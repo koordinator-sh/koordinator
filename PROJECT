@@ -1,0 +1,7 @@
+domain: koordinator.sh
+layout:
+- go.kubebuilder.io/v3
+multigroup: true
+projectName: koordinator
+repo: github.com/koordinator-sh/koordinator
+version: "3"
