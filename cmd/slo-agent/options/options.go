@@ -22,6 +22,6 @@ import (
 )
 
 var (
-	PromAddr     = flag.String("prom-addr", ":9316", "port of prometheus server")
+	PromAddr     = flag.String("prom-addr", ":9316", "Port of prometheus server")
 	LogFlushFreq = flag.Duration("log-flush-freq", 5*time.Second, "Maximum duration between log flushes")
 )

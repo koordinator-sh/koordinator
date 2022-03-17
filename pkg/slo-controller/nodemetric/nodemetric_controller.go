@@ -26,8 +26,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/handler"
 )
 
 // NodeMetricReconciler reconciles a NodeMetric object
@@ -36,9 +38,9 @@ type NodeMetricReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics/finalizers,verbs=update
+// +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -108,8 +110,8 @@ func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	// TODO: Implement better Watcher or Owns function
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&slov1alpha1.NodeMetric{}).
+		Watches(&source.Kind{Type: &corev1.Node{}}, &handler.EnqueueRequestForNode{}).
 		Complete(r)
 }
