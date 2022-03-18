@@ -45,7 +45,7 @@ type NodeMetricReconciler struct {
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx, "node-metric-reconciler")
+	_ = log.FromContext(ctx, "node-metric-reconciler", req.NamespacedName)
 
 	node, nodeMetric := &corev1.Node{}, &slov1alpha1.NodeMetric{}
 	nodeExist, nodeMetricExist := true, true

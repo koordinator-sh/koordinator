@@ -18,7 +18,8 @@ package config
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type ColocationCfg struct {
@@ -47,17 +48,17 @@ func NewDefaultColocationCfg() *ColocationCfg {
 
 func DefaultColocationCfg() ColocationCfg {
 	return ColocationCfg{
-		Enable:             pointer.BoolPtr(false),
+		Enable:             util.BoolPtr(false),
 		ColocationStrategy: DefaultColocationStrategy(),
 	}
 }
 
 func DefaultColocationStrategy() ColocationStrategy {
 	return ColocationStrategy{
-		CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-		MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-		DegradeTimeMinutes:            pointer.Int64Ptr(15),
-		UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-		ResourceDiffThreshold:         pointer.Float64(0.1),
+		CPUReclaimThresholdPercent:    util.Int64Ptr(65),
+		MemoryReclaimThresholdPercent: util.Int64Ptr(65),
+		DegradeTimeMinutes:            util.Int64Ptr(15),
+		UpdateTimeThresholdSeconds:    util.Int64Ptr(300),
+		ResourceDiffThreshold:         util.Float64Ptr(0.1),
 	}
 }

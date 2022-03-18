@@ -7,7 +7,7 @@ const (
 )
 
 const (
-	DomainPrefix          = "kccord.io"
+	DomainPrefix          = "koordinator.sh"
 	LabelAnnotationPrefix = DomainPrefix + "/"
 
 	LabelPodQoS      = LabelAnnotationPrefix + "qosClass"
