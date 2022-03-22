@@ -14,6 +14,30 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package slo_agent
+package main
 
-// TODO
+import (
+	"flag"
+	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/cmd/slo-agent/options"
+)
+
+func main() {
+	klog.InitFlags(flag.CommandLine)
+	flag.Parse()
+
+	// Default klog flush interval is 5 seconds, set to LogFlushFreq.
+	go wait.Until(klog.Flush, *options.LogFlushFreq, wait.NeverStop)
+	defer klog.Flush()
+
+	go func() {
+		klog.Info("starting prometheus server on %v", *options.PromAddr)
+		http.Handle("/metrics", promhttp.Handler())
+		klog.Fatalf("failed to start prometheus, error: %v", http.ListenAndServe(*options.PromAddr, nil))
+	}()
+}
