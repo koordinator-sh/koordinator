@@ -723,7 +723,8 @@ func (b *Builder) walkType(u types.Universe, useName *types.Name, in tc.Type) *t
 		}
 		out.Kind = types.Array
 		out.Elem = b.walkType(u, nil, t.Elem())
-		out.Len = in.(*tc.Array).Len()
+		// TODO: need to store array length, otherwise raw type name
+		// cannot be properly written.
 		return out
 	case *tc.Chan:
 		out := u.Type(name)

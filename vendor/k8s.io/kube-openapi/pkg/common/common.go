@@ -57,11 +57,6 @@ type PathHandler interface {
 	Handle(path string, handler http.Handler)
 }
 
-type PathHandlerByGroupVersion interface {
-	Handle(path string, handler http.Handler)
-	HandlePrefix(path string, handler http.Handler)
-}
-
 // Config is set of configuration for openAPI spec generation.
 type Config struct {
 	// List of supported protocols such as https, http, etc.

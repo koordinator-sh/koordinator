@@ -225,7 +225,6 @@ type openAPITypeWriter struct {
 	*generator.SnippetWriter
 	context                *generator.Context
 	refTypes               map[string]*types.Type
-	enumContext            *enumContext
 	GetDefinitionInterface *types.Type
 }
 
@@ -234,7 +233,6 @@ func newOpenAPITypeWriter(sw *generator.SnippetWriter, c *generator.Context) ope
 		SnippetWriter: sw,
 		context:       c,
 		refTypes:      map[string]*types.Type{},
-		enumContext:   newEnumContext(c),
 	}
 }
 
@@ -550,7 +548,7 @@ func mustEnforceDefault(t *types.Type, omitEmpty bool) (interface{}, error) {
 }
 
 func (g openAPITypeWriter) generateDefault(comments []string, t *types.Type, omitEmpty bool) error {
-	t = resolveAliasAndEmbeddedType(t)
+	t = resolveAliasType(t)
 	def, err := defaultFromComments(comments)
 	if err != nil {
 		return err
@@ -627,11 +625,7 @@ func (g openAPITypeWriter) generateProperty(m *types.Member, parent *types.Type)
 		return err
 	}
 	g.Do("SchemaProps: spec.SchemaProps{\n", nil)
-	var extraComments []string
-	if enumType, isEnum := g.enumContext.EnumType(m.Type); isEnum {
-		extraComments = enumType.DescriptionLines()
-	}
-	g.generateDescription(append(m.CommentLines, extraComments...))
+	g.generateDescription(m.CommentLines)
 	jsonTags := getJsonTags(m)
 	if len(jsonTags) > 1 && jsonTags[1] == "string" {
 		g.generateSimpleProperty("string", "")
@@ -647,10 +641,6 @@ func (g openAPITypeWriter) generateProperty(m *types.Member, parent *types.Type)
 	typeString, format := openapi.OpenAPITypeFormat(t.String())
 	if typeString != "" {
 		g.generateSimpleProperty(typeString, format)
-		if enumType, isEnum := g.enumContext.EnumType(m.Type); isEnum {
-			// original type is an enum, add "Enum: " and the values
-			g.Do("Enum: []interface{}{$.$}", strings.Join(enumType.ValueStrings(), ", "))
-		}
 		g.Do("},\n},\n", nil)
 		return nil
 	}
@@ -684,17 +674,12 @@ func (g openAPITypeWriter) generateReferenceProperty(t *types.Type) {
 	g.Do("Ref: ref(\"$.$\"),\n", t.Name.String())
 }
 
-func resolveAliasAndEmbeddedType(t *types.Type) *types.Type {
+func resolveAliasType(t *types.Type) *types.Type {
 	var prev *types.Type
 	for prev != t {
 		prev = t
 		if t.Kind == types.Alias {
 			t = t.Underlying
-		}
-		if t.Kind == types.Struct {
-			if len(t.Members) == 1 && t.Members[0].Embedded {
-				t = t.Members[0].Type
-			}
 		}
 	}
 	return t
