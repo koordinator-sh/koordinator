@@ -26,3 +26,5 @@ testbin/*
 
 .vscode
 .DS_Store
+# Ignore this directory temporarily to bypass the check
+/vendor/
