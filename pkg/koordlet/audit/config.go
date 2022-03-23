@@ -1,0 +1,52 @@
+/*
+Copyright 2021 Alibaba Cloud.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package audit
+
+import (
+	"flag"
+	"time"
+)
+
+type Config struct {
+	LogDir               string
+	Verbose              int
+	MaxDiskSpaceMB       int
+	MaxConcurrentReaders int
+	ActiveReaderTTL      time.Duration
+	DefaultEventsLimit   int
+	MaxEventsLimit       int
+	TickerDuration       time.Duration
+}
+
+func NewDefaultConfig() *Config {
+	return &Config{
+		LogDir:               "/var/log/koordlet",
+		Verbose:              3,
+		MaxDiskSpaceMB:       16,
+		MaxConcurrentReaders: 4,
+		ActiveReaderTTL:      time.Minute * 10,
+		DefaultEventsLimit:   256,
+		MaxEventsLimit:       2048,
+		TickerDuration:       time.Minute,
+	}
+}
+
+func (c *Config) InitFlags(fs *flag.FlagSet) {
+	fs.StringVar(&c.LogDir, "AuditLogDir", c.LogDir, "The dir of audit log")
+	fs.IntVar(&c.Verbose, "AuditVerbose", c.Verbose, "The verbose of the audit log")
+	fs.IntVar(&c.MaxDiskSpaceMB, "AuditMaxDiskSpaceMB", c.MaxDiskSpaceMB, "Max disk space occupied of audit log")
+}

@@ -75,14 +75,14 @@ test: manifests generate fmt vet envtest ## Run tests.
 ##@ Build
 
 .PHONY: build
-build: generate fmt vet build-koordlet
+build: generate fmt vet build-koordlet build-koord-controller
 
-.PHONY: build-koordlet build-koord-controller
+.PHONY: build-koordlet
 build-koordlet: ## Build koordlet binary.
 	go build -o bin/koordlet cmd/koordlet/main.go
 
 .PHONY: build-koord-controller
-build-controller: ## Build koord-controller binary.
+build-koord-controller: ## Build koord-controller binary.
 	go build -o bin/koord-controller cmd/koord-controller/main.go
 
 .PHONY: docker-build

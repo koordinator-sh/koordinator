@@ -1,0 +1,185 @@
+package system
+
+import (
+	"fmt"
+	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
+)
+
+type CgroupDriverType string
+
+const (
+	Cgroupfs CgroupDriverType = "cgroupfs"
+	Systemd  CgroupDriverType = "systemd"
+
+	kubeletDefaultCgroupDriver = Cgroupfs
+
+	KubeRootNameSystemd       = "kubepods.slice/"
+	KubeBurstableNameSystemd  = "kubepods-burstable.slice/"
+	KubeBesteffortNameSystemd = "kubepods-besteffort.slice/"
+
+	KubeRootNameCgroupfs       = "kubepods/"
+	KubeBurstableNameCgroupfs  = "burstable/"
+	KubeBesteffortNameCgroupfs = "besteffort/"
+)
+
+func (c CgroupDriverType) Validate() bool {
+	s := string(c)
+	return s == string(Cgroupfs) || s == string(Systemd)
+}
+
+type formatter struct {
+	ParentDir string
+	QOSDirFn  func(qos corev1.PodQOSClass) string
+	PodDirFn  func(qos corev1.PodQOSClass, podUID string) string
+	// containerID format: "containerd://..." or "docker://..."
+	ContainerDirFn func(c *corev1.ContainerStatus) (string, error)
+
+	PodIDParser       func(basename string) (string, error)
+	ContainerIDParser func(basename string) (string, error)
+}
+
+var cgroupPathFormatterInSystemd = formatter{
+	ParentDir: KubeRootNameSystemd,
+	QOSDirFn: func(qos corev1.PodQOSClass) string {
+		switch qos {
+		case corev1.PodQOSBurstable:
+			return KubeBurstableNameSystemd
+		case corev1.PodQOSBestEffort:
+			return KubeBesteffortNameSystemd
+		case corev1.PodQOSGuaranteed:
+			return "/"
+		}
+		return "/"
+	},
+	PodDirFn: func(qos corev1.PodQOSClass, podUID string) string {
+		id := strings.ReplaceAll(podUID, "-", "_")
+		switch qos {
+		case corev1.PodQOSBurstable:
+			return fmt.Sprintf("kubepods-burstable-pod%s.slice/", id)
+		case corev1.PodQOSBestEffort:
+			return fmt.Sprintf("kubepods-besteffort-pod%s.slice/", id)
+		case corev1.PodQOSGuaranteed:
+			return fmt.Sprintf("kubepods-pod%s.slice/", id)
+		}
+		return "/"
+	},
+	ContainerDirFn: func(c *corev1.ContainerStatus) (string, error) {
+		hashID := strings.Split(c.ContainerID, "://")
+		if len(hashID) < 2 {
+			return "", fmt.Errorf("parse container id %s failed", c.ContainerID)
+		}
+
+		switch hashID[0] {
+		case "docker":
+			return fmt.Sprintf("docker-%s.scope/", hashID[1]), nil
+		case "containerd":
+			return fmt.Sprintf("cri-containerd-%s.scope/", hashID[1]), nil
+		default:
+			return "", fmt.Errorf("unknown container protocol %s", c.ContainerID)
+		}
+	},
+	PodIDParser: func(basename string) (string, error) {
+		patterns := []struct {
+			prefix string
+			suffix string
+		}{
+			{
+				prefix: "kubepods-besteffort-pod",
+				suffix: ".slice",
+			},
+			{
+				prefix: "kubepods-burstable-pod",
+				suffix: ".slice",
+			},
+
+			{
+				prefix: "kubepods-pod",
+				suffix: ".slice",
+			},
+		}
+
+		for i := range patterns {
+			if strings.HasPrefix(basename, patterns[i].prefix) && strings.HasSuffix(basename, patterns[i].suffix) {
+				return basename[len(patterns[i].prefix) : len(basename)-len(patterns[i].suffix)], nil
+			}
+		}
+		return "", fmt.Errorf("fail to parse pod id: %v", basename)
+	},
+	ContainerIDParser: func(basename string) (string, error) {
+		patterns := []struct {
+			prefix string
+			suffix string
+		}{
+			{
+				prefix: "docker-",
+				suffix: ".scope",
+			},
+			{
+				prefix: "cri-containerd-",
+				suffix: ".scope",
+			},
+		}
+
+		for i := range patterns {
+			if strings.HasPrefix(basename, patterns[i].prefix) && strings.HasSuffix(basename, patterns[i].suffix) {
+				return basename[len(patterns[i].prefix) : len(basename)-len(patterns[i].suffix)], nil
+			}
+		}
+		return "", fmt.Errorf("fail to parse pod id: %v", basename)
+	},
+}
+
+var cgroupPathFormatterInCgroupfs = formatter{
+	ParentDir: KubeRootNameCgroupfs,
+	QOSDirFn: func(qos corev1.PodQOSClass) string {
+		switch qos {
+		case corev1.PodQOSBurstable:
+			return KubeBurstableNameCgroupfs
+		case corev1.PodQOSBestEffort:
+			return KubeBesteffortNameCgroupfs
+		case corev1.PodQOSGuaranteed:
+			return "/"
+		}
+		return "/"
+	},
+	PodDirFn: func(qos corev1.PodQOSClass, podUID string) string {
+		return fmt.Sprintf("pod%s/", podUID)
+	},
+	ContainerDirFn: func(c *corev1.ContainerStatus) (string, error) {
+		hashID := strings.Split(c.ContainerID, "://")
+		if len(hashID) < 2 {
+			return "", fmt.Errorf("parse container id %s failed", c.ContainerID)
+		}
+		if hashID[0] == "docker" || hashID[0] == "containerd" {
+			return fmt.Sprintf("%s/", hashID[1]), nil
+		} else {
+			return "", fmt.Errorf("unknown container protocol %s", c.ContainerID)
+		}
+	},
+	PodIDParser: func(basename string) (string, error) {
+		if strings.HasPrefix(basename, "pod") {
+			return basename[len("pod"):], nil
+		}
+		return "", fmt.Errorf("fail to parse pod id: %v", basename)
+	},
+	ContainerIDParser: func(basename string) (string, error) {
+		return basename, nil
+	},
+}
+
+// default use Systemd cgroup path format
+var CgroupPathFormatter = cgroupPathFormatterInSystemd
+
+func SetupCgroupPathFormatter(driver CgroupDriverType) {
+	switch driver {
+	case Systemd:
+		CgroupPathFormatter = cgroupPathFormatterInSystemd
+	case Cgroupfs:
+		CgroupPathFormatter = cgroupPathFormatterInCgroupfs
+	default:
+		klog.Warningf("cgroup driver formatter not supported: '%s'", string(driver))
+	}
+}

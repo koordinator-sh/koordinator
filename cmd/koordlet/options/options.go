@@ -18,10 +18,8 @@ package options
 
 import (
 	"flag"
-	"time"
 )
 
 var (
-	PromAddr     = flag.String("prom-addr", ":9316", "Port of prometheus server")
-	LogFlushFreq = flag.Duration("log-flush-freq", 5*time.Second, "Maximum duration between log flushes")
+	ServerAddr = flag.String("addr", ":9316", "port of koordlet server")
 )
