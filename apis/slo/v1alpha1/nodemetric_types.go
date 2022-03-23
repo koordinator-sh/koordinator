@@ -53,6 +53,8 @@ type NodeMetricStatus struct {
 	PodsMetric []*PodMetricInfo `json:"podsMetric,omitempty"`
 }
 
+// +genclient
+// +genclient:nonNamespaced
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster

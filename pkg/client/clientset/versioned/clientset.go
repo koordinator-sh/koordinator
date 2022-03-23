@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/config/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -29,6 +30,7 @@ import (
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
 	ConfigV1alpha1() configv1alpha1.ConfigV1alpha1Interface
+	SloV1alpha1() slov1alpha1.SloV1alpha1Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
@@ -36,11 +38,17 @@ type Interface interface {
 type Clientset struct {
 	*discovery.DiscoveryClient
 	configV1alpha1 *configv1alpha1.ConfigV1alpha1Client
+	sloV1alpha1    *slov1alpha1.SloV1alpha1Client
 }
 
 // ConfigV1alpha1 retrieves the ConfigV1alpha1Client
 func (c *Clientset) ConfigV1alpha1() configv1alpha1.ConfigV1alpha1Interface {
 	return c.configV1alpha1
+}
+
+// SloV1alpha1 retrieves the SloV1alpha1Client
+func (c *Clientset) SloV1alpha1() slov1alpha1.SloV1alpha1Interface {
+	return c.sloV1alpha1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -68,6 +76,10 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 	if err != nil {
 		return nil, err
 	}
+	cs.sloV1alpha1, err = slov1alpha1.NewForConfig(&configShallowCopy)
+	if err != nil {
+		return nil, err
+	}
 
 	cs.DiscoveryClient, err = discovery.NewDiscoveryClientForConfig(&configShallowCopy)
 	if err != nil {
@@ -81,6 +93,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 func NewForConfigOrDie(c *rest.Config) *Clientset {
 	var cs Clientset
 	cs.configV1alpha1 = configv1alpha1.NewForConfigOrDie(c)
+	cs.sloV1alpha1 = slov1alpha1.NewForConfigOrDie(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClientForConfigOrDie(c)
 	return &cs
@@ -90,6 +103,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
 	cs.configV1alpha1 = configv1alpha1.New(c)
+	cs.sloV1alpha1 = slov1alpha1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

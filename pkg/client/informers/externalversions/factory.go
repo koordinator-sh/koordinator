@@ -25,6 +25,7 @@ import (
 	versioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	config "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/config"
 	internalinterfaces "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/internalinterfaces"
+	slo "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/slo"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -172,8 +173,13 @@ type SharedInformerFactory interface {
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
 	Config() config.Interface
+	Slo() slo.Interface
 }
 
 func (f *sharedInformerFactory) Config() config.Interface {
 	return config.New(f, f.namespace, f.tweakListOptions)
+}
+
+func (f *sharedInformerFactory) Slo() slo.Interface {
+	return slo.New(f, f.namespace, f.tweakListOptions)
 }

@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
 )
@@ -54,6 +55,10 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 	// Group=config, Version=v1alpha1
 	case v1alpha1.SchemeGroupVersion.WithResource("clustercolocationprofiles"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Config().V1alpha1().ClusterColocationProfiles().Informer()}, nil
+
+		// Group=slo, Version=v1alpha1
+	case slov1alpha1.SchemeGroupVersion.WithResource("nodemetrics"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Slo().V1alpha1().NodeMetrics().Informer()}, nil
 
 	}
 

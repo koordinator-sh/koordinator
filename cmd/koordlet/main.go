@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/cmd/slo-agent/options"
+	"github.com/koordinator-sh/koordinator/cmd/koordlet/options"
 )
 
 func main() {
