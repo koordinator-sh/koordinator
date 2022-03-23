@@ -33,6 +33,7 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -83,6 +84,14 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeMetric")
+		os.Exit(1)
+	}
+	if err = (&noderesource.NodeResourceReconciler{
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		SyncContext: noderesource.NewSyncContext(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "NodeResource")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

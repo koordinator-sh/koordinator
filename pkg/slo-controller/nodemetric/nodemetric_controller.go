@@ -29,7 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/handler"
 )
 
 // NodeMetricReconciler reconciles a NodeMetric object
@@ -112,6 +111,6 @@ func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&slov1alpha1.NodeMetric{}).
-		Watches(&source.Kind{Type: &corev1.Node{}}, &handler.EnqueueRequestForNode{}).
+		Watches(&source.Kind{Type: &corev1.Node{}}, &EnqueueRequestForNode{}).
 		Complete(r)
 }

@@ -4,12 +4,14 @@ go 1.17
 
 require (
 	github.com/fsnotify/fsnotify v1.4.9
+	github.com/jinzhu/copier v0.3.5
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.15.0
 	github.com/prometheus/client_golang v1.11.0
 	github.com/spf13/pflag v1.0.5
 	k8s.io/api v0.22.6
 	k8s.io/apimachinery v0.22.6
+	k8s.io/apiserver v0.22.6
 	k8s.io/client-go v0.22.6
 	k8s.io/code-generator v0.22.6
 	k8s.io/component-base v0.22.6
@@ -28,6 +30,7 @@ require (
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful v2.9.5+incompatible // indirect

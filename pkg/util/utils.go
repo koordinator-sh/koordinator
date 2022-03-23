@@ -16,6 +16,12 @@ limitations under the License.
 
 package util
 
+import (
+	"encoding/json"
+	"fmt"
+	"reflect"
+)
+
 // Int64Ptr returns a int64 pointer for given value
 func Int64Ptr(v int64) *int64 {
 	return &v
@@ -34,4 +40,27 @@ func BoolPtr(v bool) *bool {
 // StringPtr returns a string pointer for given value
 func StringPtr(v string) *string {
 	return &v
+}
+
+// Merge returns a merged interface. Value in new will
+// override old's when both fields exist.
+// It will throw an error if:
+//   1. either of the inputs was nil;
+//   2. inputs were not a pointer of the same json struct.
+func Merge(old, new interface{}) (interface{}, error) {
+	if old == nil || new == nil {
+		return nil, fmt.Errorf("invalid input, should not be empty")
+	}
+
+	if reflect.TypeOf(old) != reflect.TypeOf(new) || reflect.TypeOf(old).Kind() != reflect.Ptr {
+		return nil, fmt.Errorf("invalud input, should be the same type")
+	}
+
+	if data, err := json.Marshal(new); err != nil {
+		return nil, err
+	} else if err := json.Unmarshal(data, &old); err != nil {
+		return nil, err
+	}
+
+	return old, nil
 }
