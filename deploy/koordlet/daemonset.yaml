@@ -26,7 +26,7 @@ spec:
     spec:
       containers:
         - command:
-            - /slo-agent
+            - /koordlet
           args:
             - --logtostderr=true
             - --v=4

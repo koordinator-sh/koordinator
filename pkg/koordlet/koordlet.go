@@ -18,7 +18,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/pluginsmgr"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -41,7 +40,6 @@ type daemon struct {
 	statesInformer statesinformer.StatesInformer
 	metricCache    metriccache.MetricCache
 	reporter       reporter.Reporter
-	pluginsManager pluginsmgr.PluginsManager
 	pleg           pleg.Pleg
 }
 
@@ -148,16 +146,6 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 			os.Exit(1)
 		}
 	}()
-
-	// start resmanager
-	go func() {
-		if err := d.pluginsManager.Run(stopCh); err != nil {
-			klog.Error("Unable to run the resManager: ", err)
-			os.Exit(1)
-		}
-	}()
-
-	// start slo control logic
 
 	klog.Info("Start daemon successfully")
 	<-stopCh
