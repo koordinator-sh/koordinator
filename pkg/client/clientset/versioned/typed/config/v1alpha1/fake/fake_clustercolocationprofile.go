@@ -34,9 +34,9 @@ type FakeClusterColocationProfiles struct {
 	Fake *FakeConfigV1alpha1
 }
 
-var clustercolocationprofilesResource = schema.GroupVersionResource{Group: "config.koordinator.sh", Version: "v1alpha1", Resource: "clustercolocationprofiles"}
+var clustercolocationprofilesResource = schema.GroupVersionResource{Group: "config", Version: "v1alpha1", Resource: "clustercolocationprofiles"}
 
-var clustercolocationprofilesKind = schema.GroupVersionKind{Group: "config.koordinator.sh", Version: "v1alpha1", Kind: "ClusterColocationProfile"}
+var clustercolocationprofilesKind = schema.GroupVersionKind{Group: "config", Version: "v1alpha1", Kind: "ClusterColocationProfile"}
 
 // Get takes name of the clusterColocationProfile, and returns the corresponding clusterColocationProfile object, and an error if there is any.
 func (c *FakeClusterColocationProfiles) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ClusterColocationProfile, err error) {

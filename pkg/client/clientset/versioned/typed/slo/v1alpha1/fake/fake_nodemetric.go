@@ -34,9 +34,9 @@ type FakeNodeMetrics struct {
 	Fake *FakeSloV1alpha1
 }
 
-var nodemetricsResource = schema.GroupVersionResource{Group: "slo.koordinator.sh", Version: "v1alpha1", Resource: "nodemetrics"}
+var nodemetricsResource = schema.GroupVersionResource{Group: "slo", Version: "v1alpha1", Resource: "nodemetrics"}
 
-var nodemetricsKind = schema.GroupVersionKind{Group: "slo.koordinator.sh", Version: "v1alpha1", Kind: "NodeMetric"}
+var nodemetricsKind = schema.GroupVersionKind{Group: "slo", Version: "v1alpha1", Kind: "NodeMetric"}
 
 // Get takes name of the nodeMetric, and returns the corresponding nodeMetric object, and an error if there is any.
 func (c *FakeNodeMetrics) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.NodeMetric, err error) {
