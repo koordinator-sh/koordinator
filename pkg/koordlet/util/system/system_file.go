@@ -1,8 +1,9 @@
 package system
 
 import (
-	"k8s.io/klog/v2"
 	"path"
+
+	"k8s.io/klog/v2"
 )
 
 const (

@@ -2,11 +2,12 @@ package util
 
 import (
 	"io/ioutil"
-	corev1 "k8s.io/api/core/v1"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/stretchr/testify/assert"
 

@@ -3,13 +3,13 @@ package util
 import (
 	"fmt"
 	"io/ioutil"
-	"k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	"path"
 	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	resources "k8s.io/apiserver/pkg/quota/v1"
+	"k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
 	nodesv1beta1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"

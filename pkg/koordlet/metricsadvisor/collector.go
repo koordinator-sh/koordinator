@@ -229,7 +229,7 @@ func (c *collector) collectPodResUsed() {
 func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 	klog.V(6).Infof("start collectContainerResUsed")
 	pod := meta.Pod
-	for i, _ := range pod.Status.ContainerStatuses {
+	for i := range pod.Status.ContainerStatuses {
 		containerStat := &pod.Status.ContainerStatuses[i]
 		collectTime := time.Now()
 		currentCPUTick, err0 := util.GetContainerCPUStatUsageTicks(meta.CgroupDir, containerStat)
@@ -346,7 +346,7 @@ func (c *collector) collectPodThrottledInfo() {
 
 func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMeta) {
 	pod := podMeta.Pod
-	for i, _ := range pod.Status.ContainerStatuses {
+	for i := range pod.Status.ContainerStatuses {
 		collectTime := time.Now()
 		containerStat := &pod.Status.ContainerStatuses[i]
 		if len(containerStat.ContainerID) == 0 {
@@ -383,6 +383,9 @@ func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMet
 			},
 		}
 		err = c.metricCache.InsertContainerThrottledMetrics(collectTime, containerMetric)
+		if err != nil {
+			klog.Warningf("insert container throttled metrics failed, err %v", err)
+		}
 	} // end for container status
 	klog.V(5).Infof("collectContainerThrottledInfo for pod %s/%s finished, container num %d",
 		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses))

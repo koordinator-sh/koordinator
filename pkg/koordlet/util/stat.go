@@ -3,10 +3,11 @@ package util
 import (
 	"fmt"
 	"io/ioutil"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"strconv"
 	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )

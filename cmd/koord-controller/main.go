@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"os"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -32,9 +33,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koord-controller/config"
-	"github.com/koordinator-sh/koordinator/pkg/koord-controller/nodemetric"
-	"github.com/koordinator-sh/koordinator/pkg/koord-controller/noderesource"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -78,9 +79,6 @@ func main() {
 		restConfig.Burst = cfg.ClientBurst
 	}
 	klog.Infof("apiserver client QPS: %v, Burst: %v", restConfig.QPS, restConfig.Burst)
-
-	// clientSet := clientset.NewForConfigOrDie(restConfig)
-	// informerFactory := informers.NewSharedInformerFactory(clientSet, time.Hour*24)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,

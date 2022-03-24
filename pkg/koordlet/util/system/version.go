@@ -1,9 +1,10 @@
 package system
 
 import (
-	"k8s.io/klog/v2"
 	"path"
 	"path/filepath"
+
+	"k8s.io/klog/v2"
 )
 
 var HostSystemInfo = collectVersionInfo()

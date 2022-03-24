@@ -3,10 +3,11 @@ package util
 import (
 	"fmt"
 	"io/ioutil"
-	corev1 "k8s.io/api/core/v1"
 	"reflect"
 	"strconv"
 	"strings"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (

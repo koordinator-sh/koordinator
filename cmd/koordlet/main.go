@@ -13,13 +13,12 @@ import (
 
 	"github.com/koordinator-sh/koordinator/cmd/koordlet/options"
 	"github.com/koordinator-sh/koordinator/pkg/features"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet"
+	agent "github.com/koordinator-sh/koordinator/pkg/koordlet"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/config"
 )
 
-func init() {
-}
+func init() {}
 
 func main() {
 	cfg := config.NewConfiguration()
@@ -63,7 +62,7 @@ func main() {
 		if features.DefaultKoordletFeatureGate.Enabled(features.AuditEventsHTTPHandler) {
 			http.HandleFunc("/events", audit.HttpHandler())
 		}
-		//http.HandleFunc("/healthz", d.HealthzHandler())
+		// http.HandleFunc("/healthz", d.HealthzHandler())
 		klog.Fatalf("Prometheus monitoring failed: %v", http.ListenAndServe(*options.ServerAddr, nil))
 	}()
 

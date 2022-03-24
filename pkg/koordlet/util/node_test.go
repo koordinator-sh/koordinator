@@ -1,11 +1,13 @@
 package util
 
 import (
-	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	"github.com/stretchr/testify/assert"
-	corev1 "k8s.io/api/core/v1"
 	"path"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+
+	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func Test_GetKubeQosRelativePath(t *testing.T) {

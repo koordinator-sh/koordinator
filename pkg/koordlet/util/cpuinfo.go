@@ -10,8 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 const cpuCmdTimeout = 3 * time.Second
@@ -215,6 +216,9 @@ func GetLocalCPUInfo() (*LocalCPUInfo, error) {
 	}
 	totalInfo := calculateCPUTotalInfo(processorInfos)
 	basicInfo, err := getCPUBasicInfo()
+	if err != nil {
+		return nil, err
+	}
 	return &LocalCPUInfo{
 		BasicInfo:      *basicInfo,
 		ProcessorInfos: processorInfos,

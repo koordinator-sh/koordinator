@@ -18,7 +18,6 @@ package noderesource
 
 import (
 	"context"
-	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -31,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
 )
 
 const (

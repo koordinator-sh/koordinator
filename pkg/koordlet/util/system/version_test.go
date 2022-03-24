@@ -1,9 +1,10 @@
 package system
 
 import (
-	"github.com/stretchr/testify/assert"
 	"path"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestIsAliOS(t *testing.T) {

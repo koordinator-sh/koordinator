@@ -116,7 +116,7 @@ func Test_storage_PodResourceMetric_CRUD(t *testing.T) {
 			if len(got) != len(tt.want) {
 				t.Errorf("GetPodResourceMetric() = %v, want %v", got, tt.want)
 			}
-			for i, _ := range got {
+			for i := range got {
 				if !EqualPodResourceMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetPodResourceMetric() = %v, want %v", got[i], tt.want[i])
 				}
@@ -192,7 +192,7 @@ func Test_storage_NodeResourceMetric_CRUD(t *testing.T) {
 			if len(got) != len(tt.want) {
 				t.Errorf("GetNodeResourceMetric() = %v, want %v", got, tt.want)
 			}
-			for i, _ := range got {
+			for i := range got {
 				if !EqualNodeResourceMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetNodeResourceMetric() = %v, want %v", got, tt.want)
 				}
@@ -272,7 +272,7 @@ func Test_storage_ContainerResourceMetric_CRUD(t *testing.T) {
 			if len(got) != len(tt.want) {
 				t.Errorf("GetContainerResourceMetric() = %v, want %v", got, tt.want)
 			}
-			for i, _ := range got {
+			for i := range got {
 				if !EqualContainerResourceMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetContainerResourceMetric() = %v, want %v", got[i], tt.want[i])
 				}
@@ -350,7 +350,7 @@ func Test_storage_BECPUResourceMetric_CRUD(t *testing.T) {
 			if len(got) != len(tt.want) {
 				t.Errorf("GetBECPUResourceMetric() = %v, want %v", got, tt.want)
 			}
-			for i, _ := range got {
+			for i := range got {
 				if !EqualBECPUResourceMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetBECPUResourceMetric() = %v, want %v", got, tt.want)
 				}
@@ -501,7 +501,7 @@ func Test_storage_ContainerThrottledMetric_CRUD(t *testing.T) {
 			if len(got) != len(tt.want) {
 				t.Errorf("GetContainerThrottledMetric() = %v, want %v", got, tt.want)
 			}
-			for i, _ := range got {
+			for i := range got {
 				if !EqualContainerThrottledMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetContainerThrottledMetric() = %v, want %v", got[i], tt.want[i])
 				}
@@ -579,7 +579,7 @@ func Test_storage_PodThrottledMetric_CRUD(t *testing.T) {
 			if len(got) != len(tt.want) {
 				t.Errorf("GetPodThrottledMetric() = %v, want %v", got, tt.want)
 			}
-			for i, _ := range got {
+			for i := range got {
 				if !EqualPodThrottledMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetPodThrottledMetric() = %v, want %v", got[i], tt.want[i])
 				}

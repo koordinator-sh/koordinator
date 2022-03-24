@@ -33,7 +33,7 @@ func DoHTTPGet(methodName string, ip string, port int, timeout int) ([]byte, err
 	}
 
 	if res.StatusCode != http.StatusOK {
-		return result, fmt.Errorf("http reponse statue code %v, body %v", res.StatusCode, string(result))
+		return result, fmt.Errorf("http response statue code %v, body %v", res.StatusCode, string(result))
 	}
 	return result, nil
 }

@@ -2,10 +2,11 @@ package util
 
 import (
 	"fmt"
-	corev1 "k8s.io/api/core/v1"
 	"path"
 	"strconv"
 	"strings"
+
+	corev1 "k8s.io/api/core/v1"
 
 	nodesv1beta1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -40,7 +41,7 @@ func GetRootCgroupCurCPUSet(qosClass corev1.PodQOSClass) ([]int32, error) {
 		return nil, err
 	}
 
-	return ParseCPUSetStr(string(rawContent))
+	return ParseCPUSetStr(rawContent)
 }
 
 func GetRootCgroupCurCFSPeriod(qosClass corev1.PodQOSClass) (int64, error) {
@@ -48,7 +49,7 @@ func GetRootCgroupCurCFSPeriod(qosClass corev1.PodQOSClass) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
+	return strconv.ParseInt(strings.TrimSpace(rawContent), 10, 64)
 }
 
 func GetRootCgroupCurCFQuota(qosClass corev1.PodQOSClass) (int64, error) {
@@ -56,5 +57,5 @@ func GetRootCgroupCurCFQuota(qosClass corev1.PodQOSClass) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
+	return strconv.ParseInt(strings.TrimSpace(rawContent), 10, 64)
 }

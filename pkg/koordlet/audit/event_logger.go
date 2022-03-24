@@ -263,7 +263,7 @@ func (e *reverseEventIterator) Next() (*Event, error) {
 		if err != nil {
 			return nil, err
 		}
-		bs, err = e.reader.Read()
+		bs, _ = e.reader.Read()
 	}
 
 	var event Event

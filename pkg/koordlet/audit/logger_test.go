@@ -50,8 +50,8 @@ func TestLogWriter(t *testing.T) {
 		t.Fatal("failed to read file", err)
 	}
 	line := strings.TrimSpace(string(fileContent))
-	if string(line) != "1 line" {
-		t.Errorf("failed to load line, expected 1 line actual %s", string(line))
+	if line != "1 line" {
+		t.Errorf("failed to load line, expected 1 line actual %s", line)
 	}
 }
 

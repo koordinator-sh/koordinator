@@ -1,9 +1,10 @@
 package system
 
 import (
-	"github.com/stretchr/testify/assert"
 	"path"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_CommonFileFuncs(t *testing.T) {

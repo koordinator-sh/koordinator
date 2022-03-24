@@ -186,7 +186,7 @@ func TestAuditorLoggerTxtOutput(t *testing.T) {
 		t.Fatalf("failed to get events: %v", err)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, _ := ioutil.ReadAll(resp.Body)
 	lines := bytes.Split(bytes.TrimSpace(body), []byte{'\n'})
 	if len(lines) != 10 {
 		t.Errorf("failed to load events, expected %d actual %d", 10, len(lines))
@@ -231,7 +231,7 @@ func TestAuditorLoggerReaderInvalidPageToken(t *testing.T) {
 		t.Fatalf("failed to get events: %v", err)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, _ := ioutil.ReadAll(resp.Body)
 	lines := bytes.Split(bytes.TrimSpace(body), []byte{'\n'})
 	if len(lines) != 10 {
 		t.Errorf("failed to load events, expected %d actual %d", 10, len(lines))
