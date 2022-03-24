@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -57,6 +57,8 @@ var (
 func init() {
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = configv1alpha1.AddToScheme(clientgoscheme.Scheme)
+
+	_ = configv1alpha1.AddToScheme(scheme)
 
 	scheme.AddUnversionedTypes(metav1.SchemeGroupVersion, &metav1.UpdateOptions{}, &metav1.DeleteOptions{}, &metav1.CreateOptions{})
 	// +kubebuilder:scaffold:scheme

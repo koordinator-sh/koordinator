@@ -14,11 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package extension
+package mutating
 
-const (
-	DomainPrefix = "koordinator.sh/"
+import (
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+)
 
-	LabelPodQoS      = DomainPrefix + "qosClass"
-	LabelPodPriority = DomainPrefix + "priority"
+// +kubebuilder:webhook:path=/mutate-pod,mutating=true,failurePolicy=fail,sideEffects=None,admissionReviewVersions=v1;v1beta1,groups="",resources=pods,verbs=create,versions=v1,name=mpod.kb.io
+
+var (
+	// HandlerMap contains admission webhook handlers
+	HandlerMap = map[string]admission.Handler{
+		"mutate-pod": &PodMutatingHandler{},
+	}
 )

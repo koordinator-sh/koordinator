@@ -14,22 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package extension
+package webhook
 
 import (
-	corev1 "k8s.io/api/core/v1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/pod/mutating"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/pod/validating"
 )
 
-const (
-	BatchCPU    corev1.ResourceName = DomainPrefix + "batch-cpu"
-	BatchMemory corev1.ResourceName = DomainPrefix + "batch-memory"
-)
+func init() {
+	addHandlersWithGate(mutating.HandlerMap, func() (enabled bool) {
+		return utilfeature.DefaultFeatureGate.Enabled(features.PodMutatingWebhook)
+	})
 
-var (
-	ResourceNameMap = map[PriorityClass]map[corev1.ResourceName]corev1.ResourceName{
-		PriorityBatch: {
-			corev1.ResourceCPU:    BatchCPU,
-			corev1.ResourceMemory: BatchMemory,
-		},
-	}
-)
+	addHandlersWithGate(validating.HandlerMap, func() (enabled bool) {
+		return utilfeature.DefaultFeatureGate.Enabled(features.PodMutatingWebhook)
+	})
+}
