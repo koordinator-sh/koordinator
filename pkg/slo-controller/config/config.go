@@ -17,14 +17,17 @@ limitations under the License.
 package config
 
 import (
+	"flag"
 	"reflect"
+	"strings"
 
+	"github.com/jinzhu/copier"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	cliflag "k8s.io/component-base/cli/flag"
 
-	"github.com/jinzhu/copier"
-
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -119,6 +122,46 @@ func GetNodeColocationStrategy(cfg *ColocationCfg, node *corev1.Node) *Colocatio
 			break
 		}
 	}
-
 	return strategy
+}
+
+type Configuration struct {
+	FeatureGates                        map[string]bool
+	ClientQPS                           int
+	ClientBurst                         int
+	NodeMetricReconcilerQPS             int
+	NodeMetricReconcilerBurst           int
+	NodeMetricReconcilerMaxConcurrent   int
+	NodeResourceReconcilerQPS           int
+	NodeResourceReconcilerBurst         int
+	NodeResourceReconcilerMaxConcurrent int
+}
+
+func NewConfiguration() *Configuration {
+	return &Configuration{
+		ClientQPS:                           0,
+		ClientBurst:                         0,
+		NodeMetricReconcilerQPS:             10,
+		NodeMetricReconcilerBurst:           20,
+		NodeMetricReconcilerMaxConcurrent:   1,
+		NodeResourceReconcilerQPS:           10,
+		NodeResourceReconcilerBurst:         20,
+		NodeResourceReconcilerMaxConcurrent: 1,
+	}
+}
+
+func (c *Configuration) InitFlags(fs *flag.FlagSet) {
+	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "feature-gates", "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
+		"Options are:\n"+strings.Join(features.DefaultFeatureGate.KnownFeatures(), "\n"))
+
+	fs.IntVar(&c.ClientQPS, "ClientQPS", c.ClientQPS, "Client QPS")
+	fs.IntVar(&c.ClientBurst, "ClientBurst", c.ClientBurst, "Client Burst")
+
+	fs.IntVar(&c.NodeMetricReconcilerQPS, "NodeMetricReconcilerQPS", c.NodeMetricReconcilerQPS, "NodeMetric Reconciler QPS")
+	fs.IntVar(&c.NodeMetricReconcilerBurst, "NodeMetricReconcilerBurst", c.NodeMetricReconcilerBurst, "NodeMetric Reconciler Burst")
+	fs.IntVar(&c.NodeMetricReconcilerMaxConcurrent, "NodeMetricReconcilerMaxConcurrent", c.NodeMetricReconcilerMaxConcurrent, "NodeMetrics Reconciler MaxConcurrent")
+
+	fs.IntVar(&c.NodeResourceReconcilerQPS, "NodeResourceReconcilerQPS", c.NodeResourceReconcilerQPS, "NodeResource Reconciler QPS")
+	fs.IntVar(&c.NodeResourceReconcilerBurst, "NodeResourceReconcilerBurst", c.NodeResourceReconcilerBurst, "NodeResource Reconciler Burst")
+	fs.IntVar(&c.NodeResourceReconcilerMaxConcurrent, "NodeResourceReconcilerMaxConcurrent", c.NodeResourceReconcilerMaxConcurrent, "NodeResource Reconciler MaxConcurrent")
 }
