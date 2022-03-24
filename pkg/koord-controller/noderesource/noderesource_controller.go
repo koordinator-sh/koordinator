@@ -18,6 +18,7 @@ package noderesource
 
 import (
 	"context"
+	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -33,8 +34,8 @@ import (
 )
 
 const (
-	disableInConfig        string = "DisableInConfig"
-	degradeBySloController string = "DegradeBySloController"
+	disableInConfig          string = "DisableInConfig"
+	degradeByKoordController string = "DegradeByKoordController"
 )
 
 type NodeResourceReconciler struct {
@@ -85,7 +86,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if r.isDegradeNeeded(nodeMetric, node) {
 		klog.Warningf("node %v need degradation, reset BE resource", req.Name)
-		if err := r.resetNodeBEResource(node, degradeBySloController, "degrade node resource because of abnormal NodeMetric"); err != nil {
+		if err := r.resetNodeBEResource(node, degradeByKoordController, "degrade node resource because of abnormal NodeMetric"); err != nil {
 			return ctrl.Result{Requeue: true}, err
 		} else {
 			return ctrl.Result{Requeue: false}, nil
@@ -110,15 +111,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *NodeResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.TODO(), &corev1.Pod{}, "spec.nodeName", func(object client.Object) []string {
-		if pod, ok := object.(*corev1.Pod); !ok {
-			return nil
-		} else if len(pod.Spec.NodeName) == 0 {
-			return nil
-		} else {
-			return []string{pod.Spec.NodeName}
-		}
-	}); err != nil {
+	if err := fieldindex.RegisterIndexesForKoordCtrl(mgr.GetCache()); err != nil {
 		klog.Errorf("SetupWithManager failed, err: %s", err)
 		return err
 	}

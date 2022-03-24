@@ -152,7 +152,7 @@ func NewConfiguration() *Configuration {
 
 func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "feature-gates", "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
-		"Options are:\n"+strings.Join(features.DefaultFeatureGate.KnownFeatures(), "\n"))
+		"Options are:\n"+strings.Join(features.DefaultKoordCtlFeatureGate.KnownFeatures(), "\n"))
 
 	fs.IntVar(&c.ClientQPS, "ClientQPS", c.ClientQPS, "Client QPS")
 	fs.IntVar(&c.ClientBurst, "ClientBurst", c.ClientBurst, "Client Burst")

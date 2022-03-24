@@ -33,7 +33,7 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/common"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/koord-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -49,7 +49,7 @@ func (n *EnqueueRequestForConfigMap) Create(e event.CreateEvent, q workqueue.Rat
 	if !ok {
 		return
 	}
-	if configMap.Namespace != common.ConfigNameSpace || configMap.Name != common.SLOConfigMapName {
+	if configMap.Namespace != common.ConfigNameSpace || configMap.Name != common.KoordCtrlConfigMapName {
 		return
 	}
 	if !n.syncColocationCfgIfChanged(configMap) {
@@ -64,7 +64,7 @@ func (n *EnqueueRequestForConfigMap) Update(e event.UpdateEvent, q workqueue.Rat
 	if reflect.DeepEqual(newCM.Data, oldCM.Data) {
 		return
 	}
-	if newCM.Namespace != common.ConfigNameSpace || newCM.Name != common.SLOConfigMapName {
+	if newCM.Namespace != common.ConfigNameSpace || newCM.Name != common.KoordCtrlConfigMapName {
 		return
 	}
 	if !n.syncColocationCfgIfChanged(newCM) {
@@ -78,7 +78,7 @@ func (n *EnqueueRequestForConfigMap) Delete(e event.DeleteEvent, q workqueue.Rat
 	if !ok {
 		return
 	}
-	if configMap.Namespace != common.ConfigNameSpace || configMap.Name != common.SLOConfigMapName {
+	if configMap.Namespace != common.ConfigNameSpace || configMap.Name != common.KoordCtrlConfigMapName {
 		return
 	}
 	if !n.syncColocationCfgIfChanged(configMap) {
@@ -103,7 +103,7 @@ func (n *EnqueueRequestForConfigMap) syncColocationCfgIfChanged(configMap *corev
 	configStr := configMap.Data[common.ColocationConfigKey]
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
 		klog.Errorf("failed to parse colocation configmap %v/%v, error: %v",
-			common.ConfigNameSpace, common.SLOConfigMapName, err)
+			common.ConfigNameSpace, common.KoordCtrlConfigMapName, err)
 		return false
 	}
 

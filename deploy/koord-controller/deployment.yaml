@@ -22,15 +22,13 @@ spec:
     spec:
       containers:
         - args:
-            - -slo-namespace=koord-system
-            - -slo-config-name=koord-controller-config
             - -enable-leader-election=false
             - --logtostderr=true
             - --v=4
             - -feature-gates=AllAlpha=true
           command:
             - /koord-controller
-          image: docker.io/koordinator-sh/koord-controller:v0.1
+          image: registry.cn-zhangjiakou.aliyuncs.com/acs/ack-slo-manager:koord-controller-test
           imagePullPolicy: Always
           name: koord-controller
           resources:

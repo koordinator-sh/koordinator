@@ -17,6 +17,9 @@ limitations under the License.
 package fieldindex
 
 import (
+	"context"
+	v1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sync"
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -42,6 +45,26 @@ func RegisterFieldIndexes(c cache.Cache) error {
 		// 	}
 		// 	return []string{pod.Spec.NodeName}
 		// })
+	})
+	return err
+}
+
+func RegisterIndexesForKoordCtrl(c cache.Cache) error {
+	var err error
+	registerOnce.Do(func() {
+		// NOTE: add field index here if needed
+		// such as:
+		// pod name
+		c.IndexField(context.Background(), &v1.Pod{}, "spec.nodeName", func(obj client.Object) []string {
+			pod, ok := obj.(*v1.Pod)
+			if !ok {
+				return []string{}
+			}
+			if len(pod.Spec.NodeName) == 0 {
+				return []string{}
+			}
+			return []string{pod.Spec.NodeName}
+		})
 	})
 	return err
 }

@@ -18,6 +18,7 @@ package nodemetric
 
 import (
 	"context"
+	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -96,15 +97,7 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.TODO(), &corev1.Pod{}, "spec.nodeName", func(object client.Object) []string {
-		if pod, ok := object.(*corev1.Pod); !ok {
-			return nil
-		} else if len(pod.Spec.NodeName) == 0 {
-			return nil
-		} else {
-			return []string{pod.Spec.NodeName}
-		}
-	}); err != nil {
+	if err := fieldindex.RegisterIndexesForKoordCtrl(mgr.GetCache()); err != nil {
 		klog.Errorf("SetupWithManager failed, err: %s", err)
 		return err
 	}

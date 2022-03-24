@@ -6,7 +6,7 @@ import (
 )
 
 func init() {
-	runtime.Must(defaultMutableFeatureGate.Add(defaultControllerFeatureGates))
+	runtime.Must(defaultKoordCtrlMutableFeatureGate.Add(defaultKoordCtrlFeatureGates))
 }
 
 const (
@@ -17,10 +17,10 @@ const (
 )
 
 var (
-	defaultMutableFeatureGate featuregate.MutableFeatureGate = featuregate.NewFeatureGate()
-	DefaultFeatureGate        featuregate.FeatureGate        = defaultMutableFeatureGate
+	defaultKoordCtrlMutableFeatureGate featuregate.MutableFeatureGate = featuregate.NewFeatureGate()
+	DefaultKoordCtlFeatureGate         featuregate.FeatureGate        = defaultKoordCtrlMutableFeatureGate
 
-	defaultControllerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
+	defaultKoordCtrlFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 		NodeMetricControl:   {Default: true, PreRelease: featuregate.Beta},
 		NodeResourceControl: {Default: false, PreRelease: featuregate.Alpha},
 	}
