@@ -1,0 +1,72 @@
+package main
+
+import (
+	"flag"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+
+	"github.com/koordinator-sh/koordinator/cmd/koordlet/options"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	agent "github.com/koordinator-sh/koordinator/pkg/koordlet"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/config"
+)
+
+func init() {}
+
+func main() {
+	cfg := config.NewConfiguration()
+	cfg.InitFlags(flag.CommandLine)
+	klog.InitFlags(flag.CommandLine)
+	flag.Parse()
+
+	go wait.Forever(klog.Flush, 5*time.Second)
+	defer klog.Flush()
+
+	if err := features.DefaultMutableKoordletFeatureGate.SetFromMap(cfg.FeatureGates); err != nil {
+		klog.Error("Unable to setup feature-gates: ", err)
+		os.Exit(1)
+	}
+
+	stopCtx := signals.SetupSignalHandler()
+
+	// setup the default auditor
+	if features.DefaultKoordletFeatureGate.Enabled(features.AuditEvents) {
+		audit.SetupDefaultAuditor(cfg.AuditConf, stopCtx.Done())
+	}
+
+	// Get a config to talk to the apiserver
+	klog.Info("Setting up client for koordlet")
+	err := cfg.InitClient()
+	if err != nil {
+		klog.Error("Unable to setup client config: ", err)
+		os.Exit(1)
+	}
+
+	d, err := agent.NewDaemon(cfg)
+	if err != nil {
+		klog.Error("Unable to setup koordlet daemon: ", err)
+		os.Exit(1)
+	}
+
+	// Expose the Prometheus http endpoint
+	go func() {
+		klog.Infof("Starting prometheus server on %v", *options.ServerAddr)
+		http.Handle("/metrics", promhttp.Handler())
+		if features.DefaultKoordletFeatureGate.Enabled(features.AuditEventsHTTPHandler) {
+			http.HandleFunc("/events", audit.HttpHandler())
+		}
+		// http.HandleFunc("/healthz", d.HealthzHandler())
+		klog.Fatalf("Prometheus monitoring failed: %v", http.ListenAndServe(*options.ServerAddr, nil))
+	}()
+
+	// Start the Cmd
+	klog.Info("Starting the koordlet daemon")
+	d.Run(stopCtx.Done())
+}

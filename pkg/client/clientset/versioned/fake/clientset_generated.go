@@ -21,6 +21,8 @@ import (
 	clientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	configv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/config/v1alpha1"
 	fakeconfigv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/config/v1alpha1/fake"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
+	fakeslov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -81,4 +83,9 @@ var (
 // ConfigV1alpha1 retrieves the ConfigV1alpha1Client
 func (c *Clientset) ConfigV1alpha1() configv1alpha1.ConfigV1alpha1Interface {
 	return &fakeconfigv1alpha1.FakeConfigV1alpha1{Fake: &c.Fake}
+}
+
+// SloV1alpha1 retrieves the SloV1alpha1Client
+func (c *Clientset) SloV1alpha1() slov1alpha1.SloV1alpha1Interface {
+	return &fakeslov1alpha1.FakeSloV1alpha1{Fake: &c.Fake}
 }

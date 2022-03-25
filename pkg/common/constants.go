@@ -1,8 +1,8 @@
 package common
 
 const (
-	ConfigNameSpace     = "kube-system"
-	SLOConfigMapName    = "slo-manager-config"
+	ConfigNameSpace     = "koord-system"
+	SLOCtrlConfigMap    = "slo-controller-config"
 	ColocationConfigKey = "colocation-config"
 )
 

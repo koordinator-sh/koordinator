@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/handler"
+	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
 )
 
 // NodeMetricReconciler reconciles a NodeMetric object
@@ -97,21 +97,13 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.TODO(), &corev1.Pod{}, "spec.nodeName", func(object client.Object) []string {
-		if pod, ok := object.(*corev1.Pod); !ok {
-			return nil
-		} else if len(pod.Spec.NodeName) == 0 {
-			return nil
-		} else {
-			return []string{pod.Spec.NodeName}
-		}
-	}); err != nil {
+	if err := fieldindex.RegisterIndexesForKoordCtrl(mgr.GetCache()); err != nil {
 		klog.Errorf("SetupWithManager failed, err: %s", err)
 		return err
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&slov1alpha1.NodeMetric{}).
-		Watches(&source.Kind{Type: &corev1.Node{}}, &handler.EnqueueRequestForNode{}).
+		Watches(&source.Kind{Type: &corev1.Node{}}, &EnqueueRequestForNode{}).
 		Complete(r)
 }
