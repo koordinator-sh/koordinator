@@ -13,7 +13,6 @@ import (
 // NOTE: linux kernel (Alibaba Cloud Linux 2, >= 4.10), Intel cpu and bare-mental host are required; Also, Intel RDT
 // features should be enabled in kernel configurations and kernel commandline.
 // For more info, please see https://github.com/intel/intel-cmt-cat/wiki/resctrl or
-// https://yuque.antfin-inc.com/docs/share/b73514bd-585b-44c3-9343-980f5df4de94?#
 func MountResctrlSubsystem() (bool, error) {
 	schemataPath := GetResctrlSchemataFilePath("")
 	// use schemata path to check since the subsystem root dir could keep exist when unmounted

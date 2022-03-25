@@ -76,7 +76,6 @@ var (
 const BandwidthCtrlQdiscCount = 7
 
 // TODO: 'aqos' add sub command to check itself setup
-// TC树结构: https://yuque.antfin-inc.com/docs/share/ae07d965-46ce-4143-ac8d-48ff2bd789a2#ac5vR
 func HasBandwidthCtrlSetup(iface *net.Interface) bool {
 	ifLink, err := netLinkByIndexFn(iface.Index)
 	if err != nil {

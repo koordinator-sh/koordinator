@@ -6,7 +6,6 @@ package system
 import (
 	"fmt"
 	"net"
-	"strconv"
 	"testing"
 
 	"github.com/prashantv/gostub"
@@ -147,59 +146,4 @@ func Test_GetHostDefaultIface(t *testing.T) {
 	assert.Equal(t, expectLink.Attrs().Index, findIface.Index)
 }
 
-func Test_GetIfaceSpeedMbit(t *testing.T) {
-	ifaceName := "dummy"
-	type args struct {
-		ifaceName string
-		speed     int64
-	}
-	tests := []struct {
-		name string
-		args args
-		want uint64
-	}{
-		{
-			name: "valid speed",
-			args: args{
-				ifaceName: ifaceName,
-				speed:     100,
-			},
-			want: 100,
-		},
-		{
-			name: "invalid speed in vm",
-			args: args{
-				ifaceName: ifaceName,
-				speed:     -1,
-			},
-			want: DefaultIfaceBandwidth,
-		},
-		{
-			name: "wrong iface name",
-			args: args{
-				ifaceName: "wrong",
-				speed:     -1,
-			},
-			want: DefaultIfaceBandwidth,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			helper := NewFileTestUtil(t)
-			defer helper.Cleanup()
-
-			helper.CreateFile(fmt.Sprintf("/sys/class/net/%s/speed", tt.args.ifaceName))
-			helper.WriteFileContents(
-				fmt.Sprintf("/sys/class/net/%s/speed", tt.args.ifaceName),
-				strconv.FormatInt(tt.args.speed, 10),
-			)
-			Conf.ProcRootDir = "/proc"
-			Conf.SysRootDir = helper.GetAbsoluteFilePath("sys")
-
-			speed := GetIfaceSpeedMbit(&net.Interface{
-				Name: ifaceName,
-			})
-			assert.Equal(t, tt.want, speed)
-		})
-	}
-}
+//q
