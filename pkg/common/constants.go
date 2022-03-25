@@ -1,9 +1,9 @@
 package common
 
 const (
-	ConfigNameSpace        = "koord-system"
-	KoordCtrlConfigMapName = "koord-controller-config"
-	ColocationConfigKey    = "colocation-config"
+	ConfigNameSpace     = "koord-system"
+	SLOCtrlConfigMap    = "slo-controller-config"
+	ColocationConfigKey = "colocation-config"
 )
 
 const (
