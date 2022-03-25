@@ -145,5 +145,3 @@ func Test_GetHostDefaultIface(t *testing.T) {
 	expectLink, _ := netlink.LinkByName(dummyLink.Name)
 	assert.Equal(t, expectLink.Attrs().Index, findIface.Index)
 }
-
-//q
