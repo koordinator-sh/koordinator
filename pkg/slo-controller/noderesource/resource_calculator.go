@@ -23,8 +23,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/common"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -52,14 +52,14 @@ func (r *NodeResourceReconciler) calculateBEResource(node *corev1.Node,
 		podMetric, ok := podMetricMap[podKey]
 		if !ok {
 			podRequest := util.GetPodRequest(&pod)
-			if common.GetPodQoSClass(&pod) != common.QoSBE {
+			if extension.GetPodQoSClass(&pod) != extension.QoSBE {
 				podLSUsed = quotav1.Add(podLSUsed, podRequest)
 			}
 			podAllUsed = quotav1.Add(podAllUsed, podRequest)
 			continue
 		}
 
-		if common.GetPodQoSClass(&pod) != common.QoSBE {
+		if extension.GetPodQoSClass(&pod) != extension.QoSBE {
 			podLSUsed = quotav1.Add(podLSUsed, r.getPodMetricUsage(podMetric))
 		}
 		podAllUsed = quotav1.Add(podAllUsed, r.getPodMetricUsage(podMetric))

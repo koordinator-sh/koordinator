@@ -29,8 +29,8 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/common"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -145,27 +145,27 @@ func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResou
 	copyNode := node.DeepCopy()
 
 	if beResource.MilliCPU == nil {
-		delete(copyNode.Status.Capacity, common.BatchCPU)
-		delete(copyNode.Status.Allocatable, common.BatchCPU)
+		delete(copyNode.Status.Capacity, extension.BatchCPU)
+		delete(copyNode.Status.Allocatable, extension.BatchCPU)
 	} else {
 		if _, ok := beResource.MilliCPU.AsInt64(); !ok {
 			klog.V(2).Infof("invalid cpu value, cpu quantity %v is not int64", beResource.MilliCPU)
 			return fmt.Errorf("invalid cpu value, cpu quantity %v is not int64", beResource.MilliCPU)
 		}
-		copyNode.Status.Capacity[common.BatchCPU] = *beResource.MilliCPU
-		copyNode.Status.Allocatable[common.BatchCPU] = *beResource.MilliCPU
+		copyNode.Status.Capacity[extension.BatchCPU] = *beResource.MilliCPU
+		copyNode.Status.Allocatable[extension.BatchCPU] = *beResource.MilliCPU
 	}
 
 	if beResource.Memory == nil {
-		delete(copyNode.Status.Capacity, common.BatchMemory)
-		delete(copyNode.Status.Allocatable, common.BatchMemory)
+		delete(copyNode.Status.Capacity, extension.BatchMemory)
+		delete(copyNode.Status.Allocatable, extension.BatchMemory)
 	} else {
 		if _, ok := beResource.Memory.AsInt64(); !ok {
 			klog.V(2).Infof("invalid memory value, memory quantity %v is not int64", beResource.Memory)
 			return fmt.Errorf("invalid memory value, memory quantity %v is not int64", beResource.Memory)
 		}
-		copyNode.Status.Capacity[common.BatchMemory] = *beResource.Memory
-		copyNode.Status.Allocatable[common.BatchMemory] = *beResource.Memory
+		copyNode.Status.Capacity[extension.BatchMemory] = *beResource.Memory
+		copyNode.Status.Allocatable[extension.BatchMemory] = *beResource.Memory
 	}
 
 	if needSync := r.isBEResourceSyncNeeded(node, copyNode); !needSync {
@@ -183,19 +183,19 @@ func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResou
 		}
 
 		if beResource.MilliCPU == nil {
-			delete(updateNode.Status.Capacity, common.BatchCPU)
-			delete(updateNode.Status.Allocatable, common.BatchCPU)
+			delete(updateNode.Status.Capacity, extension.BatchCPU)
+			delete(updateNode.Status.Allocatable, extension.BatchCPU)
 		} else {
-			updateNode.Status.Capacity[common.BatchCPU] = *beResource.MilliCPU
-			updateNode.Status.Allocatable[common.BatchCPU] = *beResource.MilliCPU
+			updateNode.Status.Capacity[extension.BatchCPU] = *beResource.MilliCPU
+			updateNode.Status.Allocatable[extension.BatchCPU] = *beResource.MilliCPU
 		}
 
 		if beResource.Memory == nil {
-			delete(updateNode.Status.Capacity, common.BatchMemory)
-			delete(updateNode.Status.Allocatable, common.BatchMemory)
+			delete(updateNode.Status.Capacity, extension.BatchMemory)
+			delete(updateNode.Status.Allocatable, extension.BatchMemory)
 		} else {
-			updateNode.Status.Capacity[common.BatchMemory] = *beResource.Memory
-			updateNode.Status.Allocatable[common.BatchMemory] = *beResource.Memory
+			updateNode.Status.Capacity[extension.BatchMemory] = *beResource.Memory
+			updateNode.Status.Allocatable[extension.BatchMemory] = *beResource.Memory
 		}
 
 		if err := r.Client.Status().Update(context.TODO(), updateNode); err == nil {
@@ -226,12 +226,12 @@ func (r *NodeResourceReconciler) isBEResourceSyncNeeded(old, new *corev1.Node) b
 	}
 
 	// scenario 2: resource diff is bigger than ResourceDiffThreshold
-	if util.IsResourceDiff(old.Status.Allocatable, new.Status.Allocatable, common.BatchCPU, *strategy.ResourceDiffThreshold) {
-		klog.Warningf("node %v resource diff bigger than %v, need sync", common.BatchCPU, *strategy.ResourceDiffThreshold)
+	if util.IsResourceDiff(old.Status.Allocatable, new.Status.Allocatable, extension.BatchCPU, *strategy.ResourceDiffThreshold) {
+		klog.Warningf("node %v resource diff bigger than %v, need sync", extension.BatchCPU, *strategy.ResourceDiffThreshold)
 		return true
 	}
-	if util.IsResourceDiff(old.Status.Allocatable, new.Status.Allocatable, common.BatchMemory, *strategy.ResourceDiffThreshold) {
-		klog.Warningf("node %v resource diff bigger than %v, need sync", common.BatchMemory, *strategy.ResourceDiffThreshold)
+	if util.IsResourceDiff(old.Status.Allocatable, new.Status.Allocatable, extension.BatchMemory, *strategy.ResourceDiffThreshold) {
+		klog.Warningf("node %v resource diff bigger than %v, need sync", extension.BatchMemory, *strategy.ResourceDiffThreshold)
 		return true
 	}
 

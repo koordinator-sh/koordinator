@@ -14,10 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package common
+package extension
 
 const (
-	ConfigNameSpace     = "koord-system"
-	SLOCtrlConfigMap    = "slo-controller-config"
-	ColocationConfigKey = "colocation-config"
+	BatchCPU    = LabelAnnotationPrefix + "batch-cpu"
+	BatchMemory = LabelAnnotationPrefix + "batch-memory"
 )
