@@ -32,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/common"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -49,7 +48,7 @@ func (n *EnqueueRequestForConfigMap) Create(e event.CreateEvent, q workqueue.Rat
 	if !ok {
 		return
 	}
-	if configMap.Namespace != common.ConfigNameSpace || configMap.Name != common.SLOCtrlConfigMap {
+	if configMap.Namespace != config.ConfigNameSpace || configMap.Name != config.SLOCtrlConfigMap {
 		return
 	}
 	if !n.syncColocationCfgIfChanged(configMap) {
@@ -64,7 +63,7 @@ func (n *EnqueueRequestForConfigMap) Update(e event.UpdateEvent, q workqueue.Rat
 	if reflect.DeepEqual(newCM.Data, oldCM.Data) {
 		return
 	}
-	if newCM.Namespace != common.ConfigNameSpace || newCM.Name != common.SLOCtrlConfigMap {
+	if newCM.Namespace != config.ConfigNameSpace || newCM.Name != config.SLOCtrlConfigMap {
 		return
 	}
 	if !n.syncColocationCfgIfChanged(newCM) {
@@ -78,7 +77,7 @@ func (n *EnqueueRequestForConfigMap) Delete(e event.DeleteEvent, q workqueue.Rat
 	if !ok {
 		return
 	}
-	if configMap.Namespace != common.ConfigNameSpace || configMap.Name != common.SLOCtrlConfigMap {
+	if configMap.Namespace != config.ConfigNameSpace || configMap.Name != config.SLOCtrlConfigMap {
 		return
 	}
 	if !n.syncColocationCfgIfChanged(configMap) {
@@ -100,10 +99,10 @@ func (n *EnqueueRequestForConfigMap) syncColocationCfgIfChanged(configMap *corev
 	}
 
 	cfg := &config.ColocationCfg{}
-	configStr := configMap.Data[common.ColocationConfigKey]
+	configStr := configMap.Data[config.ColocationConfigKey]
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
 		klog.Errorf("failed to parse colocation configmap %v/%v, error: %v",
-			common.ConfigNameSpace, common.SLOCtrlConfigMap, err)
+			config.ConfigNameSpace, config.SLOCtrlConfigMap, err)
 		return false
 	}
 

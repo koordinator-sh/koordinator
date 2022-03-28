@@ -21,6 +21,7 @@ import corev1 "k8s.io/api/core/v1"
 type QoSClass string
 
 const (
+	QoSLSE    QoSClass = "LSE"
 	QoSLSR    QoSClass = "LSR"
 	QoSLS     QoSClass = "LS"
 	QoSBE     QoSClass = "BE"
@@ -44,7 +45,7 @@ func getPodQoSClassByName(qos string) QoSClass {
 	q := QoSClass(qos)
 
 	switch q {
-	case QoSLSR, QoSLS, QoSBE, QoSSystem:
+	case QoSLSE, QoSLSR, QoSLS, QoSBE, QoSSystem:
 		return q
 	}
 
