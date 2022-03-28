@@ -14,11 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package extension
+package util
 
-const (
-	DomainPrefix = "koordinator.sh/"
+import "encoding/json"
 
-	LabelPodQoS      = DomainPrefix + "qosClass"
-	LabelPodPriority = DomainPrefix + "priority"
-)
+// DumpJSON returns the JSON encoding
+func DumpJSON(o interface{}) string {
+	j, _ := json.Marshal(o)
+	return string(j)
+}
