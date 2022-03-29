@@ -29,7 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
 )
 
 // NodeMetricReconciler reconciles a NodeMetric object
@@ -97,11 +96,6 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := fieldindex.RegisterIndexesForKoordCtrl(mgr.GetCache()); err != nil {
-		klog.Errorf("SetupWithManager failed, err: %s", err)
-		return err
-	}
-
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&slov1alpha1.NodeMetric{}).
 		Watches(&source.Kind{Type: &corev1.Node{}}, &EnqueueRequestForNode{}).

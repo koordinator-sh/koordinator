@@ -11,8 +11,7 @@ REG_USER ?= ""
 REG_PWD ?= ""
 
 KOORDLET_IMG ?= "${REG}/${REG_NS}/koordlet:${GIT_BRANCH}-${GIT_COMMIT_ID}"
-KOORD_CONTROLLER_IMG ?= "${REG}/${REG_NS}/koord-controller:${GIT_BRANCH}-${GIT_COMMIT_ID}"
-KOORD_WEBHOOK_IMG ?= "${REG}/${REG_NS}/koord-webhook:${GIT_BRANCH}-${GIT_COMMIT_ID}"
+KOORD_MANAGER_IMG ?= "${REG}/${REG_NS}/koord-manager:${GIT_BRANCH}-${GIT_COMMIT_ID}"
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.23
@@ -76,37 +75,29 @@ test: manifests generate fmt vet envtest ## Run tests.
 ##@ Build
 
 .PHONY: build
-build: generate fmt vet build-koordlet build-koord-controller build-koord-webhook
+build: generate fmt vet build-koordlet build-koord-manager
 
 .PHONY: build-koordlet
 build-koordlet: ## Build koordlet binary.
 	go build -o bin/koordlet cmd/koordlet/main.go
 
-.PHONY: build-koord-controller
-build-koord-controller: ## Build koord-controller binary.
-	go build -o bin/koord-controller cmd/koord-controller/main.go
-
-.PHONY: build-koord-webhook
-build-koord-webhook: ## Build koord-webhook binary.
-	go build -o bin/koord-webhook cmd/koord-webhook/main.go
+.PHONY: build-koord-manager
+build-koord-manager: ## Build koord-manager binary.
+	go build -o bin/koord-manager cmd/koord-manager/main.go
 
 .PHONY: docker-build
-docker-build: test docker-build-koordlet docker-build-koord-controller docker-build-koord-webhook
+docker-build: test docker-build-koordlet docker-build-koord-manager
 
 .PHONY: docker-build-koordlet
 docker-build-koordlet: ## Build docker image with the koordlet.
 	docker build --build-arg MODULE=koordlet -t ${KOORDLET_IMG} .
 
-.PHONY: docker-build-koord-controller
-docker-build-koord-controller: ## Build docker image with the koord-controller.
-	docker build --build-arg MODULE=koord-controller -t ${KOORD_CONTROLLER_IMG} .
-
-.PHONY: docker-build-koord-webhook
-docker-build-koord-webhook: ## Build docker image with the koord-webhook.
-	docker build --build-arg MODULE=koord-webhook -t ${KOORD_WEBHOOK_IMG} .
+.PHONY: docker-build-koord-manager
+docker-build-koord-manager: ## Build docker image with the koord-manager.
+	docker build --build-arg MODULE=koord-manager -t ${KOORD_MANAGER_IMG} .
 
 .PHONY: docker-push
-docker-push: docker-push-koordlet docker-push-koord-controller
+docker-push: docker-push-koordlet docker-push-koord-manager
 
 .PHONY: docker-push-koordlet
 docker-push-koordlet: ## Push docker image with the koordlet.
@@ -115,19 +106,12 @@ ifneq ($(REG_USER), "")
 endif
 	docker push ${KOORDLET_IMG}
 
-.PHONY: docker-push-koord-controller
-docker-push-koord-controller: ## Push docker image with the koord-controller.
+.PHONY: docker-push-koord-manager
+docker-push-koord-manager: ## Push docker image with the koord-manager.
 ifneq ($(REG_USER), "")
 	docker login -u $(REG_USER) -p $(REG_PWD) ${REG}
 endif
-	docker push ${KOORD_CONTROLLER_IMG}
-
-.PHONY: docker-push-koord-webhook
-docker-push-koord-webhook: ## Push docker image with the koord-webhook.
-ifneq ($(REG_USER), "")
-	docker login -u $(REG_USER) -p $(REG_PWD) ${REG}
-endif
-	docker push ${KOORD_WEBHOOK_IMG}
+	docker push ${KOORD_MANAGER_IMG}
 
 ##@ Deployment
 

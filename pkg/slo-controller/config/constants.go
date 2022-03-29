@@ -17,7 +17,7 @@ limitations under the License.
 package config
 
 const (
-	ConfigNameSpace     = "koord-system"
+	ConfigNameSpace     = "koordinator-system"
 	SLOCtrlConfigMap    = "slo-controller-config"
 	ColocationConfigKey = "colocation-config"
 )
