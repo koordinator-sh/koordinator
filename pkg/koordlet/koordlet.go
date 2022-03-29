@@ -19,6 +19,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -40,6 +41,7 @@ type daemon struct {
 	statesInformer statesinformer.StatesInformer
 	metricCache    metriccache.MetricCache
 	reporter       reporter.Reporter
+	resManager     resmanager.ResManager
 	pleg           pleg.Pleg
 }
 
@@ -98,11 +100,14 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, err
 	}
 
+	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, metaService, metricCache, int64(config.CollectorConf.CollectResUsedIntervalSeconds))
+
 	d := &daemon{
 		collector:      collectorService,
 		statesInformer: metaService,
 		metricCache:    metricCache,
 		reporter:       reporterService,
+		resManager:     resManagerService,
 	}
 
 	return d, nil
@@ -143,6 +148,14 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 	go func() {
 		if err := d.reporter.Run(stopCh); err != nil {
 			klog.Error("Unable to run the reporter: ", err)
+			os.Exit(1)
+		}
+	}()
+
+	// start resmanager
+	go func() {
+		if err := d.resManager.Run(stopCh); err != nil {
+			klog.Error("Unable to run the resManager: ", err)
 			os.Exit(1)
 		}
 	}()

@@ -13,6 +13,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -23,6 +24,7 @@ type Configuration struct {
 	ReporterConf    *reporter.Config
 	CollectorConf   *metricsadvisor.Config
 	MetricCacheConf *metriccache.Config
+	ResManagerConf  *resmanager.Config
 	AuditConf       *audit.Config
 	FeatureGates    map[string]bool
 }
@@ -33,6 +35,7 @@ func NewConfiguration() *Configuration {
 		ReporterConf:    reporter.NewDefaultConfig(),
 		CollectorConf:   metricsadvisor.NewDefaultConfig(),
 		MetricCacheConf: metriccache.NewDefaultConfig(),
+		ResManagerConf:  resmanager.NewDefaultConfig(),
 		AuditConf:       audit.NewDefaultConfig(),
 	}
 }
