@@ -19,7 +19,13 @@ ls -l "${TMP_DIR}"/src/github.com/koordinator-sh/koordinator/pkg/client/
 rm -rf ./pkg/client/{clientset,informers,listers}
 mv "${TMP_DIR}"/src/github.com/koordinator-sh/koordinator/pkg/client/* ./pkg/client
 
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' 's#\"config\"#\"config.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/config/v1alpha1/fake/fake_*.go
-    sed -i '' 's#\"slo\"#\"slo.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/slo/v1alpha1/fake/fake_*.go
-fi
+function custom_sed(){
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      sed -i '' $@
+    else
+      sed -i $@
+    fi
+}
+
+custom_sed 's#\"config\"#\"config.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/config/v1alpha1/fake/fake_*.go
+custom_sed 's#\"slo\"#\"slo.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/slo/v1alpha1/fake/fake_*.go

@@ -14,11 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package extension
+package config
 
 const (
-	DomainPrefix = "koordinator.sh/"
-
-	LabelPodQoS      = DomainPrefix + "qosClass"
-	LabelPodPriority = DomainPrefix + "priority"
+	ConfigNameSpace     = "koordinator-system"
+	SLOCtrlConfigMap    = "slo-controller-config"
+	ColocationConfigKey = "colocation-config"
 )

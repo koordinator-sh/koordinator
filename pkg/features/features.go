@@ -24,13 +24,16 @@ import (
 )
 
 const (
-// NOTE: Define featureGates here if needed
-// PodWebhook enables webhook for Pods creations. This is also related to SidecarSet.
-// PodWebhook featuregate.Feature = "PodWebhook"
+	// PodMutatingWebhook enables mutating webhook for Pods creations.
+	PodMutatingWebhook featuregate.Feature = "PodMutatingWebhook"
+
+	// PodValidatingWebhook enables validating webhook for Pods creations or updates.
+	PodValidatingWebhook featuregate.Feature = "PodValidatingWebhook"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-	// PodWebhook:        {Default: true, PreRelease: featuregate.Beta},
+	PodMutatingWebhook:   {Default: true, PreRelease: featuregate.Beta},
+	PodValidatingWebhook: {Default: true, PreRelease: featuregate.Beta},
 }
 
 func init() {

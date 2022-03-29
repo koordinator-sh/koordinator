@@ -44,15 +44,15 @@ func MultiplyQuant(quant resource.Quantity, factor float64) resource.Quantity {
 	return *newQuant
 }
 
-func IsResourceDiff(old, new corev1.ResourceList, resourceName string, diffThreshold float64) bool {
+func IsResourceDiff(old, new corev1.ResourceList, resourceName corev1.ResourceName, diffThreshold float64) bool {
 	oldQuant := 0.0
-	oldResource, oldExist := old[corev1.ResourceName(resourceName)]
+	oldResource, oldExist := old[resourceName]
 	if oldExist {
 		oldQuant = float64(oldResource.MilliValue())
 	}
 
 	newQuant := 0.0
-	newResource, newExist := new[corev1.ResourceName(resourceName)]
+	newResource, newExist := new[resourceName]
 	if newExist {
 		newQuant = float64(newResource.MilliValue())
 	}
