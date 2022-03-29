@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      name: nginx
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: docker.io/koordinatorsh/nginx:v1.18-koord-exmaple
+          command:
+            - "nginx"
+            - "-g"
+            - "daemon off; worker_processes 4;"
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 4
+              memory: "1Gi"
+            limits:
+              cpu: 4
+              memory: "1Gi"

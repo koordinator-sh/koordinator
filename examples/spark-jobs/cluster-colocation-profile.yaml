@@ -1,0 +1,15 @@
+apiVersion: config.koordinator.sh/v1alpha1
+kind: ClusterColocationProfile
+metadata:
+  name: spark-demo
+spec:
+  labels:
+    koordinator.sh/qos: BE
+  namespaceSelector:
+    matchLabels:
+      koordinator.sh/enable-colocation: "true"
+  patch:
+    spec:
+      priority: 6500
+      priorityClassName: koordinator-batch
+  schedulerName: default-scheduler
