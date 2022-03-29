@@ -31,6 +31,10 @@ func (c *FakeSloV1alpha1) NodeMetrics() v1alpha1.NodeMetricInterface {
 	return &FakeNodeMetrics{c}
 }
 
+func (c *FakeSloV1alpha1) NodeSLOs() v1alpha1.NodeSLOInterface {
+	return &FakeNodeSLOs{c}
+}
+
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
 func (c *FakeSloV1alpha1) RESTClient() rest.Interface {

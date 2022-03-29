@@ -25,6 +25,8 @@ import (
 type Interface interface {
 	// NodeMetrics returns a NodeMetricInformer.
 	NodeMetrics() NodeMetricInformer
+	// NodeSLOs returns a NodeSLOInformer.
+	NodeSLOs() NodeSLOInformer
 }
 
 type version struct {
@@ -41,4 +43,9 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // NodeMetrics returns a NodeMetricInformer.
 func (v *version) NodeMetrics() NodeMetricInformer {
 	return &nodeMetricInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// NodeSLOs returns a NodeSLOInformer.
+func (v *version) NodeSLOs() NodeSLOInformer {
+	return &nodeSLOInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

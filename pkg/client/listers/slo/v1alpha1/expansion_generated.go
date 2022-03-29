@@ -20,3 +20,7 @@ package v1alpha1
 // NodeMetricListerExpansion allows custom methods to be added to
 // NodeMetricLister.
 type NodeMetricListerExpansion interface{}
+
+// NodeSLOListerExpansion allows custom methods to be added to
+// NodeSLOLister.
+type NodeSLOListerExpansion interface{}
