@@ -33,28 +33,6 @@ func RegisterFieldIndexes(c cache.Cache) error {
 	var err error
 	registerOnce.Do(func() {
 		// NOTE: add field index here if needed
-		// such as:
-		// pod name
-		// c.IndexField(context.Background(), &v1.Pod{}, IndexNameForPodNodeName, func(obj client.Object) []string {
-		// 	pod, ok := obj.(*v1.Pod)
-		// 	if !ok {
-		// 		return []string{}
-		// 	}
-		// 	if len(pod.Spec.NodeName) == 0 {
-		// 		return []string{}
-		// 	}
-		// 	return []string{pod.Spec.NodeName}
-		// })
-	})
-	return err
-}
-
-func RegisterIndexesForKoordCtrl(c cache.Cache) error {
-	var err error
-	registerOnce.Do(func() {
-		// NOTE: add field index here if needed
-		// such as:
-		// pod name
 		c.IndexField(context.Background(), &v1.Pod{}, "spec.nodeName", func(obj client.Object) []string {
 			pod, ok := obj.(*v1.Pod)
 			if !ok {

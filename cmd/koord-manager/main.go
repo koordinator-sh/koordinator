@@ -36,8 +36,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	extclient "github.com/koordinator-sh/koordinator/pkg/client"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
@@ -57,8 +60,10 @@ var (
 func init() {
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = configv1alpha1.AddToScheme(clientgoscheme.Scheme)
+	_ = slov1alpha1.AddToScheme(clientgoscheme.Scheme)
 
 	_ = configv1alpha1.AddToScheme(scheme)
+	_ = slov1alpha1.AddToScheme(scheme)
 
 	scheme.AddUnversionedTypes(metav1.SchemeGroupVersion, &metav1.UpdateOptions{}, &metav1.DeleteOptions{}, &metav1.CreateOptions{})
 	// +kubebuilder:scaffold:scheme
@@ -144,6 +149,22 @@ func main() {
 	setupLog.Info("setup webhook")
 	if err = webhook.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to setup webhook")
+		os.Exit(1)
+	}
+
+	if err = (&nodemetric.NodeMetricReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "NodeMetric")
+		os.Exit(1)
+	}
+	if err = (&noderesource.NodeResourceReconciler{
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		SyncContext: noderesource.NewSyncContext(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "NodeResource")
 		os.Exit(1)
 	}
 
