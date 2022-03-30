@@ -17,6 +17,8 @@ limitations under the License.
 package util
 
 import (
+	"k8s.io/utils/pointer"
+
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
@@ -29,8 +31,8 @@ func DefaultNodeSLOSpecConfig() slov1alpha1.NodeSLOSpec {
 
 func DefaultResourceThresholdStrategy() *slov1alpha1.ResourceThresholdStrategy {
 	return &slov1alpha1.ResourceThresholdStrategy{
-		Enable:                      BoolPtr(true),
-		CPUSuppressThresholdPercent: Int64Ptr(65),
+		Enable:                      pointer.BoolPtr(true),
+		CPUSuppressThresholdPercent: pointer.Int64Ptr(65),
 		CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
 	}
 }
