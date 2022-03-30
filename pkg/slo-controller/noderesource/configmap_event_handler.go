@@ -31,7 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -40,7 +39,7 @@ var _ handler.EventHandler = &EnqueueRequestForConfigMap{}
 
 type EnqueueRequestForConfigMap struct {
 	client.Client
-	config *Config
+	Config *Config
 }
 
 func (n *EnqueueRequestForConfigMap) Create(e event.CreateEvent, q workqueue.RateLimitingInterface) {
@@ -54,22 +53,20 @@ func (n *EnqueueRequestForConfigMap) Create(e event.CreateEvent, q workqueue.Rat
 	if !n.syncColocationCfgIfChanged(configMap) {
 		return
 	}
-	n.reconcileAllNodeMetric(&q)
+	n.triggerAllNodeReconcile(&q)
 }
 
 func (n *EnqueueRequestForConfigMap) Update(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
-	newCM := e.ObjectNew.(*corev1.ConfigMap)
-	oldCM := e.ObjectOld.(*corev1.ConfigMap)
-	if reflect.DeepEqual(newCM.Data, oldCM.Data) {
+	newConfigMap := e.ObjectNew.(*corev1.ConfigMap)
+	oldConfigMap := e.ObjectOld.(*corev1.ConfigMap)
+	if reflect.DeepEqual(newConfigMap.Data, oldConfigMap.Data) {
 		return
 	}
-	if newCM.Namespace != config.ConfigNameSpace || newCM.Name != config.SLOCtrlConfigMap {
+	if newConfigMap.Namespace != config.ConfigNameSpace || newConfigMap.Name != config.SLOCtrlConfigMap {
 		return
 	}
-	if !n.syncColocationCfgIfChanged(newCM) {
-		return
-	}
-	n.reconcileAllNodeMetric(&q)
+	n.triggerAllNodeReconcile(&q)
+
 }
 
 func (n *EnqueueRequestForConfigMap) Delete(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
@@ -83,15 +80,15 @@ func (n *EnqueueRequestForConfigMap) Delete(e event.DeleteEvent, q workqueue.Rat
 	if !n.syncColocationCfgIfChanged(configMap) {
 		return
 	}
-	n.reconcileAllNodeMetric(&q)
+	n.triggerAllNodeReconcile(&q)
 }
 
 func (n *EnqueueRequestForConfigMap) Generic(e event.GenericEvent, q workqueue.RateLimitingInterface) {
 }
 
 func (n *EnqueueRequestForConfigMap) syncColocationCfgIfChanged(configMap *corev1.ConfigMap) bool {
-	n.config.Lock()
-	defer n.config.Unlock()
+	n.Config.Lock()
+	defer n.Config.Unlock()
 
 	if configMap == nil {
 		klog.Errorf("configmap is nil")
@@ -118,7 +115,7 @@ func (n *EnqueueRequestForConfigMap) syncColocationCfgIfChanged(configMap *corev
 	if cfg.NodeConfigs != nil {
 		for _, nodeCfg := range cfg.NodeConfigs {
 			if !config.IsNodeColocationCfgValid(&nodeCfg) {
-				klog.Errorf("failed to validate node colocatoin config %v", nodeCfg)
+				klog.Errorf("failed to validate node colocatoin Config %v", nodeCfg)
 				return false
 			}
 		}
@@ -127,22 +124,22 @@ func (n *EnqueueRequestForConfigMap) syncColocationCfgIfChanged(configMap *corev
 		})
 	}
 
-	changed := !reflect.DeepEqual(&n.config.ColocationCfg, cfg)
-	n.config.ColocationCfg = *cfg
-	n.config.isAvailable = true
+	changed := !reflect.DeepEqual(&n.Config.ColocationCfg, cfg)
+	n.Config.ColocationCfg = *cfg
+	n.Config.isAvailable = true
 
 	return changed
 }
 
-func (n *EnqueueRequestForConfigMap) reconcileAllNodeMetric(q *workqueue.RateLimitingInterface) {
-	nodeMetricList := &slov1alpha1.NodeMetricList{}
-	if err := n.Client.List(context.TODO(), nodeMetricList); err != nil {
+func (n *EnqueueRequestForConfigMap) triggerAllNodeReconcile(q *workqueue.RateLimitingInterface) {
+	nodeList := &corev1.NodeList{}
+	if err := n.Client.List(context.TODO(), nodeList); err != nil {
 		return
 	}
-	for _, nodeMetric := range nodeMetricList.Items {
+	for _, node := range nodeList.Items {
 		(*q).Add(reconcile.Request{
 			NamespacedName: types.NamespacedName{
-				Name: nodeMetric.Name,
+				Name: node.Name,
 			},
 		})
 	}

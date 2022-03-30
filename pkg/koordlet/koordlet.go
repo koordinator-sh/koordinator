@@ -94,9 +94,6 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 	collectorService := metricsadvisor.NewCollector(config.CollectorConf, metaService, metricCache)
 	reporterService := reporter.NewReporter(config.ReporterConf, kubeClient, crdClient, nodeName, metricCache, metaService)
-	if err != nil {
-		return nil, err
-	}
 
 	d := &daemon{
 		collector:      collectorService,

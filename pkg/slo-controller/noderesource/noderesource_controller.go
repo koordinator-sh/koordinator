@@ -65,7 +65,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if r.isColocationCfgDisabled(node) {
 		klog.Warningf("colocation for node %v is disabled, reset BE resource", req.Name)
-		if err := r.resetNodeBEResource(node, disableInConfig, "node colocation is disabled in config"); err != nil {
+		if err := r.resetNodeBEResource(node, disableInConfig, "node colocation is disabled in Config"); err != nil {
 			return ctrl.Result{Requeue: true}, err
 		} else {
 			return ctrl.Result{Requeue: false}, nil
@@ -113,6 +113,6 @@ func (r *NodeResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Node{}).
 		Watches(&source.Kind{Type: &slov1alpha1.NodeMetric{}}, &EnqueueRequestForNodeMetric{syncContext: &r.SyncContext}).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &EnqueueRequestForConfigMap{Client: r.Client, config: &r.config}).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &EnqueueRequestForConfigMap{Client: r.Client, Config: &r.config}).
 		Complete(r)
 }

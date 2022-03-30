@@ -41,6 +41,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodeslo"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
@@ -165,6 +166,13 @@ func main() {
 		SyncContext: noderesource.NewSyncContext(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeResource")
+		os.Exit(1)
+	}
+	if err = (&nodeslo.NodeSLOReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "NodeSLO")
 		os.Exit(1)
 	}
 

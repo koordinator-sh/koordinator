@@ -3,12 +3,12 @@ package reporter
 import (
 	"testing"
 
-	nodesv1beta1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 func Test_reporter_isNodeMetricInited(t *testing.T) {
 	type fields struct {
-		nodeMetric *nodesv1beta1.NodeMetric
+		nodeMetric *slov1alpha1.NodeMetric
 	}
 	tests := []struct {
 		name   string
@@ -18,7 +18,7 @@ func Test_reporter_isNodeMetricInited(t *testing.T) {
 		{
 			name: "is-node-metric-inited",
 			fields: fields{
-				nodeMetric: &nodesv1beta1.NodeMetric{},
+				nodeMetric: &slov1alpha1.NodeMetric{},
 			},
 			want: true,
 		},
