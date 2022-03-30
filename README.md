@@ -18,9 +18,10 @@ Koordinator enhances the kubernetes user experiences in the workload management 
 
 ## Quick Start
 
-You can view the full documentation from the [Koordinator website](https://koordinator.sh/docs/introduction).
+You can view the full documentation from the [Koordinator website](https://koordinator.sh/docs).
 
 - Install or upgrade Koordinator with [the latest version](https://koordinator.sh/docs/installation).
+- Referring to [best practices](https://koordinator.sh/docs/best-practices/colocation-of-spark-jobs), there will be examples on running co-located workloads.
 
 ## Contributing
 
