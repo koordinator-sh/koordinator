@@ -38,8 +38,8 @@ type ClusterColocationProfileSpec struct {
 	// +optional
 	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 
-	// QoSClass describes the type of koordinator QoS that the Pod is running.
-	// Can be LSE/LSR/LS/BE/SYSTEM.
+	// QoSClass describes the type of Koordinator QoS that the Pod is running.
+	// Options are LSE/LSR/LS/BE/SYSTEM.
 	// +kubebuilder:validation:Enum=LSE;LSR;LS;BE;SYSTEM
 	// +optional
 	QoSClass string `json:"qosClass,omitempty"`
@@ -52,11 +52,11 @@ type ClusterColocationProfileSpec struct {
 	PriorityClassName string `json:"priorityClassName,omitempty"`
 
 	// KoordinatorPriority defines the Pod priority in Koordinator.
-	// Various koordinator components use this field to find the
+	// Various Koordinator components use this field to find the
 	// priority of the pod.
 	// The higher the value, the higher the priority.
 	// +optional
-	KoordinatorPriority *int32 `json:"colocationPriority,omitempty"`
+	KoordinatorPriority *int32 `json:"koordinatorPriority,omitempty"`
 
 	// Labels describes the k/v pair that needs to inject into Pod.Labels
 	// +optional
@@ -70,7 +70,7 @@ type ClusterColocationProfileSpec struct {
 	// +optional
 	SchedulerName string `json:"schedulerName,omitempty"`
 
-	// Patch indicates patching podTemplate to the Pod.
+	// Patch indicates patching podTemplate that will be injected to the Pod.
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Schemaless
