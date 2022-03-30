@@ -12,6 +12,7 @@ REG_PWD ?= ""
 
 KOORDLET_IMG ?= "${REG}/${REG_NS}/koordlet:${GIT_BRANCH}-${GIT_COMMIT_ID}"
 KOORD_MANAGER_IMG ?= "${REG}/${REG_NS}/koord-manager:${GIT_BRANCH}-${GIT_COMMIT_ID}"
+KOORD_SCHEDULER_IMG ?= "${REG}/${REG_NS}/koord-scheduler:${GIT_BRANCH}-${GIT_COMMIT_ID}"
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.23
@@ -91,7 +92,7 @@ build-koord-manager: ## Build koord-manager binary.
 	go build -o bin/koord-manager cmd/koord-manager/main.go
 
 .PHONY: docker-build
-docker-build: test docker-build-koordlet docker-build-koord-manager
+docker-build: test docker-build-koordlet docker-build-koord-manager docker-build-koord-scheduler
 
 .PHONY: docker-build-koordlet
 docker-build-koordlet: ## Build docker image with the koordlet.
@@ -101,8 +102,12 @@ docker-build-koordlet: ## Build docker image with the koordlet.
 docker-build-koord-manager: ## Build docker image with the koord-manager.
 	docker build --build-arg MODULE=koord-manager -t ${KOORD_MANAGER_IMG} .
 
+.PHONY: docker-build-koord-scheduler
+docker-build-koord-scheduler: ## Build docker image with the scheduler.
+	docker build --build-arg MODULE=koord-scheduler -t ${KOORD_SCHEDULER_IMG} .
+
 .PHONY: docker-push
-docker-push: docker-push-koordlet docker-push-koord-manager
+docker-push: docker-push-koordlet docker-push-koord-manager docker-push-koord-scheduler
 
 .PHONY: docker-push-koordlet
 docker-push-koordlet: ## Push docker image with the koordlet.
@@ -117,6 +122,13 @@ ifneq ($(REG_USER), "")
 	docker login -u $(REG_USER) -p $(REG_PWD) ${REG}
 endif
 	docker push ${KOORD_MANAGER_IMG}
+
+.PHONY: docker-push-koord-scheduler
+docker-push-koord-scheduler: ## Push docker image with the scheduler.
+ifneq ($(REG_USER), "")
+	docker login -u $(REG_USER) -p $(REG_PWD) ${REG}
+endif
+	docker push ${KOORD_SCHEDULER_IMG}
 
 ##@ Deployment
 
