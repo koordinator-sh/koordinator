@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -59,12 +60,12 @@ func DefaultColocationCfg() ColocationCfg {
 
 func DefaultColocationStrategy() ColocationStrategy {
 	return ColocationStrategy{
-		Enable:                        util.BoolPtr(false),
-		CPUReclaimThresholdPercent:    util.Int64Ptr(65),
-		MemoryReclaimThresholdPercent: util.Int64Ptr(65),
-		DegradeTimeMinutes:            util.Int64Ptr(15),
-		UpdateTimeThresholdSeconds:    util.Int64Ptr(300),
-		ResourceDiffThreshold:         util.Float64Ptr(0.1),
+		Enable:                        pointer.Bool(false),
+		CPUReclaimThresholdPercent:    pointer.Int64(65),
+		MemoryReclaimThresholdPercent: pointer.Int64(65),
+		DegradeTimeMinutes:            pointer.Int64(15),
+		UpdateTimeThresholdSeconds:    pointer.Int64(300),
+		ResourceDiffThreshold:         pointer.Float64(0.1),
 	}
 }
 
