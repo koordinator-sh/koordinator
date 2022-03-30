@@ -25,17 +25,29 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/pointer"
 
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type ColocationCfg struct {
-	ColocationStrategy
-	NodeConfigs []NodeColocationCfg `json:"nodeConfigs,omitempty"`
+	ColocationStrategy `json:",inline"`
+	NodeConfigs        []NodeColocationCfg `json:"nodeConfigs,omitempty"`
 }
 
 type NodeColocationCfg struct {
 	NodeSelector *metav1.LabelSelector
 	ColocationCfg
+}
+
+type ResourceThresholdCfg struct {
+	ClusterStrategy *slov1alpha1.ResourceThresholdStrategy `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeResourceThresholdStrategy        `json:"nodeStrategies,omitempty"`
+}
+
+type NodeResourceThresholdStrategy struct {
+	// an empty label selector matches all objects while a nil label selector matches no objects
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	*slov1alpha1.ResourceThresholdStrategy
 }
 
 type ColocationStrategy struct {
@@ -61,7 +73,7 @@ func DefaultColocationCfg() ColocationCfg {
 func DefaultColocationStrategy() ColocationStrategy {
 	return ColocationStrategy{
 		Enable:                        pointer.Bool(false),
-		CPUReclaimThresholdPercent:    pointer.Int64(65),
+		CPUReclaimThresholdPercent:    pointer.Int64(60),
 		MemoryReclaimThresholdPercent: pointer.Int64(65),
 		DegradeTimeMinutes:            pointer.Int64(15),
 		UpdateTimeThresholdSeconds:    pointer.Int64(300),
@@ -120,4 +132,19 @@ func GetNodeColocationStrategy(cfg *ColocationCfg, node *corev1.Node) *Colocatio
 		}
 	}
 	return strategy
+}
+
+// DefaultNodeSLOSpecConfig defines the default config of the nodeSLOSpec, which would be used by the resmgr
+func DefaultNodeSLOSpecConfig() slov1alpha1.NodeSLOSpec {
+	return slov1alpha1.NodeSLOSpec{
+		ResourceUsedThresholdWithBE: DefaultResourceThresholdStrategy(),
+	}
+}
+
+func DefaultResourceThresholdStrategy() *slov1alpha1.ResourceThresholdStrategy {
+	return &slov1alpha1.ResourceThresholdStrategy{
+		Enable:                      pointer.BoolPtr(false),
+		CPUSuppressThresholdPercent: pointer.Int64Ptr(65),
+		CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
+	}
 }

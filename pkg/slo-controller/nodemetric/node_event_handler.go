@@ -48,6 +48,7 @@ func (n *EnqueueRequestForNode) Create(e event.CreateEvent, q workqueue.RateLimi
 
 func (n *EnqueueRequestForNode) Update(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	newNode, oldNode := e.ObjectNew.(*corev1.Node), e.ObjectOld.(*corev1.Node)
+	// TODO, only use for noderesource
 	if !n.isNodeAllocatableUpdated(newNode, oldNode) {
 		return
 	}

@@ -11,7 +11,7 @@ import (
 	resources "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
-	nodesv1beta1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -208,7 +208,7 @@ func GetPodKey(pod *corev1.Pod) string {
 	return fmt.Sprintf("%v/%v", pod.GetNamespace(), pod.GetName())
 }
 
-func GetPodMetricKey(podMetric *nodesv1beta1.PodMetricInfo) string {
+func GetPodMetricKey(podMetric *slov1alpha1.PodMetricInfo) string {
 	return fmt.Sprintf("%v/%v", podMetric.Namespace, podMetric.Name)
 }
 
