@@ -192,11 +192,11 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					Name: "test-init-container-a",
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
-							extension.BatchCPU:    resource.MustParse("500m"),
+							extension.BatchCPU:    *resource.NewQuantity(500, resource.DecimalSI),
 							extension.BatchMemory: resource.MustParse("1Gi"),
 						},
 						Requests: corev1.ResourceList{
-							extension.BatchCPU:    resource.MustParse("500m"),
+							extension.BatchCPU:    *resource.NewQuantity(500, resource.DecimalSI),
 							extension.BatchMemory: resource.MustParse("1Gi"),
 						},
 					},
@@ -207,18 +207,18 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					Name: "test-container-a",
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
-							extension.BatchCPU:    resource.MustParse("1"),
+							extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
 							extension.BatchMemory: resource.MustParse("4Gi"),
 						},
 						Requests: corev1.ResourceList{
-							extension.BatchCPU:    resource.MustParse("1"),
+							extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
 							extension.BatchMemory: resource.MustParse("4Gi"),
 						},
 					},
 				},
 			},
 			Overhead: map[corev1.ResourceName]resource.Quantity{
-				extension.BatchCPU:    resource.MustParse("1"),
+				extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
 				extension.BatchMemory: resource.MustParse("2Gi"),
 			},
 			SchedulerName:     "koordinator-scheduler",
