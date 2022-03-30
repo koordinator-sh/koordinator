@@ -25,26 +25,6 @@ import (
 	"strings"
 )
 
-// Int64Ptr returns a int64 pointer for given value
-func Int64Ptr(v int64) *int64 {
-	return &v
-}
-
-// Float64Ptr returns a float64 pointer for given value
-func Float64Ptr(v float64) *float64 {
-	return &v
-}
-
-// BoolPtr returns a boolean pointer for given value
-func BoolPtr(v bool) *bool {
-	return &v
-}
-
-// StringPtr returns a string pointer for given value
-func StringPtr(v string) *string {
-	return &v
-}
-
 // Merge returns a merged interface. Value in new will
 // override old's when both fields exist.
 // It will throw an error if:

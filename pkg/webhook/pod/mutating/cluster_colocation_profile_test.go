@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -123,6 +124,15 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 	err := client.Create(context.TODO(), namespaceObj)
 	assert.NoError(err)
 
+	batchPriorityClass := &schedulingv1.PriorityClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "koordinator-batch",
+		},
+		Value: extension.PriorityBatchValueMax,
+	}
+	err = client.Create(context.TODO(), batchPriorityClass)
+	assert.NoError(err)
+
 	profile := &configv1alpha1.ClusterColocationProfile{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-profile",
@@ -133,23 +143,24 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					"enable-koordinator-colocation": "true",
 				},
 			},
-			ObjectSelector: &metav1.LabelSelector{
+			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"koordinator-colocation-pod": "true",
 				},
 			},
 			Labels: map[string]string{
-				"testLabelA":               "valueA",
-				extension.LabelPodQoS:      string(extension.QoSLS),
-				extension.LabelPodPriority: string(extension.PriorityBatch),
+				"testLabelA": "valueA",
 			},
 			Annotations: map[string]string{
 				"testAnnotationA": "valueA",
 			},
+			SchedulerName:       "koordinator-scheduler",
+			QoSClass:            string(extension.QoSBE),
+			PriorityClassName:   "koordinator-batch",
+			KoordinatorPriority: pointer.Int32(1111),
 			Patch: runtime.RawExtension{
 				Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 			},
-			SchedulerName: "koordinator-scheduler",
 		},
 	}
 	err = client.Create(context.TODO(), profile)
@@ -167,8 +178,8 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 				"koordinator-colocation-pod": "true",
 				"testLabelA":                 "valueA",
 				"test-patch-label":           "patch-a",
-				extension.LabelPodQoS:        string(extension.QoSLS),
-				extension.LabelPodPriority:   string(extension.PriorityBatch),
+				extension.LabelPodQoS:        string(extension.QoSBE),
+				extension.LabelPodPriority:   "1111",
 			},
 			Annotations: map[string]string{
 				"testAnnotationA":       "valueA",
@@ -210,8 +221,9 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 				extension.BatchCPU:    resource.MustParse("1"),
 				extension.BatchMemory: resource.MustParse("2Gi"),
 			},
-			SchedulerName: "koordinator-scheduler",
-			Priority:      pointer.Int32Ptr(extension.PriorityBatchValueMax),
+			SchedulerName:     "koordinator-scheduler",
+			Priority:          pointer.Int32Ptr(extension.PriorityBatchValueMax),
+			PriorityClassName: "koordinator-batch",
 		},
 	}
 	assert.Equal(expectPod, pod)

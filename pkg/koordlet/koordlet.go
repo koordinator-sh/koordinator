@@ -96,9 +96,6 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 	collectorService := metricsadvisor.NewCollector(config.CollectorConf, metaService, metricCache)
 	reporterService := reporter.NewReporter(config.ReporterConf, kubeClient, crdClient, nodeName, metricCache, metaService)
-	if err != nil {
-		return nil, err
-	}
 
 	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, metaService, metricCache, int64(config.CollectorConf.CollectResUsedIntervalSeconds))
 

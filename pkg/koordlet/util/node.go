@@ -8,7 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	nodesv1beta1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -18,7 +18,7 @@ func GetNodeKey(node *corev1.Node) string {
 }
 
 // GetNodeMetricKey returns a generated key with given nodeMetric
-func GetNodeMetricKey(nodeMetric *nodesv1beta1.NodeMetric) string {
+func GetNodeMetricKey(nodeMetric *slov1alpha1.NodeMetric) string {
 	return fmt.Sprintf("%v/%v", nodeMetric.GetNamespace(), nodeMetric.GetName())
 }
 

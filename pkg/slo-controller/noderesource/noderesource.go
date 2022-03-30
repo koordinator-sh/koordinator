@@ -111,7 +111,7 @@ func (r *NodeResourceReconciler) isColocationCfgDisabled(node *corev1.Node) bool
 }
 
 func (r *NodeResourceReconciler) isDegradeNeeded(nodeMetric *slov1alpha1.NodeMetric, node *corev1.Node) bool {
-	if nodeMetric == nil || &nodeMetric.Status == nil || nodeMetric.Status.UpdateTime == nil {
+	if nodeMetric == nil || nodeMetric.Status.UpdateTime == nil {
 		klog.Warningf("invalid NodeMetric: %v, need degradation", nodeMetric.Name)
 		return true
 	}
@@ -209,7 +209,7 @@ func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResou
 }
 
 func (r *NodeResourceReconciler) isBEResourceSyncNeeded(old, new *corev1.Node) bool {
-	if new == nil || &new.Status == nil || new.Status.Allocatable == nil || new.Status.Capacity == nil {
+	if new == nil || new.Status.Allocatable == nil || new.Status.Capacity == nil {
 		klog.Errorf("invalid input, node should not be nil")
 		return false
 	}

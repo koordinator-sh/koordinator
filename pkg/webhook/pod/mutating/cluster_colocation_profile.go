@@ -19,13 +19,17 @@ package mutating
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
@@ -58,8 +62,8 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 				continue
 			}
 		}
-		if profile.Spec.ObjectSelector != nil {
-			matched, err := h.matchObjectSelector(pod, nil, profile.Spec.ObjectSelector)
+		if profile.Spec.Selector != nil {
+			matched, err := h.matchObjectSelector(pod, nil, profile.Spec.Selector)
 			if !matched && err == nil {
 				continue
 			}
@@ -71,10 +75,11 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 	}
 
 	for _, profile := range matchedProfiles {
-		err := h.doMutateByColocationProfile(pod, profile)
+		err := h.doMutateByColocationProfile(ctx, pod, profile)
 		if err != nil {
 			return err
 		}
+		klog.V(4).Infof("mutate Pod %s/%s by clusterColocationProfile %s", pod.Namespace, pod.Name, profile.Name)
 	}
 
 	if err = h.mutatePodResourceSpec(pod); err != nil {
@@ -115,9 +120,9 @@ func (h *PodMutatingHandler) matchObjectSelector(pod, oldPod *corev1.Pod, object
 	return matched, nil
 }
 
-func (h *PodMutatingHandler) doMutateByColocationProfile(pod *corev1.Pod, profile *configv1alpha1.ClusterColocationProfile) error {
+func (h *PodMutatingHandler) doMutateByColocationProfile(ctx context.Context, pod *corev1.Pod, profile *configv1alpha1.ClusterColocationProfile) error {
 	if len(profile.Spec.Labels) > 0 {
-		if len(pod.Labels) == 0 {
+		if pod.Labels == nil {
 			pod.Labels = make(map[string]string)
 		}
 		for k, v := range profile.Spec.Labels {
@@ -126,7 +131,7 @@ func (h *PodMutatingHandler) doMutateByColocationProfile(pod *corev1.Pod, profil
 	}
 
 	if len(profile.Spec.Annotations) > 0 {
-		if len(pod.Annotations) == 0 {
+		if pod.Annotations == nil {
 			pod.Annotations = make(map[string]string)
 		}
 		for k, v := range profile.Spec.Annotations {
@@ -136,6 +141,30 @@ func (h *PodMutatingHandler) doMutateByColocationProfile(pod *corev1.Pod, profil
 
 	if profile.Spec.SchedulerName != "" {
 		pod.Spec.SchedulerName = profile.Spec.SchedulerName
+	}
+
+	if profile.Spec.QoSClass != "" {
+		if pod.Labels == nil {
+			pod.Labels = make(map[string]string)
+		}
+		pod.Labels[extension.LabelPodQoS] = profile.Spec.QoSClass
+	}
+
+	if profile.Spec.PriorityClassName != "" {
+		priorityClass := &schedulingv1.PriorityClass{}
+		err := h.Client.Get(ctx, types.NamespacedName{Name: profile.Spec.PriorityClassName}, priorityClass)
+		if err != nil {
+			return err
+		}
+		pod.Spec.PriorityClassName = profile.Spec.PriorityClassName
+		pod.Spec.Priority = pointer.Int32(priorityClass.Value)
+	}
+
+	if profile.Spec.KoordinatorPriority != nil {
+		if pod.Labels == nil {
+			pod.Labels = make(map[string]string)
+		}
+		pod.Labels[extension.LabelPodPriority] = fmt.Sprintf("%d", *profile.Spec.KoordinatorPriority)
 	}
 
 	if profile.Spec.Patch.Raw != nil {

@@ -93,10 +93,15 @@ func (in *ClusterColocationProfileSpec) DeepCopyInto(out *ClusterColocationProfi
 		*out = new(v1.LabelSelector)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.ObjectSelector != nil {
-		in, out := &in.ObjectSelector, &out.ObjectSelector
+	if in.Selector != nil {
+		in, out := &in.Selector, &out.Selector
 		*out = new(v1.LabelSelector)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.KoordinatorPriority != nil {
+		in, out := &in.KoordinatorPriority, &out.KoordinatorPriority
+		*out = new(int32)
+		**out = **in
 	}
 	if in.Labels != nil {
 		in, out := &in.Labels, &out.Labels
