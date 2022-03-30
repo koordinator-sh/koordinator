@@ -111,7 +111,7 @@ func forbiddenSpecialQoSClassAndPriorityClass(pod *corev1.Pod, qoSClass extensio
 			}
 		}
 		if found {
-			errDetail := fmt.Sprintf("%s=%s and %s=%s cannot be used in combination", extension.LabelPodQoS, qoSClass, extension.LabelPodPriority, priorityClass)
+			errDetail := fmt.Sprintf("%s=%s and priorityClass=%s cannot be used in combination", extension.LabelPodQoS, qoSClass, priorityClass)
 			allErrs = append(allErrs, field.Forbidden(field.NewPath("Pod"), errDetail))
 		}
 	}

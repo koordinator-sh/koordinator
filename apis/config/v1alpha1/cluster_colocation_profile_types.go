@@ -39,21 +39,25 @@ type ClusterColocationProfileSpec struct {
 	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 
 	// QoSClass describes the type of Koordinator QoS that the Pod is running.
+	// The value will be injected into Pod as label koordinator.sh/qosClass.
 	// Options are LSE/LSR/LS/BE/SYSTEM.
 	// +kubebuilder:validation:Enum=LSE;LSR;LS;BE;SYSTEM
-	// +optional
-	QoSClass string `json:"qosClass,omitempty"`
+	// +required
+	QoSClass string `json:"qosClass"`
 
-	// If specified, indicates the pod's priority.
-	// Optional can be specified koordinator-prod/koordinator-mid/koordinator-batch/koordinator-free
-	// If not specified, the pod priority will be default or zero if there is no
-	// default.
-	// +optional
-	PriorityClassName string `json:"priorityClassName,omitempty"`
+	// If specified, the priorityClassName and the priority value defined in PriorityClass
+	// will be injected into the Pod.
+	// The PriorityClassName, priority value in PriorityClassName and
+	// KoordinatorPriority will affect the scheduling, preemption and
+	// other behaviors of Koordinator system.
+	// +kubebuilder:validation:Enum=koord-prod;koord-mid;koord-batch;koord-free
+	// +required
+	PriorityClassName string `json:"priorityClassName"`
 
-	// KoordinatorPriority defines the Pod priority in Koordinator.
-	// Various Koordinator components use this field to find the
-	// priority of the pod.
+	// KoordinatorPriority defines the Pod sub-priority in Koordinator.
+	// The priority value will be injected into Pod as label koordinator.sh/priority.
+	// Various Koordinator components determine the priority of the Pod
+	// in the Koordinator through KoordinatorPriority and the priority value in PriorityClassName.
 	// The higher the value, the higher the priority.
 	// +optional
 	KoordinatorPriority *int32 `json:"koordinatorPriority,omitempty"`
