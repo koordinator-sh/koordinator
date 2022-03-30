@@ -173,7 +173,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `spec.priority: Invalid value: "Prod": field is immutable`,
+			wantReason:  `spec.priority: Invalid value: "koord-prod": field is immutable`,
 		},
 		{
 			name:      "validate remove priorityClass",
@@ -267,7 +267,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=BE and koordinator.sh/priority=Prod cannot be used in combination`,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=BE and priorityClass=koord-prod cannot be used in combination`,
 		},
 		{
 			name:      "forbidden QoS and priorityClass combination: LSR And Batch",
@@ -283,7 +283,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and koordinator.sh/priority=Batch cannot be used in combination`,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-batch cannot be used in combination`,
 		},
 		{
 			name:      "forbidden QoS and priorityClass combination: LSR And Mid",
@@ -299,7 +299,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and koordinator.sh/priority=Mid cannot be used in combination`,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-mid cannot be used in combination`,
 		},
 		{
 			name:      "forbidden QoS and priorityClass combination: LSR And Free",
@@ -315,7 +315,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and koordinator.sh/priority=Free cannot be used in combination`,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-free cannot be used in combination`,
 		},
 		{
 			name:      "validate resources - LSR And Prod",

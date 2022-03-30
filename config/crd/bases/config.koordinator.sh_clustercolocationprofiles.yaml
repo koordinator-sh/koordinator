@@ -43,9 +43,12 @@ spec:
                   into Pod.Annotations
                 type: object
               koordinatorPriority:
-                description: KoordinatorPriority defines the Pod priority in Koordinator.
-                  Various Koordinator components use this field to find the priority
-                  of the pod. The higher the value, the higher the priority.
+                description: KoordinatorPriority defines the Pod sub-priority in Koordinator.
+                  The priority value will be injected into Pod as label koordinator.sh/priority.
+                  Various Koordinator components determine the priority of the Pod
+                  in the Koordinator through KoordinatorPriority and the priority
+                  value in PriorityClassName. The higher the value, the higher the
+                  priority.
                 format: int32
                 type: integer
               labels:
@@ -105,14 +108,21 @@ spec:
                   to the Pod.
                 x-kubernetes-preserve-unknown-fields: true
               priorityClassName:
-                description: If specified, indicates the pod's priority. Optional
-                  can be specified koordinator-prod/koordinator-mid/koordinator-batch/koordinator-free
-                  If not specified, the pod priority will be default or zero if there
-                  is no default.
+                description: If specified, the priorityClassName and the priority
+                  value defined in PriorityClass will be injected into the Pod. The
+                  PriorityClassName, priority value in PriorityClassName and KoordinatorPriority
+                  will affect the scheduling, preemption and other behaviors of Koordinator
+                  system.
+                enum:
+                - koord-prod
+                - koord-mid
+                - koord-batch
+                - koord-free
                 type: string
               qosClass:
                 description: QoSClass describes the type of Koordinator QoS that the
-                  Pod is running. Options are LSE/LSR/LS/BE/SYSTEM.
+                  Pod is running. The value will be injected into Pod as label koordinator.sh/qosClass.
+                  Options are LSE/LSR/LS/BE/SYSTEM.
                 enum:
                 - LSE
                 - LSR
@@ -170,6 +180,9 @@ spec:
                       are ANDed.
                     type: object
                 type: object
+            required:
+            - priorityClassName
+            - qosClass
             type: object
           status:
             description: ClusterColocationProfileStatus represents information about
