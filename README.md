@@ -18,7 +18,9 @@ Koordinator enhances the kubernetes user experiences in the workload management 
 
 ## Quick Start
 
-...
+You can view the full documentation from the [Koordinator website](https://koordinator.sh/docs/introduction).
+
+- Install or upgrade Koordinator with [the latest version](https://koordinator.sh/docs/installation).
 
 ## Contributing
 

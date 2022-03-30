@@ -21,10 +21,10 @@ import corev1 "k8s.io/api/core/v1"
 type PriorityClass string
 
 const (
-	PriorityProd  PriorityClass = "Prod"
-	PriorityMid   PriorityClass = "Mid"
-	PriorityBatch PriorityClass = "Batch"
-	PriorityFree  PriorityClass = "Free"
+	PriorityProd  PriorityClass = "koord-prod"
+	PriorityMid   PriorityClass = "koord-mid"
+	PriorityBatch PriorityClass = "koord-batch"
+	PriorityFree  PriorityClass = "koord-free"
 	PriorityNone  PriorityClass = ""
 
 	PriorityProdValueMax int32 = 9999
