@@ -43,6 +43,6 @@ var (
 	defaultKoordletFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 		AuditEvents:            {Default: false, PreRelease: featuregate.Alpha},
 		AuditEventsHTTPHandler: {Default: false, PreRelease: featuregate.Alpha},
-		BECPUSuppress:          {Default: false, PreRelease: featuregate.Alpha},
+		BECPUSuppress:          {Default: true, PreRelease: featuregate.Alpha},
 	}
 )
