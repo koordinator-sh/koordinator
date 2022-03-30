@@ -27,6 +27,9 @@ const (
 
 	// AuditEventsHTTPHandler is used to get recent events from koordlet port
 	AuditEventsHTTPHandler featuregate.Feature = "AuditEventsHTTPHandler"
+
+	// BECPUSuppress suppresses for best-effort pod
+	BECPUSuppress featuregate.Feature = "BECPUSuppress"
 )
 
 func init() {
@@ -40,5 +43,6 @@ var (
 	defaultKoordletFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 		AuditEvents:            {Default: false, PreRelease: featuregate.Alpha},
 		AuditEventsHTTPHandler: {Default: false, PreRelease: featuregate.Alpha},
+		BECPUSuppress:          {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
