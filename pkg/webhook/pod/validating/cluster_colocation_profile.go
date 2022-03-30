@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func (h *PodValidatingHandler) clusterColocationProfileValidatingPod(ctx context.Context, req admission.Request) (bool, string, error) {
@@ -51,8 +52,9 @@ func (h *PodValidatingHandler) clusterColocationProfileValidatingPod(ctx context
 		allErrs = append(allErrs, validateImmutablePriority(oldPod, newPod)...)
 	}
 
-	allErrs = append(allErrs, forbiddenSpecialQoSClassAndPriorityClass(newPod, extension.QoSBE, extension.PriorityProd)...)
-	allErrs = append(allErrs, forbiddenSpecialQoSClassAndPriorityClass(newPod, extension.QoSLSR, extension.PriorityMid, extension.PriorityBatch, extension.PriorityFree)...)
+	allErrs = append(allErrs, validateRequiredQoSClass(newPod)...)
+	allErrs = append(allErrs, forbiddenSpecialQoSClassAndPriorityClass(newPod, extension.QoSBE, extension.PriorityNone, extension.PriorityProd)...)
+	allErrs = append(allErrs, forbiddenSpecialQoSClassAndPriorityClass(newPod, extension.QoSLSR, extension.PriorityNone, extension.PriorityMid, extension.PriorityBatch, extension.PriorityFree)...)
 	allErrs = append(allErrs, validateResources(newPod)...)
 	err := allErrs.ToAggregate()
 	allowed := true
@@ -62,6 +64,21 @@ func (h *PodValidatingHandler) clusterColocationProfileValidatingPod(ctx context
 		reason = err.Error()
 	}
 	return allowed, reason, nil
+}
+
+func validateRequiredQoSClass(pod *corev1.Pod) field.ErrorList {
+	request := util.GetPodRequest(pod)
+	batchCPUQuantity := request[extension.BatchCPU]
+	batchMemoryQuantity := request[extension.BatchMemory]
+
+	if batchCPUQuantity.IsZero() && batchMemoryQuantity.IsZero() {
+		return nil
+	}
+	qosClass := extension.GetPodQoSClass(pod)
+	if qosClass == extension.QoSBE {
+		return nil
+	}
+	return field.ErrorList{field.Required(field.NewPath("labels", extension.LabelPodQoS), "must specified koordinator QoS BE with koordinator colocation resources")}
 }
 
 func validateImmutableQoSClass(oldPod, newPod *corev1.Pod) field.ErrorList {

@@ -33,7 +33,7 @@ func GetPodMetricKey(podMetric *slov1alpha1.PodMetricInfo) string {
 	return fmt.Sprintf("%v/%v", podMetric.Namespace, podMetric.Name)
 }
 
-func GetPodRequest(pod *corev1.Pod) corev1.ResourceList {
+func GetPodRequest(pod *corev1.Pod, resourceNames ...corev1.ResourceName) corev1.ResourceList {
 	result := corev1.ResourceList{}
 	for _, container := range pod.Spec.Containers {
 		result = quotav1.Add(result, container.Resources.Requests)
@@ -46,5 +46,8 @@ func GetPodRequest(pod *corev1.Pod) corev1.ResourceList {
 	if pod.Spec.Overhead != nil {
 		result = quotav1.Add(result, pod.Spec.Overhead)
 	}
-	return quotav1.Mask(result, []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory})
+	if len(resourceNames) > 0 {
+		result = quotav1.Mask(result, resourceNames)
+	}
+	return result
 }

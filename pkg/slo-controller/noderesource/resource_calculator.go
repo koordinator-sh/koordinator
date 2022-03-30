@@ -51,7 +51,7 @@ func (r *NodeResourceReconciler) calculateBEResource(node *corev1.Node,
 		podKey := util.GetPodKey(&pod)
 		podMetric, ok := podMetricMap[podKey]
 		if !ok {
-			podRequest := util.GetPodRequest(&pod)
+			podRequest := util.GetPodRequest(&pod, corev1.ResourceCPU, corev1.ResourceMemory)
 			if extension.GetPodQoSClass(&pod) != extension.QoSBE {
 				podLSUsed = quotav1.Add(podLSUsed, podRequest)
 			}

@@ -42,6 +42,12 @@ spec:
                 description: Annotations describes the k/v pair that needs to inject
                   into Pod.Annotations
                 type: object
+              colocationPriority:
+                description: KoordinatorPriority defines the Pod priority in Koordinator.
+                  Various koordinator components use this field to find the priority
+                  of the pod. The higher the value, the higher the priority.
+                format: int32
+                type: integer
               labels:
                 additionalProperties:
                   type: string
@@ -50,57 +56,8 @@ spec:
                 type: object
               namespaceSelector:
                 description: NamespaceSelector decides whether to mutate/validate
-                  Pods on an object based on whether the namespace for that object
-                  matches the selector. Default to the empty LabelSelector, which
-                  matches everything.
-                properties:
-                  matchExpressions:
-                    description: matchExpressions is a list of label selector requirements.
-                      The requirements are ANDed.
-                    items:
-                      description: A label selector requirement is a selector that
-                        contains values, a key, and an operator that relates the key
-                        and values.
-                      properties:
-                        key:
-                          description: key is the label key that the selector applies
-                            to.
-                          type: string
-                        operator:
-                          description: operator represents a key's relationship to
-                            a set of values. Valid operators are In, NotIn, Exists
-                            and DoesNotExist.
-                          type: string
-                        values:
-                          description: values is an array of string values. If the
-                            operator is In or NotIn, the values array must be non-empty.
-                            If the operator is Exists or DoesNotExist, the values
-                            array must be empty. This array is replaced during a strategic
-                            merge patch.
-                          items:
-                            type: string
-                          type: array
-                      required:
-                      - key
-                      - operator
-                      type: object
-                    type: array
-                  matchLabels:
-                    additionalProperties:
-                      type: string
-                    description: matchLabels is a map of {key,value} pairs. A single
-                      {key,value} in the matchLabels map is equivalent to an element
-                      of matchExpressions, whose key field is "key", the operator
-                      is "In", and the values array contains only "value". The requirements
-                      are ANDed.
-                    type: object
-                type: object
-              objectSelector:
-                description: ObjectSelector decides whether to mutate/validate Pods
-                  based on if the Pod has matching labels. Use the object selector
-                  only if the profile is opt-in, because end users may skip the admission
-                  webhook by setting the labels. Default to the empty LabelSelector,
-                  which matches everything.
+                  Pods if the namespace matches the selector. Default to the empty
+                  LabelSelector, which matches everything.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -146,10 +103,72 @@ spec:
               patch:
                 description: Patch indicates patching podTemplate to the Pod.
                 x-kubernetes-preserve-unknown-fields: true
+              priorityClassName:
+                description: If specified, indicates the pod's priority. Optional
+                  can be specified koordinator-prod/koordinator-mid/koordinator-batch/koordinator-free
+                  If not specified, the pod priority will be default or zero if there
+                  is no default.
+                type: string
+              qosClass:
+                description: QoSClass describes the type of koordinator QoS that the
+                  Pod is running. Can be LSE/LSR/LS/BE/SYSTEM.
+                enum:
+                - LSE
+                - LSR
+                - LS
+                - BE
+                - SYSTEM
+                type: string
               schedulerName:
                 description: If specified, the pod will be dispatched by specified
                   scheduler.
                 type: string
+              selector:
+                description: Selector decides whether to mutate/validate Pods if the
+                  Pod matches the selector. Default to the empty LabelSelector, which
+                  matches everything.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: A label selector requirement is a selector that
+                        contains values, a key, and an operator that relates the key
+                        and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: operator represents a key's relationship to
+                            a set of values. Valid operators are In, NotIn, Exists
+                            and DoesNotExist.
+                          type: string
+                        values:
+                          description: values is an array of string values. If the
+                            operator is In or NotIn, the values array must be non-empty.
+                            If the operator is Exists or DoesNotExist, the values
+                            array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: matchLabels is a map of {key,value} pairs. A single
+                      {key,value} in the matchLabels map is equivalent to an element
+                      of matchExpressions, whose key field is "key", the operator
+                      is "In", and the values array contains only "value". The requirements
+                      are ANDed.
+                    type: object
+                type: object
             type: object
           status:
             description: ClusterColocationProfileStatus represents information about

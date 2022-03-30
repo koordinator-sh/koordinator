@@ -26,19 +26,37 @@ import (
 
 // ClusterColocationProfileSpec is a description of a ClusterColocationProfile.
 type ClusterColocationProfileSpec struct {
-	// NamespaceSelector decides whether to mutate/validate Pods on an object based
-	// on whether the namespace for that object matches the selector.
+	// NamespaceSelector decides whether to mutate/validate Pods if the
+	// namespace matches the selector.
 	// Default to the empty LabelSelector, which matches everything.
 	// +optional
 	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty"`
 
-	// ObjectSelector decides whether to mutate/validate Pods based on if the
-	// Pod has matching labels.
-	// Use the object selector only if the profile is opt-in, because end
-	// users may skip the admission webhook by setting the labels.
+	// Selector decides whether to mutate/validate Pods if the
+	// Pod matches the selector.
 	// Default to the empty LabelSelector, which matches everything.
 	// +optional
-	ObjectSelector *metav1.LabelSelector `json:"objectSelector,omitempty"`
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
+
+	// QoSClass describes the type of koordinator QoS that the Pod is running.
+	// Can be LSE/LSR/LS/BE/SYSTEM.
+	// +kubebuilder:validation:Enum=LSE;LSR;LS;BE;SYSTEM
+	// +optional
+	QoSClass string `json:"qosClass,omitempty"`
+
+	// If specified, indicates the pod's priority.
+	// Optional can be specified koordinator-prod/koordinator-mid/koordinator-batch/koordinator-free
+	// If not specified, the pod priority will be default or zero if there is no
+	// default.
+	// +optional
+	PriorityClassName string `json:"priorityClassName,omitempty"`
+
+	// KoordinatorPriority defines the Pod priority in Koordinator.
+	// Various koordinator components use this field to find the
+	// priority of the pod.
+	// The higher the value, the higher the priority.
+	// +optional
+	KoordinatorPriority *int32 `json:"colocationPriority,omitempty"`
 
 	// Labels describes the k/v pair that needs to inject into Pod.Labels
 	// +optional
