@@ -42,9 +42,9 @@ spec:
                 description: Annotations describes the k/v pair that needs to inject
                   into Pod.Annotations
                 type: object
-              colocationPriority:
+              koordinatorPriority:
                 description: KoordinatorPriority defines the Pod priority in Koordinator.
-                  Various koordinator components use this field to find the priority
+                  Various Koordinator components use this field to find the priority
                   of the pod. The higher the value, the higher the priority.
                 format: int32
                 type: integer
@@ -101,7 +101,8 @@ spec:
                     type: object
                 type: object
               patch:
-                description: Patch indicates patching podTemplate to the Pod.
+                description: Patch indicates patching podTemplate that will be injected
+                  to the Pod.
                 x-kubernetes-preserve-unknown-fields: true
               priorityClassName:
                 description: If specified, indicates the pod's priority. Optional
@@ -110,8 +111,8 @@ spec:
                   is no default.
                 type: string
               qosClass:
-                description: QoSClass describes the type of koordinator QoS that the
-                  Pod is running. Can be LSE/LSR/LS/BE/SYSTEM.
+                description: QoSClass describes the type of Koordinator QoS that the
+                  Pod is running. Options are LSE/LSR/LS/BE/SYSTEM.
                 enum:
                 - LSE
                 - LSR
