@@ -128,7 +128,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 							},
 						},
 					},
-					Priority: pointer.Int32Ptr(6666),
+					Priority: pointer.Int32Ptr(extension.PriorityBatchValueMin),
 				},
 			},
 			wantAllowed: true,

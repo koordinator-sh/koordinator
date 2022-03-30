@@ -33,8 +33,8 @@ const (
 	PriorityMidValueMax int32 = 7099
 	PriorityMidValueMin int32 = 7000
 
-	PriorityBatchValueMax int32 = 6999
-	PriorityBatchValueMin int32 = 6000
+	PriorityBatchValueMax int32 = 5999
+	PriorityBatchValueMin int32 = 5000
 
 	PriorityFreeValueMax int32 = 3999
 	PriorityFreeValueMin int32 = 3000
