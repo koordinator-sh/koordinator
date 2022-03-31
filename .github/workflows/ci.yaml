@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches:
+      - main
       - master
       - release-*
   pull_request: {}
@@ -62,11 +63,12 @@ jobs:
       - name: Run Unit Tests
         run: |
           make test
-          git status
       - name: Publish Unit Test Coverage
         uses: codecov/codecov-action@v1
         with:
           flags: unittests
           file: cover.out
       - name: Check diff
-        run: '[[ -z $(git status -s) ]] || (printf "Existing modified/untracked files.\nPlease run \"make generate manifests\" and push again.\n"; exit 1)'
+        run: |
+          git status
+          [[ -z $(git status -s) ]] || (printf "Existing modified/untracked files.\nPlease run \"make generate manifests\" and push again.\n"; exit 1)
