@@ -24,7 +24,7 @@ You can view the full documentation from the [Koordinator website](https://koord
 
 ## Contributing
 
-...
+You are warmly welcome to hack on Koordinator. We have prepared a detailed guide [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
