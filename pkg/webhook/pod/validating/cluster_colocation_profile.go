@@ -30,6 +30,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
+// +kubebuilder:rbac:groups=scheduling.k8s.io,resources=priorityclasses,verbs=get;list;watch
+
 func (h *PodValidatingHandler) clusterColocationProfileValidatingPod(ctx context.Context, req admission.Request) (bool, string, error) {
 	newPod := &corev1.Pod{}
 	var allErrs field.ErrorList
@@ -53,8 +55,8 @@ func (h *PodValidatingHandler) clusterColocationProfileValidatingPod(ctx context
 	}
 
 	allErrs = append(allErrs, validateRequiredQoSClass(newPod)...)
-	allErrs = append(allErrs, forbiddenSpecialQoSClassAndPriorityClass(newPod, extension.QoSBE, extension.PriorityNone, extension.PriorityProd)...)
-	allErrs = append(allErrs, forbiddenSpecialQoSClassAndPriorityClass(newPod, extension.QoSLSR, extension.PriorityNone, extension.PriorityMid, extension.PriorityBatch, extension.PriorityFree)...)
+	allErrs = append(allErrs, forbidSpecialQoSClassAndPriorityClass(newPod, extension.QoSBE, extension.PriorityNone, extension.PriorityProd)...)
+	allErrs = append(allErrs, forbidSpecialQoSClassAndPriorityClass(newPod, extension.QoSLSR, extension.PriorityNone, extension.PriorityMid, extension.PriorityBatch, extension.PriorityFree)...)
 	allErrs = append(allErrs, validateResources(newPod)...)
 	err := allErrs.ToAggregate()
 	allowed := true
@@ -78,7 +80,7 @@ func validateRequiredQoSClass(pod *corev1.Pod) field.ErrorList {
 	if qosClass == extension.QoSBE {
 		return nil
 	}
-	return field.ErrorList{field.Required(field.NewPath("labels", extension.LabelPodQoS), "must specified koordinator QoS BE with koordinator colocation resources")}
+	return field.ErrorList{field.Required(field.NewPath("labels", extension.LabelPodQoS), "must specify koordinator QoS BE with koordinator colocation resources")}
 }
 
 func validateImmutableQoSClass(oldPod, newPod *corev1.Pod) field.ErrorList {
@@ -99,7 +101,7 @@ func validateImmutablePriority(oldPod, newPod *corev1.Pod) field.ErrorList {
 	return validation.ValidateImmutableField(newPriority, oldPriority, field.NewPath("labels", extension.LabelPodPriority))
 }
 
-func forbiddenSpecialQoSClassAndPriorityClass(pod *corev1.Pod, qoSClass extension.QoSClass, priorityClasses ...extension.PriorityClass) field.ErrorList {
+func forbidSpecialQoSClassAndPriorityClass(pod *corev1.Pod, qoSClass extension.QoSClass, priorityClasses ...extension.PriorityClass) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if extension.GetPodQoSClass(pod) == qoSClass {
 		priorityClass := extension.GetPriorityClass(pod)
@@ -124,15 +126,15 @@ func validateResources(pod *corev1.Pod) field.ErrorList {
 	switch qos {
 	case extension.QoSLSR:
 		resourceValidator = resourceValidator.
-			ExpectRequestLimitMustEquals(corev1.ResourceCPU).
-			ExpectRequestLimitMustEquals(corev1.ResourceMemory).
+			ExpectRequestLimitMustEqual(corev1.ResourceCPU).
+			ExpectRequestLimitMustEqual(corev1.ResourceMemory).
 			ExpectPositive()
 	case extension.QoSLS:
 		switch extension.GetPriorityClass(pod) {
 		case extension.PriorityProd:
 			resourceValidator = resourceValidator.
 				ExpectRequestLessThanLimit(corev1.ResourceCPU, true, true, false).
-				ExpectRequestLimitShouldEquals(corev1.ResourceMemory).
+				ExpectRequestLimitShouldEqual(corev1.ResourceMemory).
 				ExpectPositive()
 		case extension.PriorityBatch:
 			resourceValidator = resourceValidator.
@@ -142,7 +144,7 @@ func validateResources(pod *corev1.Pod) field.ErrorList {
 	case extension.QoSBE:
 		resourceValidator = resourceValidator.
 			ExpectRequestLessThanLimit(extension.BatchCPU, true, true, true).
-			ExpectRequestLimitMustEquals(extension.BatchMemory).
+			ExpectRequestLimitMustEqual(extension.BatchMemory).
 			ExpectPositive()
 	}
 	return resourceValidator.Validate()

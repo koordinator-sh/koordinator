@@ -44,7 +44,7 @@ func NewRequestLimitValidator(pod *corev1.Pod) *requestLimitValidator {
 	return &requestLimitValidator{containers: containers}
 }
 
-func (v *requestLimitValidator) ExpectRequestLimitShouldEquals(resourceName corev1.ResourceName) *requestLimitValidator {
+func (v *requestLimitValidator) ExpectRequestLimitShouldEqual(resourceName corev1.ResourceName) *requestLimitValidator {
 	v.predicates = append(v.predicates, func(container *corev1.Container) field.ErrorList {
 		requestQuantity, ok := container.Resources.Requests[resourceName]
 		if !ok {
@@ -67,7 +67,7 @@ func (v *requestLimitValidator) ExpectRequestLimitShouldEquals(resourceName core
 	return v
 }
 
-func (v *requestLimitValidator) ExpectRequestLimitMustEquals(resourceName corev1.ResourceName) *requestLimitValidator {
+func (v *requestLimitValidator) ExpectRequestLimitMustEqual(resourceName corev1.ResourceName) *requestLimitValidator {
 	v.predicates = append(v.predicates, func(container *corev1.Container) field.ErrorList {
 		allErrs := field.ErrorList{}
 		fieldPath := field.NewPath("pod.spec.containers", container.Name, "resources")

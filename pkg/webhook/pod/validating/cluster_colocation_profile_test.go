@@ -157,7 +157,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `labels.koordinator.sh/qosClass: Required value: must specified koordinator QoS BE with koordinator colocation resources`,
+			wantReason:  `labels.koordinator.sh/qosClass: Required value: must specify koordinator QoS BE with koordinator colocation resources`,
 		},
 		{
 			name:      "validate immutable priorityClass",
