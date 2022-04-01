@@ -29,6 +29,6 @@ func init() {
 	})
 
 	addHandlersWithGate(validating.HandlerMap, func() (enabled bool) {
-		return utilfeature.DefaultFeatureGate.Enabled(features.PodMutatingWebhook)
+		return utilfeature.DefaultFeatureGate.Enabled(features.PodValidatingWebhook)
 	})
 }
