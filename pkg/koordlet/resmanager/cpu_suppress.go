@@ -45,7 +45,7 @@ var (
 
 	cfsPeriod               int64 = 100000
 	beMinQuota              int64 = 2000
-	beMaxIncreaseCPUPercent       = 0.1 //scale up slow
+	beMaxIncreaseCPUPercent       = 0.1 // scale up slow
 )
 
 type suppressPolicyStatus string
@@ -108,7 +108,6 @@ func writeBECgroupsCPUSet(paths []string, cpusetStr string, isReversed bool) {
 			klog.Warningf("failed to write be cgroup cpuset: path %s, err %s", paths[i], err)
 		}
 	}
-	return
 }
 
 // calculateBESuppressCPU calculates the quantity of cpuset cpus for suppressing be pods
@@ -344,8 +343,6 @@ func (r *CPUSuppress) suppressBECPU() {
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyUsing
 		r.recoverCFSQuotaIfNeed()
 	}
-
-	return
 }
 
 func adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUInfo *metriccache.NodeCPUInfo) {
@@ -390,7 +387,6 @@ func (r *CPUSuppress) recoverCPUSetIfNeed() {
 	klog.V(6).Infof("recover bestEffort cpuset, cpuset %v", rootCPUSet)
 	writeBECgroupsCPUSet(cpusetCgroupPaths, cpusetStr, false)
 	r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyRecovered
-	return
 }
 
 func adjustByCfsQuota(cpuQuantity *resource.Quantity, node *corev1.Node) {
@@ -439,5 +435,4 @@ func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
 		return
 	}
 	r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyRecovered
-	return
 }

@@ -73,7 +73,6 @@ func (s *SyncContext) Store(key string, value time.Time) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.contextMap[key] = value
-	return
 }
 
 func (s *SyncContext) Delete(key string) {
@@ -98,7 +97,7 @@ func (r *NodeResourceReconciler) isColocationCfgDisabled(node *corev1.Node) bool
 	r.config.Lock()
 	defer r.config.Unlock()
 
-	if r.config.Enable == nil || *r.config.Enable == false {
+	if r.config.Enable == nil || !*r.config.Enable {
 		return true
 	}
 

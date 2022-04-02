@@ -124,7 +124,7 @@ func fieldLastOfMetricList(metricsList interface{}, aggregateParam AggregatePara
 
 		timestamp, ok := fieldTimeValue.Interface().(time.Time)
 		if !ok {
-			return 0, fmt.Errorf("Timestamp field type must be *time.Time, and value must not be nil. %v is illegal! ", fieldTimeValue)
+			return 0, fmt.Errorf("timestamp field type must be *time.Time, and value must not be nil. %v is illegal! ", fieldTimeValue)
 		}
 		if timestamp.UnixNano() > lastTime {
 			lastTime = timestamp.UnixNano()
