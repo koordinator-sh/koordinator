@@ -17,26 +17,14 @@ limitations under the License.
 package util
 
 import (
-	"fmt"
 	"path"
 	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
-
-// GetNodeKey returns a generated key with given node
-func GetNodeKey(node *corev1.Node) string {
-	return fmt.Sprintf("%v/%v", node.GetNamespace(), node.GetName())
-}
-
-// GetNodeMetricKey returns a generated key with given nodeMetric
-func GetNodeMetricKey(nodeMetric *slov1alpha1.NodeMetric) string {
-	return fmt.Sprintf("%v/%v", nodeMetric.GetNamespace(), nodeMetric.GetName())
-}
 
 // @output like kubepods.slice/kubepods-besteffort.slice/
 func GetKubeQosRelativePath(qosClass corev1.PodQOSClass) string {

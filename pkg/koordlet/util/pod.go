@@ -17,7 +17,6 @@ limitations under the License.
 package util
 
 import (
-	"fmt"
 	"io/ioutil"
 	"path"
 	"strconv"
@@ -27,7 +26,6 @@ import (
 	resources "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -218,14 +216,6 @@ func getPodRequestFromContainers(pod *corev1.Pod) corev1.ResourceList {
 // GetPodRequest get pod request resource
 func GetPodRequest(pod *corev1.Pod) corev1.ResourceList {
 	return getPodRequestFromContainers(pod)
-}
-
-func GetPodKey(pod *corev1.Pod) string {
-	return fmt.Sprintf("%v/%v", pod.GetNamespace(), pod.GetName())
-}
-
-func GetPodMetricKey(podMetric *slov1alpha1.PodMetricInfo) string {
-	return fmt.Sprintf("%v/%v", podMetric.Namespace, podMetric.Name)
 }
 
 func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
