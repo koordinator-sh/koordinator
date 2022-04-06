@@ -38,5 +38,6 @@ Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./L
 
 You can reach the maintainers of this project via DingTalk:
 
-![dingtalk](docs/images/dingtalk.jpg)
-
+<div>
+  <img src="https://user-images.githubusercontent.com/24452340/161946660-225da039-c5b3-4baf-ae49-12a94a5f3df1.jpg" width="300" alt="Dingtalk QRCode">
+</div>
