@@ -183,7 +183,11 @@ func (c *collector) collectNodeResUsed() {
 			MemoryWithoutCache: *resource.NewQuantity(memUsageValue*1024, resource.BinarySI),
 		},
 	}
-	c.metricCache.InsertNodeResourceMetric(collectTime, &nodeMetric)
+
+	if err := c.metricCache.InsertNodeResourceMetric(collectTime, &nodeMetric); err != nil {
+		klog.Errorf("insert node resource metric error: %v", err)
+	}
+
 	klog.Infof("collectNodeResUsed finished %+v", nodeMetric)
 }
 
@@ -232,8 +236,8 @@ func (c *collector) collectPodResUsed() {
 		}
 		klog.V(6).Infof("collect pod %s/%s, uid %s finished, metric %+v",
 			meta.Pod.Namespace, meta.Pod.Name, meta.Pod.UID, podMetric)
-		err := c.metricCache.InsertPodResourceMetric(collectTime, &podMetric)
-		if err != nil {
+
+		if err := c.metricCache.InsertPodResourceMetric(collectTime, &podMetric); err != nil {
 			klog.Infof("insert pod %s/%s, uid %s resource metric failed, metric %v, err %v",
 				pod.Namespace, pod.Name, uid, podMetric, err)
 		}
@@ -287,7 +291,9 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 		}
 		klog.V(6).Infof("collect container %s/%s/%s, id %s finished, metric %+v",
 			meta.Pod.Namespace, meta.Pod.Name, containerStat.Name, meta.Pod.UID, containerMetric)
-		c.metricCache.InsertContainerResourceMetric(collectTime, &containerMetric)
+		if err := c.metricCache.InsertContainerResourceMetric(collectTime, &containerMetric); err != nil {
+			klog.Errorf("insert container resource metric error: %v", err)
+		}
 	}
 	klog.V(5).Infof("collectContainerResUsed for pod %s/%s finished, container num %d",
 		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses))
@@ -309,7 +315,9 @@ func (c *collector) collectNodeCPUInfo() {
 		TotalInfo:      localCPUInfo.TotalInfo,
 	}
 	klog.V(6).Infof("collect cpu info finished, nodeCPUInfo %v", nodeCPUInfo)
-	c.metricCache.InsertNodeCPUInfo(nodeCPUInfo)
+	if err = c.metricCache.InsertNodeCPUInfo(nodeCPUInfo); err != nil {
+		klog.Errorf("insert node cpu info error: %v", err)
+	}
 
 	klog.Infof("collectNodeCPUInfo finished, cpu info: processors %v", len(nodeCPUInfo.ProcessorInfos))
 	metrics.RecordCollectNodeCPUInfoStatus(nil)

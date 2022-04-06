@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	clientsetbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
@@ -144,6 +145,12 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 			os.Exit(1)
 		}
 	}()
+
+	// wait informer synced
+	if cache.WaitForCacheSync(stopCh, d.statesInformer.HasSynced) {
+		klog.Error("stateInformer not synced! ")
+		os.Exit(1)
+	}
 
 	// start collector
 	go func() {
