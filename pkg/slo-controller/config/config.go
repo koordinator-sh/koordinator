@@ -122,7 +122,7 @@ func GetNodeColocationStrategy(cfg *ColocationCfg, node *corev1.Node) *Colocatio
 		}
 		if selector.Matches(nodeLabels) {
 			if nodeCfg.NodeSelector != nil {
-				if merged, err := util.Merge(strategy, &nodeCfg.ColocationStrategy); err != nil {
+				if merged, err := util.MergeCfg(strategy, &nodeCfg.ColocationStrategy); err != nil {
 					continue
 				} else {
 					strategy, _ = merged.(*ColocationStrategy)

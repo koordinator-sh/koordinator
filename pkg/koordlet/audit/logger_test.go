@@ -102,7 +102,7 @@ func TestLogReader(t *testing.T) {
 
 		lines = append(lines, line)
 
-		if bytes.Compare(line, blocks[(i+1)%2]) != 0 {
+		if !bytes.Equal(line, blocks[(i+1)%2]) {
 			t.Errorf("failed to read line expected\n: %s\nactual: %v", blocks[(i+1)%2], line)
 		}
 	}

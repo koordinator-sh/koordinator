@@ -334,11 +334,11 @@ func Test_FindContainerIdAndStatusByName(t *testing.T) {
 				ContainerStatuses: []corev1.ContainerStatus{
 					{
 						Name:        "main",
-						ContainerID: fmt.Sprintf("%s", "main"),
+						ContainerID: "main",
 					},
 					{
 						Name:        "sidecar",
-						ContainerID: fmt.Sprintf("%s", "sidecar"),
+						ContainerID: "sidecar",
 					},
 				},
 			},

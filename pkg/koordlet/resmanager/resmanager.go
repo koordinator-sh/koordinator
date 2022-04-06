@@ -210,7 +210,7 @@ func NewResManager(cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.
 
 // isFeatureDisabled returns whether the featuregate is disabled by nodeSLO config
 func isFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature) (bool, error) {
-	if nodeSLO == nil || &nodeSLO.Spec == nil {
+	if nodeSLO == nil || nodeSLO.Spec == (slov1alpha1.NodeSLOSpec{}) {
 		return false, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
 	}
 

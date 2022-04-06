@@ -104,7 +104,7 @@ func (n *EnqueueRequestForConfigMap) syncColocationCfgIfChanged(configMap *corev
 	}
 
 	defaultConfig := config.NewDefaultColocationCfg()
-	merged, _ := util.Merge(&defaultConfig.ColocationStrategy, &cfg.ColocationStrategy)
+	merged, _ := util.MergeCfg(&defaultConfig.ColocationStrategy, &cfg.ColocationStrategy)
 	cfg.ColocationStrategy = *(merged.(*config.ColocationStrategy))
 
 	if !config.IsColocationStrategyValid(&cfg.ColocationStrategy) {

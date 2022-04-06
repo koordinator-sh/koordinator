@@ -32,31 +32,6 @@ func NewWatcher() (Watcher, error) {
 	return nil, errNotSupported
 }
 
-type notSupportedWatcher struct {
-}
-
-func (w *notSupportedWatcher) Close() error {
-	return errNotSupported
-}
-
-func (w *notSupportedWatcher) AddWatch(path string) error {
-	return errNotSupported
-}
-
-func (w *notSupportedWatcher) RemoveWatch(path string) error {
-	return errNotSupported
-}
-
-func (w *notSupportedWatcher) Event() chan *inotify.Event {
-	ch := make(chan *inotify.Event)
-	close(ch)
-	return ch
-}
-
-func (w *notSupportedWatcher) Error() chan error {
-	return make(chan error)
-}
-
 func TypeOf(event *inotify.Event) EventType {
 	if event.Mask&IN_CREATE != 0 && event.Mask&IN_ISDIR != 0 {
 		return DirCreated
