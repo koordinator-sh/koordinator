@@ -36,7 +36,10 @@ Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./L
 
 ## Community, discussion, contribution, and support
 
-You can reach the maintainers of this project via DingTalk:
+You can reach the maintainers of this project at:
+
+- [Slack](https://join.slack.com/t/koordinator-sh/shared_invite/zt-1756qoub4-Cn4~esfdlfAPsD7cwO2NzA)
+- DingTalk: Search Group ID `33383887` or scan the following QR Code
 
 <div>
   <img src="https://user-images.githubusercontent.com/24452340/161946660-225da039-c5b3-4baf-ae49-12a94a5f3df1.jpg" width="300" alt="Dingtalk QRCode">
