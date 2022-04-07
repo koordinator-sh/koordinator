@@ -32,7 +32,6 @@ import (
 type TestServer struct {
 	l      net.Listener
 	server *http.Server
-	port   int
 }
 
 func (t *TestServer) Serve() {
@@ -121,7 +120,7 @@ func TestAuditorLogger(t *testing.T) {
 	if len(response.Events) != 1 {
 		t.Errorf("failed to load events, expected %d actual %d", 1, len(response.Events))
 	}
-	if bytes.Compare(blocks[len(blocks)-11], []byte(response.Events[0].Message)) != 0 {
+	if !bytes.Equal(blocks[len(blocks)-11], []byte(response.Events[0].Message)) {
 		t.Errorf("failed to load events, expected %s actual %s", blocks[len(blocks)-11], response.Events[0].Message)
 	}
 

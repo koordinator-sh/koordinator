@@ -47,11 +47,11 @@ var (
 	_ leaderelection.SwitchMetric    = switchMetric{}
 )
 
-func (_ metricsProvider) NewLeaderMetric() leaderelection.SwitchMetric {
+func (metricsProvider) NewLeaderMetric() leaderelection.SwitchMetric {
 	return switchMetric{}
 }
 
-func (_ switchMetric) On(_ string) {
+func (switchMetric) On(_ string) {
 	leaderMetric.Set(1)
 }
 

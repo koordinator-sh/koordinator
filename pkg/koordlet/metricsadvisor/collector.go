@@ -60,10 +60,10 @@ type contextRecord struct {
 
 type collectContext struct {
 	// record latest cpu stat for calculate resource used
+	// lastBeCPUStat contextRecord
 	lastNodeCPUStat      contextRecord
 	lastPodCPUStat       sync.Map
 	lastContainerCPUStat sync.Map
-	lastBeCPUStat        contextRecord
 
 	lastPodCPUThrottled       sync.Map
 	lastContainerCPUThrottled sync.Map

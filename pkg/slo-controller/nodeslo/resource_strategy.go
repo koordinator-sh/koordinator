@@ -26,8 +26,8 @@ import (
 	"k8s.io/klog/v2"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func getResourceThresholdSpec(node *corev1.Node, configMap *corev1.ConfigMap) (*slov1alpha1.ResourceThresholdStrategy, error) {

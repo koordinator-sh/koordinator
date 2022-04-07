@@ -12,7 +12,7 @@ on:
 env:
   # Common versions
   GO_VERSION: '1.17'
-  GOLANGCI_VERSION: 'v1.45.2'
+  GOLANGCI_VERSION: 'latest'
 
 jobs:
 
@@ -41,6 +41,8 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_VERSION }}
           args: --verbose
+          skip-pkg-cache: true
+          skip-build-cache: true
 
   unit-tests:
     runs-on: ubuntu-18.04

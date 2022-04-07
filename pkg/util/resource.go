@@ -44,6 +44,7 @@ func MultiplyQuant(quant resource.Quantity, factor float64) resource.Quantity {
 	return *newQuant
 }
 
+// IsResourceDiff returns whether the new resource has big enough difference with the old one or not
 func IsResourceDiff(old, new corev1.ResourceList, resourceName corev1.ResourceName, diffThreshold float64) bool {
 	oldQuant := 0.0
 	oldResource, oldExist := old[resourceName]

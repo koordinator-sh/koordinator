@@ -58,7 +58,6 @@ type daemon struct {
 	metricCache    metriccache.MetricCache
 	reporter       reporter.Reporter
 	resManager     resmanager.ResManager
-	pleg           pleg.Pleg
 }
 
 func NewDaemon(config *config.Configuration) (Daemon, error) {
