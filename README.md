@@ -32,7 +32,7 @@ You are warmly welcome to hack on Koordinator. We have prepared a detailed guide
 
 ## License
 
-Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE.md) for the full license text.
+Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
 
 ## Community, discussion, contribution, and support
 
