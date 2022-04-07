@@ -81,7 +81,7 @@ test: manifests generate fmt vet envtest ## Run tests.
 ##@ Build
 
 .PHONY: build
-build: generate fmt vet lint build-koordlet build-koord-manager
+build: generate fmt vet lint build-koordlet build-koord-manager build-koord-scheduler
 
 .PHONY: build-koordlet
 build-koordlet: ## Build koordlet binary.
@@ -90,6 +90,10 @@ build-koordlet: ## Build koordlet binary.
 .PHONY: build-koord-manager
 build-koord-manager: ## Build koord-manager binary.
 	go build -o bin/koord-manager cmd/koord-manager/main.go
+
+.PHONY: build-koord-scheduler
+build-koord-scheduler: ## Build koord-scheduler binary.
+	go build -o bin/koord-scheduler cmd/koord-scheduler/main.go
 
 .PHONY: docker-build
 docker-build: test docker-build-koordlet docker-build-koord-manager docker-build-koord-scheduler

@@ -17,22 +17,15 @@ limitations under the License.
 package util
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
-
-func DumpJSON(o interface{}) string {
-	j, _ := json.Marshal(o)
-	return string(j)
-}
 
 // MergeCPUSet merges the old cpuset with the new one, and also deduplicate and keeps a desc order by processor ids
 // e.g. [1,0], [3,2,2,1] => [3,2,1,0]
@@ -109,23 +102,6 @@ func GenerateCPUSetStr(cpuset []int32) string {
 // WriteCgroupCPUSet writes the cgroup cpuset file according to the specified cgroup dir
 func WriteCgroupCPUSet(cgroupFileDir, cpusetStr string) error {
 	return ioutil.WriteFile(filepath.Join(cgroupFileDir, sysutil.CPUSFileName), []byte(cpusetStr), 0644)
-}
-
-// MergeCfg merges the old cfg with the new one, where new's values take precedence over old's when both fields exist.
-// It would throw an error if:
-//   1. either of the inputs was nil;
-//   2. the inputs were not a pointer of the same json struct.
-func MergeCfg(old, new interface{}) (interface{}, error) {
-	if old == nil || new == nil {
-		return nil, fmt.Errorf("illegal input type, neither of the inputs could be nil")
-	}
-	if reflect.TypeOf(old) != reflect.TypeOf(new) || reflect.TypeOf(old).Kind() != reflect.Ptr {
-		return nil, fmt.Errorf("illegal input type, the inputs should be pointers of the same json struct")
-	}
-	// ignore err for serializing/deserializing the same struct type
-	data, _ := json.Marshal(new)
-	_ = json.Unmarshal(data, &old)
-	return old, nil
 }
 
 func MinInt64(i, j int64) int64 {

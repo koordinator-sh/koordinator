@@ -155,7 +155,7 @@ var DisableDeepCopy = disableDeepCopy{}
 
 type disableDeepCopy struct{}
 
-func (_ disableDeepCopy) ApplyToList(_ *client.ListOptions) {
+func (disableDeepCopy) ApplyToList(_ *client.ListOptions) {
 }
 
 func isDisableDeepCopy(opts []client.ListOption) bool {

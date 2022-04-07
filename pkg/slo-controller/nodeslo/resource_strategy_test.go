@@ -217,5 +217,5 @@ func Test_generateThresholdCfg(t *testing.T) {
 	cfg.NodeStrategies = []config.NodeResourceThresholdStrategy{selectCfg}
 
 	cfgJson, _ := json.MarshalIndent(cfg, "", "  ")
-	fmt.Printf(string(cfgJson))
+	fmt.Print(string(cfgJson))
 }
