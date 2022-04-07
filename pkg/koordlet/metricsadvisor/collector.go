@@ -238,7 +238,7 @@ func (c *collector) collectPodResUsed() {
 			meta.Pod.Namespace, meta.Pod.Name, meta.Pod.UID, podMetric)
 
 		if err := c.metricCache.InsertPodResourceMetric(collectTime, &podMetric); err != nil {
-			klog.Infof("insert pod %s/%s, uid %s resource metric failed, metric %v, err %v",
+			klog.Errorf("insert pod %s/%s, uid %s resource metric failed, metric %v, err %v",
 				pod.Namespace, pod.Name, uid, podMetric, err)
 		}
 		c.collectContainerResUsed(meta)
