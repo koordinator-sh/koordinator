@@ -51,6 +51,7 @@ var (
 
 type Collector interface {
 	Run(stopCh <-chan struct{}) error
+	HasSynced() bool
 }
 
 type contextRecord struct {
@@ -83,6 +84,7 @@ type collector struct {
 	metaService statesinformer.StatesInformer
 	metricCache metriccache.MetricCache
 	context     *collectContext
+	state       *collectState
 }
 
 func NewCollector(cfg *Config, metaService statesinformer.StatesInformer, metricCache metriccache.MetricCache) Collector {
@@ -91,11 +93,16 @@ func NewCollector(cfg *Config, metaService statesinformer.StatesInformer, metric
 		metaService: metaService,
 		metricCache: metricCache,
 		context:     newCollectContext(),
+		state:       newCollectState(),
 	}
 	if c.config == nil {
 		c.config = NewDefaultConfig()
 	}
 	return c
+}
+
+func (c *collector) HasSynced() bool {
+	return c.state.HasSynced()
 }
 
 func (c *collector) Run(stopCh <-chan struct{}) error {
@@ -184,6 +191,9 @@ func (c *collector) collectNodeResUsed() {
 		},
 	}
 	c.metricCache.InsertNodeResourceMetric(collectTime, &nodeMetric)
+
+	// update collect time
+	c.state.RefreshTime(nodeResUsedUpdateTime)
 	klog.Infof("collectNodeResUsed finished %+v", nodeMetric)
 }
 
@@ -239,6 +249,9 @@ func (c *collector) collectPodResUsed() {
 		}
 		c.collectContainerResUsed(meta)
 	}
+
+	// update collect time
+	c.state.RefreshTime(podResUsedUpdateTime)
 	klog.Infof("collectPodResUsed finished, pod num %d", len(podMetas))
 }
 
@@ -311,6 +324,8 @@ func (c *collector) collectNodeCPUInfo() {
 	klog.V(6).Infof("collect cpu info finished, nodeCPUInfo %v", nodeCPUInfo)
 	c.metricCache.InsertNodeCPUInfo(nodeCPUInfo)
 
+	// update collect time
+	c.state.RefreshTime(nodeCPUInfoUpdateTime)
 	klog.Infof("collectNodeCPUInfo finished, cpu info: processors %v", len(nodeCPUInfo.ProcessorInfos))
 	metrics.RecordCollectNodeCPUInfoStatus(nil)
 }
@@ -357,6 +372,9 @@ func (c *collector) collectPodThrottledInfo() {
 		}
 		c.collectContainerThrottledInfo(meta)
 	} // end for podMeta
+
+	// update collect time
+	c.state.RefreshTime(podThrottledInfoUpdateTime)
 	klog.Infof("collectPodThrottledInfo finished, pod num %d", len(podMetas))
 }
 
@@ -430,4 +448,7 @@ func (c *collector) cleanupContext() {
 	cleanFunc(&c.context.lastContainerCPUStat)
 	cleanFunc(&c.context.lastPodCPUThrottled)
 	cleanFunc(&c.context.lastContainerCPUThrottled)
+
+	// update clean time
+	c.state.RefreshTime(cleanupContextUpdateTime)
 }
