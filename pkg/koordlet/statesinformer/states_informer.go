@@ -65,7 +65,7 @@ type statesInformer struct {
 	podUpdatedTime time.Time
 }
 
-func NewMetaService(config *Config, kubeClient clientset.Interface, pleg pleg.Pleg, nodeName string) StatesInformer {
+func NewStatesInformer(config *Config, kubeClient clientset.Interface, pleg pleg.Pleg, nodeName string) StatesInformer {
 	nodeInformer := newNodeInformer(kubeClient, nodeName)
 
 	m := &statesInformer{
@@ -108,7 +108,7 @@ func NewMetaService(config *Config, kubeClient clientset.Interface, pleg pleg.Pl
 
 func (m *statesInformer) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	klog.Infof("starting metaservice")
+	klog.Infof("starting statesInformer")
 
 	klog.Infof("starting informer for Node")
 	go m.nodeInformer.Run(stopCh)
@@ -129,7 +129,7 @@ func (m *statesInformer) Run(stopCh <-chan struct{}) error {
 
 		go m.syncKubeletLoop(time.Duration(m.config.KubeletSyncIntervalSeconds)*time.Second, stopCh)
 	} else {
-		klog.Infof("KubeletSyncIntervalSeconds is %d, metaservice sync of kubelet is disabled",
+		klog.Infof("KubeletSyncIntervalSeconds is %d, statesInformer sync of kubelet is disabled",
 			m.config.KubeletSyncIntervalSeconds)
 	}
 	klog.Infof("start meta service successfully")

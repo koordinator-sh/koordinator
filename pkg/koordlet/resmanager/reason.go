@@ -18,4 +18,6 @@ package resmanager
 
 const (
 	adjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
+
+	evictPodByNodeMemoryUsage = "EvictPodByNodeMemoryUsage"
 )

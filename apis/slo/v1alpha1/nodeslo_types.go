@@ -32,11 +32,22 @@ const (
 
 type ResourceThresholdStrategy struct {
 	// whether the strategy is enabled, default = true
+	// +kubebuilder:default=true
 	Enable *bool `json:"enable,omitempty"`
+
 	// cpu suppress threshold percentage (0,100), default = 65
+	// +kubebuilder:default=65
 	CPUSuppressThresholdPercent *int64 `json:"cpuSuppressThresholdPercent,omitempty"`
-	//CPUSuppressPolicy
+
+	// CPUSuppressPolicy
 	CPUSuppressPolicy CPUSuppressPolicy `json:"cpuSuppressPolicy,omitempty"`
+
+	// upper: memory evict threshold percentage (0,100), default = 70
+	// +kubebuilder:default=70
+	MemoryEvictThresholdPercent *int64 `json:"memoryEvictThresholdPercent,omitempty"`
+
+	// lower: memory release util usage under MemoryEvictLowerPercent, default = MemoryEvictThresholdPercent - 2
+	MemoryEvictLowerPercent *int64 `json:"memoryEvictLowerPercent,omitempty"`
 }
 
 // NodeSLOSpec defines the desired state of NodeSLO

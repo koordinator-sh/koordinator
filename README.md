@@ -1,6 +1,6 @@
 <h1 align="center">
   <p align="center">Koordinator</p>
-  <a href="https://koordinator.sh"><img src="https://user-images.githubusercontent.com/24452340/163006136-723eb358-5187-4adb-b93e-9cca7c720936.jpeg" alt="Koordinator"></a>
+  <a href="https://koordinator.sh"><img src="https://github.com/koordinator-sh/koordinator/raw/main/docs/images/koordinator-logo.jpeg" alt="Koordinator"></a>
 </h1>
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-4EB1BA.svg)](https://opensource.org/licenses/Apache-2.0)

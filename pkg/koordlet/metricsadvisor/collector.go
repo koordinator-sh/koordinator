@@ -82,20 +82,20 @@ func newCollectContext() *collectContext {
 }
 
 type collector struct {
-	config      *Config
-	metaService statesinformer.StatesInformer
-	metricCache metriccache.MetricCache
-	context     *collectContext
-	state       *collectState
+	config         *Config
+	statesInformer statesinformer.StatesInformer
+	metricCache    metriccache.MetricCache
+	context        *collectContext
+	state          *collectState
 }
 
-func NewCollector(cfg *Config, metaService statesinformer.StatesInformer, metricCache metriccache.MetricCache) Collector {
+func NewCollector(cfg *Config, statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache) Collector {
 	c := &collector{
-		config:      cfg,
-		metaService: metaService,
-		metricCache: metricCache,
-		context:     newCollectContext(),
-		state:       newCollectState(),
+		config:         cfg,
+		statesInformer: statesInformer,
+		metricCache:    metricCache,
+		context:        newCollectContext(),
+		state:          newCollectState(),
 	}
 	if c.config == nil {
 		c.config = NewDefaultConfig()
@@ -127,7 +127,7 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 		c.collectNodeResUsed()
 		// add sync metaService cache check before collect pod information
 		// because collect function will get all pods.
-		if !cache.WaitForCacheSync(stopCh, c.metaService.HasSynced) {
+		if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
 			klog.Errorf("timed out waiting for meta service caches to sync")
 			// Koordlet exit because of metaService sync failed.
 			os.Exit(1)
@@ -213,7 +213,7 @@ func (c *collector) collectNodeResUsed() {
 
 func (c *collector) collectPodResUsed() {
 	klog.V(6).Info("start collectPodResUsed")
-	podMetas := c.metaService.GetAllPods()
+	podMetas := c.statesInformer.GetAllPods()
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
@@ -350,7 +350,7 @@ func (c *collector) collectNodeCPUInfo() {
 
 func (c *collector) collectPodThrottledInfo() {
 	klog.V(6).Info("start collectPodThrottledInfo")
-	podMetas := c.metaService.GetAllPods()
+	podMetas := c.statesInformer.GetAllPods()
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID

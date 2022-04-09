@@ -216,7 +216,7 @@ func isFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature
 
 	spec := nodeSLO.Spec
 	switch feature {
-	case features.BECPUSuppress:
+	case features.BECPUSuppress, features.BEMemoryEvict:
 		// nil value means enabled
 		if spec.ResourceUsedThresholdWithBE == nil {
 			return false, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
@@ -247,6 +247,9 @@ func (r *resManager) Run(stopCh <-chan struct{}) error {
 	cpuSuppress := NewCPUSuppress(r)
 	koordletutil.RunFeature(cpuSuppress.suppressBECPU, []featuregate.Feature{features.BECPUSuppress}, r.config.CPUSuppressIntervalSeconds, stopCh)
 
+	memoryEvictor := NewMemoryEvictor(r)
+	koordletutil.RunFeature(memoryEvictor.memoryEvict, []featuregate.Feature{features.BEMemoryEvict}, r.config.MemoryEvictIntervalSeconds, stopCh)
+
 	klog.Info("Starting resManager successfully")
 	<-stopCh
 	klog.Info("shutting down resManager")
@@ -258,4 +261,14 @@ func (r *resManager) hasSynced() bool {
 	defer r.nodeSLORWMutex.Unlock()
 
 	return r.nodeSLO != nil && r.nodeSLO.Spec.ResourceUsedThresholdWithBE != nil
+}
+
+func (r *resManager) evictPod(evictPod *corev1.Pod, node *corev1.Node, reason string, message string) error {
+	// TODO
+	return nil
+}
+
+// killContainers kills containers inside the pod
+func killContainers(pod *corev1.Pod, message string) {
+	// TODO
 }

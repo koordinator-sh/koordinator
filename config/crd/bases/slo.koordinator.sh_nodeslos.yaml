@@ -42,13 +42,26 @@ spec:
                     description: CPUSuppressPolicy
                     type: string
                   cpuSuppressThresholdPercent:
+                    default: 65
                     description: cpu suppress threshold percentage (0,100), default
                       = 65
                     format: int64
                     type: integer
                   enable:
+                    default: true
                     description: whether the strategy is enabled, default = true
                     type: boolean
+                  memoryEvictLowerPercent:
+                    description: 'lower: memory release util usage under MemoryEvictLowerPercent,
+                      default = MemoryEvictThresholdPercent - 2'
+                    format: int64
+                    type: integer
+                  memoryEvictThresholdPercent:
+                    default: 70
+                    description: 'upper: memory evict threshold percentage (0,100),
+                      default = 70'
+                    format: int64
+                    type: integer
                 type: object
             type: object
           status:
