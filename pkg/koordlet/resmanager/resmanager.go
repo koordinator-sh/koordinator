@@ -50,7 +50,7 @@ type ResManager interface {
 	Run(stopCh <-chan struct{}) error
 }
 
-type resmanager struct {
+type resManager struct {
 	config                        *Config
 	collectResUsedIntervalSeconds int64
 	nodeName                      string
@@ -103,7 +103,7 @@ func mergeSLOSpecResourceUsedThresholdWithBE(defaultSpec, newSpec *slov1alpha1.R
 }
 
 // mergeDefaultNodeSLO merges nodeSLO with default config; ensure use the function with a RWMutex
-func (r *resmanager) mergeDefaultNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
+func (r *resManager) mergeDefaultNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
 	if r.nodeSLO == nil || nodeSLO == nil {
 		klog.Errorf("failed to merge with nil nodeSLO, old: %v, new: %v", r.nodeSLO, nodeSLO)
 		return
@@ -117,7 +117,7 @@ func (r *resmanager) mergeDefaultNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
 	}
 }
 
-func (r *resmanager) createNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
+func (r *resManager) createNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
 	r.nodeSLORWMutex.Lock()
 	defer r.nodeSLORWMutex.Unlock()
 
@@ -133,7 +133,7 @@ func (r *resmanager) createNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
 	klog.Infof("update nodeSLO content: old %s, new %s", oldNodeSLOStr, newNodeSLOStr)
 }
 
-func (r *resmanager) getNodeSLOCopy() *slov1alpha1.NodeSLO {
+func (r *resManager) getNodeSLOCopy() *slov1alpha1.NodeSLO {
 	r.nodeSLORWMutex.Lock()
 	defer r.nodeSLORWMutex.Unlock()
 
@@ -144,7 +144,7 @@ func (r *resmanager) getNodeSLOCopy() *slov1alpha1.NodeSLO {
 	return nodeSLOCopy
 }
 
-func (r *resmanager) updateNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
+func (r *resManager) updateNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	r.nodeSLORWMutex.Lock()
 	defer r.nodeSLORWMutex.Unlock()
 
@@ -167,7 +167,7 @@ func NewResManager(cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.
 	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	recorder := eventBroadcaster.NewRecorder(schema, corev1.EventSource{Component: "slo-agent-reporter", Host: nodeName})
 
-	r := &resmanager{
+	r := &resManager{
 		config:                        cfg,
 		nodeName:                      nodeName,
 		schema:                        schema,
@@ -227,9 +227,9 @@ func isFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature
 	}
 }
 
-func (r *resmanager) Run(stopCh <-chan struct{}) error {
+func (r *resManager) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	klog.Info("Starting resmanager")
+	klog.Info("Starting resManager")
 
 	klog.Infof("starting informer for NodeSLO")
 	go r.nodeSLOInformer.Run(stopCh)
@@ -247,13 +247,13 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	cpuSuppress := NewCPUSuppress(r)
 	koordletutil.RunFeature(cpuSuppress.suppressBECPU, []featuregate.Feature{features.BECPUSuppress}, r.config.CPUSuppressIntervalSeconds, stopCh)
 
-	klog.Info("Starting resmanager successfully")
+	klog.Info("Starting resManager successfully")
 	<-stopCh
-	klog.Info("shutting down resmanager")
+	klog.Info("shutting down resManager")
 	return nil
 }
 
-func (r *resmanager) hasSynced() bool {
+func (r *resManager) hasSynced() bool {
 	r.nodeSLORWMutex.Lock()
 	defer r.nodeSLORWMutex.Unlock()
 

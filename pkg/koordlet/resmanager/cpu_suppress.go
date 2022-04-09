@@ -56,11 +56,11 @@ var (
 )
 
 type CPUSuppress struct {
-	resmanager             *resmanager
+	resmanager             *resManager
 	suppressPolicyStatuses map[string]suppressPolicyStatus
 }
 
-func NewCPUSuppress(resmanager *resmanager) *CPUSuppress {
+func NewCPUSuppress(resmanager *resManager) *CPUSuppress {
 	return &CPUSuppress{resmanager: resmanager, suppressPolicyStatuses: map[string]suppressPolicyStatus{}}
 }
 
