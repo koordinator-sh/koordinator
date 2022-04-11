@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: docker.io/koordinatorsh/nginx:v1.18-koord-exmaple
+          image: docker.io/koordinatorsh/nginx:v1.18-koord-example
           command:
             - "nginx"
             - "-g"
