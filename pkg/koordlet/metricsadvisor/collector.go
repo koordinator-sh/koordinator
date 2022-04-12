@@ -19,6 +19,7 @@ package metricsadvisor
 import (
 	"fmt"
 	"k8s.io/client-go/tools/cache"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -126,7 +127,9 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 		c.collectNodeResUsed()
 		// add sync metaService cache check before collect pod information.
 		if !cache.WaitForCacheSync(stopCh, c.metaService.HasSynced) {
-			klog.Errorf("timed out waiting for node metric caches to sync")
+			klog.Errorf("timed out waiting for meta service caches to sync")
+			// Koordlet exit because of metaService sync failed.
+			os.Exit(1)
 			return
 		}
 		c.collectPodResUsed()
