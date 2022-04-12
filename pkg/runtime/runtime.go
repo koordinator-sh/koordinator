@@ -28,12 +28,15 @@ import (
 )
 
 var (
-	dockerEndpoint = path.Join("/var/run/", "docker.sock")
+	DockerEndpoint      = path.Join("/var/run/", "docker.sock")
+	ContainerdEndpoint1 = path.Join("/var/run/", "containerd.sock")
+	ContainerdEndpoint2 = path.Join("/var/run/", "containerd/containerd.sock")
 )
 
 var (
-	DockerHandler handler.ContainerRuntimeHandler
-	mutex         = &sync.Mutex{}
+	DockerHandler     handler.ContainerRuntimeHandler
+	ContainerdHandler handler.ContainerRuntimeHandler
+	mutex             = &sync.Mutex{}
 )
 
 func GetRuntimeHandler(runtimeType string) (handler.ContainerRuntimeHandler, error) {
@@ -43,6 +46,8 @@ func GetRuntimeHandler(runtimeType string) (handler.ContainerRuntimeHandler, err
 	switch runtimeType {
 	case "docker":
 		return getDockerHandler()
+	case "containerd":
+		return getContainerdHandler()
 	default:
 		return nil, fmt.Errorf("runtime type %v is not supported", runtimeType)
 	}
@@ -69,10 +74,42 @@ func getDockerHandler() (handler.ContainerRuntimeHandler, error) {
 }
 
 func getDockerEndpoint() (string, error) {
-	if isFile(dockerEndpoint) {
-		return fmt.Sprintf("unix://%s", dockerEndpoint), nil
+	if isFile(DockerEndpoint) {
+		return fmt.Sprintf("unix://%s", DockerEndpoint), nil
 	}
 	return "", fmt.Errorf("docker endpoint does not exist")
+}
+
+func getContainerdHandler() (handler.ContainerRuntimeHandler, error) {
+	if ContainerdHandler != nil {
+		return ContainerdHandler, nil
+	}
+
+	unixEndpoint, err := getContainerdEndpoint()
+	if err != nil {
+		klog.Errorf("failed to get containerd endpoint, error: %v", err)
+		return nil, err
+	}
+
+	ContainerdHandler, err = handler.NewContainerdRuntimeHandler(unixEndpoint)
+	if err != nil {
+		klog.Errorf("failed to create containerd runtime handler, error: %v", err)
+		return nil, err
+	}
+
+	return ContainerdHandler, nil
+}
+
+func getContainerdEndpoint() (string, error) {
+	if isFile(ContainerdEndpoint1) {
+		return fmt.Sprintf("unix://%s", ContainerdEndpoint1), nil
+	}
+
+	if isFile(ContainerdEndpoint2) {
+		return fmt.Sprintf("unix://%s", ContainerdEndpoint2), nil
+	}
+
+	return "", fmt.Errorf("containerd endpoint does not exist")
 }
 
 func isFile(path string) bool {

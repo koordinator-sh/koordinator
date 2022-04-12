@@ -20,7 +20,7 @@ import "time"
 
 const (
 	// unixProtocol is the network protocol of unix socket.
-	// unixProtocol             = "unix"
+	unixProtocol             = "unix"
 	defaultConnectionTimeout = 5 * time.Second
 )
 
