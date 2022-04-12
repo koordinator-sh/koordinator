@@ -18,7 +18,6 @@ package metricsadvisor
 
 import (
 	"fmt"
-	"k8s.io/client-go/tools/cache"
 	"os"
 	"os/exec"
 	"strconv"
@@ -30,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
