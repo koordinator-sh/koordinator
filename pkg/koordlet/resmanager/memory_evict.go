@@ -34,7 +34,7 @@ const (
 )
 
 type MemoryEvictor struct {
-	resManager    *resManager
+	resManager    *resmanager
 	lastEvictTime time.Time
 }
 
@@ -43,7 +43,7 @@ type podInfo struct {
 	podMetric *metriccache.PodResourceMetric
 }
 
-func NewMemoryEvictor(mgr *resManager) *MemoryEvictor {
+func NewMemoryEvictor(mgr *resmanager) *MemoryEvictor {
 	return &MemoryEvictor{
 		resManager:    mgr,
 		lastEvictTime: time.Now(),
@@ -131,9 +131,7 @@ func (m *MemoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics []*metr
 	}
 
 	for _, pod := range killedPods {
-		if err := m.resManager.evictPod(pod, node, evictPodByNodeMemoryUsage, message); err != nil {
-			klog.Errorf("failed to evict pod, error: %v", err)
-		}
+		m.resManager.evictPod(pod, node, evictPodByNodeMemoryUsage, message)
 	}
 
 	m.lastEvictTime = time.Now()

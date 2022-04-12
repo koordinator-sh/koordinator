@@ -27,12 +27,12 @@ import (
 )
 
 // query data for 2 * collectResUsedIntervalSeconds
-func (r *resManager) collectNodeAndPodMetricLast() (*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
+func (r *resmanager) collectNodeAndPodMetricLast() (*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
 	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
 	return r.collectNodeAndPodMetrics(queryParam)
 }
 
-func (r *resManager) collectNodeAndPodMetrics(queryParam *metriccache.QueryParam) (*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
+func (r *resmanager) collectNodeAndPodMetrics(queryParam *metriccache.QueryParam) (*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
 	// collect node's and all pods' metrics with the same query param
 	nodeQueryResult := r.collectNodeMetric(queryParam)
 	nodeMetric := nodeQueryResult.Metric
@@ -49,7 +49,7 @@ func (r *resManager) collectNodeAndPodMetrics(queryParam *metriccache.QueryParam
 	return nodeMetric, podsMetrics
 }
 
-func (r *resManager) collectNodeMetric(queryParam *metriccache.QueryParam) metriccache.NodeResourceQueryResult {
+func (r *resmanager) collectNodeMetric(queryParam *metriccache.QueryParam) metriccache.NodeResourceQueryResult {
 	queryResult := r.metricCache.GetNodeResourceMetric(queryParam)
 	if queryResult.Error != nil {
 		klog.Warningf("get node resource metric failed, error %v", queryResult.Error)
@@ -62,7 +62,7 @@ func (r *resManager) collectNodeMetric(queryParam *metriccache.QueryParam) metri
 	return queryResult
 }
 
-func (r *resManager) collectPodMetric(podMeta *statesinformer.PodMeta, queryParam *metriccache.QueryParam) metriccache.PodResourceQueryResult {
+func (r *resmanager) collectPodMetric(podMeta *statesinformer.PodMeta, queryParam *metriccache.QueryParam) metriccache.PodResourceQueryResult {
 	if podMeta == nil || podMeta.Pod == nil {
 		return metriccache.PodResourceQueryResult{QueryResult: metriccache.QueryResult{Error: fmt.Errorf("pod is nil")}}
 	}
