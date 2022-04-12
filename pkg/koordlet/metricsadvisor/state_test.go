@@ -22,11 +22,9 @@ func Test_collectState_HasSynced(t *testing.T) {
 			name: "new-state",
 			fields: fields{
 				updateTimeMap: map[string]*time.Time{
-					nodeResUsedUpdateTime:      nil,
-					podResUsedUpdateTime:       nil,
-					podThrottledInfoUpdateTime: nil,
-					nodeCPUInfoUpdateTime:      nil,
-					cleanupContextUpdateTime:   nil,
+					nodeResUsedUpdateTime: nil,
+					podResUsedUpdateTime:  nil,
+					nodeCPUInfoUpdateTime: nil,
 				},
 			},
 			want: false,
@@ -35,11 +33,9 @@ func Test_collectState_HasSynced(t *testing.T) {
 			name: "synced-state",
 			fields: fields{
 				updateTimeMap: map[string]*time.Time{
-					nodeResUsedUpdateTime:      &totalTime,
-					podResUsedUpdateTime:       &totalTime,
-					podThrottledInfoUpdateTime: &totalTime,
-					nodeCPUInfoUpdateTime:      &totalTime,
-					cleanupContextUpdateTime:   &totalTime,
+					nodeResUsedUpdateTime: &totalTime,
+					podResUsedUpdateTime:  &totalTime,
+					nodeCPUInfoUpdateTime: &totalTime,
 				},
 			},
 			want: true,
@@ -48,11 +44,9 @@ func Test_collectState_HasSynced(t *testing.T) {
 			name: "sync-state",
 			fields: fields{
 				updateTimeMap: map[string]*time.Time{
-					nodeResUsedUpdateTime:      &totalTime,
-					podResUsedUpdateTime:       nil,
-					podThrottledInfoUpdateTime: &totalTime,
-					nodeCPUInfoUpdateTime:      &totalTime,
-					cleanupContextUpdateTime:   &totalTime,
+					nodeResUsedUpdateTime: &totalTime,
+					podResUsedUpdateTime:  nil,
+					nodeCPUInfoUpdateTime: &totalTime,
 				},
 			},
 			want: false,
@@ -85,11 +79,9 @@ func Test_collectState_RefreshTime(t *testing.T) {
 			name: "new-state",
 			fields: fields{
 				updateTimeMap: map[string]*time.Time{
-					nodeResUsedUpdateTime:      nil,
-					podResUsedUpdateTime:       nil,
-					podThrottledInfoUpdateTime: nil,
-					nodeCPUInfoUpdateTime:      nil,
-					cleanupContextUpdateTime:   nil,
+					nodeResUsedUpdateTime: nil,
+					podResUsedUpdateTime:  nil,
+					nodeCPUInfoUpdateTime: nil,
 				},
 			},
 			args: args{
@@ -117,11 +109,9 @@ func Test_newCollectState(t *testing.T) {
 			want: &collectState{
 				mu: sync.RWMutex{},
 				updateTimeMap: map[string]*time.Time{
-					nodeResUsedUpdateTime:      nil,
-					podResUsedUpdateTime:       nil,
-					podThrottledInfoUpdateTime: nil,
-					nodeCPUInfoUpdateTime:      nil,
-					cleanupContextUpdateTime:   nil,
+					nodeResUsedUpdateTime: nil,
+					podResUsedUpdateTime:  nil,
+					nodeCPUInfoUpdateTime: nil,
 				},
 			},
 		},
