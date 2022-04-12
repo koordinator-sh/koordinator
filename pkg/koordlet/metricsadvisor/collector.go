@@ -125,7 +125,8 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 
 	go wait.Until(func() {
 		c.collectNodeResUsed()
-		// add sync metaService cache check before collect pod information.
+		// add sync metaService cache check before collect pod information
+		// because collect function will get all pods.
 		if !cache.WaitForCacheSync(stopCh, c.metaService.HasSynced) {
 			klog.Errorf("timed out waiting for meta service caches to sync")
 			// Koordlet exit because of metaService sync failed.
