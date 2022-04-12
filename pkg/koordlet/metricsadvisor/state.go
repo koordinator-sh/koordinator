@@ -6,11 +6,9 @@ import (
 )
 
 const (
-	nodeResUsedUpdateTime      = "nodeResUsedUpdateTime"
-	podResUsedUpdateTime       = "podResUsedUpdateTime"
-	podThrottledInfoUpdateTime = "podThrottledInfoUpdateTime"
-	nodeCPUInfoUpdateTime      = "nodeCPUInfoUpdateTime"
-	cleanupContextUpdateTime   = "cleanupContextUpdateTime"
+	nodeResUsedUpdateTime = "nodeResUsedUpdateTime"
+	podResUsedUpdateTime  = "podResUsedUpdateTime"
+	nodeCPUInfoUpdateTime = "nodeCPUInfoUpdateTime"
 )
 
 type collectState struct {
@@ -22,11 +20,9 @@ func newCollectState() *collectState {
 	return &collectState{
 		mu: sync.RWMutex{},
 		updateTimeMap: map[string]*time.Time{
-			nodeResUsedUpdateTime:      nil,
-			podResUsedUpdateTime:       nil,
-			podThrottledInfoUpdateTime: nil,
-			nodeCPUInfoUpdateTime:      nil,
-			cleanupContextUpdateTime:   nil,
+			nodeResUsedUpdateTime: nil,
+			podResUsedUpdateTime:  nil,
+			nodeCPUInfoUpdateTime: nil,
 		},
 	}
 }

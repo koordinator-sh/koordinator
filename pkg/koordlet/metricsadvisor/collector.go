@@ -18,6 +18,7 @@ package metricsadvisor
 
 import (
 	"fmt"
+	"k8s.io/client-go/tools/cache"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -123,6 +124,11 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 
 	go wait.Until(func() {
 		c.collectNodeResUsed()
+		// add sync metaService cache check before collect pod information.
+		if !cache.WaitForCacheSync(stopCh, c.metaService.HasSynced) {
+			klog.Errorf("timed out waiting for node metric caches to sync")
+			return
+		}
 		c.collectPodResUsed()
 		c.collectPodThrottledInfo()
 	}, time.Duration(c.config.CollectResUsedIntervalSeconds)*time.Second, stopCh)
@@ -381,8 +387,6 @@ func (c *collector) collectPodThrottledInfo() {
 		c.collectContainerThrottledInfo(meta)
 	} // end for podMeta
 
-	// update collect time
-	c.state.RefreshTime(podThrottledInfoUpdateTime)
 	klog.Infof("collectPodThrottledInfo finished, pod num %d", len(podMetas))
 }
 
@@ -457,6 +461,4 @@ func (c *collector) cleanupContext() {
 	cleanFunc(&c.context.lastPodCPUThrottled)
 	cleanFunc(&c.context.lastContainerCPUThrottled)
 
-	// update clean time
-	c.state.RefreshTime(cleanupContextUpdateTime)
 }
