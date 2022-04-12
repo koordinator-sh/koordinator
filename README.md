@@ -1,6 +1,11 @@
-# Koordinator
+<h1 align="center">
+  <p align="center">Koordinator</p>
+  <a href="https://koordinator.sh"><img src="https://user-images.githubusercontent.com/24452340/163006136-723eb358-5187-4adb-b93e-9cca7c720936.jpeg" alt="Koordinator"></a>
+</h1>
 
-[![License](https://img.shields.io/badge/license-Apache%202-4EB1BA.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
+[![License](https://img.shields.io/badge/License-Apache_2.0-4EB1BA.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Slack](https://badgen.net/badge/Slack/Join/pink?icon=slack)](https://join.slack.com/t/koordinator-sh/shared_invite/zt-1756qoub4-Cn4~esfdlfAPsD7cwO2NzA)
+[![PRs Welcome](https://badgen.net/badge/PRs/Welcome/green?icon=https://api.iconify.design/octicon:git-pull-request.svg?color=white)](CONTRIBUTING.md)
 
 ## Introduction
 
@@ -42,5 +47,5 @@ You can reach the maintainers of this project at:
 - DingTalk: Search Group ID `33383887` or scan the following QR Code
 
 <div>
-  <img src="https://user-images.githubusercontent.com/24452340/161946660-225da039-c5b3-4baf-ae49-12a94a5f3df1.jpg" width="300" alt="Dingtalk QRCode">
+  <img src="https://github.com/koordinator-sh/koordinator/raw/main/docs/images/dingtalk.jpg" width="300" alt="Dingtalk QRCode">
 </div>
