@@ -1,5 +1,5 @@
 /*
-
+Copyright 2022 The Koordinator Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -29,7 +29,6 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
@@ -85,7 +84,7 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 	keyTypes := types.NamespacedName{Namespace: config.ConfigNameSpace, Name: config.SLOCtrlConfigMap}
 	if err := r.Client.Get(context.TODO(), keyTypes, configMap); err != nil {
 		// default when the configmap does not exist
-		if apierrors.IsNotFound(err) {
+		if errors.IsNotFound(err) {
 			klog.Infof("getNodeSLOSpec(): config map %s/%s not exist, err:%s", config.ConfigNameSpace,
 				config.SLOCtrlConfigMap, err)
 			return nodeSLOSpec, nil
@@ -109,8 +108,8 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 	return nodeSLOSpec, nil
 }
 
-// +kubebuilder:rbac:groups=nodes.alibabacloud.com,resources=nodeslos,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=nodes.alibabacloud.com,resources=nodeslos/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodeslos,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodeslos/status,verbs=get;update;patch
 func (r *NodeSLOReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// reconcile for 2 things:
 	//   1. ensuring the NodeSLO exists iff the Node exists

@@ -32,4 +32,3 @@ RUN apk add --update bash net-tools iproute2 logrotate less rsync util-linux
 WORKDIR /
 ARG MODULE
 COPY --from=builder /go/src/github.com/koordinator-sh/koordinator/${MODULE} .
-USER 65532:65532

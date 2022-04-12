@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches:
+      - main
       - master
       - release-*
   pull_request: {}
@@ -11,7 +12,7 @@ on:
 env:
   # Common versions
   GO_VERSION: '1.17'
-  GOLANGCI_VERSION: 'v1.42'
+  GOLANGCI_VERSION: 'latest'
 
 jobs:
 
@@ -40,6 +41,8 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_VERSION }}
           args: --verbose
+          skip-pkg-cache: true
+          skip-build-cache: true
 
   unit-tests:
     runs-on: ubuntu-18.04
@@ -62,11 +65,12 @@ jobs:
       - name: Run Unit Tests
         run: |
           make test
-          git status
       - name: Publish Unit Test Coverage
         uses: codecov/codecov-action@v1
         with:
           flags: unittests
           file: cover.out
       - name: Check diff
-        run: '[[ -z $(git status -s) ]] || (printf "Existing modified/untracked files.\nPlease run \"make generate manifests\" and push again.\n"; exit 1)'
+        run: |
+          git status
+          [[ -z $(git status -s) ]] || (printf "Existing modified/untracked files.\nPlease run \"make generate manifests\" and push again.\n"; exit 1)

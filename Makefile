@@ -54,7 +54,7 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./apis/..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@hack/fix_crd_plural.sh
 
 .PHONY: generate
@@ -81,7 +81,7 @@ test: manifests generate fmt vet envtest ## Run tests.
 ##@ Build
 
 .PHONY: build
-build: generate fmt vet lint build-koordlet build-koord-manager
+build: generate fmt vet lint build-koordlet build-koord-manager build-koord-scheduler
 
 .PHONY: build-koordlet
 build-koordlet: ## Build koordlet binary.
@@ -90,6 +90,10 @@ build-koordlet: ## Build koordlet binary.
 .PHONY: build-koord-manager
 build-koord-manager: ## Build koord-manager binary.
 	go build -o bin/koord-manager cmd/koord-manager/main.go
+
+.PHONY: build-koord-scheduler
+build-koord-scheduler: ## Build koord-scheduler binary.
+	go build -o bin/koord-scheduler cmd/koord-scheduler/main.go
 
 .PHONY: docker-build
 docker-build: test docker-build-koordlet docker-build-koord-manager docker-build-koord-scheduler

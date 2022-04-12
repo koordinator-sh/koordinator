@@ -43,11 +43,6 @@ var (
 	handlerGates = map[string]GateFunc{}
 )
 
-// nolint
-func addHandlers(m map[string]admission.Handler) {
-	addHandlersWithGate(m, nil)
-}
-
 func addHandlersWithGate(m map[string]admission.Handler, fn GateFunc) {
 	for path, handler := range m {
 		if len(path) == 0 {

@@ -1,3 +1,19 @@
+/*
+Copyright 2022 The Koordinator Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package metricsadvisor
 
 import (
@@ -44,10 +60,10 @@ type contextRecord struct {
 
 type collectContext struct {
 	// record latest cpu stat for calculate resource used
+	// lastBeCPUStat contextRecord
 	lastNodeCPUStat      contextRecord
 	lastPodCPUStat       sync.Map
 	lastContainerCPUStat sync.Map
-	lastBeCPUStat        contextRecord
 
 	lastPodCPUThrottled       sync.Map
 	lastContainerCPUThrottled sync.Map
@@ -167,7 +183,11 @@ func (c *collector) collectNodeResUsed() {
 			MemoryWithoutCache: *resource.NewQuantity(memUsageValue*1024, resource.BinarySI),
 		},
 	}
-	c.metricCache.InsertNodeResourceMetric(collectTime, &nodeMetric)
+
+	if err := c.metricCache.InsertNodeResourceMetric(collectTime, &nodeMetric); err != nil {
+		klog.Errorf("insert node resource metric error: %v", err)
+	}
+
 	klog.Infof("collectNodeResUsed finished %+v", nodeMetric)
 }
 
@@ -216,9 +236,9 @@ func (c *collector) collectPodResUsed() {
 		}
 		klog.V(6).Infof("collect pod %s/%s, uid %s finished, metric %+v",
 			meta.Pod.Namespace, meta.Pod.Name, meta.Pod.UID, podMetric)
-		err := c.metricCache.InsertPodResourceMetric(collectTime, &podMetric)
-		if err != nil {
-			klog.Infof("insert pod %s/%s, uid %s resource metric failed, metric %v, err %v",
+
+		if err := c.metricCache.InsertPodResourceMetric(collectTime, &podMetric); err != nil {
+			klog.Errorf("insert pod %s/%s, uid %s resource metric failed, metric %v, err %v",
 				pod.Namespace, pod.Name, uid, podMetric, err)
 		}
 		c.collectContainerResUsed(meta)
@@ -271,7 +291,9 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 		}
 		klog.V(6).Infof("collect container %s/%s/%s, id %s finished, metric %+v",
 			meta.Pod.Namespace, meta.Pod.Name, containerStat.Name, meta.Pod.UID, containerMetric)
-		c.metricCache.InsertContainerResourceMetric(collectTime, &containerMetric)
+		if err := c.metricCache.InsertContainerResourceMetric(collectTime, &containerMetric); err != nil {
+			klog.Errorf("insert container resource metric error: %v", err)
+		}
 	}
 	klog.V(5).Infof("collectContainerResUsed for pod %s/%s finished, container num %d",
 		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses))
@@ -293,7 +315,9 @@ func (c *collector) collectNodeCPUInfo() {
 		TotalInfo:      localCPUInfo.TotalInfo,
 	}
 	klog.V(6).Infof("collect cpu info finished, nodeCPUInfo %v", nodeCPUInfo)
-	c.metricCache.InsertNodeCPUInfo(nodeCPUInfo)
+	if err = c.metricCache.InsertNodeCPUInfo(nodeCPUInfo); err != nil {
+		klog.Errorf("insert node cpu info error: %v", err)
+	}
 
 	klog.Infof("collectNodeCPUInfo finished, cpu info: processors %v", len(nodeCPUInfo.ProcessorInfos))
 	metrics.RecordCollectNodeCPUInfoStatus(nil)

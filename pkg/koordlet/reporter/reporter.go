@@ -1,3 +1,19 @@
+/*
+Copyright 2022 The Koordinator Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package reporter
 
 import (
@@ -9,7 +25,6 @@ import (
 
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,7 +44,7 @@ import (
 	listerbeta1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -68,7 +83,7 @@ func NewReporter(cfg *Config, kubeClient *clientset.Clientset, crdClient *client
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
-	recorder := eventBroadcaster.NewRecorder(scheme, v1.EventSource{Component: "koordlet-reporter", Host: nodeName})
+	recorder := eventBroadcaster.NewRecorder(scheme, corev1.EventSource{Component: "koordlet-reporter", Host: nodeName})
 
 	r := &reporter{
 		config:             cfg,
@@ -203,12 +218,6 @@ func (r *reporter) isNodeMetricInited() bool {
 	return r.nodeMetric != nil
 }
 
-func (r *reporter) getNodeMetricSpec() *slov1alpha1.NodeMetricSpec {
-	r.rwMutex.RLock()
-	defer r.rwMutex.RUnlock()
-	return r.nodeMetric.Spec.DeepCopy()
-}
-
 func (r *reporter) createNodeMetric(nodeMetric *slov1alpha1.NodeMetric) {
 	r.rwMutex.Lock()
 	defer r.rwMutex.Unlock()
@@ -322,8 +331,8 @@ func (su *statusUpdater) updateStatus(nodeMetric *slov1alpha1.NodeMetric, newSta
 func convertNodeMetricToResourceMap(nodeMetric *metriccache.NodeResourceMetric) *slov1alpha1.ResourceMap {
 	return &slov1alpha1.ResourceMap{
 		ResourceList: corev1.ResourceList{
-			v1.ResourceCPU:    nodeMetric.CPUUsed.CPUUsed,
-			v1.ResourceMemory: nodeMetric.MemoryUsed.MemoryWithoutCache,
+			corev1.ResourceCPU:    nodeMetric.CPUUsed.CPUUsed,
+			corev1.ResourceMemory: nodeMetric.MemoryUsed.MemoryWithoutCache,
 		},
 	}
 }
@@ -331,8 +340,8 @@ func convertNodeMetricToResourceMap(nodeMetric *metriccache.NodeResourceMetric) 
 func convertPodMetricToResourceMap(podMetric *metriccache.PodResourceMetric) *slov1alpha1.ResourceMap {
 	return &slov1alpha1.ResourceMap{
 		ResourceList: corev1.ResourceList{
-			v1.ResourceCPU:    podMetric.CPUUsed.CPUUsed,
-			v1.ResourceMemory: podMetric.MemoryUsed.MemoryWithoutCache,
+			corev1.ResourceCPU:    podMetric.CPUUsed.CPUUsed,
+			corev1.ResourceMemory: podMetric.MemoryUsed.MemoryWithoutCache,
 		},
 	}
 }
