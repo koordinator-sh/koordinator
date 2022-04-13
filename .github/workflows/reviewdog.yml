@@ -31,3 +31,16 @@ jobs:
         uses: reviewdog/action-golangci-lint@v2
         with:
           golangci_lint_flags: "--enable-all --exclude-use-default=false"
+
+  govet:
+    name: govet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v3
+      - name: govet
+        uses: ./
+        with:
+          github_token: ${{ secrets.github_token }}
+          golangci_lint_flags: "--disable-all -E govet"
+          tool_name: govet
