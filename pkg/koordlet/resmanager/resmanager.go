@@ -25,6 +25,8 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -41,9 +43,16 @@ import (
 	slolisterv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/runtime"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+)
+
+const (
+	evictPodSuccess = "evictPodSuccess"
+	evictPodFail    = "evictPodFail"
 )
 
 type ResManager interface {
@@ -216,7 +225,7 @@ func isFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature
 
 	spec := nodeSLO.Spec
 	switch feature {
-	case features.BECPUSuppress:
+	case features.BECPUSuppress, features.BEMemoryEvict:
 		// nil value means enabled
 		if spec.ResourceUsedThresholdWithBE == nil {
 			return false, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
@@ -247,6 +256,9 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	cpuSuppress := NewCPUSuppress(r)
 	koordletutil.RunFeature(cpuSuppress.suppressBECPU, []featuregate.Feature{features.BECPUSuppress}, r.config.CPUSuppressIntervalSeconds, stopCh)
 
+	memoryEvictor := NewMemoryEvictor(r)
+	koordletutil.RunFeature(memoryEvictor.memoryEvict, []featuregate.Feature{features.BEMemoryEvict}, r.config.MemoryEvictIntervalSeconds, stopCh)
+
 	klog.Info("Starting resmanager successfully")
 	<-stopCh
 	klog.Info("shutting down resmanager")
@@ -258,4 +270,53 @@ func (r *resmanager) hasSynced() bool {
 	defer r.nodeSLORWMutex.Unlock()
 
 	return r.nodeSLO != nil && r.nodeSLO.Spec.ResourceUsedThresholdWithBE != nil
+}
+
+func (r *resmanager) evictPod(evictPod *corev1.Pod, node *corev1.Node, reason string, message string) {
+	podEvictMessage := fmt.Sprintf("evict Pod:%s, reason: %s, message: %v", evictPod.Name, reason, message)
+
+	podEvict := policyv1.Eviction{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      evictPod.Name,
+			Namespace: evictPod.Namespace,
+		},
+	}
+
+	if err := r.kubeClient.CoreV1().Pods(evictPod.Namespace).EvictV1(context.TODO(), &podEvict); err == nil {
+		r.eventRecorder.Eventf(node, corev1.EventTypeWarning, evictPodSuccess, podEvictMessage)
+		metrics.RecordPodEviction(reason)
+		klog.Infof("evict pod %v/%v success, reason: %v", evictPod.Namespace, evictPod.Name, reason)
+	} else if !errors.IsNotFound(err) {
+		r.eventRecorder.Eventf(node, corev1.EventTypeWarning, evictPodFail, podEvictMessage)
+		klog.Errorf("evict pod %v/%v failed, reason: %v, error: %v", evictPod.Namespace, evictPod.Name, reason, err)
+	}
+}
+
+// killContainers kills containers inside the pod
+func killContainers(pod *corev1.Pod, message string) {
+	for _, container := range pod.Spec.Containers {
+		containerID, containerStatus, err := util.FindContainerIdAndStatusByName(&pod.Status, container.Name)
+		if err != nil {
+			klog.Errorf("failed to find container id and status, error: %v", err)
+			return
+		}
+
+		if containerStatus == nil || containerStatus.State.Running == nil {
+			return
+		}
+
+		if containerID != "" {
+			runtimeType, _, _ := util.ParseContainerId(containerStatus.ContainerID)
+			runtimeHandler, err := runtime.GetRuntimeHandler(runtimeType)
+			if err != nil || runtimeHandler == nil {
+				klog.Errorf("%s, kill container(%s) error! GetRuntimeHandler fail! error: %v", message, containerStatus.ContainerID, err)
+				continue
+			}
+			if err := runtimeHandler.StopContainer(containerID, 0); err != nil {
+				klog.Errorf("%s, stop container error! error: %v", message, err)
+			}
+		} else {
+			klog.Warningf("%s, get container ID failed, pod %s/%s containerName %s status: %v", message, pod.Namespace, pod.Name, container.Name, pod.Status.ContainerStatuses)
+		}
+	}
 }

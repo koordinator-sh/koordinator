@@ -79,3 +79,23 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - slo.koordinator.sh
+  resources:
+  - nodeslos
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - slo.koordinator.sh
+  resources:
+  - nodeslos/status
+  verbs:
+  - get
+  - patch
+  - update

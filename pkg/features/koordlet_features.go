@@ -30,6 +30,9 @@ const (
 
 	// BECPUSuppress suppresses for best-effort pod
 	BECPUSuppress featuregate.Feature = "BECPUSuppress"
+
+	// BEMemoryEvict evict best-effort pod based on Memory
+	BEMemoryEvict featuregate.Feature = "BEMemoryEvict"
 )
 
 func init() {
