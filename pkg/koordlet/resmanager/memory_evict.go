@@ -55,13 +55,13 @@ func (m *MemoryEvictor) memoryEvict() {
 	defer klog.Infof("memory evict process completed")
 
 	if time.Now().Before(m.lastEvictTime.Add(time.Duration(m.resManager.config.MemoryEvictCoolTimeSeconds) * time.Second)) {
-		klog.Warningf("skip memory evict process, still in evict cooling time")
+		klog.Infof("skip memory evict process, still in evict cooling time")
 		return
 	}
 
 	nodeSLO := m.resManager.getNodeSLOCopy()
 	if disabled, err := isFeatureDisabled(nodeSLO, features.BEMemoryEvict); err != nil {
-		klog.Errorf("memory evict failed, error: %v", err)
+		klog.Errorf("failed to acquire memory eviction feature-gate, error: %v", err)
 	} else if disabled {
 		klog.Warningf("skip memory evict, disabled in NodeSLO")
 		return
@@ -97,7 +97,7 @@ func (m *MemoryEvictor) memoryEvict() {
 
 	nodeMemoryUsage := nodeMetric.MemoryUsed.MemoryWithoutCache.Value() * 100 / memoryCapacity
 	if nodeMemoryUsage < *thresholdPercent {
-		klog.Warningf("skip memory evict, node memory usage(%v) is below threshold(%v)", nodeMemoryUsage, thresholdConfig)
+		klog.Infof("skip memory evict, node memory usage(%v) is below threshold(%v)", nodeMemoryUsage, thresholdConfig)
 		return
 	}
 
@@ -157,6 +157,7 @@ func (m *MemoryEvictor) getSortedPodInfos(podMetrics []*metriccache.PodResourceM
 	}
 
 	sort.Slice(bePodInfos, func(i, j int) bool {
+		// TODO: https://github.com/koordinator-sh/koordinator/pull/65#discussion_r849048467
 		if bePodInfos[i].pod.Spec.Priority == nil || bePodInfos[j].pod.Spec.Priority == nil ||
 			*bePodInfos[i].pod.Spec.Priority == *bePodInfos[j].pod.Spec.Priority {
 			return bePodInfos[i].podMetric.MemoryUsed.MemoryWithoutCache.Value() > bePodInfos[j].podMetric.MemoryUsed.MemoryWithoutCache.Value()
