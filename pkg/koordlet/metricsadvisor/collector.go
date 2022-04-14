@@ -18,6 +18,7 @@ package metricsadvisor
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
@@ -51,6 +53,7 @@ var (
 
 type Collector interface {
 	Run(stopCh <-chan struct{}) error
+	HasSynced() bool
 }
 
 type contextRecord struct {
@@ -79,23 +82,29 @@ func newCollectContext() *collectContext {
 }
 
 type collector struct {
-	config      *Config
-	metaService statesinformer.StatesInformer
-	metricCache metriccache.MetricCache
-	context     *collectContext
+	config         *Config
+	statesInformer statesinformer.StatesInformer
+	metricCache    metriccache.MetricCache
+	context        *collectContext
+	state          *collectState
 }
 
-func NewCollector(cfg *Config, metaService statesinformer.StatesInformer, metricCache metriccache.MetricCache) Collector {
+func NewCollector(cfg *Config, statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache) Collector {
 	c := &collector{
-		config:      cfg,
-		metaService: metaService,
-		metricCache: metricCache,
-		context:     newCollectContext(),
+		config:         cfg,
+		statesInformer: statesInformer,
+		metricCache:    metricCache,
+		context:        newCollectContext(),
+		state:          newCollectState(),
 	}
 	if c.config == nil {
 		c.config = NewDefaultConfig()
 	}
 	return c
+}
+
+func (c *collector) HasSynced() bool {
+	return c.state.HasSynced()
 }
 
 func (c *collector) Run(stopCh <-chan struct{}) error {
@@ -116,6 +125,14 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 
 	go wait.Until(func() {
 		c.collectNodeResUsed()
+		// add sync metaService cache check before collect pod information
+		// because collect function will get all pods.
+		if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
+			klog.Errorf("timed out waiting for meta service caches to sync")
+			// Koordlet exit because of metaService sync failed.
+			os.Exit(1)
+			return
+		}
 		c.collectPodResUsed()
 		c.collectPodThrottledInfo()
 	}, time.Duration(c.config.CollectResUsedIntervalSeconds)*time.Second, stopCh)
@@ -188,12 +205,15 @@ func (c *collector) collectNodeResUsed() {
 		klog.Errorf("insert node resource metric error: %v", err)
 	}
 
+	// update collect time
+	c.state.RefreshTime(nodeResUsedUpdateTime)
+
 	klog.Infof("collectNodeResUsed finished %+v", nodeMetric)
 }
 
 func (c *collector) collectPodResUsed() {
 	klog.V(6).Info("start collectPodResUsed")
-	podMetas := c.metaService.GetAllPods()
+	podMetas := c.statesInformer.GetAllPods()
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
@@ -243,6 +263,9 @@ func (c *collector) collectPodResUsed() {
 		}
 		c.collectContainerResUsed(meta)
 	}
+
+	// update collect time
+	c.state.RefreshTime(podResUsedUpdateTime)
 	klog.Infof("collectPodResUsed finished, pod num %d", len(podMetas))
 }
 
@@ -319,13 +342,15 @@ func (c *collector) collectNodeCPUInfo() {
 		klog.Errorf("insert node cpu info error: %v", err)
 	}
 
+	// update collect time
+	c.state.RefreshTime(nodeCPUInfoUpdateTime)
 	klog.Infof("collectNodeCPUInfo finished, cpu info: processors %v", len(nodeCPUInfo.ProcessorInfos))
 	metrics.RecordCollectNodeCPUInfoStatus(nil)
 }
 
 func (c *collector) collectPodThrottledInfo() {
 	klog.V(6).Info("start collectPodThrottledInfo")
-	podMetas := c.metaService.GetAllPods()
+	podMetas := c.statesInformer.GetAllPods()
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
@@ -365,6 +390,7 @@ func (c *collector) collectPodThrottledInfo() {
 		}
 		c.collectContainerThrottledInfo(meta)
 	} // end for podMeta
+
 	klog.Infof("collectPodThrottledInfo finished, pod num %d", len(podMetas))
 }
 
@@ -438,4 +464,5 @@ func (c *collector) cleanupContext() {
 	cleanFunc(&c.context.lastContainerCPUStat)
 	cleanFunc(&c.context.lastPodCPUThrottled)
 	cleanFunc(&c.context.lastContainerCPUThrottled)
+
 }

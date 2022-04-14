@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	clientsetbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
@@ -103,20 +104,20 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, err
 	}
 
-	metaService := statesinformer.NewMetaService(config.MetaServiceConf, kubeClient, pleg, nodeName)
+	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, pleg, nodeName)
 	metricCache, err := metriccache.NewMetricCache(config.MetricCacheConf)
 	if err != nil {
 		return nil, err
 	}
 
-	collectorService := metricsadvisor.NewCollector(config.CollectorConf, metaService, metricCache)
-	reporterService := reporter.NewReporter(config.ReporterConf, kubeClient, crdClient, nodeName, metricCache, metaService)
+	collectorService := metricsadvisor.NewCollector(config.CollectorConf, statesInformer, metricCache)
+	reporterService := reporter.NewReporter(config.ReporterConf, kubeClient, crdClient, nodeName, metricCache, statesInformer)
 
-	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, metaService, metricCache, int64(config.CollectorConf.CollectResUsedIntervalSeconds))
+	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(config.CollectorConf.CollectResUsedIntervalSeconds))
 
 	d := &daemon{
 		collector:      collectorService,
-		statesInformer: metaService,
+		statesInformer: statesInformer,
 		metricCache:    metricCache,
 		reporter:       reporterService,
 		resManager:     resManagerService,
@@ -152,9 +153,11 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 		}
 	}()
 
-	// TODO add HasSync function for collector
-	klog.Infof("waiting 10 seconds for collector synced before start reporter")
-	time.Sleep(10 * time.Second)
+	// wait for collector sync
+	if !cache.WaitForCacheSync(stopCh, d.collector.HasSynced) {
+		klog.Error("time out waiting for collector to sync")
+		os.Exit(1)
+	}
 
 	// start reporter
 	go func() {

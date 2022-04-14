@@ -53,7 +53,7 @@ func TestNewCollector(t *testing.T) {
 }
 
 func Test_cleanupContext(t *testing.T) {
-	c := collector{config: &Config{CollectResUsedIntervalSeconds: 1}, context: newCollectContext()}
+	c := collector{config: &Config{CollectResUsedIntervalSeconds: 1}, context: newCollectContext(), state: newCollectState()}
 	for k, v := range map[string]contextRecord{
 		"expired": {cpuTick: 100, ts: time.Now().Add(0 - 2*time.Duration(contextExpiredRatio)*time.Second)},
 		"valid":   {cpuTick: 10, ts: time.Now()},

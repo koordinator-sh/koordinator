@@ -68,15 +68,15 @@ type reporter struct {
 	eventRecorder      record.EventRecorder
 	statusUpdater      *statusUpdater
 
-	metaService statesinformer.StatesInformer
-	metricCache metriccache.MetricCache
+	statesInformer statesinformer.StatesInformer
+	metricCache    metriccache.MetricCache
 
 	rwMutex    sync.RWMutex
 	nodeMetric *slov1alpha1.NodeMetric
 }
 
 func NewReporter(cfg *Config, kubeClient *clientset.Clientset, crdClient *clientsetbeta1.Clientset,
-	nodeName string, metricCache metriccache.MetricCache, metaService statesinformer.StatesInformer) Reporter {
+	nodeName string, metricCache metriccache.MetricCache, statesInformer statesinformer.StatesInformer) Reporter {
 
 	informer := newNodeMetricInformer(crdClient, nodeName)
 
@@ -92,7 +92,7 @@ func NewReporter(cfg *Config, kubeClient *clientset.Clientset, crdClient *client
 		nodeMetricLister:   listerbeta1.NewNodeMetricLister(informer.GetIndexer()),
 		eventRecorder:      recorder,
 		statusUpdater:      newStatusUpdater(crdClient.SloV1alpha1().NodeMetrics()),
-		metaService:        metaService,
+		statesInformer:     statesInformer,
 		metricCache:        metricCache,
 	}
 
@@ -135,7 +135,7 @@ func (r *reporter) Run(stopCh <-chan struct{}) error {
 	if r.config.ReportIntervalSeconds > 0 {
 		klog.Info("starting informer for NodeMetric")
 		go r.nodeMetricInformer.Run(stopCh)
-		if !cache.WaitForCacheSync(stopCh, r.nodeMetricInformer.HasSynced, r.metaService.HasSynced) {
+		if !cache.WaitForCacheSync(stopCh, r.nodeMetricInformer.HasSynced, r.statesInformer.HasSynced) {
 			return fmt.Errorf("timed out waiting for node metric caches to sync")
 		}
 
@@ -248,7 +248,7 @@ func (r *reporter) collectMetric() (*slov1alpha1.NodeMetricInfo, []*slov1alpha1.
 	// collect node's and all pods' metrics with the same query param
 	queryParam := r.generateQueryParams()
 	nodeMetricInfo := r.collectNodeMetric(queryParam)
-	podsMeta := r.metaService.GetAllPods()
+	podsMeta := r.statesInformer.GetAllPods()
 	podsMetricInfo := make([]*slov1alpha1.PodMetricInfo, 0, len(podsMeta))
 	for _, podMeta := range podsMeta {
 		podMetric := r.collectPodMetric(podMeta, queryParam)

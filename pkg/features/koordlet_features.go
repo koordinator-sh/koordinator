@@ -33,6 +33,9 @@ const (
 
 	// set cpu.cfs_burst_us; scale up cpu.cfs_quota_us if pod cpu throttled
 	CPUBurst featuregate.Feature = "CPUBurst"
+
+	// BEMemoryEvict evict best-effort pod based on Memory
+	BEMemoryEvict featuregate.Feature = "BEMemoryEvict"
 )
 
 func init() {

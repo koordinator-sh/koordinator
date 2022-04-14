@@ -35,30 +35,30 @@ import (
 )
 
 type Configuration struct {
-	KubeRestConf    *rest.Config
-	MetaServiceConf *statesinformer.Config
-	ReporterConf    *reporter.Config
-	CollectorConf   *metricsadvisor.Config
-	MetricCacheConf *metriccache.Config
-	ResManagerConf  *resmanager.Config
-	AuditConf       *audit.Config
-	FeatureGates    map[string]bool
+	KubeRestConf       *rest.Config
+	StatesInformerConf *statesinformer.Config
+	ReporterConf       *reporter.Config
+	CollectorConf      *metricsadvisor.Config
+	MetricCacheConf    *metriccache.Config
+	ResManagerConf     *resmanager.Config
+	AuditConf          *audit.Config
+	FeatureGates       map[string]bool
 }
 
 func NewConfiguration() *Configuration {
 	return &Configuration{
-		MetaServiceConf: statesinformer.NewDefaultConfig(),
-		ReporterConf:    reporter.NewDefaultConfig(),
-		CollectorConf:   metricsadvisor.NewDefaultConfig(),
-		MetricCacheConf: metriccache.NewDefaultConfig(),
-		ResManagerConf:  resmanager.NewDefaultConfig(),
-		AuditConf:       audit.NewDefaultConfig(),
+		StatesInformerConf: statesinformer.NewDefaultConfig(),
+		ReporterConf:       reporter.NewDefaultConfig(),
+		CollectorConf:      metricsadvisor.NewDefaultConfig(),
+		MetricCacheConf:    metriccache.NewDefaultConfig(),
+		ResManagerConf:     resmanager.NewDefaultConfig(),
+		AuditConf:          audit.NewDefaultConfig(),
 	}
 }
 
 func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 	sysutil.Conf.InitFlags(fs)
-	c.MetaServiceConf.InitFlags(fs)
+	c.StatesInformerConf.InitFlags(fs)
 	c.ReporterConf.InitFlags(fs)
 	c.CollectorConf.InitFlags(fs)
 	c.MetricCacheConf.InitFlags(fs)

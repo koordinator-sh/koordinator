@@ -171,7 +171,7 @@ func Test_metaService_syncPods(t *testing.T) {
 
 	c := NewDefaultConfig()
 	c.KubeletSyncIntervalSeconds = 60
-	m := NewMetaService(c, client, pleg, "localhost")
+	m := NewStatesInformer(c, client, pleg, "localhost")
 	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
 		Items: []corev1.Pod{
 			{},

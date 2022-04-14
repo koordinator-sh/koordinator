@@ -32,4 +32,6 @@ const (
 	evictPodByNodeMemoryUsage   = "EvictPodByNodeMemoryUsage"
 
 	adjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
+
+	evictPodByNodeMemoryUsage = "EvictPodByNodeMemoryUsage"
 )
