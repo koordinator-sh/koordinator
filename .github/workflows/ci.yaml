@@ -44,6 +44,14 @@ jobs:
           skip-pkg-cache: true
           skip-build-cache: true
 
+  staticcheck:
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - uses: dominikh/staticcheck-action@v1.2.0
+
   unit-tests:
     runs-on: ubuntu-18.04
     steps:

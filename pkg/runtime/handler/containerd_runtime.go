@@ -106,18 +106,18 @@ func getClientConnection(endpoint string) (*grpc.ClientConn, error) {
 		return nil, err
 	}
 
-	conn, err := grpc.Dial(addr,
-		grpc.WithInsecure(),
-		grpc.WithBlock(),
-		grpc.WithTimeout(defaultConnectionTimeout),
-		grpc.WithDialer(dialer))
+	ctx, cancel := context.WithTimeout(context.Background(), defaultConnectionTimeout)
+	defer cancel()
+
+	conn, err := grpc.DialContext(ctx, addr, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithContextDialer(dialer))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect, make sure you are running as root and the runtime has been started: %v", err)
 	}
+
 	return conn, nil
 }
 
-func getAddressAndDialer(endpoint string) (string, func(addr string, timeout time.Duration) (net.Conn, error), error) {
+func getAddressAndDialer(endpoint string) (string, func(context context.Context, addr string) (net.Conn, error), error) {
 	protocol, addr, err := parseEndpoint(endpoint)
 	if err != nil {
 		return "", nil, err
@@ -142,6 +142,7 @@ func parseEndpoint(endpoint string) (string, string, error) {
 	}
 }
 
-func dial(addr string, timeout time.Duration) (net.Conn, error) {
-	return net.DialTimeout(unixProtocol, addr, timeout)
+func dial(context context.Context, addr string) (net.Conn, error) {
+	var d net.Dialer
+	return d.DialContext(context, unixProtocol, addr)
 }
