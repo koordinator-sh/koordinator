@@ -1,0 +1,420 @@
+/*
+Copyright 2022 The Koordinator Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package resmanager
+
+import (
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"k8s.io/klog/v2"
+
+	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+
+)
+
+var _ ResourceUpdater = &CommonResourceUpdater{}
+
+var _ ResourceUpdater = &CgroupResourceUpdater{}
+
+var _ MergeableResourceUpdater = &CgroupResourceUpdater{}
+
+type UpdateFunc func(resource ResourceUpdater) error
+
+type MergeUpdateFunc func(resource MergeableResourceUpdater) (MergeableResourceUpdater, error)
+
+type ResourceUpdater interface {
+	// RefObject reference to the object
+	Owner() *OwnerRef
+	Key() string
+	Value() string
+	GetLastUpdateTimestamp() time.Time
+	SetValue(value string)
+	UpdateLastUpdateTimestamp(time time.Time)
+	Clone() ResourceUpdater
+	Update() error
+}
+
+type MergeableResourceUpdater interface {
+	ResourceUpdater
+	MergeUpdate() (MergeableResourceUpdater, error)
+	NeedMerge() bool
+}
+
+type OwnerType int
+
+const (
+	nodeType = iota
+	podType
+	containerType
+	groupType
+	cgroupsCrdType
+	unknown
+)
+
+// OwnerRef is used to record the object that needs to be modified
+// or the source object that triggers the modification
+type OwnerRef struct {
+	Type      OwnerType
+	Namespace string
+	Name      string
+	Container string
+}
+
+type CommonResourceUpdater struct {
+	owner               *OwnerRef
+	value               string
+	file                string
+	lastUpdateTimestamp time.Time
+	updateFunc          UpdateFunc
+}
+
+func (c *CommonResourceUpdater) Owner() *OwnerRef {
+	return c.owner
+}
+
+func (c *CommonResourceUpdater) Key() string {
+	return c.file
+}
+
+func (c *CommonResourceUpdater) Value() string {
+	return c.value
+}
+
+func (c *CommonResourceUpdater) GetLastUpdateTimestamp() time.Time {
+	return c.lastUpdateTimestamp
+}
+
+func (c *CommonResourceUpdater) SetValue(value string) {
+	c.value = value
+}
+
+func (c *CommonResourceUpdater) UpdateLastUpdateTimestamp(time time.Time) {
+	c.lastUpdateTimestamp = time
+}
+
+func (c *CommonResourceUpdater) Clone() ResourceUpdater {
+	return &CommonResourceUpdater{owner: c.owner, file: c.file, value: c.value, lastUpdateTimestamp: c.lastUpdateTimestamp, updateFunc: c.updateFunc}
+}
+
+func (c *CommonResourceUpdater) Update() error {
+	return c.updateFunc(c)
+}
+
+func CommonUpdateFunc(resource ResourceUpdater) error {
+	info := resource.(*CommonResourceUpdater)
+	audit.V(5).Node().Reason(updateSystemConfig).Message("update %v to %v", info.file, info.value).Do()
+	return sysutil.CommonFileWriteIfDifferent(info.file, info.Value())
+}
+
+func NewCommonResourceUpdater(file string, value string) *CommonResourceUpdater {
+	return &CommonResourceUpdater{file: file, value: value, updateFunc: CommonUpdateFunc}
+}
+
+func NewCommonResourceUpdaterExtend(file string, value string, owner *OwnerRef, updateFunc UpdateFunc) *CommonResourceUpdater {
+	return &CommonResourceUpdater{
+		owner:      owner,
+		file:       file,
+		value:      value,
+		updateFunc: updateFunc,
+	}
+}
+
+type CgroupResourceUpdater struct {
+	owner               *OwnerRef
+	value               string
+	ParentDir           string
+	file                sysutil.CgroupFile
+	lastUpdateTimestamp time.Time
+	updateFunc          UpdateFunc
+
+	// MergeableResourceUpdater implementation (used by LeveledCacheExecutor):
+	// For cgroup interfaces like `cpuset.cpus` and `memory.min`, reconciliation from top to bottom should keep the
+	// upper value larger/broader than the lower. Thus a Leveled updater is implemented as follows:
+	// 1. update batch of cgroup resources group by cgroup interface, i.e. cgroup filename.
+	// 2. update each cgroup resource by the order of layers: firstly update resources from upper to lower by merging
+	//    the new value with old value; then update resources from lower to upper with the new value.
+	mergeUpdateFunc MergeUpdateFunc
+	needMerge       bool // compatible to resource which just need to update once
+}
+
+func (c *CgroupResourceUpdater) Owner() *OwnerRef {
+	return c.owner
+}
+
+func (c *CgroupResourceUpdater) Key() string {
+	return sysutil.GetCgroupFilePath(c.ParentDir, c.file)
+}
+
+func (c *CgroupResourceUpdater) Value() string {
+	return c.value
+}
+
+func (c *CgroupResourceUpdater) GetLastUpdateTimestamp() time.Time {
+	return c.lastUpdateTimestamp
+}
+
+func (c *CgroupResourceUpdater) SetValue(value string) {
+	c.value = value
+}
+
+func (c *CgroupResourceUpdater) UpdateLastUpdateTimestamp(time time.Time) {
+	c.lastUpdateTimestamp = time
+}
+
+func (c *CgroupResourceUpdater) Update() error {
+	return c.updateFunc(c)
+}
+
+func (c *CgroupResourceUpdater) Clone() ResourceUpdater {
+	return &CgroupResourceUpdater{owner: c.owner, file: c.file, ParentDir: c.ParentDir, value: c.value, lastUpdateTimestamp: c.lastUpdateTimestamp, updateFunc: c.updateFunc}
+}
+
+func (c *CgroupResourceUpdater) MergeUpdate() (MergeableResourceUpdater, error) {
+	return c.mergeUpdateFunc(c)
+}
+
+func (c *CgroupResourceUpdater) NeedMerge() bool {
+	return c.needMerge
+}
+
+func CommonCgroupUpdateFunc(resource ResourceUpdater) error {
+	info := resource.(*CgroupResourceUpdater)
+	if info.owner != nil {
+		switch info.owner.Type {
+		case podType:
+			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		case containerType:
+			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Container(info.owner.Container).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		case nodeType:
+			audit.V(5).Node().Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		case groupType:
+			audit.V(5).Group(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		default:
+			audit.V(5).Unknown(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		}
+	}
+	return sysutil.CgroupFileWriteIfDifferent(info.ParentDir, info.file, info.value)
+}
+
+func NewCommonCgroupResourceUpdater(owner *OwnerRef, parentDir string, file sysutil.CgroupFile, value string) *CgroupResourceUpdater {
+	return &CgroupResourceUpdater{owner: owner, file: file, ParentDir: parentDir, value: value, updateFunc: CommonCgroupUpdateFunc, needMerge: false}
+}
+
+// NewMergeableCgroupResourceUpdater returns a leveled CgroupResourceUpdater which firstly MergeUpdate from top
+// to bottom and then Update from bottom to top.
+func NewMergeableCgroupResourceUpdater(owner *OwnerRef, parentDir string, file sysutil.CgroupFile, value string, mergeUpdateFunc MergeUpdateFunc) *CgroupResourceUpdater {
+	return &CgroupResourceUpdater{owner: owner, file: file, ParentDir: parentDir, value: value, updateFunc: CommonCgroupUpdateFunc, mergeUpdateFunc: mergeUpdateFunc, needMerge: true}
+}
+
+func GroupOwnerRef(name string) *OwnerRef {
+	return &OwnerRef{Type: groupType, Name: name}
+}
+
+func PodOwnerRef(ns string, name string) *OwnerRef {
+	return &OwnerRef{Type: podType, Namespace: ns, Name: name}
+}
+
+func ContainerOwnerRef(ns string, name string, container string) *OwnerRef {
+	return &OwnerRef{Type: podType, Namespace: ns, Name: name, Container: container}
+}
+
+func NodeOwnerRef() *OwnerRef {
+	return &OwnerRef{Type: nodeType}
+}
+
+func updateResctrlSchemataFunc(resource ResourceUpdater) error {
+	// NOTE: currently, only l3 schemata is to update, so do not read or compare before the write
+	// eg.
+	// $ cat /sys/fs/resctrl/schemata/BE/schemata
+	// L3:0=7ff;1=7ff
+	// MB:0=100;1=100
+	// $ echo "L3:0=3f;1=3f" > /sys/fs/resctrl/BE/schemata
+	// $ cat /sys/fs/resctrl/BE/schemata
+	// L3:0=03f;1=03f
+	// MB:0=100;1=100
+	info := resource.(*CommonResourceUpdater)
+	audit.V(5).Group(info.owner.Name).Reason(updateResctrlSchemata).Message("update %v with value %v",
+		resource.Key(), resource.Value()).Do()
+	return sysutil.CommonFileWrite(info.file, info.value)
+}
+
+func updateResctrlTasksFunc(resource ResourceUpdater) error {
+	// NOTE: resctrl/{...}/tasks file is required to appending write a task id once a time, and any duplicate would be
+	//       dropped automatically without an exception
+	// eg.
+	// $ echo 123 > /sys/fs/resctrl/BE/tasks
+	// $ echo 124 > /sys/fs/resctrl/BE/tasks
+	// $ echo 123 > /sys/fs/resctrl/BE/tasks
+	// $ echo 122 > /sys/fs/resctrl/BE/tasks
+	// $ tail -n 3 /sys/fs/resctrl/BE/tasks
+	// 122
+	// 123
+	// 124
+	info := resource.(*CommonResourceUpdater)
+	audit.V(5).Group(info.owner.Name).Reason(updateResctrlTasks).Message("update %v with value %v",
+		resource.Key(), resource.Value()).Do()
+
+	f, err := os.OpenFile(info.file, os.O_RDWR|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+
+	success, total := 0, 0
+
+	ids := strings.Split(strings.Trim(info.Value(), "\n"), "\n")
+	for _, id := range ids {
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		total++
+		_, err = f.WriteString(id)
+		// any thread can exit before the writing
+		if err == nil {
+			success++
+			continue
+		}
+		klog.V(6).Infof("failed to write resctrl task id %v for group %s, err: %s", id,
+			info.Owner().Name, err)
+	}
+
+	klog.V(5).Infof("write Cat L3 task ids for group %s finished: %v succeed, %v total",
+		info.Owner().Name, success, total)
+
+	return f.Close()
+}
+
+func mergeFuncUpdateCgroupIfLarger(resource MergeableResourceUpdater) (MergeableResourceUpdater, error) {
+	info := resource.(*CgroupResourceUpdater)
+
+	cur, err := strconv.ParseInt(info.value, 10, 64)
+	if err != nil {
+		klog.V(6).Infof("failed to merge update cgroup %v, read current value err: %s", info.file, err)
+		return resource, err
+	}
+	oldPtr, err := sysutil.CgroupFileReadInt(info.ParentDir, info.file)
+	if err != nil {
+		klog.V(6).Infof("failed to merge update cgroup %v, read old value err: %s", info.file, err)
+		return resource, err
+	}
+
+	// if old value is larger, skip the write since merged value does not change
+	if cur <= *oldPtr {
+		merged := resource.Clone().(*CgroupResourceUpdater)
+		merged.value = strconv.FormatInt(*oldPtr, 10)
+		klog.V(6).Infof("skip merge update cgroup %v since current value is smaller", info.file)
+		return merged, nil
+	}
+	// otherwise, do write for the current value
+	if info.owner != nil {
+		switch info.owner.Type {
+		case podType:
+			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		case containerType:
+			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Container(info.owner.Container).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		case nodeType:
+			audit.V(5).Node().Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		case groupType:
+			audit.V(5).Group(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		default:
+			audit.V(5).Unknown(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		}
+	}
+	// current value must be different
+	return resource, sysutil.CgroupFileWrite(info.ParentDir, info.file, info.value)
+}
+
+// TODO: mergeFuncUpdateCPUSetFunc(resource ResourceUpdater) error
+
+// TODO: 使用 NewCommonCgroupResourceUpdater 替换 BlkIOResourceUpdater, 两者除了 updateFunc 以外功能均相同
+type BlkIOResourceUpdater struct {
+	owner               *OwnerRef
+	ParentDir           string
+	file                sysutil.CgroupFile
+	value               string
+	updateFunc          UpdateFunc
+	lastUpdateTimestamp time.Time
+}
+
+func (c *BlkIOResourceUpdater) Owner() *OwnerRef {
+	return c.owner
+}
+
+func (c *BlkIOResourceUpdater) Key() string {
+	return sysutil.GetCgroupFilePath(c.ParentDir, c.file)
+}
+
+func (c *BlkIOResourceUpdater) Value() string {
+	return c.value
+}
+
+func (c *BlkIOResourceUpdater) GetLastUpdateTimestamp() time.Time {
+	return c.lastUpdateTimestamp
+}
+
+func (c *BlkIOResourceUpdater) SetValue(value string) {
+	c.value = value
+}
+
+func (c *BlkIOResourceUpdater) UpdateLastUpdateTimestamp(time time.Time) {
+	c.lastUpdateTimestamp = time
+}
+
+func (c *BlkIOResourceUpdater) Clone() ResourceUpdater {
+	return &BlkIOResourceUpdater{owner: c.owner, file: c.file, value: c.value, lastUpdateTimestamp: c.lastUpdateTimestamp, updateFunc: c.updateFunc}
+}
+
+func (c *BlkIOResourceUpdater) Update() error {
+	return c.updateFunc(c)
+}
+
+func BlkIOUpdateFunc(resource ResourceUpdater) error {
+	info := resource.(*BlkIOResourceUpdater)
+	audit.V(5).Group("blkio").Reason(updateBlkIO).Message("update %v to %v", info.file, info.value).Do()
+	return cgroupBlkIOFileWriteIfDifferent(info.ParentDir, info.file, info.Value())
+}
+
+func NewBlkIOResourceUpdater(file sysutil.CgroupFile, value string, parentDir string) *BlkIOResourceUpdater {
+	return &BlkIOResourceUpdater{file: file, value: value, ParentDir: parentDir, updateFunc: BlkIOUpdateFunc}
+}
+
+func cgroupBlkIOFileWriteIfDifferent(cgroupTaskDir string, file sysutil.CgroupFile, value string) error {
+	currentValue, currentErr := sysutil.CgroupFileRead(cgroupTaskDir, file)
+	if currentErr != nil {
+		return currentErr
+	}
+	if strings.Contains(currentValue, value) {
+		klog.V(6).Infof("read before write %s %s, and contain same value %s", cgroupTaskDir,
+			file.ResourceFileName, value)
+		return nil
+	}
+	// 获取 value 的 maj:min 和 值
+	// 如果 值 为 0，则判断 currentValue 字符串是否包含 maj:min，不包含则退出
+	reg := regexp.MustCompile(`(^[0-9]+:[0-9]+) ([0-9]+)$`)
+	out := reg.FindAllStringSubmatch(value, -1)
+	// out: [["253:0 0" "253:0" "0"]]
+	if len(out) == 1 && len(out[0]) == 3 && out[0][2] == "0" && !strings.Contains(currentValue, out[0][1]) {
+		klog.V(6).Infof("read before write %s %s, and contain no value", cgroupTaskDir,
+			file.ResourceFileName)
+		return nil
+	}
+
+	return sysutil.CgroupFileWrite(cgroupTaskDir, file, value)
+}

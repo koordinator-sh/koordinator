@@ -30,6 +30,9 @@ const (
 
 	// BECPUSuppress suppresses for best-effort pod
 	BECPUSuppress featuregate.Feature = "BECPUSuppress"
+
+	// set cpu.cfs_burst_us; scale up cpu.cfs_quota_us if pod cpu throttled
+	CPUBurst featuregate.Feature = "CPUBurst"
 )
 
 func init() {
@@ -44,5 +47,6 @@ var (
 		AuditEvents:            {Default: false, PreRelease: featuregate.Alpha},
 		AuditEventsHTTPHandler: {Default: false, PreRelease: featuregate.Alpha},
 		BECPUSuppress:          {Default: true, PreRelease: featuregate.Alpha},
+		CPUBurst:               {Default: false, PreRelease: featuregate.Alpha},
 	}
 )

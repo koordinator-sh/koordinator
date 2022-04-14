@@ -79,6 +79,55 @@ func (r *resmanager) collectPodMetric(podMeta *statesinformer.PodMeta, queryPara
 	return queryResult
 }
 
+func (r *resmanager) collectContainerResMetricLast(containerID *string) metriccache.ContainerResourceQueryResult {
+	if containerID == nil {
+		return metriccache.ContainerResourceQueryResult{
+			QueryResult: metriccache.QueryResult{Error: fmt.Errorf("container is nil")},
+		}
+	}
+	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
+	queryResult := r.metricCache.GetContainerResourceMetric(containerID, queryParam)
+	if queryResult.Error != nil {
+		klog.Warningf("get container %v resource metric failed, error %v", containerID, queryResult.Error)
+		return queryResult
+	}
+	if queryResult.Metric == nil {
+		klog.Warningf("container %v metric not exist", containerID)
+		return queryResult
+	}
+	return queryResult
+}
+
+func (r *resmanager) collectContainerThrottledMetricLast(containerID *string) metriccache.ContainerThrottledQueryResult {
+	if containerID == nil {
+		return metriccache.ContainerThrottledQueryResult{
+			QueryResult: metriccache.QueryResult{Error: fmt.Errorf("container is nil")},
+		}
+	}
+	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
+	queryResult := r.metricCache.GetContainerThrottledMetric(containerID, queryParam)
+	if queryResult.Error != nil {
+		klog.Warningf("get container %v throttled metric failed, error %v", containerID, queryResult.Error)
+		return queryResult
+	}
+	if queryResult.Metric == nil {
+		klog.Warningf("container %v metric not exist", containerID)
+		return queryResult
+	}
+	return queryResult
+}
+
+func generateQueryParamsAvg(windowSeconds int64) *metriccache.QueryParam {
+	end := time.Now()
+	start := end.Add(-time.Duration(windowSeconds) * time.Second)
+	queryParam := &metriccache.QueryParam{
+		Aggregate: metriccache.AggregationTypeAVG,
+		Start:     &start,
+		End:       &end,
+	}
+	return queryParam
+}
+
 func generateQueryParamsLast(windowSeconds int64) *metriccache.QueryParam {
 	end := time.Now()
 	start := end.Add(-time.Duration(windowSeconds) * time.Second)

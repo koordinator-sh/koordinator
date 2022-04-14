@@ -1,18 +1,18 @@
 /*
-Copyright 2022 The Koordinator Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+ * Copyright 2022 The Koordinator Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package v1alpha1
 
@@ -20,7 +20,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 type CPUSuppressPolicy string
@@ -39,10 +38,41 @@ type ResourceThresholdStrategy struct {
 	CPUSuppressPolicy CPUSuppressPolicy `json:"cpuSuppressPolicy,omitempty"`
 }
 
+type CPUBurstPolicy string
+
+const (
+	// disable cpu burst policy
+	CPUBurstNone = "none"
+	// only enable cpu burst policy by setting cpu.cfs_burst_us
+	CPUBurstOnly = "cpuBurstOnly"
+	// only enable cfs quota burst policy by scale up cpu.cfs_quota_us if pod throttled
+	CFSQuotaBurstOnly = "cfsQuotaBurstOnly"
+	// enable both
+	CPUBurstAuto = "auto"
+)
+
+type CPUBurstConfig struct {
+	Policy CPUBurstPolicy `json:"policy,omitempty"`
+	// cpu burst percentage for setting cpu.cfs_burst_us, legal range: [0, 10000], default as 1000 (1000%)
+	CPUBurstPercent *int64 `json:"cpuBurstPercent,omitempty"`
+	// pod cfs quota scale up ceil percentage, default = 300 (300%)
+	CFSQuotaBurstPercent *int64 `json:"cfsQuotaBurstPercent,omitempty"`
+	// specifies a period of time for pod can use at burst, default = -1 (unlimited)
+	CFSQuotaBurstPeriodSeconds *int64 `json:"cfsQuotaBurstPeriodSeconds,omitempty"`
+}
+
+type CPUBurstStrategy struct {
+	CPUBurstConfig `json:",inline"`
+	// scale down cfs quota if node cpu overload, default = 50
+	SharePoolThresholdPercent *int64 `json:"sharePoolThresholdPercent,omitempty"`
+}
+
 // NodeSLOSpec defines the desired state of NodeSLO
 type NodeSLOSpec struct {
 	// BE pods will be limited if node resource usage overload
 	ResourceUsedThresholdWithBE *ResourceThresholdStrategy `json:"resourceUsedThresholdWithBE,omitempty"`
+	// CPU Burst Strategy
+	CPUBurstStrategy *CPUBurstStrategy `json:"cpuBurstStrategy,omitempty"`
 }
 
 // NodeSLOStatus defines the observed state of NodeSLO

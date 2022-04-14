@@ -210,7 +210,7 @@ func NewResManager(cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.
 
 // isFeatureDisabled returns whether the featuregate is disabled by nodeSLO config
 func isFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature) (bool, error) {
-	if nodeSLO == nil || nodeSLO.Spec == (slov1alpha1.NodeSLOSpec{}) {
+	if nodeSLO == nil || &nodeSLO.Spec == nil {
 		return false, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
 	}
 
@@ -246,6 +246,10 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 
 	cpuSuppress := NewCPUSuppress(r)
 	koordletutil.RunFeature(cpuSuppress.suppressBECPU, []featuregate.Feature{features.BECPUSuppress}, r.config.CPUSuppressIntervalSeconds, stopCh)
+
+	cpuBurst := NewCPUBurst(r)
+	koordletutil.RunFeatureWithInit(func() error { return cpuBurst.init(stopCh) }, cpuBurst.start,
+		[]featuregate.Feature{features.CPUBurst}, r.config.ReconcileIntervalSeconds, stopCh)
 
 	klog.Info("Starting resmanager successfully")
 	<-stopCh
