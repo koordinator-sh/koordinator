@@ -4,81 +4,84 @@ on:
   push:
     branches:
       - main
-      - master
       - release-*
   pull_request: {}
   workflow_dispatch: {}
 
 env:
-  # Common versions
   GO_VERSION: '1.17'
-  GOLANGCI_VERSION: 'latest'
 
 jobs:
-
   golangci-lint:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          submodules: true
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - uses: actions/setup-go@v3
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: Cache Go Dependencies
-        uses: actions/cache@v2
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
         with:
-          path: ~/go/pkg/mod
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
-      - name: Code generate
-        run: |
-          make generate
-      - name: Lint golang code
-        uses: golangci/golangci-lint-action@v2
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - uses: golangci/golangci-lint-action@v3
         with:
-          version: ${{ env.GOLANGCI_VERSION }}
           args: --verbose
           skip-pkg-cache: true
           skip-build-cache: true
 
   staticcheck:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: true
-      - uses: dominikh/staticcheck-action@v1.2.0
+      - uses: actions/checkout@v3
+      - uses: dominikh/staticcheck-action@v1
 
   unit-tests:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: true
-      - name: Fetch History
-        run: git fetch --prune --unshallow
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - uses: actions/setup-go@v3
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: Cache Go Dependencies
-        uses: actions/cache@v2
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
         with:
-          path: ~/go/pkg/mod
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
-      - name: Run Unit Tests
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Check Go modules
         run: |
-          make test
-      - name: Publish Unit Test Coverage
-        uses: codecov/codecov-action@v1
+          go mod tidy && git add go.*
+          git diff --cached --exit-code || (echo 'Please run "go mod tidy" to sync Go modules' && exit 1);
+      - name: Check manifests
+        run: |
+          make manifests && git add config
+          git diff --cached --exit-code || (echo 'Please run "make manifests" to generate manifests' && exit 1);
+      - name: Check auto-generated codes
+        run: |
+          make generate && git add apis
+          git diff --cached --exit-code || (echo 'Please run "make generate" to generate Go codes' && exit 1);
+      - name: Verify gofmt
+        run: |
+          make fmt && git add pkg cmd
+          git diff --cached --exit-code || (echo 'Please run "make fmt" to verify gofmt' && exit 1);
+      - name: Verify govet
+        run: |
+          make vet && git add pkg cmd
+          git diff --cached --exit-code || (echo 'Please run "make vet" to verify govet' && exit 1);
+      - name: Run Go build
+        run: make build-koordlet build-koord-manager build-koord-scheduler
+      - name: Run Go test
+        run: make test
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v2
         with:
           flags: unittests
           file: cover.out
-      - name: Check diff
-        run: |
-          git status
-          [[ -z $(git status -s) ]] || (printf "Existing modified/untracked files.\nPlease run \"make generate manifests\" and push again.\n"; exit 1)
+          fail_ci_if_error: true
+          verbose: true
