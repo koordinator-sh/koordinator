@@ -18,10 +18,50 @@ package util
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
+
+// @parentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/****.scope
+func GetContainerCgroupPathWithKube(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	containerDir, err := system.CgroupPathFormatter.ContainerDirFn(c)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(
+		GetPodCgroupDirWithKube(podParentDir),
+		containerDir,
+	), nil
+}
+
+func GetContainerCgroupCPUAcctProcStatPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return "", err
+	}
+	return system.GetCgroupFilePath(containerPath, system.CpuacctStat), nil
+}
+
+func GetContainerCgroupMemStatPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return "", err
+	}
+	return system.GetCgroupFilePath(containerPath, system.MemStat), nil
+}
+
+func GetContainerCgroupCPUStatPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return "", err
+	}
+	return system.GetCgroupFilePath(containerPath, system.CPUStat), nil
+}
 
 func FindContainerIdAndStatusByName(status *corev1.PodStatus, name string) (string, *corev1.ContainerStatus, error) {
 	allStatuses := status.InitContainerStatuses

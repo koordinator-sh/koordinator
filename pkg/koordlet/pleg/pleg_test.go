@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/utils/inotify"
 
-	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func NewTestWatcher() (Watcher, error) {

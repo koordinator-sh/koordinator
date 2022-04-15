@@ -31,7 +31,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 type Configuration struct {

@@ -35,8 +35,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 var (
@@ -73,7 +73,7 @@ func getPodMetricCPUUsage(info *metriccache.PodResourceMetric) *resource.Quantit
 // getBECgroupCPUSetPathsRecursive gets all the be cpuset groups' paths recusively from upper to lower
 func getBECgroupCPUSetPathsRecursive() ([]string, error) {
 	// walk from root path to lower nodes
-	rootCgroupPath := koordletutil.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
+	rootCgroupPath := util.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
 	_, err := os.Stat(rootCgroupPath)
 	if err != nil {
 		// make sure the rootCgroupPath is available
@@ -95,7 +95,7 @@ func getBECgroupCPUSetPathsRecursive() ([]string, error) {
 func writeBECgroupsCPUSet(paths []string, cpusetStr string, isReversed bool) {
 	if isReversed {
 		for i := len(paths) - 1; i >= 0; i-- {
-			err := koordletutil.WriteCgroupCPUSet(paths[i], cpusetStr)
+			err := util.WriteCgroupCPUSet(paths[i], cpusetStr)
 			if err != nil {
 				klog.Warningf("failed to write be cgroup cpuset: path %s, err %s", paths[i], err)
 			}
@@ -103,7 +103,7 @@ func writeBECgroupsCPUSet(paths []string, cpusetStr string, isReversed bool) {
 		return
 	}
 	for i := range paths {
-		err := koordletutil.WriteCgroupCPUSet(paths[i], cpusetStr)
+		err := util.WriteCgroupCPUSet(paths[i], cpusetStr)
 		if err != nil {
 			klog.Warningf("failed to write be cgroup cpuset: path %s, err %s", paths[i], err)
 		}
@@ -131,7 +131,7 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric *metr
 		if !ok {
 			klog.Warningf("podMetric not included in the podMetas %v", podMetric.PodUID)
 		}
-		if !ok || (apiext.GetPodQoSClass(podMeta.Pod) != apiext.QoSBE && koordletutil.GetKubeQosClass(podMeta.Pod) != corev1.PodQOSBestEffort) {
+		if !ok || (apiext.GetPodQoSClass(podMeta.Pod) != apiext.QoSBE && util.GetKubeQosClass(podMeta.Pod) != corev1.PodQOSBestEffort) {
 			// NOTE: consider non-BE pods and podMeta-missing pods as LS
 			podLSUsedCPU.Add(*getPodMetricCPUUsage(podMetric))
 		}
@@ -190,7 +190,7 @@ func calculateBESuppressCPUSetPolicy(cpusetQuantity *resource.Quantity, oldCPUSe
 	})
 
 	// getNodeIndex is a function to calculate an index for every numa node or socket
-	getNodeIndex := func(info koordletutil.ProcessorInfo) int32 {
+	getNodeIndex := func(info util.ProcessorInfo) int32 {
 		return (info.NodeID + numProcessors) * (info.SocketID + 1)
 	}
 
@@ -270,14 +270,14 @@ func applyBESuppressCPUSetPolicy(cpuset []int32, oldCPUSet []int32) error {
 	}
 
 	// write a loose cpuset for all be cgroups before applying the real policy
-	mergedCPUSet := koordletutil.MergeCPUSet(oldCPUSet, cpuset)
-	mergedCPUSetStr := koordletutil.GenerateCPUSetStr(mergedCPUSet)
+	mergedCPUSet := util.MergeCPUSet(oldCPUSet, cpuset)
+	mergedCPUSetStr := util.GenerateCPUSetStr(mergedCPUSet)
 	klog.V(6).Infof("applyBESuppressPolicy temporarily writes cpuset from upper cgroup to lower, cpuset %v",
 		mergedCPUSet)
 	writeBECgroupsCPUSet(cpusetCgroupPaths, mergedCPUSetStr, false)
 
 	// apply the suppress policy from lower to upper
-	cpusetStr := koordletutil.GenerateCPUSetStr(cpuset)
+	cpusetStr := util.GenerateCPUSetStr(cpuset)
 	klog.V(6).Infof("applyBESuppressPolicy writes suppressed cpuset from lower cgroup to upper, cpuset %v",
 		cpuset)
 	writeBECgroupsCPUSet(cpusetCgroupPaths, cpusetStr, true)
@@ -346,7 +346,7 @@ func (r *CPUSuppress) suppressBECPU() {
 }
 
 func adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUInfo *metriccache.NodeCPUInfo) {
-	oldCPUSet, err := koordletutil.GetRootCgroupCurCPUSet(corev1.PodQOSBestEffort)
+	oldCPUSet, err := util.GetRootCgroupCurCPUSet(corev1.PodQOSBestEffort)
 	if err != nil {
 		klog.Warningf("applyBESuppressPolicy failed to get current best-effort cgroup cpuset, err: %s", err)
 		return
@@ -372,7 +372,7 @@ func (r *CPUSuppress) recoverCPUSetIfNeed() {
 		return
 	}
 
-	rootCPUSet, err := koordletutil.GetRootCgroupCurCPUSet(corev1.PodQOSGuaranteed)
+	rootCPUSet, err := util.GetRootCgroupCurCPUSet(corev1.PodQOSGuaranteed)
 	if err != nil {
 		klog.Warningf("recover bestEffort cpuset failed, get current root cgroup cpuset err: %s", err)
 		return
@@ -383,7 +383,7 @@ func (r *CPUSuppress) recoverCPUSetIfNeed() {
 		return
 	}
 
-	cpusetStr := koordletutil.GenerateCPUSetStr(rootCPUSet)
+	cpusetStr := util.GenerateCPUSetStr(rootCPUSet)
 	klog.V(6).Infof("recover bestEffort cpuset, cpuset %v", rootCPUSet)
 	writeBECgroupsCPUSet(cpusetCgroupPaths, cpusetStr, false)
 	r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyRecovered
@@ -393,9 +393,9 @@ func adjustByCfsQuota(cpuQuantity *resource.Quantity, node *corev1.Node) {
 	newBeQuota := cpuQuantity.MilliValue() * cfsPeriod / 1000
 	newBeQuota = int64(math.Max(float64(newBeQuota), float64(beMinQuota)))
 
-	beCgroupPath := koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
+	beCgroupPath := util.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
 	// read current offline quota
-	currentBeQuota, err := sysutil.CgroupFileReadInt(beCgroupPath, sysutil.CPUCFSQuota)
+	currentBeQuota, err := system.CgroupFileReadInt(beCgroupPath, system.CPUCFSQuota)
 	if err != nil {
 		klog.Warningf("suppressBECPU fail:get currentBeQuota fail,error: %v", err)
 		return
@@ -414,7 +414,7 @@ func adjustByCfsQuota(cpuQuantity *resource.Quantity, node *corev1.Node) {
 		newBeQuota = *currentBeQuota + int64(beMaxIncreaseCPUQuota)
 	}
 
-	if err := sysutil.CgroupFileWrite(beCgroupPath, sysutil.CPUCFSQuota, strconv.FormatInt(newBeQuota, 10)); err != nil {
+	if err := system.CgroupFileWrite(beCgroupPath, system.CPUCFSQuota, strconv.FormatInt(newBeQuota, 10)); err != nil {
 		klog.Errorf("suppressBECPU: failed to write cfs_quota_us for offline pods, error: %v", err)
 		return
 	}
@@ -429,8 +429,8 @@ func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
 		return
 	}
 
-	beCgroupPath := koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
-	if err := sysutil.CgroupFileWrite(beCgroupPath, sysutil.CPUCFSQuota, "-1"); err != nil {
+	beCgroupPath := util.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
+	if err := system.CgroupFileWrite(beCgroupPath, system.CPUCFSQuota, "-1"); err != nil {
 		klog.Errorf("recover bestEffort cfsQuota error: %v", err)
 		return
 	}

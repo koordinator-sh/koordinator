@@ -45,7 +45,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/runtime"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -254,10 +253,10 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	}
 
 	cpuSuppress := NewCPUSuppress(r)
-	koordletutil.RunFeature(cpuSuppress.suppressBECPU, []featuregate.Feature{features.BECPUSuppress}, r.config.CPUSuppressIntervalSeconds, stopCh)
+	util.RunFeature(cpuSuppress.suppressBECPU, []featuregate.Feature{features.BECPUSuppress}, r.config.CPUSuppressIntervalSeconds, stopCh)
 
 	memoryEvictor := NewMemoryEvictor(r)
-	koordletutil.RunFeature(memoryEvictor.memoryEvict, []featuregate.Feature{features.BEMemoryEvict}, r.config.MemoryEvictIntervalSeconds, stopCh)
+	util.RunFeature(memoryEvictor.memoryEvict, []featuregate.Feature{features.BEMemoryEvict}, r.config.MemoryEvictIntervalSeconds, stopCh)
 
 	klog.Info("Starting resmanager successfully")
 	<-stopCh

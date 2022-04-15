@@ -23,7 +23,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
