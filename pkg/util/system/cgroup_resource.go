@@ -27,12 +27,15 @@ const (
 )
 
 const (
-	CPUStatFileName       = "cpu.stat"
-	CPUSharesFileName     = "cpu.shares"
-	CPUCFSQuotaName       = "cpu.cfs_quota_us"
-	CPUBVTWarpNsName      = "cpu.bvt_warp_ns"
-	CPUSFileName          = "cpuset.cpus"
-	CpuacctStatFileName   = "cpuacct.stat"
+	CPUStatFileName   = "cpu.stat"
+	CPUSharesFileName = "cpu.shares"
+	CPUCFSQuotaName   = "cpu.cfs_quota_us"
+	CPUCFSPeriodName  = "cpu.cfs_period_us"
+	CPUBVTWarpNsName  = "cpu.bvt_warp_ns"
+	CPUSFileName      = "cpuset.cpus"
+
+	CpuacctStatFileName = "cpuacct.stat"
+
 	MemWmarkRatioFileName = "memory.wmark_ratio"
 	MemHighFileName       = "memory.high"
 	MemStatFileName       = "memory.stat"
@@ -43,13 +46,17 @@ var (
 )
 
 var (
-	CPUStat     = CgroupFile{ResourceFileName: CPUStatFileName, Subfs: CgroupCPUDir, IsAliOS: false}
-	CPUShares   = CgroupFile{ResourceFileName: CPUSharesFileName, Subfs: CgroupCPUDir, IsAliOS: false}
-	CPUCFSQuota = CgroupFile{ResourceFileName: CPUCFSQuotaName, Subfs: CgroupCPUDir, IsAliOS: false}
-	CPUSet      = CgroupFile{ResourceFileName: CPUSFileName, Subfs: CgroupCPUSetDir, IsAliOS: false}
+	CPUStat      = CgroupFile{ResourceFileName: CPUStatFileName, Subfs: CgroupCPUDir, IsAliOS: false}
+	CPUShares    = CgroupFile{ResourceFileName: CPUSharesFileName, Subfs: CgroupCPUDir, IsAliOS: false}
+	CPUCFSQuota  = CgroupFile{ResourceFileName: CPUCFSQuotaName, Subfs: CgroupCPUDir, IsAliOS: false}
+	CPUCFSPeriod = CgroupFile{ResourceFileName: CPUCFSPeriodName, Subfs: CgroupCPUDir, IsAliOS: false}
+
+	CPUSet = CgroupFile{ResourceFileName: CPUSFileName, Subfs: CgroupCPUSetDir, IsAliOS: false}
+
 	CpuacctStat = CgroupFile{ResourceFileName: CpuacctStatFileName, Subfs: CgroupCPUacctDir, IsAliOS: false}
-	MemStat     = CgroupFile{ResourceFileName: MemStatFileName, Subfs: CgroupMemDir, IsAliOS: false}
-	MemHigh     = CgroupFile{ResourceFileName: MemHighFileName, Subfs: CgroupMemDir, IsAliOS: true, Validator: MemHighValidator}
+
+	MemStat = CgroupFile{ResourceFileName: MemStatFileName, Subfs: CgroupMemDir, IsAliOS: false}
+	MemHigh = CgroupFile{ResourceFileName: MemHighFileName, Subfs: CgroupMemDir, IsAliOS: true, Validator: MemHighValidator}
 )
 
 type CgroupFile struct {

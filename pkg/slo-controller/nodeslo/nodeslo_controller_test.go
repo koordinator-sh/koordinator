@@ -35,10 +35,11 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
-	testingResourceThresholdStrategy := config.DefaultResourceThresholdStrategy()
+	testingResourceThresholdStrategy := util.DefaultResourceThresholdStrategy()
 	testingResourceThresholdStrategy.Enable = pointer.BoolPtr(true)
 	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
 	type args struct {
@@ -73,7 +74,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			},
 			fields: fields{client: fake.NewClientBuilder().Build()},
 			want: &slov1alpha1.NodeSLOSpec{
-				ResourceUsedThresholdWithBE: config.DefaultResourceThresholdStrategy(),
+				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
 			},
 			wantErr: false,
 		},
@@ -98,7 +99,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				},
 			}).Build()},
 			want: &slov1alpha1.NodeSLOSpec{
-				ResourceUsedThresholdWithBE: config.DefaultResourceThresholdStrategy(),
+				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
 			},
 			wantErr: false,
 		},
@@ -216,7 +217,7 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 			config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
 		},
 	}
-	testingResourceThresholdStrategy := config.DefaultResourceThresholdStrategy()
+	testingResourceThresholdStrategy := util.DefaultResourceThresholdStrategy()
 	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
 
 	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{

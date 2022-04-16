@@ -25,6 +25,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -76,7 +77,7 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 	}
 
 	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{
-		ResourceUsedThresholdWithBE: config.DefaultResourceThresholdStrategy(),
+		ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
 	}
 
 	// TODO: record an event about the failure reason on configmap/crd when failed to load the config

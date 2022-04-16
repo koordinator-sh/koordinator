@@ -17,6 +17,8 @@ limitations under the License.
 package resmanager
 
 const (
+	updateCPU = "UpdateCPU"
+
 	adjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
 
 	evictPodByNodeMemoryUsage = "EvictPodByNodeMemoryUsage"

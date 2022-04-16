@@ -18,11 +18,14 @@ package util
 
 import (
 	"fmt"
+	"io/ioutil"
 	"path"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -61,6 +64,80 @@ func GetContainerCgroupCPUStatPath(podParentDir string, c *corev1.ContainerStatu
 		return "", err
 	}
 	return system.GetCgroupFilePath(containerPath, system.CPUStat), nil
+}
+
+func GetContainerBEMilliCPURequest(c *corev1.Container) int64 {
+	if cpuRequest, ok := c.Resources.Requests[extension.BatchCPU]; ok {
+		return cpuRequest.Value()
+	}
+	return -1
+}
+
+func GetContainerBEMilliCPULimit(c *corev1.Container) int64 {
+	if cpuRequest, ok := c.Resources.Limits[extension.BatchCPU]; ok {
+		return cpuRequest.Value()
+	}
+	return -1
+}
+
+func GetContainerCgroupCPUSharePath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return "", err
+	}
+	return system.GetCgroupFilePath(containerPath, system.CPUShares), nil
+}
+
+func GetContainerCgroupCFSPeriodPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return "", err
+	}
+	return system.GetCgroupFilePath(containerPath, system.CPUCFSPeriod), nil
+}
+
+func GetContainerCgroupCFSQuotaPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return "", err
+	}
+	return system.GetCgroupFilePath(containerPath, system.CPUCFSQuota), nil
+}
+
+func GetContainerCurCPUShare(podParentDir string, c *corev1.ContainerStatus) (int64, error) {
+	cgroupPath, err := GetContainerCgroupCPUSharePath(podParentDir, c)
+	if err != nil {
+		return 0, err
+	}
+	rawContent, err := ioutil.ReadFile(cgroupPath)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
+}
+
+func GetContainerCurCFSPeriod(podParentDir string, c *corev1.ContainerStatus) (int64, error) {
+	cgroupPath, err := GetContainerCgroupCFSPeriodPath(podParentDir, c)
+	if err != nil {
+		return 0, err
+	}
+	rawContent, err := ioutil.ReadFile(cgroupPath)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
+}
+
+func GetContainerCurCFSQuota(podParentDir string, c *corev1.ContainerStatus) (int64, error) {
+	cgroupPath, err := GetContainerCgroupCFSQuotaPath(podParentDir, c)
+	if err != nil {
+		return 0, err
+	}
+	rawContent, err := ioutil.ReadFile(cgroupPath)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
 }
 
 func FindContainerIdAndStatusByName(status *corev1.PodStatus, name string) (string, *corev1.ContainerStatus, error) {

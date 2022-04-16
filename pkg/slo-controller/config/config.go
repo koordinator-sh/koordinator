@@ -133,18 +133,3 @@ func GetNodeColocationStrategy(cfg *ColocationCfg, node *corev1.Node) *Colocatio
 	}
 	return strategy
 }
-
-// DefaultNodeSLOSpecConfig defines the default config of the nodeSLOSpec, which would be used by the resmgr
-func DefaultNodeSLOSpecConfig() slov1alpha1.NodeSLOSpec {
-	return slov1alpha1.NodeSLOSpec{
-		ResourceUsedThresholdWithBE: DefaultResourceThresholdStrategy(),
-	}
-}
-
-func DefaultResourceThresholdStrategy() *slov1alpha1.ResourceThresholdStrategy {
-	return &slov1alpha1.ResourceThresholdStrategy{
-		Enable:                      pointer.BoolPtr(false),
-		CPUSuppressThresholdPercent: pointer.Int64Ptr(65),
-		CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
-	}
-}

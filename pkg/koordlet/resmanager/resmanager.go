@@ -252,6 +252,8 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 		return fmt.Errorf("time out waiting for sync NodeSLO")
 	}
 
+	util.RunFeature(r.reconcileBECgroup, []featuregate.Feature{features.BECgroupReconcile}, r.config.ReconcileIntervalSeconds, stopCh)
+
 	cpuSuppress := NewCPUSuppress(r)
 	util.RunFeature(cpuSuppress.suppressBECPU, []featuregate.Feature{features.BECPUSuppress}, r.config.CPUSuppressIntervalSeconds, stopCh)
 

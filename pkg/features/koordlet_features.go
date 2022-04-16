@@ -28,6 +28,9 @@ const (
 	// AuditEventsHTTPHandler is used to get recent events from koordlet port
 	AuditEventsHTTPHandler featuregate.Feature = "AuditEventsHTTPHandler"
 
+	// BECgroupReconcile sets cpu memory limit for best-effort pod
+	BECgroupReconcile featuregate.Feature = "BECgroupReconcile"
+
 	// BECPUSuppress suppresses for best-effort pod
 	BECPUSuppress featuregate.Feature = "BECPUSuppress"
 
@@ -46,6 +49,8 @@ var (
 	defaultKoordletFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 		AuditEvents:            {Default: false, PreRelease: featuregate.Alpha},
 		AuditEventsHTTPHandler: {Default: false, PreRelease: featuregate.Alpha},
-		BECPUSuppress:          {Default: true, PreRelease: featuregate.Alpha},
+		BECgroupReconcile:      {Default: false, PreRelease: featuregate.Alpha},
+		BECPUSuppress:          {Default: false, PreRelease: featuregate.Alpha},
+		BEMemoryEvict:          {Default: false, PreRelease: featuregate.Alpha},
 	}
 )

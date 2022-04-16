@@ -18,7 +18,10 @@ package util
 
 import (
 	"fmt"
+	"io/ioutil"
 	"path"
+	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
@@ -51,6 +54,25 @@ func GetPodCgroupCPUAcctProcStatPath(podParentDir string) string {
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @output /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.shares
+func GetPodCgroupCPUSharePath(podParentDir string) string {
+	podPath := GetPodCgroupDirWithKube(podParentDir)
+	return system.GetCgroupFilePath(podPath, system.CPUShares)
+}
+
+func GetPodCgroupCFSPeriodPath(podParentDir string) string {
+	podPath := GetPodCgroupDirWithKube(podParentDir)
+	return system.GetCgroupFilePath(podPath, system.CPUCFSPeriod)
+}
+
+// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @output /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.cfs_quota_us
+func GetPodCgroupCFSQuotaPath(podParentDir string) string {
+	podPath := GetPodCgroupDirWithKube(podParentDir)
+	return system.GetCgroupFilePath(podPath, system.CPUCFSQuota)
+}
+
+// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @output /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.proc_stat
 func GetPodCgroupMemStatPath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
@@ -70,6 +92,63 @@ func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
 		qosClass = qos.GetPodQOS(pod)
 	}
 	return qosClass
+}
+
+func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
+	podCPUMilliReq := int64(0)
+	for _, container := range pod.Spec.Containers {
+		containerCPUMilliReq := GetContainerBEMilliCPURequest(&container)
+		if containerCPUMilliReq <= 0 {
+			return -1
+		}
+		podCPUMilliReq += containerCPUMilliReq
+	}
+	if podCPUMilliReq <= 0 {
+		return -1
+	}
+	return podCPUMilliReq
+}
+
+func GetPodBEMilliCPULimit(pod *corev1.Pod) int64 {
+	podCPUMilliLimit := int64(0)
+	for _, container := range pod.Spec.Containers {
+		containerCPUMilliLimit := GetContainerBEMilliCPULimit(&container)
+		if containerCPUMilliLimit <= 0 {
+			return -1
+		}
+		podCPUMilliLimit += containerCPUMilliLimit
+	}
+	if podCPUMilliLimit <= 0 {
+		return -1
+	}
+	return podCPUMilliLimit
+}
+
+func GetPodCurCPUShare(podParentDir string) (int64, error) {
+	cgroupPath := GetPodCgroupCPUSharePath(podParentDir)
+	rawContent, err := ioutil.ReadFile(cgroupPath)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
+}
+
+func GetPodCurCFSPeriod(podParentDir string) (int64, error) {
+	cgroupPath := GetPodCgroupCFSPeriodPath(podParentDir)
+	rawContent, err := ioutil.ReadFile(cgroupPath)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
+}
+
+func GetPodCurCFSQuota(podParentDir string) (int64, error) {
+	cgroupPath := GetPodCgroupCFSQuotaPath(podParentDir)
+	rawContent, err := ioutil.ReadFile(cgroupPath)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
 }
 
 // @return like kubepods.slice/kubepods-burstable.slice/

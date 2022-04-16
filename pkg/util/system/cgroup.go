@@ -28,6 +28,10 @@ import (
 )
 
 const (
+	CPUShareKubeBEValue    int64 = 2
+	CPUShareUnitValue      int64 = 1024
+	CFSQuotaUnlimitedValue int64 = -1
+
 	CgroupMaxSymbolStr string = "max" // currently only appear in `memory.high`, we consider the value as MaxInt64
 	EmptyValueError    string = "EmptyValueError"
 )
