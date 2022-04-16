@@ -24,9 +24,9 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-lint-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-lint-
       - uses: golangci/golangci-lint-action@v3
         with:
           args: --verbose
@@ -51,9 +51,9 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-ut-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-ut-
       - name: Check Go modules
         run: |
           go mod tidy && git add go.*
@@ -84,4 +84,3 @@ jobs:
           flags: unittests
           file: cover.out
           fail_ci_if_error: true
-          verbose: true
