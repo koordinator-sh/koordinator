@@ -31,15 +31,27 @@ You can view the full documentation from the [Koordinator website](https://koord
 - Referring to [best practices](https://koordinator.sh/docs/best-practices/colocation-of-spark-jobs), there will be
   examples on running co-located workloads.
 
+## Code of conduct
+
+The Koordinator community is guided by our [Code of Conduct](CODE_OF_CONDUCT.md), which we encourage everybody to read
+before participating.
+
+In the interest of fostering an open and welcoming environment, we as contributors and maintainers pledge to making
+participation in our project and our community a harassment-free experience for everyone, regardless of age, body size,
+disability, ethnicity, gender identity and expression, level of experience, education, socio-economic status,
+nationality, personal appearance, race, religion, or sexual identity and orientation.
+
 ## Contributing
 
 You are warmly welcome to hack on Koordinator. We have prepared a detailed guide [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## License
+## Membership
 
-Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
+We encourage all contributors to become members. We aim to grow an active, healthy community of contributors, reviewers,
+and code owners. Learn more about requirements and responsibilities of membership in
+our [Community Membership](docs/community/community-membership.md) page.
 
-## Community, discussion, contribution, and support
+## Community
 
 You can reach the maintainers of this project at:
 
@@ -49,3 +61,7 @@ You can reach the maintainers of this project at:
 <div>
   <img src="https://github.com/koordinator-sh/koordinator/raw/main/docs/images/dingtalk.jpg" width="300" alt="Dingtalk QRCode">
 </div>
+
+## License
+
+Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
