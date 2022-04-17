@@ -155,7 +155,8 @@ There are a number of ways to contribute to Koordinator:
 
 When you are ready to join
 
-- [Open an issue](https://github.com/koordinator-sh/koordinator/issues/new) against the koordinator-sh/koordinator repo
+- [Open an issue](https://github.com/koordinator-sh/koordinator/issues/new?assignees=&labels=area%2Fgithub-membership&template=membership.yml&title=REQUEST%3A+New+membership+for+<your-GH-handle>)
+  against the **koordinator-sh/koordinator** repo
 - Make sure that the list of contributions included is representative of your work on the project.
 - Mention 2 existing reviewers who are sponsoring your membership.
 - After the request is approved, an admin will send you an invitation.

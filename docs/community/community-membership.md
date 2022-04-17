@@ -40,7 +40,6 @@ community.
     - Sponsors must have close interactions with the prospective member - e.g. code/design/proposal review, coordinating
       on issues, etc.
     - Sponsors must be reviewers or approvers in at least one OWNERS file within one of the Koordinator Projects.
-    - Sponsors must be from multiple member companies to demonstrate integration across community.
 - Follow the instructions in [Joining the Koordinator GitHub Org](../../CONTRIBUTING.md#joining-the-community)
 - Have your sponsoring reviewers reply confirmation of sponsorship: `+1`
 - Once your sponsors have responded, your request will be reviewed by the Koordinator GitHub Admin team. Any missing

@@ -83,4 +83,3 @@ jobs:
         with:
           flags: unittests
           file: cover.out
-          fail_ci_if_error: true
