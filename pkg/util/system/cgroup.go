@@ -32,9 +32,11 @@ const (
 	CPUShareUnitValue      int64 = 1024
 	CFSQuotaUnlimitedValue int64 = -1
 
-	CgroupMaxSymbolStr string = "max" // currently only appear in `memory.high`, we consider the value as MaxInt64
-	EmptyValueError    string = "EmptyValueError"
+	// CgroupMaxSymbolStr only appears in `memory.high`, we consider the value as MaxInt64
+	CgroupMaxSymbolStr string = "max"
 )
+
+const EmptyValueError string = "EmptyValueError"
 
 type CPUStatRaw struct {
 	NrPeriod             int64

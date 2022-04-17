@@ -24,7 +24,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func Test_MergeCPUSet(t *testing.T) {
@@ -162,7 +162,7 @@ func Test_UtilCgroupCPUSet(t *testing.T) {
 	err = WriteCgroupCPUSet(dname, cpusetStr)
 	assert.NoError(t, err)
 
-	rawContent, err := ioutil.ReadFile(filepath.Join(dname, sysutil.CPUSFileName))
+	rawContent, err := ioutil.ReadFile(filepath.Join(dname, system.CPUSFileName))
 	assert.NoError(t, err)
 
 	gotCPUSetStr := string(rawContent)

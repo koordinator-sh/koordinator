@@ -26,7 +26,7 @@ import (
 	"strconv"
 	"strings"
 
-	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 // MergeCfg returns a merged interface. Value in new will
@@ -126,5 +126,5 @@ func GenerateCPUSetStr(cpuset []int32) string {
 
 // WriteCgroupCPUSet writes the cgroup cpuset file according to the specified cgroup dir
 func WriteCgroupCPUSet(cgroupFileDir, cpusetStr string) error {
-	return ioutil.WriteFile(filepath.Join(cgroupFileDir, sysutil.CPUSFileName), []byte(cpusetStr), 0644)
+	return ioutil.WriteFile(filepath.Join(cgroupFileDir, system.CPUSFileName), []byte(cpusetStr), 0644)
 }

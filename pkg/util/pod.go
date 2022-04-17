@@ -80,6 +80,13 @@ func GetPodCgroupMemStatPath(podParentDir string) string {
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @output /sys/fs/cgroup/memory/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.limit_in_bytes
+func GetPodCgroupMemLimitPath(podParentDir string) string {
+	podPath := GetPodCgroupDirWithKube(podParentDir)
+	return system.GetCgroupFilePath(podPath, system.MemoryLimit)
+}
+
+// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @output /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.stat
 func GetPodCgroupCPUStatPath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
@@ -124,6 +131,21 @@ func GetPodBEMilliCPULimit(pod *corev1.Pod) int64 {
 	return podCPUMilliLimit
 }
 
+func GetPodBEMemoryByteLimit(pod *corev1.Pod) int64 {
+	podMemoryByteLimit := int64(0)
+	for _, container := range pod.Spec.Containers {
+		containerMemByteLimit := GetContainerBEMemoryByteLimit(&container)
+		if containerMemByteLimit <= 0 {
+			return -1
+		}
+		podMemoryByteLimit += containerMemByteLimit
+	}
+	if podMemoryByteLimit <= 0 {
+		return -1
+	}
+	return podMemoryByteLimit
+}
+
 func GetPodCurCPUShare(podParentDir string) (int64, error) {
 	cgroupPath := GetPodCgroupCPUSharePath(podParentDir)
 	rawContent, err := ioutil.ReadFile(cgroupPath)
@@ -144,6 +166,15 @@ func GetPodCurCFSPeriod(podParentDir string) (int64, error) {
 
 func GetPodCurCFSQuota(podParentDir string) (int64, error) {
 	cgroupPath := GetPodCgroupCFSQuotaPath(podParentDir)
+	rawContent, err := ioutil.ReadFile(cgroupPath)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
+}
+
+func GetPodCurMemLimitBytes(podParentDir string) (int64, error) {
+	cgroupPath := GetPodCgroupMemLimitPath(podParentDir)
 	rawContent, err := ioutil.ReadFile(cgroupPath)
 	if err != nil {
 		return 0, err

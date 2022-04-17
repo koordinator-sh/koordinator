@@ -38,6 +38,7 @@ const (
 
 	MemWmarkRatioFileName = "memory.wmark_ratio"
 	MemHighFileName       = "memory.high"
+	MemoryLimitFileName   = "memory.limit_in_bytes"
 	MemStatFileName       = "memory.stat"
 )
 
@@ -55,8 +56,9 @@ var (
 
 	CpuacctStat = CgroupFile{ResourceFileName: CpuacctStatFileName, Subfs: CgroupCPUacctDir, IsAliOS: false}
 
-	MemStat = CgroupFile{ResourceFileName: MemStatFileName, Subfs: CgroupMemDir, IsAliOS: false}
-	MemHigh = CgroupFile{ResourceFileName: MemHighFileName, Subfs: CgroupMemDir, IsAliOS: true, Validator: MemHighValidator}
+	MemStat     = CgroupFile{ResourceFileName: MemStatFileName, Subfs: CgroupMemDir, IsAliOS: false}
+	MemHigh     = CgroupFile{ResourceFileName: MemHighFileName, Subfs: CgroupMemDir, IsAliOS: true, Validator: MemHighValidator}
+	MemoryLimit = CgroupFile{ResourceFileName: MemoryLimitFileName, Subfs: CgroupMemDir, IsAliOS: false}
 )
 
 type CgroupFile struct {

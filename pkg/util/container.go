@@ -66,6 +66,14 @@ func GetContainerCgroupCPUStatPath(podParentDir string, c *corev1.ContainerStatu
 	return system.GetCgroupFilePath(containerPath, system.CPUStat), nil
 }
 
+func GetContainerCgroupMemLimitPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return "", err
+	}
+	return system.GetCgroupFilePath(containerPath, system.MemoryLimit), nil
+}
+
 func GetContainerBEMilliCPURequest(c *corev1.Container) int64 {
 	if cpuRequest, ok := c.Resources.Requests[extension.BatchCPU]; ok {
 		return cpuRequest.Value()
@@ -76,6 +84,13 @@ func GetContainerBEMilliCPURequest(c *corev1.Container) int64 {
 func GetContainerBEMilliCPULimit(c *corev1.Container) int64 {
 	if cpuRequest, ok := c.Resources.Limits[extension.BatchCPU]; ok {
 		return cpuRequest.Value()
+	}
+	return -1
+}
+
+func GetContainerBEMemoryByteLimit(c *corev1.Container) int64 {
+	if memLimit, ok := c.Resources.Limits[extension.BatchMemory]; ok {
+		return memLimit.Value()
 	}
 	return -1
 }
@@ -130,6 +145,18 @@ func GetContainerCurCFSPeriod(podParentDir string, c *corev1.ContainerStatus) (i
 
 func GetContainerCurCFSQuota(podParentDir string, c *corev1.ContainerStatus) (int64, error) {
 	cgroupPath, err := GetContainerCgroupCFSQuotaPath(podParentDir, c)
+	if err != nil {
+		return 0, err
+	}
+	rawContent, err := ioutil.ReadFile(cgroupPath)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
+}
+
+func GetContainerCurMemLimitBytes(podParentDir string, c *corev1.ContainerStatus) (int64, error) {
+	cgroupPath, err := GetContainerCgroupMemLimitPath(podParentDir, c)
 	if err != nil {
 		return 0, err
 	}

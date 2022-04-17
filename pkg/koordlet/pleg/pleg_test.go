@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/utils/inotify"
 
-	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func NewTestWatcher() (Watcher, error) {
@@ -81,7 +81,7 @@ func (h *testHandler) OnContainerDeleted(podID, containerID string) {
 }
 
 func TestPlegHandlePodEvents(t *testing.T) {
-	sysutil.SetupCgroupPathFormatter(sysutil.Cgroupfs)
+	system.SetupCgroupPathFormatter(system.Cgroupfs)
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
@@ -152,7 +152,7 @@ func TestPlegHandlePodEvents(t *testing.T) {
 }
 
 func TestPlegHandleContainerEvents(t *testing.T) {
-	sysutil.SetupCgroupPathFormatter(sysutil.Cgroupfs)
+	system.SetupCgroupPathFormatter(system.Cgroupfs)
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 

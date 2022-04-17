@@ -42,6 +42,7 @@ func (r *resmanager) reconcileBECgroup() {
 			reconcileBECPULimit(podMeta)
 		}
 		reconcileBECPUShare(podMeta)
+		reconcileBEMemLimit(podMeta)
 	}
 }
 
@@ -151,6 +152,59 @@ func reconcileBECPUShare(podMeta *statesinformer.PodMeta) {
 	}
 }
 
+func reconcileBEMemLimit(podMeta *statesinformer.PodMeta) {
+	needReconcilePod, err := needReconcilePodBEMemLimit(podMeta)
+	if err != nil {
+		klog.Warningf("failed to check need reconcile memory limit for pod %v/%v %v, error: %v",
+			podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, err)
+		return
+	}
+	if needReconcilePod {
+		err = applyPodBEMemLimitIfSpecified(podMeta)
+		if err != nil {
+			klog.Warningf("failed to apply cpu memory for pod %v/%v %v, error: %v",
+				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, err)
+		} else {
+			curLimit, err := util.GetPodCurMemLimitBytes(podMeta.CgroupDir)
+			klog.Infof("apply cpu memory for pod %v/%v %v succeed, current value %d, error: %v",
+				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curLimit, err)
+		}
+	}
+
+	containerMap := make(map[string]*corev1.Container, len(podMeta.Pod.Spec.Containers))
+	for i := range podMeta.Pod.Spec.Containers {
+		container := &podMeta.Pod.Spec.Containers[i]
+		containerMap[container.Name] = container
+	}
+
+	for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
+		container, exist := containerMap[containerStat.Name]
+		if !exist {
+			klog.Warningf("container %v/%v/%v lost during memory limit reconcile",
+				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name)
+			continue
+		}
+		needReconcileContainer, err := needReconcileContainerBEMemLimit(podMeta, container, &containerStat)
+		if err != nil {
+			klog.Warningf("failed to check need reconcile memory limit for container %v/%v/%v, error: %v",
+				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, err)
+			continue
+		}
+		if !needReconcileContainer {
+			continue
+		}
+
+		if err := applyContainerBEMemLimitIfSpecified(podMeta, container, &containerStat); err != nil {
+			klog.Warningf("failed to apply memory limit for container %v/%v/%v, error: %v",
+				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, err)
+		} else {
+			curLimit, err := util.GetContainerCurMemLimitBytes(podMeta.CgroupDir, &containerStat)
+			klog.Infof("apply memory limit for container %v/%v %v succeed, current value %v, error: %v",
+				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curLimit, err)
+		}
+	}
+}
+
 func needReconcilePodBECPULimit(podMeta *statesinformer.PodMeta) (bool, error) {
 	if util.GetPodBEMilliCPULimit(podMeta.Pod) <= 0 {
 		return false, nil
@@ -158,7 +212,7 @@ func needReconcilePodBECPULimit(podMeta *statesinformer.PodMeta) (bool, error) {
 
 	podCurCFSQuota, err := util.GetPodCurCFSQuota(podMeta.CgroupDir)
 	if err != nil {
-		return false, nil
+		return false, err
 	}
 	return podCurCFSQuota == system.CFSQuotaUnlimitedValue, nil
 }
@@ -197,6 +251,32 @@ func needReconcileContainerBECPUShare(podMeta *statesinformer.PodMeta, container
 		return false, err
 	}
 	return containerCurCPUShare == system.CPUShareKubeBEValue, nil
+}
+
+func needReconcilePodBEMemLimit(podMeta *statesinformer.PodMeta) (bool, error) {
+	if util.GetPodBEMemoryByteLimit(podMeta.Pod) <= 0 {
+		return false, nil
+	}
+
+	podCurMemLimit, err := util.GetPodCurMemLimitBytes(podMeta.CgroupDir)
+	if err != nil {
+		return false, err
+	}
+	// by default 9223372036854771712 , use 1024TB = 1024 * 1024 * 1024 * 1024 * 1024 for compatibility
+	return podCurMemLimit > 1024*1024*1024*1024*1024, nil
+}
+
+func needReconcileContainerBEMemLimit(podMeta *statesinformer.PodMeta, container *corev1.Container, containerStatus *corev1.ContainerStatus) (bool, error) {
+	if util.GetContainerBEMemoryByteLimit(container) <= 0 {
+		return false, nil
+	}
+
+	containerCurCFSQuota, err := util.GetContainerCurMemLimitBytes(podMeta.CgroupDir, containerStatus)
+	if err != nil {
+		return false, err
+	}
+	// by default 9223372036854771712 , use 1024TB = 1024 * 1024 * 1024 * 1024 * 1024 for compatibility
+	return containerCurCFSQuota > 1024*1024*1024*1024*1024, nil
 }
 
 func applyPodBECPULimitIfSpecified(podMeta *statesinformer.PodMeta) error {
@@ -253,6 +333,29 @@ func applyContainerBECPUShareIfSpecified(podMeta *statesinformer.PodMeta, contai
 	if err != nil {
 		return err
 	}
-	audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(updateCPU).Message("set cfs_shares to %v", targetCPUShare).Do()
+	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(updateCPU).Message("set cfs_shares to %v", targetCPUShare).Do()
 	return ioutil.WriteFile(containerCPUSharePath, []byte(strconv.Itoa(targetCPUShare)), 0644)
+}
+
+func applyPodBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta) error {
+	memoryLimit := util.GetPodBEMemoryByteLimit(podMeta.Pod)
+	if memoryLimit <= 0 {
+		return nil
+	}
+	podMemLimitPath := util.GetPodCgroupMemLimitPath(podMeta.CgroupDir)
+	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(updateMemory).Message("set memory.limits to %v", memoryLimit).Do()
+	return ioutil.WriteFile(podMemLimitPath, []byte(strconv.Itoa(int(memoryLimit))), 0644)
+}
+
+func applyContainerBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta, container *corev1.Container, containerStatus *corev1.ContainerStatus) error {
+	memoryLimit := util.GetContainerBEMemoryByteLimit(container)
+	if memoryLimit <= 0 {
+		return nil
+	}
+	containerMemLimitPath, err := util.GetContainerCgroupMemLimitPath(podMeta.CgroupDir, containerStatus)
+	if err != nil {
+		return err
+	}
+	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(updateMemory).Message("set memory.limits to %v", memoryLimit).Do()
+	return ioutil.WriteFile(containerMemLimitPath, []byte(strconv.Itoa(int(memoryLimit))), 0644)
 }

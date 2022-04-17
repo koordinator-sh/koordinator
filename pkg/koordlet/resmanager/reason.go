@@ -17,7 +17,8 @@ limitations under the License.
 package resmanager
 
 const (
-	updateCPU = "UpdateCPU"
+	updateCPU    = "UpdateCPU"
+	updateMemory = "UpdateMemory"
 
 	adjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
 
