@@ -19,14 +19,11 @@ package statesinformer
 import (
 	"path/filepath"
 	"testing"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clientsetfake "k8s.io/client-go/kubernetes/fake"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -155,37 +152,39 @@ func Test_metaService_syncNode(t *testing.T) {
 	m.syncNode(testingNode)
 }
 
-type testKubeletStub struct {
-	pods corev1.PodList
-}
+// TODO: fix data race, https://github.com/koordinator-sh/koordinator/issues/77
 
-func (t *testKubeletStub) GetAllPods() (corev1.PodList, error) {
-	return t.pods, nil
-}
-
-func Test_metaService_syncPods(t *testing.T) {
-	client := clientsetfake.NewSimpleClientset()
-	pleg, _ := pleg.NewPLEG(sysutil.Conf.CgroupRootDir)
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-
-	c := NewDefaultConfig()
-	c.KubeletSyncIntervalSeconds = 60
-	m := NewStatesInformer(c, client, pleg, "localhost")
-	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
-		Items: []corev1.Pod{
-			{},
-		},
-	}}
-
-	go m.Run(stopCh)
-
-	m.(*statesInformer).podCreated <- "pod1"
-	time.Sleep(200 * time.Millisecond)
-	if time.Since(m.(*statesInformer).podUpdatedTime) > time.Second {
-		t.Errorf("failed to triggle update by pod created event")
-	}
-	if len(m.(*statesInformer).podMap) != 1 {
-		t.Errorf("failed to update pods")
-	}
-}
+// type testKubeletStub struct {
+// 	pods corev1.PodList
+// }
+//
+// func (t *testKubeletStub) GetAllPods() (corev1.PodList, error) {
+// 	return t.pods, nil
+// }
+//
+// func Test_metaService_syncPods(t *testing.T) {
+// 	client := clientsetfake.NewSimpleClientset()
+// 	pleg, _ := pleg.NewPLEG(sysutil.Conf.CgroupRootDir)
+// 	stopCh := make(chan struct{})
+// 	defer close(stopCh)
+//
+// 	c := NewDefaultConfig()
+// 	c.KubeletSyncIntervalSeconds = 60
+// 	m := NewStatesInformer(c, client, pleg, "localhost")
+// 	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
+// 		Items: []corev1.Pod{
+// 			{},
+// 		},
+// 	}}
+//
+// 	go m.Run(stopCh)
+//
+// 	m.(*statesInformer).podCreated <- "pod1"
+// 	time.Sleep(200 * time.Millisecond)
+// 	if time.Since(m.(*statesInformer).podUpdatedTime) > time.Second {
+// 		t.Errorf("failed to triggle update by pod created event")
+// 	}
+// 	if len(m.(*statesInformer).podMap) != 1 {
+// 		t.Errorf("failed to update pods")
+// 	}
+// }
