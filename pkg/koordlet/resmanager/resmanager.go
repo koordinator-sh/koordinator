@@ -257,6 +257,10 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	cpuSuppress := NewCPUSuppress(r)
 	util.RunFeature(cpuSuppress.suppressBECPU, []featuregate.Feature{features.BECPUSuppress}, r.config.CPUSuppressIntervalSeconds, stopCh)
 
+	cpuBurst := NewCPUBurst(r)
+	util.RunFeatureWithInit(func() error { return cpuBurst.init(stopCh) }, cpuBurst.start,
+		[]featuregate.Feature{features.CPUBurst}, r.config.ReconcileIntervalSeconds, stopCh)
+
 	memoryEvictor := NewMemoryEvictor(r)
 	util.RunFeature(memoryEvictor.memoryEvict, []featuregate.Feature{features.BEMemoryEvict}, r.config.MemoryEvictIntervalSeconds, stopCh)
 

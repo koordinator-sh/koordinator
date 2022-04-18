@@ -34,6 +34,8 @@ const (
 
 	// CgroupMaxSymbolStr only appears in `memory.high`, we consider the value as MaxInt64
 	CgroupMaxSymbolStr string = "max"
+	// CgroupMaxValueStr math.MaxInt64; writing `memory.high` with this do the same as set as "max"
+	CgroupMaxValueStr string = "9223372036854775807"
 )
 
 const EmptyValueError string = "EmptyValueError"
@@ -42,6 +44,20 @@ type CPUStatRaw struct {
 	NrPeriod             int64
 	NrThrottled          int64
 	ThrottledNanoSeconds int64
+}
+
+func CgroupFileWriteIfDifferent(cgroupTaskDir string, file CgroupFile, value string) error {
+	currentValue, currentErr := CgroupFileRead(cgroupTaskDir, file)
+	if currentErr != nil {
+		return currentErr
+	}
+	if value == currentValue || value == CgroupMaxValueStr && currentValue == CgroupMaxSymbolStr {
+		// compatible with cgroup valued "max"
+		klog.V(6).Infof("read before write %s %s and got str value, considered as MaxInt64", cgroupTaskDir,
+			file.ResourceFileName)
+		return nil
+	}
+	return CgroupFileWrite(cgroupTaskDir, file, value)
 }
 
 func CgroupFileReadInt(cgroupTaskDir string, file CgroupFile) (*int64, error) {

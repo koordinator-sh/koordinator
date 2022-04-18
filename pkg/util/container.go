@@ -58,6 +58,15 @@ func GetContainerCgroupMemStatPath(podParentDir string, c *corev1.ContainerStatu
 	return system.GetCgroupFilePath(containerPath, system.MemStat), nil
 }
 
+func GetContainerBaseCFSQuota(container *corev1.Container) int64 {
+	cpuMilliLimit := GetContainerMilliCPULimit(container)
+	if cpuMilliLimit <= 0 {
+		return -1
+	} else {
+		return cpuMilliLimit * system.CFSBasePeriodValue / 1000
+	}
+}
+
 func GetContainerCgroupCPUStatPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
 	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
 	if err != nil {
@@ -72,6 +81,13 @@ func GetContainerCgroupMemLimitPath(podParentDir string, c *corev1.ContainerStat
 		return "", err
 	}
 	return system.GetCgroupFilePath(containerPath, system.MemoryLimit), nil
+}
+
+func GetContainerMilliCPULimit(c *corev1.Container) int64 {
+	if cpuLimit, ok := c.Resources.Limits[corev1.ResourceCPU]; ok {
+		return cpuLimit.MilliValue()
+	}
+	return -1
 }
 
 func GetContainerBEMilliCPURequest(c *corev1.Container) int64 {

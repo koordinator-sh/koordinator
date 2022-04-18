@@ -17,10 +17,12 @@ limitations under the License.
 package resmanager
 
 const (
-	updateCPU    = "UpdateCPU"
-	updateMemory = "UpdateMemory"
-
-	adjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
+	updateCPU          = "UpdateCPU"
+	updateMemory       = "UpdateMemory"
+	updateSystemConfig = "UpdateSystemConfig"
+	updateCgroups      = "UpdateCgroups" // update cgroups excluding the options already stated above
 
 	evictPodByNodeMemoryUsage = "EvictPodByNodeMemoryUsage"
+
+	adjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
 )

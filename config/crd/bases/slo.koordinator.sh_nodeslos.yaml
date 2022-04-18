@@ -35,6 +35,36 @@ spec:
           spec:
             description: NodeSLOSpec defines the desired state of NodeSLO
             properties:
+              cpuBurstStrategy:
+                description: CPU Burst Strategy
+                properties:
+                  cfsQuotaBurstPercent:
+                    default: 300
+                    description: pod cfs quota scale up ceil percentage, default =
+                      300 (300%)
+                    format: int64
+                    type: integer
+                  cfsQuotaBurstPeriodSeconds:
+                    default: -1
+                    description: specifies a period of time for pod can use at burst,
+                      default = -1 (unlimited)
+                    format: int64
+                    type: integer
+                  cpuBurstPercent:
+                    default: 1000
+                    description: 'cpu burst percentage for setting cpu.cfs_burst_us,
+                      legal range: [0, 10000], default as 1000 (1000%)'
+                    format: int64
+                    type: integer
+                  policy:
+                    type: string
+                  sharePoolThresholdPercent:
+                    default: 50
+                    description: scale down cfs quota if node cpu overload, default
+                      = 50
+                    format: int64
+                    type: integer
+                type: object
               resourceUsedThresholdWithBE:
                 description: BE pods will be limited if node resource usage overload
                 properties:
