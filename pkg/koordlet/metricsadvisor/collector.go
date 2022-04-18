@@ -35,8 +35,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (
@@ -356,7 +356,7 @@ func (c *collector) collectPodThrottledInfo() {
 		uid := string(pod.UID) // types.UID
 		collectTime := time.Now()
 		cgroupStatPath := util.GetPodCgroupCPUStatPath(meta.CgroupDir)
-		currentCPUStat, err := sysutil.GetCPUStatRaw(cgroupStatPath)
+		currentCPUStat, err := system.GetCPUStatRaw(cgroupStatPath)
 		if err != nil || currentCPUStat == nil {
 			if pod.Status.Phase == corev1.PodRunning {
 				// print running pod collection error
@@ -372,8 +372,8 @@ func (c *collector) collectPodThrottledInfo() {
 				meta.Pod.Namespace, meta.Pod.Name, meta.Pod.UID)
 			continue
 		}
-		lastCPUThrottled := lastCPUThrottledValue.(*sysutil.CPUStatRaw)
-		cpuThrottledRatio := sysutil.CalcCPUThrottledRatio(currentCPUStat, lastCPUThrottled)
+		lastCPUThrottled := lastCPUThrottledValue.(*system.CPUStatRaw)
+		cpuThrottledRatio := system.CalcCPUThrottledRatio(currentCPUStat, lastCPUThrottled)
 
 		klog.V(6).Infof("collect pod %s/%s, uid %s throttled finished, metric %v",
 			meta.Pod.Namespace, meta.Pod.Name, meta.Pod.UID, cpuThrottledRatio)
@@ -410,7 +410,7 @@ func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMet
 				pod.Namespace, pod.Name, containerStat.Name, err)
 			continue
 		}
-		currentCPUStat, err := sysutil.GetCPUStatRaw(containerCgroupPath)
+		currentCPUStat, err := system.GetCPUStatRaw(containerCgroupPath)
 		if err != nil {
 			klog.Infof("collect container %s/%s/%s cpu throttled failed, err %v, metric %v",
 				pod.Namespace, pod.Name, containerStat.Name, err, currentCPUStat)
@@ -423,8 +423,8 @@ func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMet
 				pod.Namespace, pod.Name, containerStat.Name)
 			continue
 		}
-		lastCPUThrottled := lastCPUThrottledValue.(*sysutil.CPUStatRaw)
-		cpuThrottledRatio := sysutil.CalcCPUThrottledRatio(currentCPUStat, lastCPUThrottled)
+		lastCPUThrottled := lastCPUThrottledValue.(*system.CPUStatRaw)
+		cpuThrottledRatio := system.CalcCPUThrottledRatio(currentCPUStat, lastCPUThrottled)
 
 		containerMetric := &metriccache.ContainerThrottledMetric{
 			ContainerID: containerStat.ContainerID,

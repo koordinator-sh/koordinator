@@ -31,7 +31,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 type Configuration struct {
@@ -57,7 +57,7 @@ func NewConfiguration() *Configuration {
 }
 
 func (c *Configuration) InitFlags(fs *flag.FlagSet) {
-	sysutil.Conf.InitFlags(fs)
+	system.Conf.InitFlags(fs)
 	c.StatesInformerConf.InitFlags(fs)
 	c.ReporterConf.InitFlags(fs)
 	c.CollectorConf.InitFlags(fs)

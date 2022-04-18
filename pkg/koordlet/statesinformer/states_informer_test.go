@@ -24,12 +24,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
-	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func Test_genPodCgroupParentDirWithSystemdDriver(t *testing.T) {
-	sysutil.SetupCgroupPathFormatter(sysutil.Systemd)
-	defer sysutil.SetupCgroupPathFormatter(sysutil.Systemd)
+	system.SetupCgroupPathFormatter(system.Systemd)
+	defer system.SetupCgroupPathFormatter(system.Systemd)
 	tests := []struct {
 		name string
 		args *corev1.Pod
@@ -83,8 +83,8 @@ func Test_genPodCgroupParentDirWithSystemdDriver(t *testing.T) {
 }
 
 func Test_genPodCgroupParentDirWithCgroupfsDriver(t *testing.T) {
-	sysutil.SetupCgroupPathFormatter(sysutil.Cgroupfs)
-	defer sysutil.SetupCgroupPathFormatter(sysutil.Systemd)
+	system.SetupCgroupPathFormatter(system.Cgroupfs)
+	defer system.SetupCgroupPathFormatter(system.Systemd)
 	tests := []struct {
 		name string
 		args *corev1.Pod

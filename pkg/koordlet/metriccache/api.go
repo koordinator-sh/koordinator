@@ -19,7 +19,7 @@ package metriccache
 import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type CPUMetric struct {
@@ -69,9 +69,9 @@ type ContainerResourceQueryResult struct {
 type NodeCPUInfo util.LocalCPUInfo
 
 type BECPUResourceMetric struct {
-	CPUUsed      resource.Quantity //cpuUsed cores for BestEffort Cgroup
-	CPURealLimit resource.Quantity //suppressCPUQuantity: if suppress by cfs_quota then this  value is cfs_quota/cfs_period
-	CPURequest   resource.Quantity //sum(extendResources_Cpu:request) by all qos:BE pod
+	CPUUsed      resource.Quantity // cpuUsed cores for BestEffort Cgroup
+	CPURealLimit resource.Quantity // suppressCPUQuantity: if suppress by cfs_quota then this  value is cfs_quota/cfs_period
+	CPURequest   resource.Quantity // sum(extendResources_Cpu:request) by all qos:BE pod
 }
 
 type BECPUResourceQueryResult struct {

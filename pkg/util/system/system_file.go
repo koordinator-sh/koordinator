@@ -14,13 +14,29 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resmanager
+package system
+
+import (
+	"path"
+)
 
 const (
-	updateCPU    = "UpdateCPU"
-	updateMemory = "UpdateMemory"
-
-	adjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
-
-	evictPodByNodeMemoryUsage = "EvictPodByNodeMemoryUsage"
+	ProcStatFileName = "stat"
 )
+
+type SystemFile struct {
+	File      string
+	Validator Validate
+}
+
+var (
+	ProcStatFile SystemFile
+)
+
+func init() {
+	initFilePath()
+}
+
+func initFilePath() {
+	ProcStatFile = SystemFile{File: path.Join(Conf.ProcRootDir, ProcStatFileName)}
+}

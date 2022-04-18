@@ -31,7 +31,7 @@ import (
 )
 
 func getResourceThresholdSpec(node *corev1.Node, configMap *corev1.ConfigMap) (*slov1alpha1.ResourceThresholdStrategy, error) {
-	mergedStrategy := config.DefaultResourceThresholdStrategy()
+	mergedStrategy := util.DefaultResourceThresholdStrategy()
 	// When the custom parameter is missing, return to the default value
 	cfgStr, ok := configMap.Data[config.ResourceThresholdConfigKey]
 	if !ok {

@@ -29,6 +29,7 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func Test_getResourceThresholdSpec(t *testing.T) {
@@ -104,7 +105,7 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 				node:      &corev1.Node{},
 				configMap: &corev1.ConfigMap{},
 			},
-			want:    config.DefaultResourceThresholdStrategy(),
+			want:    util.DefaultResourceThresholdStrategy(),
 			wantErr: false,
 		},
 		{
@@ -210,10 +211,10 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 
 func Test_generateThresholdCfg(t *testing.T) {
 	cfg := config.ResourceThresholdCfg{}
-	cfg.ClusterStrategy = config.DefaultResourceThresholdStrategy()
+	cfg.ClusterStrategy = util.DefaultResourceThresholdStrategy()
 	labelSelector := &metav1.LabelSelector{MatchLabels: map[string]string{}}
 	labelSelector.MatchLabels["machineType"] = "F53"
-	selectCfg := config.NodeResourceThresholdStrategy{NodeSelector: labelSelector, ResourceThresholdStrategy: config.DefaultResourceThresholdStrategy()}
+	selectCfg := config.NodeResourceThresholdStrategy{NodeSelector: labelSelector, ResourceThresholdStrategy: util.DefaultResourceThresholdStrategy()}
 	cfg.NodeStrategies = []config.NodeResourceThresholdStrategy{selectCfg}
 
 	cfgJson, _ := json.MarshalIndent(cfg, "", "  ")
