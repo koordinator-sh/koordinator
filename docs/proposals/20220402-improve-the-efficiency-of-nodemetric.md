@@ -77,6 +77,8 @@ Using Aggregated APIServer and not persisting NodeMetrics will face the problem 
 
 ## Alternatives
 
+- Use metrics server instead of nodemetrics, in addition to cpu and mem usage, colocation scheduling decisions also require many other decision-making bases, such as Pod's memory allocation pressure, IO pressure, scheduling delay, etc., which are not provided in metrics-server. For the cpu and mem usage information, we also need to do some preprocessing on the node side to meet the peak prediction SLO requirements. The data timeliness and computing power overhead of relying on the metrics server for computing in the center are too large.
+
 ## Upgrade Strategy
 
 This modification belongs to the internal reconstruction of the system and does not affect user functions. Just uninstall the CRD in the cluster and start the new version.
@@ -84,4 +86,5 @@ This modification belongs to the internal reconstruction of the system and does 
 ## Implementation History
 
 - [ ] 04/02/2022: Proposed idea in an issue
+- [ ] 04/19/2022: add an alternative option
 
