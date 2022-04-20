@@ -60,7 +60,7 @@ You can reach the maintainers of this project at:
 - DingTalk(Chinese): Search Group ID `33383887` or scan the following QR Code
 
 <div>
-  <img src="https://github.com/koordinator-sh/koordinator/raw/main/docs/images/dingtalk.jpg" width="300" alt="Dingtalk QRCode">
+  <img src="https://github.com/koordinator-sh/koordinator/raw/main/docs/images/dingtalk.png" width="300" alt="Dingtalk QRCode">
 </div>
 
 ## License
