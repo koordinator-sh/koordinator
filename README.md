@@ -57,7 +57,7 @@ our [Community Membership](docs/community/community-membership.md) page.
 You can reach the maintainers of this project at:
 
 - [Slack](https://join.slack.com/t/koordinator-sh/shared_invite/zt-1756qoub4-Cn4~esfdlfAPsD7cwO2NzA)
-- DingTalk: Search Group ID `33383887` or scan the following QR Code
+- DingTalk(Chinese): Search Group ID `33383887` or scan the following QR Code
 
 <div>
   <img src="https://github.com/koordinator-sh/koordinator/raw/main/docs/images/dingtalk.jpg" width="300" alt="Dingtalk QRCode">
