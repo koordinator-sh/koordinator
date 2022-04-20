@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
@@ -68,6 +69,115 @@ func Test_MergeCPUSet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := MergeCPUSet(tt.args.old, tt.args.new)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_MergeCfg(t *testing.T) {
+	type TestingStruct struct {
+		A *int64 `json:"a,omitempty"`
+		B *int64 `json:"b,omitempty"`
+	}
+	type args struct {
+		old interface{}
+		new interface{}
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    interface{}
+		wantErr bool
+	}{
+		{
+			name: "throw an error if the inputs' types are not the same",
+			args: args{
+				old: &TestingStruct{},
+				new: pointer.Int64Ptr(1),
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "throw an error if any of the inputs is not a pointer",
+			args: args{
+				old: TestingStruct{},
+				new: TestingStruct{},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:    "throw an error if any of inputs is nil",
+			args:    args{},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "throw an error if any of inputs is nil 1",
+			args: args{
+				old: &TestingStruct{},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "new is empty",
+			args: args{
+				old: &TestingStruct{
+					A: pointer.Int64Ptr(0),
+					B: pointer.Int64Ptr(1),
+				},
+				new: &TestingStruct{},
+			},
+			want: &TestingStruct{
+				A: pointer.Int64Ptr(0),
+				B: pointer.Int64Ptr(1),
+			},
+		},
+		{
+			name: "old is empty",
+			args: args{
+				old: &TestingStruct{},
+				new: &TestingStruct{
+					B: pointer.Int64Ptr(1),
+				},
+			},
+			want: &TestingStruct{
+				B: pointer.Int64Ptr(1),
+			},
+		},
+		{
+			name: "both are empty",
+			args: args{
+				old: &TestingStruct{},
+				new: &TestingStruct{},
+			},
+			want: &TestingStruct{},
+		},
+		{
+			name: "new one overwrites the old one",
+			args: args{
+				old: &TestingStruct{
+					A: pointer.Int64Ptr(0),
+					B: pointer.Int64Ptr(1),
+				},
+				new: &TestingStruct{
+					B: pointer.Int64Ptr(2),
+				},
+			},
+			want: &TestingStruct{
+				A: pointer.Int64Ptr(0),
+				B: pointer.Int64Ptr(2),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := MergeCfg(tt.args.old, tt.args.new)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			if !tt.wantErr {
+				assert.Equal(t, tt.want, got.(*TestingStruct))
+			}
 		})
 	}
 }
