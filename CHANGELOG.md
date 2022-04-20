@@ -1,5 +1,49 @@
 # Change Log
 
+## v0.2.0
+
+## Isolate resources for best-effort workloads
+
+In Koodinator v0.2.0, we refined the ability to isolate resources for best-effort worklods.
+
+`koordlet` will set the cgroup parameters according to the resources described in the Pod Spec. Currently supports setting CPU Request/Limit, and Memory Limit.
+
+For CPU resources, only the case of `request == limit` is supported, and the support for the scenario of `request <= limit` will be supported in the next version.
+
+## Active eviction mechanism based on memory safety thresholds
+
+When latency-sensitiv applications are serving, memory usage may increase due to bursty traffic. Similarly, there may be similar scenarios for best-effort workloads, for example, the current computing load exceeds the expected resource Request/Limit.
+
+These scenarios will lead to an increase in the overall memory usage of the node, which will have an unpredictable impact on the runtime stability of the node side. For example, it can reduce the quality of service of latency-sensitiv applications or even become unavailable. Especially in a co-location environment, it is more challenging.
+
+We implemented an active eviction mechanism based on memory safety thresholds in Koodinator.
+
+`koordlet` will regularly check the recent memory usage of node and Pods to check whether the safty threshold is exceeded. If it exceeds, it will evict some best-effort Pods to release memory. This mechanism can better ensure the stability of node and latency-sensitiv applications.
+
+`koordlet` currently only evicts best-effort Pods, sorted according to the Priority specified in the Pod Spec. The lower the priority, the higher the priority to be evicted, the same priority will be sorted according to the memory usage rate (RSS), the higher the memory usage, the higher the priority to be evicted. This eviction selection algorithm is not static. More dimensions will be considered in the future, and more refined implementations will be implemented for more scenarios to achieve more reasonable evictions.
+
+The current memory utilization safety threshold default value is 70%. You can modify the `memoryEvictThresholdPercent` in ConfigMap `slo-controller-config` according to the actual situation,
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slo-controller-config
+  namespace: koordinator-system
+data:
+  colocation-config: |
+    {
+      "enable": true
+    }
+  resource-threshold-config: |
+    {
+      "clusterStrategy": {
+        "enable": true,
+        "memoryEvictThresholdPercent": 70
+      }
+    }
+```
+
 ## v0.1.0
 
 ### Node Metrics 
