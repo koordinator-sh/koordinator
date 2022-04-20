@@ -6,6 +6,7 @@ require (
 	github.com/docker/docker v20.10.2+incompatible
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/go-logr/logr v0.4.0
+	github.com/golang/mock v1.4.4
 	github.com/google/uuid v1.2.0
 	github.com/jinzhu/copier v0.3.5
 	github.com/moby/moby v20.10.14+incompatible
