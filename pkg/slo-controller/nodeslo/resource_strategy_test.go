@@ -37,6 +37,7 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
 			Enable:                      pointer.BoolPtr(true),
 			CPUSuppressThresholdPercent: pointer.Int64Ptr(60),
+			MemoryEvictThresholdPercent: pointer.Int64Ptr(85),
 		},
 	}
 	testingResourceThresholdCfgStr, _ := json.Marshal(testingResourceThresholdCfg)
@@ -143,6 +144,7 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 				Enable:                      pointer.BoolPtr(true),
 				CPUSuppressThresholdPercent: pointer.Int64Ptr(60),
 				CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
+				MemoryEvictThresholdPercent: pointer.Int64Ptr(85),
 			},
 		},
 		{
@@ -170,6 +172,7 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 				Enable:                      pointer.BoolPtr(true),
 				CPUSuppressThresholdPercent: pointer.Int64Ptr(50),
 				CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
+				MemoryEvictThresholdPercent: pointer.Int64Ptr(70),
 			},
 		},
 		{
@@ -197,6 +200,7 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 				Enable:                      pointer.BoolPtr(false),
 				CPUSuppressThresholdPercent: pointer.Int64Ptr(50),
 				CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
+				MemoryEvictThresholdPercent: pointer.Int64Ptr(70),
 			},
 		},
 	}
