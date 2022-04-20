@@ -14,10 +14,6 @@ status: provisional
 
 ## Table of Contents
 
-A table of contents is helpful for quickly jumping to sections of a proposal and for highlighting
-any additional information provided beyond the standard proposal template.
-[Tools for generating](https://github.com/ekalinin/github-markdown-toc) a table of contents from markdown are available.
-
 - [Title](#title)
   - [Table of Contents](#table-of-contents)
   - [Glossary](#glossary)
@@ -33,8 +29,6 @@ any additional information provided beyond the standard proposal template.
   - [Implementation History](#implementation-history)
 
 ## Glossary
-
-Refer to the [Cluster API Book Glossary](https://cluster-api.sigs.k8s.io/reference/glossary.html).
 
 Aggregated APIServer: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/apiserver-aggregation/
 
@@ -65,8 +59,8 @@ Different from webhook, the Aggregated APIServer in Koord-manager adopts the act
 
 - Create independent service and healthcheck to support active/standby mode detection, only the leader node is in a healthy state.
 - NodeMetric records data in memory, which is lost when restarting, and waiting for the node to report again.
-- NodeResource supports data timeliness awareness. Nodes that have not been updated in the last period should be marked as unhealthy and start the exit process. Koord-manager restart time and data reporting recovery time, kept within the node health judgment time.
-- Koordlet finds the master node by self-service discovery, and directly reports it to Koord-manager without forwarding by apiserver, so as to avoid too high frequency to enhance the network traffic of the load balancer in front of apiserver.
+- NodeResource supports data timeliness awareness. Nodes that have not been updated in the last period should be marked as unhealthy and start the exit process. Koord-manager restart time and data reporting recovery time should be kept within the node health judgment time.
+- Koordlet finds the master node by self-service discovery, and directly reports it to Koord-manager without forwarding by APIServer, so as to avoid too high frequency to enhance the network traffic of the load balancer in front of apiserver.
 
 ### Risks and Mitigations
 
