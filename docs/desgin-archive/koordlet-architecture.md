@@ -39,7 +39,7 @@ module is necessary, which can avoid making the code bloated the logic more comp
 - Provide implementation details of modules.
 
 ## Architecture
-![image](../images/koordlet-arch.png)
+![image](../images/koordlet-arch.svg)
 
 ### Modules
 
@@ -85,7 +85,7 @@ different kinds of policies, and provides flexible extension points during the l
 
 ## Use Cases
 ### LLC Isolation Injections during Pod Lifecycle
-![image](../images/llc-isolation.png)
+![image](../images/llc-isolation.svg)
 
 ### CPU-Suppress on BE Pods to Mitigate Resource Interference 
-![image](../images/cpu-suppress.png)
+![image](../images/cpu-suppress.svg)
