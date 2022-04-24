@@ -128,3 +128,17 @@ func GenerateCPUSetStr(cpuset []int32) string {
 func WriteCgroupCPUSet(cgroupFileDir, cpusetStr string) error {
 	return ioutil.WriteFile(filepath.Join(cgroupFileDir, system.CPUSFileName), []byte(cpusetStr), 0644)
 }
+
+func MinInt64(i, j int64) int64 {
+	if i < j {
+		return i
+	}
+	return j
+}
+
+func MaxInt64(i, j int64) int64 {
+	if i > j {
+		return i
+	}
+	return j
+}

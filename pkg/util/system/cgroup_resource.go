@@ -16,7 +16,11 @@ limitations under the License.
 
 package system
 
-import "math"
+import (
+	"math"
+
+	"k8s.io/klog/v2"
+)
 
 const (
 	// subfs name
@@ -27,11 +31,14 @@ const (
 )
 
 const (
+	CFSBasePeriodValue int64 = 100000
+
 	CPUStatFileName   = "cpu.stat"
 	CPUSharesFileName = "cpu.shares"
 	CPUCFSQuotaName   = "cpu.cfs_quota_us"
 	CPUCFSPeriodName  = "cpu.cfs_period_us"
 	CPUBVTWarpNsName  = "cpu.bvt_warp_ns"
+	CPUBurstName      = "cpu.cfs_burst_us"
 	CPUSFileName      = "cpuset.cpus"
 
 	CpuacctStatFileName = "cpuacct.stat"
@@ -43,7 +50,8 @@ const (
 )
 
 var (
-	MemHighValidator = &RangeValidator{name: MemHighFileName, min: 0, max: math.MaxInt64}
+	MemHighValidator  = &RangeValidator{name: MemHighFileName, min: 0, max: math.MaxInt64}
+	CPUBurstValidator = &RangeValidator{name: CPUBurstName, min: 0, max: 100 * 10 * 100000}
 )
 
 var (
@@ -51,6 +59,7 @@ var (
 	CPUShares    = CgroupFile{ResourceFileName: CPUSharesFileName, Subfs: CgroupCPUDir, IsAliOS: false}
 	CPUCFSQuota  = CgroupFile{ResourceFileName: CPUCFSQuotaName, Subfs: CgroupCPUDir, IsAliOS: false}
 	CPUCFSPeriod = CgroupFile{ResourceFileName: CPUCFSPeriodName, Subfs: CgroupCPUDir, IsAliOS: false}
+	CPUBurst     = CgroupFile{ResourceFileName: CPUBurstName, Subfs: CgroupCPUDir, IsAliOS: true, Validator: CPUBurstValidator}
 
 	CPUSet = CgroupFile{ResourceFileName: CPUSFileName, Subfs: CgroupCPUSetDir, IsAliOS: false}
 
@@ -66,4 +75,19 @@ type CgroupFile struct {
 	Subfs            string
 	IsAliOS          bool
 	Validator        Validate
+}
+
+func ValidateCgroupValue(value *int64, parentDir string, file CgroupFile) bool {
+	if value == nil {
+		klog.V(5).Infof("validate fail, dir:%s, file:%s, value is nil!", parentDir, file.ResourceFileName)
+		return false
+	}
+	if file.Validator != nil {
+		valid, msg := file.Validator.Validate(value)
+		if !valid {
+			klog.Warningf("validate fail! dir:%s, msg:%s", parentDir, msg)
+		}
+		return valid
+	}
+	return true
 }

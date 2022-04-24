@@ -50,10 +50,45 @@ type ResourceThresholdStrategy struct {
 	MemoryEvictLowerPercent *int64 `json:"memoryEvictLowerPercent,omitempty"`
 }
 
+type CPUBurstPolicy string
+
+const (
+	// disable cpu burst policy
+	CPUBurstNone = "none"
+	// only enable cpu burst policy by setting cpu.cfs_burst_us
+	CPUBurstOnly = "cpuBurstOnly"
+	// only enable cfs quota burst policy by scale up cpu.cfs_quota_us if pod throttled
+	CFSQuotaBurstOnly = "cfsQuotaBurstOnly"
+	// enable both
+	CPUBurstAuto = "auto"
+)
+
+type CPUBurstConfig struct {
+	Policy CPUBurstPolicy `json:"policy,omitempty"`
+	// cpu burst percentage for setting cpu.cfs_burst_us, legal range: [0, 10000], default as 1000 (1000%)
+	// +kubebuilder:default=1000
+	CPUBurstPercent *int64 `json:"cpuBurstPercent,omitempty"`
+	// pod cfs quota scale up ceil percentage, default = 300 (300%)
+	// +kubebuilder:default=300
+	CFSQuotaBurstPercent *int64 `json:"cfsQuotaBurstPercent,omitempty"`
+	// specifies a period of time for pod can use at burst, default = -1 (unlimited)
+	// +kubebuilder:default=-1
+	CFSQuotaBurstPeriodSeconds *int64 `json:"cfsQuotaBurstPeriodSeconds,omitempty"`
+}
+
+type CPUBurstStrategy struct {
+	CPUBurstConfig `json:",inline"`
+	// scale down cfs quota if node cpu overload, default = 50
+	// +kubebuilder:default=50
+	SharePoolThresholdPercent *int64 `json:"sharePoolThresholdPercent,omitempty"`
+}
+
 // NodeSLOSpec defines the desired state of NodeSLO
 type NodeSLOSpec struct {
 	// BE pods will be limited if node resource usage overload
 	ResourceUsedThresholdWithBE *ResourceThresholdStrategy `json:"resourceUsedThresholdWithBE,omitempty"`
+	// CPU Burst Strategy
+	CPUBurstStrategy *CPUBurstStrategy `json:"cpuBurstStrategy,omitempty"`
 }
 
 // NodeSLOStatus defines the observed state of NodeSLO
