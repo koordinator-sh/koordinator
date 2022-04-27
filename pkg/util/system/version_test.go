@@ -17,13 +17,13 @@ limitations under the License.
 package system
 
 import (
-	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestIsAliOS(t *testing.T) {
+func TestIsAnolisOS(t *testing.T) {
 	tests := []struct {
 		name       string
 		fs         string
@@ -31,27 +31,27 @@ func TestIsAliOS(t *testing.T) {
 		expect     bool
 	}{
 		{
-			name:       "alios_bvt_test",
+			name:       "anolis_bvt_test",
 			fs:         CgroupCPUDir,
-			cgroupFile: path.Join(CgroupCPUDir, CPUBVTWarpNsName),
+			cgroupFile: filepath.Join(CgroupCPUDir, CPUBVTWarpNsName),
 			expect:     true,
 		},
 		{
-			name:       "alios_wmark_ratio_systemd_test",
+			name:       "anolis_wmark_ratio_systemd_test",
 			fs:         CgroupMemDir,
-			cgroupFile: path.Join(CgroupMemDir, KubeRootNameSystemd, MemWmarkRatioFileName),
+			cgroupFile: filepath.Join(CgroupMemDir, KubeRootNameSystemd, MemWmarkRatioFileName),
 			expect:     true,
 		},
 		{
-			name:       "alios_wmark_ratio_cgroupfs_test",
+			name:       "anolis_wmark_ratio_cgroupfs_test",
 			fs:         CgroupMemDir,
-			cgroupFile: path.Join(CgroupMemDir, KubeRootNameCgroupfs, MemWmarkRatioFileName),
+			cgroupFile: filepath.Join(CgroupMemDir, KubeRootNameCgroupfs, MemWmarkRatioFileName),
 			expect:     true,
 		},
 		{
-			name:       "not_alios_test",
+			name:       "not_anolis_test",
 			fs:         CgroupCPUDir,
-			cgroupFile: path.Join(CgroupCPUDir, CPUCFSQuotaName),
+			cgroupFile: filepath.Join(CgroupCPUDir, CPUCFSQuotaName),
 			expect:     false,
 		},
 	}
@@ -62,8 +62,7 @@ func TestIsAliOS(t *testing.T) {
 			defer helper.Cleanup()
 			helper.MkDirAll(tt.fs)
 			helper.CreateFile(tt.cgroupFile)
-			assert.Equal(t, tt.expect, isSupportBvtOrWmarRatio())
-
+			assert.Equal(t, tt.expect, isAnolisOS())
 		})
 	}
 

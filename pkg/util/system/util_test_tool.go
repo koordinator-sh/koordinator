@@ -33,7 +33,7 @@ type FileTestUtil struct {
 // Creates a new test util for the specified subsystem
 func NewFileTestUtil(t *testing.T) *FileTestUtil {
 	tempDir, err := ioutil.TempDir("/tmp", "koordlet_test")
-	HostSystemInfo.IsAliOS = true
+	HostSystemInfo.IsAnolisOS = true
 
 	if err != nil {
 		t.Fatal(err)

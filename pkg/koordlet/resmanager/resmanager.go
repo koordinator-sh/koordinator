@@ -18,7 +18,6 @@ package resmanager
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
@@ -99,20 +98,6 @@ func newNodeSLOInformer(client koordclientset.Interface, nodeName string) cache.
 	)
 }
 
-// mergeSLOSpecResourceUsedThresholdWithBE merges the nodeSLO ResourceUsedThresholdWithBE with default configs
-func mergeSLOSpecResourceUsedThresholdWithBE(defaultSpec, newSpec *slov1alpha1.ResourceThresholdStrategy) *slov1alpha1.ResourceThresholdStrategy {
-	spec := &slov1alpha1.ResourceThresholdStrategy{}
-	if newSpec != nil {
-		spec = newSpec
-	}
-	// ignore err for serializing/deserializing the same struct type
-	data, _ := json.Marshal(spec)
-	// NOTE: use deepcopy to avoid a overwrite to the global default
-	out := defaultSpec.DeepCopy()
-	_ = json.Unmarshal(data, &out)
-	return out
-}
-
 // mergeDefaultNodeSLO merges nodeSLO with default config; ensure use the function with a RWMutex
 func (r *resmanager) mergeDefaultNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
 	if r.nodeSLO == nil || nodeSLO == nil {
@@ -125,6 +110,14 @@ func (r *resmanager) mergeDefaultNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
 		nodeSLO.Spec.ResourceUsedThresholdWithBE)
 	if mergedResourceUsedThresholdWithBESpec != nil {
 		r.nodeSLO.Spec.ResourceUsedThresholdWithBE = mergedResourceUsedThresholdWithBESpec
+	}
+
+	// merge ResourceQoSStrategy
+	mergedResourceQoSStrategySpec := mergeSLOSpecResourceQoSStrategy(util.DefaultNodeSLOSpecConfig().ResourceQoSStrategy,
+		nodeSLO.Spec.ResourceQoSStrategy)
+	mergeNoneResourceQoSIfDisabled(mergedResourceQoSStrategySpec)
+	if mergedResourceQoSStrategySpec != nil {
+		r.nodeSLO.Spec.ResourceQoSStrategy = mergedResourceQoSStrategySpec
 	}
 }
 
@@ -259,6 +252,10 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	}
 
 	util.RunFeature(r.reconcileBECgroup, []featuregate.Feature{features.BECgroupReconcile}, r.config.ReconcileIntervalSeconds, stopCh)
+
+	cgroupResourceReconcile := NewCgroupResourcesReconcile(r)
+	util.RunFeatureWithInit(func() error { return cgroupResourceReconcile.RunInit(stopCh) }, cgroupResourceReconcile.reconcile,
+		[]featuregate.Feature{features.CgroupReconcile}, r.config.ReconcileIntervalSeconds, stopCh)
 
 	cpuSuppress := NewCPUSuppress(r)
 	util.RunFeature(cpuSuppress.suppressBECPU, []featuregate.Feature{features.BECPUSuppress}, r.config.CPUSuppressIntervalSeconds, stopCh)

@@ -21,12 +21,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
-	"github.com/koordinator-sh/koordinator/pkg/util"
-
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -35,11 +29,15 @@ import (
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 // NodeSLOReconciler reconciles a NodeSLO object
@@ -104,6 +102,14 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 			"error: %v", node.Name, err)
 	} else {
 		nodeSLOSpec.ResourceUsedThresholdWithBE = resourceThresholdSpec
+	}
+
+	resourceQoSSpec, err := getResourceQoSSpec(node, configMap)
+	if err != nil {
+		klog.Warningf("getNodeSLOSpec(): failed to get resourceQoS spec for node %s, set oldSpec(if exist) or "+
+			"default, error: %v", node.Name, err)
+	} else {
+		nodeSLOSpec.ResourceQoSStrategy = resourceQoSSpec
 	}
 
 	return nodeSLOSpec, nil

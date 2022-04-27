@@ -103,6 +103,7 @@ func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
 
 func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
 	podCPUMilliReq := int64(0)
+	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
 		containerCPUMilliReq := GetContainerBEMilliCPURequest(&container)
 		if containerCPUMilliReq <= 0 {
@@ -118,6 +119,7 @@ func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
 
 func GetPodBEMilliCPULimit(pod *corev1.Pod) int64 {
 	podCPUMilliLimit := int64(0)
+	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
 		containerCPUMilliLimit := GetContainerBEMilliCPULimit(&container)
 		if containerCPUMilliLimit <= 0 {
@@ -131,8 +133,23 @@ func GetPodBEMilliCPULimit(pod *corev1.Pod) int64 {
 	return podCPUMilliLimit
 }
 
+func GetPodBEMemoryByteRequestIgnoreUnlimited(pod *corev1.Pod) int64 {
+	podMemoryByteRequest := int64(0)
+	// TODO: count init containers and pod overhead
+	for _, container := range pod.Spec.Containers {
+		containerMemByteRequest := GetContainerBEMemoryByteRequest(&container)
+		if containerMemByteRequest < 0 {
+			// consider request of unlimited container as 0
+			continue
+		}
+		podMemoryByteRequest += containerMemByteRequest
+	}
+	return podMemoryByteRequest
+}
+
 func GetPodBEMemoryByteLimit(pod *corev1.Pod) int64 {
 	podMemoryByteLimit := int64(0)
+	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
 		containerMemByteLimit := GetContainerBEMemoryByteLimit(&container)
 		if containerMemByteLimit <= 0 {

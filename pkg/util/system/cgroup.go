@@ -61,8 +61,8 @@ func CgroupFileWriteIfDifferent(cgroupTaskDir string, file CgroupFile, value str
 }
 
 func CgroupFileReadInt(cgroupTaskDir string, file CgroupFile) (*int64, error) {
-	if file.IsAliOS && !HostSystemInfo.IsAliOS {
-		return nil, fmt.Errorf("read cgroup config : %s fail, need alios kernel", file.ResourceFileName)
+	if file.IsAnolisOS && !HostSystemInfo.IsAnolisOS {
+		return nil, fmt.Errorf("read cgroup config : %s fail, need anolis kernel", file.ResourceFileName)
 	}
 
 	dataStr, err := CgroupFileRead(cgroupTaskDir, file)
@@ -87,8 +87,8 @@ func CgroupFileReadInt(cgroupTaskDir string, file CgroupFile) (*int64, error) {
 }
 
 func CgroupFileRead(cgroupTaskDir string, file CgroupFile) (string, error) {
-	if file.IsAliOS && !HostSystemInfo.IsAliOS {
-		return "", fmt.Errorf("read cgroup config : %s fail, need alios kernel", file.ResourceFileName)
+	if file.IsAnolisOS && !HostSystemInfo.IsAnolisOS {
+		return "", fmt.Errorf("read cgroup config : %s fail, need anolis kernel", file.ResourceFileName)
 	}
 
 	klog.V(5).Infof("read %s,%s", cgroupTaskDir, file.ResourceFileName)
@@ -99,8 +99,8 @@ func CgroupFileRead(cgroupTaskDir string, file CgroupFile) (string, error) {
 }
 
 func CgroupFileWrite(cgroupTaskDir string, file CgroupFile, data string) error {
-	if file.IsAliOS && !HostSystemInfo.IsAliOS {
-		return fmt.Errorf("write cgroup config : %v [%s] fail, need alios kernel", file.ResourceFileName, data)
+	if file.IsAnolisOS && !HostSystemInfo.IsAnolisOS {
+		return fmt.Errorf("write cgroup config : %v [%s] fail, need anolis kernel", file.ResourceFileName, data)
 	}
 
 	klog.V(5).Infof("write %s,%s [%s]", cgroupTaskDir, file.ResourceFileName, data)

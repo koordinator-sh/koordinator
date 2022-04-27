@@ -21,4 +21,5 @@ const (
 	SLOCtrlConfigMap           = "slo-controller-config"
 	ColocationConfigKey        = "colocation-config"
 	ResourceThresholdConfigKey = "resource-threshold-config"
+	ResourceQoSConfigKey       = "resource-qos-config"
 )
