@@ -11,7 +11,7 @@ part of the Koordinator community.
 To be honest, we regard every user of Koordinator as a very kind contributor. After experiencing Koordinator, you may
 have some feedback for the project. Then feel free to open an issue.
 
-There are lot of cases when you could open an issue:
+There are lots of cases when you could open an issue:
 
 - bug report
 - feature request
