@@ -182,7 +182,7 @@ func Test_UpdateBatchByCache(t *testing.T) {
 
 			resourceCache := cache.NewCache(time.Second, time.Second)
 			for _, resource := range tt.initCache {
-				resourceCache.Set(resource.Key(), resource, resource.GetLastUpdateTimestamp().Sub(time.Now())+time.Second)
+				resourceCache.Set(resource.Key(), resource, time.Until(resource.GetLastUpdateTimestamp())+time.Second)
 			}
 
 			rm := ResourceUpdateExecutor{name: tt.name, forceUpdateSeconds: 1, resourceCache: resourceCache, locker: &sync.Mutex{}}
@@ -202,14 +202,13 @@ func Test_UpdateBatchByCache(t *testing.T) {
 func prepareResourceFiles(helper *sysutil.FileTestUtil, initFiles []ResourceUpdater) {
 	for _, resource := range initFiles {
 		var err error
-		switch resource.(type) {
+		switch rsc := resource.(type) {
 		case *CommonResourceUpdater:
-			helper.CreateFile(resource.Key())
+			helper.CreateFile(rsc.Key())
 			err = sysutil.CommonFileWrite(resource.Key(), resource.Value())
 		case *CgroupResourceUpdater:
-			cgroupResource := resource.(*CgroupResourceUpdater)
-			helper.CreateCgroupFile(cgroupResource.ParentDir, cgroupResource.file)
-			err = sysutil.CgroupFileWrite(cgroupResource.ParentDir, cgroupResource.file, resource.Value())
+			helper.CreateCgroupFile(rsc.ParentDir, rsc.file)
+			err = sysutil.CgroupFileWrite(rsc.ParentDir, rsc.file, resource.Value())
 		default:
 			err = fmt.Errorf("unknown resource type %T", resource)
 		}
@@ -226,7 +225,7 @@ func getActualResources(expect []ResourceUpdater) map[string]ResourceUpdater {
 		var value string
 		var err error
 		gotResource := resource.Clone()
-		switch gotResource.(type) {
+		switch rsc := gotResource.(type) {
 		case *CommonResourceUpdater:
 			value, err = sysutil.CommonFileRead(resource.Key())
 			if err != nil { // abort set value when file read failed
@@ -234,8 +233,7 @@ func getActualResources(expect []ResourceUpdater) map[string]ResourceUpdater {
 				continue
 			}
 		case *CgroupResourceUpdater:
-			cgroupResource := gotResource.(*CgroupResourceUpdater)
-			value, err = sysutil.CgroupFileRead(cgroupResource.ParentDir, cgroupResource.file)
+			value, err = sysutil.CgroupFileRead(rsc.ParentDir, rsc.file)
 			if err != nil { // abort set value when file read failed
 				klog.Errorf("getActualResources failed for cgroup resource %s, err: %s", resource.Key(), err)
 				continue
