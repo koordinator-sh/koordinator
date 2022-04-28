@@ -19,4 +19,6 @@ package utils
 const (
 	DefaultRuntimeManagerSocketPath = "/var/run/runtimemanger/runtimemanager.sock"
 	DefaultContainerdSocketPath     = "/run/containerd/containerd.sock"
+
+	UnKnownCgroupParent = "UnKnownCgroupParent"
 )
