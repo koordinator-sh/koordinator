@@ -41,5 +41,4 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.CPUSuppressIntervalSeconds, "CPUSuppressIntervalSeconds", c.CPUSuppressIntervalSeconds, "suppress be pod cpu resource interval by seconds")
 	fs.IntVar(&c.MemoryEvictIntervalSeconds, "MemoryEvictIntervalSeconds", c.MemoryEvictIntervalSeconds, "evict be pod(memory) interval by seconds")
 	fs.IntVar(&c.MemoryEvictCoolTimeSeconds, "MemoryEvictCoolTimeSeconds", c.MemoryEvictCoolTimeSeconds, "cooling time: memory next evict time should after lastEvictTime + MemoryEvictCoolTimeSeconds")
-
 }

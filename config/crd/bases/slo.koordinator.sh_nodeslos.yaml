@@ -65,6 +65,490 @@ spec:
                     format: int64
                     type: integer
                 type: object
+              resourceQoSStrategy:
+                description: QoS config strategy for pods of different qos-class
+                properties:
+                  be:
+                    description: ResourceQoS for BE pods.
+                    properties:
+                      memoryQoS:
+                        description: MemoryQoSCfg stores node-level config of memory
+                          qos
+                        properties:
+                          enable:
+                            description: 'Enable indicates whether the memory qos
+                              is enabled (Cluster default: false). This field is used
+                              for node-level control, while pod-level configuration
+                              is done with MemoryQoS and `Policy` instead of an `Enable`
+                              option. Please view the differences between MemoryQoSCfg
+                              and PodMemoryQoSConfig structs.'
+                            type: boolean
+                          lowLimitPercent:
+                            description: 'LowLimitPercent specifies the lowLimitFactor
+                              percentage to calculate `memory.low`, which TRIES BEST
+                              protecting memory from global reclamation when memory
+                              usage does not exceed the low limit unless no unprotected
+                              memcg can be reclaimed. NOTE: `memory.low` should be
+                              larger than `memory.min`. If spec.requests.memory ==
+                              spec.limits.memory, pod `memory.low` and `memory.high`
+                              become invalid, while `memory.wmark_ratio` is still
+                              in effect. Close: 0.'
+                            format: int64
+                            type: integer
+                          minLimitPercent:
+                            description: 'memcg qos If enabled, memcg qos will be
+                              set by the agent, where some fields are implicitly calculated
+                              from pod spec. 1. `memory.min` := spec.requests.memory
+                              * minLimitFactor / 100 (use 0 if requests.memory is
+                              not set) 2. `memory.low` := spec.requests.memory * lowLimitFactor
+                              / 100 (use 0 if requests.memory is not set) 3. `memory.limit_in_bytes`
+                              := spec.limits.memory (set $node.allocatable.memory
+                              if limits.memory is not set) 4. `memory.high` := memory.limit_in_bytes
+                              * throttlingFactor / 100 (use "max" if memory.high <=
+                              memory.min) MinLimitPercent specifies the minLimitFactor
+                              percentage to calculate `memory.min`, which protects
+                              memory from global reclamation when memory usage does
+                              not exceed the min limit. Close: 0.'
+                            format: int64
+                            type: integer
+                          oomKillGroup:
+                            format: int64
+                            type: integer
+                          priority:
+                            format: int64
+                            type: integer
+                          priorityEnable:
+                            description: 'TODO: enhance the usages of oom priority
+                              and oom kill group'
+                            format: int64
+                            type: integer
+                          throttlingPercent:
+                            description: 'ThrottlingPercent specifies the throttlingFactor
+                              percentage to calculate `memory.high` with pod memory.limits
+                              or node allocatable memory, which triggers memcg direct
+                              reclamation when memory usage exceeds. Lower the factor
+                              brings more heavier reclaim pressure. Close: 0.'
+                            format: int64
+                            type: integer
+                          wmarkMinAdj:
+                            description: 'wmark_min_adj (Anolis OS required) WmarkMinAdj
+                              specifies `memory.wmark_min_adj` which adjusts per-memcg
+                              threshold for global memory reclamation. Lower the factor
+                              brings later reclamation. The adjustment uses different
+                              formula for different value range. [-25, 0)：global_wmark_min''
+                              = global_wmark_min + (global_wmark_min - 0) * wmarkMinAdj
+                              (0, 50]：global_wmark_min'' = global_wmark_min + (global_wmark_low
+                              - global_wmark_min) * wmarkMinAdj Close: [LSR:0, LS:0,
+                              BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].'
+                            format: int64
+                            type: integer
+                          wmarkRatio:
+                            description: 'wmark_ratio (Anolis OS required) Async memory
+                              reclamation is triggered when cgroup memory usage exceeds
+                              `memory.wmark_high` and the reclamation stops when usage
+                              is below `memory.wmark_low`. Basically, `memory.wmark_high`
+                              := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+                              `memory.wmark_low` := min(memory.high, memory.limit_in_bytes)
+                              * (memory.wmark_ratio - memory.wmark_scale_factor) WmarkRatio
+                              specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`,
+                              which triggers async memory reclamation when memory
+                              usage exceeds. Close: 0. Recommended: 95.'
+                            format: int64
+                            type: integer
+                          wmarkScalePermill:
+                            description: 'WmarkScalePermill specifies `memory.wmark_scale_factor`
+                              that helps calculate `memory.wmark_low`, which stops
+                              async memory reclamation when memory usage belows. Close:
+                              50. Recommended: 20.'
+                            format: int64
+                            type: integer
+                        type: object
+                    type: object
+                  cgroupRoot:
+                    description: ResourceQoS for root cgroup.
+                    properties:
+                      memoryQoS:
+                        description: MemoryQoSCfg stores node-level config of memory
+                          qos
+                        properties:
+                          enable:
+                            description: 'Enable indicates whether the memory qos
+                              is enabled (Cluster default: false). This field is used
+                              for node-level control, while pod-level configuration
+                              is done with MemoryQoS and `Policy` instead of an `Enable`
+                              option. Please view the differences between MemoryQoSCfg
+                              and PodMemoryQoSConfig structs.'
+                            type: boolean
+                          lowLimitPercent:
+                            description: 'LowLimitPercent specifies the lowLimitFactor
+                              percentage to calculate `memory.low`, which TRIES BEST
+                              protecting memory from global reclamation when memory
+                              usage does not exceed the low limit unless no unprotected
+                              memcg can be reclaimed. NOTE: `memory.low` should be
+                              larger than `memory.min`. If spec.requests.memory ==
+                              spec.limits.memory, pod `memory.low` and `memory.high`
+                              become invalid, while `memory.wmark_ratio` is still
+                              in effect. Close: 0.'
+                            format: int64
+                            type: integer
+                          minLimitPercent:
+                            description: 'memcg qos If enabled, memcg qos will be
+                              set by the agent, where some fields are implicitly calculated
+                              from pod spec. 1. `memory.min` := spec.requests.memory
+                              * minLimitFactor / 100 (use 0 if requests.memory is
+                              not set) 2. `memory.low` := spec.requests.memory * lowLimitFactor
+                              / 100 (use 0 if requests.memory is not set) 3. `memory.limit_in_bytes`
+                              := spec.limits.memory (set $node.allocatable.memory
+                              if limits.memory is not set) 4. `memory.high` := memory.limit_in_bytes
+                              * throttlingFactor / 100 (use "max" if memory.high <=
+                              memory.min) MinLimitPercent specifies the minLimitFactor
+                              percentage to calculate `memory.min`, which protects
+                              memory from global reclamation when memory usage does
+                              not exceed the min limit. Close: 0.'
+                            format: int64
+                            type: integer
+                          oomKillGroup:
+                            format: int64
+                            type: integer
+                          priority:
+                            format: int64
+                            type: integer
+                          priorityEnable:
+                            description: 'TODO: enhance the usages of oom priority
+                              and oom kill group'
+                            format: int64
+                            type: integer
+                          throttlingPercent:
+                            description: 'ThrottlingPercent specifies the throttlingFactor
+                              percentage to calculate `memory.high` with pod memory.limits
+                              or node allocatable memory, which triggers memcg direct
+                              reclamation when memory usage exceeds. Lower the factor
+                              brings more heavier reclaim pressure. Close: 0.'
+                            format: int64
+                            type: integer
+                          wmarkMinAdj:
+                            description: 'wmark_min_adj (Anolis OS required) WmarkMinAdj
+                              specifies `memory.wmark_min_adj` which adjusts per-memcg
+                              threshold for global memory reclamation. Lower the factor
+                              brings later reclamation. The adjustment uses different
+                              formula for different value range. [-25, 0)：global_wmark_min''
+                              = global_wmark_min + (global_wmark_min - 0) * wmarkMinAdj
+                              (0, 50]：global_wmark_min'' = global_wmark_min + (global_wmark_low
+                              - global_wmark_min) * wmarkMinAdj Close: [LSR:0, LS:0,
+                              BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].'
+                            format: int64
+                            type: integer
+                          wmarkRatio:
+                            description: 'wmark_ratio (Anolis OS required) Async memory
+                              reclamation is triggered when cgroup memory usage exceeds
+                              `memory.wmark_high` and the reclamation stops when usage
+                              is below `memory.wmark_low`. Basically, `memory.wmark_high`
+                              := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+                              `memory.wmark_low` := min(memory.high, memory.limit_in_bytes)
+                              * (memory.wmark_ratio - memory.wmark_scale_factor) WmarkRatio
+                              specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`,
+                              which triggers async memory reclamation when memory
+                              usage exceeds. Close: 0. Recommended: 95.'
+                            format: int64
+                            type: integer
+                          wmarkScalePermill:
+                            description: 'WmarkScalePermill specifies `memory.wmark_scale_factor`
+                              that helps calculate `memory.wmark_low`, which stops
+                              async memory reclamation when memory usage belows. Close:
+                              50. Recommended: 20.'
+                            format: int64
+                            type: integer
+                        type: object
+                    type: object
+                  ls:
+                    description: ResourceQoS for LS pods.
+                    properties:
+                      memoryQoS:
+                        description: MemoryQoSCfg stores node-level config of memory
+                          qos
+                        properties:
+                          enable:
+                            description: 'Enable indicates whether the memory qos
+                              is enabled (Cluster default: false). This field is used
+                              for node-level control, while pod-level configuration
+                              is done with MemoryQoS and `Policy` instead of an `Enable`
+                              option. Please view the differences between MemoryQoSCfg
+                              and PodMemoryQoSConfig structs.'
+                            type: boolean
+                          lowLimitPercent:
+                            description: 'LowLimitPercent specifies the lowLimitFactor
+                              percentage to calculate `memory.low`, which TRIES BEST
+                              protecting memory from global reclamation when memory
+                              usage does not exceed the low limit unless no unprotected
+                              memcg can be reclaimed. NOTE: `memory.low` should be
+                              larger than `memory.min`. If spec.requests.memory ==
+                              spec.limits.memory, pod `memory.low` and `memory.high`
+                              become invalid, while `memory.wmark_ratio` is still
+                              in effect. Close: 0.'
+                            format: int64
+                            type: integer
+                          minLimitPercent:
+                            description: 'memcg qos If enabled, memcg qos will be
+                              set by the agent, where some fields are implicitly calculated
+                              from pod spec. 1. `memory.min` := spec.requests.memory
+                              * minLimitFactor / 100 (use 0 if requests.memory is
+                              not set) 2. `memory.low` := spec.requests.memory * lowLimitFactor
+                              / 100 (use 0 if requests.memory is not set) 3. `memory.limit_in_bytes`
+                              := spec.limits.memory (set $node.allocatable.memory
+                              if limits.memory is not set) 4. `memory.high` := memory.limit_in_bytes
+                              * throttlingFactor / 100 (use "max" if memory.high <=
+                              memory.min) MinLimitPercent specifies the minLimitFactor
+                              percentage to calculate `memory.min`, which protects
+                              memory from global reclamation when memory usage does
+                              not exceed the min limit. Close: 0.'
+                            format: int64
+                            type: integer
+                          oomKillGroup:
+                            format: int64
+                            type: integer
+                          priority:
+                            format: int64
+                            type: integer
+                          priorityEnable:
+                            description: 'TODO: enhance the usages of oom priority
+                              and oom kill group'
+                            format: int64
+                            type: integer
+                          throttlingPercent:
+                            description: 'ThrottlingPercent specifies the throttlingFactor
+                              percentage to calculate `memory.high` with pod memory.limits
+                              or node allocatable memory, which triggers memcg direct
+                              reclamation when memory usage exceeds. Lower the factor
+                              brings more heavier reclaim pressure. Close: 0.'
+                            format: int64
+                            type: integer
+                          wmarkMinAdj:
+                            description: 'wmark_min_adj (Anolis OS required) WmarkMinAdj
+                              specifies `memory.wmark_min_adj` which adjusts per-memcg
+                              threshold for global memory reclamation. Lower the factor
+                              brings later reclamation. The adjustment uses different
+                              formula for different value range. [-25, 0)：global_wmark_min''
+                              = global_wmark_min + (global_wmark_min - 0) * wmarkMinAdj
+                              (0, 50]：global_wmark_min'' = global_wmark_min + (global_wmark_low
+                              - global_wmark_min) * wmarkMinAdj Close: [LSR:0, LS:0,
+                              BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].'
+                            format: int64
+                            type: integer
+                          wmarkRatio:
+                            description: 'wmark_ratio (Anolis OS required) Async memory
+                              reclamation is triggered when cgroup memory usage exceeds
+                              `memory.wmark_high` and the reclamation stops when usage
+                              is below `memory.wmark_low`. Basically, `memory.wmark_high`
+                              := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+                              `memory.wmark_low` := min(memory.high, memory.limit_in_bytes)
+                              * (memory.wmark_ratio - memory.wmark_scale_factor) WmarkRatio
+                              specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`,
+                              which triggers async memory reclamation when memory
+                              usage exceeds. Close: 0. Recommended: 95.'
+                            format: int64
+                            type: integer
+                          wmarkScalePermill:
+                            description: 'WmarkScalePermill specifies `memory.wmark_scale_factor`
+                              that helps calculate `memory.wmark_low`, which stops
+                              async memory reclamation when memory usage belows. Close:
+                              50. Recommended: 20.'
+                            format: int64
+                            type: integer
+                        type: object
+                    type: object
+                  lsr:
+                    description: ResourceQoS for LSR pods.
+                    properties:
+                      memoryQoS:
+                        description: MemoryQoSCfg stores node-level config of memory
+                          qos
+                        properties:
+                          enable:
+                            description: 'Enable indicates whether the memory qos
+                              is enabled (Cluster default: false). This field is used
+                              for node-level control, while pod-level configuration
+                              is done with MemoryQoS and `Policy` instead of an `Enable`
+                              option. Please view the differences between MemoryQoSCfg
+                              and PodMemoryQoSConfig structs.'
+                            type: boolean
+                          lowLimitPercent:
+                            description: 'LowLimitPercent specifies the lowLimitFactor
+                              percentage to calculate `memory.low`, which TRIES BEST
+                              protecting memory from global reclamation when memory
+                              usage does not exceed the low limit unless no unprotected
+                              memcg can be reclaimed. NOTE: `memory.low` should be
+                              larger than `memory.min`. If spec.requests.memory ==
+                              spec.limits.memory, pod `memory.low` and `memory.high`
+                              become invalid, while `memory.wmark_ratio` is still
+                              in effect. Close: 0.'
+                            format: int64
+                            type: integer
+                          minLimitPercent:
+                            description: 'memcg qos If enabled, memcg qos will be
+                              set by the agent, where some fields are implicitly calculated
+                              from pod spec. 1. `memory.min` := spec.requests.memory
+                              * minLimitFactor / 100 (use 0 if requests.memory is
+                              not set) 2. `memory.low` := spec.requests.memory * lowLimitFactor
+                              / 100 (use 0 if requests.memory is not set) 3. `memory.limit_in_bytes`
+                              := spec.limits.memory (set $node.allocatable.memory
+                              if limits.memory is not set) 4. `memory.high` := memory.limit_in_bytes
+                              * throttlingFactor / 100 (use "max" if memory.high <=
+                              memory.min) MinLimitPercent specifies the minLimitFactor
+                              percentage to calculate `memory.min`, which protects
+                              memory from global reclamation when memory usage does
+                              not exceed the min limit. Close: 0.'
+                            format: int64
+                            type: integer
+                          oomKillGroup:
+                            format: int64
+                            type: integer
+                          priority:
+                            format: int64
+                            type: integer
+                          priorityEnable:
+                            description: 'TODO: enhance the usages of oom priority
+                              and oom kill group'
+                            format: int64
+                            type: integer
+                          throttlingPercent:
+                            description: 'ThrottlingPercent specifies the throttlingFactor
+                              percentage to calculate `memory.high` with pod memory.limits
+                              or node allocatable memory, which triggers memcg direct
+                              reclamation when memory usage exceeds. Lower the factor
+                              brings more heavier reclaim pressure. Close: 0.'
+                            format: int64
+                            type: integer
+                          wmarkMinAdj:
+                            description: 'wmark_min_adj (Anolis OS required) WmarkMinAdj
+                              specifies `memory.wmark_min_adj` which adjusts per-memcg
+                              threshold for global memory reclamation. Lower the factor
+                              brings later reclamation. The adjustment uses different
+                              formula for different value range. [-25, 0)：global_wmark_min''
+                              = global_wmark_min + (global_wmark_min - 0) * wmarkMinAdj
+                              (0, 50]：global_wmark_min'' = global_wmark_min + (global_wmark_low
+                              - global_wmark_min) * wmarkMinAdj Close: [LSR:0, LS:0,
+                              BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].'
+                            format: int64
+                            type: integer
+                          wmarkRatio:
+                            description: 'wmark_ratio (Anolis OS required) Async memory
+                              reclamation is triggered when cgroup memory usage exceeds
+                              `memory.wmark_high` and the reclamation stops when usage
+                              is below `memory.wmark_low`. Basically, `memory.wmark_high`
+                              := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+                              `memory.wmark_low` := min(memory.high, memory.limit_in_bytes)
+                              * (memory.wmark_ratio - memory.wmark_scale_factor) WmarkRatio
+                              specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`,
+                              which triggers async memory reclamation when memory
+                              usage exceeds. Close: 0. Recommended: 95.'
+                            format: int64
+                            type: integer
+                          wmarkScalePermill:
+                            description: 'WmarkScalePermill specifies `memory.wmark_scale_factor`
+                              that helps calculate `memory.wmark_low`, which stops
+                              async memory reclamation when memory usage belows. Close:
+                              50. Recommended: 20.'
+                            format: int64
+                            type: integer
+                        type: object
+                    type: object
+                  system:
+                    description: ResourceQoS for system pods
+                    properties:
+                      memoryQoS:
+                        description: MemoryQoSCfg stores node-level config of memory
+                          qos
+                        properties:
+                          enable:
+                            description: 'Enable indicates whether the memory qos
+                              is enabled (Cluster default: false). This field is used
+                              for node-level control, while pod-level configuration
+                              is done with MemoryQoS and `Policy` instead of an `Enable`
+                              option. Please view the differences between MemoryQoSCfg
+                              and PodMemoryQoSConfig structs.'
+                            type: boolean
+                          lowLimitPercent:
+                            description: 'LowLimitPercent specifies the lowLimitFactor
+                              percentage to calculate `memory.low`, which TRIES BEST
+                              protecting memory from global reclamation when memory
+                              usage does not exceed the low limit unless no unprotected
+                              memcg can be reclaimed. NOTE: `memory.low` should be
+                              larger than `memory.min`. If spec.requests.memory ==
+                              spec.limits.memory, pod `memory.low` and `memory.high`
+                              become invalid, while `memory.wmark_ratio` is still
+                              in effect. Close: 0.'
+                            format: int64
+                            type: integer
+                          minLimitPercent:
+                            description: 'memcg qos If enabled, memcg qos will be
+                              set by the agent, where some fields are implicitly calculated
+                              from pod spec. 1. `memory.min` := spec.requests.memory
+                              * minLimitFactor / 100 (use 0 if requests.memory is
+                              not set) 2. `memory.low` := spec.requests.memory * lowLimitFactor
+                              / 100 (use 0 if requests.memory is not set) 3. `memory.limit_in_bytes`
+                              := spec.limits.memory (set $node.allocatable.memory
+                              if limits.memory is not set) 4. `memory.high` := memory.limit_in_bytes
+                              * throttlingFactor / 100 (use "max" if memory.high <=
+                              memory.min) MinLimitPercent specifies the minLimitFactor
+                              percentage to calculate `memory.min`, which protects
+                              memory from global reclamation when memory usage does
+                              not exceed the min limit. Close: 0.'
+                            format: int64
+                            type: integer
+                          oomKillGroup:
+                            format: int64
+                            type: integer
+                          priority:
+                            format: int64
+                            type: integer
+                          priorityEnable:
+                            description: 'TODO: enhance the usages of oom priority
+                              and oom kill group'
+                            format: int64
+                            type: integer
+                          throttlingPercent:
+                            description: 'ThrottlingPercent specifies the throttlingFactor
+                              percentage to calculate `memory.high` with pod memory.limits
+                              or node allocatable memory, which triggers memcg direct
+                              reclamation when memory usage exceeds. Lower the factor
+                              brings more heavier reclaim pressure. Close: 0.'
+                            format: int64
+                            type: integer
+                          wmarkMinAdj:
+                            description: 'wmark_min_adj (Anolis OS required) WmarkMinAdj
+                              specifies `memory.wmark_min_adj` which adjusts per-memcg
+                              threshold for global memory reclamation. Lower the factor
+                              brings later reclamation. The adjustment uses different
+                              formula for different value range. [-25, 0)：global_wmark_min''
+                              = global_wmark_min + (global_wmark_min - 0) * wmarkMinAdj
+                              (0, 50]：global_wmark_min'' = global_wmark_min + (global_wmark_low
+                              - global_wmark_min) * wmarkMinAdj Close: [LSR:0, LS:0,
+                              BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].'
+                            format: int64
+                            type: integer
+                          wmarkRatio:
+                            description: 'wmark_ratio (Anolis OS required) Async memory
+                              reclamation is triggered when cgroup memory usage exceeds
+                              `memory.wmark_high` and the reclamation stops when usage
+                              is below `memory.wmark_low`. Basically, `memory.wmark_high`
+                              := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+                              `memory.wmark_low` := min(memory.high, memory.limit_in_bytes)
+                              * (memory.wmark_ratio - memory.wmark_scale_factor) WmarkRatio
+                              specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`,
+                              which triggers async memory reclamation when memory
+                              usage exceeds. Close: 0. Recommended: 95.'
+                            format: int64
+                            type: integer
+                          wmarkScalePermill:
+                            description: 'WmarkScalePermill specifies `memory.wmark_scale_factor`
+                              that helps calculate `memory.wmark_low`, which stops
+                              async memory reclamation when memory usage belows. Close:
+                              50. Recommended: 20.'
+                            format: int64
+                            type: integer
+                        type: object
+                    type: object
+                type: object
               resourceUsedThresholdWithBE:
                 description: BE pods will be limited if node resource usage overload
                 properties:

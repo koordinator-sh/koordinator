@@ -74,3 +74,47 @@ func getResourceThresholdSpec(node *corev1.Node, configMap *corev1.ConfigMap) (*
 
 	return mergedStrategy, nil
 }
+
+func getResourceQoSSpec(node *corev1.Node, configMap *corev1.ConfigMap) (*slov1alpha1.ResourceQoSStrategy, error) {
+	mergedStrategy := &slov1alpha1.ResourceQoSStrategy{}
+	cfgStr, ok := configMap.Data[config.ResourceQoSConfigKey]
+	if !ok {
+		return mergedStrategy, nil
+	}
+
+	cfg := config.ResourceQoSCfg{}
+	if err := json.Unmarshal([]byte(cfgStr), &cfg); err != nil {
+		klog.Warningf("failed to unmarshal config %s, err: %s", config.ResourceQoSConfigKey, err)
+		return nil, err
+	}
+
+	// use cluster strategy if no node strategy matched
+	if cfg.ClusterStrategy != nil {
+		mergedStrategyInterface, _ := util.MergeCfg(mergedStrategy, cfg.ClusterStrategy)
+		mergedStrategy = mergedStrategyInterface.(*slov1alpha1.ResourceQoSStrategy)
+	}
+
+	// NOTE: sort selectors by the string order
+	sort.Slice(cfg.NodeStrategies, func(i, j int) bool {
+		return cfg.NodeStrategies[i].NodeSelector.String() < cfg.NodeStrategies[j].NodeSelector.String()
+	})
+
+	nodeLabels := labels.Set(node.Labels)
+	for _, nodeStrategy := range cfg.NodeStrategies {
+		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
+		if err != nil {
+			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
+			continue
+		}
+		if selector.Matches(nodeLabels) {
+			// merge with the firstly-matched node strategy
+			if nodeStrategy.ResourceQoSStrategy != nil {
+				mergedStrategyInterface, _ := util.MergeCfg(mergedStrategy, nodeStrategy.ResourceQoSStrategy)
+				mergedStrategy = mergedStrategyInterface.(*slov1alpha1.ResourceQoSStrategy)
+			}
+			break
+		}
+	}
+
+	return mergedStrategy, nil
+}

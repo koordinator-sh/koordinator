@@ -90,6 +90,13 @@ func GetContainerMilliCPULimit(c *corev1.Container) int64 {
 	return -1
 }
 
+func GetContainerMemoryByteLimit(c *corev1.Container) int64 {
+	if memLimit, ok := c.Resources.Limits[corev1.ResourceMemory]; ok {
+		return memLimit.Value()
+	}
+	return -1
+}
+
 func GetContainerBEMilliCPURequest(c *corev1.Container) int64 {
 	if cpuRequest, ok := c.Resources.Requests[extension.BatchCPU]; ok {
 		return cpuRequest.Value()
@@ -100,6 +107,13 @@ func GetContainerBEMilliCPURequest(c *corev1.Container) int64 {
 func GetContainerBEMilliCPULimit(c *corev1.Container) int64 {
 	if cpuRequest, ok := c.Resources.Limits[extension.BatchCPU]; ok {
 		return cpuRequest.Value()
+	}
+	return -1
+}
+
+func GetContainerBEMemoryByteRequest(c *corev1.Container) int64 {
+	if memLimit, ok := c.Resources.Limits[extension.BatchMemory]; ok {
+		return memLimit.Value()
 	}
 	return -1
 }
