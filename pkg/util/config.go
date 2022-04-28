@@ -37,3 +37,19 @@ func DefaultResourceThresholdStrategy() *slov1alpha1.ResourceThresholdStrategy {
 		MemoryEvictThresholdPercent: pointer.Int64Ptr(70),
 	}
 }
+
+func DefaultCPUBurstConfig() slov1alpha1.CPUBurstConfig {
+	return slov1alpha1.CPUBurstConfig{
+		Policy:                     slov1alpha1.CPUBurstNone,
+		CPUBurstPercent:            pointer.Int64Ptr(1000),
+		CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
+		CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(-1),
+	}
+}
+
+func DefaultCPUBurstStrategy() *slov1alpha1.CPUBurstStrategy {
+	return &slov1alpha1.CPUBurstStrategy{
+		CPUBurstConfig:            DefaultCPUBurstConfig(),
+		SharePoolThresholdPercent: pointer.Int64Ptr(50),
+	}
+}

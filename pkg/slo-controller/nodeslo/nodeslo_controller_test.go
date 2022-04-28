@@ -100,6 +100,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			}).Build()},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
+				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
 		},
@@ -124,6 +125,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			}).Build()},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
+				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
 		},
@@ -148,6 +150,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			}).Build()},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
+				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
 		},
@@ -172,6 +175,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			}).Build()},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
+				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
 		},
@@ -222,6 +226,7 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 
 	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{
 		ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
+		CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 	}
 	nodeReq := ctrl.Request{NamespacedName: types.NamespacedName{Name: testingNode.Name}}
 	// the NodeSLO does not exists before getting created

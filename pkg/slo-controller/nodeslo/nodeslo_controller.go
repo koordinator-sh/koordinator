@@ -55,7 +55,7 @@ func (r *NodeSLOReconciler) initNodeSLO(node *corev1.Node, nodeSLO *slov1alpha1.
 	// get spec from a configmap
 	spec, err := r.getNodeSLOSpec(node, nil)
 	if err != nil {
-		klog.Errorf("initNodeSLO failed to get NodeSLO %s/%s spec", node.GetNamespace(), node.GetName())
+		klog.Errorf("initNodeSLO failed to get NodeSLO %s/%s spec, error: %v", node.GetNamespace(), node.GetName(), err)
 		return err
 	}
 
@@ -104,6 +104,14 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 			"error: %v", node.Name, err)
 	} else {
 		nodeSLOSpec.ResourceUsedThresholdWithBE = resourceThresholdSpec
+	}
+
+	cpuBurstSpec, err := getCPUBurstConfigSpec(node, configMap)
+	if err != nil {
+		klog.Warningf("getCPUBurstConfigSpec(): failed to get cpuBurstConfig spec for node %s, set oldSpec(if exist) or default"+
+			"error: %v", node.Name, err)
+	} else {
+		nodeSLOSpec.CPUBurstStrategy = cpuBurstSpec
 	}
 
 	return nodeSLOSpec, nil

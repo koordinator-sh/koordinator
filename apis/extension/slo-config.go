@@ -14,12 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package config
+package extension
 
-const (
-	ConfigNameSpace            = "koordinator-system"
-	SLOCtrlConfigMap           = "slo-controller-config"
-	ColocationConfigKey        = "colocation-config"
-	ResourceThresholdConfigKey = "resource-threshold-config"
-	CPUBurstConfigKey          = "cpu-burst-config"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
+
+type NodeCPUBurstCfg struct {
+	// an empty label selector matches all objects while a nil label selector matches no objects
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	*slov1alpha1.CPUBurstStrategy
+}
+
+type CPUBurstCfg struct {
+	ClusterStrategy *slov1alpha1.CPUBurstStrategy `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeCPUBurstCfg             `json:"nodeStrategies,omitempty"`
+}
