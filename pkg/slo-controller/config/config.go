@@ -59,6 +59,17 @@ type ColocationStrategy struct {
 	ResourceDiffThreshold         *float64 `json:"resourceDiffThreshold,omitempty"`
 }
 
+type NodeCPUBurstCfg struct {
+	// an empty label selector matches all objects while a nil label selector matches no objects
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	*slov1alpha1.CPUBurstStrategy
+}
+
+type CPUBurstCfg struct {
+	ClusterStrategy *slov1alpha1.CPUBurstStrategy `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeCPUBurstCfg             `json:"nodeStrategies,omitempty"`
+}
+
 func NewDefaultColocationCfg() *ColocationCfg {
 	defaultCfg := DefaultColocationCfg()
 	return &defaultCfg

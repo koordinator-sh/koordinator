@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -83,7 +82,7 @@ func getCPUBurstConfigSpec(node *corev1.Node, configMap *corev1.ConfigMap) (*slo
 		return mergedStrategy, nil
 	}
 
-	cfg := apiext.CPUBurstCfg{}
+	cfg := config.CPUBurstCfg{}
 	if err := json.Unmarshal([]byte(cfgStr), &cfg); err != nil {
 		klog.Warningf("failed to unmarshal config %s, error: %v", config.CPUBurstConfigKey, err)
 		return nil, err

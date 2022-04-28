@@ -26,7 +26,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -226,7 +225,7 @@ func Test_generateThresholdCfg(t *testing.T) {
 }
 
 func Test_getCPBurstConfigSpec(t *testing.T) {
-	testingCPUBurstCfg := &apiext.CPUBurstCfg{
+	testingCPUBurstCfg := &config.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
 				CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(120),
@@ -235,13 +234,13 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 	}
 	testingCPUBurstCfgStr, _ := json.Marshal(testingCPUBurstCfg)
 
-	testingCPUBurstCfg1 := &apiext.CPUBurstCfg{
+	testingCPUBurstCfg1 := &config.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
 				CPUBurstPercent: pointer.Int64Ptr(200),
 			},
 		},
-		NodeStrategies: []apiext.NodeCPUBurstCfg{
+		NodeStrategies: []config.NodeCPUBurstCfg{
 			{
 				NodeSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
