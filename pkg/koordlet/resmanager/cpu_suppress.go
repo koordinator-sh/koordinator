@@ -301,6 +301,8 @@ func (r *CPUSuppress) suppressBECPU() {
 		klog.Warningf("suppressBECPU failed, cannot check the featuregate, err: %s", err)
 		return
 	} else if disabled {
+		r.recoverCFSQuotaIfNeed()
+		r.recoverCPUSetIfNeed()
 		klog.V(5).Infof("suppressBECPU skipped, nodeSLO disable the featuregate")
 		return
 	}
