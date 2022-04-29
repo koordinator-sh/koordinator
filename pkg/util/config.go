@@ -29,6 +29,7 @@ func DefaultNodeSLOSpecConfig() slov1alpha1.NodeSLOSpec {
 	return slov1alpha1.NodeSLOSpec{
 		ResourceUsedThresholdWithBE: DefaultResourceThresholdStrategy(),
 		ResourceQoSStrategy:         DefaultResourceQoSStrategy(),
+		CPUBurstStrategy:            DefaultCPUBurstStrategy(),
 	}
 }
 
@@ -201,5 +202,21 @@ func NoneResourceQoSStrategy() *slov1alpha1.ResourceQoSStrategy {
 		LSR: NoneResourceQoS(apiext.QoSLSR),
 		LS:  NoneResourceQoS(apiext.QoSLS),
 		BE:  NoneResourceQoS(apiext.QoSBE),
+	}
+}
+
+func DefaultCPUBurstStrategy() *slov1alpha1.CPUBurstStrategy {
+	return &slov1alpha1.CPUBurstStrategy{
+		CPUBurstConfig:            DefaultCPUBurstConfig(),
+		SharePoolThresholdPercent: pointer.Int64Ptr(50),
+	}
+}
+
+func DefaultCPUBurstConfig() slov1alpha1.CPUBurstConfig {
+	return slov1alpha1.CPUBurstConfig{
+		Policy:                     slov1alpha1.CPUBurstNone,
+		CPUBurstPercent:            pointer.Int64Ptr(1000),
+		CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
+		CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(-1),
 	}
 }
