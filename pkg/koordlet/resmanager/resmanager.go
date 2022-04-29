@@ -119,6 +119,13 @@ func (r *resmanager) mergeNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	if mergedResourceQoSStrategySpec != nil {
 		r.nodeSLO.Spec.ResourceQoSStrategy = mergedResourceQoSStrategySpec
 	}
+
+	// merge CPUBurstStrategy
+	mergedCPUBurstStrategySpec := mergeSLOSpecCPUBurstStrategy(util.DefaultNodeSLOSpecConfig().CPUBurstStrategy,
+		nodeSLO.Spec.CPUBurstStrategy)
+	if mergedCPUBurstStrategySpec != nil {
+		r.nodeSLO.Spec.CPUBurstStrategy = mergedCPUBurstStrategySpec
+	}
 }
 
 func (r *resmanager) createNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
@@ -216,19 +223,18 @@ func NewResManager(cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.
 // isFeatureDisabled returns whether the featuregate is disabled by nodeSLO config
 func isFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature) (bool, error) {
 	if nodeSLO == nil || nodeSLO.Spec == (slov1alpha1.NodeSLOSpec{}) {
-		return false, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
+		return true, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
 	}
 
 	spec := nodeSLO.Spec
 	switch feature {
 	case features.BECPUSuppress, features.BEMemoryEvict:
-		// nil value means enabled
-		if spec.ResourceUsedThresholdWithBE == nil {
-			return false, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
+		if spec.ResourceUsedThresholdWithBE == nil || spec.ResourceUsedThresholdWithBE.Enable == nil {
+			return true, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
 		}
-		return spec.ResourceUsedThresholdWithBE.Enable != nil && !(*spec.ResourceUsedThresholdWithBE.Enable), nil
+		return !(*spec.ResourceUsedThresholdWithBE.Enable), nil
 	default:
-		return false, fmt.Errorf("cannot parse feature config for unsupported feature %s", feature)
+		return true, fmt.Errorf("cannot parse feature config for unsupported feature %s", feature)
 	}
 }
 

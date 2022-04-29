@@ -33,9 +33,11 @@ const (
 	RdtInfoDir string = "info"
 	L3CatDir   string = "L3"
 
-	SchemataFileName    string = "schemata"
-	CbmMaskFileName     string = "cbm_mask"
-	ResctrlTaskFileName string = "tasks"
+	SchemataFileName      string = "schemata"
+	CbmMaskFileName       string = "cbm_mask"
+	ResctrlTaskFileName   string = "tasks"
+	CPUInfoFileName       string = "cpuinfo"
+	KernelCmdlineFileName string = "cmdline"
 
 	ResctrlName string = "resctrl"
 )
@@ -47,7 +49,7 @@ var (
 )
 
 func isCPUSupportResctrl() (bool, error) {
-	isCatFlagSet, isMbaFlagSet, err := isResctrlAvailableByCpuInfo(filepath.Join(Conf.ProcRootDir, "cpuinfo"))
+	isCatFlagSet, isMbaFlagSet, err := isResctrlAvailableByCpuInfo(filepath.Join(Conf.ProcRootDir, CPUInfoFileName))
 	if err != nil {
 		klog.Errorf("isResctrlAvailableByCpuInfo error: %v", err)
 		return false, err
@@ -58,7 +60,7 @@ func isCPUSupportResctrl() (bool, error) {
 }
 
 func isKernelSupportResctrl() (bool, error) {
-	isCatFlagSet, isMbaFlagSet, err := isResctrlAvailableByKernelCmd(filepath.Join(Conf.ProcRootDir, "cmdline"))
+	isCatFlagSet, isMbaFlagSet, err := isResctrlAvailableByKernelCmd(filepath.Join(Conf.ProcRootDir, KernelCmdlineFileName))
 	if err != nil {
 		klog.Errorf("isResctrlAvailableByKernelCmd error: %v", err)
 		return false, err
