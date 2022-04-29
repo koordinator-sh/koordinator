@@ -40,6 +40,7 @@ const (
 	CPUBVTWarpNsName  = "cpu.bvt_warp_ns"
 	CPUBurstName      = "cpu.cfs_burst_us"
 	CPUSFileName      = "cpuset.cpus"
+	CPUTaskFileName   = "tasks"
 
 	CpuacctStatFileName = "cpuacct.stat"
 
@@ -75,6 +76,7 @@ var (
 	CPUShares    = CgroupFile{ResourceFileName: CPUSharesFileName, Subfs: CgroupCPUDir, IsAnolisOS: false}
 	CPUCFSQuota  = CgroupFile{ResourceFileName: CPUCFSQuotaName, Subfs: CgroupCPUDir, IsAnolisOS: false}
 	CPUCFSPeriod = CgroupFile{ResourceFileName: CPUCFSPeriodName, Subfs: CgroupCPUDir, IsAnolisOS: false}
+	CPUTask      = CgroupFile{ResourceFileName: CPUTaskFileName, Subfs: CgroupCPUDir, IsAnolisOS: false}
 	CPUBurst     = CgroupFile{ResourceFileName: CPUBurstName, Subfs: CgroupCPUDir, IsAnolisOS: true, Validator: CPUBurstValidator}
 
 	CPUSet = CgroupFile{ResourceFileName: CPUSFileName, Subfs: CgroupCPUSetDir, IsAnolisOS: false}

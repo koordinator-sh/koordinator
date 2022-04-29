@@ -83,6 +83,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			fields: fields{client: fake.NewClientBuilder().Build()},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
+				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
 			},
 			wantErr: false,
 		},

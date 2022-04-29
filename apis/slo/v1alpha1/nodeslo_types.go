@@ -104,7 +104,8 @@ type MemoryQoSCfg struct {
 }
 
 type ResourceQoS struct {
-	MemoryQoS *MemoryQoSCfg `json:"memoryQoS,omitempty"`
+	MemoryQoS  *MemoryQoSCfg  `json:"memoryQoS,omitempty"`
+	ResctrlQoS *ResctrlQoSCfg `json:"resctrlQoS,omitempty"`
 }
 
 type ResourceQoSStrategy struct {
@@ -151,17 +152,42 @@ type ResourceThresholdStrategy struct {
 	MemoryEvictLowerPercent *int64 `json:"memoryEvictLowerPercent,omitempty"`
 }
 
+// ResctrlQoSCfg stores node-level config of resctrl qos
+type ResctrlQoSCfg struct {
+	// Enable indicates whether the resctrl qos is enabled.
+	Enable     *bool `json:"enable,omitempty"`
+	ResctrlQoS `json:",inline"`
+}
+
+type ResctrlQoS struct {
+	// LLC available range start for pods by percentage
+	// +kubebuilder:default=0
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	CATRangeStartPercent *int64 `json:"catRangeStartPercent,omitempty"`
+	// LLC available range end for pods by percentage
+	// +kubebuilder:default=100
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	CATRangeEndPercent *int64 `json:"catRangeEndPercent,omitempty"`
+	// MBA percent
+	// +kubebuilder:default=100
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	MBAPercent *int64 `json:"mbaPercent,omitempty"`
+}
+
 type CPUBurstPolicy string
 
 const (
 	// disable cpu burst policy
-	CPUBurstNone = "none"
+	CPUBurstNone CPUBurstPolicy = "none"
 	// only enable cpu burst policy by setting cpu.cfs_burst_us
-	CPUBurstOnly = "cpuBurstOnly"
+	CPUBurstOnly CPUBurstPolicy = "cpuBurstOnly"
 	// only enable cfs quota burst policy by scale up cpu.cfs_quota_us if pod throttled
-	CFSQuotaBurstOnly = "cfsQuotaBurstOnly"
+	CFSQuotaBurstOnly CPUBurstPolicy = "cfsQuotaBurstOnly"
 	// enable both
-	CPUBurstAuto = "auto"
+	CPUBurstAuto CPUBurstPolicy = "auto"
 )
 
 type CPUBurstConfig struct {

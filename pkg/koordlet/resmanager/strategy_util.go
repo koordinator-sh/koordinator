@@ -55,8 +55,25 @@ func mergeSLOSpecResourceQoSStrategy(defaultSpec,
 
 // mergeNoneResourceQoSIfDisabled complete ResourceQoSStrategy according to enable statuses of qos features
 func mergeNoneResourceQoSIfDisabled(resourceQoS *slov1alpha1.ResourceQoSStrategy) {
+	mergeNoneResctrlQoSIfDisabled(resourceQoS)
 	mergeNoneMemoryQoSIfDisabled(resourceQoS)
 	klog.V(5).Infof("get merged node ResourceQoS %v", util.DumpJSON(resourceQoS))
+}
+
+// mergeNoneResctrlQoSIfDisabled completes node's resctrl qos config according to Enable options in ResctrlQoS
+func mergeNoneResctrlQoSIfDisabled(resourceQoS *slov1alpha1.ResourceQoSStrategy) {
+	if resourceQoS.LSR != nil && resourceQoS.LSR.ResctrlQoS != nil &&
+		resourceQoS.LSR.ResctrlQoS.Enable != nil && !(*resourceQoS.LSR.ResctrlQoS.Enable) {
+		resourceQoS.LSR.ResctrlQoS.ResctrlQoS = *util.NoneResctrlQoS()
+	}
+	if resourceQoS.LS != nil && resourceQoS.LS.ResctrlQoS != nil &&
+		resourceQoS.LS.ResctrlQoS.Enable != nil && !(*resourceQoS.LS.ResctrlQoS.Enable) {
+		resourceQoS.LS.ResctrlQoS.ResctrlQoS = *util.NoneResctrlQoS()
+	}
+	if resourceQoS.BE != nil && resourceQoS.BE.ResctrlQoS != nil &&
+		resourceQoS.BE.ResctrlQoS.Enable != nil && !(*resourceQoS.BE.ResctrlQoS.Enable) {
+		resourceQoS.BE.ResctrlQoS.ResctrlQoS = *util.NoneResctrlQoS()
+	}
 }
 
 // mergeNoneMemoryQoSIfDisabled completes node's memory qos config according to Enable options in MemoryQoS
