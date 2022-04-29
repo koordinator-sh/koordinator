@@ -76,6 +76,7 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 
 	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{
 		ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
+		ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
 	}
 
 	// TODO: record an event about the failure reason on configmap/crd when failed to load the config

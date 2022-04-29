@@ -163,6 +163,36 @@ spec:
                             format: int64
                             type: integer
                         type: object
+                      resctrlQoS:
+                        description: ResctrlQoSCfg stores node-level config of resctrl
+                          qos
+                        properties:
+                          catRangeEndPercent:
+                            default: 100
+                            description: LLC available range end for pods by percentage
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                          catRangeStartPercent:
+                            default: 0
+                            description: LLC available range start for pods by percentage
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                          enable:
+                            description: Enable indicates whether the resctrl qos
+                              is enabled.
+                            type: boolean
+                          mbaPercent:
+                            default: 100
+                            description: MBA percent
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                        type: object
                     type: object
                   cgroupRoot:
                     description: ResourceQoS for root cgroup.
@@ -257,6 +287,36 @@ spec:
                               async memory reclamation when memory usage belows. Close:
                               50. Recommended: 20.'
                             format: int64
+                            type: integer
+                        type: object
+                      resctrlQoS:
+                        description: ResctrlQoSCfg stores node-level config of resctrl
+                          qos
+                        properties:
+                          catRangeEndPercent:
+                            default: 100
+                            description: LLC available range end for pods by percentage
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                          catRangeStartPercent:
+                            default: 0
+                            description: LLC available range start for pods by percentage
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                          enable:
+                            description: Enable indicates whether the resctrl qos
+                              is enabled.
+                            type: boolean
+                          mbaPercent:
+                            default: 100
+                            description: MBA percent
+                            format: int64
+                            maximum: 100
+                            minimum: 0
                             type: integer
                         type: object
                     type: object
@@ -355,6 +415,36 @@ spec:
                             format: int64
                             type: integer
                         type: object
+                      resctrlQoS:
+                        description: ResctrlQoSCfg stores node-level config of resctrl
+                          qos
+                        properties:
+                          catRangeEndPercent:
+                            default: 100
+                            description: LLC available range end for pods by percentage
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                          catRangeStartPercent:
+                            default: 0
+                            description: LLC available range start for pods by percentage
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                          enable:
+                            description: Enable indicates whether the resctrl qos
+                              is enabled.
+                            type: boolean
+                          mbaPercent:
+                            default: 100
+                            description: MBA percent
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                        type: object
                     type: object
                   lsr:
                     description: ResourceQoS for LSR pods.
@@ -451,6 +541,36 @@ spec:
                             format: int64
                             type: integer
                         type: object
+                      resctrlQoS:
+                        description: ResctrlQoSCfg stores node-level config of resctrl
+                          qos
+                        properties:
+                          catRangeEndPercent:
+                            default: 100
+                            description: LLC available range end for pods by percentage
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                          catRangeStartPercent:
+                            default: 0
+                            description: LLC available range start for pods by percentage
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                          enable:
+                            description: Enable indicates whether the resctrl qos
+                              is enabled.
+                            type: boolean
+                          mbaPercent:
+                            default: 100
+                            description: MBA percent
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                        type: object
                     type: object
                   system:
                     description: ResourceQoS for system pods
@@ -545,6 +665,36 @@ spec:
                               async memory reclamation when memory usage belows. Close:
                               50. Recommended: 20.'
                             format: int64
+                            type: integer
+                        type: object
+                      resctrlQoS:
+                        description: ResctrlQoSCfg stores node-level config of resctrl
+                          qos
+                        properties:
+                          catRangeEndPercent:
+                            default: 100
+                            description: LLC available range end for pods by percentage
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                          catRangeStartPercent:
+                            default: 0
+                            description: LLC available range start for pods by percentage
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
+                          enable:
+                            description: Enable indicates whether the resctrl qos
+                              is enabled.
+                            type: boolean
+                          mbaPercent:
+                            default: 100
+                            description: MBA percent
+                            format: int64
+                            maximum: 100
+                            minimum: 0
                             type: integer
                         type: object
                     type: object

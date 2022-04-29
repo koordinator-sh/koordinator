@@ -17,10 +17,11 @@ limitations under the License.
 package resmanager
 
 const (
-	updateCPU          = "UpdateCPU"
-	updateMemory       = "UpdateMemory"
-	updateSystemConfig = "UpdateSystemConfig"
-	updateCgroups      = "UpdateCgroups" // update cgroups excluding the options already stated above
+	updateCPU             = "UpdateCPU"
+	updateMemory          = "UpdateMemory"
+	updateCgroups         = "UpdateCgroups"         // update cgroups excluding the options already stated above
+	updateResctrlSchemata = "UpdateResctrlSchemata" // update resctrl l3 cat schemata
+	updateResctrlTasks    = "UpdateResctrlTasks"    // update resctrl tasks
 
 	evictPodByNodeMemoryUsage = "EvictPodByNodeMemoryUsage"
 
