@@ -110,7 +110,7 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 			"error: %v", node.Name, err)
 	} else {
 		nodeSLOSpec.CPUBurstStrategy = cpuBurstSpec
-  }
+	}
 
 	resourceQoSSpec, err := getResourceQoSSpec(node, configMap)
 	if err != nil {

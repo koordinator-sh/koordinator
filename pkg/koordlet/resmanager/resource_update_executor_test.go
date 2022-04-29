@@ -26,7 +26,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/tools/cache"
-	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 var commonTestFile = "test_common_file"
@@ -39,10 +39,10 @@ type reconcileInfo struct {
 
 func Test_UpdateBatch(t *testing.T) {
 
-	helper := sysutil.NewFileTestUtil(t)
+	helper := system.NewFileTestUtil(t)
 	defer helper.Cleanup()
 
-	helper.CreateCgroupFile("/", sysutil.CPUShares)
+	helper.CreateCgroupFile("/", system.CPUShares)
 	helper.CreateFile(commonTestFile)
 	absFile := path.Join(helper.TempDir, commonTestFile)
 
@@ -53,7 +53,7 @@ func Test_UpdateBatch(t *testing.T) {
 		{
 			name: "test_update_valid",
 			resources: []ResourceUpdater{
-				NewCommonCgroupResourceUpdater(GroupOwnerRef("root"), "/", sysutil.CPUShares, "1024"),
+				NewCommonCgroupResourceUpdater(GroupOwnerRef("root"), "/", system.CPUShares, "1024"),
 				NewCommonResourceUpdater(absFile, "19"),
 			},
 		},
@@ -62,7 +62,7 @@ func Test_UpdateBatch(t *testing.T) {
 	for _, tt := range tests {
 
 		t.Run(tt.name, func(t *testing.T) {
-			t.Logf("Cur CgroupFile filepath %v", sysutil.Conf.CgroupRootDir)
+			t.Logf("Cur CgroupFile filepath %v", system.Conf.CgroupRootDir)
 
 			rm := NewResourceUpdateExecutor("test", 1)
 			stop := make(chan struct{})
@@ -78,7 +78,7 @@ func Test_UpdateBatch(t *testing.T) {
 
 func Test_UpdateBatchByCache(t *testing.T) {
 
-	helper := sysutil.NewFileTestUtil(t)
+	helper := system.NewFileTestUtil(t)
 	defer helper.Cleanup()
 
 	absFile := path.Join(helper.TempDir, commonTestFile)
@@ -92,22 +92,22 @@ func Test_UpdateBatchByCache(t *testing.T) {
 		{
 			name: "test_cache_equal_but_force_update",
 			initCache: []ResourceUpdater{
-				&CgroupResourceUpdater{ParentDir: "/", file: sysutil.CPUShares, value: "1024", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonCgroupUpdateFunc},
+				&CgroupResourceUpdater{ParentDir: "/", file: system.CPUShares, value: "1024", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonCgroupUpdateFunc},
 				&CommonResourceUpdater{file: absFile, value: "19", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonUpdateFunc},
 			},
 			initFiles: []ResourceUpdater{
-				&CgroupResourceUpdater{ParentDir: "/", file: sysutil.CPUShares, value: "2048", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonCgroupUpdateFunc},
+				&CgroupResourceUpdater{ParentDir: "/", file: system.CPUShares, value: "2048", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonCgroupUpdateFunc},
 				&CommonResourceUpdater{file: absFile, value: "20", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonUpdateFunc},
 			},
 			reconcileInfos: []reconcileInfo{
 				{
 					desc: "test_update",
 					resources: []ResourceUpdater{
-						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", sysutil.CPUShares, "1024"),
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.CPUShares, "1024"),
 						NewCommonResourceUpdater(absFile, "19"),
 					},
 					expect: []ResourceUpdater{
-						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", sysutil.CPUShares, "1024"),
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.CPUShares, "1024"),
 						NewCommonResourceUpdater(absFile, "19"),
 					},
 				},
@@ -116,22 +116,22 @@ func Test_UpdateBatchByCache(t *testing.T) {
 		{
 			name: "test_cache_equal_and_not_forceUpdate",
 			initCache: []ResourceUpdater{
-				&CgroupResourceUpdater{ParentDir: "/", file: sysutil.CPUShares, value: "1024", lastUpdateTimestamp: time.Now(), updateFunc: CommonCgroupUpdateFunc},
+				&CgroupResourceUpdater{ParentDir: "/", file: system.CPUShares, value: "1024", lastUpdateTimestamp: time.Now(), updateFunc: CommonCgroupUpdateFunc},
 				&CommonResourceUpdater{file: absFile, value: "19", lastUpdateTimestamp: time.Now(), updateFunc: CommonUpdateFunc},
 			},
 			initFiles: []ResourceUpdater{
-				&CgroupResourceUpdater{ParentDir: "/", file: sysutil.CPUShares, value: "2048", lastUpdateTimestamp: time.Now(), updateFunc: CommonCgroupUpdateFunc},
+				&CgroupResourceUpdater{ParentDir: "/", file: system.CPUShares, value: "2048", lastUpdateTimestamp: time.Now(), updateFunc: CommonCgroupUpdateFunc},
 				&CommonResourceUpdater{file: absFile, value: "20", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonUpdateFunc},
 			},
 			reconcileInfos: []reconcileInfo{
 				{
 					desc: "test_update",
 					resources: []ResourceUpdater{
-						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", sysutil.CPUShares, "1024"),
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.CPUShares, "1024"),
 						NewCommonResourceUpdater(absFile, "19"),
 					},
 					expect: []ResourceUpdater{
-						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", sysutil.CPUShares, "2048"),
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.CPUShares, "2048"),
 						NewCommonResourceUpdater(absFile, "20"),
 					},
 				},
@@ -141,34 +141,34 @@ func Test_UpdateBatchByCache(t *testing.T) {
 			name:      "test_reconcile",
 			initCache: []ResourceUpdater{},
 			initFiles: []ResourceUpdater{
-				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", sysutil.CPUShares, "2"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.CPUShares, "2"),
 			},
 			reconcileInfos: []reconcileInfo{
 				{
 					desc: "test_start",
 					resources: []ResourceUpdater{
-						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", sysutil.CPUShares, "1024"),
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.CPUShares, "1024"),
 					},
 					expect: []ResourceUpdater{
-						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", sysutil.CPUShares, "1024"),
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.CPUShares, "1024"),
 					},
 				},
 				{
 					desc: "test_running_2",
 					resources: []ResourceUpdater{
-						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", sysutil.CPUShares, "2"),
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.CPUShares, "2"),
 					},
 					expect: []ResourceUpdater{
-						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", sysutil.CPUShares, "2"),
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.CPUShares, "2"),
 					},
 				},
 				{
 					desc: "test_running_3",
 					resources: []ResourceUpdater{
-						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", sysutil.CPUShares, "1024"),
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.CPUShares, "1024"),
 					},
 					expect: []ResourceUpdater{
-						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", sysutil.CPUShares, "1024"),
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.CPUShares, "1024"),
 					},
 				},
 			},

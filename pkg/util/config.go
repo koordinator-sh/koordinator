@@ -54,9 +54,9 @@ func DefaultCPUBurstStrategy() *slov1alpha1.CPUBurstStrategy {
 	return &slov1alpha1.CPUBurstStrategy{
 		CPUBurstConfig:            DefaultCPUBurstConfig(),
 		SharePoolThresholdPercent: pointer.Int64Ptr(50),
-  }
+	}
 }
-    
+
 // DefaultMemoryQoS returns the recommended configuration for memory qos strategy.
 // Please refer to `apis/slo/v1alpha1` for the definition of each field.
 // In the recommended configuration, all abilities of memcg qos are disable, including `MinLimitPercent`,
