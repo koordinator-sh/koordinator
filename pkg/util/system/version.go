@@ -17,7 +17,6 @@ limitations under the License.
 package system
 
 import (
-	"path"
 	"path/filepath"
 
 	"k8s.io/klog/v2"
@@ -27,29 +26,30 @@ var HostSystemInfo = collectVersionInfo()
 
 func collectVersionInfo() VersionInfo {
 	return VersionInfo{
-		IsAliOS: isAliOS(),
+		IsAnolisOS: isAnolisOS(),
 	}
 }
 
 type VersionInfo struct {
-	IsAliOS bool
+	// Open Anolis OS (kernel): https://github.com/alibaba/cloud-kernel
+	IsAnolisOS bool
 }
 
-func isAliOS() bool {
+func isAnolisOS() bool {
 	return isSupportBvtOrWmarRatio()
 }
 
 func isSupportBvtOrWmarRatio() bool {
-	bvtFilePath := path.Join(Conf.CgroupRootDir, CgroupCPUDir, CPUBVTWarpNsName)
+	bvtFilePath := filepath.Join(Conf.CgroupRootDir, CgroupCPUDir, CPUBVTWarpNsName)
 	exists, err := PathExists(bvtFilePath)
-	klog.V(2).Infof("PathExists bvt,exists: %v,error:%v", exists, err)
+	klog.V(2).Infof("PathExists bvt: exists: %v, error:%v", exists, err)
 	if err == nil && exists {
 		return true
 	}
 
-	wmarkRatioPath := path.Join(Conf.CgroupRootDir, CgroupMemDir, "*", MemWmarkRatioFileName)
+	wmarkRatioPath := filepath.Join(Conf.CgroupRootDir, CgroupMemDir, "*", MemWmarkRatioFileName)
 	matches, err := filepath.Glob(wmarkRatioPath)
-	klog.V(2).Infof("PathExists wmark_ratio,exists: %v,error:%v", matches, err)
+	klog.V(2).Infof("PathExists wmark_ratio: exists: %v, error:%v", matches, err)
 	if err == nil && len(matches) > 0 {
 		return true
 	}

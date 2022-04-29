@@ -27,6 +27,8 @@ import (
 	"time"
 
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const cpuCmdTimeout = 3 * time.Second
@@ -135,7 +137,7 @@ func getProcessorInfos(lsCPUStr string) ([]ProcessorInfo, error) {
 	var processorInfos []ProcessorInfo
 	for _, line := range strings.Split(lsCPUStr, "\n") {
 		items := strings.Fields(line)
-		if len(items) < 4 {
+		if len(items) < 6 {
 			continue
 		}
 		cpu, err := strconv.Atoi(items[0])
@@ -151,24 +153,24 @@ func getProcessorInfos(lsCPUStr string) ([]ProcessorInfo, error) {
 		if err != nil {
 			continue
 		}
-		cacheInfos := strings.TrimSpace(items[4])
-		online := strings.TrimSpace(items[5])
-		cacheinfo := strings.Split(strings.TrimSpace(cacheInfos), ":")
-		l1l2 := cacheinfo[0]
-		l3, err := strconv.Atoi(cacheinfo[3])
+		l1l2, l3, err := system.GetCacheInfo(items[4])
 		if err != nil {
 			continue
 		}
+		online := strings.TrimSpace(items[5])
 		info := ProcessorInfo{
 			CPUID:    int32(cpu),
 			CoreID:   int32(core),
 			SocketID: int32(socket),
 			NodeID:   int32(node),
 			L1dl1il2: l1l2,
-			L3:       int32(l3),
+			L3:       l3,
 			Online:   online,
 		}
 		processorInfos = append(processorInfos, info)
+	}
+	if len(processorInfos) <= 0 {
+		return nil, fmt.Errorf("no valid processor info")
 	}
 
 	// sorted by cpu topology

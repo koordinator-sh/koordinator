@@ -42,6 +42,22 @@ type ResourceUpdateExecutor struct {
 	locker *sync.Mutex
 }
 
+// LeveledCacheExecutor is a cacheable executor to update resources by the order of resources' level
+// For cgroup interfaces like `cpuset.cpus` and `memory.min`, reconciliation from top to bottom should keep the
+// upper value larger/broader than the lower. Thus a Leveled updater is implemented as follows:
+// 1. update batch of cgroup resources group by cgroup interface, i.e. cgroup filename.
+// 2. update each cgroup resource by the order of layers: firstly update resources from upper to lower by merging
+//    the new value with old value; then update resources from lower to upper with the new value.
+type LeveledCacheExecutor interface {
+	CacheExecutor
+	LeveledUpdateBatchByCache(resources [][]MergeableResourceUpdater) (updated bool)
+	LeveledUpdateBatch(resources [][]MergeableResourceUpdater) (updated bool)
+}
+
+type LeveledResourceUpdateExecutor struct {
+	ResourceUpdateExecutor
+}
+
 func NewResourceUpdateExecutor(name string, forceUpdateSeconds int) *ResourceUpdateExecutor {
 	executor := &ResourceUpdateExecutor{
 		name:               name,
@@ -134,4 +150,108 @@ func (rm *ResourceUpdateExecutor) needUpdate(currentResource ResourceUpdater) bo
 		return true
 	}
 	return false
+}
+
+func NewLeveledResourceUpdateExecutor(name string, forceUpdateSeconds int) *LeveledResourceUpdateExecutor {
+	executor := &LeveledResourceUpdateExecutor{
+		ResourceUpdateExecutor: ResourceUpdateExecutor{
+			name:               name,
+			resourceCache:      cache.NewCacheDefault(),
+			forceUpdateSeconds: forceUpdateSeconds,
+			locker:             &sync.Mutex{},
+		},
+	}
+	return executor
+}
+
+// LeveledUpdateBatchByCache update a batch of resources by the level order cacheable. It firstly merge updates
+// resources from top to bottom, and then updates resources from bottom to top. It is compatible for some of resources
+// which just need to update once but not have an additional merge update.
+func (e *LeveledResourceUpdateExecutor) LeveledUpdateBatchByCache(resources [][]MergeableResourceUpdater) (updated bool) {
+	e.locker.Lock()
+	defer e.locker.Unlock()
+	var err error
+	for i := 0; i < len(resources); i++ {
+		for _, resource := range resources[i] {
+			if !e.needUpdate(resource) {
+				continue
+			}
+
+			if !resource.NeedMerge() {
+				err = resource.Update()
+			} else {
+				// NOTE: write merged resource into cache when the merge picks the old value
+				resource, err = resource.MergeUpdate()
+			}
+			if err != nil {
+				klog.Errorf("LeveledResourceUpdateExecutor merge update resource %v fail! error: %v",
+					resource.Key(), err)
+				continue
+			}
+
+			resource.UpdateLastUpdateTimestamp(time.Now())
+			err = e.resourceCache.SetDefault(resource.Key(), resource)
+			if err != nil {
+				klog.Errorf("resourceCache.SetDefault fail! error: %v", err)
+			}
+		}
+	}
+
+	for i := len(resources) - 1; i >= 0; i-- {
+		for _, resource := range resources[i] {
+			if !e.needUpdate(resource) {
+				continue
+			}
+
+			// skip update twice for resources specified no merge
+			if !resource.NeedMerge() {
+				continue
+			}
+			err = resource.Update()
+			if err != nil {
+				klog.Errorf("LeveledResourceUpdateExecutor update resource fail! error: %v", err)
+				continue
+			}
+
+			resource.UpdateLastUpdateTimestamp(time.Now())
+			err = e.resourceCache.SetDefault(resource.Key(), resource)
+			if err != nil {
+				klog.Errorf("resourceCache.SetDefault fail! error: %v", err)
+			}
+		}
+	}
+	return
+}
+
+// LeveledUpdateBatch update a batch of resources by the level order.
+func (e *LeveledResourceUpdateExecutor) LeveledUpdateBatch(resources [][]MergeableResourceUpdater) (updated bool) {
+	e.locker.Lock()
+	defer e.locker.Unlock()
+	var err error
+	for i := 0; i < len(resources); i++ {
+		for _, resource := range resources[i] {
+			if !resource.NeedMerge() {
+				err = resource.Update()
+			} else {
+				_, err = resource.MergeUpdate()
+			}
+			if err != nil {
+				klog.Errorf("LeveledResourceUpdateExecutor merge update resource fail! error: %v", err)
+			}
+		}
+	}
+
+	for i := len(resources) - 1; i >= 0; i-- {
+		for _, resource := range resources[i] {
+			// skip update twice for resources specified no merge
+			if !resource.NeedMerge() {
+				continue
+			}
+			err = resource.Update()
+			if err != nil {
+				klog.Errorf("LeveledResourceUpdateExecutor update resource fail! error: %v", err)
+			}
+		}
+	}
+	return
 }

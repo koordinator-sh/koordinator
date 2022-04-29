@@ -20,8 +20,6 @@ import (
 	"context"
 	"testing"
 
-	"k8s.io/utils/pointer"
-
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -29,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -42,6 +41,15 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 	testingResourceThresholdStrategy := util.DefaultResourceThresholdStrategy()
 	testingResourceThresholdStrategy.Enable = pointer.BoolPtr(true)
 	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
+	testingResourceQoSStrategy := &slov1alpha1.ResourceQoSStrategy{
+		BE: &slov1alpha1.ResourceQoS{
+			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+				MemoryQoS: slov1alpha1.MemoryQoS{
+					WmarkRatio: pointer.Int64Ptr(0),
+				},
+			},
+		},
+	}
 	type args struct {
 		node    *corev1.Node
 		nodeSLO *slov1alpha1.NodeSLO
@@ -101,6 +109,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
 			},
 			wantErr: false,
 		},
@@ -126,6 +135,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
 			},
 			wantErr: false,
 		},
@@ -145,12 +155,31 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
+					config.ResourceThresholdConfigKey: `
+{
+  "clusterStrategy": {
+    "enable": true,
+    "cpuSuppressThresholdPercent": 60
+  }
+}
+`,
+					config.ResourceQoSConfigKey: `
+{
+  "clusterStrategy": {
+    "be": {
+      "memoryQoS": {
+        "wmarkRatio": 0
+      }
+    }
+  }
+}
+`,
 				},
 			}).Build()},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				ResourceQoSStrategy:         testingResourceQoSStrategy,
 			},
 			wantErr: false,
 		},
@@ -176,6 +205,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
 			},
 			wantErr: false,
 		},
@@ -218,15 +248,43 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 			Namespace: config.ConfigNameSpace,
 		},
 		Data: map[string]string{
-			config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
+			config.ResourceThresholdConfigKey: `
+{
+  "clusterStrategy": {
+    "enable": false,
+    "cpuSuppressThresholdPercent": 60
+  }
+}
+`,
+			config.ResourceQoSConfigKey: `
+{
+  "clusterStrategy": {
+    "be": {
+      "memoryQoS": {
+        "wmarkRatio": 0
+      }
+    }
+  }
+}
+`,
 		},
 	}
 	testingResourceThresholdStrategy := util.DefaultResourceThresholdStrategy()
 	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
+	testingResourceQoSStrategy := &slov1alpha1.ResourceQoSStrategy{
+		BE: &slov1alpha1.ResourceQoS{
+			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+				MemoryQoS: slov1alpha1.MemoryQoS{
+					WmarkRatio: pointer.Int64Ptr(0),
+				},
+			},
+		},
+	}
 
 	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{
 		ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 		CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+		ResourceQoSStrategy:         testingResourceQoSStrategy,
 	}
 	nodeReq := ctrl.Request{NamespacedName: types.NamespacedName{Name: testingNode.Name}}
 	// the NodeSLO does not exists before getting created

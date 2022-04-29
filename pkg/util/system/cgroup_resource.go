@@ -43,37 +43,61 @@ const (
 
 	CpuacctStatFileName = "cpuacct.stat"
 
-	MemWmarkRatioFileName = "memory.wmark_ratio"
-	MemHighFileName       = "memory.high"
-	MemoryLimitFileName   = "memory.limit_in_bytes"
-	MemStatFileName       = "memory.stat"
+	MemWmarkRatioFileName       = "memory.wmark_ratio"
+	MemWmarkScaleFactorFileName = "memory.wmark_scale_factor"
+	MemPriorityFileName         = "memory.priority"
+	MemUsePriorityOomFileName   = "memory.use_priority_oom"
+	MemOomGroupFileName         = "memory.oom.group"
+	MemWmarkMinAdjFileName      = "memory.wmark_min_adj"
+	MemMinFileName              = "memory.min"
+	MemLowFileName              = "memory.low"
+	MemHighFileName             = "memory.high"
+	MemoryLimitFileName         = "memory.limit_in_bytes"
+	MemStatFileName             = "memory.stat"
 )
 
 var (
-	MemHighValidator  = &RangeValidator{name: MemHighFileName, min: 0, max: math.MaxInt64}
 	CPUBurstValidator = &RangeValidator{name: CPUBurstName, min: 0, max: 100 * 10 * 100000}
+
+	MemWmarkRatioValidator               = &RangeValidator{name: MemWmarkRatioFileName, min: 0, max: 100}
+	MemPriorityValidator                 = &RangeValidator{name: MemPriorityFileName, min: 0, max: 12}
+	MemOomGroupValidator                 = &RangeValidator{name: MemOomGroupFileName, min: 0, max: 1}
+	MemUsePriorityOomValidator           = &RangeValidator{name: MemUsePriorityOomFileName, min: 0, max: 1}
+	MemWmarkMinAdjValidator              = &RangeValidator{name: MemWmarkMinAdjFileName, min: -50, max: 50}
+	MemWmarkScaleFactorFileNameValidator = &RangeValidator{name: MemWmarkScaleFactorFileName, min: 1, max: 1000}
+	MemMinValidator                      = &RangeValidator{name: MemMinFileName, min: 0, max: math.MaxInt64}
+	MemLowValidator                      = &RangeValidator{name: MemLowFileName, min: 0, max: math.MaxInt64}
+	MemHighValidator                     = &RangeValidator{name: MemHighFileName, min: 0, max: math.MaxInt64} // write value(>node.total) -> read "max"
 )
 
 var (
-	CPUStat      = CgroupFile{ResourceFileName: CPUStatFileName, Subfs: CgroupCPUDir, IsAliOS: false}
-	CPUShares    = CgroupFile{ResourceFileName: CPUSharesFileName, Subfs: CgroupCPUDir, IsAliOS: false}
-	CPUCFSQuota  = CgroupFile{ResourceFileName: CPUCFSQuotaName, Subfs: CgroupCPUDir, IsAliOS: false}
-	CPUCFSPeriod = CgroupFile{ResourceFileName: CPUCFSPeriodName, Subfs: CgroupCPUDir, IsAliOS: false}
-	CPUBurst     = CgroupFile{ResourceFileName: CPUBurstName, Subfs: CgroupCPUDir, IsAliOS: true, Validator: CPUBurstValidator}
+	CPUStat      = CgroupFile{ResourceFileName: CPUStatFileName, Subfs: CgroupCPUDir, IsAnolisOS: false}
+	CPUShares    = CgroupFile{ResourceFileName: CPUSharesFileName, Subfs: CgroupCPUDir, IsAnolisOS: false}
+	CPUCFSQuota  = CgroupFile{ResourceFileName: CPUCFSQuotaName, Subfs: CgroupCPUDir, IsAnolisOS: false}
+	CPUCFSPeriod = CgroupFile{ResourceFileName: CPUCFSPeriodName, Subfs: CgroupCPUDir, IsAnolisOS: false}
+	CPUBurst     = CgroupFile{ResourceFileName: CPUBurstName, Subfs: CgroupCPUDir, IsAnolisOS: true, Validator: CPUBurstValidator}
 
-	CPUSet = CgroupFile{ResourceFileName: CPUSFileName, Subfs: CgroupCPUSetDir, IsAliOS: false}
+	CPUSet = CgroupFile{ResourceFileName: CPUSFileName, Subfs: CgroupCPUSetDir, IsAnolisOS: false}
 
-	CpuacctStat = CgroupFile{ResourceFileName: CpuacctStatFileName, Subfs: CgroupCPUacctDir, IsAliOS: false}
+	CpuacctStat = CgroupFile{ResourceFileName: CpuacctStatFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: false}
 
-	MemStat     = CgroupFile{ResourceFileName: MemStatFileName, Subfs: CgroupMemDir, IsAliOS: false}
-	MemHigh     = CgroupFile{ResourceFileName: MemHighFileName, Subfs: CgroupMemDir, IsAliOS: true, Validator: MemHighValidator}
-	MemoryLimit = CgroupFile{ResourceFileName: MemoryLimitFileName, Subfs: CgroupMemDir, IsAliOS: false}
+	MemStat             = CgroupFile{ResourceFileName: MemStatFileName, Subfs: CgroupMemDir, IsAnolisOS: false}
+	MemoryLimit         = CgroupFile{ResourceFileName: MemoryLimitFileName, Subfs: CgroupMemDir, IsAnolisOS: false}
+	MemWmarkRatio       = CgroupFile{ResourceFileName: MemWmarkRatioFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemWmarkRatioValidator}
+	MemPriority         = CgroupFile{ResourceFileName: MemPriorityFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemPriorityValidator}
+	MemUsePriorityOom   = CgroupFile{ResourceFileName: MemUsePriorityOomFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemUsePriorityOomValidator}
+	MemOomGroup         = CgroupFile{ResourceFileName: MemOomGroupFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemOomGroupValidator}
+	MemWmarkMinAdj      = CgroupFile{ResourceFileName: MemWmarkMinAdjFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemWmarkMinAdjValidator}
+	MemWmarkScaleFactor = CgroupFile{ResourceFileName: MemWmarkScaleFactorFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemWmarkScaleFactorFileNameValidator}
+	MemMin              = CgroupFile{ResourceFileName: MemMinFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemMinValidator}
+	MemLow              = CgroupFile{ResourceFileName: MemLowFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemLowValidator}
+	MemHigh             = CgroupFile{ResourceFileName: MemHighFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemHighValidator}
 )
 
 type CgroupFile struct {
 	ResourceFileName string
 	Subfs            string
-	IsAliOS          bool
+	IsAnolisOS       bool
 	Validator        Validate
 }
 

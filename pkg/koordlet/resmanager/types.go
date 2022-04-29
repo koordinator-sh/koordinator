@@ -17,7 +17,10 @@ limitations under the License.
 package resmanager
 
 import (
+	"strconv"
 	"time"
+
+	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
@@ -201,6 +204,12 @@ func NewCommonCgroupResourceUpdater(owner *OwnerRef, parentDir string, file syst
 	return &CgroupResourceUpdater{owner: owner, file: file, ParentDir: parentDir, value: value, updateFunc: CommonCgroupUpdateFunc, needMerge: false}
 }
 
+// NewMergeableCgroupResourceUpdater returns a leveled CgroupResourceUpdater which firstly MergeUpdate from top
+// to bottom and then Update from bottom to top.
+func NewMergeableCgroupResourceUpdater(owner *OwnerRef, parentDir string, file system.CgroupFile, value string, mergeUpdateFunc MergeUpdateFunc) *CgroupResourceUpdater {
+	return &CgroupResourceUpdater{owner: owner, file: file, ParentDir: parentDir, value: value, updateFunc: CommonCgroupUpdateFunc, mergeUpdateFunc: mergeUpdateFunc, needMerge: true}
+}
+
 func GroupOwnerRef(name string) *OwnerRef {
 	return &OwnerRef{Type: groupType, Name: name}
 }
@@ -211,4 +220,44 @@ func PodOwnerRef(ns string, name string) *OwnerRef {
 
 func ContainerOwnerRef(ns string, name string, container string) *OwnerRef {
 	return &OwnerRef{Type: podType, Namespace: ns, Name: name, Container: container}
+}
+
+func mergeFuncUpdateCgroupIfLarger(resource MergeableResourceUpdater) (MergeableResourceUpdater, error) {
+	info := resource.(*CgroupResourceUpdater)
+
+	cur, err := strconv.ParseInt(info.value, 10, 64)
+	if err != nil {
+		klog.V(6).Infof("failed to merge update cgroup %v, read current value err: %s", info.file, err)
+		return resource, err
+	}
+	oldPtr, err := system.CgroupFileReadInt(info.ParentDir, info.file)
+	if err != nil {
+		klog.V(6).Infof("failed to merge update cgroup %v, read old value err: %s", info.file, err)
+		return resource, err
+	}
+
+	// if old value is larger, skip the write since merged value does not change
+	if cur <= *oldPtr {
+		merged := resource.Clone().(*CgroupResourceUpdater)
+		merged.value = strconv.FormatInt(*oldPtr, 10)
+		klog.V(6).Infof("skip merge update cgroup %v since current value is smaller", info.file)
+		return merged, nil
+	}
+	// otherwise, do write for the current value
+	if info.owner != nil {
+		switch info.owner.Type {
+		case podType:
+			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		case containerType:
+			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Container(info.owner.Container).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		case nodeType:
+			audit.V(5).Node().Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		case groupType:
+			audit.V(5).Group(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		default:
+			audit.V(5).Unknown(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+		}
+	}
+	// current value must be different
+	return resource, system.CgroupFileWrite(info.ParentDir, info.file, info.value)
 }

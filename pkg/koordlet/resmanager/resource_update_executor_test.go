@@ -199,18 +199,18 @@ func Test_UpdateBatchByCache(t *testing.T) {
 	}
 }
 
-func prepareResourceFiles(helper *sysutil.FileTestUtil, initFiles []ResourceUpdater) {
+func prepareResourceFiles(helper *system.FileTestUtil, initFiles []ResourceUpdater) {
 	for _, resource := range initFiles {
 		var err error
-		switch rsc := resource.(type) {
+		switch r := resource.(type) {
 		case *CommonResourceUpdater:
-			helper.CreateFile(rsc.Key())
-			err = sysutil.CommonFileWrite(resource.Key(), resource.Value())
+			helper.CreateFile(r.Key())
+			err = system.CommonFileWrite(r.Key(), r.Value())
 		case *CgroupResourceUpdater:
-			helper.CreateCgroupFile(rsc.ParentDir, rsc.file)
-			err = sysutil.CgroupFileWrite(rsc.ParentDir, rsc.file, resource.Value())
+			helper.CreateCgroupFile(r.ParentDir, r.file)
+			err = system.CgroupFileWrite(r.ParentDir, r.file, r.Value())
 		default:
-			err = fmt.Errorf("unknown resource type %T", resource)
+			err = fmt.Errorf("unknown resource type %T", r)
 		}
 		if err != nil {
 			klog.Errorf("prepareResourceFiles failed for resource %v, err: %s", resource, err)
@@ -225,21 +225,21 @@ func getActualResources(expect []ResourceUpdater) map[string]ResourceUpdater {
 		var value string
 		var err error
 		gotResource := resource.Clone()
-		switch rsc := gotResource.(type) {
+		switch r := gotResource.(type) {
 		case *CommonResourceUpdater:
-			value, err = sysutil.CommonFileRead(resource.Key())
+			value, err = system.CommonFileRead(r.Key())
 			if err != nil { // abort set value when file read failed
-				klog.Errorf("getActualResources failed for common resource %s, err: %s", resource.Key(), err)
+				klog.Errorf("getActualResources failed for common resource %s, err: %s", r.Key(), err)
 				continue
 			}
 		case *CgroupResourceUpdater:
-			value, err = sysutil.CgroupFileRead(rsc.ParentDir, rsc.file)
+			value, err = system.CgroupFileRead(r.ParentDir, r.file)
 			if err != nil { // abort set value when file read failed
-				klog.Errorf("getActualResources failed for cgroup resource %s, err: %s", resource.Key(), err)
+				klog.Errorf("getActualResources failed for cgroup resource %s, err: %s", r.Key(), err)
 				continue
 			}
 		default:
-			klog.Errorf("getActualResources failed for unknown resource %v, type %T", resource, resource)
+			klog.Errorf("getActualResources failed for unknown resource %v, type %T", r, r)
 			continue
 		}
 		gotResource.SetValue(value)
@@ -260,5 +260,231 @@ func equalResourceMap(t *testing.T, expect []ResourceUpdater, got map[string]Res
 			return
 		}
 		assert.Equal(t, resource.Value(), gotResource.Value(), msg)
+	}
+}
+
+func Test_LeveledUpdateBatchByCache(t *testing.T) {
+	type fields struct {
+		cache         []ResourceUpdater
+		initResources []ResourceUpdater
+	}
+	type args struct {
+		resources [][]MergeableResourceUpdater
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		expect []ResourceUpdater
+	}{
+		{
+			name: "no panic when update nothing",
+		},
+		{
+			name: "update single resource",
+			fields: fields{
+				initResources: []ResourceUpdater{
+					NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "100"),
+				},
+			},
+			args: args{
+				resources: [][]MergeableResourceUpdater{
+					{
+						NewMergeableCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "1", mergeFuncUpdateCgroupIfLarger),
+					},
+				},
+			},
+			expect: []ResourceUpdater{
+				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "1"),
+			},
+		},
+		{
+			name: "update correctly for level-ordered cgroup resources",
+			fields: fields{
+				initResources: []ResourceUpdater{
+					NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "100"),
+					NewCommonCgroupResourceUpdater(ContainerOwnerRef("", "pod1", "base"), "/pod1", system.MemMin, "100"),
+				},
+			},
+			args: args{
+				resources: [][]MergeableResourceUpdater{
+					{
+						NewMergeableCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "1", mergeFuncUpdateCgroupIfLarger),
+					},
+					{
+						NewMergeableCgroupResourceUpdater(ContainerOwnerRef("", "pod1", "base"), "/pod1", system.MemMin, "1", mergeFuncUpdateCgroupIfLarger),
+					},
+				},
+			},
+			expect: []ResourceUpdater{
+				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "1"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef("", "pod1", "base"), "/pod1", system.MemMin, "1"),
+			},
+		},
+		{
+			name: "update correctly for normal cgroup resources",
+			fields: fields{
+				initResources: []ResourceUpdater{
+					NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "/", system.MemMin, "200"),
+				},
+			},
+			args: args{
+				resources: [][]MergeableResourceUpdater{
+					{
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "/", system.MemMin, "100"),
+					},
+				},
+			},
+			expect: []ResourceUpdater{
+				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "/", system.MemMin, "100"),
+			},
+		},
+		{
+			name: "update correctly with cache",
+			fields: fields{
+				cache: []ResourceUpdater{
+					NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod2"), "/", system.MemMin, "200"),
+				},
+				initResources: []ResourceUpdater{
+					NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "200"),
+					NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod2"), "/", system.MemWmarkRatio, "0"),
+				},
+			},
+			args: args{
+				resources: [][]MergeableResourceUpdater{
+					{
+						NewMergeableCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "100", mergeFuncUpdateCgroupIfLarger),
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod2"), "/", system.MemWmarkRatio, "0"),
+					},
+				},
+			},
+			expect: []ResourceUpdater{
+				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "100"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod2"), "/", system.MemWmarkRatio, "0"),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
+
+			prepareResourceFiles(helper, tt.fields.initResources)
+
+			resourceCache := cache.NewCache(time.Second, time.Second)
+			rm := LeveledResourceUpdateExecutor{
+				ResourceUpdateExecutor: ResourceUpdateExecutor{name: tt.name, forceUpdateSeconds: 1, resourceCache: resourceCache, locker: &sync.Mutex{}},
+			}
+			stop := make(chan struct{})
+			rm.Run(stop)
+			defer func() { stop <- struct{}{} }()
+			for _, cachedResource := range tt.fields.cache {
+				// make cache unexpired
+				cachedResource.UpdateLastUpdateTimestamp(time.Now())
+				err := resourceCache.Set(cachedResource.Key(), cachedResource, 30*time.Second)
+				assert.NoError(t, err)
+			}
+
+			rm.LeveledUpdateBatchByCache(tt.args.resources)
+			got := getActualResources(tt.expect)
+			equalResourceMap(t, tt.expect, got, fmt.Sprintf("case:%s, checkCurrentResource", tt.name))
+		})
+	}
+}
+
+func Test_LeveledUpdateBatch(t *testing.T) {
+	type fields struct {
+		initResources []ResourceUpdater
+	}
+	type args struct {
+		resources [][]MergeableResourceUpdater
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		expect []ResourceUpdater
+	}{
+		{
+			name: "no panic when update nothing",
+		},
+		{
+			name: "update single resource",
+			fields: fields{
+				initResources: []ResourceUpdater{
+					NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "100"),
+				},
+			},
+			args: args{
+				resources: [][]MergeableResourceUpdater{
+					{
+						NewMergeableCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "1", mergeFuncUpdateCgroupIfLarger),
+					},
+				},
+			},
+			expect: []ResourceUpdater{
+				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "1"),
+			},
+		},
+		{
+			name: "update correctly for level-ordered cgroup resources",
+			fields: fields{
+				initResources: []ResourceUpdater{
+					NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "/", system.MemWmarkRatio, "0"),
+					NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "100"),
+					NewCommonCgroupResourceUpdater(ContainerOwnerRef("", "pod1", "base"), "/pod1", system.MemMin, "100"),
+				},
+			},
+			args: args{
+				resources: [][]MergeableResourceUpdater{
+					{
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "/", system.MemWmarkRatio, "80"),
+						NewMergeableCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "1", mergeFuncUpdateCgroupIfLarger),
+					},
+					{
+						NewMergeableCgroupResourceUpdater(ContainerOwnerRef("", "pod1", "base"), "/pod1", system.MemMin, "1", mergeFuncUpdateCgroupIfLarger),
+					},
+				},
+			},
+			expect: []ResourceUpdater{
+				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "/", system.MemWmarkRatio, "80"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod1"), "/", system.MemMin, "1"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef("", "pod1", "base"), "/pod1", system.MemMin, "1"),
+			},
+		},
+		{
+			name: "update correctly for normal cgroup resources",
+			fields: fields{
+				initResources: []ResourceUpdater{
+					NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "/", system.MemWmarkRatio, "0"),
+				},
+			},
+			args: args{
+				resources: [][]MergeableResourceUpdater{
+					{
+						NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "/", system.MemWmarkRatio, "80"),
+					},
+				},
+			},
+			expect: []ResourceUpdater{
+				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "/", system.MemWmarkRatio, "80"),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
+
+			prepareResourceFiles(helper, tt.fields.initResources)
+
+			rm := LeveledResourceUpdateExecutor{
+				ResourceUpdateExecutor: ResourceUpdateExecutor{name: tt.name, forceUpdateSeconds: 1, locker: &sync.Mutex{}},
+			}
+
+			rm.LeveledUpdateBatch(tt.args.resources)
+			got := getActualResources(tt.expect)
+			equalResourceMap(t, tt.expect, got, fmt.Sprintf("case:%s, checkCurrentResource", tt.name))
+		})
 	}
 }

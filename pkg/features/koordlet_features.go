@@ -39,6 +39,9 @@ const (
 
 	// BEMemoryEvict evict best-effort pod based on Memory
 	BEMemoryEvict featuregate.Feature = "BEMemoryEvict"
+
+	// CgroupReconcile reconciles qos config for resources like cpu, memory, disk, etc.
+	CgroupReconcile featuregate.Feature = "CgroupReconcile"
 )
 
 func init() {
@@ -56,5 +59,6 @@ var (
 		BECPUSuppress:          {Default: false, PreRelease: featuregate.Alpha},
 		BEMemoryEvict:          {Default: false, PreRelease: featuregate.Alpha},
 		CPUBurst:               {Default: false, PreRelease: featuregate.Alpha},
+		CgroupReconcile:        {Default: false, PreRelease: featuregate.Alpha},
 	}
 )

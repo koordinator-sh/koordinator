@@ -50,6 +50,17 @@ type NodeResourceThresholdStrategy struct {
 	*slov1alpha1.ResourceThresholdStrategy
 }
 
+type ResourceQoSCfg struct {
+	ClusterStrategy *slov1alpha1.ResourceQoSStrategy `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeResourceQoSStrategy        `json:"nodeStrategies,omitempty"`
+}
+
+type NodeResourceQoSStrategy struct {
+	// an empty label selector matches all objects while a nil label selector matches no objects
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	*slov1alpha1.ResourceQoSStrategy
+}
+
 type ColocationStrategy struct {
 	Enable                        *bool    `json:"enable,omitempty"`
 	CPUReclaimThresholdPercent    *int64   `json:"cpuReclaimThresholdPercent,omitempty"`

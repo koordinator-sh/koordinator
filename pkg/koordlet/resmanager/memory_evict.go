@@ -130,9 +130,7 @@ func (m *MemoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics []*metr
 		}
 	}
 
-	for _, pod := range killedPods {
-		m.resManager.evictPod(pod, node, evictPodByNodeMemoryUsage, message)
-	}
+	m.resManager.evictPodsIfNotEvicted(killedPods, node, evictPodByNodeMemoryUsage, message)
 
 	m.lastEvictTime = time.Now()
 	klog.Infof("killAndEvictBEPods completed, memoryNeedRelease(%v) memoryReleased(%v)", memoryNeedRelease, memoryNeedRelease)

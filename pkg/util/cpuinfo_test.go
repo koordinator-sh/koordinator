@@ -39,6 +39,39 @@ func Test_getProcessorInfos(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "do not panic for invalid lsCPUStr",
+			args: args{
+				lsCPUStr: `
+CPU NODE SOCKET CORE L1d:L1i:L2:L3 ONLINE
+0   0    0      -    -             yes
+1   0    0      -    -             yes
+`},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "do not panic for invalid cache info",
+			args: args{
+				lsCPUStr: `
+CPU NODE SOCKET CORE L1d:L1i:L2:L3 ONLINE
+0   0    0      0    -             yes
+1   0    0      0    no cacheinfo  yes
+`},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "do not panic for invalid cache info 1",
+			args: args{
+				lsCPUStr: `
+CPU NODE SOCKET CORE L1d:L1i:L2:L3 ONLINE
+0   0    0      0    3:3:3:-       yes
+1   0    0      1    3:3:3:-       yes
+`},
+			want:    nil,
+			wantErr: true,
+		},
+		{
 			name: "read partial lsCPUStr",
 			args: args{
 				lsCPUStr: `

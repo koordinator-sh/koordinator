@@ -224,6 +224,230 @@ func Test_generateThresholdCfg(t *testing.T) {
 	fmt.Print(string(cfgJson))
 }
 
+func Test_getResourceQoSSpec(t *testing.T) {
+	testingResourceQoSCfg := &config.ResourceQoSCfg{
+		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
+			BE: &slov1alpha1.ResourceQoS{
+				MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+					MemoryQoS: slov1alpha1.MemoryQoS{
+						WmarkRatio: pointer.Int64Ptr(0),
+					},
+				},
+			},
+		},
+	}
+	testingResourceQoSCfgStr, _ := json.Marshal(testingResourceQoSCfg)
+	testingResourceQoSCfg1 := &config.ResourceQoSCfg{
+		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
+			BE: &slov1alpha1.ResourceQoS{
+				MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+					MemoryQoS: slov1alpha1.MemoryQoS{
+						WmarkRatio: pointer.Int64Ptr(0),
+					},
+				},
+			},
+		},
+		NodeStrategies: []config.NodeResourceQoSStrategy{
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"xxx": "yyy",
+					},
+				},
+				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
+					BE: &slov1alpha1.ResourceQoS{
+						MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+							MemoryQoS: slov1alpha1.MemoryQoS{
+								WmarkRatio: pointer.Int64Ptr(90),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	testingResourceQoSCfgStr1, _ := json.Marshal(testingResourceQoSCfg1)
+	testingResourceQoSCfg2 := &config.ResourceQoSCfg{
+		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
+			BE: &slov1alpha1.ResourceQoS{
+				MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+					MemoryQoS: slov1alpha1.MemoryQoS{
+						WmarkRatio: pointer.Int64Ptr(0),
+					},
+				},
+			},
+		},
+		NodeStrategies: []config.NodeResourceQoSStrategy{
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"xxx": "yyy",
+					},
+				},
+				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
+					BE: &slov1alpha1.ResourceQoS{
+						MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+							MemoryQoS: slov1alpha1.MemoryQoS{
+								WmarkRatio: pointer.Int64Ptr(90),
+							},
+						},
+					},
+				},
+			},
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"zzz": "zzz",
+					},
+				},
+				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
+					BE: &slov1alpha1.ResourceQoS{
+						MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+							MemoryQoS: slov1alpha1.MemoryQoS{
+								WmarkRatio: pointer.Int64Ptr(90),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	testingResourceQoSCfgStr2, _ := json.Marshal(testingResourceQoSCfg2)
+	testingResourceQoSStrategy := &slov1alpha1.ResourceQoSStrategy{
+		BE: &slov1alpha1.ResourceQoS{
+			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+				MemoryQoS: slov1alpha1.MemoryQoS{
+					WmarkRatio: pointer.Int64Ptr(0),
+				},
+			},
+		},
+	}
+	testingResourceQoSStrategy1 := &slov1alpha1.ResourceQoSStrategy{
+		BE: &slov1alpha1.ResourceQoS{
+			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+				MemoryQoS: slov1alpha1.MemoryQoS{
+					WmarkRatio: pointer.Int64Ptr(90),
+				},
+			},
+		},
+	}
+	testingResourceQoSStrategy2 := &slov1alpha1.ResourceQoSStrategy{
+		BE: &slov1alpha1.ResourceQoS{
+			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+				MemoryQoS: slov1alpha1.MemoryQoS{
+					WmarkRatio: pointer.Int64Ptr(90),
+				},
+			},
+		},
+	}
+	type args struct {
+		node      *corev1.Node
+		configMap *corev1.ConfigMap
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *slov1alpha1.ResourceQoSStrategy
+		wantErr bool
+	}{
+		{
+			name: "throw error for invalid configmap",
+			args: args{
+				node:      &corev1.Node{},
+				configMap: &corev1.ConfigMap{},
+			},
+			want:    &slov1alpha1.ResourceQoSStrategy{},
+			wantErr: false,
+		},
+		{
+			name: "throw error for configmap unmarshal failed",
+			args: args{
+				node: &corev1.Node{},
+				configMap: &corev1.ConfigMap{
+					Data: map[string]string{
+						config.ResourceQoSConfigKey: "invalid_content",
+					},
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "get cluster config correctly",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+				},
+				configMap: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      config.SLOCtrlConfigMap,
+						Namespace: config.ConfigNameSpace,
+					},
+					Data: map[string]string{
+						config.ResourceQoSConfigKey: string(testingResourceQoSCfgStr),
+					},
+				},
+			},
+			want: testingResourceQoSStrategy,
+		},
+		{
+			name: "get node config correctly",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							"xxx": "yyy",
+						},
+					},
+				},
+				configMap: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      config.SLOCtrlConfigMap,
+						Namespace: config.ConfigNameSpace,
+					},
+					Data: map[string]string{
+						config.ResourceQoSConfigKey: string(testingResourceQoSCfgStr1),
+					},
+				},
+			},
+			want: testingResourceQoSStrategy1,
+		},
+		{
+			name: "get firstly-matched node config",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							"xxx": "yyy",
+						},
+					},
+				},
+				configMap: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      config.SLOCtrlConfigMap,
+						Namespace: config.ConfigNameSpace,
+					},
+					Data: map[string]string{
+						config.ResourceQoSConfigKey: string(testingResourceQoSCfgStr2),
+					},
+				},
+			},
+			want: testingResourceQoSStrategy2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := getResourceQoSSpec(tt.args.node, tt.args.configMap)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func Test_getCPBurstConfigSpec(t *testing.T) {
 	testingCPUBurstCfg := &config.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
