@@ -34,6 +34,7 @@ type MemoryQoS struct {
 	// MinLimitPercent specifies the minLimitFactor percentage to calculate `memory.min`, which protects memory
 	// from global reclamation when memory usage does not exceed the min limit.
 	// Close: 0.
+	// +kubebuilder:validation:Minimum=0
 	MinLimitPercent *int64 `json:"minLimitPercent,omitempty"`
 	// LowLimitPercent specifies the lowLimitFactor percentage to calculate `memory.low`, which TRIES BEST
 	// protecting memory from global reclamation when memory usage does not exceed the low limit unless no unprotected
@@ -41,11 +42,13 @@ type MemoryQoS struct {
 	// NOTE: `memory.low` should be larger than `memory.min`. If spec.requests.memory == spec.limits.memory,
 	// pod `memory.low` and `memory.high` become invalid, while `memory.wmark_ratio` is still in effect.
 	// Close: 0.
+	// +kubebuilder:validation:Minimum=0
 	LowLimitPercent *int64 `json:"lowLimitPercent,omitempty"`
 	// ThrottlingPercent specifies the throttlingFactor percentage to calculate `memory.high` with pod
 	// memory.limits or node allocatable memory, which triggers memcg direct reclamation when memory usage exceeds.
 	// Lower the factor brings more heavier reclaim pressure.
 	// Close: 0.
+	// +kubebuilder:validation:Minimum=0
 	ThrottlingPercent *int64 `json:"throttlingPercent,omitempty"`
 
 	// wmark_ratio (Anolis OS required)
@@ -56,10 +59,14 @@ type MemoryQoS struct {
 	// WmarkRatio specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`, which triggers async
 	// memory reclamation when memory usage exceeds.
 	// Close: 0. Recommended: 95.
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=0
 	WmarkRatio *int64 `json:"wmarkRatio,omitempty"`
 	// WmarkScalePermill specifies `memory.wmark_scale_factor` that helps calculate `memory.wmark_low`, which
 	// stops async memory reclamation when memory usage belows.
 	// Close: 50. Recommended: 20.
+	// +kubebuilder:validation:Maximum=1000
+	// +kubebuilder:validation:Minimum=1
 	WmarkScalePermill *int64 `json:"wmarkScalePermill,omitempty"`
 
 	// wmark_min_adj (Anolis OS required)
@@ -69,6 +76,8 @@ type MemoryQoS struct {
 	// [-25, 0)：global_wmark_min' = global_wmark_min + (global_wmark_min - 0) * wmarkMinAdj
 	// (0, 50]：global_wmark_min' = global_wmark_min + (global_wmark_low - global_wmark_min) * wmarkMinAdj
 	// Close: [LSR:0, LS:0, BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].
+	// +kubebuilder:validation:Maximum=50
+	// +kubebuilder:validation:Minimum=-25
 	WmarkMinAdj *int64 `json:"wmarkMinAdj,omitempty"`
 
 	// TODO: enhance the usages of oom priority and oom kill group
@@ -96,7 +105,7 @@ type PodMemoryQoSConfig struct {
 
 // MemoryQoSCfg stores node-level config of memory qos
 type MemoryQoSCfg struct {
-	// Enable indicates whether the memory qos is enabled (Cluster default: false).
+	// Enable indicates whether the memory qos is enabled (default: false).
 	// This field is used for node-level control, while pod-level configuration is done with MemoryQoS and `Policy`
 	// instead of an `Enable` option. Please view the differences between MemoryQoSCfg and PodMemoryQoSConfig structs.
 	Enable    *bool `json:"enable,omitempty"`

@@ -77,9 +77,9 @@ spec:
                         properties:
                           enable:
                             description: 'Enable indicates whether the memory qos
-                              is enabled (Cluster default: false). This field is used
-                              for node-level control, while pod-level configuration
-                              is done with MemoryQoS and `Policy` instead of an `Enable`
+                              is enabled (default: false). This field is used for
+                              node-level control, while pod-level configuration is
+                              done with MemoryQoS and `Policy` instead of an `Enable`
                               option. Please view the differences between MemoryQoSCfg
                               and PodMemoryQoSConfig structs.'
                             type: boolean
@@ -94,6 +94,7 @@ spec:
                               become invalid, while `memory.wmark_ratio` is still
                               in effect. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           minLimitPercent:
                             description: 'memcg qos If enabled, memcg qos will be
@@ -110,6 +111,7 @@ spec:
                               memory from global reclamation when memory usage does
                               not exceed the min limit. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           oomKillGroup:
                             format: int64
@@ -129,6 +131,7 @@ spec:
                               reclamation when memory usage exceeds. Lower the factor
                               brings more heavier reclaim pressure. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           wmarkMinAdj:
                             description: 'wmark_min_adj (Anolis OS required) WmarkMinAdj
@@ -141,6 +144,8 @@ spec:
                               - global_wmark_min) * wmarkMinAdj Close: [LSR:0, LS:0,
                               BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].'
                             format: int64
+                            maximum: 50
+                            minimum: -25
                             type: integer
                           wmarkRatio:
                             description: 'wmark_ratio (Anolis OS required) Async memory
@@ -154,6 +159,8 @@ spec:
                               which triggers async memory reclamation when memory
                               usage exceeds. Close: 0. Recommended: 95.'
                             format: int64
+                            maximum: 100
+                            minimum: 0
                             type: integer
                           wmarkScalePermill:
                             description: 'WmarkScalePermill specifies `memory.wmark_scale_factor`
@@ -161,6 +168,8 @@ spec:
                               async memory reclamation when memory usage belows. Close:
                               50. Recommended: 20.'
                             format: int64
+                            maximum: 1000
+                            minimum: 1
                             type: integer
                         type: object
                       resctrlQoS:
@@ -203,9 +212,9 @@ spec:
                         properties:
                           enable:
                             description: 'Enable indicates whether the memory qos
-                              is enabled (Cluster default: false). This field is used
-                              for node-level control, while pod-level configuration
-                              is done with MemoryQoS and `Policy` instead of an `Enable`
+                              is enabled (default: false). This field is used for
+                              node-level control, while pod-level configuration is
+                              done with MemoryQoS and `Policy` instead of an `Enable`
                               option. Please view the differences between MemoryQoSCfg
                               and PodMemoryQoSConfig structs.'
                             type: boolean
@@ -220,6 +229,7 @@ spec:
                               become invalid, while `memory.wmark_ratio` is still
                               in effect. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           minLimitPercent:
                             description: 'memcg qos If enabled, memcg qos will be
@@ -236,6 +246,7 @@ spec:
                               memory from global reclamation when memory usage does
                               not exceed the min limit. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           oomKillGroup:
                             format: int64
@@ -255,6 +266,7 @@ spec:
                               reclamation when memory usage exceeds. Lower the factor
                               brings more heavier reclaim pressure. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           wmarkMinAdj:
                             description: 'wmark_min_adj (Anolis OS required) WmarkMinAdj
@@ -267,6 +279,8 @@ spec:
                               - global_wmark_min) * wmarkMinAdj Close: [LSR:0, LS:0,
                               BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].'
                             format: int64
+                            maximum: 50
+                            minimum: -25
                             type: integer
                           wmarkRatio:
                             description: 'wmark_ratio (Anolis OS required) Async memory
@@ -280,6 +294,8 @@ spec:
                               which triggers async memory reclamation when memory
                               usage exceeds. Close: 0. Recommended: 95.'
                             format: int64
+                            maximum: 100
+                            minimum: 0
                             type: integer
                           wmarkScalePermill:
                             description: 'WmarkScalePermill specifies `memory.wmark_scale_factor`
@@ -287,6 +303,8 @@ spec:
                               async memory reclamation when memory usage belows. Close:
                               50. Recommended: 20.'
                             format: int64
+                            maximum: 1000
+                            minimum: 1
                             type: integer
                         type: object
                       resctrlQoS:
@@ -329,9 +347,9 @@ spec:
                         properties:
                           enable:
                             description: 'Enable indicates whether the memory qos
-                              is enabled (Cluster default: false). This field is used
-                              for node-level control, while pod-level configuration
-                              is done with MemoryQoS and `Policy` instead of an `Enable`
+                              is enabled (default: false). This field is used for
+                              node-level control, while pod-level configuration is
+                              done with MemoryQoS and `Policy` instead of an `Enable`
                               option. Please view the differences between MemoryQoSCfg
                               and PodMemoryQoSConfig structs.'
                             type: boolean
@@ -346,6 +364,7 @@ spec:
                               become invalid, while `memory.wmark_ratio` is still
                               in effect. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           minLimitPercent:
                             description: 'memcg qos If enabled, memcg qos will be
@@ -362,6 +381,7 @@ spec:
                               memory from global reclamation when memory usage does
                               not exceed the min limit. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           oomKillGroup:
                             format: int64
@@ -381,6 +401,7 @@ spec:
                               reclamation when memory usage exceeds. Lower the factor
                               brings more heavier reclaim pressure. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           wmarkMinAdj:
                             description: 'wmark_min_adj (Anolis OS required) WmarkMinAdj
@@ -393,6 +414,8 @@ spec:
                               - global_wmark_min) * wmarkMinAdj Close: [LSR:0, LS:0,
                               BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].'
                             format: int64
+                            maximum: 50
+                            minimum: -25
                             type: integer
                           wmarkRatio:
                             description: 'wmark_ratio (Anolis OS required) Async memory
@@ -406,6 +429,8 @@ spec:
                               which triggers async memory reclamation when memory
                               usage exceeds. Close: 0. Recommended: 95.'
                             format: int64
+                            maximum: 100
+                            minimum: 0
                             type: integer
                           wmarkScalePermill:
                             description: 'WmarkScalePermill specifies `memory.wmark_scale_factor`
@@ -413,6 +438,8 @@ spec:
                               async memory reclamation when memory usage belows. Close:
                               50. Recommended: 20.'
                             format: int64
+                            maximum: 1000
+                            minimum: 1
                             type: integer
                         type: object
                       resctrlQoS:
@@ -455,9 +482,9 @@ spec:
                         properties:
                           enable:
                             description: 'Enable indicates whether the memory qos
-                              is enabled (Cluster default: false). This field is used
-                              for node-level control, while pod-level configuration
-                              is done with MemoryQoS and `Policy` instead of an `Enable`
+                              is enabled (default: false). This field is used for
+                              node-level control, while pod-level configuration is
+                              done with MemoryQoS and `Policy` instead of an `Enable`
                               option. Please view the differences between MemoryQoSCfg
                               and PodMemoryQoSConfig structs.'
                             type: boolean
@@ -472,6 +499,7 @@ spec:
                               become invalid, while `memory.wmark_ratio` is still
                               in effect. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           minLimitPercent:
                             description: 'memcg qos If enabled, memcg qos will be
@@ -488,6 +516,7 @@ spec:
                               memory from global reclamation when memory usage does
                               not exceed the min limit. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           oomKillGroup:
                             format: int64
@@ -507,6 +536,7 @@ spec:
                               reclamation when memory usage exceeds. Lower the factor
                               brings more heavier reclaim pressure. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           wmarkMinAdj:
                             description: 'wmark_min_adj (Anolis OS required) WmarkMinAdj
@@ -519,6 +549,8 @@ spec:
                               - global_wmark_min) * wmarkMinAdj Close: [LSR:0, LS:0,
                               BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].'
                             format: int64
+                            maximum: 50
+                            minimum: -25
                             type: integer
                           wmarkRatio:
                             description: 'wmark_ratio (Anolis OS required) Async memory
@@ -532,6 +564,8 @@ spec:
                               which triggers async memory reclamation when memory
                               usage exceeds. Close: 0. Recommended: 95.'
                             format: int64
+                            maximum: 100
+                            minimum: 0
                             type: integer
                           wmarkScalePermill:
                             description: 'WmarkScalePermill specifies `memory.wmark_scale_factor`
@@ -539,6 +573,8 @@ spec:
                               async memory reclamation when memory usage belows. Close:
                               50. Recommended: 20.'
                             format: int64
+                            maximum: 1000
+                            minimum: 1
                             type: integer
                         type: object
                       resctrlQoS:
@@ -581,9 +617,9 @@ spec:
                         properties:
                           enable:
                             description: 'Enable indicates whether the memory qos
-                              is enabled (Cluster default: false). This field is used
-                              for node-level control, while pod-level configuration
-                              is done with MemoryQoS and `Policy` instead of an `Enable`
+                              is enabled (default: false). This field is used for
+                              node-level control, while pod-level configuration is
+                              done with MemoryQoS and `Policy` instead of an `Enable`
                               option. Please view the differences between MemoryQoSCfg
                               and PodMemoryQoSConfig structs.'
                             type: boolean
@@ -598,6 +634,7 @@ spec:
                               become invalid, while `memory.wmark_ratio` is still
                               in effect. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           minLimitPercent:
                             description: 'memcg qos If enabled, memcg qos will be
@@ -614,6 +651,7 @@ spec:
                               memory from global reclamation when memory usage does
                               not exceed the min limit. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           oomKillGroup:
                             format: int64
@@ -633,6 +671,7 @@ spec:
                               reclamation when memory usage exceeds. Lower the factor
                               brings more heavier reclaim pressure. Close: 0.'
                             format: int64
+                            minimum: 0
                             type: integer
                           wmarkMinAdj:
                             description: 'wmark_min_adj (Anolis OS required) WmarkMinAdj
@@ -645,6 +684,8 @@ spec:
                               - global_wmark_min) * wmarkMinAdj Close: [LSR:0, LS:0,
                               BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].'
                             format: int64
+                            maximum: 50
+                            minimum: -25
                             type: integer
                           wmarkRatio:
                             description: 'wmark_ratio (Anolis OS required) Async memory
@@ -658,6 +699,8 @@ spec:
                               which triggers async memory reclamation when memory
                               usage exceeds. Close: 0. Recommended: 95.'
                             format: int64
+                            maximum: 100
+                            minimum: 0
                             type: integer
                           wmarkScalePermill:
                             description: 'WmarkScalePermill specifies `memory.wmark_scale_factor`
@@ -665,6 +708,8 @@ spec:
                               async memory reclamation when memory usage belows. Close:
                               50. Recommended: 20.'
                             format: int64
+                            maximum: 1000
+                            minimum: 1
                             type: integer
                         type: object
                       resctrlQoS:
