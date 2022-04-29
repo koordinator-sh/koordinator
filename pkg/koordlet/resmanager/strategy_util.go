@@ -75,3 +75,17 @@ func mergeNoneMemoryQoSIfDisabled(resourceQoS *slov1alpha1.ResourceQoSStrategy) 
 		resourceQoS.BE.MemoryQoS.MemoryQoS = *util.NoneMemoryQoS()
 	}
 }
+
+func mergeSLOSpecCPUBurstStrategy(defaultSpec,
+	newSpec *slov1alpha1.CPUBurstStrategy) *slov1alpha1.CPUBurstStrategy {
+	spec := &slov1alpha1.CPUBurstStrategy{}
+	if newSpec != nil {
+		spec = newSpec
+	}
+	// ignore err for serializing/deserializing the same struct type
+	data, _ := json.Marshal(spec)
+	// NOTE: use deepcopy to avoid a overwrite to the global default
+	out := defaultSpec.DeepCopy()
+	_ = json.Unmarshal(data, &out)
+	return out
+}

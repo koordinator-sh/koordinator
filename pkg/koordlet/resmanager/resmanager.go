@@ -119,6 +119,13 @@ func (r *resmanager) mergeDefaultNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
 	if mergedResourceQoSStrategySpec != nil {
 		r.nodeSLO.Spec.ResourceQoSStrategy = mergedResourceQoSStrategySpec
 	}
+
+	// merge CPUBurstStrategy
+	mergedCPUBurstStrategySpec := mergeSLOSpecCPUBurstStrategy(util.DefaultNodeSLOSpecConfig().CPUBurstStrategy,
+		nodeSLO.Spec.CPUBurstStrategy)
+	if mergedCPUBurstStrategySpec != nil {
+		r.nodeSLO.Spec.CPUBurstStrategy = mergedCPUBurstStrategySpec
+	}
 }
 
 func (r *resmanager) createNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
