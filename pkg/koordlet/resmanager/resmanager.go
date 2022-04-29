@@ -38,7 +38,6 @@ import (
 	"k8s.io/klog/v2"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	expireCache "github.com/koordinator-sh/koordinator/pkg/cache"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	slolisterv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
@@ -47,6 +46,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/runtime"
+	expireCache "github.com/koordinator-sh/koordinator/pkg/tools/cache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -98,8 +98,8 @@ func newNodeSLOInformer(client koordclientset.Interface, nodeName string) cache.
 	)
 }
 
-// mergeDefaultNodeSLO merges nodeSLO with default config; ensure use the function with a RWMutex
-func (r *resmanager) mergeDefaultNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
+// mergeNodeSLOSpec merges nodeSLO with default config; ensure use the function with a RWMutex
+func (r *resmanager) mergeNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	if r.nodeSLO == nil || nodeSLO == nil {
 		klog.Errorf("failed to merge with nil nodeSLO, old: %v, new: %v", r.nodeSLO, nodeSLO)
 		return
@@ -138,7 +138,7 @@ func (r *resmanager) createNodeSLO(nodeSLO *slov1alpha1.NodeSLO) {
 	r.nodeSLO.Spec = nodeSLO.Spec
 
 	// merge nodeSLO spec with the default config
-	r.mergeDefaultNodeSLO(nodeSLO)
+	r.mergeNodeSLOSpec(nodeSLO)
 
 	newNodeSLOStr := util.DumpJSON(r.nodeSLO)
 	klog.Infof("update nodeSLO content: old %s, new %s", oldNodeSLOStr, newNodeSLOStr)
@@ -164,7 +164,7 @@ func (r *resmanager) updateNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	r.nodeSLO.Spec = nodeSLO.Spec
 
 	// merge nodeSLO spec with the default config
-	r.mergeDefaultNodeSLO(nodeSLO)
+	r.mergeNodeSLOSpec(nodeSLO)
 
 	newNodeSLOStr := util.DumpJSON(r.nodeSLO)
 	klog.Infof("update nodeSLO content: old %s, new %s", oldNodeSLOStr, newNodeSLOStr)

@@ -17,7 +17,9 @@ limitations under the License.
 package resmanager
 
 import (
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -113,14 +115,14 @@ func (c *CommonResourceUpdater) Update() error {
 	return c.updateFunc(c)
 }
 
-func CommonUpdateFunc(resource ResourceUpdater) error {
-	info := resource.(*CommonResourceUpdater)
-	audit.V(5).Node().Reason(updateSystemConfig).Message("update %v to %v", info.file, info.value).Do()
-	return system.CommonFileWriteIfDifferent(info.file, info.Value())
-}
-
-func NewCommonResourceUpdater(file string, value string) *CommonResourceUpdater {
-	return &CommonResourceUpdater{key: file, file: file, value: value, updateFunc: CommonUpdateFunc}
+func NewDetailCommonResourceUpdater(key, file, value string, owner *OwnerRef, updateFunc UpdateFunc) *CommonResourceUpdater {
+	return &CommonResourceUpdater{
+		owner:      owner,
+		key:        key,
+		file:       file,
+		value:      value,
+		updateFunc: updateFunc,
+	}
 }
 
 type CgroupResourceUpdater struct {
@@ -220,6 +222,67 @@ func PodOwnerRef(ns string, name string) *OwnerRef {
 
 func ContainerOwnerRef(ns string, name string, container string) *OwnerRef {
 	return &OwnerRef{Type: podType, Namespace: ns, Name: name, Container: container}
+}
+
+func updateResctrlSchemataFunc(resource ResourceUpdater) error {
+	// NOTE: currently, only l3 schemata is to update, so do not read or compare before the write
+	// eg.
+	// $ cat /sys/fs/resctrl/schemata/BE/schemata
+	// L3:0=7ff;1=7ff
+	// MB:0=100;1=100
+	// $ echo "L3:0=3f;1=3f" > /sys/fs/resctrl/BE/schemata
+	// $ cat /sys/fs/resctrl/BE/schemata
+	// L3:0=03f;1=03f
+	// MB:0=100;1=100
+	info := resource.(*CommonResourceUpdater)
+	audit.V(5).Group(info.owner.Name).Reason(updateResctrlSchemata).Message("update %v with value %v",
+		resource.Key(), resource.Value()).Do()
+	return system.CommonFileWrite(info.file, info.value)
+}
+
+func updateResctrlTasksFunc(resource ResourceUpdater) error {
+	// NOTE: resctrl/{...}/tasks file is required to appending write a task id once a time, and any duplicate would be
+	//       dropped automatically without an exception
+	// eg.
+	// $ echo 123 > /sys/fs/resctrl/BE/tasks
+	// $ echo 124 > /sys/fs/resctrl/BE/tasks
+	// $ echo 123 > /sys/fs/resctrl/BE/tasks
+	// $ echo 122 > /sys/fs/resctrl/BE/tasks
+	// $ tail -n 3 /sys/fs/resctrl/BE/tasks
+	// 122
+	// 123
+	// 124
+	info := resource.(*CommonResourceUpdater)
+	audit.V(5).Group(info.owner.Name).Reason(updateResctrlTasks).Message("update %v with value %v",
+		resource.Key(), resource.Value()).Do()
+
+	f, err := os.OpenFile(info.file, os.O_RDWR|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+
+	success, total := 0, 0
+
+	ids := strings.Split(strings.Trim(info.Value(), "\n"), "\n")
+	for _, id := range ids {
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		total++
+		_, err = f.WriteString(id)
+		// any thread can exit before the writing
+		if err == nil {
+			success++
+			continue
+		}
+		klog.V(6).Infof("failed to write resctrl task id %v for group %s, err: %s", id,
+			info.Owner().Name, err)
+	}
+
+	klog.V(5).Infof("write Cat L3 task ids for group %s finished: %v succeed, %v total",
+		info.Owner().Name, success, total)
+
+	return f.Close()
 }
 
 func mergeFuncUpdateCgroupIfLarger(resource MergeableResourceUpdater) (MergeableResourceUpdater, error) {

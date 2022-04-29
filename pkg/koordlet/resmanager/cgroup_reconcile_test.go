@@ -824,7 +824,8 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 	testingMemoryQoSNoneResourceQoS.MemoryQoS = util.NoneResourceQoSStrategy().BE.MemoryQoS
 	testingMemoryQoSNoneResourceQoS1 := util.DefaultResourceQoSStrategy().BE // qos partially disable
 	testingMemoryQoSNoneResourceQoS1.MemoryQoS = util.NoneResourceQoSStrategy().BE.MemoryQoS
-	testingMemoryQoSAutoResourceQoS := util.DefaultResourceQoSStrategy().BE
+	testingMemoryQoSAutoResourceQoS := util.NoneResourceQoSStrategy().BE
+	testingMemoryQoSAutoResourceQoS.MemoryQoS.MemoryQoS = *util.DefaultMemoryQoS(apiext.QoSBE)
 	testingMemoryQoSAutoResourceQoS1 := util.DefaultResourceQoSStrategy().BE
 	testingMemoryQoSAutoResourceQoS1.MemoryQoS.ThrottlingPercent = pointer.Int64Ptr(90)
 	testingMemoryQoSAutoResourceQoS2 := &slov1alpha1.ResourceQoS{

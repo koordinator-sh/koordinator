@@ -35,7 +35,8 @@ const cpuCmdTimeout = 3 * time.Second
 
 // CPUBasicInfo describes the cpu basic features and status
 type CPUBasicInfo struct {
-	HyperThreadEnabled bool `json:"hyperThreadEnabled,omitempty"`
+	HyperThreadEnabled bool   `json:"hyperThreadEnabled,omitempty"`
+	CatL3CbmMask       string `json:"catL3CbmMask,omitempty"`
 }
 
 // ProcessorInfo describes the processor topology information of a single logic cpu, including the core, socket and numa
@@ -110,6 +111,9 @@ func getCPUBasicInfo() (*CPUBasicInfo, error) {
 	var err error
 	if cpuBasicInfo.HyperThreadEnabled, err = getHyperThreadEnabled(); err != nil {
 		klog.V(5).Infof("get hyperthreadEnabled info error: %v", err)
+	}
+	if cpuBasicInfo.CatL3CbmMask, err = system.ReadCatL3CbmString(); err != nil {
+		klog.V(5).Infof("get l3 cache bit mask error: %v", err)
 	}
 	return cpuBasicInfo, nil
 }

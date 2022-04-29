@@ -18,6 +18,9 @@ package util
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -168,6 +171,125 @@ func Test_getContainerCgroupPathWithCgroupfsDriver(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("getContainerCgroupPath() got = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func Test_GetContainerCurTasks(t *testing.T) {
+	type args struct {
+		podParentDir string
+		c            *corev1.ContainerStatus
+	}
+	type field struct {
+		containerParentDir string
+		tasksFileStr       string
+		invalidPath        bool
+	}
+	tests := []struct {
+		name    string
+		args    args
+		field   field
+		want    []int
+		wantErr bool
+	}{
+		{
+			name: "throw an error for empty input",
+			args: args{
+				c: &corev1.ContainerStatus{},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "parse tasks correctly",
+			field: field{
+				containerParentDir: "pod0/cri-containerd-1.scope",
+				tasksFileStr:       "22264\n22265\n22266\n22267\n29925\n29926\n37587\n41340\n45169\n",
+			},
+			args: args{
+				podParentDir: "pod0",
+				c: &corev1.ContainerStatus{
+					ContainerID: "containerd://1",
+				},
+			},
+			want:    []int{22264, 22265, 22266, 22267, 29925, 29926, 37587, 41340, 45169},
+			wantErr: false,
+		},
+		{
+			name: "throw an error for invalid path",
+			field: field{
+				containerParentDir: "pod0/cri-containerd-1.scope",
+				tasksFileStr:       "22264\n22265\n22266\n22267\n29925\n29926\n37587\n41340\n45169\n",
+				invalidPath:        true,
+			},
+			args: args{
+				podParentDir: "pod0",
+				c: &corev1.ContainerStatus{
+					ContainerID: "containerd://1",
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "parse error",
+			field: field{
+				containerParentDir: "pod0/cri-containerd-1.scope",
+				tasksFileStr:       "22264\n22265\n22266\n22587\nabs",
+			},
+			args: args{
+				podParentDir: "pod0",
+				c: &corev1.ContainerStatus{
+					ContainerID: "containerd://1",
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "parse empty",
+			field: field{
+				containerParentDir: "pod0/cri-containerd-1.scope",
+				tasksFileStr:       "",
+			},
+			args: args{
+				podParentDir: "pod0",
+				c: &corev1.ContainerStatus{
+					ContainerID: "containerd://1",
+				},
+			},
+			want:    nil,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cgroupRootDir string
+			cgroupRootDir, _ = ioutil.TempDir("", "GetContainerCurTasks")
+			defer os.RemoveAll(cgroupRootDir)
+
+			dname := filepath.Join(cgroupRootDir, system.CgroupCPUDir, tt.field.containerParentDir)
+			err := os.MkdirAll(dname, 0700)
+			assert.NoError(t, err)
+			fname := filepath.Join(dname, system.CPUTaskFileName)
+			_ = ioutil.WriteFile(fname, []byte(tt.field.tasksFileStr), 0666)
+
+			system.Conf = &system.Config{
+				CgroupRootDir: cgroupRootDir,
+			}
+			// reset Formatter after testing
+			rawParentDir := system.CgroupPathFormatter.ParentDir
+			system.CgroupPathFormatter.ParentDir = ""
+			defer func() {
+				system.CgroupPathFormatter.ParentDir = rawParentDir
+			}()
+			if tt.field.invalidPath {
+				system.Conf.CgroupRootDir = "invalidPath"
+			}
+
+			got, err := GetContainerCurTasks(tt.args.podParentDir, tt.args.c)
+			assert.Equal(t, tt.wantErr, err != nil)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

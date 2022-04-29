@@ -149,6 +149,14 @@ func GetContainerCgroupCFSQuotaPath(podParentDir string, c *corev1.ContainerStat
 	return system.GetCgroupFilePath(containerPath, system.CPUCFSQuota), nil
 }
 
+func GetContainerCurTasksPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return "", err
+	}
+	return system.GetCgroupFilePath(containerPath, system.CPUTask), nil
+}
+
 func GetContainerCurCPUShare(podParentDir string, c *corev1.ContainerStatus) (int64, error) {
 	cgroupPath, err := GetContainerCgroupCPUSharePath(podParentDir, c)
 	if err != nil {
@@ -195,6 +203,14 @@ func GetContainerCurMemLimitBytes(podParentDir string, c *corev1.ContainerStatus
 		return 0, err
 	}
 	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
+}
+
+func GetContainerCurTasks(podParentDir string, c *corev1.ContainerStatus) ([]int, error) {
+	cgroupPath, err := GetContainerCurTasksPath(podParentDir, c)
+	if err != nil {
+		return nil, err
+	}
+	return system.GetCgroupCurTasks(cgroupPath)
 }
 
 func FindContainerIdAndStatusByName(status *corev1.PodStatus, name string) (string, *corev1.ContainerStatus, error) {

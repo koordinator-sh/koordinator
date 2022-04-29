@@ -582,3 +582,15 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 		})
 	}
 }
+
+func Test_generateResourceQoSStrategeCfg(t *testing.T) {
+	cfg := config.ResourceQoSCfg{}
+	cfg.ClusterStrategy = util.DefaultResourceQoSStrategy()
+	labelSelector := &metav1.LabelSelector{MatchLabels: map[string]string{}}
+	labelSelector.MatchLabels["machineType"] = "F53"
+	selectCfg := config.NodeResourceQoSStrategy{NodeSelector: labelSelector, ResourceQoSStrategy: util.DefaultResourceQoSStrategy()}
+	cfg.NodeStrategies = []config.NodeResourceQoSStrategy{selectCfg}
+
+	cfgJson, _ := json.MarshalIndent(cfg, "", "  ")
+	fmt.Print(string(cfgJson))
+}

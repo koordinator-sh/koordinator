@@ -34,11 +34,14 @@ const (
 	// BECPUSuppress suppresses for best-effort pod
 	BECPUSuppress featuregate.Feature = "BECPUSuppress"
 
+	// BEMemoryEvict evict best-effort pod based on Memory
+	BEMemoryEvict featuregate.Feature = "BEMemoryEvict"
+
 	// CPUBurst set cpu.cfs_burst_us; scale up cpu.cfs_quota_us if pod cpu throttled
 	CPUBurst featuregate.Feature = "CPUBurst"
 
-	// BEMemoryEvict evict best-effort pod based on Memory
-	BEMemoryEvict featuregate.Feature = "BEMemoryEvict"
+	// RdtResctrl sets intel rdt resctrl for processes belonging to ls or be pods
+	RdtResctrl featuregate.Feature = "RdtResctrl"
 
 	// CgroupReconcile reconciles qos config for resources like cpu, memory, disk, etc.
 	CgroupReconcile featuregate.Feature = "CgroupReconcile"
@@ -59,6 +62,7 @@ var (
 		BECPUSuppress:          {Default: false, PreRelease: featuregate.Alpha},
 		BEMemoryEvict:          {Default: false, PreRelease: featuregate.Alpha},
 		CPUBurst:               {Default: false, PreRelease: featuregate.Alpha},
+		RdtResctrl:             {Default: false, PreRelease: featuregate.Alpha},
 		CgroupReconcile:        {Default: false, PreRelease: featuregate.Alpha},
 	}
 )

@@ -115,6 +115,27 @@ func GetCgroupFilePath(cgroupTaskDir string, file CgroupFile) string {
 	return path.Join(Conf.CgroupRootDir, file.Subfs, cgroupTaskDir, file.ResourceFileName)
 }
 
+func GetCgroupCurTasks(cgroupPath string) ([]int, error) {
+	var tasks []int
+	rawContent, err := ioutil.ReadFile(cgroupPath)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(rawContent), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if len(line) <= 0 {
+			continue
+		}
+		task, err := strconv.Atoi(line)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
+}
+
 func GetCPUStatRaw(cgroupPath string) (*CPUStatRaw, error) {
 	content, err := ioutil.ReadFile(cgroupPath)
 	if err != nil {
