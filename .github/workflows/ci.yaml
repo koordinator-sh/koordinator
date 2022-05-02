@@ -8,16 +8,25 @@ on:
   pull_request: {}
   workflow_dispatch: {}
 
-env:
-  GO_VERSION: '1.17'
-
 jobs:
+  get-go-version:
+    runs-on: ubuntu-latest
+    outputs:
+      go-version: ${{ steps.read-go-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+      - id: read-go-version
+        name: Determine Go version from go.mod
+        run: echo "::set-output name=version::$(grep "go 1." go.mod | cut -d " " -f 2)"
+
   golangci-lint:
     runs-on: ubuntu-latest
+    needs:
+      - get-go-version
     steps:
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
         with:
@@ -35,16 +44,25 @@ jobs:
 
   staticcheck:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dominikh/staticcheck-action@v1
-
-  unit-tests:
-    runs-on: ubuntu-latest
+    needs:
+      - get-go-version
     steps:
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
+      - uses: actions/checkout@v3
+      - uses: dominikh/staticcheck-action@v1
+        with:
+          install-go: false
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    needs:
+      - get-go-version
+    steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ needs.get-go-version.outputs.go-version }}
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
         with:
