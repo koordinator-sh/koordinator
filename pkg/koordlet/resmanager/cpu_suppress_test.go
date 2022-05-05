@@ -1,17 +1,17 @@
 /*
-Copyright 2022 The Koordinator Authors.
+ Copyright 2022 The Koordinator Authors.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+     http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
 */
 
 package resmanager
@@ -569,12 +569,12 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			ctl := gomock.NewController(t)
 			defer ctl.Finish()
 
-			//prepareData: statesinformer pods node
+			// prepareData: statesinformer pods node
 			si := mockstatesinformer.NewMockStatesInformer(ctl)
 			si.EXPECT().GetAllPods().Return(tt.args.podMetas).AnyTimes()
 			si.EXPECT().GetNode().Return(tt.args.node).AnyTimes()
 
-			//prepareData: mockMetricCache pods node beMetrics(AVG,current)
+			// prepareData: mockMetricCache pods node beMetrics(AVG,current)
 			mockMetricCache := mockmetriccache.NewMockMetricCache(ctl)
 
 			nodeMetricQueryResult := metriccache.NodeResourceQueryResult{
@@ -610,7 +610,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			cpuSuppress := NewCPUSuppress(r)
 			cpuSuppress.suppressBECPU()
 
-			//checkCFSQuota
+			// checkCFSQuota
 			gotBECFSQuota := helper.ReadCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota)
 			assert.Equal(t, strconv.FormatInt(tt.wantBECFSQuota, 10), gotBECFSQuota, util.GetKubeQosRelativePath(corev1.PodQOSBestEffort))
 			gotCFSQuotaPolicy, exist := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)]
@@ -619,7 +619,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				assert.Equal(t, *tt.wantCFSQuotaPolicyStatus, gotCFSQuotaPolicy, "check_CFSQuotaPolicyStatus_equal")
 			}
 
-			//checkCPUSet
+			// checkCPUSet
 			gotCPUSetPolicyStatus, exist := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)]
 			assert.Equal(t, tt.wantCPUSetPolicyStatus == nil, !exist, "check_CPUSetPolicyStatus_exist")
 			if tt.wantCPUSetPolicyStatus != nil {
@@ -1151,7 +1151,7 @@ func Test_calculateBESuppressCPUSetPolicy(t *testing.T) {
 						{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 0},
 					},
 				},
-				oldCPUSetNum: 1, //maxNewCPUSet := oldCPUSetNum + beMaxIncreaseCPUPercent*totalCPUNum = 3
+				oldCPUSetNum: 1, // maxNewCPUSet := oldCPUSetNum + beMaxIncreaseCPUPercent*totalCPUNum = 3
 			},
 			want: []int32{15, 14, 11},
 		},
