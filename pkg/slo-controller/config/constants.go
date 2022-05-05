@@ -22,4 +22,5 @@ const (
 	ColocationConfigKey        = "colocation-config"
 	ResourceThresholdConfigKey = "resource-threshold-config"
 	ResourceQoSConfigKey       = "resource-qos-config"
+	CPUBurstConfigKey          = "cpu-burst-config"
 )

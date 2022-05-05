@@ -115,6 +115,16 @@ func (c *CommonResourceUpdater) Update() error {
 	return c.updateFunc(c)
 }
 
+func CommonUpdateFunc(resource ResourceUpdater) error {
+	info := resource.(*CommonResourceUpdater)
+	audit.V(5).Node().Reason(updateSystemConfig).Message("update %v to %v", info.file, info.value).Do()
+	return system.CommonFileWriteIfDifferent(info.file, info.Value())
+}
+
+func NewCommonResourceUpdater(file string, value string) *CommonResourceUpdater {
+	return &CommonResourceUpdater{key: file, file: file, value: value, updateFunc: CommonUpdateFunc}
+}
+
 func NewDetailCommonResourceUpdater(key, file, value string, owner *OwnerRef, updateFunc UpdateFunc) *CommonResourceUpdater {
 	return &CommonResourceUpdater{
 		owner:      owner,

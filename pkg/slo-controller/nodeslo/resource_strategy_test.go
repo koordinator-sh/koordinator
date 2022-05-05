@@ -459,3 +459,138 @@ func Test_generateResourceQoSStrategeCfg(t *testing.T) {
 	cfgJson, _ := json.MarshalIndent(cfg, "", "  ")
 	fmt.Print(string(cfgJson))
 }
+
+func Test_getCPBurstConfigSpec(t *testing.T) {
+	testingCPUBurstCfg := &config.CPUBurstCfg{
+		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
+			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+				CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(120),
+			},
+		},
+	}
+	testingCPUBurstCfgStr, _ := json.Marshal(testingCPUBurstCfg)
+
+	testingCPUBurstCfg1 := &config.CPUBurstCfg{
+		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
+			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+				CPUBurstPercent: pointer.Int64Ptr(200),
+			},
+		},
+		NodeStrategies: []config.NodeCPUBurstCfg{
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"xxx": "yyy",
+					},
+				},
+				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
+					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+						CPUBurstPercent: pointer.Int64Ptr(200),
+					},
+				},
+			},
+		},
+	}
+	testingCPUBurstCfgStr1, _ := json.Marshal(testingCPUBurstCfg1)
+
+	type args struct {
+		node      *corev1.Node
+		configMap *corev1.ConfigMap
+	}
+
+	tests := []struct {
+		name    string
+		args    args
+		want    *slov1alpha1.CPUBurstStrategy
+		wantErr bool
+	}{
+		{
+			name: "default value for empty config",
+			args: args{
+				node:      &corev1.Node{},
+				configMap: &corev1.ConfigMap{},
+			},
+			want:    util.DefaultCPUBurstStrategy(),
+			wantErr: false,
+		},
+		{
+			name: "throw error for configmap unmarshal failed",
+			args: args{
+				node: &corev1.Node{},
+				configMap: &corev1.ConfigMap{
+					Data: map[string]string{
+						config.CPUBurstConfigKey: "invalid_content",
+					},
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "get cluster config correctly",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+				},
+				configMap: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      config.CPUBurstConfigKey,
+						Namespace: config.ConfigNameSpace,
+					},
+					Data: map[string]string{
+						config.CPUBurstConfigKey: string(testingCPUBurstCfgStr),
+					},
+				},
+			},
+			want: &slov1alpha1.CPUBurstStrategy{
+				CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+					Policy:                     slov1alpha1.CPUBurstNone,
+					CPUBurstPercent:            pointer.Int64Ptr(1000),
+					CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
+					CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(120),
+				},
+				SharePoolThresholdPercent: pointer.Int64Ptr(50),
+			},
+		},
+		{
+			name: "get node config correctly",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							"xxx": "yyy",
+						},
+					},
+				},
+				configMap: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      config.CPUBurstConfigKey,
+						Namespace: config.ConfigNameSpace,
+					},
+					Data: map[string]string{
+						config.CPUBurstConfigKey: string(testingCPUBurstCfgStr1),
+					},
+				},
+			},
+			want: &slov1alpha1.CPUBurstStrategy{
+				CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+					Policy:                     slov1alpha1.CPUBurstNone,
+					CPUBurstPercent:            pointer.Int64Ptr(200),
+					CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
+					CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(-1),
+				},
+				SharePoolThresholdPercent: pointer.Int64Ptr(50),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := getCPUBurstConfigSpec(tt.args.node, tt.args.configMap)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

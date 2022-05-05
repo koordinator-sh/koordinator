@@ -19,7 +19,8 @@ package resmanager
 const (
 	updateCPU             = "UpdateCPU"
 	updateMemory          = "UpdateMemory"
-	updateCgroups         = "UpdateCgroups"         // update cgroups excluding the options already stated above
+	updateCgroups         = "UpdateCgroups" // update cgroups excluding the options already stated above
+	updateSystemConfig    = "UpdateSystemConfig"
 	updateResctrlSchemata = "UpdateResctrlSchemata" // update resctrl l3 cat schemata
 	updateResctrlTasks    = "UpdateResctrlTasks"    // update resctrl tasks
 
