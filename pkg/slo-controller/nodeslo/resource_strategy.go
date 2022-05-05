@@ -118,3 +118,54 @@ func getResourceQoSSpec(node *corev1.Node, configMap *corev1.ConfigMap) (*slov1a
 
 	return mergedStrategy, nil
 }
+
+func getCPUBurstConfigSpec(node *corev1.Node, configMap *corev1.ConfigMap) (*slov1alpha1.CPUBurstStrategy, error) {
+	mergedStrategy := util.DefaultCPUBurstStrategy()
+	cfgStr, ok := configMap.Data[config.CPUBurstConfigKey]
+	if !ok {
+		return mergedStrategy, nil
+	}
+
+	cfg := config.CPUBurstCfg{}
+	if err := json.Unmarshal([]byte(cfgStr), &cfg); err != nil {
+		klog.Warningf("failed to unmarshal config %s, error: %v", config.CPUBurstConfigKey, err)
+		return nil, err
+	}
+	klog.V(5).Infof("get cpu burst config spec, origin string %v, cluster %+v, node %+v",
+		cfgStr, cfg.ClusterStrategy, cfg.NodeStrategies)
+
+	if cfg.ClusterStrategy != nil {
+		mergedStrategyInterface, err := util.MergeCfg(mergedStrategy, cfg.ClusterStrategy)
+		if err != nil {
+			klog.Warningf("merge cluster config for cpu burst failed, error %v", err)
+			return nil, err
+		}
+		mergedStrategy = mergedStrategyInterface.(*slov1alpha1.CPUBurstStrategy)
+	}
+
+	sort.Slice(cfg.NodeStrategies, func(i, j int) bool {
+		return cfg.NodeStrategies[i].NodeSelector.String() < cfg.NodeStrategies[j].NodeSelector.String()
+	})
+
+	nodeLabels := labels.Set(node.Labels)
+	for _, nodeStrategy := range cfg.NodeStrategies {
+		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
+		if err != nil {
+			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
+			continue
+		}
+		if !selector.Matches(nodeLabels) {
+			continue
+		}
+		if nodeStrategy.CPUBurstStrategy == nil {
+			continue
+		}
+		mergedStrategyInterface, err := util.MergeCfg(mergedStrategy, nodeStrategy.CPUBurstStrategy)
+		if err != nil {
+			klog.Warningf("merge node config %v for cpu burst failed, error %v", nodeStrategy.NodeSelector, err)
+			continue
+		}
+		mergedStrategy = mergedStrategyInterface.(*slov1alpha1.CPUBurstStrategy)
+	}
+	return mergedStrategy, nil
+}

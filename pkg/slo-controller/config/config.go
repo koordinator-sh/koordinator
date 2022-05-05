@@ -50,6 +50,17 @@ type NodeResourceThresholdStrategy struct {
 	*slov1alpha1.ResourceThresholdStrategy
 }
 
+type NodeCPUBurstCfg struct {
+	// an empty label selector matches all objects while a nil label selector matches no objects
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	*slov1alpha1.CPUBurstStrategy
+}
+
+type CPUBurstCfg struct {
+	ClusterStrategy *slov1alpha1.CPUBurstStrategy `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeCPUBurstCfg             `json:"nodeStrategies,omitempty"`
+}
+
 type ResourceQoSCfg struct {
 	ClusterStrategy *slov1alpha1.ResourceQoSStrategy `json:"clusterStrategy,omitempty"`
 	NodeStrategies  []NodeResourceQoSStrategy        `json:"nodeStrategies,omitempty"`
