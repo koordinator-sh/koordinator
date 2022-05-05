@@ -22,8 +22,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	// subfs name
+const ( // subsystems
 	CgroupCPUDir     string = "cpu/"
 	CgroupCPUSetDir  string = "cpuset/"
 	CgroupCPUacctDir string = "cpuacct/"
@@ -64,7 +63,7 @@ var (
 	MemPriorityValidator                 = &RangeValidator{name: MemPriorityFileName, min: 0, max: 12}
 	MemOomGroupValidator                 = &RangeValidator{name: MemOomGroupFileName, min: 0, max: 1}
 	MemUsePriorityOomValidator           = &RangeValidator{name: MemUsePriorityOomFileName, min: 0, max: 1}
-	MemWmarkMinAdjValidator              = &RangeValidator{name: MemWmarkMinAdjFileName, min: -50, max: 50}
+	MemWmarkMinAdjValidator              = &RangeValidator{name: MemWmarkMinAdjFileName, min: -25, max: 50}
 	MemWmarkScaleFactorFileNameValidator = &RangeValidator{name: MemWmarkScaleFactorFileName, min: 1, max: 1000}
 	MemMinValidator                      = &RangeValidator{name: MemMinFileName, min: 0, max: math.MaxInt64}
 	MemLowValidator                      = &RangeValidator{name: MemLowFileName, min: 0, max: math.MaxInt64}
