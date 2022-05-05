@@ -62,6 +62,7 @@ func (m *MemoryEvictor) memoryEvict() {
 	nodeSLO := m.resManager.getNodeSLOCopy()
 	if disabled, err := isFeatureDisabled(nodeSLO, features.BEMemoryEvict); err != nil {
 		klog.Errorf("failed to acquire memory eviction feature-gate, error: %v", err)
+		return
 	} else if disabled {
 		klog.Warningf("skip memory evict, disabled in NodeSLO")
 		return
