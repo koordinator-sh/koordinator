@@ -1217,6 +1217,7 @@ k8s.io/component-helpers/storage/volume
 # k8s.io/cri-api v0.22.6 => k8s.io/cri-api v0.22.6
 ## explicit; go 1.16
 k8s.io/cri-api/pkg/apis/runtime/v1alpha2
+k8s.io/cri-api/pkg/apis/testing
 # k8s.io/csi-translation-lib v0.22.6 => k8s.io/csi-translation-lib v0.22.6
 ## explicit; go 1.16
 k8s.io/csi-translation-lib
