@@ -28,7 +28,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/config"
 	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/dispatcher"
 	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtime-manager/resource-executor"
+	cri_resource_executor "github.com/koordinator-sh/koordinator/pkg/runtime-manager/resource-executor/cri"
 	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/server/utils"
+	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/store"
 )
 
 const (
@@ -38,11 +40,13 @@ const (
 type RuntimeManagerCriServer struct {
 	hookDispatcher *dispatcher.RuntimeHookDispatcher
 	backendClient  runtimeapi.RuntimeServiceClient
+	store          *store.MetaManager
 }
 
 func NewRuntimeManagerCriServer(dispatcher *dispatcher.RuntimeHookDispatcher) *RuntimeManagerCriServer {
 	criInterceptor := &RuntimeManagerCriServer{
 		hookDispatcher: dispatcher,
+		store:          store.NewMetaManager(),
 	}
 	return criInterceptor
 }
@@ -55,6 +59,9 @@ func (ci *RuntimeManagerCriServer) Run() error {
 	if err := ci.initBackendServer(utils.DefaultContainerdSocketPath); err != nil {
 		return err
 	}
+	ci.failOver()
+	klog.Infof("do failOver done")
+
 	lis, err := net.Listen("unix", utils.DefaultRuntimeManagerSocketPath)
 	if err != nil {
 		klog.Errorf("fail to create the lis %v", err)
@@ -88,16 +95,19 @@ func (ci *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeSe
 	ctx context.Context, request interface{}, handler grpc.UnaryHandler) (interface{}, error) {
 
 	runtimeHookPath, runtimeResourceType := ci.getRuntimeHookInfo(serviceType)
-	resourceExecutor := resource_executor.NewRuntimeResourceExecutor(runtimeResourceType)
+	resourceExecutor := resource_executor.NewRuntimeResourceExecutor(runtimeResourceType, ci.store)
 
 	if err := resourceExecutor.ParseRequest(request); err != nil {
 		klog.Errorf("fail to parse request %v %v", request, err)
 	}
+	defer resourceExecutor.DeleteCheckpointIfNeed(request)
 
 	// pre call hook server
 	// TODO deal with the Dispatch response
-	if _, err := ci.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest()); err != nil {
+	if response, err := ci.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest()); err != nil {
 		klog.Errorf("fail to call hook server %v", err)
+	} else {
+		resourceExecutor.UpdateResource(response)
 	}
 
 	// call the backend runtime engine
@@ -132,5 +142,32 @@ func (ci *RuntimeManagerCriServer) initBackendServer(sockPath string) error {
 		return err
 	}
 	ci.backendClient = runtimeapi.NewRuntimeServiceClient(conn)
+	return nil
+}
+
+func (ci *RuntimeManagerCriServer) failOver() error {
+	podResponse, podErr := ci.backendClient.ListPodSandbox(context.TODO(), &runtimeapi.ListPodSandboxRequest{})
+	if podErr != nil {
+		return podErr
+	}
+	containerResponse, containerErr := ci.backendClient.ListContainers(context.TODO(), &runtimeapi.ListContainersRequest{})
+	if containerErr != nil {
+		return podErr
+	}
+	for _, pod := range podResponse.Items {
+		podResourceExecutor := cri_resource_executor.NewPodResourceExecutor(ci.store)
+		podResourceExecutor.ParsePod(pod)
+		podResourceExecutor.ResourceCheckPoint(&runtimeapi.RunPodSandboxResponse{
+			PodSandboxId: pod.GetId(),
+		})
+	}
+
+	for _, container := range containerResponse.Containers {
+		containerExecutor := cri_resource_executor.NewContainerResourceExecutor(ci.store)
+		containerExecutor.ParseContainer(container)
+		containerExecutor.ResourceCheckPoint(&runtimeapi.CreateContainerResponse{
+			ContainerId: container.GetId(),
+		})
+	}
 	return nil
 }
