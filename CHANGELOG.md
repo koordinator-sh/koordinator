@@ -1,5 +1,49 @@
 # Change Log
 
+## [v0.3.0](https://github.com/koordinator-sh/koordinator/tree/v0.3.0) (2022-05-07)
+[Full Changelog](https://github.com/koordinator-sh/koordinator/compare/v0.2.0...v0.3.0)
+
+**Features and improvements:**
+
+- Support CPU burst strategy [\#52](https://github.com/koordinator-sh/koordinator/issues/52)
+- Support Memory QoS strategy [\#55](https://github.com/koordinator-sh/koordinator/issues/55)
+- Support LLC and MBA isolation strategy [\#56](https://github.com/koordinator-sh/koordinator/issues/56)
+- Protocol design between runtime-manager and hook server [\#62](https://github.com/koordinator-sh/koordinator/issues/62)
+- Improve overall code coverage from 39% to 56% [\#69](https://github.com/koordinator-sh/koordinator/issues/69)
+
+**Fixed bugs:**
+
+- when deploy on ACK 1.18.1 koord-manager pod always crash [\#49](https://github.com/koordinator-sh/koordinator/issues/49)
+- Handle unexpected CPU info in case of koordlet panic [\#90](https://github.com/koordinator-sh/koordinator/issues/90)
+
+**Merged pull requests:**
+
+- New feature: cpu burst strategy [\#73](https://github.com/koordinator-sh/koordinator/pull/73) ([stormgbs](https://github.com/stormgbs))
+- Introduce protocol between RuntimeManager and RuntimeHookServer [\#76](https://github.com/koordinator-sh/koordinator/pull/76) ([honpey](https://github.com/honpey))
+- Improve readme [\#88](https://github.com/koordinator-sh/koordinator/pull/88) ([hormes](https://github.com/hormes))
+- update image file format [\#92](https://github.com/koordinator-sh/koordinator/pull/92) ([zwzhang0107](https://github.com/zwzhang0107))
+- 🌱 add expire cache [\#93](https://github.com/koordinator-sh/koordinator/pull/93) ([jasonliu747](https://github.com/jasonliu747))
+- ✨ support LLC & MBA isolation [\#94](https://github.com/koordinator-sh/koordinator/pull/94) ([jasonliu747](https://github.com/jasonliu747))
+- fix cpuinfo panic on arm64 [\#97](https://github.com/koordinator-sh/koordinator/pull/97) ([saintube](https://github.com/saintube))
+- 📖 fix typo in docs [\#98](https://github.com/koordinator-sh/koordinator/pull/98) ([jasonliu747](https://github.com/jasonliu747))
+- Introduce HookServer config loading from /etc/runtime/hookserver.d/ [\#100](https://github.com/koordinator-sh/koordinator/pull/100) ([honpey](https://github.com/honpey))
+- add memory qos strategy [\#101](https://github.com/koordinator-sh/koordinator/pull/101) ([saintube](https://github.com/saintube))
+- add an issue template and rename feature request to proposal [\#108](https://github.com/koordinator-sh/koordinator/pull/108) ([hormes](https://github.com/hormes))
+- Introduce cri request parsing/generate-hook-request/checkpoing logic [\#110](https://github.com/koordinator-sh/koordinator/pull/110) ([honpey](https://github.com/honpey))
+- 🌱 add unit test for resmanager [\#111](https://github.com/koordinator-sh/koordinator/pull/111) ([jasonliu747](https://github.com/jasonliu747))
+- Add cpu suppress test and revise memory qos [\#112](https://github.com/koordinator-sh/koordinator/pull/112) ([saintube](https://github.com/saintube))
+- ✨ Remove deprecated go get from Makefile [\#116](https://github.com/koordinator-sh/koordinator/pull/116) ([jasonliu747](https://github.com/jasonliu747))
+- 🌱 add license checker in workflow [\#117](https://github.com/koordinator-sh/koordinator/pull/117) ([jasonliu747](https://github.com/jasonliu747))
+- Support cpu burst strategy [\#118](https://github.com/koordinator-sh/koordinator/pull/118) ([stormgbs](https://github.com/stormgbs))
+- 🌱 add unit test for memory evict feature [\#119](https://github.com/koordinator-sh/koordinator/pull/119) ([jasonliu747](https://github.com/jasonliu747))
+- add UTs for runtime handler [\#125](https://github.com/koordinator-sh/koordinator/pull/125) ([saintube](https://github.com/saintube))
+- 📖 add changelog for v0.3 [\#126](https://github.com/koordinator-sh/koordinator/pull/126) ([jasonliu747](https://github.com/jasonliu747))
+
+**New Contributors**
+
+- [honpey](https://github.com/honpey) made their first contribution in [\#76](https://github.com/koordinator-sh/koordinator/pull/76)
+- [saintube](https://github.com/saintube) made their first contribution in [\#97](https://github.com/koordinator-sh/koordinator/pull/97)
+
 ## v0.2.0
 
 ## Isolate resources for best-effort workloads
