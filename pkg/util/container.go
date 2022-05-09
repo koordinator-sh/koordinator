@@ -112,7 +112,7 @@ func GetContainerBEMilliCPULimit(c *corev1.Container) int64 {
 }
 
 func GetContainerBEMemoryByteRequest(c *corev1.Container) int64 {
-	if memLimit, ok := c.Resources.Limits[extension.BatchMemory]; ok {
+	if memLimit, ok := c.Resources.Requests[extension.BatchMemory]; ok {
 		return memLimit.Value()
 	}
 	return -1
