@@ -18,6 +18,8 @@ package main
 
 import (
 	"flag"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/pflag"
 	genericapiserver "k8s.io/apiserver/pkg/server"
@@ -25,6 +27,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/options"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/cri"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/docker"
 )
 
 func main() {
@@ -40,16 +43,25 @@ func main() {
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 	pflag.Parse()
 
+	dir, _ := filepath.Split(options.RuntimeProxyEndpoint)
+	err := os.MkdirAll(dir, 0777)
+	if err != nil {
+		klog.Fatalf("Failed to create socket dir, err: %v", err)
+	}
+
 	switch options.BackendRuntimeMode {
 	case options.BackendRuntimeModeContainerd:
 		server := cri.NewRuntimeManagerCriServer()
 		go server.Run()
 	case options.BackendRuntimeModeDocker:
+		server := docker.NewRuntimeManagerDockerServer()
+		go server.Run()
 	default:
 		klog.Fatalf("unknown runtime engine backend %v", options.BackendRuntimeMode)
 	}
 
 	stopCh := genericapiserver.SetupSignalHandler()
 	<-stopCh
+	os.Remove(options.RuntimeProxyEndpoint)
 	klog.Info("RuntimeManager shutting down")
 }
