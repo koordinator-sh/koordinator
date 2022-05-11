@@ -18,6 +18,7 @@ package util
 
 import (
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -98,11 +99,14 @@ func Test_readPodCPUStatUsageTicks(t *testing.T) {
 	tempDir := t.TempDir()
 	tempInvalidPodCgroupDir := filepath.Join(tempDir, "no_cgroup")
 	tempPodStatPath := filepath.Join(tempDir, system.CpuacctStatFileName)
-	statContentStr := getStatContents()
-	err := ioutil.WriteFile(tempPodStatPath, []byte(statContentStr), 0666)
-	if err != nil {
-		t.Error(err)
-	}
+	err := ioutil.WriteFile(tempPodStatPath, []byte(getStatContents()), 0666)
+	assert.NoError(t, err)
+	tempInvalidPodCgroupDir1 := filepath.Join(tempDir, "no_cgroup_1")
+	err = os.Mkdir(tempInvalidPodCgroupDir1, 0755)
+	assert.NoError(t, err)
+	tempPodInvalidStatPath := filepath.Join(tempInvalidPodCgroupDir1, system.CpuacctStatFileName)
+	err = ioutil.WriteFile(tempPodInvalidStatPath, []byte(getInvalidStatContents()), 0666)
+	assert.NoError(t, err)
 	type args struct {
 		podCgroupDir string
 	}
@@ -124,16 +128,18 @@ func Test_readPodCPUStatUsageTicks(t *testing.T) {
 			want:    1356232,
 			wantErr: false,
 		},
+		{
+			name:    "read invalid cpu stat content",
+			args:    args{podCgroupDir: tempPodInvalidStatPath},
+			want:    0,
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := readCPUAcctStatUsageTicks(tt.args.podCgroupDir)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("readCPUAcctStatUsageTicks wantErr %v but got err %s", tt.wantErr, err)
-			}
-			if !tt.wantErr && got != tt.want {
-				t.Errorf("readCPUAcctStatUsageTicks want %v but got %v", tt.want, got)
-			}
+			assert.Equal(t, tt.wantErr, err != nil)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -147,6 +153,12 @@ func Test_GetPodCPUStatUsageTicks(t *testing.T) {
 
 func getStatContents() string {
 	return "user 407232\nnice 60223\nsystem 888777\nidle 3710549851\niowait 7638\nirq 0\nsoftirq 0\n" +
+		"steal 1115801\nguest 0\nload average(1min) 5\nload average(5min) 1\nload average(15min) 0\n" +
+		"nr_running 0\nnr_uninterrupible 0\nnr_switches 234453363\n"
+}
+
+func getInvalidStatContents() string {
+	return "user 407232\nnice a\nsystem a\nidle a\niowait a\nirq 0\nsoftirq 0\n" +
 		"steal 1115801\nguest 0\nload average(1min) 5\nload average(5min) 1\nload average(15min) 0\n" +
 		"nr_running 0\nnr_uninterrupible 0\nnr_switches 234453363\n"
 }

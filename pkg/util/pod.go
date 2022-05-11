@@ -95,7 +95,7 @@ func GetPodCgroupCPUStatPath(podParentDir string) string {
 
 func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
 	qosClass := pod.Status.QOSClass
-	if qosClass == "" {
+	if len(qosClass) <= 0 {
 		qosClass = qos.GetPodQOS(pod)
 	}
 	return qosClass
