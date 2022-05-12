@@ -25,6 +25,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -112,7 +113,10 @@ func Test_memoryEvict(t *testing.T) {
 				createPodResourceMetric("test_be_pod_priority100_2", "8G"),
 				createPodResourceMetric("test_be_pod_priority120", "8G"),
 			},
-			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{MemoryEvictThresholdPercent: pointer.Int64Ptr(80)},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                      pointer.BoolPtr(true),
+				MemoryEvictThresholdPercent: pointer.Int64Ptr(80),
+			},
 			expectEvictPods: []*corev1.Pod{},
 			expectNotEvictPods: []*corev1.Pod{
 				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
@@ -147,7 +151,10 @@ func Test_memoryEvict(t *testing.T) {
 				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
 				createPodResourceMetric("test_be_pod_priority120", "10G"),
 			},
-			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{MemoryEvictThresholdPercent: pointer.Int64Ptr(82)}, // >96G
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                      pointer.BoolPtr(true),
+				MemoryEvictThresholdPercent: pointer.Int64Ptr(82),
+			}, // >96G
 			expectEvictPods: []*corev1.Pod{
 				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
 			},
@@ -183,7 +190,10 @@ func Test_memoryEvict(t *testing.T) {
 				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
 				createPodResourceMetric("test_be_pod_priority120", "10G"),
 			},
-			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{MemoryEvictThresholdPercent: pointer.Int64Ptr(80)}, // >91.2G
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                      pointer.BoolPtr(true),
+				MemoryEvictThresholdPercent: pointer.Int64Ptr(80),
+			}, // >91.2G
 			expectEvictPods: []*corev1.Pod{
 				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
 				createMemoryEvictTestPod("test_be_pod_priority100_1", apiext.QoSBE, 100),
@@ -219,7 +229,130 @@ func Test_memoryEvict(t *testing.T) {
 				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
 				createPodResourceMetric("test_be_pod_priority120", "10G"),   // evict
 			},
-			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{MemoryEvictThresholdPercent: pointer.Int64Ptr(50)}, // >60G
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                      pointer.BoolPtr(true),
+				MemoryEvictThresholdPercent: pointer.Int64Ptr(50),
+			}, // >60G
+			expectEvictPods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_1", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
+			},
+			expectNotEvictPods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
+				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
+				createMemoryEvictTestPod("test_noqos_pod", apiext.QoSNone, 100),
+			},
+		},
+		{
+			name: "test_memoryevict_MemoryEvictLowerPercent_80",
+			node: getNode("80", "120G"),
+			pods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
+				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
+				createMemoryEvictTestPod("test_noqos_pod", apiext.QoSNone, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_1", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
+			},
+			nodeMetric: &metriccache.NodeResourceMetric{
+				MemoryUsed: metriccache.MemoryMetric{
+					MemoryWithoutCache: resource.MustParse("115G"),
+				},
+			},
+			podMetrics: []*metriccache.PodResourceMetric{
+				createPodResourceMetric("test_lsr_pod", "40G"),
+				createPodResourceMetric("test_ls_pod", "30G"),
+				createPodResourceMetric("test_noqos_pod", "10G"),
+				createPodResourceMetric("test_be_pod_priority100_1", "5G"),
+				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
+				createPodResourceMetric("test_be_pod_priority120", "10G"),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                      pointer.BoolPtr(true),
+				MemoryEvictThresholdPercent: pointer.Int64Ptr(82),
+				MemoryEvictLowerPercent:     pointer.Int64Ptr(80),
+			}, // >96G
+			expectEvictPods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
+			},
+			expectNotEvictPods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
+				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
+				createMemoryEvictTestPod("test_noqos_pod", apiext.QoSNone, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_1", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
+			},
+		},
+		{
+			name: "test_memoryevict_MemoryEvictLowerPercent_78",
+			node: getNode("80", "120G"),
+			pods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
+				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
+				createMemoryEvictTestPod("test_noqos_pod", apiext.QoSNone, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_1", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
+			},
+			nodeMetric: &metriccache.NodeResourceMetric{
+				MemoryUsed: metriccache.MemoryMetric{
+					MemoryWithoutCache: resource.MustParse("115G"),
+				},
+			},
+			podMetrics: []*metriccache.PodResourceMetric{
+				createPodResourceMetric("test_lsr_pod", "40G"),
+				createPodResourceMetric("test_ls_pod", "30G"),
+				createPodResourceMetric("test_noqos_pod", "10G"),
+				createPodResourceMetric("test_be_pod_priority100_1", "5G"),  // evict
+				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
+				createPodResourceMetric("test_be_pod_priority120", "10G"),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                      pointer.BoolPtr(true),
+				MemoryEvictThresholdPercent: pointer.Int64Ptr(82),
+				MemoryEvictLowerPercent:     pointer.Int64Ptr(78),
+			}, // >93.6G
+			expectEvictPods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_1", apiext.QoSBE, 100),
+			},
+			expectNotEvictPods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
+				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
+				createMemoryEvictTestPod("test_noqos_pod", apiext.QoSNone, 100),
+				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
+			},
+		},
+		{
+			name: "test_memoryevict_MemoryEvictLowerPercent_74",
+			node: getNode("80", "120G"),
+			pods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
+				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
+				createMemoryEvictTestPod("test_noqos_pod", apiext.QoSNone, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_1", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
+			},
+			nodeMetric: &metriccache.NodeResourceMetric{
+				MemoryUsed: metriccache.MemoryMetric{
+					MemoryWithoutCache: resource.MustParse("115G"),
+				},
+			},
+			podMetrics: []*metriccache.PodResourceMetric{
+				createPodResourceMetric("test_lsr_pod", "40G"),
+				createPodResourceMetric("test_ls_pod", "30G"),
+				createPodResourceMetric("test_noqos_pod", "10G"),
+				createPodResourceMetric("test_be_pod_priority100_1", "5G"),  // evict
+				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
+				createPodResourceMetric("test_be_pod_priority120", "10G"),   // evict
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                      pointer.BoolPtr(true),
+				MemoryEvictThresholdPercent: pointer.Int64Ptr(82),
+				MemoryEvictLowerPercent:     pointer.Int64Ptr(74),
+			}, // >88.8G
 			expectEvictPods: []*corev1.Pod{
 				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
 				createMemoryEvictTestPod("test_be_pod_priority100_1", apiext.QoSBE, 100),
@@ -281,6 +414,7 @@ func Test_memoryEvict(t *testing.T) {
 			for _, pod := range tt.expectEvictPods {
 				getEvictObject, err := client.Tracker().Get(podsResource, pod.Namespace, pod.Name)
 				assert.NotNil(t, getEvictObject, "evictPod Fail", err)
+				assert.IsType(t, &v1.Eviction{}, getEvictObject, "evictPod Fail", pod.Name)
 			}
 
 			for _, pod := range tt.expectNotEvictPods {
