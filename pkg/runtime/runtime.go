@@ -19,18 +19,12 @@ package runtime
 import (
 	"fmt"
 	"os"
-	"path"
 	"sync"
 
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/runtime/handler"
-)
-
-var (
-	DockerEndpoint      = path.Join("/var/run/", "docker.sock")
-	ContainerdEndpoint1 = path.Join("/var/run/", "containerd.sock")
-	ContainerdEndpoint2 = path.Join("/var/run/", "containerd/containerd.sock")
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 var (
@@ -74,8 +68,12 @@ func getDockerHandler() (handler.ContainerRuntimeHandler, error) {
 }
 
 func getDockerEndpoint() (string, error) {
-	if isFile(DockerEndpoint) {
-		return fmt.Sprintf("unix://%s", DockerEndpoint), nil
+	if isFile(handler.DockerEndpoint) {
+		return fmt.Sprintf("unix://%s", handler.DockerEndpoint), nil
+	}
+	if len(system.Conf.DockerEndPoint) > 0 && isFile(system.Conf.DockerEndPoint) {
+		klog.Infof("find docker Endpoint : %v", system.Conf.DockerEndPoint)
+		return fmt.Sprintf("unix://%s", system.Conf.DockerEndPoint), nil
 	}
 	return "", fmt.Errorf("docker endpoint does not exist")
 }
@@ -101,12 +99,17 @@ func getContainerdHandler() (handler.ContainerRuntimeHandler, error) {
 }
 
 func getContainerdEndpoint() (string, error) {
-	if isFile(ContainerdEndpoint1) {
-		return fmt.Sprintf("unix://%s", ContainerdEndpoint1), nil
+	if isFile(handler.ContainerdEndpoint1) {
+		return fmt.Sprintf("unix://%s", handler.ContainerdEndpoint1), nil
 	}
 
-	if isFile(ContainerdEndpoint2) {
-		return fmt.Sprintf("unix://%s", ContainerdEndpoint2), nil
+	if isFile(handler.ContainerdEndpoint2) {
+		return fmt.Sprintf("unix://%s", handler.ContainerdEndpoint2), nil
+	}
+
+	if len(system.Conf.ContainerdEndPoint) > 0 && isFile(system.Conf.ContainerdEndPoint) {
+		klog.Infof("find containerd Endpoint : %v", system.Conf.ContainerdEndPoint)
+		return fmt.Sprintf("unix://%s", system.Conf.ContainerdEndPoint), nil
 	}
 
 	return "", fmt.Errorf("containerd endpoint does not exist")

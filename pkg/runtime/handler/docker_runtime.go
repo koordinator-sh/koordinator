@@ -19,66 +19,86 @@ package handler
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/moby/moby/client"
+	dclient "github.com/docker/docker/client"
+
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
+var (
+	DockerEndpoint = filepath.Join(system.Conf.VarRunRootDir, "docker.sock")
+)
+
+var GetDockerClient = createDockerClient // for test
+
 type DockerRuntimeHandler struct {
-	dockerClient *client.Client
+	dockerClient *dclient.Client
 	endpoint     string
 }
 
 func NewDockerRuntimeHandler(endpoint string) (ContainerRuntimeHandler, error) {
-	dockerClient, err := createDockerClient(endpoint)
+	var (
+		client     *dclient.Client
+		httpClient *http.Client
+		err        error
+	)
+
+	client, err = GetDockerClient(httpClient, endpoint)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultConnectionTimeout)
 	defer cancel()
-	dockerClient.NegotiateAPIVersion(ctx)
+
+	client.NegotiateAPIVersion(ctx)
 
 	return &DockerRuntimeHandler{
-		dockerClient: dockerClient,
+		dockerClient: client,
 		endpoint:     endpoint,
 	}, err
 }
 
-func createDockerClient(endpoint string) (*client.Client, error) {
-	ep := strings.TrimPrefix(endpoint, "unix://")
+func createDockerClient(httpClient *http.Client, endPoint string) (*dclient.Client, error) {
+	ep := strings.TrimPrefix(endPoint, "unix://")
+
 	if _, err := os.Stat(ep); err != nil {
 		return nil, err
 	}
-	return client.NewClientWithOpts(client.WithHost(endpoint))
+
+	return dclient.NewClientWithOpts(dclient.WithHost(endPoint), dclient.WithHTTPClient(httpClient))
 }
 
 func (d *DockerRuntimeHandler) StopContainer(containerID string, timeout int64) error {
-	if containerID == "" {
-		return fmt.Errorf("container ID cannot be empty")
+	if d == nil || d.dockerClient == nil {
+		return fmt.Errorf("stop container fail! docker client is nil! containerID=%v", containerID)
 	}
 
-	if d == nil || d.dockerClient == nil {
-		return fmt.Errorf("failed to stop container %v, docker client is nil", containerID)
+	if containerID == "" {
+		return fmt.Errorf("containerID cannot be empty")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultConnectionTimeout)
 	defer cancel()
 
 	stopTimeout := time.Duration(timeout) * time.Second
+
 	return d.dockerClient.ContainerStop(ctx, containerID, &stopTimeout)
 }
 
 func (d *DockerRuntimeHandler) UpdateContainerResources(containerID string, opts UpdateOptions) error {
-	if containerID == "" {
-		return fmt.Errorf("container ID cannot be empty")
+	if d == nil || d.dockerClient == nil {
+		return fmt.Errorf("UpdateContainerResources fail! docker client is nil! containerID=%v", containerID)
 	}
 
-	if d == nil || d.dockerClient == nil {
-		return fmt.Errorf("failed to stop container %v, docker client is nil", containerID)
+	if containerID == "" {
+		return fmt.Errorf("containerID cannot be empty")
 	}
 
 	updateConfig := container.UpdateConfig{
@@ -94,7 +114,7 @@ func (d *DockerRuntimeHandler) UpdateContainerResources(containerID string, opts
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultConnectionTimeout)
 	defer cancel()
-	_, err := d.dockerClient.ContainerUpdate(ctx, containerID, updateConfig)
 
+	_, err := d.dockerClient.ContainerUpdate(ctx, containerID, updateConfig)
 	return err
 }

@@ -71,6 +71,7 @@ github.com/docker/docker/api/types/swarm/runtime
 github.com/docker/docker/api/types/time
 github.com/docker/docker/api/types/versions
 github.com/docker/docker/api/types/volume
+github.com/docker/docker/client
 github.com/docker/docker/errdefs
 # github.com/docker/go-connections v0.4.0
 ## explicit
@@ -191,9 +192,6 @@ github.com/mattn/go-sqlite3
 # github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369
 ## explicit; go 1.9
 github.com/matttproud/golang_protobuf_extensions/pbutil
-# github.com/moby/moby v20.10.14+incompatible
-## explicit
-github.com/moby/moby/client
 # github.com/moby/term v0.0.0-20210610120745-9d4ed1856297
 ## explicit; go 1.13
 github.com/moby/term
@@ -268,6 +266,9 @@ github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 ## explicit
 github.com/pmezard/go-difflib/difflib
+# github.com/prashantv/gostub v1.1.0
+## explicit; go 1.17
+github.com/prashantv/gostub
 # github.com/prometheus/client_golang v1.11.0
 ## explicit; go 1.13
 github.com/prometheus/client_golang/prometheus
@@ -1217,6 +1218,7 @@ k8s.io/component-helpers/storage/volume
 # k8s.io/cri-api v0.22.6 => k8s.io/cri-api v0.22.6
 ## explicit; go 1.16
 k8s.io/cri-api/pkg/apis/runtime/v1alpha2
+k8s.io/cri-api/pkg/apis/testing
 # k8s.io/csi-translation-lib v0.22.6 => k8s.io/csi-translation-lib v0.22.6
 ## explicit; go 1.16
 k8s.io/csi-translation-lib

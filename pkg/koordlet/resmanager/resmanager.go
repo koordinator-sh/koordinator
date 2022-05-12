@@ -273,6 +273,10 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	memoryEvictor := NewMemoryEvictor(r)
 	util.RunFeature(memoryEvictor.memoryEvict, []featuregate.Feature{features.BEMemoryEvict}, r.config.MemoryEvictIntervalSeconds, stopCh)
 
+	rdtResCtrl := NewResctrlReconcile(r)
+	util.RunFeatureWithInit(func() error { return rdtResCtrl.RunInit(stopCh) }, rdtResCtrl.reconcile,
+		[]featuregate.Feature{features.RdtResctrl}, r.config.ReconcileIntervalSeconds, stopCh)
+
 	klog.Info("Starting resmanager successfully")
 	<-stopCh
 	klog.Info("shutting down resmanager")

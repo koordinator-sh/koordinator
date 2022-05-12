@@ -22,11 +22,21 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"google.golang.org/grpc"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
+)
+
+var (
+	ContainerdEndpoint1 = filepath.Join(system.Conf.VarRunRootDir, "containerd.sock")
+	ContainerdEndpoint2 = filepath.Join(system.Conf.VarRunRootDir, "containerd/containerd.sock")
+
+	GrpcDial = grpc.DialContext //for test
 )
 
 type ContainerdRuntimeHandler struct {
@@ -55,7 +65,7 @@ func NewContainerdRuntimeHandler(endpoint string) (ContainerRuntimeHandler, erro
 
 func (c *ContainerdRuntimeHandler) StopContainer(containerID string, timeout int64) error {
 	if containerID == "" {
-		return fmt.Errorf("ID cannot be empty")
+		return fmt.Errorf("containerID cannot be empty")
 	}
 	t := c.timeout + time.Duration(timeout)
 	ctx, cancel := context.WithTimeout(context.Background(), t)
@@ -71,7 +81,7 @@ func (c *ContainerdRuntimeHandler) StopContainer(containerID string, timeout int
 
 func (c *ContainerdRuntimeHandler) UpdateContainerResources(containerID string, opts UpdateOptions) error {
 	if containerID == "" {
-		return fmt.Errorf("ID cannot be empty")
+		return fmt.Errorf("containerID cannot be empty")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
@@ -109,7 +119,7 @@ func getClientConnection(endpoint string) (*grpc.ClientConn, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultConnectionTimeout)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, addr, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithContextDialer(dialer))
+	conn, err := GrpcDial(ctx, addr, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithContextDialer(dialer))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect, make sure you are running as root and the runtime has been started: %v", err)
 	}
@@ -138,7 +148,7 @@ func parseEndpoint(endpoint string) (string, string, error) {
 	case unixProtocol:
 		return unixProtocol, u.Path, nil
 	default:
-		return u.Scheme, "", fmt.Errorf("protocol %q not supported", u.Scheme)
+		return u.Scheme, "", fmt.Errorf("protocol %q is not supported", u.Scheme)
 	}
 }
 

@@ -51,6 +51,14 @@ jobs:
         with:
           go-version: ${{ needs.get-go-version.outputs.go-version }}
       - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-sc-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-sc-
       - uses: dominikh/staticcheck-action@v1
         with:
           install-go: false
