@@ -55,6 +55,8 @@ spec:
                     description: 'cpu burst percentage for setting cpu.cfs_burst_us,
                       legal range: [0, 10000], default as 1000 (1000%)'
                     format: int64
+                    maximum: 10000
+                    minimum: 0
                     type: integer
                   policy:
                     type: string
@@ -755,6 +757,8 @@ spec:
                     description: cpu suppress threshold percentage (0,100), default
                       = 65
                     format: int64
+                    maximum: 100
+                    minimum: 0
                     type: integer
                   enable:
                     default: true
@@ -764,12 +768,16 @@ spec:
                     description: 'lower: memory release util usage under MemoryEvictLowerPercent,
                       default = MemoryEvictThresholdPercent - 2'
                     format: int64
+                    maximum: 100
+                    minimum: 0
                     type: integer
                   memoryEvictThresholdPercent:
                     default: 70
                     description: 'upper: memory evict threshold percentage (0,100),
                       default = 70'
                     format: int64
+                    maximum: 100
+                    minimum: 0
                     type: integer
                 type: object
             type: object
