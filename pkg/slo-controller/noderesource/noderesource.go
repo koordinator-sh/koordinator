@@ -111,7 +111,7 @@ func (r *NodeResourceReconciler) isColocationCfgDisabled(node *corev1.Node) bool
 
 func (r *NodeResourceReconciler) isDegradeNeeded(nodeMetric *slov1alpha1.NodeMetric, node *corev1.Node) bool {
 	if nodeMetric == nil || nodeMetric.Status.UpdateTime == nil {
-		klog.Warningf("invalid NodeMetric: %v, need degradation", nodeMetric.Name)
+		klog.Warningf("invalid NodeMetric: %v, need degradation", nodeMetric)
 		return true
 	}
 
