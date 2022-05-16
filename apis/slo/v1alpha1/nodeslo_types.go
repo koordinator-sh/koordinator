@@ -54,7 +54,7 @@ type MemoryQoS struct {
 	// wmark_ratio (Anolis OS required)
 	// Async memory reclamation is triggered when cgroup memory usage exceeds `memory.wmark_high` and the reclamation
 	// stops when usage is below `memory.wmark_low`. Basically,
-	// `memory.wmark_high` := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+	// `memory.wmark_high` := min(memory.high, memory.limit_in_bytes) * memory.memory.wmark_ratio
 	// `memory.wmark_low` := min(memory.high, memory.limit_in_bytes) * (memory.wmark_ratio - memory.wmark_scale_factor)
 	// WmarkRatio specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`, which triggers async
 	// memory reclamation when memory usage exceeds.
