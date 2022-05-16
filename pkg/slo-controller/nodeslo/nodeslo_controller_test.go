@@ -86,6 +86,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
 				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
+				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
 		},
