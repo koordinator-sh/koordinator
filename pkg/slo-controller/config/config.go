@@ -36,7 +36,7 @@ type ColocationCfg struct {
 
 type NodeColocationCfg struct {
 	NodeSelector *metav1.LabelSelector
-	ColocationCfg
+	ColocationStrategy
 }
 
 type ResourceThresholdCfg struct {
