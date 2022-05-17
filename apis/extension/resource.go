@@ -18,6 +18,7 @@ package extension
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -33,3 +34,18 @@ var (
 		},
 	}
 )
+
+// TranslateResourceNameByPriorityClass translates defaultResourceName to extend resourceName by PriorityClass
+func TranslateResourceNameByPriorityClass(priorityClass PriorityClass, defaultResourceName corev1.ResourceName) corev1.ResourceName {
+	if priorityClass == PriorityProd || priorityClass == PriorityNone {
+		return defaultResourceName
+	}
+	return ResourceNameMap[priorityClass][defaultResourceName]
+}
+
+func TranslateToResourceQuantity(quantity resource.Quantity, resourceName corev1.ResourceName) resource.Quantity {
+	if resourceName == BatchCPU {
+		quantity.SetMilli(quantity.Value() / 1000)
+	}
+	return quantity
+}
