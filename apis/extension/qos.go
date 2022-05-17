@@ -33,11 +33,13 @@ func GetPodQoSClass(pod *corev1.Pod) QoSClass {
 	if pod == nil || pod.Labels == nil {
 		return QoSNone
 	}
+	return GetQoSClassByLabels(pod.Labels)
+}
 
-	if q, ok := pod.Labels[LabelPodQoS]; ok {
+func GetQoSClassByLabels(labels map[string]string) QoSClass {
+	if q, ok := labels[LabelPodQoS]; ok {
 		return getPodQoSClassByName(q)
 	}
-
 	return QoSNone
 }
 

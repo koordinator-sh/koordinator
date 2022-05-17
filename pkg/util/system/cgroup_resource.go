@@ -57,8 +57,8 @@ const (
 )
 
 var (
-	CPUBurstValidator = &RangeValidator{name: CPUBurstName, min: 0, max: 100 * 10 * 100000}
-
+	CPUBurstValidator                    = &RangeValidator{name: CPUBurstName, min: 0, max: 100 * 10 * 100000}
+	CPUBvtWarpNsValidator                = &RangeValidator{name: CPUBVTWarpNsName, min: -1, max: 2}
 	MemWmarkRatioValidator               = &RangeValidator{name: MemWmarkRatioFileName, min: 0, max: 100}
 	MemPriorityValidator                 = &RangeValidator{name: MemPriorityFileName, min: 0, max: 12}
 	MemOomGroupValidator                 = &RangeValidator{name: MemOomGroupFileName, min: 0, max: 1}
@@ -77,6 +77,7 @@ var (
 	CPUCFSPeriod = CgroupFile{ResourceFileName: CPUCFSPeriodName, Subfs: CgroupCPUDir, IsAnolisOS: false}
 	CPUTask      = CgroupFile{ResourceFileName: CPUTaskFileName, Subfs: CgroupCPUDir, IsAnolisOS: false}
 	CPUBurst     = CgroupFile{ResourceFileName: CPUBurstName, Subfs: CgroupCPUDir, IsAnolisOS: true, Validator: CPUBurstValidator}
+	CPUBVTWarpNs = CgroupFile{ResourceFileName: CPUBVTWarpNsName, Subfs: CgroupCPUDir, IsAnolisOS: true, Validator: CPUBvtWarpNsValidator}
 
 	CPUSet = CgroupFile{ResourceFileName: CPUSFileName, Subfs: CgroupCPUSetDir, IsAnolisOS: false}
 
