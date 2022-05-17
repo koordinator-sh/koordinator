@@ -54,7 +54,7 @@ type MemoryQoS struct {
 	// wmark_ratio (Anolis OS required)
 	// Async memory reclamation is triggered when cgroup memory usage exceeds `memory.wmark_high` and the reclamation
 	// stops when usage is below `memory.wmark_low`. Basically,
-	// `memory.wmark_high` := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+	// `memory.wmark_high` := min(memory.high, memory.limit_in_bytes) * memory.memory.wmark_ratio
 	// `memory.wmark_low` := min(memory.high, memory.limit_in_bytes) * (memory.wmark_ratio - memory.wmark_scale_factor)
 	// WmarkRatio specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`, which triggers async
 	// memory reclamation when memory usage exceeds.
@@ -148,6 +148,8 @@ type ResourceThresholdStrategy struct {
 
 	// cpu suppress threshold percentage (0,100), default = 65
 	// +kubebuilder:default=65
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=0
 	CPUSuppressThresholdPercent *int64 `json:"cpuSuppressThresholdPercent,omitempty"`
 
 	// CPUSuppressPolicy
@@ -155,9 +157,13 @@ type ResourceThresholdStrategy struct {
 
 	// upper: memory evict threshold percentage (0,100), default = 70
 	// +kubebuilder:default=70
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=0
 	MemoryEvictThresholdPercent *int64 `json:"memoryEvictThresholdPercent,omitempty"`
 
 	// lower: memory release util usage under MemoryEvictLowerPercent, default = MemoryEvictThresholdPercent - 2
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=0
 	MemoryEvictLowerPercent *int64 `json:"memoryEvictLowerPercent,omitempty"`
 }
 
@@ -189,19 +195,21 @@ type ResctrlQoS struct {
 type CPUBurstPolicy string
 
 const (
-	// disable cpu burst policy
+	// CPUBurstNone disables cpu burst policy
 	CPUBurstNone CPUBurstPolicy = "none"
-	// only enable cpu burst policy by setting cpu.cfs_burst_us
+	// CPUBurstOnly enables cpu burst policy by setting cpu.cfs_burst_us
 	CPUBurstOnly CPUBurstPolicy = "cpuBurstOnly"
-	// only enable cfs quota burst policy by scale up cpu.cfs_quota_us if pod throttled
+	// CFSQuotaBurstOnly enables cfs quota burst policy by scale up cpu.cfs_quota_us if pod throttled
 	CFSQuotaBurstOnly CPUBurstPolicy = "cfsQuotaBurstOnly"
-	// enable both
+	// CPUBurstAuto enables both
 	CPUBurstAuto CPUBurstPolicy = "auto"
 )
 
 type CPUBurstConfig struct {
 	Policy CPUBurstPolicy `json:"policy,omitempty"`
 	// cpu burst percentage for setting cpu.cfs_burst_us, legal range: [0, 10000], default as 1000 (1000%)
+	// +kubebuilder:validation:Maximum=10000
+	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:default=1000
 	CPUBurstPercent *int64 `json:"cpuBurstPercent,omitempty"`
 	// pod cfs quota scale up ceil percentage, default = 300 (300%)

@@ -55,6 +55,8 @@ spec:
                     description: 'cpu burst percentage for setting cpu.cfs_burst_us,
                       legal range: [0, 10000], default as 1000 (1000%)'
                     format: int64
+                    maximum: 10000
+                    minimum: 0
                     type: integer
                   policy:
                     type: string
@@ -152,7 +154,7 @@ spec:
                               reclamation is triggered when cgroup memory usage exceeds
                               `memory.wmark_high` and the reclamation stops when usage
                               is below `memory.wmark_low`. Basically, `memory.wmark_high`
-                              := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+                              := min(memory.high, memory.limit_in_bytes) * memory.memory.wmark_ratio
                               `memory.wmark_low` := min(memory.high, memory.limit_in_bytes)
                               * (memory.wmark_ratio - memory.wmark_scale_factor) WmarkRatio
                               specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`,
@@ -287,7 +289,7 @@ spec:
                               reclamation is triggered when cgroup memory usage exceeds
                               `memory.wmark_high` and the reclamation stops when usage
                               is below `memory.wmark_low`. Basically, `memory.wmark_high`
-                              := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+                              := min(memory.high, memory.limit_in_bytes) * memory.memory.wmark_ratio
                               `memory.wmark_low` := min(memory.high, memory.limit_in_bytes)
                               * (memory.wmark_ratio - memory.wmark_scale_factor) WmarkRatio
                               specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`,
@@ -422,7 +424,7 @@ spec:
                               reclamation is triggered when cgroup memory usage exceeds
                               `memory.wmark_high` and the reclamation stops when usage
                               is below `memory.wmark_low`. Basically, `memory.wmark_high`
-                              := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+                              := min(memory.high, memory.limit_in_bytes) * memory.memory.wmark_ratio
                               `memory.wmark_low` := min(memory.high, memory.limit_in_bytes)
                               * (memory.wmark_ratio - memory.wmark_scale_factor) WmarkRatio
                               specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`,
@@ -557,7 +559,7 @@ spec:
                               reclamation is triggered when cgroup memory usage exceeds
                               `memory.wmark_high` and the reclamation stops when usage
                               is below `memory.wmark_low`. Basically, `memory.wmark_high`
-                              := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+                              := min(memory.high, memory.limit_in_bytes) * memory.memory.wmark_ratio
                               `memory.wmark_low` := min(memory.high, memory.limit_in_bytes)
                               * (memory.wmark_ratio - memory.wmark_scale_factor) WmarkRatio
                               specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`,
@@ -692,7 +694,7 @@ spec:
                               reclamation is triggered when cgroup memory usage exceeds
                               `memory.wmark_high` and the reclamation stops when usage
                               is below `memory.wmark_low`. Basically, `memory.wmark_high`
-                              := min(memory.high, memory.limit_in_bytes) * memory.wmark_scale_factor
+                              := min(memory.high, memory.limit_in_bytes) * memory.memory.wmark_ratio
                               `memory.wmark_low` := min(memory.high, memory.limit_in_bytes)
                               * (memory.wmark_ratio - memory.wmark_scale_factor) WmarkRatio
                               specifies `memory.wmark_ratio` that help calculate `memory.wmark_high`,
@@ -755,6 +757,8 @@ spec:
                     description: cpu suppress threshold percentage (0,100), default
                       = 65
                     format: int64
+                    maximum: 100
+                    minimum: 0
                     type: integer
                   enable:
                     default: true
@@ -764,12 +768,16 @@ spec:
                     description: 'lower: memory release util usage under MemoryEvictLowerPercent,
                       default = MemoryEvictThresholdPercent - 2'
                     format: int64
+                    maximum: 100
+                    minimum: 0
                     type: integer
                   memoryEvictThresholdPercent:
                     default: 70
                     description: 'upper: memory evict threshold percentage (0,100),
                       default = 70'
                     format: int64
+                    maximum: 100
+                    minimum: 0
                     type: integer
                 type: object
             type: object

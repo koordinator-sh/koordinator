@@ -78,6 +78,18 @@ func (m *MemoryEvictor) memoryEvict() {
 		return
 	}
 
+	lowerPercent := int64(0)
+	if thresholdConfig.MemoryEvictLowerPercent != nil {
+		lowerPercent = *thresholdConfig.MemoryEvictLowerPercent
+	} else {
+		lowerPercent = *thresholdPercent - memoryReleaseBufferPercent
+	}
+
+	if lowerPercent >= *thresholdPercent {
+		klog.Warningf("skip memory evict, lower percent(%v) should less than threshold percent(%v)", lowerPercent, thresholdPercent)
+		return
+	}
+
 	nodeMetric, podMetrics := m.resManager.collectNodeAndPodMetricLast()
 	if nodeMetric == nil {
 		klog.Warningf("skip memory evict, NodeMetric is nil")
@@ -102,20 +114,20 @@ func (m *MemoryEvictor) memoryEvict() {
 		return
 	}
 
-	klog.Infof("node(%v) MemoryUsage(%v): %.2f, evictThresholdUsage: %.2f",
+	klog.Infof("node(%v) MemoryUsage(%v): %.2f, evictThresholdUsage: %.2f, evictLowerUsage: %.2f",
 		m.resManager.nodeName,
 		nodeMetric.MemoryUsed.MemoryWithoutCache.Value(),
 		float64(nodeMemoryUsage)/100,
 		float64(*thresholdPercent)/100,
+		float64(lowerPercent)/100,
 	)
 
-	lowPercent := *thresholdPercent - memoryReleaseBufferPercent
-	memoryNeedRelease := memoryCapacity * (nodeMemoryUsage - lowPercent) / 100
+	memoryNeedRelease := memoryCapacity * (nodeMemoryUsage - lowerPercent) / 100
 	m.killAndEvictBEPods(node, podMetrics, memoryNeedRelease)
 }
 
 func (m *MemoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics []*metriccache.PodResourceMetric, memoryNeedRelease int64) {
-	bePodInfos := m.getSortedPodInfos(podMetrics)
+	bePodInfos := m.getSortedBEPodInfos(podMetrics)
 	message := fmt.Sprintf("killAndEvictBEPods for node(%v), need to release memory: %v", m.resManager.nodeName, memoryNeedRelease)
 	memoryReleased := int64(0)
 
@@ -134,10 +146,10 @@ func (m *MemoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics []*metr
 	m.resManager.evictPodsIfNotEvicted(killedPods, node, evictPodByNodeMemoryUsage, message)
 
 	m.lastEvictTime = time.Now()
-	klog.Infof("killAndEvictBEPods completed, memoryNeedRelease(%v) memoryReleased(%v)", memoryNeedRelease, memoryNeedRelease)
+	klog.Infof("killAndEvictBEPods completed, memoryNeedRelease(%v) memoryReleased(%v)", memoryNeedRelease, memoryReleased)
 }
 
-func (m *MemoryEvictor) getSortedPodInfos(podMetrics []*metriccache.PodResourceMetric) []*podInfo {
+func (m *MemoryEvictor) getSortedBEPodInfos(podMetrics []*metriccache.PodResourceMetric) []*podInfo {
 	podMetricMap := make(map[string]*metriccache.PodResourceMetric, len(podMetrics))
 	for _, podMetric := range podMetrics {
 		podMetricMap[podMetric.PodUID] = podMetric
