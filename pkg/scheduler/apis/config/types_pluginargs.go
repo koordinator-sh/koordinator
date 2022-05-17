@@ -27,17 +27,17 @@ import (
 type LoadAwareSchedulingArgs struct {
 	metav1.TypeMeta
 
-	FilterUnhealthyNodeMetrics       bool                          `json:"filterUnhealthyNodeMetrics,omitempty"`
-	NodeMetricUpdateMaxWindowSeconds int64                         `json:"nodeMetricUpdateMaxWindowSeconds,omitempty"`
-	ResourceWeights                  map[corev1.ResourceName]int64 `json:"resourceWeights,omitempty"`
-	UsageThresholds                  map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
-	EstimatedScalingFactors          map[corev1.ResourceName]int64 `json:"estimatedScalingFactors,omitempty"`
+	FilterExpiredNodeMetrics    bool                          `json:"filterExpiredNodeMetrics,omitempty"`
+	NodeMetricExpirationSeconds int64                         `json:"nodeMetricExpirationSeconds,omitempty"`
+	ResourceWeights             map[corev1.ResourceName]int64 `json:"resourceWeights,omitempty"`
+	UsageThresholds             map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
+	EstimatedScalingFactors     map[corev1.ResourceName]int64 `json:"estimatedScalingFactors,omitempty"`
 }
 
 func DefaultLoadAwareSchedulingArgs() *LoadAwareSchedulingArgs {
 	return &LoadAwareSchedulingArgs{
-		FilterUnhealthyNodeMetrics:       true,
-		NodeMetricUpdateMaxWindowSeconds: 180, // 3 minutes
+		FilterExpiredNodeMetrics:    true,
+		NodeMetricExpirationSeconds: 180, // 3 minutes
 		ResourceWeights: map[corev1.ResourceName]int64{
 			corev1.ResourceCPU:    1,
 			corev1.ResourceMemory: 1,

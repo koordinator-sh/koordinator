@@ -19,12 +19,12 @@ package loadaware
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -37,6 +37,15 @@ import (
 
 const (
 	Name = "LoadAwareScheduling"
+)
+
+const (
+	// DefaultMilliCPURequest defines default milli cpu request number.
+	DefaultMilliCPURequest int64 = 250 // 0.25 core
+	// DefaultMemoryRequest defines default memory request size.
+	DefaultMemoryRequest int64 = 200 * 1024 * 1024 // 200 MB
+	// DefaultNodeMetricReportInterval defines the default koodlet report NodeMetric interval.
+	DefaultNodeMetricReportInterval = 60 * time.Second
 )
 
 var (
@@ -92,9 +101,9 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
-	if p.args.FilterUnhealthyNodeMetrics {
-		if isNodeMetricUnhealthy(nodeMetric, p.args.NodeMetricUpdateMaxWindowSeconds) {
-			return framework.NewStatus(framework.Unschedulable, "node(s) nodeMetric unhealthy")
+	if p.args.FilterExpiredNodeMetrics {
+		if isNodeMetricExpired(nodeMetric, p.args.NodeMetricExpirationSeconds) {
+			return framework.NewStatus(framework.Unschedulable, "node(s) nodeMetric expired")
 		}
 	}
 
@@ -118,60 +127,6 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 	return nil
 }
 
-func isNodeMetricUnhealthy(nodeMetric *slov1alpha1.NodeMetric, nodeMetricUpdateMaxWindowSeconds int64) bool {
-	return nodeMetric == nil ||
-		nodeMetric.Status.UpdateTime == nil ||
-		time.Since(nodeMetric.Status.UpdateTime.Time) >= time.Duration(nodeMetricUpdateMaxWindowSeconds)*time.Second
-}
-
-func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
-	nodeMetric, err := p.nodeMetricLister.Get(nodeName)
-	if err != nil {
-		return 0, framework.NewStatus(framework.Error, "nodeMetric not found")
-	}
-	if isNodeMetricUnhealthy(nodeMetric, p.args.NodeMetricUpdateMaxWindowSeconds) {
-		return 0, nil
-	}
-
-	return 0, nil
-}
-
-func estimatedPodUsage(pod *corev1.Pod, resourceNames []corev1.ResourceName, scalingFactors map[corev1.ResourceName]int64) corev1.ResourceList {
-	request, limit := resourceapi.PodRequestsAndLimits(pod)
-
-	estimatedUsage := make(corev1.ResourceList)
-	priorityClass := extension.GetPriorityClass(pod)
-	for _, resourceName := range resourceNames {
-		realResourceName := extension.TranslateResourceNameByPriorityClass(priorityClass, resourceName)
-		quantity := request[realResourceName]
-		if quantity.IsZero() {
-			continue
-		}
-		switch realResourceName {
-		case extension.BatchCPU:
-			quantity.SetMilli(quantity.MilliValue() / 1000 * scalingFactors[resourceName])
-		case corev1.ResourceCPU:
-			quantity.SetMilli(quantity.MilliValue() * scalingFactors[resourceName])
-		default:
-			quantity.Set(quantity.Value() * scalingFactors[resourceName])
-		}
-		estimatedUsage[resourceName] = quantity
-	}
-
-	return estimatedUsage
-}
-
-func getResourceQuantity(request, limit corev1.ResourceList, resourceName corev1.ResourceName, scalingFactor int64) resource.Quantity {
-	if quantity, ok := limit[resourceName]; ok && quantity.IsZero() {
-		return extension.TranslateToResourceQuantity(quantity, resourceName)
-	}
-	quantity := request[resourceName]
-	if !quantity.IsZero() {
-
-	}
-	return extension.TranslateToResourceQuantity(quantity, resourceName)
-}
-
 func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
 	return nil
 }
@@ -183,4 +138,137 @@ func (p *Plugin) Reserve(ctx context.Context, state *framework.CycleState, pod *
 
 func (p *Plugin) Unreserve(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) {
 	p.podAssignCache.unAssign(nodeName, pod)
+}
+
+func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
+	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+	if err != nil {
+		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+	}
+	node := nodeInfo.Node()
+	if node == nil {
+		return 0, framework.NewStatus(framework.Error, "node not found")
+	}
+	nodeMetric, err := p.nodeMetricLister.Get(nodeName)
+	if err != nil {
+		return 0, framework.NewStatus(framework.Error, "nodeMetric not found")
+	}
+	if isNodeMetricExpired(nodeMetric, p.args.NodeMetricExpirationSeconds) {
+		return 0, nil
+	}
+
+	estimatedUsed := estimatedPodUsed(pod, p.args.ResourceWeights, p.args.EstimatedScalingFactors)
+	estimatedAssignedPodUsage := p.estimatedAssignedPodUsage(nodeName, nodeMetric)
+	for resourceName, value := range estimatedAssignedPodUsage {
+		estimatedUsed[resourceName] += value
+	}
+
+	allocatable := make(map[corev1.ResourceName]int64)
+	for resourceName := range p.args.ResourceWeights {
+		quantity := node.Status.Allocatable[resourceName]
+		if resourceName == corev1.ResourceCPU {
+			allocatable[resourceName] = quantity.MilliValue()
+		} else {
+			allocatable[resourceName] = quantity.Value()
+		}
+		if nodeMetric.Status.NodeMetric != nil {
+			quantity = nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[resourceName]
+			if resourceName == corev1.ResourceCPU {
+				estimatedUsed[resourceName] = quantity.MilliValue()
+			} else {
+				estimatedUsed[resourceName] = quantity.Value()
+			}
+		}
+	}
+
+	score := loadAwareSchedulingScorer(p.args.ResourceWeights, estimatedUsed, allocatable)
+	return score, nil
+}
+
+func isNodeMetricExpired(nodeMetric *slov1alpha1.NodeMetric, nodeMetricExpiredSeconds int64) bool {
+	return nodeMetric == nil ||
+		nodeMetric.Status.UpdateTime == nil ||
+		time.Since(nodeMetric.Status.UpdateTime.Time) >= time.Duration(nodeMetricExpiredSeconds)*time.Second
+}
+
+func (p *Plugin) estimatedAssignedPodUsage(nodeName string, nodeMetric *slov1alpha1.NodeMetric) map[corev1.ResourceName]int64 {
+	estimatedUsed := make(map[corev1.ResourceName]int64)
+	nodeMetricReportInterval := getNodeMetricReportInterval(nodeMetric)
+	p.podAssignCache.lock.RLock()
+	defer p.podAssignCache.lock.RUnlock()
+	for _, podInfo := range p.podAssignCache.podInfoItems[nodeName] {
+		if podInfo.timestamp.After(nodeMetric.Status.UpdateTime.Time) ||
+			podInfo.timestamp.Before(nodeMetric.Status.UpdateTime.Time) &&
+				nodeMetric.Status.UpdateTime.Sub(podInfo.timestamp) < nodeMetricReportInterval {
+			estimated := estimatedPodUsed(podInfo.pod, p.args.ResourceWeights, p.args.EstimatedScalingFactors)
+			for resourceName, value := range estimated {
+				estimatedUsed[resourceName] += value
+			}
+		}
+	}
+	return estimatedUsed
+}
+
+func getNodeMetricReportInterval(nodeMetric *slov1alpha1.NodeMetric) time.Duration {
+	if nodeMetric.Spec.CollectPolicy == nil || nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds == nil {
+		return DefaultNodeMetricReportInterval
+	}
+	return time.Duration(*nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds) * time.Second
+}
+
+func estimatedPodUsed(pod *corev1.Pod, resourceWeights map[corev1.ResourceName]int64, scalingFactors map[corev1.ResourceName]int64) map[corev1.ResourceName]int64 {
+	requests, limits := resourceapi.PodRequestsAndLimits(pod)
+	estimatedUsed := make(map[corev1.ResourceName]int64)
+	priorityClass := extension.GetPriorityClass(pod)
+	for resourceName := range resourceWeights {
+		realResourceName := extension.TranslateResourceNameByPriorityClass(priorityClass, resourceName)
+		estimatedUsed[resourceName] = estimatedUsedByResource(requests, limits, realResourceName, scalingFactors[resourceName])
+	}
+	return estimatedUsed
+}
+
+func estimatedUsedByResource(request, limit corev1.ResourceList, resourceName corev1.ResourceName, scalingFactor int64) int64 {
+	quantity := limit[resourceName]
+	if !quantity.IsZero() {
+		scalingFactor = 100
+	} else {
+		quantity = request[resourceName]
+	}
+	if quantity.IsZero() {
+		switch resourceName {
+		case corev1.ResourceCPU, extension.BatchCPU:
+			return DefaultMilliCPURequest
+		case corev1.ResourceMemory, extension.BatchMemory:
+			return DefaultMemoryRequest
+		}
+		return 0
+	}
+
+	switch resourceName {
+	case corev1.ResourceCPU:
+		return int64(math.Round(float64(quantity.MilliValue()) * float64(scalingFactor) / 100))
+	default:
+		return int64(math.Round(float64(quantity.Value()) * float64(scalingFactor) / 100))
+	}
+}
+
+func loadAwareSchedulingScorer(resToWeightMap map[corev1.ResourceName]int64, used, allocatable map[corev1.ResourceName]int64) int64 {
+	var nodeScore, weightSum int64
+	for resource, weight := range resToWeightMap {
+		resourceScore := leastRequestedScore(used[resource], allocatable[resource])
+		nodeScore += resourceScore * weight
+		weightSum += weight
+	}
+	return nodeScore / weightSum
+}
+
+func leastRequestedScore(requested, capacity int64) int64 {
+	if capacity == 0 {
+		return 0
+	}
+	if requested > capacity {
+		return 0
+	}
+
+	return ((capacity - requested) * framework.MaxNodeScore) / capacity
 }

@@ -29,8 +29,8 @@ import (
 func ValidateLoadAwareSchedulingArgs(args *config.LoadAwareSchedulingArgs) error {
 	var allErrs field.ErrorList
 
-	if args.NodeMetricUpdateMaxWindowSeconds <= 0 {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("nodeMetricUpdateMaxWindowSeconds"), args.NodeMetricUpdateMaxWindowSeconds, "NodeMetricUpdateMaxWindowSeconds should be a positive value"))
+	if args.NodeMetricExpirationSeconds <= 0 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("nodeMetricExpiredSeconds"), args.NodeMetricExpirationSeconds, "nodeMetricExpiredSeconds should be a positive value"))
 	}
 
 	if err := validateResourceWeights(args.ResourceWeights); err != nil {
