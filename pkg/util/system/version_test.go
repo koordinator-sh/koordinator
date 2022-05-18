@@ -59,7 +59,6 @@ func TestIsAnolisOS(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := NewFileTestUtil(t)
-			defer helper.Cleanup()
 			helper.MkDirAll(tt.fs)
 			helper.CreateFile(tt.cgroupFile)
 			assert.Equal(t, tt.expect, isAnolisOS())

@@ -48,7 +48,6 @@ func Test_Docker_NewDockerRuntimeHandler(t *testing.T) {
 	defer stubs.Reset()
 
 	helper := system.NewFileTestUtil(t)
-	defer helper.Cleanup()
 	helper.MkDirAll("/var/run")
 	system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/var/run")
 	helper.WriteFileContents("/var/run/docker.sock", "test")
@@ -62,7 +61,6 @@ func Test_Docker_NewDockerRuntimeHandler(t *testing.T) {
 
 func Test_Docker_StopContainer(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
-	defer helper.Cleanup()
 	helper.MkDirAll("/var/run")
 	helper.WriteFileContents("/var/run/docker.sock", "test")
 	system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/var/run")
@@ -95,7 +93,6 @@ func Test_Docker_StopContainer(t *testing.T) {
 
 func Test_Docker_UpdateContainerResources(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
-	defer helper.Cleanup()
 	helper.MkDirAll("/var/run")
 	helper.WriteFileContents("/var/run/docker.sock", "test")
 	system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/var/run")

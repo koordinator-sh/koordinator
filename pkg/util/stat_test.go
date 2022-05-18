@@ -18,7 +18,6 @@ package util
 
 import (
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -30,11 +29,7 @@ import (
 )
 
 func Test_readTotalCPUStat(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "example")
-	defer os.RemoveAll(tempDir)
-	if err != nil {
-		t.Error(err)
-	}
+	tempDir := t.TempDir()
 	tempInvalidStatPath := filepath.Join(tempDir, "no_stat")
 	tempStatPath := filepath.Join(tempDir, "stat")
 	statContentStr := "cpu  514003 37519 593580 1706155242 5134 45033 38832 0 0 0\n" +
@@ -47,7 +42,7 @@ func Test_readTotalCPUStat(t *testing.T) {
 		"procs_running 53\n" +
 		"procs_blocked 0\n" +
 		"softirq 134422017 2 39835165 107003 28614585 2166152 0 2398085 30750729 0 30550296\n"
-	err = ioutil.WriteFile(tempStatPath, []byte(statContentStr), 0666)
+	err := ioutil.WriteFile(tempStatPath, []byte(statContentStr), 0666)
 	if err != nil {
 		t.Error(err)
 	}
@@ -100,15 +95,11 @@ func Test_GetCPUStatUsageTicks(t *testing.T) {
 }
 
 func Test_readPodCPUStatUsageTicks(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "example")
-	defer os.RemoveAll(tempDir)
-	if err != nil {
-		t.Error(err)
-	}
+	tempDir := t.TempDir()
 	tempInvalidPodCgroupDir := filepath.Join(tempDir, "no_cgroup")
 	tempPodStatPath := filepath.Join(tempDir, system.CpuacctStatFileName)
 	statContentStr := getStatContents()
-	err = ioutil.WriteFile(tempPodStatPath, []byte(statContentStr), 0666)
+	err := ioutil.WriteFile(tempPodStatPath, []byte(statContentStr), 0666)
 	if err != nil {
 		t.Error(err)
 	}
@@ -148,13 +139,9 @@ func Test_readPodCPUStatUsageTicks(t *testing.T) {
 }
 
 func Test_GetPodCPUStatUsageTicks(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "example")
-	defer os.RemoveAll(tempDir)
-	if err != nil {
-		t.Error(err)
-	}
+	tempDir := t.TempDir()
 	system.Conf = system.NewDsModeConfig()
-	_, err = GetPodCPUStatUsageTicks(tempDir)
+	_, err := GetPodCPUStatUsageTicks(tempDir)
 	assert.NotNil(t, err)
 }
 
@@ -166,7 +153,6 @@ func getStatContents() string {
 
 func TestGetContainerCPUStatUsageTicks(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
-	defer helper.Cleanup()
 	podCgroupDir := "pod-cgroup-dir"
 	container := &corev1.ContainerStatus{
 		Name:        "test-container",

@@ -18,7 +18,6 @@ package util
 
 import (
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -30,11 +29,7 @@ import (
 )
 
 func Test_readMemInfo(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "example")
-	defer os.RemoveAll(tempDir)
-	if err != nil {
-		t.Error(err)
-	}
+	tempDir := t.TempDir()
 	tempInvalidMemInfoPath := filepath.Join(tempDir, "no_meminfo")
 	tempMemInfoPath := filepath.Join(tempDir, "meminfo")
 	memInfoContentStr := "MemTotal:       263432804 kB\nMemFree:        254391744 kB\nMemAvailable:   256703236 kB\n" +
@@ -53,7 +48,7 @@ func Test_readMemInfo(t *testing.T) {
 		"CmaFree:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\n" +
 		"HugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\n" +
 		"DirectMap4k:      414760 kB\nDirectMap2M:     8876032 kB\nDirectMap1G:    261095424 kB\n"
-	err = ioutil.WriteFile(tempMemInfoPath, []byte(memInfoContentStr), 0666)
+	err := ioutil.WriteFile(tempMemInfoPath, []byte(memInfoContentStr), 0666)
 	if err != nil {
 		t.Error(err)
 	}
@@ -121,11 +116,7 @@ func Test_GetMemInfoUsageKB(t *testing.T) {
 }
 
 func Test_readPodMemStat(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "example")
-	defer os.RemoveAll(tempDir)
-	if err != nil {
-		t.Error(err)
-	}
+	tempDir := t.TempDir()
 	tempInvalidPodCgroupDir := filepath.Join(tempDir, "no_cgroup")
 	tempPodMemStatPath := filepath.Join(tempDir, system.MemStatFileName)
 	memStatContentStr := "...\ntotal_cache 4843945984\ntotal_rss 310595584\ntotal_rss_huge 60817408\n" +
@@ -137,7 +128,7 @@ func Test_readPodMemStat(t *testing.T) {
 		"total_pg_pgscan 0\ntotal_pgrefill 0\ntotal_inactive_anon 1331200\n" +
 		"total_active_anon 310775808\ntotal_inactive_file 2277351424\ntotal_active_file 2564194304\n" +
 		"total_unevictable 0"
-	err = ioutil.WriteFile(tempPodMemStatPath, []byte(memStatContentStr), 0666)
+	err := ioutil.WriteFile(tempPodMemStatPath, []byte(memStatContentStr), 0666)
 	if err != nil {
 		t.Error(err)
 	}
@@ -177,27 +168,19 @@ func Test_readPodMemStat(t *testing.T) {
 }
 
 func Test_GetPodMemStatUsageBytes(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "example")
-	defer os.RemoveAll(tempDir)
-	if err != nil {
-		t.Error(err)
-	}
+	tempDir := t.TempDir()
 	system.Conf = system.NewDsModeConfig()
-	_, err = GetPodMemStatUsageBytes(tempDir)
+	_, err := GetPodMemStatUsageBytes(tempDir)
 	assert.NotNil(t, err)
 }
 
 func TestGetContainerMemStatUsageBytes(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "example")
-	defer os.RemoveAll(tempDir)
-	if err != nil {
-		t.Error(err)
-	}
+	tempDir := t.TempDir()
 	container := &corev1.ContainerStatus{
 		Name:        "test-container",
 		ContainerID: "test-container-id",
 	}
 	system.Conf = system.NewDsModeConfig()
-	_, err = GetContainerMemStatUsageBytes(tempDir, container)
+	_, err := GetContainerMemStatUsageBytes(tempDir, container)
 	assert.NotNil(t, err)
 }

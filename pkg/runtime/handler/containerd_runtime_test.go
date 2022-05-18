@@ -38,7 +38,6 @@ func Test_NewContainerdRuntimeHandler(t *testing.T) {
 	defer stubs.Reset()
 
 	helper := system.NewFileTestUtil(t)
-	defer helper.Cleanup()
 	helper.MkDirAll("/var/run")
 	helper.WriteFileContents("/var/run/containerd.sock", "test")
 	system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/var/run")

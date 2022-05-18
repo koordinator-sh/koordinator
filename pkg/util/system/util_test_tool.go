@@ -30,14 +30,10 @@ type FileTestUtil struct {
 	t *testing.T
 }
 
-// Creates a new test util for the specified subsystem
+// NewFileTestUtil creates a new test util for the specified subsystem
 func NewFileTestUtil(t *testing.T) *FileTestUtil {
-	tempDir, err := ioutil.TempDir("/tmp", "koordlet_test")
+	tempDir := t.TempDir()
 	HostSystemInfo.IsAnolisOS = true
-
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	Conf.ProcRootDir = path.Join(tempDir, "proc")
 	os.MkdirAll(Conf.ProcRootDir, 0777)

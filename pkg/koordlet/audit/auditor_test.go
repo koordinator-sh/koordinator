@@ -24,7 +24,6 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 )
@@ -64,11 +63,7 @@ func mustCreateHttpServer(t *testing.T, handler http.Handler) *TestServer {
 }
 
 func TestAuditorLogger(t *testing.T) {
-	tempDir, err := ioutil.TempDir(".", "_test")
-	if err != nil {
-		t.Fatal("failed to create dir", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	c := NewDefaultConfig()
 	c.LogDir = tempDir
@@ -155,11 +150,7 @@ func TestAuditorLogger(t *testing.T) {
 }
 
 func TestAuditorLoggerTxtOutput(t *testing.T) {
-	tempDir, err := ioutil.TempDir(".", "_test")
-	if err != nil {
-		t.Fatal("failed to create dir", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	c := NewDefaultConfig()
 	c.LogDir = tempDir
@@ -198,11 +189,7 @@ func TestAuditorLoggerTxtOutput(t *testing.T) {
 }
 
 func TestAuditorLoggerReaderInvalidPageToken(t *testing.T) {
-	tempDir, err := ioutil.TempDir(".", "_test")
-	if err != nil {
-		t.Fatal("failed to create dir", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	c := NewDefaultConfig()
 	c.LogDir = tempDir
@@ -269,11 +256,7 @@ func TestAuditorLoggerReaderInvalidPageToken(t *testing.T) {
 }
 
 func TestAuditorLoggerMaxActiveReaders(t *testing.T) {
-	tempDir, err := ioutil.TempDir(".", "_test")
-	if err != nil {
-		t.Fatal("failed to create dir", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	c := NewDefaultConfig()
 	c.LogDir = tempDir

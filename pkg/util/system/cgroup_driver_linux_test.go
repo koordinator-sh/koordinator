@@ -20,7 +20,6 @@
 package system
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,9 +63,8 @@ func Test_GuessCgroupDriverFromCgroupName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpCgroupRoot, _ := ioutil.TempDir("", "cgroup")
+			tmpCgroupRoot := t.TempDir()
 			os.MkdirAll(tmpCgroupRoot, 0555)
-			defer os.RemoveAll(tmpCgroupRoot)
 
 			Conf = &Config{
 				CgroupRootDir: tmpCgroupRoot,

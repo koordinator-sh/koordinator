@@ -20,7 +20,6 @@
 package system
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -37,11 +36,10 @@ func Test_ProcCmdLine(t *testing.T) {
 		assert.ElementsMatch(t, cmdline, os.Args)
 	})
 	t.Run("fake process should fail", func(t *testing.T) {
-		procRoot, _ := ioutil.TempDir("", "proc")
+		procRoot := t.TempDir()
 		fakePid := 42
 		fakeProcDir := filepath.Join(procRoot, strconv.Itoa((fakePid)))
 		os.MkdirAll(fakeProcDir, 0555)
-		defer os.RemoveAll(procRoot)
 
 		_, err := ProcCmdLine(procRoot, fakePid)
 		assert.NotEmpty(t, err)

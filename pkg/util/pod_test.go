@@ -180,8 +180,7 @@ func Test_GetPodRequest(t *testing.T) {
 
 func Test_GetRootCgroupCurCPUSet(t *testing.T) {
 	// prepare testing tmp files
-	var cgroupRootDir string
-	cgroupRootDir, _ = ioutil.TempDir("", "GetRootCgroupCurCPUSet")
+	cgroupRootDir := t.TempDir()
 	dname := filepath.Join(cgroupRootDir, system.CgroupCPUSetDir)
 	err := os.MkdirAll(dname, 0700)
 	if err != nil {

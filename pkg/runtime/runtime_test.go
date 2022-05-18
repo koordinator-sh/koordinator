@@ -108,7 +108,6 @@ func Test_GetRuntimeHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
-			defer helper.Cleanup()
 			system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/var/run")
 			if tt.endPoint != "" {
 				helper.CreateFile(tt.endPoint)

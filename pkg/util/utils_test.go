@@ -18,7 +18,6 @@ package util
 
 import (
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -262,14 +261,12 @@ func Test_GenerateCPUSetStr(t *testing.T) {
 
 func Test_UtilCgroupCPUSet(t *testing.T) {
 	// prepare testing files
-	dname, err := ioutil.TempDir("", "cgroupCPUSet")
-	defer os.RemoveAll(dname)
-	assert.NoError(t, err)
+	dname := t.TempDir()
 
 	cpuset := []int32{5, 1, 0}
 	cpusetStr := GenerateCPUSetStr(cpuset)
 
-	err = WriteCgroupCPUSet(dname, cpusetStr)
+	err := WriteCgroupCPUSet(dname, cpusetStr)
 	assert.NoError(t, err)
 
 	rawContent, err := ioutil.ReadFile(filepath.Join(dname, system.CPUSFileName))

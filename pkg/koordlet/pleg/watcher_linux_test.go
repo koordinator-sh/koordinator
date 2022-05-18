@@ -20,7 +20,6 @@
 package pleg
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -34,11 +33,7 @@ func TestWatcher(t *testing.T) {
 	assert.NoError(t, err, "create watcher failed")
 	defer watcher.Close()
 
-	tempDir, err := ioutil.TempDir(".", "_test")
-	if err != nil {
-		t.Fatal("failed to create dir", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	err = watcher.AddWatch(tempDir)
 	assert.NoError(t, err, "watch path: %v failed", tempDir)

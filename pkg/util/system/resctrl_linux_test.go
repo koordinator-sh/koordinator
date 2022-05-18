@@ -58,7 +58,6 @@ func Test_isResctrlAvailableByCpuInfo(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := NewFileTestUtil(t)
-			defer helper.Cleanup()
 
 			helper.WriteProcSubFileContents("cpuinfo", tt.cpuInfoContents)
 			gotIsCatFlagSet, gotIsMbaFlagSet, err := isResctrlAvailableByCpuInfo(filepath.Join(Conf.ProcRootDir, "cpuinfo"))
@@ -115,7 +114,6 @@ func Test_isResctrlAvailableByKernelCmd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := NewFileTestUtil(t)
-			defer helper.Cleanup()
 			helper.WriteProcSubFileContents("cmdline", tt.args.content)
 			isCatFlagSet, isMbaFlagSet, _ := isResctrlAvailableByKernelCmd(filepath.Join(Conf.ProcRootDir, "cmdline"))
 			if isCatFlagSet != tt.wantCat {
