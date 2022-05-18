@@ -184,7 +184,7 @@ LICENSE_HEADER_CHECKER ?= $(LOCALBIN)/license-header-checker
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v3.8.7
 CONTROLLER_TOOLS_VERSION ?= v0.8.0
-GOLANGCILINT_VERSION ?= v1.45.2
+GOLANGCILINT_VERSION ?= v1.46.2
 LICENSEHEADERCHECKER_VERSION ?= v1.3.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"

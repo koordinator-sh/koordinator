@@ -22,11 +22,8 @@ import (
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 )
 
-// GroupName is the group name used in this package
-const GroupName = "scheduler.config.koordinator.sh"
-
 // SchemeGroupVersion is group version used to register these objects
-var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: runtime.APIVersionInternal}
+var SchemeGroupVersion = schema.GroupVersion{Group: schedconfig.GroupName, Version: runtime.APIVersionInternal}
 
 var (
 	localSchemeBuilder = &schedconfig.SchemeBuilder

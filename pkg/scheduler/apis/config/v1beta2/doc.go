@@ -21,4 +21,4 @@
 // +groupName=scheduler.config.koordinator.sh
 
 // Package v1beta1
-package v1beta1 // import "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta1"
+package v1beta2 // import "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta1"

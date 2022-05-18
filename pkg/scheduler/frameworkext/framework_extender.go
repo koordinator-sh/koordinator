@@ -20,11 +20,9 @@ import (
 	"sync"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 
-	"github.com/koordinator-sh/koordinator/pkg/client"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 )
@@ -32,36 +30,33 @@ import (
 type FrameworkExtender struct {
 	once sync.Once
 	framework.Handle
-	genericClientSet                 *client.GenericClientset
+	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 }
 
-func NewFrameworkExtender() *FrameworkExtender {
-	return &FrameworkExtender{}
-}
-
-func WithFrameworkExtender(ext *FrameworkExtender, factoryFn frameworkruntime.PluginFactory) frameworkruntime.PluginFactory {
-	return func(args runtime.Object, f framework.Handle) (framework.Plugin, error) {
-		return factoryFn(args, ext)
+func NewFrameworkExtender(
+	koordinatorClientSet koordinatorclientset.Interface,
+	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory,
+) *FrameworkExtender {
+	return &FrameworkExtender{
+		koordinatorClientSet:             koordinatorClientSet,
+		koordinatorSharedInformerFactory: koordinatorSharedInformerFactory,
 	}
 }
 
-func (ext *FrameworkExtender) Init(handle framework.Handle) {
-	ext.once.Do(func() {
-		ext.Handle = handle
-		err := client.NewRegistry(handle.KubeConfig())
-		if err != nil {
-			klog.Fatalf("Failed to client.NewRegistry, err: %v", err)
-		}
-		ext.genericClientSet = client.GetGenericClient()
-		ext.koordinatorSharedInformerFactory = koordinatorinformers.NewSharedInformerFactoryWithOptions(ext.genericClientSet.KoordinatorClient, 0)
-	})
-}
-
 func (ext *FrameworkExtender) KoordinatorClientSet() koordinatorclientset.Interface {
-	return ext.genericClientSet.KoordinatorClient
+	return ext.koordinatorClientSet
 }
 
 func (ext *FrameworkExtender) KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory {
 	return ext.koordinatorSharedInformerFactory
+}
+
+func PluginFactoryProxy(ext *FrameworkExtender, factoryFn frameworkruntime.PluginFactory) frameworkruntime.PluginFactory {
+	return func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+		ext.once.Do(func() {
+			ext.Handle = handle
+		})
+		return factoryFn(args, ext)
+	}
 }

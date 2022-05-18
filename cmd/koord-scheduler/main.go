@@ -25,6 +25,9 @@ import (
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware"
+
+	// Ensure scheme package is initialized.
+	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 )
 
 func main() {

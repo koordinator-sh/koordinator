@@ -174,9 +174,9 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 		if nodeMetric.Status.NodeMetric != nil {
 			quantity = nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[resourceName]
 			if resourceName == corev1.ResourceCPU {
-				estimatedUsed[resourceName] = quantity.MilliValue()
+				estimatedUsed[resourceName] += quantity.MilliValue()
 			} else {
-				estimatedUsed[resourceName] = quantity.Value()
+				estimatedUsed[resourceName] += quantity.Value()
 			}
 		}
 	}

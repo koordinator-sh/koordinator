@@ -47,7 +47,12 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 	}
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	p.podInfoItems[nodeName][pod.UID] = &podInfo{
+	m := p.podInfoItems[nodeName]
+	if m == nil {
+		m = make(map[types.UID]*podInfo)
+		p.podInfoItems[nodeName] = m
+	}
+	m[pod.UID] = &podInfo{
 		timestamp: time.Now(),
 		pod:       pod,
 	}

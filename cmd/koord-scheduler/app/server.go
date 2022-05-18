@@ -59,10 +59,11 @@ import (
 
 	schedulerserverconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/options"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
 // Option configures a framework.Registry.
-type Option func(runtime.Registry) error
+type Option func(*frameworkext.FrameworkExtender, runtime.Registry) error
 
 // NewSchedulerCommand creates a *cobra.Command object with default parameters and registryOptions
 func NewSchedulerCommand(registryOptions ...Option) *cobra.Command {
@@ -299,8 +300,8 @@ func getRecorderFactory(cc *schedulerserverconfig.CompletedConfig) profile.Recor
 // WithPlugin creates an Option based on plugin name and factory. Please don't remove this function: it is used to register out-of-tree plugins,
 // hence there are no references to it from the kubernetes scheduler code base.
 func WithPlugin(name string, factory runtime.PluginFactory) Option {
-	return func(registry runtime.Registry) error {
-		return registry.Register(name, factory)
+	return func(extender *frameworkext.FrameworkExtender, registry runtime.Registry) error {
+		return registry.Register(name, frameworkext.PluginFactoryProxy(extender, factory))
 	}
 }
 
@@ -324,9 +325,11 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	// Get the completed config
 	cc := c.Complete()
 
+	extender := frameworkext.NewFrameworkExtender(cc.KoordinatorClient, cc.KoordinatorSharedInformerFactory)
+
 	outOfTreeRegistry := make(runtime.Registry)
 	for _, option := range outOfTreeRegistryOptions {
-		if err := option(outOfTreeRegistry); err != nil {
+		if err := option(extender, outOfTreeRegistry); err != nil {
 			return nil, nil, err
 		}
 	}
