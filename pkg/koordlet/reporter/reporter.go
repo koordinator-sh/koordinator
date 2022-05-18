@@ -29,7 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	clientset "k8s.io/client-go/kubernetes"
 	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -139,9 +138,25 @@ func (r *reporter) Run(stopCh <-chan struct{}) error {
 			return fmt.Errorf("timed out waiting for node metric caches to sync")
 		}
 
-		go wait.Until(func() {
-			r.sync()
-		}, time.Duration(r.config.ReportIntervalSeconds)*time.Second, stopCh)
+		reportInterval := time.Duration(r.config.ReportIntervalSeconds) * time.Second
+		go func() {
+			for {
+				select {
+				case <-stopCh:
+					return
+				case <-time.After(reportInterval):
+					r.sync()
+					if r.nodeMetric.Spec.CollectPolicy != nil ||
+						r.nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds != nil {
+						interval := *r.nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds
+						if interval > 0 {
+							reportInterval = time.Duration(interval) * time.Second
+						}
+					}
+				}
+			}
+		}()
+
 	} else {
 		klog.Infof("ReportIntervalSeconds is %d, sync node metric to apiserver is disabled",
 			r.config.ReportIntervalSeconds)

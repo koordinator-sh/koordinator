@@ -18,17 +18,23 @@ package nodemetric
 
 import (
 	"context"
+	"fmt"
+	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 // NodeMetricReconciler reconciles a NodeMetric object
@@ -89,9 +95,63 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			klog.Errorf("failed to create nodeMetric %v, error: %v", nodeMetricName, err)
 			return ctrl.Result{Requeue: true}, err
 		}
+	} else {
+		// update nodeMetric spec if both exists
+		nodeMetricSpec, err := r.getNodeMetricSpec(node)
+		if err != nil {
+			klog.Errorf("syncNodeMetric failed to get nodeMetric spec: %v", err)
+			return reconcile.Result{Requeue: true}, err
+		}
+		if !reflect.DeepEqual(nodeMetricSpec, &nodeMetric.Spec) {
+			nodeMetric.Spec = *nodeMetricSpec
+			err = r.Client.Update(context.TODO(), nodeMetric)
+			if err != nil {
+				klog.Errorf("syncNodeMetric failed to update nodeMetric %v, error: %v", nodeMetricName, err)
+				return reconcile.Result{Requeue: true}, err
+			}
+		}
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *NodeMetricReconciler) getNodeMetricSpec(node *corev1.Node) (*slov1alpha1.NodeMetricSpec, error) {
+	// get cr's spec from the configmap
+	// if the configmap does not exist, use the default
+	if r.Client == nil {
+		klog.Errorf("getNodeMetricSpec failed to load configmap %s/%s",
+			config.ConfigNameSpace, config.SLOCtrlConfigMap)
+		return nil, fmt.Errorf("no available client")
+	}
+
+	nodeMetricSpec := &slov1alpha1.NodeMetricSpec{
+		CollectPolicy: util.DefaultNodeMetricCollectPolicy(),
+	}
+
+	// TODO: record an event about the failure reason on configmap/crd when failed to load the config
+	configMap := &corev1.ConfigMap{}
+	keyTypes := types.NamespacedName{Namespace: config.ConfigNameSpace, Name: config.SLOCtrlConfigMap}
+	if err := r.Client.Get(context.TODO(), keyTypes, configMap); err != nil {
+		// default when the configmap does not exist
+		if errors.IsNotFound(err) {
+			klog.Infof("getNodeMetricSpec(): config map %s/%s not exist, err:%s", config.ConfigNameSpace,
+				config.SLOCtrlConfigMap, err)
+			return nodeMetricSpec, nil
+		}
+		// abort spec update if cannot get configmap
+		klog.Errorf("getNodeMetricSpec(): failed to load config map %s/%s, err:%s", config.ConfigNameSpace,
+			config.SLOCtrlConfigMap, err)
+		return nil, err
+	}
+
+	nodeMetricCollectPolicy, err := getNodeMetricCollectPolicy(node, configMap)
+	if err != nil {
+		klog.Warningf("getNodeMetricSpec(): failed to get nodeMetricCollectPolicy for node %s, set the default error: %v", node.Name, err)
+	} else {
+		nodeMetricSpec.CollectPolicy = nodeMetricCollectPolicy
+	}
+
+	return nodeMetricSpec, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

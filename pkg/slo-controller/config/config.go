@@ -81,6 +81,16 @@ type ColocationStrategy struct {
 	ResourceDiffThreshold         *float64 `json:"resourceDiffThreshold,omitempty"`
 }
 
+type NodeMetricCollectPolicy struct {
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	*slov1alpha1.NodeMetricCollectPolicy
+}
+
+type NodeMetricCollectCfg struct {
+	ClusterPolicy *slov1alpha1.NodeMetricCollectPolicy `json:"clusterPolicy,omitempty"`
+	NodePolicies  []NodeMetricCollectPolicy            `json:"nodePolicies,omitempty"`
+}
+
 func NewDefaultColocationCfg() *ColocationCfg {
 	defaultCfg := DefaultColocationCfg()
 	return &defaultCfg

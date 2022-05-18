@@ -220,3 +220,9 @@ func DefaultCPUBurstConfig() slov1alpha1.CPUBurstConfig {
 		CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(-1),
 	}
 }
+
+func DefaultNodeMetricCollectPolicy() *slov1alpha1.NodeMetricCollectPolicy {
+	return &slov1alpha1.NodeMetricCollectPolicy{
+		ReportIntervalSeconds: pointer.Int64(60),
+	}
+}

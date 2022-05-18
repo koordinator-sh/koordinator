@@ -23,4 +23,5 @@ const (
 	ResourceThresholdConfigKey = "resource-threshold-config"
 	ResourceQoSConfigKey       = "resource-qos-config"
 	CPUBurstConfigKey          = "cpu-burst-config"
+	NodeMetricConfigKey        = "node-metric-collect-config"
 )
