@@ -17,4 +17,5 @@
 // +k8s:deepcopy-gen=package
 // +groupName=scheduler.config.koordinator.sh
 
-package config
+// Package config of the API.
+package config // import "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"

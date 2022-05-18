@@ -14,7 +14,7 @@
  limitations under the License.
 */
 
-package config
+package v1beta1
 
 import (
 	corev1 "k8s.io/api/core/v1"
@@ -25,7 +25,7 @@ import (
 
 // LoadAwareSchedulingArgs holds arguments used to configure the LoadAwareScheduling plugin.
 type LoadAwareSchedulingArgs struct {
-	metav1.TypeMeta
+	metav1.TypeMeta `json:",inline"`
 
 	FilterExpiredNodeMetrics    bool                          `json:"filterExpiredNodeMetrics,omitempty"`
 	NodeMetricExpirationSeconds int64                         `json:"nodeMetricExpirationSeconds,omitempty"`

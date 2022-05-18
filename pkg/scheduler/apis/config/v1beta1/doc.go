@@ -15,8 +15,10 @@
 */
 
 // +k8s:deepcopy-gen=package
+// +k8s:conversion-gen=github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config
 // +k8s:defaulter-gen=TypeMeta
 // +k8s:defaulter-gen-input=.
 // +groupName=scheduler.config.koordinator.sh
 
-package v1beta1
+// Package v1beta1
+package v1beta1 // import "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta1"
