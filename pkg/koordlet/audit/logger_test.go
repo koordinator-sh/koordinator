@@ -20,17 +20,12 @@ import (
 	"bytes"
 	"io"
 	"io/ioutil"
-	"os"
 	"strings"
 	"testing"
 )
 
 func TestLogWriter(t *testing.T) {
-	tempDir, err := ioutil.TempDir(".", "_test")
-	if err != nil {
-		t.Fatal("failed to create dir", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	name := tempDir + "/audit.log"
 	writer, err := OpenLogWriter(name)
@@ -56,11 +51,7 @@ func TestLogWriter(t *testing.T) {
 }
 
 func TestLogReader(t *testing.T) {
-	tempDir, err := ioutil.TempDir(".", "_test")
-	if err != nil {
-		t.Fatal("failed to create dir", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	name := tempDir + "/audit.log"
 	writer, err := OpenLogWriter(name)

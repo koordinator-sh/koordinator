@@ -425,7 +425,6 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 			defer func() { stop <- struct{}{} }()
 
 			helper := system.NewFileTestUtil(t)
-			defer helper.Cleanup()
 
 			initQoSStrategy := defaultQoSStrategy()
 			initQoSCgroupFile(initQoSStrategy, helper)
@@ -805,8 +804,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			assert.NoError(t, err)
 			defer func() { stop <- struct{}{} }()
 
-			helper := system.NewFileTestUtil(t)
-			defer helper.Cleanup()
+			system.NewFileTestUtil(t)
 
 			got, got1, got2 := m.calculateResources(tt.args.nodeCfg, tt.args.node, tt.args.podMetas)
 			assertCgroupResourceEqual(t, tt.want, got)

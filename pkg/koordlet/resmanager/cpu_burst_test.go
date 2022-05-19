@@ -689,7 +689,6 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
-			defer testHelper.Cleanup()
 
 			b := &CPUBurst{
 				executor: NewResourceUpdateExecutor("CPUBurstTestExecutor", 60),
@@ -1187,7 +1186,6 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
-			defer testHelper.Cleanup()
 
 			stop := make(chan struct{})
 			defer func() { stop <- struct{}{} }()
@@ -1566,7 +1564,6 @@ func TestCPUBurst_start(t *testing.T) {
 			}
 
 			testHelper := system.NewFileTestUtil(t)
-			defer testHelper.Cleanup()
 
 			b := NewCPUBurst(resmanager)
 			stop := make(chan struct{})

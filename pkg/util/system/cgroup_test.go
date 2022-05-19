@@ -69,7 +69,6 @@ func TestCgroupFileReadInt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := NewFileTestUtil(t)
-			defer helper.Cleanup()
 			helper.CreateCgroupFile(taskDir, tt.args.file)
 
 			err := CgroupFileWrite(taskDir, tt.args.file, tt.args.value)
@@ -92,7 +91,6 @@ func genCPUStatContent() string {
 
 func TestGetCPUStatRaw(t *testing.T) {
 	helper := NewFileTestUtil(t)
-	defer helper.Cleanup()
 	testCPUDir := "cpu"
 	filePath := GetCgroupFilePath(testCPUDir, CpuacctStat)
 

@@ -25,7 +25,6 @@ import (
 
 func Test_CommonFileFuncs(t *testing.T) {
 	helper := NewFileTestUtil(t)
-	defer helper.Cleanup()
 
 	testDir := "test"
 	helper.MkDirAll(testDir)
@@ -45,7 +44,6 @@ func Test_CommonFileFuncs(t *testing.T) {
 
 func Test_CgroupFileFuncs(t *testing.T) {
 	helper := NewFileTestUtil(t)
-	defer helper.Cleanup()
 
 	helper.CreateCgroupFile("", CPUCFSQuota)
 	exist := FileExists(GetCgroupFilePath("", CPUCFSQuota))
@@ -59,7 +57,6 @@ func Test_CgroupFileFuncs(t *testing.T) {
 
 func Test_ProcFileFuncs(t *testing.T) {
 	helper := NewFileTestUtil(t)
-	defer helper.Cleanup()
 
 	procFile := "testfile"
 	helper.CreateProcSubFile(procFile)

@@ -590,7 +590,6 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 
 			// prepare testing files
 			helper := system.NewFileTestUtil(t)
-			defer helper.Cleanup()
 			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.CPUSet, tt.args.nodeCPUSet)
 			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet, tt.args.preBECPUSet)
 			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, strconv.FormatInt(tt.args.preBECFSQuota, 10))
@@ -917,7 +916,6 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// prepare testing files
 			helper := system.NewFileTestUtil(t)
-			defer helper.Cleanup()
 			podDirs := []string{"pod1", "pod2", "pod3"}
 			testingPrepareBECgroupData(helper, podDirs, tt.args.oldCPUSets)
 			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.CPUSet, tt.args.rootCPUSets)
@@ -973,7 +971,6 @@ func Test_cpuSuppress_recoverCFSQuotaIfNeed(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
-			defer helper.Cleanup()
 			beQosDir := util.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
 			helper.CreateCgroupFile(beQosDir, system.CPUCFSQuota)
 
@@ -1195,7 +1192,6 @@ func Test_calculateBESuppressCPUSetPolicy(t *testing.T) {
 func Test_applyBESuppressCPUSetPolicy(t *testing.T) {
 	// prepare testing files
 	helper := system.NewFileTestUtil(t)
-	defer helper.Cleanup()
 	podDirs := []string{"pod1", "pod2", "pod3"}
 	testingPrepareBECgroupData(helper, podDirs, "1,2")
 
@@ -1218,7 +1214,6 @@ func Test_applyBESuppressCPUSetPolicy(t *testing.T) {
 func Test_getBECgroupCPUSetPathsRecursive(t *testing.T) {
 	// prepare testing files
 	helper := system.NewFileTestUtil(t)
-	defer helper.Cleanup()
 	podDirs := []string{"pod1", "pod2", "pod3"}
 	testingPrepareBECgroupData(helper, podDirs, "1,2")
 	var wantPaths []string
@@ -1288,7 +1283,6 @@ func Test_adjustByCPUSet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// prepare testing files
 			helper := system.NewFileTestUtil(t)
-			defer helper.Cleanup()
 			podDirs := []string{"pod1", "pod2", "pod3"}
 			testingPrepareBECgroupData(helper, podDirs, tt.args.oldCPUSets)
 
@@ -1306,7 +1300,6 @@ func Test_adjustByCPUSet(t *testing.T) {
 
 func Test_adjustByCfsQuota(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
-	defer helper.Cleanup()
 	beQosDir := util.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
 	helper.CreateCgroupFile(beQosDir, system.CPUCFSQuota)
 	node := &corev1.Node{
@@ -1375,7 +1368,6 @@ func Test_adjustByCfsQuota(t *testing.T) {
 func Test_writeBECgroupsCPUSet(t *testing.T) {
 	// prepare testing files
 	helper := system.NewFileTestUtil(t)
-	defer helper.Cleanup()
 	podDirs := []string{"pod1", "pod2", "pod3"}
 	testingPrepareBECgroupData(helper, podDirs, "1,2")
 

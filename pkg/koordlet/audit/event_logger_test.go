@@ -20,17 +20,12 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestEventLogger(t *testing.T) {
-	tempDir, err := ioutil.TempDir(".", "_test")
-	if err != nil {
-		t.Fatal("failed to create dir", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	logger := NewEventLogger(tempDir, 10, 0)
 	logger.Log(0, &Event{Reason: "hello"})
@@ -48,11 +43,7 @@ func TestEventLogger(t *testing.T) {
 }
 
 func TestFluentEventLogger(t *testing.T) {
-	tempDir, err := ioutil.TempDir(".", "_test")
-	if err != nil {
-		t.Fatal("failed to create dir", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	logger := NewFluentEventLogger(tempDir, 10, 0)
 	defer logger.Close()
@@ -81,11 +72,7 @@ func makeBlock(n int, b byte) []byte {
 }
 
 func TestReverseEventReaderSingleFile(t *testing.T) {
-	tempDir, err := ioutil.TempDir(".", "_test")
-	if err != nil {
-		t.Fatal("failed to create dir", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	logger := NewFluentEventLogger(tempDir, 10, 0)
 
@@ -111,11 +98,7 @@ func TestReverseEventReaderSingleFile(t *testing.T) {
 }
 
 func TestReverseEventReaderMultiFile(t *testing.T) {
-	tempDir, err := ioutil.TempDir(".", "_test")
-	if err != nil {
-		t.Fatal("failed to create dir", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	logger := NewFluentEventLogger(tempDir, 10, 0)
 

@@ -18,7 +18,6 @@ package resmanager
 
 import (
 	"bufio"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -231,7 +230,7 @@ func Test_reconcileBECPULimit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		system.Conf = system.NewDsModeConfig()
-		system.Conf.CgroupRootDir, _ = ioutil.TempDir("/tmp", "koordlet-test")
+		system.Conf.CgroupRootDir = t.TempDir()
 		err := initTestPodCFS(tt.args.podMeta, tt.args.podCurCFS, tt.args.containerCurCFS)
 		if err != nil {
 			t.Errorf("init cfs quota failed, error: %v", err)
@@ -341,7 +340,7 @@ func Test_reconcileBECPUShare(t *testing.T) {
 	}
 	for _, tt := range tests {
 		system.Conf = system.NewDsModeConfig()
-		system.Conf.CgroupRootDir, _ = ioutil.TempDir("/tmp", "koordlet-test")
+		system.Conf.CgroupRootDir = t.TempDir()
 		err := initTestPodCPUShare(tt.args.podMeta, tt.args.podCurCPUShare, tt.args.containerCurCPUShare)
 		if err != nil {
 			t.Errorf("init cpu share failed, error: %v", err)
@@ -451,7 +450,7 @@ func Test_reconcileBEMemLimit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		system.Conf = system.NewDsModeConfig()
-		system.Conf.CgroupRootDir, _ = ioutil.TempDir("/tmp", "koordlet-test")
+		system.Conf.CgroupRootDir = t.TempDir()
 		err := initTestPodMemLimit(tt.args.podMeta, tt.args.podCurMemLimit, tt.args.containerCurMemLimit)
 		if err != nil {
 			t.Errorf("init cpu share failed, error: %v", err)

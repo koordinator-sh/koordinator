@@ -17,7 +17,6 @@
 package runtimehooks
 
 import (
-	"io/ioutil"
 	"path"
 	"testing"
 
@@ -25,7 +24,7 @@ import (
 )
 
 func Test_runtimeHook_Run(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "runtime-hook-test")
+	tmpDir := t.TempDir()
 	type fields struct {
 		config *Config
 	}

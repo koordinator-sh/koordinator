@@ -74,8 +74,7 @@ func Test_ReadResctrlTasksMap(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var sysFSRootDir string
-			sysFSRootDir, _ = ioutil.TempDir("", "ReadResctrlTasksMap")
+			sysFSRootDir := t.TempDir()
 			resctrlDir := filepath.Join(sysFSRootDir, ResctrlDir, tt.args.groupPath)
 			err := os.MkdirAll(resctrlDir, 0700)
 			assert.NoError(t, err)
@@ -83,8 +82,6 @@ func Test_ReadResctrlTasksMap(t *testing.T) {
 			tasksPath := filepath.Join(resctrlDir, ResctrlTaskFileName)
 			err = ioutil.WriteFile(tasksPath, []byte(tt.fields.tasksStr), 0666)
 			assert.NoError(t, err)
-
-			defer os.RemoveAll(sysFSRootDir)
 
 			Conf = &Config{
 				SysFSRootDir: sysFSRootDir,
@@ -125,9 +122,7 @@ func Test_CheckAndTryEnableResctrlCat(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var sysFSRootDir string
-			sysFSRootDir, _ = ioutil.TempDir("", "CheckAndTryEnableResctrlCat")
-			defer os.RemoveAll(sysFSRootDir)
+			sysFSRootDir := t.TempDir()
 			resctrlDir := filepath.Join(sysFSRootDir, ResctrlDir)
 			l3CatDir := filepath.Join(resctrlDir, RdtInfoDir, L3CatDir)
 			err := os.MkdirAll(l3CatDir, 0700)
@@ -153,9 +148,7 @@ func Test_CheckAndTryEnableResctrlCat(t *testing.T) {
 
 func Test_MountResctrlSubsystem(t *testing.T) {
 	t.Run("test not panic", func(t *testing.T) {
-		var sysFSRootDir string
-		sysFSRootDir, _ = ioutil.TempDir("", "MountResctrlSubsystem")
-		defer os.RemoveAll(sysFSRootDir)
+		sysFSRootDir := t.TempDir()
 		resctrlDir := filepath.Join(sysFSRootDir, ResctrlDir)
 		err := os.MkdirAll(resctrlDir, 0700)
 		assert.NoError(t, err)
