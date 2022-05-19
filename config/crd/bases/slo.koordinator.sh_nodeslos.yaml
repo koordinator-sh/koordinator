@@ -73,6 +73,18 @@ spec:
                   be:
                     description: ResourceQoS for BE pods.
                     properties:
+                      cpuQoS:
+                        description: CPUQoSCfg stores node-level config of cpu qos
+                        properties:
+                          enable:
+                            description: Enable indicates whether the cpu qos is enabled.
+                            type: boolean
+                          groupIdentity:
+                            description: group identity value for pods, default =
+                              0
+                            format: int64
+                            type: integer
+                        type: object
                       memoryQoS:
                         description: MemoryQoSCfg stores node-level config of memory
                           qos
@@ -208,6 +220,18 @@ spec:
                   cgroupRoot:
                     description: ResourceQoS for root cgroup.
                     properties:
+                      cpuQoS:
+                        description: CPUQoSCfg stores node-level config of cpu qos
+                        properties:
+                          enable:
+                            description: Enable indicates whether the cpu qos is enabled.
+                            type: boolean
+                          groupIdentity:
+                            description: group identity value for pods, default =
+                              0
+                            format: int64
+                            type: integer
+                        type: object
                       memoryQoS:
                         description: MemoryQoSCfg stores node-level config of memory
                           qos
@@ -343,6 +367,18 @@ spec:
                   ls:
                     description: ResourceQoS for LS pods.
                     properties:
+                      cpuQoS:
+                        description: CPUQoSCfg stores node-level config of cpu qos
+                        properties:
+                          enable:
+                            description: Enable indicates whether the cpu qos is enabled.
+                            type: boolean
+                          groupIdentity:
+                            description: group identity value for pods, default =
+                              0
+                            format: int64
+                            type: integer
+                        type: object
                       memoryQoS:
                         description: MemoryQoSCfg stores node-level config of memory
                           qos
@@ -478,6 +514,18 @@ spec:
                   lsr:
                     description: ResourceQoS for LSR pods.
                     properties:
+                      cpuQoS:
+                        description: CPUQoSCfg stores node-level config of cpu qos
+                        properties:
+                          enable:
+                            description: Enable indicates whether the cpu qos is enabled.
+                            type: boolean
+                          groupIdentity:
+                            description: group identity value for pods, default =
+                              0
+                            format: int64
+                            type: integer
+                        type: object
                       memoryQoS:
                         description: MemoryQoSCfg stores node-level config of memory
                           qos
@@ -613,6 +661,18 @@ spec:
                   system:
                     description: ResourceQoS for system pods
                     properties:
+                      cpuQoS:
+                        description: CPUQoSCfg stores node-level config of cpu qos
+                        properties:
+                          enable:
+                            description: Enable indicates whether the cpu qos is enabled.
+                            type: boolean
+                          groupIdentity:
+                            description: group identity value for pods, default =
+                              0
+                            format: int64
+                            type: integer
+                        type: object
                       memoryQoS:
                         description: MemoryQoSCfg stores node-level config of memory
                           qos

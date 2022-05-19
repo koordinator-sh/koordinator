@@ -19,6 +19,8 @@ package server
 import (
 	"context"
 
+	"k8s.io/klog/v2"
+
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtime-manager/config"
 
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
@@ -27,6 +29,7 @@ import (
 
 func (s *server) PreRunPodSandboxHook(ctx context.Context,
 	req *runtimeapi.RunPodSandboxHookRequest) (*runtimeapi.RunPodSandboxHookResponse, error) {
+	klog.V(5).Infof("receive PreRunPodSandboxHook request %v", req.String())
 	resp := &runtimeapi.RunPodSandboxHookResponse{
 		Labels:       req.Labels,
 		Annotations:  req.Annotations,
@@ -39,6 +42,7 @@ func (s *server) PreRunPodSandboxHook(ctx context.Context,
 
 func (s *server) PreStartContainerHook(ctx context.Context,
 	req *runtimeapi.ContainerResourceHookRequest) (*runtimeapi.ContainerResourceHookResponse, error) {
+	klog.V(5).Infof("receive PreStartContainerHook request %v", req.String())
 	resp := &runtimeapi.ContainerResourceHookResponse{
 		ContainerAnnotations: req.ContainerAnnotations,
 		ContainerResources:   req.ContainerResources,
@@ -49,6 +53,7 @@ func (s *server) PreStartContainerHook(ctx context.Context,
 
 func (s *server) PostStartContainerHook(ctx context.Context,
 	req *runtimeapi.ContainerResourceHookRequest) (*runtimeapi.ContainerResourceHookResponse, error) {
+	klog.V(5).Infof("receive PostStartContainerHook request %v", req.String())
 	resp := &runtimeapi.ContainerResourceHookResponse{
 		ContainerAnnotations: req.ContainerAnnotations,
 		ContainerResources:   req.ContainerResources,
@@ -59,6 +64,7 @@ func (s *server) PostStartContainerHook(ctx context.Context,
 
 func (s *server) PostStopContainerHook(ctx context.Context,
 	req *runtimeapi.ContainerResourceHookRequest) (*runtimeapi.ContainerResourceHookResponse, error) {
+	klog.V(5).Infof("receive PostStopContainerHook request %v", req.String())
 	resp := &runtimeapi.ContainerResourceHookResponse{
 		ContainerAnnotations: req.ContainerAnnotations,
 		ContainerResources:   req.ContainerResources,
@@ -69,6 +75,7 @@ func (s *server) PostStopContainerHook(ctx context.Context,
 
 func (s *server) PreUpdateContainerResourcesHook(ctx context.Context,
 	req *runtimeapi.ContainerResourceHookRequest) (*runtimeapi.ContainerResourceHookResponse, error) {
+	klog.V(5).Infof("receive PreUpdateContainerResourcesHook request %v", req.String())
 	resp := &runtimeapi.ContainerResourceHookResponse{
 		ContainerAnnotations: req.ContainerAnnotations,
 		ContainerResources:   req.ContainerResources,

@@ -20,11 +20,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	koordclientfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
+	clientsetfake "k8s.io/client-go/kubernetes/fake"
 )
 
 func Test_genPodCgroupParentDirWithSystemdDriver(t *testing.T) {
@@ -137,7 +139,7 @@ func Test_genPodCgroupParentDirWithCgroupfsDriver(t *testing.T) {
 	}
 }
 
-func Test_metaService_syncNode(t *testing.T) {
+func Test_statesInformer_syncNode(t *testing.T) {
 	testingNode := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "test",
@@ -152,39 +154,33 @@ func Test_metaService_syncNode(t *testing.T) {
 	m.syncNode(testingNode)
 }
 
-// TODO: fix data race, https://github.com/koordinator-sh/koordinator/issues/77
+type testKubeletStub struct {
+	pods corev1.PodList
+}
 
-// type testKubeletStub struct {
-// 	pods corev1.PodList
-// }
-//
-// func (t *testKubeletStub) GetAllPods() (corev1.PodList, error) {
-// 	return t.pods, nil
-// }
-//
-// func Test_metaService_syncPods(t *testing.T) {
-// 	client := clientsetfake.NewSimpleClientset()
-// 	pleg, _ := pleg.NewPLEG(sysutil.Conf.CgroupRootDir)
-// 	stopCh := make(chan struct{})
-// 	defer close(stopCh)
-//
-// 	c := NewDefaultConfig()
-// 	c.KubeletSyncIntervalSeconds = 60
-// 	m := NewStatesInformer(c, client, pleg, "localhost")
-// 	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
-// 		Items: []corev1.Pod{
-// 			{},
-// 		},
-// 	}}
-//
-// 	go m.Run(stopCh)
-//
-// 	m.(*statesInformer).podCreated <- "pod1"
-// 	time.Sleep(200 * time.Millisecond)
-// 	if time.Since(m.(*statesInformer).podUpdatedTime) > time.Second {
-// 		t.Errorf("failed to triggle update by pod created event")
-// 	}
-// 	if len(m.(*statesInformer).podMap) != 1 {
-// 		t.Errorf("failed to update pods")
-// 	}
-// }
+func (t *testKubeletStub) GetAllPods() (corev1.PodList, error) {
+	return t.pods, nil
+}
+
+func Test_statesInformer_syncPods(t *testing.T) {
+	client := clientsetfake.NewSimpleClientset()
+	crdClient := koordclientfake.NewSimpleClientset()
+	pleg, _ := pleg.NewPLEG(system.Conf.CgroupRootDir)
+	stopCh := make(chan struct{}, 1)
+	defer close(stopCh)
+
+	c := NewDefaultConfig()
+	c.KubeletSyncIntervalSeconds = 60
+	m := NewStatesInformer(c, client, crdClient, pleg, "localhost")
+	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
+		Items: []corev1.Pod{
+			{},
+		},
+	}}
+
+	m.(*statesInformer).syncKubelet()
+
+	if len(m.(*statesInformer).GetAllPods()) != 1 {
+		t.Errorf("failed to update pods")
+	}
+}

@@ -75,21 +75,25 @@ func find(name string) (*Rule, bool) {
 	return newRule, false
 }
 
-func UpdateRules(nodeSLO *slov1alpha1.NodeSLOSpec) {
+func UpdateRules(s statesinformer.StatesInformer, nodeSLOIf interface{}) {
+	nodeSLO, ok := nodeSLOIf.(*slov1alpha1.NodeSLO)
+	if !ok {
+		klog.Errorf("update rules with type %T is illegal", nodeSLOIf)
+		return
+	}
 	klog.Infof("applying rules with new NodeSLO %v", nodeSLO)
 	for _, r := range globalHookRules {
 		if !r.systemSupported {
 			klog.Infof("system unsupported for rule %s, do nothing during UpdateRules", r.name)
 			return
 		}
-		updated, err := r.parseFunc(nodeSLO)
+		updated, err := r.parseFunc(&nodeSLO.Spec)
 		if err != nil {
 			klog.Warningf("parse rule %s from nodeSLO failed, error: %v", r.name, err)
 			continue
 		}
 		if updated {
-			// TODO get all pods from stats informer *synchronously*
-			var pods []*statesinformer.PodMeta
+			pods := s.GetAllPods()
 			r.runUpdateCallbacks(pods)
 		}
 	}
@@ -97,5 +101,4 @@ func UpdateRules(nodeSLO *slov1alpha1.NodeSLOSpec) {
 
 func init() {
 	globalHookRules = map[string]*Rule{}
-	// TODO register rule.UpdateRules to states-informer, as callback function when nodeSLO Spec created or updated
 }

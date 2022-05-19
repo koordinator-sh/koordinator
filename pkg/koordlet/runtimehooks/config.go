@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/featuregate"
+	// "github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/groupidentity"
 )
 
 const (

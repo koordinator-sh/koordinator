@@ -1172,12 +1172,12 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 		statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 		statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{testingPodMeta}).AnyTimes()
+		statesInformer.EXPECT().GetNodeSLO().Return(testingNodeSLO).AnyTimes()
 		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(testingNodeCPUInfo, nil).AnyTimes()
 		rm := &resmanager{
 			statesInformer: statesInformer,
 			metricCache:    metricCache,
 			config:         NewDefaultConfig(),
-			nodeSLO:        testingNodeSLO,
 		}
 
 		helper := system.NewFileTestUtil(t)
@@ -1215,7 +1215,8 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 		r.reconcile()
 
 		// test strategy parse error
-		r.resManager.nodeSLO.Spec.ResourceQoSStrategy = nil
+		testingNodeSLO.Spec.ResourceQoSStrategy = nil
+		statesInformer.EXPECT().GetNodeSLO().Return(testingNodeSLO).AnyTimes()
 		r.reconcile()
 
 	})

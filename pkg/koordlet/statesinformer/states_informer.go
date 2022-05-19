@@ -24,19 +24,18 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
-	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type StatesInformer interface {
@@ -44,14 +43,17 @@ type StatesInformer interface {
 	HasSynced() bool
 
 	GetNode() *corev1.Node
+	GetNodeSLO() *slov1alpha1.NodeSLO
 
 	GetAllPods() []*PodMeta
+
+	RegisterCallbacks(objType reflect.Type, name, description string, callbackFn UpdateCbFn)
 }
 
 type statesInformer struct {
-	config    *Config
-	kubelet   KubeletStub
-	hasSynced *atomic.Bool
+	config       *Config
+	kubelet      KubeletStub
+	podHasSynced *atomic.Bool
 	// use pleg to accelerate the efficiency of Pod meta update
 	pleg       pleg.Pleg
 	podCreated chan string
@@ -60,102 +62,92 @@ type statesInformer struct {
 	nodeRWMutex  sync.RWMutex
 	node         *corev1.Node
 
+	nodeSLOInformer cache.SharedIndexInformer
+	nodeSLORWMutex  sync.RWMutex
+	nodeSLO         *slov1alpha1.NodeSLO
+
 	podRWMutex     sync.RWMutex
 	podMap         map[string]*PodMeta
 	podUpdatedTime time.Time
+
+	stateUpdateCallbacks map[reflect.Type][]updateCallback
 }
 
-func NewStatesInformer(config *Config, kubeClient clientset.Interface, pleg pleg.Pleg, nodeName string) StatesInformer {
+func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, pleg pleg.Pleg, nodeName string) StatesInformer {
 	nodeInformer := newNodeInformer(kubeClient, nodeName)
+	nodeSLOInformer := newNodeSLOInformer(crdClient, nodeName)
 
-	m := &statesInformer{
-		config:    config,
-		kubelet:   NewKubeletStub(config.KubeletIPAddr, config.KubeletHTTPPort, config.KubeletSyncTimeoutSeconds),
-		hasSynced: atomic.NewBool(false),
+	return &statesInformer{
+		config:       config,
+		kubelet:      NewKubeletStub(config.KubeletIPAddr, config.KubeletHTTPPort, config.KubeletSyncTimeoutSeconds),
+		podHasSynced: atomic.NewBool(false),
 
 		pleg: pleg,
 
-		nodeInformer: nodeInformer,
+		nodeInformer:    nodeInformer,
+		nodeSLOInformer: nodeSLOInformer,
 
 		podMap:     map[string]*PodMeta{},
 		podCreated: make(chan string, 1), // set 1 buffer
+
+		stateUpdateCallbacks: map[reflect.Type][]updateCallback{
+			reflect.TypeOf(&slov1alpha1.NodeSLO{}): {},
+		},
 	}
-	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			node, ok := obj.(*corev1.Node)
-			if ok {
-				m.syncNode(node)
-			} else {
-				klog.Errorf("node informer add func parse Node failed, obj %T", obj)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			oldNode, oldOK := oldObj.(*corev1.Node)
-			newNode, newOK := newObj.(*corev1.Node)
-			if !oldOK || !newOK {
-				klog.Errorf("unable to convert object to *corev1.Node, old %T, new %T", oldObj, newObj)
-				return
-			}
-			if reflect.DeepEqual(oldNode, newNode) {
-				klog.V(5).Infof("find node %s has not changed", newNode.Name)
-				return
-			}
-			m.syncNode(newNode)
-		},
-	})
-	return m
 }
 
-func (m *statesInformer) Run(stopCh <-chan struct{}) error {
+func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	klog.Infof("starting statesInformer")
-
-	klog.Infof("starting informer for Node")
-	go m.nodeInformer.Run(stopCh)
-	if !cache.WaitForCacheSync(stopCh, m.nodeInformer.HasSynced) {
-		return fmt.Errorf("timed out waiting for node caches to sync")
+	klog.Infof("setup statesInformer")
+	s.setupInformers()
+	klog.Infof("starting informers")
+	go s.nodeInformer.Run(stopCh)
+	go s.nodeSLOInformer.Run(stopCh)
+	waitInformersSynced := []cache.InformerSynced{s.nodeInformer.HasSynced, s.nodeSLOInformer.HasSynced}
+	if !cache.WaitForCacheSync(stopCh, waitInformersSynced...) {
+		return fmt.Errorf("timed out waiting for states informer caches to sync")
 	}
 
-	if m.config.KubeletSyncIntervalSeconds > 0 {
-		hdlID := m.pleg.AddHandler(pleg.PodLifeCycleHandlerFuncs{
+	if s.config.KubeletSyncIntervalSeconds > 0 {
+		hdlID := s.pleg.AddHandler(pleg.PodLifeCycleHandlerFuncs{
 			PodAddedFunc: func(podID string) {
 				// There is no need to notify to update the data when the channel is not empty
-				if len(m.podCreated) == 0 {
-					m.podCreated <- podID
+				if len(s.podCreated) == 0 {
+					s.podCreated <- podID
 				}
 			},
 		})
-		defer m.pleg.RemoverHandler(hdlID)
+		defer s.pleg.RemoverHandler(hdlID)
 
-		go m.syncKubeletLoop(time.Duration(m.config.KubeletSyncIntervalSeconds)*time.Second, stopCh)
+		go s.syncKubeletLoop(time.Duration(s.config.KubeletSyncIntervalSeconds)*time.Second, stopCh)
 	} else {
 		klog.Infof("KubeletSyncIntervalSeconds is %d, statesInformer sync of kubelet is disabled",
-			m.config.KubeletSyncIntervalSeconds)
+			s.config.KubeletSyncIntervalSeconds)
 	}
-	klog.Infof("start meta service successfully")
+	klog.Infof("start states informer successfully")
 	<-stopCh
-	klog.Infof("shutting down meta service daemon")
+	klog.Infof("shutting down states informer daemon")
 	return nil
 }
 
-func (m *statesInformer) HasSynced() bool {
-	return m.hasSynced.Load()
+func (s *statesInformer) HasSynced() bool {
+	return s.podHasSynced.Load()
 }
 
-func (m *statesInformer) GetNode() *corev1.Node {
-	m.nodeRWMutex.RLock()
-	defer m.nodeRWMutex.RUnlock()
-	if m.node == nil {
+func (s *statesInformer) GetNode() *corev1.Node {
+	s.nodeRWMutex.RLock()
+	defer s.nodeRWMutex.RUnlock()
+	if s.node == nil {
 		return nil
 	}
-	return m.node.DeepCopy()
+	return s.node.DeepCopy()
 }
 
-func (m *statesInformer) GetAllPods() []*PodMeta {
-	m.podRWMutex.RLock()
-	defer m.podRWMutex.RUnlock()
-	pods := make([]*PodMeta, 0, len(m.podMap))
-	for _, pod := range m.podMap {
+func (s *statesInformer) GetAllPods() []*PodMeta {
+	s.podRWMutex.RLock()
+	defer s.podRWMutex.RUnlock()
+	pods := make([]*PodMeta, 0, len(s.podMap))
+	for _, pod := range s.podMap {
 		pods = append(pods, pod.DeepCopy())
 	}
 	return pods
@@ -168,7 +160,7 @@ func newNodeInformer(client clientset.Interface, nodeName string) cache.SharedIn
 
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			ListFunc: func(options metav1.ListOptions) (apiruntime.Object, error) {
 				tweakListOptionsFunc(&options)
 				return client.CoreV1().Nodes().List(context.TODO(), options)
 			},
@@ -183,65 +175,28 @@ func newNodeInformer(client clientset.Interface, nodeName string) cache.SharedIn
 	)
 }
 
-func (m *statesInformer) syncNode(newNode *corev1.Node) {
-	klog.V(5).Infof("node update detail %v", newNode)
-	m.nodeRWMutex.Lock()
-	defer m.nodeRWMutex.Unlock()
-	m.node = newNode
-
-	// also register node for metrics
-	metrics.Register(newNode)
+func newNodeSLOInformer(client koordclientset.Interface, nodeName string) cache.SharedIndexInformer {
+	tweakListOptionFunc := func(opt *metav1.ListOptions) {
+		opt.FieldSelector = "metadata.name=" + nodeName
+	}
+	return cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (apiruntime.Object, error) {
+				tweakListOptionFunc(&options)
+				return client.SloV1alpha1().NodeSLOs().List(context.TODO(), options)
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				tweakListOptionFunc(&options)
+				return client.SloV1alpha1().NodeSLOs().Watch(context.TODO(), options)
+			},
+		},
+		&slov1alpha1.NodeSLO{},
+		time.Hour*12,
+		cache.Indexers{},
+	)
 }
 
-func (m *statesInformer) syncKubelet() error {
-	podList, err := m.kubelet.GetAllPods()
-	if err != nil {
-		klog.Warningf("get pods from kubelet failed, err: %v", err)
-		return err
-	}
-	newPodMap := make(map[string]*PodMeta, len(podList.Items))
-	for _, pod := range podList.Items {
-		newPodMap[string(pod.UID)] = &PodMeta{
-			Pod:       pod.DeepCopy(),
-			CgroupDir: genPodCgroupParentDir(&pod),
-		}
-	}
-	m.podMap = newPodMap
-	m.hasSynced.Store(true)
-	m.podUpdatedTime = time.Now()
-	klog.Infof("get pods from kubelet success, len %d", len(m.podMap))
-	return nil
-}
-
-func (m *statesInformer) syncKubeletLoop(duration time.Duration, stopCh <-chan struct{}) {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	// TODO add a config to setup the values
-	rateLimiter := rate.NewLimiter(5, 10)
-	for {
-		select {
-		case <-m.podCreated:
-			if rateLimiter.Allow() {
-				// sync kubelet triggered immediately when the Pod is created
-				m.syncKubelet()
-				// reset timer to
-				if !timer.Stop() {
-					<-timer.C
-				}
-				timer.Reset(duration)
-			}
-		case <-timer.C:
-			timer.Reset(duration)
-			m.syncKubelet()
-		case <-stopCh:
-			klog.Infof("sync kubelet loop is exited")
-			return
-		}
-	}
-}
-
-func genPodCgroupParentDir(pod *corev1.Pod) string {
-	// todo use cri interface to get pod cgroup dir
-	// e.g. kubepods-burstable.slice/kubepods-burstable-pod9dba1d9e_67ba_4db6_8a73_fb3ea297c363.slice/
-	return util.GetPodKubeRelativePath(pod)
+func (s *statesInformer) setupInformers() {
+	s.setupNodeInformer()
+	s.setupNodeSLOInformer()
 }

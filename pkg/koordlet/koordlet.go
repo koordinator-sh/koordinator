@@ -106,7 +106,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, err
 	}
 
-	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, pleg, nodeName)
+	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, pleg, nodeName)
 	metricCache, err := metriccache.NewMetricCache(config.MetricCacheConf)
 	if err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(config.CollectorConf.CollectResUsedIntervalSeconds))
 
-	runtimeHook, err := runtimehooks.NewRuntimeHook(config.RuntimeHookConf)
+	runtimeHook, err := runtimehooks.NewRuntimeHook(statesInformer, config.RuntimeHookConf)
 	if err != nil {
 		return nil, err
 	}
