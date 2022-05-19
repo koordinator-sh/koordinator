@@ -23,6 +23,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -227,13 +228,17 @@ func estimatedPodUsed(pod *corev1.Pod, resourceWeights map[corev1.ResourceName]i
 	return estimatedUsed
 }
 
-func estimatedUsedByResource(request, limit corev1.ResourceList, resourceName corev1.ResourceName, scalingFactor int64) int64 {
-	quantity := limit[resourceName]
-	if !quantity.IsZero() {
+func estimatedUsedByResource(requests, limits corev1.ResourceList, resourceName corev1.ResourceName, scalingFactor int64) int64 {
+	limitQuantity := limits[resourceName]
+	requestQuantity := requests[resourceName]
+	var quantity resource.Quantity
+	if limitQuantity.Cmp(requestQuantity) > 0 {
 		scalingFactor = 100
+		quantity = limitQuantity
 	} else {
-		quantity = request[resourceName]
+		quantity = requestQuantity
 	}
+
 	if quantity.IsZero() {
 		switch resourceName {
 		case corev1.ResourceCPU, extension.BatchCPU:
@@ -244,18 +249,26 @@ func estimatedUsedByResource(request, limit corev1.ResourceList, resourceName co
 		return 0
 	}
 
+	var estimatedUsed int64
 	switch resourceName {
 	case corev1.ResourceCPU:
-		return int64(math.Round(float64(quantity.MilliValue()) * float64(scalingFactor) / 100))
+		estimatedUsed = int64(math.Round(float64(quantity.MilliValue()) * float64(scalingFactor) / 100))
+		if estimatedUsed > limitQuantity.MilliValue() {
+			estimatedUsed = limitQuantity.MilliValue()
+		}
 	default:
-		return int64(math.Round(float64(quantity.Value()) * float64(scalingFactor) / 100))
+		estimatedUsed = int64(math.Round(float64(quantity.Value()) * float64(scalingFactor) / 100))
+		if estimatedUsed > limitQuantity.Value() {
+			estimatedUsed = limitQuantity.Value()
+		}
 	}
+	return estimatedUsed
 }
 
 func loadAwareSchedulingScorer(resToWeightMap map[corev1.ResourceName]int64, used, allocatable map[corev1.ResourceName]int64) int64 {
 	var nodeScore, weightSum int64
-	for resource, weight := range resToWeightMap {
-		resourceScore := leastRequestedScore(used[resource], allocatable[resource])
+	for resourceName, weight := range resToWeightMap {
+		resourceScore := leastRequestedScore(used[resourceName], allocatable[resourceName])
 		nodeScore += resourceScore * weight
 		weightSum += weight
 	}
