@@ -1,5 +1,5 @@
 /*
-Copyright 2014 The Kubernetes Authors.
+Copyright 2022 The Koordinator Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import (
 	goruntime "runtime"
 
 	"github.com/spf13/cobra"
-
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
@@ -49,33 +48,35 @@ import (
 	"k8s.io/component-base/version"
 	"k8s.io/component-base/version/verflag"
 	"k8s.io/klog/v2"
-	schedulerserverconfig "k8s.io/kubernetes/cmd/kube-scheduler/app/config"
-	"k8s.io/kubernetes/cmd/kube-scheduler/app/options"
+	scheduleroptions "k8s.io/kubernetes/cmd/kube-scheduler/app/options"
 	"k8s.io/kubernetes/pkg/scheduler"
 	kubeschedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/latest"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	"k8s.io/kubernetes/pkg/scheduler/metrics/resources"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
+
+	schedulerserverconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
+	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/options"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
 // Option configures a framework.Registry.
-type Option func(runtime.Registry) error
+type Option func(frameworkext.ExtendedHandle, runtime.Registry) error
 
 // NewSchedulerCommand creates a *cobra.Command object with default parameters and registryOptions
 func NewSchedulerCommand(registryOptions ...Option) *cobra.Command {
 	opts := options.NewOptions()
 
 	cmd := &cobra.Command{
-		Use: "kube-scheduler",
-		Long: `The Kubernetes scheduler is a control plane process which assigns
-Pods to Nodes. The scheduler determines which Nodes are valid placements for
-each Pod in the scheduling queue according to constraints and available
-resources. The scheduler then ranks each valid Node and binds the Pod to a
-suitable Node. Multiple different schedulers may be used within a cluster;
-kube-scheduler is the reference implementation.
-See [scheduling](https://kubernetes.io/docs/concepts/scheduling-eviction/)
-for more information about scheduling and the kube-scheduler component.`,
+		Use: "koord-scheduler",
+		Long: `The Koordinator scheduler is a control plane process which assigns
+Pods to Nodes. The scheduler implements based on kubernetes scheduling framework.
+On the basis of compatibility with community scheduling capabilities, it provides 
+richer advanced scheduling capabilities to address scheduling needs in co-located 
+scenarios,ensuring the runtime quality of different workloads and users' demands 
+for cost reduction and efficiency enhancement.
+`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := runCommand(cmd, opts, registryOptions...); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -132,7 +133,7 @@ func runCommand(cmd *cobra.Command, opts *options.Options, registryOptions ...Op
 // Run executes the scheduler based on the given configuration. It only returns on error or when context is done.
 func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *scheduler.Scheduler) error {
 	// To help debugging, immediately log version
-	klog.V(1).InfoS("Starting Kubernetes Scheduler version", "version", version.Get())
+	klog.V(1).InfoS("Starting Koordinator Scheduler version", "version", version.Get())
 
 	// Configz registration.
 	if cz, err := configz.New("componentconfig"); err == nil {
@@ -187,9 +188,11 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 
 	// Start all informers.
 	cc.InformerFactory.Start(ctx.Done())
+	cc.KoordinatorSharedInformerFactory.Start(ctx.Done())
 
 	// Wait for all caches to sync before scheduling.
 	cc.InformerFactory.WaitForCacheSync(ctx.Done())
+	cc.KoordinatorSharedInformerFactory.WaitForCacheSync(ctx.Done())
 
 	// If leader election is enabled, runCommand via LeaderElector until done and exit.
 	if cc.LeaderElection != nil {
@@ -296,8 +299,8 @@ func getRecorderFactory(cc *schedulerserverconfig.CompletedConfig) profile.Recor
 // WithPlugin creates an Option based on plugin name and factory. Please don't remove this function: it is used to register out-of-tree plugins,
 // hence there are no references to it from the kubernetes scheduler code base.
 func WithPlugin(name string, factory runtime.PluginFactory) Option {
-	return func(registry runtime.Registry) error {
-		return registry.Register(name, factory)
+	return func(handle frameworkext.ExtendedHandle, registry runtime.Registry) error {
+		return registry.Register(name, frameworkext.PluginFactoryProxy(handle, factory))
 	}
 }
 
@@ -321,9 +324,13 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	// Get the completed config
 	cc := c.Complete()
 
+	// NOTE(joseph): K8s scheduling framework does not provide extension point for initialization.
+	// Currently, only by copying the initialization code and implementing custom initialization.
+	extendedHandle := frameworkext.NewExtendedHandle(cc.KoordinatorClient, cc.KoordinatorSharedInformerFactory)
+
 	outOfTreeRegistry := make(runtime.Registry)
 	for _, option := range outOfTreeRegistryOptions {
-		if err := option(outOfTreeRegistry); err != nil {
+		if err := option(extendedHandle, outOfTreeRegistry); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -353,9 +360,12 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := options.LogOrWriteConfig(opts.WriteConfigTo, &cc.ComponentConfig, completedProfiles); err != nil {
+	if err := scheduleroptions.LogOrWriteConfig(opts.WriteConfigTo, &cc.ComponentConfig, completedProfiles); err != nil {
 		return nil, nil, err
 	}
+
+	// TODO(joseph): Some extensions can also be made in the future,
+	//  such as replacing some interfaces in Scheduler to implement custom logic
 
 	return &cc, sched, nil
 }
