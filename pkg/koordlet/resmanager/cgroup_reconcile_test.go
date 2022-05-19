@@ -804,7 +804,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			assert.NoError(t, err)
 			defer func() { stop <- struct{}{} }()
 
-			_ = system.NewFileTestUtil(t)
+			system.NewFileTestUtil(t)
 
 			got, got1, got2 := m.calculateResources(tt.args.nodeCfg, tt.args.node, tt.args.podMetas)
 			assertCgroupResourceEqual(t, tt.want, got)

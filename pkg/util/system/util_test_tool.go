@@ -42,10 +42,6 @@ func NewFileTestUtil(t *testing.T) *FileTestUtil {
 	return &FileTestUtil{TempDir: tempDir, t: t}
 }
 
-func (c *FileTestUtil) Cleanup() {
-	os.RemoveAll(c.TempDir)
-}
-
 func (c *FileTestUtil) MkDirAll(dirRelativePath string) {
 	dir := path.Join(c.TempDir, dirRelativePath)
 	if err := os.MkdirAll(dir, 0777); err != nil {

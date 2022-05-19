@@ -399,7 +399,7 @@ func Test_getPodCgroupNewTaskIds(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = system.NewFileTestUtil(t)
+			system.NewFileTestUtil(t)
 
 			testingPrepareContainerCgroupCPUTasks(t,
 				tt.fields.containerParentDir, tt.fields.containerTasksStr)
