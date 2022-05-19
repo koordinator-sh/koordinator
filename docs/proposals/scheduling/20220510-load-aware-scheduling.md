@@ -7,7 +7,7 @@ reviewers:
   - "@saintube"
   - "@jasonliu747"
 creation-date: 2022-05-10
-last-updated: 2022-05-17
+last-updated: 2022-05-19
 status: provisional
 ---
 
@@ -73,8 +73,8 @@ The following is the algorithm:
 1. Get the total amount of resources of the current node as *T*
 2. Get the resource usage of the current node from NodeMetric as *A*
 3. Estimate the resource usage of the current Pod as *B*
-    1. *B = Limit* if Limit is declared in PodSpec
-    2. or *B = Request * scalingFactor*
+    1. *B = Limit* if Limit > Request
+    2. or *B = min(Request * scalingFactor, Limit)*
     3. or *B = defaultResourceRequest* if Request and Limit are not defined, the default value of CPU is *250m* and the default value of memory is *200MB*
 4. According to the algorithm in step 3, estimate the resource usage of the Pod that has been allocated by the current node within the NodeMetric update window as *C*
 5. Estimate the total resource usage of the current node as *P*, *P = A + B + C*
@@ -96,8 +96,8 @@ Here is an explanation of why the allocated Pods are also involved in the estima
 type LoadAwareSchedulingArgs struct {
   metav1.TypeMeta
 
-  FilterExpiredNodeMetrics    bool                          `json:"filterExpiredNodeMetrics,omitempty"`
-  NodeMetricExpirationSeconds int64                         `json:"nodeMetricExpirationSeconds,omitempty"`
+  FilterExpiredNodeMetrics    *bool                          `json:"filterExpiredNodeMetrics,omitempty"`
+  NodeMetricExpirationSeconds *int64                         `json:"nodeMetricExpirationSeconds,omitempty"`
   ResourceWeights             map[corev1.ResourceName]int64 `json:"resourceWeights,omitempty"`
   UsageThresholds             map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
   EstimatedScalingFactors     map[corev1.ResourceName]int64 `json:"estimatedScalingFactors,omitempty"`
@@ -106,9 +106,9 @@ type LoadAwareSchedulingArgs struct {
 ```
 
 - `FilterExpiredNodeMetrics` indicates whether to filter nodes where koordlet fails to update NodeMetric.
-- `NodeMetricExpirationSeconds` indicates the NodeMetric expiration in seconds. When NodeMetrics expired, the node is considered abnormal.
+- `NodeMetricExpirationSeconds` indicates the NodeMetric expiration in seconds. When NodeMetrics expired, the node is considered abnormal.Default is 180 seconds.
 - `ResourceWeights` indicates the weights of resources. The weights of CPU and Memory are both 1 by default.
-- `UsageThresholds` indicates the resource utilization threshold, the default for CPU is 65%, and the default for memory is 95%. When 
+- `UsageThresholds` indicates the resource utilization threshold, the default for CPU is 65%, and the default for memory is 95%. 
 - `EstimatedScalingFactors` indicates the factor when estimating resource usage. The default value of CPU is 85%, and the default value of Memory is 70%.
 
 `FilterExpiredNodeMetrics` controls the filter behavior, if it is false, `NodeMetricExpirationSeconds` can still be used when scoring.
@@ -165,5 +165,6 @@ At present, Koordinator does not have the ability to profile workloads. Differen
 
 ## Implementation History
 
-2022-05-13: Initial proposal sent for review
-2022-05-17: Update proposal to resolve comments
+- 2022-05-13: Initial proposal sent for review
+- 2022-05-17: Update proposal to resolve comments
+- 2022-05-19: Update resource usage estimation in the scoring algorithm and LoadAwareSchedulingArgs
