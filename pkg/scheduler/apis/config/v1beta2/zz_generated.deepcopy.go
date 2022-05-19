@@ -29,6 +29,16 @@ import (
 func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
+	if in.FilterExpiredNodeMetrics != nil {
+		in, out := &in.FilterExpiredNodeMetrics, &out.FilterExpiredNodeMetrics
+		*out = new(bool)
+		**out = **in
+	}
+	if in.NodeMetricExpirationSeconds != nil {
+		in, out := &in.NodeMetricExpirationSeconds, &out.NodeMetricExpirationSeconds
+		*out = new(int64)
+		**out = **in
+	}
 	if in.ResourceWeights != nil {
 		in, out := &in.ResourceWeights, &out.ResourceWeights
 		*out = make(map[v1.ResourceName]int64, len(*in))

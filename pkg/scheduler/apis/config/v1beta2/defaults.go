@@ -18,6 +18,7 @@ package v1beta2
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/pointer"
 )
 
 var (
@@ -41,11 +42,19 @@ var (
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
 func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
-	obj.FilterExpiredNodeMetrics = true
-	if obj.NodeMetricExpirationSeconds <= 0 {
-		obj.NodeMetricExpirationSeconds = defaultNodeMetricExpirationSeconds
+	if obj.FilterExpiredNodeMetrics == nil {
+		obj.FilterExpiredNodeMetrics = pointer.Bool(true)
 	}
-	obj.ResourceWeights = defaultResourceWeights
-	obj.UsageThresholds = defaultUsageThresholds
-	obj.EstimatedScalingFactors = defaultEstimatedScalingFactors
+	if obj.NodeMetricExpirationSeconds == nil {
+		obj.NodeMetricExpirationSeconds = pointer.Int64Ptr(defaultNodeMetricExpirationSeconds)
+	}
+	if len(obj.ResourceWeights) == 0 {
+		obj.ResourceWeights = defaultResourceWeights
+	}
+	if len(obj.UsageThresholds) == 0 {
+		obj.UsageThresholds = defaultUsageThresholds
+	}
+	if len(obj.EstimatedScalingFactors) == 0 {
+		obj.EstimatedScalingFactors = defaultEstimatedScalingFactors
+	}
 }

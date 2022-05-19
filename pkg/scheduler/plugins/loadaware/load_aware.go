@@ -102,8 +102,8 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
-	if p.args.FilterExpiredNodeMetrics {
-		if isNodeMetricExpired(nodeMetric, p.args.NodeMetricExpirationSeconds) {
+	if p.args.FilterExpiredNodeMetrics != nil && *p.args.FilterExpiredNodeMetrics && p.args.NodeMetricExpirationSeconds != nil {
+		if isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
 			return framework.NewStatus(framework.Unschedulable, "node(s) nodeMetric expired")
 		}
 	}
@@ -154,7 +154,7 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 	if err != nil {
 		return 0, framework.NewStatus(framework.Error, "nodeMetric not found")
 	}
-	if isNodeMetricExpired(nodeMetric, p.args.NodeMetricExpirationSeconds) {
+	if p.args.NodeMetricExpirationSeconds != nil && isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
 		return 0, nil
 	}
 
@@ -186,10 +186,11 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 	return score, nil
 }
 
-func isNodeMetricExpired(nodeMetric *slov1alpha1.NodeMetric, nodeMetricExpiredSeconds int64) bool {
+func isNodeMetricExpired(nodeMetric *slov1alpha1.NodeMetric, nodeMetricExpirationSeconds int64) bool {
 	return nodeMetric == nil ||
 		nodeMetric.Status.UpdateTime == nil ||
-		time.Since(nodeMetric.Status.UpdateTime.Time) >= time.Duration(nodeMetricExpiredSeconds)*time.Second
+		nodeMetricExpirationSeconds > 0 &&
+			time.Since(nodeMetric.Status.UpdateTime.Time) >= time.Duration(nodeMetricExpirationSeconds)*time.Second
 }
 
 func (p *Plugin) estimatedAssignedPodUsage(nodeName string, nodeMetric *slov1alpha1.NodeMetric) map[corev1.ResourceName]int64 {

@@ -27,8 +27,8 @@ import (
 type LoadAwareSchedulingArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
-	FilterExpiredNodeMetrics    bool                          `json:"filterExpiredNodeMetrics,omitempty"`
-	NodeMetricExpirationSeconds int64                         `json:"nodeMetricExpirationSeconds,omitempty"`
+	FilterExpiredNodeMetrics    *bool                         `json:"filterExpiredNodeMetrics,omitempty"`
+	NodeMetricExpirationSeconds *int64                        `json:"nodeMetricExpirationSeconds,omitempty"`
 	ResourceWeights             map[corev1.ResourceName]int64 `json:"resourceWeights,omitempty"`
 	UsageThresholds             map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
 	EstimatedScalingFactors     map[corev1.ResourceName]int64 `json:"estimatedScalingFactors,omitempty"`

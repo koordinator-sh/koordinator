@@ -50,8 +50,8 @@ func RegisterConversions(s *runtime.Scheme) error {
 }
 
 func autoConvert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(in *LoadAwareSchedulingArgs, out *config.LoadAwareSchedulingArgs, s conversion.Scope) error {
-	out.FilterExpiredNodeMetrics = in.FilterExpiredNodeMetrics
-	out.NodeMetricExpirationSeconds = in.NodeMetricExpirationSeconds
+	out.FilterExpiredNodeMetrics = (*bool)(unsafe.Pointer(in.FilterExpiredNodeMetrics))
+	out.NodeMetricExpirationSeconds = (*int64)(unsafe.Pointer(in.NodeMetricExpirationSeconds))
 	out.ResourceWeights = *(*map[v1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	out.UsageThresholds = *(*map[v1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
 	out.EstimatedScalingFactors = *(*map[v1.ResourceName]int64)(unsafe.Pointer(&in.EstimatedScalingFactors))
@@ -64,8 +64,8 @@ func Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(i
 }
 
 func autoConvert_config_LoadAwareSchedulingArgs_To_v1beta2_LoadAwareSchedulingArgs(in *config.LoadAwareSchedulingArgs, out *LoadAwareSchedulingArgs, s conversion.Scope) error {
-	out.FilterExpiredNodeMetrics = in.FilterExpiredNodeMetrics
-	out.NodeMetricExpirationSeconds = in.NodeMetricExpirationSeconds
+	out.FilterExpiredNodeMetrics = (*bool)(unsafe.Pointer(in.FilterExpiredNodeMetrics))
+	out.NodeMetricExpirationSeconds = (*int64)(unsafe.Pointer(in.NodeMetricExpirationSeconds))
 	out.ResourceWeights = *(*map[v1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	out.UsageThresholds = *(*map[v1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
 	out.EstimatedScalingFactors = *(*map[v1.ResourceName]int64)(unsafe.Pointer(&in.EstimatedScalingFactors))
