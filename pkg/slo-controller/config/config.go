@@ -73,12 +73,14 @@ type NodeResourceQoSStrategy struct {
 }
 
 type ColocationStrategy struct {
-	Enable                        *bool    `json:"enable,omitempty"`
-	CPUReclaimThresholdPercent    *int64   `json:"cpuReclaimThresholdPercent,omitempty"`
-	MemoryReclaimThresholdPercent *int64   `json:"memoryReclaimThresholdPercent,omitempty"`
-	DegradeTimeMinutes            *int64   `json:"degradeTimeMinutes,omitempty"`
-	UpdateTimeThresholdSeconds    *int64   `json:"updateTimeThresholdSeconds,omitempty"`
-	ResourceDiffThreshold         *float64 `json:"resourceDiffThreshold,omitempty"`
+	Enable                         *bool    `json:"enable,omitempty"`
+	MetricAggregateDurationSeconds *int64   `json:"metricAggregateDurationSeconds,omitempty"`
+	MetricReportIntervalSeconds    *int64   `json:"metricReportIntervalSeconds,omitempty"`
+	CPUReclaimThresholdPercent     *int64   `json:"cpuReclaimThresholdPercent,omitempty"`
+	MemoryReclaimThresholdPercent  *int64   `json:"memoryReclaimThresholdPercent,omitempty"`
+	DegradeTimeMinutes             *int64   `json:"degradeTimeMinutes,omitempty"`
+	UpdateTimeThresholdSeconds     *int64   `json:"updateTimeThresholdSeconds,omitempty"`
+	ResourceDiffThreshold          *float64 `json:"resourceDiffThreshold,omitempty"`
 }
 
 func NewDefaultColocationCfg() *ColocationCfg {
@@ -94,17 +96,21 @@ func DefaultColocationCfg() ColocationCfg {
 
 func DefaultColocationStrategy() ColocationStrategy {
 	return ColocationStrategy{
-		Enable:                        pointer.Bool(false),
-		CPUReclaimThresholdPercent:    pointer.Int64(60),
-		MemoryReclaimThresholdPercent: pointer.Int64(65),
-		DegradeTimeMinutes:            pointer.Int64(15),
-		UpdateTimeThresholdSeconds:    pointer.Int64(300),
-		ResourceDiffThreshold:         pointer.Float64(0.1),
+		Enable:                         pointer.Bool(false),
+		MetricAggregateDurationSeconds: pointer.Int64(30),
+		MetricReportIntervalSeconds:    pointer.Int64(60),
+		CPUReclaimThresholdPercent:     pointer.Int64(60),
+		MemoryReclaimThresholdPercent:  pointer.Int64(65),
+		DegradeTimeMinutes:             pointer.Int64(15),
+		UpdateTimeThresholdSeconds:     pointer.Int64(300),
+		ResourceDiffThreshold:          pointer.Float64(0.1),
 	}
 }
 
 func IsColocationStrategyValid(strategy *ColocationStrategy) bool {
 	return strategy != nil &&
+		(strategy.MetricAggregateDurationSeconds == nil || *strategy.MetricReportIntervalSeconds > 0) &&
+		(strategy.MetricReportIntervalSeconds == nil || *strategy.MetricReportIntervalSeconds > 0) &&
 		(strategy.CPUReclaimThresholdPercent == nil || *strategy.CPUReclaimThresholdPercent > 0) &&
 		(strategy.MemoryReclaimThresholdPercent == nil || *strategy.MemoryReclaimThresholdPercent > 0) &&
 		(strategy.DegradeTimeMinutes == nil || *strategy.DegradeTimeMinutes > 0) &&

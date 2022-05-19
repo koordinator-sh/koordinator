@@ -18,6 +18,8 @@ package nodemetric
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -27,8 +29,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 )
 
 var _ = Describe("NodeMetric Controller", func() {
@@ -82,6 +86,85 @@ var _ = Describe("NodeMetric Controller", func() {
 					klog.Errorf("failed to get the deleting NodeMetric, error: %v", err)
 				}
 				return errors.IsNotFound(err)
+			}, timeout, interval).Should(BeTrue())
+		})
+	})
+
+	Context("Update NodeMetric through ConfigMap", func() {
+		It("Should update NodeMetricCollectPolicy", func() {
+			ctx := context.Background()
+			node := newNodeForTest(nodeName)
+
+			key := types.NamespacedName{Name: node.Name}
+			createdNodeMetric := &slov1alpha1.NodeMetric{}
+
+			By(fmt.Sprintf("create node %s", key))
+			Expect(k8sClient.Create(ctx, node)).Should(Succeed())
+
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, key, createdNodeMetric)
+				if err != nil {
+					klog.Errorf("failed to get the corresponding NodeMetric, error: %v", err)
+				}
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			ns := &corev1.Namespace{}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: config.ConfigNameSpace}, ns)
+			if errors.IsNotFound(err) {
+				By(fmt.Sprintf("create config namespace %s", config.ConfigNameSpace))
+				ns.Name = config.ConfigNameSpace
+				Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+			} else {
+				Fail(fmt.Sprintf("Failed to get namespace %s, err: %v", config.ConfigNameSpace, err))
+			}
+
+			By("create slo-controller-config with nodeMetricCollectPolicyCfg")
+			policyConfig := &config.ColocationCfg{
+				ColocationStrategy: config.ColocationStrategy{
+					Enable:                         pointer.Bool(true),
+					MetricAggregateDurationSeconds: pointer.Int64(60),
+					MetricReportIntervalSeconds:    pointer.Int64(180),
+				},
+			}
+			data, err := json.Marshal(policyConfig)
+			Expect(err).Should(Succeed())
+
+			configMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: config.ConfigNameSpace,
+					Name:      config.SLOCtrlConfigMap,
+				},
+				Data: map[string]string{
+					config.ColocationConfigKey: string(data),
+				},
+			}
+			Expect(k8sClient.Create(ctx, configMap)).Should(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: config.SLOCtrlConfigMap, Namespace: config.ConfigNameSpace}, configMap)).Should(Succeed())
+
+			By("update nodeMetric status to trigger update nodeMetricSpec")
+			Eventually(func() bool {
+				key := types.NamespacedName{Name: node.Name}
+				nodeMetric := &slov1alpha1.NodeMetric{}
+				err := k8sClient.Get(ctx, key, nodeMetric)
+				if err != nil {
+					klog.Errorf("failed to get the corresponding NodeMetric, error: %v", err)
+					return false
+				}
+				if nodeMetric.Spec.CollectPolicy != nil &&
+					nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds != nil &&
+					*nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds == 180 {
+					return true
+				}
+
+				nodeMetric.Status.UpdateTime = &metav1.Time{
+					Time: time.Now(),
+				}
+				err = k8sClient.Update(ctx, nodeMetric)
+				if err != nil {
+					klog.Errorf("failed to update nodeMetric, err: %v", err)
+				}
+				return false
 			}, timeout, interval).Should(BeTrue())
 		})
 	})

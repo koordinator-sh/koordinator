@@ -18,9 +18,28 @@ package reporter
 
 import (
 	"testing"
+	"time"
+
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/pointer"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	listerbeta1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 )
+
+var _ listerbeta1.NodeMetricLister = &fakeNodeMetricLister{}
+
+type fakeNodeMetricLister struct {
+	nodeMetrics *slov1alpha1.NodeMetric
+}
+
+func (f *fakeNodeMetricLister) List(selector labels.Selector) (ret []*slov1alpha1.NodeMetric, err error) {
+	return []*slov1alpha1.NodeMetric{f.nodeMetrics}, nil
+}
+
+func (f *fakeNodeMetricLister) Get(name string) (*slov1alpha1.NodeMetric, error) {
+	return f.nodeMetrics, nil
+}
 
 func Test_reporter_isNodeMetricInited(t *testing.T) {
 	type fields struct {
@@ -48,5 +67,26 @@ func Test_reporter_isNodeMetricInited(t *testing.T) {
 				t.Errorf("isNodeMetricInited() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func Test_getNodeMetricReportInterval(t *testing.T) {
+	nodeMetricLister := &fakeNodeMetricLister{
+		nodeMetrics: &slov1alpha1.NodeMetric{
+			Spec: slov1alpha1.NodeMetricSpec{
+				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+					ReportIntervalSeconds: pointer.Int64(666),
+				},
+			},
+		},
+	}
+	r := &reporter{
+		config:           NewDefaultConfig(),
+		nodeMetricLister: nodeMetricLister,
+	}
+	reportInterval := r.getNodeMetricReportInterval()
+	expectReportInterval := 666 * time.Second
+	if reportInterval != expectReportInterval {
+		t.Errorf("expect reportInterval %d but got %d", expectReportInterval, reportInterval)
 	}
 }
