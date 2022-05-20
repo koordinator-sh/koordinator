@@ -29,7 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	clientset "k8s.io/client-go/kubernetes"
 	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -139,9 +138,8 @@ func (r *reporter) Run(stopCh <-chan struct{}) error {
 			return fmt.Errorf("timed out waiting for node metric caches to sync")
 		}
 
-		go wait.Until(func() {
-			r.sync()
-		}, time.Duration(r.config.ReportIntervalSeconds)*time.Second, stopCh)
+		go r.syncNodeMetricWorker(stopCh)
+
 	} else {
 		klog.Infof("ReportIntervalSeconds is %d, sync node metric to apiserver is disabled",
 			r.config.ReportIntervalSeconds)
@@ -151,6 +149,33 @@ func (r *reporter) Run(stopCh <-chan struct{}) error {
 	<-stopCh
 	klog.Info("shutting down reporter daemon")
 	return nil
+}
+
+func (r *reporter) syncNodeMetricWorker(stopCh <-chan struct{}) {
+	reportInterval := r.getNodeMetricReportInterval()
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-time.After(reportInterval):
+			r.sync()
+			reportInterval = r.getNodeMetricReportInterval()
+		}
+	}
+}
+
+func (r *reporter) getNodeMetricReportInterval() time.Duration {
+	reportInterval := time.Duration(r.config.ReportIntervalSeconds) * time.Second
+	nodeMetric, err := r.nodeMetricLister.Get(r.nodeName)
+	if err == nil &&
+		nodeMetric.Spec.CollectPolicy != nil &&
+		nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds != nil {
+		interval := *nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds
+		if interval > 0 {
+			reportInterval = time.Duration(interval) * time.Second
+		}
+	}
+	return reportInterval
 }
 
 func (r *reporter) sync() {

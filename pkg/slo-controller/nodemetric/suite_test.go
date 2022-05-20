@@ -83,7 +83,7 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
-	r := &NodeMetricReconciler{mgr.GetClient(), mgr.GetScheme()}
+	r := &NodeMetricReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}
 
 	Expect(r.SetupWithManager(mgr)).ToNot(HaveOccurred())
 

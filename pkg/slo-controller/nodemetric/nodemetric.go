@@ -31,7 +31,10 @@ func (r *NodeMetricReconciler) initNodeMetric(node *corev1.Node, nodeMetric *slo
 		return fmt.Errorf("both Node and NodeMetric should not be empty")
 	}
 
-	nodeMetricSpec := &slov1alpha1.NodeMetricSpec{}
+	nodeMetricSpec, err := r.getNodeMetricSpec(node, nil)
+	if err != nil {
+		return err
+	}
 
 	nodeMetricStatus := &slov1alpha1.NodeMetricStatus{
 		UpdateTime: &metav1.Time{Time: time.Now()},

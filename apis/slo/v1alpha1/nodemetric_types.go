@@ -39,7 +39,18 @@ type ResourceMap struct {
 }
 
 // NodeMetricSpec defines the desired state of NodeMetric
-type NodeMetricSpec struct{}
+type NodeMetricSpec struct {
+	// CollectPolicy defines the Metric collection policy
+	CollectPolicy *NodeMetricCollectPolicy `json:"metricCollectPolicy,omitempty"`
+}
+
+// NodeMetricCollectPolicy defines the Metric collection policy
+type NodeMetricCollectPolicy struct {
+	// AggregateDurationSeconds represents the aggregation period in seconds
+	AggregateDurationSeconds *int64 `json:"aggregateDurationSeconds,omitempty"`
+	// ReportIntervalSeconds represents the report period in seconds
+	ReportIntervalSeconds *int64 `json:"reportIntervalSeconds,omitempty"`
+}
 
 // NodeMetricStatus defines the observed state of NodeMetric
 type NodeMetricStatus struct {
