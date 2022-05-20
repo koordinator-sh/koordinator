@@ -21,7 +21,11 @@ mv "${TMP_DIR}"/src/github.com/koordinator-sh/koordinator/pkg/client/* ./pkg/cli
 
 function custom_sed(){
     if [[ "$OSTYPE" == "darwin"* ]]; then
-      sed -i '' $@
+      if sed --v 2>/dev/null | grep 'GNU sed'>/dev/null; then
+          sed -i $@
+      else
+          sed -i '' $@
+      fi
     else
       sed -i $@
     fi

@@ -81,7 +81,7 @@ lint-go: golangci-lint ## Lint Go code.
 
 .PHONY: lint-license
 lint-license: license-header-checker ## Check license headers.
-	$(LICENSE_HEADER_CHECKER) -a -v -i vendor "$(LICENSE_HEADER_GO)" . go
+	$(LICENSE_HEADER_CHECKER) -r -a -v -i vendor "$(LICENSE_HEADER_GO)" . go
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
