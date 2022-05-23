@@ -100,3 +100,9 @@ func GetContainerCPUStatUsageTicks(podCgroupDir string, c *corev1.ContainerStatu
 	}
 	return readCPUAcctStatUsageTicks(containerStatPath)
 }
+
+func GetRootCgroupCPUStatUsageTicks(qosClass corev1.PodQOSClass) (uint64, error) {
+	rootCgroupParentDir := GetKubeQosRelativePath(qosClass)
+	statPath := system.GetCgroupFilePath(rootCgroupParentDir, system.CpuacctStat)
+	return readCPUAcctStatUsageTicks(statPath)
+}

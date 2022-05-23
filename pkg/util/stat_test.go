@@ -151,6 +151,14 @@ func Test_GetPodCPUStatUsageTicks(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
+func Test_GetRootCgroupCPUStatUsageTicks(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	helper.WriteCgroupFileContents(GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CpuacctStat, getStatContents())
+	got, err := GetRootCgroupCPUStatUsageTicks(corev1.PodQOSBestEffort)
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(1356232), got)
+}
+
 func getStatContents() string {
 	return "user 407232\nnice 60223\nsystem 888777\nidle 3710549851\niowait 7638\nirq 0\nsoftirq 0\n" +
 		"steal 1115801\nguest 0\nload average(1min) 5\nload average(5min) 1\nload average(15min) 0\n" +
