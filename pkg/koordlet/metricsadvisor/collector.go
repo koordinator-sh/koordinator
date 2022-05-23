@@ -63,7 +63,7 @@ type contextRecord struct {
 
 type collectContext struct {
 	// record latest cpu stat for calculate resource used
-	// lastBeCPUStat contextRecord
+	lastBECPUStat        contextRecord
 	lastNodeCPUStat      contextRecord
 	lastPodCPUStat       sync.Map
 	lastContainerCPUStat sync.Map
@@ -133,6 +133,7 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 			os.Exit(1)
 			return
 		}
+		c.collectBECPUResourceMetric()
 		c.collectPodResUsed()
 		c.collectPodThrottledInfo()
 	}, time.Duration(c.config.CollectResUsedIntervalSeconds)*time.Second, stopCh)

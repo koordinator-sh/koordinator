@@ -19,6 +19,8 @@ package util
 import (
 	"fmt"
 	"path"
+	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -56,4 +58,20 @@ func GetRootCgroupCurCPUSet(qosClass corev1.PodQOSClass) ([]int32, error) {
 	}
 
 	return ParseCPUSetStr(rawContent)
+}
+
+func GetRootCgroupCurCFSQuota(qosClass corev1.PodQOSClass) (int64, error) {
+	rawContent, err := system.CgroupFileRead(GetKubeQosRelativePath(qosClass), system.CPUCFSQuota)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(strings.TrimSpace(rawContent), 10, 64)
+}
+
+func GetRootCgroupCurCFSPeriod(qosClass corev1.PodQOSClass) (int64, error) {
+	rawContent, err := system.CgroupFileRead(GetKubeQosRelativePath(qosClass), system.CPUCFSPeriod)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(strings.TrimSpace(rawContent), 10, 64)
 }

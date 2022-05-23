@@ -105,8 +105,8 @@ func GetContainerBEMilliCPURequest(c *corev1.Container) int64 {
 }
 
 func GetContainerBEMilliCPULimit(c *corev1.Container) int64 {
-	if cpuRequest, ok := c.Resources.Limits[extension.BatchCPU]; ok {
-		return cpuRequest.Value()
+	if cpuLimit, ok := c.Resources.Limits[extension.BatchCPU]; ok {
+		return cpuLimit.Value()
 	}
 	return -1
 }
@@ -226,16 +226,6 @@ func FindContainerIdAndStatusByName(status *corev1.PodStatus, name string) (stri
 		}
 	}
 	return "", nil, fmt.Errorf("unable to find ID for container with name %v in pod status (it may not be running)", name)
-}
-
-func FindContainerStatusByID(pod *corev1.Pod, containerID string) *corev1.ContainerStatus {
-	for _, containerStatus := range pod.Status.ContainerStatuses {
-		_, cID, _ := ParseContainerId(containerStatus.ContainerID)
-		if containerID == cID {
-			return &containerStatus
-		}
-	}
-	return nil
 }
 
 func ParseContainerId(data string) (cType, cID string, err error) {
