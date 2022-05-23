@@ -1,0 +1,17 @@
+flag_management:
+  default_rules:
+    carryforward: true
+    statuses:
+      - name_prefix: project-
+        type: project
+        target: auto
+        threshold: 5%
+        if_no_uploads: error
+        if_not_found: success # no commit found? still set a success
+      - name_prefix: patch-
+        type: patch
+        target: 70%
+        if_no_uploads: success
+        if_not_found: success
+github_checks:
+  annotations: true
