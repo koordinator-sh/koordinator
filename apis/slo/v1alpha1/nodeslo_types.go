@@ -23,6 +23,12 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// CPUQOS enables cpu qos features.
+type CPUQoS struct {
+	// group identity value for pods, default = 0
+	GroupIdentity *int64 `json:"groupIdentity,omitempty"`
+}
+
 // MemoryQoS enables memory qos features.
 type MemoryQoS struct {
 	// memcg qos
@@ -103,6 +109,13 @@ type PodMemoryQoSConfig struct {
 	MemoryQoS `json:",inline"`
 }
 
+// CPUQoSCfg stores node-level config of cpu qos
+type CPUQoSCfg struct {
+	// Enable indicates whether the cpu qos is enabled.
+	Enable *bool `json:"enable,omitempty"`
+	CPUQoS `json:",inline"`
+}
+
 // MemoryQoSCfg stores node-level config of memory qos
 type MemoryQoSCfg struct {
 	// Enable indicates whether the memory qos is enabled (default: false).
@@ -113,6 +126,7 @@ type MemoryQoSCfg struct {
 }
 
 type ResourceQoS struct {
+	CPUQoS     *CPUQoSCfg     `json:"cpuQoS,omitempty"`
 	MemoryQoS  *MemoryQoSCfg  `json:"memoryQoS,omitempty"`
 	ResctrlQoS *ResctrlQoSCfg `json:"resctrlQoS,omitempty"`
 }

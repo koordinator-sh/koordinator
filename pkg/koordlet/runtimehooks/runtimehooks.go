@@ -17,6 +17,11 @@
 package runtimehooks
 
 import (
+	"reflect"
+
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/server"
@@ -32,7 +37,8 @@ type RuntimeHook interface {
 }
 
 type runtimeHook struct {
-	server server.Server
+	statesInformer statesinformer.StatesInformer
+	server         server.Server
 }
 
 func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
@@ -45,14 +51,18 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
-func NewRuntimeHook(cfg *Config) (RuntimeHook, error) {
+func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook, error) {
 	s, err := server.NewServer(server.Options{Network: cfg.RuntimeHooksNetwork, Address: cfg.RuntimeHooksAddr})
 	if err != nil {
 		return nil, err
 	}
 	r := &runtimeHook{
-		server: s,
+		statesInformer: si,
+		server:         s,
 	}
+	si.RegisterCallbacks(reflect.TypeOf(&slov1alpha1.NodeSLO{}), "runtime-hooks-rule",
+		"Update hooks rule can run callbacks if NodeSLO spec update",
+		rule.UpdateRules)
 	if err := s.Setup(); err != nil {
 		klog.Fatal("failed to setup runtime hook server, error %v", err)
 		return nil, err

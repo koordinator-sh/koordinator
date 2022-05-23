@@ -573,6 +573,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			si := mockstatesinformer.NewMockStatesInformer(ctl)
 			si.EXPECT().GetAllPods().Return(tt.args.podMetas).AnyTimes()
 			si.EXPECT().GetNode().Return(tt.args.node).AnyTimes()
+			si.EXPECT().GetNodeSLO().Return(getNodeSLOByThreshold(tt.args.thresholdConfig)).AnyTimes()
 
 			// prepareData: mockMetricCache pods node beMetrics(AVG,current)
 			mockMetricCache := mockmetriccache.NewMockMetricCache(ctl)
@@ -603,7 +604,6 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				statesInformer:                si,
 				metricCache:                   mockMetricCache,
 				config:                        NewDefaultConfig(),
-				nodeSLO:                       getNodeSLOByThreshold(tt.args.thresholdConfig),
 				collectResUsedIntervalSeconds: 1,
 			}
 			cpuSuppress := NewCPUSuppress(r)

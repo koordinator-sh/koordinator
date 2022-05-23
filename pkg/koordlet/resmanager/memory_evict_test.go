@@ -374,6 +374,7 @@ func Test_memoryEvict(t *testing.T) {
 			mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
 			mockStatesInformer.EXPECT().GetAllPods().Return(getPodMetas(tt.pods)).AnyTimes()
 			mockStatesInformer.EXPECT().GetNode().Return(tt.node).AnyTimes()
+			mockStatesInformer.EXPECT().GetNodeSLO().Return(getNodeSLOByThreshold(tt.thresholdConfig)).AnyTimes()
 
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
 			mockNodeQueryResult := metriccache.NodeResourceQueryResult{Metric: tt.nodeMetric}
@@ -385,7 +386,13 @@ func Test_memoryEvict(t *testing.T) {
 
 			fakeRecorder := &FakeRecorder{}
 			client := clientsetfake.NewSimpleClientset()
-			resmanager := &resmanager{statesInformer: mockStatesInformer, podsEvicted: cache.NewCacheDefault(), eventRecorder: fakeRecorder, metricCache: mockMetricCache, kubeClient: client, nodeSLO: getNodeSLOByThreshold(tt.thresholdConfig), config: NewDefaultConfig()}
+			resmanager := &resmanager{
+				statesInformer: mockStatesInformer,
+				podsEvicted:    cache.NewCacheDefault(),
+				eventRecorder:  fakeRecorder,
+				metricCache:    mockMetricCache,
+				kubeClient:     client,
+				config:         NewDefaultConfig()}
 			stop := make(chan struct{})
 			_ = resmanager.podsEvicted.Run(stop)
 			defer func() { stop <- struct{}{} }()
