@@ -70,6 +70,7 @@ type statesInformer struct {
 	podMap         map[string]*PodMeta
 	podUpdatedTime time.Time
 
+	callbackChans        map[reflect.Type]chan struct{}
 	stateUpdateCallbacks map[reflect.Type][]updateCallback
 }
 
@@ -90,6 +91,9 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 		podMap:     map[string]*PodMeta{},
 		podCreated: make(chan string, 1), // set 1 buffer
 
+		callbackChans: map[reflect.Type]chan struct{}{
+			reflect.TypeOf(&slov1alpha1.NodeSLO{}): make(chan struct{}, 1),
+		},
 		stateUpdateCallbacks: map[reflect.Type][]updateCallback{
 			reflect.TypeOf(&slov1alpha1.NodeSLO{}): {},
 		},
@@ -103,10 +107,6 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	klog.Infof("starting informers")
 	go s.nodeInformer.Run(stopCh)
 	go s.nodeSLOInformer.Run(stopCh)
-	waitInformersSynced := []cache.InformerSynced{s.nodeInformer.HasSynced, s.nodeSLOInformer.HasSynced}
-	if !cache.WaitForCacheSync(stopCh, waitInformersSynced...) {
-		return fmt.Errorf("timed out waiting for states informer caches to sync")
-	}
 
 	if s.config.KubeletSyncIntervalSeconds > 0 {
 		hdlID := s.pleg.AddHandler(pleg.PodLifeCycleHandlerFuncs{
@@ -121,9 +121,18 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 
 		go s.syncKubeletLoop(time.Duration(s.config.KubeletSyncIntervalSeconds)*time.Second, stopCh)
 	} else {
-		klog.Infof("KubeletSyncIntervalSeconds is %d, statesInformer sync of kubelet is disabled",
+		klog.Fatalf("KubeletSyncIntervalSeconds is %d, statesInformer sync of kubelet is disabled",
 			s.config.KubeletSyncIntervalSeconds)
 	}
+
+	waitInformersSynced := []cache.InformerSynced{
+		s.nodeInformer.HasSynced, s.nodeSLOInformer.HasSynced, s.podHasSynced.Load}
+	if !cache.WaitForCacheSync(stopCh, waitInformersSynced...) {
+		return fmt.Errorf("timed out waiting for states informer caches to sync")
+	}
+
+	go s.startCallbackRunners(stopCh)
+
 	klog.Infof("start states informer successfully")
 	<-stopCh
 	klog.Infof("shutting down states informer daemon")
@@ -131,7 +140,7 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 }
 
 func (s *statesInformer) HasSynced() bool {
-	return s.podHasSynced.Load()
+	return s.podHasSynced.Load() && s.nodeSLOInformer.HasSynced() && s.nodeInformer.HasSynced()
 }
 
 func (s *statesInformer) GetNode() *corev1.Node {

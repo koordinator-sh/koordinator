@@ -39,7 +39,7 @@ func (s *statesInformer) setupNodeSLOInformer() {
 			nodeSLO, ok := obj.(*slov1alpha1.NodeSLO)
 			if ok {
 				s.updateNodeSLOSpec(nodeSLO)
-				klog.Infof("create NodeSLO %v", nodeSLO)
+				klog.Infof("create NodeSLO %v", util.DumpJSON(nodeSLO))
 			} else {
 				klog.Errorf("node slo informer add func parse nodeSLO failed")
 			}
@@ -55,7 +55,7 @@ func (s *statesInformer) setupNodeSLOInformer() {
 				klog.V(5).Infof("find NodeSLO spec %s has not changed", newNodeSLO.Name)
 				return
 			}
-			klog.Infof("update NodeSLO spec %v", newNodeSLO.Spec)
+			klog.Infof("update NodeSLO spec %v", util.DumpJSON(newNodeSLO.Spec))
 			s.updateNodeSLOSpec(newNodeSLO)
 		},
 	})
@@ -63,7 +63,7 @@ func (s *statesInformer) setupNodeSLOInformer() {
 
 func (s *statesInformer) updateNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	s.setNodeSLOSpec(nodeSLO)
-	s.runCallbacks(reflect.TypeOf(&slov1alpha1.NodeSLO{}), s.GetNodeSLO())
+	s.sendCallbacks(reflect.TypeOf(&slov1alpha1.NodeSLO{}))
 }
 
 func (s *statesInformer) setNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {

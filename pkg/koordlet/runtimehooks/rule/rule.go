@@ -25,6 +25,7 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type Rule struct {
@@ -75,13 +76,9 @@ func find(name string) (*Rule, bool) {
 	return newRule, false
 }
 
-func UpdateRules(s statesinformer.StatesInformer, nodeSLOIf interface{}) {
-	nodeSLO, ok := nodeSLOIf.(*slov1alpha1.NodeSLO)
-	if !ok {
-		klog.Errorf("update rules with type %T is illegal", nodeSLOIf)
-		return
-	}
-	klog.Infof("applying rules with new NodeSLO %v", nodeSLO)
+func UpdateRules(s statesinformer.StatesInformer) {
+	nodeSLO := s.GetNodeSLO()
+	klog.Infof("applying %v rules with new NodeSLO %v", len(globalHookRules), util.DumpJSON(nodeSLO))
 	for _, r := range globalHookRules {
 		if !r.systemSupported {
 			klog.Infof("system unsupported for rule %s, do nothing during UpdateRules", r.name)
@@ -94,6 +91,7 @@ func UpdateRules(s statesinformer.StatesInformer, nodeSLOIf interface{}) {
 		}
 		if updated {
 			pods := s.GetAllPods()
+			klog.Infof("rule %s is updated, run update callback for all %v pods", r.name, len(pods))
 			r.runUpdateCallbacks(pods)
 		}
 	}

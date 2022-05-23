@@ -72,7 +72,9 @@ func getHooksByStage(stage rmconfig.RuntimeHookType) []*Hook {
 
 func RunHooks(stage rmconfig.RuntimeHookType, request, response interface{}) {
 	hooks := getHooksByStage(stage)
+	klog.V(5).Infof("start run %v hooks at %s", len(hooks), stage)
 	for _, hook := range hooks {
+		klog.V(5).Infof("call hook %v", hook.name)
 		if err := hook.fn(request, response); err != nil {
 			klog.Warningf("failed to run hook %s in stage %s, reason: %v", hook.name, stage, err)
 		}
