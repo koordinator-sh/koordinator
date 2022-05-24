@@ -29,63 +29,36 @@ import (
 )
 
 type ContainerResourceExecutor struct {
-	store                *store.MetaManager
-	PodMeta              *v1alpha1.PodSandboxMetadata
-	ContainerMata        *v1alpha1.ContainerMetadata
-	ContainerAnnotations map[string]string
-	ContainerResources   *v1alpha1.LinuxContainerResources
-	PodResources         *v1alpha1.LinuxContainerResources
+	store.ContainerInfo
 }
 
-func NewContainerResourceExecutor(store *store.MetaManager) *ContainerResourceExecutor {
-	return &ContainerResourceExecutor{
-		store: store,
-	}
+func NewContainerResourceExecutor() *ContainerResourceExecutor {
+	return &ContainerResourceExecutor{}
 }
 
 func (c *ContainerResourceExecutor) String() string {
 	return fmt.Sprintf("pod(%v/%v)container(%v)",
-		c.PodMeta.Name, c.PodMeta.Uid,
-		c.ContainerMata.Name)
+		c.GetPodMeta().GetName(), c.GetPodMeta().GetUid(),
+		c.GetContainerMata().GetName())
 }
 
 func (c *ContainerResourceExecutor) GetMetaInfo() string {
 	return fmt.Sprintf("pod(%v/%v)container(%v)",
-		c.PodMeta.Name, c.PodMeta.Uid,
-		c.ContainerMata.Name)
-}
-
-func (c *ContainerResourceExecutor) GenerateResourceCheckpoint() interface{} {
-	return &store.ContainerInfo{
-		PodMeta:              c.PodMeta,
-		ContainerMata:        c.ContainerMata,
-		ContainerAnnotations: c.ContainerAnnotations,
-		ContainerResources:   c.ContainerResources,
-		PodResources:         c.PodResources,
-	}
+		c.GetPodMeta().GetName(), c.GetPodMeta().GetUid(),
+		c.GetContainerMata().GetName())
 }
 
 func (c *ContainerResourceExecutor) GenerateHookRequest() interface{} {
-	return &v1alpha1.ContainerResourceHookRequest{
-		PodMeta:              c.PodMeta,
-		ContainerMata:        c.ContainerMata,
-		ContainerAnnotations: c.ContainerAnnotations,
-		ContainerResources:   c.ContainerResources,
-		PodResources:         c.PodResources,
-	}
+	return c.GetContainerResourceHookRequest()
 }
 
-func (c *ContainerResourceExecutor) updateByCheckPoint(containerID string) error {
-	containerCheckPoint := c.store.GetContainerInfo(containerID)
-	if containerCheckPoint != nil {
-		return fmt.Errorf("fail to get ")
+func (c *ContainerResourceExecutor) loadContainerInfoFromStore(containerID, stage string) error {
+	containerCheckPoint := store.GetContainerInfo(containerID)
+	if containerCheckPoint == nil {
+		return fmt.Errorf("fail to load container(%v) from store during %v", containerID, stage)
 	}
-	c.PodMeta = containerCheckPoint.PodMeta
-	c.PodResources = containerCheckPoint.PodResources
-	c.ContainerMata = containerCheckPoint.ContainerMata
-	c.ContainerResources = containerCheckPoint.ContainerResources
-	c.ContainerAnnotations = containerCheckPoint.ContainerAnnotations
-	klog.Infof("get container info successful %v", containerID)
+	c.ContainerInfo = *containerCheckPoint
+	klog.Infof("load container(%v) successful during %v ", containerID, stage)
 	return nil
 }
 
@@ -94,36 +67,29 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
 	case *runtimeapi.CreateContainerRequest:
 		// get the pod info from local store
 		podID := request.GetPodSandboxId()
-		podCheckPoint := c.store.GetPodSandboxInfo(podID)
+		podCheckPoint := store.GetPodSandboxInfo(podID)
 		if podCheckPoint == nil {
-			return fmt.Errorf("no pod info related to %v", podID)
+			return fmt.Errorf("fail to get pod(%v) related to container", podID)
 		}
-		c.PodMeta = podCheckPoint.PodMeta
-		c.PodResources = podCheckPoint.Resources
-
-		// construct container info
-		c.ContainerMata = &v1alpha1.ContainerMetadata{
-			Name:    request.GetConfig().GetMetadata().GetName(),
-			Attempt: request.GetConfig().GetMetadata().GetAttempt(),
+		c.ContainerInfo = store.ContainerInfo{
+			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
+				PodMeta:      podCheckPoint.PodMeta,
+				PodResources: podCheckPoint.Resources,
+				ContainerMata: &v1alpha1.ContainerMetadata{
+					Name:    request.GetConfig().GetMetadata().GetName(),
+					Attempt: request.GetConfig().GetMetadata().GetAttempt(),
+				},
+				ContainerAnnotations: request.GetConfig().GetAnnotations(),
+				ContainerResources:   transferResource(request.GetConfig().GetLinux().GetResources()),
+			},
 		}
-		c.ContainerAnnotations = request.GetConfig().GetAnnotations()
-		c.ContainerResources = transferResource(request.GetConfig().GetLinux().GetResources())
 		klog.Infof("success parse container info %v during container create", c)
 	case *runtimeapi.StartContainerRequest:
-		if err := c.updateByCheckPoint(request.GetContainerId()); err != nil {
-			return err
-		}
-		klog.Infof("success parse container Info %v during container start", c)
+		return c.loadContainerInfoFromStore(request.GetContainerId(), "StartContainer")
 	case *runtimeapi.UpdateContainerResourcesRequest:
-		if err := c.updateByCheckPoint(request.GetContainerId()); err != nil {
-			return err
-		}
-		klog.Infof("success parse container Info %v during container update resource", c)
+		return c.loadContainerInfoFromStore(request.GetContainerId(), "UpdateContainerResource")
 	case *runtimeapi.StopContainerRequest:
-		if err := c.updateByCheckPoint(request.GetContainerId()); err != nil {
-			return nil
-		}
-		klog.Infof("success parse container Info %v during container stop", c)
+		return c.loadContainerInfoFromStore(request.GetContainerId(), "StopContainer")
 	}
 	return nil
 }
@@ -132,18 +98,23 @@ func (c *ContainerResourceExecutor) ParseContainer(container *runtimeapi.Contain
 	if container == nil {
 		return nil
 	}
-	podInfo := c.store.GetPodSandboxInfo(container.GetPodSandboxId())
+	podInfo := store.GetPodSandboxInfo(container.GetPodSandboxId())
 	if podInfo == nil {
 		return fmt.Errorf("fail to get pod info for %v", container.GetPodSandboxId())
 	}
-
-	c.ContainerAnnotations = container.GetAnnotations()
-	c.ContainerMata = &v1alpha1.ContainerMetadata{
-		Name:    container.GetMetadata().GetName(),
-		Attempt: container.GetMetadata().GetAttempt(),
+	c.ContainerInfo = store.ContainerInfo{
+		ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
+			ContainerAnnotations: container.GetAnnotations(),
+			ContainerMata: &v1alpha1.ContainerMetadata{
+				Name:    container.GetMetadata().GetName(),
+				Attempt: container.GetMetadata().GetAttempt(),
+			},
+			PodMeta:        podInfo.GetPodMeta(),
+			PodAnnotations: podInfo.GetAnnotations(),
+			PodLabels:      podInfo.GetLabels(),
+			// TODO: How to get resource when failOver
+		},
 	}
-	c.PodMeta = podInfo.PodMeta
-	// TODO: How to get resource when failOver
 	return nil
 }
 
@@ -151,12 +122,11 @@ func (c *ContainerResourceExecutor) ResourceCheckPoint(rsp interface{}) error {
 	// container level resource checkpoint would be triggered during post container create only
 	switch response := rsp.(type) {
 	case *runtimeapi.CreateContainerResponse:
-		containerCheckpoint := c.GenerateResourceCheckpoint().(*store.ContainerInfo)
-		data, _ := json.Marshal(containerCheckpoint)
-		err := c.store.WriteContainerInfo(response.GetContainerId(), containerCheckpoint)
+		err := store.WriteContainerInfo(response.GetContainerId(), &c.ContainerInfo)
 		if err != nil {
 			return err
 		}
+		data, _ := json.Marshal(c.ContainerInfo)
 		klog.Infof("success to checkpoint container level info %v %v",
 			response.GetContainerId(), string(data))
 		return nil
@@ -167,7 +137,7 @@ func (c *ContainerResourceExecutor) ResourceCheckPoint(rsp interface{}) error {
 func (c *ContainerResourceExecutor) DeleteCheckpointIfNeed(req interface{}) error {
 	switch request := req.(type) {
 	case *runtimeapi.StopContainerRequest:
-		c.store.DeleteContainerInfo(request.GetContainerId())
+		store.DeleteContainerInfo(request.GetContainerId())
 	}
 	return nil
 }

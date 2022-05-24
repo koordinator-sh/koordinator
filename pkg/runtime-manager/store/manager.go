@@ -28,41 +28,41 @@ const (
 
 // PodSandboxInfo is almost the same with v1alpha.RunPodSandboxHookRequest
 type PodSandboxInfo struct {
-	PodMeta        *v1alpha1.PodSandboxMetadata
-	RuntimeHandler string
-	Labels         map[string]string
-	Annotations    map[string]string
-	CgroupParent   string
-	Overhead       *v1alpha1.LinuxContainerResources
-	Resources      *v1alpha1.LinuxContainerResources
+	*v1alpha1.RunPodSandboxHookRequest
 }
 
 // ContainerInfo is almost the same with v1alpha.ContainerResourceHookRequest
 type ContainerInfo struct {
-	PodMeta              *v1alpha1.PodSandboxMetadata
-	ContainerMata        *v1alpha1.ContainerMetadata
-	ContainerAnnotations map[string]string
-	ContainerResources   *v1alpha1.LinuxContainerResources
-	PodResources         *v1alpha1.LinuxContainerResources
+	*v1alpha1.ContainerResourceHookRequest
 }
 
-// MetaManager no need to store info in memory
-// as bolt filemap db file
-type MetaManager struct {
+func (p *PodSandboxInfo) GetRunPodSandboxHookRequest() *v1alpha1.RunPodSandboxHookRequest {
+	if p != nil {
+		return p.RunPodSandboxHookRequest
+	}
+	return nil
+}
+
+func (c *ContainerInfo) GetContainerResourceHookRequest() *v1alpha1.ContainerResourceHookRequest {
+	if c != nil {
+		return c.ContainerResourceHookRequest
+	}
+	return nil
+}
+
+type metaManager struct {
 	sync.RWMutex
 	podInfos       map[string]*PodSandboxInfo
 	containerInfos map[string]*ContainerInfo
 }
 
-func NewMetaManager() *MetaManager {
-	return &MetaManager{
-		podInfos:       make(map[string]*PodSandboxInfo, defaultPoolSize),
-		containerInfos: make(map[string]*ContainerInfo, defaultPoolSize),
-	}
+var m = &metaManager{
+	podInfos:       make(map[string]*PodSandboxInfo, defaultPoolSize),
+	containerInfos: make(map[string]*ContainerInfo, defaultPoolSize),
 }
 
 // WritePodSandboxInfo checkpoints the pod level info
-func (m *MetaManager) WritePodSandboxInfo(podUID string, pod *PodSandboxInfo) error {
+func WritePodSandboxInfo(podUID string, pod *PodSandboxInfo) error {
 	m.Lock()
 	defer m.Unlock()
 	m.podInfos[podUID] = pod
@@ -70,7 +70,7 @@ func (m *MetaManager) WritePodSandboxInfo(podUID string, pod *PodSandboxInfo) er
 }
 
 // WriteContainerInfo returns
-func (m *MetaManager) WriteContainerInfo(containerUID string, container *ContainerInfo) error {
+func WriteContainerInfo(containerUID string, container *ContainerInfo) error {
 	m.Lock()
 	defer m.Unlock()
 	m.containerInfos[containerUID] = container
@@ -78,27 +78,27 @@ func (m *MetaManager) WriteContainerInfo(containerUID string, container *Contain
 }
 
 // GetPodSandboxInfo returns sandbox info
-func (m *MetaManager) GetPodSandboxInfo(podUID string) *PodSandboxInfo {
+func GetPodSandboxInfo(podUID string) *PodSandboxInfo {
 	m.RLock()
 	defer m.RUnlock()
 	return m.podInfos[podUID]
 }
 
-func (m *MetaManager) GetContainerInfo(containerUID string) *ContainerInfo {
+func GetContainerInfo(containerUID string) *ContainerInfo {
 	m.RLock()
 	defer m.RUnlock()
 	return m.containerInfos[containerUID]
 }
 
 // DeletePodSandboxInfo delete pod checkpoint indexed by podUID
-func (m *MetaManager) DeletePodSandboxInfo(podUID string) {
+func DeletePodSandboxInfo(podUID string) {
 	m.Lock()
 	defer m.Unlock()
 	delete(m.podInfos, podUID)
 }
 
 // DeleteContainerInfo delete container checkpoint indexed by containerUID
-func (m *MetaManager) DeleteContainerInfo(containerUID string) {
+func DeleteContainerInfo(containerUID string) {
 	m.Lock()
 	defer m.Unlock()
 	delete(m.containerInfos, containerUID)
