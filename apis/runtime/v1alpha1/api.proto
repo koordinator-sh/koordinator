@@ -124,6 +124,9 @@ message ContainerResourceHookRequest {
   map<string, string> container_annotations = 3;
   LinuxContainerResources container_resources = 4;
   LinuxContainerResources pod_resources = 5;
+  // pod related annotations and labels
+  map<string, string> pod_annotations = 6;
+  map<string, string> pod_labels = 7;
   // TODO: add the error info from containerd/dockerd
 }
 
