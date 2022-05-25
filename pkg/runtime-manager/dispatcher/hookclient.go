@@ -68,7 +68,7 @@ func newRuntimeHookClient(sockPath string) (*RuntimeHookClient, error) {
 	return client, nil
 }
 
-func (cm *HookServerClientManager) RuntimeHookClient(serverPath HookServerPath) (*RuntimeHookClient, error) {
+func (cm *HookServerClientManager) RuntimeHookServerClient(serverPath HookServerPath) (*RuntimeHookClient, error) {
 	cacheKey, err := json.Marshal(serverPath)
 	if err != nil {
 		return nil, err

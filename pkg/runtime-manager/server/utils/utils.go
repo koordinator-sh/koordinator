@@ -17,7 +17,7 @@ limitations under the License.
 package utils
 
 const (
-	DefaultRuntimeManagerSocketPath = "/var/run/runtimemanger/runtimemanager.sock"
+	DefaultRuntimeManagerSocketPath = "/var/run/runtime-manager/runtimemanager.sock"
 	DefaultRuntimeServiceSocketPath = "/run/containerd/containerd.sock"
 	DefaultImageServiceSocketPath   = "/run/containerd/containerd.sock"
 

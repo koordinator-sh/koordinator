@@ -24,7 +24,6 @@ import (
 
 type RuntimeResourceExecutor interface {
 	GetMetaInfo() string
-	GenerateResourceCheckpoint() interface{}
 	GenerateHookRequest() interface{}
 	ParseRequest(request interface{}) error
 	UpdateResource(response interface{}) error
@@ -40,12 +39,12 @@ const (
 	RuntimeNoopResource      RuntimeResourceType = "RuntimeNoopResource"
 )
 
-func NewRuntimeResourceExecutor(runtimeResourceType RuntimeResourceType, store *store.MetaManager) RuntimeResourceExecutor {
+func NewRuntimeResourceExecutor(runtimeResourceType RuntimeResourceType) RuntimeResourceExecutor {
 	switch runtimeResourceType {
 	case RuntimePodResource:
-		return cri.NewPodResourceExecutor(store)
+		return cri.NewPodResourceExecutor()
 	case RuntimeContainerResource:
-		return cri.NewContainerResourceExecutor(store)
+		return cri.NewContainerResourceExecutor()
 	}
 	return &NoopResourceExecutor{}
 }

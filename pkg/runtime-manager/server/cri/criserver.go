@@ -19,6 +19,7 @@ package cri
 import (
 	"context"
 	"net"
+	"os"
 	"time"
 
 	"google.golang.org/grpc"
@@ -30,7 +31,6 @@ import (
 	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtime-manager/resource-executor"
 	cri_resource_executor "github.com/koordinator-sh/koordinator/pkg/runtime-manager/resource-executor/cri"
 	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/server/utils"
-	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/store"
 )
 
 const (
@@ -41,13 +41,11 @@ type RuntimeManagerCriServer struct {
 	hookDispatcher              *dispatcher.RuntimeHookDispatcher
 	backendRuntimeServiceClient runtimeapi.RuntimeServiceClient
 	backendImageServiceClient   runtimeapi.ImageServiceClient
-	store                       *store.MetaManager
 }
 
 func NewRuntimeManagerCriServer(dispatcher *dispatcher.RuntimeHookDispatcher) *RuntimeManagerCriServer {
 	criInterceptor := &RuntimeManagerCriServer{
 		hookDispatcher: dispatcher,
-		store:          store.NewMetaManager(),
 	}
 	return criInterceptor
 }
@@ -63,6 +61,11 @@ func (c *RuntimeManagerCriServer) Run() error {
 	c.failOver()
 	klog.Infof("do failOver done")
 
+	if err := os.Remove(utils.DefaultRuntimeManagerSocketPath); err != nil && os.IsNotExist(err) {
+		klog.Errorf("fail to unlink %v: %v", utils.DefaultRuntimeManagerSocketPath, err)
+		return err
+	}
+
 	lis, err := net.Listen("unix", utils.DefaultRuntimeManagerSocketPath)
 	if err != nil {
 		klog.Errorf("fail to create the lis %v", err)
@@ -70,6 +73,7 @@ func (c *RuntimeManagerCriServer) Run() error {
 	}
 	grpcServer := grpc.NewServer()
 	runtimeapi.RegisterRuntimeServiceServer(grpcServer, c)
+	runtimeapi.RegisterImageServiceServer(grpcServer, c)
 	err = grpcServer.Serve(lis)
 	return err
 }
@@ -96,7 +100,7 @@ func (c *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeSer
 	ctx context.Context, request interface{}, handler grpc.UnaryHandler) (interface{}, error) {
 
 	runtimeHookPath, runtimeResourceType := c.getRuntimeHookInfo(serviceType)
-	resourceExecutor := resource_executor.NewRuntimeResourceExecutor(runtimeResourceType, c.store)
+	resourceExecutor := resource_executor.NewRuntimeResourceExecutor(runtimeResourceType)
 
 	if err := resourceExecutor.ParseRequest(request); err != nil {
 		klog.Errorf("fail to parse request %v %v", request, err)
@@ -168,7 +172,7 @@ func (c *RuntimeManagerCriServer) failOver() error {
 		return podErr
 	}
 	for _, pod := range podResponse.Items {
-		podResourceExecutor := cri_resource_executor.NewPodResourceExecutor(c.store)
+		podResourceExecutor := cri_resource_executor.NewPodResourceExecutor()
 		podResourceExecutor.ParsePod(pod)
 		podResourceExecutor.ResourceCheckPoint(&runtimeapi.RunPodSandboxResponse{
 			PodSandboxId: pod.GetId(),
@@ -176,7 +180,7 @@ func (c *RuntimeManagerCriServer) failOver() error {
 	}
 
 	for _, container := range containerResponse.Containers {
-		containerExecutor := cri_resource_executor.NewContainerResourceExecutor(c.store)
+		containerExecutor := cri_resource_executor.NewContainerResourceExecutor()
 		containerExecutor.ParseContainer(container)
 		containerExecutor.ResourceCheckPoint(&runtimeapi.CreateContainerResponse{
 			ContainerId: container.GetId(),
