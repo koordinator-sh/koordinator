@@ -24,7 +24,8 @@ const (
 	updateResctrlSchemata = "UpdateResctrlSchemata" // update resctrl l3 cat schemata
 	updateResctrlTasks    = "UpdateResctrlTasks"    // update resctrl tasks
 
-	evictPodByNodeMemoryUsage = "EvictPodByNodeMemoryUsage"
+	evictPodByNodeMemoryUsage   = "EvictPodByNodeMemoryUsage"
+	evictPodByBECPUSatisfaction = "EvictPodByBECPUSatisfaction"
 
 	adjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
 )

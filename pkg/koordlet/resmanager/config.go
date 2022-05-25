@@ -23,22 +23,28 @@ import (
 type Config struct {
 	ReconcileIntervalSeconds   int
 	CPUSuppressIntervalSeconds int
+	CPUEvictIntervalSeconds    int
 	MemoryEvictIntervalSeconds int
 	MemoryEvictCoolTimeSeconds int
+	CPUEvictCoolTimeSeconds    int
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
 		ReconcileIntervalSeconds:   1,
 		CPUSuppressIntervalSeconds: 1,
+		CPUEvictIntervalSeconds:    1,
 		MemoryEvictIntervalSeconds: 1,
 		MemoryEvictCoolTimeSeconds: 4,
+		CPUEvictCoolTimeSeconds:    20,
 	}
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.ReconcileIntervalSeconds, "ReconcileIntervalSeconds", c.ReconcileIntervalSeconds, "reconcile be pod cgroup interval by seconds")
 	fs.IntVar(&c.CPUSuppressIntervalSeconds, "CPUSuppressIntervalSeconds", c.CPUSuppressIntervalSeconds, "suppress be pod cpu resource interval by seconds")
+	fs.IntVar(&c.CPUEvictIntervalSeconds, "CPUEvictIntervalSeconds", c.CPUEvictIntervalSeconds, "evict be pod(cpu) interval by seconds")
 	fs.IntVar(&c.MemoryEvictIntervalSeconds, "MemoryEvictIntervalSeconds", c.MemoryEvictIntervalSeconds, "evict be pod(memory) interval by seconds")
 	fs.IntVar(&c.MemoryEvictCoolTimeSeconds, "MemoryEvictCoolTimeSeconds", c.MemoryEvictCoolTimeSeconds, "cooling time: memory next evict time should after lastEvictTime + MemoryEvictCoolTimeSeconds")
+	fs.IntVar(&c.CPUEvictCoolTimeSeconds, "CPUEvictCoolTimeSeconds", c.CPUEvictCoolTimeSeconds, "cooltime: CPU next evict time should after lastEvictTime + CPUEvictCoolTimeSeconds")
 }
