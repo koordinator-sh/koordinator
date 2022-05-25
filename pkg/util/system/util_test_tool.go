@@ -1,17 +1,17 @@
 /*
- Copyright 2022 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package system
@@ -21,6 +21,8 @@ import (
 	"os"
 	"path"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type FileTestUtil struct {
@@ -30,24 +32,20 @@ type FileTestUtil struct {
 	t *testing.T
 }
 
-// Creates a new test util for the specified subsystem
+// NewFileTestUtil creates a new test util for the specified subsystem
 func NewFileTestUtil(t *testing.T) *FileTestUtil {
-	tempDir, err := ioutil.TempDir("/tmp", "koordlet_test")
+	// NOTE: When $TMPDIR is not set, `t.TempDir()` can use different base directory on Mac OS X and Linux, which may
+	// generates too long paths to test unix socket.
+	t.Setenv("TMPDIR", "/tmp")
+	tempDir := t.TempDir()
 	HostSystemInfo.IsAnolisOS = true
 
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	Conf.ProcRootDir = path.Join(tempDir, "proc")
-	os.MkdirAll(Conf.ProcRootDir, 0777)
+	err := os.MkdirAll(Conf.ProcRootDir, 0777)
+	assert.NoError(t, err)
 	Conf.CgroupRootDir = tempDir
 
 	return &FileTestUtil{TempDir: tempDir, t: t}
-}
-
-func (c *FileTestUtil) Cleanup() {
-	os.RemoveAll(c.TempDir)
 }
 
 func (c *FileTestUtil) MkDirAll(dirRelativePath string) {

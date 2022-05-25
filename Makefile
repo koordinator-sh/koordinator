@@ -80,8 +80,8 @@ lint-go: golangci-lint ## Lint Go code.
 	$(GOLANGCI_LINT) run -v --timeout=5m
 
 .PHONY: lint-license
-lint-license: license-header-checker ## Check license headers.
-	$(LICENSE_HEADER_CHECKER) -a -v -i vendor "$(LICENSE_HEADER_GO)" . go
+lint-license: 
+	$(HACK_DIR)/update-license-header.sh
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
@@ -169,7 +169,8 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 ##@ Build Dependencies
 
 ## Location to install dependencies to
-LOCALBIN ?= $(shell pwd)/bin
+PWD ?= $(shell pwd)
+LOCALBIN ?= $(PWD)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
@@ -178,13 +179,12 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
-LICENSE_HEADER_CHECKER ?= $(LOCALBIN)/license-header-checker
+HACK_DIR ?= $(PWD)/hack
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v3.8.7
 CONTROLLER_TOOLS_VERSION ?= v0.8.0
 GOLANGCILINT_VERSION ?= v1.45.2
-LICENSEHEADERCHECKER_VERSION ?= v1.3.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 .PHONY: kustomize
@@ -206,8 +206,3 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
-
-.PHONY: license-header-checker
-license-header-checker: $(LICENSE_HEADER_CHECKER) ## Download license-header-checker locally if necessary.
-$(LICENSE_HEADER_CHECKER):
-	GOBIN=$(LOCALBIN) go install github.com/lsm-dev/license-header-checker/cmd/license-header-checker@$(LICENSEHEADERCHECKER_VERSION)

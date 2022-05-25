@@ -40,7 +40,6 @@ type reconcileInfo struct {
 func Test_UpdateBatch(t *testing.T) {
 
 	helper := sysutil.NewFileTestUtil(t)
-	defer helper.Cleanup()
 
 	helper.CreateCgroupFile("/", sysutil.CPUShares)
 	helper.CreateFile(commonTestFile)
@@ -79,7 +78,6 @@ func Test_UpdateBatch(t *testing.T) {
 func Test_UpdateBatchByCache(t *testing.T) {
 
 	helper := sysutil.NewFileTestUtil(t)
-	defer helper.Cleanup()
 
 	absFile := path.Join(helper.TempDir, commonTestFile)
 

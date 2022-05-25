@@ -1,17 +1,17 @@
 /*
- Copyright 2022 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package resmanager
@@ -223,7 +223,6 @@ func Test_calculateCatL3Schemata(t *testing.T) {
 func Test_initCatResctrl(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
 		helper := system.NewFileTestUtil(t)
-		defer helper.Cleanup()
 
 		sysFSRootDirName := "initCatResctrl"
 		helper.MkDirAll(sysFSRootDirName)
@@ -400,9 +399,7 @@ func Test_getPodCgroupNewTaskIds(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
-			helper := system.NewFileTestUtil(t)
-			defer helper.Cleanup()
+			system.NewFileTestUtil(t)
 
 			testingPrepareContainerCgroupCPUTasks(t,
 				tt.fields.containerParentDir, tt.fields.containerTasksStr)
@@ -611,7 +608,6 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
-			defer helper.Cleanup()
 
 			sysFSRootDirName := "calculateAndApplyCatL3PolicyForGroup"
 			helper.MkDirAll(sysFSRootDirName)
@@ -762,7 +758,6 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 
 			helper := system.NewFileTestUtil(t)
-			defer helper.Cleanup()
 
 			sysFSRootDirName := "calculateAndApplyCatMbPolicyForGroup"
 			helper.MkDirAll(sysFSRootDirName)
@@ -857,7 +852,6 @@ func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 
 			helper := system.NewFileTestUtil(t)
-			defer helper.Cleanup()
 
 			sysFSRootDirName := "writeCatL3GroupTasks"
 			helper.MkDirAll(sysFSRootDirName)
@@ -891,7 +885,6 @@ func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
 		helper := system.NewFileTestUtil(t)
-		defer helper.Cleanup()
 
 		sysFSRootDirName := "reconcileCatResctrlPolicy"
 		helper.MkDirAll(sysFSRootDirName)
@@ -1062,7 +1055,6 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{testingPodMeta}).MaxTimes(2)
 
 		helper := system.NewFileTestUtil(t)
-		defer helper.Cleanup()
 
 		sysFSRootDirName := "reconcileResctrlGroups"
 		helper.MkDirAll(sysFSRootDirName)
@@ -1172,16 +1164,15 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 		statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 		statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{testingPodMeta}).AnyTimes()
+		statesInformer.EXPECT().GetNodeSLO().Return(testingNodeSLO).AnyTimes()
 		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(testingNodeCPUInfo, nil).AnyTimes()
 		rm := &resmanager{
 			statesInformer: statesInformer,
 			metricCache:    metricCache,
 			config:         NewDefaultConfig(),
-			nodeSLO:        testingNodeSLO,
 		}
 
 		helper := system.NewFileTestUtil(t)
-		defer helper.Cleanup()
 
 		sysFSRootDirName := "ResctrlReconcile"
 		helper.MkDirAll(sysFSRootDirName)
@@ -1215,7 +1206,8 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 		r.reconcile()
 
 		// test strategy parse error
-		r.resManager.nodeSLO.Spec.ResourceQoSStrategy = nil
+		testingNodeSLO.Spec.ResourceQoSStrategy = nil
+		statesInformer.EXPECT().GetNodeSLO().Return(testingNodeSLO).AnyTimes()
 		r.reconcile()
 
 	})
@@ -1283,7 +1275,6 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 func Test_calculateL3SchemataResource(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
 		helper := system.NewFileTestUtil(t)
-		defer helper.Cleanup()
 
 		sysFSRootDirName := "reconcileCatResctrlPolicy"
 		helper.MkDirAll(sysFSRootDirName)
@@ -1299,7 +1290,6 @@ func Test_calculateL3SchemataResource(t *testing.T) {
 func Test_calculateMbSchemataResource(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
 		helper := system.NewFileTestUtil(t)
-		defer helper.Cleanup()
 
 		sysFSRootDirName := "reconcileCatResctrlPolicy"
 		helper.MkDirAll(sysFSRootDirName)

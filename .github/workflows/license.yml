@@ -26,4 +26,4 @@ jobs:
       - name: Check license header
         run: |
           make lint-license && git add apis pkg cmd
-          git diff --cached --exit-code || (echo 'Please make sure every file has a correct license inserted' && exit 1);
+          git diff --cached --exit-code || (echo 'Please run "make lint-license" to verify license header' && exit 1);

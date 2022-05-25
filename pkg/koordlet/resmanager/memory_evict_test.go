@@ -1,17 +1,17 @@
 /*
- Copyright 2022 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package resmanager
@@ -374,6 +374,7 @@ func Test_memoryEvict(t *testing.T) {
 			mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
 			mockStatesInformer.EXPECT().GetAllPods().Return(getPodMetas(tt.pods)).AnyTimes()
 			mockStatesInformer.EXPECT().GetNode().Return(tt.node).AnyTimes()
+			mockStatesInformer.EXPECT().GetNodeSLO().Return(getNodeSLOByThreshold(tt.thresholdConfig)).AnyTimes()
 
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
 			mockNodeQueryResult := metriccache.NodeResourceQueryResult{Metric: tt.nodeMetric}
@@ -385,7 +386,13 @@ func Test_memoryEvict(t *testing.T) {
 
 			fakeRecorder := &FakeRecorder{}
 			client := clientsetfake.NewSimpleClientset()
-			resmanager := &resmanager{statesInformer: mockStatesInformer, podsEvicted: cache.NewCacheDefault(), eventRecorder: fakeRecorder, metricCache: mockMetricCache, kubeClient: client, nodeSLO: getNodeSLOByThreshold(tt.thresholdConfig), config: NewDefaultConfig()}
+			resmanager := &resmanager{
+				statesInformer: mockStatesInformer,
+				podsEvicted:    cache.NewCacheDefault(),
+				eventRecorder:  fakeRecorder,
+				metricCache:    mockMetricCache,
+				kubeClient:     client,
+				config:         NewDefaultConfig()}
 			stop := make(chan struct{})
 			_ = resmanager.podsEvicted.Run(stop)
 			defer func() { stop <- struct{}{} }()

@@ -1,17 +1,17 @@
 /*
- Copyright 2022 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package cri
@@ -38,9 +38,10 @@ const (
 )
 
 type RuntimeManagerCriServer struct {
-	hookDispatcher *dispatcher.RuntimeHookDispatcher
-	backendClient  runtimeapi.RuntimeServiceClient
-	store          *store.MetaManager
+	hookDispatcher              *dispatcher.RuntimeHookDispatcher
+	backendRuntimeServiceClient runtimeapi.RuntimeServiceClient
+	backendImageServiceClient   runtimeapi.ImageServiceClient
+	store                       *store.MetaManager
 }
 
 func NewRuntimeManagerCriServer(dispatcher *dispatcher.RuntimeHookDispatcher) *RuntimeManagerCriServer {
@@ -51,15 +52,15 @@ func NewRuntimeManagerCriServer(dispatcher *dispatcher.RuntimeHookDispatcher) *R
 	return criInterceptor
 }
 
-func (ci *RuntimeManagerCriServer) Name() string {
+func (c *RuntimeManagerCriServer) Name() string {
 	return "RuntimeManagerCriServer"
 }
 
-func (ci *RuntimeManagerCriServer) Run() error {
-	if err := ci.initBackendServer(utils.DefaultContainerdSocketPath); err != nil {
+func (c *RuntimeManagerCriServer) Run() error {
+	if err := c.initBackendServer(utils.DefaultRuntimeServiceSocketPath, utils.DefaultImageServiceSocketPath); err != nil {
 		return err
 	}
-	ci.failOver()
+	c.failOver()
 	klog.Infof("do failOver done")
 
 	lis, err := net.Listen("unix", utils.DefaultRuntimeManagerSocketPath)
@@ -68,12 +69,12 @@ func (ci *RuntimeManagerCriServer) Run() error {
 		return err
 	}
 	grpcServer := grpc.NewServer()
-	runtimeapi.RegisterRuntimeServiceServer(grpcServer, ci)
+	runtimeapi.RegisterRuntimeServiceServer(grpcServer, c)
 	err = grpcServer.Serve(lis)
 	return err
 }
 
-func (ci *RuntimeManagerCriServer) getRuntimeHookInfo(serviceType RuntimeServiceType) (config.RuntimeRequestPath,
+func (c *RuntimeManagerCriServer) getRuntimeHookInfo(serviceType RuntimeServiceType) (config.RuntimeRequestPath,
 	resource_executor.RuntimeResourceType) {
 	switch serviceType {
 	case RunPodSandbox:
@@ -91,11 +92,11 @@ func (ci *RuntimeManagerCriServer) getRuntimeHookInfo(serviceType RuntimeService
 	return config.NoneRuntimeHookPath, resource_executor.RuntimeNoopResource
 }
 
-func (ci *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeServiceType,
+func (c *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeServiceType,
 	ctx context.Context, request interface{}, handler grpc.UnaryHandler) (interface{}, error) {
 
-	runtimeHookPath, runtimeResourceType := ci.getRuntimeHookInfo(serviceType)
-	resourceExecutor := resource_executor.NewRuntimeResourceExecutor(runtimeResourceType, ci.store)
+	runtimeHookPath, runtimeResourceType := c.getRuntimeHookInfo(serviceType)
+	resourceExecutor := resource_executor.NewRuntimeResourceExecutor(runtimeResourceType, c.store)
 
 	if err := resourceExecutor.ParseRequest(request); err != nil {
 		klog.Errorf("fail to parse request %v %v", request, err)
@@ -104,7 +105,7 @@ func (ci *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeSe
 
 	// pre call hook server
 	// TODO deal with the Dispatch response
-	if response, err := ci.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest()); err != nil {
+	if response, err := c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest()); err != nil {
 		klog.Errorf("fail to call hook server %v", err)
 	} else {
 		resourceExecutor.UpdateResource(response)
@@ -125,7 +126,7 @@ func (ci *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeSe
 
 	// post call hook server
 	// TODO the response
-	ci.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, resourceExecutor.GenerateHookRequest())
+	c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, resourceExecutor.GenerateHookRequest())
 	return res, err
 }
 
@@ -133,29 +134,41 @@ func dialer(ctx context.Context, addr string) (net.Conn, error) {
 	return (&net.Dialer{}).DialContext(ctx, "unix", addr)
 }
 
-func (ci *RuntimeManagerCriServer) initBackendServer(sockPath string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
-	defer cancel()
-	conn, err := grpc.DialContext(ctx, sockPath, grpc.WithInsecure(), grpc.WithContextDialer(dialer))
-	if err != nil {
-		klog.Infof("err to create  %v\n", err)
-		return err
+func (c *RuntimeManagerCriServer) initBackendServer(runtimeSockPath, imageSockPath string) error {
+	generateGrpcConn := func(sockPath string) (*grpc.ClientConn, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+		defer cancel()
+		return grpc.DialContext(ctx, sockPath, grpc.WithInsecure(), grpc.WithContextDialer(dialer))
 	}
-	ci.backendClient = runtimeapi.NewRuntimeServiceClient(conn)
+	if conn, err := generateGrpcConn(runtimeSockPath); err != nil {
+		klog.Errorf("fail to create runtime service client %v", err)
+		return err
+	} else {
+		c.backendRuntimeServiceClient = runtimeapi.NewRuntimeServiceClient(conn)
+		klog.Infof("success to create runtime client %v", runtimeSockPath)
+	}
+	if conn, err := generateGrpcConn(imageSockPath); err != nil {
+		klog.Errorf("fail to create image service client %v", err)
+		return err
+	} else {
+		c.backendImageServiceClient = runtimeapi.NewImageServiceClient(conn)
+		klog.Infof("success to create image client %v", imageSockPath)
+	}
+
 	return nil
 }
 
-func (ci *RuntimeManagerCriServer) failOver() error {
-	podResponse, podErr := ci.backendClient.ListPodSandbox(context.TODO(), &runtimeapi.ListPodSandboxRequest{})
+func (c *RuntimeManagerCriServer) failOver() error {
+	podResponse, podErr := c.backendRuntimeServiceClient.ListPodSandbox(context.TODO(), &runtimeapi.ListPodSandboxRequest{})
 	if podErr != nil {
 		return podErr
 	}
-	containerResponse, containerErr := ci.backendClient.ListContainers(context.TODO(), &runtimeapi.ListContainersRequest{})
+	containerResponse, containerErr := c.backendRuntimeServiceClient.ListContainers(context.TODO(), &runtimeapi.ListContainersRequest{})
 	if containerErr != nil {
 		return podErr
 	}
 	for _, pod := range podResponse.Items {
-		podResourceExecutor := cri_resource_executor.NewPodResourceExecutor(ci.store)
+		podResourceExecutor := cri_resource_executor.NewPodResourceExecutor(c.store)
 		podResourceExecutor.ParsePod(pod)
 		podResourceExecutor.ResourceCheckPoint(&runtimeapi.RunPodSandboxResponse{
 			PodSandboxId: pod.GetId(),
@@ -163,7 +176,7 @@ func (ci *RuntimeManagerCriServer) failOver() error {
 	}
 
 	for _, container := range containerResponse.Containers {
-		containerExecutor := cri_resource_executor.NewContainerResourceExecutor(ci.store)
+		containerExecutor := cri_resource_executor.NewContainerResourceExecutor(c.store)
 		containerExecutor.ParseContainer(container)
 		containerExecutor.ResourceCheckPoint(&runtimeapi.CreateContainerResponse{
 			ContainerId: container.GetId(),

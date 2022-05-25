@@ -1,17 +1,17 @@
 /*
- Copyright 2022 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package config
@@ -30,6 +30,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
@@ -41,6 +42,7 @@ type Configuration struct {
 	CollectorConf      *metricsadvisor.Config
 	MetricCacheConf    *metriccache.Config
 	ResManagerConf     *resmanager.Config
+	RuntimeHookConf    *runtimehooks.Config
 	AuditConf          *audit.Config
 	FeatureGates       map[string]bool
 }
@@ -52,6 +54,7 @@ func NewConfiguration() *Configuration {
 		CollectorConf:      metricsadvisor.NewDefaultConfig(),
 		MetricCacheConf:    metriccache.NewDefaultConfig(),
 		ResManagerConf:     resmanager.NewDefaultConfig(),
+		RuntimeHookConf:    runtimehooks.NewDefaultConfig(),
 		AuditConf:          audit.NewDefaultConfig(),
 	}
 }
@@ -62,6 +65,8 @@ func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 	c.ReporterConf.InitFlags(fs)
 	c.CollectorConf.InitFlags(fs)
 	c.MetricCacheConf.InitFlags(fs)
+	c.ResManagerConf.InitFlags(fs)
+	c.RuntimeHookConf.InitFlags(fs)
 	c.AuditConf.InitFlags(fs)
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "feature-gates", "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 		"Options are:\n"+strings.Join(features.DefaultKoordletFeatureGate.KnownFeatures(), "\n"))

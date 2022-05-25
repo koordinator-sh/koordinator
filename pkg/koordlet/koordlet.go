@@ -1,17 +1,17 @@
 /*
- Copyright 2022 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package agent
@@ -37,6 +37,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
@@ -59,6 +60,7 @@ type daemon struct {
 	metricCache    metriccache.MetricCache
 	reporter       reporter.Reporter
 	resManager     resmanager.ResManager
+	runtimeHook    runtimehooks.RuntimeHook
 }
 
 func NewDaemon(config *config.Configuration) (Daemon, error) {
@@ -104,7 +106,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, err
 	}
 
-	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, pleg, nodeName)
+	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, pleg, nodeName)
 	metricCache, err := metriccache.NewMetricCache(config.MetricCacheConf)
 	if err != nil {
 		return nil, err
@@ -115,12 +117,18 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(config.CollectorConf.CollectResUsedIntervalSeconds))
 
+	runtimeHook, err := runtimehooks.NewRuntimeHook(statesInformer, config.RuntimeHookConf)
+	if err != nil {
+		return nil, err
+	}
+
 	d := &daemon{
 		collector:      collectorService,
 		statesInformer: statesInformer,
 		metricCache:    metricCache,
 		reporter:       reporterService,
 		resManager:     resManagerService,
+		runtimeHook:    runtimeHook,
 	}
 
 	return d, nil
@@ -171,6 +179,13 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 	go func() {
 		if err := d.resManager.Run(stopCh); err != nil {
 			klog.Error("Unable to run the resManager: ", err)
+			os.Exit(1)
+		}
+	}()
+
+	go func() {
+		if err := d.runtimeHook.Run(stopCh); err != nil {
+			klog.Errorf("Unable to run the runtimeHook: ", err)
 			os.Exit(1)
 		}
 	}()
