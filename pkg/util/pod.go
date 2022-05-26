@@ -243,3 +243,7 @@ func GetPodRequest(pod *corev1.Pod, resourceNames ...corev1.ResourceName) corev1
 	}
 	return result
 }
+
+func IsPodTerminated(pod *corev1.Pod) bool {
+	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
+}
