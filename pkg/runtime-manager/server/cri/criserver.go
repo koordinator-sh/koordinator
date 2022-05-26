@@ -20,17 +20,18 @@ import (
 	"context"
 	"net"
 	"os"
+	"path/filepath"
 	"time"
 
 	"google.golang.org/grpc"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/cmd/runtime-manager/options"
 	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/config"
 	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/dispatcher"
 	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtime-manager/resource-executor"
 	cri_resource_executor "github.com/koordinator-sh/koordinator/pkg/runtime-manager/resource-executor/cri"
-	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/server/utils"
 )
 
 const (
@@ -43,9 +44,9 @@ type RuntimeManagerCriServer struct {
 	backendImageServiceClient   runtimeapi.ImageServiceClient
 }
 
-func NewRuntimeManagerCriServer(dispatcher *dispatcher.RuntimeHookDispatcher) *RuntimeManagerCriServer {
+func NewRuntimeManagerCriServer() *RuntimeManagerCriServer {
 	criInterceptor := &RuntimeManagerCriServer{
-		hookDispatcher: dispatcher,
+		hookDispatcher: dispatcher.NewRuntimeDispatcher(),
 	}
 	return criInterceptor
 }
@@ -55,18 +56,24 @@ func (c *RuntimeManagerCriServer) Name() string {
 }
 
 func (c *RuntimeManagerCriServer) Run() error {
-	if err := c.initBackendServer(utils.DefaultRuntimeServiceSocketPath, utils.DefaultImageServiceSocketPath); err != nil {
+	if err := c.initBackendServer(options.RemoteRuntimeServiceEndpoint, options.RemoteImageServiceEndpoint); err != nil {
 		return err
 	}
 	c.failOver()
+
 	klog.Infof("do failOver done")
 
-	if err := os.Remove(utils.DefaultRuntimeManagerSocketPath); err != nil && os.IsNotExist(err) {
-		klog.Errorf("fail to unlink %v: %v", utils.DefaultRuntimeManagerSocketPath, err)
+	if err := os.Remove(options.RuntimeManagerEndpoint); err != nil && !os.IsNotExist(err) {
+		klog.Errorf("fail to unlink %v: %v", options.RuntimeManagerEndpoint, err)
 		return err
 	}
 
-	lis, err := net.Listen("unix", utils.DefaultRuntimeManagerSocketPath)
+	if err := os.MkdirAll(filepath.Dir(options.RuntimeManagerEndpoint), 0755); err != nil {
+		klog.Errorf("fail to mkdir %v: %v", filepath.Base(options.RuntimeManagerEndpoint), err)
+		return err
+	}
+
+	lis, err := net.Listen("unix", options.RuntimeManagerEndpoint)
 	if err != nil {
 		klog.Errorf("fail to create the lis %v", err)
 		return err
