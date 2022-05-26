@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // +k8s:deepcopy-gen=package
-// +groupName=scheduler.config.koordinator.sh
+// +groupName=kubescheduler.config.k8s.io
 
 // Package config of the API.
 package config
