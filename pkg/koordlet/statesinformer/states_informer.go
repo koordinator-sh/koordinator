@@ -19,6 +19,7 @@ package statesinformer
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"reflect"
 	"sync"
 	"time"
@@ -36,6 +37,11 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
+	"github.com/koordinator-sh/koordinator/pkg/util"
+)
+
+const (
+	tokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 )
 
 type StatesInformer interface {
@@ -80,7 +86,6 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 
 	return &statesInformer{
 		config:       config,
-		kubelet:      NewKubeletStub(config.KubeletIPAddr, config.KubeletHTTPPort, config.KubeletSyncTimeoutSeconds),
 		podHasSynced: atomic.NewBool(false),
 
 		pleg: pleg,
@@ -108,6 +113,20 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	go s.nodeInformer.Run(stopCh)
 	go s.nodeSLOInformer.Run(stopCh)
 
+	// waiting for node synced.
+	waitInformersSynced := []cache.InformerSynced{
+		s.nodeInformer.HasSynced, s.nodeSLOInformer.HasSynced}
+	if !cache.WaitForCacheSync(stopCh, waitInformersSynced...) {
+		return fmt.Errorf("timed out waiting for states informer caches to sync")
+	}
+
+	stub, err := newKubeletStub(s.GetNode(), s.config.KubeletPreferredAddressType, s.config.KubeletSyncTimeoutSeconds, tokenPath)
+	if err != nil {
+		klog.ErrorS(err, "create kubelet stub")
+		return err
+	}
+	s.kubelet = stub
+
 	if s.config.KubeletSyncIntervalSeconds > 0 {
 		hdlID := s.pleg.AddHandler(pleg.PodLifeCycleHandlerFuncs{
 			PodAddedFunc: func(podID string) {
@@ -125,10 +144,10 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 			s.config.KubeletSyncIntervalSeconds)
 	}
 
-	waitInformersSynced := []cache.InformerSynced{
-		s.nodeInformer.HasSynced, s.nodeSLOInformer.HasSynced, s.podHasSynced.Load}
-	if !cache.WaitForCacheSync(stopCh, waitInformersSynced...) {
-		return fmt.Errorf("timed out waiting for states informer caches to sync")
+	// waiting for pods synced.
+	waitPodSynced := []cache.InformerSynced{s.podHasSynced.Load}
+	if !cache.WaitForCacheSync(stopCh, waitPodSynced...) {
+		return fmt.Errorf("timed out waiting for pod caches to sync")
 	}
 
 	go s.startCallbackRunners(stopCh)
@@ -208,4 +227,25 @@ func newNodeSLOInformer(client koordclientset.Interface, nodeName string) cache.
 func (s *statesInformer) setupInformers() {
 	s.setupNodeInformer()
 	s.setupNodeSLOInformer()
+}
+
+func newKubeletStub(node *corev1.Node, addressPreferred string, timeout int, tokenPath string) (KubeletStub, error) {
+	var address string
+	var err error
+	addressPreferredType := corev1.NodeAddressType(addressPreferred)
+	// if the address of the specified type has not been set or error type, InternalIP will be used.
+	if !util.IsNodeAddressTypeSupported(addressPreferredType) {
+		klog.Warningf("Wrong address type or empty type, InternalIP will be used, error: (%+v).", addressPreferredType)
+		addressPreferredType = corev1.NodeInternalIP
+	}
+	address, err = util.GetNodeAddress(node, addressPreferredType)
+	if err != nil {
+		klog.Fatalf("Get node address error: %v type(%s) ", err, addressPreferred)
+	}
+	token, err := ioutil.ReadFile(tokenPath)
+	if err != nil {
+		return nil, err
+	}
+	kubeletEndpointPort := node.Status.DaemonEndpoints.KubeletEndpoint.Port
+	return NewKubeletStub(address, int(kubeletEndpointPort), timeout, string(token))
 }
