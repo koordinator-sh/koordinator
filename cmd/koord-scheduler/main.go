@@ -22,7 +22,12 @@ import (
 	"time"
 
 	"k8s.io/component-base/logs"
-	"k8s.io/kubernetes/cmd/kube-scheduler/app"
+
+	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware"
+
+	// Ensure scheme package is initialized.
+	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 )
 
 func main() {
@@ -31,7 +36,9 @@ func main() {
 	// Register custom plugins to the scheduler framework.
 	// Later they can consist of scheduler profile(s) and hence
 	// used by various kinds of workloads.
-	command := app.NewSchedulerCommand()
+	command := app.NewSchedulerCommand(
+		app.WithPlugin(loadaware.Name, loadaware.New),
+	)
 
 	logs.InitLogs()
 	defer logs.FlushLogs()

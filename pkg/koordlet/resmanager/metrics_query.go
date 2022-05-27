@@ -26,6 +26,11 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
+func (r *resmanager) collectNodeMetricsAvg(windowSeconds int64) metriccache.NodeResourceQueryResult {
+	queryParam := generateQueryParamsAvg(windowSeconds)
+	return r.collectNodeMetric(queryParam)
+}
+
 // query data for 2 * collectResUsedIntervalSeconds
 func (r *resmanager) collectNodeAndPodMetricLast() (*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
 	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)

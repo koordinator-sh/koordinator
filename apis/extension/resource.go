@@ -33,3 +33,11 @@ var (
 		},
 	}
 )
+
+// TranslateResourceNameByPriorityClass translates defaultResourceName to extend resourceName by PriorityClass
+func TranslateResourceNameByPriorityClass(priorityClass PriorityClass, defaultResourceName corev1.ResourceName) corev1.ResourceName {
+	if priorityClass == PriorityProd || priorityClass == PriorityNone {
+		return defaultResourceName
+	}
+	return ResourceNameMap[priorityClass][defaultResourceName]
+}

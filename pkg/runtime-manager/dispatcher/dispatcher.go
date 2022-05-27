@@ -34,9 +34,11 @@ type RuntimeHookDispatcher struct {
 	hookManager *config.Manager
 }
 
-func NewRuntimeDispatcher(cm *HookServerClientManager, hookManager *config.Manager) *RuntimeHookDispatcher {
+func NewRuntimeDispatcher() *RuntimeHookDispatcher {
+	hookManager := config.NewConfigManager()
+	hookManager.Setup()
 	return &RuntimeHookDispatcher{
-		cm:          cm,
+		cm:          NewClientManager(),
 		hookManager: hookManager,
 	}
 }
@@ -69,7 +71,7 @@ func (rd *RuntimeHookDispatcher) Dispatch(ctx context.Context, runtimeRequestPat
 			if hookType.HookStage() != stage {
 				continue
 			}
-			client, err := rd.cm.RuntimeHookClient(HookServerPath{
+			client, err := rd.cm.RuntimeHookServerClient(HookServerPath{
 				Path: hookServer.RemoteEndpoint,
 			})
 			if err != nil {

@@ -34,6 +34,9 @@ const (
 	// BECPUSuppress suppresses for best-effort pod
 	BECPUSuppress featuregate.Feature = "BECPUSuppress"
 
+	// BECPUEvict for best-effort pod
+	BECPUEvict featuregate.Feature = "BECPUEvict"
+
 	// BEMemoryEvict evict best-effort pod based on Memory
 	BEMemoryEvict featuregate.Feature = "BEMemoryEvict"
 
@@ -60,6 +63,7 @@ var (
 		AuditEventsHTTPHandler: {Default: false, PreRelease: featuregate.Alpha},
 		BECgroupReconcile:      {Default: false, PreRelease: featuregate.Alpha},
 		BECPUSuppress:          {Default: false, PreRelease: featuregate.Alpha},
+		BECPUEvict:             {Default: false, PreRelease: featuregate.Alpha},
 		BEMemoryEvict:          {Default: false, PreRelease: featuregate.Alpha},
 		CPUBurst:               {Default: false, PreRelease: featuregate.Alpha},
 		RdtResctrl:             {Default: false, PreRelease: featuregate.Alpha},

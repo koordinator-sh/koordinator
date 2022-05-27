@@ -29,56 +29,31 @@ import (
 )
 
 type PodResourceExecutor struct {
-	store          *store.MetaManager
-	PodMeta        *v1alpha1.PodSandboxMetadata
-	RuntimeHandler string
-	Annotations    map[string]string
-	Labels         map[string]string
-	CgroupParent   string
+	store.PodSandboxInfo
 }
 
-func NewPodResourceExecutor(store *store.MetaManager) *PodResourceExecutor {
-	return &PodResourceExecutor{
-		store: store,
-	}
+func NewPodResourceExecutor() *PodResourceExecutor {
+	return &PodResourceExecutor{}
 }
 
 func (p *PodResourceExecutor) String() string {
-	return fmt.Sprintf("%v/%v", p.PodMeta.Name, p.PodMeta.Uid)
+	return fmt.Sprintf("%v/%v", p.GetPodMeta().GetName(), p.GetPodMeta().GetUid())
 }
 
 func (p *PodResourceExecutor) GetMetaInfo() string {
-	return fmt.Sprintf("%v/%v", p.PodMeta.Name, p.PodMeta.Uid)
-}
-
-func (p *PodResourceExecutor) GenerateResourceCheckpoint() interface{} {
-	return &store.PodSandboxInfo{
-		PodMeta:        p.PodMeta,
-		RuntimeHandler: p.RuntimeHandler,
-		Annotations:    p.Annotations,
-		Labels:         p.Labels,
-	}
+	return fmt.Sprintf("%v/%v", p.GetPodMeta().GetName(), p.GetPodMeta().GetUid())
 }
 
 func (p *PodResourceExecutor) GenerateHookRequest() interface{} {
-	return &v1alpha1.RunPodSandboxHookRequest{
-		PodMeta:        p.PodMeta,
-		RuntimeHandler: p.RuntimeHandler,
-		Annotations:    p.Annotations,
-		Labels:         p.Labels,
-	}
+	return p.GetRunPodSandboxHookRequest()
 }
 
-func (p *PodResourceExecutor) updateByCheckPoint(podID string) error {
-	podCheckPoint := p.store.GetPodSandboxInfo(podID)
-	if podCheckPoint == nil {
+func (p *PodResourceExecutor) loadPodSandboxFromStore(podID string) error {
+	podSandbox := store.GetPodSandboxInfo(podID)
+	if podSandbox == nil {
 		return fmt.Errorf("no pod item related to %v", podID)
 	}
-	p.PodMeta = podCheckPoint.PodMeta
-	p.RuntimeHandler = podCheckPoint.RuntimeHandler
-	p.Annotations = podCheckPoint.Annotations
-	p.Labels = podCheckPoint.Labels
-	p.CgroupParent = podCheckPoint.CgroupParent
+	p.PodSandboxInfo = *podSandbox
 	klog.Infof("get pod info successful %v", podID)
 	return nil
 }
@@ -86,18 +61,21 @@ func (p *PodResourceExecutor) updateByCheckPoint(podID string) error {
 func (p *PodResourceExecutor) ParseRequest(req interface{}) error {
 	switch request := req.(type) {
 	case *runtimeapi.RunPodSandboxRequest:
-		p.PodMeta = &v1alpha1.PodSandboxMetadata{
-			Name:      request.GetConfig().GetMetadata().GetName(),
-			Namespace: request.GetConfig().GetMetadata().GetNamespace(),
+		p.PodSandboxInfo = store.PodSandboxInfo{
+			RunPodSandboxHookRequest: &v1alpha1.RunPodSandboxHookRequest{
+				PodMeta: &v1alpha1.PodSandboxMetadata{
+					Name:      request.GetConfig().GetMetadata().GetName(),
+					Namespace: request.GetConfig().GetMetadata().GetNamespace(),
+				},
+				RuntimeHandler: request.GetRuntimeHandler(),
+				Annotations:    request.GetConfig().GetAnnotations(),
+				Labels:         request.GetConfig().GetLabels(),
+				CgroupParent:   request.GetConfig().GetLinux().GetCgroupParent(),
+			},
 		}
-		p.RuntimeHandler = request.GetRuntimeHandler()
-		p.Annotations = request.GetConfig().GetAnnotations()
-		p.Labels = request.GetConfig().GetLabels()
-		p.CgroupParent = request.GetConfig().GetLinux().GetCgroupParent()
 		klog.Infof("success parse pod Info %v during pod run", p)
 	case *runtimeapi.StopPodSandboxRequest:
-		return p.updateByCheckPoint(request.GetPodSandboxId())
-
+		return p.loadPodSandboxFromStore(request.GetPodSandboxId())
 	}
 	return nil
 }
@@ -106,28 +84,31 @@ func (p *PodResourceExecutor) ParsePod(podsandbox *runtimeapi.PodSandbox) error 
 	if p == nil {
 		return nil
 	}
-	p.PodMeta = &v1alpha1.PodSandboxMetadata{
-		Name:      podsandbox.GetMetadata().GetName(),
-		Namespace: podsandbox.GetMetadata().GetNamespace(),
+	p.PodSandboxInfo = store.PodSandboxInfo{
+		RunPodSandboxHookRequest: &v1alpha1.RunPodSandboxHookRequest{
+			PodMeta: &v1alpha1.PodSandboxMetadata{
+				Name:      podsandbox.GetMetadata().GetName(),
+				Namespace: podsandbox.GetMetadata().GetNamespace(),
+			},
+			RuntimeHandler: podsandbox.GetRuntimeHandler(),
+			Annotations:    podsandbox.GetAnnotations(),
+			Labels:         podsandbox.GetLabels(),
+			// TODO: how to get cgroup parent when failOver
+		},
 	}
-	p.RuntimeHandler = podsandbox.GetRuntimeHandler()
-	p.Annotations = podsandbox.GetAnnotations()
-	p.Labels = podsandbox.GetLabels()
-	// TODO: how to get cgroup parent when failOver
 	return nil
 }
 
 func (p *PodResourceExecutor) ResourceCheckPoint(response interface{}) error {
 	runPodSandboxResponse, ok := response.(*runtimeapi.RunPodSandboxResponse)
-	if !ok {
-		return fmt.Errorf("bad response %v", response)
+	if !ok || p.GetRunPodSandboxHookRequest() == nil {
+		return fmt.Errorf("no need to checkpoint resource %v %v", response, p.GetRunPodSandboxHookRequest())
 	}
-	podCheckPoint := p.GenerateResourceCheckpoint().(*store.PodSandboxInfo)
-	data, _ := json.Marshal(podCheckPoint)
-	err := p.store.WritePodSandboxInfo(runPodSandboxResponse.PodSandboxId, podCheckPoint)
+	err := store.WritePodSandboxInfo(runPodSandboxResponse.PodSandboxId, &p.PodSandboxInfo)
 	if err != nil {
 		return err
 	}
+	data, _ := json.Marshal(p.PodSandboxInfo)
 	klog.Infof("success to checkpoint pod level info %v %v",
 		runPodSandboxResponse.PodSandboxId, string(data))
 	return nil
@@ -136,7 +117,7 @@ func (p *PodResourceExecutor) ResourceCheckPoint(response interface{}) error {
 func (p *PodResourceExecutor) DeleteCheckpointIfNeed(req interface{}) error {
 	switch request := req.(type) {
 	case *runtimeapi.StopPodSandboxRequest:
-		p.store.DeletePodSandboxInfo(request.GetPodSandboxId())
+		store.DeletePodSandboxInfo(request.GetPodSandboxId())
 	}
 	return nil
 }
