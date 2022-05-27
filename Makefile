@@ -17,7 +17,7 @@ KOORD_SCHEDULER_IMG ?= "${REG}/${REG_NS}/koord-scheduler:${GIT_BRANCH}-${GIT_COM
 ENVTEST_K8S_VERSION = 1.23
 
 # Set license header files.
-LICENSE_HEADER_GO ?= hack/boilerplate.go.txt
+LICENSE_HEADER_GO ?= hack/boilerplate/boilerplate.go.txt
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -61,9 +61,8 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	@hack/generate_client.sh
-	@hack/update-scheduler-codegen.sh
 	$(CONTROLLER_GEN) object:headerFile="$(LICENSE_HEADER_GO)" paths="./apis/..."
+	@hack/update-codegen.sh
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -82,7 +81,7 @@ lint-go: golangci-lint ## Lint Go code.
 
 .PHONY: lint-license
 lint-license: 
-	$(HACK_DIR)/update-license-header.sh
+	@hack/update-license-header.sh
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
@@ -174,8 +173,7 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 ##@ Build Dependencies
 
 ## Location to install dependencies to
-PWD ?= $(shell pwd)
-LOCALBIN ?= $(PWD)/bin
+LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
