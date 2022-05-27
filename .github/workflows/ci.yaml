@@ -27,8 +27,6 @@ jobs:
       - uses: golangci/golangci-lint-action@v3
         with:
           args: --verbose
-          skip-pkg-cache: true
-          skip-build-cache: true
 
   staticcheck:
     runs-on: ubuntu-latest
@@ -77,7 +75,7 @@ jobs:
           git diff --cached --exit-code || (echo 'Please run "make manifests" to generate manifests' && exit 1);
       - name: Check auto-generated codes
         run: |
-          make generate && git add apis &&
+          make generate && git add pkg apis &&
           git diff --cached --exit-code || (echo 'Please run "make generate" to generate Go codes' && exit 1);
       - name: Verify gofmt
         run: |
