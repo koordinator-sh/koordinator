@@ -120,9 +120,9 @@ func (r *NodeResourceReconciler) isDegradeNeeded(nodeMetric *slov1alpha1.NodeMet
 
 	strategy := config.GetNodeColocationStrategy(&r.config.ColocationCfg, node)
 
-	if time.Now().After(nodeMetric.Status.UpdateTime.Add(time.Duration(*strategy.DegradeTimeMinutes) * time.Minute)) {
+	if r.Clock.Now().After(nodeMetric.Status.UpdateTime.Add(time.Duration(*strategy.DegradeTimeMinutes) * time.Minute)) {
 		klog.Warningf("timeout NodeMetric: %v, current timestamp: %v, metric last update timestamp: %v",
-			nodeMetric.Name, time.Now(), nodeMetric.Status.UpdateTime)
+			nodeMetric.Name, r.Clock.Now(), nodeMetric.Status.UpdateTime)
 		return true
 	}
 
@@ -198,7 +198,7 @@ func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResou
 		}
 
 		if err := r.Client.Status().Update(context.TODO(), updateNode); err == nil {
-			r.SyncContext.Store(util.GetNodeKey(node), time.Now())
+			r.SyncContext.Store(util.GetNodeKey(node), r.Clock.Now())
 			return nil
 		} else {
 			klog.Errorf("failed to update node %v, error: %v", updateNode.Name, err)
@@ -219,7 +219,7 @@ func (r *NodeResourceReconciler) isBEResourceSyncNeeded(old, new *corev1.Node) b
 
 	// scenario 1: update time gap is bigger than UpdateTimeThresholdSeconds
 	lastUpdatedTime, ok := r.SyncContext.Load(util.GetNodeKey(new))
-	if !ok || time.Now().After(lastUpdatedTime.Add(time.Duration(*strategy.UpdateTimeThresholdSeconds)*time.Second)) {
+	if !ok || r.Clock.Now().After(lastUpdatedTime.Add(time.Duration(*strategy.UpdateTimeThresholdSeconds)*time.Second)) {
 		klog.Warningf("node %v resource expired, need sync", new.Name)
 		return true
 	}

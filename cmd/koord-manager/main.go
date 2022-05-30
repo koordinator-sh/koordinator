@@ -27,6 +27,7 @@ import (
 	"github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/clock"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
@@ -164,6 +165,7 @@ func main() {
 		Client:      mgr.GetClient(),
 		Scheme:      mgr.GetScheme(),
 		SyncContext: noderesource.NewSyncContext(),
+		Clock:       clock.RealClock{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeResource")
 		os.Exit(1)
