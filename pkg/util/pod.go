@@ -101,6 +101,15 @@ func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
 	return qosClass
 }
 
+func GetKubeQoSByCgroupParent(cgroupDir string) corev1.PodQOSClass {
+	if strings.Contains(cgroupDir, "besteffort") {
+		return corev1.PodQOSBestEffort
+	} else if strings.Contains(cgroupDir, "burstable") {
+		return corev1.PodQOSBurstable
+	}
+	return corev1.PodQOSGuaranteed
+}
+
 func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
 	podCPUMilliReq := int64(0)
 	// TODO: count init containers and pod overhead
