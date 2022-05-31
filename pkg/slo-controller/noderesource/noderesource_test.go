@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -230,25 +231,28 @@ func Test_isDegradeNeeded(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NodeResourceReconciler{config: Config{
-				ColocationCfg: config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
-						Enable: pointer.BoolPtr(true),
-					},
-					NodeConfigs: []config.NodeColocationCfg{
-						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"xxx": "yyy",
+			r := NodeResourceReconciler{
+				config: Config{
+					ColocationCfg: config.ColocationCfg{
+						ColocationStrategy: config.ColocationStrategy{
+							Enable: pointer.BoolPtr(true),
+						},
+						NodeConfigs: []config.NodeColocationCfg{
+							{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"xxx": "yyy",
+									},
 								},
-							},
-							ColocationStrategy: config.ColocationStrategy{
-								DegradeTimeMinutes: pointer.Int64Ptr(degradeTimeoutMinutes),
+								ColocationStrategy: config.ColocationStrategy{
+									DegradeTimeMinutes: pointer.Int64Ptr(degradeTimeoutMinutes),
+								},
 							},
 						},
 					},
 				},
-			}}
+				Clock: clock.RealClock{},
+			}
 			assert.Equal(t, tt.want, r.isDegradeNeeded(tt.args.nodeMetric, tt.args.node))
 		})
 	}
@@ -717,6 +721,7 @@ func Test_updateNodeBEResource(t *testing.T) {
 					ColocationCfg: tt.fields.config.ColocationCfg,
 				},
 				SyncContext: SyncContext{contextMap: tt.fields.SyncContext.contextMap},
+				Clock:       clock.RealClock{},
 			}
 			got := r.updateNodeBEResource(tt.args.oldNode, tt.args.beResource)
 			assert.Equal(t, tt.wantErr, got != nil, got)
@@ -979,6 +984,7 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 				SyncContext: SyncContext{
 					contextMap: tt.fields.SyncContext.contextMap,
 				},
+				Clock: clock.RealClock{},
 			}
 			got := r.isBEResourceSyncNeeded(tt.args.oldNode, tt.args.newNode)
 			assert.Equal(t, tt.want, got)
