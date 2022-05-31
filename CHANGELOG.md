@@ -1,5 +1,53 @@
 # Change Log
 
+
+## [v0.4.0](https://github.com/koordinator-sh/koordinator/tree/v0.4.0) (2022-05-31)
+[Full Changelog](https://github.com/koordinator-sh/koordinator/compare/v0.3.1...v0.4.0)
+
+**Features and improvements:**
+
+- Introduce koord-runtime-proxy [\#171](https://github.com/koordinator-sh/koordinator/pull/171)
+- koord-runtime-proxy supports docker proxy [\#64](https://github.com/koordinator-sh/koordinator/issues/64)
+- Support Memory eviction lower percent [\#85](https://github.com/koordinator-sh/koordinator/issues/85)
+- Support load-aware scheduling [\#135](https://github.com/koordinator-sh/koordinator/pull/135)
+- Support BE Pods eviction based on satisfaction [\#147](https://github.com/koordinator-sh/koordinator/issues/147)
+- Support group identity [\#154](https://github.com/koordinator-sh/koordinator/issues/154)
+
+**Fixed bugs:**
+
+- Use the limit as request for BE Pods [\#49](https://github.com/koordinator-sh/koordinator/pull/129)
+
+**Merged pull requests:**
+
+- fix be container memory request [\#129](https://github.com/koordinator-sh/koordinator/pull/129) ([shinytang6](https://github.com/shinytang6))
+- add koordlet runtime design [\#123](https://github.com/koordinator-sh/koordinator/pull/123) ([zwzhang0107](https://github.com/zwzhang0107))
+- support memoryEvictLowerPercent in memory evict [\#132](https://github.com/koordinator-sh/koordinator/pull/132) ([shinytang6](https://github.com/shinytang6))
+- add validation for CRD [\#133](https://github.com/koordinator-sh/koordinator/pull/133) ([jasonliu747](https://github.com/jasonliu747))
+- Modify memqos wmark ratio doc desc [\#142](https://github.com/koordinator-sh/koordinator/pull/142) ([tianzichenone](https://github.com/tianzichenone))
+- proposal load-aware scheduling plugin [\#135](https://github.com/koordinator-sh/koordinator/pull/135) ([eahydra](https://github.com/eahydra))
+- koordlet: support NodeMetricCollectPolicy [\#157](https://github.com/koordinator-sh/koordinator/pull/157) ([eahydra](https://github.com/eahydra))
+- koord-scheduler: Support load aware scheduling [\#159](https://github.com/koordinator-sh/koordinator/pull/159) ([eahydra](https://github.com/eahydra))
+- koordlet: support collect BE CPU metric [\#158](https://github.com/koordinator-sh/koordinator/pull/158) ([jasonliu747](https://github.com/jasonliu747))
+- apis: introduce cpu evict fields in NodeSLO [\#161](https://github.com/koordinator-sh/koordinator/pull/161) ([jasonliu747](https://github.com/jasonliu747))
+- koordlet: support cpu evict feature [\#169](https://github.com/koordinator-sh/koordinator/pull/169) ([jasonliu747](https://github.com/jasonliu747))
+- Add pod annotations/labels for container level hook [\#165](https://github.com/koordinator-sh/koordinator/pull/165) ([honpey](https://github.com/honpey))
+- Introduce image service proxy under cri scenario [\#168](https://github.com/koordinator-sh/koordinator/pull/168) ([honpey](https://github.com/honpey))
+- koord-runtime-proxy: refactor codes about store and resource-exectutor [\#170](https://github.com/koordinator-sh/koordinator/pull/170) ([honpey](https://github.com/honpey))
+- Introduce main for koord-runtime-proxy [\#171](https://github.com/koordinator-sh/koordinator/pull/171) ([honpey](https://github.com/honpey))
+- Add the koord-runtime-proxy design doc [\#178](https://github.com/koordinator-sh/koordinator/pull/178) ([honpey](https://github.com/honpey))
+- koord-runtime-proxy supports docker proxy [\#128](https://github.com/koordinator-sh/koordinator/pull/128) ([ZYecho](https://github.com/ZYecho))
+- add group identity plugin [\#166](https://github.com/koordinator-sh/koordinator/pull/166) ([zwzhang0107](https://github.com/zwzhang0107))
+- use T.TempDir to create temporary test directory [\#151](https://github.com/koordinator-sh/koordinator/pull/151) ([Juneezee](https://github.com/Juneezee))
+- update codecov configuration [\#131](https://github.com/koordinator-sh/koordinator/pull/131) ([saintube](https://github.com/saintube))
+
+**New Contributors**
+
+- [shinytang6](https://github.com/shinytang6) made their contributions in [\#129](https://github.com/koordinator-sh/koordinator/pull/129), [\#132](https://github.com/koordinator-sh/koordinator/pull/132)
+- [tianzichenone](https://github.com/tianzichenone) made their first contribution in [\#142](https://github.com/koordinator-sh/koordinator/pull/142)
+- [Juneezee](https://github.com/Juneezee) made their first contribution in [\#151](https://github.com/koordinator-sh/koordinator/pull/151)
+- [ZYecho](https://github.com/ZYecho) made their first contribution in [\#128](https://github.com/koordinator-sh/koordinator/pull/128)
+
+
 ## [v0.3.0](https://github.com/koordinator-sh/koordinator/tree/v0.3.0) (2022-05-07)
 [Full Changelog](https://github.com/koordinator-sh/koordinator/compare/v0.2.0...v0.3.0)
 
