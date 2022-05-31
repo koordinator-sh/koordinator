@@ -117,3 +117,36 @@ plugin provider can set any hook combinations to "runtime-hooks".
 
 ## Installation
 
+### Installing from sources
+get sources: `git clone https://github.com/koordinator-sh/koordinator.git`
+
+build: `cd koordinator; make build-koord-runtime-proxy`
+
+### Installing from packages
+TODO
+
+### Setup Kubelet
+To make koord-runtime-proxy a proxy between kubelet and containerd(dockerd), kubelet parameters should be altered as shown
+below:
+```
+kubelet <other options> --container-runtime=remote --container-runtime=/var/run/koord-runtimeproxy/runtimeproxy.sock
+```
+
+### Setup KoordRuntimeProxy
+Firstly, please make sure your runtime backend is containerd or dockerd.
+
+Under containerd scenario, koord-runtime-proxy can be setup with command:
+```
+koord-runtime-proxy --remote-runtime-service-endpoint=<runtime sockfile path>
+    --remote-image-service-endpoint=<image sockfile path>
+```
+If containerd listening CRI request on default /var/run/koord-runtimeproxy/runtimeproxy.sock, koord-runtime-proxy can be setup by:
+```
+koord-runtime-proxy
+```
+
+Under docker scenario, koord-runtime-proxy should be setup with the additional parameter `--backend-runtime-mode Docker`,
+and without `remote-image-service-endpoint`:
+```
+koord-runtime-proxy --backend-runtime-mode=Docker --remote-runtime-service-endpoint=<runtime sockfile path>
+```
