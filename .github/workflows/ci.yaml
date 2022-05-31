@@ -16,14 +16,6 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version-file: go.mod
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-lint-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-lint-
       - uses: golangci/golangci-lint-action@v3
         with:
           args: --verbose
