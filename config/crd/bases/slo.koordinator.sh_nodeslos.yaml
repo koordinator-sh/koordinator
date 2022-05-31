@@ -820,14 +820,6 @@ spec:
                       then stop evict BE pods
                     format: int64
                     type: integer
-                  cpuEvictThresholdPercent:
-                    default: 70
-                    description: cpu evict threshold percentage (0,100), default =
-                      70
-                    format: int64
-                    maximum: 100
-                    minimum: 0
-                    type: integer
                   cpuEvictTimeWindowSeconds:
                     description: cpu evict start after continue avg(cpuusage) > CPUEvictThresholdPercent
                       in seconds
