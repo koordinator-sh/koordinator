@@ -24,8 +24,8 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/store"
-	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/utils"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
 )
 
 type PodResourceExecutor struct {

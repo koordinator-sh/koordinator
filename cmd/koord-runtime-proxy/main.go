@@ -23,13 +23,13 @@ import (
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/cmd/runtime-manager/options"
-	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/server/cri"
+	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/options"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/cri"
 )
 
 func main() {
-	flag.StringVar(&options.RuntimeManagerEndpoint, "runtime-manager-endpoint", options.DefaultRuntimeManagerEndpoint,
-		"runtime-manager service endpoint.")
+	flag.StringVar(&options.RuntimeProxyEndpoint, "koord-runtimeproxy-endpoint", options.DefaultRuntimeProxyEndpoint,
+		"koord-runtimeproxy service endpoint.")
 	flag.StringVar(&options.RemoteRuntimeServiceEndpoint, "remote-runtime-service-endpoint", options.DefaultContainerdRuntimeServiceEndpoint,
 		"backend runtime service endpoint.")
 	flag.StringVar(&options.RemoteImageServiceEndpoint, "remote-image-service-endpoint", options.DefaultContainerdImageServiceEndpoint,

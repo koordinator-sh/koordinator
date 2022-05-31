@@ -25,7 +25,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
-	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtime-manager/config"
+	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
 )

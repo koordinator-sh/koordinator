@@ -18,7 +18,7 @@ package cri
 
 import (
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/utils"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 )
 

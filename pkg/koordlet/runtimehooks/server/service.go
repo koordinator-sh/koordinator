@@ -21,7 +21,7 @@ import (
 
 	"k8s.io/klog/v2"
 
-	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtime-manager/config"
+	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
