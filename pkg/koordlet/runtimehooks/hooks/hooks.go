@@ -21,7 +21,7 @@ import (
 
 	"k8s.io/klog/v2"
 
-	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtime-manager/config"
+	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
 type Hook struct {

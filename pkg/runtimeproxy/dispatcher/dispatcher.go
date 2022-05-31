@@ -25,7 +25,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/config"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
 // RuntimeHookDispatcher dispatches hook request to RuntimeHookServer(e.g. koordlet)

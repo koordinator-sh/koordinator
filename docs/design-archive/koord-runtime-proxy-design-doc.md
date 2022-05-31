@@ -1,32 +1,32 @@
-# Design of RuntimeManager
+# Design of KoordRuntimeProxy
 
-* [Design of RuntimeManager](#summary)
+* [Design of KoordRuntimeProxy](#summary)
     * [Summary](#summary)
     * [Goals](#goals)
     * [Components](#components)
-        * [RuntimeManager](#runtimemanager)
+        * [KoordRuntimeProxy](#koordruntimeproxy)
         * [RuntimePlugins](#runtimeplugins)
-    * [Architecture of RuntimeManager](#architecture)
+    * [Architecture of KoordRuntimeProxy](#architecture)
         * [CRI Server](#cri-server)
         * [Plugins Manager](#plugins-manager)
         * [Runtime Dispatcher](#runtime-dispatcher)
         * [Store](#store)
     * [RuntimePlugins](#examples-for-hooks-extensions)
         * [How to Register Plugins](#how-to-register-plugins)
-        * [Protocols between RuntimeManager and Plugins](#protocols-between-runtimemanager-and-plugins)
+        * [Protocols between KoordRuntimeProxy and Plugins](#protocols-between-koordruntimeproxy-and-plugins)
         * [Examples for Runtime Plugins](#examples-for-runtime-plugins)
     * [Installation](#installation)
 
 ## Summary
 
-RuntimeManager acts as a proxy between kubelet and containerd(dockerd under dockershim scenario), which is designed to
+KoordRuntimeProxy acts as a proxy between kubelet and containerd(dockerd under dockershim scenario), which is designed to
 intercept CRI request, and apply some resource management policies, such as setting different cgroup parameters by pod
-priorities under hybrid workloads orchestration scenario, applying new isolation policies for latest Linux kernel,
+priorities under hybrid workload orchestration scenario, applying new isolation policies for latest Linux kernel,
 CPU architecture, and etc.
 
-There are two components involved, RuntimeManager and RuntimePlugins.
+There are two components involved, KoordRuntimeProxy and RuntimePlugins.
 
-![image](../images/runtime-manager-architecture.svg)
+![image](../images/koord-runtime-proxy-architecture.svg)
 
 ## Goals
 
@@ -35,32 +35,32 @@ There are two components involved, RuntimeManager and RuntimePlugins.
 
 ## Components
 
-### RuntimeManager
+### KoordRuntimeProxy
 
-RuntimeManager is in charge of intercepting request during pod's lifecycle, such as RunPodSandbox, CreateContainer etc.,
+KoordRuntimeProxy is in charge of intercepting request during pod's lifecycle, such as RunPodSandbox, CreateContainer etc.,
 and then calling RuntimePlugins to do resource isolation policies before transferring request to backend containerd(dockerd)
-and after transferring response to kubelet. RuntimeManager provides an isolation-policy-execution framework which allows
+and after transferring response to kubelet. KoordRuntimeProxy provides an isolation-policy-execution framework which allows
 customized plugins registered to do specified isolation policies, these plugins are called RuntimePlugins.
-RuntimeManager itself does NOT do any isolation policies.
+KoordRuntimeProxy itself does NOT do any isolation policies.
 
 ### RuntimePlugins
 
-RuntimePlugins register events(RunPodSandbox etc.) to RuntimeManager and would receive notifications when events happen.
+RuntimePlugins register events(RunPodSandbox etc.) to KoordRuntimeProxy and would receive notifications when events happen.
 RuntimePlugins should complete resource isolation policies basing on the notification message, and then response
-RuntimeManager, RuntimeManager would decide to transfer request to backend containerd or discard request according to
+KoordRuntimeProxy, KoordRuntimeProxy would decide to transfer request to backend containerd or discard request according to
 plugins' response.
 
-If no RuntimePlugins registered, RuntimeManager would become a transparent proxy between kubelet and containerd.
+If no RuntimePlugins registered, KoordRuntimeProxy would become a transparent proxy between kubelet and containerd.
 
 ## Architecture
 
-![image](../images/runtime-manager-design.svg)
+![image](../images/koord-runtime-proxy-design.svg)
 
-There are 4 main components for RuntimeManager.
+There are 4 main components for KoordRuntimeProxy.
 
 ### CRI Server
 
-As a proxy between kubelet and containerd, RuntimeManager acts as a CRI server for kubelet(http server under dockershim
+As a proxy between kubelet and containerd, KoordRuntimeProxy acts as a CRI server for kubelet(http server under dockershim
 scenario). It should intercept all request from kubelet, and generate protocols for talking with plugins before and
 after talking with backend containerd(dockerd)
 
@@ -74,13 +74,13 @@ RuntimeDispatcher is designed to manage communications with plugins.
 
 ### Store
 
-As a proxy, RuntimeManager had better be designed as stateless, but sometimes it does NOT work. Take StartContainer hook
+As a proxy, KoordRuntimeProxy had better be designed as stateless, but sometimes it does NOT work. Take StartContainer hook
 for example, there exists only containerID in CRI StartContainerRequest, which is not enough for plugins to adapt policies
-since plugins may not store pod/container info(such as meta, priority) locally. So RuntimeManager should store pod/container
-info during RunPodSandbox/CreateContainer Stage. When StartContainer request comes, RuntimeManager can get pod/container info
+since plugins may not store pod/container info(such as meta, priority) locally. So KoordRuntimeProxy should store pod/container
+info during RunPodSandbox/CreateContainer Stage. When StartContainer request comes, KoordRuntimeProxy can get pod/container info
 by containerID, and then call plugins with pod/container info.
 
-With store, there would be pod/container info everytime RuntimeManager calls plugins, so there is no need for plugins to
+With store, there would be pod/container info everytime KoordRuntimeProxy calls plugins, so there is no need for plugins to
 store pod/container info exceptionally, plugins can be designed as stateless.
 
 Considering performance, store locates in memory and does not generate external io to disk.
@@ -100,7 +100,7 @@ $ cat /etc/runtime/hookserver.d/koordlet.json
 }
 ```
 There are 3 fields involved:
-- remote-endpoint: endpoint RuntimeManager talking with plugin, generated by plugin.
+- remote-endpoint: endpoint KoordRuntimeProxy talking with plugin, generated by plugin.
 - failure-policy: policy when calling plugin fail, Fail or Ignore, default to Ignore.
 - runtime-hooks: currently 5 hook points: PreRunPodSandbox, PreStartContainer, PostStartContainer, PreUpdateContainerResources,
 PostStopContainer.
@@ -109,7 +109,7 @@ hook points with prefix 'Pre' means calling plugins before transferring request 
 hook points with prefix 'Post' means calling plugins after receiving response from containerd(dockerd).<br>
 plugin provider can set any hook combinations to "runtime-hooks".
 
-### Protocols between RuntimeManager and Plugins
+### Protocols between KoordRuntimeProxy and Plugins
 [Protocols](https://github.com/koordinator-sh/koordinator/blob/main/apis/runtime/v1alpha1/api.proto#L141)
 
 ### Examples for Runtime Plugins

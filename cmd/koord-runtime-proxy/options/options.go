@@ -17,7 +17,7 @@ limitations under the License.
 package options
 
 const (
-	DefaultRuntimeManagerEndpoint = "/var/run/runtime-manager/runtimemanager.sock"
+	DefaultRuntimeProxyEndpoint = "/var/run/koord-runtimeproxy/runtimeproxy.sock"
 
 	DefaultContainerdRuntimeServiceEndpoint = "/var/run/containerd/containerd.sock"
 	DefaultContainerdImageServiceEndpoint   = "/var/run/containerd/containerd.sock"
@@ -28,7 +28,7 @@ const (
 )
 
 var (
-	RuntimeManagerEndpoint       string
+	RuntimeProxyEndpoint         string
 	RemoteRuntimeServiceEndpoint string
 	RemoteImageServiceEndpoint   string
 

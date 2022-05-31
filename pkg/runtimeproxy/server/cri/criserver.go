@@ -27,11 +27,11 @@ import (
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/cmd/runtime-manager/options"
-	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/config"
-	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/dispatcher"
-	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtime-manager/resource-executor"
-	cri_resource_executor "github.com/koordinator-sh/koordinator/pkg/runtime-manager/resource-executor/cri"
+	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/options"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/dispatcher"
+	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor"
+	cri_resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor/cri"
 )
 
 const (
@@ -63,17 +63,17 @@ func (c *RuntimeManagerCriServer) Run() error {
 
 	klog.Infof("do failOver done")
 
-	if err := os.Remove(options.RuntimeManagerEndpoint); err != nil && !os.IsNotExist(err) {
-		klog.Errorf("fail to unlink %v: %v", options.RuntimeManagerEndpoint, err)
+	if err := os.Remove(options.RuntimeProxyEndpoint); err != nil && !os.IsNotExist(err) {
+		klog.Errorf("fail to unlink %v: %v", options.RuntimeProxyEndpoint, err)
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(options.RuntimeManagerEndpoint), 0755); err != nil {
-		klog.Errorf("fail to mkdir %v: %v", filepath.Base(options.RuntimeManagerEndpoint), err)
+	if err := os.MkdirAll(filepath.Dir(options.RuntimeProxyEndpoint), 0755); err != nil {
+		klog.Errorf("fail to mkdir %v: %v", filepath.Base(options.RuntimeProxyEndpoint), err)
 		return err
 	}
 
-	lis, err := net.Listen("unix", options.RuntimeManagerEndpoint)
+	lis, err := net.Listen("unix", options.RuntimeProxyEndpoint)
 	if err != nil {
 		klog.Errorf("fail to create the lis %v", err)
 		return err

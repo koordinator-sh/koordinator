@@ -18,8 +18,8 @@ package resource_executor
 
 import (
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/resource-executor/cri"
-	"github.com/koordinator-sh/koordinator/pkg/runtime-manager/store"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor/cri"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
 )
 
 type RuntimeResourceExecutor interface {
