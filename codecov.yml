@@ -1,17 +1,29 @@
-flag_management:
-  default_rules:
-    carryforward: true
-    statuses:
-      - name_prefix: project-
-        type: project
+coverage:
+  status:
+    project:
+      # global coverage
+      default:
         target: auto
-        threshold: 5%
+        threshold: 2%
+        flags:
+          - unittests
+        paths:
+          - "pkg"
+        # advanced settings
+        if_ci_failed: error #success, failure, error, ignore
         if_no_uploads: error
         if_not_found: success # no commit found? still set a success
-      - name_prefix: patch-
-        type: patch
+    patch:
+      # diff coverage
+      default:
         target: 70%
+        flags:
+          - unittests
+        paths:
+          - "pkg"
+        if_ci_failed: error
         if_no_uploads: success
         if_not_found: success
+
 github_checks:
   annotations: true
