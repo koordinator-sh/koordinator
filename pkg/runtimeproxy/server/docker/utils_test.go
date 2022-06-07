@@ -94,7 +94,7 @@ func Test_splitLabelsAndAnnotations(t *testing.T) {
 			args: args{
 				configs: map[string]string{
 					"annotation.dummy.koordinator.sh/test_splitLabelsAndAnnotations": "true",
-					"io.kubernetes.docker.type": "podsandbox",
+					"io.kubernetes.docker.type":                                      "podsandbox",
 				},
 			},
 			wantLabels: map[string]string{
@@ -104,7 +104,6 @@ func Test_splitLabelsAndAnnotations(t *testing.T) {
 				"dummy.koordinator.sh/test_splitLabelsAndAnnotations": "true",
 			},
 		},
-
 	}
 	for _, tt := range tests {
 		gotLabels, gotAnnos := splitLabelsAndAnnotations(tt.args.configs)
