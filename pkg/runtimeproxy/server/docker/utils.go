@@ -119,8 +119,8 @@ func splitLabelsAndAnnotations(configs map[string]string) (labels map[string]str
 	labels = make(map[string]string)
 	annos = make(map[string]string)
 	for k, v := range configs {
-		if strings.HasPrefix("annotation.", k) {
-			annos[strings.TrimPrefix("annotation.", k)] = v
+		if strings.HasPrefix(k, "annotation.") {
+			annos[strings.TrimPrefix(k, "annotation.")] = v
 		} else {
 			labels[k] = v
 		}

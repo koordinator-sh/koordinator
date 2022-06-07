@@ -78,3 +78,36 @@ func Test_getContainerID(t *testing.T) {
 		assert.Equal(t, tt.expectContainerID, cid)
 	}
 }
+
+func Test_splitLabelsAndAnnotations(t *testing.T) {
+	type args struct {
+		configs map[string]string
+	}
+	tests := []struct {
+		name       string
+		args       args
+		wantLabels map[string]string
+		wantAnnos  map[string]string
+	}{
+		{
+			name: "Docker - normal case",
+			args: args{
+				configs: map[string]string{
+					"annotation.dummy.koordinator.sh/test_splitLabelsAndAnnotations": "true",
+					"io.kubernetes.docker.type":                                      "podsandbox",
+				},
+			},
+			wantLabels: map[string]string{
+				"io.kubernetes.docker.type": "podsandbox",
+			},
+			wantAnnos: map[string]string{
+				"dummy.koordinator.sh/test_splitLabelsAndAnnotations": "true",
+			},
+		},
+	}
+	for _, tt := range tests {
+		gotLabels, gotAnnos := splitLabelsAndAnnotations(tt.args.configs)
+		assert.Equal(t, tt.wantLabels, gotLabels)
+		assert.Equal(t, tt.wantAnnos, gotAnnos)
+	}
+}
