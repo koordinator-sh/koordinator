@@ -14,7 +14,7 @@
  limitations under the License.
 */
 
-// To regenerate api.pb.go run scripts/generate_runtime.sh
+// To regenerate api.pb.go run hack/generate-runtime.sh
 syntax = "proto3";
 
 package runtime.v1alpha1;
