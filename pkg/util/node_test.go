@@ -20,10 +20,9 @@ import (
 	"path"
 	"testing"
 
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func Test_GetKubeQosRelativePath(t *testing.T) {
@@ -46,4 +45,101 @@ func Test_GetKubeQosRelativePath(t *testing.T) {
 
 	besteffortPathCgroupfs := GetKubeQosRelativePath(corev1.PodQOSBestEffort)
 	assert.Equal(t, path.Join(system.KubeRootNameCgroupfs, system.KubeBesteffortNameCgroupfs), besteffortPathCgroupfs)
+}
+
+func TestGetNodeAddress(t *testing.T) {
+	type args struct {
+		node     *corev1.Node
+		addrType corev1.NodeAddressType
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "InternalIP",
+			args: args{
+				node: &corev1.Node{
+					Status: corev1.NodeStatus{
+						Addresses: []corev1.NodeAddress{
+							{Type: corev1.NodeInternalIP, Address: "192.168.1.1"},
+						},
+					},
+				},
+				addrType: corev1.NodeInternalIP,
+			},
+			want:    "192.168.1.1",
+			wantErr: false,
+		},
+		{
+			name: "Hostname",
+			args: args{
+				node: &corev1.Node{
+					Status: corev1.NodeStatus{
+						Addresses: []corev1.NodeAddress{
+							{Type: corev1.NodeHostName, Address: "node1"},
+						},
+					},
+				},
+				addrType: corev1.NodeHostName,
+			},
+			want:    "node1",
+			wantErr: false,
+		},
+		{
+			name: "Empty",
+			args: args{
+				node: &corev1.Node{
+					Status: corev1.NodeStatus{
+						Addresses: []corev1.NodeAddress{
+							{Type: corev1.NodeInternalIP, Address: "192.168.1.1"},
+							{Type: corev1.NodeHostName, Address: "node1"},
+						},
+					},
+				},
+				addrType: corev1.NodeExternalDNS,
+			},
+			want:    "",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetNodeAddress(tt.args.node, tt.args.addrType)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetNodeAddress() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("GetNodeAddress() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsNodeAddressTypeSupported(t *testing.T) {
+	type args struct {
+		addrType corev1.NodeAddressType
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{name: "Hostname", args: args{addrType: corev1.NodeHostName}, want: true},
+		{name: "InternalIP", args: args{addrType: corev1.NodeInternalIP}, want: true},
+		{name: "InternalDNS", args: args{addrType: corev1.NodeInternalDNS}, want: true},
+		{name: "ExternalIP", args: args{addrType: corev1.NodeExternalIP}, want: true},
+		{name: "ExternalDNS", args: args{addrType: corev1.NodeExternalDNS}, want: true},
+		{name: "EmptyAddress", args: args{addrType: corev1.NodeAddressType("EmptyAddress")}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsNodeAddressTypeSupported(tt.args.addrType); got != tt.want {
+				t.Errorf("IsAddressTypeSupported() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

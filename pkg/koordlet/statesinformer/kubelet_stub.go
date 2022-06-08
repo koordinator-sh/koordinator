@@ -19,10 +19,13 @@ package statesinformer
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
-
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
+	"k8s.io/client-go/transport"
 )
 
 type KubeletStub interface {
@@ -30,27 +33,68 @@ type KubeletStub interface {
 }
 
 type kubeletStub struct {
-	ipAddr         string
-	httpPort       int
-	timeoutSeconds int
+	addr       string
+	port       int
+	httpClient *http.Client
 }
 
-func NewKubeletStub(ip string, port, timeoutSeconds int) KubeletStub {
-	return &kubeletStub{
-		ipAddr:         ip,
-		httpPort:       port,
-		timeoutSeconds: timeoutSeconds,
+func NewKubeletStub(addr string, port, timeoutSeconds int, token string) (KubeletStub, error) {
+	preTlsConfig := makeTransportConfig(token, true)
+	tlsConfig, err := transport.TLSConfigFor(preTlsConfig)
+	if err != nil {
+		return nil, err
 	}
+	rt := http.DefaultTransport
+	if tlsConfig != nil {
+		// If SSH Tunnel is turned on
+		rt = utilnet.SetOldTransportDefaults(&http.Transport{
+			TLSClientConfig: tlsConfig,
+		})
+	}
+	roundTripper, err := transport.HTTPWrappersForConfig(makeTransportConfig(token, true), rt)
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{
+		Timeout:   time.Duration(timeoutSeconds) * time.Second,
+		Transport: roundTripper,
+	}
+	return &kubeletStub{
+		httpClient: client,
+		addr:       addr,
+		port:       port,
+	}, nil
+}
+
+func makeTransportConfig(token string, insecure bool) *transport.Config {
+	tlsConfig := &transport.Config{
+		BearerToken: token,
+		TLS: transport.TLSConfig{
+			Insecure: true,
+		},
+	}
+	return tlsConfig
 }
 
 func (k *kubeletStub) GetAllPods() (corev1.PodList, error) {
 	podList := corev1.PodList{}
-	result, err := util.DoHTTPGet("pods", k.ipAddr, k.httpPort, k.timeoutSeconds)
+	url := fmt.Sprintf("https://%v:%d/pods/", k.addr, k.port)
+	rsp, err := k.httpClient.Get(url)
 	if err != nil {
 		return podList, err
 	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return podList, fmt.Errorf("request %s failed, code %d", url, rsp.StatusCode)
+	}
+
+	body, err := ioutil.ReadAll(rsp.Body)
+	if err != nil {
+		return podList, err
+	}
+
 	// parse json data
-	err = json.Unmarshal(result, &podList)
+	err = json.Unmarshal(body, &podList)
 	if err != nil {
 		return podList, fmt.Errorf("parse kubelet pod list failed, err: %v", err)
 	}
