@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"strings"
@@ -91,6 +92,17 @@ func encodeData(data interface{}) (*bytes.Buffer, error) {
 	return params, nil
 }
 
+func generateNewBody(obj interface{}) (io.ReadCloser, int64, error) {
+	nBody, err := encodeBody(obj)
+	if err != nil {
+		return nil, -1, err
+	}
+	body := ioutil.NopCloser(nBody)
+	nBody, _ = encodeBody(obj)
+	newLength, _ := calculateContentLength(nBody)
+	return body, newLength, nil
+}
+
 func HostConfigToResource(config *container.HostConfig) *v1alpha1.LinuxContainerResources {
 	if config == nil {
 		return nil
@@ -105,6 +117,35 @@ func HostConfigToResource(config *container.HostConfig) *v1alpha1.LinuxContainer
 		CpusetMems:             config.CpusetMems,
 		MemorySwapLimitInBytes: config.MemorySwap,
 	}
+}
+
+func UpdateHostConfigByResource(config *container.HostConfig, resources *v1alpha1.LinuxContainerResources) *container.HostConfig {
+	if config == nil || resources == nil {
+		return config
+	}
+	config.CPUPeriod = resources.CpuPeriod
+	config.CPUQuota = resources.CpuQuota
+	config.CPUShares = resources.CpuShares
+	config.Memory = resources.MemoryLimitInBytes
+	config.OomScoreAdj = int(resources.OomScoreAdj)
+	config.CpusetCpus = resources.CpusetCpus
+	config.CpusetMems = resources.CpusetMems
+	config.MemorySwap = resources.MemorySwapLimitInBytes
+	return config
+}
+
+func UpdateUpdateConfigByResource(containerConfig *container.UpdateConfig, resources *v1alpha1.LinuxContainerResources) {
+	if containerConfig == nil || resources == nil {
+		return
+	}
+	containerConfig.CPUPeriod = resources.CpuPeriod
+	containerConfig.CPUQuota = resources.CpuQuota
+	containerConfig.CPUShares = resources.CpuShares
+	containerConfig.Memory = resources.MemoryLimitInBytes
+	containerConfig.CpusetCpus = resources.CpusetCpus
+	containerConfig.CpusetMems = resources.CpusetMems
+	containerConfig.MemorySwap = resources.MemorySwapLimitInBytes
+
 }
 
 func getContainerID(urlPath string) (string, error) {
