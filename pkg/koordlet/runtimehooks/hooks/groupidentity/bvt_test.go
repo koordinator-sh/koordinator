@@ -62,8 +62,8 @@ func Test_bvtPlugin_PreRunPodSandbox(t *testing.T) {
 		systemSupported *bool
 	}
 	type args struct {
-		request  *runtimeapi.RunPodSandboxHookRequest
-		response *runtimeapi.RunPodSandboxHookResponse
+		request  *runtimeapi.PodSandboxHookRequest
+		response *runtimeapi.PodSandboxHookResponse
 	}
 	type want struct {
 		bvtValue int64
@@ -80,13 +80,13 @@ func Test_bvtPlugin_PreRunPodSandbox(t *testing.T) {
 				systemSupported: pointer.Bool(true),
 			},
 			args: args{
-				request: &runtimeapi.RunPodSandboxHookRequest{
+				request: &runtimeapi.PodSandboxHookRequest{
 					Labels: map[string]string{
 						ext.LabelPodQoS: string(ext.QoSLS),
 					},
 					CgroupParent: "kubepods/pod-guaranteed-test-uid/",
 				},
-				response: &runtimeapi.RunPodSandboxHookResponse{},
+				response: &runtimeapi.PodSandboxHookResponse{},
 			},
 			want: want{
 				bvtValue: 2,
@@ -98,13 +98,13 @@ func Test_bvtPlugin_PreRunPodSandbox(t *testing.T) {
 				systemSupported: pointer.Bool(true),
 			},
 			args: args{
-				request: &runtimeapi.RunPodSandboxHookRequest{
+				request: &runtimeapi.PodSandboxHookRequest{
 					Labels: map[string]string{
 						ext.LabelPodQoS: string(ext.QoSBE),
 					},
 					CgroupParent: "kubepods/besteffort/pod-besteffort-test-uid/",
 				},
-				response: &runtimeapi.RunPodSandboxHookResponse{},
+				response: &runtimeapi.PodSandboxHookResponse{},
 			},
 			want: want{
 				bvtValue: -1,

@@ -122,7 +122,7 @@ func (d *RuntimeManagerDockerServer) failOver() error {
 	// need to backup pod meta first
 	for _, s := range sandboxes {
 		store.WritePodSandboxInfo(s.ID, &store.PodSandboxInfo{
-			RunPodSandboxHookRequest: &v1alpha1.RunPodSandboxHookRequest{
+			PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
 				Labels:       s.Labels,
 				Annotations:  s.Labels,
 				CgroupParent: s.ContainerJSON.HostConfig.CgroupParent,

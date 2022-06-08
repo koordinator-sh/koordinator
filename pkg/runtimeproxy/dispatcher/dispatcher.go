@@ -47,7 +47,7 @@ func (rd *RuntimeHookDispatcher) dispatchInternal(ctx context.Context, hookType 
 	client *RuntimeHookClient, request interface{}) (response interface{}, err error) {
 	switch hookType {
 	case config.PreRunPodSandbox:
-		return client.PreRunPodSandboxHook(ctx, request.(*v1alpha1.RunPodSandboxHookRequest))
+		return client.PreRunPodSandboxHook(ctx, request.(*v1alpha1.PodSandboxHookRequest))
 	case config.PreStartContainer:
 		return client.PreStartContainerHook(ctx, request.(*v1alpha1.ContainerResourceHookRequest))
 	case config.PreUpdateContainerResources:

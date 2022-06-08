@@ -28,9 +28,9 @@ import (
 )
 
 func (s *server) PreRunPodSandboxHook(ctx context.Context,
-	req *runtimeapi.RunPodSandboxHookRequest) (*runtimeapi.RunPodSandboxHookResponse, error) {
+	req *runtimeapi.PodSandboxHookRequest) (*runtimeapi.PodSandboxHookResponse, error) {
 	klog.V(5).Infof("receive PreRunPodSandboxHook request %v", req.String())
-	resp := &runtimeapi.RunPodSandboxHookResponse{
+	resp := &runtimeapi.PodSandboxHookResponse{
 		Labels:       req.Labels,
 		Annotations:  req.Annotations,
 		CgroupParent: req.CgroupParent,
