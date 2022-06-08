@@ -62,7 +62,7 @@ func (p *PodResourceExecutor) ParseRequest(req interface{}) error {
 	switch request := req.(type) {
 	case *runtimeapi.RunPodSandboxRequest:
 		p.PodSandboxInfo = store.PodSandboxInfo{
-			RunPodSandboxHookRequest: &v1alpha1.RunPodSandboxHookRequest{
+			PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
 				PodMeta: &v1alpha1.PodSandboxMetadata{
 					Name:      request.GetConfig().GetMetadata().GetName(),
 					Namespace: request.GetConfig().GetMetadata().GetNamespace(),
@@ -85,7 +85,7 @@ func (p *PodResourceExecutor) ParsePod(podsandbox *runtimeapi.PodSandbox) error 
 		return nil
 	}
 	p.PodSandboxInfo = store.PodSandboxInfo{
-		RunPodSandboxHookRequest: &v1alpha1.RunPodSandboxHookRequest{
+		PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
 			PodMeta: &v1alpha1.PodSandboxMetadata{
 				Name:      podsandbox.GetMetadata().GetName(),
 				Namespace: podsandbox.GetMetadata().GetNamespace(),
@@ -124,7 +124,7 @@ func (p *PodResourceExecutor) DeleteCheckpointIfNeed(req interface{}) error {
 
 func (p *PodResourceExecutor) UpdateResource(rsp interface{}) error {
 	switch response := rsp.(type) {
-	case *v1alpha1.RunPodSandboxHookResponse:
+	case *v1alpha1.PodSandboxHookResponse:
 		p.Annotations = utils.MergeMap(p.Annotations, response.Annotations)
 		p.Labels = utils.MergeMap(p.Labels, response.Labels)
 		if response.CgroupParent != "" {

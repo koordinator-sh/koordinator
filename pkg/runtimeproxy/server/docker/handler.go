@@ -85,7 +85,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 	} else {
 		runtimeHookPath = config.RunPodSandbox
 		podInfo = &store.PodSandboxInfo{
-			RunPodSandboxHookRequest: &v1alpha1.RunPodSandboxHookRequest{
+			PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
 				PodMeta: &v1alpha1.PodSandboxMetadata{
 					Name:      tokens[2],
 					Namespace: tokens[3],
@@ -115,7 +115,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 	}
 
 	if runtimeResourceType == resource_executor.RuntimePodResource && hookResp != nil {
-		resp := hookResp.(*v1alpha1.RunPodSandboxHookResponse)
+		resp := hookResp.(*v1alpha1.PodSandboxHookResponse)
 		if resp.Resources != nil {
 			cfgBody.HostConfig.CPUPeriod = resp.Resources.CpuPeriod
 			cfgBody.HostConfig.CPUQuota = resp.Resources.CpuQuota

@@ -28,7 +28,7 @@ const (
 
 // PodSandboxInfo is almost the same with v1alpha.RunPodSandboxHookRequest
 type PodSandboxInfo struct {
-	*v1alpha1.RunPodSandboxHookRequest
+	*v1alpha1.PodSandboxHookRequest
 }
 
 // ContainerInfo is almost the same with v1alpha.ContainerResourceHookRequest
@@ -36,9 +36,9 @@ type ContainerInfo struct {
 	*v1alpha1.ContainerResourceHookRequest
 }
 
-func (p *PodSandboxInfo) GetRunPodSandboxHookRequest() *v1alpha1.RunPodSandboxHookRequest {
+func (p *PodSandboxInfo) GetRunPodSandboxHookRequest() *v1alpha1.PodSandboxHookRequest {
 	if p != nil {
-		return p.RunPodSandboxHookRequest
+		return p.PodSandboxHookRequest
 	}
 	return nil
 }

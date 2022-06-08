@@ -34,7 +34,7 @@ func (b *bvtPlugin) PreRunPodSandbox(requestIf, responseIf interface{}) error {
 		return nil
 	}
 	r := b.getRule()
-	req := requestIf.(*runtimeapi.RunPodSandboxHookRequest)
+	req := requestIf.(*runtimeapi.PodSandboxHookRequest)
 	podQoS := ext.GetQoSClassByLabels(req.Labels)
 	podKubeQoS := util.GetKubeQoSByCgroupParent(req.CgroupParent)
 	podBvt := r.getPodBvtValue(podQoS, podKubeQoS)

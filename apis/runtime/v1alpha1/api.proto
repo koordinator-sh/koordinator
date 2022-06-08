@@ -37,7 +37,7 @@ message PodSandboxMetadata {
 // backend containerd or dockerd. This Request is generated basing on CRI's RunPodSandboxRequest, including pod
 // Meta, Resources, Annotations .e.g and RuntimeHookServer should ensure correct operations basing on
 // this request.
-message RunPodSandboxHookRequest {
+message PodSandboxHookRequest {
   // Metadata of the sandbox. This information will uniquely identify the sandbox.
   PodSandboxMetadata pod_meta = 1;
   // Named runtime to use for podSandbox.
@@ -58,7 +58,7 @@ message RunPodSandboxHookRequest {
 // RunPodSandboxHookResponse is RuntimeHookServer's response to RunPodSandboxHookRequest.
 // RuntimeManager will merge RunPodSandboxHookResponse and RunPodSandboxRequest to generate a
 // RunPodSandboxRequest to containerd(dockerd).
-message RunPodSandboxHookResponse {
+message PodSandboxHookResponse {
   // RuntimeHookServer may inject additional labels/annotations to PodSandboxRequest to be send to
   // backend contaienrd/dockerd
   map<string, string> labels = 1;
@@ -127,6 +127,7 @@ message ContainerResourceHookRequest {
   // pod related annotations and labels
   map<string, string> pod_annotations = 6;
   map<string, string> pod_labels = 7;
+  string pod_cgroup_parent = 8;
   // TODO: add the error info from containerd/dockerd
 }
 
@@ -136,6 +137,7 @@ message ContainerResourceHookRequest {
 message ContainerResourceHookResponse {
   map<string, string> container_annotations = 1;
   LinuxContainerResources container_resources = 2;
+  string pod_cgroup_parent = 3;
 }
 
 // Runtime service defines the public APIs for talk between RuntimeHookServer and RuntimeManager
@@ -143,7 +145,13 @@ service RuntimeHookService {
   // PreRunPodSandboxHook calls RuntimeHookServer before pod creating, and would merge RunPodSandboxHookResponse
   // and Original RunPodSandboxRequest generating a new RunPodSandboxRequest to transfer to backend runtime engine.
   // RuntimeHookServer should ensure the correct operations basing on RunPodSandboxHookRequest.
-  rpc PreRunPodSandboxHook(RunPodSandboxHookRequest) returns (RunPodSandboxHookResponse) {}
+  rpc PreRunPodSandboxHook(PodSandboxHookRequest) returns (PodSandboxHookResponse) {}
+  // PostStopPodSandbox calls RuntimeHookServer after pod deleted. RuntimeHookServer could do resource setting garbage collection
+  // sanity check after PodSandBox stopped.
+  rpc PostStopPodSandbox(PodSandboxHookRequest) returns (PodSandboxHookRequest) {}
+  // PreCreateContainerHook calls RuntimeHookServer before container creating. RuntimeHookServer could do some
+  // resource setting before container launching.
+  rpc PreCreateContainerHook(ContainerResourceHookRequest) returns (ContainerResourceHookRequest) {}
   // PreStartContainerHook calls RuntimeHookServer before container starting, RuntimeHookServer could do some
   // resource adjustments before container launching.
   rpc PreStartContainerHook(ContainerResourceHookRequest) returns (ContainerResourceHookResponse) {}
