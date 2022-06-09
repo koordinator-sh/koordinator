@@ -19,6 +19,7 @@ package cri
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	"k8s.io/klog/v2"
@@ -80,7 +81,8 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
 					Attempt: request.GetConfig().GetMetadata().GetAttempt(),
 				},
 				ContainerAnnotations: request.GetConfig().GetAnnotations(),
-				ContainerResources:   transferResource(request.GetConfig().GetLinux().GetResources()),
+				ContainerResources:   transferToKoordResources(request.GetConfig().GetLinux().GetResources()),
+				PodCgroupParent:      request.GetSandboxConfig().GetLinux().GetCgroupParent(),
 			},
 		}
 		klog.Infof("success parse container info %v during container create", c)
@@ -109,9 +111,10 @@ func (c *ContainerResourceExecutor) ParseContainer(container *runtimeapi.Contain
 				Name:    container.GetMetadata().GetName(),
 				Attempt: container.GetMetadata().GetAttempt(),
 			},
-			PodMeta:        podInfo.GetPodMeta(),
-			PodAnnotations: podInfo.GetAnnotations(),
-			PodLabels:      podInfo.GetLabels(),
+			PodMeta:         podInfo.GetPodMeta(),
+			PodAnnotations:  podInfo.GetAnnotations(),
+			PodLabels:       podInfo.GetLabels(),
+			PodCgroupParent: podInfo.GetCgroupParent(),
 			// TODO: How to get resource when failOver
 		},
 	}
@@ -142,11 +145,38 @@ func (c *ContainerResourceExecutor) DeleteCheckpointIfNeed(req interface{}) erro
 	return nil
 }
 
-func (c *ContainerResourceExecutor) UpdateResource(rsp interface{}) error {
-	switch response := rsp.(type) {
-	case *v1alpha1.ContainerResourceHookResponse:
-		c.ContainerAnnotations = utils.MergeMap(c.ContainerAnnotations, response.ContainerAnnotations)
-		c.ContainerResources = updateResource(c.ContainerResources, response.ContainerResources)
+// UpdateRequest will update ContainerResourceExecutor from hook response and then update CRI request.
+func (c *ContainerResourceExecutor) UpdateRequest(rsp interface{}, req interface{}) error {
+	// update ContainerResourceExecutor
+	response, ok := rsp.(*v1alpha1.ContainerResourceHookResponse)
+	if !ok {
+		return fmt.Errorf("response type not compatible. Should be ContainerResourceHookResponse, but got %s", reflect.TypeOf(rsp).String())
+	}
+	// update PodResourceExecutor
+	c.ContainerAnnotations = utils.MergeMap(c.ContainerAnnotations, response.ContainerAnnotations)
+	c.ContainerResources = updateResource(c.ContainerResources, response.ContainerResources)
+	if response.PodCgroupParent != "" {
+		c.PodCgroupParent = response.PodCgroupParent
+	}
+	// update CRI request
+	switch request := req.(type) {
+	case *runtimeapi.CreateContainerRequest:
+		if c.ContainerAnnotations != nil {
+			request.Config.Annotations = c.ContainerAnnotations
+		}
+		if c.ContainerResources != nil {
+			request.Config.Linux.Resources = transferToCRIResources(c.ContainerResources)
+		}
+		if c.PodCgroupParent != "" {
+			request.SandboxConfig.Linux.CgroupParent = c.PodCgroupParent
+		}
+	case *runtimeapi.UpdateContainerResourcesRequest:
+		if c.ContainerAnnotations != nil {
+			request.Annotations = c.ContainerAnnotations
+		}
+		if c.ContainerResources != nil {
+			request.Linux = transferToCRIResources(c.ContainerResources)
+		}
 	}
 	return nil
 }

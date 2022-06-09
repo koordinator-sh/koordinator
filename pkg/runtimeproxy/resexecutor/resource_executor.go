@@ -26,9 +26,9 @@ type RuntimeResourceExecutor interface {
 	GetMetaInfo() string
 	GenerateHookRequest() interface{}
 	ParseRequest(request interface{}) error
-	UpdateResource(response interface{}) error
 	ResourceCheckPoint(response interface{}) error
 	DeleteCheckpointIfNeed(request interface{}) error
+	UpdateRequest(response interface{}, request interface{}) error
 }
 
 type RuntimeResourceType string
@@ -77,6 +77,6 @@ func (n *NoopResourceExecutor) DeleteCheckpointIfNeed(request interface{}) error
 	return nil
 }
 
-func (n *NoopResourceExecutor) UpdateResource(response interface{}) error {
+func (n *NoopResourceExecutor) UpdateRequest(response interface{}, request interface{}) error {
 	return nil
 }

@@ -36,7 +36,7 @@ type ContainerInfo struct {
 	*v1alpha1.ContainerResourceHookRequest
 }
 
-func (p *PodSandboxInfo) GetRunPodSandboxHookRequest() *v1alpha1.PodSandboxHookRequest {
+func (p *PodSandboxInfo) GetPodSandboxHookRequest() *v1alpha1.PodSandboxHookRequest {
 	if p != nil {
 		return p.PodSandboxHookRequest
 	}
