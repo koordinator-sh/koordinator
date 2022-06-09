@@ -148,10 +148,10 @@ service RuntimeHookService {
   rpc PreRunPodSandboxHook(PodSandboxHookRequest) returns (PodSandboxHookResponse) {}
   // PostStopPodSandbox calls RuntimeHookServer after pod deleted. RuntimeHookServer could do resource setting garbage collection
   // sanity check after PodSandBox stopped.
-  rpc PostStopPodSandbox(PodSandboxHookRequest) returns (PodSandboxHookRequest) {}
+  rpc PostStopPodSandbox(PodSandboxHookRequest) returns (PodSandboxHookResponse) {}
   // PreCreateContainerHook calls RuntimeHookServer before container creating. RuntimeHookServer could do some
   // resource setting before container launching.
-  rpc PreCreateContainerHook(ContainerResourceHookRequest) returns (ContainerResourceHookRequest) {}
+  rpc PreCreateContainerHook(ContainerResourceHookRequest) returns (ContainerResourceHookResponse) {}
   // PreStartContainerHook calls RuntimeHookServer before container starting, RuntimeHookServer could do some
   // resource adjustments before container launching.
   rpc PreStartContainerHook(ContainerResourceHookRequest) returns (ContainerResourceHookResponse) {}

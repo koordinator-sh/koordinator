@@ -40,10 +40,10 @@ type RuntimeHookServiceClient interface {
 	PreRunPodSandboxHook(ctx context.Context, in *PodSandboxHookRequest, opts ...grpc.CallOption) (*PodSandboxHookResponse, error)
 	// PostStopPodSandbox calls RuntimeHookServer after pod deleted. RuntimeHookServer could do resource setting garbage collection
 	// sanity check after PodSandBox stopped.
-	PostStopPodSandbox(ctx context.Context, in *PodSandboxHookRequest, opts ...grpc.CallOption) (*PodSandboxHookRequest, error)
+	PostStopPodSandbox(ctx context.Context, in *PodSandboxHookRequest, opts ...grpc.CallOption) (*PodSandboxHookResponse, error)
 	// PreCreateContainerHook calls RuntimeHookServer before container creating. RuntimeHookServer could do some
 	// resource setting before container launching.
-	PreCreateContainerHook(ctx context.Context, in *ContainerResourceHookRequest, opts ...grpc.CallOption) (*ContainerResourceHookRequest, error)
+	PreCreateContainerHook(ctx context.Context, in *ContainerResourceHookRequest, opts ...grpc.CallOption) (*ContainerResourceHookResponse, error)
 	// PreStartContainerHook calls RuntimeHookServer before container starting, RuntimeHookServer could do some
 	// resource adjustments before container launching.
 	PreStartContainerHook(ctx context.Context, in *ContainerResourceHookRequest, opts ...grpc.CallOption) (*ContainerResourceHookResponse, error)
@@ -75,8 +75,8 @@ func (c *runtimeHookServiceClient) PreRunPodSandboxHook(ctx context.Context, in 
 	return out, nil
 }
 
-func (c *runtimeHookServiceClient) PostStopPodSandbox(ctx context.Context, in *PodSandboxHookRequest, opts ...grpc.CallOption) (*PodSandboxHookRequest, error) {
-	out := new(PodSandboxHookRequest)
+func (c *runtimeHookServiceClient) PostStopPodSandbox(ctx context.Context, in *PodSandboxHookRequest, opts ...grpc.CallOption) (*PodSandboxHookResponse, error) {
+	out := new(PodSandboxHookResponse)
 	err := c.cc.Invoke(ctx, "/runtime.v1alpha1.RuntimeHookService/PostStopPodSandbox", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -84,8 +84,8 @@ func (c *runtimeHookServiceClient) PostStopPodSandbox(ctx context.Context, in *P
 	return out, nil
 }
 
-func (c *runtimeHookServiceClient) PreCreateContainerHook(ctx context.Context, in *ContainerResourceHookRequest, opts ...grpc.CallOption) (*ContainerResourceHookRequest, error) {
-	out := new(ContainerResourceHookRequest)
+func (c *runtimeHookServiceClient) PreCreateContainerHook(ctx context.Context, in *ContainerResourceHookRequest, opts ...grpc.CallOption) (*ContainerResourceHookResponse, error) {
+	out := new(ContainerResourceHookResponse)
 	err := c.cc.Invoke(ctx, "/runtime.v1alpha1.RuntimeHookService/PreCreateContainerHook", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -139,10 +139,10 @@ type RuntimeHookServiceServer interface {
 	PreRunPodSandboxHook(context.Context, *PodSandboxHookRequest) (*PodSandboxHookResponse, error)
 	// PostStopPodSandbox calls RuntimeHookServer after pod deleted. RuntimeHookServer could do resource setting garbage collection
 	// sanity check after PodSandBox stopped.
-	PostStopPodSandbox(context.Context, *PodSandboxHookRequest) (*PodSandboxHookRequest, error)
+	PostStopPodSandbox(context.Context, *PodSandboxHookRequest) (*PodSandboxHookResponse, error)
 	// PreCreateContainerHook calls RuntimeHookServer before container creating. RuntimeHookServer could do some
 	// resource setting before container launching.
-	PreCreateContainerHook(context.Context, *ContainerResourceHookRequest) (*ContainerResourceHookRequest, error)
+	PreCreateContainerHook(context.Context, *ContainerResourceHookRequest) (*ContainerResourceHookResponse, error)
 	// PreStartContainerHook calls RuntimeHookServer before container starting, RuntimeHookServer could do some
 	// resource adjustments before container launching.
 	PreStartContainerHook(context.Context, *ContainerResourceHookRequest) (*ContainerResourceHookResponse, error)
@@ -165,10 +165,10 @@ type UnimplementedRuntimeHookServiceServer struct {
 func (UnimplementedRuntimeHookServiceServer) PreRunPodSandboxHook(context.Context, *PodSandboxHookRequest) (*PodSandboxHookResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PreRunPodSandboxHook not implemented")
 }
-func (UnimplementedRuntimeHookServiceServer) PostStopPodSandbox(context.Context, *PodSandboxHookRequest) (*PodSandboxHookRequest, error) {
+func (UnimplementedRuntimeHookServiceServer) PostStopPodSandbox(context.Context, *PodSandboxHookRequest) (*PodSandboxHookResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PostStopPodSandbox not implemented")
 }
-func (UnimplementedRuntimeHookServiceServer) PreCreateContainerHook(context.Context, *ContainerResourceHookRequest) (*ContainerResourceHookRequest, error) {
+func (UnimplementedRuntimeHookServiceServer) PreCreateContainerHook(context.Context, *ContainerResourceHookRequest) (*ContainerResourceHookResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PreCreateContainerHook not implemented")
 }
 func (UnimplementedRuntimeHookServiceServer) PreStartContainerHook(context.Context, *ContainerResourceHookRequest) (*ContainerResourceHookResponse, error) {
