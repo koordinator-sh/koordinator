@@ -128,6 +128,7 @@ message ContainerResourceHookRequest {
   map<string, string> pod_annotations = 6;
   map<string, string> pod_labels = 7;
   string pod_cgroup_parent = 8;
+  string container_id = 9;
   // TODO: add the error info from containerd/dockerd
 }
 
@@ -138,6 +139,7 @@ message ContainerResourceHookResponse {
   map<string, string> container_annotations = 1;
   LinuxContainerResources container_resources = 2;
   string pod_cgroup_parent = 3;
+  string container_id = 4;
 }
 
 // Runtime service defines the public APIs for talk between RuntimeHookServer and RuntimeManager
