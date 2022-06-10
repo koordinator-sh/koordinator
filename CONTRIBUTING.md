@@ -6,6 +6,11 @@ by reporting issues, improving documentation, fixing bugs, or adding new feature
 Please also take a look at our code of conduct, which details how contributors are expected to conduct themselves as
 part of the Koordinator community.
 
+We made Koordinator open-source to empower developers to fix and extend the product to better meet their needs. Nothing
+thrills us more than people so passionate about the product that they're willing to spend their own time to learn the
+codebase and give back to the community. We created this doc, so we can support contributors in a way that doesn't
+sacrifice precious bandwidth that we use to serve our users and otherwise meet our community goals.
+
 ## Reporting issues
 
 To be honest, we regard every user of Koordinator as a very kind contributor. After experiencing Koordinator, you may
