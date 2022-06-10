@@ -43,7 +43,7 @@ func GetCacheInfo(str string) (string, int32, error) {
 		return "", 0, fmt.Errorf("invalid cache info %s", str)
 	}
 	l1l2 := infos[0]
-	l3, err := strconv.Atoi(infos[3])
+	l3, err := strconv.ParseInt(infos[3], 10, 32)
 	if err != nil {
 		return "", 0, err
 	}
