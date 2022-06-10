@@ -111,10 +111,10 @@ message HugepageLimit {
 message ContainerMetadata {
   // Name of the container. Same as the container name in the PodSpec.
   string name = 1;
-  // Id of the container.
-  string id = 2;
   // Attempt number of creating the container. Default: 0.
-  uint32 attempt = 3;
+  uint32 attempt = 2;
+  // Id of the container.
+  string id = 3;
 }
 
 // ContainerResourceHookRequest is sent to RuntimeHookServer before/after container related operations including
