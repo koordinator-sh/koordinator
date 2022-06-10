@@ -144,16 +144,16 @@ func getProcessorInfos(lsCPUStr string) ([]ProcessorInfo, error) {
 		if len(items) < 6 {
 			continue
 		}
-		cpu, err := strconv.Atoi(items[0])
+		cpu, err := strconv.ParseInt(items[0], 10, 32)
 		if err != nil {
 			continue
 		}
-		node, _ := strconv.Atoi(items[1])
-		socket, err := strconv.Atoi(items[2])
+		node, _ := strconv.ParseInt(items[1], 10, 32)
+		socket, err := strconv.ParseInt(items[2], 10, 32)
 		if err != nil {
 			continue
 		}
-		core, err := strconv.Atoi(items[3])
+		core, err := strconv.ParseInt(items[3], 10, 32)
 		if err != nil {
 			continue
 		}

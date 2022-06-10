@@ -92,18 +92,18 @@ func ParseCPUSetStr(cpusetStr string) ([]int32, error) {
 		boundaries := strings.Split(r, "-")
 		if len(boundaries) == 1 {
 			// only one element case, eg. "46"
-			elem, err := strconv.Atoi(boundaries[0])
+			elem, err := strconv.ParseInt(boundaries[0], 10, 32)
 			if err != nil {
 				return nil, err
 			}
 			cpuset = append(cpuset, int32(elem))
 		} else if len(boundaries) == 2 {
 			// multi-element case, eg. "0-5"
-			start, err := strconv.Atoi(boundaries[0])
+			start, err := strconv.ParseInt(boundaries[0], 10, 32)
 			if err != nil {
 				return nil, err
 			}
-			end, err := strconv.Atoi(boundaries[1])
+			end, err := strconv.ParseInt(boundaries[1], 10, 32)
 			if err != nil {
 				return nil, err
 			}
