@@ -111,8 +111,10 @@ message HugepageLimit {
 message ContainerMetadata {
   // Name of the container. Same as the container name in the PodSpec.
   string name = 1;
+  // Id of the container.
+  string id = 2;
   // Attempt number of creating the container. Default: 0.
-  uint32 attempt = 2;
+  uint32 attempt = 3;
 }
 
 // ContainerResourceHookRequest is sent to RuntimeHookServer before/after container related operations including
@@ -128,7 +130,6 @@ message ContainerResourceHookRequest {
   map<string, string> pod_annotations = 6;
   map<string, string> pod_labels = 7;
   string pod_cgroup_parent = 8;
-  string container_id = 9;
   // TODO: add the error info from containerd/dockerd
 }
 
@@ -139,7 +140,6 @@ message ContainerResourceHookResponse {
   map<string, string> container_annotations = 1;
   LinuxContainerResources container_resources = 2;
   string pod_cgroup_parent = 3;
-  string container_id = 4;
 }
 
 // Runtime service defines the public APIs for talk between RuntimeHookServer and RuntimeManager
