@@ -38,9 +38,9 @@ type RuntimeHookServiceClient interface {
 	// and Original RunPodSandboxRequest generating a new RunPodSandboxRequest to transfer to backend runtime engine.
 	// RuntimeHookServer should ensure the correct operations basing on RunPodSandboxHookRequest.
 	PreRunPodSandboxHook(ctx context.Context, in *PodSandboxHookRequest, opts ...grpc.CallOption) (*PodSandboxHookResponse, error)
-	// PostStopPodSandbox calls RuntimeHookServer after pod deleted. RuntimeHookServer could do resource setting garbage collection
+	// PostStopPodSandboxHook calls RuntimeHookServer after pod deleted. RuntimeHookServer could do resource setting garbage collection
 	// sanity check after PodSandBox stopped.
-	PostStopPodSandbox(ctx context.Context, in *PodSandboxHookRequest, opts ...grpc.CallOption) (*PodSandboxHookResponse, error)
+	PostStopPodSandboxHook(ctx context.Context, in *PodSandboxHookRequest, opts ...grpc.CallOption) (*PodSandboxHookResponse, error)
 	// PreCreateContainerHook calls RuntimeHookServer before container creating. RuntimeHookServer could do some
 	// resource setting before container launching.
 	PreCreateContainerHook(ctx context.Context, in *ContainerResourceHookRequest, opts ...grpc.CallOption) (*ContainerResourceHookResponse, error)
@@ -75,9 +75,9 @@ func (c *runtimeHookServiceClient) PreRunPodSandboxHook(ctx context.Context, in 
 	return out, nil
 }
 
-func (c *runtimeHookServiceClient) PostStopPodSandbox(ctx context.Context, in *PodSandboxHookRequest, opts ...grpc.CallOption) (*PodSandboxHookResponse, error) {
+func (c *runtimeHookServiceClient) PostStopPodSandboxHook(ctx context.Context, in *PodSandboxHookRequest, opts ...grpc.CallOption) (*PodSandboxHookResponse, error) {
 	out := new(PodSandboxHookResponse)
-	err := c.cc.Invoke(ctx, "/runtime.v1alpha1.RuntimeHookService/PostStopPodSandbox", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/runtime.v1alpha1.RuntimeHookService/PostStopPodSandboxHook", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -137,9 +137,9 @@ type RuntimeHookServiceServer interface {
 	// and Original RunPodSandboxRequest generating a new RunPodSandboxRequest to transfer to backend runtime engine.
 	// RuntimeHookServer should ensure the correct operations basing on RunPodSandboxHookRequest.
 	PreRunPodSandboxHook(context.Context, *PodSandboxHookRequest) (*PodSandboxHookResponse, error)
-	// PostStopPodSandbox calls RuntimeHookServer after pod deleted. RuntimeHookServer could do resource setting garbage collection
+	// PostStopPodSandboxHook calls RuntimeHookServer after pod deleted. RuntimeHookServer could do resource setting garbage collection
 	// sanity check after PodSandBox stopped.
-	PostStopPodSandbox(context.Context, *PodSandboxHookRequest) (*PodSandboxHookResponse, error)
+	PostStopPodSandboxHook(context.Context, *PodSandboxHookRequest) (*PodSandboxHookResponse, error)
 	// PreCreateContainerHook calls RuntimeHookServer before container creating. RuntimeHookServer could do some
 	// resource setting before container launching.
 	PreCreateContainerHook(context.Context, *ContainerResourceHookRequest) (*ContainerResourceHookResponse, error)
@@ -165,8 +165,8 @@ type UnimplementedRuntimeHookServiceServer struct {
 func (UnimplementedRuntimeHookServiceServer) PreRunPodSandboxHook(context.Context, *PodSandboxHookRequest) (*PodSandboxHookResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PreRunPodSandboxHook not implemented")
 }
-func (UnimplementedRuntimeHookServiceServer) PostStopPodSandbox(context.Context, *PodSandboxHookRequest) (*PodSandboxHookResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method PostStopPodSandbox not implemented")
+func (UnimplementedRuntimeHookServiceServer) PostStopPodSandboxHook(context.Context, *PodSandboxHookRequest) (*PodSandboxHookResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PostStopPodSandboxHook not implemented")
 }
 func (UnimplementedRuntimeHookServiceServer) PreCreateContainerHook(context.Context, *ContainerResourceHookRequest) (*ContainerResourceHookResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PreCreateContainerHook not implemented")
@@ -214,20 +214,20 @@ func _RuntimeHookService_PreRunPodSandboxHook_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _RuntimeHookService_PostStopPodSandbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _RuntimeHookService_PostStopPodSandboxHook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PodSandboxHookRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(RuntimeHookServiceServer).PostStopPodSandbox(ctx, in)
+		return srv.(RuntimeHookServiceServer).PostStopPodSandboxHook(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/runtime.v1alpha1.RuntimeHookService/PostStopPodSandbox",
+		FullMethod: "/runtime.v1alpha1.RuntimeHookService/PostStopPodSandboxHook",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RuntimeHookServiceServer).PostStopPodSandbox(ctx, req.(*PodSandboxHookRequest))
+		return srv.(RuntimeHookServiceServer).PostStopPodSandboxHook(ctx, req.(*PodSandboxHookRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -334,8 +334,8 @@ var RuntimeHookService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _RuntimeHookService_PreRunPodSandboxHook_Handler,
 		},
 		{
-			MethodName: "PostStopPodSandbox",
-			Handler:    _RuntimeHookService_PostStopPodSandbox_Handler,
+			MethodName: "PostStopPodSandboxHook",
+			Handler:    _RuntimeHookService_PostStopPodSandboxHook_Handler,
 		},
 		{
 			MethodName: "PreCreateContainerHook",
