@@ -19,6 +19,7 @@ package cri
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	"k8s.io/klog/v2"
@@ -45,7 +46,7 @@ func (p *PodResourceExecutor) GetMetaInfo() string {
 }
 
 func (p *PodResourceExecutor) GenerateHookRequest() interface{} {
-	return p.GetRunPodSandboxHookRequest()
+	return p.GetPodSandboxHookRequest()
 }
 
 func (p *PodResourceExecutor) loadPodSandboxFromStore(podID string) error {
@@ -101,8 +102,8 @@ func (p *PodResourceExecutor) ParsePod(podsandbox *runtimeapi.PodSandbox) error 
 
 func (p *PodResourceExecutor) ResourceCheckPoint(response interface{}) error {
 	runPodSandboxResponse, ok := response.(*runtimeapi.RunPodSandboxResponse)
-	if !ok || p.GetRunPodSandboxHookRequest() == nil {
-		return fmt.Errorf("no need to checkpoint resource %v %v", response, p.GetRunPodSandboxHookRequest())
+	if !ok || p.GetPodSandboxHookRequest() == nil {
+		return fmt.Errorf("no need to checkpoint resource %v %v", response, p.GetPodSandboxHookRequest())
 	}
 	err := store.WritePodSandboxInfo(runPodSandboxResponse.PodSandboxId, &p.PodSandboxInfo)
 	if err != nil {
@@ -122,13 +123,29 @@ func (p *PodResourceExecutor) DeleteCheckpointIfNeed(req interface{}) error {
 	return nil
 }
 
-func (p *PodResourceExecutor) UpdateResource(rsp interface{}) error {
-	switch response := rsp.(type) {
-	case *v1alpha1.PodSandboxHookResponse:
-		p.Annotations = utils.MergeMap(p.Annotations, response.Annotations)
-		p.Labels = utils.MergeMap(p.Labels, response.Labels)
-		if response.CgroupParent != "" {
-			p.CgroupParent = response.CgroupParent
+// UpdateRequest will update PodResourceExecutor from hook response and then update CRI request.
+func (p *PodResourceExecutor) UpdateRequest(rsp interface{}, req interface{}) error {
+	response, ok := rsp.(*v1alpha1.PodSandboxHookResponse)
+	if !ok {
+		return fmt.Errorf("response type not compatible. Should be PodSandboxHookResponse, but got %s", reflect.TypeOf(rsp).String())
+	}
+	// update PodResourceExecutor
+	p.Annotations = utils.MergeMap(p.Annotations, response.Annotations)
+	p.Labels = utils.MergeMap(p.Labels, response.Labels)
+	if response.CgroupParent != "" {
+		p.CgroupParent = response.CgroupParent
+	}
+	// update CRI request
+	switch request := req.(type) {
+	case *runtimeapi.RunPodSandboxRequest:
+		if p.Annotations != nil {
+			request.Config.Annotations = p.Annotations
+		}
+		if p.Labels != nil {
+			request.Config.Labels = p.Labels
+		}
+		if p.CgroupParent != "" {
+			request.Config.Linux.CgroupParent = p.CgroupParent
 		}
 	}
 	return nil

@@ -90,9 +90,10 @@ func (c *RuntimeManagerCriServer) getRuntimeHookInfo(serviceType RuntimeServiceT
 	switch serviceType {
 	case RunPodSandbox:
 		return config.RunPodSandbox, resource_executor.RuntimePodResource
+	case StopPodSandbox:
+		return config.StopPodSandbox, resource_executor.RuntimePodResource
 	case CreateContainer:
-		// No Nook point in create container, but we need store the container info during container create
-		return config.NoneRuntimeHookPath, resource_executor.RuntimeContainerResource
+		return config.CreateContainer, resource_executor.RuntimeContainerResource
 	case StartContainer:
 		return config.StartContainer, resource_executor.RuntimeContainerResource
 	case StopContainer:
@@ -119,7 +120,9 @@ func (c *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeSer
 	if response, err := c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest()); err != nil {
 		klog.Errorf("fail to call hook server %v", err)
 	} else {
-		resourceExecutor.UpdateResource(response)
+		if err = resourceExecutor.UpdateRequest(response, request); err != nil {
+			klog.Errorf("failed to update cri request %v", err)
+		}
 	}
 
 	// call the backend runtime engine

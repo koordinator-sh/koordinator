@@ -98,7 +98,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 				RuntimeHandler: "docker",
 			},
 		}
-		hookReq = podInfo.GetRunPodSandboxHookRequest()
+		hookReq = podInfo.GetPodSandboxHookRequest()
 	}
 
 	hookResp, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq)

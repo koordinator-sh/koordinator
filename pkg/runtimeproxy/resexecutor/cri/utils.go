@@ -17,13 +17,14 @@ limitations under the License.
 package cri
 
 import (
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
-	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 )
 
-func transferResource(r *runtimeapi.LinuxContainerResources) *v1alpha1.LinuxContainerResources {
-	linuxResource := &v1alpha1.LinuxContainerResources{
+func transferToKoordResources(r *runtimeapi.LinuxContainerResources) *v1alpha1.LinuxContainerResources {
+	linuxResources := &v1alpha1.LinuxContainerResources{
 		CpuPeriod:              r.GetCpuPeriod(),
 		CpuQuota:               r.GetCpuQuota(),
 		CpuShares:              r.GetCpuShares(),
@@ -36,12 +37,34 @@ func transferResource(r *runtimeapi.LinuxContainerResources) *v1alpha1.LinuxCont
 	}
 
 	for _, item := range r.GetHugepageLimits() {
-		linuxResource.HugepageLimits = append(linuxResource.HugepageLimits, &v1alpha1.HugepageLimit{
+		linuxResources.HugepageLimits = append(linuxResources.HugepageLimits, &v1alpha1.HugepageLimit{
 			PageSize: item.GetPageSize(),
 			Limit:    item.GetLimit(),
 		})
 	}
-	return linuxResource
+	return linuxResources
+}
+
+func transferToCRIResources(r *v1alpha1.LinuxContainerResources) *runtimeapi.LinuxContainerResources {
+	linuxResources := &runtimeapi.LinuxContainerResources{
+		CpuPeriod:              r.GetCpuPeriod(),
+		CpuQuota:               r.GetCpuQuota(),
+		CpuShares:              r.GetCpuShares(),
+		MemoryLimitInBytes:     r.GetMemoryLimitInBytes(),
+		OomScoreAdj:            r.GetOomScoreAdj(),
+		CpusetCpus:             r.GetCpusetCpus(),
+		CpusetMems:             r.GetCpusetMems(),
+		Unified:                r.GetUnified(),
+		MemorySwapLimitInBytes: r.GetMemorySwapLimitInBytes(),
+	}
+
+	for _, item := range r.GetHugepageLimits() {
+		linuxResources.HugepageLimits = append(linuxResources.HugepageLimits, &runtimeapi.HugepageLimit{
+			PageSize: item.GetPageSize(),
+			Limit:    item.GetLimit(),
+		})
+	}
+	return linuxResources
 }
 
 func updateResource(a, b *v1alpha1.LinuxContainerResources) *v1alpha1.LinuxContainerResources {

@@ -35,6 +35,8 @@ const (
 
 const (
 	PreRunPodSandbox            RuntimeHookType = "PreRunPodSandbox"
+	PostStopPodSandbox          RuntimeHookType = "PostStopPodSandbox"
+	PreCreateContainer          RuntimeHookType = "PreCreateContainer"
 	PreStartContainer           RuntimeHookType = "PreStartContainer"
 	PostStartContainer          RuntimeHookType = "PostStartContainer"
 	PreUpdateContainerResources RuntimeHookType = "PreUpdateContainerResources"
@@ -52,6 +54,8 @@ type RuntimeRequestPath string
 
 const (
 	RunPodSandbox            RuntimeRequestPath = "RunPodSandbox"
+	StopPodSandbox           RuntimeRequestPath = "StopPodSandbox"
+	CreateContainer          RuntimeRequestPath = "CreateContainer"
 	StartContainer           RuntimeRequestPath = "StartContainer"
 	UpdateContainerResources RuntimeRequestPath = "UpdateContainerResources"
 	StopContainer            RuntimeRequestPath = "StopContainer"
@@ -62,6 +66,14 @@ func (ht RuntimeHookType) OccursOn(path RuntimeRequestPath) bool {
 	switch ht {
 	case PreRunPodSandbox:
 		if path == RunPodSandbox {
+			return true
+		}
+	case PostStopPodSandbox:
+		if path == StopPodSandbox {
+			return true
+		}
+	case PreCreateContainer:
+		if path == CreateContainer {
 			return true
 		}
 	case PreStartContainer:
