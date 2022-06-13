@@ -48,6 +48,7 @@ func main() {
 	if err != nil {
 		klog.Fatalf("Failed to create socket dir, err: %v", err)
 	}
+	defer os.Remove(options.RuntimeProxyEndpoint)
 
 	switch options.BackendRuntimeMode {
 	case options.BackendRuntimeModeContainerd:
@@ -62,6 +63,5 @@ func main() {
 
 	stopCh := genericapiserver.SetupSignalHandler()
 	<-stopCh
-	os.Remove(options.RuntimeProxyEndpoint)
 	klog.Info("RuntimeManager shutting down")
 }
