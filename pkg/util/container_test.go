@@ -25,7 +25,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -368,6 +370,324 @@ func Test_FindContainerIdAndStatusByName(t *testing.T) {
 			assert.Equal(t, tt.expectContainerId, gotContainerId, "checkContainerId")
 			assert.Equal(t, tt.expectContainerStatus, gotContainerStatus, "checkContainerStatus")
 			assert.Equal(t, tt.expectErr, gotErr != nil, "checkError")
+		})
+	}
+}
+
+func Test_GetContainerCgroupXXXPath(t *testing.T) {
+	system.SetupCgroupPathFormatter(system.Systemd)
+	defer system.SetupCgroupPathFormatter(system.Systemd)
+	type args struct {
+		name            string
+		fn              func(podParentDir string, c *corev1.ContainerStatus) (string, error)
+		containerStatus *corev1.ContainerStatus
+		podParentDir    string
+		expectPath      string
+		expectErr       bool
+	}
+
+	tests := []args{
+		{
+			name:         "test_cpuacct_usage_path",
+			fn:           GetContainerCgroupCPUAcctUsagePath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "/host-cgroup/cpuacct/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cpuacct.usage",
+			expectErr:  false,
+		},
+		{
+			name:         "test_cpuacct_usage_path_invalid",
+			fn:           GetContainerCgroupCPUAcctUsagePath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "",
+			expectErr:  true,
+		},
+		{
+			name:         "test_memory_stat_path",
+			fn:           GetContainerCgroupMemStatPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "/host-cgroup/memory/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/memory.stat",
+			expectErr:  false,
+		},
+		{
+			name:         "test_memory_stat_path",
+			fn:           GetContainerCgroupMemStatPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "",
+			expectErr:  true,
+		},
+		{
+			name:         "test_cpu_stat_path",
+			fn:           GetContainerCgroupCPUStatPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "/host-cgroup/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cpu.stat",
+			expectErr:  false,
+		},
+		{
+			name:         "test_cpu_stat_path_invalid",
+			fn:           GetContainerCgroupCPUStatPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "",
+			expectErr:  true,
+		},
+		{
+			name:         "test_memory_limit_path",
+			fn:           GetContainerCgroupMemLimitPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "/host-cgroup/memory/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/memory.limit_in_bytes",
+			expectErr:  false,
+		},
+		{
+			name:         "test_memory_limit_path_invalid",
+			fn:           GetContainerCgroupMemLimitPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "",
+			expectErr:  true,
+		},
+		{
+			name:         "test_cpu_share_path",
+			fn:           GetContainerCgroupCPUSharePath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "/host-cgroup/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cpu.shares",
+			expectErr:  false,
+		},
+		{
+			name:         "test_cpu_share_path_invalid",
+			fn:           GetContainerCgroupCPUSharePath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "",
+			expectErr:  true,
+		},
+		{
+			name:         "test_cpu_cfs_period_path",
+			fn:           GetContainerCgroupCFSPeriodPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "/host-cgroup/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cpu.cfs_period_us",
+			expectErr:  false,
+		},
+		{
+			name:         "test_cpu_cfs_period_path",
+			fn:           GetContainerCgroupCFSPeriodPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "",
+			expectErr:  true,
+		},
+		{
+			name:         "test_cpu_cfs_quota_path",
+			fn:           GetContainerCgroupCFSQuotaPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "/host-cgroup/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cpu.cfs_quota_us",
+			expectErr:  false,
+		},
+		{
+			name:         "test_cpu_cfs_quota_path_invalid",
+			fn:           GetContainerCgroupCFSQuotaPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "",
+			expectErr:  true,
+		},
+		{
+			name:         "test_current_task_path",
+			fn:           GetContainerCurTasksPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "/host-cgroup/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/tasks",
+			expectErr:  false,
+		},
+		{
+			name:         "test_current_task_path_invalid",
+			fn:           GetContainerCurTasksPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "",
+			expectErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		system.Conf = system.NewDsModeConfig()
+		t.Run(tt.name, func(t *testing.T) {
+			gotPath, gotErr := tt.fn(tt.podParentDir, tt.containerStatus)
+			assert.Equal(t, tt.expectPath, gotPath, "checkPath")
+			assert.Equal(t, tt.expectErr, gotErr != nil, "checkError")
+		})
+	}
+}
+
+func Test_GetContainerXXXValue(t *testing.T) {
+	type args struct {
+		name        string
+		fn          func(container *corev1.Container) int64
+		container   *corev1.Container
+		expectValue int64
+	}
+
+	tests := []args{
+		{
+			name: "test_GetContainerBaseCFSQuota",
+			fn:   GetContainerMilliCPULimit,
+			container: &corev1.Container{
+				Resources: corev1.ResourceRequirements{
+					Limits: corev1.ResourceList(
+						map[corev1.ResourceName]resource.Quantity{
+							corev1.ResourceCPU: *resource.NewMilliQuantity(1, resource.DecimalSI),
+						}),
+				},
+			},
+			expectValue: 1,
+		},
+		{
+			name:        "test_GetContainerBaseCFSQuota_invalid",
+			fn:          GetContainerMilliCPULimit,
+			container:   &corev1.Container{},
+			expectValue: -1,
+		},
+		{
+			name: "test_GetContainerMemoryByteLimit",
+			fn:   GetContainerMemoryByteLimit,
+			container: &corev1.Container{
+				Resources: corev1.ResourceRequirements{
+					Limits: corev1.ResourceList(
+						map[corev1.ResourceName]resource.Quantity{
+							corev1.ResourceMemory: *resource.NewQuantity(1, resource.BinarySI),
+						}),
+				},
+			},
+			expectValue: 1,
+		},
+		{
+			name:        "test_GetContainerMemoryByteLimit_invalid",
+			fn:          GetContainerMemoryByteLimit,
+			container:   &corev1.Container{},
+			expectValue: -1,
+		},
+		{
+			name: "test_GetContainerBEMilliCPURequest",
+			fn:   GetContainerBEMilliCPURequest,
+			container: &corev1.Container{
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList(
+						map[corev1.ResourceName]resource.Quantity{
+							extension.BatchCPU: *resource.NewMilliQuantity(1, resource.DecimalSI),
+						}),
+				},
+			},
+			expectValue: 1,
+		},
+		{
+			name:        "test_GetContainerBEMilliCPURequest_invalid",
+			fn:          GetContainerBEMilliCPURequest,
+			container:   &corev1.Container{},
+			expectValue: -1,
+		},
+		{
+			name: "test_GetContainerBEMilliCPULimit",
+			fn:   GetContainerBEMilliCPULimit,
+			container: &corev1.Container{
+				Resources: corev1.ResourceRequirements{
+					Limits: corev1.ResourceList(
+						map[corev1.ResourceName]resource.Quantity{
+							extension.BatchCPU: *resource.NewMilliQuantity(1, resource.DecimalSI),
+						}),
+				},
+			},
+			expectValue: 1,
+		},
+		{
+			name:        "test_GetContainerBEMilliCPULimit_invalid",
+			fn:          GetContainerBEMilliCPULimit,
+			container:   &corev1.Container{},
+			expectValue: -1,
+		},
+		{
+			name: "test_GetContainerBEMemoryByteRequest",
+			fn:   GetContainerBEMemoryByteRequest,
+			container: &corev1.Container{
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList(
+						map[corev1.ResourceName]resource.Quantity{
+							extension.BatchMemory: *resource.NewQuantity(1, resource.BinarySI),
+						}),
+				},
+			},
+			expectValue: 1,
+		},
+		{
+			name:        "test_GetContainerBEMemoryByteRequest_invalid",
+			fn:          GetContainerBEMemoryByteRequest,
+			container:   &corev1.Container{},
+			expectValue: -1,
+		},
+		{
+			name: "test_GetContainerBEMemoryByteLimit",
+			fn:   GetContainerBEMemoryByteLimit,
+			container: &corev1.Container{
+				Resources: corev1.ResourceRequirements{
+					Limits: corev1.ResourceList(
+						map[corev1.ResourceName]resource.Quantity{
+							extension.BatchMemory: *resource.NewQuantity(1, resource.BinarySI),
+						}),
+				},
+			},
+			expectValue: 1,
+		},
+		{
+			name:        "test_GetContainerBEMemoryByteLimit_invalid",
+			fn:          GetContainerBEMemoryByteLimit,
+			container:   &corev1.Container{},
+			expectValue: -1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotValue := tt.fn(tt.container)
+			assert.Equal(t, tt.expectValue, gotValue, "checkValue")
 		})
 	}
 }
