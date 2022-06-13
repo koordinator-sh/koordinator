@@ -43,12 +43,13 @@ func main() {
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 	pflag.Parse()
 
-	dir, _ := filepath.Split(options.RuntimeProxyEndpoint)
-	err := os.MkdirAll(dir, 0777)
-	if err != nil {
-		klog.Fatalf("Failed to create socket dir, err: %v", err)
+	if err := os.Remove(options.RuntimeProxyEndpoint); err != nil && !os.IsNotExist(err) {
+		klog.Fatalf("failed to unlink %v: %v", options.RuntimeProxyEndpoint, err)
 	}
-	defer os.Remove(options.RuntimeProxyEndpoint)
+
+	if err := os.MkdirAll(filepath.Dir(options.RuntimeProxyEndpoint), 0755); err != nil {
+		klog.Fatalf("failed to mkdir %v: %v", filepath.Dir(options.RuntimeProxyEndpoint), err)
+	}
 
 	switch options.BackendRuntimeMode {
 	case options.BackendRuntimeModeContainerd:
@@ -63,5 +64,5 @@ func main() {
 
 	stopCh := genericapiserver.SetupSignalHandler()
 	<-stopCh
-	klog.Info("RuntimeManager shutting down")
+	klog.Info("koordiantor runtime-proxy shutting down")
 }
