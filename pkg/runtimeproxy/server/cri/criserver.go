@@ -19,8 +19,6 @@ package cri
 import (
 	"context"
 	"net"
-	"os"
-	"path/filepath"
 	"time"
 
 	"google.golang.org/grpc"
@@ -63,25 +61,15 @@ func (c *RuntimeManagerCriServer) Run() error {
 
 	klog.Infof("do failOver done")
 
-	if err := os.Remove(options.RuntimeProxyEndpoint); err != nil && !os.IsNotExist(err) {
-		klog.Errorf("fail to unlink %v: %v", options.RuntimeProxyEndpoint, err)
-		return err
-	}
-
-	if err := os.MkdirAll(filepath.Dir(options.RuntimeProxyEndpoint), 0755); err != nil {
-		klog.Errorf("fail to mkdir %v: %v", filepath.Base(options.RuntimeProxyEndpoint), err)
-		return err
-	}
-
-	lis, err := net.Listen("unix", options.RuntimeProxyEndpoint)
+	listener, err := net.Listen("unix", options.RuntimeProxyEndpoint)
 	if err != nil {
-		klog.Errorf("fail to create the lis %v", err)
+		klog.Errorf("failed to create listener, error: %v", err)
 		return err
 	}
 	grpcServer := grpc.NewServer()
 	runtimeapi.RegisterRuntimeServiceServer(grpcServer, c)
 	runtimeapi.RegisterImageServiceServer(grpcServer, c)
-	err = grpcServer.Serve(lis)
+	err = grpcServer.Serve(listener)
 	return err
 }
 
