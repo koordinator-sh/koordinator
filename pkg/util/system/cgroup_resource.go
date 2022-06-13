@@ -41,7 +41,8 @@ const (
 	CPUSFileName      = "cpuset.cpus"
 	CPUTaskFileName   = "tasks"
 
-	CpuacctStatFileName = "cpuacct.stat"
+	CpuacctStatFileName  = "cpuacct.stat"
+	CpuacctUsageFileName = "cpuacct.usage"
 
 	MemWmarkRatioFileName       = "memory.wmark_ratio"
 	MemWmarkScaleFactorFileName = "memory.wmark_scale_factor"
@@ -81,7 +82,8 @@ var (
 
 	CPUSet = CgroupFile{ResourceFileName: CPUSFileName, Subfs: CgroupCPUSetDir, IsAnolisOS: false}
 
-	CpuacctStat = CgroupFile{ResourceFileName: CpuacctStatFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: false}
+	CpuacctStat  = CgroupFile{ResourceFileName: CpuacctStatFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: false}
+	CpuacctUsage = CgroupFile{ResourceFileName: CpuacctUsageFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: false}
 
 	MemStat             = CgroupFile{ResourceFileName: MemStatFileName, Subfs: CgroupMemDir, IsAnolisOS: false}
 	MemoryLimit         = CgroupFile{ResourceFileName: MemoryLimitFileName, Subfs: CgroupMemDir, IsAnolisOS: false}

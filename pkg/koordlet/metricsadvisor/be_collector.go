@@ -117,7 +117,7 @@ func (c *collector) getBECPUUsageCores() (*resource.Quantity, error) {
 
 	collectTime := time.Now()
 
-	currentCPUTick, err := util.GetRootCgroupCPUStatUsageTicks(corev1.PodQOSBestEffort)
+	currentCPUUsage, err := util.GetRootCgroupCPUUsage(corev1.PodQOSBestEffort)
 	if err != nil {
 		klog.Warningf("failed to collect be cgroup usage, error: %v", err)
 		return nil, err
@@ -125,17 +125,17 @@ func (c *collector) getBECPUUsageCores() (*resource.Quantity, error) {
 
 	lastCPUStat := c.context.lastBECPUStat
 	c.context.lastBECPUStat = contextRecord{
-		cpuTick: currentCPUTick,
-		ts:      collectTime,
+		cpuUsage: currentCPUUsage,
+		ts:       collectTime,
 	}
 
-	if lastCPUStat.cpuTick <= 0 {
+	if lastCPUStat.cpuUsage <= 0 {
 		klog.V(6).Infof("ignore the first cpu stat collection")
 		return nil, nil
 	}
 
 	// NOTICE: do subtraction and division first to avoid overflow
-	cpuUsageValue := float64(currentCPUTick-lastCPUStat.cpuTick) / float64(collectTime.Sub(lastCPUStat.ts)) * jiffies
+	cpuUsageValue := float64(currentCPUUsage-lastCPUStat.cpuUsage) / float64(collectTime.Sub(lastCPUStat.ts))
 	// 1.0 CPU = 1000 Milli-CPU
 	cpuUsageCores := resource.NewMilliQuantity(int64(cpuUsageValue*1000), resource.DecimalSI)
 	klog.V(6).Infof("collectBECPUUsageCores finished %.2f", cpuUsageValue)
