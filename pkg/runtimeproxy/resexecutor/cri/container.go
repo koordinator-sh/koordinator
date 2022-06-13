@@ -125,6 +125,7 @@ func (c *ContainerResourceExecutor) ResourceCheckPoint(rsp interface{}) error {
 	// container level resource checkpoint would be triggered during post container create only
 	switch response := rsp.(type) {
 	case *runtimeapi.CreateContainerResponse:
+		c.ContainerMata.Id = response.GetContainerId()
 		err := store.WriteContainerInfo(response.GetContainerId(), &c.ContainerInfo)
 		if err != nil {
 			return err
