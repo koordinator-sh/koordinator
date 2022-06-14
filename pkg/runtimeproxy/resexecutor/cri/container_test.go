@@ -219,3 +219,51 @@ func TestContainerResourceExecutor_UpdateRequestForUpdateContainerResourcesReque
 		assert.Equal(t, tt.wantAnnotations, tt.args.req.(*runtimeapi.UpdateContainerResourcesRequest).GetAnnotations())
 	}
 }
+
+func TestContainerResourceExecutor_ResourceCheckPoint(t *testing.T) {
+	type fields struct {
+		ContainerInfo store.ContainerInfo
+	}
+	type args struct {
+		rsp interface{}
+	}
+	tests := []struct {
+		name          string
+		fields        fields
+		args          args
+		wantErr       bool
+		wantStoreInfo *store.ContainerInfo
+	}{
+		{
+			name: "normal case - CreateContainerResponse - Set Container id successfully",
+			args: args{
+				rsp: &runtimeapi.CreateContainerResponse{
+					ContainerId: "111111",
+				},
+			},
+			fields: fields{
+				ContainerInfo: store.ContainerInfo{
+					ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
+						ContainerMata: &v1alpha1.ContainerMetadata{},
+					},
+				},
+			},
+			wantErr: false,
+			wantStoreInfo: &store.ContainerInfo{
+				ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
+					ContainerMata: &v1alpha1.ContainerMetadata{
+						Id: "111111",
+					},
+				}},
+		},
+	}
+	for _, tt := range tests {
+		c := &ContainerResourceExecutor{
+			ContainerInfo: tt.fields.ContainerInfo,
+		}
+		err := c.ResourceCheckPoint(tt.args.rsp)
+		containerInfo := store.GetContainerInfo(c.ContainerInfo.ContainerMata.GetId())
+		assert.Equal(t, tt.wantErr, err != nil, err)
+		assert.Equal(t, tt.wantStoreInfo, containerInfo)
+	}
+}
