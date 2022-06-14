@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -130,9 +129,8 @@ func (a *auditor) gcExpiredReaders(expiredReaders []*readerContext) {
 
 func (a *auditor) HttpHandler() func(http.ResponseWriter, *http.Request) {
 	return func(rw http.ResponseWriter, r *http.Request) {
-		query := r.URL.Query()
-		sizeStr := paramenter(query, "size")
-		pageToken := paramenter(query, "pageToken")
+		sizeStr := r.URL.Query().Get("size")
+		pageToken := r.URL.Query().Get("pageToken")
 
 		klog.Infof("handle query client=%v pageToken=%v size=%v", r.RemoteAddr, pageToken, sizeStr)
 
@@ -244,14 +242,6 @@ func (a *auditor) Run(stopCh <-chan struct{}) error {
 			a.gcExpiredReaders(expiredReaders)
 		}
 	}
-}
-
-func paramenter(query url.Values, key string) string {
-	values, ok := query[key]
-	if !ok || len(values) == 0 {
-		return ""
-	}
-	return values[0]
 }
 
 // emptyAuditor do nothing to mock Auditor
