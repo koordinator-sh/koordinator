@@ -126,10 +126,16 @@ build: `cd koordinator; make build-koord-runtime-proxy`
 TODO
 
 ### Setup Kubelet
-To make koord-runtime-proxy a proxy between kubelet and containerd(dockerd), kubelet parameters should be altered as shown
+Under containerd scenario, to make koord-runtime-proxy a proxy between kubelet and containerd, kubelet parameters should be altered as shown
 below:
 ```
 kubelet <other options> --container-runtime=remote --container-runtime=/var/run/koord-runtimeproxy/runtimeproxy.sock
+```
+
+Under docker scenario, to make koord-runtime-proxy a proxy between kubelet and dockerd, kubelet parameters should be altered as shown
+below:
+```
+kubelet <other options> --docker-endpoint=/var/run/koord-runtimeproxy/runtimeproxy.sock
 ```
 
 ### Setup KoordRuntimeProxy

@@ -21,7 +21,12 @@ import (
 	"io"
 	"testing"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
+	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/types"
 )
 
 func Test_calculateContentLength(t *testing.T) {
@@ -109,5 +114,138 @@ func Test_splitLabelsAndAnnotations(t *testing.T) {
 		gotLabels, gotAnnos := splitLabelsAndAnnotations(tt.args.configs)
 		assert.Equal(t, tt.wantLabels, gotLabels)
 		assert.Equal(t, tt.wantAnnos, gotAnnos)
+	}
+}
+
+func Test_toCriCgroupPath(t *testing.T) {
+	type testCase struct {
+		cgroupDriver     string
+		cgroupParent     string
+		expectCgroupPath string
+	}
+
+	tests := []testCase{
+		{
+			"systemd",
+			"burstable/djfklsjdf98",
+			"/kubepods.slice/kubepods-burstable.slice/burstable/djfklsjdf98",
+		},
+		{
+			"cgroupfs",
+			"/kubepods.slice/kubepods-burstable.slice/burstable/djfklsjdf98",
+			"/kubepods.slice/kubepods-burstable.slice/burstable/djfklsjdf98",
+		},
+		{
+			"systemd",
+			"besteffort/fsdfsdf",
+			"/kubepods.slice/kubepods-besteffort.slice/besteffort/fsdfsdf",
+		},
+		{
+			"systemd",
+			"dfsdfsdf",
+			"/kubepods.slice/dfsdfsdf",
+		},
+	}
+	for _, tt := range tests {
+		path := ToCriCgroupPath(tt.cgroupDriver, tt.cgroupParent)
+		assert.Equal(t, tt.expectCgroupPath, path)
+	}
+}
+
+func Test_GetRuntimeResourceType(t *testing.T) {
+	type testCase struct {
+		labels       map[string]string
+		expectedType resource_executor.RuntimeResourceType
+	}
+	tests := []testCase{
+		{
+			map[string]string{types.ContainerTypeLabelKey: types.ContainerTypeLabelSandbox},
+			resource_executor.RuntimePodResource,
+		},
+		{
+			map[string]string{types.ContainerTypeLabelKey: types.ContainerTypeLabelContainer},
+			resource_executor.RuntimeContainerResource,
+		},
+	}
+	for _, tt := range tests {
+		resourceType := GetRuntimeResourceType(tt.labels)
+		assert.Equal(t, tt.expectedType, resourceType)
+	}
+}
+
+func Test_UpdateHostConfigByResource(t *testing.T) {
+	type testCase struct {
+		resources      *v1alpha1.LinuxContainerResources
+		config         *container.HostConfig
+		expectedConfig *container.HostConfig
+	}
+	tests := []testCase{
+		{
+			nil,
+			nil,
+			nil,
+		},
+		{&v1alpha1.LinuxContainerResources{
+			CpuPeriod:   1000,
+			CpuShares:   1000,
+			OomScoreAdj: 10,
+		},
+			&container.HostConfig{
+				Resources: container.Resources{
+					CPUPeriod: 10,
+					CPUShares: 20,
+				},
+				OomScoreAdj: 20,
+			},
+			&container.HostConfig{
+				Resources: container.Resources{
+					CPUPeriod: 1000,
+					CPUShares: 1000,
+				},
+				OomScoreAdj: 10,
+			},
+		},
+	}
+	for _, tt := range tests {
+		config := UpdateHostConfigByResource(tt.config, tt.resources)
+		assert.Equal(t, tt.expectedConfig, config)
+	}
+}
+
+func Test_UpdateUpdateConfigByResource(t *testing.T) {
+	type testCase struct {
+		resources      *v1alpha1.LinuxContainerResources
+		config         *container.UpdateConfig
+		expectedConfig *container.UpdateConfig
+	}
+
+	tests := []testCase{
+		{
+			nil,
+			nil,
+			nil,
+		},
+		{&v1alpha1.LinuxContainerResources{
+			CpuPeriod:   1000,
+			CpuShares:   1000,
+			OomScoreAdj: 10,
+		},
+			&container.UpdateConfig{
+				Resources: container.Resources{
+					CPUPeriod: 10,
+					CPUShares: 20,
+				},
+			},
+			&container.UpdateConfig{
+				Resources: container.Resources{
+					CPUPeriod: 1000,
+					CPUShares: 1000,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		config := UpdateUpdateConfigByResource(tt.config, tt.resources)
+		assert.Equal(t, tt.expectedConfig, config)
 	}
 }
