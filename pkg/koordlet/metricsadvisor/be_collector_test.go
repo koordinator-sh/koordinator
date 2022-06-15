@@ -48,9 +48,9 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{Pod: bePod}, {Pod: lsPod}}).AnyTimes()
 
 	// prepare BECPUUsageCores data,expect 4 cores usage
-	collector.context.lastBECPUStat = contextRecord{cpuTick: 1200000, ts: time.Now().Add(-1 * time.Second)}
+	collector.context.lastBECPUStat = contextRecord{cpuUsage: 12000000000000, ts: time.Now().Add(-1 * time.Second)}
 	helper := system.NewFileTestUtil(t)
-	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CpuacctStat, "user 400380\nsystem 800020\n")
+	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CpuacctUsage, "12004000000000")
 
 	// prepare limit data,expect 8 cores limit
 	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet, "1-15")
@@ -77,38 +77,38 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 
 func Test_getBECPUUsageCores(t *testing.T) {
 	tests := []struct {
-		name                 string
-		cpuacctStat          string
-		lastBeCPUStat        *contextRecord
-		expectCPUUsedCores   *resource.Quantity
-		expectCurrentCPUTick uint64
-		expectNil            bool
-		expectError          bool
+		name                  string
+		cpuacctUsage          string
+		lastBeCPUStat         *contextRecord
+		expectCPUUsedCores    *resource.Quantity
+		expectCurrentCPUUsage uint64
+		expectNil             bool
+		expectError           bool
 	}{
 		{
-			name:                 "test_get_first_time",
-			cpuacctStat:          "user 400000\nsystem 800000\n",
-			lastBeCPUStat:        nil,
-			expectCPUUsedCores:   nil,
-			expectCurrentCPUTick: 1200000,
-			expectNil:            true,
-			expectError:          false,
+			name:                  "test_get_first_time",
+			cpuacctUsage:          "12000000000000\n",
+			lastBeCPUStat:         nil,
+			expectCPUUsedCores:    nil,
+			expectCurrentCPUUsage: 12000000000000,
+			expectNil:             true,
+			expectError:           false,
 		},
 		{
-			name:                 "test_get_correct",
-			cpuacctStat:          "user 400380\nsystem 800020\n",
-			lastBeCPUStat:        &contextRecord{cpuTick: 1200000},
-			expectCPUUsedCores:   resource.NewQuantity(4, resource.DecimalSI),
-			expectCurrentCPUTick: 1200400,
-			expectNil:            false,
-			expectError:          false,
+			name:                  "test_get_correct",
+			cpuacctUsage:          "12004000000000\n",
+			lastBeCPUStat:         &contextRecord{cpuUsage: 12000000000000},
+			expectCPUUsedCores:    resource.NewQuantity(4, resource.DecimalSI),
+			expectCurrentCPUUsage: 12004000000000,
+			expectNil:             false,
+			expectError:           false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
-			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CpuacctStat, tt.cpuacctStat)
+			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CpuacctUsage, tt.cpuacctUsage)
 
 			collector := collector{context: newCollectContext()}
 			if tt.lastBeCPUStat != nil {
@@ -121,7 +121,7 @@ func Test_getBECPUUsageCores(t *testing.T) {
 			if !tt.expectNil {
 				assert.Equal(t, tt.expectCPUUsedCores.Value(), gotCPUUsedCores.Value(), "checkCPU")
 			}
-			assert.Equal(t, tt.expectCurrentCPUTick, collector.context.lastBECPUStat.cpuTick, "checkCPUTick")
+			assert.Equal(t, tt.expectCurrentCPUUsage, collector.context.lastBECPUStat.cpuUsage, "checkCPUUsage")
 		})
 	}
 }
