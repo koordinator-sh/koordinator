@@ -144,25 +144,25 @@ func Test_readPodCPUUsage(t *testing.T) {
 	}
 }
 
-func Test_GetPodCPUUsage(t *testing.T) {
+func Test_GetPodCPUUsageNanoseconds(t *testing.T) {
 	tempDir := t.TempDir()
 	system.Conf = system.NewDsModeConfig()
-	_, err := GetPodCPUUsage(tempDir)
+	_, err := GetPodCPUUsageNanoseconds(tempDir)
 	assert.NotNil(t, err)
 }
 
-func Test_GetContainerCPUUsage(t *testing.T) {
+func Test_GetContainerCPUUsageNanoseconds(t *testing.T) {
 	tempDir := t.TempDir()
 	system.Conf = system.NewDsModeConfig()
 	container := &corev1.ContainerStatus{ContainerID: "fakeid"}
-	_, err := GetContainerCPUUsage(tempDir, container)
+	_, err := GetContainerCPUUsageNanoseconds(tempDir, container)
 	assert.NotNil(t, err)
 }
 
-func Test_GetRootCgroupCPUUsage(t *testing.T) {
+func Test_GetRootCgroupCPUUsageNanoseconds(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
 	helper.WriteCgroupFileContents(GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CpuacctUsage, getUsageContents())
-	got, err := GetRootCgroupCPUUsage(corev1.PodQOSBestEffort)
+	got, err := GetRootCgroupCPUUsageNanoseconds(corev1.PodQOSBestEffort)
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(1356232), got)
 }

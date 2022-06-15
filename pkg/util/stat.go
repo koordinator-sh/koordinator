@@ -79,12 +79,12 @@ func readCPUAcctUsage(usagePath string) (uint64, error) {
 }
 
 // GetPodCPUUsage returns the pod's CPU usage in nanosecond
-func GetPodCPUUsage(podCgroupDir string) (uint64, error) {
+func GetPodCPUUsageNanoseconds(podCgroupDir string) (uint64, error) {
 	podStatPath := GetPodCgroupCPUAcctProcUsagePath(podCgroupDir)
 	return readCPUAcctUsage(podStatPath)
 }
 
-func GetContainerCPUUsage(podCgroupDir string, c *corev1.ContainerStatus) (uint64, error) {
+func GetContainerCPUUsageNanoseconds(podCgroupDir string, c *corev1.ContainerStatus) (uint64, error) {
 	containerStatPath, err := GetContainerCgroupCPUAcctUsagePath(podCgroupDir, c)
 	if err != nil {
 		return 0, err
@@ -92,7 +92,7 @@ func GetContainerCPUUsage(podCgroupDir string, c *corev1.ContainerStatus) (uint6
 	return readCPUAcctUsage(containerStatPath)
 }
 
-func GetRootCgroupCPUUsage(qosClass corev1.PodQOSClass) (uint64, error) {
+func GetRootCgroupCPUUsageNanoseconds(qosClass corev1.PodQOSClass) (uint64, error) {
 	rootCgroupParentDir := GetKubeQosRelativePath(qosClass)
 	statPath := system.GetCgroupFilePath(rootCgroupParentDir, system.CpuacctUsage)
 	return readCPUAcctUsage(statPath)

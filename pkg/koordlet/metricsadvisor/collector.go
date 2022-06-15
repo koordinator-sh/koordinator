@@ -220,7 +220,7 @@ func (c *collector) collectPodResUsed() {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
 		collectTime := time.Now()
-		currentCPUUsage, err0 := util.GetPodCPUUsage(meta.CgroupDir)
+		currentCPUUsage, err0 := util.GetPodCPUUsageNanoseconds(meta.CgroupDir)
 		memUsageValue, err1 := util.GetPodMemStatUsageBytes(meta.CgroupDir)
 		if err0 != nil || err1 != nil {
 			// higher verbosity for probably non-running pods
@@ -277,7 +277,7 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 	for i := range pod.Status.ContainerStatuses {
 		containerStat := &pod.Status.ContainerStatuses[i]
 		collectTime := time.Now()
-		currentCPUUsage, err0 := util.GetContainerCPUUsage(meta.CgroupDir, containerStat)
+		currentCPUUsage, err0 := util.GetContainerCPUUsageNanoseconds(meta.CgroupDir, containerStat)
 		memUsageValue, err1 := util.GetContainerMemStatUsageBytes(meta.CgroupDir, containerStat)
 		if err0 != nil || err1 != nil {
 			// higher verbosity for probably non-running pods

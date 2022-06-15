@@ -117,7 +117,7 @@ func (c *collector) getBECPUUsageCores() (*resource.Quantity, error) {
 
 	collectTime := time.Now()
 
-	currentCPUUsage, err := util.GetRootCgroupCPUUsage(corev1.PodQOSBestEffort)
+	currentCPUUsage, err := util.GetRootCgroupCPUUsageNanoseconds(corev1.PodQOSBestEffort)
 	if err != nil {
 		klog.Warningf("failed to collect be cgroup usage, error: %v", err)
 		return nil, err
