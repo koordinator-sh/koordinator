@@ -122,6 +122,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 			podInfo.Resources = resp.Resources
 		}
 		cfgBody.HostConfig.CgroupParent = resp.CgroupParent
+		podInfo.CgroupParent = resp.CgroupParent
 	} else if hookResp != nil {
 		resp := hookResp.(*v1alpha1.ContainerResourceHookResponse)
 		if resp.ContainerResources != nil {
@@ -129,6 +130,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 			containerInfo.ContainerResources = resp.ContainerResources
 		}
 		cfgBody.HostConfig.CgroupParent = resp.PodCgroupParent
+		containerInfo.PodCgroupParent = resp.PodCgroupParent
 	}
 	// send req to docker
 	nBody, err := encodeBody(cfgBody)
