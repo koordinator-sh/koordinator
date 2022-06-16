@@ -4,8 +4,8 @@ GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 GIT_COMMIT_ID ?= $(shell git rev-parse --short HEAD)
 
 # Image URL to use all building/pushing image targets
-REG ?= docker.io
-REG_NS ?= koordinatorsh
+REG ?= ghcr.io
+REG_NS ?= koordinator-sh
 REG_USER ?= ""
 REG_PWD ?= ""
 
