@@ -89,3 +89,75 @@ jobs:
           file: cover.out
           fail_ci_if_error: true
           verbose: true
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REG: ghcr.io
+      ALIYUN_REG: registry.cn-beijing.aliyuncs.com
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: docker/setup-buildx-action@v2
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.GITHUB_REG }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to AliyunCS
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.ALIYUN_REG }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PWD }}
+      - name: Build koord-manager and push
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          pull: true
+          build-args: |
+            MODULE=koord-manager
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at}}
+            org.opencontainers.image.licenses=Apache-2.0
+          tags: |
+            ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/koord-manager:latest
+            ${{ env.ALIYUN_REG }}/${{ github.repository_owner }}/koord-manager:latest
+      - name: Build koord-scheduler and push
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          pull: true
+          build-args: |
+            MODULE=koord-scheduler
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at}}
+            org.opencontainers.image.licenses=Apache-2.0
+          tags: |
+            ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/koord-scheduler:latest
+            ${{ env.ALIYUN_REG }}/${{ github.repository_owner }}/koord-scheduler:latest
+      - name: Build koordlet and push
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          pull: true
+          build-args: |
+            MODULE=koordlet
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at}}
+            org.opencontainers.image.licenses=Apache-2.0
+          tags: |
+            ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/koordlet:latest
+            ${{ env.ALIYUN_REG }}/${{ github.repository_owner }}/koordlet:latest
