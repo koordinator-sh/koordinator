@@ -656,11 +656,6 @@ func (in *ResourceThresholdStrategy) DeepCopyInto(out *ResourceThresholdStrategy
 		*out = new(int64)
 		**out = **in
 	}
-	if in.CPUEvictThresholdPercent != nil {
-		in, out := &in.CPUEvictThresholdPercent, &out.CPUEvictThresholdPercent
-		*out = new(int64)
-		**out = **in
-	}
 	if in.CPUEvictBESatisfactionUpperPercent != nil {
 		in, out := &in.CPUEvictBESatisfactionUpperPercent, &out.CPUEvictBESatisfactionUpperPercent
 		*out = new(int64)

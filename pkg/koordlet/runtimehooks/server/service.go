@@ -21,16 +21,16 @@ import (
 
 	"k8s.io/klog/v2"
 
-	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtime-manager/config"
+	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 )
 
 func (s *server) PreRunPodSandboxHook(ctx context.Context,
-	req *runtimeapi.RunPodSandboxHookRequest) (*runtimeapi.RunPodSandboxHookResponse, error) {
+	req *runtimeapi.PodSandboxHookRequest) (*runtimeapi.PodSandboxHookResponse, error) {
 	klog.V(5).Infof("receive PreRunPodSandboxHook request %v", req.String())
-	resp := &runtimeapi.RunPodSandboxHookResponse{
+	resp := &runtimeapi.PodSandboxHookResponse{
 		Labels:       req.Labels,
 		Annotations:  req.Annotations,
 		CgroupParent: req.CgroupParent,

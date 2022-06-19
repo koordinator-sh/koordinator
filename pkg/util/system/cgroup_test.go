@@ -92,10 +92,10 @@ func genCPUStatContent() string {
 func TestGetCPUStatRaw(t *testing.T) {
 	helper := NewFileTestUtil(t)
 	testCPUDir := "cpu"
-	filePath := GetCgroupFilePath(testCPUDir, CpuacctStat)
+	filePath := GetCgroupFilePath(testCPUDir, CPUStat)
 
 	goodContent := genCPUStatContent()
-	helper.WriteCgroupFileContents(testCPUDir, CpuacctStat, goodContent)
+	helper.WriteCgroupFileContents(testCPUDir, CPUStat, goodContent)
 	got, err := GetCPUStatRaw(filePath)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(18491717), got.NrPeriod)
@@ -103,22 +103,22 @@ func TestGetCPUStatRaw(t *testing.T) {
 	assert.Equal(t, int64(123), got.ThrottledNanoSeconds)
 
 	badContent1 := "nr_periods a"
-	helper.WriteCgroupFileContents(testCPUDir, CpuacctStat, badContent1)
+	helper.WriteCgroupFileContents(testCPUDir, CPUStat, badContent1)
 	_, err1 := GetCPUStatRaw(filePath)
 	assert.Error(t, err1)
 
 	badContent2 := "nr_throttled a"
-	helper.WriteCgroupFileContents(testCPUDir, CpuacctStat, badContent2)
+	helper.WriteCgroupFileContents(testCPUDir, CPUStat, badContent2)
 	_, err2 := GetCPUStatRaw(filePath)
 	assert.Error(t, err2)
 
 	badContent3 := "throttled_time a"
-	helper.WriteCgroupFileContents(testCPUDir, CpuacctStat, badContent3)
+	helper.WriteCgroupFileContents(testCPUDir, CPUStat, badContent3)
 	_, err3 := GetCPUStatRaw(filePath)
 	assert.Error(t, err3)
 
 	badContent4 := "nr_periods 18491717\n" + "nr_throttled 12\n"
-	helper.WriteCgroupFileContents(testCPUDir, CpuacctStat, badContent4)
+	helper.WriteCgroupFileContents(testCPUDir, CPUStat, badContent4)
 	_, err4 := GetCPUStatRaw(filePath)
 	assert.Error(t, err4)
 }

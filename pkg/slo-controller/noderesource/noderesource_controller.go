@@ -23,10 +23,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -40,13 +40,13 @@ const (
 type NodeResourceReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
-	config      Config
+	Clock       clock.Clock
 	SyncContext SyncContext
+
+	config Config
 }
 
 func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx, "node-resource-reconciler", req.NamespacedName)
-
 	if !r.isColocationCfgAvailable() {
 		klog.Warningf("colocation config is not available")
 		return ctrl.Result{Requeue: false}, nil
@@ -55,7 +55,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	node := &corev1.Node{}
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, node); err != nil {
 		if errors.IsNotFound(err) {
-			klog.Warningf("error: %v", err)
+			klog.V(3).Infof("node %v not found: %v", req.Name)
 			return ctrl.Result{Requeue: false}, err
 		} else {
 			klog.Errorf("failed to get node %v, error: %v", req.Name, err)
@@ -64,7 +64,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if r.isColocationCfgDisabled(node) {
-		klog.Warningf("colocation for node %v is disabled, reset BE resource", req.Name)
+		klog.Infof("colocation for node %v is disabled, reset BE resource", req.Name)
 		if err := r.resetNodeBEResource(node, disableInConfig, "node colocation is disabled in Config"); err != nil {
 			return ctrl.Result{Requeue: true}, err
 		} else {
@@ -75,10 +75,10 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	nodeMetric := &slov1alpha1.NodeMetric{}
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, nodeMetric); err != nil {
 		if errors.IsNotFound(err) {
-			klog.Warningf("error: %v", err)
+			klog.V(3).Infof("nodemetric %v not found: %v", req.Name)
 			return ctrl.Result{Requeue: false}, err
 		} else {
-			klog.Errorf("failed to get NodeMetric %v, error: %v", req.Name, err)
+			klog.Errorf("failed to get nodemetric %v, error: %v", req.Name, err)
 			return ctrl.Result{Requeue: true}, err
 		}
 	}

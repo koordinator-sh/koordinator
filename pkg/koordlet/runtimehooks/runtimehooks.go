@@ -19,12 +19,12 @@ package runtimehooks
 import (
 	"reflect"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"k8s.io/klog/v2"
 
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/server"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
 type HookPlugin interface {
@@ -42,10 +42,11 @@ type runtimeHook struct {
 }
 
 func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
-	registerPlugins()
+	klog.V(5).Infof("runtime hook server start running")
 	if err := r.server.Start(); err != nil {
 		return err
 	}
+	klog.V(5).Infof("runtime hook server has started")
 	<-stopCh
 	klog.Infof("runtime hook is stopped")
 	return nil
@@ -60,6 +61,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		statesInformer: si,
 		server:         s,
 	}
+	registerPlugins()
 	si.RegisterCallbacks(reflect.TypeOf(&slov1alpha1.NodeSLO{}), "runtime-hooks-rule",
 		"Update hooks rule can run callbacks if NodeSLO spec update",
 		rule.UpdateRules)
@@ -71,10 +73,12 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 }
 
 func registerPlugins() {
+	klog.V(5).Infof("start register plugins for runtime hook")
 	for hookFeature, hookPlugin := range runtimeHookPlugins {
-		if DefaultRuntimeHooksFG.Enabled(hookFeature) {
+		enabled := DefaultRuntimeHooksFG.Enabled(hookFeature)
+		if enabled {
 			hookPlugin.Register()
-			klog.Infof("runtime hook plugin %s has registered", hookFeature)
 		}
+		klog.Infof("runtime hook plugin %s enable %v", hookFeature, enabled)
 	}
 }

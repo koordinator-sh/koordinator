@@ -42,12 +42,12 @@ func GetContainerCgroupPathWithKube(podParentDir string, c *corev1.ContainerStat
 	), nil
 }
 
-func GetContainerCgroupCPUAcctProcStatPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+func GetContainerCgroupCPUAcctUsagePath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
 	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
 	if err != nil {
 		return "", err
 	}
-	return system.GetCgroupFilePath(containerPath, system.CpuacctStat), nil
+	return system.GetCgroupFilePath(containerPath, system.CpuacctUsage), nil
 }
 
 func GetContainerCgroupMemStatPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {

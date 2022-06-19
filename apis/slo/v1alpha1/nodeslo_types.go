@@ -178,11 +178,6 @@ type ResourceThresholdStrategy struct {
 	// +kubebuilder:validation:Minimum=0
 	MemoryEvictLowerPercent *int64 `json:"memoryEvictLowerPercent,omitempty"`
 
-	// cpu evict threshold percentage (0,100), default = 70
-	// +kubebuilder:default=70
-	// +kubebuilder:validation:Maximum=100
-	// +kubebuilder:validation:Minimum=0
-	CPUEvictThresholdPercent *int64 `json:"cpuEvictThresholdPercent,omitempty"`
 	// if be CPU RealLimit/allocatedLimit > CPUEvictBESatisfactionUpperPercent, then stop evict BE pods
 	CPUEvictBESatisfactionUpperPercent *int64 `json:"cpuEvictBESatisfactionUpperPercent,omitempty"`
 	// if be CPU (RealLimit/allocatedLimit < CPUEvictBESatisfactionLowerPercent and usage nearly 100%) continue CPUEvictTimeWindowSeconds,then start evict

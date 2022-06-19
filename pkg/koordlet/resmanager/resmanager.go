@@ -99,7 +99,7 @@ func isFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature
 
 	spec := nodeSLO.Spec
 	switch feature {
-	case features.BECPUSuppress, features.BEMemoryEvict:
+	case features.BECPUSuppress, features.BEMemoryEvict, features.BECPUEvict:
 		if spec.ResourceUsedThresholdWithBE == nil || spec.ResourceUsedThresholdWithBE.Enable == nil {
 			return true, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
 		}

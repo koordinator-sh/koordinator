@@ -26,9 +26,11 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-func (s *statesInformer) syncKubelet() error {
+func (s *statesInformer) syncPods() error {
 	podList, err := s.kubelet.GetAllPods()
-	if err != nil {
+
+	// when kubelet recovers from crash, podList may be empty.
+	if err != nil || len(podList.Items) == 0 {
 		klog.Warningf("get pods from kubelet failed, err: %v", err)
 		return err
 	}
@@ -42,7 +44,7 @@ func (s *statesInformer) syncKubelet() error {
 	s.podMap = newPodMap
 	s.podHasSynced.Store(true)
 	s.podUpdatedTime = time.Now()
-	klog.Infof("get pods from kubelet success, len %d", len(s.podMap))
+	klog.Infof("get pods success, len %d", len(s.podMap))
 	return nil
 }
 
@@ -56,7 +58,7 @@ func (s *statesInformer) syncKubeletLoop(duration time.Duration, stopCh <-chan s
 		case <-s.podCreated:
 			if rateLimiter.Allow() {
 				// sync kubelet triggered immediately when the Pod is created
-				s.syncKubelet()
+				s.syncPods()
 				// reset timer to
 				if !timer.Stop() {
 					<-timer.C
@@ -65,7 +67,7 @@ func (s *statesInformer) syncKubeletLoop(duration time.Duration, stopCh <-chan s
 			}
 		case <-timer.C:
 			timer.Reset(duration)
-			s.syncKubelet()
+			s.syncPods()
 		case <-stopCh:
 			klog.Infof("sync kubelet loop is exited")
 			return

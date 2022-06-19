@@ -47,10 +47,10 @@ func GetPodKubeRelativePath(pod *corev1.Pod) string {
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @output /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.proc_stat
-func GetPodCgroupCPUAcctProcStatPath(podParentDir string) string {
+// @output /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.usage
+func GetPodCgroupCPUAcctProcUsagePath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.GetCgroupFilePath(podPath, system.CpuacctStat)
+	return system.GetCgroupFilePath(podPath, system.CpuacctUsage)
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
@@ -73,7 +73,7 @@ func GetPodCgroupCFSQuotaPath(podParentDir string) string {
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @output /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.proc_stat
+// @output /sys/fs/cgroup/memory/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.stat
 func GetPodCgroupMemStatPath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
 	return system.GetCgroupFilePath(podPath, system.MemStat)
@@ -99,6 +99,15 @@ func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
 		qosClass = qos.GetPodQOS(pod)
 	}
 	return qosClass
+}
+
+func GetKubeQoSByCgroupParent(cgroupDir string) corev1.PodQOSClass {
+	if strings.Contains(cgroupDir, "besteffort") {
+		return corev1.PodQOSBestEffort
+	} else if strings.Contains(cgroupDir, "burstable") {
+		return corev1.PodQOSBurstable
+	}
+	return corev1.PodQOSGuaranteed
 }
 
 func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {

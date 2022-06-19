@@ -23,8 +23,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
@@ -210,5 +213,137 @@ func Test_GetRootCgroupCurCPUSet(t *testing.T) {
 	if !reflect.DeepEqual(wantCPUSet, gotCPUSet) {
 		t.Errorf("failed to GetRootCgroupCurCPUSet, want cpuset %v, got %v", wantCPUSet, gotCPUSet)
 		return
+	}
+}
+
+func Test_GetPodKubeRelativePath(t *testing.T) {
+	system.SetupCgroupPathFormatter(system.Systemd)
+	system.Conf = system.NewDsModeConfig()
+
+	assert := assert.New(t)
+
+	testCases := []struct {
+		name string
+		pod  *corev1.Pod
+		path string
+	}{
+		{
+			name: "guaranteed",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID: types.UID("uid1"),
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSGuaranteed,
+				},
+			},
+			path: "/kubepods-poduid1.slice",
+		},
+		{
+			name: "burstable",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID: types.UID("uid1"),
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBurstable,
+				},
+			},
+			path: "kubepods-burstable.slice/kubepods-burstable-poduid1.slice",
+		},
+		{
+			name: "besteffort",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID: types.UID("uid1"),
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBestEffort,
+				},
+			},
+			path: "kubepods-besteffort.slice/kubepods-besteffort-poduid1.slice",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := GetPodKubeRelativePath(tc.pod)
+			assert.Equal(tc.path, path)
+		})
+	}
+}
+
+func Test_GetPodCgroupStatPath(t *testing.T) {
+	system.SetupCgroupPathFormatter(system.Systemd)
+
+	assert := assert.New(t)
+
+	testCases := []struct {
+		name         string
+		relativePath string
+		path         string
+		fn           func(p string) string
+	}{
+		{
+			name:         "cpuacct",
+			relativePath: "pod1",
+			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/cpuacct.usage",
+			fn: func(p string) string {
+				return GetPodCgroupCPUAcctProcUsagePath(p)
+			},
+		},
+		{
+			name:         "cpushare",
+			relativePath: "pod1",
+			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.shares",
+			fn: func(p string) string {
+				return GetPodCgroupCPUSharePath(p)
+			},
+		},
+		{
+			name:         "cfsperiod",
+			relativePath: "pod1",
+			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.cfs_period_us",
+			fn: func(p string) string {
+				return GetPodCgroupCFSPeriodPath(p)
+			},
+		},
+		{
+			name:         "cfsperiod",
+			relativePath: "pod1",
+			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.cfs_quota_us",
+			fn: func(p string) string {
+				return GetPodCgroupCFSQuotaPath(p)
+			},
+		},
+		{
+			name:         "memorystat",
+			relativePath: "pod1",
+			path:         "/host-cgroup/memory/kubepods.slice/pod1/memory.stat",
+			fn: func(p string) string {
+				return GetPodCgroupMemStatPath(p)
+			},
+		},
+		{
+			name:         "memorylimit",
+			relativePath: "pod1",
+			path:         "/host-cgroup/memory/kubepods.slice/pod1/memory.limit_in_bytes",
+			fn: func(p string) string {
+				return GetPodCgroupMemLimitPath(p)
+			},
+		},
+		{
+			name:         "cpustat",
+			relativePath: "pod1",
+			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.stat",
+			fn: func(p string) string {
+				return GetPodCgroupCPUStatPath(p)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := tc.fn(tc.relativePath)
+			assert.Equal(tc.path, path)
+		})
 	}
 }

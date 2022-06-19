@@ -19,6 +19,7 @@ package server
 import (
 	"fmt"
 	"net"
+	"syscall"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -69,6 +70,11 @@ func (s *server) Stop() {
 func (s *server) createRPCServer() error {
 	if s.server != nil {
 		return nil
+	}
+	if s.options.Network == "unix" {
+		if err := syscall.Unlink(s.options.Address); err != nil {
+			klog.Infof("unlink error %v", err)
+		}
 	}
 	l, err := net.Listen(s.options.Network, s.options.Address)
 	if err != nil {
