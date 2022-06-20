@@ -25,7 +25,7 @@ import (
 const (
 	// AnnotationCustomUsageThresholds represents the user-defined resource utilization threshold.
 	// For specific value definitions, see CustomUsageThresholds
-	AnnotationCustomUsageThresholds = "scheduling.koordinator.sh/usage-thresholds"
+	AnnotationCustomUsageThresholds = SchedulingDomainPrefix + "/usage-thresholds"
 )
 
 // CustomUsageThresholds supports user-defined node resource utilization thresholds.
