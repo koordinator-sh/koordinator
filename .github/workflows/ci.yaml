@@ -87,6 +87,7 @@ jobs:
           verbose: true
 
   build-and-push:
+    needs: [golangci-lint, staticcheck, unit-tests]
     runs-on: ubuntu-latest
     env:
       GITHUB_REG: ghcr.io
@@ -122,8 +123,6 @@ jobs:
           tags: |
             ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/koord-manager:latest
             ${{ env.ALIYUN_REG }}/${{ github.repository_owner }}/koord-manager:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       - name: Build koord-scheduler and push
         uses: docker/build-push-action@v3
         with:
@@ -140,8 +139,6 @@ jobs:
           tags: |
             ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/koord-scheduler:latest
             ${{ env.ALIYUN_REG }}/${{ github.repository_owner }}/koord-scheduler:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       - name: Build koordlet and push
         uses: docker/build-push-action@v3
         with:
@@ -158,5 +155,3 @@ jobs:
           tags: |
             ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/koordlet:latest
             ${{ env.ALIYUN_REG }}/${{ github.repository_owner }}/koordlet:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
