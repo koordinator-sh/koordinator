@@ -242,7 +242,6 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 	slov1alpha1.AddToScheme(scheme)
 	r := &NodeSLOReconciler{
 		Client: fake.NewClientBuilder().WithScheme(scheme).Build(),
-		Log:    ctrl.Log.WithName("controllers").WithName("NodeSLO"),
 		Scheme: scheme,
 	}
 	testingNode := &corev1.Node{

@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -44,7 +43,6 @@ import (
 type NodeSLOReconciler struct {
 	client.Client
 	config noderesource.Config
-	Log    logr.Logger
 	Scheme *runtime.Scheme
 }
 
