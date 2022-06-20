@@ -30,6 +30,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
+	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/types"
 )
 
 type mockRespWriter struct {
@@ -139,4 +141,40 @@ func ToCriCgroupPath(cgroupDriver, cgroupParent string) string {
 	} else {
 		return fmt.Sprintf("/kubepods.slice/%s", cgroupParent)
 	}
+}
+
+func GetRuntimeResourceType(labels map[string]string) resource_executor.RuntimeResourceType {
+	if labels[types.ContainerTypeLabelKey] == types.ContainerTypeLabelSandbox {
+		return resource_executor.RuntimePodResource
+	}
+	return resource_executor.RuntimeContainerResource
+}
+
+func UpdateHostConfigByResource(config *container.HostConfig, resources *v1alpha1.LinuxContainerResources) *container.HostConfig {
+	if config == nil || resources == nil {
+		return config
+	}
+	config.CPUPeriod = resources.CpuPeriod
+	config.CPUQuota = resources.CpuQuota
+	config.CPUShares = resources.CpuShares
+	config.Memory = resources.MemoryLimitInBytes
+	config.OomScoreAdj = int(resources.OomScoreAdj)
+	config.CpusetCpus = resources.CpusetCpus
+	config.CpusetMems = resources.CpusetMems
+	config.MemorySwap = resources.MemorySwapLimitInBytes
+	return config
+}
+
+func UpdateUpdateConfigByResource(containerConfig *container.UpdateConfig, resources *v1alpha1.LinuxContainerResources) *container.UpdateConfig {
+	if containerConfig == nil || resources == nil {
+		return containerConfig
+	}
+	containerConfig.CPUPeriod = resources.CpuPeriod
+	containerConfig.CPUQuota = resources.CpuQuota
+	containerConfig.CPUShares = resources.CpuShares
+	containerConfig.Memory = resources.MemoryLimitInBytes
+	containerConfig.CpusetCpus = resources.CpusetCpus
+	containerConfig.CpusetMems = resources.CpusetMems
+	containerConfig.MemorySwap = resources.MemorySwapLimitInBytes
+	return containerConfig
 }

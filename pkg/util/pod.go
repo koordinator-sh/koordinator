@@ -47,10 +47,10 @@ func GetPodKubeRelativePath(pod *corev1.Pod) string {
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @output /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.proc_stat
-func GetPodCgroupCPUAcctProcStatPath(podParentDir string) string {
+// @output /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.usage
+func GetPodCgroupCPUAcctProcUsagePath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.GetCgroupFilePath(podPath, system.CpuacctStat)
+	return system.GetCgroupFilePath(podPath, system.CpuacctUsage)
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/

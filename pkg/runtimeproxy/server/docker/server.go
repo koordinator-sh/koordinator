@@ -149,6 +149,7 @@ func (d *RuntimeManagerDockerServer) failOver() error {
 				ContainerAnnotations: c.Labels,
 				ContainerMata: &v1alpha1.ContainerMetadata{
 					Name: c.Name,
+					Id:   c.ID,
 				},
 				PodResources: podCheckPoint.Resources,
 			},
@@ -193,11 +194,4 @@ func (d *RuntimeManagerDockerServer) Run() error {
 		klog.Fatal("ListenAndServe:", err)
 	}
 	return nil
-}
-
-func GetRuntimeResourceType(labels map[string]string) resource_executor.RuntimeResourceType {
-	if labels[types.ContainerTypeLabelKey] == types.ContainerTypeLabelSandbox {
-		return resource_executor.RuntimePodResource
-	}
-	return resource_executor.RuntimeContainerResource
 }

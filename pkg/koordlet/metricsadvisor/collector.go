@@ -57,8 +57,9 @@ type Collector interface {
 }
 
 type contextRecord struct {
-	cpuTick uint64
-	ts      time.Time
+	cpuTick  uint64
+	cpuUsage uint64
+	ts       time.Time
 }
 
 type collectContext struct {
@@ -219,7 +220,7 @@ func (c *collector) collectPodResUsed() {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
 		collectTime := time.Now()
-		currentCPUTick, err0 := util.GetPodCPUStatUsageTicks(meta.CgroupDir)
+		currentCPUUsage, err0 := util.GetPodCPUUsageNanoseconds(meta.CgroupDir)
 		memUsageValue, err1 := util.GetPodMemStatUsageBytes(meta.CgroupDir)
 		if err0 != nil || err1 != nil {
 			// higher verbosity for probably non-running pods
@@ -234,8 +235,8 @@ func (c *collector) collectPodResUsed() {
 		}
 		lastCPUStatValue, ok := c.context.lastPodCPUStat.Load(uid)
 		c.context.lastPodCPUStat.Store(uid, contextRecord{
-			cpuTick: currentCPUTick,
-			ts:      collectTime,
+			cpuUsage: currentCPUUsage,
+			ts:       collectTime,
 		})
 		if !ok {
 			klog.Infof("ignore the first cpu stat collection for pod %s/%s", pod.Namespace, pod.Name)
@@ -243,7 +244,7 @@ func (c *collector) collectPodResUsed() {
 		}
 		lastCPUStat := lastCPUStatValue.(contextRecord)
 		// NOTICE: do subtraction and division first to avoid overflow
-		cpuUsageValue := float64(currentCPUTick-lastCPUStat.cpuTick) / float64(collectTime.Sub(lastCPUStat.ts)) * jiffies
+		cpuUsageValue := float64(currentCPUUsage-lastCPUStat.cpuUsage) / float64(collectTime.Sub(lastCPUStat.ts))
 		podMetric := metriccache.PodResourceMetric{
 			PodUID: uid,
 			CPUUsed: metriccache.CPUMetric{
@@ -276,7 +277,7 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 	for i := range pod.Status.ContainerStatuses {
 		containerStat := &pod.Status.ContainerStatuses[i]
 		collectTime := time.Now()
-		currentCPUTick, err0 := util.GetContainerCPUStatUsageTicks(meta.CgroupDir, containerStat)
+		currentCPUUsage, err0 := util.GetContainerCPUUsageNanoseconds(meta.CgroupDir, containerStat)
 		memUsageValue, err1 := util.GetContainerMemStatUsageBytes(meta.CgroupDir, containerStat)
 		if err0 != nil || err1 != nil {
 			// higher verbosity for probably non-running pods
@@ -291,8 +292,8 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 		}
 		lastCPUStatValue, ok := c.context.lastContainerCPUStat.Load(containerStat.ContainerID)
 		c.context.lastContainerCPUStat.Store(containerStat.ContainerID, contextRecord{
-			cpuTick: currentCPUTick,
-			ts:      collectTime,
+			cpuUsage: currentCPUUsage,
+			ts:       collectTime,
 		})
 		if !ok {
 			klog.V(5).Infof("ignore the first cpu stat collection for container %s/%s/%s",
@@ -301,7 +302,7 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 		}
 		lastCPUStat := lastCPUStatValue.(contextRecord)
 		// NOTICE: do subtraction and division first to avoid overflow
-		cpuUsageValue := float64(currentCPUTick-lastCPUStat.cpuTick) / float64(collectTime.Sub(lastCPUStat.ts)) * jiffies
+		cpuUsageValue := float64(currentCPUUsage-lastCPUStat.cpuUsage) / float64(collectTime.Sub(lastCPUStat.ts))
 		containerMetric := metriccache.ContainerResourceMetric{
 			ContainerID: containerStat.ContainerID,
 			CPUUsed: metriccache.CPUMetric{

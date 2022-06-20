@@ -286,9 +286,9 @@ func Test_GetPodCgroupStatPath(t *testing.T) {
 		{
 			name:         "cpuacct",
 			relativePath: "pod1",
-			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/cpuacct.stat",
+			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/cpuacct.usage",
 			fn: func(p string) string {
-				return GetPodCgroupCPUAcctProcStatPath(p)
+				return GetPodCgroupCPUAcctProcUsagePath(p)
 			},
 		},
 		{

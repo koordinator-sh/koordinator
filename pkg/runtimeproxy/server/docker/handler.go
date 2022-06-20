@@ -47,10 +47,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 
 	// pre check
 	runtimeResourceType := GetRuntimeResourceType(ContainerConfig.Labels)
-	containerName := ""
-	if len(req.URL.Query()["name"]) >= 1 {
-		containerName = req.URL.Query()["name"][0]
-	}
+	containerName := req.URL.Query().Get("name")
 	tokens := strings.Split(containerName, "_")
 	if len(tokens) != 6 {
 		klog.Errorf("Failed to split k8s container name, containerName: %s", containerName)
@@ -60,7 +57,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 	labels, annos := splitLabelsAndAnnotations(ContainerConfig.Labels)
 	var podInfo *store.PodSandboxInfo
 	var containerInfo *store.ContainerInfo
-	runtimeHookPath := config.NoneRuntimeHookPath
+	var runtimeHookPath config.RuntimeRequestPath
 	var hookReq interface{}
 	if runtimeResourceType == resource_executor.RuntimeContainerResource {
 		podID := ContainerConfig.Labels[types.SandboxIDLabelKey]
@@ -70,7 +67,6 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 			http.Error(wr, "Failed to get pod info", http.StatusInternalServerError)
 			return
 		}
-		// TODO(ZYEcho): implement create container hook
 		containerInfo = &store.ContainerInfo{
 			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
 				PodMeta:      podInfo.PodMeta,
@@ -80,8 +76,13 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 				},
 				ContainerAnnotations: annos,
 				ContainerResources:   HostConfigToResource(hostConfig),
+				PodAnnotations:       podInfo.Annotations,
+				PodLabels:            podInfo.Labels,
+				PodCgroupParent:      podInfo.CgroupParent,
 			},
 		}
+		runtimeHookPath = config.CreateContainer
+		hookReq = containerInfo.GetContainerResourceHookRequest()
 	} else {
 		runtimeHookPath = config.RunPodSandbox
 		podInfo = &store.PodSandboxInfo{
@@ -117,16 +118,19 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 	if runtimeResourceType == resource_executor.RuntimePodResource && hookResp != nil {
 		resp := hookResp.(*v1alpha1.PodSandboxHookResponse)
 		if resp.Resources != nil {
-			cfgBody.HostConfig.CPUPeriod = resp.Resources.CpuPeriod
-			cfgBody.HostConfig.CPUQuota = resp.Resources.CpuQuota
-			cfgBody.HostConfig.CPUShares = resp.Resources.CpuShares
-			cfgBody.HostConfig.Memory = resp.Resources.MemoryLimitInBytes
-			cfgBody.HostConfig.OomScoreAdj = int(resp.Resources.OomScoreAdj)
-			cfgBody.HostConfig.CpusetCpus = resp.Resources.CpusetCpus
-			cfgBody.HostConfig.CpusetMems = resp.Resources.CpusetMems
-			cfgBody.HostConfig.MemorySwap = resp.Resources.MemorySwapLimitInBytes
+			cfgBody.HostConfig = UpdateHostConfigByResource(cfgBody.HostConfig, resp.Resources)
 			podInfo.Resources = resp.Resources
 		}
+		cfgBody.HostConfig.CgroupParent = resp.CgroupParent
+		podInfo.CgroupParent = resp.CgroupParent
+	} else if hookResp != nil {
+		resp := hookResp.(*v1alpha1.ContainerResourceHookResponse)
+		if resp.ContainerResources != nil {
+			cfgBody.HostConfig = UpdateHostConfigByResource(cfgBody.HostConfig, resp.ContainerResources)
+			containerInfo.ContainerResources = resp.ContainerResources
+		}
+		cfgBody.HostConfig.CgroupParent = resp.PodCgroupParent
+		containerInfo.PodCgroupParent = resp.PodCgroupParent
 	}
 	// send req to docker
 	nBody, err := encodeBody(cfgBody)
@@ -152,6 +156,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 	if runtimeResourceType == resource_executor.RuntimePodResource {
 		store.WritePodSandboxInfo(createResp.ID, podInfo)
 	} else {
+		containerInfo.ContainerMata.Id = createResp.ID
 		store.WriteContainerInfo(createResp.ID, containerInfo)
 	}
 }
@@ -196,12 +201,22 @@ func (d *RuntimeManagerDockerServer) HandleStopContainer(ctx context.Context, wr
 		return
 	}
 
-	runtimeHookPath := config.NoneRuntimeHookPath
+	var runtimeHookPath config.RuntimeRequestPath
 	var hookReq interface{}
 	containerMeta := store.GetContainerInfo(containerID)
 	if containerMeta != nil {
 		runtimeHookPath = config.StopContainer
 		hookReq = containerMeta.GetContainerResourceHookRequest()
+	} else {
+		// sandbox container
+		runtimeHookPath = config.StopPodSandbox
+		podInfo := store.GetPodSandboxInfo(containerID)
+		if podInfo == nil {
+			// refuse the req
+			http.Error(wr, "Failed to get pod info", http.StatusInternalServerError)
+			return
+		}
+		hookReq = podInfo.GetPodSandboxHookRequest()
 	}
 
 	d.Direct(wr, req)
@@ -259,13 +274,7 @@ func (d *RuntimeManagerDockerServer) HandleUpdateContainer(ctx context.Context, 
 		resp := response.(*v1alpha1.ContainerResourceHookResponse)
 		if resp.ContainerResources != nil {
 			containerMeta.ContainerResources = resp.ContainerResources
-			containerConfig.CPUPeriod = resp.ContainerResources.CpuPeriod
-			containerConfig.CPUQuota = resp.ContainerResources.CpuQuota
-			containerConfig.CPUShares = resp.ContainerResources.CpuShares
-			containerConfig.Memory = resp.ContainerResources.MemoryLimitInBytes
-			containerConfig.CpusetCpus = resp.ContainerResources.CpusetCpus
-			containerConfig.CpusetMems = resp.ContainerResources.CpusetMems
-			containerConfig.MemorySwap = resp.ContainerResources.MemorySwapLimitInBytes
+			containerConfig = UpdateUpdateConfigByResource(containerConfig, resp.ContainerResources)
 			store.WriteContainerInfo(containerID, containerMeta)
 		}
 	}
