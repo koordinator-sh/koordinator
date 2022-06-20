@@ -3,11 +3,13 @@
   <a href="https://koordinator.sh"><img src="https://github.com/koordinator-sh/koordinator/raw/main/docs/images/koordinator-logo.jpeg" alt="Koordinator"></a>
 </h1>
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-4EB1BA.svg)](https://opensource.org/licenses/Apache-2.0)
-[![codecov](https://codecov.io/github/koordinator-sh/koordinator/branch/main/graph/badge.svg?token=CPUKM09WJL)](https://codecov.io/github/koordinator-sh/koordinator)
-[![CI](https://github.com/koordinator-sh/koordinator/actions/workflows/ci.yaml/badge.svg)](https://github.com/koordinator-sh/koordinator/actions/workflows/ci.yaml)
-[![PRs Welcome](https://badgen.net/badge/PRs/Welcome/green?icon=https://api.iconify.design/octicon:git-pull-request.svg?color=white)](CONTRIBUTING.md)
-[![Slack](https://badgen.net/badge/Slack/Join/4A154B?icon=slack)](https://join.slack.com/t/koordinator-sh/shared_invite/zt-1756qoub4-Cn4~esfdlfAPsD7cwO2NzA)
+[![License](https://img.shields.io/github/license/koordinator-sh/koordinator.svg?color=4EB1BA&style=flat-square)](https://opensource.org/licenses/Apache-2.0)
+[![GitHub release](https://img.shields.io/github/v/release/koordinator-sh/koordinator.svg?style=flat-square)](https://github.com/koordinator-sh/koordinator/releases/latest)
+[![CI](https://img.shields.io/github/workflow/status/koordinator-sh/koordinator/CI?label=CI&logo=github&style=flat-square)](https://github.com/koordinator-sh/koordinator/actions/workflows/ci.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/koordinator-sh/koordinator?style=flat-square)](https://goreportcard.com/report/github.com/koordinator-sh/koordinator)
+[![codecov](https://img.shields.io/codecov/c/github/koordinator-sh/koordinator?logo=codecov&style=flat-square)](https://codecov.io/github/koordinator-sh/koordinator)
+[![PRs Welcome](https://badgen.net/badge/PRs/welcome/green?icon=https://api.iconify.design/octicon:git-pull-request.svg?color=white&style=flat-square)](CONTRIBUTING.md)
+[![Slack](https://badgen.net/badge/slack/join/4A154B?icon=slack&style=flat-square)](https://join.slack.com/t/koordinator-sh/shared_invite/zt-1756qoub4-Cn4~esfdlfAPsD7cwO2NzA)
 
 ## Introduction
 
