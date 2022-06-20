@@ -21,12 +21,12 @@ limitations under the License.
 package mock_client
 
 import (
-	context "context"
-	reflect "reflect"
+	"context"
+	"reflect"
 
-	gomock "github.com/golang/mock/gomock"
-	grpc "google.golang.org/grpc"
-	v1alpha2 "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	"github.com/golang/mock/gomock"
+	"google.golang.org/grpc"
+	"k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 )
 
 // MockRuntimeServiceClient is a mock of RuntimeServiceClient interface.
