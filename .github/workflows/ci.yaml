@@ -113,7 +113,6 @@ jobs:
       - name: Build koord-manager and push
         uses: docker/build-push-action@v3
         with:
-          context: .
           platforms: linux/amd64
           push: true
           pull: true
@@ -127,10 +126,11 @@ jobs:
           tags: |
             ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/koord-manager:latest
             ${{ env.ALIYUN_REG }}/${{ github.repository_owner }}/koord-manager:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Build koord-scheduler and push
         uses: docker/build-push-action@v3
         with:
-          context: .
           platforms: linux/amd64
           push: true
           pull: true
@@ -144,10 +144,11 @@ jobs:
           tags: |
             ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/koord-scheduler:latest
             ${{ env.ALIYUN_REG }}/${{ github.repository_owner }}/koord-scheduler:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Build koordlet and push
         uses: docker/build-push-action@v3
         with:
-          context: .
           platforms: linux/amd64
           push: true
           pull: true
@@ -161,3 +162,5 @@ jobs:
           tags: |
             ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/koordlet:latest
             ${{ env.ALIYUN_REG }}/${{ github.repository_owner }}/koordlet:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
