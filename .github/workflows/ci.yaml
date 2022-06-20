@@ -40,10 +40,7 @@ jobs:
           install-go: false
 
   unit-tests:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -83,7 +80,6 @@ jobs:
         run: make test
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
-        if: matrix.os == 'ubuntu-latest'
         with:
           flags: unittests
           file: cover.out
