@@ -121,7 +121,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 			cfgBody.HostConfig = UpdateHostConfigByResource(cfgBody.HostConfig, resp.Resources)
 			podInfo.Resources = resp.Resources
 		}
-		cfgBody.HostConfig.CgroupParent = resp.CgroupParent
+		cfgBody.HostConfig.CgroupParent = GenerateExpectedCgroupParent(d.cgroupDriver, resp.CgroupParent)
 		podInfo.CgroupParent = resp.CgroupParent
 	} else if hookResp != nil {
 		resp := hookResp.(*v1alpha1.ContainerResourceHookResponse)
@@ -129,7 +129,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 			cfgBody.HostConfig = UpdateHostConfigByResource(cfgBody.HostConfig, resp.ContainerResources)
 			containerInfo.ContainerResources = resp.ContainerResources
 		}
-		cfgBody.HostConfig.CgroupParent = resp.PodCgroupParent
+		cfgBody.HostConfig.CgroupParent = GenerateExpectedCgroupParent(d.cgroupDriver, resp.PodCgroupParent)
 		containerInfo.PodCgroupParent = resp.PodCgroupParent
 	}
 	// send req to docker

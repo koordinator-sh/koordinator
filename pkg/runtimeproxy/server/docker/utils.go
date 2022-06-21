@@ -25,7 +25,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"path"
 	"strings"
+
+	"k8s.io/klog/v2"
 
 	"github.com/docker/docker/api/types/container"
 
@@ -134,13 +137,19 @@ func ToCriCgroupPath(cgroupDriver, cgroupParent string) string {
 	if cgroupDriver != "systemd" {
 		return cgroupParent
 	}
-	if strings.Contains(cgroupParent, "burstable") {
-		return fmt.Sprintf("/kubepods.slice/kubepods-burstable.slice/%s", cgroupParent)
-	} else if strings.Contains(cgroupParent, "besteffort") {
-		return fmt.Sprintf("/kubepods.slice/kubepods-besteffort.slice/%s", cgroupParent)
-	} else {
-		return fmt.Sprintf("/kubepods.slice/%s", cgroupParent)
+	// for docker + systemd combination, the cgroup parent is pod dir, for example:
+	// kubepods-besteffort-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice,
+	// so the full path for it is :
+	// /kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice
+	cgroupHierarcy := strings.Split(cgroupParent, "-")
+	prefix := cgroupHierarcy[0]
+	fullPath := "/"
+	for i := 0; i < len(cgroupHierarcy)-1; i++ {
+		fullPath = path.Join(fullPath, fmt.Sprintf("%s.slice", prefix))
+		prefix = fmt.Sprintf("%s-%s", prefix, cgroupHierarcy[i+1])
 	}
+	fullPath = path.Join(fullPath, prefix)
+	return fullPath
 }
 
 func GetRuntimeResourceType(labels map[string]string) resource_executor.RuntimeResourceType {
@@ -177,4 +186,20 @@ func UpdateUpdateConfigByResource(containerConfig *container.UpdateConfig, resou
 	containerConfig.CpusetMems = resources.CpusetMems
 	containerConfig.MemorySwap = resources.MemorySwapLimitInBytes
 	return containerConfig
+}
+
+// GenerateExpectedCgroupParent adapted from Dockershim
+func GenerateExpectedCgroupParent(cgroupDriver, cgroupParent string) string {
+	if cgroupParent != "" {
+		// if docker uses the systemd cgroup driver, it expects *.slice style names for cgroup parent.
+		// if we configured kubelet to use --cgroup-driver=cgroupfs, and docker is configured to use systemd driver
+		// docker will fail to launch the container because the name we provide will not be a valid slice.
+		// this is a very good thing.
+		if cgroupDriver == "systemd" {
+			// Pass only the last component of the cgroup path to systemd.
+			cgroupParent = path.Base(cgroupParent)
+		}
+	}
+	klog.V(4).Infof("Setting cgroup parent to: %q", cgroupParent)
+	return cgroupParent
 }

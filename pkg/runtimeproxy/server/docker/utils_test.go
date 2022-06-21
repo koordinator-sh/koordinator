@@ -127,23 +127,33 @@ func Test_toCriCgroupPath(t *testing.T) {
 	tests := []testCase{
 		{
 			"systemd",
-			"burstable/djfklsjdf98",
-			"/kubepods.slice/kubepods-burstable.slice/burstable/djfklsjdf98",
+			"kubepods-burstable-djfklsjdf98.slice",
+			"/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-djfklsjdf98.slice",
 		},
 		{
 			"cgroupfs",
-			"/kubepods.slice/kubepods-burstable.slice/burstable/djfklsjdf98",
-			"/kubepods.slice/kubepods-burstable.slice/burstable/djfklsjdf98",
+			"/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-djfklsjdf98.slice",
+			"/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-djfklsjdf98.slice",
 		},
 		{
 			"systemd",
-			"besteffort/fsdfsdf",
-			"/kubepods.slice/kubepods-besteffort.slice/besteffort/fsdfsdf",
+			"kubepods-besteffort-fsdfsdf.slice",
+			"/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-fsdfsdf.slice",
 		},
 		{
 			"systemd",
-			"dfsdfsdf",
-			"/kubepods.slice/dfsdfsdf",
+			"kubepods-dfsdfsdf.slice",
+			"/kubepods.slice/kubepods-dfsdfsdf.slice",
+		},
+		{
+			"systemd",
+			"koordinator-dfsdfsdf.slice",
+			"/koordinator.slice/koordinator-dfsdfsdf.slice",
+		},
+		{
+			"systemd",
+			"dfsdfsdf.slice",
+			"/dfsdfsdf.slice",
 		},
 	}
 	for _, tt := range tests {
@@ -247,5 +257,62 @@ func Test_UpdateUpdateConfigByResource(t *testing.T) {
 	for _, tt := range tests {
 		config := UpdateUpdateConfigByResource(tt.config, tt.resources)
 		assert.Equal(t, tt.expectedConfig, config)
+	}
+}
+
+func TestGenerateExpectedCgroupParent(t *testing.T) {
+	type args struct {
+		cgroupDriver string
+		cgroupParent string
+	}
+	tests := []struct {
+		name                 string
+		args                 args
+		expectedCgroupParent string
+	}{
+		{
+			name: "cgroupfs case",
+			args: args{
+				cgroupDriver: "cgroupfs",
+				cgroupParent: "/kubepods/besteffort/poddjfklsjdf98",
+			},
+			expectedCgroupParent: "/kubepods/besteffort/poddjfklsjdf98",
+		},
+		{
+			name: "systemd - kubepods only",
+			args: args{
+				cgroupDriver: "systemd",
+				cgroupParent: "/kubepods.slice/kubepods-dfsdfsdf.slice",
+			},
+			expectedCgroupParent: "kubepods-dfsdfsdf.slice",
+		},
+		{
+			name: "systemd - burstable",
+			args: args{
+				cgroupDriver: "systemd",
+				cgroupParent: "/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-fsdfsdf.slice",
+			},
+			expectedCgroupParent: "kubepods-burstable-fsdfsdf.slice",
+		},
+		{
+			name: "systemd - besteffort",
+			args: args{
+				cgroupDriver: "systemd",
+				cgroupParent: "/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-fsdfsdf.slice",
+			},
+			expectedCgroupParent: "kubepods-besteffort-fsdfsdf.slice",
+		},
+		{
+			name: "systemd - customized",
+			args: args{
+				cgroupDriver: "systemd",
+				cgroupParent: "/koordinator.slice/koordinator-fsdfsdf.slice",
+			},
+			expectedCgroupParent: "koordinator-fsdfsdf.slice",
+		},
+	}
+	for _, tt := range tests {
+		currentCgroupParent := GenerateExpectedCgroupParent(tt.args.cgroupDriver, tt.args.cgroupParent)
+		assert.Equal(t, tt.expectedCgroupParent, currentCgroupParent)
 	}
 }
