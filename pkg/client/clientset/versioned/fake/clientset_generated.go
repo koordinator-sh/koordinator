@@ -22,6 +22,8 @@ import (
 	clientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	configv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/config/v1alpha1"
 	fakeconfigv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/config/v1alpha1/fake"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
+	fakeschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1/fake"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	fakeslov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -84,6 +86,11 @@ var (
 // ConfigV1alpha1 retrieves the ConfigV1alpha1Client
 func (c *Clientset) ConfigV1alpha1() configv1alpha1.ConfigV1alpha1Interface {
 	return &fakeconfigv1alpha1.FakeConfigV1alpha1{Fake: &c.Fake}
+}
+
+// SchedulingV1alpha1 retrieves the SchedulingV1alpha1Client
+func (c *Clientset) SchedulingV1alpha1() schedulingv1alpha1.SchedulingV1alpha1Interface {
+	return &fakeschedulingv1alpha1.FakeSchedulingV1alpha1{Fake: &c.Fake}
 }
 
 // SloV1alpha1 retrieves the SloV1alpha1Client
