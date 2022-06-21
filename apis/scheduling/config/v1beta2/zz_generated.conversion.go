@@ -24,7 +24,7 @@ package v1beta2
 import (
 	unsafe "unsafe"
 
-	config "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	config "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 	v1 "k8s.io/api/core/v1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"

@@ -22,7 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/apis/scheduling/config"
 )
 
 // ValidateLoadAwareSchedulingArgs validates that LoadAwareSchedulingArgs are correct.

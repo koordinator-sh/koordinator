@@ -30,10 +30,10 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/scheduling/config"
+	"github.com/koordinator-sh/koordinator/apis/scheduling/config/validation"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	slolisters "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
