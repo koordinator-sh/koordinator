@@ -20,12 +20,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
 
-	ext "github.com/koordinator-sh/koordinator/apis/extension"
-	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
@@ -34,99 +30,10 @@ func initCPUBvt(dirWithKube string, value int64, helper *system.FileTestUtil) {
 	helper.WriteCgroupFileContents(dirWithKube, system.CPUBVTWarpNs, strconv.FormatInt(value, 10))
 }
 
-func getPodCPUBurst(podDirWithKube string, helper *system.FileTestUtil) int64 {
+func getPodCPUBvt(podDirWithKube string, helper *system.FileTestUtil) int64 {
 	valueStr := helper.ReadCgroupFileContents(podDirWithKube, system.CPUBVTWarpNs)
 	value, _ := strconv.ParseInt(valueStr, 10, 64)
 	return value
-}
-
-func Test_bvtPlugin_PreRunPodSandbox(t *testing.T) {
-	defaultRule := &bvtRule{
-		podQOSParams: map[ext.QoSClass]int64{
-			ext.QoSLSR: 2,
-			ext.QoSLS:  2,
-			ext.QoSBE:  -1,
-		},
-		kubeQOSDirParams: map[corev1.PodQOSClass]int64{
-			corev1.PodQOSGuaranteed: 0,
-			corev1.PodQOSBurstable:  2,
-			corev1.PodQOSBestEffort: -1,
-		},
-		kubeQOSPodParams: map[corev1.PodQOSClass]int64{
-			corev1.PodQOSGuaranteed: 2,
-			corev1.PodQOSBurstable:  2,
-			corev1.PodQOSBestEffort: -1,
-		},
-	}
-	type fields struct {
-		systemSupported *bool
-	}
-	type args struct {
-		request  *runtimeapi.PodSandboxHookRequest
-		response *runtimeapi.PodSandboxHookResponse
-	}
-	type want struct {
-		bvtValue int64
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   want
-	}{
-		{
-			name: "set ls pod bvt",
-			fields: fields{
-				systemSupported: pointer.Bool(true),
-			},
-			args: args{
-				request: &runtimeapi.PodSandboxHookRequest{
-					Labels: map[string]string{
-						ext.LabelPodQoS: string(ext.QoSLS),
-					},
-					CgroupParent: "kubepods/pod-guaranteed-test-uid/",
-				},
-				response: &runtimeapi.PodSandboxHookResponse{},
-			},
-			want: want{
-				bvtValue: 2,
-			},
-		},
-		{
-			name: "set be pod bvt",
-			fields: fields{
-				systemSupported: pointer.Bool(true),
-			},
-			args: args{
-				request: &runtimeapi.PodSandboxHookRequest{
-					Labels: map[string]string{
-						ext.LabelPodQoS: string(ext.QoSBE),
-					},
-					CgroupParent: "kubepods/besteffort/pod-besteffort-test-uid/",
-				},
-				response: &runtimeapi.PodSandboxHookResponse{},
-			},
-			want: want{
-				bvtValue: -1,
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			testHelper := system.NewFileTestUtil(t)
-			initCPUBvt(tt.args.request.CgroupParent, 0, testHelper)
-
-			b := &bvtPlugin{
-				rule:         defaultRule,
-				sysSupported: tt.fields.systemSupported,
-			}
-			err := b.PreRunPodSandbox(tt.args.request, tt.args.response)
-			assert.NoError(t, err)
-
-			gotBvt := getPodCPUBurst(tt.args.request.CgroupParent, testHelper)
-			assert.Equal(t, tt.want.bvtValue, gotBvt, "pod bvt should equal")
-		})
-	}
 }
 
 func Test_bvtPlugin_systemSupported(t *testing.T) {
@@ -164,4 +71,11 @@ func Test_bvtPlugin_systemSupported(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_bvtPlugin_Register(t *testing.T) {
+	t.Run("register bvt plugin", func(t *testing.T) {
+		b := &bvtPlugin{}
+		b.Register()
+	})
 }

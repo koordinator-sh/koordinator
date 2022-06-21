@@ -51,7 +51,7 @@ type formatter struct {
 	QOSDirFn  func(qos corev1.PodQOSClass) string
 	PodDirFn  func(qos corev1.PodQOSClass, podUID string) string
 	// containerID format: "containerd://..." or "docker://..."
-	ContainerDirFn func(c *corev1.ContainerStatus) (string, error)
+	ContainerDirFn func(id string) (string, error)
 
 	PodIDParser       func(basename string) (string, error)
 	ContainerIDParser func(basename string) (string, error)
@@ -82,10 +82,10 @@ var cgroupPathFormatterInSystemd = formatter{
 		}
 		return "/"
 	},
-	ContainerDirFn: func(c *corev1.ContainerStatus) (string, error) {
-		hashID := strings.Split(c.ContainerID, "://")
+	ContainerDirFn: func(id string) (string, error) {
+		hashID := strings.Split(id, "://")
 		if len(hashID) < 2 {
-			return "", fmt.Errorf("parse container id %s failed", c.ContainerID)
+			return "", fmt.Errorf("parse container id %s failed", id)
 		}
 
 		switch hashID[0] {
@@ -94,7 +94,7 @@ var cgroupPathFormatterInSystemd = formatter{
 		case "containerd":
 			return fmt.Sprintf("cri-containerd-%s.scope/", hashID[1]), nil
 		default:
-			return "", fmt.Errorf("unknown container protocol %s", c.ContainerID)
+			return "", fmt.Errorf("unknown container protocol %s", id)
 		}
 	},
 	PodIDParser: func(basename string) (string, error) {
@@ -164,15 +164,15 @@ var cgroupPathFormatterInCgroupfs = formatter{
 	PodDirFn: func(qos corev1.PodQOSClass, podUID string) string {
 		return fmt.Sprintf("pod%s/", podUID)
 	},
-	ContainerDirFn: func(c *corev1.ContainerStatus) (string, error) {
-		hashID := strings.Split(c.ContainerID, "://")
+	ContainerDirFn: func(id string) (string, error) {
+		hashID := strings.Split(id, "://")
 		if len(hashID) < 2 {
-			return "", fmt.Errorf("parse container id %s failed", c.ContainerID)
+			return "", fmt.Errorf("parse container id %s failed", id)
 		}
 		if hashID[0] == "docker" || hashID[0] == "containerd" {
 			return fmt.Sprintf("%s/", hashID[1]), nil
 		} else {
-			return "", fmt.Errorf("unknown container protocol %s", c.ContainerID)
+			return "", fmt.Errorf("unknown container protocol %s", id)
 		}
 	},
 	PodIDParser: func(basename string) (string, error) {
