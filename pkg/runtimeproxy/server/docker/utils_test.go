@@ -260,7 +260,7 @@ func Test_UpdateUpdateConfigByResource(t *testing.T) {
 	}
 }
 
-func TestGenerateExpectedCgroupParent(t *testing.T) {
+func Test_generateExpectedCgroupParent(t *testing.T) {
 	type args struct {
 		cgroupDriver string
 		cgroupParent string
@@ -312,7 +312,7 @@ func TestGenerateExpectedCgroupParent(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		currentCgroupParent := GenerateExpectedCgroupParent(tt.args.cgroupDriver, tt.args.cgroupParent)
+		currentCgroupParent := generateExpectedCgroupParent(tt.args.cgroupDriver, tt.args.cgroupParent)
 		assert.Equal(t, tt.expectedCgroupParent, currentCgroupParent)
 	}
 }

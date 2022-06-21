@@ -188,8 +188,8 @@ func UpdateUpdateConfigByResource(containerConfig *container.UpdateConfig, resou
 	return containerConfig
 }
 
-// GenerateExpectedCgroupParent adapted from Dockershim
-func GenerateExpectedCgroupParent(cgroupDriver, cgroupParent string) string {
+// generateExpectedCgroupParent is adapted from Dockershim
+func generateExpectedCgroupParent(cgroupDriver, cgroupParent string) string {
 	if cgroupParent != "" {
 		// if docker uses the systemd cgroup driver, it expects *.slice style names for cgroup parent.
 		// if we configured kubelet to use --cgroup-driver=cgroupfs, and docker is configured to use systemd driver
