@@ -40,9 +40,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/runtime"
 	expireCache "github.com/koordinator-sh/koordinator/pkg/tools/cache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/runtime"
 )
 
 const (

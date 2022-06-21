@@ -34,7 +34,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
-	"github.com/koordinator-sh/koordinator/pkg/runtime/handler"
+	"github.com/koordinator-sh/koordinator/pkg/util/runtime/handler"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -122,11 +122,11 @@ func Test_GetRuntimeHandler(t *testing.T) {
 			}
 			resetEndpoint()
 
-			//for docker
+			// for docker
 			dockerStubs := dockerStub()
 			defer dockerStubs.Reset()
 
-			//for containerd
+			// for containerd
 			containerdStubs := gostub.Stub(&handler.GrpcDial, func(context context.Context, target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 				return &grpc.ClientConn{}, nil
 			})
@@ -136,7 +136,7 @@ func Test_GetRuntimeHandler(t *testing.T) {
 			assert.Equal(t, tt.expectErr, gotErr != nil, gotErr)
 			if !tt.expectErr {
 				assert.True(t, strings.Contains(reflect.TypeOf(gotHandler).String(), tt.expectRuntimeHandler))
-				//fmt.Printf("handler type: %v ---",reflect.TypeOf(gotHandler).String())
+				// fmt.Printf("handler type: %v ---",reflect.TypeOf(gotHandler).String())
 			}
 
 		})

@@ -23,7 +23,7 @@ import (
 
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/pkg/runtime/handler"
+	"github.com/koordinator-sh/koordinator/pkg/util/runtime/handler"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 

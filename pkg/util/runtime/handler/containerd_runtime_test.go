@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
-	mockclient "github.com/koordinator-sh/koordinator/pkg/runtime/handler/mockclient"
+	mock_client "github.com/koordinator-sh/koordinator/pkg/util/runtime/handler/mockclient"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -74,7 +74,7 @@ func Test_Containerd_StopContainer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctl := gomock.NewController(t)
 			defer ctl.Finish()
-			mockRuntimeClient := mockclient.NewMockRuntimeServiceClient(ctl)
+			mockRuntimeClient := mock_client.NewMockRuntimeServiceClient(ctl)
 			mockRuntimeClient.EXPECT().StopContainer(gomock.Any(), gomock.Any()).Return(nil, tt.runtimeError)
 
 			runtimeHandler := ContainerdRuntimeHandler{runtimeServiceClient: mockRuntimeClient, timeout: 1, endpoint: ContainerdEndpoint1}
@@ -110,7 +110,7 @@ func Test_Containerd_UpdateContainerResources(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctl := gomock.NewController(t)
 			defer ctl.Finish()
-			mockRuntimeClient := mockclient.NewMockRuntimeServiceClient(ctl)
+			mockRuntimeClient := mock_client.NewMockRuntimeServiceClient(ctl)
 			mockRuntimeClient.EXPECT().UpdateContainerResources(gomock.Any(), gomock.Any()).Return(nil, tt.runtimeError)
 
 			runtimeHandler := ContainerdRuntimeHandler{runtimeServiceClient: mockRuntimeClient, timeout: 1, endpoint: ContainerdEndpoint1}
