@@ -31,7 +31,7 @@ require (
 	k8s.io/kube-scheduler v0.22.6
 	k8s.io/kubernetes v1.22.6
 	k8s.io/utils v0.0.0-20210819203725-bdf08cb9a70a
-	sigs.k8s.io/controller-runtime v0.10.2
+	sigs.k8s.io/controller-runtime v0.10.3
 )
 
 require (
