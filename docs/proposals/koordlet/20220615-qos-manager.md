@@ -36,7 +36,7 @@ QoS Manager is a new plugin framework for `dynamic plugins` in [issue](https://g
 
 ## Motivation
 
-Currently, plugins from resmanager in Koorlet are mixed together, they should be classified into two categories: `static` and `dynamic`. Static plugins will be called and run only once when container is created, updated, started or stopped. But for dynamic plugins, they may be called and run at any time according the real-time runtime state of node, such as CPU suppress, CPU burst, etc. This proposal only focuses on refactoring dynamic plugins. Take a look at current plugin implementation, there are many function calls to resmanager's methods directly, such as collecting node/pod/container metrics, fetching metadata of node/pod/container, fetching configurations(NodeSLO, etc.). In the feature, we may need a flexible and powerful famework with scalability for special external plugins.
+Currently, plugins from resmanager in Koordlet are mixed together, they should be classified into two categories: `static` and `dynamic`. Static plugins will be called and run only once when a container is being created, updated, started or stopped. But for dynamic plugins, they may be called and run at any time according the real-time runtime state of node, such as CPU suppress, CPU burst, etc. This proposal only focuses on refactoring dynamic plugins. Take a look at current plugin implementation, there are many function calls to resmanager's methods directly, such as collecting node/pod/container metrics, fetching metadata of node/pod/container, fetching configurations(NodeSLO, etc.). In the feature, we may need a flexible and powerful framework with scalability for special external plugins.
 
 
 ### Goals
@@ -46,31 +46,32 @@ Currently, plugins from resmanager in Koorlet are mixed together, they should be
 
 ### Non-Goals/Future Work
 
-- Framework design with scalability for external plugins.
-- Refctor `resource-update-executor`.
+- [Future Plan] Framework design with scalability for external plugins.
+- [Future Plan] Refctor `resource-update-executor`.
 
 ## Proposal
 ### Design
 
 ![image](../../images/qos-manager.svg)
 
- The below is directory tree of qos-manager inside koordlet, all existing dynamic pluins(as built-in plugins) will be move into sub-directory  `plugins`.
+ The below is directory tree of qos-manager inside koordlet, all existing dynamic plugins(as built-in plugins) will be move into sub-directory `plugins`.
  
 ```
-pkg/koordlet/qos-manager/
+pkg/koordlet/qosmanager/
                        - manager.go
                        - context.go   // plugin context
                        - /plugins/    // built-in plugins
-                                 - /cpu-brust/
-                                 - /cpu-suppress/
-                                 - /memory-evict/
+                                 - /cpubrust/
+                                 - /cpusuppress/
+                                 - /cpuevict/
+                                 - /memoryevict/
 ```
 
-The struct `SLOManager` warps `resmanager` to provide necessay interface methods for all plugins, here we just put `StateInformer`, `MetricsCache` and `Executor` into a `PluginContext` as a parameter of `InitPlugin` function for plugin initialization. Every plugin should implement interface `Plugin` which contains some basic method, such as `Name()`, `Run()`, `Stop()`, etc.
+The struct `QoSManager` wraps `resmanager` to provide necessary interface methods for all plugins, here we just put `StateInformer`, `MetricsCache` and `Executor` into a `PluginContext` as a parameter of `InitPlugin` function for plugin initialization. Every plugin should implement interface `Plugin` which contains some basic methods, such as `Name()`, `Run()`, `Stop()`, etc. Additionally, QoSManager is also responsible for managing plugin feature-gates.
 ```go
 
-// SLOManager
-type SLOManager struct {
+// QoSManager
+type QoSManager struct {
     *resmanager
     // ...
 }
