@@ -62,6 +62,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="$(LICENSE_HEADER_GO)" paths="./apis/..."
+	$(CONTROLLER_GEN) object:headerFile="$(LICENSE_HEADER_GO)" paths="./pkg/slo-controller/config/..."
 	@hack/update-codegen.sh
 
 .PHONY: fmt

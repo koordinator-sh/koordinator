@@ -41,8 +41,8 @@ import (
 
 func Test_NodeResourceController_ConfigNotAvaliable(t *testing.T) {
 	r := &NodeResourceReconciler{
-		config: Config{
-			isAvailable: false,
+		cfgCache: &FakeCfgCache{
+			available: false,
 		},
 		SyncContext: SyncContext{},
 		Clock:       clock.RealClock{},
@@ -65,8 +65,8 @@ func Test_NodeResourceController_NodeNotFound(t *testing.T) {
 	client := fake.NewClientBuilder().Build()
 	r := &NodeResourceReconciler{
 		Client: client,
-		config: Config{
-			isAvailable: true,
+		cfgCache: &FakeCfgCache{
+			available: true,
 		},
 		SyncContext: SyncContext{},
 		Clock:       clock.RealClock{},
@@ -93,9 +93,9 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(scheme).Build()
 	r := &NodeResourceReconciler{
 		Client: client,
-		config: Config{
-			isAvailable: true,
-			ColocationCfg: config.ColocationCfg{
+		cfgCache: &FakeCfgCache{
+			available: true,
+			cfg: config.ColocationCfg{
 				ColocationStrategy: config.ColocationStrategy{
 					Enable:                        pointer.BoolPtr(true),
 					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
@@ -137,9 +137,9 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(scheme).Build()
 	r := &NodeResourceReconciler{
 		Client: client,
-		config: Config{
-			isAvailable: true,
-			ColocationCfg: config.ColocationCfg{
+		cfgCache: &FakeCfgCache{
+			available: true,
+			cfg: config.ColocationCfg{
 				ColocationStrategy: config.ColocationStrategy{
 					Enable:                        pointer.BoolPtr(true),
 					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
@@ -197,8 +197,7 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	}
 	batchCPUQ := node.Status.Allocatable[extension.BatchCPU]
 	batchcpu, _ := batchCPUQ.AsInt64()
-	assert := assert.New(t)
-	assert.Equal(int64(65000), batchcpu)
+	assert.Equal(t, int64(65000), batchcpu)
 
 	// reset node resources
 	r.Clock = clock.NewFakeClock(r.Clock.Now().Add(time.Hour))
@@ -216,5 +215,5 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	}
 	batchCPUQ = node.Status.Allocatable[extension.BatchCPU]
 	batchcpu, _ = batchCPUQ.AsInt64()
-	assert.Equal(int64(0), batchcpu)
+	assert.Equal(t, int64(0), batchcpu)
 }

@@ -18,6 +18,7 @@ package noderesource
 
 import (
 	"context"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -43,11 +44,11 @@ type NodeResourceReconciler struct {
 	Clock       clock.Clock
 	SyncContext SyncContext
 
-	config Config
+	cfgCache config.ColocationCfgCache
 }
 
 func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	if !r.isColocationCfgAvailable() {
+	if !r.cfgCache.IsCfgAvailable() {
 		klog.Warningf("colocation config is not available")
 		return ctrl.Result{Requeue: false}, nil
 	}
@@ -110,9 +111,11 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *NodeResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *config.NewDefaultColocationCfg())
+	r.cfgCache = handler.GetCache()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Node{}).
 		Watches(&source.Kind{Type: &slov1alpha1.NodeMetric{}}, &EnqueueRequestForNodeMetric{syncContext: &r.SyncContext}).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &EnqueueRequestForConfigMap{Client: r.Client, Config: &r.config}).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler).
 		Complete(r)
 }

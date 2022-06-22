@@ -18,6 +18,7 @@ package nodeslo
 
 import (
 	"context"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,7 +30,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -39,15 +39,21 @@ import (
 
 func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 	testingResourceThresholdStrategy := util.DefaultResourceThresholdStrategy()
-	testingResourceThresholdStrategy.Enable = pointer.BoolPtr(true)
 	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
-	testingCPUBurstStrategy := util.DefaultCPUBurstStrategy()
-	testingCPUBurstStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64Ptr(60)
+	testingResourceQoSStrategyOld := &slov1alpha1.ResourceQoSStrategy{
+		BE: &slov1alpha1.ResourceQoS{
+			CPUQoS: &slov1alpha1.CPUQoSCfg{
+				CPUQoS: slov1alpha1.CPUQoS{
+					GroupIdentity: pointer.Int64Ptr(0),
+				},
+			},
+		},
+	}
 	testingResourceQoSStrategy := &slov1alpha1.ResourceQoSStrategy{
 		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-				MemoryQoS: slov1alpha1.MemoryQoS{
-					WmarkRatio: pointer.Int64Ptr(0),
+			CPUQoS: &slov1alpha1.CPUQoSCfg{
+				CPUQoS: slov1alpha1.CPUQoS{
+					GroupIdentity: pointer.Int64Ptr(0),
 				},
 			},
 		},
@@ -57,7 +63,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 		nodeSLO *slov1alpha1.NodeSLO
 	}
 	type fields struct {
-		client client.Client
+		configMap *corev1.ConfigMap
 	}
 	tests := []struct {
 		name    string
@@ -67,25 +73,16 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "no client",
-			args: args{
-				node:    &corev1.Node{},
-				nodeSLO: &slov1alpha1.NodeSLO{},
-			},
-			fields:  fields{client: nil},
-			want:    &slov1alpha1.NodeSLOSpec{},
-			wantErr: true,
-		},
-		{
 			name: "throw an error if no slo configmap",
 			args: args{
 				node:    &corev1.Node{},
 				nodeSLO: &slov1alpha1.NodeSLO{},
 			},
-			fields: fields{client: fake.NewClientBuilder().Build()},
+			fields: fields{},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
 				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
+				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
 		},
@@ -95,7 +92,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				node:    &corev1.Node{},
 				nodeSLO: &slov1alpha1.NodeSLO{},
 			},
-			fields: fields{client: fake.NewClientBuilder().WithRuntimeObjects(&corev1.ConfigMap{
+			fields: fields{configMap: &corev1.ConfigMap{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "ConfigMap",
 					APIVersion: "v1",
@@ -106,9 +103,9 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				},
 				Data: map[string]string{
 					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"invalidField\",\"cpuSuppressThresholdPercent\":60}}",
-					config.SLOCtrlConfigMap:           "{\"clusterStrategy\":{\"invalidField\"}}",
+					config.ResourceQoSConfigKey:       "{\"clusterStrategy\":{\"invalidField\"}}",
 				},
-			}).Build()},
+			}},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
 				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
@@ -122,7 +119,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				node:    &corev1.Node{},
 				nodeSLO: &slov1alpha1.NodeSLO{},
 			},
-			fields: fields{client: fake.NewClientBuilder().WithRuntimeObjects(&corev1.ConfigMap{
+			fields: fields{configMap: &corev1.ConfigMap{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "ConfigMap",
 					APIVersion: "v1",
@@ -132,14 +129,13 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
-					config.CPUBurstConfigKey:          "{\"clusterStrategy\":{\"CFSQuotaBurstPeriodSeconds\":60}}",
+					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
 				},
-			}).Build()},
+			}},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
-				CPUBurstStrategy:            testingCPUBurstStrategy,
+				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
 		},
@@ -149,7 +145,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				node:    &corev1.Node{},
 				nodeSLO: &slov1alpha1.NodeSLO{},
 			},
-			fields: fields{client: fake.NewClientBuilder().WithRuntimeObjects(&corev1.ConfigMap{
+			fields: fields{configMap: &corev1.ConfigMap{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "ConfigMap",
 					APIVersion: "v1",
@@ -159,38 +155,24 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ResourceThresholdConfigKey: `
-{
-  "clusterStrategy": {
-    "enable": true,
-    "cpuSuppressThresholdPercent": 60
-  }
-}
-`,
+					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
 					config.ResourceQoSConfigKey: `
 {
   "clusterStrategy": {
     "be": {
-      "memoryQoS": {
-        "wmarkRatio": 0
+      "cpuQoS": {
+        "groupIdentity": 0
       }
     }
   }
 }
 `,
-					config.CPUBurstConfigKey: `
-{
-  "clusterStrategy": {
-    "CFSQuotaBurstPeriodSeconds": 60
-  }
-}
-`,
 				},
-			}).Build()},
+			}},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 				ResourceQoSStrategy:         testingResourceQoSStrategy,
-				CPUBurstStrategy:            testingCPUBurstStrategy,
+				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
 		},
@@ -200,7 +182,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				node:    &corev1.Node{},
 				nodeSLO: &slov1alpha1.NodeSLO{},
 			},
-			fields: fields{client: fake.NewClientBuilder().WithRuntimeObjects(&corev1.ConfigMap{
+			fields: fields{configMap: &corev1.ConfigMap{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "ConfigMap",
 					APIVersion: "v1",
@@ -210,21 +192,38 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
-					config.CPUBurstConfigKey:          "{\"clusterStrategy\":{\"CFSQuotaBurstPeriodSeconds\":60}}",
+					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
+					config.ResourceQoSConfigKey: `
+{
+  "clusterStrategy": {
+    "be": {
+      "cpuQoS": {
+        "groupIdentity": 0
+      }
+    }
+  }
+}
+`,
 				},
-			}).Build()},
+			}},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
-				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
-				CPUBurstStrategy:            testingCPUBurstStrategy,
+				ResourceQoSStrategy:         testingResourceQoSStrategyOld,
+				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctr := &NodeSLOReconciler{Client: tt.fields.client}
+			ctr := &NodeSLOReconciler{Client: fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).Build()}
+			configMapCacheHandler := NewSLOCfgHandlerForConfigMapEvent(ctr.Client, DefaultSLOCfg())
+			ctr.sloCfgCache = &configMapCacheHandler.SLOCfgCache
+			if tt.fields.configMap != nil {
+				ctr.Client.Create(context.Background(), tt.fields.configMap)
+				configMapCacheHandler.CacheConfigIfChanged(tt.fields.configMap)
+			}
+
 			err := ctr.initNodeSLO(tt.args.node, tt.args.nodeSLO)
 			got := &tt.args.nodeSLO.Spec
 			if (err != nil) != tt.wantErr {
@@ -244,6 +243,10 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 		Client: fake.NewClientBuilder().WithScheme(scheme).Build(),
 		Scheme: scheme,
 	}
+
+	configMapCacheHandler := NewSLOCfgHandlerForConfigMapEvent(r.Client, DefaultSLOCfg())
+	r.sloCfgCache = &configMapCacheHandler.SLOCfgCache
+
 	testingNode := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",
@@ -259,47 +262,36 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 			Namespace: config.ConfigNameSpace,
 		},
 		Data: map[string]string{
-			config.ResourceThresholdConfigKey: `
-{
-  "clusterStrategy": {
-    "enable": false,
-    "cpuSuppressThresholdPercent": 60
-  }
-}
-`,
+			config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
 			config.ResourceQoSConfigKey: `
 {
   "clusterStrategy": {
     "be": {
-      "memoryQoS": {
-        "wmarkRatio": 0
+      "cpuQoS": {
+        "groupIdentity": 0
       }
     }
   }
 }
 `,
-			config.CPUBurstConfigKey: `
-{
-  "clusterStrategy": {
-    "CFSQuotaBurstPeriodSeconds": 60
-  }
-}
-`,
+			config.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
 		},
 	}
 	testingResourceThresholdStrategy := util.DefaultResourceThresholdStrategy()
+	testingResourceThresholdStrategy.Enable = pointer.BoolPtr(true)
 	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
-	testingCPUBurstStrategy := util.DefaultCPUBurstStrategy()
-	testingCPUBurstStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64Ptr(60)
 	testingResourceQoSStrategy := &slov1alpha1.ResourceQoSStrategy{
 		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-				MemoryQoS: slov1alpha1.MemoryQoS{
-					WmarkRatio: pointer.Int64Ptr(0),
+			CPUQoS: &slov1alpha1.CPUQoSCfg{
+				CPUQoS: slov1alpha1.CPUQoS{
+					GroupIdentity: pointer.Int64Ptr(0),
 				},
 			},
 		},
 	}
+
+	testingCPUBurstStrategy := util.DefaultCPUBurstStrategy()
+	testingCPUBurstStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64Ptr(60)
 
 	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{
 		ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
@@ -313,6 +305,12 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 	if !errors.IsNotFound(err) {
 		t.Errorf("the testing NodeSLO should not exist before getting created, err: %s", err)
 	}
+
+	//test cfg unavailable
+	result, err := r.Reconcile(context.TODO(), nodeReq)
+	assert.NoError(t, err)
+	assert.Equal(t, reconcile.Result{Requeue: false}, result, "check_result")
+
 	// throw an error if the configmap does not exist
 	err = r.Client.Create(context.TODO(), testingNode)
 	assert.NoError(t, err)
@@ -321,6 +319,7 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 	// create and init a NodeSLO cr if the Node and the configmap exists
 	err = r.Client.Create(context.TODO(), testingConfigMap)
 	assert.NoError(t, err)
+	configMapCacheHandler.CacheConfigIfChanged(testingConfigMap)
 	_, err = r.Reconcile(context.TODO(), nodeReq)
 	assert.NoError(t, err)
 	nodeSLO = &slov1alpha1.NodeSLO{}

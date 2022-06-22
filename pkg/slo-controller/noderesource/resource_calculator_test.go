@@ -30,6 +30,24 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 )
 
+type FakeCfgCache struct {
+	cfg         config.ColocationCfg
+	available   bool
+	errorStatus bool
+}
+
+func (f *FakeCfgCache) GetCfgCopy() *config.ColocationCfg {
+	return &f.cfg
+}
+
+func (f *FakeCfgCache) IsCfgAvailable() bool {
+	return f.available
+}
+
+func (cache *FakeCfgCache) IsErrorStatus() bool {
+	return cache.errorStatus
+}
+
 func Test_calculateBEResource(t *testing.T) {
 	type args struct {
 		node       *corev1.Node
@@ -483,8 +501,8 @@ func Test_calculateBEResource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NodeResourceReconciler{config: Config{
-				ColocationCfg: config.ColocationCfg{
+			r := NodeResourceReconciler{cfgCache: &FakeCfgCache{
+				cfg: config.ColocationCfg{
 					ColocationStrategy: config.ColocationStrategy{
 						Enable:                        pointer.BoolPtr(true),
 						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
@@ -643,8 +661,8 @@ func Test_getNodeReservation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NodeResourceReconciler{config: Config{
-				ColocationCfg: config.ColocationCfg{
+			r := NodeResourceReconciler{cfgCache: &FakeCfgCache{
+				cfg: config.ColocationCfg{
 					ColocationStrategy: config.ColocationStrategy{
 						Enable:                        pointer.BoolPtr(true),
 						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
