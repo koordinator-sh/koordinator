@@ -89,7 +89,7 @@ Make any change on the new-branch then build and test your codes.
 
 PR is the only way to make change to Koordinator project files. To help reviewers better get your purpose, PR
 description could not be too detailed. We encourage contributors to follow
-the [PR template](./.github/PULL_REQUEST_TEMPLATE.md) to finish the pull request.
+the [PR template](./.github/pull_request_template.md) to finish the pull request.
 
 ### Developing Environment
 
