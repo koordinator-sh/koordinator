@@ -44,6 +44,12 @@ type RuntimeManagerDockerServer struct {
 	cgroupDriver string
 }
 
+type proxyDockerClient interface {
+	Info(ctx context.Context) (dockertypes.Info, error)
+	ContainerList(ctx context.Context, options dockertypes.ContainerListOptions) ([]dockertypes.Container, error)
+	ContainerInspect(ctx context.Context, containerID string) (dockertypes.ContainerJSON, error)
+}
+
 func (d *RuntimeManagerDockerServer) Name() string {
 	return "RuntimeManagerDockerServer"
 }
@@ -83,11 +89,8 @@ func (d *RuntimeManagerDockerServer) ServeHTTP(wr http.ResponseWriter, req *http
 	d.Direct(wr, req)
 }
 
-func (d *RuntimeManagerDockerServer) failOver() error {
-	dockerClient, err := client.NewClientWithOpts(client.WithHost("unix://"+options.RemoteRuntimeServiceEndpoint), client.WithVersion("1.39"))
-	if err != nil {
-		return err
-	}
+func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) error {
+
 	type dockerWrapper struct {
 		dockertypes.ContainerJSON
 		dockertypes.Container
@@ -180,7 +183,12 @@ func (d *RuntimeManagerDockerServer) Run() error {
 			}},
 	}
 
-	err := d.failOver()
+	dockerClient, err := client.NewClientWithOpts(client.WithHost("unix://"+options.RemoteRuntimeServiceEndpoint), client.WithVersion("1.39"))
+	if err != nil {
+		return err
+	}
+
+	err = d.failOver(dockerClient)
 	if err != nil {
 		//FIXME: need to panic?
 		klog.Errorf("Failed to backup container info from backend, err: %v", err)
