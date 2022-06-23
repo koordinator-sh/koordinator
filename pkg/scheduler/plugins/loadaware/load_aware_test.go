@@ -118,7 +118,10 @@ func TestNew(t *testing.T) {
 
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-	extendHandle := frameworkext.NewExtendedHandle(koordClientSet, koordSharedInformerFactory)
+	extendHandle := frameworkext.NewExtendedHandle(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
 	proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
@@ -223,7 +226,10 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle := frameworkext.NewExtendedHandle(koordClientSet, koordSharedInformerFactory)
+			extendHandle := frameworkext.NewExtendedHandle(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
 			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
 
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
@@ -449,7 +455,10 @@ func TestFilterUsage(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle := frameworkext.NewExtendedHandle(koordClientSet, koordSharedInformerFactory)
+			extendHandle := frameworkext.NewExtendedHandle(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
 			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
 
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
@@ -976,7 +985,10 @@ func TestScore(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle := frameworkext.NewExtendedHandle(koordClientSet, koordSharedInformerFactory)
+			extendHandle := frameworkext.NewExtendedHandle(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
 			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
 
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
