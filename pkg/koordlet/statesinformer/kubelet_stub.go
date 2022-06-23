@@ -38,7 +38,7 @@ type kubeletStub struct {
 	httpClient *http.Client
 }
 
-func NewKubeletStub(addr string, port, timeoutSeconds int, token string) (KubeletStub, error) {
+func NewKubeletStub(addr string, port int, timeout time.Duration, token string) (KubeletStub, error) {
 	preTlsConfig := makeTransportConfig(token, true)
 	tlsConfig, err := transport.TLSConfigFor(preTlsConfig)
 	if err != nil {
@@ -56,7 +56,7 @@ func NewKubeletStub(addr string, port, timeoutSeconds int, token string) (Kubele
 		return nil, err
 	}
 	client := &http.Client{
-		Timeout:   time.Duration(timeoutSeconds) * time.Second,
+		Timeout:   timeout,
 		Transport: roundTripper,
 	}
 	return &kubeletStub{

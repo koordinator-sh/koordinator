@@ -24,13 +24,14 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clientsetfake "k8s.io/client-go/kubernetes/fake"
+
 	koordclientfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clientsetfake "k8s.io/client-go/kubernetes/fake"
 )
 
 func Test_genPodCgroupParentDirWithSystemdDriver(t *testing.T) {
@@ -186,7 +187,7 @@ func Test_statesInformer_syncPods(t *testing.T) {
 		},
 	}
 	c := NewDefaultConfig()
-	c.KubeletSyncIntervalSeconds = 60
+	c.KubeletSyncInterval = 60 * time.Second
 	m := NewStatesInformer(c, client, crdClient, pleg, "localhost")
 	m.(*statesInformer).node = testingNode
 	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
@@ -236,7 +237,7 @@ func Test_newKubeletStub(t *testing.T) {
 	type args struct {
 		node             *corev1.Node
 		addressPreferred string
-		timeout          int
+		timeout          time.Duration
 		tokenPath        string
 	}
 	tests := []struct {
@@ -250,7 +251,7 @@ func Test_newKubeletStub(t *testing.T) {
 			args: args{
 				node:             testingNode,
 				addressPreferred: string(corev1.NodeInternalIP),
-				timeout:          10,
+				timeout:          10 * time.Second,
 				tokenPath:        f.Name(),
 			},
 			want:    kubeStub,
@@ -261,7 +262,7 @@ func Test_newKubeletStub(t *testing.T) {
 			args: args{
 				node:             testingNode,
 				addressPreferred: "",
-				timeout:          10,
+				timeout:          10 * time.Second,
 				tokenPath:        f.Name(),
 			},
 			want:    kubeStub,
@@ -272,7 +273,7 @@ func Test_newKubeletStub(t *testing.T) {
 			args: args{
 				node:             testingNode,
 				addressPreferred: "",
-				timeout:          10,
+				timeout:          10 * time.Second,
 				tokenPath:        "",
 			},
 			want:    nil,
@@ -300,7 +301,7 @@ func Test_statesInformer_syncKubeletLoop(t *testing.T) {
 	stopCh := make(chan struct{}, 1)
 
 	c := NewDefaultConfig()
-	c.KubeletSyncIntervalSeconds = 3
+	c.KubeletSyncInterval = 3 * time.Second
 
 	m := NewStatesInformer(c, client, crdClient, pleg, "localhost")
 	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
@@ -308,7 +309,7 @@ func Test_statesInformer_syncKubeletLoop(t *testing.T) {
 			{},
 		},
 	}}
-	go m.(*statesInformer).syncKubeletLoop(time.Second*time.Duration(c.KubeletSyncIntervalSeconds), stopCh)
+	go m.(*statesInformer).syncKubeletLoop(c.KubeletSyncInterval, stopCh)
 	time.Sleep(5 * time.Second)
 	close(stopCh)
 }
