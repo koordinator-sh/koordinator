@@ -8,7 +8,6 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.3.0
-	github.com/jinzhu/copier v0.3.5
 	github.com/prashantv/gostub v1.1.0
 	github.com/prometheus/client_golang v1.12.2
 	github.com/spf13/cobra v1.1.3

@@ -18,7 +18,6 @@ package nodeslo
 
 import (
 	"encoding/json"
-	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,142 +29,159 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-func getResourceThresholdSpec(node *corev1.Node, configMap *corev1.ConfigMap) (*slov1alpha1.ResourceThresholdStrategy, error) {
-	mergedStrategy := util.DefaultResourceThresholdStrategy()
-	// When the custom parameter is missing, return to the default value
+func getResourceThresholdSpec(node *corev1.Node, cfg *config.ResourceThresholdCfg) (*slov1alpha1.ResourceThresholdStrategy, error) {
+
+	nodeLabels := labels.Set(node.Labels)
+	for _, nodeStrategy := range cfg.NodeStrategies {
+		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
+		if err != nil {
+			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
+			continue
+		}
+		if selector.Matches(nodeLabels) {
+			return nodeStrategy.ResourceThresholdStrategy.DeepCopy(), nil
+		}
+	}
+
+	return cfg.ClusterStrategy.DeepCopy(), nil
+}
+
+func getResourceQoSSpec(node *corev1.Node, cfg *config.ResourceQoSCfg) (*slov1alpha1.ResourceQoSStrategy, error) {
+	nodeLabels := labels.Set(node.Labels)
+	for _, nodeStrategy := range cfg.NodeStrategies {
+		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
+		if err != nil {
+			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
+			continue
+		}
+		if selector.Matches(nodeLabels) {
+			return nodeStrategy.ResourceQoSStrategy.DeepCopy(), nil
+		}
+	}
+
+	return cfg.ClusterStrategy.DeepCopy(), nil
+}
+
+func getCPUBurstConfigSpec(node *corev1.Node, cfg *config.CPUBurstCfg) (*slov1alpha1.CPUBurstStrategy, error) {
+
+	nodeLabels := labels.Set(node.Labels)
+	for _, nodeStrategy := range cfg.NodeStrategies {
+		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
+		if err != nil {
+			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
+			continue
+		}
+		if selector.Matches(nodeLabels) {
+			return nodeStrategy.CPUBurstStrategy.DeepCopy(), nil
+		}
+
+	}
+	return cfg.ClusterStrategy.DeepCopy(), nil
+}
+
+func caculateResourceThresholdCfgMerged(oldCfg config.ResourceThresholdCfg, configMap *corev1.ConfigMap) (config.ResourceThresholdCfg, error) {
 	cfgStr, ok := configMap.Data[config.ResourceThresholdConfigKey]
 	if !ok {
-		return mergedStrategy, nil
+		return DefaultSLOCfg().ThresholdCfgMerged, nil
 	}
 
-	cfg := config.ResourceThresholdCfg{}
-	if err := json.Unmarshal([]byte(cfgStr), &cfg); err != nil {
-		klog.Warningf("failed to unmarshal config %s, err: %s", config.ResourceThresholdConfigKey, err)
-		return nil, err
+	mergedCfg := config.ResourceThresholdCfg{}
+	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
+		klog.Errorf("failed to unmarshal config %s, err: %s", config.ResourceThresholdConfigKey, err)
+		return oldCfg, err
 	}
 
-	// use cluster strategy if no node strategy matched
-	if cfg.ClusterStrategy != nil {
-		mergedStrategyInterface, _ := util.MergeCfg(mergedStrategy, cfg.ClusterStrategy)
-		mergedStrategy = mergedStrategyInterface.(*slov1alpha1.ResourceThresholdStrategy)
+	// merge ClusterStrategy
+	clusterMerged := DefaultSLOCfg().ThresholdCfgMerged.ClusterStrategy.DeepCopy()
+	if mergedCfg.ClusterStrategy != nil {
+		mergedStrategyInterface, _ := util.MergeCfg(clusterMerged, mergedCfg.ClusterStrategy)
+		clusterMerged = mergedStrategyInterface.(*slov1alpha1.ResourceThresholdStrategy)
 	}
+	mergedCfg.ClusterStrategy = clusterMerged
 
-	// NOTE: sort selectors by the string order
-	sort.Slice(cfg.NodeStrategies, func(i, j int) bool {
-		return cfg.NodeStrategies[i].NodeSelector.String() < cfg.NodeStrategies[j].NodeSelector.String()
-	})
-
-	nodeLabels := labels.Set(node.Labels)
-	for _, nodeStrategy := range cfg.NodeStrategies {
-		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
-		if err != nil {
-			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
-			continue
+	for index, nodeStrategy := range mergedCfg.NodeStrategies {
+		// merge with clusterStrategy
+		clusterCfgCopy := mergedCfg.ClusterStrategy.DeepCopy()
+		if nodeStrategy.ResourceThresholdStrategy != nil {
+			mergedNodeStrategyInterface, _ := util.MergeCfg(clusterCfgCopy, nodeStrategy.ResourceThresholdStrategy)
+			mergedCfg.NodeStrategies[index].ResourceThresholdStrategy = mergedNodeStrategyInterface.(*slov1alpha1.ResourceThresholdStrategy)
+		} else {
+			mergedCfg.NodeStrategies[index].ResourceThresholdStrategy = clusterCfgCopy
 		}
-		if selector.Matches(nodeLabels) {
-			// merge with the firstly-matched node strategy
-			if nodeStrategy.ResourceThresholdStrategy != nil {
-				mergedStrategyInterface, _ := util.MergeCfg(mergedStrategy, nodeStrategy.ResourceThresholdStrategy)
-				mergedStrategy = mergedStrategyInterface.(*slov1alpha1.ResourceThresholdStrategy)
-			}
-			break
-		}
+
 	}
 
-	return mergedStrategy, nil
+	return mergedCfg, nil
 }
 
-func getResourceQoSSpec(node *corev1.Node, configMap *corev1.ConfigMap) (*slov1alpha1.ResourceQoSStrategy, error) {
-	mergedStrategy := &slov1alpha1.ResourceQoSStrategy{}
+func caculateResourceQoSCfgMerged(oldCfg config.ResourceQoSCfg, configMap *corev1.ConfigMap) (config.ResourceQoSCfg, error) {
 	cfgStr, ok := configMap.Data[config.ResourceQoSConfigKey]
 	if !ok {
-		return mergedStrategy, nil
+		return DefaultSLOCfg().ResourceQoSCfgMerged, nil
 	}
 
-	cfg := config.ResourceQoSCfg{}
-	if err := json.Unmarshal([]byte(cfgStr), &cfg); err != nil {
-		klog.Warningf("failed to unmarshal config %s, err: %s", config.ResourceQoSConfigKey, err)
-		return nil, err
+	mergedCfg := config.ResourceQoSCfg{}
+	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
+		klog.Errorf("failed to unmarshal config %s, err: %s", config.ResourceQoSConfigKey, err)
+		return oldCfg, err
 	}
 
-	// use cluster strategy if no node strategy matched
-	if cfg.ClusterStrategy != nil {
-		mergedStrategyInterface, _ := util.MergeCfg(mergedStrategy, cfg.ClusterStrategy)
-		mergedStrategy = mergedStrategyInterface.(*slov1alpha1.ResourceQoSStrategy)
+	// merge ClusterStrategy
+	clusterMerged := DefaultSLOCfg().ResourceQoSCfgMerged.ClusterStrategy.DeepCopy()
+	if mergedCfg.ClusterStrategy != nil {
+		mergedStrategyInterface, _ := util.MergeCfg(clusterMerged, mergedCfg.ClusterStrategy)
+		clusterMerged = mergedStrategyInterface.(*slov1alpha1.ResourceQoSStrategy)
 	}
+	mergedCfg.ClusterStrategy = clusterMerged
 
-	// NOTE: sort selectors by the string order
-	sort.Slice(cfg.NodeStrategies, func(i, j int) bool {
-		return cfg.NodeStrategies[i].NodeSelector.String() < cfg.NodeStrategies[j].NodeSelector.String()
-	})
-
-	nodeLabels := labels.Set(node.Labels)
-	for _, nodeStrategy := range cfg.NodeStrategies {
-		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
-		if err != nil {
-			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
-			continue
+	for index, nodeStrategy := range mergedCfg.NodeStrategies {
+		// merge with clusterStrategy
+		var mergedNodeStrategy *slov1alpha1.ResourceQoSStrategy
+		clusterCfgCopy := mergedCfg.ClusterStrategy.DeepCopy()
+		if nodeStrategy.ResourceQoSStrategy != nil {
+			mergedStrategyInterface, _ := util.MergeCfg(clusterCfgCopy, nodeStrategy.ResourceQoSStrategy)
+			mergedNodeStrategy = mergedStrategyInterface.(*slov1alpha1.ResourceQoSStrategy)
+		} else {
+			mergedNodeStrategy = clusterCfgCopy
 		}
-		if selector.Matches(nodeLabels) {
-			// merge with the firstly-matched node strategy
-			if nodeStrategy.ResourceQoSStrategy != nil {
-				mergedStrategyInterface, _ := util.MergeCfg(mergedStrategy, nodeStrategy.ResourceQoSStrategy)
-				mergedStrategy = mergedStrategyInterface.(*slov1alpha1.ResourceQoSStrategy)
-			}
-			break
-		}
+		mergedCfg.NodeStrategies[index].ResourceQoSStrategy = mergedNodeStrategy
+
 	}
 
-	return mergedStrategy, nil
+	return mergedCfg, nil
 }
 
-func getCPUBurstConfigSpec(node *corev1.Node, configMap *corev1.ConfigMap) (*slov1alpha1.CPUBurstStrategy, error) {
-	mergedStrategy := util.DefaultCPUBurstStrategy()
+func caculateCPUBurstCfgMerged(oldCfg config.CPUBurstCfg, configMap *corev1.ConfigMap) (config.CPUBurstCfg, error) {
 	cfgStr, ok := configMap.Data[config.CPUBurstConfigKey]
 	if !ok {
-		return mergedStrategy, nil
+		return DefaultSLOCfg().CPUBurstCfgMerged, nil
 	}
 
-	cfg := config.CPUBurstCfg{}
-	if err := json.Unmarshal([]byte(cfgStr), &cfg); err != nil {
-		klog.Warningf("failed to unmarshal config %s, error: %v", config.CPUBurstConfigKey, err)
-		return nil, err
-	}
-	klog.V(5).Infof("get cpu burst config spec, origin string %v, cluster %+v, node %+v",
-		cfgStr, cfg.ClusterStrategy, cfg.NodeStrategies)
-
-	if cfg.ClusterStrategy != nil {
-		mergedStrategyInterface, err := util.MergeCfg(mergedStrategy, cfg.ClusterStrategy)
-		if err != nil {
-			klog.Warningf("merge cluster config for cpu burst failed, error %v", err)
-			return nil, err
-		}
-		mergedStrategy = mergedStrategyInterface.(*slov1alpha1.CPUBurstStrategy)
+	mergedCfg := config.CPUBurstCfg{}
+	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
+		klog.Errorf("failed to unmarshal config %s, err: %s", config.CPUBurstConfigKey, err)
+		return oldCfg, err
 	}
 
-	sort.Slice(cfg.NodeStrategies, func(i, j int) bool {
-		return cfg.NodeStrategies[i].NodeSelector.String() < cfg.NodeStrategies[j].NodeSelector.String()
-	})
-
-	nodeLabels := labels.Set(node.Labels)
-	for _, nodeStrategy := range cfg.NodeStrategies {
-		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
-		if err != nil {
-			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
-			continue
-		}
-		if !selector.Matches(nodeLabels) {
-			continue
-		}
-		if nodeStrategy.CPUBurstStrategy == nil {
-			continue
-		}
-		mergedStrategyInterface, err := util.MergeCfg(mergedStrategy, nodeStrategy.CPUBurstStrategy)
-		if err != nil {
-			klog.Warningf("merge node config %v for cpu burst failed, error %v", nodeStrategy.NodeSelector, err)
-			continue
-		}
-		mergedStrategy = mergedStrategyInterface.(*slov1alpha1.CPUBurstStrategy)
+	// merge ClusterStrategy
+	clusterMerged := DefaultSLOCfg().CPUBurstCfgMerged.ClusterStrategy.DeepCopy()
+	if mergedCfg.ClusterStrategy != nil {
+		mergedStrategyInterface, _ := util.MergeCfg(clusterMerged, mergedCfg.ClusterStrategy)
+		clusterMerged = mergedStrategyInterface.(*slov1alpha1.CPUBurstStrategy)
 	}
-	return mergedStrategy, nil
+	mergedCfg.ClusterStrategy = clusterMerged
+
+	for index, nodeStrategy := range mergedCfg.NodeStrategies {
+		// merge with clusterStrategy
+		clusterCfgCopy := mergedCfg.ClusterStrategy.DeepCopy()
+		if nodeStrategy.CPUBurstStrategy != nil {
+			mergedStrategyInterface, _ := util.MergeCfg(clusterCfgCopy, nodeStrategy.CPUBurstStrategy)
+			mergedCfg.NodeStrategies[index].CPUBurstStrategy = mergedStrategyInterface.(*slov1alpha1.CPUBurstStrategy)
+		} else {
+			mergedCfg.NodeStrategies[index].CPUBurstStrategy = clusterCfgCopy
+		}
+
+	}
+
+	return mergedCfg, nil
 }

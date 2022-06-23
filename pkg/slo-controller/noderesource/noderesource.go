@@ -35,12 +35,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-type Config struct {
-	sync.RWMutex
-	config.ColocationCfg
-	isAvailable bool
-}
-
 type nodeBEResource struct {
 	IsColocationAvailable bool
 
@@ -81,31 +75,15 @@ func (s *SyncContext) Delete(key string) {
 	delete(s.contextMap, key)
 }
 
-func (r *NodeResourceReconciler) isColocationCfgAvailable() bool {
-	r.config.Lock()
-	defer r.config.Unlock()
-
-	if r.config.isAvailable {
-		return true
-	}
-
-	klog.Warning("colocation config is not available")
-	return false
-}
-
 func (r *NodeResourceReconciler) isColocationCfgDisabled(node *corev1.Node) bool {
-	r.config.Lock()
-	defer r.config.Unlock()
-
-	if r.config.Enable == nil || !*r.config.Enable {
+	cfg := r.cfgCache.GetCfgCopy()
+	if cfg.Enable == nil || !*cfg.Enable {
 		return true
 	}
-
-	strategy := config.GetNodeColocationStrategy(&r.config.ColocationCfg, node)
+	strategy := config.GetNodeColocationStrategy(cfg, node)
 	if strategy == nil || strategy.Enable == nil {
 		return true
 	}
-
 	return !(*strategy.Enable)
 }
 
@@ -115,10 +93,7 @@ func (r *NodeResourceReconciler) isDegradeNeeded(nodeMetric *slov1alpha1.NodeMet
 		return true
 	}
 
-	r.config.RLock()
-	defer r.config.RUnlock()
-
-	strategy := config.GetNodeColocationStrategy(&r.config.ColocationCfg, node)
+	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
 
 	if r.Clock.Now().After(nodeMetric.Status.UpdateTime.Add(time.Duration(*strategy.DegradeTimeMinutes) * time.Minute)) {
 		klog.Warningf("timeout NodeMetric: %v, current timestamp: %v, metric last update timestamp: %v",
@@ -212,10 +187,8 @@ func (r *NodeResourceReconciler) isBEResourceSyncNeeded(old, new *corev1.Node) b
 		klog.Errorf("invalid input, node should not be nil")
 		return false
 	}
-	r.config.RLock()
-	defer r.config.RUnlock()
 
-	strategy := config.GetNodeColocationStrategy(&r.config.ColocationCfg, new)
+	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), new)
 
 	// scenario 1: update time gap is bigger than UpdateTimeThresholdSeconds
 	lastUpdatedTime, ok := r.SyncContext.Load(util.GetNodeKey(new))

@@ -18,7 +18,6 @@ package nodeslo
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,14 +31,13 @@ import (
 )
 
 func Test_getResourceThresholdSpec(t *testing.T) {
+	defaultSLOCfg := DefaultSLOCfg()
 	testingResourceThresholdCfg := &config.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
 			Enable:                      pointer.BoolPtr(true),
 			CPUSuppressThresholdPercent: pointer.Int64Ptr(60),
-			MemoryEvictThresholdPercent: pointer.Int64Ptr(85),
 		},
 	}
-	testingResourceThresholdCfgStr, _ := json.Marshal(testingResourceThresholdCfg)
 	testingResourceThresholdCfg1 := &config.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
 			Enable:                      pointer.BoolPtr(true),
@@ -48,9 +46,7 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 		NodeStrategies: []config.NodeResourceThresholdStrategy{
 			{
 				NodeSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"xxx": "yyy",
-					},
+					MatchLabels: map[string]string{"xxx": "yyy"},
 				},
 				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
 					CPUSuppressThresholdPercent: pointer.Int64Ptr(50),
@@ -58,40 +54,9 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 			},
 		},
 	}
-	testingResourceThresholdCfgStr1, _ := json.Marshal(testingResourceThresholdCfg1)
-	testingResourceThresholdCfg2 := &config.ResourceThresholdCfg{
-		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.BoolPtr(true),
-			CPUSuppressThresholdPercent: pointer.Int64Ptr(60),
-		},
-		NodeStrategies: []config.NodeResourceThresholdStrategy{
-			{
-				NodeSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"xxx": "yyy",
-					},
-				},
-				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
-					Enable:                      pointer.BoolPtr(false),
-					CPUSuppressThresholdPercent: pointer.Int64Ptr(50),
-				},
-			},
-			{
-				NodeSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"zzz": "zzz",
-					},
-				},
-				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
-					CPUSuppressThresholdPercent: pointer.Int64Ptr(40),
-				},
-			},
-		},
-	}
-	testingResourceThresholdCfgStr2, _ := json.Marshal(testingResourceThresholdCfg2)
 	type args struct {
-		node      *corev1.Node
-		configMap *corev1.ConfigMap
+		node *corev1.Node
+		cfg  *config.ResourceThresholdCfg
 	}
 	tests := []struct {
 		name    string
@@ -100,26 +65,13 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "throw error for invalid configmap",
-			args: args{
-				node:      &corev1.Node{},
-				configMap: &corev1.ConfigMap{},
-			},
-			want:    util.DefaultResourceThresholdStrategy(),
-			wantErr: false,
-		},
-		{
-			name: "throw error for configmap unmarshal failed",
+			name: "node empty ,use cluster config",
 			args: args{
 				node: &corev1.Node{},
-				configMap: &corev1.ConfigMap{
-					Data: map[string]string{
-						config.ResourceThresholdConfigKey: "invalid_content",
-					},
-				},
+				cfg:  &defaultSLOCfg.ThresholdCfgMerged,
 			},
-			want:    nil,
-			wantErr: true,
+			want:    defaultSLOCfg.ThresholdCfgMerged.ClusterStrategy,
+			wantErr: false,
 		},
 		{
 			name: "get cluster config correctly",
@@ -129,22 +81,9 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 						Name: "test-node",
 					},
 				},
-				configMap: &corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.SLOCtrlConfigMap,
-						Namespace: config.ConfigNameSpace,
-					},
-					Data: map[string]string{
-						config.ResourceThresholdConfigKey: string(testingResourceThresholdCfgStr),
-					},
-				},
+				cfg: testingResourceThresholdCfg,
 			},
-			want: &slov1alpha1.ResourceThresholdStrategy{
-				Enable:                      pointer.BoolPtr(true),
-				CPUSuppressThresholdPercent: pointer.Int64Ptr(60),
-				CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
-				MemoryEvictThresholdPercent: pointer.Int64Ptr(85),
-			},
+			want: testingResourceThresholdCfg.ClusterStrategy,
 		},
 		{
 			name: "get node config correctly",
@@ -157,22 +96,256 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 						},
 					},
 				},
+				cfg: testingResourceThresholdCfg1,
+			},
+			want: &slov1alpha1.ResourceThresholdStrategy{
+				CPUSuppressThresholdPercent: pointer.Int64Ptr(50),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := getResourceThresholdSpec(tt.args.node, tt.args.cfg)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_caculateResourceThresholdCfgMerged(t *testing.T) {
+	defaultSLOCfg := DefaultSLOCfg()
+
+	oldSLOCfg := DefaultSLOCfg()
+	oldSLOCfg.ThresholdCfgMerged.ClusterStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(30)
+
+	testingResourceThresholdCfg := &config.ResourceThresholdCfg{
+		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
+			Enable:                      pointer.BoolPtr(true),
+			CPUSuppressThresholdPercent: pointer.Int64Ptr(60),
+		},
+	}
+	testingResourceThresholdCfgStr, _ := json.Marshal(testingResourceThresholdCfg)
+
+	expectTestingResourceThresholdCfg := defaultSLOCfg.ThresholdCfgMerged.DeepCopy()
+	expectTestingResourceThresholdCfg.ClusterStrategy.Enable = testingResourceThresholdCfg.ClusterStrategy.Enable
+	expectTestingResourceThresholdCfg.ClusterStrategy.CPUSuppressThresholdPercent = testingResourceThresholdCfg.ClusterStrategy.CPUSuppressThresholdPercent
+
+	testingResourceThresholdCfg1 := &config.ResourceThresholdCfg{
+		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
+			Enable:                      pointer.BoolPtr(true),
+			CPUSuppressThresholdPercent: pointer.Int64Ptr(60),
+		},
+		NodeStrategies: []config.NodeResourceThresholdStrategy{
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"xxx": "yyy"},
+				},
+				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
+					CPUSuppressThresholdPercent: pointer.Int64Ptr(40),
+				},
+			},
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"zzz": "zzz"},
+				},
+				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
+					CPUSuppressThresholdPercent: pointer.Int64Ptr(50),
+				},
+			},
+		},
+	}
+	testingResourceThresholdCfg1Str, _ := json.Marshal(testingResourceThresholdCfg1)
+
+	expectTestingResourceThresholdCfg1 := defaultSLOCfg.ThresholdCfgMerged.DeepCopy()
+	expectTestingResourceThresholdCfg1.ClusterStrategy.Enable = testingResourceThresholdCfg1.ClusterStrategy.Enable
+	expectTestingResourceThresholdCfg1.ClusterStrategy.CPUSuppressThresholdPercent = testingResourceThresholdCfg1.ClusterStrategy.CPUSuppressThresholdPercent
+	expectTestingResourceThresholdCfg1.NodeStrategies = []config.NodeResourceThresholdStrategy{
+		{
+			NodeSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"xxx": "yyy"},
+			},
+			ResourceThresholdStrategy: expectTestingResourceThresholdCfg1.ClusterStrategy.DeepCopy(),
+		},
+		{
+			NodeSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"zzz": "zzz"},
+			},
+			ResourceThresholdStrategy: expectTestingResourceThresholdCfg1.ClusterStrategy.DeepCopy(),
+		},
+	}
+	expectTestingResourceThresholdCfg1.NodeStrategies[0].CPUSuppressThresholdPercent = pointer.Int64Ptr(40)
+	expectTestingResourceThresholdCfg1.NodeStrategies[1].CPUSuppressThresholdPercent = pointer.Int64Ptr(50)
+
+	type args struct {
+		configMap *corev1.ConfigMap
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *config.ResourceThresholdCfg
+		wantErr bool
+	}{
+		{
+			name: "config contents is empty,then use default",
+			args: args{
+				configMap: &corev1.ConfigMap{},
+			},
+			want:    &defaultSLOCfg.ThresholdCfgMerged,
+			wantErr: false,
+		},
+		{
+			name: "throw error for configmap unmarshal failed",
+			args: args{
+				configMap: &corev1.ConfigMap{
+					Data: map[string]string{
+						config.ResourceThresholdConfigKey: "invalid_content",
+					},
+				},
+			},
+			want:    &oldSLOCfg.ThresholdCfgMerged,
+			wantErr: true,
+		},
+		{
+			name: "only cluster config",
+			args: args{
+				configMap: &corev1.ConfigMap{
+					Data: map[string]string{
+						config.ResourceThresholdConfigKey: string(testingResourceThresholdCfgStr),
+					},
+				},
+			},
+			want:    expectTestingResourceThresholdCfg,
+			wantErr: false,
+		},
+		{
+			name: "node config",
+			args: args{
 				configMap: &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      config.SLOCtrlConfigMap,
 						Namespace: config.ConfigNameSpace,
 					},
 					Data: map[string]string{
-						config.ResourceThresholdConfigKey: string(testingResourceThresholdCfgStr1),
+						config.ResourceThresholdConfigKey: string(testingResourceThresholdCfg1Str),
 					},
 				},
 			},
-			want: &slov1alpha1.ResourceThresholdStrategy{
-				Enable:                      pointer.BoolPtr(true),
-				CPUSuppressThresholdPercent: pointer.Int64Ptr(50),
-				CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
-				MemoryEvictThresholdPercent: pointer.Int64Ptr(70),
+			want:    expectTestingResourceThresholdCfg1,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := caculateResourceThresholdCfgMerged(oldSLOCfg.ThresholdCfgMerged, tt.args.configMap)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, &got)
+		})
+	}
+}
+
+func Test_getResourceQoSSpec(t *testing.T) {
+	defaultSLOCfg := DefaultSLOCfg()
+	testingResourceQoSCfg := &config.ResourceQoSCfg{
+		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
+			BE: &slov1alpha1.ResourceQoS{
+				CPUQoS: &slov1alpha1.CPUQoSCfg{
+					CPUQoS: slov1alpha1.CPUQoS{
+						GroupIdentity: pointer.Int64Ptr(0),
+					},
+				},
 			},
+		},
+	}
+	testingResourceQoSCfg1 := &config.ResourceQoSCfg{
+		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
+			BE: &slov1alpha1.ResourceQoS{
+				CPUQoS: &slov1alpha1.CPUQoSCfg{
+					CPUQoS: slov1alpha1.CPUQoS{
+						GroupIdentity: pointer.Int64Ptr(0),
+					},
+				},
+			},
+		},
+		NodeStrategies: []config.NodeResourceQoSStrategy{
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"xxx": "yyy",
+					},
+				},
+				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
+					BE: &slov1alpha1.ResourceQoS{
+						CPUQoS: &slov1alpha1.CPUQoSCfg{
+							CPUQoS: slov1alpha1.CPUQoS{
+								GroupIdentity: pointer.Int64Ptr(1),
+							},
+						},
+					},
+				},
+			},
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"zzz": "zzz",
+					},
+				},
+				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
+					BE: &slov1alpha1.ResourceQoS{
+						CPUQoS: &slov1alpha1.CPUQoSCfg{
+							CPUQoS: slov1alpha1.CPUQoS{
+								GroupIdentity: pointer.Int64Ptr(2),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	type args struct {
+		node *corev1.Node
+		cfg  *config.ResourceQoSCfg
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *slov1alpha1.ResourceQoSStrategy
+		wantErr bool
+	}{
+		{
+			name: "node empty, use cluster config",
+			args: args{
+				node: &corev1.Node{},
+				cfg:  &defaultSLOCfg.ResourceQoSCfgMerged,
+			},
+			want:    &slov1alpha1.ResourceQoSStrategy{},
+			wantErr: false,
+		},
+		{
+			name: "get cluster config correctly",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+				},
+				cfg: testingResourceQoSCfg,
+			},
+			want: testingResourceQoSCfg.ClusterStrategy,
+		},
+		{
+			name: "get node config correctly",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							"zzz": "zzz",
+						},
+					},
+				},
+				cfg: testingResourceQoSCfg1,
+			},
+			want: testingResourceQoSCfg1.NodeStrategies[1].ResourceQoSStrategy,
 		},
 		{
 			name: "get firstly-matched node config",
@@ -185,64 +358,59 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 						},
 					},
 				},
-				configMap: &corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.SLOCtrlConfigMap,
-						Namespace: config.ConfigNameSpace,
-					},
-					Data: map[string]string{
-						config.ResourceThresholdConfigKey: string(testingResourceThresholdCfgStr2),
-					},
-				},
+				cfg: testingResourceQoSCfg1,
 			},
-			want: &slov1alpha1.ResourceThresholdStrategy{
-				Enable:                      pointer.BoolPtr(false),
-				CPUSuppressThresholdPercent: pointer.Int64Ptr(50),
-				CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
-				MemoryEvictThresholdPercent: pointer.Int64Ptr(70),
-			},
+			want: testingResourceQoSCfg1.NodeStrategies[0].ResourceQoSStrategy,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := getResourceThresholdSpec(tt.args.node, tt.args.configMap)
+			got, gotErr := getResourceQoSSpec(tt.args.node, tt.args.cfg)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func Test_generateThresholdCfg(t *testing.T) {
-	cfg := config.ResourceThresholdCfg{}
-	cfg.ClusterStrategy = util.DefaultResourceThresholdStrategy()
-	labelSelector := &metav1.LabelSelector{MatchLabels: map[string]string{}}
-	labelSelector.MatchLabels["machineType"] = "F53"
-	selectCfg := config.NodeResourceThresholdStrategy{NodeSelector: labelSelector, ResourceThresholdStrategy: util.DefaultResourceThresholdStrategy()}
-	cfg.NodeStrategies = []config.NodeResourceThresholdStrategy{selectCfg}
-
-	cfgJson, _ := json.MarshalIndent(cfg, "", "  ")
-	fmt.Print(string(cfgJson))
-}
-
-func Test_getResourceQoSSpec(t *testing.T) {
-	testingResourceQoSCfg := &config.ResourceQoSCfg{
+func Test_caculateResourceQoSCfgMerged(t *testing.T) {
+	defaultSLOCfg := DefaultSLOCfg().ResourceQoSCfgMerged
+	oldSLOConfig := &config.ResourceQoSCfg{
 		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
 			BE: &slov1alpha1.ResourceQoS{
+				CPUQoS: &slov1alpha1.CPUQoSCfg{
+					CPUQoS: slov1alpha1.CPUQoS{
+						GroupIdentity: pointer.Int64Ptr(2),
+					},
+				},
 				MemoryQoS: &slov1alpha1.MemoryQoSCfg{
 					MemoryQoS: slov1alpha1.MemoryQoS{
-						WmarkRatio: pointer.Int64Ptr(0),
+						MinLimitPercent: pointer.Int64Ptr(40),
 					},
 				},
 			},
 		},
 	}
-	testingResourceQoSCfgStr, _ := json.Marshal(testingResourceQoSCfg)
+
+	testingOnlyCluster := &config.ResourceQoSCfg{
+		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
+			BE: &slov1alpha1.ResourceQoS{
+				CPUQoS: &slov1alpha1.CPUQoSCfg{
+					CPUQoS: slov1alpha1.CPUQoS{
+						GroupIdentity: pointer.Int64Ptr(0),
+					},
+				},
+			},
+		},
+	}
+	testingOnlyClusterStr, _ := json.Marshal(testingOnlyCluster)
+	expectTestingOnlyCluster := testingOnlyCluster.DeepCopy()
+
 	testingResourceQoSCfg1 := &config.ResourceQoSCfg{
 		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
 			BE: &slov1alpha1.ResourceQoS{
-				MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-					MemoryQoS: slov1alpha1.MemoryQoS{
-						WmarkRatio: pointer.Int64Ptr(0),
+				CPUQoS: &slov1alpha1.CPUQoSCfg{
+					CPUQoS: slov1alpha1.CPUQoS{
+						GroupIdentity: pointer.Int64Ptr(0),
 					},
 				},
 			},
@@ -256,39 +424,9 @@ func Test_getResourceQoSSpec(t *testing.T) {
 				},
 				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
 					BE: &slov1alpha1.ResourceQoS{
-						MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-							MemoryQoS: slov1alpha1.MemoryQoS{
-								WmarkRatio: pointer.Int64Ptr(90),
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	testingResourceQoSCfgStr1, _ := json.Marshal(testingResourceQoSCfg1)
-	testingResourceQoSCfg2 := &config.ResourceQoSCfg{
-		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
-			BE: &slov1alpha1.ResourceQoS{
-				MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-					MemoryQoS: slov1alpha1.MemoryQoS{
-						WmarkRatio: pointer.Int64Ptr(0),
-					},
-				},
-			},
-		},
-		NodeStrategies: []config.NodeResourceQoSStrategy{
-			{
-				NodeSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"xxx": "yyy",
-					},
-				},
-				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-					BE: &slov1alpha1.ResourceQoS{
-						MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-							MemoryQoS: slov1alpha1.MemoryQoS{
-								WmarkRatio: pointer.Int64Ptr(90),
+						CPUQoS: &slov1alpha1.CPUQoSCfg{
+							CPUQoS: slov1alpha1.CPUQoS{
+								GroupIdentity: pointer.Int64Ptr(0),
 							},
 						},
 					},
@@ -302,9 +440,9 @@ func Test_getResourceQoSSpec(t *testing.T) {
 				},
 				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
 					BE: &slov1alpha1.ResourceQoS{
-						MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-							MemoryQoS: slov1alpha1.MemoryQoS{
-								WmarkRatio: pointer.Int64Ptr(90),
+						CPUQoS: &slov1alpha1.CPUQoSCfg{
+							CPUQoS: slov1alpha1.CPUQoS{
+								GroupIdentity: pointer.Int64Ptr(-1),
 							},
 						},
 					},
@@ -312,97 +450,58 @@ func Test_getResourceQoSSpec(t *testing.T) {
 			},
 		},
 	}
-	testingResourceQoSCfgStr2, _ := json.Marshal(testingResourceQoSCfg2)
-	testingResourceQoSStrategy := &slov1alpha1.ResourceQoSStrategy{
-		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-				MemoryQoS: slov1alpha1.MemoryQoS{
-					WmarkRatio: pointer.Int64Ptr(0),
-				},
-			},
-		},
-	}
-	testingResourceQoSStrategy1 := &slov1alpha1.ResourceQoSStrategy{
-		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-				MemoryQoS: slov1alpha1.MemoryQoS{
-					WmarkRatio: pointer.Int64Ptr(90),
-				},
-			},
-		},
-	}
-	testingResourceQoSStrategy2 := &slov1alpha1.ResourceQoSStrategy{
-		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-				MemoryQoS: slov1alpha1.MemoryQoS{
-					WmarkRatio: pointer.Int64Ptr(90),
-				},
-			},
-		},
-	}
+	testingResourceQoSCfgStr1, _ := json.Marshal(testingResourceQoSCfg1)
+	expectTestingResourceQoSCfg1 := testingResourceQoSCfg1.DeepCopy()
+	expectTestingResourceQoSCfg1.NodeStrategies[0].BE.CPUQoS.GroupIdentity = pointer.Int64Ptr(0)
+	expectTestingResourceQoSCfg1.NodeStrategies[1].BE.CPUQoS.GroupIdentity = pointer.Int64Ptr(-1)
+
 	type args struct {
-		node      *corev1.Node
 		configMap *corev1.ConfigMap
 	}
 	tests := []struct {
 		name    string
 		args    args
-		want    *slov1alpha1.ResourceQoSStrategy
+		want    *config.ResourceQoSCfg
 		wantErr bool
 	}{
 		{
-			name: "throw error for invalid configmap",
+			name: "config is null! use old",
 			args: args{
-				node:      &corev1.Node{},
 				configMap: &corev1.ConfigMap{},
 			},
-			want:    &slov1alpha1.ResourceQoSStrategy{},
+			want:    &defaultSLOCfg,
 			wantErr: false,
 		},
 		{
 			name: "throw error for configmap unmarshal failed",
 			args: args{
-				node: &corev1.Node{},
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
 						config.ResourceQoSConfigKey: "invalid_content",
 					},
 				},
 			},
-			want:    nil,
+			want:    oldSLOConfig,
 			wantErr: true,
 		},
 		{
 			name: "get cluster config correctly",
 			args: args{
-				node: &corev1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node",
-					},
-				},
 				configMap: &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      config.SLOCtrlConfigMap,
 						Namespace: config.ConfigNameSpace,
 					},
 					Data: map[string]string{
-						config.ResourceQoSConfigKey: string(testingResourceQoSCfgStr),
+						config.ResourceQoSConfigKey: string(testingOnlyClusterStr),
 					},
 				},
 			},
-			want: testingResourceQoSStrategy,
+			want: expectTestingOnlyCluster,
 		},
 		{
 			name: "get node config correctly",
 			args: args{
-				node: &corev1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node",
-						Labels: map[string]string{
-							"xxx": "yyy",
-						},
-					},
-				},
 				configMap: &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      config.SLOCtrlConfigMap,
@@ -413,54 +512,20 @@ func Test_getResourceQoSSpec(t *testing.T) {
 					},
 				},
 			},
-			want: testingResourceQoSStrategy1,
-		},
-		{
-			name: "get firstly-matched node config",
-			args: args{
-				node: &corev1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node",
-						Labels: map[string]string{
-							"xxx": "yyy",
-						},
-					},
-				},
-				configMap: &corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.SLOCtrlConfigMap,
-						Namespace: config.ConfigNameSpace,
-					},
-					Data: map[string]string{
-						config.ResourceQoSConfigKey: string(testingResourceQoSCfgStr2),
-					},
-				},
-			},
-			want: testingResourceQoSStrategy2,
+			want: expectTestingResourceQoSCfg1,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := getResourceQoSSpec(tt.args.node, tt.args.configMap)
+			got, gotErr := caculateResourceQoSCfgMerged(*oldSLOConfig, tt.args.configMap)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want, &got)
 		})
 	}
 }
 
-func Test_generateResourceQoSStrategeCfg(t *testing.T) {
-	cfg := config.ResourceQoSCfg{}
-	cfg.ClusterStrategy = util.DefaultResourceQoSStrategy()
-	labelSelector := &metav1.LabelSelector{MatchLabels: map[string]string{}}
-	labelSelector.MatchLabels["machineType"] = "F53"
-	selectCfg := config.NodeResourceQoSStrategy{NodeSelector: labelSelector, ResourceQoSStrategy: util.DefaultResourceQoSStrategy()}
-	cfg.NodeStrategies = []config.NodeResourceQoSStrategy{selectCfg}
-
-	cfgJson, _ := json.MarshalIndent(cfg, "", "  ")
-	fmt.Print(string(cfgJson))
-}
-
 func Test_getCPBurstConfigSpec(t *testing.T) {
+	defaultConfig := DefaultSLOCfg()
 	testingCPUBurstCfg := &config.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
@@ -468,8 +533,6 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 			},
 		},
 	}
-	testingCPUBurstCfgStr, _ := json.Marshal(testingCPUBurstCfg)
-
 	testingCPUBurstCfg1 := &config.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
@@ -489,15 +552,24 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 					},
 				},
 			},
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"zzz": "zzz",
+					},
+				},
+				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
+					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+						CPUBurstPercent: pointer.Int64Ptr(100),
+					},
+				},
+			},
 		},
 	}
-	testingCPUBurstCfgStr1, _ := json.Marshal(testingCPUBurstCfg1)
-
 	type args struct {
-		node      *corev1.Node
-		configMap *corev1.ConfigMap
+		node *corev1.Node
+		cfg  *config.CPUBurstCfg
 	}
-
 	tests := []struct {
 		name    string
 		args    args
@@ -507,24 +579,11 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 		{
 			name: "default value for empty config",
 			args: args{
-				node:      &corev1.Node{},
-				configMap: &corev1.ConfigMap{},
+				node: &corev1.Node{},
+				cfg:  &defaultConfig.CPUBurstCfgMerged,
 			},
 			want:    util.DefaultCPUBurstStrategy(),
 			wantErr: false,
-		},
-		{
-			name: "throw error for configmap unmarshal failed",
-			args: args{
-				node: &corev1.Node{},
-				configMap: &corev1.ConfigMap{
-					Data: map[string]string{
-						config.CPUBurstConfigKey: "invalid_content",
-					},
-				},
-			},
-			want:    nil,
-			wantErr: true,
 		},
 		{
 			name: "get cluster config correctly",
@@ -534,25 +593,9 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 						Name: "test-node",
 					},
 				},
-				configMap: &corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.CPUBurstConfigKey,
-						Namespace: config.ConfigNameSpace,
-					},
-					Data: map[string]string{
-						config.CPUBurstConfigKey: string(testingCPUBurstCfgStr),
-					},
-				},
+				cfg: testingCPUBurstCfg,
 			},
-			want: &slov1alpha1.CPUBurstStrategy{
-				CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-					Policy:                     slov1alpha1.CPUBurstNone,
-					CPUBurstPercent:            pointer.Int64Ptr(1000),
-					CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(120),
-				},
-				SharePoolThresholdPercent: pointer.Int64Ptr(50),
-			},
+			want: testingCPUBurstCfg.ClusterStrategy,
 		},
 		{
 			name: "get node config correctly",
@@ -565,9 +608,144 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 						},
 					},
 				},
+				cfg: testingCPUBurstCfg1,
+			},
+			want: testingCPUBurstCfg1.NodeStrategies[0].CPUBurstStrategy,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := getCPUBurstConfigSpec(tt.args.node, tt.args.cfg)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_caculateCPUBurstCfgMerged(t *testing.T) {
+
+	defaultSLOCfg := DefaultSLOCfg()
+
+	oldSLOConfig := DefaultSLOCfg()
+	oldSLOConfig.CPUBurstCfgMerged.ClusterStrategy.CFSQuotaBurstPercent = pointer.Int64Ptr(30)
+
+	testingCfgClusterOnly := &config.CPUBurstCfg{
+		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
+			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+				CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(120),
+			},
+		},
+	}
+	testingCfgClusterOnlyStr, _ := json.Marshal(testingCfgClusterOnly)
+
+	expectTestingCfgClusterOnly := defaultSLOCfg.CPUBurstCfgMerged.DeepCopy()
+	expectTestingCfgClusterOnly.ClusterStrategy.CPUBurstConfig.CFSQuotaBurstPeriodSeconds = testingCfgClusterOnly.ClusterStrategy.CPUBurstConfig.CFSQuotaBurstPeriodSeconds
+
+	testingCPUBurstCfg1 := &config.CPUBurstCfg{
+		ClusterStrategy: testingCfgClusterOnly.ClusterStrategy,
+		NodeStrategies: []config.NodeCPUBurstCfg{
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"xxx": "yyy",
+					},
+				},
+				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
+					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+						CPUBurstPercent: pointer.Int64Ptr(100),
+					},
+				},
+			},
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"zzz": "zzz",
+					},
+				},
+				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
+					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+						CPUBurstPercent: pointer.Int64Ptr(200),
+					},
+				},
+			},
+		},
+	}
+	testingCPUBurstCfgStr1, _ := json.Marshal(testingCPUBurstCfg1)
+
+	expectTestingCPUBurstCfg1 := &config.CPUBurstCfg{
+		ClusterStrategy: expectTestingCfgClusterOnly.ClusterStrategy.DeepCopy(),
+		NodeStrategies: []config.NodeCPUBurstCfg{
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"xxx": "yyy",
+					},
+				},
+				CPUBurstStrategy: expectTestingCfgClusterOnly.ClusterStrategy.DeepCopy(),
+			},
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"zzz": "zzz",
+					},
+				},
+				CPUBurstStrategy: expectTestingCfgClusterOnly.ClusterStrategy.DeepCopy(),
+			},
+		},
+	}
+	expectTestingCPUBurstCfg1.NodeStrategies[0].CPUBurstPercent = testingCPUBurstCfg1.NodeStrategies[0].CPUBurstPercent
+	expectTestingCPUBurstCfg1.NodeStrategies[1].CPUBurstPercent = testingCPUBurstCfg1.NodeStrategies[1].CPUBurstPercent
+
+	type args struct {
+		configMap *corev1.ConfigMap
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *config.CPUBurstCfg
+		wantErr bool
+	}{
+		{
+			name: "config is null! use cluster config",
+			args: args{
+				configMap: &corev1.ConfigMap{},
+			},
+			want:    &defaultSLOCfg.CPUBurstCfgMerged,
+			wantErr: false,
+		},
+		{
+			name: "throw error for configmap unmarshal failed",
+			args: args{
+				configMap: &corev1.ConfigMap{
+					Data: map[string]string{
+						config.CPUBurstConfigKey: "invalid_content",
+					},
+				},
+			},
+			want:    &oldSLOConfig.CPUBurstCfgMerged,
+			wantErr: true,
+		},
+		{
+			name: "get cluster config correctly",
+			args: args{
 				configMap: &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.CPUBurstConfigKey,
+						Name:      config.SLOCtrlConfigMap,
+						Namespace: config.ConfigNameSpace,
+					},
+					Data: map[string]string{
+						config.CPUBurstConfigKey: string(testingCfgClusterOnlyStr),
+					},
+				},
+			},
+			want: expectTestingCfgClusterOnly,
+		},
+		{
+			name: "get config merged correctly",
+			args: args{
+				configMap: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      config.SLOCtrlConfigMap,
 						Namespace: config.ConfigNameSpace,
 					},
 					Data: map[string]string{
@@ -575,22 +753,14 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 					},
 				},
 			},
-			want: &slov1alpha1.CPUBurstStrategy{
-				CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-					Policy:                     slov1alpha1.CPUBurstNone,
-					CPUBurstPercent:            pointer.Int64Ptr(200),
-					CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(-1),
-				},
-				SharePoolThresholdPercent: pointer.Int64Ptr(50),
-			},
+			want: expectTestingCPUBurstCfg1,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := getCPUBurstConfigSpec(tt.args.node, tt.args.configMap)
+			got, gotErr := caculateCPUBurstCfgMerged(oldSLOConfig.CPUBurstCfgMerged, tt.args.configMap)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want, &got)
 		})
 	}
 }
