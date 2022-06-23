@@ -128,10 +128,8 @@ func (r *NodeResourceReconciler) getNodeAllocatable(node *corev1.Node) corev1.Re
 
 // getNodeReservation gets node-level safe-guarding reservation with the node's allocatable
 func (r *NodeResourceReconciler) getNodeReservation(node *corev1.Node) corev1.ResourceList {
-	r.config.RLock()
-	defer r.config.RUnlock()
 
-	strategy := config.GetNodeColocationStrategy(&r.config.ColocationCfg, node)
+	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
 
 	nodeAllocatable := r.getNodeAllocatable(node)
 	cpuReserveQuant := util.MultiplyMilliQuant(nodeAllocatable[corev1.ResourceCPU], r.getReserveRatio(*strategy.CPUReclaimThresholdPercent))

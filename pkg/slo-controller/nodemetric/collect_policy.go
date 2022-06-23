@@ -19,21 +19,12 @@ package nodemetric
 import (
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
-
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
 )
 
-func getNodeMetricCollectPolicy(node *corev1.Node, colocationConfig *noderesource.Config) (*slov1alpha1.NodeMetricCollectPolicy, error) {
-	colocationConfig.RLock()
-	defer colocationConfig.RUnlock()
+func getNodeMetricCollectPolicy(strategy *config.ColocationStrategy) (*slov1alpha1.NodeMetricCollectPolicy, error) {
 
-	strategy := config.GetNodeColocationStrategy(&colocationConfig.ColocationCfg, node)
-	if strategy == nil {
-		strategy = &colocationConfig.ColocationStrategy
-	}
 	if strategy == nil {
 		return nil, fmt.Errorf("failed to find satisfied strategy")
 	}
