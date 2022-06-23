@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
+
+	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 )
 
 const (
@@ -59,17 +61,17 @@ type ResourceStatus struct {
 }
 
 // CPUBindPolicy defines the CPU binding policy
-type CPUBindPolicy string
+type CPUBindPolicy = schedulingconfig.CPUBindPolicy
 
 const (
 	// CPUBindPolicyNone does not perform any bind policy
-	CPUBindPolicyNone CPUBindPolicy = "None"
+	CPUBindPolicyNone CPUBindPolicy = schedulingconfig.CPUBindPolicyNone
 	// CPUBindPolicyFullPCPUs favor cpuset allocation that pack in few physical cores
-	CPUBindPolicyFullPCPUs CPUBindPolicy = "FullPCPUs"
+	CPUBindPolicyFullPCPUs CPUBindPolicy = schedulingconfig.CPUBindPolicyFullPCPUs
 	// CPUBindPolicySpreadByPCPUs favor cpuset allocation that evenly allocate logical cpus across physical cores
-	CPUBindPolicySpreadByPCPUs CPUBindPolicy = "SpreadByPCPUs"
+	CPUBindPolicySpreadByPCPUs CPUBindPolicy = schedulingconfig.CPUBindPolicySpreadByPCPUs
 	// CPUBindPolicyConstrainedBurst constrains the CPU Shared Pool range of the Burstable Pod
-	CPUBindPolicyConstrainedBurst CPUBindPolicy = "ConstrainedBurst"
+	CPUBindPolicyConstrainedBurst CPUBindPolicy = schedulingconfig.CPUBindPolicyConstrainedBurst
 )
 
 type NUMACPUSharedPools []CPUSharedPool
@@ -83,7 +85,7 @@ type CPUSharedPool struct {
 // GetResourceSpec parses ResourceSpec from annotations
 func GetResourceSpec(annotations map[string]string) (*ResourceSpec, error) {
 	resourceSpec := &ResourceSpec{
-		PreferredCPUBindPolicy: CPUBindPolicyNone,
+		PreferredCPUBindPolicy: schedulingconfig.CPUBindPolicyNone,
 	}
 	data, ok := annotations[AnnotationResourceSpec]
 	if !ok {

@@ -30,9 +30,14 @@ import (
 // All generated defaulters are covering - they call all nested defaulters.
 func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&LoadAwareSchedulingArgs{}, func(obj interface{}) { SetObjectDefaults_LoadAwareSchedulingArgs(obj.(*LoadAwareSchedulingArgs)) })
+	scheme.AddTypeDefaultingFunc(&NodeNUMAResourceArgs{}, func(obj interface{}) { SetObjectDefaults_NodeNUMAResourceArgs(obj.(*NodeNUMAResourceArgs)) })
 	return nil
 }
 
 func SetObjectDefaults_LoadAwareSchedulingArgs(in *LoadAwareSchedulingArgs) {
 	SetDefaults_LoadAwareSchedulingArgs(in)
+}
+
+func SetObjectDefaults_NodeNUMAResourceArgs(in *NodeNUMAResourceArgs) {
+	SetDefaults_NodeNUMAResourceArgs(in)
 }

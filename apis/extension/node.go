@@ -17,6 +17,8 @@ limitations under the License.
 package extension
 
 import (
+	"encoding/json"
+
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -49,3 +51,29 @@ type PodCPUAlloc struct {
 }
 
 type PodCPUAllocs []PodCPUAlloc
+
+func GetCPUTopology(annotations map[string]string) (*CPUTopology, error) {
+	topology := &CPUTopology{}
+	data, ok := annotations[AnnotationNodeCPUTopology]
+	if !ok {
+		return topology, nil
+	}
+	err := json.Unmarshal([]byte(data), topology)
+	if err != nil {
+		return nil, err
+	}
+	return topology, nil
+}
+
+func GetPodCPUAllocs(annotations map[string]string) (PodCPUAllocs, error) {
+	var allocs PodCPUAllocs
+	data, ok := annotations[AnnotationNodeCPUAllocs]
+	if !ok {
+		return allocs, nil
+	}
+	err := json.Unmarshal([]byte(data), &allocs)
+	if err != nil {
+		return nil, err
+	}
+	return allocs, nil
+}
