@@ -25,4 +25,6 @@ const (
 
 	LabelPodQoS      = DomainPrefix + "qosClass"
 	LabelPodPriority = DomainPrefix + "priority"
+
+	LabelManagedBy = "app.kubernetes.io/managed-by"
 )

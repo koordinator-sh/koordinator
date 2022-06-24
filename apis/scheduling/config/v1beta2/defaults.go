@@ -18,6 +18,7 @@ package v1beta2
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/utils/pointer"
 )
 
@@ -38,6 +39,18 @@ var (
 		corev1.ResourceCPU:    85, // 85%
 		corev1.ResourceMemory: 70, // 70%
 	}
+
+	defaultPreferredCPUBindPolicy          = CPUBindPolicyFullPCPUs
+	defaultNUMAAllocateStrategy            = NUMAMostAllocated
+	defaultNodeNUMAResourceScoringStrategy = &ScoringStrategy{
+		Type: MostAllocated,
+		Resources: []schedconfig.ResourceSpec{
+			{
+				Name:   string(corev1.ResourceCPU),
+				Weight: 1,
+			},
+		},
+	}
 )
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
@@ -56,5 +69,18 @@ func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 	}
 	if len(obj.EstimatedScalingFactors) == 0 {
 		obj.EstimatedScalingFactors = defaultEstimatedScalingFactors
+	}
+}
+
+// SetDefaults_NodeNUMAResourceArgs sets the default parameters for NodeNUMANodeResource plugin.
+func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
+	if obj.PreferredCPUBindPolicy == "" {
+		obj.PreferredCPUBindPolicy = defaultPreferredCPUBindPolicy
+	}
+	if obj.NUMAAllocateStrategy == "" {
+		obj.NUMAAllocateStrategy = defaultNUMAAllocateStrategy
+	}
+	if obj.ScoringStrategy == nil {
+		obj.ScoringStrategy = defaultNodeNUMAResourceScoringStrategy
 	}
 }
