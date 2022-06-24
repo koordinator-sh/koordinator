@@ -24,11 +24,14 @@ import (
 	"sync"
 	"time"
 
+	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
+	_ "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/scheme"
 	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -36,6 +39,7 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -72,15 +76,18 @@ type statesInformer struct {
 	nodeSLORWMutex  sync.RWMutex
 	nodeSLO         *slov1alpha1.NodeSLO
 
+	topologyClient topologyclientset.Interface
+
 	podRWMutex     sync.RWMutex
 	podMap         map[string]*PodMeta
 	podUpdatedTime time.Time
+	metricsCache   metriccache.MetricCache
 
 	callbackChans        map[reflect.Type]chan struct{}
 	stateUpdateCallbacks map[reflect.Type][]updateCallback
 }
 
-func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, pleg pleg.Pleg, nodeName string) StatesInformer {
+func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient *topologyclientset.Clientset, metricsCache metriccache.MetricCache, pleg pleg.Pleg, nodeName string) StatesInformer {
 	nodeInformer := newNodeInformer(kubeClient, nodeName)
 	nodeSLOInformer := newNodeSLOInformer(crdClient, nodeName)
 
@@ -102,6 +109,8 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 		stateUpdateCallbacks: map[reflect.Type][]updateCallback{
 			reflect.TypeOf(&slov1alpha1.NodeSLO{}): {},
 		},
+		topologyClient: topologyClient,
+		metricsCache:   metricsCache,
 	}
 }
 
@@ -151,6 +160,8 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	}
 
 	go s.startCallbackRunners(stopCh)
+
+	go wait.Until(s.reportNodeTopology, s.config.NodeTopologySyncInterval, stopCh)
 
 	klog.Infof("start states informer successfully")
 	<-stopCh
