@@ -120,14 +120,14 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 		return fmt.Errorf("timed out waiting for states informer caches to sync")
 	}
 
-	stub, err := newKubeletStub(s.GetNode(), s.config.KubeletPreferredAddressType, s.config.KubeletSyncTimeoutSeconds, tokenPath)
+	stub, err := newKubeletStub(s.GetNode(), s.config.KubeletPreferredAddressType, s.config.KubeletSyncTimeout, tokenPath)
 	if err != nil {
 		klog.ErrorS(err, "create kubelet stub")
 		return err
 	}
 	s.kubelet = stub
 
-	if s.config.KubeletSyncIntervalSeconds > 0 {
+	if s.config.KubeletSyncInterval > 0 {
 		hdlID := s.pleg.AddHandler(pleg.PodLifeCycleHandlerFuncs{
 			PodAddedFunc: func(podID string) {
 				// There is no need to notify to update the data when the channel is not empty
@@ -138,10 +138,10 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 		})
 		defer s.pleg.RemoverHandler(hdlID)
 
-		go s.syncKubeletLoop(time.Duration(s.config.KubeletSyncIntervalSeconds)*time.Second, stopCh)
+		go s.syncKubeletLoop(s.config.KubeletSyncInterval, stopCh)
 	} else {
 		klog.Fatalf("KubeletSyncIntervalSeconds is %d, statesInformer sync of kubelet is disabled",
-			s.config.KubeletSyncIntervalSeconds)
+			s.config.KubeletSyncInterval)
 	}
 
 	// waiting for pods synced.
@@ -229,7 +229,7 @@ func (s *statesInformer) setupInformers() {
 	s.setupNodeSLOInformer()
 }
 
-func newKubeletStub(node *corev1.Node, addressPreferred string, timeout int, tokenPath string) (KubeletStub, error) {
+func newKubeletStub(node *corev1.Node, addressPreferred string, timeout time.Duration, tokenPath string) (KubeletStub, error) {
 	var address string
 	var err error
 	addressPreferredType := corev1.NodeAddressType(addressPreferred)
