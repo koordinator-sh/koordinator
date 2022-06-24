@@ -55,8 +55,9 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	node := &corev1.Node{}
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, node); err != nil {
 		if errors.IsNotFound(err) {
-			klog.V(3).Infof("node %v not found: %v", req.Name)
-			return ctrl.Result{Requeue: false}, err
+			// skip non-existing node and return no error to forget the request
+			klog.V(3).Infof("skip for node %v not found", req.Name)
+			return ctrl.Result{Requeue: false}, nil
 		} else {
 			klog.Errorf("failed to get node %v, error: %v", req.Name, err)
 			return ctrl.Result{Requeue: true}, err
@@ -75,8 +76,9 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	nodeMetric := &slov1alpha1.NodeMetric{}
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, nodeMetric); err != nil {
 		if errors.IsNotFound(err) {
-			klog.V(3).Infof("nodemetric %v not found: %v", req.Name)
-			return ctrl.Result{Requeue: false}, err
+			// skip non-existing node metric and return no error to forget the request
+			klog.V(3).Infof("skip for nodemetric %v not found", req.Name)
+			return ctrl.Result{Requeue: false}, nil
 		} else {
 			klog.Errorf("failed to get nodemetric %v, error: %v", req.Name, err)
 			return ctrl.Result{Requeue: true}, err
