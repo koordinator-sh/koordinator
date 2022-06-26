@@ -37,6 +37,23 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
 )
 
+const (
+	CreateContainer = iota
+	StartContainer
+	UpdateContainer
+	StopContainer
+	AllContainerEvents
+)
+
+var regExp [AllContainerEvents]*regexp.Regexp
+
+func init() {
+	regExp[CreateContainer] = regexp.MustCompile(`^/(v\d\.\d+/)?containers/create$`)
+	regExp[StartContainer] = regexp.MustCompile(`^/(v\d\.\d+/)?containers(/\w+)?/start$`)
+	regExp[UpdateContainer] = regexp.MustCompile(`^/(v\d\.\d+/)?containers(/\w+)?/update$`)
+	regExp[StopContainer] = regexp.MustCompile(`^/(v\d\.\d+/)?containers(/\w+)?/stop`)
+}
+
 type RuntimeManagerDockerServer struct {
 	dispatcher   *dispatcher.RuntimeHookDispatcher
 	reverseProxy *httputil.ReverseProxy
@@ -59,10 +76,10 @@ func NewRuntimeManagerDockerServer() *RuntimeManagerDockerServer {
 		dispatcher: dispatcher.NewRuntimeDispatcher(),
 	}
 	interceptor.router = map[*regexp.Regexp]func(context.Context, http.ResponseWriter, *http.Request){
-		regexp.MustCompile(`^/(v\d\.\d+/)?containers(/\w+)?/update$`): interceptor.HandleUpdateContainer,
-		regexp.MustCompile(`^/(v\d\.\d+/)?containers/create$`):        interceptor.HandleCreateContainer,
-		regexp.MustCompile(`^/(v\d\.\d+/)?containers(/\w+)?/start$`):  interceptor.HandleStartContainer,
-		regexp.MustCompile(`^/(v\d\.\d+/)?containers(/\w+)?/stop`):    interceptor.HandleStopContainer,
+		regExp[CreateContainer]: interceptor.DockerRequestHandler,
+		regExp[StartContainer]:  interceptor.DockerRequestHandler,
+		regExp[UpdateContainer]: interceptor.DockerRequestHandler,
+		regExp[StopContainer]:   interceptor.DockerRequestHandler,
 	}
 	return interceptor
 }
