@@ -36,72 +36,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 )
 
-func Test_isColocationCfgAvailable(t *testing.T) {
-	type fields struct {
-		config Config
-	}
-	tests := []*struct {
-		name   string
-		fields fields
-		want   bool
-	}{
-		{
-			name: "return false for empty config",
-			want: false,
-		},
-		{
-			name: "return false for non-empty but invalid config",
-			fields: fields{
-				config: Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(true),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(-1),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
-					},
-					isAvailable: false,
-				},
-			},
-			want: false,
-		},
-		{
-			name: "return true for valid config",
-			fields: fields{
-				config: Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(true),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
-					},
-					isAvailable: true,
-				},
-			},
-			want: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := NodeResourceReconciler{config: Config{
-				ColocationCfg: tt.fields.config.ColocationCfg,
-			}}
-			got := r.isColocationCfgAvailable()
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func Test_isColocationCfgDisabled(t *testing.T) {
 	type fields struct {
-		config *Config
+		config config.ColocationCfg
 	}
 	type args struct {
 		node *corev1.Node
@@ -114,7 +51,7 @@ func Test_isColocationCfgDisabled(t *testing.T) {
 	}{
 		{
 			name:   "set as disabled when no config",
-			fields: fields{config: &Config{}},
+			fields: fields{config: config.ColocationCfg{}},
 			args: args{
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -136,8 +73,8 @@ func Test_isColocationCfgDisabled(t *testing.T) {
 		},
 		{
 			name: "use cluster config when nil node",
-			fields: fields{config: &Config{
-				ColocationCfg: config.ColocationCfg{
+			fields: fields{
+				config: config.ColocationCfg{
 					ColocationStrategy: config.ColocationStrategy{
 						Enable:                        pointer.BoolPtr(false),
 						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
@@ -159,15 +96,15 @@ func Test_isColocationCfgDisabled(t *testing.T) {
 						},
 					},
 				},
-			}},
+			},
 			args: args{},
 			want: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NodeResourceReconciler{config: Config{
-				ColocationCfg: tt.fields.config.ColocationCfg,
+			r := NodeResourceReconciler{cfgCache: &FakeCfgCache{
+				cfg: tt.fields.config,
 			}}
 			got := r.isColocationCfgDisabled(tt.args.node)
 			assert.Equal(t, tt.want, got)
@@ -232,8 +169,8 @@ func Test_isDegradeNeeded(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := NodeResourceReconciler{
-				config: Config{
-					ColocationCfg: config.ColocationCfg{
+				cfgCache: &FakeCfgCache{
+					cfg: config.ColocationCfg{
 						ColocationStrategy: config.ColocationStrategy{
 							Enable: pointer.BoolPtr(true),
 						},
@@ -261,7 +198,7 @@ func Test_isDegradeNeeded(t *testing.T) {
 func Test_updateNodeBEResource(t *testing.T) {
 	type fields struct {
 		Client      client.Client
-		config      *Config
+		config      *config.ColocationCfg
 		SyncContext *SyncContext
 	}
 	type args struct {
@@ -293,16 +230,14 @@ func Test_updateNodeBEResource(t *testing.T) {
 						},
 					},
 				}).Build(),
-				config: &Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(true),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
+				config: &config.ColocationCfg{
+					ColocationStrategy: config.ColocationStrategy{
+						Enable:                        pointer.BoolPtr(true),
+						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+						DegradeTimeMinutes:            pointer.Int64Ptr(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 					},
 				},
 				SyncContext: &SyncContext{
@@ -365,16 +300,14 @@ func Test_updateNodeBEResource(t *testing.T) {
 						},
 					},
 				}).Build(),
-				config: &Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(true),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
+				config: &config.ColocationCfg{
+					ColocationStrategy: config.ColocationStrategy{
+						Enable:                        pointer.BoolPtr(true),
+						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+						DegradeTimeMinutes:            pointer.Int64Ptr(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 					},
 				},
 				SyncContext: &SyncContext{
@@ -423,16 +356,14 @@ func Test_updateNodeBEResource(t *testing.T) {
 			name: "abort update for the node that no longer exists",
 			fields: fields{
 				Client: fake.NewClientBuilder().Build(),
-				config: &Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(true),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
+				config: &config.ColocationCfg{
+					ColocationStrategy: config.ColocationStrategy{
+						Enable:                        pointer.BoolPtr(true),
+						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+						DegradeTimeMinutes:            pointer.Int64Ptr(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 					},
 				},
 				SyncContext: &SyncContext{
@@ -486,16 +417,14 @@ func Test_updateNodeBEResource(t *testing.T) {
 						},
 					},
 				}).Build(),
-				config: &Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(true),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
+				config: &config.ColocationCfg{
+					ColocationStrategy: config.ColocationStrategy{
+						Enable:                        pointer.BoolPtr(true),
+						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+						DegradeTimeMinutes:            pointer.Int64Ptr(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 					},
 				},
 				SyncContext: &SyncContext{
@@ -561,39 +490,37 @@ func Test_updateNodeBEResource(t *testing.T) {
 						},
 					},
 				}).Build(),
-				config: &Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(true),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(70),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
-						NodeConfigs: []config.NodeColocationCfg{
-							{
-								NodeSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{
-										"xxx": "yyy",
-									},
-								},
-								ColocationStrategy: config.ColocationStrategy{
-									CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-									MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-									ResourceDiffThreshold:         pointer.Float64Ptr(0.6),
+				config: &config.ColocationCfg{
+					ColocationStrategy: config.ColocationStrategy{
+						Enable:                        pointer.BoolPtr(true),
+						CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
+						MemoryReclaimThresholdPercent: pointer.Int64Ptr(70),
+						DegradeTimeMinutes:            pointer.Int64Ptr(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					},
+					NodeConfigs: []config.NodeColocationCfg{
+						{
+							NodeSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"xxx": "yyy",
 								},
 							},
-							{
-								NodeSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{
-										"abc": "def",
-									},
+							ColocationStrategy: config.ColocationStrategy{
+								CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+								MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+								ResourceDiffThreshold:         pointer.Float64Ptr(0.6),
+							},
+						},
+						{
+							NodeSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"abc": "def",
 								},
-								ColocationStrategy: config.ColocationStrategy{
-									CPUReclaimThresholdPercent:    pointer.Int64Ptr(60),
-									MemoryReclaimThresholdPercent: pointer.Int64Ptr(60),
-								},
+							},
+							ColocationStrategy: config.ColocationStrategy{
+								CPUReclaimThresholdPercent:    pointer.Int64Ptr(60),
+								MemoryReclaimThresholdPercent: pointer.Int64Ptr(60),
 							},
 						},
 					},
@@ -664,16 +591,14 @@ func Test_updateNodeBEResource(t *testing.T) {
 						},
 					},
 				}).Build(),
-				config: &Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(false),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
+				config: &config.ColocationCfg{
+					ColocationStrategy: config.ColocationStrategy{
+						Enable:                        pointer.BoolPtr(false),
+						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+						DegradeTimeMinutes:            pointer.Int64Ptr(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 					},
 				},
 				SyncContext: &SyncContext{
@@ -717,8 +642,8 @@ func Test_updateNodeBEResource(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &NodeResourceReconciler{
 				Client: tt.fields.Client,
-				config: Config{
-					ColocationCfg: tt.fields.config.ColocationCfg,
+				cfgCache: &FakeCfgCache{
+					cfg: *tt.fields.config,
 				},
 				SyncContext: SyncContext{contextMap: tt.fields.SyncContext.contextMap},
 				Clock:       clock.RealClock{},
@@ -741,7 +666,7 @@ func Test_updateNodeBEResource(t *testing.T) {
 
 func Test_isBEResourceSyncNeeded(t *testing.T) {
 	type fields struct {
-		config      *Config
+		config      *config.ColocationCfg
 		SyncContext *SyncContext
 	}
 	type args struct {
@@ -757,23 +682,21 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 	}{
 		{
 			name:   "cannot update an invalid new node",
-			fields: fields{config: &Config{}, SyncContext: &SyncContext{}},
+			fields: fields{config: &config.ColocationCfg{}, SyncContext: &SyncContext{}},
 			args:   args{},
 			want:   false,
 		},
 		{
 			name: "needSync for expired node resource",
 			fields: fields{
-				config: &Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(true),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
+				config: &config.ColocationCfg{
+					ColocationStrategy: config.ColocationStrategy{
+						Enable:                        pointer.BoolPtr(true),
+						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+						DegradeTimeMinutes:            pointer.Int64Ptr(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 					},
 				},
 				SyncContext: &SyncContext{
@@ -817,16 +740,14 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 		{
 			name: "needSync for cpu diff larger than 0.1",
 			fields: fields{
-				config: &Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(true),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
+				config: &config.ColocationCfg{
+					ColocationStrategy: config.ColocationStrategy{
+						Enable:                        pointer.BoolPtr(true),
+						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+						DegradeTimeMinutes:            pointer.Int64Ptr(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 					},
 				},
 				SyncContext: &SyncContext{
@@ -870,16 +791,14 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 		{
 			name: "needSync for cpu diff larger than 0.1",
 			fields: fields{
-				config: &Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(true),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
+				config: &config.ColocationCfg{
+					ColocationStrategy: config.ColocationStrategy{
+						Enable:                        pointer.BoolPtr(true),
+						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+						DegradeTimeMinutes:            pointer.Int64Ptr(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 					},
 				},
 				SyncContext: &SyncContext{
@@ -923,16 +842,14 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 		{
 			name: "no need to sync, everything's ok.",
 			fields: fields{
-				config: &Config{
-					ColocationCfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
-							Enable:                        pointer.BoolPtr(true),
-							CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-							MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-							DegradeTimeMinutes:            pointer.Int64Ptr(15),
-							UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-							ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-						},
+				config: &config.ColocationCfg{
+					ColocationStrategy: config.ColocationStrategy{
+						Enable:                        pointer.BoolPtr(true),
+						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+						DegradeTimeMinutes:            pointer.Int64Ptr(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 					},
 				},
 				SyncContext: &SyncContext{
@@ -978,8 +895,8 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &NodeResourceReconciler{
-				config: Config{
-					ColocationCfg: tt.fields.config.ColocationCfg,
+				cfgCache: &FakeCfgCache{
+					cfg: *tt.fields.config,
 				},
 				SyncContext: SyncContext{
 					contextMap: tt.fields.SyncContext.contextMap,
