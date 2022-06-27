@@ -11,7 +11,7 @@
          * [Rule](#rule)
       * [Working Mode](#working-mode)
          * [Proxy](#proxy)
-         * [Bypass](#bypass)
+         * [Standalone](#standalone)
    * [Examples for hooks extensions](#examples-for-hooks-extensions)
 
 ## Summary
@@ -52,7 +52,7 @@ of injection policies. For each policy update, the `Rule` module also provides a
 parameters of pods and containers.  
 
 ### Working Mode
-Runtime Hooks supports two working modes for different scenarios: `Proxy` and `Bypass`.
+Runtime Hooks supports two working modes for different scenarios: `Proxy` and `Standalone`.
 
 ![image](../images/runtime-hooks-working-mode.svg) 
 
@@ -63,8 +63,8 @@ of Kubelet to `Koordinator Runtime Manager`. For each cri request, `Runtime Mana
 `Runtime Hooks` to execute the injection synchronously. `Proxy` running mode has a better performance which can
 guarantee the related parameters set timely and appropriately.
 
-#### Bypass
-`Bypass` working mode simplifies the runtime configuration and architecture. `Runtime Manager` is not needed in this 
+#### Standalone
+`Standalone` working mode simplifies the runtime configuration and architecture. `Runtime Manager` is not needed in this 
 working mode, so that `Runtime Hooks` works as an independent module. Without the proxy intercepts requests between 
 Kubelet and Runtime, `Runtime Hooks` can only set related parameters asynchronously, which limits the using scenarios.  
 

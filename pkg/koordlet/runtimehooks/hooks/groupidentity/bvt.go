@@ -43,11 +43,15 @@ type bvtPlugin struct {
 
 func (b *bvtPlugin) Register() {
 	klog.V(5).Infof("register hook %v", name)
-	hooks.Register(rmconfig.PreRunPodSandbox, name, description, b.PreRunPodSandbox)
+	hooks.Register(rmconfig.PreRunPodSandbox, name, description, b.SetPodBvtValue)
 	rule.Register(name, description,
 		rule.WithParseFunc(b.parseRule),
 		rule.WithUpdateCallback(b.ruleUpdateCb),
 		rule.WithSystemSupported(b.SystemSupported))
+	//reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUBVTWarpNs, b.SetPodBvtValue,
+	//	"reconcile pod level cpu bvt value")
+	//reconciler.RegisterCgroupReconciler(reconciler.KubeQOSLevel, sysutil.CPUBVTWarpNs, b.SetKubeQOSBvtValue,
+	//	"reconcile kubeqos level cpu bvt value")
 }
 
 func (b *bvtPlugin) SystemSupported() bool {

@@ -24,6 +24,11 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
+var (
+	RegisterTypeNodeSLO = reflect.TypeOf(&slov1alpha1.NodeSLO{})
+	RegisterTypePod     = reflect.TypeOf(&PodMeta{})
+)
+
 type updateCallback struct {
 	name        string
 	description string
