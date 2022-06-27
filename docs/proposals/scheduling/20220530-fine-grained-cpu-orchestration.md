@@ -343,7 +343,7 @@ We use [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderes
 
 ##### Compatible
 
-In order to be compatible with the existing NodeResourceTopology instances and prevent koordlet from conflicting with existing components, when koordlet creates a NodeResourceTopology, add the prefix `koord-` before the name to distinguish it, and add the label `app.kubernetes.io/managed-by=Koordinator` describes the node is managed by Koordinator.
+The koordlet creates or updates NodeResourceTopology periodically. The name of NodeResourceTopology is same as the name of Node. and add the label `app.kubernetes.io/managed-by=Koordinator` describes the node is managed by Koordinator.
 
 ##### Extension
 
@@ -466,7 +466,7 @@ metadata:
       ]
   labels:
     app.kubernetes.io/managed-by: Koordinator
-  name: koord-node1
+  name: node1
 topologyPolicies: ["SingleNUMANodePodLevel"]
 zones:
   - name: node-0
