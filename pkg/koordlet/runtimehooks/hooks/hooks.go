@@ -39,9 +39,10 @@ var globalStageHooks map[rmconfig.RuntimeHookType][]*Hook
 func Register(stage rmconfig.RuntimeHookType, name, description string, hookFn HookFn) *Hook {
 	h, error := generateNewHook(stage, name)
 	if error != nil {
-		klog.Fatal("hook %s is conflict since name is already registered")
+		klog.Fatalf("hook %s is conflict since name is already registered", name)
 		return h
 	}
+	klog.V(1).Infof("hook %s is registered", name)
 	h.description = description
 	h.fn = hookFn
 	return h

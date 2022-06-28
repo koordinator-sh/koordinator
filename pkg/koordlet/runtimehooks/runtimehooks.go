@@ -20,14 +20,13 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/proxyserver"
-	//"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
 type HookPlugin interface {
 	Register()
-	SystemSupported() bool
 }
 
 type RuntimeHook interface {
@@ -37,7 +36,7 @@ type RuntimeHook interface {
 type runtimeHook struct {
 	statesInformer statesinformer.StatesInformer
 	server         proxyserver.Server
-	//reconciler     reconciler.Reconciler
+	reconciler     reconciler.Reconciler
 }
 
 func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
@@ -45,9 +44,9 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	if err := r.server.Start(); err != nil {
 		return err
 	}
-	//if err := r.reconciler.Run(stopCh); err != nil {
-	//	return err
-	//}
+	if err := r.reconciler.Run(stopCh); err != nil {
+		return err
+	}
 	klog.V(5).Infof("runtime hook server has started")
 	<-stopCh
 	klog.Infof("runtime hook is stopped")
@@ -62,11 +61,14 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	r := &runtimeHook{
 		statesInformer: si,
 		server:         s,
-		//reconciler:     reconciler.NewReconciler(si),
+		reconciler:     reconciler.NewReconciler(si),
 	}
 	registerPlugins()
-	si.RegisterCallbacks(statesinformer.RegisterTypeNodeSLO, "runtime-hooks-rule",
+	si.RegisterCallbacks(statesinformer.RegisterTypeNodeSLOSpec, "runtime-hooks-rule",
 		"Update hooks rule can run callbacks if NodeSLO spec update",
+		rule.UpdateRules)
+	si.RegisterCallbacks(statesinformer.RegisterTypeNodeTopology, "runtime-hook-rule",
+		"Update hooks rule if NodeTopology infor update",
 		rule.UpdateRules)
 	if err := s.Setup(); err != nil {
 		klog.Fatal("failed to setup runtime hook server, error %v", err)

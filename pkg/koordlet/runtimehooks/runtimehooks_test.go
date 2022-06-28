@@ -18,13 +18,11 @@ package runtimehooks
 
 import (
 	"path"
-	"reflect"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	mockstatesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 )
 
@@ -66,11 +64,12 @@ func Test_runtimeHook_Run(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			si := mockstatesinformer.NewMockStatesInformer(ctrl)
-			si.EXPECT().RegisterCallbacks(reflect.TypeOf(&slov1alpha1.NodeSLO{}), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			si.EXPECT().RegisterCallbacks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			r, err := NewRuntimeHook(si, tt.fields.config)
 			assert.NoError(t, err)
 			stop := make(chan struct{})
-			go func() { stop <- struct{}{} }()
+
+			go func() { close(stop) }()
 			err = r.Run(stop)
 			assert.NoError(t, err)
 		})

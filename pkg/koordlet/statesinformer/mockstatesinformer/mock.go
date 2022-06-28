@@ -109,7 +109,7 @@ func (mr *MockStatesInformerMockRecorder) HasSynced() *gomock.Call {
 }
 
 // RegisterCallbacks mocks base method.
-func (m *MockStatesInformer) RegisterCallbacks(objType reflect.Type, name, description string, callbackFn statesinformer.UpdateCbFn) {
+func (m *MockStatesInformer) RegisterCallbacks(objType statesinformer.RegisterType, name, description string, callbackFn statesinformer.UpdateCbFn) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "RegisterCallbacks", objType, name, description, callbackFn)
 }

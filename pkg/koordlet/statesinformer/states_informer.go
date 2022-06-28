@@ -19,7 +19,6 @@ package statesinformer
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
 
@@ -59,7 +58,7 @@ type StatesInformer interface {
 
 	GetAllPods() []*PodMeta
 
-	RegisterCallbacks(objType reflect.Type, name, description string, callbackFn UpdateCbFn)
+	RegisterCallbacks(objType RegisterType, name, description string, callbackFn UpdateCbFn)
 }
 
 type statesInformer struct {
@@ -85,8 +84,8 @@ type statesInformer struct {
 	podUpdatedTime time.Time
 	metricsCache   metriccache.MetricCache
 
-	callbackChans        map[reflect.Type]chan struct{}
-	stateUpdateCallbacks map[reflect.Type][]updateCallback
+	callbackChans        map[RegisterType]chan UpdateCbCtx
+	stateUpdateCallbacks map[RegisterType][]updateCallback
 }
 
 func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient *topologyclientset.Clientset, metricsCache metriccache.MetricCache, pleg pleg.Pleg, nodeName string) StatesInformer {
@@ -105,11 +104,15 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 		podMap:     map[string]*PodMeta{},
 		podCreated: make(chan string, 1), // set 1 buffer
 
-		callbackChans: map[reflect.Type]chan struct{}{
-			reflect.TypeOf(&slov1alpha1.NodeSLO{}): make(chan struct{}, 1),
+		callbackChans: map[RegisterType]chan UpdateCbCtx{
+			RegisterTypeNodeSLOSpec:  make(chan UpdateCbCtx, 1),
+			RegisterTypeAllPods:      make(chan UpdateCbCtx, 1),
+			RegisterTypeNodeTopology: make(chan UpdateCbCtx, 1),
 		},
-		stateUpdateCallbacks: map[reflect.Type][]updateCallback{
-			reflect.TypeOf(&slov1alpha1.NodeSLO{}): {},
+		stateUpdateCallbacks: map[RegisterType][]updateCallback{
+			RegisterTypeNodeSLOSpec:  {},
+			RegisterTypeAllPods:      {},
+			RegisterTypeNodeTopology: {},
 		},
 		topologyClient: topologyClient,
 		metricsCache:   metricsCache,

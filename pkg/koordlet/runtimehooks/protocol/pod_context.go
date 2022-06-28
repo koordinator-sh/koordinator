@@ -17,6 +17,7 @@ limitations under the License.
 package protocol
 
 import (
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 
@@ -61,7 +62,7 @@ func (p *PodRequest) FromReconciler(podMeta *statesinformer.PodMeta) {
 	p.PodMeta.FromReconciler(podMeta.Pod.ObjectMeta)
 	p.Labels = podMeta.Pod.Labels
 	p.Annotations = podMeta.Pod.Annotations
-	p.CgroupParent = podMeta.CgroupDir
+	p.CgroupParent = util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 }
 
 type PodResponse struct {

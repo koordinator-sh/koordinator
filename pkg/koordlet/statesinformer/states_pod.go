@@ -45,7 +45,7 @@ func (s *statesInformer) syncPods() error {
 	s.podHasSynced.Store(true)
 	s.podUpdatedTime = time.Now()
 	klog.Infof("get pods success, len %d", len(s.podMap))
-	s.sendCallbacks(RegisterTypePod)
+	s.sendCallbacks(RegisterTypeAllPods)
 	return nil
 }
 
