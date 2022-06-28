@@ -20,6 +20,7 @@ import (
 	"flag"
 	"reflect"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -33,8 +34,10 @@ func TestNewDefaultConfig(t *testing.T) {
 			name: "config",
 			want: &Config{
 				KubeletPreferredAddressType: string(corev1.NodeInternalIP),
-				KubeletSyncIntervalSeconds:  30,
-				KubeletSyncTimeoutSeconds:   3,
+				KubeletSyncInterval:         30 * time.Second,
+				KubeletSyncTimeout:          3 * time.Second,
+				InsecureKubeletTLS:          false,
+				KubeletReadOnlyPort:         10255,
 			},
 		},
 	}
@@ -50,17 +53,20 @@ func TestNewDefaultConfig(t *testing.T) {
 func TestConfig_InitFlags(t *testing.T) {
 	cmdArgs := []string{
 		"",
-		"--KubeletPreferredAddressType=Hostname",
-		"--KubeletSyncIntervalSeconds=10",
-		"--KubeletSyncTimeoutSeconds=30",
+		"--kubelet-preferred-address-type=Hostname",
+		"--kubelet-sync-interval=30s",
+		"--kubelet-sync-timeout=10s",
+		"--kubelet-insecure-tls=true",
+		"--kubelet-read-only-port=10258",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
 	type fields struct {
 		KubeletPreferredAddressType string
-		KubeletSyncIntervalSeconds  int
-		KubeletSyncTimeoutSeconds   int
-		ApiServerSyncTimeoutSeconds int
+		KubeletSyncInterval         time.Duration
+		KubeletSyncTimeout          time.Duration
+		InsecureKubeletTLS          bool
+		KubeletReadOnlyPort         uint
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -74,9 +80,10 @@ func TestConfig_InitFlags(t *testing.T) {
 			name: "not default",
 			fields: fields{
 				KubeletPreferredAddressType: "Hostname",
-				KubeletSyncIntervalSeconds:  10,
-				KubeletSyncTimeoutSeconds:   30,
-				ApiServerSyncTimeoutSeconds: 20,
+				KubeletSyncInterval:         30 * time.Second,
+				KubeletSyncTimeout:          10 * time.Second,
+				InsecureKubeletTLS:          true,
+				KubeletReadOnlyPort:         10258,
 			},
 			args: args{fs: fs},
 		},
@@ -86,8 +93,10 @@ func TestConfig_InitFlags(t *testing.T) {
 
 			raw := &Config{
 				KubeletPreferredAddressType: tt.fields.KubeletPreferredAddressType,
-				KubeletSyncIntervalSeconds:  tt.fields.KubeletSyncIntervalSeconds,
-				KubeletSyncTimeoutSeconds:   tt.fields.KubeletSyncTimeoutSeconds,
+				KubeletSyncInterval:         tt.fields.KubeletSyncInterval,
+				KubeletSyncTimeout:          tt.fields.KubeletSyncTimeout,
+				InsecureKubeletTLS:          tt.fields.InsecureKubeletTLS,
+				KubeletReadOnlyPort:         tt.fields.KubeletReadOnlyPort,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

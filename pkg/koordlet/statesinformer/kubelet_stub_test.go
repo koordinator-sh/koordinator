@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -92,7 +93,7 @@ func Test_kubeletStub_GetAllPods(t *testing.T) {
 	}
 	port, _ := strconv.Atoi(portStr)
 
-	client, err := NewKubeletStub(address, port, 10, token)
+	client, err := NewKubeletStub(address, port, 10*time.Second, token)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,10 +106,10 @@ func Test_kubeletStub_GetAllPods(t *testing.T) {
 
 func TestNewKubeletStub(t *testing.T) {
 	type args struct {
-		addr           string
-		port           int
-		timeoutSeconds int
-		token          string
+		addr    string
+		port    int
+		timeout time.Duration
+		token   string
 	}
 	tests := []struct {
 		name    string
@@ -118,16 +119,16 @@ func TestNewKubeletStub(t *testing.T) {
 		{
 			name: "127.0.0.1",
 			args: args{
-				addr:           "127.0.0.1",
-				port:           10250,
-				timeoutSeconds: 10,
-				token:          "test_token",
+				addr:    "127.0.0.1",
+				port:    10250,
+				timeout: 10 * time.Second,
+				token:   "test_token",
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewKubeletStub(tt.args.addr, tt.args.port, tt.args.timeoutSeconds, tt.args.token)
+			got, err := NewKubeletStub(tt.args.addr, tt.args.port, tt.args.timeout, tt.args.token)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewKubeletStub() error = %v, wantErr %v", err, tt.wantErr)
 				return

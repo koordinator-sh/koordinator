@@ -17,12 +17,23 @@ limitations under the License.
 package extension
 
 import (
+	"encoding/json"
+
 	corev1 "k8s.io/api/core/v1"
+
+	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 )
 
 const (
 	BatchCPU    corev1.ResourceName = DomainPrefix + "batch-cpu"
 	BatchMemory corev1.ResourceName = DomainPrefix + "batch-memory"
+
+	// AnnotationResourceSpec represents resource allocation API defined by Koordinator.
+	// The user specifies the desired CPU orchestration policy by setting the annotation.
+	AnnotationResourceSpec = SchedulingDomainPrefix + "/resource-spec"
+	// AnnotationResourceStatus represents resource allocation result.
+	// koord-scheduler patch Pod with the annotation before binding to node.
+	AnnotationResourceStatus = SchedulingDomainPrefix + "/resource-status"
 )
 
 var (
@@ -33,6 +44,73 @@ var (
 		},
 	}
 )
+
+// ResourceSpec describes extra attributes of the resource requirements.
+type ResourceSpec struct {
+	// PreferredCPUBindPolicy represents best-effort CPU bind policy.
+	PreferredCPUBindPolicy CPUBindPolicy `json:"preferredCPUBindPolicy,omitempty"`
+}
+
+// ResourceStatus describes resource allocation result, such as how to bind CPU.
+type ResourceStatus struct {
+	// CPUSet represents the allocated CPUs. It is Linux CPU list formatted string.
+	// When LSE/LSR Pod requested, koord-scheduler will update the field.
+	CPUSet string `json:"cpuset,omitempty"`
+	// CPUSharedPools represents the desired CPU Shared Pools used by LS Pods.
+	CPUSharedPools []CPUSharedPool `json:"cpuSharedPools,omitempty"`
+}
+
+// CPUBindPolicy defines the CPU binding policy
+type CPUBindPolicy = schedulingconfig.CPUBindPolicy
+
+const (
+	// CPUBindPolicyNone does not perform any bind policy
+	CPUBindPolicyNone CPUBindPolicy = schedulingconfig.CPUBindPolicyNone
+	// CPUBindPolicyFullPCPUs favor cpuset allocation that pack in few physical cores
+	CPUBindPolicyFullPCPUs CPUBindPolicy = schedulingconfig.CPUBindPolicyFullPCPUs
+	// CPUBindPolicySpreadByPCPUs favor cpuset allocation that evenly allocate logical cpus across physical cores
+	CPUBindPolicySpreadByPCPUs CPUBindPolicy = schedulingconfig.CPUBindPolicySpreadByPCPUs
+	// CPUBindPolicyConstrainedBurst constrains the CPU Shared Pool range of the Burstable Pod
+	CPUBindPolicyConstrainedBurst CPUBindPolicy = schedulingconfig.CPUBindPolicyConstrainedBurst
+)
+
+type NUMACPUSharedPools []CPUSharedPool
+
+type CPUSharedPool struct {
+	Socket int32  `json:"socket,omitempty"`
+	Node   int32  `json:"node,omitempty"`
+	CPUSet string `json:"cpuset,omitempty"`
+}
+
+// GetResourceSpec parses ResourceSpec from annotations
+func GetResourceSpec(annotations map[string]string) (*ResourceSpec, error) {
+	resourceSpec := &ResourceSpec{
+		PreferredCPUBindPolicy: schedulingconfig.CPUBindPolicyNone,
+	}
+	data, ok := annotations[AnnotationResourceSpec]
+	if !ok {
+		return resourceSpec, nil
+	}
+	err := json.Unmarshal([]byte(data), resourceSpec)
+	if err != nil {
+		return nil, err
+	}
+	return resourceSpec, nil
+}
+
+// GetResourceStatus parses ResourceStatus from annotations
+func GetResourceStatus(annotations map[string]string) (*ResourceStatus, error) {
+	resourceStatus := &ResourceStatus{}
+	data, ok := annotations[AnnotationResourceStatus]
+	if !ok {
+		return resourceStatus, nil
+	}
+	err := json.Unmarshal([]byte(data), resourceStatus)
+	if err != nil {
+		return nil, err
+	}
+	return resourceStatus, nil
+}
 
 // TranslateResourceNameByPriorityClass translates defaultResourceName to extend resourceName by PriorityClass
 func TranslateResourceNameByPriorityClass(priorityClass PriorityClass, defaultResourceName corev1.ResourceName) corev1.ResourceName {

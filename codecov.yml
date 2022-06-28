@@ -1,3 +1,4 @@
+# https://docs.codecov.com/docs/commit-status
 coverage:
   status:
     project:
@@ -10,7 +11,7 @@ coverage:
         paths:
           - "pkg"
         # advanced settings
-        if_ci_failed: error #success, failure, error, ignore
+        if_ci_failed: error # success, failure, error, ignore
         if_no_uploads: error
         if_not_found: success # no commit found? still set a success
     patch:
@@ -24,6 +25,9 @@ coverage:
         if_ci_failed: error
         if_no_uploads: success
         if_not_found: success
+
+ignore:
+  - "**/*_generated.*"
 
 github_checks:
   annotations: true

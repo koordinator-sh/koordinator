@@ -24,10 +24,11 @@ import (
 	"k8s.io/component-base/logs"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/compatibledefaultpreemption"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware"
 
 	// Ensure scheme package is initialized.
-	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
+	_ "github.com/koordinator-sh/koordinator/apis/scheduling/config/scheme"
 )
 
 func main() {
@@ -38,6 +39,7 @@ func main() {
 	// used by various kinds of workloads.
 	command := app.NewSchedulerCommand(
 		app.WithPlugin(loadaware.Name, loadaware.New),
+		app.WithPlugin(compatibledefaultpreemption.Name, compatibledefaultpreemption.New),
 	)
 
 	logs.InitLogs()

@@ -1,0 +1,143 @@
+project_name: koordinator-sh
+env:
+  - GIT_URL=https://github.com/koordinator-sh/koordinator
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    id: koord-runtime-proxy
+    main: ./cmd/koord-runtime-proxy
+    binary: koord-runtime-proxy
+    ldflags:
+      - -s -w
+      - -X github.com/koordinator-sh/koordinator/pkg/version.version={{ .Version }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.buildDate={{ .Date }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.gitCommit={{ .Commit }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.gitTreeState=clean
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    id: koord-manager
+    main: ./cmd/koord-manager
+    binary: koord-manager
+    ldflags:
+      - -s -w
+      - -X github.com/koordinator-sh/koordinator/pkg/version.version={{ .Version }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.buildDate={{ .Date }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.gitCommit={{ .Commit }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.gitTreeState=clean
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    id: koord-scheduler
+    main: ./cmd/koord-scheduler
+    binary: koord-scheduler
+    ldflags:
+      - -s -w
+      - -X github.com/koordinator-sh/koordinator/pkg/version.version={{ .Version }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.buildDate={{ .Date }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.gitCommit={{ .Commit }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.gitTreeState=clean
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    id: koordlet
+    main: ./cmd/koordlet
+    binary: koordlet
+    ldflags:
+      - -s -w
+      - -X github.com/koordinator-sh/koordinator/pkg/version.version={{ .Version }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.buildDate={{ .Date }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.gitCommit={{ .Commit }}
+      - -X github.com/koordinator-sh/koordinator/pkg/version.gitTreeState=clean
+archives:
+  - id: koord-runtime-proxy
+    format: binary
+    builds:
+      - koord-runtime-proxy
+    replacements:
+      amd64: x86_64
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^build:'
+      - '^ci:'
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^feat(deps):'
+dockers:
+  - image_templates:
+      - "ghcr.io/{{.ProjectName}}/koord-manager:{{ .Version }}"
+      - "registry.cn-beijing.aliyuncs.com/{{.ProjectName}}/koord-manager:{{ .Version }}"
+    dockerfile: .goreleaser/Dockerfile
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.title=koord-manager"
+      - "--label=org.opencontainers.image.source={{.Env.GIT_URL}}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+      - "--build-arg=MODULE=koord-manager"
+    id: koord-manager
+    ids:
+      - koord-manager
+    goos: linux
+    goarch: amd64
+  - image_templates:
+      - "ghcr.io/{{.ProjectName}}/koordlet:{{ .Version }}"
+      - "registry.cn-beijing.aliyuncs.com/{{.ProjectName}}/koordlet:{{ .Version }}"
+    dockerfile: .goreleaser/Dockerfile
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.title=koordlet"
+      - "--label=org.opencontainers.image.source={{.Env.GIT_URL}}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+      - "--build-arg=MODULE=koordlet"
+    id: koordlet
+    ids:
+      - koordlet
+    goos: linux
+    goarch: amd64
+  - image_templates:
+      - "ghcr.io/{{.ProjectName}}/koord-scheduler:{{ .Version }}"
+      - "registry.cn-beijing.aliyuncs.com/{{.ProjectName}}/koord-scheduler:{{ .Version }}"
+    dockerfile: .goreleaser/Dockerfile
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.title=koord-scheduler"
+      - "--label=org.opencontainers.image.source={{.Env.GIT_URL}}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+      - "--build-arg=MODULE=koord-scheduler"
+    id: koord-scheduler
+    ids:
+      - koord-scheduler
+    goos: linux
+    goarch: amd64

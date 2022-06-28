@@ -38,10 +38,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/runtime"
-	"github.com/koordinator-sh/koordinator/pkg/runtime/handler"
 	"github.com/koordinator-sh/koordinator/pkg/tools/cache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/runtime"
+	"github.com/koordinator-sh/koordinator/pkg/util/runtime/handler"
 )
 
 // TODO: unit test for cpuEvict() to improve coverage

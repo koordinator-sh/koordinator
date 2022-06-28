@@ -24,7 +24,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,15 +33,13 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
 )
 
 // NodeMetricReconciler reconciles a NodeMetric object
 type NodeMetricReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	// TODO: Separate Config from noderesource package
-	config noderesource.Config
+	Scheme   *runtime.Scheme
+	cfgCache config.ColocationCfgCache
 }
 
 // +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics,verbs=get;list;watch;create;update;patch;delete
@@ -53,6 +50,14 @@ type NodeMetricReconciler struct {
 // move the current state of the cluster closer to the desired state.
 func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx, "node-metric-reconciler", req.NamespacedName)
+
+	// if cache unavailable, requeue the req
+	if !r.cfgCache.IsAvailable() {
+		// all nodes would be enqueued once the config is available, so here we just drop the req
+		klog.Warningf("colocation config is not available, drop the req %v until a valid config is set",
+			req.NamespacedName)
+		return reconcile.Result{Requeue: false}, nil
+	}
 
 	node, nodeMetric := &corev1.Node{}, &slov1alpha1.NodeMetric{}
 	nodeExist, nodeMetricExist := true, true
@@ -118,44 +123,23 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 }
 
 func (r *NodeMetricReconciler) getNodeMetricSpec(node *corev1.Node, oldSpec *slov1alpha1.NodeMetricSpec) (*slov1alpha1.NodeMetricSpec, error) {
-	// get cr's spec from the configmap
-	// if the configmap does not exist, use the default
-	if r.Client == nil {
-		klog.Errorf("getNodeMetricSpec failed to load configmap %s/%s",
-			config.ConfigNameSpace, config.SLOCtrlConfigMap)
-		return nil, fmt.Errorf("no available client")
+
+	if node == nil {
+		klog.Errorf("getNodeMetricSpec failed to get spec for nil node")
+		return nil, fmt.Errorf("invalid node input")
 	}
 
-	var nodeMetricSpec *slov1alpha1.NodeMetricSpec
-	if oldSpec != nil {
-		nodeMetricSpec = oldSpec.DeepCopy()
-	} else {
-		defaultColocationCfg := config.NewDefaultColocationCfg()
-		nodeMetricSpec = &slov1alpha1.NodeMetricSpec{
-			CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-				AggregateDurationSeconds: defaultColocationCfg.MetricAggregateDurationSeconds,
-				ReportIntervalSeconds:    defaultColocationCfg.MetricReportIntervalSeconds,
-			},
-		}
+	//if cfg cache error status(like umashall error),then use oldSpec
+	if oldSpec != nil && r.cfgCache.IsErrorStatus() {
+		return oldSpec, nil
 	}
 
-	// TODO: record an event about the failure reason on configmap/crd when failed to load the config
-	configMap := &corev1.ConfigMap{}
-	keyTypes := types.NamespacedName{Namespace: config.ConfigNameSpace, Name: config.SLOCtrlConfigMap}
-	if err := r.Client.Get(context.TODO(), keyTypes, configMap); err != nil {
-		// default when the configmap does not exist
-		if errors.IsNotFound(err) {
-			klog.Infof("getNodeMetricSpec(): config map %s/%s not exist, err:%s", config.ConfigNameSpace,
-				config.SLOCtrlConfigMap, err)
-			return nodeMetricSpec, nil
-		}
-		// abort spec update if cannot get configmap
-		klog.Errorf("getNodeMetricSpec(): failed to load config map %s/%s, err:%s", config.ConfigNameSpace,
-			config.SLOCtrlConfigMap, err)
-		return nil, err
-	}
+	nodeMetricSpec := getDefaultSpec()
 
-	nodeMetricCollectPolicy, err := getNodeMetricCollectPolicy(node, &r.config)
+	cfg := r.cfgCache.GetCfgCopy()
+	mergedStrategy := config.GetNodeColocationStrategy(cfg, node)
+
+	nodeMetricCollectPolicy, err := getNodeMetricCollectPolicy(mergedStrategy)
 	if err != nil {
 		klog.Warningf("getNodeMetricSpec(): failed to get nodeMetricCollectPolicy for node %s, set the default error: %v", node.Name, err)
 	} else {
@@ -165,14 +149,23 @@ func (r *NodeMetricReconciler) getNodeMetricSpec(node *corev1.Node, oldSpec *slo
 	return nodeMetricSpec, nil
 }
 
+func getDefaultSpec() *slov1alpha1.NodeMetricSpec {
+	defaultColocationCfg := config.NewDefaultColocationCfg()
+	return &slov1alpha1.NodeMetricSpec{
+		CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+			AggregateDurationSeconds: defaultColocationCfg.MetricAggregateDurationSeconds,
+			ReportIntervalSeconds:    defaultColocationCfg.MetricReportIntervalSeconds,
+		},
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *config.NewDefaultColocationCfg())
+	r.cfgCache = handler.GetCache()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&slov1alpha1.NodeMetric{}).
 		Watches(&source.Kind{Type: &corev1.Node{}}, &EnqueueRequestForNode{}).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &noderesource.EnqueueRequestForConfigMap{
-			Config: &r.config,
-			Client: r.Client,
-		}).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler).
 		Complete(r)
 }

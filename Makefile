@@ -4,8 +4,8 @@ GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 GIT_COMMIT_ID ?= $(shell git rev-parse --short HEAD)
 
 # Image URL to use all building/pushing image targets
-REG ?= docker.io
-REG_NS ?= koordinatorsh
+REG ?= ghcr.io
+REG_NS ?= koordinator-sh
 REG_USER ?= ""
 REG_PWD ?= ""
 
@@ -62,6 +62,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="$(LICENSE_HEADER_GO)" paths="./apis/..."
+	$(CONTROLLER_GEN) object:headerFile="$(LICENSE_HEADER_GO)" paths="./pkg/slo-controller/config/..."
 	@hack/update-codegen.sh
 
 .PHONY: fmt

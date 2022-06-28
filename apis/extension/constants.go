@@ -18,7 +18,13 @@ package extension
 
 const (
 	DomainPrefix = "koordinator.sh/"
+	// SchedulingDomainPrefix represents the scheduling domain prefix
+	SchedulingDomainPrefix = "scheduling.koordinator.sh"
+	// NodeDomainPrefix represents the node domain prefix
+	NodeDomainPrefix = "node.koordinator.sh"
 
 	LabelPodQoS      = DomainPrefix + "qosClass"
 	LabelPodPriority = DomainPrefix + "priority"
+
+	LabelManagedBy = "app.kubernetes.io/managed-by"
 )

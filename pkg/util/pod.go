@@ -116,13 +116,11 @@ func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
 	for _, container := range pod.Spec.Containers {
 		containerCPUMilliReq := GetContainerBEMilliCPURequest(&container)
 		if containerCPUMilliReq <= 0 {
-			return -1
+			containerCPUMilliReq = 0
 		}
 		podCPUMilliReq += containerCPUMilliReq
 	}
-	if podCPUMilliReq <= 0 {
-		return -1
-	}
+
 	return podCPUMilliReq
 }
 

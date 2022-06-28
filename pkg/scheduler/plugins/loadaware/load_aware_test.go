@@ -40,11 +40,11 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/scheduling/config"
+	"github.com/koordinator-sh/koordinator/apis/scheduling/config/v1beta2"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
@@ -118,7 +118,10 @@ func TestNew(t *testing.T) {
 
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-	extendHandle := frameworkext.NewExtendedHandle(koordClientSet, koordSharedInformerFactory)
+	extendHandle := frameworkext.NewExtendedHandle(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
 	proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
@@ -223,7 +226,10 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle := frameworkext.NewExtendedHandle(koordClientSet, koordSharedInformerFactory)
+			extendHandle := frameworkext.NewExtendedHandle(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
 			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
 
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
@@ -285,11 +291,13 @@ func TestFilterUsage(t *testing.T) {
 		name                  string
 		usageThresholds       map[corev1.ResourceName]int64
 		customUsageThresholds map[corev1.ResourceName]int64
+		nodeName              string
 		nodeMetric            *slov1alpha1.NodeMetric
 		wantStatus            *framework.Status
 	}{
 		{
-			name: "filter normal usage",
+			name:     "filter normal usage",
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -316,7 +324,13 @@ func TestFilterUsage(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
-			name: "filter exceed cpu usage",
+			name:       "filter node missing NodeMetrics",
+			nodeName:   "test-node-1",
+			wantStatus: nil,
+		},
+		{
+			name:     "filter exceed cpu usage",
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -343,7 +357,8 @@ func TestFilterUsage(t *testing.T) {
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
 		},
 		{
-			name: "filter exceed memory usage",
+			name:     "filter exceed memory usage",
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -374,6 +389,7 @@ func TestFilterUsage(t *testing.T) {
 			customUsageThresholds: map[corev1.ResourceName]int64{
 				corev1.ResourceMemory: 60,
 			},
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -404,6 +420,7 @@ func TestFilterUsage(t *testing.T) {
 			usageThresholds: map[corev1.ResourceName]int64{
 				corev1.ResourceMemory: 0,
 			},
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -449,7 +466,10 @@ func TestFilterUsage(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle := frameworkext.NewExtendedHandle(koordClientSet, koordSharedInformerFactory)
+			extendHandle := frameworkext.NewExtendedHandle(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
 			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
 
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
@@ -471,7 +491,7 @@ func TestFilterUsage(t *testing.T) {
 			nodes := []*corev1.Node{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: tt.nodeMetric.Name,
+						Name: tt.nodeName,
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
@@ -506,15 +526,17 @@ func TestFilterUsage(t *testing.T) {
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
-			_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
-			assert.NoError(t, err)
+			if tt.nodeMetric != nil {
+				_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
 
 			koordSharedInformerFactory.Start(context.TODO().Done())
 			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
 
 			cycleState := framework.NewCycleState()
 
-			nodeInfo, err := snapshot.Get(tt.nodeMetric.Name)
+			nodeInfo, err := snapshot.Get(tt.nodeName)
 			assert.NoError(t, err)
 			assert.NotNil(t, nodeInfo)
 
@@ -529,12 +551,14 @@ func TestScore(t *testing.T) {
 		name        string
 		pod         *corev1.Pod
 		assignedPod []*podAssignInfo
+		nodeName    string
 		nodeMetric  *slov1alpha1.NodeMetric
 		wantScore   int64
 		wantStatus  *framework.Status
 	}{
 		{
-			name: "score node with expired nodeMetric",
+			name:     "score node with expired nodeMetric",
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -574,6 +598,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -593,7 +618,7 @@ func TestScore(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
-			name: "score cert load node",
+			name: "score node missing NodeMetrics",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -613,6 +638,32 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
+			nodeName:   "test-node-1",
+			wantScore:  0,
+			wantStatus: nil,
+		},
+		{
+			name: "score load node",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -640,7 +691,7 @@ func TestScore(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
-			name: "score cert load node with just assigned pod",
+			name: "score load node with just assigned pod",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -684,6 +735,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -711,7 +763,7 @@ func TestScore(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
-			name: "score cert load node with just assigned pod where after updateTime",
+			name: "score load node with just assigned pod where after updateTime",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -755,6 +807,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -782,7 +835,7 @@ func TestScore(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
-			name: "score cert load node with just assigned pod where before updateTime",
+			name: "score load node with just assigned pod where before updateTime",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -826,6 +879,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -874,6 +928,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -913,6 +968,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -942,6 +998,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
+			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
@@ -976,7 +1033,10 @@ func TestScore(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle := frameworkext.NewExtendedHandle(koordClientSet, koordSharedInformerFactory)
+			extendHandle := frameworkext.NewExtendedHandle(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
 			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
 
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
@@ -998,7 +1058,7 @@ func TestScore(t *testing.T) {
 			nodes := []*corev1.Node{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: tt.nodeMetric.Name,
+						Name: tt.nodeName,
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
@@ -1021,30 +1081,32 @@ func TestScore(t *testing.T) {
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
-			_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
-			assert.NoError(t, err)
+			if tt.nodeMetric != nil {
+				_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
 
 			koordSharedInformerFactory.Start(context.TODO().Done())
 			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
 
 			cycleState := framework.NewCycleState()
 
-			nodeInfo, err := snapshot.Get(tt.nodeMetric.Name)
+			nodeInfo, err := snapshot.Get(tt.nodeName)
 			assert.NoError(t, err)
 			assert.NotNil(t, nodeInfo)
 
 			assignCache := p.(*Plugin).podAssignCache
 			for _, v := range tt.assignedPod {
-				m := assignCache.podInfoItems[tt.nodeMetric.Name]
+				m := assignCache.podInfoItems[tt.nodeName]
 				if m == nil {
 					m = map[types.UID]*podAssignInfo{}
-					assignCache.podInfoItems[tt.nodeMetric.Name] = m
+					assignCache.podInfoItems[tt.nodeName] = m
 				}
 				v.pod.UID = uuid.NewUUID()
 				m[v.pod.UID] = v
 			}
 
-			score, status := p.(*Plugin).Score(context.TODO(), cycleState, tt.pod, tt.nodeMetric.Name)
+			score, status := p.(*Plugin).Score(context.TODO(), cycleState, tt.pod, tt.nodeName)
 			assert.Equal(t, tt.wantScore, score)
 			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
 		})

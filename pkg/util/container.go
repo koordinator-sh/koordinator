@@ -32,7 +32,13 @@ import (
 // @parentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/****.scope
 func GetContainerCgroupPathWithKube(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	containerDir, err := system.CgroupPathFormatter.ContainerDirFn(c)
+	return GetContainerCgroupPathWithKubeByID(podParentDir, c.ContainerID)
+}
+
+// @parentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/****.scope
+func GetContainerCgroupPathWithKubeByID(podParentDir string, containerID string) (string, error) {
+	containerDir, err := system.CgroupPathFormatter.ContainerDirFn(containerID)
 	if err != nil {
 		return "", err
 	}

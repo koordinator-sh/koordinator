@@ -40,10 +40,7 @@ jobs:
           install-go: false
 
   unit-tests:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -83,9 +80,53 @@ jobs:
         run: make test
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
-        if: matrix.os == 'ubuntu-latest'
         with:
           flags: unittests
           file: cover.out
           fail_ci_if_error: true
           verbose: true
+
+  build-and-push:
+    needs: [golangci-lint, staticcheck, unit-tests]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [koordlet, koord-manager, koord-scheduler]
+    env:
+      GITHUB_REG: ghcr.io
+      ALIYUN_REG: registry.cn-beijing.aliyuncs.com
+    steps:
+      - uses: docker/setup-buildx-action@v2
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.GITHUB_REG }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to AliyunCS
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.ALIYUN_REG }}
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PWD }}
+      - name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          platforms: linux/amd64
+          push: true
+          pull: true
+          build-args: |
+            MODULE=${{ matrix.target }}
+          labels: |
+            org.opencontainers.image.title=${{ matrix.target }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at}}
+            org.opencontainers.image.licenses=Apache-2.0
+          tags: |
+            ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/${{ matrix.target }}:latest
+            ${{ env.ALIYUN_REG }}/${{ github.repository_owner }}/${{ matrix.target }}:latest
+          cache-from: type=gha,scope=build-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=build-${{ matrix.target }}

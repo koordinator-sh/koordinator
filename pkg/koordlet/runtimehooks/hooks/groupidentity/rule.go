@@ -102,6 +102,10 @@ func (b *bvtPlugin) parseRule(mergedNodeSLO *slov1alpha1.NodeSLOSpec) (bool, err
 }
 
 func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
+	if !b.SystemSupported() {
+		klog.V(5).Infof("plugin %s is not supported by system", name)
+		return nil
+	}
 	r := b.getRule()
 	for _, kubeQoS := range []corev1.PodQOSClass{
 		corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {

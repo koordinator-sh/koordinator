@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
@@ -31,7 +32,7 @@ type Hook struct {
 	fn          HookFn
 }
 
-type HookFn func(request, response interface{}) error
+type HookFn func(protocol.HooksProtocol) error
 
 var globalStageHooks map[rmconfig.RuntimeHookType][]*Hook
 
@@ -70,12 +71,12 @@ func getHooksByStage(stage rmconfig.RuntimeHookType) []*Hook {
 	}
 }
 
-func RunHooks(stage rmconfig.RuntimeHookType, request, response interface{}) {
+func RunHooks(stage rmconfig.RuntimeHookType, protocol protocol.HooksProtocol) {
 	hooks := getHooksByStage(stage)
 	klog.V(5).Infof("start run %v hooks at %s", len(hooks), stage)
 	for _, hook := range hooks {
 		klog.V(5).Infof("call hook %v", hook.name)
-		if err := hook.fn(request, response); err != nil {
+		if err := hook.fn(protocol); err != nil {
 			klog.Warningf("failed to run hook %s in stage %s, reason: %v", hook.name, stage, err)
 		}
 	}

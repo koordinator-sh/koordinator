@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,13 +36,12 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
-	"github.com/stretchr/testify/assert"
 )
 
 func Test_NodeResourceController_ConfigNotAvaliable(t *testing.T) {
 	r := &NodeResourceReconciler{
-		config: Config{
-			isAvailable: false,
+		cfgCache: &FakeCfgCache{
+			available: false,
 		},
 		SyncContext: SyncContext{},
 		Clock:       clock.RealClock{},
@@ -65,8 +64,8 @@ func Test_NodeResourceController_NodeNotFound(t *testing.T) {
 	client := fake.NewClientBuilder().Build()
 	r := &NodeResourceReconciler{
 		Client: client,
-		config: Config{
-			isAvailable: true,
+		cfgCache: &FakeCfgCache{
+			available: true,
 		},
 		SyncContext: SyncContext{},
 		Clock:       clock.RealClock{},
@@ -78,12 +77,8 @@ func Test_NodeResourceController_NodeNotFound(t *testing.T) {
 	nodeReq := ctrl.Request{NamespacedName: key}
 
 	result, err := r.Reconcile(ctx, nodeReq)
-	if !errors.IsNotFound(err) {
-		t.Fatal(err)
-	}
-	if result.Requeue != false {
-		t.Errorf("failed to reconcile")
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, false, result.Requeue)
 }
 
 func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
@@ -93,9 +88,9 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(scheme).Build()
 	r := &NodeResourceReconciler{
 		Client: client,
-		config: Config{
-			isAvailable: true,
-			ColocationCfg: config.ColocationCfg{
+		cfgCache: &FakeCfgCache{
+			available: true,
+			cfg: config.ColocationCfg{
 				ColocationStrategy: config.ColocationStrategy{
 					Enable:                        pointer.BoolPtr(true),
 					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
@@ -122,12 +117,8 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 	nodeReq := ctrl.Request{NamespacedName: key}
 
 	result, err := r.Reconcile(ctx, nodeReq)
-	if !errors.IsNotFound(err) {
-		t.Fatal(err)
-	}
-	if result.Requeue != false {
-		t.Errorf("failed to reconcile")
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, false, result.Requeue)
 }
 
 func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
@@ -137,9 +128,9 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(scheme).Build()
 	r := &NodeResourceReconciler{
 		Client: client,
-		config: Config{
-			isAvailable: true,
-			ColocationCfg: config.ColocationCfg{
+		cfgCache: &FakeCfgCache{
+			available: true,
+			cfg: config.ColocationCfg{
 				ColocationStrategy: config.ColocationStrategy{
 					Enable:                        pointer.BoolPtr(true),
 					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
@@ -197,8 +188,7 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	}
 	batchCPUQ := node.Status.Allocatable[extension.BatchCPU]
 	batchcpu, _ := batchCPUQ.AsInt64()
-	assert := assert.New(t)
-	assert.Equal(int64(65000), batchcpu)
+	assert.Equal(t, int64(65000), batchcpu)
 
 	// reset node resources
 	r.Clock = clock.NewFakeClock(r.Clock.Now().Add(time.Hour))
@@ -216,5 +206,5 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	}
 	batchCPUQ = node.Status.Allocatable[extension.BatchCPU]
 	batchcpu, _ = batchCPUQ.AsInt64()
-	assert.Equal(int64(0), batchcpu)
+	assert.Equal(t, int64(0), batchcpu)
 }
