@@ -36,8 +36,7 @@ QoS Manager is a new plugin framework for `dynamic plugins` in [issue](https://g
 
 ## Motivation
 
-Currently, plugins from resmanager in Koordlet are mixed together, they should be classified into two categories: `static` and `dynamic`. Static plugins will be called and run only once when a container is being created, updated, started or stopped. But for dynamic plugins, they may be called and run at any time according the real-time runtime state of node, such as CPU suppress, CPU burst, etc. This proposal only focuses on refactoring dynamic plugins. Take a look at current plugin implementation, there are many function calls to resmanager's methods directly, such as collecting node/pod/container metrics, fetching metadata of node/pod/container, fetching configurations(NodeSLO, etc.). In the feature, we may need a flexible and powerful framework with scalability for special external plugins.
-
+Currently, plugins from resmanager in Koordlet are mixed together, they should be classified into two categories: `static` and `dynamic`. Static plugins will be called and run only once when a container created, updated, started or stopped. However, for dynamic plugins, they may be called and run at any time according the real-time runtime states of node, such as CPU suppress, CPU burst, etc. This proposal only focuses on refactoring dynamic plugins. Take a look at current plugin implementation, there are many function calls to resmanager's methods directly, such as collecting node/pod/container metrics, fetching metadata of node/pod/container, fetching configurations(NodeSLO, etc.). In the feature, we may need a flexible and powerful framework with scalability for special external plugins.
 
 ### Goals
 - Define a new framework named `qos-manager` to manage dynamic plugins.
@@ -67,7 +66,10 @@ pkg/koordlet/qosmanager/
                                  - /memoryevict/
 ```
 
-The struct `QoSManager` wraps `resmanager` to provide necessary interface methods for all plugins, here we just put `StateInformer`, `MetricsCache` and `Executor` into a `PluginContext` as a parameter of `InitPlugin` function for plugin initialization. Every plugin should implement interface `Plugin` which contains some basic methods, such as `Name()`, `Run()`, `Stop()`, etc. Additionally, QoSManager is also responsible for managing plugin feature-gates.
+The struct `QoSManager` wraps `resmanager` to provide necessary interface methods for all plugins, here we just put `StateInformer`, `MetricsCache` and `Executor` into a `PluginContext` as a parameter of `InitPlugin` function during plugin initialization. Each plugin should implement interface `Plugin` which contains some basic methods, such as `Name()`, `Run()`, `Stop()`, etc. On startup, each plugin should call `StateInformer.RegisterCallbacks` for `NodeSLO` policy updates. Additionally, QoSManager is also responsible for managing plugin feature-gates. 
+
+The `Executor` is a very important component in `Koordlet` which is responsible for resolving conflicts of rules produced by `qos-manager` and `runtime-hooks`, adaptations for various platforms (kernel, arch, etc.), it also should have a configuration cache to avoid redundant parameters updates.
+
 ```go
 
 // QoSManager
