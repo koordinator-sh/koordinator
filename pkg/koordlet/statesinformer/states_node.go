@@ -32,6 +32,7 @@ func (s *statesInformer) setupNodeInformer() {
 			node, ok := obj.(*corev1.Node)
 			if ok {
 				s.syncNode(node)
+				s.syncNodeResourceTopology(node)
 			} else {
 				klog.Errorf("node informer add func parse Node failed, obj %T", obj)
 			}
@@ -48,6 +49,7 @@ func (s *statesInformer) setupNodeInformer() {
 				return
 			}
 			s.syncNode(newNode)
+			s.syncNodeResourceTopology(newNode)
 		},
 	})
 }

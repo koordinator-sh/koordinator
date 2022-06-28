@@ -188,7 +188,7 @@ func Test_statesInformer_syncPods(t *testing.T) {
 	}
 	c := NewDefaultConfig()
 	c.KubeletSyncInterval = 60 * time.Second
-	m := NewStatesInformer(c, client, crdClient, pleg, "localhost")
+	m := NewStatesInformer(c, client, crdClient, nil, nil, pleg, "localhost")
 	m.(*statesInformer).node = testingNode
 	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
 		Items: []corev1.Pod{
@@ -303,7 +303,7 @@ func Test_statesInformer_syncKubeletLoop(t *testing.T) {
 	c := NewDefaultConfig()
 	c.KubeletSyncInterval = 3 * time.Second
 
-	m := NewStatesInformer(c, client, crdClient, pleg, "localhost")
+	m := NewStatesInformer(c, client, crdClient, nil, nil, pleg, "localhost")
 	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
 		Items: []corev1.Pod{
 			{},
