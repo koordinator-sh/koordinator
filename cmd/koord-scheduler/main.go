@@ -26,6 +26,7 @@ import (
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/compatibledefaultpreemption"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/nodenumaresource"
 
 	// Ensure scheme package is initialized.
 	_ "github.com/koordinator-sh/koordinator/apis/scheduling/config/scheme"
@@ -39,6 +40,7 @@ func main() {
 	// used by various kinds of workloads.
 	command := app.NewSchedulerCommand(
 		app.WithPlugin(loadaware.Name, loadaware.New),
+		app.WithPlugin(nodenumaresource.Name, nodenumaresource.New),
 		app.WithPlugin(compatibledefaultpreemption.Name, compatibledefaultpreemption.New),
 	)
 
