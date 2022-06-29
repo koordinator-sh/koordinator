@@ -124,7 +124,7 @@ func prepareToWrite(dir string) error {
 	_, err := os.Stat(dir)
 	switch {
 	case os.IsNotExist(err):
-		klog.Info("cert directory doesn't exist, creating", "directory", dir)
+		klog.V(1).Info("cert directory doesn't exist, creating", "directory", dir)
 		// TODO: figure out if we can reduce the permission. (Now it's 0777)
 		err = os.MkdirAll(dir, 0777)
 		if err != nil {

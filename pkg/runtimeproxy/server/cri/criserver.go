@@ -59,7 +59,7 @@ func (c *RuntimeManagerCriServer) Run() error {
 	}
 	c.failOver()
 
-	klog.Infof("do failOver done")
+	klog.V(5).Infof("do failOver done")
 
 	listener, err := net.Listen("unix", options.RuntimeProxyEndpoint)
 	if err != nil {
@@ -116,7 +116,7 @@ func (c *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeSer
 	// call the backend runtime engine
 	res, err := handler(ctx, request)
 	if err == nil {
-		klog.Infof("%v call on backend %v success", resourceExecutor.GetMetaInfo(), string(runtimeHookPath))
+		klog.V(2).Infof("%v call on backend %v success", resourceExecutor.GetMetaInfo(), string(runtimeHookPath))
 		// store checkpoint info basing request
 		// checkpoint only when response success
 		if err := resourceExecutor.ResourceCheckPoint(res); err != nil {
@@ -147,14 +147,14 @@ func (c *RuntimeManagerCriServer) initBackendServer(runtimeSockPath, imageSockPa
 		return err
 	} else {
 		c.backendRuntimeServiceClient = runtimeapi.NewRuntimeServiceClient(conn)
-		klog.Infof("success to create runtime client %v", runtimeSockPath)
+		klog.V(2).Infof("success to create runtime client %v", runtimeSockPath)
 	}
 	if conn, err := generateGrpcConn(imageSockPath); err != nil {
 		klog.Errorf("fail to create image service client %v", err)
 		return err
 	} else {
 		c.backendImageServiceClient = runtimeapi.NewImageServiceClient(conn)
-		klog.Infof("success to create image client %v", imageSockPath)
+		klog.V(2).Infof("success to create image client %v", imageSockPath)
 	}
 
 	return nil

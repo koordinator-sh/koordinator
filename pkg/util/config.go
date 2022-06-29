@@ -58,7 +58,7 @@ func DefaultCPUQoS(qos apiext.QoSClass) *slov1alpha1.CPUQoS {
 			GroupIdentity: pointer.Int64Ptr(-1),
 		}
 	default:
-		klog.Infof("cpu qos has no auto config for qos %s", qos)
+		klog.V(1).Infof("cpu qos has no auto config for qos %s", qos)
 	}
 	return cpuQoS
 }
@@ -86,7 +86,7 @@ func DefaultResctrlQoS(qos apiext.QoSClass) *slov1alpha1.ResctrlQoS {
 			MBAPercent:           pointer.Int64Ptr(100),
 		}
 	default:
-		klog.Infof("resctrl qos has no auto config for qos %s", qos)
+		klog.V(1).Infof("resctrl qos has no auto config for qos %s", qos)
 	}
 	return resctrlQoS
 }

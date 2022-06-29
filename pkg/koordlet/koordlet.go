@@ -70,11 +70,11 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	if len(nodeName) == 0 {
 		return nil, fmt.Errorf("failed to new daemon: NODE_NAME env is empty")
 	}
-	klog.Infof("NODE_NAME is %v,start time %v", nodeName, float64(time.Now().Unix()))
+
+	klog.V(1).InfoS("Starting daemon", "nodeName", nodeName, "start time", float64(time.Now().Unix()))
 	metrics.RecordKoordletStartTime(nodeName, float64(time.Now().Unix()))
 
-	klog.Infof("sysconf: %+v,agentMode:%v", system.Conf, system.AgentMode)
-	klog.Infof("kernel version INFO : %+v", system.HostSystemInfo)
+	klog.V(1).InfoS("Starting daemon", "sysconf", system.Conf, "agentMode", system.AgentMode, "kernel version", system.HostSystemInfo)
 
 	// setup cgroup path formatter from cgroup driver type
 	var detectCgroupDriver system.CgroupDriverType
@@ -84,7 +84,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 			detectCgroupDriver = driver
 			return true, nil
 		}
-		klog.Infof("can not detect cgroup driver from 'kubepods' cgroup name")
+		klog.V(4).Infof("can not detect cgroup driver from 'kubepods' cgroup name")
 
 		if driver, err := system.GuessCgroupDriverFromKubelet(); err == nil && driver.Validate() {
 			detectCgroupDriver = driver
@@ -97,7 +97,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, fmt.Errorf("can not detect kubelet cgroup driver: %v", pollErr)
 	}
 	system.SetupCgroupPathFormatter(detectCgroupDriver)
-	klog.Infof("Node %s use '%s' as cgroup driver", nodeName, string(detectCgroupDriver))
+	klog.V(3).Infof("Node %s use '%s' as cgroup driver", nodeName, string(detectCgroupDriver))
 
 	kubeClient := clientset.NewForConfigOrDie(config.KubeRestConf)
 	crdClient := clientsetbeta1.NewForConfigOrDie(config.KubeRestConf)
@@ -139,7 +139,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 func (d *daemon) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
-	klog.Infof("Starting daemon")
+	klog.V(1).Info("Starting daemon")
 
 	go func() {
 		if err := d.metricCache.Run(stopCh); err != nil {
@@ -193,7 +193,7 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 		}
 	}()
 
-	klog.Info("Start daemon successfully")
+	klog.V(1).Info("Start daemon successfully")
 	<-stopCh
-	klog.Info("Shutting down daemon")
+	klog.V(1).Info("Shutting down daemon")
 }

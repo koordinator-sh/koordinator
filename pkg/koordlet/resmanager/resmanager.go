@@ -111,7 +111,7 @@ func isFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature
 
 func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	klog.Info("Starting resmanager")
+	klog.V(1).Info("Starting resmanager")
 
 	r.podsEvicted.Run(stopCh)
 
@@ -142,9 +142,9 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	util.RunFeatureWithInit(func() error { return rdtResCtrl.RunInit(stopCh) }, rdtResCtrl.reconcile,
 		[]featuregate.Feature{features.RdtResctrl}, r.config.ReconcileIntervalSeconds, stopCh)
 
-	klog.Info("Starting resmanager successfully")
+	klog.V(1).Info("Starting resmanager successfully")
 	<-stopCh
-	klog.Info("shutting down resmanager")
+	klog.V(1).Info("shutting down resmanager")
 	return nil
 }
 
@@ -179,7 +179,7 @@ func (r *resmanager) evictPod(evictPod *corev1.Pod, node *corev1.Node, reason st
 	if err := r.kubeClient.CoreV1().Pods(evictPod.Namespace).EvictV1(context.TODO(), &podEvict); err == nil {
 		r.eventRecorder.Eventf(node, corev1.EventTypeWarning, evictPodSuccess, podEvictMessage)
 		metrics.RecordPodEviction(reason)
-		klog.Infof("evict pod %v/%v success, reason: %v", evictPod.Namespace, evictPod.Name, reason)
+		klog.V(4).Infof("evict pod %v/%v success, reason: %v", evictPod.Namespace, evictPod.Name, reason)
 		return true
 	} else if !errors.IsNotFound(err) {
 		r.eventRecorder.Eventf(node, corev1.EventTypeWarning, evictPodFail, podEvictMessage)

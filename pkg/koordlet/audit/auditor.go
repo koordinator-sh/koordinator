@@ -119,7 +119,7 @@ func (a *auditor) popExpiredReaderNoLock() []*readerContext {
 
 func (a *auditor) gcExpiredReaders(expiredReaders []*readerContext) {
 	for _, expired := range expiredReaders {
-		klog.Infof("reader %v is expired", expired.pageToken)
+		klog.V(4).Infof("reader %v is expired", expired.pageToken)
 		expired.mutex.Lock()
 		expired.closed = true
 		expired.reverseIterator.Close()
@@ -132,7 +132,7 @@ func (a *auditor) HttpHandler() func(http.ResponseWriter, *http.Request) {
 		sizeStr := r.URL.Query().Get("size")
 		pageToken := r.URL.Query().Get("pageToken")
 
-		klog.Infof("handle query client=%v pageToken=%v size=%v", r.RemoteAddr, pageToken, sizeStr)
+		klog.V(4).InfoS("handle query", "client", r.RemoteAddr, "pageToken", pageToken, "size", sizeStr)
 
 		size := a.config.DefaultEventsLimit
 		if s, err := strconv.Atoi(sizeStr); err == nil {

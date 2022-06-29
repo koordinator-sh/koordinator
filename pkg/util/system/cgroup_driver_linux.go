@@ -81,7 +81,7 @@ func GuessCgroupDriverFromKubelet() (CgroupDriverType, error) {
 	if argsCgroupDriver != "" {
 		return CgroupDriverType(argsCgroupDriver), nil
 	} else if argsConfigFile == "" {
-		klog.Infof("Neither '--cgroup-driver' or '--config' is specify, use default: '%s'", string(kubeletDefaultCgroupDriver))
+		klog.V(0).Infof("Neither '--cgroup-driver' or '--config' is specify, use default: '%s'", string(kubeletDefaultCgroupDriver))
 		return kubeletDefaultCgroupDriver, nil
 	}
 
@@ -120,6 +120,6 @@ func GuessCgroupDriverFromKubelet() (CgroupDriverType, error) {
 			return CgroupDriverType(strings.TrimSpace(parts[1])), nil
 		}
 	}
-	klog.Infof("Cgroup driver is not specify in kubelet config file, use default: '%s'", kubeletDefaultCgroupDriver)
+	klog.V(1).Infof("Cgroup driver is not specify in kubelet config file, use default: '%s'", kubeletDefaultCgroupDriver)
 	return kubeletDefaultCgroupDriver, nil
 }

@@ -121,9 +121,9 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 
 func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	klog.Infof("setup statesInformer")
+	klog.V(1).Infof("setup statesInformer")
 	s.setupInformers()
-	klog.Infof("starting informers")
+	klog.V(1).Infof("starting informers")
 	go s.nodeInformer.Run(stopCh)
 	go s.nodeSLOInformer.Run(stopCh)
 
@@ -168,9 +168,9 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 
 	go wait.Until(s.reportNodeTopology, s.config.NodeTopologySyncInterval, stopCh)
 
-	klog.Infof("start states informer successfully")
+	klog.V(1).Infof("start states informer successfully")
 	<-stopCh
-	klog.Infof("shutting down states informer daemon")
+	klog.V(1).Infof("shutting down states informer daemon")
 	return nil
 }
 

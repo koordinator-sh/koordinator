@@ -89,14 +89,14 @@ func New(cfg *rest.Config, handlers map[string]admission.Handler) (*Controller, 
 		AddFunc: func(obj interface{}) {
 			secret := obj.(*v1.Secret)
 			if secret.Name == secretName {
-				klog.Infof("Secret %s added", secretName)
+				klog.V(2).Infof("Secret %s added", secretName)
 				c.queue.Add("")
 			}
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			secret := cur.(*v1.Secret)
 			if secret.Name == secretName {
-				klog.Infof("Secret %s updated", secretName)
+				klog.V(2).Infof("Secret %s updated", secretName)
 				c.queue.Add("")
 			}
 		},
@@ -106,14 +106,14 @@ func New(cfg *rest.Config, handlers map[string]admission.Handler) (*Controller, 
 		AddFunc: func(obj interface{}) {
 			conf := obj.(*admissionregistrationv1.MutatingWebhookConfiguration)
 			if conf.Name == mutatingWebhookConfigurationName {
-				klog.Infof("MutatingWebhookConfiguration %s added", mutatingWebhookConfigurationName)
+				klog.V(2).Infof("MutatingWebhookConfiguration %s added", mutatingWebhookConfigurationName)
 				c.queue.Add("")
 			}
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			conf := cur.(*admissionregistrationv1.MutatingWebhookConfiguration)
 			if conf.Name == mutatingWebhookConfigurationName {
-				klog.Infof("MutatingWebhookConfiguration %s update", mutatingWebhookConfigurationName)
+				klog.V(2).Infof("MutatingWebhookConfiguration %s update", mutatingWebhookConfigurationName)
 				c.queue.Add("")
 			}
 		},
@@ -123,14 +123,14 @@ func New(cfg *rest.Config, handlers map[string]admission.Handler) (*Controller, 
 		AddFunc: func(obj interface{}) {
 			conf := obj.(*admissionregistrationv1.ValidatingWebhookConfiguration)
 			if conf.Name == validatingWebhookConfigurationName {
-				klog.Infof("ValidatingWebhookConfiguration %s added", validatingWebhookConfigurationName)
+				klog.V(2).Infof("ValidatingWebhookConfiguration %s added", validatingWebhookConfigurationName)
 				c.queue.Add("")
 			}
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			conf := cur.(*admissionregistrationv1.ValidatingWebhookConfiguration)
 			if conf.Name == validatingWebhookConfigurationName {
-				klog.Infof("ValidatingWebhookConfiguration %s updated", validatingWebhookConfigurationName)
+				klog.V(2).Infof("ValidatingWebhookConfiguration %s updated", validatingWebhookConfigurationName)
 				c.queue.Add("")
 			}
 		},
@@ -149,8 +149,8 @@ func (c *Controller) Start(ctx context.Context) {
 	defer utilruntime.HandleCrash()
 	defer c.queue.ShutDown()
 
-	klog.Infof("Starting webhook-controller")
-	defer klog.Infof("Shutting down webhook-controller")
+	klog.V(1).Infof("Starting webhook-controller")
+	defer klog.V(1).Infof("Shutting down webhook-controller")
 
 	c.informerFactory.Start(ctx.Done())
 	if !cache.WaitForNamedCacheSync("webhook-controller", ctx.Done(), c.synced...) {
@@ -161,7 +161,7 @@ func (c *Controller) Start(ctx context.Context) {
 		for c.processNextWorkItem() {
 		}
 	}, time.Second, ctx.Done())
-	klog.Infof("Started webhook-controller")
+	klog.V(5).Infof("Started webhook-controller")
 
 	<-ctx.Done()
 }
@@ -187,9 +187,9 @@ func (c *Controller) processNextWorkItem() bool {
 }
 
 func (c *Controller) sync() error {
-	klog.Infof("Starting to sync webhook certs and configurations")
+	klog.V(1).Infof("Starting to sync webhook certs and configurations")
 	defer func() {
-		klog.Infof("Finished to sync webhook certs and configurations")
+		klog.V(1).Infof("Finished to sync webhook certs and configurations")
 	}()
 
 	var dnsName string

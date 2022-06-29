@@ -248,7 +248,7 @@ func calculateBESuppressCPUSetPolicy(cpusetQuantity *resource.Quantity, oldCPUSe
 		CPUSets = append(CPUSets, prioritizedCPUs[i].CPUID)
 		needCPUs--
 	}
-	klog.Infof("calculated BE suppress policy: cpuset %v", CPUSets)
+	klog.V(4).InfoS("calculated BE suppress policy", "cpuset", CPUSets)
 
 	return CPUSets
 }
@@ -365,7 +365,7 @@ func adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUInfo *metriccache.
 		return
 	}
 	audit.V(1).Node().Reason(adjustBEByNodeCPUUsage).Message("update BE group to cpuset: %v", beCPUSet).Do()
-	klog.Infof("suppressBECPU finished, suppress be cpu successfully: current cpuset %v", beCPUSet)
+	klog.V(2).Infof("suppressBECPU finished, suppress be cpu successfully: current cpuset %v", beCPUSet)
 }
 
 func (r *CPUSuppress) recoverCPUSetIfNeed() {
@@ -422,7 +422,7 @@ func adjustByCfsQuota(cpuQuantity *resource.Quantity, node *corev1.Node) {
 	}
 	metrics.RecordBESuppressCores(string(slov1alpha1.CPUCfsQuotaPolicy), float64(newBeQuota)/float64(cfsPeriod))
 	audit.V(1).Node().Reason(adjustBEByNodeCPUUsage).Message("update BE group to cfs_quota: %v", newBeQuota).Do()
-	klog.Infof("suppressBECPU: succeeded to write cfs_quota_us for offline pods, new value: %d", newBeQuota)
+	klog.V(2).Infof("suppressBECPU: succeeded to write cfs_quota_us for offline pods, new value: %d", newBeQuota)
 }
 
 func (r *CPUSuppress) recoverCFSQuotaIfNeed() {

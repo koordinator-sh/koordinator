@@ -65,7 +65,7 @@ func handleCommon(dnsName string, ch certReadWriter) (*generator.Artifacts, bool
 	// Recreate the cert if it's invalid.
 	valid := validCert(certs, dnsName)
 	if !valid {
-		klog.Info("cert is invalid or expiring, regenerating a new one")
+		klog.V(2).Info("cert is invalid or expiring, regenerating a new one")
 		certs, err = ch.overwrite(certs.ResourceVersion)
 		if err != nil {
 			return nil, false, err

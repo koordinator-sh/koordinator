@@ -55,7 +55,7 @@ func (s *server) Setup() error {
 }
 
 func (s *server) Start() error {
-	klog.Infof("starting runtime hook server on %s", s.options.Address)
+	klog.V(1).Infof("starting runtime hook server on %s", s.options.Address)
 	go func() {
 		s.server.Serve(s.listener)
 	}()
@@ -63,7 +63,7 @@ func (s *server) Start() error {
 }
 
 func (s *server) Stop() {
-	klog.Infof("stopping runtime hook server")
+	klog.V(1).Infof("stopping runtime hook server")
 	s.server.Stop()
 }
 

@@ -59,7 +59,7 @@ func (c *ContainerResourceExecutor) loadContainerInfoFromStore(containerID, stag
 		return fmt.Errorf("fail to load container(%v) from store during %v", containerID, stage)
 	}
 	c.ContainerInfo = *containerCheckPoint
-	klog.Infof("load container(%v) successful during %v ", containerID, stage)
+	klog.V(2).Infof("load container(%v) successful during %v ", containerID, stage)
 	return nil
 }
 
@@ -85,7 +85,7 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
 				PodCgroupParent:      request.GetSandboxConfig().GetLinux().GetCgroupParent(),
 			},
 		}
-		klog.Infof("success parse container info %v during container create", c)
+		klog.V(4).Infof("success parse container info %v during container create", c)
 	case *runtimeapi.StartContainerRequest:
 		return c.loadContainerInfoFromStore(request.GetContainerId(), "StartContainer")
 	case *runtimeapi.UpdateContainerResourcesRequest:
@@ -131,7 +131,7 @@ func (c *ContainerResourceExecutor) ResourceCheckPoint(rsp interface{}) error {
 			return err
 		}
 		data, _ := json.Marshal(c.ContainerInfo)
-		klog.Infof("success to checkpoint container level info %v %v",
+		klog.V(4).Infof("success to checkpoint container level info %v %v",
 			response.GetContainerId(), string(data))
 		return nil
 	}

@@ -130,7 +130,7 @@ func (p *SLOCfgHandlerForConfigMapEvent) updateCacheIfChanged(newSLOCfg SLOCfg) 
 	if changed {
 		oldInfoFmt, _ := json.MarshalIndent(p.SLOCfgCache.sloCfg, "", "\t")
 		newInfoFmt, _ := json.MarshalIndent(newSLOCfg, "", "\t")
-		klog.Infof("NodeSLO config Changed success! oldCfg:%s\n,newCfg:%s", string(oldInfoFmt), string(newInfoFmt))
+		klog.V(2).InfoS("NodeSLO config Changed success!", "oldCfg", string(oldInfoFmt), "newCfg", string(newInfoFmt))
 		p.SLOCfgCache.sloCfg = newSLOCfg
 	}
 	// set the available flag and never change it

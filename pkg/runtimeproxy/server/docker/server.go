@@ -78,7 +78,7 @@ func (d *RuntimeManagerDockerServer) Direct(wr http.ResponseWriter, req *http.Re
 
 func (d *RuntimeManagerDockerServer) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 	ctx := context.TODO()
-	klog.Infof("req path: %s, req method: %s", req.URL.Path, req.Method)
+	klog.V(4).InfoS("serving HTTP", "request path", req.URL.Path, "request method", req.Method)
 	for reg, handler := range d.router {
 		if reg.MatchString(req.URL.Path) {
 			handler(ctx, wr, req)

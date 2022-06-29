@@ -75,7 +75,7 @@ func (s *statesInformer) sendCallbacks(objType RegisterType) {
 		case s.callbackChans[objType] <- struct{}{}:
 			return
 		default:
-			klog.Infof("last callback runner %v has not finished, ignore this time", objType.String())
+			klog.V(4).Infof("last callback runner %v has not finished, ignore this time", objType.String())
 		}
 	} else {
 		klog.Warningf("callback runner %v is not exist", objType.String())
@@ -109,7 +109,7 @@ func (s *statesInformer) startCallbackRunners(stopCh <-chan struct{}) {
 						s.runCallbacks(cbType, cbObj)
 					}
 				case <-stopCh:
-					klog.Infof("callback runner %v loop is exited", cbType.String())
+					klog.V(5).Infof("callback runner %v loop is exited", cbType.String())
 					return
 				}
 			}

@@ -54,7 +54,7 @@ func isCPUSupportResctrl() (bool, error) {
 		klog.Errorf("isResctrlAvailableByCpuInfo error: %v", err)
 		return false, err
 	}
-	klog.Infof("isResctrlAvailableByCpuInfo result,isCatFlagSet: %v,isMbaFlagSet: %v", isCatFlagSet, isMbaFlagSet)
+	klog.V(4).InfoS("isResctrlAvailableByCpuInfo result", "isCatFlagSet", isCatFlagSet, "isMbaFlagSet", isMbaFlagSet)
 	isInit = true
 	return isCatFlagSet && isMbaFlagSet, nil
 }
@@ -65,7 +65,7 @@ func isKernelSupportResctrl() (bool, error) {
 		klog.Errorf("isResctrlAvailableByKernelCmd error: %v", err)
 		return false, err
 	}
-	klog.Infof("isResctrlAvailableByKernelCmd result,isCatFlagSet: %v,isMbaFlagSet: %v", isCatFlagSet, isMbaFlagSet)
+	klog.V(4).InfoS("isResctrlAvailableByKernelCmd result", "isCatFlagSet", isCatFlagSet, "isMbaFlagSet", isMbaFlagSet)
 	isInit = true
 	return isCatFlagSet && isMbaFlagSet, nil
 }
@@ -166,7 +166,7 @@ func CheckAndTryEnableResctrlCat() error {
 		return err
 	}
 	if newMount {
-		klog.Infof("mount resctrl successfully, resctrl enabled")
+		klog.V(4).Info("mount resctrl successfully, resctrl enabled")
 	}
 	// double check l3_cbm path to ensure both resctrl and cat are correctly enabled
 	l3CbmFilePath = GetResctrlL3CbmFilePath()

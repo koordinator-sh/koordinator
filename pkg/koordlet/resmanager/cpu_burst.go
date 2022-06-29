@@ -320,7 +320,7 @@ func (b *CPUBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 
 		changed, finalOperation := changeOperationByNode(nodeState, originOperation)
 		if changed {
-			klog.Infof("node is in %v state, switch origin scale operation %v to %v",
+			klog.V(2).Infof("node is in %v state, switch origin scale operation %v to %v",
 				nodeState, originOperation.String(), finalOperation.String())
 		} else {
 			klog.V(5).Infof("node is in %v state, operation %v is same as before %v",
@@ -349,7 +349,7 @@ func (b *CPUBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 				pod.Namespace, pod.Name, containerStat.Name, finalOperation, deltaContainerCFS, err)
 			continue
 		}
-		klog.Infof("scale container %v/%v/%v cfs quota success, operation %v, current cfs %v, target cfs %v",
+		klog.V(5).Infof("scale container %v/%v/%v cfs quota success, operation %v, current cfs %v, target cfs %v",
 			pod.Namespace, pod.Name, containerStat.Name, finalOperation, containerCurCFS, containerTargetCFS)
 	} // end for containers
 }
@@ -539,7 +539,7 @@ func (b *CPUBurst) Recycle() {
 	for key, limiter := range b.containerLimiter {
 		if limiter.Expire() {
 			delete(b.containerLimiter, key)
-			klog.Infof("recycle limiter for container %v", key)
+			klog.V(2).Infof("recycle limiter for container %v", key)
 		}
 	}
 }
