@@ -143,6 +143,7 @@ func NewFrameworkExtenderFactory(handle ExtendedHandle, hooks ...SchedulingPhase
 		if ok {
 			i.filterHooks = append(i.filterHooks, filter)
 		}
+		klog.V(4).InfoS("framework extender got scheduling hooks registered", "preFilter", preFilter.Name(), "filter", filter.Name())
 	}
 	return i
 }
@@ -166,27 +167,30 @@ type frameworkExtenderImpl struct {
 	filterHooks    []FilterPhaseHook
 }
 
+// RunPreFilterPlugins hooks the PreFilter phase of framework with pre-filter hooks.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
 	for _, hook := range ext.preFilterHooks {
 		newPod, hooked := hook.PreFilterHook(ext.handle, cycleState, pod)
 		if hooked {
-			klog.V(5).InfoS("RunPreFilterPlugins hooked", "meet PreFilterPhaseHook", "hook", hook.Name(), "pod", klog.KObj(pod))
+			klog.V(5).InfoS("RunPreFilterPlugins hooked", "hook", hook.Name(), "pod", klog.KObj(pod))
 			return ext.Framework.RunPreFilterPlugins(ctx, cycleState, newPod)
 		}
 	}
 	return ext.Framework.RunPreFilterPlugins(ctx, cycleState, pod)
 }
 
-func (ext *frameworkExtenderImpl) RunFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) framework.PluginToStatus {
+// RunFilterPluginsWithNominatedPods hooks the Filter phase of framework with filter hooks.
+// We don't hook RunFilterPlugins since framework's RunFilterPluginsWithNominatedPods just calls its RunFilterPlugins.
+func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	for _, hook := range ext.filterHooks {
 		// hook can change the args (cycleState, pod, nodeInfo) for filter plugins
 		newPod, newNodeInfo, hooked := hook.FilterHook(ext.handle, cycleState, pod, nodeInfo)
 		if hooked {
-			klog.V(5).InfoS("RunFilterPlugins hooked", "meet FilterPhaseHook", "hook", hook.Name(), "pod", klog.KObj(pod))
-			return ext.Framework.RunFilterPlugins(ctx, cycleState, newPod, newNodeInfo)
+			klog.V(5).InfoS("RunFilterPluginsWithNominatedPods hooked", "hook", hook.Name(), "pod", klog.KObj(pod))
+			return ext.Framework.RunFilterPluginsWithNominatedPods(ctx, cycleState, newPod, newNodeInfo)
 		}
 	}
-	return ext.Framework.RunFilterPlugins(ctx, cycleState, pod, nodeInfo)
+	return ext.Framework.RunFilterPluginsWithNominatedPods(ctx, cycleState, pod, nodeInfo)
 }
 
 // PluginFactoryProxy is used to proxy the call to the PluginFactory function and pass in the ExtendedHandle for the custom plugin

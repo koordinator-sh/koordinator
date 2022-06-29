@@ -50,6 +50,8 @@ var (
 			},
 		},
 	}
+
+	defaultEnablePreemption = pointer.Bool(false)
 )
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
@@ -78,5 +80,11 @@ func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
 	}
 	if obj.ScoringStrategy == nil {
 		obj.ScoringStrategy = defaultNodeNUMAResourceScoringStrategy
+	}
+}
+
+func SetDefaults_ReservationArgs(obj *ReservationArgs) {
+	if obj.EnablePreemption == nil {
+		obj.EnablePreemption = defaultEnablePreemption
 	}
 }
