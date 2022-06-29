@@ -20,12 +20,11 @@ import (
 	"path"
 	"sync"
 
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (
