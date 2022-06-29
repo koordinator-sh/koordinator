@@ -1,0 +1,401 @@
+---
+title: Fine-grained Device Scheduling
+authors:
+- "@buptcozy"
+co-authors:
+- "@eahydra"
+reviewers:
+- "@eahydra"
+- "@hormes"
+- "@yihuifeng"
+- "@honpey"
+- "@zwzhang0107"
+- "@jasonliu747"
+creation-date: 2022-06-29
+last-updated: 2022-07-08
+status: provisional
+
+---
+
+# Fine-grained Device Scheduling
+
+<!-- TOC -->
+
+- [Fine-grained Device Scheduling](#fine-grained-device-scheduling)
+    - [Summary](#summary)
+    - [Motivation](#motivation)
+        - [Goals](#goals)
+        - [Non-goals/Future work](#non-goalsfuture-work)
+    - [Proposal](#proposal)
+        - [API](#api)
+            - [Device resource dimensions](#device-resource-dimensions)
+            - [User apply device resources scenarios](#user-apply-device-resources-scenarios)
+                - [Compatible with nvidia.com/gpu](#compatible-with-nvidiacomgpu)
+                - [Apply whole resources of GPU or part resources of GPU](#apply-whole-resources-of-gpu-or-part-resources-of-gpu)
+                - [Apply koordinator.sh/gpu-core and koordinator.sh/gpu-memory-ratio separately](#apply-koordinatorshgpu-core-and-koordinatorshgpu-memory-ratio-separately)
+                - [Apply koordinator.sh/gpu-core and koordinator.sh/gpu-memory separately](#apply-koordinatorshgpu-core-and-koordinatorshgpu-memory-separately)
+                - [Apply RDMA](#apply-rdma)
+        - [Implementation Details](#implementation-details)
+            - [Scheduling](#scheduling)
+                - [DeviceAllocation](#deviceallocation)
+                - [NodeDevicePlugin](#nodedeviceplugin)
+            - [Device Reporter](#device-reporter)
+            - [koordlet and koord-runtime-proxy](#koordlet-and-koord-runtime-proxy)
+        - [Compatibility](#compatibility)
+    - [Unsolved Problems](#unsolved-problems)
+    - [Alternatives](#alternatives)
+    - [Implementation History](#implementation-history)
+    - [References](#references)
+
+<!-- /TOC -->
+
+## Summary
+
+This proposal provides a fine-grained mechanism for managing GPUs nd other devices such as RDMA and FPGA, defines a set of APIs to describe device information on nodes, including GPU, RDMA, and FPGA, and a new set of resource names to flexibly support users to apply at a finer granularity GPU resources. This mechanism is the basis for subsequent other GPU scheduling capabilities such as GPU Share, GPU Overcommitment, etc.
+
+## Motivation
+
+GPU devices have very strong computing power, but are expensive. How to make better use of GPU equipment, give full play to the value of GPU and reduce costs is a problem that needs to be solved. In the existing GPU allocation mechanism of the K8s community, the GPU is allocated by the kubelet, and it is a complete device allocation. This method is simple and reliable, but similar to the CPU and memory, the GPU will also be wasted. Therefore, some users expect to use only a portion of the GPU's resources and share the rest with other workloads to save costs. Moreover, GPU has particularities. For example, the NVLink and oversold scenarios supported by NVIDIA GPU mentioned below both require a central decision through the scheduler to obtain globally optimal allocation results.
+
+![image](/docs/images/nvlink.jpg)
+
+From the picture, we can find that although the node has 8 GPU instances whose model is A100/V100, the data transmission speed between GPU instances is different. When a Pod requires multiple GPU instances, we can assign the Pod the GPU instances with the maximum data transfer speed combined relationship. In addition, when we want the GPU instances among a group of Pods to have the maximum data transfer speed combined relationship, the scheduler should batch allocate the best GPU instances to these Pods and assign them to the same node.
+
+### Goals
+
+1. Definition Device CRD and the Resource API. 
+1. Provides a reporter component in koordlet to report Device information and resource capacities.
+1. Provides a scheduler plugin to support users to apply at a finer granularity GPU resources.
+1. Provider a new runtime hook plugin in koordlet to support update the environments of containers with GPUs that be allocated by scheduler.
+
+### Non-goals/Future work
+
+1. Define flexible allocation strategies, such as implementing BinPacking or Spread according to GPU resources
+
+## Proposal
+
+### API
+
+#### Device resource dimensions
+
+Due to GPU is complicated, we will introduce GPU first. As we all know there is compute and GPU Memory capability for the GPU device. Generally user apply GPU like "I want 1/2/4/8 GPUs", but if node support GPU level isolation mechanism, user may apply GPU like "I want 0.5/0.25 GPU resources". Moreover, user may set different compute capability and GPU memory capability for best resource utilization, so the user want apply GPU like "I want X percent of "compute capability and Y percent of memory capability".
+
+We abstract GPU resources into different dimensions:
+
+- `koordinator.sh/gpu-core` represents the computing capacity of the GPU. Similar to K8s MilliCPU, we abstract the total computing power of GPU into one hundred, and users can apply for the corresponding amount of GPU computing power according to their needs.
+- `koordinator.sh/gpu-memory` represents the memory capacity of the GPU in bytes.
+- `koordinator.sh/gpu-memory-ratio` represents the percentage of the GPU's memory.
+
+Assuming that node A has 4 GPU instances, and the total memory of each instance is 8GB, when device reporter reports GPU capacity information to `Node.Status.Allocatable`, it no longer reports nvidia.com/gpu=4, but reports the following information:
+
+```yaml
+status:
+  capacity:
+    koordinator.sh/gpu-core: 400
+    koordinator.sh/gpu-memory: "32GB"
+    koordinator.sh/gpu-memory-ratio: 400
+  allocatable:
+    koordinator.sh/gpu-core: 400
+    koordinator.sh/gpu-memory: "32GB"
+    koordinator.sh/gpu-memory-ratio: 400
+```
+
+For the convenience of users, an independent resource name `koordinator.sh/gpu` is defined. For example, when a user wants to use half of the computing resources and memory resources of a GPU instance, the user can directly declare `koordinator.sh/gpu: 50`, and the scheduler will convert it to `koordinator.sh/gpu-core: 50, koordinator. sh/gpu-memory-ratio: 50`
+
+For other devices like RDMA and FPGA, the node has 1 RDMA and 1 FGPA, will report the following information:
+
+```yaml
+status:
+  capacity:
+    koordinator.sh/rdma: 100
+    koordinator.sh/fpga: 100
+  allocatable:
+    koordinator.sh/rdma: 100
+    koordinator.sh/fpga: 100
+```
+
+Why do we need `koordinator.sh/gpu-memory-ratio` and `koordinator.sh/gpu-memory` ? 
+When user apply 0.5/0.25 GPU, the user don't know the exact memory total bytes per GPU, only wants to use 
+half or quarter percentage of memory, so user can request the GPU memory with `koordinator.sh/gpu-memory-ratio`. 
+When scheduler assigned Pod on concrete node, scheduler will translate the `koordinator.sh/gpu-memory-ratio` to `koordinator.sh/gpu-memory` by the formulas:  ***allocatedMemory = totalMemoryOf(GPU)  * `koordinator.sh/gpu-memory-ratio`***, so that the GPU isolation can work.
+
+During the scheduling filter phase, the scheduler will do special processing for `koordinator.sh/gpu-memory` and `koordinator.sh/gpu-memory-ratio`. When a Pod specifies `koordinator.sh/gpu-memory-ratio`, the scheduler checks each GPU instance on each node for unallocated or remaining resources to ensure that the remaining memory on each GPU instance meets the ratio requirement.
+
+If the user knows exactly or can roughly estimate the specific memory consumption of the workload, he can apply for GPU memory through `koordinator.sh/gpu-memory`. All details can be seen below.
+
+Besides, when dimension's value > 100, means Pod need multi-devices. now only allow the value can be divided by 100.
+
+#### User apply device resources scenarios
+
+##### Compatible with `nvidia.com/gpu`
+
+```yaml
+resources:
+  requests:
+    nvidia.com/gpu: "2"
+    cpu: "4"
+    memory: "8Gi"
+```
+
+The scheduler translates the `nvida.com/gpu: 1` to the following spec:
+
+```yaml
+resources:
+  requests:
+    koordinator.sh/gpu-core: "200"
+    koordinator.sh/gpu-memory-ratio: "200"
+    koordinator.sh/gpu-memory: "16Gi" # assume 8G memory in bytes per GPU
+    cpu: "4"
+    memory: "8Gi"
+```
+
+##### Apply whole resources of GPU or part resources of GPU
+
+```yaml
+resources:
+   requests:
+    koordinator.sh/gpu: "50"
+    cpu: "4"
+    memory: "8Gi"
+```
+
+The scheduler translates the `koordinator.sh/gpu: "50"` to the following spec:
+
+```yaml
+resources:
+  requests:
+    koordinator.sh/gpu-core: "50"
+    koordinator.sh/gpu-memory-ratio: "50"
+    koordinator.sh/gpu-memory: "4Gi" # assume 8G memory in bytes for the GPU
+    cpu: "4"
+    memory: "8Gi"
+```
+
+##### Apply `koordinator.sh/gpu-core` and `koordinator.sh/gpu-memory-ratio` separately
+
+```yaml
+resources:
+  requests:
+    koordinator.sh/gpu-core: "50"
+    koordinator.sh/gpu-memory-ratio: "60"
+    cpu: "4"
+    memory: "8Gi"
+```
+
+##### Apply `koordinator.sh/gpu-core` and `koordinator.sh/gpu-memory` separately
+
+```yaml
+resources:
+  requests:
+    koordinator.sh/gpu-core: "60"
+    koordinator.sh/gpu-memory: "4Gi"
+    cpu: "4"
+    memory: "8Gi"
+```
+
+##### Apply RDMA
+
+```yaml
+resources:
+  requests:
+    koordinator.sh/rdma: "100"
+    cpu: "4"
+    memory: "8Gi"
+```
+
+### Implementation Details
+
+#### Scheduling
+
+1. Abstract new data structure to describe resources and healthy status per device on the node.
+2. Implements the Filter/Reserve/PreBind extenstion points.
+3. Automatically recognize different kind devices. When a new device added, we don't need modify any code
+
+##### DeviceAllocation
+
+In the PreBind stage, the scheduler will update the device (including GPU) allocation results, including the device's Minor and resource allocation information, to the Pod in the form of annotations.
+
+```go
+/*
+{
+  "gpu": [
+    {
+      "minor": 0,
+      "resouurces": {
+        "koordinator.sh/gpu-core": 100,
+        "koordinator.sh/gpu-mem-ratio": 100,
+        "koordinator.sh/gpu-mem": "16Gi"
+      }
+    },
+    {
+      "minor": 1,
+      "resouurces": {
+        "koordinator.sh/gpu-core": 100,
+        "koordinator.sh/gpu-mem-ratio": 100,
+        "koordinator.sh/gpu-mem": "16Gi"
+      }
+    }
+  ]
+}
+*/
+type DeviceAllocation struct {
+    Minor     int32
+    Resources map[string]resource.Quantity
+}
+type DeviceAllocations map[DeviceType][]*DeviceAllocation
+```
+
+##### NodeDevicePlugin
+
+```go
+var (
+	_ framework.FilterPlugin    = &NodeDevicePlugin{}
+	_ framework.ReservePlugin   = &NodeDevicePlugin{}
+	_ framework.PreBindPlugin   = &NodeDevicePlugin{}
+)
+type NodeDevicePlugin struct {
+    frameworkHandler     framework.Handle
+    deviceClient         deviceClient.Interface
+    deviceLister         devicelister.DeviceLister
+    nodeLister           listerv1.NodeLister
+    nodeDeviceCache      *NodeDeviceCache
+}
+type NodeDeviceCache struct {
+    nodeDevices map[string]*nodeDevice
+}
+type nodeDevice struct {
+    DeviceTotal map[DeviceType]*deviceResource
+    DeviceFree  map[DeviceType]*deviceResource
+    DeviceUsed  map[DeviceType]*deviceResource
+    AllocateSet map[string]*PodInfo
+}
+// We use `deviceResource` to present resources per device.
+// "0": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
+// "1": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
+type deviceResource struct {
+    // key is the minor of device
+    DeviceKeyValueMap map[int32]map[string]resource.Quantity
+}
+```
+
+We will register node and device event handler to maintain device account.
+
+In Filter, we will make-up each device request by a node(the gpu-memory example), and try compare each device free 
+resource and pod device request.
+
+In Reserve/UnReserve, we will update nodeDeviceCache's used/free resource and allocateSet. Now device selection rule just based on device minor id order.
+
+In PreBind, we will write DeviceAllocations to Pod's annotation.
+
+In init stage, we should list all Node/Device/Pods to recover device accounts.
+
+#### Device Reporter
+
+Implements a new component called  `Device Reporter` in koordlet to create or update `Device` CRD instance with the resources information and healthy status per device including GPU, RDMA and FPGA, etc. This version we only support GPU. It will execution `nccl` commands to get each minor resource just like k8s-gpu-device-plugins. We will apply community health check logic.
+
+```go
+type DeviceType string
+const (
+    GPU  DeviceType = "gpu"
+    FPGA DeviceType = "fpga"
+    RDMA DeviceType = "rdma"
+)
+type DeviceList struct {
+    metav1.TypeMeta `json:",inline"`
+    metav1.ListMeta `json:"metadata,omitempty"`
+    Items []Device `json:"items"`   
+}
+type DevicesSpec struct {
+    Items  []Device `json:"items"`
+}
+type Device struct {
+    metav1.TypeMeta   `json:",inline"`
+    metav1.ObjectMeta `json:"metadata,omitempty"`
+    Spec   DeviceSpec `json:"spec,omitempty"`
+    Status DevicesStatus `json:"status,omitempty"`
+}
+type DeviceSpec struct {
+    Devices []DeviceInfo `json:"devices"`
+}
+type DeviceInfo struct {
+    // ID represents the UUID of device
+    ID string `json:"id,omitempty"`
+    // Minor represents the Minor number of Device, starting from 0
+    Minor int32 `json:"minor,omitempty"`
+    // Type represents the type of device
+    Type DeviceType `json:"deviceType,omitempty"`
+    // Health indicates whether the device is normal
+    Health bool `json:"health,omitempty"`
+    // Resources represents the total capacity of various resources of the device
+    Resources map[string]resource.Quantity `json:"resource,omitempty"`
+}
+type DevicesStatus struct {
+    Allocations []DeviceAllocation `json:"allocations"`  // record each pod device usage card list, more detail see Compatibility    
+}
+type DeviceAllocation struct {
+    Type    DeviceType             `json:"type"`
+    Entries []DeviceAllocationItem `json:"entries"`
+}
+type DeviceAllocationItem struct {
+    Name      string   `json:"name"`
+    Namespace string   `json:"namespace"`
+    UUID      string   `json:"uuid"`
+    Devices   []string `json:"devices"`
+}
+```
+
+#### koordlet and koord-runtime-proxy
+
+Our target is to work compatible with origin k8s kubelet and k8s device plugins, so:
+1. We still allow kubelet and device plugin to allocate concrete device, which means no matter there's a k8s device 
+plugin or not, our design can work well.
+2. In koord-runtime-proxy, we will use Pod's `DeviceAllocation` in annotation to replace the step1's result of container's 
+args and envs.
+
+We should modify protocol between koord-runtime-proxy and koordlet to add container env:
+
+```go
+type ContainerResourceHookRequest struct {  
+    ....
+    Env map[string]string
+}
+type ContainerResourceHookResponse struct {
+    ....
+    Env map[string]string
+}
+```
+
+Then we will add a new `gpu-hook` in koordlet's runtimehooks. It's used in `PreStartContainer` and `PostContainerstage`. 
+We will generate new GPU env `NVIDIA_VISIBLE_DEVICES` by Pod GPU allocation result in annotation. 
+
+When we handle hot-update processing, we can handle the existing scheduled Pods without device allocation in pod's annotation. If GPU allocation info is not in annotation, we will find the GPU allocations from `ContainerResourceHookRequest`'s `Env`, and we will update all GPU allocations to Device CRD instance. 
+
+The koord-runtime-proxy can see these Pod's env, we need koord-runtime-proxy to pass these environments to koordlet, and koordlet parse the GPU related env to find the concrete device ids. Then koordlet will update these information to Device CRD intance, which help scheduler to recover the deviceCache.
+
+Besides, the koordlet should report GPU model to node labels same as device plugin, this is in-case koordinator working without device-plugin.
+
+Finally, we should modify `ContainerResourceExecutor`'s `UpdateRequest` function in koord-runtime-proxy, and let new GPU env covering old GPU env.
+
+### Compatibility
+
+As we know, the GPU scheduling in kube-scheduler side has no any different with other scalar resources. The concrete 
+device-level assigning is done by kubelet and GPU device plugin, which will generate container's GPU env. 
+
+Our design has no conflict with the above process. our device reporter will report koordinator GPU resources for kubelet
+updating node resources. Then we schedule device request in our new plugin with new device resource account. In pre-bind 
+stage, we will update container resources with koordinator GPU resources, this is for kubelet to check resource limitation.
+We will also add device allocation information to pod's annotation. In node side, the k8s device plugin will first patch
+container env, but we will overwrite these envs in runtimeproxy by allocation result in pod's annotation.
+
+If there is no GPU device plugin, the only different is in pre-bind stage, we will erase the origin-gpu-resource-dimension
+in container to pass kubelet resource limitation check. This will be a flag in scheduler side.
+
+## Unsolved Problems
+
+## Alternatives
+
+1. User can choose whether use k8s-device plugin. as mentioned above, we can compatible in both cases.
+
+## Implementation History
+
+## References
