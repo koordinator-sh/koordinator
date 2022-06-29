@@ -77,3 +77,16 @@ func GetPodCPUAllocs(annotations map[string]string) (PodCPUAllocs, error) {
 	}
 	return allocs, nil
 }
+
+func GetNodeCPUSharePools(nodeTopoAnnotations map[string]string) ([]CPUSharedPool, error) {
+	var cpuSharePools []CPUSharedPool
+	data, ok := nodeTopoAnnotations[AnnotationNodeCPUSharedPools]
+	if !ok {
+		return cpuSharePools, nil
+	}
+	err := json.Unmarshal([]byte(data), &cpuSharePools)
+	if err != nil {
+		return nil, err
+	}
+	return cpuSharePools, nil
+}

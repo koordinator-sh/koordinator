@@ -106,6 +106,8 @@ func (s *statesInformer) reportNodeTopology() {
 		if topology.Annotations == nil {
 			topology.Annotations = make(map[string]string)
 		}
+		// TODO only update if necessary
+		s.updateNodeTopo(topology)
 		if topology.Annotations[extension.AnnotationNodeCPUTopology] == string(cpuTopologyJson) && topology.Annotations[extension.AnnotationNodeCPUSharedPools] == string(cpuSharePoolsJson) {
 			return nil
 		}
@@ -188,4 +190,22 @@ func (s *statesInformer) calCpuTopology() (*extension.CPUTopology, map[int32]*ex
 		usedCPUs[cpu.CPUID] = &info
 	}
 	return cpuTopology, usedCPUs, nil
+}
+
+func (s *statesInformer) updateNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
+	s.setNodeTopo(newTopo)
+	klog.V(5).Infof("local node topology info updated %v", newTopo)
+	s.sendCallbacks(RegisterTypeNodeTopology)
+}
+
+func (s *statesInformer) setNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
+	s.nodeTopoMutex.Lock()
+	defer s.nodeTopoMutex.Unlock()
+	s.nodeTopology = newTopo
+}
+
+func (s *statesInformer) getNodeTopo() *v1alpha1.NodeResourceTopology {
+	s.nodeTopoMutex.RLock()
+	defer s.nodeTopoMutex.RUnlock()
+	return s.nodeTopology.DeepCopy()
 }
