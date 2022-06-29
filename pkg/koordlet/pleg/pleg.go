@@ -20,6 +20,8 @@ import (
 	"path"
 	"sync"
 
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
@@ -134,7 +136,8 @@ func (p *pleg) RemoverHandler(id HandlerID) PodLifeCycleHandler {
 func (p *pleg) Run(stopCh <-chan struct{}) error {
 	qosClasses := []corev1.PodQOSClass{corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort}
 	for _, qosClass := range qosClasses {
-		cgroupPath := path.Join(p.cgroupRootPath, util.GetPodQoSRelativePath(qosClass))
+		// choose cpu subsystem as ground truth since we only need to watch one of all subsystems, and cpu subsystem always and must exist
+		cgroupPath := path.Join(p.cgroupRootPath, system.CgroupCPUDir, util.GetPodQoSRelativePath(qosClass))
 		err := p.podWatcher.AddWatch(cgroupPath)
 		if err != nil {
 			klog.Errorf("failed to watch path %v err %v", cgroupPath, err)
