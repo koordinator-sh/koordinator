@@ -126,7 +126,7 @@ If the user knows exactly or can roughly estimate the specific memory consumptio
 Besides, when dimension's value > 100, means Pod need multi-devices. now only allow the value can be divided by 100.
 
 #### User apply device resources scenarios
-
+   
 ##### Compatible with `nvidia.com/gpu`
 
 ```yaml
@@ -242,6 +242,7 @@ type DeviceAllocation struct {
     Minor     int32
     Resources map[string]resource.Quantity
 }
+
 type DeviceAllocations map[DeviceType][]*DeviceAllocation
 ```
 
@@ -253,6 +254,7 @@ var (
 	_ framework.ReservePlugin   = &NodeDevicePlugin{}
 	_ framework.PreBindPlugin   = &NodeDevicePlugin{}
 )
+
 type NodeDevicePlugin struct {
     frameworkHandler     framework.Handle
     deviceClient         deviceClient.Interface
@@ -260,15 +262,18 @@ type NodeDevicePlugin struct {
     nodeLister           listerv1.NodeLister
     nodeDeviceCache      *NodeDeviceCache
 }
+
 type NodeDeviceCache struct {
     nodeDevices map[string]*nodeDevice
 }
+
 type nodeDevice struct {
     DeviceTotal map[DeviceType]*deviceResource
     DeviceFree  map[DeviceType]*deviceResource
     DeviceUsed  map[DeviceType]*deviceResource
     AllocateSet map[string]*PodInfo
 }
+
 // We use `deviceResource` to present resources per device.
 // "0": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
 // "1": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
@@ -276,6 +281,7 @@ type deviceResource struct {
     // key is the minor of device
     DeviceKeyValueMap map[int32]map[string]resource.Quantity
 }
+
 ```
 
 We will register node and device event handler to maintain device account.
@@ -295,28 +301,36 @@ Implements a new component called  `Device Reporter` in koordlet to create or up
 
 ```go
 type DeviceType string
+
 const (
     GPU  DeviceType = "gpu"
     FPGA DeviceType = "fpga"
     RDMA DeviceType = "rdma"
 )
+
 type DeviceList struct {
     metav1.TypeMeta `json:",inline"`
     metav1.ListMeta `json:"metadata,omitempty"`
+
     Items []Device `json:"items"`   
 }
+
 type DevicesSpec struct {
     Items  []Device `json:"items"`
 }
+
 type Device struct {
     metav1.TypeMeta   `json:",inline"`
     metav1.ObjectMeta `json:"metadata,omitempty"`
+
     Spec   DeviceSpec `json:"spec,omitempty"`
     Status DevicesStatus `json:"status,omitempty"`
 }
+
 type DeviceSpec struct {
     Devices []DeviceInfo `json:"devices"`
 }
+
 type DeviceInfo struct {
     // ID represents the UUID of device
     ID string `json:"id,omitempty"`
@@ -329,13 +343,16 @@ type DeviceInfo struct {
     // Resources represents the total capacity of various resources of the device
     Resources map[string]resource.Quantity `json:"resource,omitempty"`
 }
+
 type DevicesStatus struct {
     Allocations []DeviceAllocation `json:"allocations"`  // record each pod device usage card list, more detail see Compatibility    
 }
+
 type DeviceAllocation struct {
     Type    DeviceType             `json:"type"`
     Entries []DeviceAllocationItem `json:"entries"`
 }
+
 type DeviceAllocationItem struct {
     Name      string   `json:"name"`
     Namespace string   `json:"namespace"`
@@ -359,6 +376,7 @@ type ContainerResourceHookRequest struct {
     ....
     Env map[string]string
 }
+
 type ContainerResourceHookResponse struct {
     ....
     Env map[string]string
