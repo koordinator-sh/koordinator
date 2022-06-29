@@ -17,17 +17,29 @@ limitations under the License.
 package statesinformer
 
 import (
-	"reflect"
-
 	"k8s.io/klog/v2"
-
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
-var (
-	RegisterTypeNodeSLO = reflect.TypeOf(&slov1alpha1.NodeSLO{})
-	RegisterTypePod     = reflect.TypeOf(&PodMeta{})
+type RegisterType int64
+
+const (
+	RegisterTypeNodeSLOSpec RegisterType = iota
+	RegisterTypeAllPods
+	RegisterTypeNodeTopology
 )
+
+func (r RegisterType) String() string {
+	switch r {
+	case RegisterTypeNodeSLOSpec:
+		return "RegisterTypeNodeSLOSpec"
+	case RegisterTypeAllPods:
+		return "RegisterTypeAllPods"
+	case RegisterTypeNodeTopology:
+		return "RegisterTypeNodeTopology"
+	default:
+		return "RegisterTypeUnknown"
+	}
+}
 
 type updateCallback struct {
 	name        string
@@ -35,16 +47,17 @@ type updateCallback struct {
 	fn          UpdateCbFn
 }
 
-type UpdateCbFn func(s StatesInformer)
+type UpdateCbCtx struct{}
+type UpdateCbFn func(t RegisterType, obj interface{}, pods []*PodMeta)
 
-func (s *statesInformer) RegisterCallbacks(objType reflect.Type, name, description string, callbackFn UpdateCbFn) {
-	callbacks, legal := s.stateUpdateCallbacks[objType]
+func (s *statesInformer) RegisterCallbacks(rType RegisterType, name, description string, callbackFn UpdateCbFn) {
+	callbacks, legal := s.stateUpdateCallbacks[rType]
 	if !legal {
-		klog.Fatalf("states informer callback register with type %v is illegal", objType)
+		klog.Fatalf("states informer callback register with type %v is illegal", rType.String())
 	}
 	for _, c := range callbacks {
 		if c.name == name {
-			klog.Fatalf("states informer callback register %s with type %v already registered", name, objType)
+			klog.Fatalf("states informer callback register %s with type %v already registered", name, rType.String())
 		}
 	}
 	newCb := updateCallback{
@@ -52,11 +65,11 @@ func (s *statesInformer) RegisterCallbacks(objType reflect.Type, name, descripti
 		description: description,
 		fn:          callbackFn,
 	}
-	s.stateUpdateCallbacks[objType] = append(s.stateUpdateCallbacks[objType], newCb)
-	klog.Infof("states informer callback %s has registered", name)
+	s.stateUpdateCallbacks[rType] = append(s.stateUpdateCallbacks[rType], newCb)
+	klog.V(1).Infof("states informer callback %s has registered", name)
 }
 
-func (s *statesInformer) sendCallbacks(objType reflect.Type) {
+func (s *statesInformer) sendCallbacks(objType RegisterType) {
 	if _, exist := s.callbackChans[objType]; exist {
 		select {
 		case s.callbackChans[objType] <- struct{}{}:
@@ -65,19 +78,20 @@ func (s *statesInformer) sendCallbacks(objType reflect.Type) {
 			klog.Infof("last callback runner %v has not finished, ignore this time", objType.String())
 		}
 	} else {
-		klog.Warningf("callback runner %v is not exist", objType.Name())
+		klog.Warningf("callback runner %v is not exist", objType.String())
 	}
 }
 
-func (s *statesInformer) runCallbacks(objType reflect.Type, obj interface{}) {
+func (s *statesInformer) runCallbacks(objType RegisterType, obj interface{}) {
 	callbacks, exist := s.stateUpdateCallbacks[objType]
 	if !exist {
 		klog.Errorf("states informer callbacks type %v not exist", objType.String())
 		return
 	}
+	pods := s.GetAllPods()
 	for _, c := range callbacks {
 		klog.V(5).Infof("start running callback function %v for type %v", c.name, objType.String())
-		c.fn(s)
+		c.fn(objType, obj, pods)
 	}
 }
 
@@ -87,8 +101,8 @@ func (s *statesInformer) startCallbackRunners(stopCh <-chan struct{}) {
 		go func() {
 			for {
 				select {
-				case <-s.callbackChans[cbType]:
-					cbObj := s.getObjByType(cbType)
+				case cbCtx := <-s.callbackChans[cbType]:
+					cbObj := s.getObjByType(cbType, cbCtx)
 					if cbObj == nil {
 						klog.Warningf("callback runner with type %v is not exist")
 					} else {
@@ -103,10 +117,16 @@ func (s *statesInformer) startCallbackRunners(stopCh <-chan struct{}) {
 	}
 }
 
-func (s *statesInformer) getObjByType(objType reflect.Type) interface{} {
+func (s *statesInformer) getObjByType(objType RegisterType, cbCtx UpdateCbCtx) interface{} {
 	switch objType {
-	case reflect.TypeOf(&slov1alpha1.NodeSLO{}):
-		return s.GetNodeSLO()
+	case RegisterTypeNodeSLOSpec:
+		nodeSLO := s.GetNodeSLO()
+		if nodeSLO != nil {
+			return &nodeSLO.Spec
+		}
+		return nil
+	case RegisterTypeAllPods:
+		return &struct{}{}
 	}
 	return nil
 }

@@ -31,6 +31,10 @@ func (b *bvtPlugin) SetPodBvtValue(p protocol.HooksProtocol) error {
 		return nil
 	}
 	r := b.getRule()
+	if r == nil {
+		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
+		return nil
+	}
 	podCtx := p.(*protocol.PodContext)
 	req := podCtx.Request
 	podQoS := ext.GetQoSClassByLabels(req.Labels)
@@ -46,6 +50,10 @@ func (b *bvtPlugin) SetKubeQOSBvtValue(p protocol.HooksProtocol) error {
 		return nil
 	}
 	r := b.getRule()
+	if r == nil {
+		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
+		return nil
+	}
 	kubeQOSCtx := p.(*protocol.KubeQOSContext)
 	req := kubeQOSCtx.Request
 	bvtValue := r.getKubeQoSDirBvtValue(req.KubeQOSClass)

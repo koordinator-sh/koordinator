@@ -49,6 +49,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 		},
 	}
 	type fields struct {
+		rule            *bvtRule
 		systemSupported *bool
 	}
 	type args struct {
@@ -67,6 +68,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 		{
 			name: "set ls pod bvt",
 			fields: fields{
+				rule:            defaultRule,
 				systemSupported: pointer.Bool(true),
 			},
 			args: args{
@@ -85,6 +87,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 		{
 			name: "set be pod bvt",
 			fields: fields{
+				rule:            defaultRule,
 				systemSupported: pointer.Bool(true),
 			},
 			args: args{
@@ -103,7 +106,27 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 		{
 			name: "set be pod bvt but system not support",
 			fields: fields{
+				rule:            defaultRule,
 				systemSupported: pointer.Bool(false),
+			},
+			args: args{
+				request: &runtimeapi.PodSandboxHookRequest{
+					Labels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSBE),
+					},
+					CgroupParent: "kubepods/besteffort/pod-besteffort-test-uid/",
+				},
+				response: &runtimeapi.PodSandboxHookResponse{},
+			},
+			want: want{
+				bvtValue: nil,
+			},
+		},
+		{
+			name: "set be pod bvt but rule is nil",
+			fields: fields{
+				rule:            nil,
+				systemSupported: pointer.Bool(true),
 			},
 			args: args{
 				request: &runtimeapi.PodSandboxHookRequest{
@@ -125,7 +148,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			initCPUBvt(tt.args.request.CgroupParent, 0, testHelper)
 
 			b := &bvtPlugin{
-				rule:         defaultRule,
+				rule:         tt.fields.rule,
 				sysSupported: tt.fields.systemSupported,
 			}
 			ctx := &protocol.PodContext{}
@@ -164,6 +187,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 		},
 	}
 	type fields struct {
+		rule         *bvtRule
 		sysSupported *bool
 	}
 	type args struct {
@@ -181,6 +205,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 		{
 			name: "set guaranteed dir bvt",
 			fields: fields{
+				rule:         defaultRule,
 				sysSupported: pointer.BoolPtr(true),
 			},
 			args: args{
@@ -193,6 +218,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 		{
 			name: "set burstable dir bvt",
 			fields: fields{
+				rule:         defaultRule,
 				sysSupported: pointer.BoolPtr(true),
 			},
 			args: args{
@@ -205,6 +231,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 		{
 			name: "set be dir bvt",
 			fields: fields{
+				rule:         defaultRule,
 				sysSupported: pointer.BoolPtr(true),
 			},
 			args: args{
@@ -217,7 +244,21 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 		{
 			name: "set be dir bvt but system not support",
 			fields: fields{
+				rule:         defaultRule,
 				sysSupported: pointer.BoolPtr(false),
+			},
+			args: args{
+				kubeQOS: corev1.PodQOSBestEffort,
+			},
+			want: want{
+				bvtValue: nil,
+			},
+		},
+		{
+			name: "set be dir bvt but rule is nil",
+			fields: fields{
+				rule:         nil,
+				sysSupported: pointer.BoolPtr(true),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSBestEffort,
@@ -234,7 +275,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			initCPUBvt(kubeQOSDir, 0, testHelper)
 
 			b := &bvtPlugin{
-				rule:         defaultRule,
+				rule:         tt.fields.rule,
 				sysSupported: tt.fields.sysSupported,
 			}
 			ctx := &protocol.KubeQOSContext{}
