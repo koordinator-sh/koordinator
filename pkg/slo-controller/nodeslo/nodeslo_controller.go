@@ -18,13 +18,11 @@ package nodeslo
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,17 +31,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 // NodeSLOReconciler reconciles a NodeSLO object
 type NodeSLOReconciler struct {
 	client.Client
-	config noderesource.Config
-	Scheme *runtime.Scheme
+	sloCfgCache *SLOCfgCache
+	Scheme      *runtime.Scheme
 }
 
 func (r *NodeSLOReconciler) initNodeSLO(node *corev1.Node, nodeSLO *slov1alpha1.NodeSLO) error {
@@ -65,59 +60,28 @@ func (r *NodeSLOReconciler) initNodeSLO(node *corev1.Node, nodeSLO *slov1alpha1.
 }
 
 func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alpha1.NodeSLOSpec) (*slov1alpha1.NodeSLOSpec, error) {
-	// get cr's spec from the configmap
-	// if the configmap does not exist, use the default
-	if r.Client == nil {
-		klog.Errorf("getNodeSLOSpec failed to load configmap %s/%s",
-			config.ConfigNameSpace, config.SLOCtrlConfigMap)
-		return nil, fmt.Errorf("no available client")
+	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{}
+	if oldSpec != nil {
+		nodeSLOSpec = oldSpec.DeepCopy()
 	}
 
-	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{
-		ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
-		ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
-	}
+	sloCfg := r.sloCfgCache.GetSLOCfgCopy()
 
-	// TODO: record an event about the failure reason on configmap/crd when failed to load the config
-	configMap := &corev1.ConfigMap{}
-	keyTypes := types.NamespacedName{Namespace: config.ConfigNameSpace, Name: config.SLOCtrlConfigMap}
-	if err := r.Client.Get(context.TODO(), keyTypes, configMap); err != nil {
-		// default when the configmap does not exist
-		if errors.IsNotFound(err) {
-			klog.Infof("getNodeSLOSpec(): config map %s/%s not exist, err:%s", config.ConfigNameSpace,
-				config.SLOCtrlConfigMap, err)
-			return nodeSLOSpec, nil
-		}
-		// abort spec update if cannot get configmap
-		klog.Errorf("getNodeSLOSpec(): failed to load config map %s/%s, err:%s", config.ConfigNameSpace,
-			config.SLOCtrlConfigMap, err)
-		return nil, err
-	}
-
-	// TODO: no longer merge custom config with the default in nodeslo controller as it would be done twice in the agent
-	// resourceThreshold spec
-	resourceThresholdSpec, err := getResourceThresholdSpec(node, configMap)
+	var err error
+	nodeSLOSpec.ResourceUsedThresholdWithBE, err = getResourceThresholdSpec(node, &sloCfg.ThresholdCfgMerged)
 	if err != nil {
-		klog.Warningf("getNodeSLOSpec(): failed to get resourceTheshold spec for node %s, set the default, "+
-			"error: %v", node.Name, err)
-	} else {
-		nodeSLOSpec.ResourceUsedThresholdWithBE = resourceThresholdSpec
+		klog.Warningf("getNodeSLOSpec(): failed to get resourceTheshold spec for node %s,error: %v", node.Name, err)
 	}
 
-	resourceQoSSpec, err := getResourceQoSSpec(node, configMap)
+	// resourceQOS spec
+	nodeSLOSpec.ResourceQoSStrategy, err = getResourceQoSSpec(node, &sloCfg.ResourceQoSCfgMerged)
 	if err != nil {
-		klog.Warningf("getNodeSLOSpec(): failed to get resourceQoS spec for node %s, set oldSpec(if exist) or "+
-			"default, error: %v", node.Name, err)
-	} else {
-		nodeSLOSpec.ResourceQoSStrategy = resourceQoSSpec
+		klog.Warningf("getNodeSLOSpec(): failed to get resourceQoS spec for node %s,error: %v", node.Name, err)
 	}
 
-	cpuBurstSpec, err := getCPUBurstConfigSpec(node, configMap)
+	nodeSLOSpec.CPUBurstStrategy, err = getCPUBurstConfigSpec(node, &sloCfg.CPUBurstCfgMerged)
 	if err != nil {
-		klog.Warningf("getCPUBurstConfigSpec(): failed to get cpuBurstConfig spec for node %s, set oldSpec(if "+
-			"exist) or default error: %v", node.Name, err)
-	} else {
-		nodeSLOSpec.CPUBurstStrategy = cpuBurstSpec
+		klog.Warningf("getNodeSLOSpec(): failed to get cpuBurstConfig spec for node %s,error: %v", node.Name, err)
 	}
 
 	return nodeSLOSpec, nil
@@ -131,6 +95,14 @@ func (r *NodeSLOReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	//   1. ensuring the NodeSLO exists iff the Node exists
 	//   2. update NodeSLO Spec
 	_ = log.FromContext(ctx, "node-slo-reconciler", req.NamespacedName)
+
+	// if cache unavailable, requeue the req
+	if !r.sloCfgCache.IsAvailable() {
+		// all nodes would be enqueued once the config is available, so here we just drop the req
+		klog.Warningf("slo config is not available, drop the req %v until a valid config is set",
+			req.NamespacedName)
+		return reconcile.Result{Requeue: false}, nil
+	}
 
 	// get the node
 	nodeExist := true
@@ -207,14 +179,13 @@ func (r *NodeSLOReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *NodeSLOReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	configMapCacheHandler := NewSLOCfgHandlerForConfigMapEvent(r.Client, DefaultSLOCfg())
+	r.sloCfgCache = &configMapCacheHandler.SLOCfgCache
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&slov1alpha1.NodeSLO{}).
 		Watches(&source.Kind{Type: &corev1.Node{}}, &nodemetric.EnqueueRequestForNode{
 			Client: r.Client,
 		}).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &noderesource.EnqueueRequestForConfigMap{
-			Config: &r.config,
-			Client: r.Client,
-		}).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, configMapCacheHandler).
 		Complete(r)
 }

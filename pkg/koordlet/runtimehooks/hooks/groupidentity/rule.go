@@ -54,7 +54,9 @@ func (r *bvtRule) getKubeQoSDirBvtValue(kubeQoS corev1.PodQOSClass) int64 {
 	return *util.NoneCPUQoS().GroupIdentity
 }
 
-func (b *bvtPlugin) parseRule(mergedNodeSLO *slov1alpha1.NodeSLOSpec) (bool, error) {
+func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
+	mergedNodeSLO := mergedNodeSLOIf.(*slov1alpha1.NodeSLOSpec)
+
 	// setting pod rule by qos config
 	lsrValue := *mergedNodeSLO.ResourceQoSStrategy.LSR.CPUQoS.CPUQoS.GroupIdentity
 	lsValue := *mergedNodeSLO.ResourceQoSStrategy.LS.CPUQoS.GroupIdentity
@@ -102,7 +104,15 @@ func (b *bvtPlugin) parseRule(mergedNodeSLO *slov1alpha1.NodeSLOSpec) (bool, err
 }
 
 func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
+	if !b.SystemSupported() {
+		klog.V(5).Infof("plugin %s is not supported by system", name)
+		return nil
+	}
 	r := b.getRule()
+	if r == nil {
+		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
+		return nil
+	}
 	for _, kubeQoS := range []corev1.PodQOSClass{
 		corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
 		bvtValue := r.getKubeQoSDirBvtValue(kubeQoS)
@@ -131,6 +141,9 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 func (b *bvtPlugin) getRule() *bvtRule {
 	b.ruleRWMutex.RLock()
 	defer b.ruleRWMutex.RUnlock()
+	if b.rule == nil {
+		return nil
+	}
 	rule := *b.rule
 	return &rule
 }

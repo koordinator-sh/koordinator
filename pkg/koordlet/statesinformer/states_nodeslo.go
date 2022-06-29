@@ -63,7 +63,7 @@ func (s *statesInformer) setupNodeSLOInformer() {
 
 func (s *statesInformer) updateNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	s.setNodeSLOSpec(nodeSLO)
-	s.sendCallbacks(reflect.TypeOf(&slov1alpha1.NodeSLO{}))
+	s.sendCallbacks(RegisterTypeNodeSLOSpec)
 }
 
 func (s *statesInformer) setNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {

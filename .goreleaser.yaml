@@ -85,6 +85,7 @@ changelog:
       - '^docs:'
       - '^test:'
       - '^chore:'
+      - '^feat(deps):'
 dockers:
   - image_templates:
       - "ghcr.io/{{.ProjectName}}/koord-manager:{{ .Version }}"

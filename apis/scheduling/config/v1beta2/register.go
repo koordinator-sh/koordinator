@@ -35,6 +35,7 @@ var (
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
 		&LoadAwareSchedulingArgs{},
+		&NodeNUMAResourceArgs{},
 	)
 	return nil
 }

@@ -11,7 +11,7 @@ reviewers:
 - "@stormgbs"
 - "@zwzhang0107"
 creation-date: 2022-05-30
-last-updated: 2022-06-05
+last-updated: 2022-06-24
 status: provisional
 
 ---
@@ -164,11 +164,11 @@ Because the CPU reserved by kubelet mainly serves K8s BestEffort and Burstable P
     1. If kubelet reserved CPUs, the best effort Pods use the reserved CPUs first.
     1. koordlet can use all CPUs in the node but exclude the CPUs allocated by K8s Guaranteed and Koordinator LSE Pods that have integer CPU. It means that if koordlet enables the CPU Suppress feature should follow the constraint to guarantee not affecting LSE Pods. Similarly, if kubelet enables the CPU manager policy with `static`, the K8s Guaranteed Pods should also be excluded. 
 1. For K8s Guaranteed Pods:
-    1. If there is `scheduler.koordinator.sh/resource-status` updated by koord-scheduler in the Pod annotation, then replace the CPUSet in the kubelet CRI request, including Sandbox/Container creating stage.
+    1. If there is `scheduling.koordinator.sh/resource-status` updated by koord-scheduler in the Pod annotation, then replace the CPUSet in the kubelet CRI request, including Sandbox/Container creating stage.
     1. kubelet sometimes call `Update` method defined in CRI to update container cgroup to set new CPUs, so koordlet and koord-runtime-proxy need to hook the method.
 1. Automatically resize CPU Shared Pool
     1. koordlet automatically resize `CPU Shared Pool` based on the changes such as Pod creating/destroying. If `CPU Shared Pool` changed, koordlet should update cgroups of all LS/K8s Burstable Pods with the CPUs of shared pool. 
-    1. If the corresponding `CPU Shared Pool` is specified in the annotation `scheduler.koordinator.sh/resource-status` of the Pod, koordlet need to bind only the CPUs of the corresponding pool when configuring the cgroup.
+    1. If the corresponding `CPU Shared Pool` is specified in the annotation `scheduling.koordinator.sh/resource-status` of the Pod, koordlet need to bind only the CPUs of the corresponding pool when configuring the cgroup.
 
 The takeover logic will require koord-runtime-proxy to add new extension points, and require koordlet to implement a new runtime hook plugin. When koord-runtime-proxy is not installed, these takeover logic will also be able to be implemented.
 
@@ -178,7 +178,7 @@ The takeover logic will require koord-runtime-proxy to add new extension points,
 
 ##### Resource spec
 
-The annotation `scheduler.koordinator.sh/resource-spec` is a resource allocation API defined by Koordinator. The user specifies the desired CPU orchestration policy by setting the annotation. In the future, we can also extend and add resource types that need to be supported as needed. The scheme corresponding to the annotation value is defined as follows:
+The annotation `scheduling.koordinator.sh/resource-spec` is a resource allocation API defined by Koordinator. The user specifies the desired CPU orchestration policy by setting the annotation. In the future, we can also extend and add resource types that need to be supported as needed. The scheme corresponding to the annotation value is defined as follows:
 
 ```go
 // ResourceSpec describes extra attributes of the compute resource requirements.
@@ -216,7 +216,7 @@ const (
    - `CPUBindPolicyNone` or empty value does not perform any bind policy. It is completely determined by the scheduler plugin configuration.
    - `CPUBindPolicyFullPCPUs` is a bin-packing policy, similar to the `full-pcpus-only=true` option defined by the kubelet, that allocate full physical cores. However, if the number of remaining logical CPUs in the node is sufficient but the number of full physical cores is insufficient, the allocation will continue. This policy can effectively avoid the noisy neighbor problem.
    - `CPUBindPolicySpreadByPCPUs` is a spread policy. If the node enabled Hyper-Threading, when this policy is adopted, the scheduler will evenly allocate logical CPUs across physical cores. For example, the current node has 8 physical cores and 16 logical CPUs. When a Pod requires 8 logical CPUs and the `CPUBindPolicySpreadByPCPUs` policy is adopted, the scheduler will allocate an logical CPU from each physical core. This policy is mainly used by some latency-sensitive applications with multiple different peak-to-valley characteristics. It can not only allow the application to fully use the CPU at certain times, but will not be disturbed by the application on the same physical core. So the noisy neighbor problem may arise when using this policy.
-   - `CPUBindPolicyConstrainedBurst` a special policy that mainly helps K8s Burstable/Koordinator LS Pod get better performance. When using the policy, koord-scheduler is filtering out Nodes that have NUMA Nodes with suitable CPU Shared Pool by Pod Limit. After the scheduling is successful, the scheduler will update `scheduler.koordinator.sh/resource-status` in the Pod, declaring the `CPU Shared Pool` to be bound. The koordlet binds the CPU Shared Pool of the corresponding NUMA Node according to the `CPU Shared Pool`
+   - `CPUBindPolicyConstrainedBurst` a special policy that mainly helps K8s Burstable/Koordinator LS Pod get better performance. When using the policy, koord-scheduler is filtering out Nodes that have NUMA Nodes with suitable CPU Shared Pool by Pod Limit. After the scheduling is successful, the scheduler will update `scheduling.koordinator.sh/resource-status` in the Pod, declaring the `CPU Shared Pool` to be bound. The koordlet binds the CPU Shared Pool of the corresponding NUMA Node according to the `CPU Shared Pool`
    - If `kubelet.koordinator.sh/cpu-manager-policy` in `NodeResourceTopology` has option `full-pcpus-only=true`, or `node.koordinator.sh/cpu-bind-policy` in the Node with the value `PCPUOnly`, the koord-scheduler will check whether the number of CPU requests of the Pod meets the `SMT-alignment` requirements, so as to avoid being rejected by the kubelet after scheduling. koord-scheduler will avoid such nodes if the Pod uses the `CPUBindPolicySpreadByPCPUs` policy or the number of logical CPUs mapped to the number of physical cores is not an integer.
 - The `CPUExclusivePolicy` defines the CPU exclusive policy, it can help users to avoid noisy neighbor problems. The specific values are defined as follows:
    - `CPUExclusivePolicyNone` or empty value does not perform any isolate policy. It is completely determined by the scheduler plugin configuration.
@@ -227,7 +227,7 @@ For the ARM architecture, `CPUBindPolicy` only support `CPUBindPolicyFullPCPUs`,
 
 ##### Resource status
 
-The annotation `scheduler.koordinator.sh/resource-status` represents resource allocation result. koord-scheduler patch Pod with the annotation before binding to node. koordlet uses the result to configure cgroup.
+The annotation `scheduling.koordinator.sh/resource-status` represents resource allocation result. koord-scheduler patch Pod with the annotation before binding to node. koordlet uses the result to configure cgroup.
 
 The scheme corresponding to the annotation value is defined as follows:
 
@@ -250,12 +250,12 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    scheduler.koordinator.sh/resource-spec: |-
+    scheduling.koordinator.sh/resource-spec: |-
       {
         "preferredCPUBindPolicy": "SpreadByPCPUs",
         "preferredCPUExclusivePolicy": "PCPULevel"
       }
-    scheduler.koordinator.sh/resource-status: |-
+    scheduling.koordinator.sh/resource-status: |-
       {
         "cpuset": "0-3"
       }
@@ -343,7 +343,7 @@ We use [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderes
 
 ##### Compatible
 
-In order to be compatible with the existing NodeResourceTopology instances and prevent koordlet from conflicting with existing components, when koordlet creates a NodeResourceTopology, add the prefix `koord-` before the name to distinguish it, and add the label `app.kubernetes.io/managed-by=Koordinator` describes the node is managed by Koordinator.
+The koordlet creates or updates NodeResourceTopology periodically. The name of NodeResourceTopology is same as the name of Node. and add the label `app.kubernetes.io/managed-by=Koordinator` describes the node is managed by Koordinator.
 
 ##### Extension
 
@@ -372,7 +372,7 @@ type CPUTopology struct {
 }
 
 type CPUInfo struct {
-  ID    int32 `json:"id"`
+  ID     int32 `json:"id"`
   Core   int32 `json:"core"`
   Socket int32 `json:"socket"`
   Node   int32 `json:"node"`
@@ -465,8 +465,8 @@ metadata:
         }
       ]
   labels:
-    app.kubernetes.io/created-by: Koordinator
-  name: koord-node1
+    app.kubernetes.io/managed-by: Koordinator
+  name: node1
 topologyPolicies: ["SingleNUMANodePodLevel"]
 zones:
   - name: node-0
@@ -519,7 +519,7 @@ zones:
 
 Koordinator defines `RebindResource` CRD to resolve user story [#6](#story-6).
 
-The `RebindResource` CRD trigger koord-scheudler rebinds the Pods on the specified Node with action such as `RebindCPU` to get better orchestration. When the koord-scheduler reconciling the CRD instance, koord-scheduler locks the node, sort the Pods in the node, and reallocate the CPUs in the new order. The reallocated CPUs will be updated to the Pod's annotation `scheduler.koordlet.sh/alloc-status`. koordlet perceives changes in Pod annotation and updates cgroups.
+The `RebindResource` CRD trigger koord-scheudler rebinds the Pods on the specified Node with action such as `RebindCPU` to get better orchestration. When the koord-scheduler reconciling the CRD instance, koord-scheduler locks the node, sort the Pods in the node, and reallocate the CPUs in the new order. The reallocated CPUs will be updated to the Pod's annotation `scheduling.koordinator.sh/resource-status`. koordlet perceives changes in Pod annotation and updates cgroups.
 
 Through the re-adjust mechanism, it is possible to obtain several benefits:
 1. Pods have a chance to get better orchestration.
@@ -615,7 +615,7 @@ The plugin extends the Filter/Score/Reserve/PreBind extension points. Filter the
 
 #### Reserve phase
 
-According to the requirements of `scheduler.koordinator.sh/resource-spec` in the Pod and the requirements of the node CPU orchestration strategies, use the CPU allocation algorithm to allocate the CPU and record the result in `CycleState`.
+According to the requirements of `scheduling.koordinator.sh/resource-spec` in the Pod and the requirements of the node CPU orchestration strategies, use the CPU allocation algorithm to allocate the CPU and record the result in `CycleState`.
 
 If it is LS Pod, find the best-fit NUMA Node by NUMA topology alignment policy that be as the CPU Shared Pool.
 
@@ -623,7 +623,7 @@ In order to prevent nodes from being repeatedly allocated during the scheduling 
 
 #### PreBind phase
 
-Update the annotation `scheduler.koordinator.sh/resource-status` of the Pod in the PreBind extension point to record the allocated CPU information that from the `CycleState`.
+Update the annotation `scheduling.koordinator.sh/resource-status` of the Pod in the PreBind extension point to record the allocated CPU information that from the `CycleState`.
 
 #### CPU Allocation Algorithm
 
@@ -701,3 +701,4 @@ type ScoringStrategy struct {
   - Change some APIs's name
   - Add details about how to process newly created K8s Guaranteed Pod
   - Support Burstable Pod staticly bind CPU
+- 2022-06-24: Fix typo

@@ -17,31 +17,46 @@ limitations under the License.
 package groupidentity
 
 import (
-	"strconv"
-
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
-	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
-func (b *bvtPlugin) PreRunPodSandbox(requestIf, responseIf interface{}) error {
+func (b *bvtPlugin) SetPodBvtValue(p protocol.HooksProtocol) error {
 	if !b.SystemSupported() {
 		klog.V(5).Infof("plugin %s is not supported by system", name)
 		return nil
 	}
 	r := b.getRule()
-	req := requestIf.(*runtimeapi.PodSandboxHookRequest)
+	if r == nil {
+		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
+		return nil
+	}
+	podCtx := p.(*protocol.PodContext)
+	req := podCtx.Request
 	podQoS := ext.GetQoSClassByLabels(req.Labels)
 	podKubeQoS := util.GetKubeQoSByCgroupParent(req.CgroupParent)
 	podBvt := r.getPodBvtValue(podQoS, podKubeQoS)
-	// CgroupParent e.g. kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod586c1b35_63de_4ee0_9da3_2cebdca672c8.slice
-	klog.V(5).Infof("set pod bvt on cgroup parent %v", req.CgroupParent)
-	if req.PodMeta != nil {
-		audit.V(2).Pod(req.PodMeta.Namespace, req.PodMeta.Name).Reason(name).Message("set bvt to %v", podBvt).Do()
+	podCtx.Response.Resources.CPUBvt = pointer.Int64(podBvt)
+	return nil
+}
+
+func (b *bvtPlugin) SetKubeQOSBvtValue(p protocol.HooksProtocol) error {
+	if !b.SystemSupported() {
+		klog.V(5).Infof("plugin %s is not supported by system", name)
+		return nil
 	}
-	return sysutil.CgroupFileWrite(req.CgroupParent, sysutil.CPUBVTWarpNs, strconv.FormatInt(podBvt, 10))
+	r := b.getRule()
+	if r == nil {
+		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
+		return nil
+	}
+	kubeQOSCtx := p.(*protocol.KubeQOSContext)
+	req := kubeQOSCtx.Request
+	bvtValue := r.getKubeQoSDirBvtValue(req.KubeQOSClass)
+	kubeQOSCtx.Response.Resources.CPUBvt = pointer.Int64(bvtValue)
+	return nil
 }

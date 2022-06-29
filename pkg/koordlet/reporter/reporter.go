@@ -199,7 +199,7 @@ func (r *reporter) sync() {
 		nodeMetric, err := r.nodeMetricLister.Get(r.nodeName)
 		if errors.IsNotFound(err) {
 			klog.Warningf("nodeMetric %v not found, skip", r.nodeName)
-			return err
+			return nil
 		} else if err != nil {
 			klog.Warningf("failed to get %s nodeMetric: %v", r.nodeName, err)
 			return err

@@ -117,8 +117,8 @@ type Reservation struct {
 	// specified in the pod template.
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec              ReservationSpec   `json:"spec,omitempty"`
-	Status            ReservationStatus `json:"status,omitempty"`
+	Spec   ReservationSpec   `json:"spec,omitempty"`
+	Status ReservationStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

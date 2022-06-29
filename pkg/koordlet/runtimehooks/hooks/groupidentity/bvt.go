@@ -24,7 +24,9 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
@@ -43,11 +45,15 @@ type bvtPlugin struct {
 
 func (b *bvtPlugin) Register() {
 	klog.V(5).Infof("register hook %v", name)
-	hooks.Register(rmconfig.PreRunPodSandbox, name, description, b.PreRunPodSandbox)
+	hooks.Register(rmconfig.PreRunPodSandbox, name, description, b.SetPodBvtValue)
 	rule.Register(name, description,
-		rule.WithParseFunc(b.parseRule),
+		rule.WithParseFunc(statesinformer.RegisterTypeNodeSLOSpec, b.parseRule),
 		rule.WithUpdateCallback(b.ruleUpdateCb),
 		rule.WithSystemSupported(b.SystemSupported))
+	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUBVTWarpNs, b.SetPodBvtValue,
+		"reconcile pod level cpu bvt value")
+	reconciler.RegisterCgroupReconciler(reconciler.KubeQOSLevel, sysutil.CPUBVTWarpNs, b.SetKubeQOSBvtValue,
+		"reconcile kubeqos level cpu bvt value")
 }
 
 func (b *bvtPlugin) SystemSupported() bool {

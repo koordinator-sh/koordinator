@@ -19,7 +19,6 @@ package config
 import (
 	"reflect"
 
-	"github.com/jinzhu/copier"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -29,49 +28,59 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
+//TODO move under apis in the next PR
+// +k8s:deepcopy-gen=true
 type ColocationCfg struct {
 	ColocationStrategy `json:",inline"`
 	NodeConfigs        []NodeColocationCfg `json:"nodeConfigs,omitempty"`
 }
 
+// +k8s:deepcopy-gen=true
 type NodeColocationCfg struct {
 	NodeSelector *metav1.LabelSelector
 	ColocationStrategy
 }
 
+// +k8s:deepcopy-gen=true
 type ResourceThresholdCfg struct {
 	ClusterStrategy *slov1alpha1.ResourceThresholdStrategy `json:"clusterStrategy,omitempty"`
 	NodeStrategies  []NodeResourceThresholdStrategy        `json:"nodeStrategies,omitempty"`
 }
 
+// +k8s:deepcopy-gen=true
 type NodeResourceThresholdStrategy struct {
 	// an empty label selector matches all objects while a nil label selector matches no objects
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 	*slov1alpha1.ResourceThresholdStrategy
 }
 
+// +k8s:deepcopy-gen=true
 type NodeCPUBurstCfg struct {
 	// an empty label selector matches all objects while a nil label selector matches no objects
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 	*slov1alpha1.CPUBurstStrategy
 }
 
+// +k8s:deepcopy-gen=true
 type CPUBurstCfg struct {
 	ClusterStrategy *slov1alpha1.CPUBurstStrategy `json:"clusterStrategy,omitempty"`
 	NodeStrategies  []NodeCPUBurstCfg             `json:"nodeStrategies,omitempty"`
 }
 
+// +k8s:deepcopy-gen=true
 type ResourceQoSCfg struct {
 	ClusterStrategy *slov1alpha1.ResourceQoSStrategy `json:"clusterStrategy,omitempty"`
 	NodeStrategies  []NodeResourceQoSStrategy        `json:"nodeStrategies,omitempty"`
 }
 
+// +k8s:deepcopy-gen=true
 type NodeResourceQoSStrategy struct {
 	// an empty label selector matches all objects while a nil label selector matches no objects
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 	*slov1alpha1.ResourceQoSStrategy
 }
 
+// +k8s:deepcopy-gen=true
 type ColocationStrategy struct {
 	Enable                         *bool    `json:"enable,omitempty"`
 	MetricAggregateDurationSeconds *int64   `json:"metricAggregateDurationSeconds,omitempty"`
@@ -109,7 +118,7 @@ func DefaultColocationStrategy() ColocationStrategy {
 
 func IsColocationStrategyValid(strategy *ColocationStrategy) bool {
 	return strategy != nil &&
-		(strategy.MetricAggregateDurationSeconds == nil || *strategy.MetricReportIntervalSeconds > 0) &&
+		(strategy.MetricAggregateDurationSeconds == nil || *strategy.MetricAggregateDurationSeconds > 0) &&
 		(strategy.MetricReportIntervalSeconds == nil || *strategy.MetricReportIntervalSeconds > 0) &&
 		(strategy.CPUReclaimThresholdPercent == nil || *strategy.CPUReclaimThresholdPercent > 0) &&
 		(strategy.MemoryReclaimThresholdPercent == nil || *strategy.MemoryReclaimThresholdPercent > 0) &&
@@ -137,10 +146,7 @@ func GetNodeColocationStrategy(cfg *ColocationCfg, node *corev1.Node) *Colocatio
 		return nil
 	}
 
-	strategy := &ColocationStrategy{}
-	if err := copier.Copy(&strategy, &cfg.ColocationStrategy); err != nil {
-		return nil
-	}
+	strategy := cfg.ColocationStrategy.DeepCopy()
 
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeCfg := range cfg.NodeConfigs {

@@ -17,19 +17,16 @@ limitations under the License.
 package runtimehooks
 
 import (
-	"reflect"
-
 	"k8s.io/klog/v2"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/proxyserver"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/server"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
 type HookPlugin interface {
 	Register()
-	SystemSupported() bool
 }
 
 type RuntimeHook interface {
@@ -38,12 +35,16 @@ type RuntimeHook interface {
 
 type runtimeHook struct {
 	statesInformer statesinformer.StatesInformer
-	server         server.Server
+	server         proxyserver.Server
+	reconciler     reconciler.Reconciler
 }
 
 func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	klog.V(5).Infof("runtime hook server start running")
 	if err := r.server.Start(); err != nil {
+		return err
+	}
+	if err := r.reconciler.Run(stopCh); err != nil {
 		return err
 	}
 	klog.V(5).Infof("runtime hook server has started")
@@ -53,17 +54,21 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 }
 
 func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook, error) {
-	s, err := server.NewServer(server.Options{Network: cfg.RuntimeHooksNetwork, Address: cfg.RuntimeHooksAddr})
+	s, err := proxyserver.NewServer(proxyserver.Options{Network: cfg.RuntimeHooksNetwork, Address: cfg.RuntimeHooksAddr})
 	if err != nil {
 		return nil, err
 	}
 	r := &runtimeHook{
 		statesInformer: si,
 		server:         s,
+		reconciler:     reconciler.NewReconciler(si),
 	}
 	registerPlugins()
-	si.RegisterCallbacks(reflect.TypeOf(&slov1alpha1.NodeSLO{}), "runtime-hooks-rule",
+	si.RegisterCallbacks(statesinformer.RegisterTypeNodeSLOSpec, "runtime-hooks-rule",
 		"Update hooks rule can run callbacks if NodeSLO spec update",
+		rule.UpdateRules)
+	si.RegisterCallbacks(statesinformer.RegisterTypeNodeTopology, "runtime-hook-rule",
+		"Update hooks rule if NodeTopology infor update",
 		rule.UpdateRules)
 	if err := s.Setup(); err != nil {
 		klog.Fatal("failed to setup runtime hook server, error %v", err)

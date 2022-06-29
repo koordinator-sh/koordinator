@@ -19,6 +19,7 @@ package frameworkext
 import (
 	"sync"
 
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -33,6 +34,33 @@ type ExtendedHandle interface {
 	framework.Handle
 	KoordinatorClientSet() koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory
+	NodeResourceTopologySharedInformerFactory() nrtinformers.SharedInformerFactory
+}
+
+type extendedHandleOptions struct {
+	koordinatorClientSet             koordinatorclientset.Interface
+	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	nrtSharedInformerFactory         nrtinformers.SharedInformerFactory
+}
+
+type Option func(*extendedHandleOptions)
+
+func WithKoordinatorClientSet(koordinatorClientSet koordinatorclientset.Interface) Option {
+	return func(options *extendedHandleOptions) {
+		options.koordinatorClientSet = koordinatorClientSet
+	}
+}
+
+func WithKoordinatorSharedInformerFactory(informerFactory koordinatorinformers.SharedInformerFactory) Option {
+	return func(options *extendedHandleOptions) {
+		options.koordinatorSharedInformerFactory = informerFactory
+	}
+}
+
+func WithNodeResourceTopologySharedInformerFactory(informerFactory nrtinformers.SharedInformerFactory) Option {
+	return func(options *extendedHandleOptions) {
+		options.nrtSharedInformerFactory = informerFactory
+	}
 }
 
 type frameworkExtendedHandleImpl struct {
@@ -40,15 +68,19 @@ type frameworkExtendedHandleImpl struct {
 	framework.Handle
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	nrtSharedInformerFactory         nrtinformers.SharedInformerFactory
 }
 
-func NewExtendedHandle(
-	koordinatorClientSet koordinatorclientset.Interface,
-	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory,
-) ExtendedHandle {
+func NewExtendedHandle(options ...Option) ExtendedHandle {
+	handleOptions := &extendedHandleOptions{}
+	for _, opt := range options {
+		opt(handleOptions)
+	}
+
 	return &frameworkExtendedHandleImpl{
-		koordinatorClientSet:             koordinatorClientSet,
-		koordinatorSharedInformerFactory: koordinatorSharedInformerFactory,
+		koordinatorClientSet:             handleOptions.koordinatorClientSet,
+		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
+		nrtSharedInformerFactory:         handleOptions.nrtSharedInformerFactory,
 	}
 }
 
@@ -58,6 +90,10 @@ func (ext *frameworkExtendedHandleImpl) KoordinatorClientSet() koordinatorclient
 
 func (ext *frameworkExtendedHandleImpl) KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory {
 	return ext.koordinatorSharedInformerFactory
+}
+
+func (ext *frameworkExtendedHandleImpl) NodeResourceTopologySharedInformerFactory() nrtinformers.SharedInformerFactory {
+	return ext.nrtSharedInformerFactory
 }
 
 // PluginFactoryProxy is used to proxy the call to the PluginFactory function and pass in the ExtendedHandle for the custom plugin

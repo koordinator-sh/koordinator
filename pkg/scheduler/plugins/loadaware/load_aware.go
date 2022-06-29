@@ -23,6 +23,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
@@ -102,6 +103,12 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 
 	nodeMetric, err := p.nodeMetricLister.Get(node.Name)
 	if err != nil {
+		// For nodes that lack load information, fall back to the situation where there is no load-aware scheduling.
+		// Some nodes in the cluster do not install the koordlet, but users newly created Pod use koord-scheduler to schedule,
+		// and the load-aware scheduling itself is an optimization, so we should skip these nodes.
+		if errors.IsNotFound(err) {
+			return nil
+		}
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
@@ -168,7 +175,12 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 	}
 	nodeMetric, err := p.nodeMetricLister.Get(nodeName)
 	if err != nil {
-		return 0, framework.NewStatus(framework.Error, "nodeMetric not found")
+		// caused by load-aware scheduling itself is an optimization,
+		// so we should skip the node and score the node 0
+		if errors.IsNotFound(err) {
+			return 0, nil
+		}
+		return 0, framework.NewStatus(framework.Error, err.Error())
 	}
 	if p.args.NodeMetricExpirationSeconds != nil && isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
 		return 0, nil

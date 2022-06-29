@@ -21,6 +21,7 @@ import (
 	"os"
 	"time"
 
+	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -100,17 +101,19 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 	kubeClient := clientset.NewForConfigOrDie(config.KubeRestConf)
 	crdClient := clientsetbeta1.NewForConfigOrDie(config.KubeRestConf)
+	topologyClient := topologyclientset.NewForConfigOrDie(config.KubeRestConf)
 
 	pleg, err := pleg.NewPLEG(system.Conf.CgroupRootDir)
 	if err != nil {
 		return nil, err
 	}
 
-	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, pleg, nodeName)
 	metricCache, err := metriccache.NewMetricCache(config.MetricCacheConf)
 	if err != nil {
 		return nil, err
 	}
+
+	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, pleg, nodeName)
 
 	collectorService := metricsadvisor.NewCollector(config.CollectorConf, statesInformer, metricCache)
 	reporterService := reporter.NewReporter(config.ReporterConf, kubeClient, crdClient, nodeName, metricCache, statesInformer)

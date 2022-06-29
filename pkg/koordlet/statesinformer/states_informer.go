@@ -19,29 +19,34 @@ package statesinformer
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"reflect"
 	"sync"
 	"time"
 
+	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
+	_ "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/scheme"
 	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
-	tokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	HTTPScheme  = "http"
+	HTTPSScheme = "https"
 )
 
 type StatesInformer interface {
@@ -53,7 +58,7 @@ type StatesInformer interface {
 
 	GetAllPods() []*PodMeta
 
-	RegisterCallbacks(objType reflect.Type, name, description string, callbackFn UpdateCbFn)
+	RegisterCallbacks(objType RegisterType, name, description string, callbackFn UpdateCbFn)
 }
 
 type statesInformer struct {
@@ -72,15 +77,18 @@ type statesInformer struct {
 	nodeSLORWMutex  sync.RWMutex
 	nodeSLO         *slov1alpha1.NodeSLO
 
+	topologyClient topologyclientset.Interface
+
 	podRWMutex     sync.RWMutex
 	podMap         map[string]*PodMeta
 	podUpdatedTime time.Time
+	metricsCache   metriccache.MetricCache
 
-	callbackChans        map[reflect.Type]chan struct{}
-	stateUpdateCallbacks map[reflect.Type][]updateCallback
+	callbackChans        map[RegisterType]chan UpdateCbCtx
+	stateUpdateCallbacks map[RegisterType][]updateCallback
 }
 
-func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, pleg pleg.Pleg, nodeName string) StatesInformer {
+func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient *topologyclientset.Clientset, metricsCache metriccache.MetricCache, pleg pleg.Pleg, nodeName string) StatesInformer {
 	nodeInformer := newNodeInformer(kubeClient, nodeName)
 	nodeSLOInformer := newNodeSLOInformer(crdClient, nodeName)
 
@@ -96,12 +104,18 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 		podMap:     map[string]*PodMeta{},
 		podCreated: make(chan string, 1), // set 1 buffer
 
-		callbackChans: map[reflect.Type]chan struct{}{
-			reflect.TypeOf(&slov1alpha1.NodeSLO{}): make(chan struct{}, 1),
+		callbackChans: map[RegisterType]chan UpdateCbCtx{
+			RegisterTypeNodeSLOSpec:  make(chan UpdateCbCtx, 1),
+			RegisterTypeAllPods:      make(chan UpdateCbCtx, 1),
+			RegisterTypeNodeTopology: make(chan UpdateCbCtx, 1),
 		},
-		stateUpdateCallbacks: map[reflect.Type][]updateCallback{
-			reflect.TypeOf(&slov1alpha1.NodeSLO{}): {},
+		stateUpdateCallbacks: map[RegisterType][]updateCallback{
+			RegisterTypeNodeSLOSpec:  {},
+			RegisterTypeAllPods:      {},
+			RegisterTypeNodeTopology: {},
 		},
+		topologyClient: topologyClient,
+		metricsCache:   metricsCache,
 	}
 }
 
@@ -120,14 +134,14 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 		return fmt.Errorf("timed out waiting for states informer caches to sync")
 	}
 
-	stub, err := newKubeletStub(s.GetNode(), s.config.KubeletPreferredAddressType, s.config.KubeletSyncTimeoutSeconds, tokenPath)
+	stub, err := newKubeletStubFromConfig(s.GetNode(), s.config)
 	if err != nil {
 		klog.ErrorS(err, "create kubelet stub")
 		return err
 	}
 	s.kubelet = stub
 
-	if s.config.KubeletSyncIntervalSeconds > 0 {
+	if s.config.KubeletSyncInterval > 0 {
 		hdlID := s.pleg.AddHandler(pleg.PodLifeCycleHandlerFuncs{
 			PodAddedFunc: func(podID string) {
 				// There is no need to notify to update the data when the channel is not empty
@@ -138,10 +152,10 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 		})
 		defer s.pleg.RemoverHandler(hdlID)
 
-		go s.syncKubeletLoop(time.Duration(s.config.KubeletSyncIntervalSeconds)*time.Second, stopCh)
+		go s.syncKubeletLoop(s.config.KubeletSyncInterval, stopCh)
 	} else {
 		klog.Fatalf("KubeletSyncIntervalSeconds is %d, statesInformer sync of kubelet is disabled",
-			s.config.KubeletSyncIntervalSeconds)
+			s.config.KubeletSyncInterval)
 	}
 
 	// waiting for pods synced.
@@ -151,6 +165,8 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	}
 
 	go s.startCallbackRunners(stopCh)
+
+	go wait.Until(s.reportNodeTopology, s.config.NodeTopologySyncInterval, stopCh)
 
 	klog.Infof("start states informer successfully")
 	<-stopCh
@@ -229,10 +245,14 @@ func (s *statesInformer) setupInformers() {
 	s.setupNodeSLOInformer()
 }
 
-func newKubeletStub(node *corev1.Node, addressPreferred string, timeout int, tokenPath string) (KubeletStub, error) {
+func newKubeletStubFromConfig(node *corev1.Node, cfg *Config) (KubeletStub, error) {
 	var address string
 	var err error
-	addressPreferredType := corev1.NodeAddressType(addressPreferred)
+	var port int
+	var scheme string
+	var restConfig *rest.Config
+
+	addressPreferredType := corev1.NodeAddressType(cfg.KubeletPreferredAddressType)
 	// if the address of the specified type has not been set or error type, InternalIP will be used.
 	if !util.IsNodeAddressTypeSupported(addressPreferredType) {
 		klog.Warningf("Wrong address type or empty type, InternalIP will be used, error: (%+v).", addressPreferredType)
@@ -240,12 +260,24 @@ func newKubeletStub(node *corev1.Node, addressPreferred string, timeout int, tok
 	}
 	address, err = util.GetNodeAddress(node, addressPreferredType)
 	if err != nil {
-		klog.Fatalf("Get node address error: %v type(%s) ", err, addressPreferred)
-	}
-	token, err := ioutil.ReadFile(tokenPath)
-	if err != nil {
+		klog.Fatalf("Get node address error: %v type(%s) ", err, cfg.KubeletPreferredAddressType)
 		return nil, err
 	}
-	kubeletEndpointPort := node.Status.DaemonEndpoints.KubeletEndpoint.Port
-	return NewKubeletStub(address, int(kubeletEndpointPort), timeout, string(token))
+
+	if cfg.InsecureKubeletTLS {
+		port = int(cfg.KubeletReadOnlyPort)
+		scheme = HTTPScheme
+	} else {
+		restConfig, err = config.GetConfig()
+		if err != nil {
+			return nil, err
+		}
+		restConfig.TLSClientConfig.Insecure = true
+		restConfig.TLSClientConfig.CAData = nil
+		restConfig.TLSClientConfig.CAFile = ""
+		port = int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
+		scheme = HTTPSScheme
+	}
+
+	return NewKubeletStub(address, port, scheme, cfg.KubeletSyncTimeout, restConfig)
 }

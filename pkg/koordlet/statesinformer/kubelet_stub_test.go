@@ -24,14 +24,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/transport"
+	"k8s.io/client-go/rest"
 )
 
 var (
@@ -90,9 +90,17 @@ func Test_kubeletStub_GetAllPods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	port, _ := strconv.Atoi(portStr)
 
-	client, err := NewKubeletStub(address, port, 10, token)
+	port, _ := strconv.Atoi(portStr)
+	cfg := &rest.Config{
+		Host:        net.JoinHostPort(address, portStr),
+		BearerToken: token,
+		TLSClientConfig: rest.TLSClientConfig{
+			Insecure: true,
+		},
+	}
+
+	client, err := NewKubeletStub(address, port, "https", 10*time.Second, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,11 +113,13 @@ func Test_kubeletStub_GetAllPods(t *testing.T) {
 
 func TestNewKubeletStub(t *testing.T) {
 	type args struct {
-		addr           string
-		port           int
-		timeoutSeconds int
-		token          string
+		addr    string
+		port    int
+		scheme  string
+		timeout time.Duration
+		config  *rest.Config
 	}
+
 	tests := []struct {
 		name    string
 		args    args
@@ -118,55 +128,27 @@ func TestNewKubeletStub(t *testing.T) {
 		{
 			name: "127.0.0.1",
 			args: args{
-				addr:           "127.0.0.1",
-				port:           10250,
-				timeoutSeconds: 10,
-				token:          "test_token",
+				addr:    "127.0.0.1",
+				port:    10250,
+				scheme:  "https",
+				timeout: 10 * time.Second,
+				config: &rest.Config{
+					BearerToken: token,
+					TLSClientConfig: rest.TLSClientConfig{
+						Insecure: true,
+					},
+				},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewKubeletStub(tt.args.addr, tt.args.port, tt.args.timeoutSeconds, tt.args.token)
+			got, err := NewKubeletStub(tt.args.addr, tt.args.port, tt.args.scheme, tt.args.timeout, tt.args.config)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewKubeletStub() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			assert.NotNil(t, got)
-		})
-	}
-}
-
-func Test_makeTransportConfig(t *testing.T) {
-	inToken := "test_token"
-	ts := &transport.Config{
-		BearerToken: inToken,
-		TLS: transport.TLSConfig{
-			Insecure: true,
-		},
-	}
-	type args struct {
-		token    string
-		insecure bool
-	}
-	tests := []struct {
-		name string
-		args args
-		want *transport.Config
-	}{
-		{
-			name: "transport",
-			args: args{
-				token: inToken,
-			},
-			want: ts,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := makeTransportConfig(tt.args.token, tt.args.insecure); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("makeTransportConfig() = %v, want %v", got, tt.want)
-			}
 		})
 	}
 }
