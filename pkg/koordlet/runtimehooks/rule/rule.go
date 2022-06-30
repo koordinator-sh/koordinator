@@ -53,6 +53,7 @@ func Register(name, description string, injectOpts ...InjectOption) *Rule {
 	for _, opt := range injectOpts {
 		opt.Apply(r)
 	}
+	klog.V(5).Infof("new rule %v has registered", name)
 	return r
 }
 
@@ -77,7 +78,8 @@ func find(name string) (*Rule, bool) {
 }
 
 func UpdateRules(ruleType statesinformer.RegisterType, ruleObj interface{}, podsMeta []*statesinformer.PodMeta) {
-	klog.V(3).Infof("applying %v rules with new NodeSLO %v", len(globalHookRules), util.DumpJSON(ruleObj))
+	klog.V(3).Infof("applying %v rules with new %v, detail: %v",
+		len(globalHookRules), ruleType.String(), util.DumpJSON(ruleObj))
 	for _, r := range globalHookRules {
 		if ruleType != r.parseRuleType {
 			continue

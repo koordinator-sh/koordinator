@@ -66,7 +66,7 @@ func (s *statesInformer) RegisterCallbacks(rType RegisterType, name, description
 		fn:          callbackFn,
 	}
 	s.stateUpdateCallbacks[rType] = append(s.stateUpdateCallbacks[rType], newCb)
-	klog.V(1).Infof("states informer callback %s has registered", name)
+	klog.V(1).Infof("states informer callback %s has registered for type %v", name, rType.String())
 }
 
 func (s *statesInformer) sendCallbacks(objType RegisterType) {
@@ -127,6 +127,8 @@ func (s *statesInformer) getObjByType(objType RegisterType, cbCtx UpdateCbCtx) i
 		return nil
 	case RegisterTypeAllPods:
 		return &struct{}{}
+	case RegisterTypeNodeTopology:
+		return s.getNodeTopo()
 	}
 	return nil
 }

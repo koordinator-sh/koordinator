@@ -24,11 +24,13 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/featuregate"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/groupidentity"
 )
 
 const (
-	GroupIdentity featuregate.Feature = "GroupIdentity"
+	GroupIdentity   featuregate.Feature = "GroupIdentity"
+	CPUSetAllocator featuregate.Feature = "CPUSetAllocator"
 )
 
 var (
@@ -36,11 +38,13 @@ var (
 	DefaultRuntimeHooksFG        featuregate.FeatureGate        = DefaultMutableRuntimeHooksFG
 
 	defaultRuntimeHooksFG = map[featuregate.Feature]featuregate.FeatureSpec{
-		GroupIdentity: {Default: false, PreRelease: featuregate.Alpha},
+		GroupIdentity:   {Default: false, PreRelease: featuregate.Alpha},
+		CPUSetAllocator: {Default: false, PreRelease: featuregate.Alpha},
 	}
 
 	runtimeHookPlugins = map[featuregate.Feature]HookPlugin{
-		GroupIdentity: groupidentity.Object(),
+		GroupIdentity:   groupidentity.Object(),
+		CPUSetAllocator: cpuset.Object(),
 	}
 )
 
