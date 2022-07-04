@@ -211,7 +211,7 @@ func (r *reporter) sync() {
 	if retErr != nil {
 		klog.Warningf("update node metric status failed, status %v, err %v", util.DumpJSON(newStatus), retErr)
 	} else {
-		klog.Infof("update node metric status success, detail: %v", util.DumpJSON(newStatus))
+		klog.V(4).Infof("update node metric status success, detail: %v", util.DumpJSON(newStatus))
 	}
 }
 

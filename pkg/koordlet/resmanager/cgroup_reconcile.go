@@ -467,6 +467,8 @@ func makeCgroupResourcesForAnolis(owner *OwnerRef, parentDir string, summary *cg
 	var resources []MergeableResourceUpdater
 
 	if !system.HostSystemInfo.IsAnolisOS {
+		klog.V(5).Infof("ignored cgroup resources which required non Anolis OS, owner: %v, parentDir: %v",
+			owner, parentDir)
 		return nil
 	}
 
