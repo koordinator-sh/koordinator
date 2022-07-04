@@ -61,7 +61,7 @@ func main() {
 	}
 
 	// Get a config to talk to the apiserver
-	klog.Info("Setting up client for koordlet")
+	klog.V(1).Info("Setting up client for koordlet")
 	err := cfg.InitClient()
 	if err != nil {
 		klog.Error("Unable to setup client config: ", err)
@@ -76,7 +76,7 @@ func main() {
 
 	// Expose the Prometheus http endpoint
 	go func() {
-		klog.Infof("Starting prometheus server on %v", *options.ServerAddr)
+		klog.V(1).Infof("Starting prometheus server on %v", *options.ServerAddr)
 		http.Handle("/metrics", promhttp.Handler())
 		if features.DefaultKoordletFeatureGate.Enabled(features.AuditEventsHTTPHandler) {
 			http.HandleFunc("/events", audit.HttpHandler())
@@ -86,6 +86,6 @@ func main() {
 	}()
 
 	// Start the Cmd
-	klog.Info("Starting the koordlet daemon")
+	klog.V(1).Info("Starting the koordlet daemon")
 	d.Run(stopCtx.Done())
 }

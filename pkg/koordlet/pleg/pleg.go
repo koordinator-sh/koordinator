@@ -156,7 +156,7 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 				basename := path.Base(evt.Name)
 				podID, err := util.ParsePodID(basename)
 				if err != nil {
-					klog.Infof("skip %v added event which is not a pod", evt.Name)
+					klog.V(4).Infof("skip %v added event which is not a pod", evt.Name)
 					continue
 				}
 				// handle Pod event
@@ -167,7 +167,7 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 				basename := path.Base(evt.Name)
 				podID, err := util.ParsePodID(basename)
 				if err != nil {
-					klog.Infof("skip %v removed event which is not a pod", evt.Name)
+					klog.V(4).Infof("skip %v removed event which is not a pod", evt.Name)
 					continue
 				}
 				// handle Pod event
@@ -187,7 +187,7 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 				podBasename := path.Base(path.Dir(evt.Name))
 				podID, podErr := util.ParsePodID(podBasename)
 				if podErr != nil || containerErr != nil {
-					klog.Infof("skip %v added event which is not a container", evt.Name)
+					klog.V(4).Infof("skip %v added event which is not a container", evt.Name)
 					continue
 				}
 				// handle Container event
@@ -198,7 +198,7 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 				podBasename := path.Base(path.Dir(evt.Name))
 				podID, podErr := util.ParsePodID(podBasename)
 				if podErr != nil || containerErr != nil {
-					klog.Infof("skip %v removed event which is not a container", evt.Name)
+					klog.V(4).Infof("skip %v removed event which is not a container", evt.Name)
 					continue
 				}
 				// handle Container event

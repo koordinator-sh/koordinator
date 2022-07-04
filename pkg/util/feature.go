@@ -40,7 +40,7 @@ func RunFeatureWithInit(moduleInit func() error, moduleFunc func(), featureDepen
 	moduleInitName := runtime.FuncForPC(reflect.ValueOf(moduleInit).Pointer()).Name()
 	moduleFuncName := runtime.FuncForPC(reflect.ValueOf(moduleFunc).Pointer()).Name()
 	if interval <= 0 {
-		klog.Infof("time interval %v is disabled, skip run %v module", interval, moduleFuncName)
+		klog.V(4).Infof("time interval %v is disabled, skip run %v module", interval, moduleFuncName)
 		return false, nil
 	}
 
@@ -52,17 +52,17 @@ func RunFeatureWithInit(moduleInit func() error, moduleFunc func(), featureDepen
 		}
 	}
 	if !moduleFuncEnabled {
-		klog.Infof("all feature dependency %v is disabled, skip run module %v", featureDependency, moduleFuncName)
+		klog.V(2).Infof("all feature dependency %v is disabled, skip run module %v", featureDependency, moduleFuncName)
 		return false, nil
 	}
 
-	klog.Infof("starting %v feature init module", moduleInitName)
+	klog.V(2).Infof("starting %v feature init module", moduleInitName)
 	if err := moduleInit(); err != nil {
 		klog.Errorf("starting %v feature init module error %v", moduleInitName, err)
 		return false, err
 	}
 
-	klog.Infof("starting %v feature dependency module, interval seconds %v", moduleFuncName, interval)
+	klog.V(2).Infof("starting %v feature dependency module, interval seconds %v", moduleFuncName, interval)
 	go wait.Until(moduleFunc, time.Duration(interval)*time.Second, stopCh)
 	return true, nil
 }

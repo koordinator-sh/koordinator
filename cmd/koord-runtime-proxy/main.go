@@ -64,5 +64,5 @@ func main() {
 
 	stopCh := genericapiserver.SetupSignalHandler()
 	<-stopCh
-	klog.Info("koordiantor runtime-proxy shutting down")
+	klog.V(1).Info("koordiantor runtime-proxy shutting down")
 }

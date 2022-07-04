@@ -55,7 +55,7 @@ func (p *PodResourceExecutor) loadPodSandboxFromStore(podID string) error {
 		return fmt.Errorf("no pod item related to %v", podID)
 	}
 	p.PodSandboxInfo = *podSandbox
-	klog.Infof("get pod info successful %v", podID)
+	klog.V(4).Infof("get pod info successful %v", podID)
 	return nil
 }
 
@@ -74,7 +74,7 @@ func (p *PodResourceExecutor) ParseRequest(req interface{}) error {
 				CgroupParent:   request.GetConfig().GetLinux().GetCgroupParent(),
 			},
 		}
-		klog.Infof("success parse pod Info %v during pod run", p)
+		klog.V(4).Infof("success parse pod Info %v during pod run", p)
 	case *runtimeapi.StopPodSandboxRequest:
 		return p.loadPodSandboxFromStore(request.GetPodSandboxId())
 	}
@@ -110,7 +110,7 @@ func (p *PodResourceExecutor) ResourceCheckPoint(response interface{}) error {
 		return err
 	}
 	data, _ := json.Marshal(p.PodSandboxInfo)
-	klog.Infof("success to checkpoint pod level info %v %v",
+	klog.V(4).Infof("success to checkpoint pod level info %v %v",
 		runPodSandboxResponse.PodSandboxId, string(data))
 	return nil
 }

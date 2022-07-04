@@ -72,7 +72,7 @@ func watchCACert(watcher *fsnotify.Watcher) {
 				continue
 			}
 
-			klog.Infof("Watched ca-cert %v %v", event.Name, event.Op)
+			klog.V(4).InfoS("Watched ca-cert", "event.name", event, "event.op", event.Op)
 
 			// If the file was removed, re-add the watch.
 			if isRemove(event) {

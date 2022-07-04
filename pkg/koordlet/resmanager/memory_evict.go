@@ -51,11 +51,11 @@ func NewMemoryEvictor(mgr *resmanager) *MemoryEvictor {
 }
 
 func (m *MemoryEvictor) memoryEvict() {
-	klog.Infof("starting memory evict process")
-	defer klog.Infof("memory evict process completed")
+	klog.V(1).Infof("starting memory evict process")
+	defer klog.V(1).Infof("memory evict process completed")
 
 	if time.Now().Before(m.lastEvictTime.Add(time.Duration(m.resManager.config.MemoryEvictCoolTimeSeconds) * time.Second)) {
-		klog.Infof("skip memory evict process, still in evict cooling time")
+		klog.V(2).Infof("skip memory evict process, still in evict cooling time")
 		return
 	}
 
@@ -110,11 +110,11 @@ func (m *MemoryEvictor) memoryEvict() {
 
 	nodeMemoryUsage := nodeMetric.MemoryUsed.MemoryWithoutCache.Value() * 100 / memoryCapacity
 	if nodeMemoryUsage < *thresholdPercent {
-		klog.Infof("skip memory evict, node memory usage(%v) is below threshold(%v)", nodeMemoryUsage, thresholdConfig)
+		klog.V(2).Infof("skip memory evict, node memory usage(%v) is below threshold(%v)", nodeMemoryUsage, thresholdConfig)
 		return
 	}
 
-	klog.Infof("node(%v) MemoryUsage(%v): %.2f, evictThresholdUsage: %.2f, evictLowerUsage: %.2f",
+	klog.V(4).Infof("node(%v) MemoryUsage(%v): %.2f, evictThresholdUsage: %.2f, evictLowerUsage: %.2f",
 		m.resManager.nodeName,
 		nodeMetric.MemoryUsed.MemoryWithoutCache.Value(),
 		float64(nodeMemoryUsage)/100,
@@ -146,7 +146,7 @@ func (m *MemoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics []*metr
 	m.resManager.evictPodsIfNotEvicted(killedPods, node, evictPodByNodeMemoryUsage, message)
 
 	m.lastEvictTime = time.Now()
-	klog.Infof("killAndEvictBEPods completed, memoryNeedRelease(%v) memoryReleased(%v)", memoryNeedRelease, memoryReleased)
+	klog.V(2).Infof("killAndEvictBEPods completed, memoryNeedRelease(%v) memoryReleased(%v)", memoryNeedRelease, memoryReleased)
 }
 
 func (m *MemoryEvictor) getSortedBEPodInfos(podMetrics []*metriccache.PodResourceMetric) []*podInfo {

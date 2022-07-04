@@ -43,7 +43,7 @@ func CommonFileWriteIfDifferent(file string, value string) error {
 		return err
 	}
 	if value == currentValue {
-		klog.Infof("resource currentValue equal newValue, skip update resource! file:%s, value %s", file, value)
+		klog.V(4).Infof("resource currentValue equal newValue, skip update resource!", "file", file, "value", value)
 		return nil
 	}
 	return CommonFileWrite(file, value)

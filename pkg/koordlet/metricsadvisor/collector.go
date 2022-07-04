@@ -110,10 +110,11 @@ func (c *collector) HasSynced() bool {
 
 func (c *collector) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	klog.Info("Starting collector for NodeMetric")
-	defer klog.Info("shutting down daemon")
+	klog.V(1).Info("Starting collector for NodeMetric")
+	defer klog.V(1).Info("shutting down daemon")
+
 	if c.config.CollectResUsedIntervalSeconds <= 0 {
-		klog.Infof("CollectResUsedIntervalSeconds is %v, metric collector is disabled",
+		klog.V(2).Infof("CollectResUsedIntervalSeconds is %v, metric collector is disabled",
 			c.config.CollectResUsedIntervalSeconds)
 		return nil
 	}
@@ -143,7 +144,7 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 
 	go wait.Until(c.cleanupContext, cleanupInterval, stopCh)
 
-	klog.Info("Starting successfully")
+	klog.V(1).Info("Starting collector successfully")
 	<-stopCh
 	return nil
 }
@@ -210,7 +211,7 @@ func (c *collector) collectNodeResUsed() {
 	// update collect time
 	c.state.RefreshTime(nodeResUsedUpdateTime)
 
-	klog.Infof("collectNodeResUsed finished %+v", nodeMetric)
+	klog.V(5).Infof("collectNodeResUsed finished", "nodeMetric", nodeMetric)
 }
 
 func (c *collector) collectPodResUsed() {
@@ -239,7 +240,7 @@ func (c *collector) collectPodResUsed() {
 			ts:       collectTime,
 		})
 		if !ok {
-			klog.Infof("ignore the first cpu stat collection for pod %s/%s", pod.Namespace, pod.Name)
+			klog.V(4).Infof("ignore the first cpu stat collection for pod %s/%s", pod.Namespace, pod.Name)
 			continue
 		}
 		lastCPUStat := lastCPUStatValue.(contextRecord)
@@ -268,7 +269,7 @@ func (c *collector) collectPodResUsed() {
 
 	// update collect time
 	c.state.RefreshTime(podResUsedUpdateTime)
-	klog.Infof("collectPodResUsed finished, pod num %d", len(podMetas))
+	klog.V(5).InfoS("collectPodResUsed finished", "pod num", len(podMetas))
 }
 
 func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
@@ -346,7 +347,7 @@ func (c *collector) collectNodeCPUInfo() {
 
 	// update collect time
 	c.state.RefreshTime(nodeCPUInfoUpdateTime)
-	klog.Infof("collectNodeCPUInfo finished, cpu info: processors %v", len(nodeCPUInfo.ProcessorInfos))
+	klog.V(4).InfoS("collectNodeCPUInfo finished", "cpu info: processors", len(nodeCPUInfo.ProcessorInfos))
 	metrics.RecordCollectNodeCPUInfoStatus(nil)
 }
 
@@ -393,7 +394,7 @@ func (c *collector) collectPodThrottledInfo() {
 		c.collectContainerThrottledInfo(meta)
 	} // end for podMeta
 
-	klog.Infof("collectPodThrottledInfo finished, pod num %d", len(podMetas))
+	klog.V(4).Infof("collectPodThrottledInfo finished, pod num %d", len(podMetas))
 }
 
 func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMeta) {
@@ -402,7 +403,7 @@ func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMet
 		collectTime := time.Now()
 		containerStat := &pod.Status.ContainerStatuses[i]
 		if len(containerStat.ContainerID) == 0 {
-			klog.Infof("container %s/%s/%s id is empty, maybe not ready, skip this round",
+			klog.V(4).Infof("container %s/%s/%s id is empty, maybe not ready, skip this round",
 				pod.Namespace, pod.Name, containerStat.Name)
 			continue
 		}

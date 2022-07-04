@@ -72,7 +72,7 @@ func getDockerEndpoint() (string, error) {
 		return fmt.Sprintf("unix://%s", handler.DockerEndpoint), nil
 	}
 	if len(system.Conf.DockerEndPoint) > 0 && isFile(system.Conf.DockerEndPoint) {
-		klog.Infof("find docker Endpoint : %v", system.Conf.DockerEndPoint)
+		klog.V(1).Infof("find docker Endpoint: %v", system.Conf.DockerEndPoint)
 		return fmt.Sprintf("unix://%s", system.Conf.DockerEndPoint), nil
 	}
 	return "", fmt.Errorf("docker endpoint does not exist")
@@ -108,7 +108,7 @@ func getContainerdEndpoint() (string, error) {
 	}
 
 	if len(system.Conf.ContainerdEndPoint) > 0 && isFile(system.Conf.ContainerdEndPoint) {
-		klog.Infof("find containerd Endpoint : %v", system.Conf.ContainerdEndPoint)
+		klog.V(1).Infof("find containerd Endpoint: %v", system.Conf.ContainerdEndPoint)
 		return fmt.Sprintf("unix://%s", system.Conf.ContainerdEndPoint), nil
 	}
 

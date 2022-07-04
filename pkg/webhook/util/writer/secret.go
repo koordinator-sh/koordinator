@@ -124,7 +124,7 @@ func (s *secretCertWriter) overwrite(resourceVersion string) (
 		klog.Infof("Cert writer update secret failed: %v", err)
 		return certs, err
 	}
-	klog.Infof("Cert writer update secret %s resourceVersion from %s to %s",
+	klog.V(2).Infof("Cert writer update secret %s resourceVersion from %s to %s",
 		secret.Name, resourceVersion, secret.ResourceVersion)
 	return certs, err
 }

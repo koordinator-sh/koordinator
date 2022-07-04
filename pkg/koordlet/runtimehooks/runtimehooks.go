@@ -47,9 +47,9 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	if err := r.reconciler.Run(stopCh); err != nil {
 		return err
 	}
-	klog.V(5).Infof("runtime hook server has started")
+	klog.V(1).Infof("runtime hook server has started")
 	<-stopCh
-	klog.Infof("runtime hook is stopped")
+	klog.V(1).Infof("runtime hook is stopped")
 	return nil
 }
 
@@ -84,6 +84,6 @@ func registerPlugins() {
 		if enabled {
 			hookPlugin.Register()
 		}
-		klog.Infof("runtime hook plugin %s enable %v", hookFeature, enabled)
+		klog.V(2).Infof("runtime hook plugin %s enable %v", hookFeature, enabled)
 	}
 }

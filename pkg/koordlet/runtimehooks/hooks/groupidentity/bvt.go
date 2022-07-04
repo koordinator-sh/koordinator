@@ -61,7 +61,7 @@ func (b *bvtPlugin) SystemSupported() bool {
 		bvtFilePath := sysutil.GetCgroupFilePath(
 			util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), sysutil.CPUBVTWarpNs)
 		b.sysSupported = pointer.BoolPtr(sysutil.FileExists(bvtFilePath))
-		klog.Infof("update system supported info to %v for plugin %v", *b.sysSupported, name)
+		klog.V(2).Infof("update system supported info to %v for plugin %v", *b.sysSupported, name)
 	}
 	return *b.sysSupported
 }

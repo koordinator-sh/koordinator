@@ -92,14 +92,14 @@ func (m *Manager) registerFileToWatchIfNeed(file string) error {
 	}
 	if exist && config.fileIno != stat.Ino {
 		m.watcher.Remove(file)
-		klog.Infof("remove previous file %v with inode number %v", file, config.fileIno)
+		klog.V(4).Infof("remove previous file %v with inode number %v", file, config.fileIno)
 	}
 	m.watcher.Add(file)
 	m.configs[file] = &RuntimeHookConfigItem{
 		filePath: file,
 		fileIno:  stat.Ino,
 	}
-	klog.Infof("add new watching file %v with inode number %v", file, stat.Ino)
+	klog.V(4).Infof("add new watching file %v with inode number %v", file, stat.Ino)
 	return nil
 }
 
@@ -114,7 +114,7 @@ func (m *Manager) removeFileToWatch(filepath string) {
 		klog.Errorf("fail to remove %s to watch", filepath)
 	}
 	delete(m.configs, filepath)
-	klog.Infof("remove watching file %v", filepath)
+	klog.V(2).Infof("remove watching file %v", filepath)
 }
 
 func (m *Manager) needRefreshConfig(filepath string) bool {
@@ -173,13 +173,13 @@ func (m *Manager) updateHookConfig(filepath string) error {
 	}
 	configItem.RuntimeHookConfig = config
 	configItem.updateTime = updateTime
-	klog.Infof("update config for %v %v", filepath, config)
+	klog.V(1).Infof("update config for %v %v", filepath, config)
 	return nil
 }
 
 func (m *Manager) Setup() error {
 	if _, err := os.Stat(defaultRuntimeHookConfigPath); os.IsNotExist(err) {
-		klog.Infof("create %v", defaultRuntimeHookConfigPath)
+		klog.V(4).Infof("create %v", defaultRuntimeHookConfigPath)
 		if err := os.MkdirAll(defaultRuntimeHookConfigPath, 0755); err != nil {
 			klog.Errorf("fail to create %v %v", defaultRuntimeHookConfigPath, err)
 			return err
@@ -225,7 +225,7 @@ func (m *Manager) syncLoop() error {
 		select {
 		case event, ok := <-m.watcher.Events:
 			if !ok {
-				klog.Infof("config manager channel is closed")
+				klog.V(5).Infof("config manager channel is closed")
 				return nil
 			}
 			// only reload config when write/rename/remove events

@@ -292,7 +292,7 @@ func isSatisfactionConfigValid(thresholdConfig *slov1alpha1.ResourceThresholdStr
 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, CPUEvictBESatisfactionUpperPercent(%d) is not valid,must (0,%d)!", upperPercent, beCPUSatisfactionUpperPercentMax)
 		return false
 	} else if *upperPercent < *lowPercent {
-		klog.Infof("cpuEvict by ResourceSatisfaction skipped, CPUEvictBESatisfactionUpperPercent(%d) < CPUEvictBESatisfactionLowerPercent(%d)!", upperPercent, lowPercent)
+		klog.V(4).Infof("cpuEvict by ResourceSatisfaction skipped, CPUEvictBESatisfactionUpperPercent(%d) < CPUEvictBESatisfactionLowerPercent(%d)!", upperPercent, lowPercent)
 		return false
 	}
 	return true

@@ -99,7 +99,7 @@ func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
 	}
 
 	updated := b.updateRule(newRule)
-	klog.Infof("runtime hook plugin %s update rule %v, new rule %v", name, updated, newRule)
+	klog.V(2).Infof("runtime hook plugin %s update rule %v, new rule %v", name, updated, newRule)
 	return updated, nil
 }
 

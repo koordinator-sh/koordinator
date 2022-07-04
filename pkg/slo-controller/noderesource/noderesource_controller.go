@@ -66,7 +66,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if r.isColocationCfgDisabled(node) {
-		klog.Infof("colocation for node %v is disabled, reset BE resource", req.Name)
+		klog.V(1).Infof("colocation for node %v is disabled, reset BE resource", req.Name)
 		if err := r.resetNodeBEResource(node, disableInConfig, "node colocation is disabled in Config"); err != nil {
 			return ctrl.Result{Requeue: true}, err
 		} else {

@@ -129,7 +129,7 @@ func (e *eventWriter) openNewLogWriter() error {
 			klog.Errorf("failed to list files %v", pattern)
 		} else {
 			for i := 0; i < len(files)-e.maxFileNum+1; i++ {
-				klog.Infof("clean audit file %v", files[i])
+				klog.V(4).Infof("clean audit file %v", files[i])
 				if err := os.Remove(files[i]); err != nil {
 					klog.Errorf("clean audit file %v failed: %v", files[i], err)
 				}

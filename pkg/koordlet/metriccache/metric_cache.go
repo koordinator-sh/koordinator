@@ -497,7 +497,7 @@ func (m *metricCache) recycleDB() {
 		klog.Warningf("DeleteContainerThrottledMetric failed during recycle, error %v", err)
 	}
 	// raw records do not need to cleanup
-	klog.Infof("expired metric data before %v has been recycled", expiredTime)
+	klog.V(2).Infof("expired metric data before %v has been recycled", expiredTime)
 }
 
 func getAggregateFunc(aggregationType AggregationType) func(interface{}, AggregateParam) (float64, error) {

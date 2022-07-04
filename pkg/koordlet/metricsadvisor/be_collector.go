@@ -46,7 +46,7 @@ func (c *collector) collectBECPUResourceMetric() {
 	}
 
 	if beCPUUsageCores == nil {
-		klog.Info("beCPUUsageCores is nil")
+		klog.V(4).Info("beCPUUsageCores is nil")
 		return
 	}
 

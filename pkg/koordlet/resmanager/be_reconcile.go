@@ -60,7 +60,7 @@ func reconcileBECPULimit(podMeta *statesinformer.PodMeta) {
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, err)
 		} else {
 			curCFS, err := util.GetPodCurCFSQuota(podMeta.CgroupDir)
-			klog.Infof("apply cpu limit for pod %v/%v %v succeed, current value %d, error: %v",
+			klog.V(4).Infof("apply cpu limit for pod %v/%v %v succeed, current value %d, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curCFS, err)
 		}
 	}
@@ -93,7 +93,7 @@ func reconcileBECPULimit(podMeta *statesinformer.PodMeta) {
 				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, err)
 		} else {
 			curCFS, err := util.GetContainerCurCFSQuota(podMeta.CgroupDir, &containerStat)
-			klog.Infof("apply cpu limit for container %v/%v %v succeed, current value %v, error: %v",
+			klog.V(2).Infof("apply cpu limit for container %v/%v %v succeed, current value %v, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curCFS, err)
 		}
 	}
@@ -113,7 +113,7 @@ func reconcileBECPUShare(podMeta *statesinformer.PodMeta) {
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, err)
 		} else {
 			curShare, err := util.GetPodCurCPUShare(podMeta.CgroupDir)
-			klog.Infof("apply cpu request for pod %v/%v %v succeed, current value %d, error: %v",
+			klog.V(4).Infof("apply cpu request for pod %v/%v %v succeed, current value %d, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curShare, err)
 		}
 	}
@@ -146,7 +146,7 @@ func reconcileBECPUShare(podMeta *statesinformer.PodMeta) {
 				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, err)
 		} else {
 			curShare, err := util.GetContainerCurCPUShare(podMeta.CgroupDir, &containerStat)
-			klog.Infof("apply cpu request for pod %v/%v %v succeed, current value %d, error: %v",
+			klog.V(4).Infof("apply cpu request for pod %v/%v %v succeed, current value %d, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, curShare, err)
 		}
 	}
@@ -166,7 +166,7 @@ func reconcileBEMemLimit(podMeta *statesinformer.PodMeta) {
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, err)
 		} else {
 			curLimit, err := util.GetPodCurMemLimitBytes(podMeta.CgroupDir)
-			klog.Infof("apply cpu memory for pod %v/%v %v succeed, current value %d, error: %v",
+			klog.V(4).Infof("apply cpu memory for pod %v/%v %v succeed, current value %d, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curLimit, err)
 		}
 	}
@@ -199,7 +199,7 @@ func reconcileBEMemLimit(podMeta *statesinformer.PodMeta) {
 				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, err)
 		} else {
 			curLimit, err := util.GetContainerCurMemLimitBytes(podMeta.CgroupDir, &containerStat)
-			klog.Infof("apply memory limit for container %v/%v %v succeed, current value %v, error: %v",
+			klog.V(4).Infof("apply memory limit for container %v/%v %v succeed, current value %v, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curLimit, err)
 		}
 	}

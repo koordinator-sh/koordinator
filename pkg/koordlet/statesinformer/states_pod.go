@@ -44,7 +44,7 @@ func (s *statesInformer) syncPods() error {
 	s.podMap = newPodMap
 	s.podHasSynced.Store(true)
 	s.podUpdatedTime = time.Now()
-	klog.Infof("get pods success, len %d", len(s.podMap))
+	klog.V(4).InfoS("get pods success", "length", len(s.podMap))
 	s.sendCallbacks(RegisterTypeAllPods)
 	return nil
 }
@@ -70,7 +70,7 @@ func (s *statesInformer) syncKubeletLoop(duration time.Duration, stopCh <-chan s
 			timer.Reset(duration)
 			s.syncPods()
 		case <-stopCh:
-			klog.Infof("sync kubelet loop is exited")
+			klog.V(5).Infof("sync kubelet loop is exited")
 			return
 		}
 	}

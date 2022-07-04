@@ -207,7 +207,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 				select {
 				case <-ctx.Done():
 					// We were asked to terminate. Exit 0.
-					klog.Info("Requested to terminate. Exiting.")
+					klog.V(2).Info("Requested to terminate. Exiting.")
 					os.Exit(0)
 				default:
 					// We lost the lock.

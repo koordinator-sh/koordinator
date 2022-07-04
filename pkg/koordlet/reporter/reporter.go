@@ -115,7 +115,7 @@ func NewReporter(cfg *Config, kubeClient *clientset.Clientset, crdClient *client
 				klog.V(5).Infof("find nodeMetric spec %s has not changed.", newNodeMetric.Name)
 				return
 			}
-			klog.Infof("update node metric spec %v", newNodeMetric.Spec)
+			klog.V(2).Infof("update node metric spec %v", newNodeMetric.Spec)
 			r.updateMetricSpec(newNodeMetric)
 		},
 	})
@@ -129,10 +129,10 @@ func (r *reporter) ReportEvent(object runtime.Object, eventType, reason, message
 
 func (r *reporter) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	klog.Infof("starting reporter")
+	klog.V(1).Infof("starting reporter")
 
 	if r.config.ReportIntervalSeconds > 0 {
-		klog.Info("starting informer for NodeMetric")
+		klog.V(1).Info("starting informer for NodeMetric")
 		go r.nodeMetricInformer.Run(stopCh)
 		if !cache.WaitForCacheSync(stopCh, r.nodeMetricInformer.HasSynced, r.statesInformer.HasSynced) {
 			return fmt.Errorf("timed out waiting for node metric caches to sync")
@@ -141,13 +141,13 @@ func (r *reporter) Run(stopCh <-chan struct{}) error {
 		go r.syncNodeMetricWorker(stopCh)
 
 	} else {
-		klog.Infof("ReportIntervalSeconds is %d, sync node metric to apiserver is disabled",
+		klog.V(2).Infof("ReportIntervalSeconds is %d, sync node metric to apiserver is disabled",
 			r.config.ReportIntervalSeconds)
 	}
 
-	klog.Info("start reporter successfully")
+	klog.V(1).Info("start reporter successfully")
 	<-stopCh
-	klog.Info("shutting down reporter daemon")
+	klog.V(1).Info("shutting down reporter daemon")
 	return nil
 }
 
@@ -211,7 +211,7 @@ func (r *reporter) sync() {
 	if retErr != nil {
 		klog.Warningf("update node metric status failed, status %v, err %v", util.DumpJSON(newStatus), retErr)
 	} else {
-		klog.Infof("update node metric status success, detail: %v", util.DumpJSON(newStatus))
+		klog.V(2).Infof("update node metric status success, detail: %v", util.DumpJSON(newStatus))
 	}
 }
 
