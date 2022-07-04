@@ -24,13 +24,13 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // CPUQOS enables cpu qos features.
-type CPUQoS struct {
+type CPUQOS struct {
 	// group identity value for pods, default = 0
 	GroupIdentity *int64 `json:"groupIdentity,omitempty"`
 }
 
-// MemoryQoS enables memory qos features.
-type MemoryQoS struct {
+// MemoryQOS enables memory qos features.
+type MemoryQOS struct {
 	// memcg qos
 	// If enabled, memcg qos will be set by the agent, where some fields are implicitly calculated from pod spec.
 	// 1. `memory.min` := spec.requests.memory * minLimitFactor / 100 (use 0 if requests.memory is not set)
@@ -92,60 +92,60 @@ type MemoryQoS struct {
 	OomKillGroup   *int64 `json:"oomKillGroup,omitempty"`
 }
 
-type PodMemoryQoSPolicy string
+type PodMemoryQOSPolicy string
 
 const (
-	// PodMemoryQoSPolicyDefault indicates pod inherits node-level config
-	PodMemoryQoSPolicyDefault PodMemoryQoSPolicy = "default"
-	// PodMemoryQoSPolicyNone indicates pod disables memory qos
-	PodMemoryQoSPolicyNone PodMemoryQoSPolicy = "none"
-	// PodMemoryQoSPolicyAuto indicates pod uses a recommended config
-	PodMemoryQoSPolicyAuto PodMemoryQoSPolicy = "auto"
+	// PodMemoryQOSPolicyDefault indicates pod inherits node-level config
+	PodMemoryQOSPolicyDefault PodMemoryQOSPolicy = "default"
+	// PodMemoryQOSPolicyNone indicates pod disables memory qos
+	PodMemoryQOSPolicyNone PodMemoryQOSPolicy = "none"
+	// PodMemoryQOSPolicyAuto indicates pod uses a recommended config
+	PodMemoryQOSPolicyAuto PodMemoryQOSPolicy = "auto"
 )
 
-type PodMemoryQoSConfig struct {
+type PodMemoryQOSConfig struct {
 	// Policy indicates the qos plan; use "default" if empty
-	Policy    PodMemoryQoSPolicy `json:"policy,omitempty"`
-	MemoryQoS `json:",inline"`
+	Policy    PodMemoryQOSPolicy `json:"policy,omitempty"`
+	MemoryQOS `json:",inline"`
 }
 
-// CPUQoSCfg stores node-level config of cpu qos
-type CPUQoSCfg struct {
+// CPUQOSCfg stores node-level config of cpu qos
+type CPUQOSCfg struct {
 	// Enable indicates whether the cpu qos is enabled.
 	Enable *bool `json:"enable,omitempty"`
-	CPUQoS `json:",inline"`
+	CPUQOS `json:",inline"`
 }
 
-// MemoryQoSCfg stores node-level config of memory qos
-type MemoryQoSCfg struct {
+// MemoryQOSCfg stores node-level config of memory qos
+type MemoryQOSCfg struct {
 	// Enable indicates whether the memory qos is enabled (default: false).
-	// This field is used for node-level control, while pod-level configuration is done with MemoryQoS and `Policy`
-	// instead of an `Enable` option. Please view the differences between MemoryQoSCfg and PodMemoryQoSConfig structs.
+	// This field is used for node-level control, while pod-level configuration is done with MemoryQOS and `Policy`
+	// instead of an `Enable` option. Please view the differences between MemoryQOSCfg and PodMemoryQOSConfig structs.
 	Enable    *bool `json:"enable,omitempty"`
-	MemoryQoS `json:",inline"`
+	MemoryQOS `json:",inline"`
 }
 
-type ResourceQoS struct {
-	CPUQoS     *CPUQoSCfg     `json:"cpuQoS,omitempty"`
-	MemoryQoS  *MemoryQoSCfg  `json:"memoryQoS,omitempty"`
-	ResctrlQoS *ResctrlQoSCfg `json:"resctrlQoS,omitempty"`
+type ResourceQOS struct {
+	CPUQOS     *CPUQOSCfg     `json:"cpuQOS,omitempty"`
+	MemoryQOS  *MemoryQOSCfg  `json:"memoryQOS,omitempty"`
+	ResctrlQOS *ResctrlQOSCfg `json:"resctrlQOS,omitempty"`
 }
 
-type ResourceQoSStrategy struct {
-	// ResourceQoS for LSR pods.
-	LSR *ResourceQoS `json:"lsr,omitempty"`
+type ResourceQOSStrategy struct {
+	// ResourceQOS for LSR pods.
+	LSRClass *ResourceQOS `json:"lsrClass,omitempty"`
 
-	// ResourceQoS for LS pods.
-	LS *ResourceQoS `json:"ls,omitempty"`
+	// ResourceQOS for LS pods.
+	LSClass *ResourceQOS `json:"lsClass,omitempty"`
 
-	// ResourceQoS for BE pods.
-	BE *ResourceQoS `json:"be,omitempty"`
+	// ResourceQOS for BE pods.
+	BEClass *ResourceQOS `json:"beClass,omitempty"`
 
-	// ResourceQoS for system pods
-	System *ResourceQoS `json:"system,omitempty"`
+	// ResourceQOS for system pods
+	SystemClass *ResourceQOS `json:"systemClass,omitempty"`
 
-	// ResourceQoS for root cgroup.
-	CgroupRoot *ResourceQoS `json:"cgroupRoot,omitempty"`
+	// ResourceQOS for root cgroup.
+	CgroupRoot *ResourceQOS `json:"cgroupRoot,omitempty"`
 }
 
 type CPUSuppressPolicy string
@@ -186,14 +186,14 @@ type ResourceThresholdStrategy struct {
 	CPUEvictTimeWindowSeconds *int64 `json:"cpuEvictTimeWindowSeconds,omitempty"`
 }
 
-// ResctrlQoSCfg stores node-level config of resctrl qos
-type ResctrlQoSCfg struct {
+// ResctrlQOSCfg stores node-level config of resctrl qos
+type ResctrlQOSCfg struct {
 	// Enable indicates whether the resctrl qos is enabled.
 	Enable     *bool `json:"enable,omitempty"`
-	ResctrlQoS `json:",inline"`
+	ResctrlQOS `json:",inline"`
 }
 
-type ResctrlQoS struct {
+type ResctrlQOS struct {
 	// LLC available range start for pods by percentage
 	// +kubebuilder:default=0
 	// +kubebuilder:validation:Minimum=0
@@ -251,7 +251,7 @@ type NodeSLOSpec struct {
 	// BE pods will be limited if node resource usage overload
 	ResourceUsedThresholdWithBE *ResourceThresholdStrategy `json:"resourceUsedThresholdWithBE,omitempty"`
 	// QoS config strategy for pods of different qos-class
-	ResourceQoSStrategy *ResourceQoSStrategy `json:"resourceQoSStrategy,omitempty"`
+	ResourceQOSStrategy *ResourceQOSStrategy `json:"resourceQOSStrategy,omitempty"`
 	// CPU Burst Strategy
 	CPUBurstStrategy *CPUBurstStrategy `json:"cpuBurstStrategy,omitempty"`
 }
