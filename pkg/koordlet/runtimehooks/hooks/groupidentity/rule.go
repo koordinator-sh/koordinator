@@ -37,30 +37,30 @@ type bvtRule struct {
 	kubeQOSPodParams map[corev1.PodQOSClass]int64
 }
 
-func (r *bvtRule) getPodBvtValue(podQoSClass ext.QoSClass, podKubeQoS corev1.PodQOSClass) int64 {
+func (r *bvtRule) getPodBvtValue(podQoSClass ext.QoSClass, podKubeQOS corev1.PodQOSClass) int64 {
 	if val, exist := r.podQOSParams[podQoSClass]; exist {
 		return val
 	}
-	if val, exist := r.kubeQOSPodParams[podKubeQoS]; exist {
+	if val, exist := r.kubeQOSPodParams[podKubeQOS]; exist {
 		return val
 	}
-	return *util.NoneCPUQoS().GroupIdentity
+	return *util.NoneCPUQOS().GroupIdentity
 }
 
-func (r *bvtRule) getKubeQoSDirBvtValue(kubeQoS corev1.PodQOSClass) int64 {
-	if bvtValue, exist := r.kubeQOSDirParams[kubeQoS]; exist {
+func (r *bvtRule) getKubeQOSDirBvtValue(kubeQOS corev1.PodQOSClass) int64 {
+	if bvtValue, exist := r.kubeQOSDirParams[kubeQOS]; exist {
 		return bvtValue
 	}
-	return *util.NoneCPUQoS().GroupIdentity
+	return *util.NoneCPUQOS().GroupIdentity
 }
 
 func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
 	mergedNodeSLO := mergedNodeSLOIf.(*slov1alpha1.NodeSLOSpec)
 
 	// setting pod rule by qos config
-	lsrValue := *mergedNodeSLO.ResourceQoSStrategy.LSR.CPUQoS.CPUQoS.GroupIdentity
-	lsValue := *mergedNodeSLO.ResourceQoSStrategy.LS.CPUQoS.GroupIdentity
-	beValue := *mergedNodeSLO.ResourceQoSStrategy.BE.CPUQoS.GroupIdentity
+	lsrValue := *mergedNodeSLO.ResourceQOSStrategy.LSRClass.CPUQOS.CPUQOS.GroupIdentity
+	lsValue := *mergedNodeSLO.ResourceQOSStrategy.LSClass.CPUQOS.GroupIdentity
+	beValue := *mergedNodeSLO.ResourceQOSStrategy.BEClass.CPUQOS.GroupIdentity
 
 	// setting besteffort according to BE
 	besteffortDirVal := beValue
@@ -71,12 +71,12 @@ func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
 	burstablePodVal := lsValue
 
 	// NOTICE guaranteed root dir must set as 0 until kernel supported
-	guaranteedDirVal := *util.NoneCPUQoS().GroupIdentity
+	guaranteedDirVal := *util.NoneCPUQOS().GroupIdentity
 	// setting guaranteed pod enabled if LS or LSR enabled
-	guaranteedPodVal := *util.NoneCPUQoS().GroupIdentity
-	if *mergedNodeSLO.ResourceQoSStrategy.LSR.CPUQoS.Enable {
+	guaranteedPodVal := *util.NoneCPUQOS().GroupIdentity
+	if *mergedNodeSLO.ResourceQOSStrategy.LSRClass.CPUQOS.Enable {
 		guaranteedPodVal = lsrValue
-	} else if *mergedNodeSLO.ResourceQoSStrategy.LS.CPUQoS.Enable {
+	} else if *mergedNodeSLO.ResourceQOSStrategy.LSClass.CPUQOS.Enable {
 		guaranteedPodVal = lsValue
 	}
 
@@ -113,20 +113,20 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
 		return nil
 	}
-	for _, kubeQoS := range []corev1.PodQOSClass{
+	for _, kubeQOS := range []corev1.PodQOSClass{
 		corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
-		bvtValue := r.getKubeQoSDirBvtValue(kubeQoS)
-		kubeQoSCgroupPath := util.GetKubeQosRelativePath(kubeQoS)
-		if err := sysutil.CgroupFileWrite(kubeQoSCgroupPath, sysutil.CPUBVTWarpNs, strconv.FormatInt(bvtValue, 10)); err != nil {
-			klog.Infof("update kube qos %v cpu bvt failed, dir %v, error %v", kubeQoS, kubeQoSCgroupPath, err)
+		bvtValue := r.getKubeQOSDirBvtValue(kubeQOS)
+		kubeQOSCgroupPath := util.GetKubeQosRelativePath(kubeQOS)
+		if err := sysutil.CgroupFileWrite(kubeQOSCgroupPath, sysutil.CPUBVTWarpNs, strconv.FormatInt(bvtValue, 10)); err != nil {
+			klog.Infof("update kube qos %v cpu bvt failed, dir %v, error %v", kubeQOS, kubeQOSCgroupPath, err)
 		} else {
-			audit.V(2).Group(string(kubeQoS)).Reason(name).Message("set bvt to %v", bvtValue)
+			audit.V(2).Group(string(kubeQOS)).Reason(name).Message("set bvt to %v", bvtValue)
 		}
 	}
 	for _, podMeta := range pods {
-		podQoS := ext.GetPodQoSClass(podMeta.Pod)
-		podKubeQoS := podMeta.Pod.Status.QOSClass
-		podBvt := r.getPodBvtValue(podQoS, podKubeQoS)
+		podQOS := ext.GetPodQoSClass(podMeta.Pod)
+		podKubeQOS := podMeta.Pod.Status.QOSClass
+		podBvt := r.getPodBvtValue(podQOS, podKubeQOS)
 		podCgroupPath := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 		if err := sysutil.CgroupFileWrite(podCgroupPath, sysutil.CPUBVTWarpNs, strconv.FormatInt(podBvt, 10)); err != nil {
 			klog.Infof("update pod %s cpu bvt failed, dir %v, error %v",

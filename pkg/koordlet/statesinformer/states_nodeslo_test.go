@@ -32,19 +32,19 @@ func Test_mergeNodeSLOSpec(t *testing.T) {
 		ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
 			CPUSuppressThresholdPercent: pointer.Int64Ptr(80),
 		},
-		ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-			LSR: util.NoneResourceQoS(apiext.QoSLSR),
-			LS:  util.NoneResourceQoS(apiext.QoSLS),
-			BE: &slov1alpha1.ResourceQoS{
-				CPUQoS: &slov1alpha1.CPUQoSCfg{
+		ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+			LSRClass: util.NoneResourceQOS(apiext.QoSLSR),
+			LSClass:  util.NoneResourceQOS(apiext.QoSLS),
+			BEClass: &slov1alpha1.ResourceQOS{
+				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					Enable: pointer.BoolPtr(true),
 				},
-				MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+				MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 					Enable: pointer.BoolPtr(true),
 				},
-				ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
+				ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 					Enable: pointer.BoolPtr(true),
-					ResctrlQoS: slov1alpha1.ResctrlQoS{
+					ResctrlQOS: slov1alpha1.ResctrlQOS{
 						CATRangeEndPercent: pointer.Int64Ptr(50),
 					},
 				},
@@ -111,26 +111,26 @@ func Test_mergeNodeSLOSpec(t *testing.T) {
 							CPUSuppressThresholdPercent: pointer.Int64Ptr(100),
 							MemoryEvictThresholdPercent: pointer.Int64Ptr(100),
 						},
-						ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-							LSR: &slov1alpha1.ResourceQoS{
-								ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-									ResctrlQoS: slov1alpha1.ResctrlQoS{
+						ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+							LSRClass: &slov1alpha1.ResourceQOS{
+								ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+									ResctrlQOS: slov1alpha1.ResctrlQOS{
 										CATRangeStartPercent: pointer.Int64Ptr(0),
 										CATRangeEndPercent:   pointer.Int64Ptr(100),
 									},
 								},
 							},
-							LS: &slov1alpha1.ResourceQoS{
-								ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-									ResctrlQoS: slov1alpha1.ResctrlQoS{
+							LSClass: &slov1alpha1.ResourceQOS{
+								ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+									ResctrlQOS: slov1alpha1.ResctrlQOS{
 										CATRangeStartPercent: pointer.Int64Ptr(0),
 										CATRangeEndPercent:   pointer.Int64Ptr(100),
 									},
 								},
 							},
-							BE: &slov1alpha1.ResourceQoS{
-								ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-									ResctrlQoS: slov1alpha1.ResctrlQoS{
+							BEClass: &slov1alpha1.ResourceQOS{
+								ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+									ResctrlQOS: slov1alpha1.ResctrlQOS{
 										CATRangeStartPercent: pointer.Int64Ptr(0),
 										CATRangeEndPercent:   pointer.Int64Ptr(40),
 									},
@@ -163,10 +163,10 @@ func Test_createNodeSLO(t *testing.T) {
 		CPUSuppressThresholdPercent: pointer.Int64Ptr(80),
 	}
 
-	testingNewNodeSLO.Spec.ResourceQoSStrategy.BE = &slov1alpha1.ResourceQoS{
-		ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
+	testingNewNodeSLO.Spec.ResourceQOSStrategy.BEClass = &slov1alpha1.ResourceQOS{
+		ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 			Enable: pointer.BoolPtr(true),
-			ResctrlQoS: slov1alpha1.ResctrlQoS{
+			ResctrlQOS: slov1alpha1.ResctrlQOS{
 				CATRangeStartPercent: pointer.Int64Ptr(0),
 				CATRangeEndPercent:   pointer.Int64Ptr(20),
 			},
@@ -178,12 +178,12 @@ func Test_createNodeSLO(t *testing.T) {
 	}
 	testingCreatedNodeSLO.Spec.ResourceUsedThresholdWithBE.Enable = pointer.BoolPtr(true)
 	testingCreatedNodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent = pointer.Int64Ptr(80)
-	testingCreatedNodeSLO.Spec.ResourceQoSStrategy.LSR = util.NoneResourceQoS(apiext.QoSLSR)
-	testingCreatedNodeSLO.Spec.ResourceQoSStrategy.LS = util.NoneResourceQoS(apiext.QoSLS)
-	testingCreatedNodeSLO.Spec.ResourceQoSStrategy.BE = util.NoneResourceQoS(apiext.QoSBE)
-	testingCreatedNodeSLO.Spec.ResourceQoSStrategy.BE.ResctrlQoS.Enable = pointer.BoolPtr(true)
-	testingCreatedNodeSLO.Spec.ResourceQoSStrategy.BE.ResctrlQoS.CATRangeStartPercent = pointer.Int64Ptr(0)
-	testingCreatedNodeSLO.Spec.ResourceQoSStrategy.BE.ResctrlQoS.CATRangeEndPercent = pointer.Int64Ptr(20)
+	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.LSRClass = util.NoneResourceQOS(apiext.QoSLSR)
+	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.LSClass = util.NoneResourceQOS(apiext.QoSLS)
+	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass = util.NoneResourceQOS(apiext.QoSBE)
+	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.BoolPtr(true)
+	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeStartPercent = pointer.Int64Ptr(0)
+	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeEndPercent = pointer.Int64Ptr(20)
 
 	r := statesInformer{nodeSLO: nil}
 
@@ -198,11 +198,11 @@ func Test_updateNodeSLOSpec(t *testing.T) {
 				Enable:                      pointer.BoolPtr(true),
 				CPUSuppressThresholdPercent: pointer.Int64Ptr(80),
 			},
-			ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-				BE: &slov1alpha1.ResourceQoS{
-					ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
+			ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+				BEClass: &slov1alpha1.ResourceQOS{
+					ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 						Enable: pointer.BoolPtr(true),
-						ResctrlQoS: slov1alpha1.ResctrlQoS{
+						ResctrlQOS: slov1alpha1.ResctrlQOS{
 							CATRangeStartPercent: pointer.Int64Ptr(0),
 							CATRangeEndPercent:   pointer.Int64Ptr(20),
 						},
@@ -216,19 +216,19 @@ func Test_updateNodeSLOSpec(t *testing.T) {
 	}
 	testingUpdatedNodeSLO.Spec.ResourceUsedThresholdWithBE.Enable = pointer.BoolPtr(true)
 	testingUpdatedNodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent = pointer.Int64Ptr(80)
-	testingUpdatedNodeSLO.Spec.ResourceQoSStrategy.LSR.CPUQoS.CPUQoS = *util.NoneCPUQoS()
-	testingUpdatedNodeSLO.Spec.ResourceQoSStrategy.LSR.MemoryQoS.MemoryQoS = *util.NoneMemoryQoS()
-	testingUpdatedNodeSLO.Spec.ResourceQoSStrategy.LSR.ResctrlQoS.ResctrlQoS = *util.NoneResctrlQoS()
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.LSRClass.CPUQOS.CPUQOS = *util.NoneCPUQOS()
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.LSRClass.MemoryQOS.MemoryQOS = *util.NoneMemoryQOS()
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.LSRClass.ResctrlQOS.ResctrlQOS = *util.NoneResctrlQOS()
 
-	testingUpdatedNodeSLO.Spec.ResourceQoSStrategy.LS.CPUQoS.CPUQoS = *util.NoneCPUQoS()
-	testingUpdatedNodeSLO.Spec.ResourceQoSStrategy.LS.MemoryQoS.MemoryQoS = *util.NoneMemoryQoS()
-	testingUpdatedNodeSLO.Spec.ResourceQoSStrategy.LS.ResctrlQoS.ResctrlQoS = *util.NoneResctrlQoS()
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.LSClass.CPUQOS.CPUQOS = *util.NoneCPUQOS()
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.LSClass.MemoryQOS.MemoryQOS = *util.NoneMemoryQOS()
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.LSClass.ResctrlQOS.ResctrlQOS = *util.NoneResctrlQOS()
 
-	testingUpdatedNodeSLO.Spec.ResourceQoSStrategy.BE.CPUQoS.CPUQoS = *util.NoneCPUQoS()
-	testingUpdatedNodeSLO.Spec.ResourceQoSStrategy.BE.MemoryQoS.MemoryQoS = *util.NoneMemoryQoS()
-	testingUpdatedNodeSLO.Spec.ResourceQoSStrategy.BE.ResctrlQoS.Enable = pointer.BoolPtr(true)
-	testingUpdatedNodeSLO.Spec.ResourceQoSStrategy.BE.ResctrlQoS.CATRangeStartPercent = pointer.Int64Ptr(0)
-	testingUpdatedNodeSLO.Spec.ResourceQoSStrategy.BE.ResctrlQoS.CATRangeEndPercent = pointer.Int64Ptr(20)
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.CPUQOS.CPUQOS = *util.NoneCPUQOS()
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.MemoryQOS.MemoryQOS = *util.NoneMemoryQOS()
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.BoolPtr(true)
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeStartPercent = pointer.Int64Ptr(0)
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeEndPercent = pointer.Int64Ptr(20)
 
 	r := statesInformer{
 		nodeSLO: &slov1alpha1.NodeSLO{
@@ -324,17 +324,17 @@ func Test_mergeSLOSpecResourceUsedThresholdWithBE(t *testing.T) {
 	}
 }
 
-func Test_mergeSLOSpecResourceQoSStrategy(t *testing.T) {
-	testingDefaultSpec := util.DefaultResourceQoSStrategy()
+func Test_mergeSLOSpecResourceQOSStrategy(t *testing.T) {
+	testingDefaultSpec := util.DefaultResourceQOSStrategy()
 
 	testingNewSpec := testingDefaultSpec.DeepCopy()
-	testingNewSpec.BE.MemoryQoS.WmarkRatio = pointer.Int64Ptr(0)
+	testingNewSpec.BEClass.MemoryQOS.WmarkRatio = pointer.Int64Ptr(0)
 
-	testingNewSpec1 := &slov1alpha1.ResourceQoSStrategy{
-		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+	testingNewSpec1 := &slov1alpha1.ResourceQOSStrategy{
+		BEClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					WmarkRatio: pointer.Int64Ptr(90),
 				},
 			},
@@ -342,30 +342,30 @@ func Test_mergeSLOSpecResourceQoSStrategy(t *testing.T) {
 	}
 
 	testingMergedSpec := testingDefaultSpec.DeepCopy()
-	testingMergedSpec.BE.MemoryQoS.Enable = pointer.BoolPtr(true)
-	testingMergedSpec.BE.MemoryQoS.WmarkRatio = pointer.Int64Ptr(90)
+	testingMergedSpec.BEClass.MemoryQOS.Enable = pointer.BoolPtr(true)
+	testingMergedSpec.BEClass.MemoryQOS.WmarkRatio = pointer.Int64Ptr(90)
 
 	type args struct {
-		defaultSpec *slov1alpha1.ResourceQoSStrategy
-		newSpec     *slov1alpha1.ResourceQoSStrategy
+		defaultSpec *slov1alpha1.ResourceQOSStrategy
+		newSpec     *slov1alpha1.ResourceQOSStrategy
 	}
 	tests := []struct {
 		name string
 		args args
-		want *slov1alpha1.ResourceQoSStrategy
+		want *slov1alpha1.ResourceQOSStrategy
 	}{
 		{
 			name: "both empty",
 			args: args{
-				defaultSpec: &slov1alpha1.ResourceQoSStrategy{},
-				newSpec:     &slov1alpha1.ResourceQoSStrategy{},
+				defaultSpec: &slov1alpha1.ResourceQOSStrategy{},
+				newSpec:     &slov1alpha1.ResourceQOSStrategy{},
 			},
-			want: &slov1alpha1.ResourceQoSStrategy{},
+			want: &slov1alpha1.ResourceQOSStrategy{},
 		},
 		{
 			name: "totally use new",
 			args: args{
-				defaultSpec: &slov1alpha1.ResourceQoSStrategy{},
+				defaultSpec: &slov1alpha1.ResourceQOSStrategy{},
 				newSpec:     testingNewSpec,
 			},
 			want: testingNewSpec,
@@ -396,21 +396,21 @@ func Test_mergeSLOSpecResourceQoSStrategy(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := mergeSLOSpecResourceQoSStrategy(tt.args.defaultSpec, tt.args.newSpec)
+			got := mergeSLOSpecResourceQOSStrategy(tt.args.defaultSpec, tt.args.newSpec)
 			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func Test_mergeNoneResourceQoSIfDisabled(t *testing.T) {
-	testDefault := util.DefaultResourceQoSStrategy()
-	testAllNone := util.NoneResourceQoSStrategy()
+func Test_mergeNoneResourceQOSIfDisabled(t *testing.T) {
+	testDefault := util.DefaultResourceQOSStrategy()
+	testAllNone := util.NoneResourceQOSStrategy()
 
 	testLSMemQOSEnabled := testDefault.DeepCopy()
-	testLSMemQOSEnabled.LS.MemoryQoS.Enable = pointer.BoolPtr(true)
-	testLSMemQOSEnabledResult := util.NoneResourceQoSStrategy()
-	testLSMemQOSEnabledResult.LS.MemoryQoS.Enable = pointer.BoolPtr(true)
-	testLSMemQOSEnabledResult.LS.MemoryQoS.MemoryQoS = *util.DefaultMemoryQoS(apiext.QoSLS)
+	testLSMemQOSEnabled.LSClass.MemoryQOS.Enable = pointer.BoolPtr(true)
+	testLSMemQOSEnabledResult := util.NoneResourceQOSStrategy()
+	testLSMemQOSEnabledResult.LSClass.MemoryQOS.Enable = pointer.BoolPtr(true)
+	testLSMemQOSEnabledResult.LSClass.MemoryQOS.MemoryQOS = *util.DefaultMemoryQOS(apiext.QoSLS)
 
 	type args struct {
 		nodeCfg *slov1alpha1.NodeSLO
@@ -418,14 +418,14 @@ func Test_mergeNoneResourceQoSIfDisabled(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want *slov1alpha1.ResourceQoSStrategy
+		want *slov1alpha1.ResourceQOSStrategy
 	}{
 		{
 			name: "all disabled",
 			args: args{
 				nodeCfg: &slov1alpha1.NodeSLO{
 					Spec: slov1alpha1.NodeSLOSpec{
-						ResourceQoSStrategy: testDefault,
+						ResourceQOSStrategy: testDefault,
 					},
 				},
 			},
@@ -436,7 +436,7 @@ func Test_mergeNoneResourceQoSIfDisabled(t *testing.T) {
 			args: args{
 				nodeCfg: &slov1alpha1.NodeSLO{
 					Spec: slov1alpha1.NodeSLOSpec{
-						ResourceQoSStrategy: testLSMemQOSEnabled,
+						ResourceQOSStrategy: testLSMemQOSEnabled,
 					},
 				},
 			},
@@ -445,8 +445,8 @@ func Test_mergeNoneResourceQoSIfDisabled(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mergeNoneResourceQoSIfDisabled(tt.args.nodeCfg.Spec.ResourceQoSStrategy)
-			assert.Equal(t, tt.want, tt.args.nodeCfg.Spec.ResourceQoSStrategy)
+			mergeNoneResourceQOSIfDisabled(tt.args.nodeCfg.Spec.ResourceQOSStrategy)
+			assert.Equal(t, tt.want, tt.args.nodeCfg.Spec.ResourceQOSStrategy)
 		})
 	}
 }

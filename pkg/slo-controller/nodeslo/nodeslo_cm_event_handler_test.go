@@ -43,11 +43,11 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 		},
 		Data: map[string]string{
 			config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
-			config.ResourceQoSConfigKey: `
+			config.ResourceQOSConfigKey: `
 {
   "clusterStrategy": {
-    "be": {
-      "cpuQoS": {
+    "beClass": {
+      "cpuQOS": {
         "groupIdentity": 0
       }
     }
@@ -62,10 +62,10 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 	expectTestingCfg1.ThresholdCfgMerged.ClusterStrategy.Enable = pointer.BoolPtr(true)
 	expectTestingCfg1.ThresholdCfgMerged.ClusterStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
 
-	expectTestingCfg1.ResourceQoSCfgMerged.ClusterStrategy = &slov1alpha1.ResourceQoSStrategy{
-		BE: &slov1alpha1.ResourceQoS{
-			CPUQoS: &slov1alpha1.CPUQoSCfg{
-				CPUQoS: slov1alpha1.CPUQoS{
+	expectTestingCfg1.ResourceQOSCfgMerged.ClusterStrategy = &slov1alpha1.ResourceQOSStrategy{
+		BEClass: &slov1alpha1.ResourceQOS{
+			CPUQOS: &slov1alpha1.CPUQOSCfg{
+				CPUQOS: slov1alpha1.CPUQOS{
 					GroupIdentity: pointer.Int64Ptr(0),
 				},
 			},
@@ -131,7 +131,7 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 				},
 				Data: map[string]string{
 					config.ResourceThresholdConfigKey: "invalid_content",
-					config.ResourceQoSConfigKey:       "invalid_content",
+					config.ResourceQOSConfigKey:       "invalid_content",
 					config.CPUBurstConfigKey:          "invalid_content",
 				},
 			}},
