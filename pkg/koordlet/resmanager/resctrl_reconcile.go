@@ -89,17 +89,17 @@ func getPodResctrlGroup(pod *corev1.Pod) string {
 	return UnknownResctrlGroup
 }
 
-func getResourceQoSForResctrlGroup(strategy *slov1alpha1.ResourceQoSStrategy, group string) *slov1alpha1.ResourceQoS {
+func getResourceQOSForResctrlGroup(strategy *slov1alpha1.ResourceQOSStrategy, group string) *slov1alpha1.ResourceQOS {
 	if strategy == nil {
 		return nil
 	}
 	switch group {
 	case LSRResctrlGroup:
-		return strategy.LSR
+		return strategy.LSRClass
 	case LSResctrlGroup:
-		return strategy.LS
+		return strategy.LSClass
 	case BEResctrlGroup:
-		return strategy.BE
+		return strategy.BEClass
 	}
 	return nil
 }
@@ -276,15 +276,15 @@ func calculateL3TasksResource(group string, taskIds []int) ResourceUpdater {
 }
 
 func (r *ResctrlReconcile) calculateAndApplyCatL3PolicyForGroup(group string, cbm uint, l3Num int,
-	resourceQoS *slov1alpha1.ResourceQoS) error {
-	if resourceQoS == nil || resourceQoS.ResctrlQoS == nil || resourceQoS.ResctrlQoS.CATRangeStartPercent == nil ||
-		resourceQoS.ResctrlQoS.CATRangeEndPercent == nil {
+	resourceQoS *slov1alpha1.ResourceQOS) error {
+	if resourceQoS == nil || resourceQoS.ResctrlQOS == nil || resourceQoS.ResctrlQOS.CATRangeStartPercent == nil ||
+		resourceQoS.ResctrlQOS.CATRangeEndPercent == nil {
 		klog.Warningf("skipped, since resourceQoS or startPercent or endPercent is nil for group %v, "+
 			"resourceQoS %v", resourceQoS, group)
 		return nil
 	}
 
-	startPercent, endPercent := *resourceQoS.ResctrlQoS.CATRangeStartPercent, *resourceQoS.ResctrlQoS.CATRangeEndPercent
+	startPercent, endPercent := *resourceQoS.ResctrlQOS.CATRangeStartPercent, *resourceQoS.ResctrlQOS.CATRangeEndPercent
 	// calculate policy
 	l3MaskValue, err := calculateCatL3MaskValue(cbm, startPercent, endPercent)
 	if err != nil {
@@ -307,14 +307,14 @@ func (r *ResctrlReconcile) calculateAndApplyCatL3PolicyForGroup(group string, cb
 	return nil
 }
 
-func (r *ResctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3Num int, resourceQoS *slov1alpha1.ResourceQoS) error {
-	if resourceQoS == nil || resourceQoS.ResctrlQoS == nil {
-		klog.Warningf("skipped, since resourceQoS or ResctrlQoS is nil for group %v, "+
+func (r *ResctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3Num int, resourceQoS *slov1alpha1.ResourceQOS) error {
+	if resourceQoS == nil || resourceQoS.ResctrlQOS == nil {
+		klog.Warningf("skipped, since resourceQoS or ResctrlQOS is nil for group %v, "+
 			"resourceQoS %v", resourceQoS, group)
 		return nil
 	}
 
-	memBwPercent := calculateMbaPercentForGroup(group, resourceQoS.ResctrlQoS.MBAPercent)
+	memBwPercent := calculateMbaPercentForGroup(group, resourceQoS.ResctrlQOS.MBAPercent)
 	if memBwPercent == "" {
 		return nil
 	}
@@ -348,7 +348,7 @@ func (r *ResctrlReconcile) calculateAndApplyCatL3GroupTasks(group string, taskId
 	return nil
 }
 
-func (r *ResctrlReconcile) reconcileCatResctrlPolicy(qosStrategy *slov1alpha1.ResourceQoSStrategy) {
+func (r *ResctrlReconcile) reconcileCatResctrlPolicy(qosStrategy *slov1alpha1.ResourceQOSStrategy) {
 	// 1. retrieve rdt configs from nodeSLOSpec
 	// 2.1 get cbm and l3 numbers, which are general for all resctrl groups
 	// 2.2 calculate applying resctrl policies, like cat policy and so on, with each rdt config
@@ -385,7 +385,7 @@ func (r *ResctrlReconcile) reconcileCatResctrlPolicy(qosStrategy *slov1alpha1.Re
 
 	// calculate and apply l3 cat policy for each group
 	for _, group := range resctrlGroupList {
-		resQoSStrategy := getResourceQoSForResctrlGroup(qosStrategy, group)
+		resQoSStrategy := getResourceQOSForResctrlGroup(qosStrategy, group)
 		err = r.calculateAndApplyCatL3PolicyForGroup(group, cbm, l3Num, resQoSStrategy)
 		if err != nil {
 			klog.Warningf("failed to apply l3 cat policy for group %v, err: %v", group, err)
@@ -397,7 +397,7 @@ func (r *ResctrlReconcile) reconcileCatResctrlPolicy(qosStrategy *slov1alpha1.Re
 	}
 }
 
-func (r *ResctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.ResourceQoSStrategy) {
+func (r *ResctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.ResourceQOSStrategy) {
 	// 1. retrieve task ids for each slo by reading cgroup task file of every pod container
 	// 2. add the related task ids in resctrl groups
 
@@ -425,7 +425,7 @@ func (r *ResctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.Resou
 
 		// only extension-QoS-specified pod are considered
 		podQoSCfg := getPodResourceQoSByQoSClass(pod, qosStrategy, r.resManager.config)
-		if podQoSCfg.ResctrlQoS.Enable == nil || !(*podQoSCfg.ResctrlQoS.Enable) {
+		if podQoSCfg.ResctrlQOS.Enable == nil || !(*podQoSCfg.ResctrlQOS.Enable) {
 			klog.V(5).Infof("pod %v with qos %v disabled resctrl", util.GetPodKey(pod), extension.GetPodQoSClass(pod))
 			continue
 		}
@@ -457,10 +457,10 @@ func (r *ResctrlReconcile) reconcile() {
 		return
 	}
 	nodeSLO := r.resManager.getNodeSLOCopy()
-	if nodeSLO == nil || nodeSLO.Spec.ResourceQoSStrategy == nil {
+	if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil {
 		// do nothing if nodeSLO == nil || nodeSLO.spec.ResourceStrategy == nil
-		klog.Warningf("nodeSLO is nil %v, or nodeSLO.Spec.ResourceQoSStrategy is nil %v",
-			nodeSLO == nil, nodeSLO.Spec.ResourceQoSStrategy == nil)
+		klog.Warningf("nodeSLO is nil %v, or nodeSLO.Spec.ResourceQOSStrategy is nil %v",
+			nodeSLO == nil, nodeSLO.Spec.ResourceQOSStrategy == nil)
 		return
 	}
 
@@ -477,6 +477,6 @@ func (r *ResctrlReconcile) reconcile() {
 		klog.Warningf("ResctrlReconcile failed, cannot initialize cat resctrl group, err: %s", err)
 		return
 	}
-	r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQoSStrategy)
-	r.reconcileResctrlGroups(nodeSLO.Spec.ResourceQoSStrategy)
+	r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
+	r.reconcileResctrlGroups(nodeSLO.Spec.ResourceQOSStrategy)
 }

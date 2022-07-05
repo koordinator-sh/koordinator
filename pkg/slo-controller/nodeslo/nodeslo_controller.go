@@ -74,7 +74,7 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 	}
 
 	// resourceQOS spec
-	nodeSLOSpec.ResourceQoSStrategy, err = getResourceQoSSpec(node, &sloCfg.ResourceQoSCfgMerged)
+	nodeSLOSpec.ResourceQOSStrategy, err = getResourceQOSSpec(node, &sloCfg.ResourceQOSCfgMerged)
 	if err != nil {
 		klog.Warningf("getNodeSLOSpec(): failed to get resourceQoS spec for node %s,error: %v", node.Name, err)
 	}

@@ -68,16 +68,16 @@ type CPUBurstCfg struct {
 }
 
 // +k8s:deepcopy-gen=true
-type ResourceQoSCfg struct {
-	ClusterStrategy *slov1alpha1.ResourceQoSStrategy `json:"clusterStrategy,omitempty"`
-	NodeStrategies  []NodeResourceQoSStrategy        `json:"nodeStrategies,omitempty"`
+type ResourceQOSCfg struct {
+	ClusterStrategy *slov1alpha1.ResourceQOSStrategy `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeResourceQOSStrategy        `json:"nodeStrategies,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true
-type NodeResourceQoSStrategy struct {
+type NodeResourceQOSStrategy struct {
 	// an empty label selector matches all objects while a nil label selector matches no objects
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
-	*slov1alpha1.ResourceQoSStrategy
+	*slov1alpha1.ResourceQOSStrategy
 }
 
 // +k8s:deepcopy-gen=true

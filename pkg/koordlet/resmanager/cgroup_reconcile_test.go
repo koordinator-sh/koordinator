@@ -55,11 +55,11 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 			},
 		},
 	}
-	testingQoSStrategyBE := &slov1alpha1.ResourceQoSStrategy{
-		LSR: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+	testingQOSStrategyBE := &slov1alpha1.ResourceQOSStrategy{
+		LSRClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -72,10 +72,10 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 				},
 			},
 		},
-		LS: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+		LSClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -88,60 +88,10 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 				},
 			},
 		},
-		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+		BEClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(50),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
-				},
-			},
-		},
-	}
-	testingQoSStrategyLS := &slov1alpha1.ResourceQoSStrategy{
-		LSR: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
-					MinLimitPercent:   pointer.Int64Ptr(100),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
-				},
-			},
-		},
-		LS: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
-					MinLimitPercent:   pointer.Int64Ptr(100),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
-				},
-			},
-		},
-		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -155,11 +105,11 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 			},
 		},
 	}
-	testingQoSStrategyLSR := &slov1alpha1.ResourceQoSStrategy{
-		LSR: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+	testingQOSStrategyLS := &slov1alpha1.ResourceQOSStrategy{
+		LSRClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(100),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -172,11 +122,11 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 				},
 			},
 		},
-		LS: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+		LSClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
+				MemoryQOS: slov1alpha1.MemoryQOS{
+					MinLimitPercent:   pointer.Int64Ptr(100),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
 					WmarkRatio:        pointer.Int64Ptr(95),
@@ -188,10 +138,10 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 				},
 			},
 		},
-		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+		BEClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -205,11 +155,27 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 			},
 		},
 	}
-	testingQoSStrategyNone := &slov1alpha1.ResourceQoSStrategy{
-		LSR: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+	testingQOSStrategyLSR := &slov1alpha1.ResourceQOSStrategy{
+		LSRClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
+					MinLimitPercent:   pointer.Int64Ptr(100),
+					LowLimitPercent:   pointer.Int64Ptr(0),
+					ThrottlingPercent: pointer.Int64Ptr(0),
+					WmarkRatio:        pointer.Int64Ptr(95),
+					WmarkScalePermill: pointer.Int64Ptr(20),
+					WmarkMinAdj:       pointer.Int64Ptr(-25),
+					PriorityEnable:    pointer.Int64Ptr(0),
+					Priority:          pointer.Int64Ptr(0),
+					OomKillGroup:      pointer.Int64Ptr(0),
+				},
+			},
+		},
+		LSClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
+				Enable: pointer.BoolPtr(true),
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -222,10 +188,28 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 				},
 			},
 		},
-		LS: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+		BEClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
+					MinLimitPercent:   pointer.Int64Ptr(0),
+					LowLimitPercent:   pointer.Int64Ptr(0),
+					ThrottlingPercent: pointer.Int64Ptr(0),
+					WmarkRatio:        pointer.Int64Ptr(95),
+					WmarkScalePermill: pointer.Int64Ptr(20),
+					WmarkMinAdj:       pointer.Int64Ptr(50),
+					PriorityEnable:    pointer.Int64Ptr(0),
+					Priority:          pointer.Int64Ptr(0),
+					OomKillGroup:      pointer.Int64Ptr(0),
+				},
+			},
+		},
+	}
+	testingQOSStrategyNone := &slov1alpha1.ResourceQOSStrategy{
+		LSRClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
+				Enable: pointer.BoolPtr(true),
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -238,10 +222,26 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 				},
 			},
 		},
-		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+		LSClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
+					MinLimitPercent:   pointer.Int64Ptr(0),
+					LowLimitPercent:   pointer.Int64Ptr(0),
+					ThrottlingPercent: pointer.Int64Ptr(0),
+					WmarkRatio:        pointer.Int64Ptr(95),
+					WmarkScalePermill: pointer.Int64Ptr(20),
+					WmarkMinAdj:       pointer.Int64Ptr(-25),
+					PriorityEnable:    pointer.Int64Ptr(0),
+					Priority:          pointer.Int64Ptr(0),
+					OomKillGroup:      pointer.Int64Ptr(0),
+				},
+			},
+		},
+		BEClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
+				Enable: pointer.BoolPtr(true),
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -259,46 +259,46 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 	testingNonRunningPod.Pod.Status.Phase = corev1.PodSucceeded
 	type args struct {
 		name        string
-		qosStrategy *slov1alpha1.ResourceQoSStrategy
+		qosStrategy *slov1alpha1.ResourceQOSStrategy
 		podMetas    []*statesinformer.PodMeta
-		expect      *slov1alpha1.ResourceQoSStrategy
+		expect      *slov1alpha1.ResourceQOSStrategy
 	}
 	tests := []args{
 		{
 			name:        "empty config with no pod",
-			qosStrategy: defaultQoSStrategy(),
-			expect:      defaultQoSStrategy(),
+			qosStrategy: defaultQOSStrategy(),
+			expect:      defaultQOSStrategy(),
 		},
 		{
 			name:        "valid config with no pod",
-			qosStrategy: newValidQoSStrategy(),
-			expect:      mergeWithDefaultQoSStrategy(newValidQoSStrategy()), // memory.wmark_xxx use default
+			qosStrategy: newValidQOSStrategy(),
+			expect:      mergeWithDefaultQOSStrategy(newValidQOSStrategy()), // memory.wmark_xxx use default
 		},
 		{
 			name: "mixed config with no pod",
-			qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-				LSR: &slov1alpha1.ResourceQoS{
-					MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+			qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+				LSRClass: &slov1alpha1.ResourceQOS{
+					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 						Enable: pointer.BoolPtr(true),
-						MemoryQoS: slov1alpha1.MemoryQoS{
+						MemoryQOS: slov1alpha1.MemoryQOS{
 							WmarkRatio:  pointer.Int64Ptr(101),
 							WmarkMinAdj: pointer.Int64Ptr(-51),
 						},
 					},
 				},
-				LS: &slov1alpha1.ResourceQoS{
-					MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+				LSClass: &slov1alpha1.ResourceQOS{
+					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 						Enable: pointer.BoolPtr(true),
-						MemoryQoS: slov1alpha1.MemoryQoS{
+						MemoryQOS: slov1alpha1.MemoryQOS{
 							Priority:       pointer.Int64Ptr(6),
 							PriorityEnable: pointer.Int64Ptr(1),
 						},
 					},
 				},
-				BE: &slov1alpha1.ResourceQoS{
-					MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+				BEClass: &slov1alpha1.ResourceQOS{
+					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 						Enable: pointer.BoolPtr(true),
-						MemoryQoS: slov1alpha1.MemoryQoS{
+						MemoryQOS: slov1alpha1.MemoryQOS{
 							WmarkRatio:        pointer.Int64Ptr(-1),
 							WmarkScalePermill: pointer.Int64Ptr(20),
 							WmarkMinAdj:       pointer.Int64Ptr(53),
@@ -308,11 +308,11 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 					},
 				},
 			},
-			expect: &slov1alpha1.ResourceQoSStrategy{
-				LSR: &slov1alpha1.ResourceQoS{
-					MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+			expect: &slov1alpha1.ResourceQOSStrategy{
+				LSRClass: &slov1alpha1.ResourceQOS{
+					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 						Enable: pointer.BoolPtr(true),
-						MemoryQoS: slov1alpha1.MemoryQoS{
+						MemoryQOS: slov1alpha1.MemoryQOS{
 							MinLimitPercent:   pointer.Int64Ptr(0),
 							LowLimitPercent:   pointer.Int64Ptr(0),
 							ThrottlingPercent: pointer.Int64Ptr(0),
@@ -325,10 +325,10 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 						},
 					},
 				},
-				LS: &slov1alpha1.ResourceQoS{
-					MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+				LSClass: &slov1alpha1.ResourceQOS{
+					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 						Enable: pointer.BoolPtr(true),
-						MemoryQoS: slov1alpha1.MemoryQoS{
+						MemoryQOS: slov1alpha1.MemoryQOS{
 							MinLimitPercent:   pointer.Int64Ptr(0),
 							LowLimitPercent:   pointer.Int64Ptr(0),
 							ThrottlingPercent: pointer.Int64Ptr(0),
@@ -341,10 +341,10 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 						},
 					},
 				},
-				BE: &slov1alpha1.ResourceQoS{
-					MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+				BEClass: &slov1alpha1.ResourceQOS{
+					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 						Enable: pointer.BoolPtr(true),
-						MemoryQoS: slov1alpha1.MemoryQoS{
+						MemoryQOS: slov1alpha1.MemoryQOS{
 							MinLimitPercent:   pointer.Int64Ptr(0),
 							LowLimitPercent:   pointer.Int64Ptr(0),
 							ThrottlingPercent: pointer.Int64Ptr(0),
@@ -361,51 +361,51 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 		},
 		{
 			name:        "calculate qos resources from a pod",
-			qosStrategy: testingQoSStrategyBE,
+			qosStrategy: testingQOSStrategyBE,
 			podMetas: []*statesinformer.PodMeta{
 				createPod(corev1.PodQOSBestEffort, apiext.QoSBE),
 			},
-			expect: mergeWithDefaultQoSStrategy(testingQoSStrategyBE),
+			expect: mergeWithDefaultQOSStrategy(testingQOSStrategyBE),
 		},
 		{
 			name:        "calculate qos resources from a pod 1",
-			qosStrategy: testingQoSStrategyLS,
+			qosStrategy: testingQOSStrategyLS,
 			podMetas: []*statesinformer.PodMeta{
 				createPod(corev1.PodQOSBurstable, apiext.QoSLS),
 			},
-			expect: mergeWithDefaultQoSStrategy(testingQoSStrategyLS),
+			expect: mergeWithDefaultQOSStrategy(testingQOSStrategyLS),
 		},
 		{
 			name:        "calculate qos resources from a pod 2",
-			qosStrategy: testingQoSStrategyLSR,
+			qosStrategy: testingQOSStrategyLSR,
 			podMetas: []*statesinformer.PodMeta{
 				createPod(corev1.PodQOSGuaranteed, apiext.QoSLSR),
 			},
-			expect: mergeWithDefaultQoSStrategy(testingQoSStrategyLSR),
+			expect: mergeWithDefaultQOSStrategy(testingQOSStrategyLSR),
 		},
 		{
 			name:        "node disabled",
-			qosStrategy: testingQoSStrategyNone,
+			qosStrategy: testingQOSStrategyNone,
 			podMetas: []*statesinformer.PodMeta{
-				createPodWithMemoryQoS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQoSConfig{Policy: slov1alpha1.PodMemoryQoSPolicyDefault}),
+				createPodWithMemoryQOS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQOSConfig{Policy: slov1alpha1.PodMemoryQOSPolicyDefault}),
 			},
-			expect: mergeWithDefaultQoSStrategy(testingQoSStrategyNone),
+			expect: mergeWithDefaultQOSStrategy(testingQOSStrategyNone),
 		},
 		{
 			name:        "pod enabled while node disabled",
-			qosStrategy: testingQoSStrategyBE,
+			qosStrategy: testingQOSStrategyBE,
 			podMetas: []*statesinformer.PodMeta{
-				createPodWithMemoryQoS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQoSConfig{Policy: slov1alpha1.PodMemoryQoSPolicyAuto}),
+				createPodWithMemoryQOS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQOSConfig{Policy: slov1alpha1.PodMemoryQOSPolicyAuto}),
 			},
-			expect: mergeWithDefaultQoSStrategy(testingQoSStrategyBE),
+			expect: mergeWithDefaultQOSStrategy(testingQOSStrategyBE),
 		},
 		{
 			name:        "ignore non-running pod",
-			qosStrategy: testingQoSStrategyBE,
+			qosStrategy: testingQOSStrategyBE,
 			podMetas: []*statesinformer.PodMeta{
 				testingNonRunningPod,
 			},
-			expect: defaultQoSStrategy(),
+			expect: defaultQOSStrategy(),
 		},
 	}
 	for _, tt := range tests {
@@ -426,11 +426,11 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 
 			helper := system.NewFileTestUtil(t)
 
-			initQoSStrategy := defaultQoSStrategy()
-			initQoSCgroupFile(initQoSStrategy, helper)
+			initQOSStrategy := defaultQOSStrategy()
+			initQOSCgroupFile(initQOSStrategy, helper)
 
-			reconciler.calculateAndUpdateResources(createNodeSLOWithQoSStrategy(tt.qosStrategy))
-			got := gotQoSStrategyFromFile()
+			reconciler.calculateAndUpdateResources(createNodeSLOWithQOSStrategy(tt.qosStrategy))
+			got := gotQOSStrategyFromFile()
 			assert.Equal(t, tt.expect, got)
 		})
 	}
@@ -441,9 +441,9 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 	podParentDirLS := util.GetPodCgroupDirWithKube(testingPodLS.CgroupDir)
 	containerDirLS, _ := util.GetContainerCgroupPathWithKube(testingPodLS.CgroupDir, &testingPodLS.Pod.Status.ContainerStatuses[0])
 	containerDirLS1, _ := util.GetContainerCgroupPathWithKube(testingPodLS.CgroupDir, &testingPodLS.Pod.Status.ContainerStatuses[1])
-	testingPodBEWithMemQoS := createPodWithMemoryQoS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQoSConfig{
-		Policy: slov1alpha1.PodMemoryQoSPolicyAuto,
-		MemoryQoS: slov1alpha1.MemoryQoS{
+	testingPodBEWithMemQOS := createPodWithMemoryQOS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQOSConfig{
+		Policy: slov1alpha1.PodMemoryQOSPolicyAuto,
+		MemoryQOS: slov1alpha1.MemoryQOS{
 			MinLimitPercent:   pointer.Int64Ptr(100),
 			LowLimitPercent:   pointer.Int64Ptr(0),
 			ThrottlingPercent: pointer.Int64Ptr(80),
@@ -452,9 +452,9 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			WmarkMinAdj:       pointer.Int64Ptr(50),
 		},
 	})
-	testingPodBEWithMemQoS1 := createPodWithMemoryQoS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQoSConfig{
-		Policy: slov1alpha1.PodMemoryQoSPolicyAuto,
-		MemoryQoS: slov1alpha1.MemoryQoS{
+	testingPodBEWithMemQoS1 := createPodWithMemoryQOS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQOSConfig{
+		Policy: slov1alpha1.PodMemoryQOSPolicyAuto,
+		MemoryQOS: slov1alpha1.MemoryQOS{
 			MinLimitPercent:   pointer.Int64Ptr(50),
 			LowLimitPercent:   pointer.Int64Ptr(0),
 			ThrottlingPercent: pointer.Int64Ptr(40),
@@ -463,14 +463,14 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			WmarkMinAdj:       pointer.Int64Ptr(50),
 		},
 	})
-	podParentDirBE := util.GetPodCgroupDirWithKube(testingPodBEWithMemQoS.CgroupDir)
-	containerDirBE, _ := util.GetContainerCgroupPathWithKube(testingPodBEWithMemQoS.CgroupDir, &testingPodBEWithMemQoS.Pod.Status.ContainerStatuses[0])
-	containerDirBE1, _ := util.GetContainerCgroupPathWithKube(testingPodBEWithMemQoS.CgroupDir, &testingPodBEWithMemQoS.Pod.Status.ContainerStatuses[1])
+	podParentDirBE := util.GetPodCgroupDirWithKube(testingPodBEWithMemQOS.CgroupDir)
+	containerDirBE, _ := util.GetContainerCgroupPathWithKube(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[0])
+	containerDirBE1, _ := util.GetContainerCgroupPathWithKube(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[1])
 	type fields struct {
 		resmanager *resmanager
 	}
 	type args struct {
-		nodeCfg  *slov1alpha1.ResourceQoSStrategy
+		nodeCfg  *slov1alpha1.ResourceQOSStrategy
 		node     *corev1.Node
 		podMetas []*statesinformer.PodMeta
 	}
@@ -491,10 +491,10 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			name:   "not panic when no pods exists with a valid resourceQoS config",
 			fields: fields{resmanager: &resmanager{config: NewDefaultConfig()}},
 			args: args{
-				nodeCfg: &slov1alpha1.ResourceQoSStrategy{
-					LSR: &slov1alpha1.ResourceQoS{},
-					LS:  &slov1alpha1.ResourceQoS{},
-					BE:  &slov1alpha1.ResourceQoS{},
+				nodeCfg: &slov1alpha1.ResourceQOSStrategy{
+					LSRClass: &slov1alpha1.ResourceQOS{},
+					LSClass:  &slov1alpha1.ResourceQOS{},
+					BEClass:  &slov1alpha1.ResourceQOS{},
 				},
 			},
 			// no resourceUpdater generated
@@ -503,10 +503,10 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			name:   "config is empty",
 			fields: fields{resmanager: &resmanager{config: NewDefaultConfig()}},
 			args: args{
-				nodeCfg: &slov1alpha1.ResourceQoSStrategy{
-					LSR: &slov1alpha1.ResourceQoS{},
-					LS:  &slov1alpha1.ResourceQoS{},
-					BE:  &slov1alpha1.ResourceQoS{},
+				nodeCfg: &slov1alpha1.ResourceQOSStrategy{
+					LSRClass: &slov1alpha1.ResourceQOS{},
+					LSClass:  &slov1alpha1.ResourceQOS{},
+					BEClass:  &slov1alpha1.ResourceQOS{},
 				},
 				podMetas: []*statesinformer.PodMeta{
 					{
@@ -525,10 +525,10 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			name:   "single pod using node-level config",
 			fields: fields{resmanager: &resmanager{config: NewDefaultConfig()}},
 			args: args{
-				nodeCfg: &slov1alpha1.ResourceQoSStrategy{
-					LSR: defaultQoSStrategy().LSR,
-					LS:  defaultQoSStrategy().LS,
-					BE:  defaultQoSStrategy().BE,
+				nodeCfg: &slov1alpha1.ResourceQOSStrategy{
+					LSRClass: defaultQOSStrategy().LSRClass,
+					LSClass:  defaultQOSStrategy().LSClass,
+					BEClass:  defaultQOSStrategy().BEClass,
 				},
 				podMetas: []*statesinformer.PodMeta{
 					testingPodLS,
@@ -584,10 +584,10 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			name:   "single pod using pod-level config",
 			fields: fields{resmanager: &resmanager{config: NewDefaultConfig()}},
 			args: args{
-				nodeCfg: &slov1alpha1.ResourceQoSStrategy{
-					LSR: &slov1alpha1.ResourceQoS{},
-					LS:  &slov1alpha1.ResourceQoS{},
-					BE:  &slov1alpha1.ResourceQoS{},
+				nodeCfg: &slov1alpha1.ResourceQOSStrategy{
+					LSRClass: &slov1alpha1.ResourceQOS{},
+					LSClass:  &slov1alpha1.ResourceQOS{},
+					BEClass:  &slov1alpha1.ResourceQOS{},
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -601,7 +601,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 					},
 				},
 				podMetas: []*statesinformer.PodMeta{
-					testingPodBEWithMemQoS,
+					testingPodBEWithMemQOS,
 				},
 			},
 			want: []MergeableResourceUpdater{
@@ -611,46 +611,46 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
 			},
 			want1: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
+				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
 			},
 			want2: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), mergeFuncUpdateCgroupIfLarger),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
 			},
 		},
 		{
 			name:   "multiple pods",
 			fields: fields{resmanager: &resmanager{config: NewDefaultConfig()}},
 			args: args{
-				nodeCfg: &slov1alpha1.ResourceQoSStrategy{
-					LSR: &slov1alpha1.ResourceQoS{},
-					LS: &slov1alpha1.ResourceQoS{
-						MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+				nodeCfg: &slov1alpha1.ResourceQOSStrategy{
+					LSRClass: &slov1alpha1.ResourceQOS{},
+					LSClass: &slov1alpha1.ResourceQOS{
+						MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 							Enable: pointer.BoolPtr(false),
-							MemoryQoS: slov1alpha1.MemoryQoS{
+							MemoryQOS: slov1alpha1.MemoryQOS{
 								MinLimitPercent:   pointer.Int64Ptr(0),
 								LowLimitPercent:   pointer.Int64Ptr(0),
 								ThrottlingPercent: pointer.Int64Ptr(0),
@@ -660,7 +660,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 							},
 						},
 					},
-					BE: &slov1alpha1.ResourceQoS{},
+					BEClass: &slov1alpha1.ResourceQOS{},
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -675,7 +675,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				},
 				podMetas: []*statesinformer.PodMeta{
 					testingPodLS,
-					testingPodBEWithMemQoS,
+					testingPodBEWithMemQOS,
 				},
 			},
 			want: []MergeableResourceUpdater{
@@ -692,14 +692,14 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkRatio, "0"),
 				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkScaleFactor, "50"),
 				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkMinAdj, "0"),
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
+				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
 			},
 			want2: []MergeableResourceUpdater{
 				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
@@ -714,34 +714,34 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkRatio, "0"),
 				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkScaleFactor, "50"),
 				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkMinAdj, "0"),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), mergeFuncUpdateCgroupIfLarger),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
 			},
 		},
 		{
 			name:   "single pod with memory.high is no less than memory.min",
 			fields: fields{resmanager: &resmanager{config: NewDefaultConfig()}},
 			args: args{
-				nodeCfg: &slov1alpha1.ResourceQoSStrategy{
-					LSR: &slov1alpha1.ResourceQoS{},
-					LS:  &slov1alpha1.ResourceQoS{},
-					BE:  &slov1alpha1.ResourceQoS{},
+				nodeCfg: &slov1alpha1.ResourceQOSStrategy{
+					LSRClass: &slov1alpha1.ResourceQOS{},
+					LSClass:  &slov1alpha1.ResourceQOS{},
+					BEClass:  &slov1alpha1.ResourceQOS{},
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -765,34 +765,34 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
 			},
 			want1: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
+				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
+				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
 			},
 			want2: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*40/100, 10), mergeFuncUpdateCgroupIfLarger), // node allocatable * throttling factor
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQoS.Pod.Namespace, testingPodBEWithMemQoS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*40/100, 10), mergeFuncUpdateCgroupIfLarger), // node allocatable * throttling factor
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), mergeFuncUpdateCgroupIfLarger),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
+				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
 			},
 		},
 	}
@@ -815,26 +815,26 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 }
 
 func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
-	testingNodeNoneResourceQoS := util.NoneResourceQoSStrategy().BE
-	testingMemoryQoSEnableResourceQoS := util.DefaultResourceQoSStrategy().BE // qos enable
-	testingMemoryQoSEnableResourceQoS.MemoryQoS.Enable = pointer.BoolPtr(true)
-	testingMemoryQoSNoneResourceQoS := util.NoneResourceQoSStrategy().BE // qos disable
-	testingMemoryQoSNoneResourceQoS.MemoryQoS = util.NoneResourceQoSStrategy().BE.MemoryQoS
-	testingMemoryQoSNoneResourceQoS1 := util.DefaultResourceQoSStrategy().BE // qos partially disable
-	testingMemoryQoSNoneResourceQoS1.MemoryQoS = util.NoneResourceQoSStrategy().BE.MemoryQoS
-	testingMemoryQoSAutoResourceQoS := util.NoneResourceQoSStrategy().BE
-	testingMemoryQoSAutoResourceQoS.MemoryQoS.MemoryQoS = *util.DefaultMemoryQoS(apiext.QoSBE)
-	testingMemoryQoSAutoResourceQoS1 := util.DefaultResourceQoSStrategy().BE
-	testingMemoryQoSAutoResourceQoS1.MemoryQoS.ThrottlingPercent = pointer.Int64Ptr(90)
-	testingMemoryQoSAutoResourceQoS2 := &slov1alpha1.ResourceQoS{
-		MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-			MemoryQoS: *util.DefaultMemoryQoS(apiext.QoSBE),
+	testingNodeNoneResourceQoS := util.NoneResourceQOSStrategy().BEClass
+	testingMemoryQoSEnableResourceQoS := util.DefaultResourceQOSStrategy().BEClass // qos enable
+	testingMemoryQoSEnableResourceQoS.MemoryQOS.Enable = pointer.BoolPtr(true)
+	testingMemoryQoSNoneResourceQoS := util.NoneResourceQOSStrategy().BEClass // qos disable
+	testingMemoryQoSNoneResourceQoS.MemoryQOS = util.NoneResourceQOSStrategy().BEClass.MemoryQOS
+	testingMemoryQoSNoneResourceQoS1 := util.DefaultResourceQOSStrategy().BEClass // qos partially disable
+	testingMemoryQoSNoneResourceQoS1.MemoryQOS = util.NoneResourceQOSStrategy().BEClass.MemoryQOS
+	testingMemoryQoSAutoResourceQoS := util.NoneResourceQOSStrategy().BEClass
+	testingMemoryQoSAutoResourceQoS.MemoryQOS.MemoryQOS = *util.DefaultMemoryQOS(apiext.QoSBE)
+	testingMemoryQoSAutoResourceQoS1 := util.DefaultResourceQOSStrategy().BEClass
+	testingMemoryQoSAutoResourceQoS1.MemoryQOS.ThrottlingPercent = pointer.Int64Ptr(90)
+	testingMemoryQoSAutoResourceQoS2 := &slov1alpha1.ResourceQOS{
+		MemoryQOS: &slov1alpha1.MemoryQOSCfg{
+			MemoryQOS: *util.DefaultMemoryQOS(apiext.QoSBE),
 		},
 	}
-	testingMemoryQoSAutoResourceQoS2.MemoryQoS.ThrottlingPercent = pointer.Int64Ptr(90)
+	testingMemoryQoSAutoResourceQoS2.MemoryQOS.ThrottlingPercent = pointer.Int64Ptr(90)
 	type args struct {
 		pod *corev1.Pod
-		cfg *slov1alpha1.ResourceQoS
+		cfg *slov1alpha1.ResourceQOS
 	}
 	type fields struct {
 		resmanager *resmanager
@@ -843,7 +843,7 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 		name    string
 		fields  fields
 		args    args
-		want    *slov1alpha1.ResourceQoS
+		want    *slov1alpha1.ResourceQOS
 		wantErr bool
 	}{
 		{
@@ -866,9 +866,9 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 						Phase: corev1.PodRunning,
 					},
 				},
-				cfg: defaultQoSStrategy().BE,
+				cfg: defaultQOSStrategy().BEClass,
 			},
-			want: defaultQoSStrategy().BE,
+			want: defaultQOSStrategy().BEClass,
 		},
 		{
 			name: "pod policy is None, use pod config",
@@ -893,7 +893,7 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 						Phase: corev1.PodRunning,
 					},
 				},
-				cfg: util.DefaultResourceQoSStrategy().BE,
+				cfg: util.DefaultResourceQOSStrategy().BEClass,
 			},
 			want: testingMemoryQoSNoneResourceQoS1,
 		},
@@ -947,7 +947,7 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 						Phase: corev1.PodRunning,
 					},
 				},
-				cfg: util.DefaultResourceQoSStrategy().BE,
+				cfg: util.DefaultResourceQOSStrategy().BEClass,
 			},
 			want: testingMemoryQoSAutoResourceQoS1,
 		},
@@ -972,7 +972,7 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 						Phase: corev1.PodRunning,
 					},
 				},
-				cfg: &slov1alpha1.ResourceQoS{},
+				cfg: &slov1alpha1.ResourceQOS{},
 			},
 			want: testingMemoryQoSAutoResourceQoS2,
 		},
@@ -1076,13 +1076,13 @@ func Test_makeCgroupResources(t *testing.T) {
 func Test_getPodResourceQoSByQoSClass(t *testing.T) {
 	type args struct {
 		pod      *corev1.Pod
-		strategy *slov1alpha1.ResourceQoSStrategy
+		strategy *slov1alpha1.ResourceQOSStrategy
 		config   *Config
 	}
 	tests := []struct {
 		name string
 		args args
-		want *slov1alpha1.ResourceQoS
+		want *slov1alpha1.ResourceQOS
 	}{
 		{
 			name: "return nil",
@@ -1093,28 +1093,28 @@ func Test_getPodResourceQoSByQoSClass(t *testing.T) {
 			name: "get qos=LS config",
 			args: args{
 				pod:      createPod(corev1.PodQOSBurstable, apiext.QoSLS).Pod,
-				strategy: defaultQoSStrategy(),
+				strategy: defaultQOSStrategy(),
 				config:   NewDefaultConfig(),
 			},
-			want: defaultQoSStrategy().LS,
+			want: defaultQOSStrategy().LSClass,
 		},
 		{
 			name: "get qos=None kubeQoS=Burstable config",
 			args: args{
 				pod:      createPod(corev1.PodQOSBurstable, apiext.QoSNone).Pod,
-				strategy: defaultQoSStrategy(),
+				strategy: defaultQOSStrategy(),
 				config:   NewDefaultConfig(),
 			},
-			want: defaultQoSStrategy().LS,
+			want: defaultQOSStrategy().LSClass,
 		},
 		{
 			name: "get qos=None kubeQoS=Besteffort config",
 			args: args{
 				pod:      createPod(corev1.PodQOSBestEffort, apiext.QoSNone).Pod,
-				strategy: defaultQoSStrategy(),
+				strategy: defaultQOSStrategy(),
 				config:   NewDefaultConfig(),
 			},
-			want: defaultQoSStrategy().BE,
+			want: defaultQOSStrategy().BEClass,
 		},
 	}
 	for _, tt := range tests {
@@ -1125,12 +1125,12 @@ func Test_getPodResourceQoSByQoSClass(t *testing.T) {
 	}
 }
 
-func defaultQoSStrategy() *slov1alpha1.ResourceQoSStrategy {
-	return &slov1alpha1.ResourceQoSStrategy{
-		LSR: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+func defaultQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
+	return &slov1alpha1.ResourceQOSStrategy{
+		LSRClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -1143,10 +1143,10 @@ func defaultQoSStrategy() *slov1alpha1.ResourceQoSStrategy {
 				},
 			},
 		},
-		LS: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+		LSClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -1159,10 +1159,10 @@ func defaultQoSStrategy() *slov1alpha1.ResourceQoSStrategy {
 				},
 			},
 		},
-		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+		BEClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -1178,12 +1178,12 @@ func defaultQoSStrategy() *slov1alpha1.ResourceQoSStrategy {
 	}
 }
 
-func newValidQoSStrategy() *slov1alpha1.ResourceQoSStrategy {
-	return &slov1alpha1.ResourceQoSStrategy{
-		LSR: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+func newValidQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
+	return &slov1alpha1.ResourceQOSStrategy{
+		LSRClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -1196,10 +1196,10 @@ func newValidQoSStrategy() *slov1alpha1.ResourceQoSStrategy {
 				},
 			},
 		},
-		LS: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+		LSClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -1212,10 +1212,10 @@ func newValidQoSStrategy() *slov1alpha1.ResourceQoSStrategy {
 				},
 			},
 		},
-		BE: &slov1alpha1.ResourceQoS{
-			MemoryQoS: &slov1alpha1.MemoryQoSCfg{
+		BEClass: &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable: pointer.BoolPtr(true),
-				MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: slov1alpha1.MemoryQOS{
 					MinLimitPercent:   pointer.Int64Ptr(0),
 					LowLimitPercent:   pointer.Int64Ptr(0),
 					ThrottlingPercent: pointer.Int64Ptr(0),
@@ -1231,17 +1231,17 @@ func newValidQoSStrategy() *slov1alpha1.ResourceQoSStrategy {
 	}
 }
 
-func mergeWithDefaultQoSStrategy(cfg *slov1alpha1.ResourceQoSStrategy) *slov1alpha1.ResourceQoSStrategy {
-	defaultCfg := defaultQoSStrategy()
-	cfg.LSR.MemoryQoS.WmarkRatio = defaultCfg.LSR.MemoryQoS.WmarkRatio
-	cfg.LSR.MemoryQoS.WmarkScalePermill = defaultCfg.LSR.MemoryQoS.WmarkScalePermill
-	cfg.LSR.MemoryQoS.WmarkMinAdj = defaultCfg.LSR.MemoryQoS.WmarkMinAdj
-	cfg.LS.MemoryQoS.WmarkRatio = defaultCfg.LS.MemoryQoS.WmarkRatio
-	cfg.LS.MemoryQoS.WmarkScalePermill = defaultCfg.LS.MemoryQoS.WmarkScalePermill
-	cfg.LS.MemoryQoS.WmarkMinAdj = defaultCfg.LS.MemoryQoS.WmarkMinAdj
-	cfg.BE.MemoryQoS.WmarkRatio = defaultCfg.BE.MemoryQoS.WmarkRatio
-	cfg.BE.MemoryQoS.WmarkScalePermill = defaultCfg.BE.MemoryQoS.WmarkScalePermill
-	cfg.BE.MemoryQoS.WmarkMinAdj = defaultCfg.BE.MemoryQoS.WmarkMinAdj
+func mergeWithDefaultQOSStrategy(cfg *slov1alpha1.ResourceQOSStrategy) *slov1alpha1.ResourceQOSStrategy {
+	defaultCfg := defaultQOSStrategy()
+	cfg.LSRClass.MemoryQOS.WmarkRatio = defaultCfg.LSRClass.MemoryQOS.WmarkRatio
+	cfg.LSRClass.MemoryQOS.WmarkScalePermill = defaultCfg.LSRClass.MemoryQOS.WmarkScalePermill
+	cfg.LSRClass.MemoryQOS.WmarkMinAdj = defaultCfg.LSRClass.MemoryQOS.WmarkMinAdj
+	cfg.LSClass.MemoryQOS.WmarkRatio = defaultCfg.LSClass.MemoryQOS.WmarkRatio
+	cfg.LSClass.MemoryQOS.WmarkScalePermill = defaultCfg.LSClass.MemoryQOS.WmarkScalePermill
+	cfg.LSClass.MemoryQOS.WmarkMinAdj = defaultCfg.LSClass.MemoryQOS.WmarkMinAdj
+	cfg.BEClass.MemoryQOS.WmarkRatio = defaultCfg.BEClass.MemoryQOS.WmarkRatio
+	cfg.BEClass.MemoryQOS.WmarkScalePermill = defaultCfg.BEClass.MemoryQOS.WmarkScalePermill
+	cfg.BEClass.MemoryQOS.WmarkMinAdj = defaultCfg.BEClass.MemoryQOS.WmarkMinAdj
 	return cfg
 }
 
@@ -1311,8 +1311,8 @@ func createPod(kubeQosClass corev1.PodQOSClass, qosClass apiext.QoSClass) *state
 	}
 }
 
-func createPodWithMemoryQoS(kubeQosClass corev1.PodQOSClass, qosClass apiext.QoSClass,
-	memQoS *slov1alpha1.PodMemoryQoSConfig) *statesinformer.PodMeta {
+func createPodWithMemoryQOS(kubeQosClass corev1.PodQOSClass, qosClass apiext.QoSClass,
+	memQoS *slov1alpha1.PodMemoryQOSConfig) *statesinformer.PodMeta {
 	podMeta := createPod(kubeQosClass, qosClass)
 
 	memQoSConfigBytes, _ := json.Marshal(memQoS)
@@ -1323,10 +1323,10 @@ func createPodWithMemoryQoS(kubeQosClass corev1.PodQOSClass, qosClass apiext.QoS
 	return podMeta
 }
 
-func createNodeSLOWithQoSStrategy(qosStrategy *slov1alpha1.ResourceQoSStrategy) *slov1alpha1.NodeSLO {
+func createNodeSLOWithQOSStrategy(qosStrategy *slov1alpha1.ResourceQOSStrategy) *slov1alpha1.NodeSLO {
 	return &slov1alpha1.NodeSLO{
 		Spec: slov1alpha1.NodeSLOSpec{
-			ResourceQoSStrategy: qosStrategy,
+			ResourceQOSStrategy: qosStrategy,
 		},
 	}
 }
@@ -1351,62 +1351,62 @@ func assertCgroupResourceEqual(t *testing.T, expect, got []MergeableResourceUpda
 	}
 }
 
-func gotQoSStrategyFromFile() *slov1alpha1.ResourceQoSStrategy {
-	strategy := &slov1alpha1.ResourceQoSStrategy{}
-	strategy.LSR = readMemFromCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed))
-	strategy.LS = readMemFromCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBurstable))
-	strategy.BE = readMemFromCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort))
+func gotQOSStrategyFromFile() *slov1alpha1.ResourceQOSStrategy {
+	strategy := &slov1alpha1.ResourceQOSStrategy{}
+	strategy.LSRClass = readMemFromCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed))
+	strategy.LSClass = readMemFromCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBurstable))
+	strategy.BEClass = readMemFromCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort))
 	return strategy
 }
 
-func initQoSCgroupFile(qos *slov1alpha1.ResourceQoSStrategy, helper *system.FileTestUtil) {
-	writeMemToCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), qos.LSR, helper)
-	writeMemToCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBurstable), qos.LS, helper)
-	writeMemToCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), qos.BE, helper)
+func initQOSCgroupFile(qos *slov1alpha1.ResourceQOSStrategy, helper *system.FileTestUtil) {
+	writeMemToCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), qos.LSRClass, helper)
+	writeMemToCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBurstable), qos.LSClass, helper)
+	writeMemToCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), qos.BEClass, helper)
 }
 
-func readMemFromCgroupFile(parentDir string) *slov1alpha1.ResourceQoS {
-	resourceQoS := &slov1alpha1.ResourceQoS{
-		MemoryQoS: &slov1alpha1.MemoryQoSCfg{},
+func readMemFromCgroupFile(parentDir string) *slov1alpha1.ResourceQOS {
+	resourceQoS := &slov1alpha1.ResourceQOS{
+		MemoryQOS: &slov1alpha1.MemoryQOSCfg{},
 	}
 
 	// dynamic resources, calculate with pod request/limit=1GiB
 	// testingPodMemRequestLimitBytes = 1073741824
 	minLimitPercent, _ := system.CgroupFileReadInt(parentDir, system.MemMin)
 	if minLimitPercent != nil {
-		resourceQoS.MemoryQoS.MinLimitPercent = pointer.Int64Ptr((*minLimitPercent) * 100 / testingPodMemRequestLimitBytes)
+		resourceQoS.MemoryQOS.MinLimitPercent = pointer.Int64Ptr((*minLimitPercent) * 100 / testingPodMemRequestLimitBytes)
 	}
 	lowLimitPercent, _ := system.CgroupFileReadInt(parentDir, system.MemLow)
 	if lowLimitPercent != nil {
-		resourceQoS.MemoryQoS.LowLimitPercent = pointer.Int64Ptr((*lowLimitPercent) * 100 / testingPodMemRequestLimitBytes)
+		resourceQoS.MemoryQOS.LowLimitPercent = pointer.Int64Ptr((*lowLimitPercent) * 100 / testingPodMemRequestLimitBytes)
 	}
 	throttlingPercent, _ := system.CgroupFileReadInt(parentDir, system.MemHigh)
 	if throttlingPercent != nil {
-		resourceQoS.MemoryQoS.ThrottlingPercent = pointer.Int64Ptr(0) // assert test setting disabled
+		resourceQoS.MemoryQOS.ThrottlingPercent = pointer.Int64Ptr(0) // assert test setting disabled
 	}
 	// static resources
-	resourceQoS.MemoryQoS.WmarkRatio, _ = system.CgroupFileReadInt(parentDir, system.MemWmarkRatio)
-	resourceQoS.MemoryQoS.WmarkScalePermill, _ = system.CgroupFileReadInt(parentDir, system.MemWmarkScaleFactor)
-	resourceQoS.MemoryQoS.WmarkMinAdj, _ = system.CgroupFileReadInt(parentDir, system.MemWmarkMinAdj)
-	resourceQoS.MemoryQoS.PriorityEnable, _ = system.CgroupFileReadInt(parentDir, system.MemUsePriorityOom)
-	resourceQoS.MemoryQoS.Priority, _ = system.CgroupFileReadInt(parentDir, system.MemPriority)
-	resourceQoS.MemoryQoS.OomKillGroup, _ = system.CgroupFileReadInt(parentDir, system.MemOomGroup)
+	resourceQoS.MemoryQOS.WmarkRatio, _ = system.CgroupFileReadInt(parentDir, system.MemWmarkRatio)
+	resourceQoS.MemoryQOS.WmarkScalePermill, _ = system.CgroupFileReadInt(parentDir, system.MemWmarkScaleFactor)
+	resourceQoS.MemoryQOS.WmarkMinAdj, _ = system.CgroupFileReadInt(parentDir, system.MemWmarkMinAdj)
+	resourceQoS.MemoryQOS.PriorityEnable, _ = system.CgroupFileReadInt(parentDir, system.MemUsePriorityOom)
+	resourceQoS.MemoryQOS.Priority, _ = system.CgroupFileReadInt(parentDir, system.MemPriority)
+	resourceQoS.MemoryQOS.OomKillGroup, _ = system.CgroupFileReadInt(parentDir, system.MemOomGroup)
 
 	// assume NONE cfg equals to disabled
-	memoryQoSDisabled := reflect.DeepEqual(util.NoneMemoryQoS(), &resourceQoS.MemoryQoS)
-	resourceQoS.MemoryQoS.Enable = pointer.BoolPtr(!memoryQoSDisabled)
+	memoryQoSDisabled := reflect.DeepEqual(util.NoneMemoryQOS(), &resourceQoS.MemoryQOS)
+	resourceQoS.MemoryQOS.Enable = pointer.BoolPtr(!memoryQoSDisabled)
 
 	return resourceQoS
 }
 
-func writeMemToCgroupFile(parentDir string, qos *slov1alpha1.ResourceQoS, helper *system.FileTestUtil) {
+func writeMemToCgroupFile(parentDir string, qos *slov1alpha1.ResourceQOS, helper *system.FileTestUtil) {
 	helper.WriteCgroupFileContents(parentDir, system.MemMin, "0")
 	helper.WriteCgroupFileContents(parentDir, system.MemLow, "0")
 	helper.WriteCgroupFileContents(parentDir, system.MemHigh, strconv.FormatInt(math.MaxInt64, 10))
-	helper.WriteCgroupFileContents(parentDir, system.MemWmarkRatio, strconv.FormatInt(*qos.MemoryQoS.WmarkRatio, 10))
-	helper.WriteCgroupFileContents(parentDir, system.MemWmarkMinAdj, strconv.FormatInt(*qos.MemoryQoS.WmarkMinAdj, 10))
-	helper.WriteCgroupFileContents(parentDir, system.MemWmarkScaleFactor, strconv.FormatInt(*qos.MemoryQoS.WmarkScalePermill, 10))
-	helper.WriteCgroupFileContents(parentDir, system.MemUsePriorityOom, strconv.FormatInt(*qos.MemoryQoS.PriorityEnable, 10))
-	helper.WriteCgroupFileContents(parentDir, system.MemPriority, strconv.FormatInt(*qos.MemoryQoS.Priority, 10))
-	helper.WriteCgroupFileContents(parentDir, system.MemOomGroup, strconv.FormatInt(*qos.MemoryQoS.OomKillGroup, 10))
+	helper.WriteCgroupFileContents(parentDir, system.MemWmarkRatio, strconv.FormatInt(*qos.MemoryQOS.WmarkRatio, 10))
+	helper.WriteCgroupFileContents(parentDir, system.MemWmarkMinAdj, strconv.FormatInt(*qos.MemoryQOS.WmarkMinAdj, 10))
+	helper.WriteCgroupFileContents(parentDir, system.MemWmarkScaleFactor, strconv.FormatInt(*qos.MemoryQOS.WmarkScalePermill, 10))
+	helper.WriteCgroupFileContents(parentDir, system.MemUsePriorityOom, strconv.FormatInt(*qos.MemoryQOS.PriorityEnable, 10))
+	helper.WriteCgroupFileContents(parentDir, system.MemPriority, strconv.FormatInt(*qos.MemoryQOS.Priority, 10))
+	helper.WriteCgroupFileContents(parentDir, system.MemOomGroup, strconv.FormatInt(*qos.MemoryQOS.OomKillGroup, 10))
 }

@@ -40,19 +40,19 @@ import (
 func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 	testingResourceThresholdStrategy := util.DefaultResourceThresholdStrategy()
 	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
-	testingResourceQoSStrategyOld := &slov1alpha1.ResourceQoSStrategy{
-		BE: &slov1alpha1.ResourceQoS{
-			CPUQoS: &slov1alpha1.CPUQoSCfg{
-				CPUQoS: slov1alpha1.CPUQoS{
+	testingResourceQOSStrategyOld := &slov1alpha1.ResourceQOSStrategy{
+		BEClass: &slov1alpha1.ResourceQOS{
+			CPUQOS: &slov1alpha1.CPUQOSCfg{
+				CPUQOS: slov1alpha1.CPUQOS{
 					GroupIdentity: pointer.Int64Ptr(0),
 				},
 			},
 		},
 	}
-	testingResourceQoSStrategy := &slov1alpha1.ResourceQoSStrategy{
-		BE: &slov1alpha1.ResourceQoS{
-			CPUQoS: &slov1alpha1.CPUQoSCfg{
-				CPUQoS: slov1alpha1.CPUQoS{
+	testingResourceQOSStrategy := &slov1alpha1.ResourceQOSStrategy{
+		BEClass: &slov1alpha1.ResourceQOS{
+			CPUQOS: &slov1alpha1.CPUQOSCfg{
+				CPUQOS: slov1alpha1.CPUQOS{
 					GroupIdentity: pointer.Int64Ptr(0),
 				},
 			},
@@ -81,7 +81,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			fields: fields{},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
-				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
+				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
@@ -103,12 +103,12 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				},
 				Data: map[string]string{
 					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"invalidField\",\"cpuSuppressThresholdPercent\":60}}",
-					config.ResourceQoSConfigKey:       "{\"clusterStrategy\":{\"invalidField\"}}",
+					config.ResourceQOSConfigKey:       "{\"clusterStrategy\":{\"invalidField\"}}",
 				},
 			}},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
-				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
+				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
@@ -134,7 +134,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
-				ResourceQoSStrategy:         &slov1alpha1.ResourceQoSStrategy{},
+				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
@@ -156,11 +156,11 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				},
 				Data: map[string]string{
 					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
-					config.ResourceQoSConfigKey: `
+					config.ResourceQOSConfigKey: `
 {
   "clusterStrategy": {
-    "be": {
-      "cpuQoS": {
+    "beClass": {
+      "cpuQOS": {
         "groupIdentity": 0
       }
     }
@@ -171,7 +171,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
-				ResourceQoSStrategy:         testingResourceQoSStrategy,
+				ResourceQOSStrategy:         testingResourceQOSStrategy,
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
@@ -193,11 +193,11 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				},
 				Data: map[string]string{
 					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
-					config.ResourceQoSConfigKey: `
+					config.ResourceQOSConfigKey: `
 {
   "clusterStrategy": {
-    "be": {
-      "cpuQoS": {
+    "beClass": {
+      "cpuQOS": {
         "groupIdentity": 0
       }
     }
@@ -208,7 +208,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
-				ResourceQoSStrategy:         testingResourceQoSStrategyOld,
+				ResourceQOSStrategy:         testingResourceQOSStrategyOld,
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 			},
 			wantErr: false,
@@ -263,11 +263,11 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 		},
 		Data: map[string]string{
 			config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
-			config.ResourceQoSConfigKey: `
+			config.ResourceQOSConfigKey: `
 {
   "clusterStrategy": {
-    "be": {
-      "cpuQoS": {
+    "beClass": {
+      "cpuQOS": {
         "groupIdentity": 0
       }
     }
@@ -280,10 +280,10 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 	testingResourceThresholdStrategy := util.DefaultResourceThresholdStrategy()
 	testingResourceThresholdStrategy.Enable = pointer.BoolPtr(true)
 	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
-	testingResourceQoSStrategy := &slov1alpha1.ResourceQoSStrategy{
-		BE: &slov1alpha1.ResourceQoS{
-			CPUQoS: &slov1alpha1.CPUQoSCfg{
-				CPUQoS: slov1alpha1.CPUQoS{
+	testingResourceQOSStrategy := &slov1alpha1.ResourceQOSStrategy{
+		BEClass: &slov1alpha1.ResourceQOS{
+			CPUQOS: &slov1alpha1.CPUQOSCfg{
+				CPUQOS: slov1alpha1.CPUQOS{
 					GroupIdentity: pointer.Int64Ptr(0),
 				},
 			},
@@ -295,7 +295,7 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 
 	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{
 		ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
-		ResourceQoSStrategy:         testingResourceQoSStrategy,
+		ResourceQOSStrategy:         testingResourceQOSStrategy,
 		CPUBurstStrategy:            testingCPUBurstStrategy,
 	}
 	nodeReq := ctrl.Request{NamespacedName: types.NamespacedName{Name: testingNode.Name}}

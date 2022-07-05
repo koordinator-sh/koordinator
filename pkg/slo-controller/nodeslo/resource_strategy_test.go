@@ -243,40 +243,40 @@ func Test_caculateResourceThresholdCfgMerged(t *testing.T) {
 	}
 }
 
-func Test_getResourceQoSSpec(t *testing.T) {
+func Test_getResourceQOSSpec(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg()
-	testingResourceQoSCfg := &config.ResourceQoSCfg{
-		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
-			BE: &slov1alpha1.ResourceQoS{
-				CPUQoS: &slov1alpha1.CPUQoSCfg{
-					CPUQoS: slov1alpha1.CPUQoS{
+	testingResourceQOSCfg := &config.ResourceQOSCfg{
+		ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
+			BEClass: &slov1alpha1.ResourceQOS{
+				CPUQOS: &slov1alpha1.CPUQOSCfg{
+					CPUQOS: slov1alpha1.CPUQOS{
 						GroupIdentity: pointer.Int64Ptr(0),
 					},
 				},
 			},
 		},
 	}
-	testingResourceQoSCfg1 := &config.ResourceQoSCfg{
-		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
-			BE: &slov1alpha1.ResourceQoS{
-				CPUQoS: &slov1alpha1.CPUQoSCfg{
-					CPUQoS: slov1alpha1.CPUQoS{
+	testingResourceQOSCfg1 := &config.ResourceQOSCfg{
+		ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
+			BEClass: &slov1alpha1.ResourceQOS{
+				CPUQOS: &slov1alpha1.CPUQOSCfg{
+					CPUQOS: slov1alpha1.CPUQOS{
 						GroupIdentity: pointer.Int64Ptr(0),
 					},
 				},
 			},
 		},
-		NodeStrategies: []config.NodeResourceQoSStrategy{
+		NodeStrategies: []config.NodeResourceQOSStrategy{
 			{
 				NodeSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"xxx": "yyy",
 					},
 				},
-				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-					BE: &slov1alpha1.ResourceQoS{
-						CPUQoS: &slov1alpha1.CPUQoSCfg{
-							CPUQoS: slov1alpha1.CPUQoS{
+				ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+					BEClass: &slov1alpha1.ResourceQOS{
+						CPUQOS: &slov1alpha1.CPUQOSCfg{
+							CPUQOS: slov1alpha1.CPUQOS{
 								GroupIdentity: pointer.Int64Ptr(1),
 							},
 						},
@@ -289,10 +289,10 @@ func Test_getResourceQoSSpec(t *testing.T) {
 						"zzz": "zzz",
 					},
 				},
-				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-					BE: &slov1alpha1.ResourceQoS{
-						CPUQoS: &slov1alpha1.CPUQoSCfg{
-							CPUQoS: slov1alpha1.CPUQoS{
+				ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+					BEClass: &slov1alpha1.ResourceQOS{
+						CPUQOS: &slov1alpha1.CPUQOSCfg{
+							CPUQOS: slov1alpha1.CPUQOS{
 								GroupIdentity: pointer.Int64Ptr(2),
 							},
 						},
@@ -303,21 +303,21 @@ func Test_getResourceQoSSpec(t *testing.T) {
 	}
 	type args struct {
 		node *corev1.Node
-		cfg  *config.ResourceQoSCfg
+		cfg  *config.ResourceQOSCfg
 	}
 	tests := []struct {
 		name    string
 		args    args
-		want    *slov1alpha1.ResourceQoSStrategy
+		want    *slov1alpha1.ResourceQOSStrategy
 		wantErr bool
 	}{
 		{
 			name: "node empty, use cluster config",
 			args: args{
 				node: &corev1.Node{},
-				cfg:  &defaultSLOCfg.ResourceQoSCfgMerged,
+				cfg:  &defaultSLOCfg.ResourceQOSCfgMerged,
 			},
-			want:    &slov1alpha1.ResourceQoSStrategy{},
+			want:    &slov1alpha1.ResourceQOSStrategy{},
 			wantErr: false,
 		},
 		{
@@ -328,9 +328,9 @@ func Test_getResourceQoSSpec(t *testing.T) {
 						Name: "test-node",
 					},
 				},
-				cfg: testingResourceQoSCfg,
+				cfg: testingResourceQOSCfg,
 			},
-			want: testingResourceQoSCfg.ClusterStrategy,
+			want: testingResourceQOSCfg.ClusterStrategy,
 		},
 		{
 			name: "get node config correctly",
@@ -343,9 +343,9 @@ func Test_getResourceQoSSpec(t *testing.T) {
 						},
 					},
 				},
-				cfg: testingResourceQoSCfg1,
+				cfg: testingResourceQOSCfg1,
 			},
-			want: testingResourceQoSCfg1.NodeStrategies[1].ResourceQoSStrategy,
+			want: testingResourceQOSCfg1.NodeStrategies[1].ResourceQOSStrategy,
 		},
 		{
 			name: "get firstly-matched node config",
@@ -358,32 +358,32 @@ func Test_getResourceQoSSpec(t *testing.T) {
 						},
 					},
 				},
-				cfg: testingResourceQoSCfg1,
+				cfg: testingResourceQOSCfg1,
 			},
-			want: testingResourceQoSCfg1.NodeStrategies[0].ResourceQoSStrategy,
+			want: testingResourceQOSCfg1.NodeStrategies[0].ResourceQOSStrategy,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := getResourceQoSSpec(tt.args.node, tt.args.cfg)
+			got, gotErr := getResourceQOSSpec(tt.args.node, tt.args.cfg)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func Test_caculateResourceQoSCfgMerged(t *testing.T) {
-	defaultSLOCfg := DefaultSLOCfg().ResourceQoSCfgMerged
-	oldSLOConfig := &config.ResourceQoSCfg{
-		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
-			BE: &slov1alpha1.ResourceQoS{
-				CPUQoS: &slov1alpha1.CPUQoSCfg{
-					CPUQoS: slov1alpha1.CPUQoS{
+func Test_caculateResourceQOSCfgMerged(t *testing.T) {
+	defaultSLOCfg := DefaultSLOCfg().ResourceQOSCfgMerged
+	oldSLOConfig := &config.ResourceQOSCfg{
+		ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
+			BEClass: &slov1alpha1.ResourceQOS{
+				CPUQOS: &slov1alpha1.CPUQOSCfg{
+					CPUQOS: slov1alpha1.CPUQOS{
 						GroupIdentity: pointer.Int64Ptr(2),
 					},
 				},
-				MemoryQoS: &slov1alpha1.MemoryQoSCfg{
-					MemoryQoS: slov1alpha1.MemoryQoS{
+				MemoryQOS: &slov1alpha1.MemoryQOSCfg{
+					MemoryQOS: slov1alpha1.MemoryQOS{
 						MinLimitPercent: pointer.Int64Ptr(40),
 					},
 				},
@@ -391,11 +391,11 @@ func Test_caculateResourceQoSCfgMerged(t *testing.T) {
 		},
 	}
 
-	testingOnlyCluster := &config.ResourceQoSCfg{
-		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
-			BE: &slov1alpha1.ResourceQoS{
-				CPUQoS: &slov1alpha1.CPUQoSCfg{
-					CPUQoS: slov1alpha1.CPUQoS{
+	testingOnlyCluster := &config.ResourceQOSCfg{
+		ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
+			BEClass: &slov1alpha1.ResourceQOS{
+				CPUQOS: &slov1alpha1.CPUQOSCfg{
+					CPUQOS: slov1alpha1.CPUQOS{
 						GroupIdentity: pointer.Int64Ptr(0),
 					},
 				},
@@ -405,27 +405,27 @@ func Test_caculateResourceQoSCfgMerged(t *testing.T) {
 	testingOnlyClusterStr, _ := json.Marshal(testingOnlyCluster)
 	expectTestingOnlyCluster := testingOnlyCluster.DeepCopy()
 
-	testingResourceQoSCfg1 := &config.ResourceQoSCfg{
-		ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{
-			BE: &slov1alpha1.ResourceQoS{
-				CPUQoS: &slov1alpha1.CPUQoSCfg{
-					CPUQoS: slov1alpha1.CPUQoS{
+	testingResourceQOSCfg1 := &config.ResourceQOSCfg{
+		ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
+			BEClass: &slov1alpha1.ResourceQOS{
+				CPUQOS: &slov1alpha1.CPUQOSCfg{
+					CPUQOS: slov1alpha1.CPUQOS{
 						GroupIdentity: pointer.Int64Ptr(0),
 					},
 				},
 			},
 		},
-		NodeStrategies: []config.NodeResourceQoSStrategy{
+		NodeStrategies: []config.NodeResourceQOSStrategy{
 			{
 				NodeSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"xxx": "yyy",
 					},
 				},
-				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-					BE: &slov1alpha1.ResourceQoS{
-						CPUQoS: &slov1alpha1.CPUQoSCfg{
-							CPUQoS: slov1alpha1.CPUQoS{
+				ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+					BEClass: &slov1alpha1.ResourceQOS{
+						CPUQOS: &slov1alpha1.CPUQOSCfg{
+							CPUQOS: slov1alpha1.CPUQOS{
 								GroupIdentity: pointer.Int64Ptr(0),
 							},
 						},
@@ -438,10 +438,10 @@ func Test_caculateResourceQoSCfgMerged(t *testing.T) {
 						"zzz": "zzz",
 					},
 				},
-				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-					BE: &slov1alpha1.ResourceQoS{
-						CPUQoS: &slov1alpha1.CPUQoSCfg{
-							CPUQoS: slov1alpha1.CPUQoS{
+				ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+					BEClass: &slov1alpha1.ResourceQOS{
+						CPUQOS: &slov1alpha1.CPUQOSCfg{
+							CPUQOS: slov1alpha1.CPUQOS{
 								GroupIdentity: pointer.Int64Ptr(-1),
 							},
 						},
@@ -450,10 +450,10 @@ func Test_caculateResourceQoSCfgMerged(t *testing.T) {
 			},
 		},
 	}
-	testingResourceQoSCfgStr1, _ := json.Marshal(testingResourceQoSCfg1)
-	expectTestingResourceQoSCfg1 := testingResourceQoSCfg1.DeepCopy()
-	expectTestingResourceQoSCfg1.NodeStrategies[0].BE.CPUQoS.GroupIdentity = pointer.Int64Ptr(0)
-	expectTestingResourceQoSCfg1.NodeStrategies[1].BE.CPUQoS.GroupIdentity = pointer.Int64Ptr(-1)
+	testingResourceQOSCfgStr1, _ := json.Marshal(testingResourceQOSCfg1)
+	expectTestingResourceQOSCfg1 := testingResourceQOSCfg1.DeepCopy()
+	expectTestingResourceQOSCfg1.NodeStrategies[0].BEClass.CPUQOS.GroupIdentity = pointer.Int64Ptr(0)
+	expectTestingResourceQOSCfg1.NodeStrategies[1].BEClass.CPUQOS.GroupIdentity = pointer.Int64Ptr(-1)
 
 	type args struct {
 		configMap *corev1.ConfigMap
@@ -461,7 +461,7 @@ func Test_caculateResourceQoSCfgMerged(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    *config.ResourceQoSCfg
+		want    *config.ResourceQOSCfg
 		wantErr bool
 	}{
 		{
@@ -477,7 +477,7 @@ func Test_caculateResourceQoSCfgMerged(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						config.ResourceQoSConfigKey: "invalid_content",
+						config.ResourceQOSConfigKey: "invalid_content",
 					},
 				},
 			},
@@ -493,7 +493,7 @@ func Test_caculateResourceQoSCfgMerged(t *testing.T) {
 						Namespace: config.ConfigNameSpace,
 					},
 					Data: map[string]string{
-						config.ResourceQoSConfigKey: string(testingOnlyClusterStr),
+						config.ResourceQOSConfigKey: string(testingOnlyClusterStr),
 					},
 				},
 			},
@@ -508,16 +508,16 @@ func Test_caculateResourceQoSCfgMerged(t *testing.T) {
 						Namespace: config.ConfigNameSpace,
 					},
 					Data: map[string]string{
-						config.ResourceQoSConfigKey: string(testingResourceQoSCfgStr1),
+						config.ResourceQOSConfigKey: string(testingResourceQOSCfgStr1),
 					},
 				},
 			},
-			want: expectTestingResourceQoSCfg1,
+			want: expectTestingResourceQOSCfg1,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := caculateResourceQoSCfgMerged(*oldSLOConfig, tt.args.configMap)
+			got, gotErr := caculateResourceQOSCfgMerged(*oldSLOConfig, tt.args.configMap)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.want, &got)
 		})
