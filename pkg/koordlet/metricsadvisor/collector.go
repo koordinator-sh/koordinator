@@ -362,7 +362,7 @@ func (c *collector) collectPodThrottledInfo() {
 		if err != nil || currentCPUStat == nil {
 			if pod.Status.Phase == corev1.PodRunning {
 				// print running pod collection error
-				klog.Infof("collect pod %s/%s, uid %v cpu throttled failed, err %v, metric %v",
+				klog.V(4).Infof("collect pod %s/%s, uid %v cpu throttled failed, err %v, metric %v",
 					pod.Namespace, pod.Name, uid, err, currentCPUStat)
 			}
 			continue
@@ -402,7 +402,7 @@ func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMet
 		collectTime := time.Now()
 		containerStat := &pod.Status.ContainerStatuses[i]
 		if len(containerStat.ContainerID) == 0 {
-			klog.Infof("container %s/%s/%s id is empty, maybe not ready, skip this round",
+			klog.V(4).Infof("container %s/%s/%s id is empty, maybe not ready, skip this round",
 				pod.Namespace, pod.Name, containerStat.Name)
 			continue
 		}
@@ -414,7 +414,7 @@ func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMet
 		}
 		currentCPUStat, err := system.GetCPUStatRaw(containerCgroupPath)
 		if err != nil {
-			klog.Infof("collect container %s/%s/%s cpu throttled failed, err %v, metric %v",
+			klog.V(4).Infof("collect container %s/%s/%s cpu throttled failed, err %v, metric %v",
 				pod.Namespace, pod.Name, containerStat.Name, err, currentCPUStat)
 			continue
 		}
