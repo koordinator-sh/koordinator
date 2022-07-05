@@ -26,6 +26,13 @@ type CPUMetric struct {
 	CPUUsed resource.Quantity
 }
 
+type GPUMetric struct {
+	Minor      int32             // index starting from 0
+	DeviceUUID string            // device UUID
+	SMUtil     resource.Quantity // current utilization rate for the device
+	MemoryUsed resource.Quantity // used memory on the device, in bytes
+}
+
 type MemoryMetric struct {
 	MemoryWithoutCache resource.Quantity
 }
@@ -37,6 +44,7 @@ type CPUThrottledMetric struct {
 type NodeResourceMetric struct {
 	CPUUsed    CPUMetric
 	MemoryUsed MemoryMetric
+	GPUs       []*GPUMetric
 }
 
 type NodeResourceQueryResult struct {
@@ -48,6 +56,7 @@ type PodResourceMetric struct {
 	PodUID     string
 	CPUUsed    CPUMetric
 	MemoryUsed MemoryMetric
+	GPUs       []*GPUMetric
 }
 
 type PodResourceQueryResult struct {
@@ -59,6 +68,7 @@ type ContainerResourceMetric struct {
 	ContainerID string
 	CPUUsed     CPUMetric
 	MemoryUsed  MemoryMetric
+	GPUs        []*GPUMetric
 }
 
 type ContainerResourceQueryResult struct {
