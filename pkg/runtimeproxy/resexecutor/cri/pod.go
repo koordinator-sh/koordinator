@@ -67,6 +67,7 @@ func (p *PodResourceExecutor) ParseRequest(req interface{}) error {
 				PodMeta: &v1alpha1.PodSandboxMetadata{
 					Name:      request.GetConfig().GetMetadata().GetName(),
 					Namespace: request.GetConfig().GetMetadata().GetNamespace(),
+					Uid:       request.GetConfig().GetMetadata().GetUid(),
 				},
 				RuntimeHandler: request.GetRuntimeHandler(),
 				Annotations:    request.GetConfig().GetAnnotations(),
@@ -90,6 +91,7 @@ func (p *PodResourceExecutor) ParsePod(podsandbox *runtimeapi.PodSandbox) error 
 			PodMeta: &v1alpha1.PodSandboxMetadata{
 				Name:      podsandbox.GetMetadata().GetName(),
 				Namespace: podsandbox.GetMetadata().GetNamespace(),
+				Uid:       podsandbox.GetMetadata().GetUid(),
 			},
 			RuntimeHandler: podsandbox.GetRuntimeHandler(),
 			Annotations:    podsandbox.GetAnnotations(),
