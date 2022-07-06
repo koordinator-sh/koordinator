@@ -131,6 +131,7 @@ func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) er
 				CgroupParent: s.ContainerJSON.HostConfig.CgroupParent,
 				PodMeta: &v1alpha1.PodSandboxMetadata{
 					Name: s.Name,
+					Uid:  s.ID,
 				},
 				RuntimeHandler: "Docker",
 				Resources:      HostConfigToResource(s.ContainerJSON.HostConfig),

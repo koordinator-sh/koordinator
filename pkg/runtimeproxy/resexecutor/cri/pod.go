@@ -90,6 +90,7 @@ func (p *PodResourceExecutor) ParsePod(podsandbox *runtimeapi.PodSandbox) error 
 			PodMeta: &v1alpha1.PodSandboxMetadata{
 				Name:      podsandbox.GetMetadata().GetName(),
 				Namespace: podsandbox.GetMetadata().GetNamespace(),
+				Uid:       podsandbox.GetMetadata().GetUid(),
 			},
 			RuntimeHandler: podsandbox.GetRuntimeHandler(),
 			Annotations:    podsandbox.GetAnnotations(),
