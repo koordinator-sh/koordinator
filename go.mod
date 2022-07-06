@@ -18,7 +18,7 @@ require (
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 	google.golang.org/grpc v1.38.0
 	google.golang.org/protobuf v1.28.0
-	gorm.io/driver/sqlite v1.3.4
+	gorm.io/driver/sqlite v1.3.6
 	gorm.io/gorm v1.23.6
 	k8s.io/api v0.22.6
 	k8s.io/apimachinery v0.22.6
