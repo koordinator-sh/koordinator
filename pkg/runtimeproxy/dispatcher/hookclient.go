@@ -17,7 +17,6 @@ limitations under the License.
 package dispatcher
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/golang/groupcache/lru"
@@ -69,11 +68,7 @@ func newRuntimeHookClient(sockPath string) (*RuntimeHookClient, error) {
 }
 
 func (cm *HookServerClientManager) RuntimeHookServerClient(serverPath HookServerPath) (*RuntimeHookClient, error) {
-	cacheKey, err := json.Marshal(serverPath)
-	if err != nil {
-		return nil, err
-	}
-	if client, ok := cm.cache.Get(string(cacheKey)); ok {
+	if client, ok := cm.cache.Get(serverPath); ok {
 		return client.(*RuntimeHookClient), nil
 	}
 
@@ -82,6 +77,6 @@ func (cm *HookServerClientManager) RuntimeHookServerClient(serverPath HookServer
 		klog.Errorf("fail to create client %v", err)
 		return nil, err
 	}
-	cm.cache.Add(string(cacheKey), runtimeHookClient)
+	cm.cache.Add(serverPath, runtimeHookClient)
 	return runtimeHookClient, nil
 }
