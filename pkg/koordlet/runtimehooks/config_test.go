@@ -14,20 +14,27 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package reporter
+package runtimehooks
 
-import "flag"
+import (
+	"flag"
+	"testing"
 
-type Config struct {
-	ReportIntervalSeconds int
-}
+	"github.com/stretchr/testify/assert"
+)
 
-func NewDefaultConfig() *Config {
-	return &Config{
-		ReportIntervalSeconds: 60,
+func Test_NewDefaultConfig(t *testing.T) {
+	expectConfig := &Config{
+		RuntimeHooksNetwork: "tcp",
+		RuntimeHooksAddr:    ":9318",
+		FeatureGates:        map[string]bool{},
 	}
+	defaultConfig := NewDefaultConfig()
+	assert.Equal(t, expectConfig, defaultConfig)
 }
 
-func (c *Config) InitFlags(fs *flag.FlagSet) {
-	fs.IntVar(&c.ReportIntervalSeconds, "report-interval-seconds", c.ReportIntervalSeconds, "Report interval by seconds")
+func Test_InitFlags(t *testing.T) {
+	cfg := NewDefaultConfig()
+	cfg.InitFlags(flag.CommandLine)
+	flag.Parse()
 }
