@@ -73,17 +73,17 @@ type ScoringStrategy struct {
 type NodeNUMAResourceArgs struct {
 	metav1.TypeMeta
 
-	PreferredCPUBindPolicy CPUBindPolicy        `json:"preferredCPUBindPolicy,omitempty"`
-	NUMAAllocateStrategy   NUMAAllocateStrategy `json:"numaAllocateStrategy,omitempty"`
-	ScoringStrategy        *ScoringStrategy     `json:"scoringStrategy,omitempty"`
+	DefaultCPUBindPolicy CPUBindPolicy        `json:"defaultCPUBindPolicy,omitempty"`
+	NUMAAllocateStrategy NUMAAllocateStrategy `json:"numaAllocateStrategy,omitempty"`
+	ScoringStrategy      *ScoringStrategy     `json:"scoringStrategy,omitempty"`
 }
 
 // CPUBindPolicy defines the CPU binding policy
 type CPUBindPolicy string
 
 const (
-	// CPUBindPolicyNone does not perform any bind policy
-	CPUBindPolicyNone CPUBindPolicy = "None"
+	// CPUBindPolicyDefault performs the default bind policy that specified in koord-scheduler configuration
+	CPUBindPolicyDefault CPUBindPolicy = "Default"
 	// CPUBindPolicyFullPCPUs favor cpuset allocation that pack in few physical cores
 	CPUBindPolicyFullPCPUs CPUBindPolicy = "FullPCPUs"
 	// CPUBindPolicySpreadByPCPUs favor cpuset allocation that evenly allocate logical cpus across physical cores

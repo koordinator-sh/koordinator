@@ -74,8 +74,8 @@ func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 
 // SetDefaults_NodeNUMAResourceArgs sets the default parameters for NodeNUMANodeResource plugin.
 func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
-	if obj.PreferredCPUBindPolicy == "" {
-		obj.PreferredCPUBindPolicy = defaultPreferredCPUBindPolicy
+	if obj.DefaultCPUBindPolicy == "" {
+		obj.DefaultCPUBindPolicy = defaultPreferredCPUBindPolicy
 	}
 	if obj.NUMAAllocateStrategy == "" {
 		obj.NUMAAllocateStrategy = defaultNUMAAllocateStrategy
