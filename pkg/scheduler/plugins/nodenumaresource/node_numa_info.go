@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -179,6 +180,12 @@ func (c *nodeNumaInfoCache) setPod(pod *corev1.Pod) {
 	if err != nil {
 		return
 	}
+
+	resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
+	if err != nil {
+		return
+	}
+
 	cpuset, err := Parse(resourceStatus.CPUSet)
 	if err != nil || cpuset.IsEmpty() {
 		return
@@ -186,7 +193,7 @@ func (c *nodeNumaInfoCache) setPod(pod *corev1.Pod) {
 
 	numaInfo.lock.Lock()
 	defer numaInfo.lock.Unlock()
-	numaInfo.allocateCPUs(pod.UID, cpuset)
+	numaInfo.allocateCPUs(pod.UID, cpuset, resourceSpec.PreferredCPUExclusivePolicy)
 }
 
 func (c *nodeNumaInfoCache) deletePod(pod *corev1.Pod) {
@@ -217,7 +224,7 @@ func (n *nodeNUMAInfo) updateCPUTopology(topology *CPUTopology) {
 	n.cpuTopology = topology
 }
 
-func (n *nodeNUMAInfo) allocateCPUs(podUID types.UID, cpuset CPUSet) {
+func (n *nodeNUMAInfo) allocateCPUs(podUID types.UID, cpuset CPUSet, exclusivePolicy schedulingconfig.CPUExclusivePolicy) {
 	if _, ok := n.allocatedPods[podUID]; ok {
 		return
 	}
@@ -228,6 +235,7 @@ func (n *nodeNUMAInfo) allocateCPUs(podUID types.UID, cpuset CPUSet) {
 		if !ok {
 			cpuInfo = n.cpuTopology.CPUDetails[cpuID]
 		}
+		cpuInfo.ExclusivePolicy = exclusivePolicy
 		cpuInfo.RefCount++
 		n.allocatedCPUs[cpuID] = cpuInfo
 	}

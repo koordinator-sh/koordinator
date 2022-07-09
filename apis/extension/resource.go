@@ -49,6 +49,8 @@ var (
 type ResourceSpec struct {
 	// PreferredCPUBindPolicy represents best-effort CPU bind policy.
 	PreferredCPUBindPolicy CPUBindPolicy `json:"preferredCPUBindPolicy,omitempty"`
+	// PreferredCPUExclusivePolicy represents best-effort CPU exclusive policy.
+	PreferredCPUExclusivePolicy CPUExclusivePolicy `json:"preferredCPUExclusivePolicy,omitempty"`
 }
 
 // ResourceStatus describes resource allocation result, such as how to bind CPU.
@@ -72,6 +74,17 @@ const (
 	CPUBindPolicySpreadByPCPUs CPUBindPolicy = schedulingconfig.CPUBindPolicySpreadByPCPUs
 	// CPUBindPolicyConstrainedBurst constrains the CPU Shared Pool range of the Burstable Pod
 	CPUBindPolicyConstrainedBurst CPUBindPolicy = schedulingconfig.CPUBindPolicyConstrainedBurst
+)
+
+type CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicy
+
+const (
+	// CPUExclusivePolicyNone does not perform any exclusive policy
+	CPUExclusivePolicyNone CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicyNone
+	// CPUExclusivePolicyPCPULevel represents mutual exclusion in the physical core dimension
+	CPUExclusivePolicyPCPULevel CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicyPCPULevel
+	// CPUExclusivePolicyNUMANodeLevel indicates mutual exclusion in the NUMA topology dimension
+	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicyNUMANodeLevel
 )
 
 type NUMACPUSharedPools []CPUSharedPool
