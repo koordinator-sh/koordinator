@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metricsadvisor
+package reporter
 
 import (
 	"flag"
@@ -25,8 +25,7 @@ import (
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		CollectResUsedIntervalSeconds:     1,
-		CollectNodeCPUInfoIntervalSeconds: 60,
+		ReportIntervalSeconds: 60,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -35,14 +34,12 @@ func Test_NewDefaultConfig(t *testing.T) {
 func Test_InitFlags(t *testing.T) {
 	cmdArgs := []string{
 		"",
-		"--collect-res-used-interval-seconds=3",
-		"--collect-node-cpu-info-interval-seconds=90",
+		"--report-interval-seconds=30",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
 	type fields struct {
-		CollectResUsedIntervalSeconds     int
-		CollectNodeCPUInfoIntervalSeconds int
+		ReportIntervalSeconds int
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -53,20 +50,14 @@ func Test_InitFlags(t *testing.T) {
 		args   args
 	}{
 		{
-			name: "not default",
-			fields: fields{
-				CollectResUsedIntervalSeconds:     3,
-				CollectNodeCPUInfoIntervalSeconds: 90,
-			},
-			args: args{fs: fs},
+			name:   "not default",
+			fields: fields{ReportIntervalSeconds: 30},
+			args:   args{fs: fs},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw := &Config{
-				CollectResUsedIntervalSeconds:     tt.fields.CollectResUsedIntervalSeconds,
-				CollectNodeCPUInfoIntervalSeconds: tt.fields.CollectNodeCPUInfoIntervalSeconds,
-			}
+			raw := &Config{ReportIntervalSeconds: tt.fields.ReportIntervalSeconds}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)
 			tt.args.fs.Parse(cmdArgs[1:])

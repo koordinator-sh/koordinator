@@ -63,8 +63,8 @@ func NewDefaultConfig() *Config {
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
-	fs.StringVar(&c.RuntimeHooksNetwork, "RuntimeHooksNetwork", c.RuntimeHooksNetwork, "rpc server network type for runtime hooks")
-	fs.StringVar(&c.RuntimeHooksAddr, "RuntimeHooksAddr", c.RuntimeHooksAddr, "rpc server address for runtime hooks")
+	fs.StringVar(&c.RuntimeHooksNetwork, "runtime-hooks-network", c.RuntimeHooksNetwork, "rpc server network type for runtime hooks")
+	fs.StringVar(&c.RuntimeHooksAddr, "runtime-hooks-addr", c.RuntimeHooksAddr, "rpc server address for runtime hooks")
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "runtime-hooks",
 		"A set of key=value pairs that describe feature gates for runtime hooks alpha/experimental features. "+
 			"Options are:\n"+strings.Join(DefaultRuntimeHooksFG.KnownFeatures(), "\n"))

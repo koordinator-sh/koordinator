@@ -31,6 +31,6 @@ func NewDefaultConfig() *Config {
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
-	fs.IntVar(&c.CollectResUsedIntervalSeconds, "CollectResUsedIntervalSeconds", c.CollectResUsedIntervalSeconds, "Collect node/pod resource usage interval by seconds")
-	fs.IntVar(&c.CollectNodeCPUInfoIntervalSeconds, "CollectNodeCPUInfoIntervalSeconds", c.CollectNodeCPUInfoIntervalSeconds, "Collect node cpu info interval by seconds")
+	fs.IntVar(&c.CollectResUsedIntervalSeconds, "collect-res-used-interval-seconds", c.CollectResUsedIntervalSeconds, "Collect node/pod resource usage interval by seconds")
+	fs.IntVar(&c.CollectNodeCPUInfoIntervalSeconds, "collect-node-cpu-info-interval-seconds", c.CollectNodeCPUInfoIntervalSeconds, "Collect node cpu info interval by seconds")
 }
