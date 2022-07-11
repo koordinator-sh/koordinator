@@ -105,7 +105,7 @@ func (c *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeSer
 
 	// pre call hook server
 	// TODO deal with the Dispatch response
-	if response, err := c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest()); err != nil {
+	if response, err := c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest()); err != nil || response == nil {
 		klog.Errorf("fail to call hook server %v", err)
 	} else {
 		if err = resourceExecutor.UpdateRequest(response, request); err != nil {
