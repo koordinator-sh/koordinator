@@ -101,7 +101,6 @@ func Convert_config_LoadAwareSchedulingArgs_To_v1beta2_LoadAwareSchedulingArgs(i
 
 func autoConvert_v1beta2_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(in *NodeNUMAResourceArgs, out *config.NodeNUMAResourceArgs, s conversion.Scope) error {
 	out.DefaultCPUBindPolicy = config.CPUBindPolicy(in.DefaultCPUBindPolicy)
-	out.NUMAAllocateStrategy = config.NUMAAllocateStrategy(in.NUMAAllocateStrategy)
 	out.ScoringStrategy = (*config.ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
 	return nil
 }
@@ -113,7 +112,6 @@ func Convert_v1beta2_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(in *Nod
 
 func autoConvert_config_NodeNUMAResourceArgs_To_v1beta2_NodeNUMAResourceArgs(in *config.NodeNUMAResourceArgs, out *NodeNUMAResourceArgs, s conversion.Scope) error {
 	out.DefaultCPUBindPolicy = CPUBindPolicy(in.DefaultCPUBindPolicy)
-	out.NUMAAllocateStrategy = NUMAAllocateStrategy(in.NUMAAllocateStrategy)
 	out.ScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
 	return nil
 }

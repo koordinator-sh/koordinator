@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 
 	"k8s.io/apimachinery/pkg/types"
+
+	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 )
 
 const (
@@ -30,6 +32,22 @@ const (
 	// AnnotationNodeCPUSharedPools describes the CPU Shared Pool defined by Koordinator.
 	// The shared pool is mainly used by Koordinator LS Pods or K8s Burstable Pods.
 	AnnotationNodeCPUSharedPools = NodeDomainPrefix + "/cpu-shared-pools"
+
+	// LabelNodeCPUBindPolicy constrains how to bind CPU logical CPUs when scheduling.
+	LabelNodeCPUBindPolicy = NodeDomainPrefix + "/cpu-bind-policy"
+	// LabelNodeNUMAAllocateStrategy indicates how to choose satisfied NUMA Nodes when scheduling.
+	LabelNodeNUMAAllocateStrategy = NodeDomainPrefix + "/numa-allocate-strategy"
+)
+
+const (
+	// NodeCPUBindPolicyFullPCPUsOnly requires that the scheduler must allocate full physical cores.
+	// Equivalent to kubelet CPU manager policy option full-pcpus-only=true.
+	NodeCPUBindPolicyFullPCPUsOnly = "FullPCPUsOnly"
+)
+
+const (
+	NodeNUMAAllocateStrategyLeastAllocated = string(schedulingconfig.NUMALeastAllocated)
+	NodeNUMAAllocateStrategyMostAllocated  = string(schedulingconfig.NUMAMostAllocated)
 )
 
 type CPUTopology struct {
