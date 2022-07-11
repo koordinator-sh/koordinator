@@ -73,9 +73,9 @@ type ScoringStrategy struct {
 type NodeNUMAResourceArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
-	PreferredCPUBindPolicy CPUBindPolicy        `json:"preferredCPUBindPolicy,omitempty"`
-	NUMAAllocateStrategy   NUMAAllocateStrategy `json:"numaAllocateStrategy,omitempty"`
-	ScoringStrategy        *ScoringStrategy     `json:"scoringStrategy,omitempty"`
+	DefaultCPUBindPolicy CPUBindPolicy        `json:"defaultCPUBindPolicy,omitempty"`
+	NUMAAllocateStrategy NUMAAllocateStrategy `json:"numaAllocateStrategy,omitempty"`
+	ScoringStrategy      *ScoringStrategy     `json:"scoringStrategy,omitempty"`
 }
 
 // CPUBindPolicy defines the CPU binding policy
