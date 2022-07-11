@@ -105,10 +105,11 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 func (p *Plugin) Name() string { return Name }
 
 type preFilterState struct {
-	skip          bool
-	resourceSpec  *extension.ResourceSpec
-	numCPUsNeeded int
-	allocatedCPUs CPUSet
+	skip                   bool
+	resourceSpec           *extension.ResourceSpec
+	preferredCPUBindPolicy extension.CPUBindPolicy
+	numCPUsNeeded          int
+	allocatedCPUs          CPUSet
 }
 
 func (s *preFilterState) Clone() framework.StateData {
@@ -132,8 +133,12 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	qosClass := extension.GetPodQoSClass(pod)
 	priorityClass := extension.GetPriorityClass(pod)
 	if (qosClass == extension.QoSLSE || qosClass == extension.QoSLSR) && priorityClass == extension.PriorityProd {
-		if resourceSpec.PreferredCPUBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs ||
-			resourceSpec.PreferredCPUBindPolicy == schedulingconfig.CPUBindPolicySpreadByPCPUs {
+		preferredCPUBindPolicy := resourceSpec.PreferredCPUBindPolicy
+		if preferredCPUBindPolicy == "" || preferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault {
+			preferredCPUBindPolicy = p.pluginArgs.DefaultCPUBindPolicy
+		}
+		if preferredCPUBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs ||
+			preferredCPUBindPolicy == schedulingconfig.CPUBindPolicySpreadByPCPUs {
 			requests, _ := resourceapi.PodRequestsAndLimits(pod)
 			requestedCPU := requests.Cpu().MilliValue()
 			if requestedCPU%1000 != 0 {
@@ -143,6 +148,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 			if requestedCPU > 0 {
 				state.skip = false
 				state.resourceSpec = resourceSpec
+				state.preferredCPUBindPolicy = preferredCPUBindPolicy
 				state.numCPUsNeeded = int(requestedCPU / 1000)
 			}
 		}
@@ -226,11 +232,11 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, nil
 	}
 
-	score := p.calcScore(state.numCPUsNeeded, state.resourceSpec, numaInfo)
+	score := p.calcScore(state.numCPUsNeeded, state.preferredCPUBindPolicy, numaInfo)
 	return score, nil
 }
 
-func (p *Plugin) calcScore(numCPUsNeeded int, resourceSpec *extension.ResourceSpec, numaInfo *nodeNUMAInfo) int64 {
+func (p *Plugin) calcScore(numCPUsNeeded int, preferredCPUBindPolicy extension.CPUBindPolicy, numaInfo *nodeNUMAInfo) int64 {
 	availableCPUs, allocated := getAvailableCPUsFunc(numaInfo)
 	acc := newCPUAccumulator(
 		numaInfo.cpuTopology,
@@ -242,7 +248,7 @@ func (p *Plugin) calcScore(numCPUsNeeded int, resourceSpec *extension.ResourceSp
 	)
 
 	var freeCPUs [][]int
-	if resourceSpec.PreferredCPUBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs {
+	if preferredCPUBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs {
 		if numCPUsNeeded <= numaInfo.cpuTopology.CPUsPerNode() {
 			freeCPUs = acc.freeCoresInNode(true)
 		} else if numCPUsNeeded <= numaInfo.cpuTopology.CPUsPerSocket() {
@@ -347,7 +353,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		availableCPUs,
 		allocated,
 		state.numCPUsNeeded,
-		state.resourceSpec.PreferredCPUBindPolicy,
+		state.preferredCPUBindPolicy,
 		false,
 		p.pluginArgs.NUMAAllocateStrategy,
 	)
@@ -409,6 +415,19 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations[extension.AnnotationResourceStatus] = string(data)
+
+	// Write back ResourceSpec annotation if LSR Pod hasn't specified CPUBindPolicy
+	if state.resourceSpec.PreferredCPUBindPolicy == "" ||
+		state.resourceSpec.PreferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault {
+		resourceSpec := &extension.ResourceSpec{
+			PreferredCPUBindPolicy: p.pluginArgs.DefaultCPUBindPolicy,
+		}
+		data, err = json.Marshal(resourceSpec)
+		if err != nil {
+			return framework.NewStatus(framework.Error, err.Error())
+		}
+		pod.Annotations[extension.AnnotationResourceSpec] = string(data)
+	}
 
 	patchBytes, err := generatePodPatch(podOriginal, pod)
 	if err != nil {

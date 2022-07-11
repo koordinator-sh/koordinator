@@ -64,8 +64,8 @@ type ResourceStatus struct {
 type CPUBindPolicy = schedulingconfig.CPUBindPolicy
 
 const (
-	// CPUBindPolicyNone does not perform any bind policy
-	CPUBindPolicyNone CPUBindPolicy = schedulingconfig.CPUBindPolicyNone
+	// CPUBindPolicyDefault performs the default bind policy that specified in koord-scheduler configuration
+	CPUBindPolicyDefault CPUBindPolicy = schedulingconfig.CPUBindPolicyDefault
 	// CPUBindPolicyFullPCPUs favor cpuset allocation that pack in few physical cores
 	CPUBindPolicyFullPCPUs CPUBindPolicy = schedulingconfig.CPUBindPolicyFullPCPUs
 	// CPUBindPolicySpreadByPCPUs favor cpuset allocation that evenly allocate logical cpus across physical cores
@@ -85,7 +85,7 @@ type CPUSharedPool struct {
 // GetResourceSpec parses ResourceSpec from annotations
 func GetResourceSpec(annotations map[string]string) (*ResourceSpec, error) {
 	resourceSpec := &ResourceSpec{
-		PreferredCPUBindPolicy: schedulingconfig.CPUBindPolicyNone,
+		PreferredCPUBindPolicy: schedulingconfig.CPUBindPolicyDefault,
 	}
 	data, ok := annotations[AnnotationResourceSpec]
 	if !ok {
