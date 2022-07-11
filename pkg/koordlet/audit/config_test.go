@@ -14,19 +14,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metricsadvisor
+package audit
 
 import (
 	"flag"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		CollectResUsedIntervalSeconds:     1,
-		CollectNodeCPUInfoIntervalSeconds: 60,
+		LogDir:               "/var/log/koordlet",
+		Verbose:              3,
+		MaxDiskSpaceMB:       16,
+		MaxConcurrentReaders: 4,
+		ActiveReaderTTL:      time.Minute * 10,
+		DefaultEventsLimit:   256,
+		MaxEventsLimit:       2048,
+		TickerDuration:       time.Minute,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -35,14 +42,16 @@ func Test_NewDefaultConfig(t *testing.T) {
 func Test_InitFlags(t *testing.T) {
 	cmdArgs := []string{
 		"",
-		"--collect-res-used-interval-seconds=3",
-		"--collect-node-cpu-info-interval-seconds=90",
+		"--audit-log-dir=/tmp/log/koordlet",
+		"--audit-verbose=4",
+		"--audit-max-disk-space-mb=32",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
 	type fields struct {
-		CollectResUsedIntervalSeconds     int
-		CollectNodeCPUInfoIntervalSeconds int
+		LogDir         string
+		Verbose        int
+		MaxDiskSpaceMB int
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -55,8 +64,9 @@ func Test_InitFlags(t *testing.T) {
 		{
 			name: "not default",
 			fields: fields{
-				CollectResUsedIntervalSeconds:     3,
-				CollectNodeCPUInfoIntervalSeconds: 90,
+				LogDir:         "/tmp/log/koordlet",
+				Verbose:        4,
+				MaxDiskSpaceMB: 32,
 			},
 			args: args{fs: fs},
 		},
@@ -64,8 +74,14 @@ func Test_InitFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			raw := &Config{
-				CollectResUsedIntervalSeconds:     tt.fields.CollectResUsedIntervalSeconds,
-				CollectNodeCPUInfoIntervalSeconds: tt.fields.CollectNodeCPUInfoIntervalSeconds,
+				LogDir:               tt.fields.LogDir,
+				Verbose:              tt.fields.Verbose,
+				MaxDiskSpaceMB:       tt.fields.MaxDiskSpaceMB,
+				MaxConcurrentReaders: 4,
+				ActiveReaderTTL:      time.Minute * 10,
+				DefaultEventsLimit:   256,
+				MaxEventsLimit:       2048,
+				TickerDuration:       time.Minute,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

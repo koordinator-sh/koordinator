@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metricsadvisor
+package resmanager
 
 import (
 	"flag"
@@ -25,8 +25,12 @@ import (
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		CollectResUsedIntervalSeconds:     1,
-		CollectNodeCPUInfoIntervalSeconds: 60,
+		ReconcileIntervalSeconds:   1,
+		CPUSuppressIntervalSeconds: 1,
+		CPUEvictIntervalSeconds:    1,
+		MemoryEvictIntervalSeconds: 1,
+		MemoryEvictCoolTimeSeconds: 4,
+		CPUEvictCoolTimeSeconds:    20,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -35,14 +39,22 @@ func Test_NewDefaultConfig(t *testing.T) {
 func Test_InitFlags(t *testing.T) {
 	cmdArgs := []string{
 		"",
-		"--collect-res-used-interval-seconds=3",
-		"--collect-node-cpu-info-interval-seconds=90",
+		"--reconcile-interval-seconds=2",
+		"--cpu-suppress-interval-seconds=2",
+		"--cpu-evict-interval-seconds=2",
+		"--memory-evict-interval-seconds=2",
+		"--memory-evict-cool-time-seconds=8",
+		"--cpu-evict-cool-time-seconds=40",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
 	type fields struct {
-		CollectResUsedIntervalSeconds     int
-		CollectNodeCPUInfoIntervalSeconds int
+		ReconcileIntervalSeconds   int
+		CPUSuppressIntervalSeconds int
+		CPUEvictIntervalSeconds    int
+		MemoryEvictIntervalSeconds int
+		MemoryEvictCoolTimeSeconds int
+		CPUEvictCoolTimeSeconds    int
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -55,8 +67,12 @@ func Test_InitFlags(t *testing.T) {
 		{
 			name: "not default",
 			fields: fields{
-				CollectResUsedIntervalSeconds:     3,
-				CollectNodeCPUInfoIntervalSeconds: 90,
+				ReconcileIntervalSeconds:   2,
+				CPUSuppressIntervalSeconds: 2,
+				CPUEvictIntervalSeconds:    2,
+				MemoryEvictIntervalSeconds: 2,
+				MemoryEvictCoolTimeSeconds: 8,
+				CPUEvictCoolTimeSeconds:    40,
 			},
 			args: args{fs: fs},
 		},
@@ -64,8 +80,12 @@ func Test_InitFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			raw := &Config{
-				CollectResUsedIntervalSeconds:     tt.fields.CollectResUsedIntervalSeconds,
-				CollectNodeCPUInfoIntervalSeconds: tt.fields.CollectNodeCPUInfoIntervalSeconds,
+				ReconcileIntervalSeconds:   tt.fields.ReconcileIntervalSeconds,
+				CPUSuppressIntervalSeconds: tt.fields.CPUSuppressIntervalSeconds,
+				CPUEvictIntervalSeconds:    tt.fields.CPUEvictIntervalSeconds,
+				MemoryEvictIntervalSeconds: tt.fields.MemoryEvictIntervalSeconds,
+				MemoryEvictCoolTimeSeconds: tt.fields.MemoryEvictCoolTimeSeconds,
+				CPUEvictCoolTimeSeconds:    tt.fields.CPUEvictCoolTimeSeconds,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

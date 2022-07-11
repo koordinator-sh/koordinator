@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metricsadvisor
+package metriccache
 
 import (
 	"flag"
@@ -25,8 +25,8 @@ import (
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		CollectResUsedIntervalSeconds:     1,
-		CollectNodeCPUInfoIntervalSeconds: 60,
+		MetricGCIntervalSeconds: 300,
+		MetricExpireSeconds:     1800,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -35,14 +35,14 @@ func Test_NewDefaultConfig(t *testing.T) {
 func Test_InitFlags(t *testing.T) {
 	cmdArgs := []string{
 		"",
-		"--collect-res-used-interval-seconds=3",
-		"--collect-node-cpu-info-interval-seconds=90",
+		"--metric-gc-interval-seconds=100",
+		"--metric-expire-seconds=600",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
 	type fields struct {
-		CollectResUsedIntervalSeconds     int
-		CollectNodeCPUInfoIntervalSeconds int
+		MetricGCIntervalSeconds int
+		MetricExpireSeconds     int
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -55,8 +55,8 @@ func Test_InitFlags(t *testing.T) {
 		{
 			name: "not default",
 			fields: fields{
-				CollectResUsedIntervalSeconds:     3,
-				CollectNodeCPUInfoIntervalSeconds: 90,
+				MetricGCIntervalSeconds: 100,
+				MetricExpireSeconds:     600,
 			},
 			args: args{fs: fs},
 		},
@@ -64,8 +64,8 @@ func Test_InitFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			raw := &Config{
-				CollectResUsedIntervalSeconds:     tt.fields.CollectResUsedIntervalSeconds,
-				CollectNodeCPUInfoIntervalSeconds: tt.fields.CollectNodeCPUInfoIntervalSeconds,
+				MetricGCIntervalSeconds: tt.fields.MetricGCIntervalSeconds,
+				MetricExpireSeconds:     tt.fields.MetricExpireSeconds,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)
