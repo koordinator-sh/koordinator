@@ -91,7 +91,12 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
 	case *runtimeapi.StartContainerRequest:
 		return c.loadContainerInfoFromStore(request.GetContainerId(), "StartContainer")
 	case *runtimeapi.UpdateContainerResourcesRequest:
-		return c.loadContainerInfoFromStore(request.GetContainerId(), "UpdateContainerResource")
+		err := c.loadContainerInfoFromStore(request.GetContainerId(), "UpdateContainerResource")
+		if err != nil {
+			return err
+		}
+		c.ContainerResources = updateResourceByUpdateContainerResourceRequest(c.ContainerResources, transferToKoordResources(request.Linux))
+		return nil
 	case *runtimeapi.StopContainerRequest:
 		return c.loadContainerInfoFromStore(request.GetContainerId(), "StopContainer")
 	}

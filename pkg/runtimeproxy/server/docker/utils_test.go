@@ -316,3 +316,89 @@ func Test_generateExpectedCgroupParent(t *testing.T) {
 		assert.Equal(t, tt.expectedCgroupParent, currentCgroupParent)
 	}
 }
+
+func TestMergeResourceByUpdateConfig(t *testing.T) {
+	type args struct {
+		resources       *v1alpha1.LinuxContainerResources
+		containerConfig *container.UpdateConfig
+	}
+	tests := []struct {
+		name string
+		args args
+		want *v1alpha1.LinuxContainerResources
+	}{
+		{
+			name: "nil config",
+			args: args{
+				resources:       nil,
+				containerConfig: nil,
+			},
+			want: nil,
+		},
+		{
+			name: "normal case",
+			args: args{
+				containerConfig: &container.UpdateConfig{
+					Resources: container.Resources{
+						CPUShares:  100,
+						CPUPeriod:  200,
+						CPUQuota:   300,
+						CpusetCpus: "0-64",
+						CpusetMems: "0-2",
+						Memory:     400,
+						MemorySwap: 500,
+					},
+				},
+				resources: &v1alpha1.LinuxContainerResources{
+					CpuPeriod:              20,
+					CpuQuota:               30,
+					CpuShares:              10,
+					MemoryLimitInBytes:     40,
+					OomScoreAdj:            -998,
+					CpusetCpus:             "",
+					CpusetMems:             "",
+					MemorySwapLimitInBytes: 50,
+				},
+			},
+			want: &v1alpha1.LinuxContainerResources{
+				CpuPeriod:              200,
+				CpuQuota:               300,
+				CpuShares:              100,
+				MemoryLimitInBytes:     400,
+				OomScoreAdj:            -998,
+				CpusetCpus:             "0-64",
+				CpusetMems:             "0-2",
+				MemorySwapLimitInBytes: 500,
+			},
+		},
+		{
+			name: "UpdateConfig only has non-trivial cpuset field",
+			args: args{
+				resources: &v1alpha1.LinuxContainerResources{
+					CpuPeriod:              10000,
+					CpuQuota:               10000,
+					CpuShares:              1000,
+					OomScoreAdj:            -998,
+					CpusetCpus:             "0-63",
+					MemorySwapLimitInBytes: 1000,
+				},
+				containerConfig: &container.UpdateConfig{
+					Resources: container.Resources{
+						CpusetCpus: "0-31",
+					},
+				},
+			},
+			want: &v1alpha1.LinuxContainerResources{
+				CpuPeriod:              10000,
+				CpuQuota:               10000,
+				CpuShares:              1000,
+				OomScoreAdj:            -998,
+				CpusetCpus:             "0-31",
+				MemorySwapLimitInBytes: 1000,
+			},
+		},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, MergeResourceByUpdateConfig(tt.args.resources, tt.args.containerConfig))
+	}
+}
