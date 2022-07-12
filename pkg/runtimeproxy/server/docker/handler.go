@@ -18,278 +18,46 @@ package docker
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"io/ioutil"
+	"fmt"
 	"net/http"
-	"strings"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/runconfig"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
-	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor"
-	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/types"
-	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
 )
 
-func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, wr http.ResponseWriter, req *http.Request) {
-	// get create container config
-	dec := runconfig.ContainerDecoder{}
-	ContainerConfig, hostConfig, networkingConfig, err := dec.DecodeConfig(req.Body)
-	if err != nil {
-		klog.Errorf("Failed to decode docker create config, err: %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
+func (d *RuntimeManagerDockerServer) generateErrorInfo(wr http.ResponseWriter, format string, args ...interface{}) {
+	err := fmt.Errorf(format, args...)
+	klog.Errorf("%v", err)
+	http.Error(wr, err.Error(), http.StatusInternalServerError)
+}
+
+func (d *RuntimeManagerDockerServer) DockerRequestHandler(ctx context.Context, wr http.ResponseWriter, req *http.Request) {
+	resExecutor := &PodResourceExecutorDocker{
+		cgroupDriver: d.cgroupDriver,
+	}
+	if err := resExecutor.ParseRequest(req); err != nil {
+		d.generateErrorInfo(wr, err.Error())
+		return
+	}
+	defer resExecutor.DeleteCheckpointIfNeed(req)
+
+	if resp, err := d.dispatcher.Dispatch(ctx, resExecutor.RuntimeRequestPath, config.PreHook, resExecutor.GenerateHookRequest()); err != nil {
+		d.generateErrorInfo(wr, "failed to call pre start container hook server %v", err)
+		return
+	} else if err = resExecutor.ReConstructRequestByHookResponse(resp, req); err != nil {
+		d.generateErrorInfo(wr, "failed to reconstruct request by hook server response %v", err)
 		return
 	}
 
-	// pre check
-	runtimeResourceType := GetRuntimeResourceType(ContainerConfig.Labels)
-	containerName := req.URL.Query().Get("name")
-	tokens := strings.Split(containerName, "_")
-	if len(tokens) != 6 {
-		klog.Errorf("Failed to split k8s container name, containerName: %s", containerName)
-		http.Error(wr, "Failed to split k8s container name", http.StatusInternalServerError)
-		return
-	}
-	labels, annos := splitLabelsAndAnnotations(ContainerConfig.Labels)
-	var podInfo *store.PodSandboxInfo
-	var containerInfo *store.ContainerInfo
-	var runtimeHookPath config.RuntimeRequestPath
-	var hookReq interface{}
-	if runtimeResourceType == resource_executor.RuntimeContainerResource {
-		podID := ContainerConfig.Labels[types.SandboxIDLabelKey]
-		podInfo = store.GetPodSandboxInfo(podID)
-		if podInfo == nil {
-			// refuse the req
-			http.Error(wr, "Failed to get pod info", http.StatusInternalServerError)
-			return
-		}
-		containerInfo = &store.ContainerInfo{
-			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
-				PodMeta:      podInfo.PodMeta,
-				PodResources: podInfo.Resources,
-				ContainerMata: &v1alpha1.ContainerMetadata{
-					Name: tokens[1],
-				},
-				ContainerAnnotations: annos,
-				ContainerResources:   HostConfigToResource(hostConfig),
-				PodAnnotations:       podInfo.Annotations,
-				PodLabels:            podInfo.Labels,
-				PodCgroupParent:      podInfo.CgroupParent,
-			},
-		}
-		runtimeHookPath = config.CreateContainer
-		hookReq = containerInfo.GetContainerResourceHookRequest()
-	} else {
-		runtimeHookPath = config.RunPodSandbox
-		podInfo = &store.PodSandboxInfo{
-			PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
-				PodMeta: &v1alpha1.PodSandboxMetadata{
-					Name:      tokens[2],
-					Namespace: tokens[3],
-					Uid:       tokens[4],
-				},
-				Labels:         labels,
-				Annotations:    annos,
-				CgroupParent:   ToCriCgroupPath(d.cgroupDriver, hostConfig.CgroupParent),
-				Resources:      HostConfigToResource(hostConfig),
-				RuntimeHandler: "docker",
-			},
-		}
-		hookReq = podInfo.GetPodSandboxHookRequest()
-	}
-
-	hookResp, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq)
-	if err != nil {
-		klog.Errorf("Failed to call hook server %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	cfgBody := types.ConfigWrapper{
-		Config:           ContainerConfig,
-		HostConfig:       hostConfig,
-		NetworkingConfig: networkingConfig,
-	}
-
-	if runtimeResourceType == resource_executor.RuntimePodResource && hookResp != nil {
-		resp := hookResp.(*v1alpha1.PodSandboxHookResponse)
-		if resp.Resources != nil {
-			cfgBody.HostConfig = UpdateHostConfigByResource(cfgBody.HostConfig, resp.Resources)
-			podInfo.Resources = resp.Resources
-		}
-		cfgBody.HostConfig.CgroupParent = generateExpectedCgroupParent(d.cgroupDriver, resp.CgroupParent)
-		podInfo.CgroupParent = resp.CgroupParent
-	} else if hookResp != nil {
-		resp := hookResp.(*v1alpha1.ContainerResourceHookResponse)
-		if resp.ContainerResources != nil {
-			cfgBody.HostConfig = UpdateHostConfigByResource(cfgBody.HostConfig, resp.ContainerResources)
-			containerInfo.ContainerResources = resp.ContainerResources
-		}
-		cfgBody.HostConfig.CgroupParent = generateExpectedCgroupParent(d.cgroupDriver, resp.PodCgroupParent)
-		containerInfo.PodCgroupParent = resp.PodCgroupParent
-	}
-	// send req to docker
-	nBody, err := encodeBody(cfgBody)
-	if err != nil {
-		klog.Errorf("Failed to parse req to local store, err: %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	req.Body = ioutil.NopCloser(nBody)
-	nBody, _ = encodeBody(cfgBody)
-	newLength, _ := calculateContentLength(nBody)
-	req.ContentLength = newLength
 	resp := d.Direct(wr, req)
-
-	createResp := &container.ContainerCreateCreatedBody{}
-	err = json.Unmarshal([]byte(resp), createResp)
-	if err != nil {
-		klog.Errorf("Failed to Unmarshal create resp,  resp: %s, err: %v", resp, err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
+	if err := resExecutor.ResourceCheckPoint(resp); err != nil {
+		klog.Infof("fail to update: %v", err)
 		return
 	}
 
-	if runtimeResourceType == resource_executor.RuntimePodResource {
-		store.WritePodSandboxInfo(createResp.ID, podInfo)
-	} else {
-		containerInfo.ContainerMata.Id = createResp.ID
-		store.WriteContainerInfo(createResp.ID, containerInfo)
-	}
-}
-
-func (d *RuntimeManagerDockerServer) HandleStartContainer(ctx context.Context, wr http.ResponseWriter, req *http.Request) {
-	// we need to get the container id, because we need it to get info from checkpoint
-	containerID, err := getContainerID(req.URL.Path)
-	if err != nil {
-		klog.Errorf("Failed to get container id, err: %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
+	if _, err := d.dispatcher.Dispatch(ctx, resExecutor.RuntimeRequestPath, config.PostHook, resExecutor.GenerateHookRequest()); err != nil {
+		d.generateErrorInfo(wr, "failed to call post start container hook server %v", err)
 		return
 	}
-	containerMeta := store.GetContainerInfo(containerID)
-	runtimeHookPath := config.NoneRuntimeHookPath
-	var hookReq interface{}
-	if containerMeta != nil {
-		runtimeHookPath = config.StartContainer
-		hookReq = containerMeta.GetContainerResourceHookRequest()
-	}
-
-	// no need to care about the resp
-	if _, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq); err != nil {
-		klog.Errorf("Failed to call pre start container hook server %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	d.Direct(wr, req)
-
-	if _, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, hookReq); err != nil {
-		klog.Errorf("Failed to call post start container hook server %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (d *RuntimeManagerDockerServer) HandleStopContainer(ctx context.Context, wr http.ResponseWriter, req *http.Request) {
-	containerID, err := getContainerID(req.URL.Path)
-	if err != nil {
-		klog.Errorf("Failed to get container id, err: %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var runtimeHookPath config.RuntimeRequestPath
-	var hookReq interface{}
-	containerMeta := store.GetContainerInfo(containerID)
-	if containerMeta != nil {
-		runtimeHookPath = config.StopContainer
-		hookReq = containerMeta.GetContainerResourceHookRequest()
-	} else {
-		// sandbox container
-		runtimeHookPath = config.StopPodSandbox
-		podInfo := store.GetPodSandboxInfo(containerID)
-		if podInfo == nil {
-			// refuse the req
-			http.Error(wr, "Failed to get pod info", http.StatusInternalServerError)
-			return
-		}
-		hookReq = podInfo.GetPodSandboxHookRequest()
-	}
-
-	d.Direct(wr, req)
-
-	if containerMeta != nil {
-		store.DeleteContainerInfo(containerID)
-	} else {
-		store.DeletePodSandboxInfo(containerID)
-	}
-
-	if _, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, hookReq); err != nil {
-		klog.Errorf("Failed to call post stop hook server %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (d *RuntimeManagerDockerServer) HandleUpdateContainer(ctx context.Context, wr http.ResponseWriter, req *http.Request) {
-	containerID, err := getContainerID(req.URL.Path)
-	if err != nil {
-		klog.Errorf("Failed to get container id, err: %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	reqBytes, err := io.ReadAll(req.Body)
-	if err != nil {
-		klog.Errorf("Failed to ready req body, err: %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	containerConfig := &container.UpdateConfig{}
-	if err := json.Unmarshal(reqBytes, containerConfig); err != nil {
-		klog.Errorf("Failed to Unmarshal req body to docker config, err: %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var hookReq interface{}
-	containerMeta := store.GetContainerInfo(containerID)
-	runtimeHookPath := config.NoneRuntimeHookPath
-	if containerMeta != nil {
-		runtimeHookPath = config.UpdateContainerResources
-		hookReq = containerMeta.GetContainerResourceHookRequest()
-	}
-
-	response, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq)
-	if err != nil {
-		klog.Errorf("Failed to call pre update hook server %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if containerMeta != nil && response != nil {
-		resp := response.(*v1alpha1.ContainerResourceHookResponse)
-		if resp.ContainerResources != nil {
-			containerMeta.ContainerResources = resp.ContainerResources
-			containerConfig = UpdateUpdateConfigByResource(containerConfig, resp.ContainerResources)
-			store.WriteContainerInfo(containerID, containerMeta)
-		}
-	}
-
-	// send req to docker
-	nBody, err := encodeBody(containerConfig)
-	if err != nil {
-		klog.Errorf("Failed to parse req to local store, err: %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	req.Body = ioutil.NopCloser(nBody)
-	nBody, _ = encodeBody(containerConfig)
-	newLength, _ := calculateContentLength(nBody)
-	req.ContentLength = newLength
-
-	d.Direct(wr, req)
 }

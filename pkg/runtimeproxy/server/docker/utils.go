@@ -23,14 +23,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"path"
 	"strings"
 
-	"k8s.io/klog/v2"
-
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/runconfig"
+	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor"
@@ -94,6 +95,17 @@ func encodeData(data interface{}) (*bytes.Buffer, error) {
 		}
 	}
 	return params, nil
+}
+
+func constructHttpBody(obj interface{}) (io.ReadCloser, int64, error) {
+	nBody, err := encodeBody(obj)
+	if err != nil {
+		return nil, -1, err
+	}
+	body := ioutil.NopCloser(nBody)
+	nBody, _ = encodeBody(obj)
+	newLength, _ := calculateContentLength(nBody)
+	return body, newLength, nil
 }
 
 func HostConfigToResource(config *container.HostConfig) *v1alpha1.LinuxContainerResources {
@@ -202,4 +214,16 @@ func generateExpectedCgroupParent(cgroupDriver, cgroupParent string) string {
 	}
 	klog.V(4).Infof("Setting cgroup parent to: %q", cgroupParent)
 	return cgroupParent
+}
+
+func generateConfigWrapperFromRequest(req *http.Request) (*types.ConfigWrapper, error) {
+	ContainerConfig, hostConfig, networkingConfig, err := runconfig.ContainerDecoder{}.DecodeConfig(req.Body)
+	if err != nil {
+		return nil, fmt.Errorf("bad %v", err)
+	}
+	return &types.ConfigWrapper{
+		Config:           ContainerConfig,
+		HostConfig:       hostConfig,
+		NetworkingConfig: networkingConfig,
+	}, nil
 }
