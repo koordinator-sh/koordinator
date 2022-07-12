@@ -74,8 +74,10 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
 		}
 		c.ContainerInfo = store.ContainerInfo{
 			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
-				PodMeta:      podCheckPoint.PodMeta,
-				PodResources: podCheckPoint.Resources,
+				PodMeta:        podCheckPoint.PodMeta,
+				PodResources:   podCheckPoint.Resources,
+				PodAnnotations: podCheckPoint.Annotations,
+				PodLabels:      podCheckPoint.Labels,
 				ContainerMata: &v1alpha1.ContainerMetadata{
 					Name:    request.GetConfig().GetMetadata().GetName(),
 					Attempt: request.GetConfig().GetMetadata().GetAttempt(),
