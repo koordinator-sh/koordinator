@@ -20,8 +20,6 @@ import (
 	"reflect"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/util/sets"
-
 	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 )
 
@@ -145,7 +143,7 @@ func TestTakeFullPCPUs(t *testing.T) {
 			allocatedCPUsDetails := tt.topology.CPUDetails.KeepOnly(tt.allocatedCPUs)
 			result, err := takeCPUs(
 				tt.topology, availableCPUs, allocatedCPUsDetails,
-				tt.numCPUsNeeded, schedulingconfig.CPUBindPolicyFullPCPUs, false, schedulingconfig.NUMAMostAllocated)
+				tt.numCPUsNeeded, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
 			if tt.wantError && err == nil {
 				t.Fatal("expect error but got nil")
 			} else if !tt.wantError && err != nil {
@@ -249,7 +247,7 @@ func TestTakeFullPCPUsWithNUMALeastAllocated(t *testing.T) {
 			allocatedCPUsDetails := tt.topology.CPUDetails.KeepOnly(tt.allocatedCPUs)
 			result, err := takeCPUs(
 				tt.topology, availableCPUs, allocatedCPUsDetails,
-				tt.numCPUsNeeded, schedulingconfig.CPUBindPolicyFullPCPUs, false, schedulingconfig.NUMALeastAllocated)
+				tt.numCPUsNeeded, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMALeastAllocated)
 			if tt.wantError && err == nil {
 				t.Fatal("expect error but got nil")
 			} else if !tt.wantError && err != nil {
@@ -259,6 +257,16 @@ func TestTakeFullPCPUsWithNUMALeastAllocated(t *testing.T) {
 				t.Fatalf("expect: %s, but got: %s", tt.wantResult.String(), result.String())
 			}
 		})
+	}
+}
+
+func TestCPUSpreadByPCPUs(t *testing.T) {
+	topology := buildCPUTopologyForTest(2, 2, 4, 2)
+	acc := newCPUAccumulator(topology, topology.CPUDetails.CPUs(), nil, 8, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	result := acc.freeCPUs(false)
+	result = acc.spreadCPUs(result)
+	if !reflect.DeepEqual([]int{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31}, result) {
+		t.Fatal("unexpect spread result")
 	}
 }
 
@@ -306,7 +314,7 @@ func TestTakeSpreadByPCPUs(t *testing.T) {
 			allocatedCPUsDetails := tt.topology.CPUDetails.KeepOnly(tt.allocatedCPUs)
 			result, err := takeCPUs(
 				tt.topology, availableCPUs, allocatedCPUsDetails,
-				tt.numCPUsNeeded, schedulingconfig.CPUBindPolicySpreadByPCPUs, false, schedulingconfig.NUMAMostAllocated)
+				tt.numCPUsNeeded, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
 			if tt.wantError && err == nil {
 				t.Fatal("expect error but got nil")
 			} else if !tt.wantError && err != nil {
@@ -316,6 +324,16 @@ func TestTakeSpreadByPCPUs(t *testing.T) {
 				t.Fatalf("expect: %s, but got: %s", tt.wantResult.String(), result.String())
 			}
 		})
+	}
+}
+
+func TestCPUSpreadByPCPUsWithNUMALeastAllocated(t *testing.T) {
+	topology := buildCPUTopologyForTest(2, 2, 4, 2)
+	acc := newCPUAccumulator(topology, topology.CPUDetails.CPUs(), nil, 8, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMALeastAllocated)
+	result := acc.freeCPUs(false)
+	result = acc.spreadCPUs(result)
+	if !reflect.DeepEqual([]int{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31}, result) {
+		t.Fatal("unexpect spread result")
 	}
 }
 
@@ -363,7 +381,7 @@ func TestTakeSpreadByPCPUsWithNUMALeastAllocated(t *testing.T) {
 			allocatedCPUsDetails := tt.topology.CPUDetails.KeepOnly(tt.allocatedCPUs)
 			result, err := takeCPUs(
 				tt.topology, availableCPUs, allocatedCPUsDetails,
-				tt.numCPUsNeeded, schedulingconfig.CPUBindPolicySpreadByPCPUs, false, schedulingconfig.NUMALeastAllocated)
+				tt.numCPUsNeeded, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMALeastAllocated)
 			if tt.wantError && err == nil {
 				t.Fatal("expect error but got nil")
 			} else if !tt.wantError && err != nil {
@@ -376,120 +394,110 @@ func TestTakeSpreadByPCPUsWithNUMALeastAllocated(t *testing.T) {
 	}
 }
 
-func TestTakeSpreadByPCPUsWithCoreLevelExclusive(t *testing.T) {
+func TestTakeCPUsWithExclusivePolicy(t *testing.T) {
 	tests := []struct {
-		name                 string
-		topology             *CPUTopology
-		allocatedCPUs        CPUSet
-		cpusInApps           CPUSet
-		cpusInServiceUnits   map[string][]int
-		currentAppName       string
-		currentServiceUnit   string
-		cpuMutexApps         sets.String
-		cpuMutexServiceUnits sets.String
-		numCPUsNeeded        int
-		wantError            bool
-		wantResult           CPUSet
+		name                     string
+		topology                 *CPUTopology
+		allocatedExclusiveCPUs   CPUSet
+		allocatedExclusivePolicy schedulingconfig.CPUExclusivePolicy
+		bindPolicy               schedulingconfig.CPUBindPolicy
+		exclusivePolicy          schedulingconfig.CPUExclusivePolicy
+		numCPUsNeeded            int
+		wantError                bool
+		wantResult               CPUSet
 	}{
 		{
-			name:               "allocate cpus on full-free socket with other CPUMutex apps",
-			topology:           buildCPUTopologyForTest(2, 1, 4, 2),
-			allocatedCPUs:      NewCPUSet(0, 2),
-			cpusInApps:         NewCPUSet(0, 2),
-			cpuMutexApps:       sets.NewString("test-app-1", "test-app-2"),
-			currentAppName:     "test-app-2",
-			currentServiceUnit: "test-app-2-host",
-			numCPUsNeeded:      4,
-			wantResult:         NewCPUSet(8, 10, 12, 14),
+			name:                   "allocate cpus on full-free socket with PCPULevel",
+			topology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			allocatedExclusiveCPUs: NewCPUSet(0, 2),
+			numCPUsNeeded:          4,
+			wantResult:             NewCPUSet(8, 10, 12, 14),
 		},
 		{
-			name:               "allocate cpus on full-free socket with same CPUMutex apps",
-			topology:           buildCPUTopologyForTest(2, 1, 4, 2),
-			allocatedCPUs:      NewCPUSet(0, 2),
-			cpusInApps:         NewCPUSet(0, 2),
-			cpuMutexApps:       sets.NewString("test-app-1"),
-			currentAppName:     "test-app-1",
-			currentServiceUnit: "test-app-1-host",
-			numCPUsNeeded:      4,
-			wantResult:         NewCPUSet(8, 10, 12, 14),
+			name:          "allocate overlapped cpus with PCPULevel",
+			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
+			numCPUsNeeded: 10,
+			wantResult:    NewCPUSet(0, 1, 2, 3, 4, 6, 8, 10, 12, 14),
 		},
 		{
-			name:               "allocate overlapped cpus with same CPUMutex apps",
-			topology:           buildCPUTopologyForTest(2, 1, 4, 2),
-			cpuMutexApps:       sets.NewString("test-app-1"),
-			currentAppName:     "test-app-1",
-			currentServiceUnit: "test-app-1-host",
-			numCPUsNeeded:      10,
-			wantResult:         NewCPUSet(0, 1, 2, 3, 4, 6, 8, 10, 12, 14),
+			name:                   "allocate cpus on large-size partially-allocated socket with PCPULevel",
+			topology:               buildCPUTopologyForTest(2, 1, 8, 2),
+			allocatedExclusiveCPUs: NewCPUSet(0, 2),
+			numCPUsNeeded:          4,
+			wantResult:             NewCPUSet(4, 6, 8, 10),
 		},
 		{
-			name:               "allocate cpus on large-size partially-allocated socket with other CPUMutex apps",
-			topology:           buildCPUTopologyForTest(2, 1, 8, 2),
-			allocatedCPUs:      NewCPUSet(0, 2),
-			cpusInApps:         NewCPUSet(0, 2),
-			cpuMutexApps:       sets.NewString("test-app-1", "test-app-2"),
-			currentAppName:     "test-app-2",
-			currentServiceUnit: "test-app-2-host",
-			numCPUsNeeded:      4,
-			wantResult:         NewCPUSet(4, 6, 8, 10),
+			name:                   "allocate cpus with none exclusive policy",
+			topology:               buildCPUTopologyForTest(2, 1, 8, 2),
+			allocatedExclusiveCPUs: NewCPUSet(0, 2),
+			exclusivePolicy:        schedulingconfig.CPUExclusivePolicyNone,
+			numCPUsNeeded:          4,
+			wantResult:             NewCPUSet(1, 3, 4, 6),
 		},
 		{
-			name:                 "allocate cpus on full-free socket with other CPUMutex serviceUnits",
-			topology:             buildCPUTopologyForTest(2, 1, 4, 2),
-			allocatedCPUs:        NewCPUSet(0, 2),
-			cpusInApps:           NewCPUSet(0, 2),
-			cpuMutexServiceUnits: sets.NewString("test-app-1-host", "test-app-2-host"),
-			currentAppName:       "test-app-2",
-			currentServiceUnit:   "test-app-2-host",
-			numCPUsNeeded:        4,
-			wantResult:           NewCPUSet(8, 10, 12, 14),
+			name:                     "allocate cpus on full-free socket with NUMANodeLevel",
+			topology:                 buildCPUTopologyForTest(2, 1, 4, 2),
+			allocatedExclusiveCPUs:   NewCPUSet(0, 2),
+			allocatedExclusivePolicy: schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
+			exclusivePolicy:          schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
+			numCPUsNeeded:            4,
+			wantResult:               NewCPUSet(8, 10, 12, 14),
 		},
 		{
-			name:                 "allocate cpus on full-free socket with same CPUMutex serviceUnits",
-			topology:             buildCPUTopologyForTest(2, 1, 4, 2),
-			allocatedCPUs:        NewCPUSet(0, 2),
-			cpusInApps:           NewCPUSet(0, 2),
-			cpuMutexServiceUnits: sets.NewString("test-app-1-host"),
-			currentAppName:       "test-app-1",
-			currentServiceUnit:   "test-app-1-host",
-			numCPUsNeeded:        4,
-			wantResult:           NewCPUSet(8, 10, 12, 14),
+			name:                     "allocate cpus on partially-allocated socket without NUMANodeLevel",
+			topology:                 buildCPUTopologyForTest(2, 1, 4, 2),
+			allocatedExclusiveCPUs:   NewCPUSet(0, 2),
+			allocatedExclusivePolicy: schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
+			exclusivePolicy:          schedulingconfig.CPUExclusivePolicyNone,
+			numCPUsNeeded:            4,
+			wantResult:               NewCPUSet(1, 3, 4, 6),
 		},
 		{
-			name:                 "allocate overlapped cpus with same CPUMutex serviceUnits",
-			topology:             buildCPUTopologyForTest(2, 1, 4, 2),
-			cpuMutexServiceUnits: sets.NewString("test-app-1-host"),
-			currentAppName:       "test-app-1",
-			currentServiceUnit:   "test-app-1-host",
-			numCPUsNeeded:        10,
-			wantResult:           NewCPUSet(0, 1, 2, 3, 4, 6, 8, 10, 12, 14),
+			name:                     "allocate cpus on full-free socket with NUMANodeLevel with PCPUs",
+			topology:                 buildCPUTopologyForTest(2, 1, 4, 2),
+			allocatedExclusiveCPUs:   NewCPUSet(0, 2),
+			allocatedExclusivePolicy: schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
+			exclusivePolicy:          schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
+			bindPolicy:               schedulingconfig.CPUBindPolicyFullPCPUs,
+			numCPUsNeeded:            4,
+			wantResult:               NewCPUSet(8, 9, 10, 11),
 		},
 		{
-			name:                 "allocate cpus on large-size partially-allocated socket with other CPUMutex serviceUnits",
-			topology:             buildCPUTopologyForTest(2, 1, 8, 2),
-			allocatedCPUs:        NewCPUSet(0, 2),
-			cpusInApps:           NewCPUSet(0, 2),
-			cpuMutexServiceUnits: sets.NewString("test-app-1-host", "test-app-2-host"),
-			currentAppName:       "test-app-2",
-			currentServiceUnit:   "test-app-2-host",
-			numCPUsNeeded:        4,
-			wantResult:           NewCPUSet(4, 6, 8, 10),
+			name:                     "allocate cpus on partially-allocated socket without NUMANodeLevel with PCPUs",
+			topology:                 buildCPUTopologyForTest(2, 1, 4, 2),
+			allocatedExclusiveCPUs:   NewCPUSet(0, 2),
+			allocatedExclusivePolicy: schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
+			exclusivePolicy:          schedulingconfig.CPUExclusivePolicyNone,
+			bindPolicy:               schedulingconfig.CPUBindPolicyFullPCPUs,
+			numCPUsNeeded:            4,
+			wantResult:               NewCPUSet(4, 5, 6, 7),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			availableCPUs := tt.topology.CPUDetails.CPUs().Difference(tt.allocatedCPUs)
-			allocatedCPUsDetails := tt.topology.CPUDetails.KeepOnly(tt.allocatedCPUs)
-			for _, cpuID := range tt.cpusInApps.ToSliceNoSort() {
+			availableCPUs := tt.topology.CPUDetails.CPUs().Difference(tt.allocatedExclusiveCPUs)
+			allocatedCPUsDetails := tt.topology.CPUDetails.KeepOnly(tt.allocatedExclusiveCPUs)
+			for _, cpuID := range tt.allocatedExclusiveCPUs.ToSliceNoSort() {
 				cpuInfo := allocatedCPUsDetails[cpuID]
-				cpuInfo.Exclusive = true
+				if tt.allocatedExclusivePolicy != "" {
+					cpuInfo.ExclusivePolicy = tt.allocatedExclusivePolicy
+				} else {
+					cpuInfo.ExclusivePolicy = schedulingconfig.CPUExclusivePolicyPCPULevel
+				}
 				allocatedCPUsDetails[cpuID] = cpuInfo
+			}
+
+			if tt.exclusivePolicy == "" {
+				tt.exclusivePolicy = schedulingconfig.CPUExclusivePolicyPCPULevel
+			}
+			if tt.bindPolicy == "" {
+				tt.bindPolicy = schedulingconfig.CPUBindPolicySpreadByPCPUs
 			}
 
 			result, err := takeCPUs(
 				tt.topology, availableCPUs, allocatedCPUsDetails,
-				tt.numCPUsNeeded, schedulingconfig.CPUBindPolicySpreadByPCPUs, true, schedulingconfig.NUMAMostAllocated)
+				tt.numCPUsNeeded, tt.bindPolicy, tt.exclusivePolicy, schedulingconfig.NUMAMostAllocated)
 			if tt.wantError && err == nil {
 				t.Fatal("expect error but got nil")
 			} else if !tt.wantError && err != nil {
@@ -499,26 +507,6 @@ func TestTakeSpreadByPCPUsWithCoreLevelExclusive(t *testing.T) {
 				t.Fatalf("expect: %s, but got: %s", tt.wantResult.String(), result.String())
 			}
 		})
-	}
-}
-
-func TestCPUSpreadByPCPUs(t *testing.T) {
-	topology := buildCPUTopologyForTest(2, 2, 4, 2)
-	acc := newCPUAccumulator(topology, topology.CPUDetails.CPUs(), nil, 8, false, schedulingconfig.NUMAMostAllocated)
-	result := acc.freeCPUs(false)
-	result = acc.spreadCPUs(result)
-	if !reflect.DeepEqual([]int{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31}, result) {
-		t.Fatal("unexpect spread result")
-	}
-}
-
-func TestCPUSpreadByPCPUsWithNUMALeastAllocated(t *testing.T) {
-	topology := buildCPUTopologyForTest(2, 2, 4, 2)
-	acc := newCPUAccumulator(topology, topology.CPUDetails.CPUs(), nil, 8, false, schedulingconfig.NUMALeastAllocated)
-	result := acc.freeCPUs(false)
-	result = acc.spreadCPUs(result)
-	if !reflect.DeepEqual([]int{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31}, result) {
-		t.Fatal("unexpect spread result")
 	}
 }
 
@@ -564,7 +552,7 @@ func BenchmarkTakeCPUsWithSameCoreFirst(b *testing.B) {
 		b.Run(tt.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				_, err := takeCPUs(
-					topology, cpus, nil, tt.numCPUsNeeded, schedulingconfig.CPUBindPolicyFullPCPUs, false, schedulingconfig.NUMAMostAllocated)
+					topology, cpus, nil, tt.numCPUsNeeded, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -616,7 +604,7 @@ func BenchmarkTakeCPUsWithSpread(b *testing.B) {
 		b.Run(tt.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				_, err := takeCPUs(
-					topology, cpus, nil, tt.numCPUsNeeded, schedulingconfig.CPUBindPolicySpreadByPCPUs, false, schedulingconfig.NUMAMostAllocated)
+					topology, cpus, nil, tt.numCPUsNeeded, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
 				if err != nil {
 					b.Fatal(err)
 				}
