@@ -16,6 +16,10 @@ limitations under the License.
 
 package nodenumaresource
 
+import (
+	"github.com/koordinator-sh/koordinator/apis/extension"
+)
+
 // CPUTopology contains details of node cpu
 type CPUTopology struct {
 	NumCPUs    int
@@ -64,12 +68,12 @@ func NewCPUDetails() CPUDetails {
 
 // CPUInfo contains the NUMA, socket, and core IDs associated with a CPU.
 type CPUInfo struct {
-	CPUID     int
-	CoreID    int
-	NodeID    int
-	SocketID  int
-	RefCount  int
-	Exclusive bool
+	CPUID           int
+	CoreID          int
+	NodeID          int
+	SocketID        int
+	RefCount        int
+	ExclusivePolicy extension.CPUExclusivePolicy
 }
 
 // Clone clones the CPUDetails

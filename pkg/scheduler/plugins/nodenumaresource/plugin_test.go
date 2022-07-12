@@ -39,8 +39,8 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/apis/scheduling/config"
-	"github.com/koordinator-sh/koordinator/apis/scheduling/config/v1beta2"
+	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
+	schedulingconfigv1beta2 "github.com/koordinator-sh/koordinator/apis/scheduling/config/v1beta2"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
@@ -109,14 +109,14 @@ type pluginTestSuit struct {
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	nrtSharedInformerFactory         nrtinformers.SharedInformerFactory
 	proxyNew                         runtime.PluginFactory
-	nodeNUMAResourceArgs             *config.NodeNUMAResourceArgs
+	nodeNUMAResourceArgs             *schedulingconfig.NodeNUMAResourceArgs
 }
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
-	var v1beta2args v1beta2.NodeNUMAResourceArgs
-	v1beta2.SetDefaults_NodeNUMAResourceArgs(&v1beta2args)
-	var nodeNUMAResourceArgs config.NodeNUMAResourceArgs
-	err := v1beta2.Convert_v1beta2_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(&v1beta2args, &nodeNUMAResourceArgs, nil)
+	var v1beta2args schedulingconfigv1beta2.NodeNUMAResourceArgs
+	schedulingconfigv1beta2.SetDefaults_NodeNUMAResourceArgs(&v1beta2args)
+	var nodeNUMAResourceArgs schedulingconfig.NodeNUMAResourceArgs
+	err := schedulingconfigv1beta2.Convert_v1beta2_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(&v1beta2args, &nodeNUMAResourceArgs, nil)
 	assert.NoError(t, err)
 
 	nodeNUMAResourcePluginConfig := scheduledconfig.PluginConfig{
@@ -224,7 +224,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			wantState: &preFilterState{
 				skip:                   false,
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs},
-				preferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
 			},
 		},
@@ -256,7 +256,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			wantState: &preFilterState{
 				skip:                   false,
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs},
-				preferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
 			},
 		},
@@ -554,7 +554,7 @@ func TestPlugin_Score(t *testing.T) {
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
-				preferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
 			},
 			numaInfo:  newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2)),
@@ -569,7 +569,7 @@ func TestPlugin_Score(t *testing.T) {
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
-				preferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          8,
 			},
 			numaInfo:  newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2)),
@@ -584,7 +584,7 @@ func TestPlugin_Score(t *testing.T) {
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
 				},
-				preferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
 			numaInfo:  newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2)),
@@ -599,7 +599,7 @@ func TestPlugin_Score(t *testing.T) {
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
-				preferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          16,
 			},
 			numaInfo:  newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2)),
@@ -614,7 +614,7 @@ func TestPlugin_Score(t *testing.T) {
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
-				preferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          16,
 			},
 			numaInfo:  newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 2, 4, 2)),
@@ -629,7 +629,7 @@ func TestPlugin_Score(t *testing.T) {
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
 				},
-				preferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
 			numaInfo:  newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2)),
@@ -734,7 +734,7 @@ func TestPlugin_Reserve(t *testing.T) {
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
-				preferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
 			numaInfo:   newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2)),
 			pod:        &corev1.Pod{},
@@ -819,7 +819,7 @@ func TestPlugin_Unreserve(t *testing.T) {
 		},
 	}
 
-	numaInfo.allocateCPUs(pod.UID, state.allocatedCPUs)
+	numaInfo.allocateCPUs(pod.UID, state.allocatedCPUs, schedulingconfig.CPUExclusivePolicyNone)
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
 	plg := &Plugin{
@@ -904,7 +904,7 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 		resourceSpec: &extension.ResourceSpec{
 			PreferredCPUBindPolicy: extension.CPUBindPolicyDefault,
 		},
-		preferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+		preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 		allocatedCPUs:          NewCPUSet(0, 1, 2, 3),
 	}
 	cycleState := framework.NewCycleState()

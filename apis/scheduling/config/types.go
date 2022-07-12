@@ -92,6 +92,17 @@ const (
 	CPUBindPolicyConstrainedBurst CPUBindPolicy = "ConstrainedBurst"
 )
 
+type CPUExclusivePolicy string
+
+const (
+	// CPUExclusivePolicyNone does not perform any exclusive policy
+	CPUExclusivePolicyNone CPUExclusivePolicy = "None"
+	// CPUExclusivePolicyPCPULevel represents mutual exclusion in the physical core dimension
+	CPUExclusivePolicyPCPULevel CPUExclusivePolicy = "PCPULevel"
+	// CPUExclusivePolicyNUMANodeLevel indicates mutual exclusion in the NUMA topology dimension
+	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = "NUMANodeLevel"
+)
+
 // NUMAAllocateStrategy indicates how to choose satisfied NUMA Nodes
 type NUMAAllocateStrategy string
 

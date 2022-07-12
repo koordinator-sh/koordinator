@@ -71,7 +71,7 @@ type ScoringStrategy struct {
 
 // NodeNUMAResourceArgs holds arguments used to configure the NodeNUMAResource plugin.
 type NodeNUMAResourceArgs struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta
 
 	DefaultCPUBindPolicy CPUBindPolicy        `json:"defaultCPUBindPolicy,omitempty"`
 	NUMAAllocateStrategy NUMAAllocateStrategy `json:"numaAllocateStrategy,omitempty"`
@@ -90,6 +90,17 @@ const (
 	CPUBindPolicySpreadByPCPUs CPUBindPolicy = "SpreadByPCPUs"
 	// CPUBindPolicyConstrainedBurst constrains the CPU Shared Pool range of the Burstable Pod
 	CPUBindPolicyConstrainedBurst CPUBindPolicy = "ConstrainedBurst"
+)
+
+type CPUExclusivePolicy string
+
+const (
+	// CPUExclusivePolicyNone does not perform any exclusive policy
+	CPUExclusivePolicyNone CPUExclusivePolicy = "None"
+	// CPUExclusivePolicyPCPULevel represents mutual exclusion in the physical core dimension
+	CPUExclusivePolicyPCPULevel CPUExclusivePolicy = "PCPULevel"
+	// CPUExclusivePolicyNUMANodeLevel indicates mutual exclusion in the NUMA topology dimension
+	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = "NUMANodeLevel"
 )
 
 // NUMAAllocateStrategy indicates how to choose satisfied NUMA Nodes
