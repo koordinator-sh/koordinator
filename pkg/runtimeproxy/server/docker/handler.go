@@ -263,6 +263,13 @@ func (d *RuntimeManagerDockerServer) HandleUpdateContainer(ctx context.Context, 
 		hookReq = containerMeta.GetContainerResourceHookRequest()
 	}
 
+	// update resources in cache with UpdateConfig
+	if containerConfig != nil && hookReq != nil {
+		if updateReq, ok := hookReq.(*v1alpha1.ContainerResourceHookRequest); ok {
+			updateReq.ContainerResources = MergeResourceByUpdateConfig(updateReq.ContainerResources, containerConfig)
+		}
+	}
+
 	response, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq)
 	if err != nil {
 		klog.Errorf("Failed to call pre update hook server %v", err)

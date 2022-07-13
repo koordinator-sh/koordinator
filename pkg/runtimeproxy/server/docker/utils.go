@@ -188,6 +188,34 @@ func UpdateUpdateConfigByResource(containerConfig *container.UpdateConfig, resou
 	return containerConfig
 }
 
+func MergeResourceByUpdateConfig(resources *v1alpha1.LinuxContainerResources, containerConfig *container.UpdateConfig) *v1alpha1.LinuxContainerResources {
+	if containerConfig == nil || resources == nil {
+		return resources
+	}
+	if containerConfig.CPUPeriod > 0 {
+		resources.CpuPeriod = containerConfig.CPUPeriod
+	}
+	if containerConfig.CPUQuota > 0 {
+		resources.CpuQuota = containerConfig.CPUQuota
+	}
+	if containerConfig.CPUShares > 0 {
+		resources.CpuShares = containerConfig.CPUShares
+	}
+	if containerConfig.Memory > 0 {
+		resources.MemoryLimitInBytes = containerConfig.Memory
+	}
+	if containerConfig.CpusetCpus != "" {
+		resources.CpusetCpus = containerConfig.CpusetCpus
+	}
+	if containerConfig.CpusetMems != "" {
+		resources.CpusetMems = containerConfig.CpusetMems
+	}
+	if containerConfig.MemorySwap > 0 {
+		resources.MemorySwapLimitInBytes = containerConfig.MemorySwap
+	}
+	return resources
+}
+
 // generateExpectedCgroupParent is adapted from Dockershim
 func generateExpectedCgroupParent(cgroupDriver, cgroupParent string) string {
 	if cgroupParent != "" {
