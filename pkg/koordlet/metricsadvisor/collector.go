@@ -17,7 +17,7 @@ limitations under the License.
 package metricsadvisor
 
 import (
-	"fmt"
+	"bytes"
 	"os"
 	"os/exec"
 	"strconv"
@@ -46,8 +46,7 @@ const (
 
 var (
 	// jiffies is the duration unit of CPU stats
-	jiffies = float64(10 * time.Millisecond)
-
+	jiffies            = float64(10 * time.Millisecond)
 	localCPUInfoGetter = util.GetLocalCPUInfo
 )
 
@@ -148,26 +147,24 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
+// initJiffies use command "getconf CLK_TCK" to fetch the clock tick on current host,
+// if the command doesn't exist uses the default value 10ms for jiffies
 func initJiffies() error {
-	// retrieve jiffies
-	clkTckStdout, err := exec.Command("getconf", "CLK_TCK").Output()
+	getconf, err := exec.LookPath("getconf")
+	if err != nil {
+		return nil
+	}
+	cmd := exec.Command(getconf, "CLK_TCK")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	ticks, err := strconv.ParseFloat(strings.TrimSpace(out.String()), 64)
 	if err != nil {
 		return err
 	}
-	clkTckStdoutStrs := strings.Split(string(clkTckStdout), "\n")
-	if len(clkTckStdoutStrs) <= 0 {
-		return fmt.Errorf("getconf CLK_TCK returns empty")
-	}
-	clkTckStdoutStr := strings.Fields(clkTckStdoutStrs[0])
-	if len(clkTckStdoutStr) <= 0 {
-		return fmt.Errorf("getconf CLK_TCK returns empty")
-	}
-	clkTck, err := strconv.Atoi(clkTckStdoutStr[0])
-	if err != nil {
-		return err
-	}
-	// clkTck (Hz)
-	jiffies = float64(time.Second / time.Duration(clkTck))
+	jiffies = float64(time.Second / time.Duration(ticks))
 	return nil
 }
 
