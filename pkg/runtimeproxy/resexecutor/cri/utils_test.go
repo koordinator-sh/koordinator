@@ -48,26 +48,41 @@ func Test_updateResource(t *testing.T) {
 			name: "normal case",
 			args: args{
 				a: &v1alpha1.LinuxContainerResources{
-					CpuPeriod:   1000,
-					CpuShares:   500,
-					OomScoreAdj: 10,
+					CpuPeriod:              1000,
+					CpuQuota:               2000,
+					CpuShares:              500,
+					OomScoreAdj:            10,
+					MemorySwapLimitInBytes: 100,
+					MemoryLimitInBytes:     300,
+					CpusetCpus:             "0-64",
+					CpusetMems:             "0-2",
 					Unified: map[string]string{
 						"resourceA": "resource A",
 					},
 				},
 				b: &v1alpha1.LinuxContainerResources{
-					CpuPeriod:   2000,
-					CpuShares:   1000,
-					OomScoreAdj: 20,
+					CpuPeriod:              2000,
+					CpuQuota:               4000,
+					CpuShares:              1000,
+					OomScoreAdj:            20,
+					MemorySwapLimitInBytes: 200,
+					MemoryLimitInBytes:     600,
+					CpusetCpus:             "0-31",
+					CpusetMems:             "0-4",
 					Unified: map[string]string{
 						"resourceB": "resource B",
 					},
 				},
 			},
 			want: &v1alpha1.LinuxContainerResources{
-				CpuPeriod:   2000,
-				CpuShares:   1000,
-				OomScoreAdj: 20,
+				CpuPeriod:              2000,
+				CpuQuota:               4000,
+				CpuShares:              1000,
+				OomScoreAdj:            20,
+				MemorySwapLimitInBytes: 200,
+				MemoryLimitInBytes:     600,
+				CpusetCpus:             "0-31",
+				CpusetMems:             "0-4",
 				Unified: map[string]string{
 					"resourceA": "resource A",
 					"resourceB": "resource B",
@@ -152,5 +167,76 @@ func Test_transferToCRIResources(t *testing.T) {
 	for _, tt := range tests {
 		gotResources := transferToCRIResources(tt.args.r)
 		assert.Equal(t, tt.want, gotResources)
+	}
+}
+
+func Test_updateResourceByUpdateContainerResourceRequest(t *testing.T) {
+	type args struct {
+		a *v1alpha1.LinuxContainerResources
+		b *v1alpha1.LinuxContainerResources
+	}
+	tests := []struct {
+		name string
+		args args
+		want *v1alpha1.LinuxContainerResources
+	}{
+		{
+			name: "a and b are both nil",
+			args: args{
+				a: nil,
+				b: nil,
+			},
+			want: nil,
+		},
+		{
+			name: "normal case",
+			args: args{
+				a: &v1alpha1.LinuxContainerResources{
+					CpuPeriod:              1000,
+					CpuQuota:               2000,
+					CpuShares:              500,
+					OomScoreAdj:            10,
+					MemorySwapLimitInBytes: 100,
+					MemoryLimitInBytes:     300,
+					CpusetCpus:             "0-64",
+					CpusetMems:             "0-2",
+					Unified: map[string]string{
+						"resourceA": "resource A",
+					},
+				},
+				b: &v1alpha1.LinuxContainerResources{
+					CpuPeriod:              2000,
+					CpuQuota:               4000,
+					CpuShares:              1000,
+					OomScoreAdj:            20,
+					MemorySwapLimitInBytes: 200,
+					MemoryLimitInBytes:     600,
+					CpusetCpus:             "0-31",
+					CpusetMems:             "0-4",
+					Unified: map[string]string{
+						"resourceB": "resource B",
+					},
+				},
+			},
+			want: &v1alpha1.LinuxContainerResources{
+				CpuPeriod:              2000,
+				CpuQuota:               4000,
+				CpuShares:              1000,
+				OomScoreAdj:            10,
+				MemorySwapLimitInBytes: 200,
+				MemoryLimitInBytes:     600,
+				CpusetCpus:             "0-31",
+				CpusetMems:             "0-4",
+				Unified: map[string]string{
+					"resourceA": "resource A",
+					"resourceB": "resource B",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, updateResourceByUpdateContainerResourceRequest(tt.args.a, tt.args.b), "updateResourceByUpdateContainerResourceRequest(%v, %v)", tt.args.a, tt.args.b)
+		})
 	}
 }
