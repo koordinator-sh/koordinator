@@ -648,7 +648,6 @@ type CPUOrchestrationPluginArgs struct {
 
   DefaultCPUBindPolicy        CPUBindPolicy               `json:"defaultCPUBindPolicy,omitempty"`
   NUMATopologyAlignmentPolicy NUMATopologyAlignmentPolicy `json:"numaTopologyAlignmentPolicy,omitempty"`
-  NUMAAllocateStrategy        NUMAAllocateStrategy        `json:"numaAllocateStrategy,omitempty"`
 
   ScoringStrategy ScoringStrategy `json:"scoringStrategy,omitempty"`
 }
@@ -678,7 +677,6 @@ type ScoringStrategy struct {
 
 - `DefaultCPUBindPolicy` represents the default bind policy. If not set, use `FullPCPUs` as default value.
 - `NUMATopologyAlignmentPolicy` represents the default NUMA topology alignment policy, If not set, use `BestEffort` as default value.
-- `NUMAAllocateStrategy` represents the default NUMA allocate strategy. If not set, use `MostAllocated` as default value.
 - `ScoringStrategy` represents the node resource scoring strategy. If not set, use `MostAllocated` as default value.
 
 ## Alternatives
