@@ -24,6 +24,7 @@ import (
 	"k8s.io/component-base/logs"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/compatibledefaultpreemption"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/nodenumaresource"
@@ -35,10 +36,15 @@ import (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
+	// Register custom scheduling hooks for pre-process scheduling context before call plugins.
+	// e.g. change the nodeInfo and make a copy before calling filter plugins
+	var schedulingHooks []frameworkext.SchedulingPhaseHook
+
 	// Register custom plugins to the scheduler framework.
 	// Later they can consist of scheduler profile(s) and hence
 	// used by various kinds of workloads.
 	command := app.NewSchedulerCommand(
+		schedulingHooks,
 		app.WithPlugin(loadaware.Name, loadaware.New),
 		app.WithPlugin(nodenumaresource.Name, nodenumaresource.New),
 		app.WithPlugin(compatibledefaultpreemption.Name, compatibledefaultpreemption.New),

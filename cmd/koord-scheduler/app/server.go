@@ -65,7 +65,7 @@ import (
 type Option func(frameworkext.ExtendedHandle, runtime.Registry) error
 
 // NewSchedulerCommand creates a *cobra.Command object with default parameters and registryOptions
-func NewSchedulerCommand(registryOptions ...Option) *cobra.Command {
+func NewSchedulerCommand(schedulingHooks []frameworkext.SchedulingPhaseHook, registryOptions ...Option) *cobra.Command {
 	opts := options.NewOptions()
 
 	cmd := &cobra.Command{
@@ -78,7 +78,7 @@ scenarios,ensuring the runtime quality of different workloads and users' demands
 for cost reduction and efficiency enhancement.
 `,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := runCommand(cmd, opts, registryOptions...); err != nil {
+			if err := runCommand(cmd, opts, schedulingHooks, registryOptions...); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
@@ -110,7 +110,7 @@ for cost reduction and efficiency enhancement.
 }
 
 // runCommand runs the scheduler.
-func runCommand(cmd *cobra.Command, opts *options.Options, registryOptions ...Option) error {
+func runCommand(cmd *cobra.Command, opts *options.Options, schedulingHooks []frameworkext.SchedulingPhaseHook, registryOptions ...Option) error {
 	verflag.PrintAndExitIfRequested()
 	cliflag.PrintFlags(cmd.Flags())
 
@@ -122,7 +122,7 @@ func runCommand(cmd *cobra.Command, opts *options.Options, registryOptions ...Op
 		cancel()
 	}()
 
-	cc, sched, err := Setup(ctx, opts, registryOptions...)
+	cc, sched, err := Setup(ctx, opts, schedulingHooks, registryOptions...)
 	if err != nil {
 		return err
 	}
@@ -307,7 +307,7 @@ func WithPlugin(name string, factory runtime.PluginFactory) Option {
 }
 
 // Setup creates a completed config and a scheduler based on the command args and options
-func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions ...Option) (*schedulerserverconfig.CompletedConfig, *scheduler.Scheduler, error) {
+func Setup(ctx context.Context, opts *options.Options, schedulingHooks []frameworkext.SchedulingPhaseHook, outOfTreeRegistryOptions ...Option) (*schedulerserverconfig.CompletedConfig, *scheduler.Scheduler, error) {
 	if cfg, err := latest.Default(); err != nil {
 		return nil, nil, err
 	} else {
@@ -372,6 +372,13 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	// TODO(joseph): Some extensions can also be made in the future,
 	//  such as replacing some interfaces in Scheduler to implement custom logic
+
+	// extend framework to hook run plugin functions
+	extendedFrameworkFactory := frameworkext.NewFrameworkExtenderFactory(extendedHandle, schedulingHooks...)
+	for k, v := range sched.Profiles {
+		sched.Profiles[k] = extendedFrameworkFactory.New(v)
+	}
+	// TODO: register event handlers for scheduler instance
 
 	return &cc, sched, nil
 }
