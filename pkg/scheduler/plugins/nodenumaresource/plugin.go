@@ -53,6 +53,8 @@ const (
 const (
 	ErrMissingNodeResourceTopology = "node(s) missing NodeResourceTopology"
 	ErrInvalidCPUTopology          = "node(s) invalid CPU Topology"
+	ErrSMTAlignmentError           = "node(s) requested cpus not multiple cpus per core"
+	ErrRequiredFullPCPUsPolicy     = "node(s) required FullPCPUs policy"
 )
 
 var (
@@ -201,6 +203,15 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
 	}
 
+	if node.Labels[extension.LabelNodeCPUBindPolicy] == extension.NodeCPUBindPolicyFullPCPUsOnly {
+		if state.numCPUsNeeded%numaInfo.cpuTopology.CPUsPerCore() != 0 {
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError)
+		}
+		if state.preferredCPUBindPolicy != schedulingconfig.CPUBindPolicyFullPCPUs {
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy)
+		}
+	}
+
 	return nil
 }
 
@@ -234,11 +245,23 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, nil
 	}
 
-	score := p.calcScore(state.numCPUsNeeded, state.preferredCPUBindPolicy, state.preferredCPUExclusivePolicy, numaInfo)
+	numaAllocateStrategy := p.getNUMAAllocateStrategy(node)
+	score := p.calcScore(numaInfo, state.numCPUsNeeded, state.preferredCPUBindPolicy, state.preferredCPUExclusivePolicy, numaAllocateStrategy)
 	return score, nil
 }
 
-func (p *Plugin) calcScore(numCPUsNeeded int, cpuBindPolicy schedulingconfig.CPUBindPolicy, cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy, numaInfo *nodeNUMAInfo) int64 {
+func (p *Plugin) getNUMAAllocateStrategy(node *corev1.Node) schedulingconfig.NUMAAllocateStrategy {
+	numaAllocateStrategy := schedulingconfig.NUMAMostAllocated
+	if p.pluginArgs.ScoringStrategy != nil && p.pluginArgs.ScoringStrategy.Type == schedulingconfig.LeastAllocated {
+		numaAllocateStrategy = schedulingconfig.NUMALeastAllocated
+	}
+	if val := schedulingconfig.NUMAAllocateStrategy(node.Labels[extension.LabelNodeNUMAAllocateStrategy]); val != "" {
+		numaAllocateStrategy = val
+	}
+	return numaAllocateStrategy
+}
+
+func (p *Plugin) calcScore(numaInfo *nodeNUMAInfo, numCPUsNeeded int, cpuBindPolicy schedulingconfig.CPUBindPolicy, cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy, numaAllocateStrategy schedulingconfig.NUMAAllocateStrategy) int64 {
 	availableCPUs, allocated := getAvailableCPUsFunc(numaInfo)
 	acc := newCPUAccumulator(
 		numaInfo.cpuTopology,
@@ -246,7 +269,7 @@ func (p *Plugin) calcScore(numCPUsNeeded int, cpuBindPolicy schedulingconfig.CPU
 		allocated,
 		numCPUsNeeded,
 		cpuExclusivePolicy,
-		p.pluginArgs.NUMAAllocateStrategy,
+		numaAllocateStrategy,
 	)
 
 	var freeCPUs [][]int
@@ -265,7 +288,7 @@ func (p *Plugin) calcScore(numCPUsNeeded int, cpuBindPolicy schedulingconfig.CPU
 	}
 
 	scoreFn := mostRequestedScore
-	if p.pluginArgs.ScoringStrategy != nil && p.pluginArgs.ScoringStrategy.Type == schedulingconfig.LeastAllocated {
+	if numaAllocateStrategy == schedulingconfig.NUMALeastAllocated {
 		scoreFn = leastRequestedScore
 	}
 
@@ -335,6 +358,15 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
+	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+	if err != nil {
+		return framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+	}
+	node := nodeInfo.Node()
+	if node == nil {
+		return framework.NewStatus(framework.Error, "node not found")
+	}
+
 	// The Pod requires the CPU to be allocated according to CPUBindPolicy,
 	// but the current node does not have a NodeResourceTopology or a valid CPUTopology,
 	// so this error should be exposed to the user
@@ -350,6 +382,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	}
 
 	availableCPUs, allocated := getAvailableCPUsFunc(numaInfo)
+	numaAllocateStrategy := p.getNUMAAllocateStrategy(node)
 	result, err := takeCPUs(
 		numaInfo.cpuTopology,
 		availableCPUs,
@@ -357,7 +390,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		state.numCPUsNeeded,
 		state.preferredCPUBindPolicy,
 		state.resourceSpec.PreferredCPUExclusivePolicy,
-		p.pluginArgs.NUMAAllocateStrategy,
+		numaAllocateStrategy,
 	)
 	if err != nil {
 		return framework.NewStatus(framework.Error, err.Error())

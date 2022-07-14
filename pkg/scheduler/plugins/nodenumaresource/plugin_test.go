@@ -416,11 +416,12 @@ func TestPlugin_PreFilter(t *testing.T) {
 
 func TestPlugin_Filter(t *testing.T) {
 	tests := []struct {
-		name     string
-		state    *preFilterState
-		pod      *corev1.Pod
-		numaInfo *nodeNUMAInfo
-		want     *framework.Status
+		name       string
+		nodeLabels map[string]string
+		state      *preFilterState
+		pod        *corev1.Pod
+		numaInfo   *nodeNUMAInfo
+		want       *framework.Status
 	}{
 		{
 			name: "error with missing preFilterState",
@@ -461,13 +462,44 @@ func TestPlugin_Filter(t *testing.T) {
 			pod:  &corev1.Pod{},
 			want: nil,
 		},
+		{
+			name: "verify FullPCPUsOnly with SMTAlignmentError",
+			nodeLabels: map[string]string{
+				extension.LabelNodeCPUBindPolicy: extension.NodeCPUBindPolicyFullPCPUsOnly,
+			},
+			state: &preFilterState{
+				skip:                   false,
+				resourceSpec:           &extension.ResourceSpec{},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          5,
+			},
+			numaInfo: newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2)),
+			pod:      &corev1.Pod{},
+			want:     framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
+		},
+		{
+			name: "verify FullPCPUsOnly with RequiredFullPCPUsPolicy",
+			nodeLabels: map[string]string{
+				extension.LabelNodeCPUBindPolicy: extension.NodeCPUBindPolicyFullPCPUsOnly,
+			},
+			state: &preFilterState{
+				skip:                   false,
+				resourceSpec:           &extension.ResourceSpec{},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				numCPUsNeeded:          4,
+			},
+			numaInfo: newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2)),
+			pod:      &corev1.Pod{},
+			want:     framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodes := []*corev1.Node{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node-1",
+						Name:   "test-node-1",
+						Labels: map[string]string{},
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
@@ -477,6 +509,10 @@ func TestPlugin_Filter(t *testing.T) {
 					},
 				},
 			}
+			for k, v := range tt.nodeLabels {
+				nodes[0].Labels[k] = v
+			}
+
 			suit := newPluginTestSuit(t, nodes)
 			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
@@ -507,12 +543,13 @@ func TestPlugin_Filter(t *testing.T) {
 
 func TestPlugin_Score(t *testing.T) {
 	tests := []struct {
-		name      string
-		state     *preFilterState
-		pod       *corev1.Pod
-		numaInfo  *nodeNUMAInfo
-		want      *framework.Status
-		wantScore int64
+		name       string
+		nodeLabels map[string]string
+		state      *preFilterState
+		pod        *corev1.Pod
+		numaInfo   *nodeNUMAInfo
+		want       *framework.Status
+		wantScore  int64
 	}{
 		{
 			name: "error with missing preFilterState",
@@ -637,6 +674,24 @@ func TestPlugin_Score(t *testing.T) {
 			want:      nil,
 			wantScore: 100,
 		},
+		{
+			name: "score with Node NUMA Allocate Strategy",
+			nodeLabels: map[string]string{
+				extension.LabelNodeNUMAAllocateStrategy: extension.NodeNUMAAllocateStrategyLeastAllocated,
+			},
+			state: &preFilterState{
+				skip: false,
+				resourceSpec: &extension.ResourceSpec{
+					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
+				},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				numCPUsNeeded:          2,
+			},
+			numaInfo:  newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2)),
+			pod:       &corev1.Pod{},
+			want:      nil,
+			wantScore: 50,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -644,7 +699,8 @@ func TestPlugin_Score(t *testing.T) {
 			nodes := []*corev1.Node{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node-1",
+						Name:   "test-node-1",
+						Labels: map[string]string{},
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
@@ -654,6 +710,10 @@ func TestPlugin_Score(t *testing.T) {
 					},
 				},
 			}
+			for k, v := range tt.nodeLabels {
+				nodes[0].Labels[k] = v
+			}
+
 			suit := newPluginTestSuit(t, nodes)
 			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
@@ -689,12 +749,14 @@ func TestPlugin_Score(t *testing.T) {
 
 func TestPlugin_Reserve(t *testing.T) {
 	tests := []struct {
-		name       string
-		state      *preFilterState
-		pod        *corev1.Pod
-		numaInfo   *nodeNUMAInfo
-		want       *framework.Status
-		wantCPUSet CPUSet
+		name          string
+		nodeLabels    map[string]string
+		state         *preFilterState
+		pod           *corev1.Pod
+		numaInfo      *nodeNUMAInfo
+		allocatedCPUs []int
+		want          *framework.Status
+		wantCPUSet    CPUSet
 	}{
 		{
 			name: "error with missing preFilterState",
@@ -754,13 +816,52 @@ func TestPlugin_Reserve(t *testing.T) {
 			pod:      &corev1.Pod{},
 			want:     framework.NewStatus(framework.Error, "not enough cpus available to satisfy request"),
 		},
+		{
+			name: "succeed with valid cpu topology and node numa least allocate strategy",
+			nodeLabels: map[string]string{
+				extension.LabelNodeNUMAAllocateStrategy: extension.NodeNUMAAllocateStrategyLeastAllocated,
+			},
+			state: &preFilterState{
+				skip:          false,
+				numCPUsNeeded: 4,
+				resourceSpec: &extension.ResourceSpec{
+					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+			},
+			numaInfo:      newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 8, 2)),
+			allocatedCPUs: []int{0, 1, 2, 3},
+			pod:           &corev1.Pod{},
+			want:          nil,
+			wantCPUSet:    NewCPUSet(16, 17, 18, 19),
+		},
+		{
+			name: "succeed with valid cpu topology and node numa most allocate strategy",
+			nodeLabels: map[string]string{
+				extension.LabelNodeNUMAAllocateStrategy: extension.NodeNUMAAllocateStrategyMostAllocated,
+			},
+			state: &preFilterState{
+				skip:          false,
+				numCPUsNeeded: 4,
+				resourceSpec: &extension.ResourceSpec{
+					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+			},
+			numaInfo:      newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 8, 2)),
+			allocatedCPUs: []int{0, 1, 2, 3},
+			pod:           &corev1.Pod{},
+			want:          nil,
+			wantCPUSet:    NewCPUSet(4, 5, 6, 7),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodes := []*corev1.Node{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node-1",
+						Name:   "test-node-1",
+						Labels: map[string]string{},
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
@@ -770,6 +871,10 @@ func TestPlugin_Reserve(t *testing.T) {
 					},
 				},
 			}
+			for k, v := range tt.nodeLabels {
+				nodes[0].Labels[k] = v
+			}
+
 			suit := newPluginTestSuit(t, nodes)
 			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
@@ -777,6 +882,9 @@ func TestPlugin_Reserve(t *testing.T) {
 
 			plg := p.(*Plugin)
 			if tt.numaInfo != nil {
+				if len(tt.allocatedCPUs) > 0 {
+					tt.numaInfo.allocateCPUs(uuid.NewUUID(), NewCPUSet(tt.allocatedCPUs...), schedulingconfig.CPUExclusivePolicyNone)
+				}
 				plg.nodeInfoCache.nodes[tt.numaInfo.nodeName] = tt.numaInfo
 			}
 

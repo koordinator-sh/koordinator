@@ -201,7 +201,7 @@ func newCPUAccumulator(
 	allocatedCPUs CPUDetails,
 	numCPUsNeeded int,
 	exclusivePolicy schedulingconfig.CPUExclusivePolicy,
-	numaSortStrategy schedulingconfig.NUMAAllocateStrategy,
+	numaAllocateStrategy schedulingconfig.NUMAAllocateStrategy,
 ) *cpuAccumulator {
 	exclusiveInCores := sets.NewInt()
 	exclusiveInNUMANodes := sets.NewInt()
@@ -225,7 +225,7 @@ func newCPUAccumulator(
 		exclusive:            exclusive,
 		exclusivePolicy:      exclusivePolicy,
 		numCPUsNeeded:        numCPUsNeeded,
-		numaAllocateStrategy: numaSortStrategy,
+		numaAllocateStrategy: numaAllocateStrategy,
 		result:               NewCPUSet(),
 	}
 }

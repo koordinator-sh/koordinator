@@ -41,7 +41,6 @@ var (
 	}
 
 	defaultPreferredCPUBindPolicy          = CPUBindPolicyFullPCPUs
-	defaultNUMAAllocateStrategy            = NUMAMostAllocated
 	defaultNodeNUMAResourceScoringStrategy = &ScoringStrategy{
 		Type: MostAllocated,
 		Resources: []schedconfig.ResourceSpec{
@@ -76,9 +75,6 @@ func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
 	if obj.DefaultCPUBindPolicy == "" {
 		obj.DefaultCPUBindPolicy = defaultPreferredCPUBindPolicy
-	}
-	if obj.NUMAAllocateStrategy == "" {
-		obj.NUMAAllocateStrategy = defaultNUMAAllocateStrategy
 	}
 	if obj.ScoringStrategy == nil {
 		obj.ScoringStrategy = defaultNodeNUMAResourceScoringStrategy
