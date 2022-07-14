@@ -17,10 +17,13 @@ limitations under the License.
 package frameworkext
 
 import (
+	"context"
 	"sync"
 
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 
@@ -94,6 +97,96 @@ func (ext *frameworkExtendedHandleImpl) KoordinatorSharedInformerFactory() koord
 
 func (ext *frameworkExtendedHandleImpl) NodeResourceTopologySharedInformerFactory() nrtinformers.SharedInformerFactory {
 	return ext.nrtSharedInformerFactory
+}
+
+type FrameworkExtender interface {
+	framework.Framework
+}
+
+type FrameworkExtenderFactory interface {
+	New(f framework.Framework) FrameworkExtender
+}
+
+type SchedulingPhaseHook interface {
+	Name() string
+}
+
+type PreFilterPhaseHook interface {
+	SchedulingPhaseHook
+	PreFilterHook(handle ExtendedHandle, state *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool)
+}
+
+type FilterPhaseHook interface {
+	SchedulingPhaseHook
+	FilterHook(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool)
+}
+
+type frameworkExtenderFactoryImpl struct {
+	handle ExtendedHandle
+
+	// extend framework with SchedulingPhaseHook
+	preFilterHooks []PreFilterPhaseHook
+	filterHooks    []FilterPhaseHook
+}
+
+func NewFrameworkExtenderFactory(handle ExtendedHandle, hooks ...SchedulingPhaseHook) FrameworkExtenderFactory {
+	i := &frameworkExtenderFactoryImpl{
+		handle: handle,
+	}
+	for _, h := range hooks {
+		// a hook may register in multiple phases
+		preFilter, ok := h.(PreFilterPhaseHook)
+		if ok {
+			i.preFilterHooks = append(i.preFilterHooks, preFilter)
+		}
+		filter, ok := h.(FilterPhaseHook)
+		if ok {
+			i.filterHooks = append(i.filterHooks, filter)
+		}
+	}
+	return i
+}
+
+func (i *frameworkExtenderFactoryImpl) New(f framework.Framework) FrameworkExtender {
+	return &frameworkExtenderImpl{
+		Framework:      f,
+		handle:         i.handle,
+		preFilterHooks: i.preFilterHooks,
+		filterHooks:    i.filterHooks,
+	}
+}
+
+var _ framework.Framework = &frameworkExtenderImpl{}
+
+type frameworkExtenderImpl struct {
+	framework.Framework
+	handle ExtendedHandle
+
+	preFilterHooks []PreFilterPhaseHook
+	filterHooks    []FilterPhaseHook
+}
+
+func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+	for _, hook := range ext.preFilterHooks {
+		newPod, hooked := hook.PreFilterHook(ext.handle, cycleState, pod)
+		if hooked {
+			klog.V(5).InfoS("RunPreFilterPlugins hooked", "meet PreFilterPhaseHook", "hook", hook.Name(), "pod", klog.KObj(pod))
+			return ext.Framework.RunPreFilterPlugins(ctx, cycleState, newPod)
+		}
+	}
+	return ext.Framework.RunPreFilterPlugins(ctx, cycleState, pod)
+}
+
+func (ext *frameworkExtenderImpl) RunFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) framework.PluginToStatus {
+	for _, hook := range ext.filterHooks {
+		// hook can change the args (cycleState, pod, nodeInfo) for filter plugins
+		newPod, newNodeInfo, hooked := hook.FilterHook(ext.handle, cycleState, pod, nodeInfo)
+		if hooked {
+			klog.V(5).InfoS("RunFilterPlugins hooked", "meet FilterPhaseHook", "hook", hook.Name(), "pod", klog.KObj(pod))
+			return ext.Framework.RunFilterPlugins(ctx, cycleState, newPod, newNodeInfo)
+		}
+	}
+	return ext.Framework.RunFilterPlugins(ctx, cycleState, pod, nodeInfo)
 }
 
 // PluginFactoryProxy is used to proxy the call to the PluginFactory function and pass in the ExtendedHandle for the custom plugin
