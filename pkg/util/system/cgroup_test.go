@@ -23,6 +23,55 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestCgroupFileWriteIfDifferent(t *testing.T) {
+	taskDir := "/"
+	type args struct {
+		cgroupTaskDir string
+		file          CgroupFile
+		value         string
+		currentValue  string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "currentValue is the same as value",
+			args: args{
+				cgroupTaskDir: taskDir,
+				file:          CPUShares,
+				value:         "1024",
+				currentValue:  "1024",
+			},
+			wantErr: false,
+		},
+		{
+			name: "currentValue is different with value",
+			args: args{
+				cgroupTaskDir: taskDir,
+				file:          CPUShares,
+				value:         "1024",
+				currentValue:  "512",
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			helper.CreateCgroupFile(taskDir, tt.args.file)
+
+			err := CgroupFileWrite(taskDir, tt.args.file, tt.args.currentValue)
+			assert.NoError(t, err)
+
+			gotErr := CgroupFileWriteIfDifferent(taskDir, tt.args.file, tt.args.currentValue)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+
+		})
+	}
+}
+
 func TestCgroupFileReadInt(t *testing.T) {
 	taskDir := "/"
 	testingInt64 := int64(1024)
