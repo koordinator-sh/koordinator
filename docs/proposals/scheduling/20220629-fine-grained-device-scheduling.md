@@ -12,7 +12,7 @@ reviewers:
 - "@zwzhang0107"
 - "@jasonliu747"
 creation-date: 2022-06-29
-last-updated: 2022-07-08
+last-updated: 2022-07-18
 status: provisional
 
 ---
@@ -303,61 +303,57 @@ Implements a new component called  `Device Reporter` in koordlet to create or up
 type DeviceType string
 
 const (
-    GPU  DeviceType = "gpu"
-    FPGA DeviceType = "fpga"
-    RDMA DeviceType = "rdma"
+	GPU  DeviceType = "gpu"
+	FPGA DeviceType = "fpga"
+	RDMA DeviceType = "rdma"
 )
 
-type DeviceList struct {
-    metav1.TypeMeta `json:",inline"`
-    metav1.ListMeta `json:"metadata,omitempty"`
-
-    Items []Device `json:"items"`   
-}
-
-type DevicesSpec struct {
-    Items  []Device `json:"items"`
-}
-
-type Device struct {
-    metav1.TypeMeta   `json:",inline"`
-    metav1.ObjectMeta `json:"metadata,omitempty"`
-
-    Spec   DeviceSpec `json:"spec,omitempty"`
-    Status DevicesStatus `json:"status,omitempty"`
-}
-
 type DeviceSpec struct {
-    Devices []DeviceInfo `json:"devices"`
+	Devices []DeviceInfo `json:"devices"`
 }
 
 type DeviceInfo struct {
-    // ID represents the UUID of device
-    ID string `json:"id,omitempty"`
-    // Minor represents the Minor number of Device, starting from 0
-    Minor int32 `json:"minor,omitempty"`
-    // Type represents the type of device
-    Type DeviceType `json:"deviceType,omitempty"`
-    // Health indicates whether the device is normal
-    Health bool `json:"health,omitempty"`
-    // Resources represents the total capacity of various resources of the device
-    Resources map[string]resource.Quantity `json:"resource,omitempty"`
+	// UUID represents the UUID of device
+	UUID string `json:"id,omitempty"`
+	// Minor represents the Minor number of Device, starting from 0
+	Minor int32 `json:"minor,omitempty"`
+	// Type represents the type of device
+	Type DeviceType `json:"deviceType,omitempty"`
+	// Health indicates whether the device is normal
+	Health bool `json:"health,omitempty"`
+	// Resources represents the total capacity of various resources of the device
+	Resources map[string]resource.Quantity `json:"resource,omitempty"`
 }
 
-type DevicesStatus struct {
-    Allocations []DeviceAllocation `json:"allocations"`  // record each pod device usage card list, more detail see Compatibility    
+type DeviceStatus struct {
+	Allocations []DeviceAllocation `json:"allocations"`
 }
 
 type DeviceAllocation struct {
-    Type    DeviceType             `json:"type"`
-    Entries []DeviceAllocationItem `json:"entries"`
+	Type    DeviceType             `json:"type"`
+	Entries []DeviceAllocationItem `json:"entries"`
 }
 
 type DeviceAllocationItem struct {
-    Name      string   `json:"name"`
-    Namespace string   `json:"namespace"`
-    UUID      string   `json:"uuid"`
-    Devices   []string `json:"devices"`
+	Name      string   `json:"name"`
+	Namespace string   `json:"namespace"`
+	UUID      string   `json:"uuid"`
+	Devices   []string `json:"devices"`
+}
+
+type Device struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   DeviceSpec   `json:"spec,omitempty"`
+	Status DeviceStatus `json:"status,omitempty"`
+}
+
+type DeviceList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+
+	Items []Device `json:"items"`
 }
 ```
 
@@ -415,5 +411,9 @@ in container to pass kubelet resource limitation check. This will be a flag in s
 1. User can choose whether use k8s-device plugin. as mentioned above, we can compatible in both cases.
 
 ## Implementation History
+
+- 2022-06-29: Initial proposal
+- 2022-07-08: Refactor proposal for review
+- 2022-07-18: Fix Device CRD definition
 
 ## References
