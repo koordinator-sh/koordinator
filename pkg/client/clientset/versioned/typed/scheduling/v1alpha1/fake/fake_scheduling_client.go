@@ -28,6 +28,10 @@ type FakeSchedulingV1alpha1 struct {
 	*testing.Fake
 }
 
+func (c *FakeSchedulingV1alpha1) PodMigrationJobs() v1alpha1.PodMigrationJobInterface {
+	return &FakePodMigrationJobs{c}
+}
+
 func (c *FakeSchedulingV1alpha1) Reservations() v1alpha1.ReservationInterface {
 	return &FakeReservations{c}
 }
