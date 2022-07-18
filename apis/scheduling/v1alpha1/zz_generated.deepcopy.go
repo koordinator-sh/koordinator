@@ -22,9 +22,8 @@ limitations under the License.
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -102,7 +101,7 @@ func (in *DeviceInfo) DeepCopyInto(out *DeviceInfo) {
 	*out = *in
 	if in.Resources != nil {
 		in, out := &in.Resources, &out.Resources
-		*out = make(map[string]resource.Quantity, len(*in))
+		*out = make(v1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
@@ -200,7 +199,7 @@ func (in *PodMigrateReservationOptions) DeepCopyInto(out *PodMigrateReservationO
 	*out = *in
 	if in.ReservationRef != nil {
 		in, out := &in.ReservationRef, &out.ReservationRef
-		*out = new(corev1.ObjectReference)
+		*out = new(v1.ObjectReference)
 		**out = **in
 	}
 	if in.Template != nil {
@@ -306,12 +305,12 @@ func (in *PodMigrationJobPreemptedReservation) DeepCopyInto(out *PodMigrationJob
 	*out = *in
 	if in.PreemptedPodRef != nil {
 		in, out := &in.PreemptedPodRef, &out.PreemptedPodRef
-		*out = new(corev1.ObjectReference)
+		*out = new(v1.ObjectReference)
 		**out = **in
 	}
 	if in.PodsRef != nil {
 		in, out := &in.PodsRef, &out.PodsRef
-		*out = make([]corev1.ObjectReference, len(*in))
+		*out = make([]v1.ObjectReference, len(*in))
 		copy(*out, *in)
 	}
 }
@@ -346,12 +345,12 @@ func (in *PodMigrationJobSpec) DeepCopyInto(out *PodMigrationJobSpec) {
 	*out = *in
 	if in.TTL != nil {
 		in, out := &in.TTL, &out.TTL
-		*out = new(v1.Duration)
+		*out = new(metav1.Duration)
 		**out = **in
 	}
 	if in.PodRef != nil {
 		in, out := &in.PodRef, &out.PodRef
-		*out = new(corev1.ObjectReference)
+		*out = new(v1.ObjectReference)
 		**out = **in
 	}
 	if in.ReservationOptions != nil {
@@ -361,7 +360,7 @@ func (in *PodMigrationJobSpec) DeepCopyInto(out *PodMigrationJobSpec) {
 	}
 	if in.DeleteOptions != nil {
 		in, out := &in.DeleteOptions, &out.DeleteOptions
-		*out = new(v1.DeleteOptions)
+		*out = new(metav1.DeleteOptions)
 		(*in).DeepCopyInto(*out)
 	}
 }
@@ -388,12 +387,12 @@ func (in *PodMigrationJobStatus) DeepCopyInto(out *PodMigrationJobStatus) {
 	}
 	if in.PodsRef != nil {
 		in, out := &in.PodsRef, &out.PodsRef
-		*out = make([]corev1.ObjectReference, len(*in))
+		*out = make([]v1.ObjectReference, len(*in))
 		copy(*out, *in)
 	}
 	if in.PreemptedPodsRef != nil {
 		in, out := &in.PreemptedPodsRef, &out.PreemptedPodsRef
-		*out = make([]corev1.ObjectReference, len(*in))
+		*out = make([]v1.ObjectReference, len(*in))
 		copy(*out, *in)
 	}
 	if in.PreemptedPodsReservations != nil {
@@ -512,7 +511,7 @@ func (in *ReservationOwner) DeepCopyInto(out *ReservationOwner) {
 	*out = *in
 	if in.Object != nil {
 		in, out := &in.Object, &out.Object
-		*out = new(corev1.ObjectReference)
+		*out = new(v1.ObjectReference)
 		**out = **in
 	}
 	if in.Controller != nil {
@@ -522,7 +521,7 @@ func (in *ReservationOwner) DeepCopyInto(out *ReservationOwner) {
 	}
 	if in.LabelSelector != nil {
 		in, out := &in.LabelSelector, &out.LabelSelector
-		*out = new(v1.LabelSelector)
+		*out = new(metav1.LabelSelector)
 		(*in).DeepCopyInto(*out)
 	}
 }
@@ -542,7 +541,7 @@ func (in *ReservationSpec) DeepCopyInto(out *ReservationSpec) {
 	*out = *in
 	if in.Template != nil {
 		in, out := &in.Template, &out.Template
-		*out = new(corev1.PodTemplateSpec)
+		*out = new(v1.PodTemplateSpec)
 		(*in).DeepCopyInto(*out)
 	}
 	if in.Owners != nil {
@@ -554,7 +553,7 @@ func (in *ReservationSpec) DeepCopyInto(out *ReservationSpec) {
 	}
 	if in.TTL != nil {
 		in, out := &in.TTL, &out.TTL
-		*out = new(v1.Duration)
+		*out = new(metav1.Duration)
 		**out = **in
 	}
 	if in.Expires != nil {
@@ -585,7 +584,7 @@ func (in *ReservationStatus) DeepCopyInto(out *ReservationStatus) {
 	}
 	if in.CurrentOwners != nil {
 		in, out := &in.CurrentOwners, &out.CurrentOwners
-		*out = make([]corev1.ObjectReference, len(*in))
+		*out = make([]v1.ObjectReference, len(*in))
 		copy(*out, *in)
 	}
 }

@@ -17,7 +17,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -32,10 +31,6 @@ type PodMetricInfo struct {
 	Name      string      `json:"name,omitempty"`
 	Namespace string      `json:"namespace,omitempty"`
 	PodUsage  ResourceMap `json:"podUsage,omitempty"`
-}
-
-type ResourceMap struct {
-	corev1.ResourceList `json:"resources,omitempty"`
 }
 
 // NodeMetricSpec defines the desired state of NodeMetric

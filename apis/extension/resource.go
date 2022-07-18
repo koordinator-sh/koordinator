@@ -28,6 +28,12 @@ const (
 	BatchCPU    corev1.ResourceName = DomainPrefix + "batch-cpu"
 	BatchMemory corev1.ResourceName = DomainPrefix + "batch-memory"
 
+	GPUCore        corev1.ResourceName = DomainPrefix + "gpu-core"
+	GPUMemory      corev1.ResourceName = DomainPrefix + "gpu-memory"
+	GPUMemoryRatio corev1.ResourceName = DomainPrefix + "gpu-memory-ratio"
+)
+
+const (
 	// AnnotationResourceSpec represents resource allocation API defined by Koordinator.
 	// The user specifies the desired CPU orchestration policy by setting the annotation.
 	AnnotationResourceSpec = SchedulingDomainPrefix + "/resource-spec"
