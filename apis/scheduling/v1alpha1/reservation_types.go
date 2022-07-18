@@ -49,6 +49,17 @@ type ReservationSpec struct {
 	Expires *metav1.Time `json:"expires,omitempty"`
 }
 
+// ReservationTemplateSpec describes the data a Reservation should have when created from a template
+type ReservationTemplateSpec struct {
+	// Standard object's metadata.
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Specification of the desired behavior of the Reservation.
+	// +optional
+	Spec ReservationSpec `json:"spec,omitempty"`
+}
+
 type ReservationStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
