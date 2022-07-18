@@ -118,9 +118,9 @@ type PodMigrationJobSpec struct {
 	// +optional
 	Paused bool `json:"paused,omitempty"`
 
-	// TimeoutInSeconds controls the PodMigrationJob timeout duration.
+	// TTL controls the PodMigrationJob timeout duration.
 	// +optional
-	TimeoutInSeconds *int32 `json:"timeoutInSeconds,omitempty"`
+	TTL *metav1.Duration `json:"ttl,omitempty"`
 
 	// Mode represents the operating mode of the Job
 	// Default is PodMigrationJobModeReservationFirst
@@ -129,7 +129,7 @@ type PodMigrationJobSpec struct {
 
 	// PodRef represents the Pod that be migrated
 	// +required
-	PodRef *v1.ObjectReference `json:"podRef,omitempty"`
+	PodRef *corev1.ObjectReference `json:"podRef"`
 
 	// ReservationOptions defines the Reservation options for migrated Pod
 	// +optional
@@ -152,7 +152,7 @@ type PodMigrateReservationOptions struct {
 	// ReservationRef if not specified, PodMigrationJob controller will create Reservation by Template,
 	// and update the ReservationRef to reference the Reservation
 	// +optional
-	ReservationRef *v1.ObjectReference `json:"reservationRef,omitempty"`
+	ReservationRef *corev1.ObjectReference `json:"reservationRef,omitempty"`
 
 	// Template is the object that describes the Reservation that will be created if not specified ReservationRef
 	// +optional
@@ -194,16 +194,16 @@ type PodMigrationJobStatus struct {
 	Status string `json:"state,omitempty"`
 	// Reason represents a brief CamelCase message indicating details about why the PodMigrationJob is in this state.
 	Reason string `json:"reason,omitempty"`
-	// Message represents a human readable message indicating details about why the PodMigrationJob is in this state.
+	// Message represents a human-readable message indicating details about why the PodMigrationJob is in this state.
 	Message string `json:"message,omitempty"`
 	// Conditions records the stats of PodMigrationJob
 	Conditions []PodMigrationJobCondition `json:"conditions,omitempty"`
 	// NodeName represents the node's name of migrated Pod
 	NodeName string `json:"nodeName,omitempty"`
 	// PodsRef represents the newly created Pods after being migrated
-	PodsRef []v1.ObjectReference `json:"podsRef,omitempty"`
+	PodsRef []corev1.ObjectReference `json:"podsRef,omitempty"`
 	// PreemptedPodsRef represents the Pods that be preempted
-	PreemptedPodsRef []v1.ObjectReference `json:"preemptedPodsRef,omitempty"`
+	PreemptedPodsRef []corev1.ObjectReference `json:"preemptedPodsRef,omitempty"`
 	// PreemptedPodsReservations records information about Reservations created due to preemption
 	PreemptedPodsReservations []PodMigrationJobPreemptedReservation `json:"preemptedPodsReservation,omitempty"`
 }
@@ -218,9 +218,9 @@ type PodMigrationJobPreemptedReservation struct {
 	// Phase represents the Phase of Reservation
 	Phase string `json:"phase,omitempty"`
 	// PreemptedPodRef represents the Pod that be preempted
-	PreemptedPodRef *v1.ObjectReference `json:"preemptedPodRef,omitempty"`
+	PreemptedPodRef *corev1.ObjectReference `json:"preemptedPodRef,omitempty"`
 	// PodsRef represents the newly created Pods after being preempted
-	PodsRef []v1.ObjectReference `json:"podsRef,omitempty"`
+	PodsRef []corev1.ObjectReference `json:"podsRef,omitempty"`
 }
 
 type PodMigrationJobCondition struct {
