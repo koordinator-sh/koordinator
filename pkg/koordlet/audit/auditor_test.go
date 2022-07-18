@@ -43,7 +43,7 @@ func (t *TestServer) Shutdown() error {
 }
 
 func (t *TestServer) URL(size int, pageToken string) string {
-	url := fmt.Sprintf("http://:%d?size=%d", t.l.Addr().(*net.TCPAddr).Port, size)
+	url := fmt.Sprintf("http://127.0.0.1:%d?size=%d", t.l.Addr().(*net.TCPAddr).Port, size)
 	if pageToken != "" {
 		url += fmt.Sprintf("&pageToken=%s", pageToken)
 	}
@@ -86,15 +86,18 @@ func TestAuditorLogger(t *testing.T) {
 	req, _ := http.NewRequest("GET", server.URL(10, ""), nil)
 	req.Header.Add("Accept", "application/json")
 	resp, err := client.Do(req)
+
 	if err != nil {
 		t.Fatalf("failed to get events: %v", err)
 	}
+
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	response := &JsonResponse{}
 	if err := json.Unmarshal(body, response); err != nil {
 		t.Fatal(err)
 	}
+
 	if len(response.Events) != 10 {
 		t.Errorf("failed to load events, expected %d actual %d", 10, len(response.Events))
 	}
