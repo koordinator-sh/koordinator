@@ -24,6 +24,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// Devices returns a DeviceInformer.
+	Devices() DeviceInformer
 	// PodMigrationJobs returns a PodMigrationJobInformer.
 	PodMigrationJobs() PodMigrationJobInformer
 	// Reservations returns a ReservationInformer.
@@ -39,6 +41,11 @@ type version struct {
 // New returns a new Interface.
 func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakListOptions internalinterfaces.TweakListOptionsFunc) Interface {
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
+}
+
+// Devices returns a DeviceInformer.
+func (v *version) Devices() DeviceInformer {
+	return &deviceInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // PodMigrationJobs returns a PodMigrationJobInformer.
