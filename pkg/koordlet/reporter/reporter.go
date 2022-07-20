@@ -26,6 +26,7 @@ import (
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -37,6 +38,8 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	clientsetbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	clientbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
@@ -354,19 +357,61 @@ func (su *statusUpdater) updateStatus(nodeMetric *slov1alpha1.NodeMetric, newSta
 }
 
 func convertNodeMetricToResourceMap(nodeMetric *metriccache.NodeResourceMetric) *slov1alpha1.ResourceMap {
+	var deviceInfos []schedulingv1alpha1.DeviceInfo
+	if len(nodeMetric.GPUs) > 0 {
+		for _, gpu := range nodeMetric.GPUs {
+			gpuInfo := schedulingv1alpha1.DeviceInfo{
+				UUID:  gpu.DeviceUUID,
+				Minor: gpu.Minor,
+				Type:  schedulingv1alpha1.GPU,
+				// TODO: how to check the health status of GPU
+				Health: true,
+				Resources: map[corev1.ResourceName]resource.Quantity{
+					apiext.GPUCore:   gpu.SMUtil,
+					apiext.GPUMemory: gpu.MemoryUsed,
+					// TODO: koordlet needs to collect total memory of GPU as well
+					// apiext.GPUMemoryRatio: 100 * gpu.MemoryUsed / gpu.MemoryTotal
+				},
+			}
+			deviceInfos = append(deviceInfos, gpuInfo)
+		}
+	}
+
 	return &slov1alpha1.ResourceMap{
 		ResourceList: corev1.ResourceList{
 			corev1.ResourceCPU:    nodeMetric.CPUUsed.CPUUsed,
 			corev1.ResourceMemory: nodeMetric.MemoryUsed.MemoryWithoutCache,
 		},
+		Devices: deviceInfos,
 	}
 }
 
 func convertPodMetricToResourceMap(podMetric *metriccache.PodResourceMetric) *slov1alpha1.ResourceMap {
+	var deviceInfos []schedulingv1alpha1.DeviceInfo
+	if len(podMetric.GPUs) > 0 {
+		for _, gpu := range podMetric.GPUs {
+			gpuInfo := schedulingv1alpha1.DeviceInfo{
+				UUID:  gpu.DeviceUUID,
+				Minor: gpu.Minor,
+				Type:  schedulingv1alpha1.GPU,
+				// TODO: how to check the health status of GPU
+				Health: true,
+				Resources: map[corev1.ResourceName]resource.Quantity{
+					apiext.GPUCore:   gpu.SMUtil,
+					apiext.GPUMemory: gpu.MemoryUsed,
+					// TODO: koordlet needs to collect total memory of GPU as well
+					// apiext.GPUMemoryRatio: 100 * gpu.MemoryUsed / gpu.MemoryTotal
+				},
+			}
+			deviceInfos = append(deviceInfos, gpuInfo)
+		}
+	}
+
 	return &slov1alpha1.ResourceMap{
 		ResourceList: corev1.ResourceList{
 			corev1.ResourceCPU:    podMetric.CPUUsed.CPUUsed,
 			corev1.ResourceMemory: podMetric.MemoryUsed.MemoryWithoutCache,
 		},
+		Devices: deviceInfos,
 	}
 }

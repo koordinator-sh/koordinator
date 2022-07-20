@@ -29,6 +29,8 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
+
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	clientbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	fakeclientslov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1/fake"
@@ -37,7 +39,6 @@ import (
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
-	"github.com/stretchr/testify/assert"
 )
 
 var _ listerbeta1.NodeMetricLister = &fakeNodeMetricLister{}
@@ -204,6 +205,10 @@ func Test_reporter_sync(t *testing.T) {
 							MemoryUsed: metriccache.MemoryMetric{
 								MemoryWithoutCache: resource.MustParse("1Gi"),
 							},
+							GPUs: []*metriccache.GPUMetric{
+								{DeviceUUID: "1", Minor: 0, SMUtil: *resource.NewQuantity(80, resource.DecimalSI), MemoryUsed: *resource.NewQuantity(30, resource.BinarySI)},
+								{DeviceUUID: "2", Minor: 1, SMUtil: *resource.NewQuantity(40, resource.DecimalSI), MemoryUsed: *resource.NewQuantity(50, resource.BinarySI)},
+							},
 						},
 					}).Times(1)
 					return c
@@ -242,6 +247,10 @@ func Test_reporter_sync(t *testing.T) {
 							},
 							MemoryUsed: metriccache.MemoryMetric{
 								MemoryWithoutCache: resource.MustParse("1Gi"),
+							},
+							GPUs: []*metriccache.GPUMetric{
+								{DeviceUUID: "1", Minor: 0, SMUtil: *resource.NewQuantity(80, resource.DecimalSI), MemoryUsed: *resource.NewQuantity(30, resource.BinarySI)},
+								{DeviceUUID: "2", Minor: 1, SMUtil: *resource.NewQuantity(40, resource.DecimalSI), MemoryUsed: *resource.NewQuantity(50, resource.BinarySI)},
 							},
 						}),
 					},
