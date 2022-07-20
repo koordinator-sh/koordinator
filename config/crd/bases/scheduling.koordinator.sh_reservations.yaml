@@ -38,7 +38,10 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Reservation is the Schema for the reservation API
+        description: Reservation is the Schema for the reservation API. A Reservation
+          object is namespaced. But it can reserve resources for pods of any namespace.
+          Any namespaced affinity/anti-affinity of reservation scheduling can be specified
+          with the ObjectMeta.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -55,14 +58,15 @@ spec:
           spec:
             properties:
               expires:
-                description: Expired timestamp when the reservation expires. `expires`
-                  and `ttl` are mutually exclusive. Defaults to being set dynamically
-                  at runtime based on the `ttl`.
+                description: Expired timestamp when the reservation is expected to
+                  expire. If both `expires` and `ttl` are set, `expires` is checked
+                  first. `expires` and `ttl` are mutually exclusive. Defaults to being
+                  set dynamically at runtime based on the `ttl`.
                 format: date-time
                 type: string
               owners:
                 description: Specify the owners who can allocate the reserved resources.
-                  Multiple owner selectors and ANDed.
+                  Multiple owner selectors and ORed.
                 items:
                   properties:
                     controller:
@@ -147,7 +151,7 @@ spec:
                           type: object
                       type: object
                     object:
-                      description: Multiple field selectors are ORed.
+                      description: Multiple field selectors are ANDed.
                       properties:
                         apiVersion:
                           description: API version of the referent.
@@ -6994,12 +6998,32 @@ spec:
                     type: object
                 type: object
               ttl:
+                default: '''24h'''
                 description: Time-to-Live period for the reservation. `expires` and
-                  `ttl` are mutually exclusive. Defaults to 24h.
+                  `ttl` are mutually exclusive. Defaults to 24h. Set 0 to disable
+                  expiration.
                 type: string
             type: object
           status:
             properties:
+              allocatable:
+                additionalProperties:
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                  x-kubernetes-int-or-string: true
+                description: Resource reserved and allocatable for owners.
+                type: object
+              allocated:
+                additionalProperties:
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                  x-kubernetes-int-or-string: true
+                description: Resource allocated by current owners.
+                type: object
               conditions:
                 description: The `conditions` indicate the messages of reason why
                   the reservation is still pending.
@@ -7086,6 +7110,14 @@ spec:
                       type: string
                   type: object
                 type: array
+              expired:
+                description: The `expired` indicates the timestamp if the reservation
+                  is expired.
+                format: date-time
+                type: string
+              nodeName:
+                description: Name of node the reservation is scheduled on.
+                type: string
               phase:
                 description: The `phase` indicates whether is reservation is waiting
                   for process (`Pending`), available to allocate (`Available`) or

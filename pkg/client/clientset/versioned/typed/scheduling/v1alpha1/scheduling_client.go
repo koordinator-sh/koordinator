@@ -39,8 +39,8 @@ func (c *SchedulingV1alpha1Client) PodMigrationJobs() PodMigrationJobInterface {
 	return newPodMigrationJobs(c)
 }
 
-func (c *SchedulingV1alpha1Client) Reservations() ReservationInterface {
-	return newReservations(c)
+func (c *SchedulingV1alpha1Client) Reservations(namespace string) ReservationInterface {
+	return newReservations(c, namespace)
 }
 
 // NewForConfig creates a new SchedulingV1alpha1Client for the given config.

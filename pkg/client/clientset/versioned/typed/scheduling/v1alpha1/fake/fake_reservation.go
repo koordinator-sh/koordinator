@@ -33,6 +33,7 @@ import (
 // FakeReservations implements ReservationInterface
 type FakeReservations struct {
 	Fake *FakeSchedulingV1alpha1
+	ns   string
 }
 
 var reservationsResource = schema.GroupVersionResource{Group: "scheduling.koordinator.sh", Version: "v1alpha1", Resource: "reservations"}
@@ -42,7 +43,8 @@ var reservationsKind = schema.GroupVersionKind{Group: "scheduling.koordinator.sh
 // Get takes name of the reservation, and returns the corresponding reservation object, and an error if there is any.
 func (c *FakeReservations) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.Reservation, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(reservationsResource, name), &v1alpha1.Reservation{})
+		Invokes(testing.NewGetAction(reservationsResource, c.ns, name), &v1alpha1.Reservation{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -52,7 +54,8 @@ func (c *FakeReservations) Get(ctx context.Context, name string, options v1.GetO
 // List takes label and field selectors, and returns the list of Reservations that match those selectors.
 func (c *FakeReservations) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.ReservationList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(reservationsResource, reservationsKind, opts), &v1alpha1.ReservationList{})
+		Invokes(testing.NewListAction(reservationsResource, reservationsKind, c.ns, opts), &v1alpha1.ReservationList{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -73,13 +76,15 @@ func (c *FakeReservations) List(ctx context.Context, opts v1.ListOptions) (resul
 // Watch returns a watch.Interface that watches the requested reservations.
 func (c *FakeReservations) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(reservationsResource, opts))
+		InvokesWatch(testing.NewWatchAction(reservationsResource, c.ns, opts))
+
 }
 
 // Create takes the representation of a reservation and creates it.  Returns the server's representation of the reservation, and an error, if there is any.
 func (c *FakeReservations) Create(ctx context.Context, reservation *v1alpha1.Reservation, opts v1.CreateOptions) (result *v1alpha1.Reservation, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(reservationsResource, reservation), &v1alpha1.Reservation{})
+		Invokes(testing.NewCreateAction(reservationsResource, c.ns, reservation), &v1alpha1.Reservation{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -89,7 +94,8 @@ func (c *FakeReservations) Create(ctx context.Context, reservation *v1alpha1.Res
 // Update takes the representation of a reservation and updates it. Returns the server's representation of the reservation, and an error, if there is any.
 func (c *FakeReservations) Update(ctx context.Context, reservation *v1alpha1.Reservation, opts v1.UpdateOptions) (result *v1alpha1.Reservation, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(reservationsResource, reservation), &v1alpha1.Reservation{})
+		Invokes(testing.NewUpdateAction(reservationsResource, c.ns, reservation), &v1alpha1.Reservation{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -100,7 +106,8 @@ func (c *FakeReservations) Update(ctx context.Context, reservation *v1alpha1.Res
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
 func (c *FakeReservations) UpdateStatus(ctx context.Context, reservation *v1alpha1.Reservation, opts v1.UpdateOptions) (*v1alpha1.Reservation, error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(reservationsResource, "status", reservation), &v1alpha1.Reservation{})
+		Invokes(testing.NewUpdateSubresourceAction(reservationsResource, "status", c.ns, reservation), &v1alpha1.Reservation{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -110,13 +117,14 @@ func (c *FakeReservations) UpdateStatus(ctx context.Context, reservation *v1alph
 // Delete takes name of the reservation and deletes it. Returns an error if one occurs.
 func (c *FakeReservations) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(reservationsResource, name), &v1alpha1.Reservation{})
+		Invokes(testing.NewDeleteAction(reservationsResource, c.ns, name), &v1alpha1.Reservation{})
+
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeReservations) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(reservationsResource, listOpts)
+	action := testing.NewDeleteCollectionAction(reservationsResource, c.ns, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1alpha1.ReservationList{})
 	return err
@@ -125,7 +133,8 @@ func (c *FakeReservations) DeleteCollection(ctx context.Context, opts v1.DeleteO
 // Patch applies the patch and returns the patched reservation.
 func (c *FakeReservations) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.Reservation, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(reservationsResource, name, pt, data, subresources...), &v1alpha1.Reservation{})
+		Invokes(testing.NewPatchSubresourceAction(reservationsResource, c.ns, name, pt, data, subresources...), &v1alpha1.Reservation{})
+
 	if obj == nil {
 		return nil, err
 	}

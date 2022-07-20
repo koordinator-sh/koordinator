@@ -32,8 +32,8 @@ func (c *FakeSchedulingV1alpha1) PodMigrationJobs() v1alpha1.PodMigrationJobInte
 	return &FakePodMigrationJobs{c}
 }
 
-func (c *FakeSchedulingV1alpha1) Reservations() v1alpha1.ReservationInterface {
-	return &FakeReservations{c}
+func (c *FakeSchedulingV1alpha1) Reservations(namespace string) v1alpha1.ReservationInterface {
+	return &FakeReservations{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

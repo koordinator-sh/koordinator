@@ -33,7 +33,7 @@ import (
 // ReservationsGetter has a method to return a ReservationInterface.
 // A group's client should implement this interface.
 type ReservationsGetter interface {
-	Reservations() ReservationInterface
+	Reservations(namespace string) ReservationInterface
 }
 
 // ReservationInterface has methods to work with Reservation resources.
@@ -53,12 +53,14 @@ type ReservationInterface interface {
 // reservations implements ReservationInterface
 type reservations struct {
 	client rest.Interface
+	ns     string
 }
 
 // newReservations returns a Reservations
-func newReservations(c *SchedulingV1alpha1Client) *reservations {
+func newReservations(c *SchedulingV1alpha1Client, namespace string) *reservations {
 	return &reservations{
 		client: c.RESTClient(),
+		ns:     namespace,
 	}
 }
 
@@ -66,6 +68,7 @@ func newReservations(c *SchedulingV1alpha1Client) *reservations {
 func (c *reservations) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.Reservation, err error) {
 	result = &v1alpha1.Reservation{}
 	err = c.client.Get().
+		Namespace(c.ns).
 		Resource("reservations").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
@@ -82,6 +85,7 @@ func (c *reservations) List(ctx context.Context, opts v1.ListOptions) (result *v
 	}
 	result = &v1alpha1.ReservationList{}
 	err = c.client.Get().
+		Namespace(c.ns).
 		Resource("reservations").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -98,6 +102,7 @@ func (c *reservations) Watch(ctx context.Context, opts v1.ListOptions) (watch.In
 	}
 	opts.Watch = true
 	return c.client.Get().
+		Namespace(c.ns).
 		Resource("reservations").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -108,6 +113,7 @@ func (c *reservations) Watch(ctx context.Context, opts v1.ListOptions) (watch.In
 func (c *reservations) Create(ctx context.Context, reservation *v1alpha1.Reservation, opts v1.CreateOptions) (result *v1alpha1.Reservation, err error) {
 	result = &v1alpha1.Reservation{}
 	err = c.client.Post().
+		Namespace(c.ns).
 		Resource("reservations").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(reservation).
@@ -120,6 +126,7 @@ func (c *reservations) Create(ctx context.Context, reservation *v1alpha1.Reserva
 func (c *reservations) Update(ctx context.Context, reservation *v1alpha1.Reservation, opts v1.UpdateOptions) (result *v1alpha1.Reservation, err error) {
 	result = &v1alpha1.Reservation{}
 	err = c.client.Put().
+		Namespace(c.ns).
 		Resource("reservations").
 		Name(reservation.Name).
 		VersionedParams(&opts, scheme.ParameterCodec).
@@ -134,6 +141,7 @@ func (c *reservations) Update(ctx context.Context, reservation *v1alpha1.Reserva
 func (c *reservations) UpdateStatus(ctx context.Context, reservation *v1alpha1.Reservation, opts v1.UpdateOptions) (result *v1alpha1.Reservation, err error) {
 	result = &v1alpha1.Reservation{}
 	err = c.client.Put().
+		Namespace(c.ns).
 		Resource("reservations").
 		Name(reservation.Name).
 		SubResource("status").
@@ -147,6 +155,7 @@ func (c *reservations) UpdateStatus(ctx context.Context, reservation *v1alpha1.R
 // Delete takes name of the reservation and deletes it. Returns an error if one occurs.
 func (c *reservations) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	return c.client.Delete().
+		Namespace(c.ns).
 		Resource("reservations").
 		Name(name).
 		Body(&opts).
@@ -161,6 +170,7 @@ func (c *reservations) DeleteCollection(ctx context.Context, opts v1.DeleteOptio
 		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
 	}
 	return c.client.Delete().
+		Namespace(c.ns).
 		Resource("reservations").
 		VersionedParams(&listOpts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -173,6 +183,7 @@ func (c *reservations) DeleteCollection(ctx context.Context, opts v1.DeleteOptio
 func (c *reservations) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.Reservation, err error) {
 	result = &v1alpha1.Reservation{}
 	err = c.client.Patch(pt).
+		Namespace(c.ns).
 		Resource("reservations").
 		Name(name).
 		SubResource(subresources...).
