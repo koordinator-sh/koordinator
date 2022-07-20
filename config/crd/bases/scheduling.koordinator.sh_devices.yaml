@@ -36,9 +36,6 @@ spec:
               devices:
                 items:
                   properties:
-                    deviceType:
-                      description: Type represents the type of device
-                      type: string
                     health:
                       description: Health indicates whether the device is normal
                       type: boolean
@@ -50,16 +47,19 @@ spec:
                         from 0
                       format: int32
                       type: integer
-                    resource:
+                    resources:
                       additionalProperties:
                         anyOf:
                         - type: integer
                         - type: string
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
-                      description: Resources represents the total capacity of various
-                        resources of the device
+                      description: Resources is a set of (resource name, quantity)
+                        pairs
                       type: object
+                    type:
+                      description: Type represents the type of device
+                      type: string
                   type: object
                 type: array
             required:

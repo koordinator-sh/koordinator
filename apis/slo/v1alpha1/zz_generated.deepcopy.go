@@ -22,6 +22,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"k8s.io/api/core/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
@@ -549,6 +550,13 @@ func (in *ResourceMap) DeepCopyInto(out *ResourceMap) {
 		*out = make(v1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
+		}
+	}
+	if in.Devices != nil {
+		in, out := &in.Devices, &out.Devices
+		*out = make([]schedulingv1alpha1.DeviceInfo, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 }

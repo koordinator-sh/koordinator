@@ -17,7 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"k8s.io/apimachinery/pkg/api/resource"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -39,11 +39,11 @@ type DeviceInfo struct {
 	// Minor represents the Minor number of Device, starting from 0
 	Minor int32 `json:"minor,omitempty"`
 	// Type represents the type of device
-	Type DeviceType `json:"deviceType,omitempty"`
+	Type DeviceType `json:"type,omitempty"`
 	// Health indicates whether the device is normal
 	Health bool `json:"health,omitempty"`
-	// Resources represents the total capacity of various resources of the device
-	Resources map[string]resource.Quantity `json:"resource,omitempty"`
+	// Resources is a set of (resource name, quantity) pairs
+	Resources corev1.ResourceList `json:"resources,omitempty"`
 }
 
 type DeviceStatus struct {
