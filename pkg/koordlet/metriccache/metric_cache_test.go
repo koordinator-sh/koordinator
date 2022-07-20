@@ -21,9 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/resource"
-
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
@@ -54,6 +53,10 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 						MemoryUsed: MemoryMetric{
 							MemoryWithoutCache: *resource.NewQuantity(30, resource.BinarySI),
 						},
+						GPUs: []GPUMetric{
+							{DeviceUUID: "1", Minor: 0, SMUtil: 80, MemoryUsed: *resource.NewQuantity(30, resource.BinarySI)},
+							{DeviceUUID: "2", Minor: 1, SMUtil: 40, MemoryUsed: *resource.NewQuantity(50, resource.BinarySI)},
+						},
 					},
 					now.Add(-time.Second * 10): {
 						CPUUsed: CPUMetric{
@@ -62,6 +65,10 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 						MemoryUsed: MemoryMetric{
 							MemoryWithoutCache: *resource.NewQuantity(10, resource.BinarySI),
 						},
+						GPUs: []GPUMetric{
+							{DeviceUUID: "1", Minor: 0, SMUtil: 60, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+							{DeviceUUID: "2", Minor: 1, SMUtil: 50, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+						},
 					},
 					now.Add(-time.Second * 5): {
 						CPUUsed: CPUMetric{
@@ -69,6 +76,10 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 						},
 						MemoryUsed: MemoryMetric{
 							MemoryWithoutCache: *resource.NewQuantity(20, resource.BinarySI),
+						},
+						GPUs: []GPUMetric{
+							{DeviceUUID: "1", Minor: 0, SMUtil: 70, MemoryUsed: *resource.NewQuantity(50, resource.BinarySI)},
+							{DeviceUUID: "2", Minor: 1, SMUtil: 60, MemoryUsed: *resource.NewQuantity(30, resource.BinarySI)},
 						},
 					},
 				},
@@ -81,6 +92,10 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 					MemoryUsed: MemoryMetric{
 						MemoryWithoutCache: *resource.NewQuantity(20, resource.BinarySI),
 					},
+					GPUs: []GPUMetric{
+						{DeviceUUID: "1", Minor: 0, SMUtil: 70, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+						{DeviceUUID: "2", Minor: 1, SMUtil: 50, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+					},
 				},
 				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 3}},
 			},
@@ -91,6 +106,10 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 					},
 					MemoryUsed: MemoryMetric{
 						MemoryWithoutCache: *resource.NewQuantity(15, resource.BinarySI),
+					},
+					GPUs: []GPUMetric{
+						{DeviceUUID: "1", Minor: 0, SMUtil: 65, MemoryUsed: *resource.NewQuantity(45, resource.BinarySI)},
+						{DeviceUUID: "2", Minor: 1, SMUtil: 55, MemoryUsed: *resource.NewQuantity(35, resource.BinarySI)},
 					},
 				},
 				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 2}},
@@ -304,6 +323,10 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 						MemoryUsed: MemoryMetric{
 							MemoryWithoutCache: *resource.NewQuantity(30, resource.BinarySI),
 						},
+						GPUs: []GPUMetric{
+							{DeviceUUID: "1", Minor: 0, SMUtil: 80, MemoryUsed: *resource.NewQuantity(30, resource.BinarySI)},
+							{DeviceUUID: "2", Minor: 1, SMUtil: 40, MemoryUsed: *resource.NewQuantity(50, resource.BinarySI)},
+						},
 					},
 					now.Add(-time.Second * 10): {
 						ContainerID: "container-id-1",
@@ -313,6 +336,10 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 						MemoryUsed: MemoryMetric{
 							MemoryWithoutCache: *resource.NewQuantity(10, resource.BinarySI),
 						},
+						GPUs: []GPUMetric{
+							{DeviceUUID: "1", Minor: 0, SMUtil: 60, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+							{DeviceUUID: "2", Minor: 1, SMUtil: 50, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+						},
 					},
 					now.Add(-time.Second * 5): {
 						ContainerID: "container-id-1",
@@ -321,6 +348,10 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 						},
 						MemoryUsed: MemoryMetric{
 							MemoryWithoutCache: *resource.NewQuantity(20, resource.BinarySI),
+						},
+						GPUs: []GPUMetric{
+							{DeviceUUID: "1", Minor: 0, SMUtil: 70, MemoryUsed: *resource.NewQuantity(50, resource.BinarySI)},
+							{DeviceUUID: "2", Minor: 1, SMUtil: 60, MemoryUsed: *resource.NewQuantity(30, resource.BinarySI)},
 						},
 					},
 					now.Add(-time.Second * 4): {
@@ -343,6 +374,10 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 					MemoryUsed: MemoryMetric{
 						MemoryWithoutCache: *resource.NewQuantity(20, resource.BinarySI),
 					},
+					GPUs: []GPUMetric{
+						{DeviceUUID: "1", Minor: 0, SMUtil: 70, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+						{DeviceUUID: "2", Minor: 1, SMUtil: 50, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+					},
 				},
 				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 3}},
 			},
@@ -354,6 +389,10 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 					},
 					MemoryUsed: MemoryMetric{
 						MemoryWithoutCache: *resource.NewQuantity(15, resource.BinarySI),
+					},
+					GPUs: []GPUMetric{
+						{DeviceUUID: "1", Minor: 0, SMUtil: 65, MemoryUsed: *resource.NewQuantity(45, resource.BinarySI)},
+						{DeviceUUID: "2", Minor: 1, SMUtil: 55, MemoryUsed: *resource.NewQuantity(35, resource.BinarySI)},
 					},
 				},
 				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 2}},
@@ -458,7 +497,6 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 			if got.Error != nil {
 				t.Errorf("get container metric failed %v", got.Error)
 			}
-
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("GetContainerResourceMetric() got = %v, want %v", got, tt.want)
 			}
@@ -934,6 +972,143 @@ func Test_metricCache_PodThrottledMetric_CRUD(t *testing.T) {
 			if !reflect.DeepEqual(gotAfterDel, tt.wantAfterDelete) {
 				t.Errorf("GetPodThrottledMetric() after delete, got = %v, want %v",
 					gotAfterDel, tt.wantAfterDelete)
+			}
+		})
+	}
+}
+
+func Test_metricCache_aggregateGPUUsages(t *testing.T) {
+	type fields struct {
+		config *Config
+	}
+	type args struct {
+		gpuResourceMetrics [][]gpuResourceMetric
+		aggregateFunc      AggregationFunc
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    []GPUMetric
+		wantErr bool
+	}{
+		{
+			name: "sample device",
+			fields: fields{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+			},
+			args: args{
+				aggregateFunc: getAggregateFunc(AggregationTypeAVG),
+				gpuResourceMetrics: [][]gpuResourceMetric{
+					{
+						{DeviceUUID: "1-1", Minor: 0, SMUtil: 20, MemoryUsed: 1000},
+						{DeviceUUID: "2-1", Minor: 1, SMUtil: 40, MemoryUsed: 2000},
+					},
+					{
+						{DeviceUUID: "1-1", Minor: 0, SMUtil: 40, MemoryUsed: 4000},
+						{DeviceUUID: "2-1", Minor: 1, SMUtil: 30, MemoryUsed: 1000},
+					},
+				},
+			},
+			want: []GPUMetric{
+				{DeviceUUID: "1-1", Minor: 0, SMUtil: 30, MemoryUsed: *resource.NewQuantity(2500, resource.BinarySI)},
+				{DeviceUUID: "2-1", Minor: 1, SMUtil: 35, MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI)},
+			},
+		},
+
+		{
+			name: "difference device",
+			fields: fields{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+			},
+			args: args{
+				aggregateFunc: getAggregateFunc(AggregationTypeAVG),
+				gpuResourceMetrics: [][]gpuResourceMetric{
+					{
+						{DeviceUUID: "1-1", Minor: 0, SMUtil: 20, MemoryUsed: 1000},
+						{DeviceUUID: "2-1", Minor: 1, SMUtil: 40, MemoryUsed: 4000},
+					},
+					{
+						{DeviceUUID: "3-1", Minor: 2, SMUtil: 40, MemoryUsed: 4000},
+						{DeviceUUID: "4-1", Minor: 3, SMUtil: 30, MemoryUsed: 1000},
+					},
+				},
+			},
+			want: []GPUMetric{
+				{DeviceUUID: "3-1", Minor: 2, SMUtil: 30, MemoryUsed: *resource.NewQuantity(2500, resource.BinarySI)},
+				{DeviceUUID: "4-1", Minor: 3, SMUtil: 35, MemoryUsed: *resource.NewQuantity(2500, resource.BinarySI)},
+			},
+		},
+		{
+			name: "single device",
+			fields: fields{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+			},
+			args: args{
+				aggregateFunc: getAggregateFunc(AggregationTypeAVG),
+				gpuResourceMetrics: [][]gpuResourceMetric{
+					{
+						{DeviceUUID: "2-1", Minor: 1, SMUtil: 40, MemoryUsed: 2000},
+					},
+					{
+						{DeviceUUID: "2-1", Minor: 1, SMUtil: 30, MemoryUsed: 1000},
+					},
+				},
+			},
+			want: []GPUMetric{
+				{DeviceUUID: "2-1", Minor: 1, SMUtil: 35, MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI)},
+			},
+		},
+		{
+			name: "single device and multiple device",
+			fields: fields{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+			},
+			args: args{
+				aggregateFunc: getAggregateFunc(AggregationTypeAVG),
+				gpuResourceMetrics: [][]gpuResourceMetric{
+					{
+						{DeviceUUID: "1-1", Minor: 0, SMUtil: 20, MemoryUsed: 1000},
+						{DeviceUUID: "3-1", Minor: 3, SMUtil: 40, MemoryUsed: 2000},
+					},
+					{
+						{DeviceUUID: "1-1", Minor: 0, SMUtil: 40, MemoryUsed: 1000},
+						{DeviceUUID: "3-1", Minor: 3, SMUtil: 30, MemoryUsed: 1000},
+					},
+				},
+			},
+			want: []GPUMetric{
+				{DeviceUUID: "1-1", Minor: 0, SMUtil: 30, MemoryUsed: *resource.NewQuantity(1000, resource.BinarySI)},
+				{DeviceUUID: "3-1", Minor: 3, SMUtil: 35, MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI)},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := NewStorage()
+			m := &metricCache{
+				config: tt.fields.config,
+				db:     s,
+			}
+			got, err := m.aggregateGPUUsages(tt.args.gpuResourceMetrics, tt.args.aggregateFunc)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("metricCache.aggregateGPUUsages() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("metricCache.aggregateGPUUsages() = %v, want %v", got, tt.want)
 			}
 		})
 	}

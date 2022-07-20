@@ -61,6 +61,8 @@ github.com/Microsoft/go-winio v0.4.15 h1:qkLXKzb1QoVatRyd/YlXZ/Kg0m5K3SPuoD82jjS
 github.com/Microsoft/go-winio v0.4.15/go.mod h1:tTuCMEN+UleMWgg9dVx4Hu52b1bJo+59jBh3ajtinzw=
 github.com/Microsoft/hcsshim v0.8.10-0.20200715222032-5eafd1556990 h1:1xpVY4dSUSbW3PcSGxZJhI8Z+CJiqbd933kM7HIinTc=
 github.com/Microsoft/hcsshim v0.8.10-0.20200715222032-5eafd1556990/go.mod h1:ay/0dTb7NsG8QMDfsRfLHgZo/6xAJShLe1+ePPflihk=
+github.com/NVIDIA/go-nvml v0.11.6-0.0.20220715143214-a79f46f2a6f7 h1:yl06QAxbf3g3VZX5/7CaZfTUZqFztdZZvlq0TfAvQrk=
+github.com/NVIDIA/go-nvml v0.11.6-0.0.20220715143214-a79f46f2a6f7/go.mod h1:hy7HYeQy335x6nEss0Ne3PYqleRa6Ct+VKD9RQ4nyFs=
 github.com/NYTimes/gziphandler v0.0.0-20170623195520-56545f4a5d46/go.mod h1:3wb06e3pkSAbeQ52E9H9iFoQsEEwGN64994WTCIhntQ=
 github.com/NYTimes/gziphandler v1.1.1 h1:ZUDjpQae29j0ryrS0u/B8HZfJBtBQHjqw2rQ2cqUQ3I=
 github.com/NYTimes/gziphandler v1.1.1/go.mod h1:n/CVRwUEOgIxrgPvAQhUUr9oeUtvrhMomdKFjzJNB0c=
