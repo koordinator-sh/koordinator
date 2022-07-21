@@ -48,7 +48,7 @@ The existing [descheduler](https://github.com/kubernetes-sigs/descheduler) in th
 
 We also noticed that the K8s descheduler community also found these problems and proposed corresponding solutions such as [#753 Descheduler framework Proposal](https://github.com/kubernetes-sigs/descheduler/issues/753) and [PoC #781](https://github.com/kubernetes-sigs/descheduler/pull/781). The K8s descheduler community tries to implement a descheduler framework similar to the k8s scheduling framework. This coincides with our thinking.  
 
-On the whole, these solutions solved most of our problems, but we also noticed that the related implementations were not merged into the main branch. But we review these implementations and discussions, and we believe this is the right direction. Considering that Koordiantor has clear milestones for descheduler-related features, we will implement Koordinator's own descheduler independently of the upstream community. We try to use some of the designs in the [#753 PR](https://github.com/kubernetes-sigs/descheduler/issues/753) proposed by the community and we will follow the Koordinator's compatibility principle with K8s to maintain compatibility with the upstream community descheduler when implementing. Such as independent implementation can also drive the evolution of the upstream community's work on the descheduler framework. And when the upstream community has new changes or switches to the architecture that Koordinator deems appropriate, Koordinator will follow up promptly and actively.
+On the whole, these solutions solved most of our problems, but we also noticed that the related implementations were not merged into the main branch. But we review these implementations and discussions, and we believe this is the right direction. Considering that Koordiantor has clear milestones for descheduler-related features, we will implement Koordinator's own descheduler independently of the upstream community. We try to use some of the designs in the [#753 PR](https://github.com/kubernetes-sigs/descheduler/issues/753) proposed by the community, and we will follow the Koordinator's compatibility principle with K8s to maintain compatibility with the upstream community descheduler when implementing. Such as independent implementation can also drive the evolution of the upstream community's work on the descheduler framework. And when the upstream community has new changes or switches to the architecture that Koordinator deems appropriate, Koordinator will follow up promptly and actively.
 
 ### Goals
 
@@ -77,13 +77,13 @@ Currently, descheduler has split `Pod Evictor` and `Evictor Filter`. Users can i
 The `Evictor` interface defined as follows:
 
 ```go
-type EvictOptons struct {
-  Strategy string
-  Reason   string
+type EvictOptions struct {
+    Strategy string
+    Reason   string
 }
 
 type Evictor interface {
-  Evict(context.Context, *v1.Pod, options EvictOptions) bool
+    Evict(context.Context, *v1.Pod, EvictOptions) bool
 }
 ```
 
