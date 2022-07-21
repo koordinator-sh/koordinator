@@ -23,6 +23,6 @@ import (
 )
 
 type ResourceMap struct {
-	corev1.ResourceList `json:",inline"`
+	corev1.ResourceList `json:"resources,omitempty"`
 	Devices             []schedulingv1alpha1.DeviceInfo `json:"devices,omitempty"`
 }
