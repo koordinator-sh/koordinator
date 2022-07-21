@@ -28,6 +28,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/compatibledefaultpreemption"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/nodenumaresource"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 
 	// Ensure scheme package is initialized.
 	_ "github.com/koordinator-sh/koordinator/apis/scheduling/config/scheme"
@@ -38,7 +39,9 @@ func main() {
 
 	// Register custom scheduling hooks for pre-process scheduling context before call plugins.
 	// e.g. change the nodeInfo and make a copy before calling filter plugins
-	var schedulingHooks []frameworkext.SchedulingPhaseHook
+	schedulingHooks := []frameworkext.SchedulingPhaseHook{
+		reservation.NewHook(),
+	}
 
 	// Register custom plugins to the scheduler framework.
 	// Later they can consist of scheduler profile(s) and hence
@@ -48,6 +51,7 @@ func main() {
 		app.WithPlugin(loadaware.Name, loadaware.New),
 		app.WithPlugin(nodenumaresource.Name, nodenumaresource.New),
 		app.WithPlugin(compatibledefaultpreemption.Name, compatibledefaultpreemption.New),
+		app.WithPlugin(reservation.Name, reservation.New),
 	)
 
 	logs.InitLogs()
