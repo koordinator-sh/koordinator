@@ -74,9 +74,10 @@ type rawGPUMetric struct {
 }
 
 type device struct {
-	Minor      int32 // index starting from 0
-	DeviceUUID string
-	Device     nvml.Device
+	Minor       int32 // index starting from 0
+	DeviceUUID  string
+	MemoryTotal uint64
+	Device      nvml.Device
 }
 
 // initGPUDeviceManager will not retry if init fails,
@@ -131,10 +132,16 @@ func (g *gpuDeviceManager) initGPUData() error {
 		if ret != nvml.SUCCESS {
 			return fmt.Errorf("unable to get device minor number: %v", nvml.ErrorString(ret))
 		}
+
+		memory, ret := gpudevice.GetMemoryInfo()
+		if ret != nvml.SUCCESS {
+			return fmt.Errorf("unable to get device memory info: %v", nvml.ErrorString(ret))
+		}
 		devices[deviceIndex] = &device{
-			DeviceUUID: uuid,
-			Minor:      int32(minor),
-			Device:     gpudevice,
+			DeviceUUID:  uuid,
+			Minor:       int32(minor),
+			MemoryTotal: memory.Total,
+			Device:      gpudevice,
 		}
 	}
 
@@ -163,10 +170,11 @@ func (g *gpuDeviceManager) getNodeGPUUsage() []metriccache.GPUMetric {
 	rtn := make([]metriccache.GPUMetric, g.deviceCount)
 	for i := 0; i < g.deviceCount; i++ {
 		rtn[i] = metriccache.GPUMetric{
-			DeviceUUID: g.devices[i].DeviceUUID,
-			Minor:      g.devices[i].Minor,
-			SMUtil:     tmp[i].SMUtil,
-			MemoryUsed: *resource.NewQuantity(int64(tmp[i].MemoryUsed), resource.BinarySI),
+			DeviceUUID:  g.devices[i].DeviceUUID,
+			Minor:       g.devices[i].Minor,
+			SMUtil:      tmp[i].SMUtil,
+			MemoryUsed:  *resource.NewQuantity(int64(tmp[i].MemoryUsed), resource.BinarySI),
+			MemoryTotal: *resource.NewQuantity(int64(g.devices[i].MemoryTotal), resource.BinarySI),
 		}
 	}
 	return rtn
@@ -197,10 +205,11 @@ func (g *gpuDeviceManager) getTotalGPUUsageOfPIDs(pids []uint64) []metriccache.G
 	for i := 0; i < g.deviceCount; i++ {
 		if value, ok := tmp[i]; ok {
 			rtn = append(rtn, metriccache.GPUMetric{
-				DeviceUUID: g.devices[i].DeviceUUID,
-				Minor:      g.devices[i].Minor,
-				SMUtil:     value.SMUtil,
-				MemoryUsed: *resource.NewQuantity(int64(value.MemoryUsed), resource.BinarySI),
+				DeviceUUID:  g.devices[i].DeviceUUID,
+				Minor:       g.devices[i].Minor,
+				SMUtil:      value.SMUtil,
+				MemoryUsed:  *resource.NewQuantity(int64(value.MemoryUsed), resource.BinarySI),
+				MemoryTotal: *resource.NewQuantity(int64(g.devices[i].MemoryTotal), resource.BinarySI),
 			})
 		}
 	}
@@ -208,6 +217,17 @@ func (g *gpuDeviceManager) getTotalGPUUsageOfPIDs(pids []uint64) []metriccache.G
 }
 
 func (g *gpuDeviceManager) getPodGPUUsage(podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.GPUMetric, error) {
+	runningContainer := make([]corev1.ContainerStatus, 0)
+	for _, c := range cs {
+		if c.State.Running == nil {
+			klog.V(5).Infof("non-running container %s", c.ContainerID)
+			continue
+		}
+		runningContainer = append(runningContainer, c)
+	}
+	if len(runningContainer) == 0 {
+		return nil, nil
+	}
 	pids, err := util.GetPIDsInPod(podParentDir, cs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pid, error: %v", err)
@@ -216,6 +236,10 @@ func (g *gpuDeviceManager) getPodGPUUsage(podParentDir string, cs []corev1.Conta
 }
 
 func (g *gpuDeviceManager) getContainerGPUUsage(podParentDir string, c *corev1.ContainerStatus) ([]metriccache.GPUMetric, error) {
+	if c.State.Running == nil {
+		klog.V(5).Infof("non-running container %s", c.ContainerID)
+		return nil, nil
+	}
 	currentPIDs, err := util.GetPIDsInContainer(podParentDir, c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pid, error: %v", err)

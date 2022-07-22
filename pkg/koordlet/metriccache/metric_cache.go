@@ -470,11 +470,12 @@ func (m *metricCache) InsertNodeResourceMetric(t time.Time, nodeResUsed *NodeRes
 	gpuUsages := make([]gpuResourceMetric, len(nodeResUsed.GPUs))
 	for idx, usage := range nodeResUsed.GPUs {
 		gpuUsages[idx] = gpuResourceMetric{
-			DeviceUUID: usage.DeviceUUID,
-			Minor:      usage.Minor,
-			SMUtil:     float64(usage.SMUtil),
-			MemoryUsed: float64(usage.MemoryUsed.Value()),
-			Timestamp:  t,
+			DeviceUUID:  usage.DeviceUUID,
+			Minor:       usage.Minor,
+			SMUtil:      float64(usage.SMUtil),
+			MemoryUsed:  float64(usage.MemoryUsed.Value()),
+			MemoryTotal: float64(usage.MemoryTotal.Value()),
+			Timestamp:   t,
 		}
 	}
 
@@ -491,11 +492,12 @@ func (m *metricCache) InsertPodResourceMetric(t time.Time, podResUsed *PodResour
 	gpuUsages := make([]gpuResourceMetric, len(podResUsed.GPUs))
 	for idx, usage := range podResUsed.GPUs {
 		gpuUsages[idx] = gpuResourceMetric{
-			DeviceUUID: usage.DeviceUUID,
-			Minor:      usage.Minor,
-			SMUtil:     float64(usage.SMUtil),
-			MemoryUsed: float64(usage.MemoryUsed.Value()),
-			Timestamp:  t,
+			DeviceUUID:  usage.DeviceUUID,
+			Minor:       usage.Minor,
+			SMUtil:      float64(usage.SMUtil),
+			MemoryUsed:  float64(usage.MemoryUsed.Value()),
+			MemoryTotal: float64(usage.MemoryTotal.Value()),
+			Timestamp:   t,
 		}
 	}
 
@@ -513,11 +515,12 @@ func (m *metricCache) InsertContainerResourceMetric(t time.Time, containerResUse
 	gpuUsages := make([]gpuResourceMetric, len(containerResUsed.GPUs))
 	for idx, usage := range containerResUsed.GPUs {
 		gpuUsages[idx] = gpuResourceMetric{
-			DeviceUUID: usage.DeviceUUID,
-			Minor:      usage.Minor,
-			SMUtil:     float64(usage.SMUtil),
-			MemoryUsed: float64(usage.MemoryUsed.Value()),
-			Timestamp:  t,
+			DeviceUUID:  usage.DeviceUUID,
+			Minor:       usage.Minor,
+			SMUtil:      float64(usage.SMUtil),
+			MemoryUsed:  float64(usage.MemoryUsed.Value()),
+			MemoryTotal: float64(usage.MemoryTotal.Value()),
+			Timestamp:   t,
 		}
 	}
 	dbItem := &containerResourceMetric{
@@ -604,10 +607,11 @@ func (m *metricCache) aggregateGPUUsages(gpuResourceMetricsByTime [][]gpuResourc
 		}
 
 		g := GPUMetric{
-			DeviceUUID: v[len(v)-1].DeviceUUID,
-			Minor:      v[len(v)-1].Minor,
-			SMUtil:     uint32(smutil),
-			MemoryUsed: *resource.NewQuantity(int64(memoryUsed), resource.BinarySI),
+			DeviceUUID:  v[len(v)-1].DeviceUUID,
+			Minor:       v[len(v)-1].Minor,
+			SMUtil:      uint32(smutil),
+			MemoryUsed:  *resource.NewQuantity(int64(memoryUsed), resource.BinarySI),
+			MemoryTotal: *resource.NewQuantity(int64(v[len(v)-1].MemoryTotal), resource.BinarySI),
 		}
 		metrics = append(metrics, g)
 	}

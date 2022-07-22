@@ -29,11 +29,12 @@ const (
 )
 
 type gpuResourceMetric struct {
-	Minor      int32   // index starting from 0
-	DeviceUUID string  // device UUID
-	SMUtil     float64 // current utilization rate for the device
-	MemoryUsed float64 // used memory on the device, in bytes
-	Timestamp  time.Time
+	Minor       int32   // index starting from 0
+	DeviceUUID  string  // device UUID
+	SMUtil      float64 // current utilization rate for the device
+	MemoryUsed  float64 // used memory on the device, in bytes
+	MemoryTotal float64 // total memory on the device, in bytes
+	Timestamp   time.Time
 }
 
 type GPUMetricsArray []gpuResourceMetric

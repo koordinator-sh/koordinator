@@ -54,8 +54,20 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 							MemoryWithoutCache: *resource.NewQuantity(30, resource.BinarySI),
 						},
 						GPUs: []GPUMetric{
-							{DeviceUUID: "1", Minor: 0, SMUtil: 80, MemoryUsed: *resource.NewQuantity(30, resource.BinarySI)},
-							{DeviceUUID: "2", Minor: 1, SMUtil: 40, MemoryUsed: *resource.NewQuantity(50, resource.BinarySI)},
+							{
+								DeviceUUID:  "1",
+								Minor:       0,
+								SMUtil:      80,
+								MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+							},
+							{
+								DeviceUUID:  "2",
+								Minor:       1,
+								SMUtil:      40,
+								MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+							},
 						},
 					},
 					now.Add(-time.Second * 10): {
@@ -66,8 +78,20 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 							MemoryWithoutCache: *resource.NewQuantity(10, resource.BinarySI),
 						},
 						GPUs: []GPUMetric{
-							{DeviceUUID: "1", Minor: 0, SMUtil: 60, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
-							{DeviceUUID: "2", Minor: 1, SMUtil: 50, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+							{
+								DeviceUUID:  "1",
+								Minor:       0,
+								SMUtil:      60,
+								MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+							},
+							{
+								DeviceUUID:  "2",
+								Minor:       1,
+								SMUtil:      50,
+								MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+							},
 						},
 					},
 					now.Add(-time.Second * 5): {
@@ -78,8 +102,20 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 							MemoryWithoutCache: *resource.NewQuantity(20, resource.BinarySI),
 						},
 						GPUs: []GPUMetric{
-							{DeviceUUID: "1", Minor: 0, SMUtil: 70, MemoryUsed: *resource.NewQuantity(50, resource.BinarySI)},
-							{DeviceUUID: "2", Minor: 1, SMUtil: 60, MemoryUsed: *resource.NewQuantity(30, resource.BinarySI)},
+							{
+								DeviceUUID:  "1",
+								Minor:       0,
+								SMUtil:      70,
+								MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+							},
+							{
+								DeviceUUID:  "2",
+								Minor:       1,
+								SMUtil:      60,
+								MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+							},
 						},
 					},
 				},
@@ -93,8 +129,20 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 						MemoryWithoutCache: *resource.NewQuantity(20, resource.BinarySI),
 					},
 					GPUs: []GPUMetric{
-						{DeviceUUID: "1", Minor: 0, SMUtil: 70, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
-						{DeviceUUID: "2", Minor: 1, SMUtil: 50, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+						{
+							DeviceUUID:  "1",
+							Minor:       0,
+							SMUtil:      70,
+							MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+						},
+						{
+							DeviceUUID:  "2",
+							Minor:       1,
+							SMUtil:      50,
+							MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+						},
 					},
 				},
 				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 3}},
@@ -108,8 +156,20 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 						MemoryWithoutCache: *resource.NewQuantity(15, resource.BinarySI),
 					},
 					GPUs: []GPUMetric{
-						{DeviceUUID: "1", Minor: 0, SMUtil: 65, MemoryUsed: *resource.NewQuantity(45, resource.BinarySI)},
-						{DeviceUUID: "2", Minor: 1, SMUtil: 55, MemoryUsed: *resource.NewQuantity(35, resource.BinarySI)},
+						{
+							DeviceUUID:  "1",
+							Minor:       0,
+							SMUtil:      65,
+							MemoryUsed:  *resource.NewQuantity(45, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+						},
+						{
+							DeviceUUID:  "2",
+							Minor:       1,
+							SMUtil:      55,
+							MemoryUsed:  *resource.NewQuantity(35, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+						},
 					},
 				},
 				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 2}},
@@ -190,6 +250,22 @@ func Test_metricCache_PodResourceMetric_CRUD(t *testing.T) {
 						MemoryUsed: MemoryMetric{
 							MemoryWithoutCache: *resource.NewQuantity(30, resource.BinarySI),
 						},
+						GPUs: []GPUMetric{
+							{
+								DeviceUUID:  "1",
+								Minor:       0,
+								SMUtil:      80,
+								MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+							},
+							{
+								DeviceUUID:  "2",
+								Minor:       1,
+								SMUtil:      40,
+								MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+							},
+						},
 					},
 					now.Add(-time.Second * 10): {
 						PodUID: "pod-uid-1",
@@ -199,6 +275,22 @@ func Test_metricCache_PodResourceMetric_CRUD(t *testing.T) {
 						MemoryUsed: MemoryMetric{
 							MemoryWithoutCache: *resource.NewQuantity(10, resource.BinarySI),
 						},
+						GPUs: []GPUMetric{
+							{
+								DeviceUUID:  "1",
+								Minor:       0,
+								SMUtil:      60,
+								MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+							},
+							{
+								DeviceUUID:  "2",
+								Minor:       1,
+								SMUtil:      50,
+								MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+							},
+						},
 					},
 					now.Add(-time.Second * 5): {
 						PodUID: "pod-uid-1",
@@ -207,6 +299,22 @@ func Test_metricCache_PodResourceMetric_CRUD(t *testing.T) {
 						},
 						MemoryUsed: MemoryMetric{
 							MemoryWithoutCache: *resource.NewQuantity(20, resource.BinarySI),
+						},
+						GPUs: []GPUMetric{
+							{
+								DeviceUUID:  "1",
+								Minor:       0,
+								SMUtil:      70,
+								MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+							},
+							{
+								DeviceUUID:  "2",
+								Minor:       1,
+								SMUtil:      60,
+								MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+							},
 						},
 					},
 					now.Add(-time.Second * 4): {
@@ -229,6 +337,22 @@ func Test_metricCache_PodResourceMetric_CRUD(t *testing.T) {
 					MemoryUsed: MemoryMetric{
 						MemoryWithoutCache: *resource.NewQuantity(20, resource.BinarySI),
 					},
+					GPUs: []GPUMetric{
+						{
+							DeviceUUID:  "1",
+							Minor:       0,
+							SMUtil:      70,
+							MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+						},
+						{
+							DeviceUUID:  "2",
+							Minor:       1,
+							SMUtil:      50,
+							MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+						},
+					},
 				},
 				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 3}},
 			},
@@ -241,6 +365,22 @@ func Test_metricCache_PodResourceMetric_CRUD(t *testing.T) {
 					},
 					MemoryUsed: MemoryMetric{
 						MemoryWithoutCache: *resource.NewQuantity(15, resource.BinarySI),
+					},
+					GPUs: []GPUMetric{
+						{
+							DeviceUUID:  "1",
+							Minor:       0,
+							SMUtil:      65,
+							MemoryUsed:  *resource.NewQuantity(45, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+						},
+						{
+							DeviceUUID:  "2",
+							Minor:       1,
+							SMUtil:      55,
+							MemoryUsed:  *resource.NewQuantity(35, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+						},
 					},
 				},
 				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 2}},
@@ -324,8 +464,20 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 							MemoryWithoutCache: *resource.NewQuantity(30, resource.BinarySI),
 						},
 						GPUs: []GPUMetric{
-							{DeviceUUID: "1", Minor: 0, SMUtil: 80, MemoryUsed: *resource.NewQuantity(30, resource.BinarySI)},
-							{DeviceUUID: "2", Minor: 1, SMUtil: 40, MemoryUsed: *resource.NewQuantity(50, resource.BinarySI)},
+							{
+								DeviceUUID:  "1",
+								Minor:       0,
+								SMUtil:      80,
+								MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+							},
+							{
+								DeviceUUID:  "2",
+								Minor:       1,
+								SMUtil:      40,
+								MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+							},
 						},
 					},
 					now.Add(-time.Second * 10): {
@@ -337,8 +489,20 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 							MemoryWithoutCache: *resource.NewQuantity(10, resource.BinarySI),
 						},
 						GPUs: []GPUMetric{
-							{DeviceUUID: "1", Minor: 0, SMUtil: 60, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
-							{DeviceUUID: "2", Minor: 1, SMUtil: 50, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+							{
+								DeviceUUID:  "1",
+								Minor:       0,
+								SMUtil:      60,
+								MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+							},
+							{
+								DeviceUUID:  "2",
+								Minor:       1,
+								SMUtil:      50,
+								MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+							},
 						},
 					},
 					now.Add(-time.Second * 5): {
@@ -350,8 +514,20 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 							MemoryWithoutCache: *resource.NewQuantity(20, resource.BinarySI),
 						},
 						GPUs: []GPUMetric{
-							{DeviceUUID: "1", Minor: 0, SMUtil: 70, MemoryUsed: *resource.NewQuantity(50, resource.BinarySI)},
-							{DeviceUUID: "2", Minor: 1, SMUtil: 60, MemoryUsed: *resource.NewQuantity(30, resource.BinarySI)},
+							{
+								DeviceUUID:  "1",
+								Minor:       0,
+								SMUtil:      70,
+								MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+							},
+							{
+								DeviceUUID:  "2",
+								Minor:       1,
+								SMUtil:      60,
+								MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+								MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+							},
 						},
 					},
 					now.Add(-time.Second * 4): {
@@ -375,8 +551,20 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 						MemoryWithoutCache: *resource.NewQuantity(20, resource.BinarySI),
 					},
 					GPUs: []GPUMetric{
-						{DeviceUUID: "1", Minor: 0, SMUtil: 70, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
-						{DeviceUUID: "2", Minor: 1, SMUtil: 50, MemoryUsed: *resource.NewQuantity(40, resource.BinarySI)},
+						{
+							DeviceUUID:  "1",
+							Minor:       0,
+							SMUtil:      70,
+							MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+						},
+						{
+							DeviceUUID:  "2",
+							Minor:       1,
+							SMUtil:      50,
+							MemoryUsed:  *resource.NewQuantity(40, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+						},
 					},
 				},
 				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 3}},
@@ -391,8 +579,20 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 						MemoryWithoutCache: *resource.NewQuantity(15, resource.BinarySI),
 					},
 					GPUs: []GPUMetric{
-						{DeviceUUID: "1", Minor: 0, SMUtil: 65, MemoryUsed: *resource.NewQuantity(45, resource.BinarySI)},
-						{DeviceUUID: "2", Minor: 1, SMUtil: 55, MemoryUsed: *resource.NewQuantity(35, resource.BinarySI)},
+						{
+							DeviceUUID:  "1",
+							Minor:       0,
+							SMUtil:      65,
+							MemoryUsed:  *resource.NewQuantity(45, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
+						},
+						{
+							DeviceUUID:  "2",
+							Minor:       1,
+							SMUtil:      55,
+							MemoryUsed:  *resource.NewQuantity(35, resource.BinarySI),
+							MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+						},
 					},
 				},
 				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 2}},
@@ -1004,18 +1204,30 @@ func Test_metricCache_aggregateGPUUsages(t *testing.T) {
 				aggregateFunc: getAggregateFunc(AggregationTypeAVG),
 				gpuResourceMetrics: [][]gpuResourceMetric{
 					{
-						{DeviceUUID: "1-1", Minor: 0, SMUtil: 20, MemoryUsed: 1000},
-						{DeviceUUID: "2-1", Minor: 1, SMUtil: 40, MemoryUsed: 2000},
+						{DeviceUUID: "1-1", Minor: 0, SMUtil: 20, MemoryUsed: 1000, MemoryTotal: 10000},
+						{DeviceUUID: "2-1", Minor: 1, SMUtil: 40, MemoryUsed: 2000, MemoryTotal: 20000},
 					},
 					{
-						{DeviceUUID: "1-1", Minor: 0, SMUtil: 40, MemoryUsed: 4000},
-						{DeviceUUID: "2-1", Minor: 1, SMUtil: 30, MemoryUsed: 1000},
+						{DeviceUUID: "1-1", Minor: 0, SMUtil: 40, MemoryUsed: 4000, MemoryTotal: 10000},
+						{DeviceUUID: "2-1", Minor: 1, SMUtil: 30, MemoryUsed: 1000, MemoryTotal: 20000},
 					},
 				},
 			},
 			want: []GPUMetric{
-				{DeviceUUID: "1-1", Minor: 0, SMUtil: 30, MemoryUsed: *resource.NewQuantity(2500, resource.BinarySI)},
-				{DeviceUUID: "2-1", Minor: 1, SMUtil: 35, MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI)},
+				{
+					DeviceUUID:  "1-1",
+					Minor:       0,
+					SMUtil:      30,
+					MemoryUsed:  *resource.NewQuantity(2500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+				},
+				{
+					DeviceUUID:  "2-1",
+					Minor:       1,
+					SMUtil:      35,
+					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(20000, resource.BinarySI),
+				},
 			},
 		},
 
@@ -1031,18 +1243,30 @@ func Test_metricCache_aggregateGPUUsages(t *testing.T) {
 				aggregateFunc: getAggregateFunc(AggregationTypeAVG),
 				gpuResourceMetrics: [][]gpuResourceMetric{
 					{
-						{DeviceUUID: "1-1", Minor: 0, SMUtil: 20, MemoryUsed: 1000},
-						{DeviceUUID: "2-1", Minor: 1, SMUtil: 40, MemoryUsed: 4000},
+						{DeviceUUID: "1-1", Minor: 0, SMUtil: 20, MemoryUsed: 1000, MemoryTotal: 8000},
+						{DeviceUUID: "2-1", Minor: 1, SMUtil: 40, MemoryUsed: 4000, MemoryTotal: 10000},
 					},
 					{
-						{DeviceUUID: "3-1", Minor: 2, SMUtil: 40, MemoryUsed: 4000},
-						{DeviceUUID: "4-1", Minor: 3, SMUtil: 30, MemoryUsed: 1000},
+						{DeviceUUID: "3-1", Minor: 2, SMUtil: 40, MemoryUsed: 4000, MemoryTotal: 12000},
+						{DeviceUUID: "4-1", Minor: 3, SMUtil: 30, MemoryUsed: 1000, MemoryTotal: 14000},
 					},
 				},
 			},
 			want: []GPUMetric{
-				{DeviceUUID: "3-1", Minor: 2, SMUtil: 30, MemoryUsed: *resource.NewQuantity(2500, resource.BinarySI)},
-				{DeviceUUID: "4-1", Minor: 3, SMUtil: 35, MemoryUsed: *resource.NewQuantity(2500, resource.BinarySI)},
+				{
+					DeviceUUID:  "3-1",
+					Minor:       2,
+					SMUtil:      30,
+					MemoryUsed:  *resource.NewQuantity(2500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(12000, resource.BinarySI),
+				},
+				{
+					DeviceUUID:  "4-1",
+					Minor:       3,
+					SMUtil:      35,
+					MemoryUsed:  *resource.NewQuantity(2500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
+				},
 			},
 		},
 		{
@@ -1057,15 +1281,21 @@ func Test_metricCache_aggregateGPUUsages(t *testing.T) {
 				aggregateFunc: getAggregateFunc(AggregationTypeAVG),
 				gpuResourceMetrics: [][]gpuResourceMetric{
 					{
-						{DeviceUUID: "2-1", Minor: 1, SMUtil: 40, MemoryUsed: 2000},
+						{DeviceUUID: "2-1", Minor: 1, SMUtil: 40, MemoryUsed: 2000, MemoryTotal: 10000},
 					},
 					{
-						{DeviceUUID: "2-1", Minor: 1, SMUtil: 30, MemoryUsed: 1000},
+						{DeviceUUID: "2-1", Minor: 1, SMUtil: 30, MemoryUsed: 1000, MemoryTotal: 12000},
 					},
 				},
 			},
 			want: []GPUMetric{
-				{DeviceUUID: "2-1", Minor: 1, SMUtil: 35, MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI)},
+				{
+					DeviceUUID:  "2-1",
+					Minor:       1,
+					SMUtil:      35,
+					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(12000, resource.BinarySI),
+				},
 			},
 		},
 		{
@@ -1080,18 +1310,30 @@ func Test_metricCache_aggregateGPUUsages(t *testing.T) {
 				aggregateFunc: getAggregateFunc(AggregationTypeAVG),
 				gpuResourceMetrics: [][]gpuResourceMetric{
 					{
-						{DeviceUUID: "1-1", Minor: 0, SMUtil: 20, MemoryUsed: 1000},
-						{DeviceUUID: "3-1", Minor: 3, SMUtil: 40, MemoryUsed: 2000},
+						{DeviceUUID: "1-1", Minor: 0, SMUtil: 20, MemoryUsed: 1000, MemoryTotal: 10000},
+						{DeviceUUID: "3-1", Minor: 3, SMUtil: 40, MemoryUsed: 2000, MemoryTotal: 20000},
 					},
 					{
-						{DeviceUUID: "1-1", Minor: 0, SMUtil: 40, MemoryUsed: 1000},
-						{DeviceUUID: "3-1", Minor: 3, SMUtil: 30, MemoryUsed: 1000},
+						{DeviceUUID: "1-1", Minor: 0, SMUtil: 40, MemoryUsed: 1000, MemoryTotal: 10000},
+						{DeviceUUID: "3-1", Minor: 3, SMUtil: 30, MemoryUsed: 1000, MemoryTotal: 20000},
 					},
 				},
 			},
 			want: []GPUMetric{
-				{DeviceUUID: "1-1", Minor: 0, SMUtil: 30, MemoryUsed: *resource.NewQuantity(1000, resource.BinarySI)},
-				{DeviceUUID: "3-1", Minor: 3, SMUtil: 35, MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI)},
+				{
+					DeviceUUID:  "1-1",
+					Minor:       0,
+					SMUtil:      30,
+					MemoryUsed:  *resource.NewQuantity(1000, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+				},
+				{
+					DeviceUUID:  "3-1",
+					Minor:       3,
+					SMUtil:      35,
+					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(20000, resource.BinarySI),
+				},
 			},
 		},
 	}

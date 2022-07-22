@@ -22,11 +22,13 @@ import (
 	"path"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
@@ -45,7 +47,7 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 			fields: fields{
 				deviceCount: 1,
 				devices: []*device{
-					{Minor: 0, DeviceUUID: "test-device1"},
+					{Minor: 0, DeviceUUID: "test-device1", MemoryTotal: 8000},
 				},
 				processesMetrics: map[uint32][]*rawGPUMetric{
 					122: {{SMUtil: 70, MemoryUsed: 1500}},
@@ -53,10 +55,11 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 			},
 			want: []metriccache.GPUMetric{
 				{
-					DeviceUUID: "test-device1",
-					Minor:      0,
-					SMUtil:     70,
-					MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI),
+					DeviceUUID:  "test-device1",
+					Minor:       0,
+					SMUtil:      70,
+					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
 				},
 			},
 		},
@@ -65,8 +68,8 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 			fields: fields{
 				deviceCount: 2,
 				devices: []*device{
-					{Minor: 0, DeviceUUID: "test-device1"},
-					{Minor: 1, DeviceUUID: "test-device2"},
+					{Minor: 0, DeviceUUID: "test-device1", MemoryTotal: 8000},
+					{Minor: 1, DeviceUUID: "test-device2", MemoryTotal: 9000},
 				},
 				processesMetrics: map[uint32][]*rawGPUMetric{
 					122: {{SMUtil: 70, MemoryUsed: 1500}, nil},
@@ -75,16 +78,18 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 			},
 			want: []metriccache.GPUMetric{
 				{
-					DeviceUUID: "test-device1",
-					Minor:      0,
-					SMUtil:     70,
-					MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI),
+					DeviceUUID:  "test-device1",
+					Minor:       0,
+					SMUtil:      70,
+					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
 				},
 				{
-					DeviceUUID: "test-device2",
-					Minor:      1,
-					SMUtil:     50,
-					MemoryUsed: *resource.NewQuantity(1000, resource.BinarySI),
+					DeviceUUID:  "test-device2",
+					Minor:       1,
+					SMUtil:      50,
+					MemoryUsed:  *resource.NewQuantity(1000, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(9000, resource.BinarySI),
 				},
 			},
 		},
@@ -93,8 +98,8 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 			fields: fields{
 				deviceCount: 2,
 				devices: []*device{
-					{Minor: 0, DeviceUUID: "test-device1"},
-					{Minor: 1, DeviceUUID: "test-device2"},
+					{Minor: 0, DeviceUUID: "test-device1", MemoryTotal: 8000},
+					{Minor: 1, DeviceUUID: "test-device2", MemoryTotal: 9000},
 				},
 				processesMetrics: map[uint32][]*rawGPUMetric{
 					122: {{SMUtil: 70, MemoryUsed: 1500}, {SMUtil: 30, MemoryUsed: 1000}},
@@ -103,16 +108,18 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 			},
 			want: []metriccache.GPUMetric{
 				{
-					DeviceUUID: "test-device1",
-					Minor:      0,
-					SMUtil:     90,
-					MemoryUsed: *resource.NewQuantity(2500, resource.BinarySI),
+					DeviceUUID:  "test-device1",
+					Minor:       0,
+					SMUtil:      90,
+					MemoryUsed:  *resource.NewQuantity(2500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
 				},
 				{
-					DeviceUUID: "test-device2",
-					Minor:      1,
-					SMUtil:     80,
-					MemoryUsed: *resource.NewQuantity(2000, resource.BinarySI),
+					DeviceUUID:  "test-device2",
+					Minor:       1,
+					SMUtil:      80,
+					MemoryUsed:  *resource.NewQuantity(2000, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(9000, resource.BinarySI),
 				},
 			},
 		},
@@ -154,7 +161,7 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 			fields: fields{
 				deviceCount: 1,
 				devices: []*device{
-					{Minor: 0, DeviceUUID: "test-device1"},
+					{Minor: 0, DeviceUUID: "test-device1", MemoryTotal: 14000},
 				},
 				processesMetrics: map[uint32][]*rawGPUMetric{
 					122: {{SMUtil: 70, MemoryUsed: 1500}},
@@ -163,10 +170,11 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 			},
 			want: []metriccache.GPUMetric{
 				{
-					DeviceUUID: "test-device1",
-					Minor:      0,
-					SMUtil:     70,
-					MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI),
+					DeviceUUID:  "test-device1",
+					Minor:       0,
+					SMUtil:      70,
+					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
 				},
 			},
 		},
@@ -178,8 +186,8 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 			fields: fields{
 				deviceCount: 2,
 				devices: []*device{
-					{Minor: 0, DeviceUUID: "test-device1"},
-					{Minor: 1, DeviceUUID: "test-device2"},
+					{Minor: 0, DeviceUUID: "test-device1", MemoryTotal: 14000},
+					{Minor: 1, DeviceUUID: "test-device2", MemoryTotal: 24000},
 				},
 				processesMetrics: map[uint32][]*rawGPUMetric{
 					122: {{SMUtil: 70, MemoryUsed: 1500}, nil},
@@ -188,16 +196,18 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 			},
 			want: []metriccache.GPUMetric{
 				{
-					DeviceUUID: "test-device1",
-					Minor:      0,
-					SMUtil:     70,
-					MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI),
+					DeviceUUID:  "test-device1",
+					Minor:       0,
+					SMUtil:      70,
+					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
 				},
 				{
-					DeviceUUID: "test-device2",
-					Minor:      1,
-					SMUtil:     50,
-					MemoryUsed: *resource.NewQuantity(1000, resource.BinarySI),
+					DeviceUUID:  "test-device2",
+					Minor:       1,
+					SMUtil:      50,
+					MemoryUsed:  *resource.NewQuantity(1000, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
 				},
 			},
 		},
@@ -209,8 +219,8 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 			fields: fields{
 				deviceCount: 2,
 				devices: []*device{
-					{Minor: 0, DeviceUUID: "test-device1"},
-					{Minor: 1, DeviceUUID: "test-device2"},
+					{Minor: 0, DeviceUUID: "test-device1", MemoryTotal: 14000},
+					{Minor: 1, DeviceUUID: "test-device2", MemoryTotal: 24000},
 				},
 				processesMetrics: map[uint32][]*rawGPUMetric{
 					122: {{SMUtil: 70, MemoryUsed: 1500}, nil},
@@ -219,10 +229,11 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 			},
 			want: []metriccache.GPUMetric{
 				{
-					DeviceUUID: "test-device1",
-					Minor:      0,
-					SMUtil:     70,
-					MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI),
+					DeviceUUID:  "test-device1",
+					Minor:       0,
+					SMUtil:      70,
+					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
 				},
 			},
 		},
@@ -234,8 +245,8 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 			fields: fields{
 				deviceCount: 2,
 				devices: []*device{
-					{Minor: 0, DeviceUUID: "test-device1"},
-					{Minor: 1, DeviceUUID: "test-device2"},
+					{Minor: 0, DeviceUUID: "test-device1", MemoryTotal: 14000},
+					{Minor: 1, DeviceUUID: "test-device2", MemoryTotal: 24000},
 				},
 				processesMetrics: map[uint32][]*rawGPUMetric{
 					122: {{SMUtil: 70, MemoryUsed: 1500}, {SMUtil: 50, MemoryUsed: 1000}},
@@ -244,16 +255,18 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 			},
 			want: []metriccache.GPUMetric{
 				{
-					DeviceUUID: "test-device1",
-					Minor:      0,
-					SMUtil:     80,
-					MemoryUsed: *resource.NewQuantity(2500, resource.BinarySI),
+					DeviceUUID:  "test-device1",
+					Minor:       0,
+					SMUtil:      80,
+					MemoryUsed:  *resource.NewQuantity(2500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
 				},
 				{
-					DeviceUUID: "test-device2",
-					Minor:      1,
-					SMUtil:     90,
-					MemoryUsed: *resource.NewQuantity(4000, resource.BinarySI),
+					DeviceUUID:  "test-device2",
+					Minor:       1,
+					SMUtil:      90,
+					MemoryUsed:  *resource.NewQuantity(4000, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
 				},
 			},
 		},
@@ -311,8 +324,8 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 				gpuDeviceManager: &gpuDeviceManager{
 					deviceCount: 2,
 					devices: []*device{
-						{Minor: 0, DeviceUUID: "12"},
-						{Minor: 1, DeviceUUID: "23"},
+						{Minor: 0, DeviceUUID: "12", MemoryTotal: 14000},
+						{Minor: 1, DeviceUUID: "23", MemoryTotal: 24000},
 					},
 					processesMetrics: map[uint32][]*rawGPUMetric{
 						122: {{SMUtil: 70, MemoryUsed: 1500}, {SMUtil: 50, MemoryUsed: 1000}},
@@ -325,15 +338,37 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 				cs: []corev1.ContainerStatus{
 					{
 						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+						State: corev1.ContainerState{
+							Running: &corev1.ContainerStateRunning{
+								StartedAt: v1.NewTime(time.Now()),
+							},
+						},
 					},
 					{
 						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4acff",
+						State: corev1.ContainerState{
+							Running: &corev1.ContainerStateRunning{
+								StartedAt: v1.NewTime(time.Now()),
+							},
+						},
 					},
 				},
 			},
 			want: []metriccache.GPUMetric{
-				{Minor: 0, DeviceUUID: "12", SMUtil: 80, MemoryUsed: *resource.NewQuantity(2500, resource.BinarySI)},
-				{Minor: 1, DeviceUUID: "23", SMUtil: 90, MemoryUsed: *resource.NewQuantity(4000, resource.BinarySI)},
+				{
+					Minor:       0,
+					DeviceUUID:  "12",
+					SMUtil:      80,
+					MemoryUsed:  *resource.NewQuantity(2500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
+				},
+				{
+					Minor:       1,
+					DeviceUUID:  "23",
+					SMUtil:      90,
+					MemoryUsed:  *resource.NewQuantity(4000, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
+				},
 			},
 			wantErr: false,
 		},
@@ -343,8 +378,8 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 				gpuDeviceManager: &gpuDeviceManager{
 					deviceCount: 2,
 					devices: []*device{
-						{Minor: 0, DeviceUUID: "12"},
-						{Minor: 1, DeviceUUID: "23"},
+						{Minor: 0, DeviceUUID: "12", MemoryTotal: 14000},
+						{Minor: 1, DeviceUUID: "23", MemoryTotal: 24000},
 					},
 					processesMetrics: map[uint32][]*rawGPUMetric{
 						122: {{SMUtil: 70, MemoryUsed: 1500}, nil},
@@ -357,15 +392,37 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 				cs: []corev1.ContainerStatus{
 					{
 						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+						State: corev1.ContainerState{
+							Running: &corev1.ContainerStateRunning{
+								StartedAt: v1.NewTime(time.Now()),
+							},
+						},
 					},
 					{
 						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4acff",
+						State: corev1.ContainerState{
+							Running: &corev1.ContainerStateRunning{
+								StartedAt: v1.NewTime(time.Now()),
+							},
+						},
 					},
 				},
 			},
 			want: []metriccache.GPUMetric{
-				{Minor: 0, DeviceUUID: "12", SMUtil: 70, MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI)},
-				{Minor: 1, DeviceUUID: "23", SMUtil: 40, MemoryUsed: *resource.NewQuantity(3000, resource.BinarySI)},
+				{
+					Minor:       0,
+					DeviceUUID:  "12",
+					SMUtil:      70,
+					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
+				},
+				{
+					Minor:       1,
+					DeviceUUID:  "23",
+					SMUtil:      40,
+					MemoryUsed:  *resource.NewQuantity(3000, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
+				},
 			},
 			wantErr: false,
 		},
@@ -376,8 +433,8 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 				gpuDeviceManager: &gpuDeviceManager{
 					deviceCount: 2,
 					devices: []*device{
-						{Minor: 0, DeviceUUID: "12"},
-						{Minor: 1, DeviceUUID: "23"},
+						{Minor: 0, DeviceUUID: "12", MemoryTotal: 14000},
+						{Minor: 1, DeviceUUID: "23", MemoryTotal: 24000},
 					},
 					processesMetrics: map[uint32][]*rawGPUMetric{
 						122: {nil, {SMUtil: 70, MemoryUsed: 1500}},
@@ -390,14 +447,30 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 				cs: []corev1.ContainerStatus{
 					{
 						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+						State: corev1.ContainerState{
+							Running: &corev1.ContainerStateRunning{
+								StartedAt: v1.NewTime(time.Now()),
+							},
+						},
 					},
 					{
 						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4acff",
+						State: corev1.ContainerState{
+							Running: &corev1.ContainerStateRunning{
+								StartedAt: v1.NewTime(time.Now()),
+							},
+						},
 					},
 				},
 			},
 			want: []metriccache.GPUMetric{
-				{Minor: 1, DeviceUUID: "23", SMUtil: 90, MemoryUsed: *resource.NewQuantity(4500, resource.BinarySI)},
+				{
+					Minor:       1,
+					DeviceUUID:  "23",
+					SMUtil:      90,
+					MemoryUsed:  *resource.NewQuantity(4500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
+				},
 			},
 			wantErr: false,
 		},
@@ -455,8 +528,8 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 				gpuDeviceManager: &gpuDeviceManager{
 					deviceCount: 2,
 					devices: []*device{
-						{Minor: 0, DeviceUUID: "12"},
-						{Minor: 1, DeviceUUID: "23"},
+						{Minor: 0, DeviceUUID: "12", MemoryTotal: 14000},
+						{Minor: 1, DeviceUUID: "23", MemoryTotal: 24000},
 					},
 					processesMetrics: map[uint32][]*rawGPUMetric{
 						122: {{SMUtil: 70, MemoryUsed: 1500}, {SMUtil: 50, MemoryUsed: 1000}},
@@ -468,11 +541,27 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 				podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
 				c: &corev1.ContainerStatus{
 					ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+					State: corev1.ContainerState{
+						Running: &corev1.ContainerStateRunning{
+							StartedAt: v1.NewTime(time.Now()),
+						},
+					},
 				},
 			},
 			want: []metriccache.GPUMetric{
-				{Minor: 0, DeviceUUID: "12", SMUtil: 80, MemoryUsed: *resource.NewQuantity(2500, resource.BinarySI)},
-				{Minor: 1, DeviceUUID: "23", SMUtil: 90, MemoryUsed: *resource.NewQuantity(4000, resource.BinarySI)},
+				{
+					Minor: 0, DeviceUUID: "12",
+					SMUtil:      80,
+					MemoryUsed:  *resource.NewQuantity(2500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
+				},
+				{
+					Minor:       1,
+					DeviceUUID:  "23",
+					SMUtil:      90,
+					MemoryUsed:  *resource.NewQuantity(4000, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
+				},
 			},
 			wantErr: false,
 		},
@@ -482,8 +571,8 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 				gpuDeviceManager: &gpuDeviceManager{
 					deviceCount: 2,
 					devices: []*device{
-						{Minor: 0, DeviceUUID: "12"},
-						{Minor: 1, DeviceUUID: "23"},
+						{Minor: 0, DeviceUUID: "12", MemoryTotal: 14000},
+						{Minor: 1, DeviceUUID: "23", MemoryTotal: 24000},
 					},
 					processesMetrics: map[uint32][]*rawGPUMetric{
 						122: {{SMUtil: 70, MemoryUsed: 1500}, {SMUtil: 50, MemoryUsed: 1000}},
@@ -495,11 +584,28 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 				podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
 				c: &corev1.ContainerStatus{
 					ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4acff",
+					State: corev1.ContainerState{
+						Running: &corev1.ContainerStateRunning{
+							StartedAt: v1.NewTime(time.Now()),
+						},
+					},
 				},
 			},
 			want: []metriccache.GPUMetric{
-				{Minor: 0, DeviceUUID: "12", SMUtil: 70, MemoryUsed: *resource.NewQuantity(1500, resource.BinarySI)},
-				{Minor: 1, DeviceUUID: "23", SMUtil: 50, MemoryUsed: *resource.NewQuantity(1000, resource.BinarySI)},
+				{
+					Minor:       0,
+					DeviceUUID:  "12",
+					SMUtil:      70,
+					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
+				},
+				{
+					Minor:       1,
+					DeviceUUID:  "23",
+					SMUtil:      50,
+					MemoryUsed:  *resource.NewQuantity(1000, resource.BinarySI),
+					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
+				},
 			},
 			wantErr: false,
 		},
