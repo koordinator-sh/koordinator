@@ -385,10 +385,10 @@ func (in *PodMigrationJobStatus) DeepCopyInto(out *PodMigrationJobStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	if in.PodsRef != nil {
-		in, out := &in.PodsRef, &out.PodsRef
-		*out = make([]v1.ObjectReference, len(*in))
-		copy(*out, *in)
+	if in.PodRef != nil {
+		in, out := &in.PodRef, &out.PodRef
+		*out = new(v1.ObjectReference)
+		**out = **in
 	}
 	if in.PreemptedPodsRef != nil {
 		in, out := &in.PreemptedPodsRef, &out.PreemptedPodsRef

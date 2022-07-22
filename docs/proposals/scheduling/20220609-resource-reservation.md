@@ -119,6 +119,9 @@ type ReservationSpec struct {
 	// like a normal pod.
 	// If the `template.spec.nodeName` is specified, the scheduler will not choose another node but reserve resources on
 	// the specified node.
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Schemaless
+	// +optional
 	Template *corev1.PodTemplateSpec `json:"template,omitempty"`
 	// Specify the owners who can allocate the reserved resources.
 	// Multiple owner selectors and ORed.

@@ -32,6 +32,8 @@ type ReservationSpec struct {
 	// like a normal pod.
 	// If the `template.spec.nodeName` is specified, the scheduler will not choose another node but reserve resources on
 	// the specified node.
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Schemaless
 	// +optional
 	Template *corev1.PodTemplateSpec `json:"template,omitempty"`
 	// Specify the owners who can allocate the reserved resources.
@@ -59,6 +61,7 @@ type ReservationSpec struct {
 // ReservationTemplateSpec describes the data a Reservation should have when created from a template
 type ReservationTemplateSpec struct {
 	// Standard object's metadata.
+	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
