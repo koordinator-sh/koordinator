@@ -204,6 +204,22 @@ func Test_reporter_sync(t *testing.T) {
 							MemoryUsed: metriccache.MemoryMetric{
 								MemoryWithoutCache: resource.MustParse("1Gi"),
 							},
+							GPUs: []metriccache.GPUMetric{
+								{
+									DeviceUUID:  "1",
+									Minor:       0,
+									SMUtil:      80,
+									MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+									TotalMemory: *resource.NewQuantity(100, resource.BinarySI),
+								},
+								{
+									DeviceUUID:  "2",
+									Minor:       1,
+									SMUtil:      40,
+									MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+									TotalMemory: *resource.NewQuantity(200, resource.BinarySI),
+								},
+							},
 						},
 					}).Times(1)
 					return c
@@ -242,6 +258,22 @@ func Test_reporter_sync(t *testing.T) {
 							},
 							MemoryUsed: metriccache.MemoryMetric{
 								MemoryWithoutCache: resource.MustParse("1Gi"),
+							},
+							GPUs: []metriccache.GPUMetric{
+								{
+									DeviceUUID:  "1",
+									Minor:       0,
+									SMUtil:      80,
+									MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+									TotalMemory: *resource.NewQuantity(100, resource.BinarySI),
+								},
+								{
+									DeviceUUID:  "2",
+									Minor:       1,
+									SMUtil:      40,
+									MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+									TotalMemory: *resource.NewQuantity(200, resource.BinarySI),
+								},
 							},
 						}),
 					},
