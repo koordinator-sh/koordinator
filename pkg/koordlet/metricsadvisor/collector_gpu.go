@@ -24,12 +24,13 @@ import (
 	"time"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type GPUDeviceManager interface {
@@ -82,6 +83,9 @@ type device struct {
 
 // initGPUDeviceManager will not retry if init fails,
 func initGPUDeviceManager() GPUDeviceManager {
+	if !features.DefaultKoordletFeatureGate.Enabled(features.Accelerators) {
+		return &dummyDeviceManager{}
+	}
 	if ret := nvml.Init(); ret != nvml.SUCCESS {
 		if ret == nvml.ERROR_LIBRARY_NOT_FOUND {
 			klog.Warning("nvml init failed, library not found")
