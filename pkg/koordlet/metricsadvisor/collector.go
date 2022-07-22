@@ -266,7 +266,6 @@ func (c *collector) collectPodResUsed() {
 				MemoryWithoutCache: *resource.NewQuantity(memUsageValue, resource.BinarySI),
 			},
 		}
-
 		if gpus, err := c.context.gpuDeviceManager.getPodGPUUsage(meta.CgroupDir, meta.Pod.Status.ContainerStatuses); err == nil {
 			podMetric.GPUs = gpus
 		} else {
