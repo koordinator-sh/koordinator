@@ -48,6 +48,9 @@ const (
 
 	// CgroupReconcile reconciles qos config for resources like cpu, memory, disk, etc.
 	CgroupReconcile featuregate.Feature = "CgroupReconcile"
+
+	// Accelerators enables GPU related feature in koordlet.
+	Accelerators featuregate.Feature = "Accelerators"
 )
 
 func init() {
@@ -68,5 +71,6 @@ var (
 		CPUBurst:               {Default: false, PreRelease: featuregate.Alpha},
 		RdtResctrl:             {Default: false, PreRelease: featuregate.Alpha},
 		CgroupReconcile:        {Default: false, PreRelease: featuregate.Alpha},
+		Accelerators:           {Default: false, PreRelease: featuregate.Alpha},
 	}
 )

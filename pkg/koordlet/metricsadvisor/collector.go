@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -128,10 +129,14 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 		return err
 	}
 
-	go wait.Until(func() {
+	// collect gpu metrics.
+	if features.DefaultKoordletFeatureGate.Enabled(features.Accelerators) {
+		go wait.Until(func() {
+			c.collectGPUUsage()
+		}, time.Duration(c.config.CollectResUsedIntervalSeconds)*time.Second, stopCh)
+	}
 
-		// collect gpu metrics.
-		c.collectGPUUsage()
+	go wait.Until(func() {
 		c.collectNodeResUsed()
 		// add sync metaService cache check before collect pod information
 		// because collect function will get all pods.
