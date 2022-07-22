@@ -54,6 +54,66 @@ func Test_syncNodeResourceTopology(t *testing.T) {
 	assert.Equal(t, "Koordinator", topology.Labels[extension.LabelManagedBy])
 }
 
+func Test_calGuaranteedCpu(t *testing.T) {
+	testCases := []struct {
+		description       string
+		checkpointContent string
+		expectedError     bool
+		expectedPodAllocs []extension.PodCPUAlloc
+	}{
+		{
+			"Restore non-existing checkpoint",
+			"",
+			true,
+			nil,
+		},
+		{
+			"Restore empty entry",
+			`{
+				"policyName": "none",
+				"defaultCPUSet": "4-6",
+				"entries": {},
+				"checksum": 354655845
+			}`,
+			false,
+			extension.PodCPUAllocs{},
+		},
+		{
+			"Restore checkpoint with invalid JSON",
+			`{`,
+			true,
+			nil,
+		},
+		{
+			"Restore checkpoint with normal assignment entry",
+			`{
+				"policyName": "none",
+				"defaultCPUSet": "1-3",
+				"entries": {
+					"pod": {
+						"container1": "1-2",
+						"container2": "2-3"
+					}
+				},
+				"checksum": 962272150
+			}`,
+			false,
+			[]extension.PodCPUAlloc{
+				{
+					Name:   "pod",
+					CPUSet: "1-3",
+				},
+			},
+		},
+	}
+	s := &statesInformer{}
+	for _, c := range testCases {
+		podAllocs, err := s.calGuaranteedCpu(map[int32]*extension.CPUInfo{}, c.checkpointContent)
+		assert.Equal(t, c.expectedError, err != nil)
+		assert.Equal(t, c.expectedPodAllocs, podAllocs)
+	}
+}
+
 func Test_reportNodeTopology(t *testing.T) {
 	client := topologyclientsetfake.NewSimpleClientset()
 	testNode := &corev1.Node{
