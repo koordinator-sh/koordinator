@@ -144,7 +144,7 @@ type PodMigrationJobMode string
 
 const (
 	PodMigrationJobModeReservationFirst PodMigrationJobMode = "ReservationFirst"
-	PodMigrationJobModeEvictionDirectly    PodMigrationJobMode = "EvictDirectly"
+	PodMigrationJobModeEvictionDirectly PodMigrationJobMode = "EvictDirectly"
 )
 
 type PodMigrateReservationOptions struct {
@@ -165,7 +165,7 @@ type PodMigrateReservationOptions struct {
 }
 
 type PodMigrationJobPreemptionOptions struct {
-  // Reserved object.
+	// Reserved object.
 }
 ```
 
@@ -191,7 +191,7 @@ type PodMigrationJobStatus struct {
 	Phase PodMigrationJobPhase `json:"phase,omitempty"`
 	// Status represents the current status of PodMigrationJob
 	// e.g. ReservationCreated
-	Status string `json:"state,omitempty"`
+	Status string `json:"status,omitempty"`
 	// Reason represents a brief CamelCase message indicating details about why the PodMigrationJob is in this state.
 	Reason string `json:"reason,omitempty"`
 	// Message represents a human-readable message indicating details about why the PodMigrationJob is in this state.
@@ -200,8 +200,8 @@ type PodMigrationJobStatus struct {
 	Conditions []PodMigrationJobCondition `json:"conditions,omitempty"`
 	// NodeName represents the node's name of migrated Pod
 	NodeName string `json:"nodeName,omitempty"`
-	// PodsRef represents the newly created Pods after being migrated
-	PodsRef []corev1.ObjectReference `json:"podsRef,omitempty"`
+	// PodRef represents the newly created Pod after being migrated
+	PodRef *corev1.ObjectReference `json:"podRef,omitempty"`
 	// PreemptedPodsRef represents the Pods that be preempted
 	PreemptedPodsRef []corev1.ObjectReference `json:"preemptedPodsRef,omitempty"`
 	// PreemptedPodsReservations records information about Reservations created due to preemption
@@ -251,21 +251,35 @@ const (
 	// PodMigrationJobSucceed represents the PodMigrationJob processed successfully
 	PodMigrationJobSucceed PodMigrationJobPhase = "Succeed"
 	// PodMigrationJobFailed represents the PodMigrationJob process failed caused by Timeout, Reservation failed, etc.
-	PodMigrationJobFailed  PodMigrationJobPhase = "Failed"
+	PodMigrationJobFailed PodMigrationJobPhase = "Failed"
 	// PodMigrationJobAborted represents the user forcefully aborted the PodMigrationJob.
 	PodMigrationJobAborted PodMigrationJobPhase = "Aborted"
 )
 
-type PodMigrationJobConditionType string
-
 // These are valid conditions of PodMigrationJob.
 const (
-	PodMigrationJobConditionReservationCreated     PodMigrationJobConditionType = "ReservationCreated"
-	PodMigrationJobConditionReservationScheduled   PodMigrationJobConditionType = "ReservationScheduled"
-	PodMigrationJobConditionWaitForConfirmPreempt  PodMigrationJobConditionType = "WaitForConfirmPreempt"
-	PodMigrationJobConditionPreempting             PodMigrationJobConditionType = "Preempting"
-	PodMigrationJobConditionEvicting               PodMigrationJobConditionType = "Evicting"
-	PodMigrationJobConditionReservationWaitForBind PodMigrationJobConditionType = "WaitForBind"
+	PodMigrationJobConditionReservationCreated             PodMigrationJobConditionType = "ReservationCreated"
+	PodMigrationJobConditionReservationScheduled           PodMigrationJobConditionType = "ReservationScheduled"
+	PodMigrationJobConditionPreemption                     PodMigrationJobConditionType = "Preemption"
+	PodMigrationJobConditionEviction                       PodMigrationJobConditionType = "Eviction"
+	PodMigrationJobConditionPodScheduled                   PodMigrationJobConditionType = "PodScheduled"
+	PodMigrationJobConditionReservationPodBoundReservation PodMigrationJobConditionType = "PodBoundReservation"
+	PodMigrationJobConditionReservationBound               PodMigrationJobConditionType = "ReservationBound"
+)
+
+// These are valid reasons of PodMigrationJob.
+const (
+	PodMigrationJobReasonTimeout                   = "Timeout"
+	PodMigrationJobReasonFailedCreateReservation   = "FailedCreateReservation"
+	PodMigrationJobReasonUnschedulable             = "Unschedulable"
+	PodMigrationJobReasonMissingPod                = "MissingPod"
+	PodMigrationJobReasonMissingReservation        = "MissingReservation"
+	PodMigrationJobReasonPreempting                = "Preempting"
+	PodMigrationJobReasonPreemptComplete           = "PreemptComplete"
+	PodMigrationJobReasonEvicting                  = "Evicting"
+	PodMigrationJobReasonFailedEvict               = "FailedEvict"
+	PodMigrationJobReasonEvictComplete             = "EvictComplete"
+	PodMigrationJobReasonWaitForPodBindReservation = "WaitForPodBindReservation"
 )
 
 type PodMigrationJobConditionStatus string
@@ -397,3 +411,4 @@ type PodMigrationJobControllerConfiguration struct {
 - 2022-07-01: Initial proposal
 - 2022-07-11: Refactor proposal for review
 - 2022-07-13: Update proposal based on review comments
+- 2022-07-22: Update Spec

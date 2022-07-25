@@ -218,10 +218,10 @@ func (in *PodMigrationJobStatus) DeepCopyInto(out *PodMigrationJobStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	if in.PodsRef != nil {
-		in, out := &in.PodsRef, &out.PodsRef
-		*out = make([]corev1.ObjectReference, len(*in))
-		copy(*out, *in)
+	if in.PodRef != nil {
+		in, out := &in.PodRef, &out.PodRef
+		*out = new(corev1.ObjectReference)
+		**out = **in
 	}
 	if in.PreemptedPodsRef != nil {
 		in, out := &in.PreemptedPodsRef, &out.PreemptedPodsRef
@@ -426,14 +426,14 @@ func (in *ReservationStatus) DeepCopyInto(out *ReservationStatus) {
 	}
 	if in.Allocatable != nil {
 		in, out := &in.Allocatable, &out.Allocatable
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
 	if in.Allocated != nil {
 		in, out := &in.Allocated, &out.Allocated
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}

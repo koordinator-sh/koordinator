@@ -67,6 +67,8 @@ type PodMigrateReservationOptions struct {
 	ReservationRef *corev1.ObjectReference `json:"reservationRef,omitempty"`
 
 	// Template is the object that describes the Reservation that will be created if not specified ReservationRef
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Schemaless
 	// +optional
 	Template *ReservationTemplateSpec `json:"template,omitempty"`
 
@@ -86,7 +88,7 @@ type PodMigrationJobStatus struct {
 	Phase PodMigrationJobPhase `json:"phase,omitempty"`
 	// Status represents the current status of PodMigrationJob
 	// e.g. ReservationCreated
-	Status string `json:"state,omitempty"`
+	Status string `json:"status,omitempty"`
 	// Reason represents a brief CamelCase message indicating details about why the PodMigrationJob is in this state.
 	Reason string `json:"reason,omitempty"`
 	// Message represents a human-readable message indicating details about why the PodMigrationJob is in this state.
@@ -95,8 +97,8 @@ type PodMigrationJobStatus struct {
 	Conditions []PodMigrationJobCondition `json:"conditions,omitempty"`
 	// NodeName represents the node's name of migrated Pod
 	NodeName string `json:"nodeName,omitempty"`
-	// PodsRef represents the newly created Pods after being migrated
-	PodsRef []corev1.ObjectReference `json:"podsRef,omitempty"`
+	// PodRef represents the newly created Pod after being migrated
+	PodRef *corev1.ObjectReference `json:"podRef,omitempty"`
 	// PreemptedPodsRef represents the Pods that be preempted
 	PreemptedPodsRef []corev1.ObjectReference `json:"preemptedPodsRef,omitempty"`
 	// PreemptedPodsReservations records information about Reservations created due to preemption
@@ -155,12 +157,28 @@ type PodMigrationJobConditionType string
 
 // These are valid conditions of PodMigrationJob.
 const (
-	PodMigrationJobConditionReservationCreated     PodMigrationJobConditionType = "ReservationCreated"
-	PodMigrationJobConditionReservationScheduled   PodMigrationJobConditionType = "ReservationScheduled"
-	PodMigrationJobConditionWaitForConfirmPreempt  PodMigrationJobConditionType = "WaitForConfirmPreempt"
-	PodMigrationJobConditionPreempting             PodMigrationJobConditionType = "Preempting"
-	PodMigrationJobConditionEvicting               PodMigrationJobConditionType = "Evicting"
-	PodMigrationJobConditionReservationWaitForBind PodMigrationJobConditionType = "WaitForBind"
+	PodMigrationJobConditionReservationCreated             PodMigrationJobConditionType = "ReservationCreated"
+	PodMigrationJobConditionReservationScheduled           PodMigrationJobConditionType = "ReservationScheduled"
+	PodMigrationJobConditionPreemption                     PodMigrationJobConditionType = "Preemption"
+	PodMigrationJobConditionEviction                       PodMigrationJobConditionType = "Eviction"
+	PodMigrationJobConditionPodScheduled                   PodMigrationJobConditionType = "PodScheduled"
+	PodMigrationJobConditionReservationPodBoundReservation PodMigrationJobConditionType = "PodBoundReservation"
+	PodMigrationJobConditionReservationBound               PodMigrationJobConditionType = "ReservationBound"
+)
+
+// These are valid reasons of PodMigrationJob.
+const (
+	PodMigrationJobReasonTimeout                   = "Timeout"
+	PodMigrationJobReasonFailedCreateReservation   = "FailedCreateReservation"
+	PodMigrationJobReasonUnschedulable             = "Unschedulable"
+	PodMigrationJobReasonMissingPod                = "MissingPod"
+	PodMigrationJobReasonMissingReservation        = "MissingReservation"
+	PodMigrationJobReasonPreempting                = "Preempting"
+	PodMigrationJobReasonPreemptComplete           = "PreemptComplete"
+	PodMigrationJobReasonEvicting                  = "Evicting"
+	PodMigrationJobReasonFailedEvict               = "FailedEvict"
+	PodMigrationJobReasonEvictComplete             = "EvictComplete"
+	PodMigrationJobReasonWaitForPodBindReservation = "WaitForPodBindReservation"
 )
 
 type PodMigrationJobConditionStatus string
@@ -180,8 +198,13 @@ const (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase",description="The phase of PodMigrationJob"
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status",description="The status of PodMigrationJob"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:printcolumn:name="Node",type="string",JSONPath=".status.nodeName"
+// +kubebuilder:printcolumn:name="Reservation",type="string",JSONPath=".spec.reservationOptions.reservationRef.name"
+// +kubebuilder:printcolumn:name="PodNamespace",type="string",JSONPath=".spec.podRef.namespace"
+// +kubebuilder:printcolumn:name="Pod",type="string",JSONPath=".spec.podRef.name"
+// +kubebuilder:printcolumn:name="NewPod",type="string",JSONPath=".status.podRef.name"
 // +kubebuilder:printcolumn:name="TTL",type="string",JSONPath=".spec.ttl"
 
 type PodMigrationJob struct {
