@@ -919,12 +919,12 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 			wantPolicyStatus: &policyRecovered,
 		},
 		{
-			name: "test not need recover. currentPolicyStatus is policyRecovered",
+			name: "test need recover. currentPolicyStatus is policyRecovered",
 			args: args{
 				oldCPUSets:          "7,6,3,2",
 				currentPolicyStatus: &policyRecovered,
 			},
-			wantCPUSet:       "7,6,3,2",
+			wantCPUSet:       "0-15",
 			wantPolicyStatus: &policyRecovered,
 		},
 	}
