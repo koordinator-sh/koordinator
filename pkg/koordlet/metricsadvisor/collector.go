@@ -129,8 +129,6 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 	}
 
 	go wait.Until(func() {
-
-		// collect gpu metrics.
 		c.collectGPUUsage()
 		c.collectNodeResUsed()
 		// add sync metaService cache check before collect pod information
