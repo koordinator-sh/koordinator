@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -204,13 +205,67 @@ func Test_reporter_sync(t *testing.T) {
 							MemoryUsed: metriccache.MemoryMetric{
 								MemoryWithoutCache: resource.MustParse("1Gi"),
 							},
+							GPUs: []metriccache.GPUMetric{
+								{
+									DeviceUUID:  "1",
+									Minor:       0,
+									SMUtil:      80,
+									MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+									MemoryTotal: *resource.NewQuantity(100, resource.BinarySI),
+								},
+								{
+									DeviceUUID:  "2",
+									Minor:       1,
+									SMUtil:      40,
+									MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+									MemoryTotal: *resource.NewQuantity(200, resource.BinarySI),
+								},
+							},
+						},
+					}).Times(1)
+					c.EXPECT().GetPodResourceMetric(gomock.Any(), gomock.Any()).Return(metriccache.PodResourceQueryResult{
+						Metric: &metriccache.PodResourceMetric{
+							PodUID: "test-pod",
+							CPUUsed: metriccache.CPUMetric{
+								CPUUsed: resource.MustParse("1000"),
+							},
+							MemoryUsed: metriccache.MemoryMetric{
+								MemoryWithoutCache: resource.MustParse("1Gi"),
+							},
+							GPUs: []metriccache.GPUMetric{
+								{
+									DeviceUUID:  "1",
+									Minor:       0,
+									SMUtil:      80,
+									MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+									MemoryTotal: *resource.NewQuantity(100, resource.BinarySI),
+								},
+								{
+									DeviceUUID:  "2",
+									Minor:       1,
+									SMUtil:      40,
+									MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+									MemoryTotal: *resource.NewQuantity(200, resource.BinarySI),
+								},
+							},
 						},
 					}).Times(1)
 					return c
 				},
 				statesInformer: func(ctrl *gomock.Controller) statesinformer.StatesInformer {
 					i := mock_statesinformer.NewMockStatesInformer(ctrl)
-					i.EXPECT().GetAllPods().Return(nil).Times(1)
+					i.EXPECT().GetAllPods().Return(
+						[]*statesinformer.PodMeta{
+							{
+								Pod: &v1.Pod{
+									ObjectMeta: metav1.ObjectMeta{
+										Name:      "test-pod",
+										Namespace: "default",
+										UID:       "test-pod",
+									},
+								},
+							},
+						}).Times(1)
 					return i
 				},
 				nodeMetricLister: &fakeNodeMetricLister{
@@ -243,9 +298,55 @@ func Test_reporter_sync(t *testing.T) {
 							MemoryUsed: metriccache.MemoryMetric{
 								MemoryWithoutCache: resource.MustParse("1Gi"),
 							},
+							GPUs: []metriccache.GPUMetric{
+								{
+									DeviceUUID:  "1",
+									Minor:       0,
+									SMUtil:      80,
+									MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+									MemoryTotal: *resource.NewQuantity(100, resource.BinarySI),
+								},
+								{
+									DeviceUUID:  "2",
+									Minor:       1,
+									SMUtil:      40,
+									MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+									MemoryTotal: *resource.NewQuantity(200, resource.BinarySI),
+								},
+							},
 						}),
 					},
-					PodsMetric: []*slov1alpha1.PodMetricInfo{},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Name:      "test-pod",
+							Namespace: "default",
+							PodUsage: *convertPodMetricToResourceMap(&metriccache.PodResourceMetric{
+								PodUID: "test-pod",
+								CPUUsed: metriccache.CPUMetric{
+									CPUUsed: resource.MustParse("1000"),
+								},
+								MemoryUsed: metriccache.MemoryMetric{
+									MemoryWithoutCache: resource.MustParse("1Gi"),
+								},
+								GPUs: []metriccache.GPUMetric{
+									{
+										DeviceUUID:  "1",
+										Minor:       0,
+										SMUtil:      80,
+										MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
+										MemoryTotal: *resource.NewQuantity(100, resource.BinarySI),
+									},
+									{
+										DeviceUUID:  "2",
+										Minor:       1,
+										SMUtil:      40,
+										MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+										MemoryTotal: *resource.NewQuantity(200, resource.BinarySI),
+									},
+								},
+							}),
+						},
+					},
 				},
 			},
 			wantErr: false,
