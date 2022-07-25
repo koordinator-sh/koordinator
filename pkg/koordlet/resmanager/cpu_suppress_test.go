@@ -70,12 +70,10 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 		preBECFSQuota   int64
 	}
 	tests := []struct {
-		name                     string
-		args                     args
-		wantBECFSQuota           int64
-		wantCFSQuotaPolicyStatus *suppressPolicyStatus
-		wantBECPUSet             string
-		wantCPUSetPolicyStatus   *suppressPolicyStatus
+		name           string
+		args           args
+		wantBECFSQuota int64
+		wantBECPUSet   string
 	}{
 		{
 			name: "does not panic on empty (non-nil) input",
@@ -93,10 +91,8 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 					CPUSuppressThresholdPercent: pointer.Int64Ptr(70),
 				},
 			},
-			wantBECFSQuota:           16 * defaultCFSPeriod,
-			wantCFSQuotaPolicyStatus: nil,
-			wantBECPUSet:             "0-9",
-			wantCPUSetPolicyStatus:   nil,
+			wantBECFSQuota: 16 * defaultCFSPeriod,
+			wantBECPUSet:   "0-9",
 		},
 		{
 			name: "suppress by cfsQuota calculate correctly for missing podMeta or transient metrics",
@@ -186,10 +182,8 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 					CPUSuppressThresholdPercent: pointer.Int64Ptr(70),
 				},
 			},
-			wantBECFSQuota:           3.2 * defaultCFSPeriod,
-			wantCFSQuotaPolicyStatus: &policyUsing,
-			wantBECPUSet:             "0-15",
-			wantCPUSetPolicyStatus:   &policyRecovered,
+			wantBECFSQuota: 3.2 * defaultCFSPeriod,
+			wantBECPUSet:   "0-15",
 		},
 		{
 			name: "calculate be suppress cfsQuota correctly",
@@ -310,10 +304,8 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 					CPUSuppressThresholdPercent: pointer.Int64Ptr(70),
 				},
 			},
-			wantBECFSQuota:           1.2 * defaultCFSPeriod,
-			wantCFSQuotaPolicyStatus: &policyUsing,
-			wantBECPUSet:             "0-15",
-			wantCPUSetPolicyStatus:   &policyRecovered,
+			wantBECFSQuota: 1.2 * defaultCFSPeriod,
+			wantBECPUSet:   "0-15",
 		},
 		{
 			name: "calculate be suppress cpus correctly",
@@ -434,10 +426,8 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 					CPUSuppressThresholdPercent: pointer.Int64Ptr(70),
 				},
 			},
-			wantBECFSQuota:           -1,
-			wantCFSQuotaPolicyStatus: &policyRecovered,
-			wantBECPUSet:             "0,1",
-			wantCPUSetPolicyStatus:   &policyUsing,
+			wantBECFSQuota: -1,
+			wantBECPUSet:   "0,1",
 		},
 		{
 			name: "reset cpuset and cfs quota if cpu qos disabled",
@@ -558,10 +548,8 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 					CPUSuppressThresholdPercent: pointer.Int64Ptr(70),
 				},
 			},
-			wantBECFSQuota:           -1,
-			wantCFSQuotaPolicyStatus: &policyRecovered,
-			wantBECPUSet:             "0-15",
-			wantCPUSetPolicyStatus:   &policyRecovered,
+			wantBECFSQuota: -1,
+			wantBECPUSet:   "0-15",
 		},
 	}
 	for _, tt := range tests {
@@ -612,18 +600,8 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			// checkCFSQuota
 			gotBECFSQuota := helper.ReadCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota)
 			assert.Equal(t, strconv.FormatInt(tt.wantBECFSQuota, 10), gotBECFSQuota, util.GetKubeQosRelativePath(corev1.PodQOSBestEffort))
-			gotCFSQuotaPolicy, exist := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)]
-			assert.Equal(t, tt.wantCFSQuotaPolicyStatus == nil, !exist, "check_CFSQuotaPolicyStatus_exist")
-			if tt.wantCFSQuotaPolicyStatus != nil {
-				assert.Equal(t, *tt.wantCFSQuotaPolicyStatus, gotCFSQuotaPolicy, "check_CFSQuotaPolicyStatus_equal")
-			}
 
 			// checkCPUSet
-			gotCPUSetPolicyStatus, exist := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)]
-			assert.Equal(t, tt.wantCPUSetPolicyStatus == nil, !exist, "check_CPUSetPolicyStatus_exist")
-			if tt.wantCPUSetPolicyStatus != nil {
-				assert.Equal(t, *tt.wantCPUSetPolicyStatus, gotCPUSetPolicyStatus, "check_CPUSetPolicyStatus_equal")
-			}
 			gotCPUSetBECgroup := helper.ReadCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 			assert.Equal(t, tt.wantBECPUSet, gotCPUSetBECgroup, "checkBECPUSet")
 			for _, podMeta := range tt.args.podMetas {
@@ -871,8 +849,7 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 
 func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 	type args struct {
-		oldCPUSets          string
-		currentPolicyStatus *suppressPolicyStatus
+		oldCPUSets string
 	}
 	mockNodeInfo := metriccache.NodeCPUInfo{
 		ProcessorInfos: []util.ProcessorInfo{
@@ -895,37 +872,30 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		name             string
-		args             args
-		wantCPUSet       string
-		wantPolicyStatus *suppressPolicyStatus
+		name       string
+		args       args
+		wantCPUSet string
 	}{
 		{
 			name: "test need recover. currentPolicyStatus is nil",
 			args: args{
-				oldCPUSets:          "7,6,3,2",
-				currentPolicyStatus: nil,
+				oldCPUSets: "7,6,3,2",
 			},
-			wantCPUSet:       "0-15",
-			wantPolicyStatus: &policyRecovered,
+			wantCPUSet: "0-15",
 		},
 		{
 			name: "test need recover. currentPolicyStatus is policyUsing",
 			args: args{
-				oldCPUSets:          "7,6,3,2",
-				currentPolicyStatus: &policyUsing,
+				oldCPUSets: "7,6,3,2",
 			},
-			wantCPUSet:       "0-15",
-			wantPolicyStatus: &policyRecovered,
+			wantCPUSet: "0-15",
 		},
 		{
 			name: "test not need recover. currentPolicyStatus is policyRecovered",
 			args: args{
-				oldCPUSets:          "7,6,3,2",
-				currentPolicyStatus: &policyRecovered,
+				oldCPUSets: "7,6,3,2",
 			},
-			wantCPUSet:       "7,6,3,2",
-			wantPolicyStatus: &policyRecovered,
+			wantCPUSet: "7,6,3,2",
 		},
 	}
 	for _, tt := range tests {
@@ -945,12 +915,7 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 				metricCache:    mockMetricCache,
 			}
 			cpuSuppress := NewCPUSuppress(r)
-			if tt.args.currentPolicyStatus != nil {
-				cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = *tt.args.currentPolicyStatus
-			}
 			cpuSuppress.recoverCPUSetIfNeed()
-			gotPolicyStatus := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)]
-			assert.Equal(t, *tt.wantPolicyStatus, gotPolicyStatus, "checkStatus")
 			gotCPUSetBECgroup := helper.ReadCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 			assert.Equal(t, tt.wantCPUSet, gotCPUSetBECgroup, "checkBECPUSet")
 			for _, podDir := range podDirs {
@@ -963,32 +928,25 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 
 func Test_cpuSuppress_recoverCFSQuotaIfNeed(t *testing.T) {
 	type args struct {
-		name                string
-		preBECfsQuota       int64
-		currentPolicyStatus *suppressPolicyStatus
-		wantBECfsQuota      int64
-		wantPolicyStatus    *suppressPolicyStatus
+		name           string
+		preBECfsQuota  int64
+		wantBECfsQuota int64
 	}
 	testCases := []args{
 		{
-			name:             "test need recover. currentPolicyStatus is nil",
-			preBECfsQuota:    10 * cfsPeriod,
-			wantBECfsQuota:   -1,
-			wantPolicyStatus: &policyRecovered,
+			name:           "test need recover. currentPolicyStatus is nil",
+			preBECfsQuota:  10 * cfsPeriod,
+			wantBECfsQuota: -1,
 		},
 		{
-			name:                "test need recover. currentPolicyStatus is policyUsing",
-			preBECfsQuota:       10 * cfsPeriod,
-			currentPolicyStatus: &policyUsing,
-			wantBECfsQuota:      -1,
-			wantPolicyStatus:    &policyRecovered,
+			name:           "test need recover. currentPolicyStatus is policyUsing",
+			preBECfsQuota:  10 * cfsPeriod,
+			wantBECfsQuota: -1,
 		},
 		{
-			name:                "test not need recover. currentPolicyStatus is policyRecovered",
-			preBECfsQuota:       10 * cfsPeriod,
-			currentPolicyStatus: &policyRecovered,
-			wantBECfsQuota:      10 * cfsPeriod,
-			wantPolicyStatus:    &policyRecovered,
+			name:           "test not need recover. currentPolicyStatus is policyRecovered",
+			preBECfsQuota:  10 * cfsPeriod,
+			wantBECfsQuota: 10 * cfsPeriod,
 		},
 	}
 	for _, tt := range testCases {
@@ -1001,12 +959,8 @@ func Test_cpuSuppress_recoverCFSQuotaIfNeed(t *testing.T) {
 
 			r := resmanager{}
 			cpuSuppress := NewCPUSuppress(&r)
-			if tt.currentPolicyStatus != nil {
-				cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = *tt.currentPolicyStatus
-			}
 			cpuSuppress.recoverCFSQuotaIfNeed()
-			gotPolicyStatus := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)]
-			assert.Equal(t, *tt.wantPolicyStatus, gotPolicyStatus, "checkStatus")
+
 			gotBECfsQuota := helper.ReadCgroupFileContents(beQosDir, system.CPUCFSQuota)
 			assert.Equal(t, strconv.FormatInt(tt.wantBECfsQuota, 10), gotBECfsQuota)
 		})

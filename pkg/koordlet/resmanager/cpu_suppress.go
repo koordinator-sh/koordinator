@@ -49,20 +49,12 @@ var (
 	beMaxIncreaseCPUPercent       = 0.1 // scale up slow
 )
 
-type suppressPolicyStatus string
-
-var (
-	policyUsing     suppressPolicyStatus = "using"
-	policyRecovered suppressPolicyStatus = "recovered"
-)
-
 type CPUSuppress struct {
-	resmanager             *resmanager
-	suppressPolicyStatuses map[string]suppressPolicyStatus
+	resmanager *resmanager
 }
 
 func NewCPUSuppress(resmanager *resmanager) *CPUSuppress {
-	return &CPUSuppress{resmanager: resmanager, suppressPolicyStatuses: map[string]suppressPolicyStatus{}}
+	return &CPUSuppress{resmanager: resmanager}
 }
 
 // getPodMetricCPUUsage gets pod usage cpu from the PodResourceMetric
@@ -349,14 +341,12 @@ func (r *CPUSuppress) suppressBECPU() {
 		klog.Warningf("suppressBECPU failed to get nodeCPUInfo from metriccache, err: %s", err)
 		return
 	}
-
+	// need to exclude lse pod
+	r.recoverCPUSetIfNeed()
 	if nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy == slov1alpha1.CPUCfsQuotaPolicy {
 		adjustByCfsQuota(suppressCPUQuantity, node)
-		r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyUsing
-		r.recoverCPUSetIfNeed()
 	} else {
 		r.adjustByCPUSet(suppressCPUQuantity, nodeCPUInfo)
-		r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyUsing
 		r.recoverCFSQuotaIfNeed()
 	}
 }
@@ -432,11 +422,6 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 }
 
 func (r *CPUSuppress) recoverCPUSetIfNeed() {
-	cpusetPolicyStatus, exist := r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)]
-	if exist && cpusetPolicyStatus == policyRecovered {
-		return
-	}
-
 	cpus := []int{}
 	nodeInfo, err := r.resmanager.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
 	if err != nil {
@@ -481,7 +466,6 @@ func (r *CPUSuppress) recoverCPUSetIfNeed() {
 	cpusetStr := beCPUSet.String()
 	klog.V(6).Infof("recover bestEffort cpuset, cpuset %v", cpusetStr)
 	writeBECgroupsCPUSet(cpusetCgroupPaths, cpusetStr, false)
-	r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyRecovered
 }
 
 func adjustByCfsQuota(cpuQuantity *resource.Quantity, node *corev1.Node) {
@@ -519,17 +503,11 @@ func adjustByCfsQuota(cpuQuantity *resource.Quantity, node *corev1.Node) {
 }
 
 func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
-	cfsQuotaPolicyStatus, exist := r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)]
-	if exist && cfsQuotaPolicyStatus == policyRecovered {
-		return
-	}
-
 	beCgroupPath := util.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
 	if err := system.CgroupFileWrite(beCgroupPath, system.CPUCFSQuota, "-1"); err != nil {
 		klog.Errorf("recover bestEffort cfsQuota error: %v", err)
 		return
 	}
-	r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyRecovered
 }
 
 func getCPUSuppressPolicy(nodeSLO *slov1alpha1.NodeSLO) slov1alpha1.CPUSuppressPolicy {
