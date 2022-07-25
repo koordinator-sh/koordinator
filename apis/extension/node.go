@@ -27,11 +27,13 @@ import (
 const (
 	// AnnotationNodeCPUTopology describes the detailed CPU topology.
 	AnnotationNodeCPUTopology = NodeDomainPrefix + "/cpu-topology"
-	// AnnotationNodeCPUAllocs describes the CPUs allocated by Koordinator LSE/LSR and K8s Guaranteed Pods.
+	// AnnotationNodeCPUAllocs describes K8s Guaranteed Pods.
 	AnnotationNodeCPUAllocs = NodeDomainPrefix + "/pod-cpu-allocs"
 	// AnnotationNodeCPUSharedPools describes the CPU Shared Pool defined by Koordinator.
 	// The shared pool is mainly used by Koordinator LS Pods or K8s Burstable Pods.
 	AnnotationNodeCPUSharedPools = NodeDomainPrefix + "/cpu-shared-pools"
+	// AnnotationNodeCPUManagerPolicy describes the cpu manager policy options of kubelet
+	AnnotationNodeCPUManagerPolicy = NodeDomainPrefix + "/cpu-manager-policy"
 
 	// LabelNodeCPUBindPolicy constrains how to bind CPU logical CPUs when scheduling.
 	LabelNodeCPUBindPolicy = NodeDomainPrefix + "/cpu-bind-policy"
@@ -66,6 +68,11 @@ type PodCPUAlloc struct {
 	Name      string    `json:"name,omitempty"`
 	UID       types.UID `json:"uid,omitempty"`
 	CPUSet    string    `json:"cpuset,omitempty"`
+}
+
+type CPUManagerPolicy struct {
+	Policy  string            `json:"policy,omitempty"`
+	Options map[string]string `json:"options,omitempty"`
 }
 
 type PodCPUAllocs []PodCPUAlloc
@@ -107,4 +114,17 @@ func GetNodeCPUSharePools(nodeTopoAnnotations map[string]string) ([]CPUSharedPoo
 		return nil, err
 	}
 	return cpuSharePools, nil
+}
+
+func GetCPUManagerPolicy(annotations map[string]string) (*CPUManagerPolicy, error) {
+	cpuManagerPolicy := &CPUManagerPolicy{}
+	data, ok := annotations[AnnotationNodeCPUManagerPolicy]
+	if !ok {
+		return cpuManagerPolicy, nil
+	}
+	err := json.Unmarshal([]byte(data), cpuManagerPolicy)
+	if err != nil {
+		return nil, err
+	}
+	return cpuManagerPolicy, nil
 }
