@@ -47,6 +47,8 @@ import (
 	"k8s.io/component-base/version"
 	"k8s.io/component-base/version/verflag"
 	"k8s.io/klog/v2"
+	"k8s.io/klog/v2/klogr"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	deschedulerappconfig "github.com/koordinator-sh/koordinator/cmd/koord-descheduler/app/config"
@@ -267,6 +269,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	cc := c.Complete()
 
 	deschedulercontrollersoptions.Manager = cc.Manager
+	ctrl.SetLogger(klogr.New())
 
 	if err = fieldindex.RegisterFieldIndexes(cc.Manager.GetCache()); err != nil {
 		return nil, nil, fmt.Errorf("failed to register field index, err: %w", err)

@@ -18,6 +18,7 @@ package config
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -78,4 +79,56 @@ type RemovePodsViolatingNodeAffinityArgs struct {
 type Namespaces struct {
 	Include []string
 	Exclude []string
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// MigrationControllerArgs holds arguments used to configure the MigrationController
+type MigrationControllerArgs struct {
+	metav1.TypeMeta
+
+	// DryRun means only execute the entire migration logic except create Reservation or Delete Pod
+	// Default is false
+	DryRun bool
+
+	// EvictFailedBarePods allows pods without ownerReferences and in failed phase to be evicted.
+	EvictFailedBarePods bool
+
+	// EvictLocalStoragePods allows pods using local storage to be evicted.
+	EvictLocalStoragePods bool
+
+	// EvictSystemCriticalPods allows eviction of pods of any priority (including Kubernetes system pods)
+	EvictSystemCriticalPods bool
+
+	// IgnorePVCPods prevents pods with PVCs from being evicted.
+	IgnorePvcPods bool
+
+	// LabelSelector sets whether to apply label filtering when evicting.
+	// Any pod matching the label selector is considered evictable.
+	LabelSelector *metav1.LabelSelector
+
+	// FlowControlQPS controls the number of arbitrations per second
+	FlowControlQPS string
+	// FlowControlBurst is the maximum number of tokens
+	FlowControlBurst int32
+
+	// MaxMigratingPerNode represents he maximum number of pods that can be migrating during migrate per node.
+	MaxMigratingPerNode *int32
+
+	// MaxMigratingPerNamespace represents he maximum number of pods that can be migrating during migrate per namespace.
+	MaxMigratingPerNamespace *int32
+
+	// MaxMigratingPerWorkload represents he maximum number of pods that can be migrating during migrate per workload.
+	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
+	MaxMigratingPerWorkload *intstr.IntOrString
+
+	// MaxUnavailablePerWorkload represents he maximum number of pods that can be unavailable during migrate per workload.
+	// The unavailable state includes NotRunning/NotReady/Migrating/Evicting
+	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
+	MaxUnavailablePerWorkload *intstr.IntOrString
+
+	// EvictionPolicy represents how to delete Pod, support "Delete" and "Eviction", default value is "Eviction"
+	EvictionPolicy string
+	// DefaultDeleteOptions defines options when deleting migrated pods and preempted pods through the method specified by EvictionPolicy
+	DefaultDeleteOptions *metav1.DeleteOptions
 }

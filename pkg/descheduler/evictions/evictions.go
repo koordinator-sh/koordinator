@@ -143,7 +143,7 @@ func (pe *PodEvictor) Evict(ctx context.Context, pod *corev1.Pod, opts framework
 	if pe.dryRun {
 		klog.V(1).InfoS("Evicted pod in dry run mode", "pod", klog.KObj(pod), "reason", opts.Reason, "strategy", opts.PluginName, "node", nodeName)
 	} else {
-		err := evictPod(ctx, pe.client, pod, opts.DeleteOptions)
+		err := EvictPod(ctx, pe.client, pod, opts.DeleteOptions)
 		if err != nil {
 			// err is used only for logging purposes
 			klog.ErrorS(err, "Error evicting pod", "pod", klog.KObj(pod), "reason", opts.Reason)
@@ -169,7 +169,7 @@ func (pe *PodEvictor) Evict(ctx context.Context, pod *corev1.Pod, opts framework
 	return true
 }
 
-func evictPod(ctx context.Context, client clientset.Interface, pod *corev1.Pod, deleteOptions *metav1.DeleteOptions) error {
+func EvictPod(ctx context.Context, client clientset.Interface, pod *corev1.Pod, deleteOptions *metav1.DeleteOptions) error {
 	eviction := &policy.Eviction{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pod.Name,

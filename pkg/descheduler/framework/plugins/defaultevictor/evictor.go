@@ -54,9 +54,13 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nodesLister.List(labels.Everything())
 	}
 
-	selector, err := metav1.LabelSelectorAsSelector(evictorArgs.LabelSelector)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get label selectors: %v", err)
+	var selector labels.Selector
+	if evictorArgs.LabelSelector != nil {
+		var err error
+		selector, err = metav1.LabelSelectorAsSelector(evictorArgs.LabelSelector)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get label selectors: %v", err)
+		}
 	}
 
 	priorityClassLister := handle.SharedInformerFactory().Scheduling().V1().PriorityClasses().Lister()
