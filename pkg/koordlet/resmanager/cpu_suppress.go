@@ -349,11 +349,10 @@ func (r *CPUSuppress) suppressBECPU() {
 		klog.Warningf("suppressBECPU failed to get nodeCPUInfo from metriccache, err: %s", err)
 		return
 	}
-
+	r.recoverCPUSetIfNeed()
 	if nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy == slov1alpha1.CPUCfsQuotaPolicy {
 		adjustByCfsQuota(suppressCPUQuantity, node)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyUsing
-		r.recoverCPUSetIfNeed()
 	} else {
 		r.adjustByCPUSet(suppressCPUQuantity, nodeCPUInfo)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyUsing
@@ -432,11 +431,6 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 }
 
 func (r *CPUSuppress) recoverCPUSetIfNeed() {
-	cpusetPolicyStatus, exist := r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)]
-	if exist && cpusetPolicyStatus == policyRecovered {
-		return
-	}
-
 	cpus := []int{}
 	nodeInfo, err := r.resmanager.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
 	if err != nil {
