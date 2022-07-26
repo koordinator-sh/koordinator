@@ -45,7 +45,7 @@ type cpusetPlugin struct {
 
 func (p *cpusetPlugin) Register() {
 	klog.V(5).Infof("register hook %v", name)
-	hooks.Register(rmconfig.PreStartContainer, name, description, p.SetContainerCPUSet)
+	hooks.Register(rmconfig.PreCreateContainer, name, description, p.SetContainerCPUSet)
 	rule.Register(name, description,
 		rule.WithParseFunc(statesinformer.RegisterTypeNodeTopology, p.parseRule),
 		rule.WithUpdateCallback(p.ruleUpdateCb))
@@ -63,13 +63,14 @@ func Object() *cpusetPlugin {
 }
 
 func (p *cpusetPlugin) SetContainerCPUSet(proto protocol.HooksProtocol) error {
+	// TODO maybe consider support cpu-static policy for kubelet by refreshing cpuset of kubepods-burstable dir
 	containerCtx := proto.(*protocol.ContainerContext)
 	if containerCtx == nil {
 		return fmt.Errorf("container protocol is nil for plugin %v", name)
 	}
 	containerReq := containerCtx.Request
 
-	// cpuset from pod annotation
+	// cpuset from pod annotation (LSE, LSR)
 	if cpusetVal, err := getCPUSetFromPod(containerReq.PodAnnotations); err != nil {
 		return err
 	} else if cpusetVal != "" {
@@ -87,9 +88,7 @@ func (p *cpusetPlugin) SetContainerCPUSet(proto protocol.HooksProtocol) error {
 	if err != nil {
 		return err
 	}
-	if cpusetValue != "" {
-		containerCtx.Response.Resources.CPUSet = pointer.StringPtr(cpusetValue)
-	}
+	containerCtx.Response.Resources.CPUSet = cpusetValue
 	return nil
 }
 
