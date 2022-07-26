@@ -78,7 +78,8 @@ func (n *EnqueueRequestForNodeMetric) cleanSyncContext(nodeMetric *slov1alpha1.N
 		return fmt.Errorf("failed to cleanup empty sync context")
 	}
 
-	n.syncContext.Delete(util.GetNodeMetricKey(nodeMetric))
+	// nodeMetric's name = node's name
+	n.syncContext.Delete(util.GenerateNodeKey(&nodeMetric.ObjectMeta))
 
 	return nil
 }

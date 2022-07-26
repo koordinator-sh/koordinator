@@ -23,19 +23,14 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
-// GetNodeKey returns a generated key with given node
-func GetNodeKey(node *corev1.Node) string {
+// GenerateNodeKey returns a generated key with given meta
+func GenerateNodeKey(node *metav1.ObjectMeta) string {
 	return fmt.Sprintf("%v/%v", node.GetNamespace(), node.GetName())
-}
-
-// GetNodeMetricKey returns a generated key with given nodeMetric
-func GetNodeMetricKey(nodeMetric *slov1alpha1.NodeMetric) string {
-	return fmt.Sprintf("%v/%v", nodeMetric.GetNamespace(), nodeMetric.GetName())
 }
 
 // @output like kubepods.slice/kubepods-besteffort.slice/

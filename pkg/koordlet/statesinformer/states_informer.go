@@ -40,6 +40,8 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	"github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -82,6 +84,10 @@ type statesInformer struct {
 	nodeTopology   *topov1alpha1.NodeResourceTopology
 	topologyClient topologyclientset.Interface
 
+	deviceClient v1alpha1.DeviceInterface
+	unhealthyGPU map[string]struct{}
+	gpuMutex     sync.RWMutex
+
 	podRWMutex     sync.RWMutex
 	podMap         map[string]*PodMeta
 	podUpdatedTime time.Time
@@ -91,7 +97,7 @@ type statesInformer struct {
 	stateUpdateCallbacks map[RegisterType][]updateCallback
 }
 
-func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient *topologyclientset.Clientset, metricsCache metriccache.MetricCache, pleg pleg.Pleg, nodeName string) StatesInformer {
+func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient *topologyclientset.Clientset, metricsCache metriccache.MetricCache, pleg pleg.Pleg, nodeName string, schedulingClient *v1alpha1.SchedulingV1alpha1Client) StatesInformer {
 	nodeInformer := newNodeInformer(kubeClient, nodeName)
 	nodeSLOInformer := newNodeSLOInformer(crdClient, nodeName)
 
@@ -119,6 +125,8 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 		},
 		topologyClient: topologyClient,
 		metricsCache:   metricsCache,
+		deviceClient:   schedulingClient.Devices(),
+		unhealthyGPU:   make(map[string]struct{}),
 	}
 }
 
@@ -170,6 +178,13 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	go s.startCallbackRunners(stopCh)
 
 	go wait.Until(s.reportNodeTopology, s.config.NodeTopologySyncInterval, stopCh)
+	if features.DefaultKoordletFeatureGate.Enabled(features.Accelerators) {
+		go wait.Until(s.reportDevice, s.config.NodeTopologySyncInterval, stopCh)
+		// check is nvml is available
+		if s.initGPU() {
+			go s.gpuHealCheck(stopCh)
+		}
+	}
 
 	klog.Infof("start states informer successfully")
 	<-stopCh

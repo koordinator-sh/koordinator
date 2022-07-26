@@ -31,6 +31,7 @@ import (
 	"k8s.io/klog/v2"
 
 	clientsetbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	"github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/config"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
@@ -103,6 +104,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	kubeClient := clientset.NewForConfigOrDie(config.KubeRestConf)
 	crdClient := clientsetbeta1.NewForConfigOrDie(config.KubeRestConf)
 	topologyClient := topologyclientset.NewForConfigOrDie(config.KubeRestConf)
+	schedulingClient := v1alpha1.NewForConfigOrDie(config.KubeRestConf)
 
 	pleg, err := pleg.NewPLEG(system.Conf.CgroupRootDir)
 	if err != nil {
@@ -114,7 +116,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, err
 	}
 
-	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, pleg, nodeName)
+	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, pleg, nodeName, schedulingClient)
 
 	collectorService := metricsadvisor.NewCollector(config.CollectorConf, statesInformer, metricCache)
 	reporterService := reporter.NewReporter(config.ReporterConf, kubeClient, crdClient, nodeName, metricCache, statesInformer)
