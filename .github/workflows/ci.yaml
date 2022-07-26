@@ -56,7 +56,7 @@ jobs:
           make vet && git add pkg cmd &&
           git diff --cached --exit-code || (echo 'Please run "make vet" to verify govet' && exit 1);
       - name: Run Go build
-        run: make build-koordlet build-koord-manager build-koord-scheduler build-koord-runtime-proxy
+        run: make build-koordlet build-koord-manager build-koord-scheduler build-koord-descheduler build-koord-runtime-proxy
       - name: Run Go test
         run: make test
       - name: Upload coverage to Codecov
@@ -74,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [koordlet, koord-manager, koord-scheduler]
+        target: [koordlet, koord-manager, koord-scheduler, koord-descheduler]
     env:
       GITHUB_REG: ghcr.io
       ALIYUN_REG: registry.cn-beijing.aliyuncs.com
