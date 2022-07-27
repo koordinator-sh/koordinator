@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	"flag"
 	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +28,17 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
+
+var (
+	// SLO configmap name
+	ConfigNameSpace  = "koordinator-system"
+	SLOCtrlConfigMap = "slo-controller-config"
+)
+
+func InitFlags(fs *flag.FlagSet) {
+	fs.StringVar(&SLOCtrlConfigMap, "slo-config-name", SLOCtrlConfigMap, "determines the name the slo-controller configmap uses.")
+	fs.StringVar(&ConfigNameSpace, "config-namespace", ConfigNameSpace, "determines the namespace of configmap uses.")
+}
 
 //TODO move under apis in the next PR
 // +k8s:deepcopy-gen=true

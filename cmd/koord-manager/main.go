@@ -40,6 +40,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	extclient "github.com/koordinator-sh/koordinator/pkg/client"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	sloconfig "github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodeslo"
@@ -88,6 +89,7 @@ func main() {
 	flag.BoolVar(&enablePprof, "enable-pprof", true, "Enable pprof for controller manager.")
 	flag.StringVar(&pprofAddr, "pprof-addr", ":8090", "The address the pprof binds to.")
 	flag.StringVar(&syncPeriodStr, "sync-period", "", "Determines the minimum frequency at which watched resources are reconciled.")
+	sloconfig.InitFlags(flag.CommandLine)
 
 	utilfeature.DefaultMutableFeatureGate.AddFlag(pflag.CommandLine)
 	klog.InitFlags(nil)

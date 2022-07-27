@@ -17,10 +17,6 @@ limitations under the License.
 package config
 
 const (
-	// SLO configmap name
-	ConfigNameSpace  = "koordinator-system"
-	SLOCtrlConfigMap = "slo-controller-config"
-
 	// keys in the configmap
 	ColocationConfigKey        = "colocation-config"
 	ResourceThresholdConfigKey = "resource-threshold-config"
