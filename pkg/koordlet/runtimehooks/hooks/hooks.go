@@ -37,9 +37,9 @@ type HookFn func(protocol.HooksProtocol) error
 var globalStageHooks map[rmconfig.RuntimeHookType][]*Hook
 
 func Register(stage rmconfig.RuntimeHookType, name, description string, hookFn HookFn) *Hook {
-	h, error := generateNewHook(stage, name)
-	if error != nil {
-		klog.Fatalf("hook %s is conflict since name is already registered", name)
+	h, err := generateNewHook(stage, name)
+	if err != nil {
+		klog.Fatalf("hook %s register failed, reason: %v", name, err)
 		return h
 	}
 	klog.V(1).Infof("hook %s is registered", name)
@@ -86,9 +86,11 @@ func RunHooks(stage rmconfig.RuntimeHookType, protocol protocol.HooksProtocol) {
 func init() {
 	globalStageHooks = map[rmconfig.RuntimeHookType][]*Hook{
 		rmconfig.PreRunPodSandbox:            make([]*Hook, 0),
+		rmconfig.PreCreateContainer:          make([]*Hook, 0),
 		rmconfig.PreStartContainer:           make([]*Hook, 0),
 		rmconfig.PostStartContainer:          make([]*Hook, 0),
 		rmconfig.PostStopContainer:           make([]*Hook, 0),
+		rmconfig.PostStopPodSandbox:          make([]*Hook, 0),
 		rmconfig.PreUpdateContainerResources: make([]*Hook, 0),
 	}
 }

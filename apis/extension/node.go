@@ -42,6 +42,9 @@ const (
 )
 
 const (
+	// cpu manager policy options of kubelet
+	NodeCPUManagerPolicyStatic = "static"
+	NodeCPUManagerPolicyNone   = "none"
 	// NodeCPUBindPolicyFullPCPUsOnly requires that the scheduler must allocate full physical cores.
 	// Equivalent to kubelet CPU manager policy option full-pcpus-only=true.
 	NodeCPUBindPolicyFullPCPUsOnly = "FullPCPUsOnly"
