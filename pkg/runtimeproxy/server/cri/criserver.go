@@ -171,7 +171,7 @@ func (c *RuntimeManagerCriServer) failOver() error {
 	}
 	containerResponse, containerErr := c.backendRuntimeServiceClient.ListContainers(context.TODO(), &runtimeapi.ListContainersRequest{})
 	if containerErr != nil {
-		return podErr
+		return containerErr
 	}
 	for _, pod := range podResponse.Items {
 		podResourceExecutor := cri_resource_executor.NewPodResourceExecutor()
