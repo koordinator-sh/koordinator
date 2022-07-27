@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	"flag"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -419,6 +420,39 @@ func Test_IsNodeColocationCfgValid(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := IsNodeColocationCfgValid(tt.args.nodeCfg)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestInitFlags(t *testing.T) {
+	cmdArgs := []string{
+		"",
+		"--slo-config-name=self-defined-slo-config",
+		"--config-namespace=self-defined-ns",
+	}
+	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
+	type args struct {
+		fs *flag.FlagSet
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "parse config",
+			args: args{
+				fs: fs,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wantSLOName := "self-defined-slo-config"
+			wantSLONs := "self-defined-ns"
+			InitFlags(tt.args.fs)
+			fs.Parse(cmdArgs[1:])
+			assert.Equal(t, wantSLOName, SLOCtrlConfigMap, "config map name should be equal")
+			assert.Equal(t, wantSLONs, ConfigNameSpace, "config map ns should be equal")
 		})
 	}
 }
