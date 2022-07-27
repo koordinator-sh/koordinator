@@ -29,5 +29,5 @@ func NewDefaultConfig() *Config {
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
-	fs.IntVar(&c.ReportIntervalSeconds, "ReportIntervalSeconds", c.ReportIntervalSeconds, "Report interval by seconds")
+	fs.IntVar(&c.ReportIntervalSeconds, "report-interval-seconds", c.ReportIntervalSeconds, "Report interval by seconds")
 }

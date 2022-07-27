@@ -39,7 +39,7 @@ var _ handler.EventHandler = &SLOCfgHandlerForConfigMapEvent{}
 
 type SLOCfg struct {
 	ThresholdCfgMerged   config.ResourceThresholdCfg `json:"thresholdCfgMerged,omitempty"`
-	ResourceQoSCfgMerged config.ResourceQoSCfg       `json:"resourceQoSCfgMerged,omitempty"`
+	ResourceQOSCfgMerged config.ResourceQOSCfg       `json:"resourceQOSCfgMerged,omitempty"`
 	CPUBurstCfgMerged    config.CPUBurstCfg          `json:"cpuBurstCfgMerged,omitempty"`
 }
 
@@ -47,7 +47,7 @@ func (in *SLOCfg) DeepCopy() *SLOCfg {
 	out := &SLOCfg{}
 	out.ThresholdCfgMerged = *in.ThresholdCfgMerged.DeepCopy()
 	out.CPUBurstCfgMerged = *in.CPUBurstCfgMerged.DeepCopy()
-	out.ResourceQoSCfgMerged = *in.ResourceQoSCfgMerged.DeepCopy()
+	out.ResourceQOSCfgMerged = *in.ResourceQOSCfgMerged.DeepCopy()
 	return out
 }
 
@@ -73,7 +73,7 @@ func (c *SLOCfgCache) IsAvailable() bool {
 func DefaultSLOCfg() SLOCfg {
 	return SLOCfg{
 		ThresholdCfgMerged:   config.ResourceThresholdCfg{ClusterStrategy: util.DefaultResourceThresholdStrategy()},
-		ResourceQoSCfgMerged: config.ResourceQoSCfg{ClusterStrategy: &slov1alpha1.ResourceQoSStrategy{}},
+		ResourceQOSCfgMerged: config.ResourceQOSCfg{ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{}},
 		CPUBurstCfgMerged:    config.CPUBurstCfg{ClusterStrategy: util.DefaultCPUBurstStrategy()},
 	}
 }
@@ -118,7 +118,7 @@ func (p *SLOCfgHandlerForConfigMapEvent) syncNodeSLOSpecIfChanged(configMap *cor
 	var newSLOCfg SLOCfg
 	oldSLOCfgCopy := p.SLOCfgCache.sloCfg.DeepCopy()
 	newSLOCfg.ThresholdCfgMerged, _ = caculateResourceThresholdCfgMerged(oldSLOCfgCopy.ThresholdCfgMerged, configMap)
-	newSLOCfg.ResourceQoSCfgMerged, _ = caculateResourceQoSCfgMerged(oldSLOCfgCopy.ResourceQoSCfgMerged, configMap)
+	newSLOCfg.ResourceQOSCfgMerged, _ = caculateResourceQOSCfgMerged(oldSLOCfgCopy.ResourceQOSCfgMerged, configMap)
 	newSLOCfg.CPUBurstCfgMerged, _ = caculateCPUBurstCfgMerged(oldSLOCfgCopy.CPUBurstCfgMerged, configMap)
 
 	return p.updateCacheIfChanged(newSLOCfg)

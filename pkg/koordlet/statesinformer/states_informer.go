@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	_ "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/scheme"
 	"go.uber.org/atomic"
@@ -77,6 +78,8 @@ type statesInformer struct {
 	nodeSLORWMutex  sync.RWMutex
 	nodeSLO         *slov1alpha1.NodeSLO
 
+	nodeTopoMutex  sync.RWMutex
+	nodeTopology   *topov1alpha1.NodeResourceTopology
 	topologyClient topologyclientset.Interface
 
 	podRWMutex     sync.RWMutex

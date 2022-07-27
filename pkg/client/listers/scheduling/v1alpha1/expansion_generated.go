@@ -18,6 +18,18 @@ limitations under the License.
 
 package v1alpha1
 
+// DeviceListerExpansion allows custom methods to be added to
+// DeviceLister.
+type DeviceListerExpansion interface{}
+
+// PodMigrationJobListerExpansion allows custom methods to be added to
+// PodMigrationJobLister.
+type PodMigrationJobListerExpansion interface{}
+
 // ReservationListerExpansion allows custom methods to be added to
 // ReservationLister.
 type ReservationListerExpansion interface{}
+
+// ReservationNamespaceListerExpansion allows custom methods to be added to
+// ReservationNamespaceLister.
+type ReservationNamespaceListerExpansion interface{}

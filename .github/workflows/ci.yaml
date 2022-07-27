@@ -117,8 +117,7 @@ jobs:
           platforms: linux/amd64
           push: true
           pull: true
-          build-args: |
-            MODULE=${{ matrix.target }}
+          file: docker/${{ matrix.target }}.dockerfile
           labels: |
             org.opencontainers.image.title=${{ matrix.target }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

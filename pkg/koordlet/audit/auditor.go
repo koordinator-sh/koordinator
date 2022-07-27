@@ -159,7 +159,7 @@ func (a *auditor) HttpHandler() func(http.ResponseWriter, *http.Request) {
 		} else {
 			activeReader = a.findActiveReader(pageToken)
 			if activeReader == nil {
-				http.Error(rw, fmt.Sprintf("reader %v is existed", pageToken), http.StatusConflict)
+				http.Error(rw, fmt.Sprintf("invalid pageToken %s", pageToken), http.StatusConflict)
 				return
 			}
 		}

@@ -11,6 +11,7 @@
 [![PRs Welcome](https://badgen.net/badge/PRs/welcome/green?icon=https://api.iconify.design/octicon:git-pull-request.svg?color=white&style=flat-square)](CONTRIBUTING.md)
 [![Slack](https://badgen.net/badge/slack/join/4A154B?icon=slack&style=flat-square)](https://join.slack.com/t/koordinator-sh/shared_invite/zt-1756qoub4-Cn4~esfdlfAPsD7cwO2NzA)
 
+English | [简体中文](./README-zh_CN.md)
 ## Introduction
 
 Koordinator is a QoS based scheduling system for hybrid orchestration workloads on Kubernetes. It aims to improve the
@@ -42,7 +43,7 @@ before participating.
 
 In the interest of fostering an open and welcoming environment, we as contributors and maintainers pledge to making
 participation in our project and our community a harassment-free experience for everyone, regardless of age, body size,
-disability, ethnicity, gender identity and expression, level of experience, education, socio-economic status,
+disability, ethnicity, level of experience, education, socio-economic status,
 nationality, personal appearance, race, religion, or sexual identity and orientation.
 
 ## Contributing

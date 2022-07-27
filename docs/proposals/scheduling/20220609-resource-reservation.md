@@ -8,7 +8,7 @@ reviewers:
   - "@jasonliu747"
   - "@zwzhang0107"
 creation-date: 2022-06-09
-last-updated: 2022-06-20
+last-updated: 2022-07-20
 ---
 # Resource Reservation
 
@@ -119,9 +119,12 @@ type ReservationSpec struct {
 	// like a normal pod.
 	// If the `template.spec.nodeName` is specified, the scheduler will not choose another node but reserve resources on
 	// the specified node.
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Schemaless
+	// +optional
 	Template *corev1.PodTemplateSpec `json:"template,omitempty"`
 	// Specify the owners who can allocate the reserved resources.
-	// Multiple owner selectors and ANDed.
+	// Multiple owner selectors and ORed.
 	Owners []ReservationOwner `json:"owners,omitempty"`
 	// By default, the resources requirements of reservation (specified in `template.spec`) is filtered by whether the
 	// node has sufficient free resources (i.e. ReservationRequest <  NodeFree).
@@ -130,7 +133,7 @@ type ReservationSpec struct {
 	PreAllocation bool `json:"preAllocation,omitempty"`
 	// Time-to-Live period for the reservation.
 	// `expires` and `ttl` are mutually exclusive. If both `ttl` and `expires` are not specified, a very
-	// long TTL will be picked as default.
+	// long TTL will be picked as default. Set 0 to disable the expiration.
 	TTL *metav1.Duration `json:"ttl,omitempty"`
 	// Expired timestamp when the reservation expires.
 	// `expires` and `ttl` are mutually exclusive. Defaults to being set dynamically at runtime based on the `ttl`.
@@ -141,14 +144,22 @@ type ReservationStatus struct {
 	// The `phase` indicates whether is reservation is waiting for process (`Pending`), available to allocate
 	// (`Available`) or expired to get cleanup (Expired).
 	Phase ReservationPhase `json:"phase,omitempty"`
+	// The `expired` indicates the timestamp if the reservation is expired.
+	Expired *metav1.Time `json:"expired,omitempty"`
 	// The `conditions` indicate the messages of reason why the reservation is still pending.
 	Conditions []ReservationCondition `json:"conditions,omitempty"`
 	// Current resource owners which allocated the reservation resources.
 	CurrentOwners []corev1.ObjectReference `json:"currentOwners,omitempty"`
+	// Name of node the reservation is scheduled on.
+	NodeName string `json:"nodeName,omitempty"`
+	// Resource reserved and allocatable for owners.
+	Allocatable corev1.ResourceList `json:"allocatable,omitempty"`
+	// Resource allocated by current owners.
+	Allocated corev1.ResourceList `json:"allocated,omitempty"`
 }
 
 type ReservationOwner struct {
-	// Multiple field selectors are ORed.
+	// Multiple field selectors are ANDed.
 	Object        *corev1.ObjectReference         `json:"object,omitempty"`
 	Controller    *ReservationControllerReference `json:"controller,omitempty"`
 	LabelSelector *metav1.LabelSelector           `json:"labelSelector,omitempty"`
@@ -212,11 +223,13 @@ Let's call the reservation is *allocatable* for a pod if:
 
 When the reservation plugin is enabled, the scheduler checks for every scheduling pod if there are allocatable reservations on a node. With a `Score` plugin implemented, the scheduler prefers pods to schedule on nodes which have more allocatable reserved resources.
 
-When a pod is scheduled on a node with allocatable reservations, it allocates resources belonging to one of reservations. (TBD: To pick one of reservations, we might choose the first coming matched one.)
+When a pod is scheduled on a node with allocatable reservations, it allocates resources belonging to one of reservations. To pick one of reservations, we choose the one which can get most reserved resources allocated (i.e. MostAllocated). And the scheduler also annotates the pod with the reservation info.
 
 ##### Expiration and Cleanup
 
 When a reservation has been created for a long time exceeding the `TTL` or `Expires`, the scheduler updates its status as `Expired`. For expired reservations, the scheduler will cleanup them with a custom garbage collection period.
+
+When a node is deleted, the available and waiting reservations on the node should be marked as `Expired` since they are not allocatable any more.
 
 #### Use Cases
 
@@ -262,7 +275,8 @@ Reserving resources with [`pause` pods with very low assigned priority](https://
 ## Implementation History
 
 - [X]  06/09/2022: Open PR for initial draft
-- [ ]  06/14/2022: Sent proposal for review
+- [X]  06/14/2022: Sent proposal for review
+- [ ]  07/20/2022: Update design details
 
 ## References
 

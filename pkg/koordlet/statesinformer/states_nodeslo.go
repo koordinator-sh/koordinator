@@ -98,12 +98,12 @@ func (s *statesInformer) mergeNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 		s.nodeSLO.Spec.ResourceUsedThresholdWithBE = mergedResourceUsedThresholdWithBESpec
 	}
 
-	// merge ResourceQoSStrategy
-	mergedResourceQoSStrategySpec := mergeSLOSpecResourceQoSStrategy(util.DefaultNodeSLOSpecConfig().ResourceQoSStrategy,
-		nodeSLO.Spec.ResourceQoSStrategy)
-	mergeNoneResourceQoSIfDisabled(mergedResourceQoSStrategySpec)
-	if mergedResourceQoSStrategySpec != nil {
-		s.nodeSLO.Spec.ResourceQoSStrategy = mergedResourceQoSStrategySpec
+	// merge ResourceQOSStrategy
+	mergedResourceQOSStrategySpec := mergeSLOSpecResourceQOSStrategy(util.DefaultNodeSLOSpecConfig().ResourceQOSStrategy,
+		nodeSLO.Spec.ResourceQOSStrategy)
+	mergeNoneResourceQOSIfDisabled(mergedResourceQOSStrategySpec)
+	if mergedResourceQOSStrategySpec != nil {
+		s.nodeSLO.Spec.ResourceQOSStrategy = mergedResourceQOSStrategySpec
 	}
 
 	// merge CPUBurstStrategy
@@ -128,9 +128,9 @@ func mergeSLOSpecResourceUsedThresholdWithBE(defaultSpec, newSpec *slov1alpha1.R
 	return out
 }
 
-func mergeSLOSpecResourceQoSStrategy(defaultSpec,
-	newSpec *slov1alpha1.ResourceQoSStrategy) *slov1alpha1.ResourceQoSStrategy {
-	spec := &slov1alpha1.ResourceQoSStrategy{}
+func mergeSLOSpecResourceQOSStrategy(defaultSpec,
+	newSpec *slov1alpha1.ResourceQOSStrategy) *slov1alpha1.ResourceQOSStrategy {
+	spec := &slov1alpha1.ResourceQOSStrategy{}
 	if newSpec != nil {
 		spec = newSpec
 	}
@@ -156,59 +156,59 @@ func mergeSLOSpecCPUBurstStrategy(defaultSpec,
 	return out
 }
 
-// mergeNoneResourceQoSIfDisabled complete ResourceQoSStrategy according to enable statuses of qos features
-func mergeNoneResourceQoSIfDisabled(resourceQoS *slov1alpha1.ResourceQoSStrategy) {
-	mergeNoneCPUQoSIfDisabled(resourceQoS)
-	mergeNoneResctrlQoSIfDisabled(resourceQoS)
-	mergeNoneMemoryQoSIfDisabled(resourceQoS)
-	klog.V(5).Infof("get merged node ResourceQoS %v", util.DumpJSON(resourceQoS))
+// mergeNoneResourceQOSIfDisabled complete ResourceQOSStrategy according to enable statuses of qos features
+func mergeNoneResourceQOSIfDisabled(resourceQOS *slov1alpha1.ResourceQOSStrategy) {
+	mergeNoneCPUQOSIfDisabled(resourceQOS)
+	mergeNoneResctrlQOSIfDisabled(resourceQOS)
+	mergeNoneMemoryQOSIfDisabled(resourceQOS)
+	klog.V(5).Infof("get merged node ResourceQOS %v", util.DumpJSON(resourceQOS))
 }
 
-// mergeNoneResctrlQoSIfDisabled completes node's resctrl qos config according to Enable options in ResctrlQoS
-func mergeNoneResctrlQoSIfDisabled(resourceQoS *slov1alpha1.ResourceQoSStrategy) {
-	if resourceQoS.LSR != nil && resourceQoS.LSR.ResctrlQoS != nil &&
-		resourceQoS.LSR.ResctrlQoS.Enable != nil && !(*resourceQoS.LSR.ResctrlQoS.Enable) {
-		resourceQoS.LSR.ResctrlQoS.ResctrlQoS = *util.NoneResctrlQoS()
+// mergeNoneResctrlQOSIfDisabled completes node's resctrl qos config according to Enable options in ResctrlQOS
+func mergeNoneResctrlQOSIfDisabled(resourceQOS *slov1alpha1.ResourceQOSStrategy) {
+	if resourceQOS.LSRClass != nil && resourceQOS.LSRClass.ResctrlQOS != nil &&
+		resourceQOS.LSRClass.ResctrlQOS.Enable != nil && !(*resourceQOS.LSRClass.ResctrlQOS.Enable) {
+		resourceQOS.LSRClass.ResctrlQOS.ResctrlQOS = *util.NoneResctrlQOS()
 	}
-	if resourceQoS.LS != nil && resourceQoS.LS.ResctrlQoS != nil &&
-		resourceQoS.LS.ResctrlQoS.Enable != nil && !(*resourceQoS.LS.ResctrlQoS.Enable) {
-		resourceQoS.LS.ResctrlQoS.ResctrlQoS = *util.NoneResctrlQoS()
+	if resourceQOS.LSClass != nil && resourceQOS.LSClass.ResctrlQOS != nil &&
+		resourceQOS.LSClass.ResctrlQOS.Enable != nil && !(*resourceQOS.LSClass.ResctrlQOS.Enable) {
+		resourceQOS.LSClass.ResctrlQOS.ResctrlQOS = *util.NoneResctrlQOS()
 	}
-	if resourceQoS.BE != nil && resourceQoS.BE.ResctrlQoS != nil &&
-		resourceQoS.BE.ResctrlQoS.Enable != nil && !(*resourceQoS.BE.ResctrlQoS.Enable) {
-		resourceQoS.BE.ResctrlQoS.ResctrlQoS = *util.NoneResctrlQoS()
-	}
-}
-
-// mergeNoneMemoryQoSIfDisabled completes node's memory qos config according to Enable options in MemoryQoS
-func mergeNoneMemoryQoSIfDisabled(resourceQoS *slov1alpha1.ResourceQoSStrategy) {
-	// if MemoryQoS.Enable=false, merge with NoneMemoryQoS
-	if resourceQoS.LSR != nil && resourceQoS.LSR.MemoryQoS != nil &&
-		resourceQoS.LSR.MemoryQoS.Enable != nil && !(*resourceQoS.LSR.MemoryQoS.Enable) {
-		resourceQoS.LSR.MemoryQoS.MemoryQoS = *util.NoneMemoryQoS()
-	}
-	if resourceQoS.LS != nil && resourceQoS.LS.MemoryQoS != nil &&
-		resourceQoS.LS.MemoryQoS.Enable != nil && !(*resourceQoS.LS.MemoryQoS.Enable) {
-		resourceQoS.LS.MemoryQoS.MemoryQoS = *util.NoneMemoryQoS()
-	}
-	if resourceQoS.BE != nil && resourceQoS.BE.MemoryQoS != nil &&
-		resourceQoS.BE.MemoryQoS.Enable != nil && !(*resourceQoS.BE.MemoryQoS.Enable) {
-		resourceQoS.BE.MemoryQoS.MemoryQoS = *util.NoneMemoryQoS()
+	if resourceQOS.BEClass != nil && resourceQOS.BEClass.ResctrlQOS != nil &&
+		resourceQOS.BEClass.ResctrlQOS.Enable != nil && !(*resourceQOS.BEClass.ResctrlQOS.Enable) {
+		resourceQOS.BEClass.ResctrlQOS.ResctrlQOS = *util.NoneResctrlQOS()
 	}
 }
 
-func mergeNoneCPUQoSIfDisabled(resourceQoS *slov1alpha1.ResourceQoSStrategy) {
-	// if CPUQoS.Enabled=false, merge with NoneCPUQoS
-	if resourceQoS.LSR != nil && resourceQoS.LSR.CPUQoS != nil &&
-		resourceQoS.LSR.CPUQoS.Enable != nil && !(*resourceQoS.LSR.CPUQoS.Enable) {
-		resourceQoS.LSR.CPUQoS.CPUQoS = *util.NoneCPUQoS()
+// mergeNoneMemoryQOSIfDisabled completes node's memory qos config according to Enable options in MemoryQOS
+func mergeNoneMemoryQOSIfDisabled(resourceQOS *slov1alpha1.ResourceQOSStrategy) {
+	// if MemoryQOS.Enable=false, merge with NoneMemoryQOS
+	if resourceQOS.LSRClass != nil && resourceQOS.LSRClass.MemoryQOS != nil &&
+		resourceQOS.LSRClass.MemoryQOS.Enable != nil && !(*resourceQOS.LSRClass.MemoryQOS.Enable) {
+		resourceQOS.LSRClass.MemoryQOS.MemoryQOS = *util.NoneMemoryQOS()
 	}
-	if resourceQoS.LS != nil && resourceQoS.LS.CPUQoS != nil &&
-		resourceQoS.LS.CPUQoS.Enable != nil && !(*resourceQoS.LS.CPUQoS.Enable) {
-		resourceQoS.LS.CPUQoS.CPUQoS = *util.NoneCPUQoS()
+	if resourceQOS.LSClass != nil && resourceQOS.LSClass.MemoryQOS != nil &&
+		resourceQOS.LSClass.MemoryQOS.Enable != nil && !(*resourceQOS.LSClass.MemoryQOS.Enable) {
+		resourceQOS.LSClass.MemoryQOS.MemoryQOS = *util.NoneMemoryQOS()
 	}
-	if resourceQoS.BE != nil && resourceQoS.BE.CPUQoS != nil &&
-		resourceQoS.BE.CPUQoS.Enable != nil && !(*resourceQoS.BE.CPUQoS.Enable) {
-		resourceQoS.BE.CPUQoS.CPUQoS = *util.NoneCPUQoS()
+	if resourceQOS.BEClass != nil && resourceQOS.BEClass.MemoryQOS != nil &&
+		resourceQOS.BEClass.MemoryQOS.Enable != nil && !(*resourceQOS.BEClass.MemoryQOS.Enable) {
+		resourceQOS.BEClass.MemoryQOS.MemoryQOS = *util.NoneMemoryQOS()
+	}
+}
+
+func mergeNoneCPUQOSIfDisabled(resourceQOS *slov1alpha1.ResourceQOSStrategy) {
+	// if CPUQOS.Enabled=false, merge with NoneCPUQOS
+	if resourceQOS.LSRClass != nil && resourceQOS.LSRClass.CPUQOS != nil &&
+		resourceQOS.LSRClass.CPUQOS.Enable != nil && !(*resourceQOS.LSRClass.CPUQOS.Enable) {
+		resourceQOS.LSRClass.CPUQOS.CPUQOS = *util.NoneCPUQOS()
+	}
+	if resourceQOS.LSClass != nil && resourceQOS.LSClass.CPUQOS != nil &&
+		resourceQOS.LSClass.CPUQOS.Enable != nil && !(*resourceQOS.LSClass.CPUQOS.Enable) {
+		resourceQOS.LSClass.CPUQOS.CPUQOS = *util.NoneCPUQOS()
+	}
+	if resourceQOS.BEClass != nil && resourceQOS.BEClass.CPUQOS != nil &&
+		resourceQOS.BEClass.CPUQOS.Enable != nil && !(*resourceQOS.BEClass.CPUQOS.Enable) {
+		resourceQOS.BEClass.CPUQOS.CPUQOS = *util.NoneCPUQOS()
 	}
 }

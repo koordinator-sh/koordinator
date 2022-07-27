@@ -11,7 +11,7 @@ reviewers:
 - "@stormgbs"
 - "@zwzhang0107"
 creation-date: 2022-05-30
-last-updated: 2022-06-24
+last-updated: 2022-07-11
 status: provisional
 
 ---
@@ -190,8 +190,8 @@ type ResourceSpec struct {
 type CPUBindPolicy string
 
 const (
-  // CPUBindPolicyNone does not perform any bind policy
-  CPUBindPolicyNone CPUBindPolicy = "None"
+  // CPUBindPolicyDefault performs the default bind policy that specified in koord-scheduler configuration
+  CPUBindPolicyDefault CPUBindPolicy = "Default"
   // CPUBindPolicyFullPCPUs favor cpuset allocation that pack in few physical cores
   CPUBindPolicyFullPCPUs CPUBindPolicy = "FullPCPUs"
   // CPUBindPolicySpreadByPCPUs favor cpuset allocation that evenly allocate logical cpus across physical cores
@@ -203,8 +203,8 @@ const (
 type CPUExclusivePolicy string
 
 const (
-  // CPUExclusivePolicyNone does not perform any exclusive policy
-  CPUExclusivePolicyNone CPUExclusivePolicy = "None"
+  // CPUExclusivePolicyDefault performs the default exclusive policy that specified in koord-scheduler configuration
+  CPUExclusivePolicyDefault CPUExclusivePolicy = "Default"
   // CPUExclusivePolicyPCPULevel represents mutual exclusion in the physical core dimension 
   CPUExclusivePolicyPCPULevel CPUExclusivePolicy = "PCPULevel"
   // CPUExclusivePolicyNUMANodeLevel indicates mutual exclusion in the NUMA topology dimension
@@ -213,13 +213,13 @@ const (
 ```
 
 - The `CPUBindPolicy` defines the CPU binding policy. The specific values are defined as follows:
-   - `CPUBindPolicyNone` or empty value does not perform any bind policy. It is completely determined by the scheduler plugin configuration.
+   - `CPUBindPolicyDefault` or empty value performs the default bind policy that specified in koord-scheduler configuration.
    - `CPUBindPolicyFullPCPUs` is a bin-packing policy, similar to the `full-pcpus-only=true` option defined by the kubelet, that allocate full physical cores. However, if the number of remaining logical CPUs in the node is sufficient but the number of full physical cores is insufficient, the allocation will continue. This policy can effectively avoid the noisy neighbor problem.
    - `CPUBindPolicySpreadByPCPUs` is a spread policy. If the node enabled Hyper-Threading, when this policy is adopted, the scheduler will evenly allocate logical CPUs across physical cores. For example, the current node has 8 physical cores and 16 logical CPUs. When a Pod requires 8 logical CPUs and the `CPUBindPolicySpreadByPCPUs` policy is adopted, the scheduler will allocate an logical CPU from each physical core. This policy is mainly used by some latency-sensitive applications with multiple different peak-to-valley characteristics. It can not only allow the application to fully use the CPU at certain times, but will not be disturbed by the application on the same physical core. So the noisy neighbor problem may arise when using this policy.
    - `CPUBindPolicyConstrainedBurst` a special policy that mainly helps K8s Burstable/Koordinator LS Pod get better performance. When using the policy, koord-scheduler is filtering out Nodes that have NUMA Nodes with suitable CPU Shared Pool by Pod Limit. After the scheduling is successful, the scheduler will update `scheduling.koordinator.sh/resource-status` in the Pod, declaring the `CPU Shared Pool` to be bound. The koordlet binds the CPU Shared Pool of the corresponding NUMA Node according to the `CPU Shared Pool`
    - If `kubelet.koordinator.sh/cpu-manager-policy` in `NodeResourceTopology` has option `full-pcpus-only=true`, or `node.koordinator.sh/cpu-bind-policy` in the Node with the value `PCPUOnly`, the koord-scheduler will check whether the number of CPU requests of the Pod meets the `SMT-alignment` requirements, so as to avoid being rejected by the kubelet after scheduling. koord-scheduler will avoid such nodes if the Pod uses the `CPUBindPolicySpreadByPCPUs` policy or the number of logical CPUs mapped to the number of physical cores is not an integer.
 - The `CPUExclusivePolicy` defines the CPU exclusive policy, it can help users to avoid noisy neighbor problems. The specific values are defined as follows:
-   - `CPUExclusivePolicyNone` or empty value does not perform any isolate policy. It is completely determined by the scheduler plugin configuration.
+   - `CPUExclusivePolicyDefault` or empty value performs the default exclusive policy that specified in koord-scheduler configuration.
    - `CPUExclusivePolicyPCPULevel`. When allocating logical CPUs, try to avoid physical cores that have already been applied for by the same exclusive policy. It is a supplement to the `CPUBindPolicySpreadByPCPUs` policy. 
    - `CPUExclusivePolicyNUMANodeLevel`. When allocating logical CPUs, try to avoid NUMA Nodes that has already been applied for by the same exclusive policy. If there is no NUMA Node that satisfies the policy, downgrade to `PCPU` policy.
 
@@ -646,10 +646,8 @@ The following is an approximate brief algorithm logic:
 type CPUOrchestrationPluginArgs struct {
   metav1.TypeMeta
 
-  PreferredCPUBindPolicy      CPUBindPolicy               `json:"preferredCPUBindPolicy,omitempty"`
-  PreferredCPUExclusivePolicy CPUExclusivePolicy          `json:"preferredCPUExclusivePolicy,omitempty"`
+  DefaultCPUBindPolicy        CPUBindPolicy               `json:"defaultCPUBindPolicy,omitempty"`
   NUMATopologyAlignmentPolicy NUMATopologyAlignmentPolicy `json:"numaTopologyAlignmentPolicy,omitempty"`
-  NUMAAllocateStrategy        NUMAAllocateStrategy        `json:"numaAllocateStrategy,omitempty"`
 
   ScoringStrategy ScoringStrategy `json:"scoringStrategy,omitempty"`
 }
@@ -677,11 +675,9 @@ type ScoringStrategy struct {
 }
 ```
 
-- `CPUBindPolicy` represents the default bind policy. If not set, use `PCPUFirst` as default value.
-- `CPUExclusivePolicy` represents the default exclusive policy. There is no default value.
+- `DefaultCPUBindPolicy` represents the default bind policy. If not set, use `FullPCPUs` as default value.
 - `NUMATopologyAlignmentPolicy` represents the default NUMA topology alignment policy, If not set, use `BestEffort` as default value.
 - `ScoringStrategy` represents the node resource scoring strategy. If not set, use `MostAllocated` as default value.
-- `NUMAAllocateStrategy` represents the default NUMA allocate strategy. If not set, use `MostAllocated` as default value.
 
 ## Alternatives
 
@@ -702,3 +698,4 @@ type ScoringStrategy struct {
   - Add details about how to process newly created K8s Guaranteed Pod
   - Support Burstable Pod staticly bind CPU
 - 2022-06-24: Fix typo
+- 2022-07-11: Adjust CPUBindPolicyNone to CPUBindPolicyDefault

@@ -24,6 +24,10 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// Devices returns a DeviceInformer.
+	Devices() DeviceInformer
+	// PodMigrationJobs returns a PodMigrationJobInformer.
+	PodMigrationJobs() PodMigrationJobInformer
 	// Reservations returns a ReservationInformer.
 	Reservations() ReservationInformer
 }
@@ -39,7 +43,17 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
+// Devices returns a DeviceInformer.
+func (v *version) Devices() DeviceInformer {
+	return &deviceInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// PodMigrationJobs returns a PodMigrationJobInformer.
+func (v *version) PodMigrationJobs() PodMigrationJobInformer {
+	return &podMigrationJobInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
 // Reservations returns a ReservationInformer.
 func (v *version) Reservations() ReservationInformer {
-	return &reservationInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+	return &reservationInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }

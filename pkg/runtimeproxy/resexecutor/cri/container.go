@@ -74,8 +74,10 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
 		}
 		c.ContainerInfo = store.ContainerInfo{
 			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
-				PodMeta:      podCheckPoint.PodMeta,
-				PodResources: podCheckPoint.Resources,
+				PodMeta:        podCheckPoint.PodMeta,
+				PodResources:   podCheckPoint.Resources,
+				PodAnnotations: podCheckPoint.Annotations,
+				PodLabels:      podCheckPoint.Labels,
 				ContainerMata: &v1alpha1.ContainerMetadata{
 					Name:    request.GetConfig().GetMetadata().GetName(),
 					Attempt: request.GetConfig().GetMetadata().GetAttempt(),
@@ -89,7 +91,12 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
 	case *runtimeapi.StartContainerRequest:
 		return c.loadContainerInfoFromStore(request.GetContainerId(), "StartContainer")
 	case *runtimeapi.UpdateContainerResourcesRequest:
-		return c.loadContainerInfoFromStore(request.GetContainerId(), "UpdateContainerResource")
+		err := c.loadContainerInfoFromStore(request.GetContainerId(), "UpdateContainerResource")
+		if err != nil {
+			return err
+		}
+		c.ContainerResources = updateResourceByUpdateContainerResourceRequest(c.ContainerResources, transferToKoordResources(request.Linux))
+		return nil
 	case *runtimeapi.StopContainerRequest:
 		return c.loadContainerInfoFromStore(request.GetContainerId(), "StopContainer")
 	}

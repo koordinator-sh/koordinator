@@ -41,10 +41,10 @@ func NewDefaultConfig() *Config {
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
-	fs.IntVar(&c.ReconcileIntervalSeconds, "ReconcileIntervalSeconds", c.ReconcileIntervalSeconds, "reconcile be pod cgroup interval by seconds")
-	fs.IntVar(&c.CPUSuppressIntervalSeconds, "CPUSuppressIntervalSeconds", c.CPUSuppressIntervalSeconds, "suppress be pod cpu resource interval by seconds")
-	fs.IntVar(&c.CPUEvictIntervalSeconds, "CPUEvictIntervalSeconds", c.CPUEvictIntervalSeconds, "evict be pod(cpu) interval by seconds")
-	fs.IntVar(&c.MemoryEvictIntervalSeconds, "MemoryEvictIntervalSeconds", c.MemoryEvictIntervalSeconds, "evict be pod(memory) interval by seconds")
-	fs.IntVar(&c.MemoryEvictCoolTimeSeconds, "MemoryEvictCoolTimeSeconds", c.MemoryEvictCoolTimeSeconds, "cooling time: memory next evict time should after lastEvictTime + MemoryEvictCoolTimeSeconds")
-	fs.IntVar(&c.CPUEvictCoolTimeSeconds, "CPUEvictCoolTimeSeconds", c.CPUEvictCoolTimeSeconds, "cooltime: CPU next evict time should after lastEvictTime + CPUEvictCoolTimeSeconds")
+	fs.IntVar(&c.ReconcileIntervalSeconds, "reconcile-interval-seconds", c.ReconcileIntervalSeconds, "reconcile be pod cgroup interval by seconds")
+	fs.IntVar(&c.CPUSuppressIntervalSeconds, "cpu-suppress-interval-seconds", c.CPUSuppressIntervalSeconds, "suppress be pod cpu resource interval by seconds")
+	fs.IntVar(&c.CPUEvictIntervalSeconds, "cpu-evict-interval-seconds", c.CPUEvictIntervalSeconds, "evict be pod(cpu) interval by seconds")
+	fs.IntVar(&c.MemoryEvictIntervalSeconds, "memory-evict-interval-seconds", c.MemoryEvictIntervalSeconds, "evict be pod(memory) interval by seconds")
+	fs.IntVar(&c.MemoryEvictCoolTimeSeconds, "memory-evict-cool-time-seconds", c.MemoryEvictCoolTimeSeconds, "cooling time: memory next evict time should after lastEvictTime + MemoryEvictCoolTimeSeconds")
+	fs.IntVar(&c.CPUEvictCoolTimeSeconds, "cpu-evict-cool-time-seconds", c.CPUEvictCoolTimeSeconds, "cooltime: CPU next evict time should after lastEvictTime + CPUEvictCoolTimeSeconds")
 }

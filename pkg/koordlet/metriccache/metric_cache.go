@@ -29,6 +29,8 @@ import (
 
 type AggregationType string
 
+type AggregationFunc func(interface{}, AggregateParam) (float64, error)
+
 const (
 	AggregationTypeAVG   AggregationType = "AVG"
 	AggregationTypeP90   AggregationType = "P90"
@@ -132,6 +134,25 @@ func (m *metricCache) GetNodeResourceMetric(param *QueryParam) NodeResourceQuery
 		return result
 	}
 
+	// gpu metrics time series.
+	// m.GPUs is a slice.
+	gpuUsagesByTime := make([][]gpuResourceMetric, 0)
+	for _, m := range metrics {
+		if len(m.GPUs) == 0 {
+			continue
+		}
+		gpuUsagesByTime = append(gpuUsagesByTime, m.GPUs)
+	}
+
+	var aggregateGPUMetrics []GPUMetric
+	if len(gpuUsagesByTime) > 0 {
+		aggregateGPUMetrics, err = m.aggregateGPUUsages(gpuUsagesByTime, aggregateFunc)
+		if err != nil {
+			result.Error = fmt.Errorf("get node aggregate GPUMetric failed, metrics %v, error %v", metrics, err)
+			return result
+		}
+	}
+
 	count, err := count(metrics)
 	if err != nil {
 		result.Error = fmt.Errorf("get node aggregate count failed, metrics %v, error %v", metrics, err)
@@ -146,6 +167,7 @@ func (m *metricCache) GetNodeResourceMetric(param *QueryParam) NodeResourceQuery
 		MemoryUsed: MemoryMetric{
 			MemoryWithoutCache: *resource.NewQuantity(int64(memoryUsed), resource.BinarySI),
 		},
+		GPUs: aggregateGPUMetrics,
 	}
 
 	return result
@@ -181,6 +203,25 @@ func (m *metricCache) GetPodResourceMetric(podUID *string, param *QueryParam) Po
 		return result
 	}
 
+	// gpu metrics time series.
+	// m.GPUs is a slice.
+	gpuUsagesByTime := make([][]gpuResourceMetric, 0)
+	for _, m := range metrics {
+		if len(m.GPUs) == 0 {
+			continue
+		}
+		gpuUsagesByTime = append(gpuUsagesByTime, m.GPUs)
+	}
+
+	var aggregateGPUMetrics []GPUMetric
+	if len(gpuUsagesByTime) > 0 {
+		aggregateGPUMetrics, err = m.aggregateGPUUsages(gpuUsagesByTime, aggregateFunc)
+		if err != nil {
+			result.Error = fmt.Errorf("get pod aggregate GPUMetric failed, metrics %v, error %v", metrics, err)
+			return result
+		}
+	}
+
 	count, err := count(metrics)
 	if err != nil {
 		result.Error = fmt.Errorf("get node aggregate count failed, metrics %v, error %v", metrics, err)
@@ -196,7 +237,9 @@ func (m *metricCache) GetPodResourceMetric(podUID *string, param *QueryParam) Po
 		MemoryUsed: MemoryMetric{
 			MemoryWithoutCache: *resource.NewQuantity(int64(memoryUsed), resource.BinarySI),
 		},
+		GPUs: aggregateGPUMetrics,
 	}
+
 	return result
 }
 
@@ -226,15 +269,34 @@ func (m *metricCache) GetContainerResourceMetric(containerID *string, param *Que
 	}
 	memoryUsed, err := aggregateFunc(metrics, AggregateParam{ValueFieldName: "MemoryUsedBytes", TimeFieldName: "Timestamp"})
 	if err != nil {
-		result.Error = fmt.Errorf("get pod %v aggregate MemoryUsedBytes failed, metrics %v, error %v",
+		result.Error = fmt.Errorf("get container %v aggregate MemoryUsedBytes failed, metrics %v, error %v",
 			containerID, metrics, err)
 		return result
 	}
 
 	count, err := count(metrics)
 	if err != nil {
-		result.Error = fmt.Errorf("get node aggregate count failed, metrics %v, error %v", metrics, err)
+		result.Error = fmt.Errorf("get container aggregate count failed, metrics %v, error %v", metrics, err)
 		return result
+	}
+
+	// gpu metrics time series.
+	// m.GPUs is a slice.
+	gpuUsagesByTime := make([][]gpuResourceMetric, 0)
+	for _, m := range metrics {
+		if len(m.GPUs) == 0 {
+			continue
+		}
+		gpuUsagesByTime = append(gpuUsagesByTime, m.GPUs)
+	}
+
+	var aggregateGPUMetrics []GPUMetric
+	if len(gpuUsagesByTime) > 0 {
+		aggregateGPUMetrics, err = m.aggregateGPUUsages(gpuUsagesByTime, aggregateFunc)
+		if err != nil {
+			result.Error = fmt.Errorf("get container aggregate GPUMetric failed, metrics %v, error %v", metrics, err)
+			return result
+		}
 	}
 
 	result.AggregateInfo = &AggregateInfo{MetricsCount: int64(count)}
@@ -246,6 +308,7 @@ func (m *metricCache) GetContainerResourceMetric(containerID *string, param *Que
 		MemoryUsed: MemoryMetric{
 			MemoryWithoutCache: *resource.NewQuantity(int64(memoryUsed), resource.BinarySI),
 		},
+		GPUs: aggregateGPUMetrics,
 	}
 	return result
 }
@@ -404,29 +467,67 @@ func (m *metricCache) GetContainerThrottledMetric(containerID *string, param *Qu
 }
 
 func (m *metricCache) InsertNodeResourceMetric(t time.Time, nodeResUsed *NodeResourceMetric) error {
+	gpuUsages := make([]gpuResourceMetric, len(nodeResUsed.GPUs))
+	for idx, usage := range nodeResUsed.GPUs {
+		gpuUsages[idx] = gpuResourceMetric{
+			DeviceUUID:  usage.DeviceUUID,
+			Minor:       usage.Minor,
+			SMUtil:      float64(usage.SMUtil),
+			MemoryUsed:  float64(usage.MemoryUsed.Value()),
+			MemoryTotal: float64(usage.MemoryTotal.Value()),
+			Timestamp:   t,
+		}
+	}
+
 	dbItem := &nodeResourceMetric{
 		CPUUsedCores:    float64(nodeResUsed.CPUUsed.CPUUsed.MilliValue()) / 1000,
 		MemoryUsedBytes: float64(nodeResUsed.MemoryUsed.MemoryWithoutCache.Value()),
+		GPUs:            gpuUsages,
 		Timestamp:       t,
 	}
 	return m.db.InsertNodResourceMetric(dbItem)
 }
 
 func (m *metricCache) InsertPodResourceMetric(t time.Time, podResUsed *PodResourceMetric) error {
+	gpuUsages := make([]gpuResourceMetric, len(podResUsed.GPUs))
+	for idx, usage := range podResUsed.GPUs {
+		gpuUsages[idx] = gpuResourceMetric{
+			DeviceUUID:  usage.DeviceUUID,
+			Minor:       usage.Minor,
+			SMUtil:      float64(usage.SMUtil),
+			MemoryUsed:  float64(usage.MemoryUsed.Value()),
+			MemoryTotal: float64(usage.MemoryTotal.Value()),
+			Timestamp:   t,
+		}
+	}
+
 	dbItem := &podResourceMetric{
 		PodUID:          podResUsed.PodUID,
 		CPUUsedCores:    float64(podResUsed.CPUUsed.CPUUsed.MilliValue()) / 1000,
 		MemoryUsedBytes: float64(podResUsed.MemoryUsed.MemoryWithoutCache.Value()),
+		GPUs:            gpuUsages,
 		Timestamp:       t,
 	}
 	return m.db.InsertPodResourceMetric(dbItem)
 }
 
 func (m *metricCache) InsertContainerResourceMetric(t time.Time, containerResUsed *ContainerResourceMetric) error {
+	gpuUsages := make([]gpuResourceMetric, len(containerResUsed.GPUs))
+	for idx, usage := range containerResUsed.GPUs {
+		gpuUsages[idx] = gpuResourceMetric{
+			DeviceUUID:  usage.DeviceUUID,
+			Minor:       usage.Minor,
+			SMUtil:      float64(usage.SMUtil),
+			MemoryUsed:  float64(usage.MemoryUsed.Value()),
+			MemoryTotal: float64(usage.MemoryTotal.Value()),
+			Timestamp:   t,
+		}
+	}
 	dbItem := &containerResourceMetric{
 		ContainerID:     containerResUsed.ContainerID,
 		CPUUsedCores:    float64(containerResUsed.CPUUsed.CPUUsed.MilliValue()) / 1000,
 		MemoryUsedBytes: float64(containerResUsed.MemoryUsed.MemoryWithoutCache.Value()),
+		GPUs:            gpuUsages,
 		Timestamp:       t,
 	}
 	return m.db.InsertContainerResourceMetric(dbItem)
@@ -474,6 +575,50 @@ func (m *metricCache) InsertContainerThrottledMetrics(t time.Time, metric *Conta
 	return m.db.InsertContainerThrottledMetric(dbItem)
 }
 
+func (m *metricCache) aggregateGPUUsages(gpuResourceMetricsByTime [][]gpuResourceMetric, aggregateFunc AggregationFunc) ([]GPUMetric, error) {
+	if len(gpuResourceMetricsByTime) == 0 {
+		return nil, nil
+	}
+	deviceCount := len(gpuResourceMetricsByTime[0])
+	// keep order by device minor.
+	gpuUsageByDevice := make([][]gpuResourceMetric, deviceCount)
+	for _, deviceMetrics := range gpuResourceMetricsByTime {
+		if len(deviceMetrics) != deviceCount {
+			return nil, fmt.Errorf("aggregateGPUUsages %v error: inconsistent time series dimensions, deviceCount %d", deviceMetrics, deviceCount)
+		}
+		for devIdx, m := range deviceMetrics {
+			gpuUsageByDevice[devIdx] = append(gpuUsageByDevice[devIdx], m)
+		}
+	}
+
+	metrics := make([]GPUMetric, 0)
+	for _, v := range gpuUsageByDevice {
+		if len(v) == 0 {
+			continue
+		}
+		smutil, err := aggregateFunc(v, AggregateParam{ValueFieldName: "SMUtil", TimeFieldName: "Timestamp"})
+		if err != nil {
+			return nil, err
+		}
+
+		memoryUsed, err := aggregateFunc(v, AggregateParam{ValueFieldName: "MemoryUsed", TimeFieldName: "Timestamp"})
+		if err != nil {
+			return nil, err
+		}
+
+		g := GPUMetric{
+			DeviceUUID:  v[len(v)-1].DeviceUUID,
+			Minor:       v[len(v)-1].Minor,
+			SMUtil:      uint32(smutil),
+			MemoryUsed:  *resource.NewQuantity(int64(memoryUsed), resource.BinarySI),
+			MemoryTotal: *resource.NewQuantity(int64(v[len(v)-1].MemoryTotal), resource.BinarySI),
+		}
+		metrics = append(metrics, g)
+	}
+
+	return metrics, nil
+}
+
 func (m *metricCache) recycleDB() {
 	now := time.Now()
 	oldTime := time.Unix(0, 0)
@@ -500,7 +645,7 @@ func (m *metricCache) recycleDB() {
 	klog.V(2).Infof("expired metric data before %v has been recycled", expiredTime)
 }
 
-func getAggregateFunc(aggregationType AggregationType) func(interface{}, AggregateParam) (float64, error) {
+func getAggregateFunc(aggregationType AggregationType) AggregationFunc {
 	switch aggregationType {
 	case AggregationTypeAVG:
 		return fieldAvgOfMetricList

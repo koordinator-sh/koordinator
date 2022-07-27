@@ -114,15 +114,15 @@ docker-build: test docker-build-koordlet docker-build-koord-manager docker-build
 
 .PHONY: docker-build-koordlet
 docker-build-koordlet: ## Build docker image with the koordlet.
-	docker build --build-arg MODULE=koordlet -t ${KOORDLET_IMG} .
+	docker build --pull -t ${KOORDLET_IMG} -f docker/koordlet.dockerfile .
 
 .PHONY: docker-build-koord-manager
 docker-build-koord-manager: ## Build docker image with the koord-manager.
-	docker build --build-arg MODULE=koord-manager -t ${KOORD_MANAGER_IMG} .
+	docker build --pull -t ${KOORD_MANAGER_IMG} -f docker/koord-manager.dockerfile .
 
 .PHONY: docker-build-koord-scheduler
 docker-build-koord-scheduler: ## Build docker image with the scheduler.
-	docker build --build-arg MODULE=koord-scheduler -t ${KOORD_SCHEDULER_IMG} .
+	docker build --pull -t ${KOORD_SCHEDULER_IMG} -f docker/koord-scheduler.dockerfile .
 
 .PHONY: docker-push
 docker-push: docker-push-koordlet docker-push-koord-manager docker-push-koord-scheduler

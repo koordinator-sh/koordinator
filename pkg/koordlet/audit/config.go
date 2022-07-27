@@ -46,7 +46,7 @@ func NewDefaultConfig() *Config {
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
-	fs.StringVar(&c.LogDir, "AuditLogDir", c.LogDir, "The dir of audit log")
-	fs.IntVar(&c.Verbose, "AuditVerbose", c.Verbose, "The verbose of the audit log")
-	fs.IntVar(&c.MaxDiskSpaceMB, "AuditMaxDiskSpaceMB", c.MaxDiskSpaceMB, "Max disk space occupied of audit log")
+	fs.StringVar(&c.LogDir, "audit-log-dir", c.LogDir, "The dir of audit log")
+	fs.IntVar(&c.Verbose, "audit-verbose", c.Verbose, "The verbose of the audit log")
+	fs.IntVar(&c.MaxDiskSpaceMB, "audit-max-disk-space-mb", c.MaxDiskSpaceMB, "Max disk space occupied of audit log")
 }

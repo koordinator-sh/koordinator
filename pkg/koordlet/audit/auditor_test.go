@@ -18,48 +18,21 @@ package audit
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
 
-type TestServer struct {
-	l      net.Listener
-	server *http.Server
-}
-
-func (t *TestServer) Serve() {
-	t.server.Serve(t.l)
-}
-
-func (t *TestServer) Shutdown() error {
-	t.l.Close()
-	return t.server.Shutdown(context.TODO())
-}
-
-func (t *TestServer) URL(size int, pageToken string) string {
-	url := fmt.Sprintf("http://:%d?size=%d", t.l.Addr().(*net.TCPAddr).Port, size)
+func makeRequestUrl(size int, serverUrl, pageToken string) string {
+	url := fmt.Sprintf("%s?size=%d", serverUrl, size)
 	if pageToken != "" {
 		url += fmt.Sprintf("&pageToken=%s", pageToken)
 	}
 	return url
-}
-
-func mustCreateHttpServer(t *testing.T, handler http.Handler) *TestServer {
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := &http.Server{Handler: handler}
-	return &TestServer{
-		l:      l,
-		server: server,
-	}
 }
 
 func TestAuditorLogger(t *testing.T) {
@@ -76,31 +49,31 @@ func TestAuditorLogger(t *testing.T) {
 	}
 	logger.Flush()
 
-	server := mustCreateHttpServer(t, http.HandlerFunc(auditor.HttpHandler()))
-	defer server.Shutdown()
-	go func() {
-		server.Serve()
-	}()
+	server := httptest.NewServer(http.HandlerFunc(auditor.HttpHandler()))
+	defer server.Close()
 
 	client := http.Client{}
-	req, _ := http.NewRequest("GET", server.URL(10, ""), nil)
+	req, _ := http.NewRequest("GET", makeRequestUrl(10, server.URL, ""), nil)
 	req.Header.Add("Accept", "application/json")
 	resp, err := client.Do(req)
+
 	if err != nil {
 		t.Fatalf("failed to get events: %v", err)
 	}
+
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	response := &JsonResponse{}
 	if err := json.Unmarshal(body, response); err != nil {
 		t.Fatal(err)
 	}
+
 	if len(response.Events) != 10 {
 		t.Errorf("failed to load events, expected %d actual %d", 10, len(response.Events))
 	}
 
 	// continue read logs
-	req, _ = http.NewRequest("GET", server.URL(1, response.NextPageToken), nil)
+	req, _ = http.NewRequest("GET", makeRequestUrl(1, server.URL, response.NextPageToken), nil)
 	req.Header.Add("Accept", "application/json")
 	resp, err = client.Do(req)
 	if err != nil {
@@ -124,7 +97,7 @@ func TestAuditorLogger(t *testing.T) {
 		count := 0
 		stepSize := 5
 		for {
-			req, _ = http.NewRequest("GET", server.URL(stepSize, response.NextPageToken), nil)
+			req, _ = http.NewRequest("GET", makeRequestUrl(stepSize, server.URL, response.NextPageToken), nil)
 			req.Header.Add("Accept", "application/json")
 			resp, err = client.Do(req)
 			if err != nil {
@@ -146,7 +119,6 @@ func TestAuditorLogger(t *testing.T) {
 			t.Errorf("failed to read to the end, expected %v actual %v", len(blocks)-11, count)
 		}
 	}()
-
 }
 
 func TestAuditorLoggerTxtOutput(t *testing.T) {
@@ -163,14 +135,11 @@ func TestAuditorLoggerTxtOutput(t *testing.T) {
 	}
 	logger.Flush()
 
-	server := mustCreateHttpServer(t, http.HandlerFunc(auditor.HttpHandler()))
-	defer server.Shutdown()
-	go func() {
-		server.Serve()
-	}()
+	server := httptest.NewServer(http.HandlerFunc(auditor.HttpHandler()))
+	defer server.Close()
 
 	client := http.Client{}
-	req, _ := http.NewRequest("GET", server.URL(10, ""), nil)
+	req, _ := http.NewRequest("GET", makeRequestUrl(10, server.URL, ""), nil)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("failed to get events: %v", err)
@@ -204,14 +173,11 @@ func TestAuditorLoggerReaderInvalidPageToken(t *testing.T) {
 	}
 	logger.Flush()
 
-	server := mustCreateHttpServer(t, http.HandlerFunc(auditor.HttpHandler()))
-	defer server.Shutdown()
-	go func() {
-		server.Serve()
-	}()
+	server := httptest.NewServer(http.HandlerFunc(auditor.HttpHandler()))
+	defer server.Close()
 
 	client := http.Client{}
-	req, _ := http.NewRequest("GET", server.URL(10, ""), nil)
+	req, _ := http.NewRequest("GET", makeRequestUrl(10, server.URL, ""), nil)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("failed to get events: %v", err)
@@ -235,7 +201,7 @@ func TestAuditorLoggerReaderInvalidPageToken(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// request with expired token
-	req, _ = http.NewRequest("GET", server.URL(10, nextPageTokens[0]), nil)
+	req, _ = http.NewRequest("GET", makeRequestUrl(10, server.URL, nextPageTokens[0]), nil)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("failed to get events: %v", err)
@@ -245,7 +211,7 @@ func TestAuditorLoggerReaderInvalidPageToken(t *testing.T) {
 	}
 
 	// request with not exists token
-	req, _ = http.NewRequest("GET", server.URL(10, "not-exists-token"), nil)
+	req, _ = http.NewRequest("GET", makeRequestUrl(10, server.URL, "not-exists-token"), nil)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("failed to get events: %v", err)
@@ -269,16 +235,13 @@ func TestAuditorLoggerMaxActiveReaders(t *testing.T) {
 	}
 	logger.Flush()
 
-	server := mustCreateHttpServer(t, http.HandlerFunc(ad.HttpHandler()))
-	defer server.Shutdown()
-	go func() {
-		server.Serve()
-	}()
+	server := httptest.NewServer(http.HandlerFunc(ad.HttpHandler()))
+	defer server.Close()
 
 	client := http.Client{}
 
 	for i := 0; i < c.MaxConcurrentReaders+5; i++ {
-		req, _ := http.NewRequest("GET", server.URL(10, ""), nil)
+		req, _ := http.NewRequest("GET", makeRequestUrl(10, server.URL, ""), nil)
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("failed to get events: %v", err)

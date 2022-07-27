@@ -54,6 +54,8 @@ const (
 	MemHighFileName             = "memory.high"
 	MemoryLimitFileName         = "memory.limit_in_bytes"
 	MemStatFileName             = "memory.stat"
+
+	ProcsFileName = "cgroup.procs"
 )
 
 var (
@@ -94,6 +96,8 @@ var (
 	MemMin              = CgroupFile{ResourceFileName: MemMinFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemMinValidator}
 	MemLow              = CgroupFile{ResourceFileName: MemLowFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemLowValidator}
 	MemHigh             = CgroupFile{ResourceFileName: MemHighFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemHighValidator}
+
+	CPUProcs = CgroupFile{ResourceFileName: ProcsFileName, Subfs: CgroupCPUDir, IsAnolisOS: false}
 )
 
 type CgroupFile struct {

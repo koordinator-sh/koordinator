@@ -75,7 +75,7 @@ func NewResManager(cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
-	recorder := eventBroadcaster.NewRecorder(schema, corev1.EventSource{Component: "slo-agent-reporter", Host: nodeName})
+	recorder := eventBroadcaster.NewRecorder(schema, corev1.EventSource{Component: "koordlet-resmanager", Host: nodeName})
 
 	r := &resmanager{
 		config:                        cfg,

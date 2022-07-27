@@ -62,6 +62,7 @@ type daemon struct {
 	reporter       reporter.Reporter
 	resManager     resmanager.ResManager
 	runtimeHook    runtimehooks.RuntimeHook
+	pleg           pleg.Pleg
 }
 
 func NewDaemon(config *config.Configuration) (Daemon, error) {
@@ -132,6 +133,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		reporter:       reporterService,
 		resManager:     resManagerService,
 		runtimeHook:    runtimeHook,
+		pleg:           pleg,
 	}
 
 	return d, nil
@@ -193,7 +195,15 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 		}
 	}()
 
-	klog.V(1).Info("Start daemon successfully")
+
+	go func() {
+		if err := d.pleg.Run(stopCh); err != nil {
+			klog.Errorf("Unable to run the pleg: ", err)
+			os.Exit(1)
+		}
+	}()
+
+	klog.Info("Start daemon successfully")
 	<-stopCh
-	klog.V(1).Info("Shutting down daemon")
+	klog.Info("Shutting down daemon")
 }

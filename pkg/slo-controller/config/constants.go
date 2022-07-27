@@ -24,7 +24,7 @@ const (
 	// keys in the configmap
 	ColocationConfigKey        = "colocation-config"
 	ResourceThresholdConfigKey = "resource-threshold-config"
-	ResourceQoSConfigKey       = "resource-qos-config"
+	ResourceQOSConfigKey       = "resource-qos-config"
 	CPUBurstConfigKey          = "cpu-burst-config"
 )
 
@@ -33,7 +33,7 @@ Koordinator uses configmap to manage the configuration of SLO, the configmap is 
  <ConfigNameSpace>/<SLOCtrlConfigMap>, with the following keys respectively:
    - <ColocationConfigKey>
    - <ResourceThresholdConfigKey>
-   - <ResourceQoSConfigKey>
+   - <ResourceQOSConfigKey>
    - <CPUBurstConfigKey>
 
 et.

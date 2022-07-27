@@ -69,9 +69,9 @@ func (m *CgroupResourcesReconcile) RunInit(stopCh <-chan struct{}) error {
 
 func (m *CgroupResourcesReconcile) reconcile() {
 	nodeSLO := m.resmanager.getNodeSLOCopy()
-	if nodeSLO == nil || nodeSLO.Spec.ResourceQoSStrategy == nil {
-		// do nothing if nodeSLO == nil || nodeSLO.Spec.ResourceQoSStrategy == nil
-		klog.Warning("nodeSLO or nodeSLO.Spec.ResourceQoSStrategy is nil %v", util.DumpJSON(nodeSLO))
+	if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil {
+		// do nothing if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil
+		klog.Warning("nodeSLO or nodeSLO.Spec.ResourceQOSStrategy is nil %v", util.DumpJSON(nodeSLO))
 		return
 	}
 
@@ -99,7 +99,7 @@ func (m *CgroupResourcesReconcile) calculateAndUpdateResources(nodeSLO *slov1alp
 	podMetas := m.resmanager.statesInformer.GetAllPods()
 
 	// calculate qos-level, pod-level and container-level resources
-	qosResources, podResources, containerResources := m.calculateResources(nodeSLO.Spec.ResourceQoSStrategy, node, podMetas)
+	qosResources, podResources, containerResources := m.calculateResources(nodeSLO.Spec.ResourceQOSStrategy, node, podMetas)
 
 	// to make sure the hierarchical cgroup resources are correctly updated, we simply update the resources by
 	// cgroup-level order.
@@ -112,7 +112,7 @@ func (m *CgroupResourcesReconcile) calculateAndUpdateResources(nodeSLO *slov1alp
 }
 
 // calculateResources calculates qos-level, pod-level and container-level resources with nodeCfg and podMetas
-func (m *CgroupResourcesReconcile) calculateResources(nodeCfg *slov1alpha1.ResourceQoSStrategy, node *corev1.Node,
+func (m *CgroupResourcesReconcile) calculateResources(nodeCfg *slov1alpha1.ResourceQOSStrategy, node *corev1.Node,
 	podMetas []*statesinformer.PodMeta) (qosLevelResources, podLevelResources, containerLevelResources []MergeableResourceUpdater) {
 	// TODO: check anolis os version
 	qosSummary := map[corev1.PodQOSClass]*cgroupResourceSummary{
@@ -162,7 +162,7 @@ func (m *CgroupResourcesReconcile) calculateResources(nodeCfg *slov1alpha1.Resou
 }
 
 func (m *CgroupResourcesReconcile) calculateQoSResources(summary *cgroupResourceSummary, qos corev1.PodQOSClass,
-	qosCfg *slov1alpha1.ResourceQoS) []MergeableResourceUpdater {
+	qosCfg *slov1alpha1.ResourceQOS) []MergeableResourceUpdater {
 	// double-check qosCfg is not nil
 	if qosCfg == nil {
 		klog.Warningf("calculateQoSResources aborts since qos config is %v", qosCfg)
@@ -172,17 +172,17 @@ func (m *CgroupResourcesReconcile) calculateQoSResources(summary *cgroupResource
 	qosDir := util.GetKubeQosRelativePath(qos)
 
 	// Mem QoS
-	if qosCfg.MemoryQoS != nil {
-		summary.memoryUsePriorityOom = qosCfg.MemoryQoS.PriorityEnable
-		summary.memoryPriority = qosCfg.MemoryQoS.Priority
-		summary.memoryOomKillGroup = qosCfg.MemoryQoS.OomKillGroup
+	if qosCfg.MemoryQOS != nil {
+		summary.memoryUsePriorityOom = qosCfg.MemoryQOS.PriorityEnable
+		summary.memoryPriority = qosCfg.MemoryQOS.Priority
+		summary.memoryOomKillGroup = qosCfg.MemoryQOS.OomKillGroup
 	}
 
 	return makeCgroupResources(GroupOwnerRef(string(qos)), qosDir, summary)
 }
 
 func (m *CgroupResourcesReconcile) calculatePodAndContainerResources(podMeta *statesinformer.PodMeta, node *corev1.Node,
-	podCfg *slov1alpha1.ResourceQoS) (podResources, containerResources []MergeableResourceUpdater) {
+	podCfg *slov1alpha1.ResourceQOS) (podResources, containerResources []MergeableResourceUpdater) {
 	pod := podMeta.Pod
 	podDir := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 
@@ -208,7 +208,7 @@ func (m *CgroupResourcesReconcile) calculatePodAndContainerResources(podMeta *st
 	return
 }
 
-func (m *CgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parentDir string, podCfg *slov1alpha1.ResourceQoS) []MergeableResourceUpdater {
+func (m *CgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parentDir string, podCfg *slov1alpha1.ResourceQOS) []MergeableResourceUpdater {
 	// double-check qos config is not nil
 	if podCfg == nil {
 		klog.V(5).Infof("calculatePodResources aborts since pod-level config is empty, cfg: %v", podCfg)
@@ -218,13 +218,13 @@ func (m *CgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 
 	// Mem QoS
 	// resources statically use configured values
-	if podCfg.MemoryQoS != nil {
-		summary.memoryWmarkRatio = podCfg.MemoryQoS.WmarkRatio
-		summary.memoryWmarkScaleFactor = podCfg.MemoryQoS.WmarkScalePermill
-		summary.memoryWmarkMinAdj = podCfg.MemoryQoS.WmarkMinAdj
-		summary.memoryUsePriorityOom = podCfg.MemoryQoS.PriorityEnable
-		summary.memoryPriority = podCfg.MemoryQoS.Priority
-		summary.memoryOomKillGroup = podCfg.MemoryQoS.OomKillGroup
+	if podCfg.MemoryQOS != nil {
+		summary.memoryWmarkRatio = podCfg.MemoryQOS.WmarkRatio
+		summary.memoryWmarkScaleFactor = podCfg.MemoryQOS.WmarkScalePermill
+		summary.memoryWmarkMinAdj = podCfg.MemoryQOS.WmarkMinAdj
+		summary.memoryUsePriorityOom = podCfg.MemoryQOS.PriorityEnable
+		summary.memoryPriority = podCfg.MemoryQOS.Priority
+		summary.memoryOomKillGroup = podCfg.MemoryQOS.OomKillGroup
 		// resources calculated with pod spec
 		var memRequest int64
 		// memory.min, memory.low: just sum all containers' memory requests; regard as no memory protection when any
@@ -235,12 +235,12 @@ func (m *CgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 		} else {
 			memRequest = util.GetPodBEMemoryByteRequestIgnoreUnlimited(pod)
 		}
-		if podCfg.MemoryQoS.MinLimitPercent != nil {
+		if podCfg.MemoryQOS.MinLimitPercent != nil {
 			// assert no overflow for request < 1PiB
-			summary.memoryMin = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQoS.MinLimitPercent) / 100)
+			summary.memoryMin = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQOS.MinLimitPercent) / 100)
 		}
-		if podCfg.MemoryQoS.LowLimitPercent != nil {
-			summary.memoryLow = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQoS.LowLimitPercent) / 100)
+		if podCfg.MemoryQOS.LowLimitPercent != nil {
+			summary.memoryLow = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQOS.LowLimitPercent) / 100)
 		}
 		// values improved: memory.low is no less than memory.min
 		if summary.memoryMin != nil && summary.memoryLow != nil && *summary.memoryLow > 0 &&
@@ -255,7 +255,7 @@ func (m *CgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 }
 
 func (m *CgroupResourcesReconcile) calculateContainerResources(container *corev1.Container, pod *corev1.Pod,
-	node *corev1.Node, parentDir string, podCfg *slov1alpha1.ResourceQoS) []MergeableResourceUpdater {
+	node *corev1.Node, parentDir string, podCfg *slov1alpha1.ResourceQOS) []MergeableResourceUpdater {
 	// double-check qos config is not nil
 	if podCfg == nil {
 		klog.V(5).Infof("calculateContainerResources aborts since pod-level config is empty, cfg: %v", podCfg)
@@ -265,13 +265,13 @@ func (m *CgroupResourcesReconcile) calculateContainerResources(container *corev1
 
 	// Mem QoS
 	// resources statically use configured values
-	if podCfg.MemoryQoS != nil {
-		summary.memoryWmarkRatio = podCfg.MemoryQoS.WmarkRatio
-		summary.memoryWmarkScaleFactor = podCfg.MemoryQoS.WmarkScalePermill
-		summary.memoryWmarkMinAdj = podCfg.MemoryQoS.WmarkMinAdj
-		summary.memoryUsePriorityOom = podCfg.MemoryQoS.PriorityEnable
-		summary.memoryPriority = podCfg.MemoryQoS.Priority
-		summary.memoryOomKillGroup = podCfg.MemoryQoS.OomKillGroup
+	if podCfg.MemoryQOS != nil {
+		summary.memoryWmarkRatio = podCfg.MemoryQOS.WmarkRatio
+		summary.memoryWmarkScaleFactor = podCfg.MemoryQOS.WmarkScalePermill
+		summary.memoryWmarkMinAdj = podCfg.MemoryQOS.WmarkMinAdj
+		summary.memoryUsePriorityOom = podCfg.MemoryQOS.PriorityEnable
+		summary.memoryPriority = podCfg.MemoryQOS.Priority
+		summary.memoryOomKillGroup = podCfg.MemoryQOS.OomKillGroup
 		// resources calculated with container spec
 		var memRequest int64
 		var memLimit int64
@@ -287,22 +287,22 @@ func (m *CgroupResourcesReconcile) calculateContainerResources(container *corev1
 			memRequest = 0
 		}
 		// memory.min, memory.low: if container's memory request is not set, just consider it as zero
-		if podCfg.MemoryQoS.MinLimitPercent != nil {
-			summary.memoryMin = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQoS.MinLimitPercent) / 100)
+		if podCfg.MemoryQOS.MinLimitPercent != nil {
+			summary.memoryMin = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQOS.MinLimitPercent) / 100)
 		}
-		if podCfg.MemoryQoS.LowLimitPercent != nil {
-			summary.memoryLow = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQoS.LowLimitPercent) / 100)
+		if podCfg.MemoryQOS.LowLimitPercent != nil {
+			summary.memoryLow = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQOS.LowLimitPercent) / 100)
 		}
 		// memory.high: if container's memory throttling factor is set as zero, disable memory.high by set to maximal;
 		// else if factor is set while container's limit not set, set memory.high with node memory allocatable
-		if podCfg.MemoryQoS.ThrottlingPercent != nil {
-			if *podCfg.MemoryQoS.ThrottlingPercent == 0 { // reset to system default if set 0
+		if podCfg.MemoryQOS.ThrottlingPercent != nil {
+			if *podCfg.MemoryQOS.ThrottlingPercent == 0 { // reset to system default if set 0
 				summary.memoryHigh = pointer.Int64Ptr(math.MaxInt64) // writing MaxInt64 is equal to write "max"
 			} else if memLimit > 0 {
-				summary.memoryHigh = pointer.Int64Ptr(memLimit * (*podCfg.MemoryQoS.ThrottlingPercent) / 100)
+				summary.memoryHigh = pointer.Int64Ptr(memLimit * (*podCfg.MemoryQOS.ThrottlingPercent) / 100)
 			} else {
 				nodeLimit := node.Status.Allocatable.Memory().Value()
-				summary.memoryHigh = pointer.Int64Ptr(nodeLimit * (*podCfg.MemoryQoS.ThrottlingPercent) / 100)
+				summary.memoryHigh = pointer.Int64Ptr(nodeLimit * (*podCfg.MemoryQOS.ThrottlingPercent) / 100)
 			}
 		}
 		// values improved: memory.low is no less than memory.min
@@ -324,29 +324,29 @@ func (m *CgroupResourcesReconcile) calculateContainerResources(container *corev1
 	return makeCgroupResources(ContainerOwnerRef(pod.Namespace, pod.Name, container.Name), parentDir, summary)
 }
 
-// getMergedPodResourceQoS returns a merged ResourceQoS for the pod (i.e. a pod-level qos config).
+// getMergedPodResourceQoS returns a merged ResourceQOS for the pod (i.e. a pod-level qos config).
 // 1. merge pod-level cfg with node-level cfg if pod annotation of advanced qos config exists;
 // 2. calculates and finally returns the pod-level cfg with each feature cfg (e.g. pod-level memory qos config).
-func (m *CgroupResourcesReconcile) getMergedPodResourceQoS(pod *corev1.Pod, cfg *slov1alpha1.ResourceQoS) (*slov1alpha1.ResourceQoS, error) {
-	// deep-copy node config into pod config; assert cfg == NoneResourceQoS when node disables
+func (m *CgroupResourcesReconcile) getMergedPodResourceQoS(pod *corev1.Pod, cfg *slov1alpha1.ResourceQOS) (*slov1alpha1.ResourceQOS, error) {
+	// deep-copy node config into pod config; assert cfg == NoneResourceQOS when node disables
 	mergedCfg := cfg.DeepCopy()
 
 	// update with memory qos config
 	m.mergePodResourceQoSForMemoryQoS(pod, mergedCfg)
 
-	klog.V(5).Infof("get merged pod ResourceQoS %v for pod %s", util.DumpJSON(mergedCfg), util.GetPodKey(pod))
+	klog.V(5).Infof("get merged pod ResourceQOS %v for pod %s", util.DumpJSON(mergedCfg), util.GetPodKey(pod))
 	return mergedCfg, nil
 }
 
 // mergePodResourceQoSForMemoryQoS merges pod-level memory qos config with node-level resource qos config
 // config overwrite: pod-level config > pod policy template > node-level config
-func (m *CgroupResourcesReconcile) mergePodResourceQoSForMemoryQoS(pod *corev1.Pod, cfg *slov1alpha1.ResourceQoS) {
+func (m *CgroupResourcesReconcile) mergePodResourceQoSForMemoryQoS(pod *corev1.Pod, cfg *slov1alpha1.ResourceQOS) {
 	// get the pod-level config and determine if the pod is allowed
 	// TODO: support namespaced switch
-	if cfg.MemoryQoS == nil {
-		cfg.MemoryQoS = &slov1alpha1.MemoryQoSCfg{}
+	if cfg.MemoryQOS == nil {
+		cfg.MemoryQOS = &slov1alpha1.MemoryQOSCfg{}
 	}
-	policy := slov1alpha1.PodMemoryQoSPolicyDefault
+	policy := slov1alpha1.PodMemoryQOSPolicyDefault
 
 	// get pod-level config
 	podCfg, err := apiext.GetPodMemoryQoSConfig(pod)
@@ -360,12 +360,12 @@ func (m *CgroupResourcesReconcile) mergePodResourceQoSForMemoryQoS(pod *corev1.P
 	klog.V(5).Infof("memory qos podPolicy=%s for pod %s", policy, util.GetPodKey(pod))
 
 	// if policy is not default, replace memory qos config with the policy template
-	if policy == slov1alpha1.PodMemoryQoSPolicyNone { // fully disable memory qos for policy=None
-		cfg.MemoryQoS.MemoryQoS = *util.NoneMemoryQoS()
-		cfg.MemoryQoS.Enable = pointer.BoolPtr(false)
+	if policy == slov1alpha1.PodMemoryQOSPolicyNone { // fully disable memory qos for policy=None
+		cfg.MemoryQOS.MemoryQOS = *util.NoneMemoryQOS()
+		cfg.MemoryQOS.Enable = pointer.BoolPtr(false)
 		return
-	} else if policy == slov1alpha1.PodMemoryQoSPolicyAuto { // qos=None would be set with kubeQoS for policy=Auto
-		cfg.MemoryQoS.MemoryQoS = getPodResourceQoSByQoSClass(pod, util.DefaultResourceQoSStrategy(), m.resmanager.config).MemoryQoS.MemoryQoS
+	} else if policy == slov1alpha1.PodMemoryQOSPolicyAuto { // qos=None would be set with kubeQoS for policy=Auto
+		cfg.MemoryQOS.MemoryQOS = getPodResourceQoSByQoSClass(pod, util.DefaultResourceQOSStrategy(), m.resmanager.config).MemoryQOS.MemoryQOS
 	}
 
 	// no need to merge config if pod-level config is nil
@@ -373,18 +373,18 @@ func (m *CgroupResourcesReconcile) mergePodResourceQoSForMemoryQoS(pod *corev1.P
 		return
 	}
 	// otherwise detailed pod-level config is specified, merge with node-level config for the pod
-	merged, err := util.MergeCfg(&cfg.MemoryQoS.MemoryQoS, &podCfg.MemoryQoS) // node config has been deep-copied
+	merged, err := util.MergeCfg(&cfg.MemoryQOS.MemoryQOS, &podCfg.MemoryQOS) // node config has been deep-copied
 	if err != nil {
 		// not change memory qos config if merge error
 		klog.Errorf("failed to merge memory qos config with node config, pod %s, err: %s", util.GetPodKey(pod), err)
 		return
 	}
-	cfg.MemoryQoS.MemoryQoS = *merged.(*slov1alpha1.MemoryQoS)
-	klog.V(6).Infof("get merged memory qos %v", util.DumpJSON(cfg.MemoryQoS))
+	cfg.MemoryQOS.MemoryQOS = *merged.(*slov1alpha1.MemoryQOS)
+	klog.V(6).Infof("get merged memory qos %v", util.DumpJSON(cfg.MemoryQOS))
 }
 
 // updateCgroupSummaryForQoS updates qos cgroup summary by pod to summarize qos-level cgroup according to belonging pods
-func updateCgroupSummaryForQoS(summary *cgroupResourceSummary, pod *corev1.Pod, podCfg *slov1alpha1.ResourceQoS) {
+func updateCgroupSummaryForQoS(summary *cgroupResourceSummary, pod *corev1.Pod, podCfg *slov1alpha1.ResourceQOS) {
 	// Memory QoS
 	// `memory.min` for qos := sum(requests of pod with the qos * minLimitPercent); if factor is nil, set kernel default
 	// `memory.low` for qos := sum(requests of pod with the qos * lowLimitPercent); if factor is nil, set kernel default
@@ -396,18 +396,18 @@ func updateCgroupSummaryForQoS(summary *cgroupResourceSummary, pod *corev1.Pod, 
 	} else {
 		memRequest = util.GetPodBEMemoryByteRequestIgnoreUnlimited(pod)
 	}
-	if podCfg.MemoryQoS.MinLimitPercent != nil {
+	if podCfg.MemoryQOS.MinLimitPercent != nil {
 		if summary.memoryMin == nil {
 			summary.memoryMin = pointer.Int64Ptr(0)
 		}
 		// assert no overflow for req < 1PiB
-		*summary.memoryMin += memRequest * (*podCfg.MemoryQoS.MinLimitPercent) / 100
+		*summary.memoryMin += memRequest * (*podCfg.MemoryQOS.MinLimitPercent) / 100
 	}
-	if podCfg.MemoryQoS.LowLimitPercent != nil {
+	if podCfg.MemoryQOS.LowLimitPercent != nil {
 		if summary.memoryLow == nil {
 			summary.memoryLow = pointer.Int64Ptr(0)
 		}
-		*summary.memoryLow += memRequest * (*podCfg.MemoryQoS.LowLimitPercent) / 100
+		*summary.memoryLow += memRequest * (*podCfg.MemoryQOS.LowLimitPercent) / 100
 	}
 }
 
@@ -467,6 +467,8 @@ func makeCgroupResourcesForAnolis(owner *OwnerRef, parentDir string, summary *cg
 	var resources []MergeableResourceUpdater
 
 	if !system.HostSystemInfo.IsAnolisOS {
+		klog.V(5).Infof("ignored cgroup resources which required non Anolis OS, owner: %v, parentDir: %v",
+			owner, parentDir)
 		return nil
 	}
 
@@ -517,42 +519,42 @@ func makeCgroupResourcesForAnolis(owner *OwnerRef, parentDir string, summary *cg
 
 // getKubeQoSResourceQoSByQoSClass gets pod config by mapping kube qos into koordinator qos.
 // https://koordinator.sh/docs/core-concepts/qos/#koordinator-qos-vs-kubernetes-qos
-func getKubeQoSResourceQoSByQoSClass(qosClass corev1.PodQOSClass, strategy *slov1alpha1.ResourceQoSStrategy,
-	config *Config) *slov1alpha1.ResourceQoS {
+func getKubeQoSResourceQoSByQoSClass(qosClass corev1.PodQOSClass, strategy *slov1alpha1.ResourceQOSStrategy,
+	config *Config) *slov1alpha1.ResourceQOS {
 	// NOTE: only used for static qos resource calculation here, and it may be incorrect mapping for dynamic qos
 	// resource, e.g. qos class of a LS pod can be corev1.PodQOSGuaranteed
 	if strategy == nil {
 		return nil
 	}
-	var resourceQoS *slov1alpha1.ResourceQoS
+	var resourceQoS *slov1alpha1.ResourceQOS
 	switch qosClass {
 	case corev1.PodQOSGuaranteed:
-		resourceQoS = strategy.LSR
+		resourceQoS = strategy.LSRClass
 	case corev1.PodQOSBurstable:
-		resourceQoS = strategy.LS
+		resourceQoS = strategy.LSClass
 	case corev1.PodQOSBestEffort:
-		resourceQoS = strategy.BE
+		resourceQoS = strategy.BEClass
 	}
 	return resourceQoS
 }
 
-func getPodResourceQoSByQoSClass(pod *corev1.Pod, strategy *slov1alpha1.ResourceQoSStrategy, config *Config) *slov1alpha1.ResourceQoS {
+func getPodResourceQoSByQoSClass(pod *corev1.Pod, strategy *slov1alpha1.ResourceQOSStrategy, config *Config) *slov1alpha1.ResourceQOS {
 	if strategy == nil {
 		return nil
 	}
-	var resourceQoS *slov1alpha1.ResourceQoS
+	var resourceQoS *slov1alpha1.ResourceQOS
 	podQoS := apiext.GetPodQoSClass(pod)
 	switch podQoS {
 	case apiext.QoSLSR:
-		resourceQoS = strategy.LSR
+		resourceQoS = strategy.LSRClass
 	case apiext.QoSLS:
-		resourceQoS = strategy.LS
+		resourceQoS = strategy.LSClass
 	case apiext.QoSBE:
-		resourceQoS = strategy.BE
+		resourceQoS = strategy.BEClass
 	default:
 		// qos=None pods uses config mapped from kubeQoS
 		resourceQoS = getKubeQoSResourceQoSByQoSClass(util.GetKubeQosClass(pod), strategy, config)
-		klog.V(6).Infof("get pod ResourceQoS according to kubeQoS for QoS=None pods, pod %s, "+
+		klog.V(6).Infof("get pod ResourceQOS according to kubeQoS for QoS=None pods, pod %s, "+
 			"resourceQoS %v", util.GetPodKey(pod), util.DumpJSON(resourceQoS))
 	}
 	return resourceQoS

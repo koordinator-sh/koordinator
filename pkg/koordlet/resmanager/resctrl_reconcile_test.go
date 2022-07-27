@@ -420,7 +420,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 		group       string
 		cbm         uint
 		l3Num       int
-		qosStrategy *slov1alpha1.ResourceQoSStrategy
+		qosStrategy *slov1alpha1.ResourceQOSStrategy
 	}
 	type field struct {
 		invalidPath bool
@@ -444,10 +444,10 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 				group: LSResctrlGroup,
 				cbm:   0xf,
 				l3Num: 2,
-				qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-					LS: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					LSClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(0),
 								CATRangeEndPercent:   pointer.Int64Ptr(100),
 							},
@@ -465,10 +465,10 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 				group: LSResctrlGroup,
 				cbm:   0xf,
 				l3Num: 2,
-				qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-					BE: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					BEClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(0),
 								CATRangeEndPercent:   pointer.Int64Ptr(100),
 							},
@@ -485,10 +485,10 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 				group: LSResctrlGroup,
 				cbm:   0x4,
 				l3Num: 2,
-				qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-					LS: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					LSClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(0),
 								CATRangeEndPercent:   pointer.Int64Ptr(100),
 							},
@@ -505,10 +505,10 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 				group: LSResctrlGroup,
 				cbm:   0xf,
 				l3Num: 2,
-				qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-					LS: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					LSClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(0),
 								CATRangeEndPercent:   pointer.Int64Ptr(100),
 							},
@@ -525,18 +525,18 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 				group: LSResctrlGroup,
 				cbm:   0x7ff,
 				l3Num: 1,
-				qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-					LS: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					LSClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(10),
 								CATRangeEndPercent:   pointer.Int64Ptr(50),
 							},
 						},
 					},
-					BE: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+					BEClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(0),
 								CATRangeEndPercent:   pointer.Int64Ptr(100),
 							},
@@ -553,18 +553,18 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 				group: LSRResctrlGroup,
 				cbm:   0x7ff,
 				l3Num: 1,
-				qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-					LSR: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					LSRClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(10),
 								CATRangeEndPercent:   pointer.Int64Ptr(50),
 							},
 						},
 					},
-					BE: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+					BEClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(0),
 								CATRangeEndPercent:   pointer.Int64Ptr(100),
 							},
@@ -581,18 +581,18 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 				group: BEResctrlGroup,
 				cbm:   0x7ff,
 				l3Num: 1,
-				qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-					LS: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					LSClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(0),
 								CATRangeEndPercent:   pointer.Int64Ptr(100),
 							},
 						},
 					},
-					BE: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+					BEClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(10),
 								CATRangeEndPercent:   pointer.Int64Ptr(50),
 							},
@@ -640,7 +640,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 
 			// execute function
 			err := r.calculateAndApplyCatL3PolicyForGroup(tt.args.group, tt.args.cbm, tt.args.l3Num,
-				getResourceQoSForResctrlGroup(tt.args.qosStrategy, tt.args.group))
+				getResourceQOSForResctrlGroup(tt.args.qosStrategy, tt.args.group))
 			assert.Equal(t, tt.wantErr, err != nil)
 
 			schemataPath := filepath.Join(validSysFSRootDir, system.ResctrlDir, tt.args.group, system.SchemataFileName)
@@ -654,7 +654,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 	type args struct {
 		group       string
 		l3Num       int
-		qosStrategy *slov1alpha1.ResourceQoSStrategy
+		qosStrategy *slov1alpha1.ResourceQOSStrategy
 	}
 	type field struct {
 		invalidPath bool
@@ -677,10 +677,10 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			args: args{
 				group: LSResctrlGroup,
 				l3Num: 2,
-				qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-					LS: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					LSClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								MBAPercent: pointer.Int64Ptr(90),
 							},
 						},
@@ -696,10 +696,10 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			args: args{
 				group: LSResctrlGroup,
 				l3Num: 2,
-				qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-					BE: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					BEClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								MBAPercent: pointer.Int64Ptr(90),
 							},
 						},
@@ -714,10 +714,10 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			args: args{
 				group: LSResctrlGroup,
 				l3Num: 2,
-				qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-					LS: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					LSClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								MBAPercent: pointer.Int64Ptr(90),
 							},
 						},
@@ -732,17 +732,17 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			args: args{
 				group: BEResctrlGroup,
 				l3Num: 2,
-				qosStrategy: &slov1alpha1.ResourceQoSStrategy{
-					LS: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					LSClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								MBAPercent: pointer.Int64Ptr(100),
 							},
 						},
 					},
-					BE: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+					BEClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								MBAPercent: pointer.Int64Ptr(90),
 							},
 						},
@@ -789,7 +789,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 
 			// execute function
 			err := r.calculateAndApplyCatMbPolicyForGroup(tt.args.group, tt.args.l3Num,
-				getResourceQoSForResctrlGroup(tt.args.qosStrategy, tt.args.group))
+				getResourceQOSForResctrlGroup(tt.args.qosStrategy, tt.args.group))
 			assert.Equal(t, tt.wantErr, err != nil)
 
 			schemataPath := filepath.Join(validSysFSRootDir, system.ResctrlDir, tt.args.group, system.SchemataFileName)
@@ -901,27 +901,27 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 
 		nodeSLO := &slov1alpha1.NodeSLO{
 			Spec: slov1alpha1.NodeSLOSpec{
-				ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-					LSR: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+				ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+					LSRClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(0),
 								CATRangeEndPercent:   pointer.Int64Ptr(100),
 							},
 						},
 					},
-					LS: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+					LSClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(0),
 								CATRangeEndPercent:   pointer.Int64Ptr(100),
 								MBAPercent:           pointer.Int64Ptr(90),
 							},
 						},
 					},
-					BE: &slov1alpha1.ResourceQoS{
-						ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-							ResctrlQoS: slov1alpha1.ResctrlQoS{
+					BEClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(0),
 								CATRangeEndPercent:   pointer.Int64Ptr(30),
 							},
@@ -949,7 +949,7 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 		defer func() { stop <- struct{}{} }()
 
 		// reconcile and check if the result is correct
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQoSStrategy)
+		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		beSchemataPath := filepath.Join(resctrlDirPath, BEResctrlGroup, system.SchemataFileName)
 		expectBESchemataStr := "L3:0=f;1=f;\n"
@@ -964,11 +964,11 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 		// log error for invalid be resctrl path
 		err = os.RemoveAll(filepath.Join(resctrlDirPath, BEResctrlGroup))
 		assert.NoError(t, err)
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQoSStrategy)
+		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for invalid root resctrl path
 		system.Conf.SysFSRootDir = "invalidPath"
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQoSStrategy)
+		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 		system.Conf.SysFSRootDir = validSysFSRootDir
 
 		// log error for invalid l3 number
@@ -976,27 +976,27 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 			BasicInfo: util.CPUBasicInfo{CatL3CbmMask: "7ff"},
 			TotalInfo: util.CPUTotalInfo{NumberL3s: -1},
 		}, nil).Times(1)
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQoSStrategy)
+		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for invalid l3 cbm
 		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: util.CPUBasicInfo{CatL3CbmMask: "invalid"},
 			TotalInfo: util.CPUTotalInfo{NumberL3s: 2},
 		}, nil).Times(1)
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQoSStrategy)
+		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: util.CPUBasicInfo{CatL3CbmMask: ""},
 			TotalInfo: util.CPUTotalInfo{NumberL3s: 2},
 		}, nil).Times(1)
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQoSStrategy)
+		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for invalid nodeCPUInfo
 		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(nil, nil)
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQoSStrategy)
+		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for get nodeCPUInfo failed
 		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(nil, fmt.Errorf("error"))
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQoSStrategy)
+		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 	})
 }
 
@@ -1034,8 +1034,8 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		},
 		CgroupDir: "p0",
 	}
-	testQOSStrategy := util.DefaultResourceQoSStrategy()
-	testQOSStrategy.BE.ResctrlQoS.Enable = pointer.BoolPtr(true)
+	testQOSStrategy := util.DefaultResourceQOSStrategy()
+	testQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.BoolPtr(true)
 
 	t.Run("test", func(t *testing.T) {
 		// initialization
@@ -1095,26 +1095,26 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 
 	testingNodeSLO := &slov1alpha1.NodeSLO{
 		Spec: slov1alpha1.NodeSLOSpec{
-			ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-				LSR: &slov1alpha1.ResourceQoS{
-					ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-						ResctrlQoS: slov1alpha1.ResctrlQoS{
+			ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+				LSRClass: &slov1alpha1.ResourceQOS{
+					ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+						ResctrlQOS: slov1alpha1.ResctrlQOS{
 							CATRangeStartPercent: pointer.Int64Ptr(0),
 							CATRangeEndPercent:   pointer.Int64Ptr(100),
 						},
 					},
 				},
-				LS: &slov1alpha1.ResourceQoS{
-					ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-						ResctrlQoS: slov1alpha1.ResctrlQoS{
+				LSClass: &slov1alpha1.ResourceQOS{
+					ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+						ResctrlQOS: slov1alpha1.ResctrlQOS{
 							CATRangeStartPercent: pointer.Int64Ptr(0),
 							CATRangeEndPercent:   pointer.Int64Ptr(100),
 						},
 					},
 				},
-				BE: &slov1alpha1.ResourceQoS{
-					ResctrlQoS: &slov1alpha1.ResctrlQoSCfg{
-						ResctrlQoS: slov1alpha1.ResctrlQoS{
+				BEClass: &slov1alpha1.ResourceQOS{
+					ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+						ResctrlQOS: slov1alpha1.ResctrlQOS{
 							CATRangeStartPercent: pointer.Int64Ptr(0),
 							CATRangeEndPercent:   pointer.Int64Ptr(30),
 						},
@@ -1206,7 +1206,7 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 		r.reconcile()
 
 		// test strategy parse error
-		testingNodeSLO.Spec.ResourceQoSStrategy = nil
+		testingNodeSLO.Spec.ResourceQOSStrategy = nil
 		statesInformer.EXPECT().GetNodeSLO().Return(testingNodeSLO).AnyTimes()
 		r.reconcile()
 

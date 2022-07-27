@@ -3,6 +3,7 @@ module github.com/koordinator-sh/koordinator
 go 1.17
 
 require (
+	github.com/NVIDIA/go-nvml v0.11.6-0.0.20220715143214-a79f46f2a6f7
 	github.com/docker/docker v20.10.17+incompatible
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
@@ -13,13 +14,13 @@ require (
 	github.com/prometheus/client_golang v1.12.2
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.7.5
+	github.com/stretchr/testify v1.8.0
 	go.uber.org/atomic v1.9.0
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 	google.golang.org/grpc v1.38.0
 	google.golang.org/protobuf v1.28.0
-	gorm.io/driver/sqlite v1.3.4
-	gorm.io/gorm v1.23.6
+	gorm.io/driver/sqlite v1.3.6
+	gorm.io/gorm v1.23.8
 	k8s.io/api v0.22.6
 	k8s.io/apimachinery v0.22.6
 	k8s.io/apiserver v0.22.6

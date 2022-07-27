@@ -17,6 +17,7 @@ limitations under the License.
 package metricsadvisor
 
 import (
+	"flag"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,4 +30,47 @@ func Test_NewDefaultConfig(t *testing.T) {
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
+}
+
+func Test_InitFlags(t *testing.T) {
+	cmdArgs := []string{
+		"",
+		"--collect-res-used-interval-seconds=3",
+		"--collect-node-cpu-info-interval-seconds=90",
+	}
+	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
+
+	type fields struct {
+		CollectResUsedIntervalSeconds     int
+		CollectNodeCPUInfoIntervalSeconds int
+	}
+	type args struct {
+		fs *flag.FlagSet
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+	}{
+		{
+			name: "not default",
+			fields: fields{
+				CollectResUsedIntervalSeconds:     3,
+				CollectNodeCPUInfoIntervalSeconds: 90,
+			},
+			args: args{fs: fs},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := &Config{
+				CollectResUsedIntervalSeconds:     tt.fields.CollectResUsedIntervalSeconds,
+				CollectNodeCPUInfoIntervalSeconds: tt.fields.CollectNodeCPUInfoIntervalSeconds,
+			}
+			c := NewDefaultConfig()
+			c.InitFlags(tt.args.fs)
+			tt.args.fs.Parse(cmdArgs[1:])
+			assert.Equal(t, raw, c)
+		})
+	}
 }
