@@ -71,7 +71,7 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 		allSharePoolCPUs = append(allSharePoolCPUs, nodeSharePool.CPUSet)
 	}
 
-	podQOSClass := ext.GetQoSClassByLabels(podLabels)
+	podQOSClass := ext.GetQoSClassByAttrs(podLabels, podAnnotations)
 	if podQOSClass == ext.QoSLS {
 		// LS pods use all share pool
 		return pointer.String(strings.Join(allSharePoolCPUs, ",")), nil
