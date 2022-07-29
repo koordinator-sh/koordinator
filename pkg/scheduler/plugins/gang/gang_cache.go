@@ -2,12 +2,9 @@ package gang
 
 import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 	"k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"strconv"
 	"sync"
-	"time"
 )
 
 type gangCache struct {
@@ -22,362 +19,120 @@ func NewGangCache() *gangCache {
 	}
 }
 
-func (gangCache *gangCache) onPodAdd(obj interface{}) {
-	pod, ok := obj.(*v1.Pod)
-	if !ok {
-		return
-	}
-	gangCache.AddPod(pod)
-}
-
-func (gangCache *gangCache) onPodDelete(obj interface{}) {
-	pod, ok := obj.(*v1.Pod)
-	if !ok {
-		return
-	}
-	gangCache.DeletePod(pod)
-	gangName := pod.Annotations[extension.GangNameAnnotation]
-	//whether need to delete the gang from the gangCache
-	if num, found := gangCache.GetChildrenNum(gangName); found && num == 0 {
-		gangCache.DeleteGang(gangName)
-	}
-}
-
-func (gangCache *gangCache) DeleteGang(gangName string) {
-	if gangName == "" {
-		return
-	}
+/*****************Cache BEG*****************/
+func (gangCache *gangCache) createGangToCache(gangId string) *Gang {
 	gangCache.lock.Lock()
 	defer gangCache.lock.Unlock()
-	delete(gangCache.gangItems, gangName)
+
+	if gang, exist := gangCache.gangItems[gangId]; exist {
+		return gang
+	}
+
+	gang := NewGang(gangId)
+	gangCache.gangItems[gangId] = gang
+	return gang
 }
 
-func (gangCache *gangCache) HasGang(gangName string) bool {
+func (gangCache *gangCache) GetGangFromCache(gangId string) *Gang {
 	gangCache.lock.RLock()
 	defer gangCache.lock.RUnlock()
-	if _, ok := gangCache.gangItems[gangName]; !ok {
+
+	return gangCache.gangItems[gangId]
+}
+
+func (gangCache *gangCache) deleteGangFromCache(gangId string) {
+	gangCache.lock.Lock()
+	defer gangCache.lock.Unlock()
+
+	delete(gangCache.gangItems, gangId)
+}
+
+/*****************Cache END*****************/
+
+/******************Pod Event BEG******************/
+func (gangCache *gangCache) OnPodAdd(obj interface{}) {
+	pod, ok := obj.(*v1.Pod)
+	if !ok {
+		return
+	}
+
+	if !IsValidPod(pod) {
+		return
+	}
+
+	gangNamespace := pod.Annotations[extension.GangNamespaceAnnotation]
+	gangName := pod.Annotations[extension.GangNameAnnotation]
+
+	gangId := GetNamespaceSplicingName(gangNamespace, gangName)
+	gang := gangCache.GetGangFromCache(gangId)
+	if gang == nil {
+		gang = gangCache.createGangToCache(gangId)
+		klog.Infof("Create gang by pod on add, gangName:%v", gangId)
+	}
+
+	if ShouldInitGangByPodConfig(pod) {
+		gang.TryInitByPodConfig(pod)
+	}
+}
+
+func (gangCache *gangCache) OnPodUpdate(oldObj interface{}, newObj interface{}) {
+}
+
+func (gangCache *gangCache) OnPodDelete(obj interface{}) {
+	pod, ok := obj.(*v1.Pod)
+	if !ok {
+		return
+	}
+
+	if !IsValidPod(pod) {
+		return
+	}
+
+	gangNamespace := pod.Annotations[extension.GangNamespaceAnnotation]
+	gangName := pod.Annotations[extension.GangNameAnnotation]
+
+	gangId := GetNamespaceSplicingName(gangNamespace, gangName)
+	gang := gangCache.GetGangFromCache(gangId)
+	if gang == nil {
+		return
+	}
+
+	shouldDeleteGang := gang.deletePod(pod)
+	if shouldDeleteGang {
+		gangCache.deleteGangFromCache(gangId)
+		klog.Infof("Delete gang from gang cache, gangName:%v", gang.Name)
+	}
+}
+
+/******************Pod Event END******************/
+
+/******************GANG Event BEG******************/
+func (gangCache *gangCache) OnGangAdd(obj interface{}) {
+	//todo, parse podGroup
+}
+
+func (gangCache *gangCache) OnGangUpdate(obj interface{}) {
+}
+
+func (gangCache *gangCache) OnGangDelete(obj interface{}) {
+	//todo, parse podGroup
+}
+
+/******************GANG Event END******************/
+
+func ShouldInitGangByPodConfig(pod *v1.Pod) bool {
+	_, exist := pod.Annotations[extension.GangMinNumAnnotation]
+	return exist
+}
+
+func IsValidPod(pod *v1.Pod) bool {
+	if pod.Annotations == nil {
 		return false
 	}
+
+	if _, exist := pod.Annotations[extension.GangNameAnnotation]; !exist {
+		return false
+	}
+
 	return true
-}
-
-//Get functions
-func (gangCache *gangCache) GetGangWaitTime(gangName string) (time.Duration, bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return 0, false
-	} else {
-		return gang.WaitTime, true
-	}
-}
-
-func (gangCache *gangCache) GetChildrenNum(gangName string) (int, bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return 0, false
-	} else {
-		return len(gang.Children), true
-	}
-}
-
-func (gangCache *gangCache) GetGangMinNum(gangName string) (int, bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return 0, false
-	} else {
-		return gang.MinRequiredNumber, true
-	}
-}
-
-func (gangCache *gangCache) GetGangTotalNum(gangName string) (int, bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return 0, false
-	} else {
-		return gang.TotalChildrenNum, true
-	}
-}
-
-func (gangCache *gangCache) GetGangMode(gangName string) (string, bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return "", false
-	} else {
-		return gang.Mode, true
-	}
-}
-
-func (gangCache *gangCache) GetGangAssumedPods(gangName string) (int, bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return 0, false
-	} else {
-		return len(gang.WaitingForBindChildren) + len(gang.BoundChildren), true
-	}
-}
-
-func (gangCache *gangCache) GetGangScheduleCycle(gangName string) (int, bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return 0, false
-	} else {
-		return gang.ScheduleCycle, true
-	}
-}
-
-func (gangCache *gangCache) GetChildScheduleCycle(gangName string, childName string) (int, bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return 0, false
-	} else {
-		if cycle, found := gang.ChildrenScheduleRoundMap[childName]; !found {
-			return 0, false
-		} else {
-			return cycle, true
-		}
-	}
-}
-
-func (gangCache *gangCache) GetCreateTime(gangName string) (time.Time, bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return time.Time{}, false
-	} else {
-		return gang.CreateTime, true
-	}
-}
-
-func (gangCache *gangCache) GetGangGroup(gangName string) ([]string, bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return nil, false
-	} else {
-		return gang.GangGroup, true
-	}
-}
-
-func (gangCache *gangCache) IsGangResourceSatisfied(gangName string) (isSatisfied bool, found bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return false, false
-	} else {
-		return gang.ResourceSatisfied, true
-	}
-}
-
-func (gangCache *gangCache) IsGangScheduleCycleValid(gangName string) (valid bool, found bool) {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	if gang, ok := gangCache.gangItems[gangName]; !ok {
-		return false, false
-	} else {
-		return gang.ScheduleCycleValid, true
-	}
-}
-
-//Set functions
-func (gangCache *gangCache) SetScheduleCycle(gangName string, scheduleCycle int) {
-	gangCache.lock.Lock()
-	defer gangCache.lock.Unlock()
-	gang := gangCache.gangItems[gangName]
-	gang.ScheduleCycle = scheduleCycle
-}
-
-func (gangCache *gangCache) SetScheduleCycleValid(gangName string, valid bool) {
-	gangCache.lock.Lock()
-	defer gangCache.lock.Unlock()
-	gang := gangCache.gangItems[gangName]
-	gang.ScheduleCycleValid = valid
-}
-
-func (gangCache *gangCache) SetChildCycle(gangName, childName string, childCycle int) {
-	gangCache.lock.Lock()
-	defer gangCache.lock.Unlock()
-	gang := gangCache.gangItems[gangName]
-	gang.ChildrenScheduleRoundMap[childName] = childCycle
-}
-
-// CountChildNumWithCycle  return how many children with the childCycle in the ChildrenScheduleRoundMap
-func (gangCache *gangCache) CountChildNumWithCycle(gangName string, childCycle int) int {
-	gangCache.lock.RLock()
-	defer gangCache.lock.RUnlock()
-	gang := gangCache.gangItems[gangName]
-	num := 0
-	for _, cycle := range gang.ChildrenScheduleRoundMap {
-		if cycle == childCycle {
-			num++
-		}
-	}
-	return num
-}
-
-func (gangCache *gangCache) AddPod(pod *v1.Pod) {
-	if util.IsPodTerminated(pod) {
-		gangCache.DeletePod(pod)
-		return
-	}
-	gangName := pod.Annotations[extension.GangNameAnnotation]
-	gangCache.lock.Lock()
-	defer gangCache.lock.Unlock()
-	var gang *Gang
-	if _, ok := gangCache.gangItems[gangName]; ok {
-		gang = gangCache.gangItems[gangName]
-	} else {
-		gang = gangCache.NewGangWithPod(pod)
-	}
-	podName := pod.Name
-	gang.Children[podName] = pod
-	gang.ChildrenScheduleRoundMap[podName] = 0
-}
-
-// NewGangWithPod
-//create Gang depending on its first pod's Annotations
-func (gangCache *gangCache) NewGangWithPod(pod *v1.Pod) *Gang {
-	gangName := pod.Annotations[extension.GangNameAnnotation]
-	minRequiredNumber := pod.Annotations[extension.GangMinNumAnnotation]
-	totalChildrenNum := pod.Annotations[extension.GangTotalNumAnnotation]
-	mode := pod.Annotations[extension.GangModeAnnotation]
-	waitTime := pod.Annotations[extension.GangWaitTimeAnnotation]
-	gangGroup := pod.Annotations[extension.GangGroupsAnnotation]
-	rawGang := NewGang(gangName)
-	if minRequiredNumber != "" {
-		num, err := strconv.Atoi(minRequiredNumber)
-		if err != nil {
-			klog.Errorf("pod's annotation MinRequiredNumber illegal,err:%v", err.Error())
-		} else {
-			rawGang.MinRequiredNumber = num
-		}
-	}
-	if totalChildrenNum != "" {
-		num, err := strconv.Atoi(totalChildrenNum)
-		if err != nil {
-			klog.Errorf("pod's annotation totalChildrenNum illegal,err:%v", err.Error())
-		} else {
-			rawGang.TotalChildrenNum = num
-		}
-	} else {
-		rawGang.TotalChildrenNum = rawGang.MinRequiredNumber
-	}
-	if mode != "" {
-		if mode != extension.StrictMode || mode != extension.NonStrictMode {
-			klog.Errorf("pod's annotation mode illegal,err:%v")
-		} else {
-			rawGang.Mode = mode
-		}
-	}
-	if waitTime != "" {
-		num, err := strconv.Atoi(waitTime)
-		if err != nil {
-			klog.Errorf("pod's annotation waitTime illegal,err:%v", err.Error())
-		} else {
-			rawGang.WaitTime = time.Duration(num) * time.Second
-		}
-	}
-	if gangGroup != "" {
-		groupSlice, err := util.StringToGangGroupSlice(gangGroup)
-		if err != nil {
-			klog.Errorf("pod's annotation gangGroup illegal")
-		} else {
-			rawGang.GangGroup = groupSlice
-		}
-	}
-	return rawGang
-}
-
-func (gangCache *gangCache) AddAssumedPod(pod *v1.Pod) {
-	if pod == nil {
-		return
-	}
-	gangName := pod.Annotations[extension.GangNameAnnotation]
-	gangCache.lock.Lock()
-	defer gangCache.lock.Unlock()
-	gang := gangCache.gangItems[gangName]
-	podName := pod.Name
-	delete(gang.BoundChildren, podName)
-	gang.WaitingForBindChildren[podName] = pod
-	if len(gang.WaitingForBindChildren)+len(gang.BoundChildren) >= gang.MinRequiredNumber {
-		gang.ResourceSatisfied = true
-	}
-}
-
-func (gangCache *gangCache) AddBoundPod(pod *v1.Pod) {
-	if pod == nil {
-		return
-	}
-	gangName := pod.Annotations[extension.GangNameAnnotation]
-	gangCache.lock.Lock()
-	defer gangCache.lock.Unlock()
-	gang := gangCache.gangItems[gangName]
-	podName := pod.Name
-	delete(gang.WaitingForBindChildren, podName)
-	gang.BoundChildren[podName] = pod
-}
-
-func (gangCache *gangCache) DeletePod(pod *v1.Pod) {
-	if pod == nil {
-		return
-	}
-	gangName := pod.Annotations[extension.GangNameAnnotation]
-	gangCache.lock.Lock()
-	defer gangCache.lock.Unlock()
-	gang := gangCache.gangItems[gangName]
-	podName := pod.Name
-	delete(gang.Children, podName)
-	delete(gang.WaitingForBindChildren, podName)
-	delete(gang.BoundChildren, podName)
-	delete(gang.ChildrenScheduleRoundMap, podName)
-	if len(gang.WaitingForBindChildren)+len(gang.BoundChildren) < gang.MinRequiredNumber {
-		gang.ResourceSatisfied = false
-	}
-}
-
-// Gang  basic gang info recorded in gangCache
-type Gang struct {
-	Name       string
-	WaitTime   time.Duration
-	CreateTime time.Time
-	//strict-mode or non-strict-mode
-	Mode              string
-	MinRequiredNumber int
-	TotalChildrenNum  int
-	GangGroup         []string
-	Children          map[string]*v1.Pod
-	//pods that have already assumed(waiting in Permit stage)
-	WaitingForBindChildren map[string]*v1.Pod
-	//pods that have already bound
-	BoundChildren map[string]*v1.Pod
-	//if assumed  pods number has reached to MinRequiredNumber
-	ResourceSatisfied bool
-
-	//if the gang should be passed at PreFilter stage(Strict-Mode)
-	ScheduleCycleValid bool
-	//these fields used to count the cycle
-	ScheduleCycle            int
-	ChildrenScheduleRoundMap map[string]int
-}
-
-func NewGang(gangName string) *Gang {
-	return &Gang{
-		Name:                     gangName,
-		CreateTime:               time.Now(),
-		WaitTime:                 extension.DefaultGangWaitTime,
-		Mode:                     extension.StrictMode,
-		Children:                 make(map[string]*v1.Pod),
-		WaitingForBindChildren:   make(map[string]*v1.Pod),
-		BoundChildren:            make(map[string]*v1.Pod),
-		ScheduleCycleValid:       true,
-		ScheduleCycle:            1,
-		ChildrenScheduleRoundMap: make(map[string]int),
-	}
 }

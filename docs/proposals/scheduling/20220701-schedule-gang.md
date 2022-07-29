@@ -190,7 +190,7 @@ metadata:
   annotations:
     gang.scheduling.koordinator.sh/total-number: 5
     gang.scheduling.koordinator.sh/gang-mode: strict-mode
-    gang.scheduling.koordinator.sh/groups: ["gangA", "gangB"]
+    gang.scheduling.koordinator.sh/groups: ["gangANamespace/gangA", "gangBNamespace/gangB"]
 spec:
   minMember: 5
   minResources:
@@ -206,7 +206,8 @@ temporarily to collect all related pods, and need to suspend the scheduling of p
 
 #### Annotation way
 ```yaml
-gang.scheduling.koordinator.sh/name           
+gang.scheduling.koordinator.sh/name
+gang.scheduling.koordinator.sh/namespace
 gang.scheduling.koordinator.sh/min-available
 ```
 
@@ -238,6 +239,7 @@ When user apply a basic gang, the example is as follows:
 metadata:
    annotations:
     gang.scheduling.koordinator.sh/name: gangA
+    gang.scheduling.koordinator.sh/namespace: gangANamespace
     gang.scheduling.koordinator.sh/min-available: 5
 ```
 
@@ -247,19 +249,21 @@ roleA and roleB belongs to one GangGroup, the example is as follows:
 metadata:
    annotations:
      gang.scheduling.koordinator.sh/name: gangA
+     gang.scheduling.koordinator.sh/namespace: gangANamespace
      gang.scheduling.koordinator.sh/waiting-time: 3600s 
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5
      gang.scheduling.koordinator.sh/gang-mode: strict-mode
-     gang.scheduling.koordinator.sh/groups: ["gangA", "gangB"]
+     gang.scheduling.koordinator.sh/groups: ["gangANamespace/gangA", "gangBNamespace/gangB"]
 metadata:
    annotations:
      gang.scheduling.koordinator.sh/name: gangB
+     gang.scheduling.koordinator.sh/namespace: gangBNamespace
      gang.scheduling.koordinator.sh/waiting-time: 3600s 
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5
      gang.scheduling.koordinator.sh/gang-mode: strict-mode
-     gang.scheduling.koordinator.sh/groups: ["gangA", "gangB"]
+     gang.scheduling.koordinator.sh/groups: ["gangANamespace/gangA", "gangBNamespace/gangB"]
 ```
 
 Assuming a job has two roles: A and B, each role has several pods. podA belongs to roleA, podB belongs to roleB.
@@ -268,6 +272,7 @@ roleA and roleB belongs to different GangGroup, the example as follows:
 metadata:
   annotations:
      gang.scheduling.koordinator.sh/name: gangA
+     gang.scheduling.koordinator.sh/namespace: gangANamespace
      gang.scheduling.koordinator.sh/waiting-time: 3600s 
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5
@@ -276,6 +281,7 @@ metadata:
 metadata:
    annotations:
      gang.scheduling.koordinator.sh/name: gangB
+     gang.scheduling.koordinator.sh/namespace: gangBNamespace
      gang.scheduling.koordinator.sh/waiting-time: 3600s 
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5

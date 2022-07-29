@@ -39,10 +39,7 @@ type GangPlugin struct {
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	gangCache := NewGangCache()
-	//recover the gangCache
-	if err := RecoverGangCache(handle, gangCache); err != nil {
-		return nil, err
-	}
+
 	podInformer := handle.SharedInformerFactory().Core().V1().Pods().Informer()
 	podLister := handle.SharedInformerFactory().Core().V1().Pods().Lister()
 	podInformer.AddEventHandler(cache.FilteringResourceEventHandler{
@@ -56,16 +53,22 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		//	}
 		//},
 		Handler: cache.ResourceEventHandlerFuncs{
-
-			AddFunc:    gangCache.onPodAdd,
-			DeleteFunc: gangCache.onPodDelete,
+			AddFunc:    gangCache.OnPodAdd,
+			UpdateFunc: gangCache.OnPodUpdate,
+			DeleteFunc: gangCache.OnPodDelete,
 		},
 	})
-	return &GangPlugin{
+
+	gang := &GangPlugin{
 		frameworkHandler: handle,
 		podLister:        podLister,
 		gangCache:        gangCache,
-	}, nil
+	}
+
+	//recover the gangCache
+	gang.RecoverGangCache()
+
+	return gang, nil
 }
 
 func (p *GangPlugin) Name() string { return Name }
@@ -107,16 +110,46 @@ func (p *GangPlugin) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 // iii.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative.
 // iv.Try update scheduleCycle, scheduleCycleValid, childrenScheduleRoundMap as mentioned above.
 func (p *GangPlugin) PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) *framework.Status {
-	gangCache := p.gangCache
-	gangName := pod.Annotations[extension.GangNameAnnotation]
-	mode, found := gangCache.GetGangMode(gangName)
-	if !found {
-		klog.Infof("pre-filter pod %v  from Gang %v rejected,didn't find the Gang in the cache ", pod.Name, gangName)
-		return framework.NewStatus(framework.Unschedulable, "can not find gang in the gang cache")
+	gangId := GetNamespaceSplicingName(pod.Annotations[extension.GangNamespaceAnnotation],
+		pod.Annotations[extension.GangNameAnnotation])
+	gang := p.gangCache.GetGangFromCache(gangId)
+	if gang == nil {
+		klog.Errorf("can't find gang, gangName:%v, podName:%v", gangId,
+			GetNamespaceSplicingName(pod.Namespace, pod.Name))
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "can't find gang")
 	}
-	if err := p.PreFilterCheck(pod, gangName, mode); err != nil {
-		klog.Errorf("PreFilter failed err:%s", err.Error)
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+
+	if gang.GetChildrenNum() < gang.GetGangMinNum() {
+		klog.Errorf("gang child pod not collect enough, gangName:%v, podName:%v", gangId,
+			GetNamespaceSplicingName(pod.Namespace, pod.Name))
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "gang child pod not collect enough")
+	}
+
+	if pod.Annotations[extension.GangTimeOutAnnotation] == "true" {
+		klog.Errorf("gang has timeout, gangName:%v, podName:%v", gangId,
+			GetNamespaceSplicingName(pod.Namespace, pod.Name))
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "gang has timeout")
+	}
+
+	gangMode := gang.GetGangMode()
+	if gangMode == extension.StrictMode {
+		defer gang.TryUpdateScheduleCycle()
+
+		podScheduleCycle := gang.GetChildScheduleCycle(pod)
+		gangScheduleCycle := gang.GetGangScheduleCycle()
+		if podScheduleCycle >= gangScheduleCycle {
+			klog.Errorf("pod's schedule cycle too large, gangName:%v, podName:%v, podCycle, gangCycle",
+				gangId, GetNamespaceSplicingName(pod.Namespace, pod.Name), podScheduleCycle, gangScheduleCycle)
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, "pod's schedule cycle too large")
+		}
+
+		gang.SetChildScheduleCycle(pod, gangScheduleCycle)
+
+		if !gang.IsGangScheduleCycleValid() {
+			klog.Errorf("gang scheduleCycle not valid, gangName:%v, podName:%v",
+				gangId, GetNamespaceSplicingName(pod.Namespace, pod.Name))
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, "gang scheduleCycle not valid")
+		}
 	}
 	return framework.NewStatus(framework.Success, "")
 }
@@ -131,26 +164,36 @@ func (p *GangPlugin) PreFilterExtensions() framework.PreFilterExtensions {
 //ii. If non-strict mode, we will do nothing.
 func (p *GangPlugin) PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod,
 	filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	gangCache := p.gangCache
-	gangName := pod.Annotations[extension.GangNameAnnotation]
-	mode, found := gangCache.GetGangMode(gangName)
-	if !found {
-		klog.Infof("pre-filter pod %v  from Gang %v rejected,didn't find the Gang in the cache ", pod.Name, gangName)
-		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "can not find gang in the gang cache")
+	gangId := GetNamespaceSplicingName(pod.Annotations[extension.GangNamespaceAnnotation],
+		pod.Annotations[extension.GangNameAnnotation])
+	gang := p.gangCache.GetGangFromCache(gangId)
+	if gang == nil {
+		klog.Errorf("can't find gang, gangName:%v, podName:%v", gangId,
+			GetNamespaceSplicingName(pod.Namespace, pod.Name))
+		return &framework.PostFilterResult{}, framework.NewStatus(framework.UnschedulableAndUnresolvable, "can't find gang")
 	}
-	if mode == extension.StrictMode {
+
+	if gang.IsGangResourceSatisfied() {
+		return &framework.PostFilterResult{}, framework.NewStatus(framework.Success, "")
+	}
+
+	if gang.GetGangMode() == extension.StrictMode {
 		p.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-			if waitingPod.GetPod().Annotations[extension.GangNameAnnotation] == gangName {
-				klog.Errorf("postFilter rejects the pod name:%v from Gang %s", pod.Name, gangName)
-				waitingPod.Reject(p.Name(), "optimistic rejection in PostFilter")
+			waitingGangId := GetNamespaceSplicingName(waitingPod.GetPod().Annotations[extension.GangNamespaceAnnotation],
+				waitingPod.GetPod().Annotations[extension.GangNameAnnotation])
+			if waitingGangId == gangId {
+				klog.Errorf("postFilter rejects the pod, gangName:%v, podName:%v",
+					GetNamespaceSplicingName(pod.Namespace, pod.Name), gangId)
+				waitingPod.Reject(p.Name(), "gang rejection in PostFilter")
 			}
 		})
-		gangCache.SetScheduleCycleValid(gangName, false)
+		gang.SetScheduleCycleValid(false)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
-			fmt.Sprintf("Gang %v gets rejected this cycle due to Pod %v is unschedulable even after PostFilter in StrictMode", gangName, pod.Name))
+			fmt.Sprintf("Gang %v gets rejected this cycle due to Pod %v is unschedulable even after "+
+				"PostFilter in StrictMode", gangId, pod.Name))
 	}
-	return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
-		fmt.Sprintf("Pod %v from Gang %v is unschedulable in NonStrictMode", gangName, pod.Name))
+
+	return &framework.PostFilterResult{}, framework.NewStatus(framework.Success, "")
 }
 
 // Permit
@@ -163,7 +206,10 @@ func (p *GangPlugin) Permit(ctx context.Context, state *framework.CycleState, po
 	case extension.GangNotFoundInCache:
 		return framework.NewStatus(framework.Unschedulable, "Gang not found in gangCache"), 0
 	case extension.Wait:
-		klog.Infof("Pod %v from gang %v is waiting to be scheduled at Permit stage", pod.Name, pod.Annotations[extension.GangNameAnnotation])
+		klog.Infof("Pod %v from gang %v is waiting to be scheduled at Permit stage",
+			GetNamespaceSplicingName(pod.Namespace, pod.Name),
+			GetNamespaceSplicingName(pod.Annotations[extension.GangNamespaceAnnotation],
+				pod.Annotations[extension.GangNameAnnotation]))
 		retStatus = framework.NewStatus(framework.Wait)
 		p.ActivateGang(pod, state)
 	case extension.Success:
@@ -183,159 +229,123 @@ func (p *GangPlugin) Reserve(ctx context.Context, state *framework.CycleState, p
 //(1)handle the timeout gang
 //(2)do nothing when bound failed
 func (p *GangPlugin) Unreserve(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) {
-	gangName := pod.Annotations[extension.GangNameAnnotation]
-	gangCache := p.gangCache
-	resourceSatisfied, _ := gangCache.IsGangResourceSatisfied(gangName)
+	gangId := GetNamespaceSplicingName(pod.Annotations[extension.GangNamespaceAnnotation],
+		pod.Annotations[extension.GangNameAnnotation])
+	gang := p.gangCache.GetGangFromCache(gangId)
+	if gang == nil {
+		klog.Errorf("can't find gang, gangName:%v, podName:%v", gangId,
+			GetNamespaceSplicingName(pod.Namespace, pod.Name))
+		return
+	}
 
 	//gang time out
-	if !resourceSatisfied {
-		klog.Infof("gang %v is time out,start to release the assumed resource and add annotations to the gang's children")
+	if !gang.IsGangResourceSatisfied() {
+		klog.Infof("gang is time out,start to release the assumed resource and add annotations to the "+
+			"gang's children, gangName:%v, podName:%v", gangId, GetNamespaceSplicingName(pod.Namespace, pod.Name))
 		timeoutAnnotations := map[string]interface{}{
 			"metadata": map[string]map[string]string{
 				"Annotations": {
 					extension.GangTimeOutAnnotation: "true",
 				}},
 		}
+
 		pods, err := p.podLister.List(nil)
 		if err != nil {
-			klog.Errorf("unReserve list pod err : %v", err.Error())
+			klog.Errorf("unReserve list pod err:%v", err.Error())
 			return
 		}
 		//add timeout annotation to all the children of the gang
 		for _, pod := range pods {
-			if pod.Annotations[extension.GangNameAnnotation] == gangName {
-				ns := pod.Namespace
-				podName := pod.Name
+			if GetNamespaceSplicingName(pod.Annotations[extension.GangNamespaceAnnotation],
+				pod.Annotations[extension.GangNameAnnotation]) == gangId {
 				updateAnnotation, _ := json.Marshal(timeoutAnnotations)
-				_, err := p.frameworkHandler.ClientSet().CoreV1().Pods(ns).Patch(ctx, podName, types.StrategicMergePatchType, updateAnnotation, metav1.PatchOptions{})
+				_, err := p.frameworkHandler.ClientSet().CoreV1().Pods(pod.Namespace).Patch(ctx, pod.Name,
+					types.StrategicMergePatchType, updateAnnotation, metav1.PatchOptions{})
 				if err != nil {
-					klog.Errorf("unReserve when patch annotation to pod err : %v", err.Error())
+					klog.Errorf("unReserve when patch gang timeout annotation to pod:%v, err:%v",
+						GetNamespaceSplicingName(pod.Namespace, pod.Name), err.Error())
 				}
 			}
 		}
+
 		//release resource of all assumed children of the gang
 		p.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-			if waitingPod.GetPod().Annotations[extension.GangNameAnnotation] == gangName {
-				klog.Errorf("unReserve rejects the pod name:%v from Gang %s due to timeout", pod.Name, gangName)
+			if GetNamespaceSplicingName(waitingPod.GetPod().Annotations[extension.GangNamespaceAnnotation],
+				waitingPod.GetPod().Annotations[extension.GangNameAnnotation]) == gangId {
+				klog.Errorf("unReserve rejects the pod name:%v from Gang %s due to timeout",
+					GetNamespaceSplicingName(pod.Namespace, pod.Name), gangId)
 				waitingPod.Reject(p.Name(), "optimistic rejection in unReserve due to timeout")
 			}
 		})
 	}
-	return
 }
 
 // PostBind just update the gang's BoundChildren
 func (p *GangPlugin) PostBind(ctx context.Context, _ *framework.CycleState, pod *corev1.Pod, nodeName string) {
-	gangCache := p.gangCache
-	gangCache.AddBoundPod(pod)
-	return
+	gangId := GetNamespaceSplicingName(pod.Annotations[extension.GangNamespaceAnnotation],
+		pod.Annotations[extension.GangNameAnnotation])
+	gang := p.gangCache.GetGangFromCache(gangId)
+	if gang == nil {
+		klog.Errorf("can't find gang, gangName:%v, podName:%v", gangId,
+			GetNamespaceSplicingName(pod.Namespace, pod.Name))
+		return
+	}
+
+	gang.AddBoundPod(pod)
 }
 
-func RecoverGangCache(handle framework.Handle, gangCache *gangCache) error {
-	podLister := handle.SharedInformerFactory().Core().V1().Pods().Lister()
+func (p *GangPlugin) RecoverGangCache() {
+	podLister := p.frameworkHandler.SharedInformerFactory().Core().V1().Pods().Lister()
 	podsList, err := podLister.List(nil)
 	if err != nil {
 		klog.Errorf("RecoverGangCache podsList List error %+v", err)
-		return err
 	}
 	for _, pod := range podsList {
-		if pod.Annotations[extension.GangNameAnnotation] != "" {
-			gangCache.onPodAdd(pod)
-			if pod.Spec.NodeName != "" {
-				//todo:没想好如何区分assumedpod 和 boundpod，暂时先按assumed处理，不影响permit计数
-				gangCache.AddAssumedPod(pod)
-			}
-		}
-	}
-	//todo:严格模式下 schedulingCycle 如何recover呢？
-	return nil
-}
+		p.gangCache.OnPodAdd(pod)
 
-func (p *GangPlugin) PreFilterCheck(pod *corev1.Pod, gangName string, mode string) error {
-	gangCache := p.gangCache
-	var currentChildrenNum int
-	var minRequireChildrenNum int
-	var gangScheduleCycle int
-	var podScheduleCycle int
-	var found bool
-	//check if reach MinNumber
-	if currentChildrenNum, found = gangCache.GetChildrenNum(gangName); !found {
-		return fmt.Errorf("pre-filter pod %v  from Gang %v rejected,didn't find the Gang in the cache ", pod.Name, gangName)
-	}
-	if minRequireChildrenNum, found = gangCache.GetGangMinNum(gangName); !found {
-		return fmt.Errorf("pre-filter pod %v  from Gang %v rejected,didn't find the Gang in the cache ", pod.Name, gangName)
+		if pod.Spec.NodeName != "" {
+			gangId := GetNamespaceSplicingName(pod.Annotations[extension.GangNamespaceAnnotation],
+				pod.Annotations[extension.GangNameAnnotation])
+			gang := p.gangCache.GetGangFromCache(gangId)
+			gang.AddAssumedPod(pod)
+			gang.SetResourceSatisfied()
+		}
 	}
 
-	if currentChildrenNum < minRequireChildrenNum {
-		return fmt.Errorf("pre-filter pod %v cannot find enough children pods from Gang %v, "+
-			"current children number: %v, minRequiredNumber of Gang is %v", pod.Name, gangName, currentChildrenNum, minRequireChildrenNum)
-	}
-	//check if Gang is timeout
-	if pod.Annotations[extension.GangTimeOutAnnotation] == "true" {
-		return fmt.Errorf("pre-filter pod %v from Gang %v rejected,Gang is timeout", pod.Name, gangName)
-	}
-
-	if mode == extension.StrictMode {
-		if gangScheduleCycle, found = gangCache.GetGangScheduleCycle(gangName); !found {
-			return fmt.Errorf("pre-filter pod %v  from Gang %v rejected,didn't find the Gang in the cache ", pod.Name, gangName)
-		}
-		if podScheduleCycle, found = gangCache.GetChildScheduleCycle(gangName, pod.Name); !found {
-			return fmt.Errorf("pre-filter pod %v  from Gang %v rejected,didn't find the Gang in the cache ", pod.Name, gangName)
-		}
-		//firstly, filter the pods whose cycle is greater than GangScheduleCycle,
-		//Actually,there shouldn't be the greater condition,at most a pod is scheduled twice in this gangScheduleCycle
-		//So we don't add it's podCycle,remaining equal with gangScheduleCycle
-		if podScheduleCycle >= gangScheduleCycle {
-			klog.Errorf("pre-filter pod's cycle is greater than GangScheduleCycle", pod.Name, gangName)
-		}
-		//secondly, set the pod's cycle equal with gangScheduleCycle
-		gangCache.SetChildCycle(gangName, pod.Name, gangScheduleCycle)
-		//check the if gang's cycle valid
-		if valid, found := gangCache.IsGangScheduleCycleValid(gangName); !found {
-			return fmt.Errorf("pre-filter pod %v  from Gang %v rejected,didn't find the Gang in the cache ", pod.Name, gangName)
-		} else {
-			if !valid {
-				return fmt.Errorf("pre-filter pod %v from Gang %v rejected,Gang's ScheduleCycle is not valid", pod.Name, gangName)
-			}
-		}
-		//finally, check if all the pods in this gangScheduleCycle has been handled
-		if gangTotalNum, found := gangCache.GetGangTotalNum(gangName); !found {
-			return fmt.Errorf("pre-filter pod %v  from Gang %v rejected,didn't find the Gang in the cache ", pod.Name, gangName)
-		} else {
-			if gangCache.CountChildNumWithCycle(gangName, gangScheduleCycle) == gangTotalNum {
-				gangCache.SetScheduleCycleValid(gangName, true)
-				gangCache.SetScheduleCycle(gangName, gangScheduleCycle+1)
-			}
-		}
-	}
-	return nil
+	//todo recover podGroup
 }
 
 func (p *GangPlugin) PermitCheck(pod *corev1.Pod) (time.Duration, extension.Status) {
-	gangName := pod.Annotations[extension.GangNameAnnotation]
-	gangCache := p.gangCache
-	waitTime, found := gangCache.GetGangWaitTime(gangName)
-	if !found {
+	gangId := GetNamespaceSplicingName(pod.Annotations[extension.GangNamespaceAnnotation],
+		pod.Annotations[extension.GangNameAnnotation])
+	gang := p.gangCache.GetGangFromCache(gangId)
+	if gang == nil {
+		klog.Errorf("can't find gang, gangName:%v, podName:%v", gangId,
+			GetNamespaceSplicingName(pod.Namespace, pod.Name))
 		return 0, extension.GangNotFoundInCache
 	}
+
 	//first we need to add the pod to assumedMap of gang
-	gangCache.AddAssumedPod(pod)
-	gangGroup, _ := gangCache.GetGangGroup(gangName)
+	gang.AddAssumedPod(pod)
+	gangGroup := gang.GetGangGroup()
 	allGangGroupSatisfied := true
 	//only the gang itself
 	if len(gangGroup) == 0 {
-		allGangGroupSatisfied, _ = gangCache.IsGangResourceSatisfied(gangName)
+		allGangGroupSatisfied = gang.IsGangResourceSatisfied()
 	} else {
 		//check each gang group
 		for _, groupName := range gangGroup {
-			if satisfied, _ := gangCache.IsGangResourceSatisfied(groupName); !satisfied {
-				allGangGroupSatisfied = false
-				break
+			gangTmp := p.gangCache.GetGangFromCache(groupName)
+			if gangTmp != nil {
+				if !gangTmp.IsGangResourceSatisfied() {
+					allGangGroupSatisfied = false
+					break
+				}
 			}
 		}
 	}
 	if !allGangGroupSatisfied {
-		return waitTime, extension.Wait
+		return gang.WaitTime, extension.Wait
 	}
 	return 0, extension.Success
 }
@@ -343,23 +353,29 @@ func (p *GangPlugin) PermitCheck(pod *corev1.Pod) (time.Duration, extension.Stat
 // ActivateGang
 //Put all the pods belong to the Gang which in UnSchedulableQueue or backoffQueue back to activeQueue,
 func (p *GangPlugin) ActivateGang(pod *corev1.Pod, state *framework.CycleState) {
-	gangName := pod.Annotations[extension.GangNameAnnotation]
+	gangId := GetNamespaceSplicingName(pod.Annotations[extension.GangNamespaceAnnotation],
+		pod.Annotations[extension.GangNameAnnotation])
+
 	pods, err := p.podLister.Pods(pod.Namespace).List(nil)
 	if err != nil {
-		klog.Errorf("ActivateGang Failed to list pods belong to a Gang: %v", gangName)
+		klog.Errorf("ActivateGang Failed to list pods belong to a Gang: %v", gangId)
 		return
 	}
+
+	toActivePods := make([]*corev1.Pod, 0)
 	for i := range pods {
-		if pods[i].UID == pod.UID {
-			pods = append(pods[:i], pods[i+1:]...)
-			break
+		gangIdTmp := GetNamespaceSplicingName(pods[i].Annotations[extension.GangNamespaceAnnotation],
+			pods[i].Annotations[extension.GangNameAnnotation])
+		if gangIdTmp == gangId {
+			toActivePods = append(toActivePods, pods[i])
 		}
 	}
-	if len(pods) != 0 {
+
+	if len(toActivePods) != 0 {
 		if c, err := state.Read(framework.PodsToActivateKey); err == nil {
 			if s, ok := c.(*framework.PodsToActivate); ok {
 				s.Lock()
-				for _, pod := range pods {
+				for _, pod := range toActivePods {
 					namespacedName := util.GetNamespacedName(pod)
 					s.Map[namespacedName] = pod
 				}
@@ -370,29 +386,38 @@ func (p *GangPlugin) ActivateGang(pod *corev1.Pod, state *framework.CycleState) 
 }
 
 func (p *GangPlugin) AllowGangGroup(pod *corev1.Pod) {
-	gangName := pod.Annotations[extension.GangNameAnnotation]
-	gangCache := p.gangCache
-	gangGroup, _ := gangCache.GetGangGroup(gangName)
+	gangId := GetNamespaceSplicingName(pod.Annotations[extension.GangNamespaceAnnotation],
+		pod.Annotations[extension.GangNameAnnotation])
+	gang := p.gangCache.GetGangFromCache(gangId)
+	if gang == nil {
+		klog.Errorf("can't find gang, gangName:%v, podName:%v", gangId,
+			GetNamespaceSplicingName(pod.Namespace, pod.Name))
+		return
+	}
+
 	//allow only the gang itself
-	if len(gangGroup) == 0 {
+	gangSlices := make([]string, 0)
+	if len(gang.GetGangGroup()) == 0 {
+		gangSlices = append(gangSlices, gangId)
+	} else {
+		gangSlices = gang.GetGangGroup()
+	}
+
+	//allow each gang group
+	for _, gangIdTmp := range gangSlices {
 		p.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-			if waitingPod.GetPod().Annotations[extension.GangNameAnnotation] == gangName {
-				klog.Infof("Permit allows pod %v from gang %v", waitingPod.GetPod().Name, gangName)
+			podGangId := GetNamespaceSplicingName(waitingPod.GetPod().Annotations[extension.GangNamespaceAnnotation],
+				waitingPod.GetPod().Annotations[extension.GangNameAnnotation])
+
+			if podGangId == gangIdTmp {
+				klog.Infof("Permit allows pod %v from gang %v",
+					GetNamespaceSplicingName(waitingPod.GetPod().Namespace, waitingPod.GetPod().Name), podGangId)
 				waitingPod.Allow(p.Name())
 			}
 		})
-	} else {
-		//allow each gang group
-		for _, groupName := range gangGroup {
-			p.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-				if waitingPod.GetPod().Annotations[extension.GangNameAnnotation] == groupName {
-					klog.Infof("Permit allows pod %v from gang %v", waitingPod.GetPod().Name, gangName)
-					waitingPod.Allow(p.Name())
-				}
-			})
-		}
+
+		klog.Infof("Permit allows for gang", gangIdTmp)
 	}
-	klog.Infof("Permit allows pod %v from gang %v", pod.Name, gangName)
 }
 
 func (p *GangPlugin) GetCreatTime(podInfo *framework.QueuedPodInfo) time.Time {
@@ -402,10 +427,11 @@ func (p *GangPlugin) GetCreatTime(podInfo *framework.QueuedPodInfo) time.Time {
 		return podInfo.InitialAttemptTimestamp
 	}
 	//it belongs to a gang,we get the creation time of the Gang
-	gangCache := p.gangCache
-	createTime, found := gangCache.GetCreateTime(gangName)
-	if !found {
-		klog.Infof("GetGangCreatTime: gang %v is not found in the cache", gangName)
+	gangId := GetNamespaceSplicingName(podInfo.Pod.Annotations[extension.GangNamespaceAnnotation],
+		podInfo.Pod.Annotations[extension.GangNameAnnotation])
+	gang := p.gangCache.GetGangFromCache(gangId)
+	if gang != nil {
+		return gang.CreateTime
 	}
-	return createTime
+	return time.Now()
 }
