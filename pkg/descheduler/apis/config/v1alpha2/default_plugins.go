@@ -19,11 +19,25 @@ package v1alpha2
 import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/defaultevictor"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/removepodsviolatingnodeaffinity"
 )
 
 // getDefaultPlugins returns the default set of plugins.
 func getDefaultPlugins() *Plugins {
-	plugins := &Plugins{}
+	plugins := &Plugins{
+		Deschedule: PluginSet{
+			Enabled: []Plugin{
+				{Name: removepodsviolatingnodeaffinity.PluginName},
+			},
+		},
+		Evictor: PluginSet{
+			Enabled: []Plugin{
+				{Name: defaultevictor.PluginName},
+			},
+		},
+	}
 	return plugins
 }
 

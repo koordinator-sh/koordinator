@@ -27,6 +27,7 @@ require (
 	k8s.io/client-go v0.22.6
 	k8s.io/code-generator v0.22.6
 	k8s.io/component-base v0.22.6
+	k8s.io/component-helpers v0.22.6
 	k8s.io/cri-api v0.22.6
 	k8s.io/klog/v2 v2.10.0
 	k8s.io/kube-scheduler v0.22.6
@@ -134,7 +135,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.22.2 // indirect
 	k8s.io/cloud-provider v0.22.6 // indirect
-	k8s.io/component-helpers v0.22.6 // indirect
 	k8s.io/csi-translation-lib v0.22.6 // indirect
 	k8s.io/gengo v0.0.0-20201214224949-b6c5ce23f027 // indirect
 	k8s.io/kube-openapi v0.0.0-20211109043538-20434351676c // indirect
