@@ -1,0 +1,599 @@
+/*
+Copyright 2022 The Koordinator Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package eventhandlers
+
+import (
+	"testing"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/kubernetes/pkg/scheduler"
+
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
+	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+)
+
+func TestAddScheduleEventHandler(t *testing.T) {
+	t.Run("test not panic", func(t *testing.T) {
+		sched := &scheduler.Scheduler{}
+		internalHandler := &fakeSchedulerInternalHandler{}
+		koordClientSet := koordfake.NewSimpleClientset()
+		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+		extendHandle := frameworkext.NewExtendedHandle(
+			frameworkext.WithKoordinatorClientSet(koordClientSet),
+			frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+		)
+		AddScheduleEventHandler(sched, internalHandler, extendHandle)
+	})
+}
+
+func Test_addReservationToCache(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		internalHandler SchedulerInternalHandler
+		obj             interface{}
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "nil obj",
+			args: args{
+				obj: nil,
+			},
+		},
+		{
+			name: "failed to validate reservation",
+			args: args{
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: nil,
+					},
+				},
+			},
+		},
+		{
+			name: "add reservation successfully",
+			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addReservationToCache(nil, tt.args.internalHandler, tt.args.obj)
+		})
+	}
+}
+
+func Test_updateReservationInCache(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		internalHandler SchedulerInternalHandler
+		oldObj          interface{}
+		newObj          interface{}
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "nil obj",
+			args: args{
+				oldObj: nil,
+				newObj: nil,
+			},
+		},
+		{
+			name: "failed to validate reservation",
+			args: args{
+				oldObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+						UID:  "123",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: nil,
+					},
+				},
+				newObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+						UID:  "123",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: nil,
+					},
+				},
+			},
+		},
+		{
+			name: "update reservation successfully",
+			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
+				oldObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+						UID:  "456",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+				newObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+						UID:  "456",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+			},
+		},
+		{
+			name: "update different reservations",
+			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
+				oldObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+						UID:  "456",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+				newObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+						UID:  "789",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updateReservationInCache(nil, tt.args.internalHandler, tt.args.oldObj, tt.args.newObj)
+		})
+	}
+}
+
+func Test_deleteReservationFromCache(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		internalHandler SchedulerInternalHandler
+		obj             interface{}
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "nil obj",
+			args: args{
+				obj: nil,
+			},
+		},
+		{
+			name: "failed to validate reservation",
+			args: args{
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: nil,
+					},
+				},
+			},
+		},
+		{
+			name: "delete reservation successfully",
+			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deleteReservationFromCache(nil, tt.args.internalHandler, tt.args.obj)
+		})
+	}
+}
+
+func Test_addReservationToSchedulingQueue(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		internalHandler SchedulerInternalHandler
+		obj             interface{}
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "nil obj",
+			args: args{
+				obj: nil,
+			},
+		},
+		{
+			name: "failed to validate reservation",
+			args: args{
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: nil,
+					},
+				},
+			},
+		},
+		{
+			name: "add reservation successfully",
+			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addReservationToSchedulingQueue(nil, tt.args.internalHandler, tt.args.obj)
+		})
+	}
+}
+
+func Test_updateReservationInSchedulingQueue(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		internalHandler SchedulerInternalHandler
+		oldObj          interface{}
+		newObj          interface{}
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "nil obj",
+			args: args{
+				oldObj: nil,
+				newObj: nil,
+			},
+		},
+		{
+			name: "failed to validate reservation",
+			args: args{
+				oldObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+						UID:  "123",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: nil,
+					},
+				},
+				newObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+						UID:  "123",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: nil,
+					},
+				},
+			},
+		},
+		{
+			name: "update reservation successfully",
+			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
+				oldObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+						UID:  "456",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+				newObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+						UID:  "456",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updateReservationInSchedulingQueue(nil, tt.args.internalHandler, tt.args.oldObj, tt.args.newObj)
+		})
+	}
+}
+
+func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		internalHandler SchedulerInternalHandler
+		obj             interface{}
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "nil obj",
+			args: args{
+				obj: nil,
+			},
+		},
+		{
+			name: "failed to validate reservation",
+			args: args{
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: nil,
+					},
+				},
+			},
+		},
+		{
+			name: "delete reservation successfully",
+			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deleteReservationFromSchedulingQueue(nil, tt.args.internalHandler, tt.args.obj)
+		})
+	}
+}
+
+func Test_handleExpiredReservation(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		internalHandler SchedulerInternalHandler
+		obj             interface{}
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "nil obj",
+			args: args{
+				obj: nil,
+			},
+		},
+		{
+			name: "failed to validate reservation",
+			args: args{
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: nil,
+					},
+				},
+			},
+		},
+		{
+			name: "handle failed unscheduled reservation",
+			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+					Status: schedulingv1alpha1.ReservationStatus{
+						Phase: schedulingv1alpha1.ReservationFailed,
+					},
+				},
+			},
+		},
+		{
+			name: "handle failed scheduled reservation",
+			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+					Status: schedulingv1alpha1.ReservationStatus{
+						Phase:    schedulingv1alpha1.ReservationFailed,
+						NodeName: "test-node-0",
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handleExpiredReservation(nil, tt.args.internalHandler, tt.args.obj)
+		})
+	}
+}

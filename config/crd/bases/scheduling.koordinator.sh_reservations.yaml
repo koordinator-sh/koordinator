@@ -23,7 +23,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    - jsonPath: .spec.template.spec.nodeName
+    - jsonPath: .status.nodeName
       name: Node
       priority: 10
       type: string
@@ -39,9 +39,8 @@ spec:
     schema:
       openAPIV3Schema:
         description: Reservation is the Schema for the reservation API. A Reservation
-          object is namespaced. But it can reserve resources for pods of any namespace.
-          Any namespaced affinity/anti-affinity of reservation scheduling can be specified
-          with the ObjectMeta.
+          object is non-namespaced. Any namespaced affinity/anti-affinity of reservation
+          scheduling can be specified in the spec.template.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -205,7 +204,7 @@ spec:
                   node.
                 x-kubernetes-preserve-unknown-fields: true
               ttl:
-                default: '''24h'''
+                default: 24h
                 description: Time-to-Live period for the reservation. `expires` and
                   `ttl` are mutually exclusive. Defaults to 24h. Set 0 to disable
                   expiration.
@@ -246,11 +245,10 @@ spec:
                       type: string
                     reason:
                       type: string
-                  required:
-                  - lastProbeTime
-                  - lastTransitionTime
-                  - message
-                  - reason
+                    status:
+                      type: string
+                    type:
+                      type: string
                   type: object
                 type: array
               currentOwners:
@@ -317,18 +315,12 @@ spec:
                       type: string
                   type: object
                 type: array
-              expired:
-                description: The `expired` indicates the timestamp if the reservation
-                  is expired.
-                format: date-time
-                type: string
               nodeName:
                 description: Name of node the reservation is scheduled on.
                 type: string
               phase:
                 description: The `phase` indicates whether is reservation is waiting
-                  for process (`Pending`), available to allocate (`Available`) or
-                  expired to get cleanup (Expired).
+                  for process, available to allocate or failed/expired to get cleanup.
                 type: string
             type: object
         type: object
