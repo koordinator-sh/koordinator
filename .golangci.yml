@@ -80,6 +80,7 @@ linters:
     - misspell
     - vet
     - unconvert
+    - staticcheck
 issues:
   exclude:
     # staticcheck
