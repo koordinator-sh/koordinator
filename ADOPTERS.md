@@ -5,8 +5,9 @@ free to get in touch.
 
 ## Adopters list
 
-| Organization | Contact | Description of Use |
-| ------------ |---------| ------------------ |
+| Organization | Contact                                                                     | Description of Use                                                                                                                                                            |
+|--------------|-----------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| XiaoHongShu  | TECHINFCONTAINER_Intern@xiaohongshu.com | Heavily use Koordinator as base building block and inspiration in production for online/offline colocation <br/> including qos-ensurance and fine-grained CPU/GPU scheduling. |
 
 ## Process
 
