@@ -20,25 +20,6 @@ jobs:
         with:
           args: --verbose
 
-  staticcheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version-file: go.mod
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-sc-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-sc-
-      - uses: dominikh/staticcheck-action@v1
-        with:
-          install-go: false
-
   unit-tests:
     runs-on: ubuntu-latest
     steps:
@@ -87,7 +68,7 @@ jobs:
           verbose: true
 
   build-and-push:
-    needs: [golangci-lint, staticcheck, unit-tests]
+    needs: [golangci-lint, unit-tests]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:

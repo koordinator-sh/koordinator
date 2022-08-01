@@ -37,9 +37,8 @@ Currently, in the Koordinator project we use the following types of test:
 
 During a review, some attention is given to the [coding style](TODO).
 
-1. Koordinator uses [golangci-lint](https://golangci-lint.run/) and [staticcheck](https://staticcheck.io/) to find bugs
-   and performance issues, offer simplifications, and enforce style rules. We advise to integrate this in your text
-   editor.
+1. Koordinator uses [golangci-lint](https://golangci-lint.run/) to find bugs and performance issues, 
+   offer simplifications, and enforce style rules. We advise to integrate this in your text editor.
 2. We value good naming for variables, functions for new concepts, etc. If your change extends an area where there is
    already an established naming pattern, you can reuse the existing pattern. If you are introducing new concepts, be
    creative! But during the review we might kindly request you to rename some entities.
