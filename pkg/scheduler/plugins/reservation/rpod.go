@@ -87,3 +87,10 @@ func GetReservePodNodeName(pod *corev1.Pod) string {
 func GetReservationNameFromReservePod(pod *corev1.Pod) string {
 	return pod.Annotations[AnnotationReservationName]
 }
+
+func GetReservationSchedulerName(r *schedulingv1alpha1.Reservation) string {
+	if r == nil || r.Spec.Template == nil || len(r.Spec.Template.Spec.SchedulerName) <= 0 {
+		return corev1.DefaultSchedulerName
+	}
+	return r.Spec.Template.Spec.SchedulerName
+}

@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
+	"k8s.io/kubernetes/pkg/scheduler/profile"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -66,12 +67,11 @@ func AddScheduleEventHandler(sched *scheduler.Scheduler, internalHandler Schedul
 		FilterFunc: func(obj interface{}) bool {
 			switch t := obj.(type) {
 			case *schedulingv1alpha1.Reservation:
-				// scheduler is always responsible for schedulingv1alpha1.reservation object
-				return !reservation.IsReservationScheduled(t) && !reservation.IsReservationFailed(t)
+				return !reservation.IsReservationScheduled(t) && !reservation.IsReservationFailed(t) && isResponsibleForReservation(sched.Profiles, t)
 			case cache.DeletedFinalStateUnknown:
-				if _, ok := t.Obj.(*schedulingv1alpha1.Reservation); ok {
+				if r, ok := t.Obj.(*schedulingv1alpha1.Reservation); ok {
 					// DeletedFinalStateUnknown object can be stale, so just try to cleanup without check.
-					return true
+					return isResponsibleForReservation(sched.Profiles, r)
 				}
 				klog.Errorf("unable to convert object %T to *schedulingv1alpha1.Reservation in %T", t.Obj, sched)
 				return false
@@ -304,28 +304,29 @@ func handleExpiredReservation(sched *scheduler.Scheduler, internalHandler Schedu
 		return
 	}
 	reservePod := reservation.NewReservePod(r)
-	if len(reservation.GetReservationNodeName(r)) > 0 {
-		err := internalHandler.GetCache().RemovePod(reservePod)
+
+	// in case the pod has expired before scheduling cache initialized, or the pod just finished scheduling cycle and
+	// deleted, both we need to check if pod is cached
+	_, err = internalHandler.GetCache().GetPod(reservePod)
+	if err == nil {
+		err = internalHandler.GetCache().RemovePod(reservePod)
 		if err != nil {
-			klog.Errorf("failed to remove reserve pod in scheduler cache, reservation %v, err: %v", klog.KObj(r), err)
+			klog.Errorf("failed to remove expired reserve pod in scheduler cache, reservation %v, err: %s",
+				klog.KObj(r), err)
 		}
 		internalHandler.MoveAllToActiveOrBackoffQueue(assignedPodDelete)
-	} else { // otherwise, try dequeue the reserve pod from the scheduling queue
-		// in case the pod just finished scheduling cycle and deleted, also check if pod is cached
-		_, err := internalHandler.GetCache().GetPod(reservePod)
-		if err == nil {
-			klog.V(5).InfoS("reserve pod is just scheduled and deleted, remove it in cache", "reservation", klog.KObj(r))
-			err = internalHandler.GetCache().RemovePod(reservePod)
-			if err != nil {
-				klog.Errorf("failed to remove reserve pod in scheduler cache, reservation %v, err: %v", klog.KObj(r), err)
-			}
-			internalHandler.MoveAllToActiveOrBackoffQueue(assignedPodDelete)
-		}
+	}
 
+	if len(reservation.GetReservationNodeName(r)) <= 0 {
+		// pod is unscheduled, try dequeue the reserve pod from the scheduling queue
 		err = internalHandler.GetQueue().Delete(reservePod)
 		if err != nil {
-			klog.Errorf("failed to delete reserve pod in scheduling queue, reservation %v, err: %v", klog.KObj(r), err)
+			klog.Errorf("failed to delete expired reserve pod in scheduling queue, reservation %v, err: %v", klog.KObj(r), err)
 		}
 	}
 	klog.V(4).InfoS("handle expired reservation", "reservation", klog.KObj(r), "phase", r.Status.Phase)
+}
+
+func isResponsibleForReservation(profiles profile.Map, r *schedulingv1alpha1.Reservation) bool {
+	return profiles.HandlesSchedulerName(reservation.GetReservationSchedulerName(r))
 }
