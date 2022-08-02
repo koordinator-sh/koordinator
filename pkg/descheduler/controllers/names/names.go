@@ -1,5 +1,5 @@
 /*
-Copyright 2022 The Koordinator Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,15 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package names
 
-import (
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
+const (
+	MigrationController = "MigrationController"
 )
-
-func NewControllerRegistry() runtime.Registry {
-	return runtime.Registry{
-		migration.Name: migration.New,
-	}
-}

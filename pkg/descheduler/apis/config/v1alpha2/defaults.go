@@ -26,6 +26,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
+	migrationevictor "github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/evictor"
 )
 
 func addDefaultingFuncs(scheme *runtime.Scheme) error {
@@ -187,5 +188,11 @@ func SetDefaults_DefaultEvictorArgs(obj *DefaultEvictorArgs) {
 func SetDefaults_RemovePodsViolatingNodeAffinityArgs(obj *RemovePodsViolatingNodeAffinityArgs) {
 	if len(obj.NodeAffinityType) == 0 {
 		obj.NodeAffinityType = append(obj.NodeAffinityType, "requiredDuringSchedulingIgnoredDuringExecution")
+	}
+}
+
+func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
+	if obj.EvictionPolicy == "" {
+		obj.EvictionPolicy = migrationevictor.NativeEvictorName
 	}
 }
