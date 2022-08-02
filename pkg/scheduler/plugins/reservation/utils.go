@@ -55,13 +55,13 @@ func StatusNodeNameIndexFunc(obj interface{}) ([]string, error) {
 
 // IsReservationActive checks if the reservation is scheduled and its status is Available/Waiting.
 func IsReservationActive(r *schedulingv1alpha1.Reservation) bool {
-	return r != nil && len(r.Status.NodeName) > 0 &&
+	return r != nil && len(GetReservationNodeName(r)) > 0 &&
 		(r.Status.Phase == schedulingv1alpha1.ReservationAvailable || r.Status.Phase == schedulingv1alpha1.ReservationWaiting)
 }
 
 // IsReservationScheduled checks if the reservation is scheduled on a node and its status is Available.
 func IsReservationScheduled(r *schedulingv1alpha1.Reservation) bool {
-	return r != nil && len(r.Status.NodeName) > 0 && r.Status.Phase == schedulingv1alpha1.ReservationAvailable
+	return r != nil && len(GetReservationNodeName(r)) > 0 && r.Status.Phase == schedulingv1alpha1.ReservationAvailable
 }
 
 func IsReservationFailed(r *schedulingv1alpha1.Reservation) bool {
@@ -79,6 +79,14 @@ func IsReservationExpired(r *schedulingv1alpha1.Reservation) bool {
 		}
 	}
 	return false
+}
+
+func GetReservationNodeName(r *schedulingv1alpha1.Reservation) string {
+	return r.Status.NodeName
+}
+
+func SetReservationNodeName(r *schedulingv1alpha1.Reservation, nodeName string) {
+	r.Status.NodeName = nodeName
 }
 
 func ValidateReservation(r *schedulingv1alpha1.Reservation) error {
@@ -119,10 +127,8 @@ func isReservationNeedCleanup(r *schedulingv1alpha1.Reservation) bool {
 }
 
 func setReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string) {
-	// TBD: how to annotate nodeName
-	r.Spec.Template.Spec.NodeName = nodeName
-
-	r.Status.NodeName = nodeName
+	// just annotate scheduled node at status
+	SetReservationNodeName(r, nodeName)
 	r.Status.Phase = schedulingv1alpha1.ReservationAvailable
 	r.Status.CurrentOwners = make([]corev1.ObjectReference, 0)
 
@@ -220,12 +226,25 @@ func setReservationUnschedulable(r *schedulingv1alpha1.Reservation, msg string) 
 }
 
 func setReservationAllocated(r *schedulingv1alpha1.Reservation, pod *corev1.Pod) {
-	r.Status.CurrentOwners = append(r.Status.CurrentOwners, getPodOwner(pod))
+	owner := getPodOwner(pod)
 	requests, _ := resourceapi.PodRequestsAndLimits(pod)
-	if r.Status.Allocated == nil {
-		r.Status.Allocated = requests
+	// avoid duplication (it happens if pod allocated annotation was missing)
+	idx := -1
+	for i, current := range r.Status.CurrentOwners {
+		if matchObjectRef(pod, &current) {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		r.Status.CurrentOwners = append(r.Status.CurrentOwners, owner)
+		if r.Status.Allocated == nil {
+			r.Status.Allocated = requests
+		} else {
+			r.Status.Allocated = quotav1.Add(r.Status.Allocated, requests)
+		}
 	} else {
-		r.Status.Allocated = quotav1.Add(r.Status.Allocated, requests)
+		// keep old allocated
+		r.Status.CurrentOwners[idx] = owner
 	}
 }
 
@@ -256,10 +275,6 @@ func getReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceLi
 		Spec: r.Spec.Template.Spec,
 	})
 	return requests
-}
-
-func getReservationNodeName(r *schedulingv1alpha1.Reservation) string {
-	return r.Status.NodeName
 }
 
 func getUnschedulableMessage(filteredNodeStatusMap framework.NodeToStatusMap) string {

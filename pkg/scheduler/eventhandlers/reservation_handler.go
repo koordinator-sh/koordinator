@@ -156,9 +156,9 @@ func updateReservationInCache(sched *scheduler.Scheduler, internalHandler Schedu
 	}
 
 	// nodeName update of the same reservations is not allowed and may corrupt the cache
-	if oldR.Status.NodeName != newR.Status.NodeName {
-		klog.Errorf("updateReservationInCache failed, update on status.nodeName is forbidden, old %s, new %s",
-			oldR.Status.NodeName, newR.Status.NodeName)
+	if reservation.GetReservationNodeName(oldR) != reservation.GetReservationNodeName(newR) {
+		klog.Errorf("updateReservationInCache failed, update on existing nodeName is forbidden, old %s, new %s",
+			reservation.GetReservationNodeName(oldR), reservation.GetReservationNodeName(newR))
 		return
 	}
 
@@ -304,7 +304,7 @@ func handleExpiredReservation(sched *scheduler.Scheduler, internalHandler Schedu
 		return
 	}
 	reservePod := reservation.NewReservePod(r)
-	if len(r.Status.NodeName) > 0 {
+	if len(reservation.GetReservationNodeName(r)) > 0 {
 		err := internalHandler.GetCache().RemovePod(reservePod)
 		if err != nil {
 			klog.Errorf("failed to remove reserve pod in scheduler cache, reservation %v, err: %v", klog.KObj(r), err)

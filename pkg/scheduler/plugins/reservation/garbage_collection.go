@@ -123,19 +123,20 @@ func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
 	// assert pod != nil
 	reservationAllocated, err := apiext.GetReservationAllocated(pod)
 	if err != nil {
-		klog.V(3).InfoS("failed to get reservation allocation info of the pod",
+		klog.V(3).InfoS("failed to parse reservation allocation info of the pod",
 			"pod", klog.KObj(pod), "err", err)
 		return
 	}
-	// pod does not allocate any reservation
+	// Most pods have no reservation allocated.
 	if reservationAllocated == nil {
 		return
 	}
 
+	// pod has allocated reservation, should remove allocation info in the reservation
 	err = retryOnConflictOrTooManyRequests(func() error {
 		r, err1 := p.lister.Get(reservationAllocated.Name)
 		if errors.IsNotFound(err1) {
-			klog.V(4).InfoS("skip sync for reservation not found", "reservation", klog.KObj(r))
+			klog.V(5).InfoS("skip sync for reservation not found", "reservation", klog.KObj(r))
 			return nil
 		} else if err1 != nil {
 			klog.V(4).InfoS("failed to get reservation",
@@ -148,6 +149,11 @@ func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
 			klog.V(4).InfoS("abort sync for reservation is no longer available or scheduled",
 				"reservation", klog.KObj(r))
 			return nil
+		}
+		// got different versions of the reservation; still check if the reservation was allocated by this pod
+		if r.UID != reservationAllocated.UID {
+			klog.V(4).InfoS("failed to get original reservation, got reservation with a different UID",
+				"reservation", reservationAllocated.Name, "old UID", reservationAllocated.UID, "current UID", r.UID)
 		}
 		err1 = removeReservationAllocated(r, pod)
 		if err1 != nil {
