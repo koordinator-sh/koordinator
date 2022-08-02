@@ -142,7 +142,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 		{
 			name: "get all share pools for origin burstable pod under none policy",
 			fields: fields{
-				kubeletPoicy: ext.NodeCPUManagerPolicyNone,
+				kubeletPoicy: ext.KubeletCPUManagerPolicyNone,
 				sharePools: []ext.CPUSharedPool{
 					{
 						Socket: 0,
@@ -171,7 +171,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 		{
 			name: "do nothing for origin burstable pod under static policy",
 			fields: fields{
-				kubeletPoicy: ext.NodeCPUManagerPolicyStatic,
+				kubeletPoicy: ext.KubeletCPUManagerPolicyStatic,
 				sharePools: []ext.CPUSharedPool{
 					{
 						Socket: 0,
@@ -229,7 +229,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &cpusetRule{
-				kubeletPolicy: ext.CPUManagerPolicy{
+				kubeletPolicy: ext.KubeletCPUManagerPolicy{
 					Policy: tt.fields.kubeletPoicy,
 				},
 				sharePools: tt.fields.sharePools,
@@ -328,7 +328,7 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 	}
 	type args struct {
 		nodeTopo   *topov1alpha1.NodeResourceTopology
-		cpuPolicy  *ext.CPUManagerPolicy
+		cpuPolicy  *ext.KubeletCPUManagerPolicy
 		sharePools []ext.CPUSharedPool
 	}
 	tests := []struct {
@@ -449,8 +449,8 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 						Name: "test-node",
 					},
 				},
-				cpuPolicy: &ext.CPUManagerPolicy{
-					Policy: ext.NodeCPUManagerPolicyNone,
+				cpuPolicy: &ext.KubeletCPUManagerPolicy{
+					Policy: ext.KubeletCPUManagerPolicyNone,
 				},
 				sharePools: []ext.CPUSharedPool{
 					{
@@ -467,8 +467,8 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 			},
 			wantUpdated: true,
 			wantRule: &cpusetRule{
-				kubeletPolicy: ext.CPUManagerPolicy{
-					Policy: ext.NodeCPUManagerPolicyNone,
+				kubeletPolicy: ext.KubeletCPUManagerPolicy{
+					Policy: ext.KubeletCPUManagerPolicyNone,
 				},
 				sharePools: []ext.CPUSharedPool{
 					{
@@ -496,7 +496,7 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 			}
 			if tt.args.cpuPolicy != nil {
 				cpuPolicyJson := util.DumpJSON(tt.args.cpuPolicy)
-				tt.args.nodeTopo.Annotations[ext.AnnotationNodeCPUManagerPolicy] = cpuPolicyJson
+				tt.args.nodeTopo.Annotations[ext.AnnotationKubeletCPUManagerPolicy] = cpuPolicyJson
 			}
 			if len(tt.args.sharePools) != 0 {
 				sharePoolJson := util.DumpJSON(tt.args.sharePools)

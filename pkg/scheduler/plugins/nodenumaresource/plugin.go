@@ -207,7 +207,9 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
 	}
 
-	if node.Labels[extension.LabelNodeCPUBindPolicy] == extension.NodeCPUBindPolicyFullPCPUsOnly {
+	if node.Labels[extension.LabelNodeCPUBindPolicy] == extension.NodeCPUBindPolicyFullPCPUsOnly ||
+		(numaInfo.KubeletCPUManagerPolicy.Policy == extension.KubeletCPUManagerPolicyStatic &&
+			numaInfo.KubeletCPUManagerPolicy.Options[extension.KubeletCPUManagerPolicyFullPCPUsOnlyOption] == "true") {
 		if state.numCPUsNeeded%numaInfo.cpuTopology.CPUsPerCore() != 0 {
 			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError)
 		}

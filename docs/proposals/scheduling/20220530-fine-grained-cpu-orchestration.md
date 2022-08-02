@@ -349,7 +349,7 @@ The koordlet creates or updates NodeResourceTopology periodically. The name of N
 
 At present, the NodeResourceTopology lacks some information, and it is temporarily written in the NodeResourceTopology in the form of annotations or labels:
 
-- The annotation `kubelet.koordinator.sh/cpu-manger-policy` describes the kubelet CPU manager policy and options. The scheme is defined as follows:
+- The annotation `kubelet.koordinator.sh/cpu-manager-policy` describes the kubelet CPU manager policy and options. The scheme is defined as follows:
 
 ```go
 const (
@@ -423,7 +423,7 @@ apiVersion: topology.node.k8s.io/v1alpha1
 kind: NodeResourceTopology
 metadata:
   annotations:
-    kubelet.koordinator.sh/cpu-manger-policy: |-
+    kubelet.koordinator.sh/cpu-manager-policy: |-
       {
         "policy": "static",
         "options": {

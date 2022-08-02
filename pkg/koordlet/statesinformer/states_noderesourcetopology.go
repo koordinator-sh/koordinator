@@ -161,7 +161,7 @@ func (s *statesInformer) reportNodeTopology() {
 	if err != nil {
 		klog.Errorf("failed to guess kubelet cpu manager opt, err: %v", err)
 	}
-	cpuManagerPolicy := extension.CPUManagerPolicy{
+	cpuManagerPolicy := extension.KubeletCPUManagerPolicy{
 		Policy:  cpuPolicy,
 		Options: cpuManagerOpt,
 	}
@@ -211,7 +211,7 @@ func (s *statesInformer) reportNodeTopology() {
 		s.updateNodeTopo(topology)
 		topology.Annotations[extension.AnnotationNodeCPUTopology] = string(cpuTopologyJson)
 		topology.Annotations[extension.AnnotationNodeCPUSharedPools] = string(cpuSharePoolsJson)
-		topology.Annotations[extension.AnnotationNodeCPUManagerPolicy] = string(cpuManagerPolicyJson)
+		topology.Annotations[extension.AnnotationKubeletCPUManagerPolicy] = string(cpuManagerPolicyJson)
 		if len(podAllocsJson) != 0 {
 			topology.Annotations[extension.AnnotationNodeCPUAllocs] = string(podAllocsJson)
 		}
