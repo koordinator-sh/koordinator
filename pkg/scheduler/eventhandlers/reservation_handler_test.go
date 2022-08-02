@@ -20,9 +20,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/profile"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -440,6 +443,50 @@ func Test_updateReservationInSchedulingQueue(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "update new reservation successfully",
+			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
+				oldObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            "r-0",
+						UID:             "456",
+						ResourceVersion: "0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+				newObj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            "r-0",
+						UID:             "456",
+						ResourceVersion: "1",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -594,6 +641,60 @@ func Test_handleExpiredReservation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handleExpiredReservation(nil, tt.args.internalHandler, tt.args.obj)
+		})
+	}
+}
+
+var _ framework.Framework = &fakeFramework{}
+
+type fakeFramework struct {
+	framework.Framework
+}
+
+func Test_isResponsibleForReservation(t *testing.T) {
+	type args struct {
+		profiles profile.Map
+		r        *schedulingv1alpha1.Reservation
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "not responsible when profile is empty",
+			args: args{
+				profiles: profile.Map{},
+				r:        &schedulingv1alpha1.Reservation{},
+			},
+			want: false,
+		},
+		{
+			name: "responsible when scheduler name matched the profile",
+			args: args{
+				profiles: profile.Map{
+					"test-scheduler": &fakeFramework{},
+				},
+				r: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-reserve-sample",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								SchedulerName: "test-scheduler",
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isResponsibleForReservation(tt.args.profiles, tt.args.r)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

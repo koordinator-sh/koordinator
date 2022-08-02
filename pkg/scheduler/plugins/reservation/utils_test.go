@@ -313,3 +313,50 @@ func Test_matchReservationOwners(t *testing.T) {
 		})
 	}
 }
+
+func TestGetReservationSchedulerName(t *testing.T) {
+	tests := []struct {
+		name string
+		arg  *schedulingv1alpha1.Reservation
+		want string
+	}{
+		{
+			name: "empty reservation",
+			arg:  nil,
+			want: corev1.DefaultSchedulerName,
+		},
+		{
+			name: "empty template",
+			arg:  &schedulingv1alpha1.Reservation{},
+			want: corev1.DefaultSchedulerName,
+		},
+		{
+			name: "empty scheduler name",
+			arg: &schedulingv1alpha1.Reservation{
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+				},
+			},
+			want: corev1.DefaultSchedulerName,
+		},
+		{
+			name: "get scheduler name successfully",
+			arg: &schedulingv1alpha1.Reservation{
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							SchedulerName: "test-scheduler",
+						},
+					},
+				},
+			},
+			want: "test-scheduler",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetReservationSchedulerName(tt.arg)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
