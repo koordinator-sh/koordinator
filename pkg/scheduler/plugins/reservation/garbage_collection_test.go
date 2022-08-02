@@ -472,7 +472,8 @@ func Test_syncPodDeleted(t *testing.T) {
 			Annotations: map[string]string{
 				apiext.AnnotationReservationAllocated: `
 {
-  "Name": "test-reserve-0"
+  "name": "test-reserve-0",
+  "uid":  "aaabbbccc"
 }
 `,
 			},
@@ -493,6 +494,7 @@ func Test_syncPodDeleted(t *testing.T) {
 	testReservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-reserve-0",
+			UID:  "aaabbbccc",
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
 			Expires: &metav1.Time{Time: now.Add(10 * time.Hour)},
@@ -525,6 +527,8 @@ func Test_syncPodDeleted(t *testing.T) {
 			NodeName: "test-node-0",
 		},
 	}
+	testReservationDifferent := testReservation.DeepCopy()
+	testReservationDifferent.UID = "xxxyyyzzz"
 	type fields struct {
 		lister *fakeReservationLister
 		client *fakeReservationClient
@@ -594,6 +598,18 @@ func Test_syncPodDeleted(t *testing.T) {
 				lister: &fakeReservationLister{
 					reservations: map[string]*schedulingv1alpha1.Reservation{
 						testReservation.Name: testReservation,
+					},
+				},
+				client: &fakeReservationClient{},
+			},
+		},
+		{
+			name: "get different versions of the reservation",
+			arg:  testPod,
+			fields: fields{
+				lister: &fakeReservationLister{
+					reservations: map[string]*schedulingv1alpha1.Reservation{
+						testReservationDifferent.Name: testReservationDifferent,
 					},
 				},
 				client: &fakeReservationClient{},

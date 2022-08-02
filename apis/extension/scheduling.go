@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
@@ -52,8 +53,8 @@ func GetCustomUsageThresholds(node *corev1.Node) (*CustomUsageThresholds, error)
 }
 
 type ReservationAllocated struct {
-	Namespace string `json:"namespace,omitempty"`
-	Name      string `json:"name,omitempty"`
+	Name string    `json:"name,omitempty"`
+	UID  types.UID `json:"uid,omitempty"`
 }
 
 func GetReservationAllocated(pod *corev1.Pod) (*ReservationAllocated, error) {
@@ -77,8 +78,8 @@ func SetReservationAllocated(pod *corev1.Pod, r *schedulingv1alpha1.Reservation)
 		pod.Annotations = map[string]string{}
 	}
 	reservationAllocated := &ReservationAllocated{
-		Namespace: r.Namespace,
-		Name:      r.Name,
+		Name: r.Name,
+		UID:  r.UID,
 	}
 	data, _ := json.Marshal(reservationAllocated) // assert no error
 	pod.Annotations[AnnotationReservationAllocated] = string(data)

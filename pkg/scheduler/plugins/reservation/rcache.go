@@ -105,7 +105,7 @@ func newAvailableCache(rList ...*schedulingv1alpha1.Reservation) *AvailableCache
 		}
 		meta := newReservationInfo(r)
 		a.reservations[GetReservationKey(r)] = meta
-		nodeName := getReservationNodeName(r)
+		nodeName := GetReservationNodeName(r)
 		a.nodeToR[nodeName] = append(a.nodeToR[nodeName], meta)
 	}
 	return a
@@ -118,18 +118,18 @@ func (a *AvailableCache) Add(r *schedulingv1alpha1.Reservation) {
 	defer a.lock.Unlock()
 	meta := newReservationInfo(r)
 	a.reservations[GetReservationKey(r)] = meta
-	nodeName := getReservationNodeName(r)
+	nodeName := GetReservationNodeName(r)
 	a.nodeToR[nodeName] = append(a.nodeToR[nodeName], meta)
 }
 
 func (a *AvailableCache) Delete(r *schedulingv1alpha1.Reservation) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
-	if r == nil || len(r.Status.NodeName) <= 0 {
+	if r == nil || len(GetReservationNodeName(r)) <= 0 {
 		return
 	}
 	delete(a.reservations, GetReservationKey(r))
-	nodeName := getReservationNodeName(r)
+	nodeName := GetReservationNodeName(r)
 	rOnNode := a.nodeToR[nodeName]
 	for i, rInfo := range rOnNode {
 		if rInfo.Reservation.Name == r.Name && rInfo.Reservation.Namespace == r.Namespace {

@@ -53,7 +53,7 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	reservePod.Annotations[AnnotationReservePod] = "true"
 	reservePod.Annotations[AnnotationReservationName] = r.Name // for search inversely
 
-	// annotate node name
+	// annotate node name specified
 	if len(reservePod.Spec.NodeName) > 0 {
 		// if the reservation specifies a nodeName, annotate it and cleanup spec.nodeName for other plugins not
 		// processing the nodeName before binding
@@ -61,8 +61,8 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 		reservePod.Spec.NodeName = ""
 	}
 	// use reservation status.nodeName as the real scheduled result
-	if len(r.Status.NodeName) > 0 {
-		reservePod.Spec.NodeName = r.Status.NodeName
+	if nodeName := GetReservationNodeName(r); len(nodeName) > 0 {
+		reservePod.Spec.NodeName = nodeName
 	}
 
 	return reservePod
