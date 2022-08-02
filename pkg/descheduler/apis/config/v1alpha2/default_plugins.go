@@ -29,7 +29,6 @@ func getDefaultPlugins() *Plugins {
 		Deschedule: PluginSet{
 			Enabled: []Plugin{
 				// NOTE: add default deschedule plugins here.
-				{},
 			},
 		},
 		Evictor: PluginSet{
