@@ -83,18 +83,22 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	}
 
 	numaInfoCache := newNodeNUMAInfoCache()
+
+	nodeResTopologyInformerFactory := extendedHandle.NodeResourceTopologySharedInformerFactory()
+	nodeResTopologyInformer := nodeResTopologyInformerFactory.Topology().V1alpha1().NodeResourceTopologies().Informer()
+	nodeResTopologyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    numaInfoCache.onNodeResourceTopologyAdd,
+		UpdateFunc: numaInfoCache.onNodeResourceTopologyUpdate,
+		DeleteFunc: numaInfoCache.onNodeResourceTopologyDelete,
+	})
+	nodeResTopologyInformerFactory.Start(context.TODO().Done())
+	nodeResTopologyInformerFactory.WaitForCacheSync(context.TODO().Done())
+
 	podInformer := extendedHandle.SharedInformerFactory().Core().V1().Pods().Informer()
 	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    numaInfoCache.onPodAdd,
 		UpdateFunc: numaInfoCache.onPodUpdate,
 		DeleteFunc: numaInfoCache.onPodDelete,
-	})
-
-	nodeResTopologyInformer := extendedHandle.NodeResourceTopologySharedInformerFactory().Topology().V1alpha1().NodeResourceTopologies().Informer()
-	nodeResTopologyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    numaInfoCache.onNodeResourceTopologyAdd,
-		UpdateFunc: numaInfoCache.onNodeResourceTopologyUpdate,
-		DeleteFunc: numaInfoCache.onNodeResourceTopologyDelete,
 	})
 
 	return &Plugin{

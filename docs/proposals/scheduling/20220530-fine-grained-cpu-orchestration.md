@@ -11,7 +11,7 @@ reviewers:
 - "@stormgbs"
 - "@zwzhang0107"
 creation-date: 2022-05-30
-last-updated: 2022-07-11
+last-updated: 2022-08-02
 status: provisional
 
 ---
@@ -383,10 +383,11 @@ type CPUInfo struct {
 
 ```go
 type PodCPUAlloc struct {
-  Namespace string    `json:"namespace,omitempty"`
-  Name      string    `json:"name,omitempty"`
-  UID       types.UID `json:"uid,omitempty"`
-  CPUSet    string    `json:"cpuset,omitempty"`
+  Namespace        string    `json:"namespace,omitempty"`
+  Name             string    `json:"name,omitempty"`
+  UID              types.UID `json:"uid,omitempty"`
+  CPUSet           string    `json:"cpuset,omitempty"`
+  ManagedByKubelet bool      `json:"managedByKubelet,omitempty"`
 }
 
 type PodCPUAllocs []PodCPUAlloc
@@ -459,9 +460,10 @@ metadata:
       [
         {
           "namespace": "default",
-          "name": "test-pod",
+          "name": "static-guaranteed-pod",
           "uid": "32b14702-2efe-4be9-a9da-f3b779175846",
-          "cpu": "4-8"
+          "cpu": "4-8",
+          "managedByKubelet": "true"
         }
       ]
   labels:
@@ -699,3 +701,4 @@ type ScoringStrategy struct {
   - Support Burstable Pod staticly bind CPU
 - 2022-06-24: Fix typo
 - 2022-07-11: Adjust CPUBindPolicyNone to CPUBindPolicyDefault
+- 2022-08-02: Update PodCPUAllocs definition
