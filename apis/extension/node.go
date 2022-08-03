@@ -67,18 +67,19 @@ type CPUInfo struct {
 }
 
 type PodCPUAlloc struct {
-	Namespace string    `json:"namespace,omitempty"`
-	Name      string    `json:"name,omitempty"`
-	UID       types.UID `json:"uid,omitempty"`
-	CPUSet    string    `json:"cpuset,omitempty"`
+	Namespace        string    `json:"namespace,omitempty"`
+	Name             string    `json:"name,omitempty"`
+	UID              types.UID `json:"uid,omitempty"`
+	CPUSet           string    `json:"cpuset,omitempty"`
+	ManagedByKubelet bool      `json:"managedByKubelet,omitempty"`
 }
+
+type PodCPUAllocs []PodCPUAlloc
 
 type CPUManagerPolicy struct {
 	Policy  string            `json:"policy,omitempty"`
 	Options map[string]string `json:"options,omitempty"`
 }
-
-type PodCPUAllocs []PodCPUAlloc
 
 func GetCPUTopology(annotations map[string]string) (*CPUTopology, error) {
 	topology := &CPUTopology{}
