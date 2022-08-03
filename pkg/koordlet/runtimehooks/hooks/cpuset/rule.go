@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
@@ -30,10 +29,11 @@ import (
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type cpusetRule struct {
-	kubeletPolicy ext.CPUManagerPolicy
+	kubeletPolicy ext.KubeletCPUManagerPolicy
 	sharePools    []ext.CPUSharedPool
 }
 
@@ -84,7 +84,7 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 		return pointer.String(""), nil
 	}
 
-	if r.kubeletPolicy.Policy == ext.NodeCPUManagerPolicyStatic {
+	if r.kubeletPolicy.Policy == ext.KubeletCPUManagerPolicyStatic {
 		return nil, nil
 	} else {
 		// none policy
@@ -102,7 +102,7 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	cpuManagerPolicy, err := ext.GetCPUManagerPolicy(nodeTopo.Annotations)
+	cpuManagerPolicy, err := ext.GetKubeletCPUManagerPolicy(nodeTopo.Annotations)
 	if err != nil {
 		return false, err
 	}

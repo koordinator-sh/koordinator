@@ -416,12 +416,13 @@ func TestPlugin_PreFilter(t *testing.T) {
 
 func TestPlugin_Filter(t *testing.T) {
 	tests := []struct {
-		name       string
-		nodeLabels map[string]string
-		state      *preFilterState
-		pod        *corev1.Pod
-		numaInfo   *nodeNUMAInfo
-		want       *framework.Status
+		name          string
+		nodeLabels    map[string]string
+		kubeletPolicy *extension.KubeletCPUManagerPolicy
+		state         *preFilterState
+		pod           *corev1.Pod
+		numaInfo      *nodeNUMAInfo
+		want          *framework.Status
 	}{
 		{
 			name: "error with missing preFilterState",
@@ -492,6 +493,42 @@ func TestPlugin_Filter(t *testing.T) {
 			pod:      &corev1.Pod{},
 			want:     framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
 		},
+		{
+			name: "verify Kubelet FullPCPUsOnly with SMTAlignmentError",
+			state: &preFilterState{
+				skip:                   false,
+				resourceSpec:           &extension.ResourceSpec{},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          5,
+			},
+			numaInfo: newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2)),
+			kubeletPolicy: &extension.KubeletCPUManagerPolicy{
+				Policy: extension.KubeletCPUManagerPolicyStatic,
+				Options: map[string]string{
+					extension.KubeletCPUManagerPolicyFullPCPUsOnlyOption: "true",
+				},
+			},
+			pod:  &corev1.Pod{},
+			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
+		},
+		{
+			name: "verify Kubelet FullPCPUsOnly with RequiredFullPCPUsPolicy",
+			state: &preFilterState{
+				skip:                   false,
+				resourceSpec:           &extension.ResourceSpec{},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				numCPUsNeeded:          4,
+			},
+			numaInfo: newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2)),
+			kubeletPolicy: &extension.KubeletCPUManagerPolicy{
+				Policy: extension.KubeletCPUManagerPolicyStatic,
+				Options: map[string]string{
+					extension.KubeletCPUManagerPolicyFullPCPUsOnlyOption: "true",
+				},
+			},
+			pod:  &corev1.Pod{},
+			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -520,6 +557,9 @@ func TestPlugin_Filter(t *testing.T) {
 
 			plg := p.(*Plugin)
 			if tt.numaInfo != nil {
+				if tt.kubeletPolicy != nil {
+					tt.numaInfo.KubeletCPUManagerPolicy = tt.kubeletPolicy
+				}
 				plg.nodeInfoCache.nodes[tt.numaInfo.nodeName] = tt.numaInfo
 			}
 

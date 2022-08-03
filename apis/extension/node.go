@@ -32,8 +32,6 @@ const (
 	// AnnotationNodeCPUSharedPools describes the CPU Shared Pool defined by Koordinator.
 	// The shared pool is mainly used by Koordinator LS Pods or K8s Burstable Pods.
 	AnnotationNodeCPUSharedPools = NodeDomainPrefix + "/cpu-shared-pools"
-	// AnnotationNodeCPUManagerPolicy describes the cpu manager policy options of kubelet
-	AnnotationNodeCPUManagerPolicy = NodeDomainPrefix + "/cpu-manager-policy"
 
 	// LabelNodeCPUBindPolicy constrains how to bind CPU logical CPUs when scheduling.
 	LabelNodeCPUBindPolicy = NodeDomainPrefix + "/cpu-bind-policy"
@@ -42,9 +40,6 @@ const (
 )
 
 const (
-	// cpu manager policy options of kubelet
-	NodeCPUManagerPolicyStatic = "static"
-	NodeCPUManagerPolicyNone   = "none"
 	// NodeCPUBindPolicyFullPCPUsOnly requires that the scheduler must allocate full physical cores.
 	// Equivalent to kubelet CPU manager policy option full-pcpus-only=true.
 	NodeCPUBindPolicyFullPCPUsOnly = "FullPCPUsOnly"
@@ -53,6 +48,16 @@ const (
 const (
 	NodeNUMAAllocateStrategyLeastAllocated = string(schedulingconfig.NUMALeastAllocated)
 	NodeNUMAAllocateStrategyMostAllocated  = string(schedulingconfig.NUMAMostAllocated)
+)
+
+const (
+	// AnnotationKubeletCPUManagerPolicy describes the cpu manager policy options of kubelet
+	AnnotationKubeletCPUManagerPolicy = "kubelet.koordinator.sh/cpu-manager-policy"
+
+	KubeletCPUManagerPolicyStatic                         = "static"
+	KubeletCPUManagerPolicyNone                           = "none"
+	KubeletCPUManagerPolicyFullPCPUsOnlyOption            = "full-pcpus-only"
+	KubeletCPUManagerPolicyDistributeCPUsAcrossNUMAOption = "distribute-cpus-across-numa"
 )
 
 type CPUTopology struct {
@@ -76,7 +81,7 @@ type PodCPUAlloc struct {
 
 type PodCPUAllocs []PodCPUAlloc
 
-type CPUManagerPolicy struct {
+type KubeletCPUManagerPolicy struct {
 	Policy  string            `json:"policy,omitempty"`
 	Options map[string]string `json:"options,omitempty"`
 }
@@ -120,9 +125,9 @@ func GetNodeCPUSharePools(nodeTopoAnnotations map[string]string) ([]CPUSharedPoo
 	return cpuSharePools, nil
 }
 
-func GetCPUManagerPolicy(annotations map[string]string) (*CPUManagerPolicy, error) {
-	cpuManagerPolicy := &CPUManagerPolicy{}
-	data, ok := annotations[AnnotationNodeCPUManagerPolicy]
+func GetKubeletCPUManagerPolicy(annotations map[string]string) (*KubeletCPUManagerPolicy, error) {
+	cpuManagerPolicy := &KubeletCPUManagerPolicy{}
+	data, ok := annotations[AnnotationKubeletCPUManagerPolicy]
 	if !ok {
 		return cpuManagerPolicy, nil
 	}

@@ -36,6 +36,7 @@ type nodeNUMAInfo struct {
 	cpuTopology   *CPUTopology
 	allocatedPods map[types.UID]struct{}
 	allocatedCPUs CPUDetails
+	*extension.KubeletCPUManagerPolicy
 }
 
 type nodeNumaInfoCache struct {
@@ -45,10 +46,11 @@ type nodeNumaInfoCache struct {
 
 func newNodeNUMAInfo(nodeName string, cpuTopology *CPUTopology) *nodeNUMAInfo {
 	return &nodeNUMAInfo{
-		nodeName:      nodeName,
-		cpuTopology:   cpuTopology,
-		allocatedPods: map[types.UID]struct{}{},
-		allocatedCPUs: NewCPUDetails(),
+		nodeName:                nodeName,
+		cpuTopology:             cpuTopology,
+		allocatedPods:           map[types.UID]struct{}{},
+		allocatedCPUs:           NewCPUDetails(),
+		KubeletCPUManagerPolicy: &extension.KubeletCPUManagerPolicy{},
 	}
 }
 
@@ -149,6 +151,11 @@ func (c *nodeNumaInfoCache) setNodeResourceTopology(oldNodeResTopology, nodeResT
 	if err != nil {
 		klog.Errorf("Failed to GetPodCPUAllocs from new NodeResourceTopology %s, err: %v", nodeResTopology.Name, err)
 	}
+	kubeletCPUManagerPolicy, err := extension.GetKubeletCPUManagerPolicy(nodeResTopology.Annotations)
+	if err != nil {
+		klog.Errorf("Failed to GetKubeletCPUManagerPolicy from NodeResourceTopology %s, err: %v", nodeResTopology.Name, err)
+	}
+
 	var oldPodCPUAllocs extension.PodCPUAllocs
 	if oldNodeResTopology != nil {
 		oldPodCPUAllocs, err = extension.GetPodCPUAllocs(oldNodeResTopology.Annotations)
@@ -170,6 +177,7 @@ func (c *nodeNumaInfoCache) setNodeResourceTopology(oldNodeResTopology, nodeResT
 	numaInfo.lock.Lock()
 	defer numaInfo.lock.Unlock()
 	numaInfo.updateCPUTopology(cpuTopology)
+	numaInfo.updateKubeletCPUManagerPolicy(kubeletCPUManagerPolicy)
 	numaInfo.releaseCPUsManagedByKubelet(oldPodCPUAllocs)
 	numaInfo.updateCPUsManagedByKubelet(podCPUAllocs)
 }
@@ -241,6 +249,13 @@ func (c *nodeNumaInfoCache) deletePod(pod *corev1.Pod) {
 
 func (n *nodeNUMAInfo) updateCPUTopology(topology *CPUTopology) {
 	n.cpuTopology = topology
+}
+
+func (n *nodeNUMAInfo) updateKubeletCPUManagerPolicy(policy *extension.KubeletCPUManagerPolicy) {
+	if policy == nil {
+		policy = &extension.KubeletCPUManagerPolicy{}
+	}
+	n.KubeletCPUManagerPolicy = policy
 }
 
 func (n *nodeNUMAInfo) updateCPUsManagedByKubelet(podCPUAllocs extension.PodCPUAllocs) {
