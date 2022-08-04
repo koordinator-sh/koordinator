@@ -155,14 +155,15 @@ func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
 			klog.V(4).InfoS("failed to get original reservation, got reservation with a different UID",
 				"reservation", reservationAllocated.Name, "old UID", reservationAllocated.UID, "current UID", r.UID)
 		}
-		err1 = removeReservationAllocated(r, pod)
+		curR := r.DeepCopy()
+		err1 = removeReservationAllocated(curR, pod)
 		if err1 != nil {
 			klog.V(4).InfoS("failed to remove reservation allocated",
-				"reservation", klog.KObj(r), "pod", klog.KObj(pod), "err", err1)
+				"reservation", klog.KObj(curR), "pod", klog.KObj(pod), "err", err1)
 			return err1
 		}
 
-		_, err1 = p.client.Reservations().UpdateStatus(context.TODO(), r, metav1.UpdateOptions{})
+		_, err1 = p.client.Reservations().UpdateStatus(context.TODO(), curR, metav1.UpdateOptions{})
 		return err1
 	})
 	if err != nil {

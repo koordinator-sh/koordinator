@@ -529,6 +529,8 @@ func Test_syncPodDeleted(t *testing.T) {
 	}
 	testReservationDifferent := testReservation.DeepCopy()
 	testReservationDifferent.UID = "xxxyyyzzz"
+	testReservationNotMatched := testReservation.DeepCopy()
+	testReservationNotMatched.Status.CurrentOwners = nil
 	type fields struct {
 		lister *fakeReservationLister
 		client *fakeReservationClient
@@ -610,6 +612,18 @@ func Test_syncPodDeleted(t *testing.T) {
 				lister: &fakeReservationLister{
 					reservations: map[string]*schedulingv1alpha1.Reservation{
 						testReservationDifferent.Name: testReservationDifferent,
+					},
+				},
+				client: &fakeReservationClient{},
+			},
+		},
+		{
+			name: "current owner not match",
+			arg:  testPod,
+			fields: fields{
+				lister: &fakeReservationLister{
+					reservations: map[string]*schedulingv1alpha1.Reservation{
+						testReservationNotMatched.Name: testReservationNotMatched,
 					},
 				},
 				client: &fakeReservationClient{},
