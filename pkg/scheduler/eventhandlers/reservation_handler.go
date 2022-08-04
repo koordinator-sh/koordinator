@@ -124,6 +124,7 @@ func addReservationToCache(sched *scheduler.Scheduler, internalHandler Scheduler
 		klog.Errorf("addReservationToCache failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
 		return
 	}
+	// only add valid reservation into cache
 	err := reservation.ValidateReservation(r)
 	if err != nil {
 		klog.Errorf("addReservationToCache failed, invalid reservation, err: %v", err)
@@ -213,15 +214,10 @@ func addReservationToSchedulingQueue(sched *scheduler.Scheduler, internalHandler
 		klog.Errorf("addReservationToSchedulingQueue failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
 		return
 	}
-	err := reservation.ValidateReservation(r)
-	if err != nil {
-		klog.Errorf("addReservationToSchedulingQueue failed, invalid reservation, err: %v", err)
-		return
-	}
 	klog.V(3).InfoS("Add event for unscheduled reservation", "reservation", klog.KObj(r))
 
 	reservePod := reservation.NewReservePod(r)
-	if err = internalHandler.GetQueue().Add(reservePod); err != nil {
+	if err := internalHandler.GetQueue().Add(reservePod); err != nil {
 		klog.Errorf("failed to add reserve pod into scheduling queue, reservation %v, err: %v", klog.KObj(reservePod), err)
 	}
 }
@@ -239,11 +235,6 @@ func updateReservationInSchedulingQueue(sched *scheduler.Scheduler, internalHand
 		return
 	}
 
-	err := reservation.ValidateReservation(newR)
-	if err != nil {
-		klog.Errorf("updateReservationInSchedulingQueue failed, invalid reservation, err: %v", err)
-		return
-	}
 	newReservePod := reservation.NewReservePod(newR)
 	isAssumed, err := internalHandler.GetCache().IsAssumedPod(newReservePod)
 	if err != nil {
@@ -277,11 +268,6 @@ func deleteReservationFromSchedulingQueue(sched *scheduler.Scheduler, internalHa
 	}
 	klog.V(3).InfoS("Delete event for unscheduled reservation", "reservation", klog.KObj(r))
 
-	err := reservation.ValidateReservation(r)
-	if err != nil {
-		klog.Errorf("deleteReservationFromSchedulingQueue failed, invalid reservation, err: %v", err)
-		return
-	}
 	reservePod := reservation.NewReservePod(r)
 	if err := internalHandler.GetQueue().Delete(reservePod); err != nil {
 		klog.Errorf("failed to delete reserve pod in scheduling queue, reservation %s, err: %v", klog.KObj(r), err)
@@ -298,16 +284,11 @@ func handleExpiredReservation(sched *scheduler.Scheduler, internalHandler Schedu
 	}
 
 	// if the reservation has been scheduled, remove the reserve pod from the pod cache
-	err := reservation.ValidateReservation(r)
-	if err != nil {
-		klog.Errorf("handleExpiredReservation failed, invalid reservation, err: %v", err)
-		return
-	}
 	reservePod := reservation.NewReservePod(r)
 
 	// in case the pod has expired before scheduling cache initialized, or the pod just finished scheduling cycle and
 	// deleted, both we need to check if pod is cached
-	_, err = internalHandler.GetCache().GetPod(reservePod)
+	_, err := internalHandler.GetCache().GetPod(reservePod)
 	if err == nil {
 		err = internalHandler.GetCache().RemovePod(reservePod)
 		if err != nil {

@@ -413,6 +413,68 @@ func TestPreFilter(t *testing.T) {
 			want: framework.NewStatus(framework.Error, "the reservation misses the template spec"),
 		},
 		{
+			name: "failed to validate reservation 1",
+			args: args{
+				cycleState: framework.NewCycleState(),
+				pod:        reservePod,
+			},
+			fields: fields{
+				lister: &fakeReservationLister{
+					reservations: map[string]*schedulingv1alpha1.Reservation{
+						reservePod.Name: {
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "reserve-pod-0",
+							},
+							Spec: schedulingv1alpha1.ReservationSpec{
+								Template: &corev1.PodTemplateSpec{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "reserve-pod-0",
+									},
+								},
+								Owners: nil,
+								TTL:    &metav1.Duration{Duration: 30 * time.Minute},
+							},
+						},
+					},
+				},
+			},
+			want: framework.NewStatus(framework.Error, "the reservation misses the owner spec"),
+		},
+		{
+			name: "failed to validate reservation 2",
+			args: args{
+				cycleState: framework.NewCycleState(),
+				pod:        reservePod,
+			},
+			fields: fields{
+				lister: &fakeReservationLister{
+					reservations: map[string]*schedulingv1alpha1.Reservation{
+						reservePod.Name: {
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "reserve-pod-0",
+							},
+							Spec: schedulingv1alpha1.ReservationSpec{
+								Template: &corev1.PodTemplateSpec{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "reserve-pod-0",
+									},
+								},
+								Owners: []schedulingv1alpha1.ReservationOwner{
+									{
+										Object: &corev1.ObjectReference{
+											Kind: "Pod",
+											Name: "test-pod-0",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: framework.NewStatus(framework.Error, "the reservation misses the expiration spec"),
+		},
+		{
 			name: "validate reservation successfully",
 			args: args{
 				cycleState: framework.NewCycleState(),

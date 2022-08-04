@@ -18,6 +18,7 @@ package reservation
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -35,9 +36,12 @@ var (
 // NewReservePod returns a fake pod set as the reservation's specifications.
 // The reserve pod is only visible for the scheduler and does not make actual creation on nodes.
 func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
-	reservePod := &corev1.Pod{
-		ObjectMeta: r.Spec.Template.ObjectMeta,
-		Spec:       r.Spec.Template.Spec,
+	reservePod := &corev1.Pod{}
+	if r.Spec.Template != nil {
+		reservePod.ObjectMeta = r.Spec.Template.ObjectMeta
+		reservePod.Spec = r.Spec.Template.Spec
+	} else {
+		klog.V(4).InfoS("failed to set valid spec for new reserve pod, template is nil", "spec", r.Spec)
 	}
 	// name, uid: reservation uid
 	reservePod.Name = GetReservationKey(r)

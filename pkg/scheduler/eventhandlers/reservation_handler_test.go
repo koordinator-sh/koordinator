@@ -317,8 +317,9 @@ func Test_addReservationToSchedulingQueue(t *testing.T) {
 			},
 		},
 		{
-			name: "failed to validate reservation",
+			name: "allow incomplete reservation, validate it in plugin",
 			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -379,8 +380,9 @@ func Test_updateReservationInSchedulingQueue(t *testing.T) {
 			},
 		},
 		{
-			name: "failed to validate reservation",
+			name: "allow incomplete reservation, validate it in plugin",
 			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
 				oldObj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -512,8 +514,9 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 			},
 		},
 		{
-			name: "failed to validate reservation",
+			name: "allow incomplete reservation, validate it later",
 			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -572,8 +575,9 @@ func Test_handleExpiredReservation(t *testing.T) {
 			},
 		},
 		{
-			name: "failed to validate reservation",
+			name: "allow incomplete reservation, validate it later",
 			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",

@@ -67,6 +67,9 @@ spec:
                 description: Specify the owners who can allocate the reserved resources.
                   Multiple owner selectors and ORed.
                 items:
+                  description: ReservationOwner indicates the owner specification
+                    which can allocate reserved resources.
+                  minProperties: 1
                   properties:
                     controller:
                       properties:
@@ -187,6 +190,7 @@ spec:
                           type: string
                       type: object
                   type: object
+                minItems: 1
                 type: array
               preAllocation:
                 description: By default, the resources requirements of reservation
@@ -209,6 +213,9 @@ spec:
                   `ttl` are mutually exclusive. Defaults to 24h. Set 0 to disable
                   expiration.
                 type: string
+            required:
+            - owners
+            - template
             type: object
           status:
             properties:

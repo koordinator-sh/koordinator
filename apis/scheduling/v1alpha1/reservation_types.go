@@ -34,12 +34,13 @@ type ReservationSpec struct {
 	// the specified node.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Schemaless
-	// +optional
-	Template *corev1.PodTemplateSpec `json:"template,omitempty"`
+	// +kubebuilder:validation:Required
+	Template *corev1.PodTemplateSpec `json:"template"`
 	// Specify the owners who can allocate the reserved resources.
 	// Multiple owner selectors and ORed.
-	// +optional
-	Owners []ReservationOwner `json:"owners,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	Owners []ReservationOwner `json:"owners"`
 	// By default, the resources requirements of reservation (specified in `template.spec`) is filtered by whether the
 	// node has sufficient free resources (i.e. ReservationRequest <  NodeFree).
 	// When `preAllocation` is set, the scheduler will skip this validation and allow overcommitment. The scheduled
@@ -95,6 +96,8 @@ type ReservationStatus struct {
 	Allocated corev1.ResourceList `json:"allocated,omitempty"`
 }
 
+// ReservationOwner indicates the owner specification which can allocate reserved resources.
+// +kubebuilder:validation:MinProperties=1
 type ReservationOwner struct {
 	// Multiple field selectors are ANDed.
 	// +optional
