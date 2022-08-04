@@ -91,6 +91,10 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		DeleteFunc: func(event event.DeleteEvent) bool {
 			job := event.Object.(*sev1alpha1.PodMigrationJob)
 			r.assumedCache.delete(job)
+			// TODO(joseph): It's better that delete reservation asynchronously
+			if err = r.deleteReservation(context.TODO(), job); err != nil {
+				klog.Errorf("Failed to delete reservation, MigrationJob: %s, err: %v", job.Name, err)
+			}
 			return true
 		}}); err != nil {
 		return nil, err
@@ -358,6 +362,12 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 		return result, err
 	} else if !boundComplete {
 		return result, nil
+	}
+
+	// TODO(joseph): currently Reservation does not support allocateOnce semantics.
+	//  It is our responsibility to clean up the Reservation ourselves
+	if err = r.deleteReservation(ctx, job); err != nil {
+		klog.Errorf("Failed to delete reservation, MigrationJob: %s, err: %v", job.Name, err)
 	}
 
 	boundPod := reservationObj.GetBoundPod()
@@ -670,6 +680,12 @@ func (r *Reconciler) waitForPendingPodScheduled(ctx context.Context, job *sev1al
 		}
 		err = r.updateCondition(ctx, job, cond)
 		return reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
+	}
+
+	// TODO(joseph): currently Reservation does not support allocateOnce semantics.
+	//  It is our responsibility to clean up the Reservation ourselves
+	if err = r.deleteReservation(ctx, job); err != nil {
+		klog.Errorf("Failed to delete reservation, MigrationJob: %s, err: %v", job.Name, err)
 	}
 
 	job.Status.Phase = sev1alpha1.PodMigrationJobSucceed
