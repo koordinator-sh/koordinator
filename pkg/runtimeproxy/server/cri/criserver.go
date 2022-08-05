@@ -183,7 +183,10 @@ func (c *RuntimeManagerCriServer) failOver() error {
 
 	for _, container := range containerResponse.Containers {
 		containerExecutor := cri_resource_executor.NewContainerResourceExecutor()
-		containerExecutor.ParseContainer(container)
+		if err := containerExecutor.ParseContainer(container); err != nil {
+			klog.Errorf("failed to parse container %s, err: %v", container.Id, err)
+			continue
+		}
 		containerExecutor.ResourceCheckPoint(&runtimeapi.CreateContainerResponse{
 			ContainerId: container.GetId(),
 		})
