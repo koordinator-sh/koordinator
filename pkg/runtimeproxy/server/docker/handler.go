@@ -19,6 +19,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -212,8 +213,8 @@ func (d *RuntimeManagerDockerServer) HandleStopContainer(ctx context.Context, wr
 		runtimeHookPath = config.StopPodSandbox
 		podInfo := store.GetPodSandboxInfo(containerID)
 		if podInfo == nil {
-			// refuse the req
-			http.Error(wr, "Failed to get pod info", http.StatusInternalServerError)
+			// kubelet will not treat not found error as error, so we need to return err msg as same with docker server to avoid pod terminating
+			http.Error(wr, fmt.Sprintf("No such container: %s", containerID), http.StatusInternalServerError)
 			return
 		}
 		hookReq = podInfo.GetPodSandboxHookRequest()
