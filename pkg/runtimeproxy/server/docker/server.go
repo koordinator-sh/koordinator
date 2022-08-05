@@ -19,6 +19,7 @@ package docker
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -140,24 +141,24 @@ func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) er
 	}
 
 	for _, c := range containers {
-		podID := c.Labels[types.SandboxIDLabelKey]
-		podCheckPoint := store.GetPodSandboxInfo(podID)
-		if podCheckPoint == nil {
-			klog.Errorf("no pod info related to containerID %v", c.ID)
-			continue
-		}
-		store.WriteContainerInfo(c.ID, &store.ContainerInfo{
+		cInfo := &store.ContainerInfo{
 			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
-				PodMeta:              podCheckPoint.PodMeta,
 				ContainerResources:   HostConfigToResource(c.ContainerJSON.HostConfig),
 				ContainerAnnotations: c.Labels,
 				ContainerMata: &v1alpha1.ContainerMetadata{
 					Name: c.Name,
 					Id:   c.ID,
 				},
-				PodResources: podCheckPoint.Resources,
 			},
-		})
+		}
+		podID := c.Labels[types.SandboxIDLabelKey]
+		podCheckPoint := store.GetPodSandboxInfo(podID)
+		if podCheckPoint != nil {
+			cInfo.ContainerResourceHookRequest.PodMeta = podCheckPoint.PodMeta
+			cInfo.ContainerResourceHookRequest.PodResources = podCheckPoint.Resources
+			continue
+		}
+		store.WriteContainerInfo(c.ID, cInfo)
 	}
 	info, err := dockerClient.Info(context.TODO())
 	if err != nil {
@@ -191,8 +192,7 @@ func (d *RuntimeManagerDockerServer) Run() error {
 
 	err = d.failOver(dockerClient)
 	if err != nil {
-		//FIXME: need to panic?
-		klog.Errorf("Failed to backup container info from backend, err: %v", err)
+		panic(fmt.Sprintf("Failed to backup container info from backend, err: %v", err))
 	}
 
 	lis, err := net.Listen("unix", options.RuntimeProxyEndpoint)
