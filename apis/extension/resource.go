@@ -25,12 +25,17 @@ import (
 )
 
 const (
-	BatchCPU    corev1.ResourceName = DomainPrefix + "batch-cpu"
-	BatchMemory corev1.ResourceName = DomainPrefix + "batch-memory"
+	// Deprecated because of the limitation of extended resource naming
+	KoordBatchCPU corev1.ResourceName = DomainPrefix + "batch-cpu"
+	// Deprecated because of the limitation of extended resource naming
+	KoordBatchMemory corev1.ResourceName = DomainPrefix + "batch-memory"
 
-	GPUCore        corev1.ResourceName = DomainPrefix + "gpu-core"
-	GPUMemory      corev1.ResourceName = DomainPrefix + "gpu-memory"
-	GPUMemoryRatio corev1.ResourceName = DomainPrefix + "gpu-memory-ratio"
+	BatchCPU    corev1.ResourceName = ResourceDomainPrefix + "batch-cpu"
+	BatchMemory corev1.ResourceName = ResourceDomainPrefix + "batch-memory"
+
+	GPUCore        corev1.ResourceName = ResourceDomainPrefix + "gpu-core"
+	GPUMemory      corev1.ResourceName = ResourceDomainPrefix + "gpu-memory"
+	GPUMemoryRatio corev1.ResourceName = ResourceDomainPrefix + "gpu-memory-ratio"
 )
 
 const (

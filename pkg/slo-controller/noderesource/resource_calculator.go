@@ -81,7 +81,7 @@ func (r *NodeResourceReconciler) calculateBEResource(node *corev1.Node,
 
 	return &nodeBEResource{
 		// transform cores into milli-cores
-		MilliCPU:              resource.NewQuantity(nodeAllocatableBE.Cpu().MilliValue(), resource.DecimalSI),
+		CPU:                   nodeAllocatableBE.Cpu(),
 		Memory:                nodeAllocatableBE.Memory(),
 		IsColocationAvailable: true,
 		Message: fmt.Sprintf(

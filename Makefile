@@ -82,11 +82,15 @@ lint-go: golangci-lint ## Lint Go code.
 	$(GOLANGCI_LINT) run -v --timeout=5m
 
 .PHONY: lint-license
-lint-license: 
+lint-license:
 	@hack/update-license-header.sh
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -race -covermode atomic -coverprofile cover.out
+
+.PHONY: fast-test
+fast-test: ## Run tests fast.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -race -covermode atomic -coverprofile cover.out
 
 ##@ Build
