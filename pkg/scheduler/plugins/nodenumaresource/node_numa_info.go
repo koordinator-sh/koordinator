@@ -203,12 +203,12 @@ func (c *nodeNumaInfoCache) setPod(pod *corev1.Pod) {
 		return
 	}
 
-	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+	resourceStatus, err := GetResourceStatus(pod.Annotations)
 	if err != nil {
 		return
 	}
 
-	resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
+	resourceSpec, err := GetResourceSpec(pod.Annotations)
 	if err != nil {
 		return
 	}
@@ -233,7 +233,7 @@ func (c *nodeNumaInfoCache) deletePod(pod *corev1.Pod) {
 		return
 	}
 
-	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+	resourceStatus, err := GetResourceStatus(pod.Annotations)
 	if err != nil {
 		return
 	}
