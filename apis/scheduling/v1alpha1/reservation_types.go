@@ -41,12 +41,6 @@ type ReservationSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
 	Owners []ReservationOwner `json:"owners"`
-	// By default, the resources requirements of reservation (specified in `template.spec`) is filtered by whether the
-	// node has sufficient free resources (i.e. ReservationRequest <  NodeFree).
-	// When `preAllocation` is set, the scheduler will skip this validation and allow overcommitment. The scheduled
-	// reservation would be waiting to be available until free resources are sufficient.
-	// +optional
-	PreAllocation bool `json:"preAllocation,omitempty"`
 	// Time-to-Live period for the reservation.
 	// `expires` and `ttl` are mutually exclusive. Defaults to 24h. Set 0 to disable expiration.
 	// +kubebuilder:default="24h"
@@ -57,6 +51,17 @@ type ReservationSpec struct {
 	// `expires` and `ttl` are mutually exclusive. Defaults to being set dynamically at runtime based on the `ttl`.
 	// +optional
 	Expires *metav1.Time `json:"expires,omitempty"`
+	// By default, the resources requirements of reservation (specified in `template.spec`) is filtered by whether the
+	// node has sufficient free resources (i.e. Reservation Request <  Node Free).
+	// When `preAllocation` is set, the scheduler will skip this validation and allow overcommitment. The scheduled
+	// reservation would be waiting to be available until free resources are sufficient.
+	// +optional
+	PreAllocation bool `json:"preAllocation,omitempty"`
+	// By default, reserved resources are always allocatable as long as the reservation phase is Available. When
+	// `AllocateOnce` is set, the reserved resources are only available for the first owner who allocates successfully
+	// and are not allocatable to other owners anymore.
+	// +optional
+	AllocateOnce bool `json:"allocateOnce,omitempty"`
 }
 
 // ReservationTemplateSpec describes the data a Reservation should have when created from a template
@@ -122,6 +127,8 @@ const (
 	ReservationPending ReservationPhase = "Pending"
 	// ReservationAvailable indicates the Reservation is both scheduled and available for allocation.
 	ReservationAvailable ReservationPhase = "Available"
+	// ReservationSucceeded indicates the Reservation is scheduled and allocated for a owner, but not allocatable anymore.
+	ReservationSucceeded ReservationPhase = "Succeeded"
 	// ReservationWaiting indicates the Reservation is scheduled, but the resources to reserve are not ready for
 	// allocation (e.g. in pre-allocation for running pods).
 	ReservationWaiting ReservationPhase = "Waiting"
@@ -150,6 +157,7 @@ const (
 	ReasonReservationUnschedulable = "Unschedulable"
 
 	ReasonReservationAvailable = "Available"
+	ReasonReservationSucceeded = "Succeeded"
 	ReasonReservationExpired   = "Expired"
 )
 

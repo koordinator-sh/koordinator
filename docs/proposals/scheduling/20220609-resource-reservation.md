@@ -126,11 +126,6 @@ type ReservationSpec struct {
 	// Specify the owners who can allocate the reserved resources.
 	// Multiple owner selectors and ORed.
 	Owners []ReservationOwner `json:"owners,omitempty"`
-	// By default, the resources requirements of reservation (specified in `template.spec`) is filtered by whether the
-	// node has sufficient free resources (i.e. ReservationRequest <  NodeFree).
-	// When `preAllocation` is set, the scheduler will skip this validation and allow overcommitment. The scheduled
-	// reservation would be waiting to be available until free resources are sufficient.
-	PreAllocation bool `json:"preAllocation,omitempty"`
 	// Time-to-Live period for the reservation.
 	// `expires` and `ttl` are mutually exclusive. If both `ttl` and `expires` are not specified, a very
 	// long TTL will be picked as default. Set 0 to disable the expiration.
@@ -138,6 +133,15 @@ type ReservationSpec struct {
 	// Expired timestamp when the reservation expires.
 	// `expires` and `ttl` are mutually exclusive. Defaults to being set dynamically at runtime based on the `ttl`.
 	Expires *metav1.Time `json:"expires,omitempty"`
+	// By default, the resources requirements of reservation (specified in `template.spec`) is filtered by whether the
+	// node has sufficient free resources (i.e. Reservation Request < Node Free).
+	// When `preAllocation` is set, the resource fit validation is skipped and overcommitment is allowed. The scheduled
+	// reservation would be waiting to be available until free resources are sufficient.
+	PreAllocation bool `json:"preAllocation,omitempty"`
+	// By default, reserved resources are always allocatable as long as the reservation phase is Available. When
+	// `AllocateOnce` is set, the reserved resources are only available for the first owner who allocates successfully
+	// and are not allocatable to other owners anymore.
+	AllocateOnce bool `json:"allocateOnce,omitempty"`
 }
 
 type ReservationStatus struct {
@@ -179,6 +183,8 @@ const (
 	ReservationPending ReservationPhase = "Pending"
 	// ReservationAvailable indicates the Reservation is both scheduled and available for allocation.
 	ReservationAvailable ReservationPhase = "Available"
+	// ReservationSucceeded indicates the Reservation is scheduled and allocated for a owner, but not allocatable anymore.
+	ReservationSucceeded ReservationPhase = "Succeeded"
 	// ReservationWaiting indicates the Reservation is scheduled, but the resources to reserve are not ready for
 	// allocation (e.g. in pre-allocation for running pods).
 	ReservationWaiting ReservationPhase = "Waiting"
@@ -225,6 +231,8 @@ When the reservation plugin is enabled, the scheduler checks for every schedulin
 
 When a pod is scheduled on a node with allocatable reservations, it allocates resources belonging to one of reservations. To pick one of reservations, we choose the one which can get most reserved resources allocated (i.e. MostAllocated). And the scheduler also annotates the pod with the reservation info.
 
+If the reservation sets `AllocateOnce`, the reserved resources can get allocated only once. The reservation's phase becomes `Succeeded` when an owner uses the reservation successfully. Then the reservation is considered unavailable, and other owners cannot allocate from it anymore.
+
 ##### Expiration and Cleanup
 
 When a reservation has been created for a long time exceeding the `TTL` or `Expires`, the scheduler updates its status as `Expired`. For expired reservations, the scheduler will cleanup them with a custom garbage collection period.
@@ -252,7 +260,7 @@ To ensure the preemptive resources are for the preemptor, firstly the scheduler 
 
 ##### Usage in Descheduling
 
-Before a pod is rescheduled, the descheduler can create a reservation that sets `template` and `owners` for the candidate. When the reservation becomes `Available`, the descheduler can assign the pod to allocate the reserved resources. This solves the problem in which the rescheduled pod has stopped at the old node but cannot run on the new node. Moreover, the descheduler can migrate resources between pods by setting the `preAllocation` field.
+Before a pod is rescheduled, the descheduler can create a reservation that sets `template` and `owners` for the candidate and enables `allocateOnce` in most cases. When the reservation becomes `Available`, the descheduler can assign the pod to allocate the reserved resources. Once the pod allocate successfully, the reservation becomes `Succeeded` and no longer hold the resources. This solves the problem in which the rescheduled pod has stopped at the old node but cannot run on the new node. Moreover, the descheduler can migrate resources between pods by setting the `preAllocation` field.
 
 ##### Usage in Pre-allocation
 
@@ -276,7 +284,8 @@ Reserving resources with [`pause` pods with very low assigned priority](https://
 
 - [X]  06/09/2022: Open PR for initial draft
 - [X]  06/14/2022: Sent proposal for review
-- [ ]  07/20/2022: Update design details
+- [X]  07/20/2022: Update design details
+- [ ]  08/08/2022: Update allocateOnce API
 
 ## References
 

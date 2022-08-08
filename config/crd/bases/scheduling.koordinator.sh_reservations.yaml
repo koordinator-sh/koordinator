@@ -56,6 +56,13 @@ spec:
             type: object
           spec:
             properties:
+              allocateOnce:
+                description: By default, reserved resources are always allocatable
+                  as long as the reservation phase is Available. When `AllocateOnce`
+                  is set, the reserved resources are only available for the first
+                  owner who allocates successfully and are not allocatable to other
+                  owners anymore.
+                type: boolean
               expires:
                 description: Expired timestamp when the reservation is expected to
                   expire. If both `expires` and `ttl` are set, `expires` is checked
@@ -195,7 +202,7 @@ spec:
               preAllocation:
                 description: By default, the resources requirements of reservation
                   (specified in `template.spec`) is filtered by whether the node has
-                  sufficient free resources (i.e. ReservationRequest <  NodeFree).
+                  sufficient free resources (i.e. Reservation Request <  Node Free).
                   When `preAllocation` is set, the scheduler will skip this validation
                   and allow overcommitment. The scheduled reservation would be waiting
                   to be available until free resources are sufficient.
