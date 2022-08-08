@@ -51,12 +51,13 @@ status: provisional
 <!-- /TOC -->
 
 ## Summary
-When several users or teams share a cluster, fairness of resource usage is very important. This proposal provides 
+When several users or teams share a cluster, fairness of resource allocation is very important. This proposal provides
 multi-hierarchy elastic quota management mechanism for the scheduler. 
-- It supports configuring quota groups in a tree structure, which is closer to the real business scenario. 
-- It supports the borrowing / returning of resources between different quota groups. The busy quota groups can automatically 
-temporarily borrow the resources from the idle quota groups, which can improve the utilization of the cluster. At the same time, 
-when the idle quota group turn into the busy quota group, it can also automatically take back the "lent-to" resources. 
+- It supports configuring quota groups in a tree structure, which is similar to the organizational structure of most companies.
+- It supports the borrowing / returning of resources between different quota groups, for better resource utilization efficiency.
+The busy quota groups can automatically temporarily borrow the resources from the idle quota groups, which can improve the
+utilization of the cluster. At the same time, when the idle quota group turn into the busy quota group, it can also automatically
+take back the "lent-to" resources.
 - It considers the resource fairness between different quota groups. When the busy quota groups borrow the 
 resources from the idle quota groups, the resources can be allocated to the busy quota groups under some fair rules.
 
@@ -119,8 +120,8 @@ The semantics of "max" is the quota group's upper limit of resources. We require
 
 2. We define "request" as the sum pod's request in the quota group. When some quota groups "request" is less than "min", and some 
 quota groups "request" is more than "min", the unused resources of the former can be lent to (or you can choose not to share) the 
-latter. The latter should use these resources according to a fair rules. When the former needs to use the "lent-to" resources, 
-the latter should also return the "borrowed-from" resources according to a fair rules.
+latter. The latter should use these resources according to the fair rule. When the former needs to use the "lent-to" resources,
+the latter should also return the "borrowed-from" resources according to the fair rule.
 
 3. We define the "runtime" as the current actual resource that can be used by the quota group. For a quota group whose "request" 
 is less than min, the value of "runtime" is equal to "request". That is to say "request" should be unconditionally satisfied 
@@ -155,26 +156,24 @@ We first calculate the "min" part of "runtime". It should be like as below:
 ![image](/docs/images/runtimequota2.jpg)
 
 Then we find quota groupA can lent 5 quotas to B\C\D, and the cluster has 40 quotas to allocate, so the sum is 45 for B\C\D 
-to share. We take the proportion of "max" as the basis for B\C\D to allocate shared resources by default, because the larger 
-the "max" is, the more resources it wants. In this way, "max" has both the meaning of resource ceiling and allocation proportion. 
-At the same time, we also support using new fields to represent the allocation proportion, which is called "shared-weight". 
+to share. We introduce a new field to represent the allocation fairness, which is called "shared-weight". "shared-weight" determines
+the ability of quota groups to compete for shared resources. That is to say, B/C/D will allocate resources in the cluster according
+to its "shared-weight".
 
-Then we find quota groupA can lent 5 quotas to B\C\D, and the cluster has 40 quotas to allocate, so the sum is 45 for B\C\D 
-to share. We introduce new fields to represent the allocation proportion, which is called "shared-weight". "shared-weight" determines
-the ability of quota groups to compete for shared resources. For example, in a scenario, although the "max" of each quota 
-groups are different, SRE hopes that the ability of quota groups to compete for resources is equal, so it will configure 
-"shared-weight" of all quota groups to the same value. If quota group don't config "shared-weight", it will equal to "max" by 
-default. In this way, "max" has both the meaning of resource ceiling and allocation proportion: the larger the "max" is, 
-the more resources it wants. 
+For example, assuming that the weights of B\C\D are 60\50\80
 
-In the above example, we assume that "shared-weight" is equal to "max". According to "max" proportion, quota groupB can get
-45 * 60 / (60 + 50 + 80) = 14. quota group C can get 45 * 50 / (60 + 50 + 80) = 12. quota group D can get 45 * 80 / (60 + 50 + 80) = 19.
-However, quota groupB only need 5 more due to request is 20 and min is 15, and quota group C and D are still hungry, 
-so quota groupB can share 14 - 5 = 9 to C and D.
+- B can get 45 * 60 / (60 + 50 + 80) = 14
+
+- C can get 45 * 50 / (60 + 50 + 80) = 12
+
+- D can get 45 * 80 / (60 + 50 + 80) = 19
+
+However, quota group B only need 5 more due to request is 20 and min is 15, and quota group C and D are still hungry,
+so quota group B can share 14 - 5 = 9 to C and D.
 
 ![image](/docs/images/runtimequota3.jpg)
 
-quota group C and D can still share the remained quota of 9 by allocation proportion, which C get 9 * 50 / (50 + 80) = 3, 
+quota group C and D can still share the remained quota of 9 by allocation proportion, which C get 9 * 50 / (50 + 80) = 3,
 D get 9 * 80 / (50 + 80) = 6, and we get the runtime of each quota group finally.
 
 ![image](/docs/images/runtimequota4.jpg)
@@ -189,6 +188,11 @@ whose "request" is greater than "min", we call it "borrowed-quotas".
 3. The "borrowed-quotas" share the resources by allocation proportion. 
 
 4. If the new "runtime" is larger than "request", there will be new resources which can be lent to the rest "borrowed-quotas".
+
+It is very difficult to manage the weight of thousands of quota groups in a company. Therefore, we need to set a default value
+for the "shared-weight". According to our experience in online operations, using max as the default "shared-weight" of the quota
+group can satisfy most scenarios. In this way, "max" has both the meaning of resource ceiling and allocation proportion: the
+larger the "max" is, the more resources it wants. For individual special scenarios, the resource administrator can adjust the weight.
 
 It must be pointed out that if the cluster resources suddenly decrease due to node failure, the sum of "min" may be 
 greater than the total resources of the cluster. If this case happens, we can't grantee "min" of each quota group actually. 
