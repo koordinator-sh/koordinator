@@ -131,6 +131,21 @@ func GetResourceStatus(annotations map[string]string) (*ResourceStatus, error) {
 	return resourceStatus, nil
 }
 
+func SetResourceStatus(pod *corev1.Pod, status *ResourceStatus) error {
+	if pod == nil {
+		return nil
+	}
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	data, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+	pod.Annotations[AnnotationResourceStatus] = string(data)
+	return nil
+}
+
 // TranslateResourceNameByPriorityClass translates defaultResourceName to extend resourceName by PriorityClass
 func TranslateResourceNameByPriorityClass(priorityClass PriorityClass, defaultResourceName corev1.ResourceName) corev1.ResourceName {
 	if priorityClass == PriorityProd || priorityClass == PriorityNone {
