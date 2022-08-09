@@ -127,6 +127,17 @@ type MigrationControllerArgs struct {
 	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
 	MaxUnavailablePerWorkload *intstr.IntOrString
 
+	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run. Defaults to 1.
+	MaxConcurrentReconciles int32
+
+	// DefaultJobMode represents the default operating mode of the PodMigrationJob
+	// Default is PodMigrationJobModeReservationFirst
+	DefaultJobMode string
+
+	// DefaultJobTTL represents the default TTL of the PodMigrationJob
+	// Default is 5 minute
+	DefaultJobTTL metav1.Duration
+
 	// EvictionPolicy represents how to delete Pod, support "Delete" and "Eviction", default value is "Eviction"
 	EvictionPolicy string
 	// DefaultDeleteOptions defines options when deleting migrated pods and preempted pods through the method specified by EvictionPolicy

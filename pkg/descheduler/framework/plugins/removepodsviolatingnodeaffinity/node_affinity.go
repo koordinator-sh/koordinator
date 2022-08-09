@@ -51,7 +51,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, fmt.Errorf("want args to be of type RemovePodsViolatingNodeAffinityArgs, got %T", args)
 	}
 
-	if err := validation.ValidateRemovePodsViolatingNodeAffinityArgs(nodeAffinityArgs); err != nil {
+	if err := validation.ValidateRemovePodsViolatingNodeAffinityArgs(nil, nodeAffinityArgs); err != nil {
 		return nil, err
 	}
 

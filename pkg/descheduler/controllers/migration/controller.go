@@ -42,6 +42,7 @@ import (
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/evictor"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/util"
@@ -76,13 +77,16 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, fmt.Errorf("want args to be of type MigrationControllerArgs, got %T", args)
 	}
 
+	if err := validation.ValidateMigrationControllerArgs(nil, controllerArgs); err != nil {
+		return nil, err
+	}
+
 	r, err := newReconciler(controllerArgs, handle)
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO(joseph): custom MaxConcurrentReconciles via configuration
-	c, err := controller.New(Name, options.Manager, controller.Options{Reconciler: r, MaxConcurrentReconciles: 1})
+	c, err := controller.New(Name, options.Manager, controller.Options{Reconciler: r, MaxConcurrentReconciles: int(controllerArgs.MaxConcurrentReconciles)})
 	if err != nil {
 		return nil, err
 	}
@@ -177,10 +181,8 @@ func (r *Reconciler) Evict(ctx context.Context, pod *corev1.Pod, evictOptions fr
 				Name:      pod.Name,
 				UID:       pod.UID,
 			},
-			// TODO(joseph): custom migration mode via configuration
-			Mode: sev1alpha1.PodMigrationJobModeReservationFirst,
-			// TODO(joseph): custom default TTL via configuration
-			TTL:           &metav1.Duration{Duration: 5 * time.Minute},
+			Mode:          sev1alpha1.PodMigrationJobMode(r.args.DefaultJobMode),
+			TTL:           r.args.DefaultJobTTL.DeepCopy(),
 			DeleteOptions: evictOptions.DeleteOptions,
 		},
 		Status: sev1alpha1.PodMigrationJobStatus{

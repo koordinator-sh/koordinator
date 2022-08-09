@@ -27,6 +27,7 @@ import (
 	componentbasevalidation "k8s.io/component-base/config/validation"
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/names"
 )
 
 func ValidateDeschedulerConfiguration(cc *config.DeschedulerConfiguration) utilerrors.Aggregate {
@@ -76,7 +77,11 @@ func validateDeschedulerProfile(path *field.Path, profile *config.DeschedulerPro
 
 func validatePluginConfig(path *field.Path, profile *config.DeschedulerProfile) []error {
 	var errs []error
-	m := map[string]interface{}{}
+	m := map[string]interface{}{
+		// NOTE: you can add the in-tree plugins configuration validation function
+		names.MigrationController:         ValidateMigrationControllerArgs,
+		"RemovePodsViolatingNodeAffinity": ValidateRemovePodsViolatingNodeAffinityArgs,
+	}
 
 	seenPluginConfig := make(sets.String)
 
