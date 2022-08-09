@@ -246,7 +246,7 @@ type extensionPoint struct {
 
 func (f *frameworkImpl) getEvictorExtensionPoint(plugins *deschedulerconfig.Plugins) []extensionPoint {
 	if plugins == nil {
-		return []extensionPoint{}
+		return nil
 	}
 
 	return []extensionPoint{
@@ -256,7 +256,7 @@ func (f *frameworkImpl) getEvictorExtensionPoint(plugins *deschedulerconfig.Plug
 
 func (f *frameworkImpl) getOtherExtensionPoints(plugins *deschedulerconfig.Plugins) []extensionPoint {
 	if plugins == nil {
-		return []extensionPoint{}
+		return nil
 	}
 
 	return []extensionPoint{
