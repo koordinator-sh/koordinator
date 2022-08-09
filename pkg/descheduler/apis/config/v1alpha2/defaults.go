@@ -19,14 +19,25 @@ package v1alpha2
 import (
 	"net"
 	"strconv"
+	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	componentbaseconfigv1alpha1 "k8s.io/component-base/config/v1alpha1"
 	"k8s.io/utils/pointer"
 
+	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	migrationevictor "github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/evictor"
+)
+
+const (
+	defaultMigrationControllerMaxConcurrentReconciles = 1
+
+	defaultMigrationJobMode           = sev1alpha1.PodMigrationJobModeReservationFirst
+	defaultMigrationJobTTL            = 5 * time.Minute
+	defaultMigrationJobEvictionPolicy = migrationevictor.NativeEvictorName
 )
 
 func addDefaultingFuncs(scheme *runtime.Scheme) error {
@@ -192,7 +203,16 @@ func SetDefaults_RemovePodsViolatingNodeAffinityArgs(obj *RemovePodsViolatingNod
 }
 
 func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
+	if obj.MaxConcurrentReconciles == nil {
+		obj.MaxConcurrentReconciles = pointer.Int32(defaultMigrationControllerMaxConcurrentReconciles)
+	}
+	if obj.DefaultJobMode == "" {
+		obj.DefaultJobMode = string(defaultMigrationJobMode)
+	}
+	if obj.DefaultJobTTL == nil {
+		obj.DefaultJobTTL = &metav1.Duration{Duration: defaultMigrationJobTTL}
+	}
 	if obj.EvictionPolicy == "" {
-		obj.EvictionPolicy = migrationevictor.NativeEvictorName
+		obj.EvictionPolicy = defaultMigrationJobEvictionPolicy
 	}
 }

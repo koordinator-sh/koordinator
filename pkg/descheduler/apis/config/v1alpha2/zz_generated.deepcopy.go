@@ -160,6 +160,11 @@ func (in *DeschedulerProfile) DeepCopy() *DeschedulerProfile {
 func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
+	if in.MaxConcurrentReconciles != nil {
+		in, out := &in.MaxConcurrentReconciles, &out.MaxConcurrentReconciles
+		*out = new(int32)
+		**out = **in
+	}
 	if in.LabelSelector != nil {
 		in, out := &in.LabelSelector, &out.LabelSelector
 		*out = new(v1.LabelSelector)
@@ -183,6 +188,11 @@ func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 	if in.MaxUnavailablePerWorkload != nil {
 		in, out := &in.MaxUnavailablePerWorkload, &out.MaxUnavailablePerWorkload
 		*out = new(intstr.IntOrString)
+		**out = **in
+	}
+	if in.DefaultJobTTL != nil {
+		in, out := &in.DefaultJobTTL, &out.DefaultJobTTL
+		*out = new(v1.Duration)
 		**out = **in
 	}
 	if in.DefaultDeleteOptions != nil {

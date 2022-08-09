@@ -170,6 +170,7 @@ func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 		*out = new(intstr.IntOrString)
 		**out = **in
 	}
+	out.DefaultJobTTL = in.DefaultJobTTL
 	if in.DefaultDeleteOptions != nil {
 		in, out := &in.DefaultDeleteOptions, &out.DefaultDeleteOptions
 		*out = new(v1.DeleteOptions)

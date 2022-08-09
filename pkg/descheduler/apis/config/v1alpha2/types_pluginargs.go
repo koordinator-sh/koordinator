@@ -91,6 +91,9 @@ type MigrationControllerArgs struct {
 	// Default is false
 	DryRun bool `json:"dryRun,omitempty"`
 
+	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run. Defaults to 1.
+	MaxConcurrentReconciles *int32 `json:"maxConcurrentReconciles,omitempty"`
+
 	// EvictFailedBarePods allows pods without ownerReferences and in failed phase to be evicted.
 	EvictFailedBarePods bool `json:"evictFailedBarePods"`
 
@@ -126,6 +129,14 @@ type MigrationControllerArgs struct {
 	// The unavailable state includes NotRunning/NotReady/Migrating/Evicting
 	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
 	MaxUnavailablePerWorkload *intstr.IntOrString `json:"maxUnavailablePerWorkload,omitempty"`
+
+	// DefaultJobMode represents the default operating mode of the PodMigrationJob
+	// Default is PodMigrationJobModeReservationFirst
+	DefaultJobMode string `json:"defaultJobMode,omitempty"`
+
+	// DefaultJobTTL represents the default TTL of the PodMigrationJob
+	// Default is 5 minute
+	DefaultJobTTL *metav1.Duration `json:"defaultJobTTL,omitempty"`
 
 	// EvictionPolicy represents how to delete Pod, support "Delete" and "Eviction", default value is "Eviction"
 	EvictionPolicy string `json:"evictionPolicy,omitempty"`
