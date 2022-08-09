@@ -180,10 +180,10 @@ func Test_reconcileBECPULimit(t *testing.T) {
 									Name: "test-container-1",
 									Resources: corev1.ResourceRequirements{
 										Limits: corev1.ResourceList{
-											extension.BatchCPU: *resource.NewQuantity(500, resource.DecimalSI),
+											extension.BatchCPU: *resource.NewMilliQuantity(500, resource.DecimalSI),
 										},
 										Requests: corev1.ResourceList{
-											extension.BatchCPU: *resource.NewQuantity(500, resource.DecimalSI),
+											extension.BatchCPU: *resource.NewMilliQuantity(500, resource.DecimalSI),
 										},
 									},
 								},
@@ -191,10 +191,10 @@ func Test_reconcileBECPULimit(t *testing.T) {
 									Name: "test-container-2",
 									Resources: corev1.ResourceRequirements{
 										Limits: corev1.ResourceList{
-											extension.BatchCPU: *resource.NewQuantity(1000, resource.DecimalSI),
+											extension.BatchCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
 										},
 										Requests: corev1.ResourceList{
-											extension.BatchCPU: *resource.NewQuantity(1000, resource.DecimalSI),
+											extension.BatchCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
 										},
 									},
 								},
@@ -290,10 +290,10 @@ func Test_reconcileBECPUShare(t *testing.T) {
 									Name: "test-container-1",
 									Resources: corev1.ResourceRequirements{
 										Limits: corev1.ResourceList{
-											extension.BatchCPU: *resource.NewQuantity(500, resource.DecimalSI),
+											extension.BatchCPU: *resource.NewMilliQuantity(500, resource.DecimalSI),
 										},
 										Requests: corev1.ResourceList{
-											extension.BatchCPU: *resource.NewQuantity(500, resource.DecimalSI),
+											extension.BatchCPU: *resource.NewMilliQuantity(500, resource.DecimalSI),
 										},
 									},
 								},
@@ -301,10 +301,10 @@ func Test_reconcileBECPUShare(t *testing.T) {
 									Name: "test-container-2",
 									Resources: corev1.ResourceRequirements{
 										Limits: corev1.ResourceList{
-											extension.BatchCPU: *resource.NewQuantity(1000, resource.DecimalSI),
+											extension.BatchCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
 										},
 										Requests: corev1.ResourceList{
-											extension.BatchCPU: *resource.NewQuantity(1000, resource.DecimalSI),
+											extension.BatchCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
 										},
 									},
 								},

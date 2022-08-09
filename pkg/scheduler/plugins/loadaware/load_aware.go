@@ -280,7 +280,7 @@ func estimatedUsedByResource(requests, limits corev1.ResourceList, resourceName 
 
 	var estimatedUsed int64
 	switch resourceName {
-	case corev1.ResourceCPU:
+	case corev1.ResourceCPU, extension.BatchCPU:
 		estimatedUsed = int64(math.Round(float64(quantity.MilliValue()) * float64(scalingFactor) / 100))
 		if estimatedUsed > limitQuantity.MilliValue() {
 			estimatedUsed = limitQuantity.MilliValue()

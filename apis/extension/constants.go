@@ -16,8 +16,12 @@ limitations under the License.
 
 package extension
 
+import corev1 "k8s.io/api/core/v1"
+
 const (
 	DomainPrefix = "koordinator.sh/"
+	// use prefix "kubernetes.io/" for extend resource
+	ResourceDomainPrefix = corev1.ResourceDefaultNamespacePrefix
 	// SchedulingDomainPrefix represents the scheduling domain prefix
 	SchedulingDomainPrefix = "scheduling.koordinator.sh"
 	// NodeDomainPrefix represents the node domain prefix

@@ -24,7 +24,6 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -220,9 +219,6 @@ func replaceAndEraseResource(priorityClass extension.PriorityClass, resourceList
 	}
 	quantity, ok := resourceList[resourceName]
 	if ok {
-		if resourceName == corev1.ResourceCPU {
-			quantity = *resource.NewQuantity(quantity.MilliValue(), resource.DecimalSI)
-		}
 		resourceList[extendResourceName] = quantity
 		delete(resourceList, resourceName)
 	}

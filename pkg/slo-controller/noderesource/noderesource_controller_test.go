@@ -188,7 +188,7 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	}
 	batchCPUQ := node.Status.Allocatable[extension.BatchCPU]
 	batchcpu, _ := batchCPUQ.AsInt64()
-	assert.Equal(t, int64(65000), batchcpu)
+	assert.Equal(t, int64(65), batchcpu)
 
 	// reset node resources
 	r.Clock = clock.NewFakeClock(r.Clock.Now().Add(time.Hour))

@@ -261,8 +261,8 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 				},
 				beResource: &nodeBEResource{
-					MilliCPU: resource.NewQuantity(20, resource.DecimalSI),
-					Memory:   resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
+					CPU:    resource.NewQuantity(20, resource.DecimalSI),
+					Memory: resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
 				},
 			},
 			want: &corev1.Node{
@@ -331,8 +331,8 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 				},
 				beResource: &nodeBEResource{
-					MilliCPU: resource.NewQuantity(30, resource.DecimalSI),
-					Memory:   resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+					CPU:    resource.NewQuantity(30, resource.DecimalSI),
+					Memory: resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
 				},
 			},
 			want: &corev1.Node{
@@ -387,8 +387,8 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 				},
 				beResource: &nodeBEResource{
-					MilliCPU: resource.NewQuantity(20, resource.DecimalSI),
-					Memory:   resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
+					CPU:    resource.NewQuantity(20, resource.DecimalSI),
+					Memory: resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
 				},
 			},
 			want: &corev1.Node{
@@ -398,76 +398,6 @@ func Test_updateNodeBEResource(t *testing.T) {
 				Status: corev1.NodeStatus{},
 			},
 			wantErr: false,
-		},
-		{
-			name: "failed to update for invalid be resource",
-			fields: fields{
-				Client: fake.NewClientBuilder().WithRuntimeObjects(&corev1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node0",
-					},
-					Status: corev1.NodeStatus{
-						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
-						},
-						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
-						},
-					},
-				}).Build(),
-				config: &config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
-						Enable:                        pointer.BoolPtr(true),
-						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-						DegradeTimeMinutes:            pointer.Int64Ptr(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-					},
-				},
-				SyncContext: &SyncContext{
-					contextMap: map[string]time.Time{"/test-node0": time.Now()},
-				},
-			},
-			args: args{
-				oldNode: &corev1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node0",
-					},
-					Status: corev1.NodeStatus{
-						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
-						},
-						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
-						},
-					},
-				},
-				beResource: &nodeBEResource{
-					MilliCPU: resource.NewMilliQuantity(22200, resource.DecimalSI),
-					Memory:   resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
-				},
-			},
-			want: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node0",
-				},
-				Status: corev1.NodeStatus{
-					Allocatable: corev1.ResourceList{
-						apiext.BatchCPU:    resource.MustParse("20"),
-						apiext.BatchMemory: resource.MustParse("40G"),
-					},
-					Capacity: corev1.ResourceList{
-						apiext.BatchCPU:    resource.MustParse("20"),
-						apiext.BatchMemory: resource.MustParse("40G"),
-					},
-				},
-			},
-			wantErr: true,
 		},
 		{
 			name: "not update be resource with node-specified config",
@@ -549,8 +479,8 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 				},
 				beResource: &nodeBEResource{
-					MilliCPU: resource.NewQuantity(30, resource.DecimalSI),
-					Memory:   resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+					CPU:    resource.NewQuantity(30, resource.DecimalSI),
+					Memory: resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
 				},
 			},
 			want: &corev1.Node{
@@ -622,8 +552,8 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 				},
 				beResource: &nodeBEResource{
-					MilliCPU: nil,
-					Memory:   nil,
+					CPU:    nil,
+					Memory: nil,
 				},
 			},
 			want: &corev1.Node{
