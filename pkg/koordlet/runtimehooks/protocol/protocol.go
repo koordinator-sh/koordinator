@@ -19,9 +19,10 @@ package protocol
 import (
 	"strconv"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
-	corev1 "k8s.io/api/core/v1"
 )
 
 type HooksProtocol interface {

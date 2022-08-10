@@ -73,12 +73,12 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 	if reflect.DeepEqual(obj, clone) {
 		return admission.Allowed("")
 	}
-	marshalled, err := json.Marshal(obj)
+	marshaled, err := json.Marshal(obj)
 	if err != nil {
 		klog.Errorf("Failed to marshal mutated Pod %s/%s, err: %v", obj.Namespace, obj.Name, err)
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
-	return admission.PatchResponseFromRaw(req.AdmissionRequest.Object.Raw, marshalled)
+	return admission.PatchResponseFromRaw(req.AdmissionRequest.Object.Raw, marshaled)
 }
 
 var _ inject.Client = &PodMutatingHandler{}
