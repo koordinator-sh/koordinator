@@ -310,6 +310,9 @@ func shouldWriteFile(path string, content []byte) (bool, error) {
 func (w *Writer) pathsToRemove(payload map[string]FileProjection, oldTsDir string) (sets.String, error) {
 	paths := sets.NewString()
 	visitor := func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 		relativePath := strings.TrimPrefix(path, oldTsDir)
 		relativePath = strings.TrimPrefix(relativePath, string(os.PathSeparator))
 		if relativePath == "" {
