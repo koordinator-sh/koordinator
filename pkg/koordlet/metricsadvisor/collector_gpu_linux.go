@@ -156,12 +156,12 @@ func (g *gpuDeviceManager) getNodeGPUUsage() []metriccache.GPUMetric {
 	return rtn
 }
 
-func (g *gpuDeviceManager) getTotalGPUUsageOfPIDs(pids []uint64) []metriccache.GPUMetric {
+func (g *gpuDeviceManager) getTotalGPUUsageOfPIDs(pids []uint32) []metriccache.GPUMetric {
 	g.RLock()
 	defer g.RUnlock()
 	tmp := make(map[int]*rawGPUMetric)
 	for _, pid := range pids {
-		if metrics, exist := g.processesMetrics[uint32(pid)]; exist {
+		if metrics, exist := g.processesMetrics[pid]; exist {
 			for idx, metric := range metrics {
 				if metric == nil {
 					continue
