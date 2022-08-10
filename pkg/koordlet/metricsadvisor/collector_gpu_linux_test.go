@@ -146,7 +146,7 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 		processesMetrics map[uint32][]*rawGPUMetric
 	}
 	type args struct {
-		pids []uint64
+		pids []uint32
 	}
 	tests := []struct {
 		name   string
@@ -157,7 +157,7 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 		{
 			name: "single device",
 			args: args{
-				pids: []uint64{122},
+				pids: []uint32{122},
 			},
 			fields: fields{
 				deviceCount: 1,
@@ -182,7 +182,7 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 		{
 			name: "multiple device",
 			args: args{
-				pids: []uint64{122, 222},
+				pids: []uint32{122, 222},
 			},
 			fields: fields{
 				deviceCount: 2,
@@ -215,7 +215,7 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 		{
 			name: "multiple device-1",
 			args: args{
-				pids: []uint64{122},
+				pids: []uint32{122},
 			},
 			fields: fields{
 				deviceCount: 2,
@@ -241,7 +241,7 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 		{
 			name: "multiple device and multiple processes",
 			args: args{
-				pids: []uint64{122, 222},
+				pids: []uint32{122, 222},
 			},
 			fields: fields{
 				deviceCount: 2,
