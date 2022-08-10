@@ -25,11 +25,13 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 	"github.com/stretchr/testify/assert"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func Test_getContainerCgroupPathWithSystemdDriver(t *testing.T) {
