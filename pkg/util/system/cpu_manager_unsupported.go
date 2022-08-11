@@ -22,3 +22,7 @@ package system
 func GuessCPUManagerOptFromKubelet() (string, string, map[string]string, error) {
 	return "", "", nil, nil
 }
+
+func GuessConfigFilePathFromKubelet() (string, error) {
+	return "", nil
+}
