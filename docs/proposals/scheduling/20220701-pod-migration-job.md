@@ -367,41 +367,59 @@ See the Configuration section for more details
 
 #### Controller Configuration
 
-User can configure the `PodMigrationJobControllerConfiguration` through Koordinator Descheduler ConfigMap. 
+User can configure the `MigrationControllerArgs` through Koordinator Descheduler ConfigMap. 
 
 ```go
-type PodMigrationJobControllerConfiguration struct {
-  // Paused indicates whether the PodMigrationJob Controller should to work or not.
-  Paused bool `json:"paused,omitempty"`
-  // DryRun means only execute the entire migration logic except create Reservation or Delete Pod
-  // Default is false
-  DryRun bool `json:"dryRun,omitempty"`
+// MigrationControllerArgs holds arguments used to configure the MigrationController
+type MigrationControllerArgs struct {
+	metav1.TypeMeta
 
-  // FlowControlQPS controls the number of arbitrations per second
-  FlowControlQPS string `json:"flowControlQPS,omitempty"`
-  // FlowControlBurst is the maximum number of tokens
-  FlowControlBurst int32 `json:"flowControlBurst,omitempty"`
+	// DryRun means only execute the entire migration logic except create Reservation or Delete Pod
+	// Default is false
+	DryRun bool `json:"dryRun,omitempty"`
 
-  // MaxMigratingPerNode represents he maximum number of pods that can be migrating during migrate per node.
-  MaxMigratingPerNode *int32 `json:"maxMigratingPerNode,omitempty"`
+	// EvictFailedBarePods allows pods without ownerReferences and in failed phase to be evicted.
+	EvictFailedBarePods bool `json:"evictFailedBarePods"`
 
-  // MaxMigratingPerNamespace represents he maximum number of pods that can be migrating during migrate per namespace.
-  MaxMigratingPerNamespace *int32 `json:"maxMigratingPerNamespace,omitempty"`
+	// EvictLocalStoragePods allows pods using local storage to be evicted.
+	EvictLocalStoragePods bool `json:"evictLocalStoragePods"`
 
-  // MaxMigratingPerWorkload represents he maximum number of pods that can be migrating during migrate per workload.
-  // Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
-  MaxMigratingPerWorkload *intstr.IntOrString `json:"maxMigratingPerWorkload,omitempty"`
+	// EvictSystemCriticalPods allows eviction of pods of any priority (including Kubernetes system pods)
+	EvictSystemCriticalPods bool `json:"evictSystemCriticalPods"`
 
-  // MaxUnavailablePerWorkload represents he maximum number of pods that can be unavailable during migrate per workload.
-  // The unavailable state includes NotRunning/NotReady/Migrating/Evicting
-  // Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
-  MaxUnavailablePerWorkload *intstr.IntOrString `json:"maxUnavailablePerWorkload,omitempty"`
+	// IgnorePVCPods prevents pods with PVCs from being evicted.
+	IgnorePvcPods bool `json:"ignorePvcPods"`
 
-  // EvictionPolicy represents how to delete Pod, support "Delete" and "Eviction", default value is "Eviction"
-  EvictionPolicy string `evictionPolicy,omitempty`
-  // DefaultDeleteOptions defines options when deleting migrated pods and preempted pods through the method specified by EvictionPolicy
-  DefaultDeleteOptions *metav1.DeleteOptions `json:"defaultDeleteOptions,omitempty"`
+	// LabelSelector sets whether to apply label filtering when evicting.
+	// Any pod matching the label selector is considered evictable.
+	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
+
+	// FlowControlQPS controls the number of arbitrations per second
+	FlowControlQPS string `json:"flowControlQPS,omitempty"`
+	// FlowControlBurst is the maximum number of tokens
+	FlowControlBurst int32 `json:"flowControlBurst,omitempty"`
+
+	// MaxMigratingPerNode represents he maximum number of pods that can be migrating during migrate per node.
+	MaxMigratingPerNode *int32 `json:"maxMigratingPerNode,omitempty"`
+
+	// MaxMigratingPerNamespace represents he maximum number of pods that can be migrating during migrate per namespace.
+	MaxMigratingPerNamespace *int32 `json:"maxMigratingPerNamespace,omitempty"`
+
+	// MaxMigratingPerWorkload represents he maximum number of pods that can be migrating during migrate per workload.
+	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
+	MaxMigratingPerWorkload *intstr.IntOrString `json:"maxMigratingPerWorkload,omitempty"`
+
+	// MaxUnavailablePerWorkload represents he maximum number of pods that can be unavailable during migrate per workload.
+	// The unavailable state includes NotRunning/NotReady/Migrating/Evicting
+	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
+	MaxUnavailablePerWorkload *intstr.IntOrString `json:"maxUnavailablePerWorkload,omitempty"`
+
+	// EvictionPolicy represents how to delete Pod, support "Delete" and "Eviction", default value is "Eviction"
+	EvictionPolicy string `json:"evictionPolicy,omitempty"`
+	// DefaultDeleteOptions defines options when deleting migrated pods and preempted pods through the method specified by EvictionPolicy
+	DefaultDeleteOptions *metav1.DeleteOptions `json:"defaultDeleteOptions,omitempty"`
 }
+
 ```
 
 ## Alternatives
@@ -412,3 +430,4 @@ type PodMigrationJobControllerConfiguration struct {
 - 2022-07-11: Refactor proposal for review
 - 2022-07-13: Update proposal based on review comments
 - 2022-07-22: Update Spec
+- 2022-08-02: Update MigrationJob configuration

@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
@@ -35,6 +36,7 @@ type nodeNUMAInfo struct {
 	cpuTopology   *CPUTopology
 	allocatedPods map[types.UID]struct{}
 	allocatedCPUs CPUDetails
+	*extension.KubeletCPUManagerPolicy
 }
 
 type nodeNumaInfoCache struct {
@@ -44,10 +46,11 @@ type nodeNumaInfoCache struct {
 
 func newNodeNUMAInfo(nodeName string, cpuTopology *CPUTopology) *nodeNUMAInfo {
 	return &nodeNUMAInfo{
-		nodeName:      nodeName,
-		cpuTopology:   cpuTopology,
-		allocatedPods: map[types.UID]struct{}{},
-		allocatedCPUs: NewCPUDetails(),
+		nodeName:                nodeName,
+		cpuTopology:             cpuTopology,
+		allocatedPods:           map[types.UID]struct{}{},
+		allocatedCPUs:           NewCPUDetails(),
+		KubeletCPUManagerPolicy: &extension.KubeletCPUManagerPolicy{},
 	}
 }
 
@@ -62,15 +65,20 @@ func (c *nodeNumaInfoCache) onNodeResourceTopologyAdd(obj interface{}) {
 	if !ok {
 		return
 	}
-	c.setNodeResourceTopology(nodeResTopology)
+	c.setNodeResourceTopology(nil, nodeResTopology)
 }
 
 func (c *nodeNumaInfoCache) onNodeResourceTopologyUpdate(oldObj, newObj interface{}) {
+	oldNodeResTopology, ok := oldObj.(*nrtv1alpha1.NodeResourceTopology)
+	if !ok {
+		return
+	}
+
 	nodeResTopology, ok := newObj.(*nrtv1alpha1.NodeResourceTopology)
 	if !ok {
 		return
 	}
-	c.setNodeResourceTopology(nodeResTopology)
+	c.setNodeResourceTopology(oldNodeResTopology, nodeResTopology)
 }
 
 func (c *nodeNumaInfoCache) onNodeResourceTopologyDelete(obj interface{}) {
@@ -137,8 +145,25 @@ func (c *nodeNumaInfoCache) getNodeNUMAInfo(nodeName string) *nodeNUMAInfo {
 	return c.nodes[nodeName]
 }
 
-func (c *nodeNumaInfoCache) setNodeResourceTopology(nodeResTopology *nrtv1alpha1.NodeResourceTopology) {
+func (c *nodeNumaInfoCache) setNodeResourceTopology(oldNodeResTopology, nodeResTopology *nrtv1alpha1.NodeResourceTopology) {
 	cpuTopology := buildCPUTopology(nodeResTopology)
+	podCPUAllocs, err := extension.GetPodCPUAllocs(nodeResTopology.Annotations)
+	if err != nil {
+		klog.Errorf("Failed to GetPodCPUAllocs from new NodeResourceTopology %s, err: %v", nodeResTopology.Name, err)
+	}
+	kubeletCPUManagerPolicy, err := extension.GetKubeletCPUManagerPolicy(nodeResTopology.Annotations)
+	if err != nil {
+		klog.Errorf("Failed to GetKubeletCPUManagerPolicy from NodeResourceTopology %s, err: %v", nodeResTopology.Name, err)
+	}
+
+	var oldPodCPUAllocs extension.PodCPUAllocs
+	if oldNodeResTopology != nil {
+		oldPodCPUAllocs, err = extension.GetPodCPUAllocs(oldNodeResTopology.Annotations)
+		if err != nil {
+			klog.Errorf("Failed to GetPodCPUAllocs from old NodeResourceTopology %s, err: %v", nodeResTopology.Name, err)
+		}
+	}
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -147,12 +172,14 @@ func (c *nodeNumaInfoCache) setNodeResourceTopology(nodeResTopology *nrtv1alpha1
 	if numaInfo == nil {
 		numaInfo = newNodeNUMAInfo(nodeName, cpuTopology)
 		c.nodes[nodeName] = numaInfo
-		return
 	}
 
 	numaInfo.lock.Lock()
 	defer numaInfo.lock.Unlock()
 	numaInfo.updateCPUTopology(cpuTopology)
+	numaInfo.updateKubeletCPUManagerPolicy(kubeletCPUManagerPolicy)
+	numaInfo.releaseCPUsManagedByKubelet(oldPodCPUAllocs)
+	numaInfo.updateCPUsManagedByKubelet(podCPUAllocs)
 }
 
 func (c *nodeNumaInfoCache) deleteNodeResourceTopology(nodeResTopology *nrtv1alpha1.NodeResourceTopology) {
@@ -176,12 +203,12 @@ func (c *nodeNumaInfoCache) setPod(pod *corev1.Pod) {
 		return
 	}
 
-	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+	resourceStatus, err := GetResourceStatus(pod.Annotations)
 	if err != nil {
 		return
 	}
 
-	resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
+	resourceSpec, err := GetResourceSpec(pod.Annotations)
 	if err != nil {
 		return
 	}
@@ -206,7 +233,7 @@ func (c *nodeNumaInfoCache) deletePod(pod *corev1.Pod) {
 		return
 	}
 
-	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+	resourceStatus, err := GetResourceStatus(pod.Annotations)
 	if err != nil {
 		return
 	}
@@ -222,6 +249,39 @@ func (c *nodeNumaInfoCache) deletePod(pod *corev1.Pod) {
 
 func (n *nodeNUMAInfo) updateCPUTopology(topology *CPUTopology) {
 	n.cpuTopology = topology
+}
+
+func (n *nodeNUMAInfo) updateKubeletCPUManagerPolicy(policy *extension.KubeletCPUManagerPolicy) {
+	if policy == nil {
+		policy = &extension.KubeletCPUManagerPolicy{}
+	}
+	n.KubeletCPUManagerPolicy = policy
+}
+
+func (n *nodeNUMAInfo) updateCPUsManagedByKubelet(podCPUAllocs extension.PodCPUAllocs) {
+	for _, v := range podCPUAllocs {
+		if !v.ManagedByKubelet || v.UID == "" || v.CPUSet == "" {
+			continue
+		}
+		cpuset, err := Parse(v.CPUSet)
+		if err != nil || cpuset.IsEmpty() {
+			continue
+		}
+		n.allocateCPUs(v.UID, cpuset, schedulingconfig.CPUExclusivePolicyNone)
+	}
+}
+
+func (n *nodeNUMAInfo) releaseCPUsManagedByKubelet(podCPUAllocs extension.PodCPUAllocs) {
+	for _, v := range podCPUAllocs {
+		if !v.ManagedByKubelet || v.UID == "" || v.CPUSet == "" {
+			continue
+		}
+		cpuset, err := Parse(v.CPUSet)
+		if err != nil || cpuset.IsEmpty() {
+			continue
+		}
+		n.releaseCPUs(v.UID, cpuset)
+	}
 }
 
 func (n *nodeNUMAInfo) allocateCPUs(podUID types.UID, cpuset CPUSet, exclusivePolicy schedulingconfig.CPUExclusivePolicy) {

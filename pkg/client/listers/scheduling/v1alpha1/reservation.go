@@ -31,8 +31,9 @@ type ReservationLister interface {
 	// List lists all Reservations in the indexer.
 	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.Reservation, err error)
-	// Reservations returns an object that can list and get Reservations.
-	Reservations(namespace string) ReservationNamespaceLister
+	// Get retrieves the Reservation from the index for a given name.
+	// Objects returned here must be treated as read-only.
+	Get(name string) (*v1alpha1.Reservation, error)
 	ReservationListerExpansion
 }
 
@@ -54,41 +55,9 @@ func (s *reservationLister) List(selector labels.Selector) (ret []*v1alpha1.Rese
 	return ret, err
 }
 
-// Reservations returns an object that can list and get Reservations.
-func (s *reservationLister) Reservations(namespace string) ReservationNamespaceLister {
-	return reservationNamespaceLister{indexer: s.indexer, namespace: namespace}
-}
-
-// ReservationNamespaceLister helps list and get Reservations.
-// All objects returned here must be treated as read-only.
-type ReservationNamespaceLister interface {
-	// List lists all Reservations in the indexer for a given namespace.
-	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.Reservation, err error)
-	// Get retrieves the Reservation from the indexer for a given namespace and name.
-	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1alpha1.Reservation, error)
-	ReservationNamespaceListerExpansion
-}
-
-// reservationNamespaceLister implements the ReservationNamespaceLister
-// interface.
-type reservationNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all Reservations in the indexer for a given namespace.
-func (s reservationNamespaceLister) List(selector labels.Selector) (ret []*v1alpha1.Reservation, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.Reservation))
-	})
-	return ret, err
-}
-
-// Get retrieves the Reservation from the indexer for a given namespace and name.
-func (s reservationNamespaceLister) Get(name string) (*v1alpha1.Reservation, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+// Get retrieves the Reservation from the index for a given name.
+func (s *reservationLister) Get(name string) (*v1alpha1.Reservation, error) {
+	obj, exists, err := s.indexer.GetByKey(name)
 	if err != nil {
 		return nil, err
 	}

@@ -24,9 +24,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 )
 
 func TestNUMAInfoCacheWithNodeResourceTopologyAddOrUpdateOrDelete(t *testing.T) {
@@ -47,12 +49,23 @@ func TestNUMAInfoCacheWithNodeResourceTopologyAddOrUpdateOrDelete(t *testing.T) 
 	data, err := json.Marshal(topology)
 	assert.NoError(t, err)
 
+	podCPUAllocs := extension.PodCPUAllocs{
+		{
+			UID:              uuid.NewUUID(),
+			CPUSet:           "1-4",
+			ManagedByKubelet: true,
+		},
+	}
+	podCPUAllocsData, err := json.Marshal(podCPUAllocs)
+	assert.NoError(t, err)
+
 	cache := newNodeNUMAInfoCache()
 	nrt := &nrtv1alpha1.NodeResourceTopology{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node-1",
 			Annotations: map[string]string{
 				extension.AnnotationNodeCPUTopology: string(data),
+				extension.AnnotationNodeCPUAllocs:   string(podCPUAllocsData),
 			},
 		},
 	}
@@ -63,6 +76,19 @@ func TestNUMAInfoCacheWithNodeResourceTopologyAddOrUpdateOrDelete(t *testing.T) 
 	assert.Equal(t, cpuTopology, numaInfo.cpuTopology)
 	assert.NotNil(t, numaInfo.allocatedPods)
 	assert.NotNil(t, numaInfo.allocatedCPUs)
+	expectedAllocatedPods := map[types.UID]struct{}{
+		podCPUAllocs[0].UID: {},
+	}
+	assert.Equal(t, expectedAllocatedPods, numaInfo.allocatedPods)
+
+	expectedAllocatedCPUs := CPUDetails{}
+	for _, cpuID := range []int{1, 2, 3, 4} {
+		cpuInfo := numaInfo.cpuTopology.CPUDetails[cpuID]
+		cpuInfo.ExclusivePolicy = schedulingconfig.CPUExclusivePolicyNone
+		cpuInfo.RefCount++
+		expectedAllocatedCPUs[cpuID] = cpuInfo
+	}
+	assert.Equal(t, expectedAllocatedCPUs, numaInfo.allocatedCPUs)
 
 	newNRT := nrt.DeepCopy()
 	newNRT.Labels = nil
@@ -75,6 +101,11 @@ func TestNUMAInfoCacheWithNodeResourceTopologyAddOrUpdateOrDelete(t *testing.T) 
 	assert.Equal(t, &CPUTopology{CPUDetails: NewCPUDetails()}, numaInfo.cpuTopology)
 	assert.NotNil(t, numaInfo.allocatedPods)
 	assert.NotNil(t, numaInfo.allocatedCPUs)
+
+	expectedAllocatedPods = map[types.UID]struct{}{}
+	assert.Equal(t, expectedAllocatedPods, numaInfo.allocatedPods)
+	expectedAllocatedCPUs = CPUDetails{}
+	assert.Equal(t, expectedAllocatedCPUs, numaInfo.allocatedCPUs)
 
 	cache.onNodeResourceTopologyDelete(newNRT)
 	numaInfo = cache.getNodeNUMAInfo("test-node-1")

@@ -34,21 +34,16 @@ type ReservationSpec struct {
 	// the specified node.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Schemaless
-	// +optional
-	Template *corev1.PodTemplateSpec `json:"template,omitempty"`
+	// +kubebuilder:validation:Required
+	Template *corev1.PodTemplateSpec `json:"template"`
 	// Specify the owners who can allocate the reserved resources.
 	// Multiple owner selectors and ORed.
-	// +optional
-	Owners []ReservationOwner `json:"owners,omitempty"`
-	// By default, the resources requirements of reservation (specified in `template.spec`) is filtered by whether the
-	// node has sufficient free resources (i.e. ReservationRequest <  NodeFree).
-	// When `preAllocation` is set, the scheduler will skip this validation and allow overcommitment. The scheduled
-	// reservation would be waiting to be available until free resources are sufficient.
-	// +optional
-	PreAllocation bool `json:"preAllocation,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	Owners []ReservationOwner `json:"owners"`
 	// Time-to-Live period for the reservation.
 	// `expires` and `ttl` are mutually exclusive. Defaults to 24h. Set 0 to disable expiration.
-	// +kubebuilder:default='24h'
+	// +kubebuilder:default="24h"
 	// +optional
 	TTL *metav1.Duration `json:"ttl,omitempty"`
 	// Expired timestamp when the reservation is expected to expire.
@@ -56,6 +51,17 @@ type ReservationSpec struct {
 	// `expires` and `ttl` are mutually exclusive. Defaults to being set dynamically at runtime based on the `ttl`.
 	// +optional
 	Expires *metav1.Time `json:"expires,omitempty"`
+	// By default, the resources requirements of reservation (specified in `template.spec`) is filtered by whether the
+	// node has sufficient free resources (i.e. Reservation Request <  Node Free).
+	// When `preAllocation` is set, the scheduler will skip this validation and allow overcommitment. The scheduled
+	// reservation would be waiting to be available until free resources are sufficient.
+	// +optional
+	PreAllocation bool `json:"preAllocation,omitempty"`
+	// By default, reserved resources are always allocatable as long as the reservation phase is Available. When
+	// `AllocateOnce` is set, the reserved resources are only available for the first owner who allocates successfully
+	// and are not allocatable to other owners anymore.
+	// +optional
+	AllocateOnce bool `json:"allocateOnce,omitempty"`
 }
 
 // ReservationTemplateSpec describes the data a Reservation should have when created from a template
@@ -74,13 +80,10 @@ type ReservationStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// The `phase` indicates whether is reservation is waiting for process (`Pending`), available to allocate
-	// (`Available`) or expired to get cleanup (Expired).
+	// The `phase` indicates whether is reservation is waiting for process, available to allocate or failed/expired to
+	// get cleanup.
 	// +optional
 	Phase ReservationPhase `json:"phase,omitempty"`
-	// The `expired` indicates the timestamp if the reservation is expired.
-	// +optional
-	Expired *metav1.Time `json:"expired,omitempty"`
 	// The `conditions` indicate the messages of reason why the reservation is still pending.
 	// +optional
 	Conditions []ReservationCondition `json:"conditions,omitempty"`
@@ -98,6 +101,8 @@ type ReservationStatus struct {
 	Allocated corev1.ResourceList `json:"allocated,omitempty"`
 }
 
+// ReservationOwner indicates the owner specification which can allocate reserved resources.
+// +kubebuilder:validation:MinProperties=1
 type ReservationOwner struct {
 	// Multiple field selectors are ANDed.
 	// +optional
@@ -122,39 +127,63 @@ const (
 	ReservationPending ReservationPhase = "Pending"
 	// ReservationAvailable indicates the Reservation is both scheduled and available for allocation.
 	ReservationAvailable ReservationPhase = "Available"
+	// ReservationSucceeded indicates the Reservation is scheduled and allocated for a owner, but not allocatable anymore.
+	ReservationSucceeded ReservationPhase = "Succeeded"
 	// ReservationWaiting indicates the Reservation is scheduled, but the resources to reserve are not ready for
 	// allocation (e.g. in pre-allocation for running pods).
 	ReservationWaiting ReservationPhase = "Waiting"
-	// ReservationExpired indicates the Reservation is expired, which the object is not available to allocate and will
-	// get cleaned in the future.
-	ReservationExpired ReservationPhase = "Expired"
+	// ReservationFailed indicates the Reservation is failed to reserve resources, due to expiration or marked as
+	// unavailable, which the object is not available to allocate and will get cleaned in the future.
+	ReservationFailed ReservationPhase = "Failed"
+)
+
+type ReservationConditionType string
+
+const (
+	ReservationConditionScheduled ReservationConditionType = "Scheduled"
+	ReservationConditionReady     ReservationConditionType = "Ready"
+)
+
+type ConditionStatus string
+
+const (
+	ConditionStatusTrue    ConditionStatus = "True"
+	ConditionStatusFalse   ConditionStatus = "False"
+	ConditionStatusUnknown ConditionStatus = "Unknown"
 )
 
 const (
+	ReasonReservationScheduled     = "Scheduled"
+	ReasonReservationUnschedulable = "Unschedulable"
+
 	ReasonReservationAvailable = "Available"
+	ReasonReservationSucceeded = "Succeeded"
 	ReasonReservationExpired   = "Expired"
 )
 
 type ReservationCondition struct {
-	LastProbeTime      metav1.Time `json:"lastProbeTime"`
-	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
-	Reason             string      `json:"reason"`
-	Message            string      `json:"message"`
+	Type               ReservationConditionType `json:"type,omitempty"`
+	Status             ConditionStatus          `json:"status,omitempty"`
+	Reason             string                   `json:"reason,omitempty"`
+	Message            string                   `json:"message,omitempty"`
+	LastProbeTime      metav1.Time              `json:"lastProbeTime,omitempty"`
+	LastTransitionTime metav1.Time              `json:"lastTransitionTime,omitempty"`
 }
 
 // +genclient
+// +genclient:nonNamespaced
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase",description="The phase of reservation"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:printcolumn:name="Node",type="string",JSONPath=".spec.template.spec.nodeName",priority=10
+// +kubebuilder:printcolumn:name="Node",type="string",JSONPath=".status.nodeName",priority=10
 // +kubebuilder:printcolumn:name="TTL",type="string",JSONPath=".spec.ttl",priority=10
 // +kubebuilder:printcolumn:name="Expires",type="string",JSONPath=".spec.expires",priority=10
 
 // Reservation is the Schema for the reservation API.
-// A Reservation object is namespaced. But it can reserve resources for pods of any namespace. Any
-// namespaced affinity/anti-affinity of reservation scheduling can be specified with the ObjectMeta.
+// A Reservation object is non-namespaced.
+// Any namespaced affinity/anti-affinity of reservation scheduling can be specified in the spec.template.
 type Reservation struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

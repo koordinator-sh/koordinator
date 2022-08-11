@@ -32,8 +32,6 @@ const (
 	// AnnotationNodeCPUSharedPools describes the CPU Shared Pool defined by Koordinator.
 	// The shared pool is mainly used by Koordinator LS Pods or K8s Burstable Pods.
 	AnnotationNodeCPUSharedPools = NodeDomainPrefix + "/cpu-shared-pools"
-	// AnnotationNodeCPUManagerPolicy describes the cpu manager policy options of kubelet
-	AnnotationNodeCPUManagerPolicy = NodeDomainPrefix + "/cpu-manager-policy"
 
 	// LabelNodeCPUBindPolicy constrains how to bind CPU logical CPUs when scheduling.
 	LabelNodeCPUBindPolicy = NodeDomainPrefix + "/cpu-bind-policy"
@@ -52,6 +50,16 @@ const (
 	NodeNUMAAllocateStrategyMostAllocated  = string(schedulingconfig.NUMAMostAllocated)
 )
 
+const (
+	// AnnotationKubeletCPUManagerPolicy describes the cpu manager policy options of kubelet
+	AnnotationKubeletCPUManagerPolicy = "kubelet.koordinator.sh/cpu-manager-policy"
+
+	KubeletCPUManagerPolicyStatic                         = "static"
+	KubeletCPUManagerPolicyNone                           = "none"
+	KubeletCPUManagerPolicyFullPCPUsOnlyOption            = "full-pcpus-only"
+	KubeletCPUManagerPolicyDistributeCPUsAcrossNUMAOption = "distribute-cpus-across-numa"
+)
+
 type CPUTopology struct {
 	Detail []CPUInfo `json:"detail,omitempty"`
 }
@@ -64,18 +72,19 @@ type CPUInfo struct {
 }
 
 type PodCPUAlloc struct {
-	Namespace string    `json:"namespace,omitempty"`
-	Name      string    `json:"name,omitempty"`
-	UID       types.UID `json:"uid,omitempty"`
-	CPUSet    string    `json:"cpuset,omitempty"`
-}
-
-type CPUManagerPolicy struct {
-	Policy  string            `json:"policy,omitempty"`
-	Options map[string]string `json:"options,omitempty"`
+	Namespace        string    `json:"namespace,omitempty"`
+	Name             string    `json:"name,omitempty"`
+	UID              types.UID `json:"uid,omitempty"`
+	CPUSet           string    `json:"cpuset,omitempty"`
+	ManagedByKubelet bool      `json:"managedByKubelet,omitempty"`
 }
 
 type PodCPUAllocs []PodCPUAlloc
+
+type KubeletCPUManagerPolicy struct {
+	Policy  string            `json:"policy,omitempty"`
+	Options map[string]string `json:"options,omitempty"`
+}
 
 func GetCPUTopology(annotations map[string]string) (*CPUTopology, error) {
 	topology := &CPUTopology{}
@@ -116,9 +125,9 @@ func GetNodeCPUSharePools(nodeTopoAnnotations map[string]string) ([]CPUSharedPoo
 	return cpuSharePools, nil
 }
 
-func GetCPUManagerPolicy(annotations map[string]string) (*CPUManagerPolicy, error) {
-	cpuManagerPolicy := &CPUManagerPolicy{}
-	data, ok := annotations[AnnotationNodeCPUManagerPolicy]
+func GetKubeletCPUManagerPolicy(annotations map[string]string) (*KubeletCPUManagerPolicy, error) {
+	cpuManagerPolicy := &KubeletCPUManagerPolicy{}
+	data, ok := annotations[AnnotationKubeletCPUManagerPolicy]
 	if !ok {
 		return cpuManagerPolicy, nil
 	}

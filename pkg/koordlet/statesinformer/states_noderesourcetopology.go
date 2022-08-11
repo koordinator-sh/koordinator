@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
@@ -70,7 +71,7 @@ func (s *statesInformer) syncNodeResourceTopology(node *corev1.Node) {
 		TopologyPolicies: []string{string(v1alpha1.None)},
 		Zones:            v1alpha1.ZoneList{v1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 	}
-	//TODO: add retry if create fail
+	// TODO: add retry if create fail
 	_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Create(ctx, topology, metav1.CreateOptions{})
 	if err != nil {
 		klog.Errorf("failed to create NodeResourceTopology %s, err: %v", topologyName, err)
@@ -87,21 +88,57 @@ func (s *statesInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInfo,
 	if err != nil {
 		return nil, err
 	}
-	podAllocs := []extension.PodCPUAlloc{}
-	for pod := range checkPoint.Entries {
-		cpuSet := cpuset.NewCPUSet()
-		for container, cpuString := range checkPoint.Entries[pod] {
-			if tmpContainerCPUSet, err := cpuset.Parse(cpuString); err != nil {
-				klog.Errorf("could not parse cpuset %q for container %q in pod %q: %v", cpuString, container, pod, err)
-				continue
-			} else {
-				cpuSet = cpuSet.Union(tmpContainerCPUSet)
+
+	pods := make(map[types.UID]*PodMeta)
+	managedPods := make(map[types.UID]struct{})
+	for _, podMeta := range s.GetAllPods() {
+		pods[podMeta.Pod.UID] = podMeta
+		qosClass := extension.GetPodQoSClass(podMeta.Pod)
+		if qosClass == extension.QoSLS || qosClass == extension.QoSBE {
+			managedPods[podMeta.Pod.UID] = struct{}{}
+			continue
+		}
+		resourceStatus, err := extension.GetResourceStatus(podMeta.Pod.Annotations)
+		if err == nil {
+			set, err := cpuset.Parse(resourceStatus.CPUSet)
+			if err == nil && set.Size() > 0 {
+				managedPods[podMeta.Pod.UID] = struct{}{}
 			}
 		}
-		podAllocs = append(podAllocs, extension.PodCPUAlloc{
-			Name:   pod,
-			CPUSet: cpuSet.String(),
-		})
+	}
+
+	var podAllocs []extension.PodCPUAlloc
+	for podUID := range checkPoint.Entries {
+		if _, ok := managedPods[types.UID(podUID)]; ok {
+			continue
+		}
+		cpuSet := cpuset.NewCPUSet()
+		for container, cpuString := range checkPoint.Entries[podUID] {
+			if containerCPUSet, err := cpuset.Parse(cpuString); err != nil {
+				klog.Errorf("could not parse cpuset %q for container %q in pod %q: %v", cpuString, container, podUID, err)
+				continue
+			} else if containerCPUSet.Size() > 0 {
+				cpuSet = cpuSet.Union(containerCPUSet)
+			}
+		}
+		if cpuSet.IsEmpty() {
+			continue
+		}
+
+		// TODO: It is possible that the data in the checkpoint file is invalid
+		//  and should be checked with the data in the cgroup to determine whether it is consistent
+		podCPUAlloc := extension.PodCPUAlloc{
+			UID:              types.UID(podUID),
+			CPUSet:           cpuSet.String(),
+			ManagedByKubelet: true,
+		}
+		podMeta := pods[types.UID(podUID)]
+		if podMeta != nil {
+			podCPUAlloc.Namespace = podMeta.Pod.Namespace
+			podCPUAlloc.Name = podMeta.Pod.Name
+		}
+		podAllocs = append(podAllocs, podCPUAlloc)
+
 		for _, cpuID := range cpuSet.ToSliceNoSort() {
 			delete(usedCPUs, int32(cpuID))
 		}
@@ -124,7 +161,7 @@ func (s *statesInformer) reportNodeTopology() {
 	if err != nil {
 		klog.Errorf("failed to guess kubelet cpu manager opt, err: %v", err)
 	}
-	cpuManagerPolicy := extension.CPUManagerPolicy{
+	cpuManagerPolicy := extension.KubeletCPUManagerPolicy{
 		Policy:  cpuPolicy,
 		Options: cpuManagerOpt,
 	}
@@ -174,7 +211,7 @@ func (s *statesInformer) reportNodeTopology() {
 		s.updateNodeTopo(topology)
 		topology.Annotations[extension.AnnotationNodeCPUTopology] = string(cpuTopologyJson)
 		topology.Annotations[extension.AnnotationNodeCPUSharedPools] = string(cpuSharePoolsJson)
-		topology.Annotations[extension.AnnotationNodeCPUManagerPolicy] = string(cpuManagerPolicyJson)
+		topology.Annotations[extension.AnnotationKubeletCPUManagerPolicy] = string(cpuManagerPolicyJson)
 		if len(podAllocsJson) != 0 {
 			topology.Annotations[extension.AnnotationNodeCPUAllocs] = string(podAllocsJson)
 		}

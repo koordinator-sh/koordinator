@@ -25,11 +25,13 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 	"github.com/stretchr/testify/assert"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func Test_getContainerCgroupPathWithSystemdDriver(t *testing.T) {
@@ -732,7 +734,7 @@ func TestGetPIDsInContainer(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    []uint64
+		want    []uint32
 		wantErr bool
 	}{
 		{
@@ -743,7 +745,7 @@ func TestGetPIDsInContainer(t *testing.T) {
 					ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
 				},
 			},
-			want: []uint64{12, 23},
+			want: []uint32{12, 23},
 		},
 		{
 			name: "not exist",
@@ -771,7 +773,6 @@ func TestGetPIDsInContainer(t *testing.T) {
 }
 
 func TestGetPIDsInPod(t *testing.T) {
-
 	system.SetupCgroupPathFormatter(system.Systemd)
 	defer system.SetupCgroupPathFormatter(system.Systemd)
 	dir := t.TempDir()
@@ -795,7 +796,7 @@ func TestGetPIDsInPod(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    []uint64
+		want    []uint32
 		wantErr bool
 	}{
 		{
@@ -811,7 +812,7 @@ func TestGetPIDsInPod(t *testing.T) {
 					},
 				},
 			},
-			want:    []uint64{12, 23, 45, 67},
+			want:    []uint32{12, 23, 45, 67},
 			wantErr: false,
 		},
 	}

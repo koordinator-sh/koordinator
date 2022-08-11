@@ -54,6 +54,38 @@ rules:
   - list
   - watch
 - apiGroups:
+  - scheduling.koordinator.sh
+  resources:
+  - podmigrationjobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - scheduling.koordinator.sh
+  resources:
+  - podmigrationjobs/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - scheduling.koordinator.sh
+  resources:
+  - reservations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - slo.koordinator.sh
   resources:
   - nodemetrics

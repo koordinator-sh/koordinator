@@ -113,3 +113,13 @@ const (
 	// NUMADistributeEvenly indicates that evenly distribute CPUs across NUMA Nodes.
 	NUMADistributeEvenly NUMAAllocateStrategy = "DistributeEvenly"
 )
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ReservationArgs holds arguments used to configure the Reservation plugin.
+type ReservationArgs struct {
+	metav1.TypeMeta
+
+	// EnablePreemption indicates whether to enable preemption for reservations.
+	EnablePreemption *bool `json:"enablePreemption,omitempty"`
+}

@@ -58,6 +58,12 @@ const (
 )
 
 var (
+	GetResourceSpec   = extension.GetResourceSpec
+	GetResourceStatus = extension.GetResourceStatus
+	SetResourceStatus = extension.SetResourceStatus
+)
+
+var (
 	_ framework.PreFilterPlugin = &Plugin{}
 	_ framework.FilterPlugin    = &Plugin{}
 	_ framework.ScorePlugin     = &Plugin{}
@@ -74,7 +80,7 @@ type Plugin struct {
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	pluginArgs, ok := args.(*schedulingconfig.NodeNUMAResourceArgs)
 	if !ok {
-		return nil, fmt.Errorf("want args to be of type LoadAwareSchedulingArgs, got %T", args)
+		return nil, fmt.Errorf("want args to be of type NodeNUMAResourceArgs, got %T", args)
 	}
 
 	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
@@ -83,18 +89,22 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	}
 
 	numaInfoCache := newNodeNUMAInfoCache()
+
+	nodeResTopologyInformerFactory := extendedHandle.NodeResourceTopologySharedInformerFactory()
+	nodeResTopologyInformer := nodeResTopologyInformerFactory.Topology().V1alpha1().NodeResourceTopologies().Informer()
+	nodeResTopologyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    numaInfoCache.onNodeResourceTopologyAdd,
+		UpdateFunc: numaInfoCache.onNodeResourceTopologyUpdate,
+		DeleteFunc: numaInfoCache.onNodeResourceTopologyDelete,
+	})
+	nodeResTopologyInformerFactory.Start(context.TODO().Done())
+	nodeResTopologyInformerFactory.WaitForCacheSync(context.TODO().Done())
+
 	podInformer := extendedHandle.SharedInformerFactory().Core().V1().Pods().Informer()
 	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    numaInfoCache.onPodAdd,
 		UpdateFunc: numaInfoCache.onPodUpdate,
 		DeleteFunc: numaInfoCache.onPodDelete,
-	})
-
-	nodeResTopologyInformer := extendedHandle.NodeResourceTopologySharedInformerFactory().Topology().V1alpha1().NodeResourceTopologies().Informer()
-	nodeResTopologyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    numaInfoCache.onNodeResourceTopologyAdd,
-		UpdateFunc: numaInfoCache.onNodeResourceTopologyUpdate,
-		DeleteFunc: numaInfoCache.onNodeResourceTopologyDelete,
 	})
 
 	return &Plugin{
@@ -124,7 +134,7 @@ func (s *preFilterState) Clone() framework.StateData {
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
-	resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
+	resourceSpec, err := GetResourceSpec(pod.Annotations)
 	if err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
 	}
@@ -203,7 +213,9 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
 	}
 
-	if node.Labels[extension.LabelNodeCPUBindPolicy] == extension.NodeCPUBindPolicyFullPCPUsOnly {
+	if node.Labels[extension.LabelNodeCPUBindPolicy] == extension.NodeCPUBindPolicyFullPCPUsOnly ||
+		(numaInfo.KubeletCPUManagerPolicy.Policy == extension.KubeletCPUManagerPolicyStatic &&
+			numaInfo.KubeletCPUManagerPolicy.Options[extension.KubeletCPUManagerPolicyFullPCPUsOnlyOption] == "true") {
 		if state.numCPUsNeeded%numaInfo.cpuTopology.CPUsPerCore() != 0 {
 			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError)
 		}
@@ -433,23 +445,12 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
-	resourceStatus := &extension.ResourceStatus{
-		CPUSet: state.allocatedCPUs.String(),
-	}
-	data, err := json.Marshal(resourceStatus)
-	if err != nil {
-		return framework.NewStatus(framework.Error, err.Error())
+	if state.allocatedCPUs.IsEmpty() {
+		return nil
 	}
 
-	podOriginal, err := p.handle.SharedInformerFactory().Core().V1().Pods().Lister().Pods(pod.Namespace).Get(pod.Name)
-	if err != nil {
-		return framework.NewStatus(framework.Error, err.Error())
-	}
-	pod = podOriginal.DeepCopy()
-	if pod.Annotations == nil {
-		pod.Annotations = map[string]string{}
-	}
-	pod.Annotations[extension.AnnotationResourceStatus] = string(data)
+	podOriginal := pod
+	pod = pod.DeepCopy()
 
 	// Write back ResourceSpec annotation if LSR Pod hasn't specified CPUBindPolicy
 	if state.resourceSpec.PreferredCPUBindPolicy == "" ||
@@ -457,11 +458,21 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 		resourceSpec := &extension.ResourceSpec{
 			PreferredCPUBindPolicy: p.pluginArgs.DefaultCPUBindPolicy,
 		}
-		data, err = json.Marshal(resourceSpec)
+		resourceSpecData, err := json.Marshal(resourceSpec)
 		if err != nil {
 			return framework.NewStatus(framework.Error, err.Error())
 		}
-		pod.Annotations[extension.AnnotationResourceSpec] = string(data)
+		if pod.Annotations == nil {
+			pod.Annotations = make(map[string]string)
+		}
+		pod.Annotations[extension.AnnotationResourceSpec] = string(resourceSpecData)
+	}
+
+	err := SetResourceStatus(pod, &extension.ResourceStatus{
+		CPUSet: state.allocatedCPUs.String(),
+	})
+	if err != nil {
+		return framework.NewStatus(framework.Error, err.Error())
 	}
 
 	patchBytes, err := generatePodPatch(podOriginal, pod)
@@ -487,6 +498,6 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
-	klog.V(4).Infof("Successfully preBind Pod %s/%s with CPUSet %s", pod.Namespace, pod.Name, resourceStatus.CPUSet)
+	klog.V(4).Infof("Successfully preBind Pod %s/%s with CPUSet %s", pod.Namespace, pod.Name, state.allocatedCPUs)
 	return nil
 }

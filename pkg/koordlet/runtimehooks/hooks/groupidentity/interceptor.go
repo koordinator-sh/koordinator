@@ -37,7 +37,7 @@ func (b *bvtPlugin) SetPodBvtValue(p protocol.HooksProtocol) error {
 	}
 	podCtx := p.(*protocol.PodContext)
 	req := podCtx.Request
-	podQOS := ext.GetQoSClassByLabels(req.Labels)
+	podQOS := ext.GetQoSClassByAttrs(req.Labels, req.Annotations)
 	podKubeQOS := util.GetKubeQoSByCgroupParent(req.CgroupParent)
 	podBvt := r.getPodBvtValue(podQOS, podKubeQOS)
 	podCtx.Response.Resources.CPUBvt = pointer.Int64(podBvt)

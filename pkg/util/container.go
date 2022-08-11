@@ -115,14 +115,14 @@ func GetContainerMemoryByteLimit(c *corev1.Container) int64 {
 
 func GetContainerBEMilliCPURequest(c *corev1.Container) int64 {
 	if cpuRequest, ok := c.Resources.Requests[extension.BatchCPU]; ok {
-		return cpuRequest.Value()
+		return cpuRequest.MilliValue()
 	}
 	return -1
 }
 
 func GetContainerBEMilliCPULimit(c *corev1.Container) int64 {
 	if cpuLimit, ok := c.Resources.Limits[extension.BatchCPU]; ok {
-		return cpuLimit.Value()
+		return cpuLimit.MilliValue()
 	}
 	return -1
 }
@@ -229,8 +229,8 @@ func GetContainerCurTasks(podParentDir string, c *corev1.ContainerStatus) ([]int
 	return system.GetCgroupCurTasks(cgroupPath)
 }
 
-func GetPIDsInPod(podParentDir string, cs []corev1.ContainerStatus) ([]uint64, error) {
-	pids := make([]uint64, 0)
+func GetPIDsInPod(podParentDir string, cs []corev1.ContainerStatus) ([]uint32, error) {
+	pids := make([]uint32, 0)
 	for i := range cs {
 		p, err := GetPIDsInContainer(podParentDir, &cs[i])
 		if err != nil {
@@ -241,7 +241,7 @@ func GetPIDsInPod(podParentDir string, cs []corev1.ContainerStatus) ([]uint64, e
 	return pids, nil
 }
 
-func GetPIDsInContainer(podParentDir string, c *corev1.ContainerStatus) ([]uint64, error) {
+func GetPIDsInContainer(podParentDir string, c *corev1.ContainerStatus) ([]uint32, error) {
 	cgroupPath, err := GetContainerCgroupCPUProcsPath(podParentDir, c)
 	if err != nil {
 		return nil, err
@@ -251,14 +251,14 @@ func GetPIDsInContainer(podParentDir string, c *corev1.ContainerStatus) ([]uint6
 		return nil, err
 	}
 	pidStrs := strings.Fields(strings.TrimSpace(string(rawContent)))
-	pids := make([]uint64, len(pidStrs))
+	pids := make([]uint32, len(pidStrs))
 
 	for i := 0; i < len(pids); i++ {
-		p, err := strconv.ParseUint(pidStrs[i], 10, 64)
+		p, err := strconv.ParseUint(pidStrs[i], 10, 32)
 		if err != nil {
 			return nil, err
 		}
-		pids[i] = p
+		pids[i] = uint32(p)
 	}
 	return pids, nil
 }

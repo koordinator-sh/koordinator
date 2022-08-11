@@ -22,32 +22,39 @@ import (
 	"strings"
 
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type cpusetRule struct {
-	sharePools []ext.CPUSharedPool
+	kubeletPolicy ext.KubeletCPUManagerPolicy
+	sharePools    []ext.CPUSharedPool
 }
 
-func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest) (string, error) {
+func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest) (*string, error) {
+	// pod specifies share pool id in annotations, use part cpu share pool
+	// pod specifies QoS=LS in labels, use all share pool
+	// besteffort pod(including QoS=BE) will be managed by cpu suppress policy, inject empty string
+	// guaranteed/bustable pod without QoS label, if kubelet use none policy, use all share pool, and if kubelet use
+	// static policy, do nothing
 	if containerReq == nil {
-		return "", nil
+		return nil, nil
 	}
 	podAnnotations := containerReq.PodAnnotations
 	podLabels := containerReq.PodLabels
 	podAlloc, err := ext.GetResourceStatus(podAnnotations)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if len(podAlloc.CPUSharedPools) != 0 {
-		// pod specified cpu share pool
+		// LS pods which have specified cpu share pool
 		cpusetList := make([]string, 0, len(podAlloc.CPUSharedPools))
 		for _, specifiedSharePool := range podAlloc.CPUSharedPools {
 			for _, nodeSharePool := range r.sharePools {
@@ -56,22 +63,33 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 				}
 			}
 		}
-		return strings.Join(cpusetList, ","), nil
+		return pointer.String(strings.Join(cpusetList, ",")), nil
+	}
+
+	allSharePoolCPUs := make([]string, 0, len(r.sharePools))
+	for _, nodeSharePool := range r.sharePools {
+		allSharePoolCPUs = append(allSharePoolCPUs, nodeSharePool.CPUSet)
+	}
+
+	podQOSClass := ext.GetQoSClassByAttrs(podLabels, podAnnotations)
+	if podQOSClass == ext.QoSLS {
+		// LS pods use all share pool
+		return pointer.String(strings.Join(allSharePoolCPUs, ",")), nil
 	}
 
 	kubeQOS := util.GetKubeQoSByCgroupParent(containerReq.CgroupParent)
-	podQOSClass := ext.GetQoSClassByLabels(podLabels)
-	isKubeOriginLS := podQOSClass == ext.QoSNone && kubeQOS != corev1.PodQOSBestEffort
-	if podQOSClass == ext.QoSLS || isKubeOriginLS {
-		// LS pod which does not specified cpu, bind all cpu share pool
-		// TODO use dynamic binding policy in the future
-		allSharePoolCPUs := make([]string, 0, len(r.sharePools))
-		for _, nodeSharePool := range r.sharePools {
-			allSharePoolCPUs = append(allSharePoolCPUs, nodeSharePool.CPUSet)
-		}
-		return strings.Join(allSharePoolCPUs, ","), nil
+	if kubeQOS == corev1.PodQOSBestEffort {
+		// besteffort pods including QoS=BE, clear cpuset of BE container to avoid conflict with kubelet static policy,
+		// which will pass cpuset in StartContainerRequest of CRI
+		return pointer.String(""), nil
 	}
-	return "", nil
+
+	if r.kubeletPolicy.Policy == ext.KubeletCPUManagerPolicyStatic {
+		return nil, nil
+	} else {
+		// none policy
+		return pointer.String(strings.Join(allSharePoolCPUs, ",")), nil
+	}
 }
 
 func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
@@ -84,8 +102,13 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	cpuManagerPolicy, err := ext.GetKubeletCPUManagerPolicy(nodeTopo.Annotations)
+	if err != nil {
+		return false, err
+	}
 	newRule := &cpusetRule{
-		sharePools: cpuSharePools,
+		kubeletPolicy: *cpuManagerPolicy,
+		sharePools:    cpuSharePools,
 	}
 	updated := p.updateRule(newRule)
 	return updated, nil

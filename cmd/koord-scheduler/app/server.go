@@ -58,6 +58,7 @@ import (
 
 	schedulerserverconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/options"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/eventhandlers"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
@@ -378,7 +379,11 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 	for k, v := range sched.Profiles {
 		sched.Profiles[k] = extendedFrameworkFactory.New(v)
 	}
-	// TODO: register event handlers for scheduler instance
+
+	schedulerInternalHandler := &eventhandlers.SchedulerInternalHandlerImpl{
+		Scheduler: sched,
+	}
+	eventhandlers.AddScheduleEventHandler(sched, schedulerInternalHandler, extendedHandle)
 
 	return &cc, sched, nil
 }

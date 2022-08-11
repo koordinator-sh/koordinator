@@ -19,25 +19,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v3
         with:
           args: --verbose
-
-  staticcheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version-file: go.mod
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-sc-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-sc-
-      - uses: dominikh/staticcheck-action@v1
-        with:
-          install-go: false
+          version: v1.47.3
 
   unit-tests:
     runs-on: ubuntu-latest
@@ -75,7 +57,7 @@ jobs:
           make vet && git add pkg cmd &&
           git diff --cached --exit-code || (echo 'Please run "make vet" to verify govet' && exit 1);
       - name: Run Go build
-        run: make build-koordlet build-koord-manager build-koord-scheduler build-koord-runtime-proxy
+        run: make build-koordlet build-koord-manager build-koord-scheduler build-koord-descheduler build-koord-runtime-proxy
       - name: Run Go test
         run: make test
       - name: Upload coverage to Codecov
@@ -87,13 +69,13 @@ jobs:
           verbose: true
 
   build-and-push:
-    needs: [golangci-lint, staticcheck, unit-tests]
+    needs: [golangci-lint, unit-tests]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        target: [koordlet, koord-manager, koord-scheduler]
+        target: [koordlet, koord-manager, koord-scheduler, koord-descheduler]
     env:
       GITHUB_REG: ghcr.io
       ALIYUN_REG: registry.cn-beijing.aliyuncs.com

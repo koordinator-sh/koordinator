@@ -183,7 +183,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 				},
 			},
 			wantErr:    false,
-			wantCPUSet: nil,
+			wantCPUSet: pointer.StringPtr(""),
 		},
 	}
 	for _, tt := range tests {

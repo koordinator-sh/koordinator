@@ -18,7 +18,7 @@ require (
 	go.uber.org/atomic v1.9.0
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 	google.golang.org/grpc v1.38.0
-	google.golang.org/protobuf v1.28.0
+	google.golang.org/protobuf v1.28.1
 	gorm.io/driver/sqlite v1.3.6
 	gorm.io/gorm v1.23.8
 	k8s.io/api v0.22.6
@@ -27,12 +27,14 @@ require (
 	k8s.io/client-go v0.22.6
 	k8s.io/code-generator v0.22.6
 	k8s.io/component-base v0.22.6
+	k8s.io/component-helpers v0.22.6
 	k8s.io/cri-api v0.22.6
 	k8s.io/klog/v2 v2.10.0
 	k8s.io/kube-scheduler v0.22.6
 	k8s.io/kubernetes v1.22.6
 	k8s.io/utils v0.0.0-20210819203725-bdf08cb9a70a
 	sigs.k8s.io/controller-runtime v0.10.3
+	sigs.k8s.io/yaml v1.3.0
 )
 
 require (
@@ -133,14 +135,12 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.22.2 // indirect
 	k8s.io/cloud-provider v0.22.6 // indirect
-	k8s.io/component-helpers v0.22.6 // indirect
 	k8s.io/csi-translation-lib v0.22.6 // indirect
 	k8s.io/gengo v0.0.0-20201214224949-b6c5ce23f027 // indirect
 	k8s.io/kube-openapi v0.0.0-20211109043538-20434351676c // indirect
 	k8s.io/mount-utils v0.22.6 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.27 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
-	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
 replace (

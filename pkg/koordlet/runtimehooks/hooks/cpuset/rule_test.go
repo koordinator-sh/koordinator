@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
@@ -33,7 +34,8 @@ import (
 
 func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 	type fields struct {
-		sharePools []ext.CPUSharedPool
+		kubeletPoicy string
+		sharePools   []ext.CPUSharedPool
 	}
 	type args struct {
 		podAlloc     *ext.ResourceStatus
@@ -43,11 +45,11 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 		name    string
 		fields  fields
 		args    args
-		want    string
+		want    *string
 		wantErr bool
 	}{
 		{
-			name: "get cpuset from bad annotation",
+			name: "get cpuset fqrom bad annotation",
 			fields: fields{
 				sharePools: []ext.CPUSharedPool{
 					{
@@ -68,7 +70,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					CgroupParent: "burstable/test-pod/test-container",
 				},
 			},
-			want:    "",
+			want:    nil,
 			wantErr: true,
 		},
 		{
@@ -104,7 +106,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					},
 				},
 			},
-			want:    "0-7",
+			want:    pointer.String("0-7"),
 			wantErr: false,
 		},
 		{
@@ -134,12 +136,13 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					CgroupParent:   "burstable/test-pod/test-container",
 				},
 			},
-			want:    "0-7,8-15",
+			want:    pointer.String("0-7,8-15"),
 			wantErr: false,
 		},
 		{
-			name: "get all share pools for origin burstable pod",
+			name: "get all share pools for origin burstable pod under none policy",
 			fields: fields{
+				kubeletPoicy: ext.KubeletCPUManagerPolicyNone,
 				sharePools: []ext.CPUSharedPool{
 					{
 						Socket: 0,
@@ -162,11 +165,40 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					CgroupParent:   "burstable/test-pod/test-container",
 				},
 			},
-			want:    "0-7,8-15",
+			want:    pointer.String("0-7,8-15"),
 			wantErr: false,
 		},
 		{
-			name: "nothing for origin besteffort pod",
+			name: "do nothing for origin burstable pod under static policy",
+			fields: fields{
+				kubeletPoicy: ext.KubeletCPUManagerPolicyStatic,
+				sharePools: []ext.CPUSharedPool{
+					{
+						Socket: 0,
+						Node:   0,
+						CPUSet: "0-7",
+					},
+					{
+						Socket: 1,
+						Node:   0,
+						CPUSet: "8-15",
+					},
+				},
+			},
+			args: args{
+				containerReq: &protocol.ContainerRequest{
+					PodMeta:        protocol.PodMeta{},
+					ContainerMeta:  protocol.ContainerMeta{},
+					PodLabels:      map[string]string{},
+					PodAnnotations: map[string]string{},
+					CgroupParent:   "burstable/test-pod/test-container",
+				},
+			},
+			want:    nil,
+			wantErr: false,
+		},
+		{
+			name: "empty string for origin besteffort pod",
 			fields: fields{
 				sharePools: []ext.CPUSharedPool{
 					{
@@ -190,13 +222,16 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					CgroupParent:   "besteffort/test-pod/test-container",
 				},
 			},
-			want:    "",
+			want:    pointer.String(""),
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &cpusetRule{
+				kubeletPolicy: ext.KubeletCPUManagerPolicy{
+					Policy: tt.fields.kubeletPoicy,
+				},
 				sharePools: tt.fields.sharePools,
 			}
 			if tt.args.podAlloc != nil {
@@ -208,9 +243,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 				t.Errorf("getCPUSet() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if got != tt.want {
-				t.Errorf("getCPUSet() got = %v, wantUpdated %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got, "cpuset of container should be equal")
 		})
 	}
 	// node.koordinator.sh/cpu-shared-pools: '[{"cpuset":"2-7"}]'
@@ -295,6 +328,7 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 	}
 	type args struct {
 		nodeTopo   *topov1alpha1.NodeResourceTopology
+		cpuPolicy  *ext.KubeletCPUManagerPolicy
 		sharePools []ext.CPUSharedPool
 	}
 	tests := []struct {
@@ -415,6 +449,9 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 						Name: "test-node",
 					},
 				},
+				cpuPolicy: &ext.KubeletCPUManagerPolicy{
+					Policy: ext.KubeletCPUManagerPolicyNone,
+				},
 				sharePools: []ext.CPUSharedPool{
 					{
 						Socket: 0,
@@ -430,6 +467,9 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 			},
 			wantUpdated: true,
 			wantRule: &cpusetRule{
+				kubeletPolicy: ext.KubeletCPUManagerPolicy{
+					Policy: ext.KubeletCPUManagerPolicyNone,
+				},
 				sharePools: []ext.CPUSharedPool{
 					{
 						Socket: 0,
@@ -451,11 +491,16 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 			p := &cpusetPlugin{
 				rule: tt.fields.rule,
 			}
+			if tt.args.nodeTopo.Annotations == nil {
+				tt.args.nodeTopo.Annotations = map[string]string{}
+			}
+			if tt.args.cpuPolicy != nil {
+				cpuPolicyJson := util.DumpJSON(tt.args.cpuPolicy)
+				tt.args.nodeTopo.Annotations[ext.AnnotationKubeletCPUManagerPolicy] = cpuPolicyJson
+			}
 			if len(tt.args.sharePools) != 0 {
 				sharePoolJson := util.DumpJSON(tt.args.sharePools)
-				tt.args.nodeTopo.Annotations = map[string]string{
-					ext.AnnotationNodeCPUSharedPools: sharePoolJson,
-				}
+				tt.args.nodeTopo.Annotations[ext.AnnotationNodeCPUSharedPools] = sharePoolJson
 			}
 			got, err := p.parseRule(tt.args.nodeTopo)
 			if (err != nil) != tt.wantErr {
