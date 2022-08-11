@@ -492,7 +492,7 @@ func TestPreFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Plugin{lister: tt.fields.lister}
+			p := &Plugin{rLister: tt.fields.lister}
 			got := p.PreFilter(context.TODO(), tt.args.cycleState, tt.args.pod)
 			assert.Equal(t, tt.want, got)
 		})
@@ -740,8 +740,8 @@ func TestPostFilter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Plugin{
-				lister: tt.fields.lister,
-				client: tt.fields.client,
+				rLister: tt.fields.lister,
+				client:  tt.fields.client,
 			}
 			if tt.fields.lister != nil && tt.fields.client != nil {
 				tt.fields.client.lister = tt.fields.lister
@@ -971,6 +971,8 @@ func TestReserve(t *testing.T) {
 	cacheNotActive.AddToFailed(rScheduled)
 	cacheMatched := newReservationCache()
 	cacheMatched.AddToActive(rScheduled)
+	cacheAssumed := newReservationCache()
+	cacheAssumed.Assume(rScheduled.DeepCopy())
 	type args struct {
 		cycleState *framework.CycleState
 		pod        *corev1.Pod
@@ -1029,12 +1031,25 @@ func TestReserve(t *testing.T) {
 				pod:        normalPod,
 				nodeName:   testNodeName,
 			},
-			want: framework.NewStatus(framework.Error, ErrReasonReservationFailedToReserve),
+			want: framework.NewStatus(framework.Error, ErrReasonReservationNotMatchStale),
 		},
 		{
 			name: "reservation matched",
 			fields: fields{
 				reservationCache: cacheMatched,
+			},
+			args: args{
+				cycleState: stateForMatch,
+				pod:        normalPod,
+				nodeName:   testNodeName,
+			},
+			want:      nil,
+			wantField: rAllocated,
+		},
+		{
+			name: "reservation assumed",
+			fields: fields{
+				reservationCache: cacheAssumed,
 			},
 			args: args{
 				cycleState: stateForMatch,
@@ -1054,7 +1069,7 @@ func TestReserve(t *testing.T) {
 				pod:        normalPod1,
 				nodeName:   testNodeName,
 			},
-			want: framework.NewStatus(framework.Error, ErrReasonReservationFailedToReserve),
+			want: framework.NewStatus(framework.Error, ErrReasonReservationNotMatchStale),
 		},
 	}
 	for _, tt := range tests {
@@ -1108,6 +1123,7 @@ func TestUnreserve(t *testing.T) {
 	}
 	rAllocated := rScheduled.DeepCopy()
 	setReservationAllocated(rAllocated, normalPod)
+	rAllocated1 := rAllocated.DeepCopy()
 	stateSkip := framework.NewCycleState()
 	stateSkip.Write(preFilterStateKey, &stateData{
 		skip: true,
@@ -1120,10 +1136,18 @@ func TestUnreserve(t *testing.T) {
 	stateAssumed.Write(preFilterStateKey, &stateData{
 		assumed: rAllocated,
 	})
+	stateAssumedAndPreBind := framework.NewCycleState()
+	stateAssumedAndPreBind.Write(preFilterStateKey, &stateData{
+		assumed: rAllocated,
+		preBind: true,
+	})
+	stateAssumedAndPreBind1 := stateAssumedAndPreBind.Clone()
 	cacheNotActive := newReservationCache()
 	cacheNotActive.AddToFailed(rScheduled)
 	cacheMatched := newReservationCache()
 	cacheMatched.AddToActive(rScheduled)
+	cacheAssumed := newReservationCache()
+	cacheAssumed.Assume(rAllocated)
 	type args struct {
 		cycleState *framework.CycleState
 		pod        *corev1.Pod
@@ -1131,6 +1155,9 @@ func TestUnreserve(t *testing.T) {
 	}
 	type fields struct {
 		reservationCache *reservationCache
+		lister           *fakeReservationLister
+		client           *fakeReservationClient
+		handle           frameworkext.ExtendedHandle
 	}
 	tests := []struct {
 		name      string
@@ -1170,7 +1197,7 @@ func TestUnreserve(t *testing.T) {
 			},
 		},
 		{
-			name: "state clean allocated successfully",
+			name: "state clean reserve successfully",
 			fields: fields{
 				reservationCache: cacheMatched,
 			},
@@ -1180,10 +1207,54 @@ func TestUnreserve(t *testing.T) {
 				nodeName:   testNodeName,
 			},
 		},
+		{
+			name: "state clean prebind but owner not match",
+			fields: fields{
+				reservationCache: cacheAssumed,
+				lister: &fakeReservationLister{
+					reservations: map[string]*schedulingv1alpha1.Reservation{
+						rScheduled.Name: rScheduled,
+					},
+				},
+				client: &fakeReservationClient{},
+				handle: &fakeExtendedHandle{cs: kubefake.NewSimpleClientset(normalPod)},
+			},
+			args: args{
+				cycleState: stateAssumedAndPreBind,
+				pod:        normalPod,
+				nodeName:   testNodeName,
+			},
+		},
+		{
+			name: "state clean prebind successfully",
+			fields: fields{
+				reservationCache: cacheAssumed,
+				lister: &fakeReservationLister{
+					reservations: map[string]*schedulingv1alpha1.Reservation{
+						rAllocated1.Name: rAllocated1,
+					},
+				},
+				client: &fakeReservationClient{},
+				handle: &fakeExtendedHandle{cs: kubefake.NewSimpleClientset(normalPod)},
+			},
+			args: args{
+				cycleState: stateAssumedAndPreBind1,
+				pod:        normalPod,
+				nodeName:   testNodeName,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Plugin{reservationCache: tt.fields.reservationCache}
+			p := &Plugin{
+				reservationCache: tt.fields.reservationCache,
+				rLister:          tt.fields.lister,
+				client:           tt.fields.client,
+				handle:           tt.fields.handle,
+			}
+			if tt.fields.lister != nil && tt.fields.client != nil {
+				tt.fields.client.lister = tt.fields.lister
+			}
 			p.Unreserve(context.TODO(), tt.args.cycleState, tt.args.pod, tt.args.nodeName)
 			if tt.args.cycleState != nil {
 				state := getPreFilterState(tt.args.cycleState)
@@ -1245,15 +1316,18 @@ func TestPreBind(t *testing.T) {
 	stateAssumed.Write(preFilterStateKey, &stateData{
 		assumed: rAllocated,
 	})
+	cacheAssumed := newReservationCache()
+	cacheAssumed.Assume(rAllocated)
 	type args struct {
 		cycleState *framework.CycleState
 		pod        *corev1.Pod
 		nodeName   string
 	}
 	type fields struct {
-		lister *fakeReservationLister
-		client *fakeReservationClient
-		handle frameworkext.ExtendedHandle
+		reservationCache *reservationCache
+		lister           *fakeReservationLister
+		client           *fakeReservationClient
+		handle           frameworkext.ExtendedHandle
 	}
 	tests := []struct {
 		name   string
@@ -1341,6 +1415,7 @@ func TestPreBind(t *testing.T) {
 		{
 			name: "failed to patch pod",
 			fields: fields{
+				reservationCache: newReservationCache(),
 				lister: &fakeReservationLister{
 					reservations: map[string]*schedulingv1alpha1.Reservation{
 						rScheduled.Name: rScheduled,
@@ -1354,11 +1429,12 @@ func TestPreBind(t *testing.T) {
 				pod:        normalPod,
 				nodeName:   testNodeName,
 			},
-			want: framework.NewStatus(framework.Error, fmt.Sprintf("pods \"%s\" not found", normalPod.Name)),
+			want: nil,
 		},
 		{
 			name: "pre-bind pod successfully",
 			fields: fields{
+				reservationCache: cacheAssumed,
 				lister: &fakeReservationLister{
 					reservations: map[string]*schedulingv1alpha1.Reservation{
 						rScheduled.Name: rScheduled,
@@ -1378,9 +1454,10 @@ func TestPreBind(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Plugin{
-				lister: tt.fields.lister,
-				client: tt.fields.client,
-				handle: tt.fields.handle,
+				reservationCache: tt.fields.reservationCache,
+				rLister:          tt.fields.lister,
+				client:           tt.fields.client,
+				handle:           tt.fields.handle,
 			}
 			if tt.fields.lister != nil && tt.fields.client != nil {
 				tt.fields.client.lister = tt.fields.lister
@@ -1517,7 +1594,7 @@ func TestBind(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Plugin{
-				lister:           tt.fields.lister,
+				rLister:          tt.fields.lister,
 				client:           tt.fields.client,
 				reservationCache: newReservationCache(),
 			}
@@ -1526,6 +1603,184 @@ func TestBind(t *testing.T) {
 			}
 			got := p.Bind(context.TODO(), nil, tt.args.pod, tt.args.nodeName)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_handleOnAdd(t *testing.T) {
+	rScheduled := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-1",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-1",
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-1",
+					},
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			NodeName: "test-node-0",
+		},
+	}
+	rExpired := rScheduled.DeepCopy()
+	setReservationExpired(rExpired)
+	tests := []struct {
+		name  string
+		arg   interface{}
+		field *reservationCache
+	}{
+		{
+			name: "ignore invalid object",
+			arg:  &corev1.Pod{},
+		},
+		{
+			name:  "add active",
+			arg:   rScheduled,
+			field: newReservationCache(),
+		},
+		{
+			name:  "add expired",
+			arg:   rExpired,
+			field: newReservationCache(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Plugin{reservationCache: tt.field}
+			p.handleOnAdd(tt.arg)
+		})
+	}
+}
+
+func Test_handleOnUpdate(t *testing.T) {
+	rScheduled := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-1",
+			UID:  "1234",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-1",
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-1",
+					},
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			NodeName: "test-node-0",
+		},
+	}
+	rExpired := rScheduled.DeepCopy()
+	setReservationExpired(rExpired)
+	rScheduledDifferent := rScheduled.DeepCopy()
+	rScheduledDifferent.UID = "abcd"
+	tests := []struct {
+		name  string
+		arg   interface{}
+		arg1  interface{}
+		field *reservationCache
+	}{
+		{
+			name: "ignore invalid object",
+			arg:  &corev1.Pod{},
+		},
+		{
+			name: "ignore invalid object 1",
+			arg:  rScheduled,
+			arg1: &corev1.Pod{},
+		},
+		{
+			name:  "mark object into failed",
+			arg:   rScheduled,
+			arg1:  rExpired,
+			field: newReservationCache(),
+		},
+		{
+			name:  "mark object into failed",
+			arg:   rScheduled,
+			arg1:  rScheduledDifferent,
+			field: newReservationCache(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Plugin{reservationCache: tt.field}
+			p.handleOnUpdate(tt.arg, tt.arg1)
+		})
+	}
+}
+
+func Test_handleOnDelete(t *testing.T) {
+	rScheduled := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-1",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-1",
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-1",
+					},
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			NodeName: "test-node-0",
+		},
+	}
+	rExpired := rScheduled.DeepCopy()
+	setReservationExpired(rExpired)
+	tests := []struct {
+		name  string
+		arg   interface{}
+		field *reservationCache
+	}{
+		{
+			name: "ignore invalid object",
+			arg:  &corev1.Pod{},
+		},
+		{
+			name:  "delete expired",
+			arg:   rExpired,
+			field: newReservationCache(),
+		},
+		{
+			name: "delete DeletedFinalStateUnknown",
+			arg: cache.DeletedFinalStateUnknown{
+				Obj: rExpired,
+			},
+			field: newReservationCache(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Plugin{reservationCache: tt.field}
+			p.handleOnDelete(tt.arg)
 		})
 	}
 }

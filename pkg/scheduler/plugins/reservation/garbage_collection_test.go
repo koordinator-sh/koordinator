@@ -17,6 +17,7 @@ limitations under the License.
 package reservation
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -26,11 +27,31 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	listercorev1 "k8s.io/client-go/listers/core/v1"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	clientschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
+
+type fakePodLister struct {
+	listercorev1.PodNamespaceLister
+	pods   map[string]*corev1.Pod
+	getErr map[string]bool
+}
+
+func (f *fakePodLister) Pods(namespace string) listercorev1.PodNamespaceLister {
+	return f
+}
+
+func (f *fakePodLister) Get(name string) (*corev1.Pod, error) {
+	if f.getErr[name] {
+		return nil, fmt.Errorf("get err")
+	}
+	return f.pods[name], nil
+}
 
 func Test_gcReservations(t *testing.T) {
 	now := time.Now()
@@ -270,14 +291,14 @@ func Test_gcReservations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Plugin{
 				reservationCache: tt.fields.reservationCache,
-				lister:           tt.fields.lister,
+				rLister:          tt.fields.lister,
 				client:           tt.fields.client,
 			}
 			tt.fields.client.lister = tt.fields.lister
 
 			p.gcReservations()
 
-			gotExist, gotExpired, gotErr := testListExistAndExpired(p.lister)
+			gotExist, gotExpired, gotErr := testListExistAndExpired(p.rLister)
 			if tt.fields.listErr {
 				assert.Equal(t, true, gotErr != nil)
 				return
@@ -443,7 +464,7 @@ func Test_expireReservationOnNode(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Plugin{
 				reservationCache: tt.fields.reservationCache,
-				lister:           tt.fields.lister,
+				rLister:          tt.fields.lister,
 				client:           tt.fields.client,
 				informer:         tt.fields.informer,
 			}
@@ -451,7 +472,7 @@ func Test_expireReservationOnNode(t *testing.T) {
 
 			p.expireReservationOnNode(tt.arg)
 
-			gotExist, gotExpired, gotErr := testListExistAndExpired(p.lister)
+			gotExist, gotExpired, gotErr := testListExistAndExpired(p.rLister)
 			if tt.fields.listErr {
 				assert.Equal(t, true, gotErr != nil)
 				return
@@ -459,6 +480,101 @@ func Test_expireReservationOnNode(t *testing.T) {
 			assert.NoError(t, gotErr)
 			assert.Equal(t, tt.wantFields.exist, gotExist)
 			assert.Equal(t, tt.wantFields.expired, gotExpired)
+		})
+	}
+}
+
+func Test_syncActiveReservation(t *testing.T) {
+	normalPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod-1",
+		},
+	}
+	now := time.Now()
+	testNoOwner := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "r-active",
+			UID:  "0",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Expires: &metav1.Time{Time: now.Add(10 * time.Hour)},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:     schedulingv1alpha1.ReservationAvailable,
+			NodeName:  "node-0",
+			Allocated: util.NewZeroResourceList(),
+		},
+	}
+	testHasOwner := testNoOwner.DeepCopy()
+	setReservationAllocated(testHasOwner, normalPod)
+	testHasOwner1 := testHasOwner.DeepCopy()
+	testHasOwner2 := testHasOwner.DeepCopy()
+	type fields struct {
+		podLister listercorev1.PodLister
+		client    clientschedulingv1alpha1.SchedulingV1alpha1Interface
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		arg    *schedulingv1alpha1.Reservation
+	}{
+		{
+			name: "no owners to re-sync",
+			arg:  testNoOwner,
+		},
+		{
+			name: "does not change for correct owner",
+			fields: fields{
+				podLister: &fakePodLister{
+					pods: map[string]*corev1.Pod{
+						normalPod.Name: normalPod,
+					},
+				},
+			},
+			arg: testHasOwner,
+		},
+		{
+			name: "fix for owner cannot get",
+			fields: fields{
+				podLister: &fakePodLister{
+					getErr: map[string]bool{
+						normalPod.Name: true,
+					},
+				},
+				client: &fakeReservationClient{
+					lister: &fakeReservationLister{
+						reservations: map[string]*schedulingv1alpha1.Reservation{
+							testHasOwner1.Name: testHasOwner1,
+						},
+					},
+				},
+			},
+			arg: testHasOwner1,
+		},
+		{
+			name: "fix for owner but failed to update status",
+			fields: fields{
+				podLister: &fakePodLister{
+					getErr: map[string]bool{
+						normalPod.Name: true,
+					},
+				},
+				client: &fakeReservationClient{
+					updateStatusErr: map[string]bool{
+						testHasOwner2.Name: true,
+					},
+				},
+			},
+			arg: testHasOwner2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Plugin{
+				podLister: tt.fields.podLister,
+				client:    tt.fields.client,
+			}
+			p.syncActiveReservation(tt.arg)
 		})
 	}
 }
@@ -497,6 +613,20 @@ func Test_syncPodDeleted(t *testing.T) {
 			UID:  "aaabbbccc",
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
 			Expires: &metav1.Time{Time: now.Add(10 * time.Hour)},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
@@ -515,25 +645,24 @@ func Test_syncPodDeleted(t *testing.T) {
 			},
 		},
 	}
-	testReservationFailed := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-reserve-0",
-		},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Expires: &metav1.Time{Time: now.Add(10 * time.Hour)},
-		},
-		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReservationFailed,
-			NodeName: "test-node-0",
-		},
-	}
+	testReservationFailed := testReservation.DeepCopy()
+	testReservationFailed.Status.Phase = schedulingv1alpha1.ReservationFailed
 	testReservationDifferent := testReservation.DeepCopy()
 	testReservationDifferent.UID = "xxxyyyzzz"
 	testReservationNotMatched := testReservation.DeepCopy()
 	testReservationNotMatched.Status.CurrentOwners = nil
+	testCacheHasOwner := newReservationCache()
+	testCacheHasOwner.AddToActive(testReservation)
+	testCacheFailed := newReservationCache()
+	testCacheFailed.AddToActive(testReservationFailed)
+	testCacheOwnerDifferent := newReservationCache()
+	testCacheOwnerDifferent.AddToActive(testReservationDifferent)
+	testCacheOwnerNotMatched := newReservationCache()
+	testCacheOwnerNotMatched.AddToActive(testReservationNotMatched)
 	type fields struct {
-		lister *fakeReservationLister
-		client *fakeReservationClient
+		reservationCache *reservationCache
+		lister           *fakeReservationLister
+		client           *fakeReservationClient
 	}
 	tests := []struct {
 		name   string
@@ -542,16 +671,13 @@ func Test_syncPodDeleted(t *testing.T) {
 	}{
 		{
 			name: "not allocate reservation",
-			arg:  &corev1.Pod{},
-		},
-		{
-			name: "invalid allocate info",
+			fields: fields{
+				reservationCache: newReservationCache(),
+			},
 			arg: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-pod-0",
-					Annotations: map[string]string{
-						apiext.AnnotationReservationAllocated: "invalid info",
-					},
+					UID:  "5678",
 				},
 			},
 		},
@@ -559,6 +685,7 @@ func Test_syncPodDeleted(t *testing.T) {
 			name: "failed to get reservation",
 			arg:  testPod,
 			fields: fields{
+				reservationCache: testCacheHasOwner,
 				lister: &fakeReservationLister{
 					getErr: map[string]bool{
 						testReservation.Name: true,
@@ -570,6 +697,7 @@ func Test_syncPodDeleted(t *testing.T) {
 			name: "failed to update status",
 			arg:  testPod,
 			fields: fields{
+				reservationCache: testCacheHasOwner,
 				lister: &fakeReservationLister{
 					reservations: map[string]*schedulingv1alpha1.Reservation{
 						testReservation.Name: testReservation,
@@ -586,6 +714,7 @@ func Test_syncPodDeleted(t *testing.T) {
 			name: "skip for failed reservation",
 			arg:  testPod,
 			fields: fields{
+				reservationCache: testCacheFailed,
 				lister: &fakeReservationLister{
 					reservations: map[string]*schedulingv1alpha1.Reservation{
 						testReservationFailed.Name: testReservationFailed,
@@ -597,6 +726,7 @@ func Test_syncPodDeleted(t *testing.T) {
 			name: "sync successfully",
 			arg:  testPod,
 			fields: fields{
+				reservationCache: testCacheHasOwner,
 				lister: &fakeReservationLister{
 					reservations: map[string]*schedulingv1alpha1.Reservation{
 						testReservation.Name: testReservation,
@@ -609,6 +739,7 @@ func Test_syncPodDeleted(t *testing.T) {
 			name: "get different versions of the reservation",
 			arg:  testPod,
 			fields: fields{
+				reservationCache: testCacheOwnerDifferent,
 				lister: &fakeReservationLister{
 					reservations: map[string]*schedulingv1alpha1.Reservation{
 						testReservationDifferent.Name: testReservationDifferent,
@@ -621,6 +752,7 @@ func Test_syncPodDeleted(t *testing.T) {
 			name: "current owner not match",
 			arg:  testPod,
 			fields: fields{
+				reservationCache: testCacheOwnerNotMatched,
 				lister: &fakeReservationLister{
 					reservations: map[string]*schedulingv1alpha1.Reservation{
 						testReservationNotMatched.Name: testReservationNotMatched,
@@ -633,8 +765,9 @@ func Test_syncPodDeleted(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Plugin{
-				lister: tt.fields.lister,
-				client: tt.fields.client,
+				reservationCache: tt.fields.reservationCache,
+				rLister:          tt.fields.lister,
+				client:           tt.fields.client,
 			}
 			if tt.fields.lister != nil && tt.fields.client != nil {
 				tt.fields.client.lister = tt.fields.lister
