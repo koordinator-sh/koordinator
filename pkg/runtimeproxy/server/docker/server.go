@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"regexp"
 
@@ -36,6 +35,7 @@ import (
 	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/types"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
+	"github.com/koordinator-sh/koordinator/pkg/util/httputil"
 )
 
 type RuntimeManagerDockerServer struct {
@@ -156,7 +156,6 @@ func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) er
 		if podCheckPoint != nil {
 			cInfo.ContainerResourceHookRequest.PodMeta = podCheckPoint.PodMeta
 			cInfo.ContainerResourceHookRequest.PodResources = podCheckPoint.Resources
-			continue
 		}
 		store.WriteContainerInfo(c.ID, cInfo)
 	}
