@@ -15,6 +15,7 @@ free to get in touch.
 | Organization                           | Contact                              | Maturity | Description of Use                                                                                                                                                       |
 | -------------------------------------- | ------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [XiaoHongShu](https://xiaohongshu.com) | [@cheimu](https://github.com/cheimu) | Stable   | Heavily use Koordinator as base building block and inspiration in production for online/offline colocation, including qos-ensurance and fine-grained CPU/GPU scheduling. |
+| [iQIYI](https://www.iqiyi.com/) | [@Herbert](https://github.com/wangxiaoq) [@sunwuhao](mailTo:sunwuhao001@hotmail.com) | Alpha   | Use koordinator in some pilot projects for online/offline colocation. |
 
 ## Process
 
