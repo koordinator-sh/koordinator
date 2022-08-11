@@ -29,8 +29,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/configfiles"
+	utilfs "k8s.io/kubernetes/pkg/util/filesystem"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
@@ -156,15 +159,42 @@ func (s *statesInformer) reportNodeTopology() {
 	if err != nil {
 		return
 	}
-	// TODO: support https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/
+
+	// default policy is none
+	cpuManagerPolicy := extension.KubeletCPUManagerPolicy{
+		Policy: "none",
+	}
+
+	filePath, err := system.GuessConfigFilePathFromKubelet()
+	if err != nil {
+		klog.Error("failed to read config file path from kubelet args")
+	}
+	if filePath != "" {
+		kubeletConfig, err := loadConfigFile(filePath)
+		if err != nil {
+			klog.Errorf("failed to load kubelet config, err: %v", err)
+		} else {
+			if len(kubeletConfig.CPUManagerPolicyOptions) != 0 {
+				cpuManagerPolicy.Options = kubeletConfig.CPUManagerPolicyOptions
+			}
+			if kubeletConfig.CPUManagerPolicy != "" {
+				cpuManagerPolicy.Policy = kubeletConfig.CPUManagerPolicy
+			}
+		}
+	}
+
 	cpuPolicy, stateFilePath, cpuManagerOpt, err := system.GuessCPUManagerOptFromKubelet()
 	if err != nil {
 		klog.Errorf("failed to guess kubelet cpu manager opt, err: %v", err)
 	}
-	cpuManagerPolicy := extension.KubeletCPUManagerPolicy{
-		Policy:  cpuPolicy,
-		Options: cpuManagerOpt,
+	// use args first
+	if cpuPolicy != "" {
+		cpuManagerPolicy.Policy = cpuPolicy
 	}
+	if len(cpuManagerOpt) != 0 {
+		cpuManagerPolicy.Options = cpuManagerOpt
+	}
+
 	cpuManagerPolicyJson, err := json.Marshal(cpuManagerPolicy)
 	if err != nil {
 		klog.Errorf("failed to marshal cpu manager policy, err: %v", err)
@@ -310,4 +340,17 @@ func (s *statesInformer) getNodeTopo() *v1alpha1.NodeResourceTopology {
 	s.nodeTopoMutex.RLock()
 	defer s.nodeTopoMutex.RUnlock()
 	return s.nodeTopology.DeepCopy()
+}
+
+func loadConfigFile(kubeletConfigFile string) (*kubeletconfig.KubeletConfiguration, error) {
+	const errFmt = "failed to load Kubelet config file %s, error %v"
+	loader, err := configfiles.NewFsLoader(&utilfs.DefaultFs{}, kubeletConfigFile)
+	if err != nil {
+		return nil, fmt.Errorf(errFmt, kubeletConfigFile, err)
+	}
+	kc, err := loader.Load()
+	if err != nil {
+		return nil, fmt.Errorf(errFmt, kubeletConfigFile, err)
+	}
+	return kc, err
 }

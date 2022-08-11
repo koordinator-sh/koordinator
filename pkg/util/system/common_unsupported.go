@@ -38,3 +38,7 @@ var ExecCmdOnHost = execCmdOnHostFn
 func execCmdOnHostFn(cmds []string) ([]byte, int, error) {
 	return nil, -1, fmt.Errorf("only support linux")
 }
+
+func WorkingDirOf(pid int) (string, error) {
+	return "", fmt.Errorf("only support linux")
+}

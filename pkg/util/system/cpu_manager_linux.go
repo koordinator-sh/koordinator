@@ -22,6 +22,7 @@ package system
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 
 	"github.com/spf13/pflag"
 	cliflag "k8s.io/component-base/cli/flag"
@@ -45,10 +46,46 @@ func GuessCPUManagerOptFromKubelet() (string, string, map[string]string, error) 
 	fs := pflag.NewFlagSet("GuessTest", pflag.ContinueOnError)
 	fs.ParseErrorsWhitelist.UnknownFlags = true
 	fs.StringVar(&argsRootDir, "root-dir", "/var/lib/kubelet", "")
-	fs.StringVar(&argsCpuPolicy, "cpu-manager-policy", "none", "")
+	fs.StringVar(&argsCpuPolicy, "cpu-manager-policy", "", "")
 	fs.Var(cliflag.NewMapStringStringNoSplit(&argsCpuManagerOpt), "cpu-manager-policy-options", "")
 	if err := fs.Parse(kubeletArgs[1:]); err != nil {
 		return "", "", nil, fmt.Errorf("failed to parse kubelet's args, kubelet version may not support: %v", err)
 	}
 	return argsCpuPolicy, path.Join(argsRootDir, "cpu_manager_state"), argsCpuManagerOpt, nil
+}
+
+// return kubelet config file path
+func GuessConfigFilePathFromKubelet() (string, error) {
+	pids, err := PidOf(Conf.ProcRootDir, "kubelet")
+	if err != nil || len(pids) == 0 {
+		return "", fmt.Errorf("failed to find kubelet's pid, kubelet may stop: %v", err)
+	}
+	kubeletPid := pids[0]
+
+	kubeletArgs, err := ProcCmdLine(Conf.ProcRootDir, kubeletPid)
+	if err != nil || len(kubeletArgs) <= 1 {
+		return "", fmt.Errorf("failed to get kubelet's args: %v", err)
+	}
+	var argsFilePath string
+	fs := pflag.NewFlagSet("GuessTest", pflag.ContinueOnError)
+	fs.ParseErrorsWhitelist.UnknownFlags = true
+	fs.StringVar(&argsFilePath, "config", argsFilePath, "")
+	if err := fs.Parse(kubeletArgs[1:]); err != nil {
+		return "", fmt.Errorf("failed to parse kubelet's args, kubelet version may not support: %v", err)
+	}
+	if argsFilePath == "" {
+		return "", nil
+	}
+	if FileExists(argsFilePath) {
+		return argsFilePath, nil
+	}
+	wd, err := WorkingDirOf(kubeletPid)
+	if err != nil {
+		return "", err
+	}
+	absPath := filepath.Join(wd, argsFilePath)
+	if FileExists(absPath) {
+		return absPath, nil
+	}
+	return "", fmt.Errorf("failed to get kubelet config file")
 }

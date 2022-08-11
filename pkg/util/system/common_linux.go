@@ -151,3 +151,16 @@ func execCmdOnHostFn(cmds []string) ([]byte, int, error) {
 		return out, 0, nil
 	}
 }
+
+// return working dir of process
+func WorkingDirOf(pid int) (string, error) {
+	var errB bytes.Buffer
+	command := exec.Command("pwdx", fmt.Sprintf("%d", pid))
+	command.Stderr = &errB
+	if out, err := command.Output(); err != nil {
+		return "", fmt.Errorf("pwdx command('%d') failed: %v, stderr: %s", pid, err, errB.String())
+	} else {
+		tokens := strings.Split(string(out), ":")
+		return strings.TrimSpace(tokens[1]), nil
+	}
+}
