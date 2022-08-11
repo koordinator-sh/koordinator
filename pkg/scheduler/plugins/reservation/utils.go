@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/klog/v2"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,6 +36,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -134,7 +137,7 @@ func setReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string)
 
 	requests := getReservationRequests(r)
 	r.Status.Allocatable = requests
-	r.Status.Allocated = nil
+	r.Status.Allocated = util.NewZeroResourceList()
 
 	// initialize the conditions
 	r.Status.Conditions = []schedulingv1alpha1.ReservationCondition{
@@ -263,10 +266,11 @@ func removeReservationAllocated(r *schedulingv1alpha1.Reservation, pod *corev1.P
 
 	// decrease resources allocated
 	requests, _ := resourceapi.PodRequestsAndLimits(pod)
-	if r.Status.Allocated == nil {
-		return fmt.Errorf("current allocated is nil")
+	if r.Status.Allocated != nil {
+		r.Status.Allocated = quotav1.Subtract(r.Status.Allocated, requests)
+	} else {
+		klog.V(5).InfoS("failed to remove pod from reservation allocated, err: allocated is nil")
 	}
-	r.Status.Allocated = quotav1.Subtract(r.Status.Allocated, requests)
 	return nil
 }
 
@@ -392,13 +396,15 @@ func matchLabelSelector(pod *corev1.Pod, labelSelector *metav1.LabelSelector) bo
 
 func getPodOwner(pod *corev1.Pod) corev1.ObjectReference {
 	return corev1.ObjectReference{
-		Kind:       pod.Kind,
-		APIVersion: pod.APIVersion,
-		Namespace:  pod.Namespace,
-		Name:       pod.Name,
-		UID:        pod.UID,
-		// currently `ResourceVersion`, `FieldPath` are ignored
+		Namespace: pod.Namespace,
+		Name:      pod.Name,
+		UID:       pod.UID,
+		// currently `Kind`, `APIVersion`m `ResourceVersion`, `FieldPath` are ignored
 	}
+}
+
+func getOwnerKey(owner *corev1.ObjectReference) string {
+	return string(owner.UID)
 }
 
 func retryOnConflictOrTooManyRequests(fn func() error) error {
