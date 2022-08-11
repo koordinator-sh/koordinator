@@ -5,6 +5,10 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+    paths-ignore:
+     - '**/*.md'
+     - 'apis/**'
+     - 'pkg/client/**'
   schedule:
     - cron: '30 16 * * 0'
 
