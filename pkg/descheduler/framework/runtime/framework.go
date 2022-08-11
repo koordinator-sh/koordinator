@@ -115,9 +115,6 @@ func NewFramework(r Registry, profile *deschedulerconfig.DeschedulerProfile, opt
 		getPodsAssignedToNodeFunc: options.getPodsAssignedToNodeFunc,
 	}
 
-	// get needed plugins from config
-	pg := f.pluginsNeeded(profile.Plugins)
-
 	pluginConfig := make(map[string]runtime.Object, len(profile.PluginConfig))
 	for i := range profile.PluginConfig {
 		name := profile.PluginConfig[i].Name
@@ -127,46 +124,34 @@ func NewFramework(r Registry, profile *deschedulerconfig.DeschedulerProfile, opt
 		pluginConfig[name] = profile.PluginConfig[i].Args
 	}
 	outputProfile := deschedulerconfig.DeschedulerProfile{
-		Name:         profile.Name,
-		Plugins:      profile.Plugins,
-		PluginConfig: make([]deschedulerconfig.PluginConfig, 0, len(pg)),
+		Name:    profile.Name,
+		Plugins: profile.Plugins,
 	}
 
 	pluginsMap := make(map[string]framework.Plugin)
-	for name, factory := range r {
-		// initialize only needed plugins.
-		if !pg.Has(name) {
-			continue
-		}
 
-		args := pluginConfig[name]
-		if args != nil {
-			outputProfile.PluginConfig = append(outputProfile.PluginConfig, deschedulerconfig.PluginConfig{
-				Name: name,
-				Args: args,
-			})
-		}
-		p, err := factory(args, f)
-		if err != nil {
-			return nil, fmt.Errorf("initializing plugin %q: %w", name, err)
-		}
-		pluginsMap[name] = p
-	}
-
-	// initialize plugins per individual extension points
-	for _, e := range f.getExtensionPoints(profile.Plugins) {
-		if err := updatePluginList(e.slicePtr, *e.plugins, pluginsMap); err != nil {
-			return nil, err
-		}
+	// Other plugins may depend on the evictor plugin, so we should initialize the evictor plugin first.
+	evictorExtensionPoint := f.getEvictorExtensionPoint(profile.Plugins)
+	outputPluginConfig, err := f.initPlugins(r, pluginConfig, evictorExtensionPoint, pluginsMap)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(f.evictorPlugins) == 0 {
 		return nil, fmt.Errorf("no evict plugin is enabled")
 	}
-
 	if len(f.evictorPlugins) > 1 {
 		return nil, fmt.Errorf("only one evict plugin can be enabled")
 	}
+
+	outputProfile.PluginConfig = append(outputProfile.PluginConfig, outputPluginConfig...)
+
+	otherExtensionPoints := f.getOtherExtensionPoints(profile.Plugins)
+	outputPluginConfig, err = f.initPlugins(r, pluginConfig, otherExtensionPoints, pluginsMap)
+	if err != nil {
+		return nil, err
+	}
+	outputProfile.PluginConfig = append(outputProfile.PluginConfig, outputPluginConfig...)
 
 	if options.captureProfile != nil {
 		if len(outputProfile.PluginConfig) != 0 {
@@ -180,6 +165,46 @@ func NewFramework(r Registry, profile *deschedulerconfig.DeschedulerProfile, opt
 	}
 
 	return f, nil
+}
+
+func (f *frameworkImpl) initPlugins(r Registry, pluginConfig map[string]runtime.Object, extensionPoints []extensionPoint, pluginsMap map[string]framework.Plugin) ([]deschedulerconfig.PluginConfig, error) {
+	pg := sets.NewString()
+	pluginsNeeded(pg, extensionPoints)
+
+	var outputPluginConfig []deschedulerconfig.PluginConfig
+	for name, factory := range r {
+		// initialize only needed plugins.
+		if !pg.Has(name) {
+			continue
+		}
+
+		// initialize plugins that have not yet been created
+		if _, ok := pluginsMap[name]; ok {
+			continue
+		}
+
+		args := pluginConfig[name]
+		if args != nil {
+			outputPluginConfig = append(outputPluginConfig, deschedulerconfig.PluginConfig{
+				Name: name,
+				Args: args,
+			})
+		}
+		p, err := factory(args, f)
+		if err != nil {
+			return nil, fmt.Errorf("initializing plugin %q: %w", name, err)
+		}
+		pluginsMap[name] = p
+	}
+
+	// initialize plugins per individual extension points
+	for _, e := range extensionPoints {
+		if err := updatePluginList(e.slicePtr, *e.plugins, pluginsMap); err != nil {
+			return nil, err
+		}
+	}
+
+	return outputPluginConfig, nil
 }
 
 func updatePluginList(pluginList interface{}, pluginSet deschedulerconfig.PluginSet, pluginsMap map[string]framework.Plugin) error {
@@ -219,32 +244,33 @@ type extensionPoint struct {
 	slicePtr interface{}
 }
 
-func (f *frameworkImpl) getExtensionPoints(plugins *deschedulerconfig.Plugins) []extensionPoint {
+func (f *frameworkImpl) getEvictorExtensionPoint(plugins *deschedulerconfig.Plugins) []extensionPoint {
+	if plugins == nil {
+		return []extensionPoint{}
+	}
+
 	return []extensionPoint{
-		{&plugins.Deschedule, &f.deschedulePlugins},
-		{&plugins.Balance, &f.balancePlugins},
 		{&plugins.Evictor, &f.evictorPlugins},
 	}
 }
 
-func (f *frameworkImpl) pluginsNeeded(plugins *deschedulerconfig.Plugins) sets.String {
-	pgSet := sets.String{}
-
+func (f *frameworkImpl) getOtherExtensionPoints(plugins *deschedulerconfig.Plugins) []extensionPoint {
 	if plugins == nil {
-		return pgSet
+		return []extensionPoint{}
 	}
 
-	find := func(pgs *deschedulerconfig.PluginSet) {
-		for _, pg := range pgs.Enabled {
+	return []extensionPoint{
+		{&plugins.Deschedule, &f.deschedulePlugins},
+		{&plugins.Balance, &f.balancePlugins},
+	}
+}
+
+func pluginsNeeded(pgSet sets.String, points []extensionPoint) {
+	for _, e := range points {
+		for _, pg := range e.plugins.Enabled {
 			pgSet.Insert(pg.Name)
 		}
 	}
-
-	for _, e := range f.getExtensionPoints(plugins) {
-		find(e.plugins)
-	}
-
-	return pgSet
 }
 
 func (f *frameworkImpl) ClientSet() clientset.Interface {
