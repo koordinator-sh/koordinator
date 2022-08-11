@@ -43,15 +43,14 @@ as the namespace of koordiantor extended resources.
 ## Proposal
 
 ### User Stories
-Co-located pods request resources as the following format to achieve better readability (instead of milli-cores for cpu)
-and resource overcommitment (request < limit). 
+Co-located pods request resources as the following format to achieve resource overcommitment (request < limit). 
 ```yaml
 resources:
   requests:
-    kubernetes.io/batch-cpu: 1.5 # 1.5 core
+    kubernetes.io/batch-cpu: 1500 # 1.5 core
     kubernetes.io/batch-memory: 1Gi
   limites:
-    kubernetes.io/batch-cpu: 3 # 3 core
+    kubernetes.io/batch-cpu: 3000 # 3 core
     kubernetes.io/batch-memory: 2Gi    
 ```
 
@@ -70,15 +69,20 @@ Here are the pros and cons for alternative plans.
 
 | Alternative | Pros | Cons |
 | --------------- | ---- | ---- |
-| annotations["batch-cpu"] | resource overcommitment; better expression (cpu=1.5cores); | incompatible with k8s scheduler |
-| extended resource `koordinator.sh/batch-cpu` |  compatible with k8s scheduler | resource overcommitment is not allowed; bad expression (cpu=1500 milli-cores) | 
-| setting requests as extended resource `koordinator.sh/batch-cpu` and limits in pod annotations | barely works with ugly design | bad expression (cpu=1500 milli-cores); confusing using habits |
+| annotations["batch-cpu"] | resource overcommitment; | incompatible with k8s scheduler |
+| extended resource `koordinator.sh/batch-cpu` |  compatible with k8s scheduler | resource overcommitment is not allowed; | 
+| setting requests as extended resource `koordinator.sh/batch-cpu` and limits in pod annotations | barely works with ugly design | bad expression ; confusing using habits |
 
 ## Unsolved Problems
 1. [Remove the constrains for extended resources in api-server.](https://github.com/kubernetes/kubernetes/pull/110536)
 2. Extended resources with old formats (koordinator.sh) on node needs to be removed manually.
 3. Old format of extended resource will be marked as `deprecated`, koordinator will not support in next few versions.
 So please update the pod with old format as soon as possible.
+4. Although new pods will be injected with new formats of extended resource, there may be some unscheduled pods with 
+old formats of extended resource. If all nodes with old format happen to run out, these pods needs to be deleted manually
+for resubmissions.
 
 ## Implementation History
 - 2022-07-07: Initialize proposal for review
+- 2022-08-10: Fix the explanation that batch-cpu still need to be filled as milli-core, since the `scheduler` and `kubelet`
+will round down by `Value()` for extended-resource

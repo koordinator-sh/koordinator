@@ -193,10 +193,10 @@ func mockBEPod() *corev1.Pod {
 					Name: "test-container-1",
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
-							apiext.BatchCPU: *resource.NewMilliQuantity(500, resource.DecimalSI),
+							apiext.BatchCPU: *resource.NewQuantity(500, resource.DecimalSI),
 						},
 						Requests: corev1.ResourceList{
-							apiext.BatchCPU: *resource.NewMilliQuantity(500, resource.DecimalSI),
+							apiext.BatchCPU: *resource.NewQuantity(500, resource.DecimalSI),
 						},
 					},
 				},
@@ -204,10 +204,10 @@ func mockBEPod() *corev1.Pod {
 					Name: "test-container-2",
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
-							apiext.BatchCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
+							apiext.BatchCPU: *resource.NewQuantity(1000, resource.DecimalSI),
 						},
 						Requests: corev1.ResourceList{
-							apiext.BatchCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
+							apiext.BatchCPU: *resource.NewQuantity(1000, resource.DecimalSI),
 						},
 					},
 				},

@@ -465,10 +465,10 @@ func Test_GetPodBEMilliCPURequest(t *testing.T) {
 						{
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									apiext.BatchCPU: resource.MustParse("2"),
+									apiext.BatchCPU: resource.MustParse("2000"),
 								},
 								Limits: corev1.ResourceList{
-									apiext.BatchCPU: resource.MustParse("4"),
+									apiext.BatchCPU: resource.MustParse("4000"),
 								},
 							},
 						},
@@ -486,20 +486,20 @@ func Test_GetPodBEMilliCPURequest(t *testing.T) {
 						{
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									apiext.BatchCPU: resource.MustParse("4"),
+									apiext.BatchCPU: resource.MustParse("4000"),
 								},
 								Limits: corev1.ResourceList{
-									apiext.BatchCPU: resource.MustParse("4"),
+									apiext.BatchCPU: resource.MustParse("4000"),
 								},
 							},
 						},
 						{
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									apiext.BatchCPU: resource.MustParse("2"),
+									apiext.BatchCPU: resource.MustParse("2000"),
 								},
 								Limits: corev1.ResourceList{
-									apiext.BatchCPU: resource.MustParse("4"),
+									apiext.BatchCPU: resource.MustParse("4000"),
 								},
 							},
 						},

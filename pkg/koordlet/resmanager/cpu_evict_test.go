@@ -404,10 +404,10 @@ func mockBEPodForCPUEvict(name string, request int64, priority int32) *corev1.Po
 					Name: fmt.Sprintf("%s_%s", name, "main"),
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
-							apiext.BatchCPU: *resource.NewMilliQuantity(request, resource.DecimalSI),
+							apiext.BatchCPU: *resource.NewQuantity(request, resource.DecimalSI),
 						},
 						Requests: corev1.ResourceList{
-							apiext.BatchCPU: *resource.NewMilliQuantity(request, resource.DecimalSI),
+							apiext.BatchCPU: *resource.NewQuantity(request, resource.DecimalSI),
 						},
 					},
 				},

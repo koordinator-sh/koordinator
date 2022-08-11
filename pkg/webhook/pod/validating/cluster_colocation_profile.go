@@ -144,7 +144,7 @@ func validateResources(pod *corev1.Pod) field.ErrorList {
 	case extension.QoSBE:
 		resourceValidator = resourceValidator.
 			ExpectRequestLessThanLimit(extension.BatchCPU, true, true, true).
-			ExpectRequestLimitMustEqual(extension.BatchMemory).
+			ExpectRequestLessThanLimit(extension.BatchMemory, true, true, true).
 			ExpectPositive()
 	}
 	return resourceValidator.Validate()

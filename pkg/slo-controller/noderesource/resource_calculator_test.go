@@ -119,8 +119,8 @@ func Test_calculateBEResource(t *testing.T) {
 				},
 			},
 			want: &nodeBEResource{
-				CPU:    resource.NewQuantity(0, resource.DecimalSI),
-				Memory: resource.NewScaledQuantity(6, 9),
+				MilliCPU: resource.NewQuantity(0, resource.DecimalSI),
+				Memory:   resource.NewScaledQuantity(6, 9),
 				Message: "nodeAllocatableBE[CPU(Milli-Core)]:0 = nodeAllocatable:20000 - nodeReservation:7000 - systemUsage:0 - podLSUsed:20000\n" +
 					" nodeAllocatableBE[Mem(GB)]:6 = nodeAllocatable:40 - nodeReservation:14 - systemUsage:0 - podLSUsed:20\n",
 			},
@@ -304,8 +304,8 @@ func Test_calculateBEResource(t *testing.T) {
 				},
 			},
 			want: &nodeBEResource{
-				CPU:    resource.NewQuantity(25, resource.DecimalSI),
-				Memory: resource.NewScaledQuantity(33, 9),
+				MilliCPU: resource.NewQuantity(25000, resource.DecimalSI),
+				Memory:   resource.NewScaledQuantity(33, 9),
 				Message: "nodeAllocatableBE[CPU(Milli-Core)]:25000 = nodeAllocatable:100000 - nodeReservation:35000 - systemUsage:7000 - podLSUsed:33000\n" +
 					" nodeAllocatableBE[Mem(GB)]:33 = nodeAllocatable:120 - nodeReservation:42 - systemUsage:12 - podLSUsed:33\n",
 			},
@@ -492,8 +492,8 @@ func Test_calculateBEResource(t *testing.T) {
 				},
 			},
 			want: &nodeBEResource{
-				CPU:    resource.NewQuantity(30, resource.DecimalSI),
-				Memory: resource.NewScaledQuantity(39, 9),
+				MilliCPU: resource.NewQuantity(30000, resource.DecimalSI),
+				Memory:   resource.NewScaledQuantity(39, 9),
 				Message: "nodeAllocatableBE[CPU(Milli-Core)]:30000 = nodeAllocatable:100000 - nodeReservation:30000 - systemUsage:7000 - podLSUsed:33000\n" +
 					" nodeAllocatableBE[Mem(GB)]:39 = nodeAllocatable:120 - nodeReservation:36 - systemUsage:12 - podLSUsed:33\n",
 			},
@@ -538,9 +538,9 @@ func Test_calculateBEResource(t *testing.T) {
 				},
 			}}
 			got := r.calculateBEResource(tt.args.node, tt.args.podList, tt.args.nodeMetric)
-			if !got.CPU.Equal(*tt.want.CPU) {
+			if !got.MilliCPU.Equal(*tt.want.MilliCPU) {
 				t.Errorf("calculateBEResource() should get correct cpu resource, want %v, got %v",
-					tt.want.CPU, got.CPU)
+					tt.want.MilliCPU, got.MilliCPU)
 			}
 			if !got.Memory.Equal(*tt.want.Memory) {
 				t.Errorf("calculateBEResource() should get correct memory resource, want %v, got %v",

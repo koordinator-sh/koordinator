@@ -697,7 +697,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-cpu: Required value: limit of container test-container-a does not have resource kubernetes.io/batch-cpu, pod.spec.containers.test-container-a.resources: Forbidden: container test-container-a: resource kubernetes.io/batch-cpu quantity should satisify request <= limit, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-memory: Not found: "null", pod.spec.containers.test-container-a.resources: Forbidden: resource kubernetes.io/batch-memory of container test-container-a: quantity of request and limit must be equal]`,
+			wantReason:  `[pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-cpu: Required value: limit of container test-container-a does not have resource kubernetes.io/batch-cpu, pod.spec.containers.test-container-a.resources: Forbidden: container test-container-a: resource kubernetes.io/batch-cpu quantity should satisify request <= limit, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-memory: Required value: limit of container test-container-a does not have resource kubernetes.io/batch-memory, pod.spec.containers.test-container-a.resources: Forbidden: container test-container-a: resource kubernetes.io/batch-memory quantity should satisify request <= limit]`,
 		},
 		{
 			name:      "forbidden resources - BE And Batch: limits has cpu/memory and missing requests",
@@ -725,7 +725,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-cpu: Required value: request of container test-container-a does not have resource kubernetes.io/batch-cpu, pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Not found: "null", pod.spec.containers.test-container-a.resources: Forbidden: resource kubernetes.io/batch-memory of container test-container-a: quantity of request and limit must be equal]`,
+			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-cpu: Required value: request of container test-container-a does not have resource kubernetes.io/batch-cpu, pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Required value: request of container test-container-a does not have resource kubernetes.io/batch-memory]`,
 		},
 		{
 			name:      "validate resources - BE And Batch: request memory must equal limits and cpu less than limits",
