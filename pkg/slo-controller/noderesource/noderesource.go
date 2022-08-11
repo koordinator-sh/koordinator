@@ -38,8 +38,8 @@ import (
 type nodeBEResource struct {
 	IsColocationAvailable bool
 
-	CPU    *resource.Quantity
-	Memory *resource.Quantity
+	MilliCPU *resource.Quantity
+	Memory   *resource.Quantity
 
 	Reason  string
 	Message string
@@ -107,7 +107,7 @@ func (r *NodeResourceReconciler) isDegradeNeeded(nodeMetric *slov1alpha1.NodeMet
 func (r *NodeResourceReconciler) resetNodeBEResource(node *corev1.Node, reason, message string) error {
 	beResource := &nodeBEResource{
 		IsColocationAvailable: false,
-		CPU:                   nil,
+		MilliCPU:              nil,
 		Memory:                nil,
 		Reason:                reason,
 		Message:               message,
@@ -118,12 +118,18 @@ func (r *NodeResourceReconciler) resetNodeBEResource(node *corev1.Node, reason, 
 func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResource *nodeBEResource) error {
 	copyNode := node.DeepCopy()
 
-	if beResource.CPU == nil {
+	if beResource.MilliCPU == nil {
 		delete(copyNode.Status.Capacity, extension.BatchCPU)
 		delete(copyNode.Status.Allocatable, extension.BatchCPU)
 	} else {
-		copyNode.Status.Capacity[extension.BatchCPU] = *beResource.CPU
-		copyNode.Status.Allocatable[extension.BatchCPU] = *beResource.CPU
+		if _, ok := beResource.MilliCPU.AsInt64(); !ok {
+			klog.V(2).Infof("invalid cpu value, cpu quantity %v is not int64", beResource.MilliCPU)
+			return fmt.Errorf("invalid cpu value, cpu quantity %v is not int64", beResource.MilliCPU)
+		}
+		copyNode.Status.Capacity[extension.BatchCPU] = *beResource.MilliCPU
+		copyNode.Status.Allocatable[extension.BatchCPU] = *beResource.MilliCPU
+		copyNode.Status.Capacity[extension.BatchCPU] = *beResource.MilliCPU
+		copyNode.Status.Allocatable[extension.BatchCPU] = *beResource.MilliCPU
 	}
 
 	if beResource.Memory == nil {
@@ -152,12 +158,12 @@ func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResou
 			return err
 		}
 
-		if beResource.CPU == nil {
+		if beResource.MilliCPU == nil {
 			delete(updateNode.Status.Capacity, extension.BatchCPU)
 			delete(updateNode.Status.Allocatable, extension.BatchCPU)
 		} else {
-			updateNode.Status.Capacity[extension.BatchCPU] = *beResource.CPU
-			updateNode.Status.Allocatable[extension.BatchCPU] = *beResource.CPU
+			updateNode.Status.Capacity[extension.BatchCPU] = *beResource.MilliCPU
+			updateNode.Status.Allocatable[extension.BatchCPU] = *beResource.MilliCPU
 		}
 
 		if beResource.Memory == nil {

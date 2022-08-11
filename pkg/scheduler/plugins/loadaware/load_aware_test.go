@@ -916,11 +916,11 @@ func TestScore(t *testing.T) {
 							Name: "test-container",
 							Resources: corev1.ResourceRequirements{
 								Limits: corev1.ResourceList{
-									extension.BatchCPU:    resource.MustParse("16"),
+									extension.BatchCPU:    resource.MustParse("16000"),
 									extension.BatchMemory: resource.MustParse("32Gi"),
 								},
 								Requests: corev1.ResourceList{
-									extension.BatchCPU:    resource.MustParse("16"),
+									extension.BatchCPU:    resource.MustParse("16000"),
 									extension.BatchMemory: resource.MustParse("32Gi"),
 								},
 							},
