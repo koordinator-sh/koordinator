@@ -61,6 +61,7 @@ var (
 	GetResourceSpec   = extension.GetResourceSpec
 	GetResourceStatus = extension.GetResourceStatus
 	SetResourceStatus = extension.SetResourceStatus
+	GetPodQoSClass    = extension.GetPodQoSClass
 )
 
 var (
@@ -74,7 +75,7 @@ var (
 type Plugin struct {
 	handle        framework.Handle
 	pluginArgs    *schedulingconfig.NodeNUMAResourceArgs
-	nodeInfoCache *nodeNumaInfoCache
+	nodeInfoCache *NodeNumaInfoCache
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -143,7 +144,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		skip: true,
 	}
 
-	qosClass := extension.GetPodQoSClass(pod)
+	qosClass := GetPodQoSClass(pod)
 	priorityClass := extension.GetPriorityClass(pod)
 	if (qosClass == extension.QoSLSE || qosClass == extension.QoSLSR) && priorityClass == extension.PriorityProd {
 		preferredCPUBindPolicy := resourceSpec.PreferredCPUBindPolicy
@@ -500,4 +501,22 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 
 	klog.V(4).Infof("Successfully preBind Pod %s/%s with CPUSet %s", pod.Namespace, pod.Name, state.allocatedCPUs)
 	return nil
+}
+
+func (p *Plugin) NodeInfoCache() *NodeNumaInfoCache {
+	return p.nodeInfoCache
+}
+
+func (p *Plugin) GetAvailableCPUs(nodeName string) (availableCPUs CPUSet, allocated CPUDetails, err error) {
+	numaInfo := p.nodeInfoCache.getNodeNUMAInfo(nodeName)
+	if numaInfo == nil {
+		return
+	}
+	numaInfo.lock.Lock()
+	defer numaInfo.lock.Unlock()
+	if !numaInfo.cpuTopology.IsValid() {
+		return NewCPUSet(), nil, fmt.Errorf("cpu topology is invalid")
+	}
+	availableCPUs, allocated = getAvailableCPUsFunc(numaInfo)
+	return availableCPUs, allocated, nil
 }
