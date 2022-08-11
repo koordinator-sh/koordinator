@@ -1078,3 +1078,39 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 	}
 	assert.Equal(t, expectedResourceSpec, resourceSpec)
 }
+
+func TestPlugin_GetAvailableCPUs(t *testing.T) {
+	nodes := []*corev1.Node{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "test-node-1",
+				Labels: map[string]string{},
+			},
+			Status: corev1.NodeStatus{
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("96"),
+					corev1.ResourceMemory: resource.MustParse("512Gi"),
+				},
+			},
+		},
+	}
+	suit := newPluginTestSuit(t, nodes)
+	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	assert.NotNil(t, p)
+	assert.Nil(t, err)
+	plg := p.(*Plugin)
+	numaInfo := newNodeNUMAInfo("test-node-1", buildCPUTopologyForTest(2, 1, 4, 2))
+	if numaInfo != nil {
+		plg.nodeInfoCache.nodes[nodes[0].Name] = numaInfo
+	}
+	suit.start()
+	nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get("test-node-1")
+	assert.NoError(t, err)
+	assert.NotNil(t, nodeInfo)
+
+	expectedAvailableCPUs, expectedAllocatedCPUs := getAvailableCPUsFunc(numaInfo)
+	availableCPUs, allocatedCPUS, err := plg.GetAvailableCPUs("test-node-1")
+	assert.Nil(t, err)
+	assert.Equal(t, expectedAllocatedCPUs, allocatedCPUS)
+	assert.Equal(t, expectedAvailableCPUs, availableCPUs)
+}

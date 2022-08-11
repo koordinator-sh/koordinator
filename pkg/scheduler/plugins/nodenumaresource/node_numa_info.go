@@ -39,7 +39,7 @@ type nodeNUMAInfo struct {
 	*extension.KubeletCPUManagerPolicy
 }
 
-type nodeNumaInfoCache struct {
+type NodeNumaInfoCache struct {
 	lock  sync.Mutex
 	nodes map[string]*nodeNUMAInfo
 }
@@ -54,13 +54,13 @@ func newNodeNUMAInfo(nodeName string, cpuTopology *CPUTopology) *nodeNUMAInfo {
 	}
 }
 
-func newNodeNUMAInfoCache() *nodeNumaInfoCache {
-	return &nodeNumaInfoCache{
+func newNodeNUMAInfoCache() *NodeNumaInfoCache {
+	return &NodeNumaInfoCache{
 		nodes: map[string]*nodeNUMAInfo{},
 	}
 }
 
-func (c *nodeNumaInfoCache) onNodeResourceTopologyAdd(obj interface{}) {
+func (c *NodeNumaInfoCache) onNodeResourceTopologyAdd(obj interface{}) {
 	nodeResTopology, ok := obj.(*nrtv1alpha1.NodeResourceTopology)
 	if !ok {
 		return
@@ -68,7 +68,7 @@ func (c *nodeNumaInfoCache) onNodeResourceTopologyAdd(obj interface{}) {
 	c.setNodeResourceTopology(nil, nodeResTopology)
 }
 
-func (c *nodeNumaInfoCache) onNodeResourceTopologyUpdate(oldObj, newObj interface{}) {
+func (c *NodeNumaInfoCache) onNodeResourceTopologyUpdate(oldObj, newObj interface{}) {
 	oldNodeResTopology, ok := oldObj.(*nrtv1alpha1.NodeResourceTopology)
 	if !ok {
 		return
@@ -81,7 +81,7 @@ func (c *nodeNumaInfoCache) onNodeResourceTopologyUpdate(oldObj, newObj interfac
 	c.setNodeResourceTopology(oldNodeResTopology, nodeResTopology)
 }
 
-func (c *nodeNumaInfoCache) onNodeResourceTopologyDelete(obj interface{}) {
+func (c *NodeNumaInfoCache) onNodeResourceTopologyDelete(obj interface{}) {
 	var nodeResTopology *nrtv1alpha1.NodeResourceTopology
 	switch t := obj.(type) {
 	case *nrtv1alpha1.NodeResourceTopology:
@@ -102,23 +102,23 @@ func (c *nodeNumaInfoCache) onNodeResourceTopologyDelete(obj interface{}) {
 	c.deleteNodeResourceTopology(nodeResTopology)
 }
 
-func (c *nodeNumaInfoCache) onPodAdd(obj interface{}) {
+func (c *NodeNumaInfoCache) onPodAdd(obj interface{}) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
 		return
 	}
-	c.setPod(pod)
+	c.SetPod(pod)
 }
 
-func (c *nodeNumaInfoCache) onPodUpdate(oldObj, newObj interface{}) {
+func (c *NodeNumaInfoCache) onPodUpdate(oldObj, newObj interface{}) {
 	pod, ok := newObj.(*corev1.Pod)
 	if !ok {
 		return
 	}
-	c.setPod(pod)
+	c.SetPod(pod)
 }
 
-func (c *nodeNumaInfoCache) onPodDelete(obj interface{}) {
+func (c *NodeNumaInfoCache) onPodDelete(obj interface{}) {
 	var pod *corev1.Pod
 	switch t := obj.(type) {
 	case *corev1.Pod:
@@ -136,16 +136,16 @@ func (c *nodeNumaInfoCache) onPodDelete(obj interface{}) {
 	if pod == nil {
 		return
 	}
-	c.deletePod(pod)
+	c.DeletePod(pod)
 }
 
-func (c *nodeNumaInfoCache) getNodeNUMAInfo(nodeName string) *nodeNUMAInfo {
+func (c *NodeNumaInfoCache) getNodeNUMAInfo(nodeName string) *nodeNUMAInfo {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return c.nodes[nodeName]
 }
 
-func (c *nodeNumaInfoCache) setNodeResourceTopology(oldNodeResTopology, nodeResTopology *nrtv1alpha1.NodeResourceTopology) {
+func (c *NodeNumaInfoCache) setNodeResourceTopology(oldNodeResTopology, nodeResTopology *nrtv1alpha1.NodeResourceTopology) {
 	cpuTopology := buildCPUTopology(nodeResTopology)
 	podCPUAllocs, err := extension.GetPodCPUAllocs(nodeResTopology.Annotations)
 	if err != nil {
@@ -182,19 +182,19 @@ func (c *nodeNumaInfoCache) setNodeResourceTopology(oldNodeResTopology, nodeResT
 	numaInfo.updateCPUsManagedByKubelet(podCPUAllocs)
 }
 
-func (c *nodeNumaInfoCache) deleteNodeResourceTopology(nodeResTopology *nrtv1alpha1.NodeResourceTopology) {
+func (c *NodeNumaInfoCache) deleteNodeResourceTopology(nodeResTopology *nrtv1alpha1.NodeResourceTopology) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	nodeName := nodeResTopology.Name
 	delete(c.nodes, nodeName)
 }
 
-func (c *nodeNumaInfoCache) setPod(pod *corev1.Pod) {
+func (c *NodeNumaInfoCache) SetPod(pod *corev1.Pod) {
 	if pod.Spec.NodeName == "" {
 		return
 	}
 	if util.IsPodTerminated(pod) {
-		c.deletePod(pod)
+		c.DeletePod(pod)
 		return
 	}
 
@@ -223,7 +223,7 @@ func (c *nodeNumaInfoCache) setPod(pod *corev1.Pod) {
 	numaInfo.allocateCPUs(pod.UID, cpuset, resourceSpec.PreferredCPUExclusivePolicy)
 }
 
-func (c *nodeNumaInfoCache) deletePod(pod *corev1.Pod) {
+func (c *NodeNumaInfoCache) DeletePod(pod *corev1.Pod) {
 	if pod.Spec.NodeName == "" {
 		return
 	}
