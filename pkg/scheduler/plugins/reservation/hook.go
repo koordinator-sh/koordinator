@@ -159,7 +159,8 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 				klog.V(5).Infof("unable to convert to *schedulingv1alpha1.Reservation, obj %T", obj)
 				continue
 			}
-			if !IsReservationScheduled(r) { // only count scheduled reservations
+			// only count available reservations, ignore succeeded ones
+			if !IsReservationAvailable(r) {
 				continue
 			}
 			if matchReservation(pod, newReservationInfo(r)) {

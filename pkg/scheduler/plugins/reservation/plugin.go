@@ -406,7 +406,7 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 		} else if err1 != nil {
 			return err1
 		}
-		if !IsReservationScheduled(curR) {
+		if !IsReservationAvailable(curR) {
 			klog.V(5).InfoS("skip unreserve resources on a non-scheduled reservation",
 				"reservation", klog.KObj(curR), "phase", curR.Status.Phase)
 			return nil
@@ -428,7 +428,6 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 				"reservation", klog.KObj(curR), "pod", klog.KObj(pod), "err", err1)
 			return err1
 		}
-
 		return nil
 	})
 	if err != nil {
@@ -490,7 +489,7 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 			return err1
 		}
 
-		if !IsReservationScheduled(curR) {
+		if !IsReservationAvailable(curR) {
 			klog.Warningf("failed to allocate resources on a non-scheduled reservation %v, phase %v",
 				klog.KObj(curR), curR.Status.Phase)
 			return fmt.Errorf(ErrReasonReservationFailed)
@@ -503,7 +502,10 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 		}
 
 		curR = curR.DeepCopy()
+		// if `allocateOnce` is set, update reservation status as succeeded;
+		// otherwise, just update reservation allocated and owner statuses
 		setReservationAllocated(curR, pod)
+
 		_, err1 = p.client.Reservations().UpdateStatus(context.TODO(), curR, metav1.UpdateOptions{})
 		if err1 != nil {
 			klog.Warningf("failed to update reservation status for pod allocation, reservation %v, pod %v, err: %v",
