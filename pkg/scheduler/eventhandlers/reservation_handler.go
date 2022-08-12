@@ -37,7 +37,7 @@ func AddScheduleEventHandler(sched *scheduler.Scheduler, internalHandler Schedul
 		FilterFunc: func(obj interface{}) bool {
 			switch t := obj.(type) {
 			case *schedulingv1alpha1.Reservation:
-				return reservation.IsReservationScheduled(t)
+				return reservation.IsReservationAvailable(t)
 			case cache.DeletedFinalStateUnknown:
 				if _, ok := t.Obj.(*schedulingv1alpha1.Reservation); ok {
 					// DeletedFinalStateUnknown object can be stale, so just try to cleanup without check.
@@ -67,7 +67,8 @@ func AddScheduleEventHandler(sched *scheduler.Scheduler, internalHandler Schedul
 		FilterFunc: func(obj interface{}) bool {
 			switch t := obj.(type) {
 			case *schedulingv1alpha1.Reservation:
-				return !reservation.IsReservationScheduled(t) && !reservation.IsReservationFailed(t) && isResponsibleForReservation(sched.Profiles, t)
+				return isResponsibleForReservation(sched.Profiles, t) && !reservation.IsReservationAvailable(t) &&
+					!reservation.IsReservationFailed(t) && !reservation.IsReservationSucceeded(t)
 			case cache.DeletedFinalStateUnknown:
 				if r, ok := t.Obj.(*schedulingv1alpha1.Reservation); ok {
 					// DeletedFinalStateUnknown object can be stale, so just try to cleanup without check.

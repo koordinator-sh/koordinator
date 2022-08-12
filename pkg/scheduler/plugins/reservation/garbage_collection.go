@@ -182,8 +182,8 @@ func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
 			return err1
 		}
 
-		// check if the reservation has been expired
-		if !IsReservationScheduled(r) {
+		// check if the reservation is still scheduled; succeeded ones are ignored to update
+		if !IsReservationAvailable(r) {
 			klog.V(4).InfoS("skip sync for reservation no longer available or scheduled",
 				"reservation", klog.KObj(r))
 			return nil

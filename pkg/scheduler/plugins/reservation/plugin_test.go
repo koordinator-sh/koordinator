@@ -1124,6 +1124,9 @@ func TestUnreserve(t *testing.T) {
 	rAllocated := rScheduled.DeepCopy()
 	setReservationAllocated(rAllocated, normalPod)
 	rAllocated1 := rAllocated.DeepCopy()
+	rAllocateOnce := rScheduled.DeepCopy()
+	rAllocateOnce.Spec.AllocateOnce = true
+	setReservationAllocated(rAllocateOnce, normalPod)
 	stateSkip := framework.NewCycleState()
 	stateSkip.Write(preFilterStateKey, &stateData{
 		skip: true,
@@ -1142,12 +1145,19 @@ func TestUnreserve(t *testing.T) {
 		preBind: true,
 	})
 	stateAssumedAndPreBind1 := stateAssumedAndPreBind.Clone()
+	stateAllocateOnce := framework.NewCycleState()
+	stateAllocateOnce.Write(preFilterStateKey, &stateData{
+		assumed: rAllocateOnce,
+		preBind: true,
+	})
 	cacheNotActive := newReservationCache()
 	cacheNotActive.AddToFailed(rScheduled)
 	cacheMatched := newReservationCache()
 	cacheMatched.AddToActive(rScheduled)
 	cacheAssumed := newReservationCache()
 	cacheAssumed.Assume(rAllocated)
+	cacheAssumedAllocateOnce := newReservationCache()
+	cacheAssumedAllocateOnce.Assume(rAllocateOnce)
 	type args struct {
 		cycleState *framework.CycleState
 		pod        *corev1.Pod
@@ -1243,6 +1253,24 @@ func TestUnreserve(t *testing.T) {
 				nodeName:   testNodeName,
 			},
 		},
+		{
+			name: "state clean prebind allocateOnce successfully",
+			fields: fields{
+				reservationCache: cacheAssumedAllocateOnce,
+				lister: &fakeReservationLister{
+					reservations: map[string]*schedulingv1alpha1.Reservation{
+						rAllocateOnce.Name: rAllocateOnce,
+					},
+				},
+				client: &fakeReservationClient{},
+				handle: &fakeExtendedHandle{cs: kubefake.NewSimpleClientset(normalPod)},
+			},
+			args: args{
+				cycleState: stateAllocateOnce,
+				pod:        normalPod,
+				nodeName:   testNodeName,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1302,6 +1330,8 @@ func TestPreBind(t *testing.T) {
 	}
 	rAllocated := rScheduled.DeepCopy()
 	setReservationAllocated(rAllocated, normalPod)
+	rAllocateOnce := rScheduled.DeepCopy()
+	rAllocateOnce.Spec.AllocateOnce = true
 	rExpired := rScheduled.DeepCopy()
 	setReservationExpired(rExpired)
 	stateSkip := framework.NewCycleState()
@@ -1316,8 +1346,14 @@ func TestPreBind(t *testing.T) {
 	stateAssumed.Write(preFilterStateKey, &stateData{
 		assumed: rAllocated,
 	})
+	stateAssumedAllocateOnce := framework.NewCycleState()
+	stateAssumedAllocateOnce.Write(preFilterStateKey, &stateData{
+		assumed: rAllocateOnce,
+	})
 	cacheAssumed := newReservationCache()
 	cacheAssumed.Assume(rAllocated)
+	cacheAssumedAllocateOnce := newReservationCache()
+	cacheAssumedAllocateOnce.Assume(rAllocateOnce)
 	type args struct {
 		cycleState *framework.CycleState
 		pod        *corev1.Pod
@@ -1445,6 +1481,25 @@ func TestPreBind(t *testing.T) {
 			},
 			args: args{
 				cycleState: stateAssumed,
+				pod:        normalPod,
+				nodeName:   testNodeName,
+			},
+			want: nil,
+		},
+		{
+			name: "pre-bind pod with allocateOnce successfully",
+			fields: fields{
+				reservationCache: cacheAssumedAllocateOnce,
+				lister: &fakeReservationLister{
+					reservations: map[string]*schedulingv1alpha1.Reservation{
+						rAllocateOnce.Name: rAllocateOnce,
+					},
+				},
+				client: &fakeReservationClient{},
+				handle: &fakeExtendedHandle{cs: kubefake.NewSimpleClientset(normalPod)},
+			},
+			args: args{
+				cycleState: stateAssumedAllocateOnce,
 				pod:        normalPod,
 				nodeName:   testNodeName,
 			},

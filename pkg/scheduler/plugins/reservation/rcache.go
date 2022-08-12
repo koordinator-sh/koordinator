@@ -106,7 +106,7 @@ func newAvailableCache(rList ...*schedulingv1alpha1.Reservation) *AvailableCache
 		ownerToR:     map[string]*reservationInfo{},
 	}
 	for _, r := range rList {
-		if !IsReservationScheduled(r) {
+		if !IsReservationAvailable(r) {
 			continue
 		}
 		rInfo := newReservationInfo(r)

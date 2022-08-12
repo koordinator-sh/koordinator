@@ -22,8 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/klog/v2"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/apis/core/validation"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -56,15 +55,19 @@ func StatusNodeNameIndexFunc(obj interface{}) ([]string, error) {
 	return []string{r.Status.NodeName}, nil
 }
 
-// IsReservationActive checks if the reservation is scheduled and its status is Available/Waiting.
+// IsReservationActive checks if the reservation is scheduled and its status is Available/Waiting (active to use).
 func IsReservationActive(r *schedulingv1alpha1.Reservation) bool {
 	return r != nil && len(GetReservationNodeName(r)) > 0 &&
 		(r.Status.Phase == schedulingv1alpha1.ReservationAvailable || r.Status.Phase == schedulingv1alpha1.ReservationWaiting)
 }
 
-// IsReservationScheduled checks if the reservation is scheduled on a node and its status is Available.
-func IsReservationScheduled(r *schedulingv1alpha1.Reservation) bool {
+// IsReservationAvailable checks if the reservation is scheduled on a node and its status is Available.
+func IsReservationAvailable(r *schedulingv1alpha1.Reservation) bool {
 	return r != nil && len(GetReservationNodeName(r)) > 0 && r.Status.Phase == schedulingv1alpha1.ReservationAvailable
+}
+
+func IsReservationSucceeded(r *schedulingv1alpha1.Reservation) bool {
+	return r != nil && r.Status.Phase == schedulingv1alpha1.ReservationSucceeded
 }
 
 func IsReservationFailed(r *schedulingv1alpha1.Reservation) bool {
@@ -249,6 +252,30 @@ func setReservationAllocated(r *schedulingv1alpha1.Reservation, pod *corev1.Pod)
 		// keep old allocated
 		r.Status.CurrentOwners[idx] = owner
 	}
+	if r.Spec.AllocateOnce {
+		setReservationSucceeded(r)
+	}
+}
+
+func setReservationSucceeded(r *schedulingv1alpha1.Reservation) {
+	r.Status.Phase = schedulingv1alpha1.ReservationSucceeded
+	idx := -1
+	for i, condition := range r.Status.Conditions {
+		if condition.Type == schedulingv1alpha1.ReservationConditionReady {
+			idx = i
+		}
+	}
+	condition := schedulingv1alpha1.ReservationCondition{
+		Type:          schedulingv1alpha1.ReservationConditionReady,
+		Status:        schedulingv1alpha1.ConditionStatusFalse,
+		Reason:        schedulingv1alpha1.ReasonReservationSucceeded,
+		LastProbeTime: metav1.Now(),
+	}
+	if idx < 0 { // if not set condition
+		r.Status.Conditions = append(r.Status.Conditions, condition)
+	} else {
+		r.Status.Conditions[idx] = condition
+	}
 }
 
 func removeReservationAllocated(r *schedulingv1alpha1.Reservation, pod *corev1.Pod) error {
@@ -271,7 +298,32 @@ func removeReservationAllocated(r *schedulingv1alpha1.Reservation, pod *corev1.P
 	} else {
 		klog.V(5).InfoS("failed to remove pod from reservation allocated, err: allocated is nil")
 	}
+
+	if r.Spec.AllocateOnce {
+		removeReservationSucceeded(r)
+	}
+
 	return nil
+}
+
+func removeReservationSucceeded(r *schedulingv1alpha1.Reservation) {
+	// only available reservation can trans to succeeded
+	r.Status.Phase = schedulingv1alpha1.ReservationAvailable
+	idx := -1
+	for i, condition := range r.Status.Conditions {
+		if condition.Type == schedulingv1alpha1.ReservationConditionReady {
+			idx = i
+		}
+	}
+	if idx >= 0 {
+		condition := schedulingv1alpha1.ReservationCondition{
+			Type:          schedulingv1alpha1.ReservationConditionReady,
+			Status:        schedulingv1alpha1.ConditionStatusTrue,
+			Reason:        schedulingv1alpha1.ReasonReservationAvailable,
+			LastProbeTime: r.Status.Conditions[idx].LastTransitionTime,
+		}
+		r.Status.Conditions[idx] = condition
+	}
 }
 
 func getReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceList {
