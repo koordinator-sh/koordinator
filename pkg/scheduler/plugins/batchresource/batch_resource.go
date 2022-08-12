@@ -117,24 +117,25 @@ func computeNodeBatchAllocatable(nodeInfo *framework.NodeInfo) *batchResource {
 }
 
 func computeNodeBatchRequested(nodeInfo *framework.NodeInfo) *batchResource {
-	nodeRequeted := &batchResource{
+	nodeRequested := &batchResource{
 		MilliCPU: 0,
 		Memory:   0,
 	}
-	// compatible with old format, accumulate with KoordBatchCPU, KoordBatchCPU if exist
+	// compatible with old format, accumulate
+	// with KoordBatchCPU, KoordBatchCPU if exist
 	if batchCPU, exist := nodeInfo.Requested.ScalarResources[apiext.BatchCPU]; exist {
-		nodeRequeted.MilliCPU += batchCPU
+		nodeRequested.MilliCPU += batchCPU
 	}
 	if koordBatchCPU, exist := nodeInfo.Requested.ScalarResources[apiext.KoordBatchCPU]; exist {
-		nodeRequeted.MilliCPU += koordBatchCPU
+		nodeRequested.MilliCPU += koordBatchCPU
 	}
 	if batchMemory, exist := nodeInfo.Requested.ScalarResources[apiext.BatchMemory]; exist {
-		nodeRequeted.Memory += batchMemory
+		nodeRequested.Memory += batchMemory
 	}
 	if koordBatchMemory, exist := nodeInfo.Requested.ScalarResources[apiext.KoordBatchMemory]; exist {
-		nodeRequeted.Memory += koordBatchMemory
+		nodeRequested.Memory += koordBatchMemory
 	}
-	return nodeRequeted
+	return nodeRequested
 }
 
 // computePodBERequest returns the total non-zero best-effort requests. If Overhead is defined for the pod and
