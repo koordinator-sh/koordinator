@@ -20,11 +20,37 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/json"
+	"sigs.k8s.io/yaml"
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 )
 
 type PluginFactory func(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
+
+// DecodeInto decodes configuration whose type is *runtime.Unknown to the interface into.
+func DecodeInto(obj runtime.Object, into interface{}) error {
+	if obj == nil {
+		return nil
+	}
+	configuration, ok := obj.(*runtime.Unknown)
+	if !ok {
+		return fmt.Errorf("want args of type runtime.Unknown, got %T", obj)
+	}
+	if configuration.Raw == nil {
+		return nil
+	}
+
+	switch configuration.ContentType {
+	// If ContentType is empty, it means ContentTypeJSON by default.
+	case runtime.ContentTypeJSON, "":
+		return json.Unmarshal(configuration.Raw, into)
+	case runtime.ContentTypeYAML:
+		return yaml.Unmarshal(configuration.Raw, into)
+	default:
+		return fmt.Errorf("not supported content type %s", configuration.ContentType)
+	}
+}
 
 type Registry map[string]PluginFactory
 
