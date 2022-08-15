@@ -86,12 +86,10 @@ func updateResource(a, b *v1alpha1.LinuxContainerResources) *v1alpha1.LinuxConta
 	if b.OomScoreAdj >= -1000 && b.OomScoreAdj <= 1000 {
 		a.OomScoreAdj = b.OomScoreAdj
 	}
-	if b.CpusetCpus != "" {
-		a.CpusetCpus = b.CpusetCpus
-	}
-	if b.CpusetMems != "" {
-		a.CpusetMems = b.CpusetMems
-	}
+
+	a.CpusetCpus = b.CpusetCpus
+	a.CpusetMems = b.CpusetMems
+
 	a.Unified = utils.MergeMap(a.Unified, b.Unified)
 	if b.MemorySwapLimitInBytes > 0 {
 		a.MemorySwapLimitInBytes = b.MemorySwapLimitInBytes
