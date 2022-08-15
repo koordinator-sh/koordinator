@@ -90,7 +90,7 @@ test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -race -covermode atomic -coverprofile cover.out
 
 .PHONY: fast-test
-fast-test: ## Run tests fast.
+fast-test: envtest ## Run tests fast.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -race -covermode atomic -coverprofile cover.out
 
 ##@ Build
