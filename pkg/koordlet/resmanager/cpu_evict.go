@@ -187,7 +187,7 @@ func (c *CPUEvictor) getPodEvictInfoAndSort(beMetric *metriccache.BECPUResourceM
 
 			milliRequestSum := int64(0)
 			for _, container := range pod.Spec.Containers {
-				containerCPUReq := util.GetContainerBEMilliCPURequest(&container)
+				containerCPUReq := util.GetContainerBatchMilliCPURequest(&container)
 				if containerCPUReq > 0 {
 					milliRequestSum = milliRequestSum + containerCPUReq
 				}

@@ -114,7 +114,7 @@ func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
 	podCPUMilliReq := int64(0)
 	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
-		containerCPUMilliReq := GetContainerBEMilliCPURequest(&container)
+		containerCPUMilliReq := GetContainerBatchMilliCPURequest(&container)
 		if containerCPUMilliReq <= 0 {
 			containerCPUMilliReq = 0
 		}
@@ -128,7 +128,7 @@ func GetPodBEMilliCPULimit(pod *corev1.Pod) int64 {
 	podCPUMilliLimit := int64(0)
 	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
-		containerCPUMilliLimit := GetContainerBEMilliCPULimit(&container)
+		containerCPUMilliLimit := GetContainerBatchMilliCPULimit(&container)
 		if containerCPUMilliLimit <= 0 {
 			return -1
 		}
@@ -144,7 +144,7 @@ func GetPodBEMemoryByteRequestIgnoreUnlimited(pod *corev1.Pod) int64 {
 	podMemoryByteRequest := int64(0)
 	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
-		containerMemByteRequest := GetContainerBEMemoryByteRequest(&container)
+		containerMemByteRequest := GetContainerBatchMemoryByteRequest(&container)
 		if containerMemByteRequest < 0 {
 			// consider request of unlimited container as 0
 			continue
@@ -158,7 +158,7 @@ func GetPodBEMemoryByteLimit(pod *corev1.Pod) int64 {
 	podMemoryByteLimit := int64(0)
 	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
-		containerMemByteLimit := GetContainerBEMemoryByteLimit(&container)
+		containerMemByteLimit := GetContainerBatchMemoryByteLimit(&container)
 		if containerMemByteLimit <= 0 {
 			return -1
 		}
