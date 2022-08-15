@@ -59,7 +59,7 @@ jobs:
       - name: Run Go build
         run: make build-koordlet build-koord-manager build-koord-scheduler build-koord-descheduler build-koord-runtime-proxy
       - name: Run Go test
-        run: make test
+        run: make fast-test
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
