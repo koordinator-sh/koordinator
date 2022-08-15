@@ -196,6 +196,26 @@ func Test_isDegradeNeeded(t *testing.T) {
 }
 
 func Test_updateNodeBEResource(t *testing.T) {
+	enabledCfg := &config.ColocationCfg{
+		ColocationStrategy: config.ColocationStrategy{
+			Enable:                        pointer.BoolPtr(true),
+			CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+			MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+			DegradeTimeMinutes:            pointer.Int64Ptr(15),
+			UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+			ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+		},
+	}
+	disableCfg := &config.ColocationCfg{
+		ColocationStrategy: config.ColocationStrategy{
+			Enable:                        pointer.BoolPtr(false),
+			CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+			MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+			DegradeTimeMinutes:            pointer.Int64Ptr(15),
+			UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+			ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+		},
+	}
 	type fields struct {
 		Client      client.Client
 		config      *config.ColocationCfg
@@ -230,16 +250,7 @@ func Test_updateNodeBEResource(t *testing.T) {
 						},
 					},
 				}).Build(),
-				config: &config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
-						Enable:                        pointer.BoolPtr(true),
-						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-						DegradeTimeMinutes:            pointer.Int64Ptr(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-					},
-				},
+				config: enabledCfg,
 				SyncContext: &SyncContext{
 					contextMap: map[string]time.Time{"/test-node0": time.Now()},
 				},
@@ -300,16 +311,7 @@ func Test_updateNodeBEResource(t *testing.T) {
 						},
 					},
 				}).Build(),
-				config: &config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
-						Enable:                        pointer.BoolPtr(true),
-						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-						DegradeTimeMinutes:            pointer.Int64Ptr(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-					},
-				},
+				config: enabledCfg,
 				SyncContext: &SyncContext{
 					contextMap: map[string]time.Time{"/test-node0": time.Now()},
 				},
@@ -356,16 +358,7 @@ func Test_updateNodeBEResource(t *testing.T) {
 			name: "abort update for the node that no longer exists",
 			fields: fields{
 				Client: fake.NewClientBuilder().Build(),
-				config: &config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
-						Enable:                        pointer.BoolPtr(true),
-						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-						DegradeTimeMinutes:            pointer.Int64Ptr(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-					},
-				},
+				config: enabledCfg,
 				SyncContext: &SyncContext{
 					contextMap: map[string]time.Time{"/test-node0": time.Now()},
 				},
@@ -417,16 +410,7 @@ func Test_updateNodeBEResource(t *testing.T) {
 						},
 					},
 				}).Build(),
-				config: &config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
-						Enable:                        pointer.BoolPtr(true),
-						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-						DegradeTimeMinutes:            pointer.Int64Ptr(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-					},
-				},
+				config: enabledCfg,
 				SyncContext: &SyncContext{
 					contextMap: map[string]time.Time{"/test-node0": time.Now()},
 				},
@@ -491,14 +475,7 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 				}).Build(),
 				config: &config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
-						Enable:                        pointer.BoolPtr(true),
-						CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
-						MemoryReclaimThresholdPercent: pointer.Int64Ptr(70),
-						DegradeTimeMinutes:            pointer.Int64Ptr(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-					},
+					ColocationStrategy: enabledCfg.ColocationStrategy,
 					NodeConfigs: []config.NodeColocationCfg{
 						{
 							NodeSelector: &metav1.LabelSelector{
@@ -591,16 +568,7 @@ func Test_updateNodeBEResource(t *testing.T) {
 						},
 					},
 				}).Build(),
-				config: &config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
-						Enable:                        pointer.BoolPtr(false),
-						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-						DegradeTimeMinutes:            pointer.Int64Ptr(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-					},
-				},
+				config: disableCfg,
 				SyncContext: &SyncContext{
 					contextMap: map[string]time.Time{"/test-node0": time.Now()},
 				},
