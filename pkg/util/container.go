@@ -25,7 +25,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -108,34 +107,6 @@ func GetContainerMilliCPULimit(c *corev1.Container) int64 {
 
 func GetContainerMemoryByteLimit(c *corev1.Container) int64 {
 	if memLimit, ok := c.Resources.Limits[corev1.ResourceMemory]; ok {
-		return memLimit.Value()
-	}
-	return -1
-}
-
-func GetContainerBEMilliCPURequest(c *corev1.Container) int64 {
-	if cpuRequest, ok := c.Resources.Requests[extension.BatchCPU]; ok {
-		return cpuRequest.Value()
-	}
-	return -1
-}
-
-func GetContainerBEMilliCPULimit(c *corev1.Container) int64 {
-	if cpuLimit, ok := c.Resources.Limits[extension.BatchCPU]; ok {
-		return cpuLimit.Value()
-	}
-	return -1
-}
-
-func GetContainerBEMemoryByteRequest(c *corev1.Container) int64 {
-	if memLimit, ok := c.Resources.Requests[extension.BatchMemory]; ok {
-		return memLimit.Value()
-	}
-	return -1
-}
-
-func GetContainerBEMemoryByteLimit(c *corev1.Container) int64 {
-	if memLimit, ok := c.Resources.Limits[extension.BatchMemory]; ok {
 		return memLimit.Value()
 	}
 	return -1

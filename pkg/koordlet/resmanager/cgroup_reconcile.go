@@ -279,8 +279,8 @@ func (m *CgroupResourcesReconcile) calculateContainerResources(container *corev1
 			memRequest = container.Resources.Requests.Memory().Value()
 			memLimit = util.GetContainerMemoryByteLimit(container)
 		} else {
-			memRequest = util.GetContainerBEMemoryByteRequest(container)
-			memLimit = util.GetContainerBEMemoryByteLimit(container)
+			memRequest = util.GetContainerBatchMemoryByteRequest(container)
+			memLimit = util.GetContainerBatchMemoryByteLimit(container)
 		}
 		if memRequest < 0 {
 			// when container request not set, memory request is counted as zero but not unlimited(-1)

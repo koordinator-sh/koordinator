@@ -218,7 +218,7 @@ func needReconcilePodBECPULimit(podMeta *statesinformer.PodMeta) (bool, error) {
 }
 
 func needReconcileContainerBECPULimit(podMeta *statesinformer.PodMeta, container *corev1.Container, containerStatus *corev1.ContainerStatus) (bool, error) {
-	if util.GetContainerBEMilliCPULimit(container) <= 0 {
+	if util.GetContainerBatchMilliCPULimit(container) <= 0 {
 		return false, nil
 	}
 
@@ -242,7 +242,7 @@ func needReconcilePodBECPUShare(podMeta *statesinformer.PodMeta) (bool, error) {
 }
 
 func needReconcileContainerBECPUShare(podMeta *statesinformer.PodMeta, container *corev1.Container, containerStatus *corev1.ContainerStatus) (bool, error) {
-	if util.GetContainerBEMilliCPURequest(container) <= 0 {
+	if util.GetContainerBatchMilliCPURequest(container) <= 0 {
 		return false, nil
 	}
 
@@ -267,7 +267,7 @@ func needReconcilePodBEMemLimit(podMeta *statesinformer.PodMeta) (bool, error) {
 }
 
 func needReconcileContainerBEMemLimit(podMeta *statesinformer.PodMeta, container *corev1.Container, containerStatus *corev1.ContainerStatus) (bool, error) {
-	if util.GetContainerBEMemoryByteLimit(container) <= 0 {
+	if util.GetContainerBatchMemoryByteLimit(container) <= 0 {
 		return false, nil
 	}
 
@@ -295,7 +295,7 @@ func applyPodBECPULimitIfSpecified(podMeta *statesinformer.PodMeta) error {
 }
 
 func applyContainerBECPULimitIfSpecified(podMeta *statesinformer.PodMeta, container *corev1.Container, containerStatus *corev1.ContainerStatus) error {
-	milliCPULimit := util.GetContainerBEMilliCPULimit(container)
+	milliCPULimit := util.GetContainerBatchMilliCPULimit(container)
 	if milliCPULimit <= 0 {
 		return nil
 	}
@@ -324,7 +324,7 @@ func applyPodBECPURequestIfSpecified(podMeta *statesinformer.PodMeta) error {
 }
 
 func applyContainerBECPUShareIfSpecified(podMeta *statesinformer.PodMeta, container *corev1.Container, containerStatus *corev1.ContainerStatus) error {
-	milliCPURequest := util.GetContainerBEMilliCPURequest(container)
+	milliCPURequest := util.GetContainerBatchMilliCPURequest(container)
 	if milliCPURequest <= 0 {
 		return nil
 	}
@@ -348,7 +348,7 @@ func applyPodBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta) error {
 }
 
 func applyContainerBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta, container *corev1.Container, containerStatus *corev1.ContainerStatus) error {
-	memoryLimit := util.GetContainerBEMemoryByteLimit(container)
+	memoryLimit := util.GetContainerBatchMemoryByteLimit(container)
 	if memoryLimit <= 0 {
 		return nil
 	}

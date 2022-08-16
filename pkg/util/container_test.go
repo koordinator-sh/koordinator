@@ -631,7 +631,7 @@ func Test_GetContainerXXXValue(t *testing.T) {
 		},
 		{
 			name: "test_GetContainerBEMilliCPURequest",
-			fn:   GetContainerBEMilliCPURequest,
+			fn:   GetContainerBatchMilliCPURequest,
 			container: &corev1.Container{
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList(
@@ -644,13 +644,13 @@ func Test_GetContainerXXXValue(t *testing.T) {
 		},
 		{
 			name:        "test_GetContainerBEMilliCPURequest_invalid",
-			fn:          GetContainerBEMilliCPURequest,
+			fn:          GetContainerBatchMilliCPURequest,
 			container:   &corev1.Container{},
 			expectValue: -1,
 		},
 		{
 			name: "test_GetContainerBEMilliCPULimit",
-			fn:   GetContainerBEMilliCPULimit,
+			fn:   GetContainerBatchMilliCPULimit,
 			container: &corev1.Container{
 				Resources: corev1.ResourceRequirements{
 					Limits: corev1.ResourceList(
@@ -663,13 +663,13 @@ func Test_GetContainerXXXValue(t *testing.T) {
 		},
 		{
 			name:        "test_GetContainerBEMilliCPULimit_invalid",
-			fn:          GetContainerBEMilliCPULimit,
+			fn:          GetContainerBatchMilliCPULimit,
 			container:   &corev1.Container{},
 			expectValue: -1,
 		},
 		{
 			name: "test_GetContainerBEMemoryByteRequest",
-			fn:   GetContainerBEMemoryByteRequest,
+			fn:   GetContainerBatchMemoryByteRequest,
 			container: &corev1.Container{
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList(
@@ -682,13 +682,13 @@ func Test_GetContainerXXXValue(t *testing.T) {
 		},
 		{
 			name:        "test_GetContainerBEMemoryByteRequest_invalid",
-			fn:          GetContainerBEMemoryByteRequest,
+			fn:          GetContainerBatchMemoryByteRequest,
 			container:   &corev1.Container{},
 			expectValue: -1,
 		},
 		{
 			name: "test_GetContainerBEMemoryByteLimit",
-			fn:   GetContainerBEMemoryByteLimit,
+			fn:   GetContainerBatchMemoryByteLimit,
 			container: &corev1.Container{
 				Resources: corev1.ResourceRequirements{
 					Limits: corev1.ResourceList(
@@ -701,7 +701,7 @@ func Test_GetContainerXXXValue(t *testing.T) {
 		},
 		{
 			name:        "test_GetContainerBEMemoryByteLimit_invalid",
-			fn:          GetContainerBEMemoryByteLimit,
+			fn:          GetContainerBatchMemoryByteLimit,
 			container:   &corev1.Container{},
 			expectValue: -1,
 		},
