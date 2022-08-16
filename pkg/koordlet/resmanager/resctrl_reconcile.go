@@ -459,8 +459,7 @@ func (r *ResctrlReconcile) reconcile() {
 	nodeSLO := r.resManager.getNodeSLOCopy()
 	if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil {
 		// do nothing if nodeSLO == nil || nodeSLO.spec.ResourceStrategy == nil
-		klog.Warningf("nodeSLO is nil %v, or nodeSLO.Spec.ResourceQOSStrategy is nil %v",
-			nodeSLO == nil, nodeSLO.Spec.ResourceQOSStrategy == nil)
+		klog.Warningf("nodeSLO is nil %v, or nodeSLO.Spec.ResourceQOSStrategy is nil", nodeSLO == nil)
 		return
 	}
 
