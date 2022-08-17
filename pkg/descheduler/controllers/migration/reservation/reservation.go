@@ -79,31 +79,30 @@ func (r *Reservation) NeedPreemption() bool {
 	return false
 }
 
-func GetReservationCondition(r Object, conditionType sev1alpha1.ReservationConditionType) *sev1alpha1.ReservationCondition {
+func GetReservationCondition(r Object, conditionType sev1alpha1.ReservationConditionType, reason string) *sev1alpha1.ReservationCondition {
 	conditions := r.GetReservationConditions()
 	if len(conditions) == 0 {
 		return nil
 	}
 	for i := range conditions {
 		cond := &conditions[i]
-		if cond.Type == conditionType {
-			return &sev1alpha1.ReservationCondition{
-				LastProbeTime:      cond.LastProbeTime,
-				LastTransitionTime: cond.LastTransitionTime,
-				Reason:             cond.Reason,
-				Message:            cond.Message,
-			}
+		if cond.Type == conditionType && (reason == "" || reason == cond.Reason) {
+			return cond
 		}
 	}
 	return nil
 }
 
 func GetUnschedulableCondition(r Object) *sev1alpha1.ReservationCondition {
-	condition := GetReservationCondition(r, sev1alpha1.ReservationConditionScheduled)
-	if condition != nil && condition.Reason == sev1alpha1.ReasonReservationUnschedulable {
-		return condition
+	return GetReservationCondition(r, sev1alpha1.ReservationConditionScheduled, sev1alpha1.ReasonReservationUnschedulable)
+}
+
+func IsReservationScheduled(r Object) bool {
+	if r.GetScheduledNodeName() == "" {
+		return false
 	}
-	return nil
+	cond := GetReservationCondition(r, sev1alpha1.ReservationConditionScheduled, sev1alpha1.ReasonReservationScheduled)
+	return cond != nil && cond.Status == sev1alpha1.ConditionStatusTrue
 }
 
 func IsReservationPending(r Object) bool {
@@ -127,6 +126,6 @@ func IsReservationExpired(r Object) bool {
 	if !IsReservationFailed(r) {
 		return false
 	}
-	condition := GetReservationCondition(r, sev1alpha1.ReservationConditionReady)
-	return condition != nil && condition.Reason == sev1alpha1.ReasonReservationExpired
+	condition := GetReservationCondition(r, sev1alpha1.ReservationConditionReady, sev1alpha1.ReasonReservationExpired)
+	return condition != nil
 }
