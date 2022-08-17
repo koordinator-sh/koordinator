@@ -52,13 +52,11 @@ type Object interface {
 	runtime.Object
 	String() string
 	OriginObject() client.Object
-	GetReservationCondition(conditionType sev1alpha1.ReservationConditionType) *sev1alpha1.ReservationCondition
-	GetUnschedulableCondition() *sev1alpha1.ReservationCondition
+	GetReservationConditions() []sev1alpha1.ReservationCondition
 	QueryPreemptedPodsRefs() []corev1.ObjectReference
 	GetBoundPod() *corev1.ObjectReference
 	GetReservationOwners() []sev1alpha1.ReservationOwner
 	GetScheduledNodeName() string
-	IsPending() bool
-	IsScheduled() bool
+	GetPhase() sev1alpha1.ReservationPhase
 	NeedPreemption() bool
 }

@@ -41,26 +41,15 @@ func (r *Reservation) OriginObject() client.Object {
 	return r.Reservation
 }
 
-func (r *Reservation) GetReservationCondition(conditionType sev1alpha1.ReservationConditionType) *sev1alpha1.ReservationCondition {
-	for _, v := range r.Status.Conditions {
-		if v.Type == conditionType {
-			return &sev1alpha1.ReservationCondition{
-				LastProbeTime:      v.LastProbeTime,
-				LastTransitionTime: v.LastTransitionTime,
-				Reason:             v.Reason,
-				Message:            v.Message,
-			}
-		}
-	}
-	return nil
-}
-
-func (r *Reservation) GetUnschedulableCondition() *sev1alpha1.ReservationCondition {
-	cond := r.GetReservationCondition(sev1alpha1.ReservationConditionScheduled)
-	if cond == nil || cond.Reason != sev1alpha1.ReasonReservationUnschedulable {
+func (r *Reservation) GetReservationConditions() []sev1alpha1.ReservationCondition {
+	if len(r.Status.Conditions) == 0 {
 		return nil
 	}
-	return cond
+	conditions := make([]sev1alpha1.ReservationCondition, 0, len(r.Status.Conditions))
+	for i := range r.Status.Conditions {
+		conditions = append(conditions, *r.Status.Conditions[i].DeepCopy())
+	}
+	return conditions
 }
 
 func (r *Reservation) QueryPreemptedPodsRefs() []corev1.ObjectReference {
@@ -82,14 +71,62 @@ func (r *Reservation) GetScheduledNodeName() string {
 	return r.Status.NodeName
 }
 
-func (r *Reservation) IsPending() bool {
-	return r.Status.Phase == "" || r.Status.Phase == sev1alpha1.ReservationPending
-}
-
-func (r *Reservation) IsScheduled() bool {
-	return r.Status.NodeName != ""
+func (r *Reservation) GetPhase() sev1alpha1.ReservationPhase {
+	return r.Status.Phase
 }
 
 func (r *Reservation) NeedPreemption() bool {
 	return false
+}
+
+func GetReservationCondition(r Object, conditionType sev1alpha1.ReservationConditionType) *sev1alpha1.ReservationCondition {
+	conditions := r.GetReservationConditions()
+	if len(conditions) == 0 {
+		return nil
+	}
+	for i := range conditions {
+		cond := &conditions[i]
+		if cond.Type == conditionType {
+			return &sev1alpha1.ReservationCondition{
+				LastProbeTime:      cond.LastProbeTime,
+				LastTransitionTime: cond.LastTransitionTime,
+				Reason:             cond.Reason,
+				Message:            cond.Message,
+			}
+		}
+	}
+	return nil
+}
+
+func GetUnschedulableCondition(r Object) *sev1alpha1.ReservationCondition {
+	condition := GetReservationCondition(r, sev1alpha1.ReservationConditionScheduled)
+	if condition != nil && condition.Reason == sev1alpha1.ReasonReservationUnschedulable {
+		return condition
+	}
+	return nil
+}
+
+func IsReservationPending(r Object) bool {
+	return r != nil && (r.GetPhase() == "" || r.GetPhase() == sev1alpha1.ReservationPending)
+}
+
+// IsReservationAvailable checks if the reservation is scheduled on a node and its status is Available.
+func IsReservationAvailable(r Object) bool {
+	return r != nil && r.GetScheduledNodeName() != "" && r.GetPhase() == sev1alpha1.ReservationAvailable
+}
+
+func IsReservationSucceeded(r Object) bool {
+	return r != nil && r.GetPhase() == sev1alpha1.ReservationSucceeded
+}
+
+func IsReservationFailed(r Object) bool {
+	return r != nil && r.GetPhase() == sev1alpha1.ReservationFailed
+}
+
+func IsReservationExpired(r Object) bool {
+	if !IsReservationFailed(r) {
+		return false
+	}
+	condition := GetReservationCondition(r, sev1alpha1.ReservationConditionReady)
+	return condition != nil && condition.Reason == sev1alpha1.ReasonReservationExpired
 }
