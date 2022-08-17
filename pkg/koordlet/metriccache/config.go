@@ -32,5 +32,5 @@ func NewDefaultConfig() *Config {
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.MetricGCIntervalSeconds, "metric-gc-interval-seconds", c.MetricGCIntervalSeconds, "Collect node metrics interval by seconds")
-	fs.IntVar(&c.MetricExpireSeconds, "metric-expire-seconds", c.MetricExpireSeconds, "Collect pod metrics interval by seconds")
+	fs.IntVar(&c.MetricExpireSeconds, "metric-expire-seconds", c.MetricExpireSeconds, "Collect pod metrics expire by seconds")
 }
