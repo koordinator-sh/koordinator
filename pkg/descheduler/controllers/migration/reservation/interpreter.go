@@ -57,7 +57,7 @@ func (p *interpreterImpl) GetReservation(ctx context.Context, ref *corev1.Object
 	namespacedName := types.NamespacedName{Name: ref.Name}
 	err := p.Client.Get(ctx, namespacedName, reservation)
 	if errors.IsNotFound(err) {
-		klog.Warningf("Failed to get Reservation %v, reason: %v", err)
+		klog.Warningf("Failed to get Reservation %v, reason: %v", ref.Name, err)
 		err = p.mgr.GetAPIReader().Get(ctx, namespacedName, reservation)
 	}
 	return &Reservation{Reservation: reservation}, err
