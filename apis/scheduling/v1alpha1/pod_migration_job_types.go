@@ -145,8 +145,8 @@ const (
 	PodMigrationJobPending PodMigrationJobPhase = "Pending"
 	// PodMigrationJobRunning represents the PodMigrationJob is being processed
 	PodMigrationJobRunning PodMigrationJobPhase = "Running"
-	// PodMigrationJobSucceed represents the PodMigrationJob processed successfully
-	PodMigrationJobSucceed PodMigrationJobPhase = "Succeed"
+	// PodMigrationJobSucceeded represents the PodMigrationJob processed successfully
+	PodMigrationJobSucceeded PodMigrationJobPhase = "Succeeded"
 	// PodMigrationJobFailed represents the PodMigrationJob process failed caused by Timeout, Reservation failed, etc.
 	PodMigrationJobFailed PodMigrationJobPhase = "Failed"
 	// PodMigrationJobAborted represents the user forcefully aborted the PodMigrationJob.
@@ -168,17 +168,19 @@ const (
 
 // These are valid reasons of PodMigrationJob.
 const (
-	PodMigrationJobReasonTimeout                   = "Timeout"
-	PodMigrationJobReasonFailedCreateReservation   = "FailedCreateReservation"
-	PodMigrationJobReasonUnschedulable             = "Unschedulable"
-	PodMigrationJobReasonMissingPod                = "MissingPod"
-	PodMigrationJobReasonMissingReservation        = "MissingReservation"
-	PodMigrationJobReasonPreempting                = "Preempting"
-	PodMigrationJobReasonPreemptComplete           = "PreemptComplete"
-	PodMigrationJobReasonEvicting                  = "Evicting"
-	PodMigrationJobReasonFailedEvict               = "FailedEvict"
-	PodMigrationJobReasonEvictComplete             = "EvictComplete"
-	PodMigrationJobReasonWaitForPodBindReservation = "WaitForPodBindReservation"
+	PodMigrationJobReasonTimeout                      = "Timeout"
+	PodMigrationJobReasonFailedCreateReservation      = "FailedCreateReservation"
+	PodMigrationJobReasonReservationExpired           = "ReservationExpired"
+	PodMigrationJobReasonReservationBoundByAnotherPod = "ReservationBoundByAnotherPod"
+	PodMigrationJobReasonUnschedulable                = "Unschedulable"
+	PodMigrationJobReasonMissingPod                   = "MissingPod"
+	PodMigrationJobReasonMissingReservation           = "MissingReservation"
+	PodMigrationJobReasonPreempting                   = "Preempting"
+	PodMigrationJobReasonPreemptComplete              = "PreemptComplete"
+	PodMigrationJobReasonEvicting                     = "Evicting"
+	PodMigrationJobReasonFailedEvict                  = "FailedEvict"
+	PodMigrationJobReasonEvictComplete                = "EvictComplete"
+	PodMigrationJobReasonWaitForPodBindReservation    = "WaitForPodBindReservation"
 )
 
 type PodMigrationJobConditionStatus string

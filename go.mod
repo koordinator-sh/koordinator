@@ -11,6 +11,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/google/uuid v1.3.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.0.12
+	github.com/mohae/deepcopy v0.0.0-20170603005431-491d3605edfb
 	github.com/prashantv/gostub v1.1.0
 	github.com/prometheus/client_golang v1.13.0
 	github.com/spf13/cobra v1.5.0

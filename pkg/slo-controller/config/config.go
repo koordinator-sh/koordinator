@@ -102,6 +102,7 @@ type ColocationStrategy struct {
 	DegradeTimeMinutes             *int64   `json:"degradeTimeMinutes,omitempty"`
 	UpdateTimeThresholdSeconds     *int64   `json:"updateTimeThresholdSeconds,omitempty"`
 	ResourceDiffThreshold          *float64 `json:"resourceDiffThreshold,omitempty"`
+	ColocationStrategyExtender     `json:",inline"`
 }
 
 func NewDefaultColocationCfg() *ColocationCfg {
@@ -116,7 +117,7 @@ func DefaultColocationCfg() ColocationCfg {
 }
 
 func DefaultColocationStrategy() ColocationStrategy {
-	return ColocationStrategy{
+	cfg := ColocationStrategy{
 		Enable:                         pointer.Bool(false),
 		MetricAggregateDurationSeconds: pointer.Int64(30),
 		MetricReportIntervalSeconds:    pointer.Int64(60),
@@ -126,6 +127,8 @@ func DefaultColocationStrategy() ColocationStrategy {
 		UpdateTimeThresholdSeconds:     pointer.Int64(300),
 		ResourceDiffThreshold:          pointer.Float64(0.1),
 	}
+	cfg.ColocationStrategyExtender = defaultColocationStrategyExtender
+	return cfg
 }
 
 func IsColocationStrategyValid(strategy *ColocationStrategy) bool {

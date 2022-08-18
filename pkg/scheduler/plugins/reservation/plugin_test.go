@@ -968,7 +968,7 @@ func TestReserve(t *testing.T) {
 	})
 	stateForMatch1 := stateForMatch.Clone()
 	cacheNotActive := newReservationCache()
-	cacheNotActive.AddToFailed(rScheduled)
+	cacheNotActive.AddToInactive(rScheduled)
 	cacheMatched := newReservationCache()
 	cacheMatched.AddToActive(rScheduled)
 	cacheAssumed := newReservationCache()
@@ -1151,7 +1151,7 @@ func TestUnreserve(t *testing.T) {
 		preBind: true,
 	})
 	cacheNotActive := newReservationCache()
-	cacheNotActive.AddToFailed(rScheduled)
+	cacheNotActive.AddToInactive(rScheduled)
 	cacheMatched := newReservationCache()
 	cacheMatched.AddToActive(rScheduled)
 	cacheAssumed := newReservationCache()
@@ -1425,7 +1425,7 @@ func TestPreBind(t *testing.T) {
 				pod:        normalPod,
 				nodeName:   testNodeName,
 			},
-			want: framework.NewStatus(framework.Error, ErrReasonReservationFailed),
+			want: framework.NewStatus(framework.Error, ErrReasonReservationInactive),
 		},
 		{
 			name: "failed to update status",
@@ -1607,7 +1607,7 @@ func TestBind(t *testing.T) {
 				pod:      reservePod,
 				nodeName: testNodeName,
 			},
-			want: framework.NewStatus(framework.Error, "failed to bind reservation, err: "+ErrReasonReservationFailed),
+			want: framework.NewStatus(framework.Error, "failed to bind reservation, err: "+ErrReasonReservationInactive),
 		},
 		{
 			name: "failed to update status",

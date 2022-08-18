@@ -136,6 +136,48 @@ func Test_gcReservations(t *testing.T) {
 			},
 		},
 	}
+	testSucceededReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "r-succeeded",
+			UID:  "5",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationSucceeded,
+			Conditions: []schedulingv1alpha1.ReservationCondition{
+				{
+					Type:               schedulingv1alpha1.ReservationConditionReady,
+					Status:             schedulingv1alpha1.ConditionStatusFalse,
+					Reason:             schedulingv1alpha1.ReasonReservationSucceeded,
+					LastTransitionTime: metav1.Time{Time: now.Add(-3 * time.Hour)},
+					LastProbeTime:      metav1.Time{Time: now.Add(-3 * time.Hour)},
+				},
+			},
+		},
+	}
+	testToCleanReservation1 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "r-to-clean-1",
+			UID:  "6",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			TTL: &metav1.Duration{Duration: 6 * time.Hour},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationSucceeded,
+			Conditions: []schedulingv1alpha1.ReservationCondition{
+				{
+					Type:               schedulingv1alpha1.ReservationConditionReady,
+					Status:             schedulingv1alpha1.ConditionStatusFalse,
+					Reason:             schedulingv1alpha1.ReasonReservationSucceeded,
+					LastTransitionTime: metav1.Time{Time: now.Add(-30 * time.Hour)},
+					LastProbeTime:      metav1.Time{Time: now.Add(-30 * time.Hour)},
+				},
+			},
+		},
+	}
 	type fields struct {
 		reservationCache *reservationCache
 		lister           *fakeReservationLister
@@ -171,11 +213,13 @@ func Test_gcReservations(t *testing.T) {
 				reservationCache: newReservationCache(),
 				lister: &fakeReservationLister{
 					reservations: map[string]*schedulingv1alpha1.Reservation{
-						testActiveReservation.Name:   testActiveReservation,
-						testPendingReservation.Name:  testPendingReservation,
-						testToExpireReservation.Name: testToExpireReservation,
-						testExpiredReservation.Name:  testExpiredReservation,
-						testToCleanReservation.Name:  testToCleanReservation,
+						testActiveReservation.Name:    testActiveReservation,
+						testPendingReservation.Name:   testPendingReservation,
+						testSucceededReservation.Name: testSucceededReservation,
+						testToExpireReservation.Name:  testToExpireReservation,
+						testExpiredReservation.Name:   testExpiredReservation,
+						testToCleanReservation.Name:   testToCleanReservation,
+						testToCleanReservation1.Name:  testToCleanReservation1,
 					},
 				},
 				client: &fakeReservationClient{},
@@ -184,6 +228,7 @@ func Test_gcReservations(t *testing.T) {
 				exist: map[string]*schedulingv1alpha1.Reservation{
 					string(testActiveReservation.UID):    testActiveReservation,
 					string(testPendingReservation.UID):   testPendingReservation,
+					string(testSucceededReservation.UID): testSucceededReservation,
 					string(testToExpireReservation1.UID): testToExpireReservation1,
 					string(testExpiredReservation.UID):   testExpiredReservation,
 				},

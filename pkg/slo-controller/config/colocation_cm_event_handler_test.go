@@ -28,7 +28,7 @@ import (
 )
 
 func Test_syncColocationConfigIfChanged(t *testing.T) {
-
+	clearDefaultColocationExtension()
 	oldCfg := *NewDefaultColocationCfg()
 	oldCfg.MemoryReclaimThresholdPercent = pointer.Int64Ptr(40)
 

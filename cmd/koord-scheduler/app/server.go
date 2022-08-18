@@ -384,6 +384,7 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 		Scheduler: sched,
 	}
 	eventhandlers.AddScheduleEventHandler(sched, schedulerInternalHandler, extendedHandle)
+	eventhandlers.AddReservationErrorHandler(sched, schedulerInternalHandler, extendedHandle)
 
 	return &cc, sched, nil
 }

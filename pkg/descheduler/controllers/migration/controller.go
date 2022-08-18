@@ -307,7 +307,7 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 		return reconcile.Result{}, err
 	}
 
-	if err = r.handleCreateReservationSuccess(ctx, job); err != nil {
+	if err = r.handleReservationCreateSuccess(ctx, job); err != nil {
 		return reconcile.Result{}, err
 	}
 
@@ -320,19 +320,25 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 		return reconcile.Result{}, err
 	}
 
-	if err = r.handleScheduleFailed(ctx, job, reservationObj); err != nil {
+	// sync reservation Unschedulable message to PodMigrationJob
+	if err = r.syncReservationScheduleFailed(ctx, job, reservationObj); err != nil {
 		return reconcile.Result{}, err
 	}
 
-	if reservationObj.IsPending() {
+	if reservation.IsReservationPending(reservationObj) {
 		klog.V(4).Infof("MigrationJob %s is waiting for Reservation %s scheduled", job.Name, reservationObj)
 		return reconcile.Result{RequeueAfter: defaultRequeueAfter}, nil
 	}
 
-	if !reservationObj.IsScheduled() {
+	if reservation.IsReservationExpired(reservationObj) {
+		err := r.abortJobByReservationExpired(ctx, job)
+		return reconcile.Result{}, err
+	}
+
+	if !reservation.IsReservationScheduled(reservationObj) {
 		preemption := r.reservationInterpreter.Preemption()
 		if !reservationObj.NeedPreemption() || preemption == nil {
-			err := r.abortJobByUnschedulable(ctx, job, reservationObj)
+			err := r.abortJobByReservationUnschedulable(ctx, job, reservationObj)
 			return reconcile.Result{}, err
 		}
 		preemptComplete, result, err := preemption.Preempt(ctx, job, reservationObj)
@@ -343,7 +349,7 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 		}
 	}
 
-	if err = r.handleScheduleSuccess(ctx, job, reservationObj); err != nil {
+	if err = r.syncReservationScheduleSuccess(ctx, job, reservationObj); err != nil {
 		return reconcile.Result{}, err
 	}
 
@@ -366,16 +372,10 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 		return result, nil
 	}
 
-	// TODO(joseph): currently Reservation does not support allocateOnce semantics.
-	//  It is our responsibility to clean up the Reservation ourselves
-	if err = r.deleteReservation(ctx, job); err != nil {
-		klog.Errorf("Failed to delete reservation, MigrationJob: %s, err: %v", job.Name, err)
-	}
-
 	boundPod := reservationObj.GetBoundPod()
 	podNamespacedName := types.NamespacedName{Namespace: boundPod.Namespace, Name: boundPod.Name}
 	job.Status.PodRef = boundPod
-	job.Status.Phase = sev1alpha1.PodMigrationJobSucceed
+	job.Status.Phase = sev1alpha1.PodMigrationJobSucceeded
 	job.Status.Status = "Complete"
 	job.Status.Reason = ""
 	job.Status.Message = fmt.Sprintf("Bind Pod %q in Reservation %q", podNamespacedName, reservationObj)
@@ -443,10 +443,55 @@ func (r *Reconciler) abortJobByMissingReservation(ctx context.Context, job *sev1
 	return err
 }
 
-func (r *Reconciler) abortJobByUnschedulable(ctx context.Context, job *sev1alpha1.PodMigrationJob, reservationObj reservation.Object) error {
+func (r *Reconciler) abortJobByReservationExpired(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
+	klog.V(4).Infof("MigrationJob %s stop migration because Reservation expired", job.Name)
+	job.Status.Phase = sev1alpha1.PodMigrationJobFailed
+	job.Status.Reason = sev1alpha1.PodMigrationJobReasonReservationExpired
+	job.Status.Message = "Reservation expired"
+	return r.Client.Status().Update(ctx, job)
+}
+
+func (r *Reconciler) abortJobByReservationBound(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
+	klog.V(4).Infof("MigrationJob %s stop migration because Reservation is already bound by another Pod", job.Name)
+	job.Status.Phase = sev1alpha1.PodMigrationJobFailed
+	job.Status.Reason = sev1alpha1.PodMigrationJobReasonReservationBoundByAnotherPod
+	job.Status.Message = "Reservation is already bound by another Pod"
+	return r.Client.Status().Update(ctx, job)
+}
+
+func (r *Reconciler) abortJobIfReservationBoundByAnotherPod(ctx context.Context, job *sev1alpha1.PodMigrationJob, pod *corev1.Pod) (bool, error) {
+	if job.Spec.ReservationOptions != nil && job.Spec.ReservationOptions.ReservationRef != nil {
+		reservationObj, err := r.reservationInterpreter.GetReservation(ctx, job.Spec.ReservationOptions.ReservationRef)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				_ = r.abortJobByMissingReservation(ctx, job)
+			}
+			return true, err
+		}
+
+		if reservation.IsReservationSucceeded(reservationObj) {
+			boundByAnotherPod := true
+			if pod != nil {
+				if podRef := reservationObj.GetBoundPod(); podRef != nil {
+					if podRef.UID == pod.UID {
+						boundByAnotherPod = false
+					}
+				}
+			}
+			if boundByAnotherPod {
+				err = r.abortJobByReservationBound(ctx, job)
+				return true, err
+			}
+
+		}
+	}
+	return false, nil
+}
+
+func (r *Reconciler) abortJobByReservationUnschedulable(ctx context.Context, job *sev1alpha1.PodMigrationJob, reservationObj reservation.Object) error {
 	klog.V(4).Infof("MigrationJob %s stop migration because Reservation %q cannot be scheduled", job.Name, reservationObj)
 	var message string
-	unschedulableCond := reservationObj.GetUnschedulableCondition()
+	unschedulableCond := reservation.GetUnschedulableCondition(reservationObj)
 	if unschedulableCond != nil {
 		message = unschedulableCond.Message
 	}
@@ -456,11 +501,11 @@ func (r *Reconciler) abortJobByUnschedulable(ctx context.Context, job *sev1alpha
 	return r.Client.Status().Update(ctx, job)
 }
 
-func (r *Reconciler) handleScheduleFailed(ctx context.Context, job *sev1alpha1.PodMigrationJob, reservationObj reservation.Object) error {
+func (r *Reconciler) syncReservationScheduleFailed(ctx context.Context, job *sev1alpha1.PodMigrationJob, reservationObj reservation.Object) error {
 	_, cond := util.GetCondition(&job.Status, sev1alpha1.PodMigrationJobConditionReservationScheduled)
 	if cond == nil || cond.Status == sev1alpha1.PodMigrationJobConditionStatusFalse {
 		klog.V(4).Infof("MigrationJob %s checks whether Reservation %q is scheduled successfully", job.Name, reservationObj)
-		unschedulableCond := reservationObj.GetUnschedulableCondition()
+		unschedulableCond := reservation.GetUnschedulableCondition(reservationObj)
 		if unschedulableCond != nil {
 			cond = &sev1alpha1.PodMigrationJobCondition{
 				Type:    sev1alpha1.PodMigrationJobConditionReservationScheduled,
@@ -509,7 +554,7 @@ func (r *Reconciler) evictPodDirectly(ctx context.Context, job *sev1alpha1.PodMi
 		return result, nil
 	}
 
-	job.Status.Phase = sev1alpha1.PodMigrationJobSucceed
+	job.Status.Phase = sev1alpha1.PodMigrationJobSucceeded
 	job.Status.Status = "Complete"
 	job.Status.Reason = ""
 	job.Status.Message = fmt.Sprintf("Pod %q has been evicted", podNamespacedName)
@@ -553,6 +598,10 @@ func (r *Reconciler) evictPod(ctx context.Context, job *sev1alpha1.PodMigrationJ
 		return false, reconcile.Result{RequeueAfter: defaultRequeueAfter}, nil
 	}
 
+	if aborted, err := r.abortJobIfReservationBoundByAnotherPod(ctx, job, nil); aborted {
+		return false, reconcile.Result{}, err
+	}
+
 	if job.Spec.DeleteOptions == nil {
 		job.Spec.DeleteOptions = r.args.DefaultDeleteOptions
 	}
@@ -575,7 +624,7 @@ func (r *Reconciler) evictPod(ctx context.Context, job *sev1alpha1.PodMigrationJ
 	return false, reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
 }
 
-func (r *Reconciler) handleScheduleSuccess(ctx context.Context, job *sev1alpha1.PodMigrationJob, reservationObj reservation.Object) error {
+func (r *Reconciler) syncReservationScheduleSuccess(ctx context.Context, job *sev1alpha1.PodMigrationJob, reservationObj reservation.Object) error {
 	scheduledNodeName := reservationObj.GetScheduledNodeName()
 	if scheduledNodeName == "" || job.Status.NodeName != "" {
 		return nil
@@ -645,7 +694,7 @@ func (r *Reconciler) createReservation(ctx context.Context, job *sev1alpha1.PodM
 	return err
 }
 
-func (r *Reconciler) handleCreateReservationSuccess(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
+func (r *Reconciler) handleReservationCreateSuccess(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
 	cond := &sev1alpha1.PodMigrationJobCondition{
 		Type:   sev1alpha1.PodMigrationJobConditionReservationCreated,
 		Status: sev1alpha1.PodMigrationJobConditionStatusTrue,
@@ -670,6 +719,10 @@ func (r *Reconciler) waitForPendingPodScheduled(ctx context.Context, job *sev1al
 
 	_, podCondition := podutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
 	if podCondition == nil || podCondition.Status == corev1.ConditionFalse {
+		if aborted, err := r.abortJobIfReservationBoundByAnotherPod(ctx, job, pod); aborted {
+			return reconcile.Result{}, err
+		}
+
 		var message string
 		if podCondition != nil {
 			message = podCondition.Message
@@ -684,13 +737,7 @@ func (r *Reconciler) waitForPendingPodScheduled(ctx context.Context, job *sev1al
 		return reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
 	}
 
-	// TODO(joseph): currently Reservation does not support allocateOnce semantics.
-	//  It is our responsibility to clean up the Reservation ourselves
-	if err = r.deleteReservation(ctx, job); err != nil {
-		klog.Errorf("Failed to delete reservation, MigrationJob: %s, err: %v", job.Name, err)
-	}
-
-	job.Status.Phase = sev1alpha1.PodMigrationJobSucceed
+	job.Status.Phase = sev1alpha1.PodMigrationJobSucceeded
 	job.Status.Status = "Complete"
 	job.Status.Reason = ""
 	job.Status.Message = fmt.Sprintf("Assign Pod %q to node %q", podNamespacedName, pod.Spec.NodeName)

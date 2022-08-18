@@ -53,9 +53,6 @@ func CreateOrUpdateReservationOptions(job *sev1alpha1.PodMigrationJob, pod *core
 				Owners: GenerateReserveResourceOwners(pod),
 			},
 		}
-		// force removed the assigned nodeName of target Pod
-		// to request new Node
-		reservationOptions.Template.Spec.Template.Spec.NodeName = ""
 	} else {
 		if reservationOptions.Template.ObjectMeta.Name == "" {
 			reservationOptions.Template.ObjectMeta.Name = string(job.UID)
@@ -66,14 +63,16 @@ func CreateOrUpdateReservationOptions(job *sev1alpha1.PodMigrationJob, pod *core
 				ObjectMeta: pod.ObjectMeta,
 				Spec:       pod.Spec,
 			}
-			// force removed the assigned nodeName of target Pod
-			// to request new Node
-			reservationOptions.Template.Spec.Template.Spec.NodeName = ""
 		}
 		if len(reservationOptions.Template.Spec.Owners) == 0 {
 			reservationOptions.Template.Spec.Owners = GenerateReserveResourceOwners(pod)
 		}
 	}
+
+	// Reservation used for migration is no longer reused after consumed
+	reservationOptions.Template.Spec.AllocateOnce = true
+	// force removed the assigned nodeName of target Pod to request new Node
+	reservationOptions.Template.Spec.Template.Spec.NodeName = ""
 
 	if reservationOptions.Template.ObjectMeta.Labels == nil {
 		reservationOptions.Template.ObjectMeta.Labels = map[string]string{}
