@@ -46,7 +46,7 @@ func (p *Plugin) gcReservations() {
 	for _, r := range rList {
 		// expire reservations
 		// the reserve pods of expired reservations would be dequeue or removed from cache by the scheduler handler.
-		if r.Status.Phase != schedulingv1alpha1.ReservationFailed && isReservationNeedExpiration(r) {
+		if isReservationNeedExpiration(r) {
 			// marked as expired in cache even if the reservation is failed to set expired
 			if err = p.expireReservation(r); err != nil {
 				klog.Warningf("failed to update reservation %s as expired, err: %s", klog.KObj(r), err)
@@ -54,12 +54,12 @@ func (p *Plugin) gcReservations() {
 		} else if IsReservationActive(r) {
 			// sync active reservation for correct owner statuses
 			p.syncActiveReservation(r)
-		} else if IsReservationExpired(r) {
-			p.reservationCache.AddToFailed(r)
+		} else if IsReservationExpired(r) || IsReservationSucceeded(r) {
+			p.reservationCache.AddToInactive(r)
 		}
 	}
 
-	expiredMap := p.reservationCache.GetAllFailed()
+	expiredMap := p.reservationCache.GetAllInactive()
 	// TBD: cleanup orphan reservations
 	for _, r := range expiredMap {
 		// cleanup expired reservations
@@ -103,7 +103,7 @@ func (p *Plugin) expireReservationOnNode(node *corev1.Node) {
 
 func (p *Plugin) expireReservation(r *schedulingv1alpha1.Reservation) error {
 	// marked as expired in cache even if the reservation is failed to set expired
-	p.reservationCache.AddToFailed(r)
+	p.reservationCache.AddToInactive(r)
 	// update reservation status
 	return retryOnConflictOrTooManyRequests(func() error {
 		curR, err := p.rLister.Get(r.Name)

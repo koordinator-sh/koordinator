@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
+
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +34,53 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
+
+func TestAddReservationErrorHandler(t *testing.T) {
+	testNodeName := "test-node-0"
+	testR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-1",
+			UID:  "1234",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-1",
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-1",
+					},
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationPending,
+			NodeName: testNodeName,
+		},
+	}
+	testPod := reservation.NewReservePod(testR)
+
+	t.Run("test not panic", func(t *testing.T) {
+		sched := &scheduler.Scheduler{}
+		internalHandler := &fakeSchedulerInternalHandler{}
+		koordClientSet := koordfake.NewSimpleClientset(testR)
+		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+		extendHandle := frameworkext.NewExtendedHandle(
+			frameworkext.WithKoordinatorClientSet(koordClientSet),
+			frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+		)
+
+		AddReservationErrorHandler(sched, internalHandler, extendHandle)
+
+		sched.Error(&framework.QueuedPodInfo{
+			PodInfo: framework.NewPodInfo(testPod),
+		}, nil)
+	})
+}
 
 func TestAddScheduleEventHandler(t *testing.T) {
 	t.Run("test not panic", func(t *testing.T) {

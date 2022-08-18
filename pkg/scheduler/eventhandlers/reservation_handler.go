@@ -20,12 +20,58 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 )
+
+func AddReservationErrorHandler(sched *scheduler.Scheduler, internalHandler SchedulerInternalHandler, extendedHandle frameworkext.ExtendedHandle) {
+	reservationLister := extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Lister()
+	defaultErrorFn := sched.Error
+	sched.Error = func(podInfo *framework.QueuedPodInfo, err error) {
+		pod := podInfo.Pod
+		// if the pod is not a reserve pod, use the default error handler
+		if !reservation.IsReservePod(pod) {
+			defaultErrorFn(podInfo, err)
+			return
+		}
+
+		// NOTE: If the pod is a reserve pod, we simply check the corresponding reservation status if the reserve pod
+		// need requeue for the next scheduling cycle.
+		if err == scheduler.ErrNoNodesAvailable {
+			klog.V(2).InfoS("Unable to schedule reserve pod; no nodes are registered to the cluster; waiting", "pod", klog.KObj(pod))
+		} else if fitError, ok := err.(*framework.FitError); ok {
+			// Inject UnschedulablePlugins to PodInfo, which will be used later for moving Pods between queues efficiently.
+			podInfo.UnschedulablePlugins = fitError.Diagnosis.UnschedulablePlugins
+			klog.V(2).InfoS("Unable to schedule reserve pod; no fit; waiting", "pod", klog.KObj(pod), "err", err)
+		} else {
+			klog.ErrorS(err, "Error scheduling reserve pod; retrying", "pod", klog.KObj(pod))
+		}
+
+		// Check if the corresponding reservation exists in informer cache.
+		rName := reservation.GetReservationNameFromReservePod(pod)
+		cachedR, err := reservationLister.Get(rName)
+		if err != nil {
+			klog.InfoS("Reservation doesn't exist in informer cache",
+				"pod", klog.KObj(pod), "reservation", rName, "err", err)
+			return
+		}
+		// In the case of extender, the pod may have been bound successfully, but timed out returning its response to the scheduler.
+		// It could result in the live version to carry .spec.nodeName, and that's inconsistent with the internal-queued version.
+		if nodeName := reservation.GetReservationNodeName(cachedR); len(nodeName) != 0 {
+			klog.InfoS("Reservation has been assigned to node. Abort adding it back to queue.",
+				"pod", klog.KObj(pod), "reservation", rName, "node", nodeName)
+			return
+		}
+		podInfo.PodInfo = framework.NewPodInfo(reservation.NewReservePod(cachedR))
+		if err = internalHandler.GetQueue().AddUnschedulableIfNotPresent(podInfo, internalHandler.GetQueue().SchedulingCycle()); err != nil {
+			klog.ErrorS(err, "Error occurred")
+		}
+	}
+}
 
 // AddScheduleEventHandler adds reservation event handlers for the scheduler just like pods'.
 // One special case is that reservations have expiration, which the scheduler should cleanup expired ones from the
