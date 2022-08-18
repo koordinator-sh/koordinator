@@ -72,7 +72,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
 				PodMeta:      podInfo.PodMeta,
 				PodResources: podInfo.Resources,
-				ContainerMata: &v1alpha1.ContainerMetadata{
+				ContainerMeta: &v1alpha1.ContainerMetadata{
 					Name: tokens[1],
 				},
 				ContainerAnnotations: annos,
@@ -80,6 +80,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 				PodAnnotations:       podInfo.Annotations,
 				PodLabels:            podInfo.Labels,
 				PodCgroupParent:      podInfo.CgroupParent,
+				ContainerEnvs:        splitDockerEnv(ContainerConfig.Env),
 			},
 		}
 		runtimeHookPath = config.CreateContainer
@@ -132,6 +133,10 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 		}
 		cfgBody.HostConfig.CgroupParent = generateExpectedCgroupParent(d.cgroupDriver, resp.PodCgroupParent)
 		containerInfo.PodCgroupParent = resp.PodCgroupParent
+		if resp.ContainerEnvs != nil {
+			cfgBody.Env = generateEnvList(resp.ContainerEnvs)
+			containerInfo.ContainerEnvs = resp.ContainerEnvs
+		}
 	}
 	// send req to docker
 	nBody, err := encodeBody(cfgBody)
@@ -157,7 +162,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 	if runtimeResourceType == resource_executor.RuntimePodResource {
 		store.WritePodSandboxInfo(createResp.ID, podInfo)
 	} else {
-		containerInfo.ContainerMata.Id = createResp.ID
+		containerInfo.ContainerMeta.Id = createResp.ID
 		store.WriteContainerInfo(createResp.ID, containerInfo)
 	}
 }

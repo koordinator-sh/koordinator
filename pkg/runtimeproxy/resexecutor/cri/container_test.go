@@ -244,14 +244,14 @@ func TestContainerResourceExecutor_ResourceCheckPoint(t *testing.T) {
 			fields: fields{
 				ContainerInfo: store.ContainerInfo{
 					ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
-						ContainerMata: &v1alpha1.ContainerMetadata{},
+						ContainerMeta: &v1alpha1.ContainerMetadata{},
 					},
 				},
 			},
 			wantErr: false,
 			wantStoreInfo: &store.ContainerInfo{
 				ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
-					ContainerMata: &v1alpha1.ContainerMetadata{
+					ContainerMeta: &v1alpha1.ContainerMetadata{
 						Id: "111111",
 					},
 				}},
@@ -262,7 +262,7 @@ func TestContainerResourceExecutor_ResourceCheckPoint(t *testing.T) {
 			ContainerInfo: tt.fields.ContainerInfo,
 		}
 		err := c.ResourceCheckPoint(tt.args.rsp)
-		containerInfo := store.GetContainerInfo(c.ContainerInfo.ContainerMata.GetId())
+		containerInfo := store.GetContainerInfo(c.ContainerInfo.ContainerMeta.GetId())
 		assert.Equal(t, tt.wantErr, err != nil, err)
 		assert.Equal(t, tt.wantStoreInfo, containerInfo)
 	}
@@ -343,7 +343,7 @@ func TestContainerResourceExecutor_ParseRequest_CreateContainerRequest(t *testin
 					PodAnnotations: map[string]string{
 						"annotation.dummy.koordinator.sh/TestContainerResourceExecutor_ParseRequest_CreateContainerRequest_Pod": "true",
 					},
-					ContainerMata: &v1alpha1.ContainerMetadata{
+					ContainerMeta: &v1alpha1.ContainerMetadata{
 						Name:    "test container",
 						Attempt: 101010,
 					},
@@ -406,7 +406,7 @@ func TestContainerResourceExecutor_ParseRequest_UpdateContainerResourcesRequest(
 							Namespace: "mock namespace",
 							Uid:       "202207121604",
 						},
-						ContainerMata: &v1alpha1.ContainerMetadata{
+						ContainerMeta: &v1alpha1.ContainerMetadata{
 							Name:    "test container",
 							Attempt: 101010,
 						},
@@ -432,7 +432,7 @@ func TestContainerResourceExecutor_ParseRequest_UpdateContainerResourcesRequest(
 						Namespace: "mock namespace",
 						Uid:       "202207121604",
 					},
-					ContainerMata: &v1alpha1.ContainerMetadata{
+					ContainerMeta: &v1alpha1.ContainerMetadata{
 						Name:    "test container",
 						Attempt: 101010,
 					},

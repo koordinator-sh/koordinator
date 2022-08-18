@@ -121,7 +121,7 @@ message ContainerMetadata {
 // pre-container-start, post-container-create, pre-container-resource-update, post-container-stop.
 message ContainerResourceHookRequest {
   PodSandboxMetadata pod_meta = 1;
-  ContainerMetadata container_mata = 2;
+  ContainerMetadata container_meta = 2;
   // container related annotations
   map<string, string> container_annotations = 3;
   LinuxContainerResources container_resources = 4;
@@ -130,6 +130,7 @@ message ContainerResourceHookRequest {
   map<string, string> pod_annotations = 6;
   map<string, string> pod_labels = 7;
   string pod_cgroup_parent = 8;
+  map<string, string> container_envs = 9;
   // TODO: add the error info from containerd/dockerd
 }
 
@@ -140,6 +141,7 @@ message ContainerResourceHookResponse {
   map<string, string> container_annotations = 1;
   LinuxContainerResources container_resources = 2;
   string pod_cgroup_parent = 3;
+  map<string, string> container_envs = 4;
 }
 
 // Runtime service defines the public APIs for talk between RuntimeHookServer and RuntimeManager
