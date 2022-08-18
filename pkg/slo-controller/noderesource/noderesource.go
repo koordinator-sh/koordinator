@@ -142,6 +142,7 @@ func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResou
 
 		if err := r.Client.Status().Update(context.TODO(), updateNode); err == nil {
 			r.SyncContext.Store(util.GetNodeKey(node), r.Clock.Now())
+			klog.V(5).Infof("update node %v success, detail %+v", updateNode.Name, updateNode)
 			return nil
 		} else {
 			klog.Errorf("failed to update node %v, error: %v", updateNode.Name, err)
@@ -176,7 +177,7 @@ func (r *NodeResourceReconciler) isBEResourceSyncNeeded(old, new *corev1.Node) b
 	}
 
 	// scenario 3: all good, do nothing
-	klog.Info("all good, no need to sync")
+	klog.Info("all good, no need to sync for node %v", new.Name)
 	return false
 }
 
@@ -204,5 +205,8 @@ func (r *NodeResourceReconciler) prepareNodeResource(node *corev1.Node, beResour
 		node.Status.Capacity[extension.BatchMemory] = *beResource.Memory
 		node.Status.Allocatable[extension.BatchMemory] = *beResource.Memory
 	}
+
+	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
+	runNodePrepareExtenders(strategy, node)
 	return nil
 }
