@@ -150,6 +150,11 @@ func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 		*out = new(v1.LabelSelector)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.Namespaces != nil {
+		in, out := &in.Namespaces, &out.Namespaces
+		*out = new(Namespaces)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.MaxMigratingPerNode != nil {
 		in, out := &in.MaxMigratingPerNode, &out.MaxMigratingPerNode
 		*out = new(int32)

@@ -378,6 +378,9 @@ type MigrationControllerArgs struct {
 	// Default is false
 	DryRun bool `json:"dryRun,omitempty"`
 
+	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run. Defaults to 1.
+	MaxConcurrentReconciles *int32 `json:"maxConcurrentReconciles,omitempty"`
+
 	// EvictFailedBarePods allows pods without ownerReferences and in failed phase to be evicted.
 	EvictFailedBarePods bool `json:"evictFailedBarePods"`
 
@@ -394,10 +397,8 @@ type MigrationControllerArgs struct {
 	// Any pod matching the label selector is considered evictable.
 	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
 
-	// FlowControlQPS controls the number of arbitrations per second
-	FlowControlQPS string `json:"flowControlQPS,omitempty"`
-	// FlowControlBurst is the maximum number of tokens
-	FlowControlBurst int32 `json:"flowControlBurst,omitempty"`
+	// Namespaces carries a list of included/excluded namespaces
+	Namespaces *Namespaces `json:"namespaces,omitempty"`
 
 	// MaxMigratingPerNode represents he maximum number of pods that can be migrating during migrate per node.
 	MaxMigratingPerNode *int32 `json:"maxMigratingPerNode,omitempty"`
@@ -414,12 +415,23 @@ type MigrationControllerArgs struct {
 	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
 	MaxUnavailablePerWorkload *intstr.IntOrString `json:"maxUnavailablePerWorkload,omitempty"`
 
+	// DefaultJobMode represents the default operating mode of the PodMigrationJob
+	// Default is PodMigrationJobModeReservationFirst
+	DefaultJobMode string `json:"defaultJobMode,omitempty"`
+
+	// DefaultJobTTL represents the default TTL of the PodMigrationJob
+	// Default is 5 minute
+	DefaultJobTTL *metav1.Duration `json:"defaultJobTTL,omitempty"`
+
+	// EvictQPS controls the number of evict per second
+	EvictQPS string `json:"evictQPS,omitempty"`
+	// EvictBurst is the maximum number of tokens
+	EvictBurst int32 `json:"evictBurst,omitempty"`
 	// EvictionPolicy represents how to delete Pod, support "Delete" and "Eviction", default value is "Eviction"
 	EvictionPolicy string `json:"evictionPolicy,omitempty"`
 	// DefaultDeleteOptions defines options when deleting migrated pods and preempted pods through the method specified by EvictionPolicy
 	DefaultDeleteOptions *metav1.DeleteOptions `json:"defaultDeleteOptions,omitempty"`
 }
-
 ```
 
 ## Alternatives
@@ -431,3 +443,4 @@ type MigrationControllerArgs struct {
 - 2022-07-13: Update proposal based on review comments
 - 2022-07-22: Update Spec
 - 2022-08-02: Update MigrationJob configuration
+- 2022-08-25: Update MigrationJob configuration

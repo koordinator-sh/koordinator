@@ -12,6 +12,8 @@ spec:
     kind: PodMigrationJob
     listKind: PodMigrationJobList
     plural: podmigrationjobs
+    shortNames:
+    - pmj
     singular: podmigrationjob
   scope: Cluster
   versions:
