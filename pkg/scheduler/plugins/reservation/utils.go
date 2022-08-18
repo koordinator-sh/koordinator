@@ -109,11 +109,15 @@ func ValidateReservation(r *schedulingv1alpha1.Reservation) error {
 }
 
 func isReservationNeedExpiration(r *schedulingv1alpha1.Reservation) bool {
-	// 1. disable expiration if TTL is set as 0
+	// 1. failed or succeeded reservations does not need to expire
+	if r.Status.Phase == schedulingv1alpha1.ReservationFailed || r.Status.Phase == schedulingv1alpha1.ReservationSucceeded {
+		return false
+	}
+	// 2. disable expiration if TTL is set as 0
 	if r.Spec.TTL != nil && r.Spec.TTL.Duration == 0 {
 		return false
 	}
-	// 2. if both TTL and Expires are set, firstly check Expires
+	// 3. if both TTL and Expires are set, firstly check Expires
 	return r.Spec.Expires != nil && time.Now().After(r.Spec.Expires.Time) ||
 		r.Spec.TTL != nil && time.Since(r.CreationTimestamp.Time) > r.Spec.TTL.Duration
 }
@@ -126,6 +130,12 @@ func isReservationNeedCleanup(r *schedulingv1alpha1.Reservation) bool {
 		for _, condition := range r.Status.Conditions {
 			if condition.Reason == schedulingv1alpha1.ReasonReservationExpired {
 				return time.Since(condition.LastTransitionTime.Time) > defaultGCDuration
+			}
+		}
+	} else if IsReservationSucceeded(r) {
+		for _, condition := range r.Status.Conditions {
+			if condition.Reason == schedulingv1alpha1.ReasonReservationSucceeded {
+				return time.Since(condition.LastProbeTime.Time) > defaultGCDuration
 			}
 		}
 	}
@@ -164,50 +174,51 @@ func setReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string)
 func setReservationExpired(r *schedulingv1alpha1.Reservation) {
 	r.Status.Phase = schedulingv1alpha1.ReservationFailed
 	// not duplicate expired info
-	expiredIdx := -1
+	idx := -1
 	isReady := false
 	for i, condition := range r.Status.Conditions {
 		if condition.Type == schedulingv1alpha1.ReservationConditionReady {
-			expiredIdx = i
+			idx = i
 			isReady = condition.Status == schedulingv1alpha1.ConditionStatusTrue
 		}
 	}
-	if expiredIdx < 0 { // if not set condition
-		expiredCondition := schedulingv1alpha1.ReservationCondition{
+	if idx < 0 { // if not set condition
+		condition := schedulingv1alpha1.ReservationCondition{
 			Type:               schedulingv1alpha1.ReservationConditionReady,
 			Status:             schedulingv1alpha1.ConditionStatusFalse,
 			Reason:             schedulingv1alpha1.ReasonReservationExpired,
 			LastProbeTime:      metav1.Now(),
 			LastTransitionTime: metav1.Now(),
 		}
-		r.Status.Conditions = append(r.Status.Conditions, expiredCondition)
+		r.Status.Conditions = append(r.Status.Conditions, condition)
 	} else if isReady { // if was ready
-		expiredCondition := schedulingv1alpha1.ReservationCondition{
+		condition := schedulingv1alpha1.ReservationCondition{
 			Type:               schedulingv1alpha1.ReservationConditionReady,
 			Status:             schedulingv1alpha1.ConditionStatusFalse,
 			Reason:             schedulingv1alpha1.ReasonReservationExpired,
 			LastProbeTime:      metav1.Now(),
 			LastTransitionTime: metav1.Now(),
 		}
-		r.Status.Conditions[expiredIdx] = expiredCondition
-	} else { // if already expired
-		r.Status.Conditions[expiredIdx].LastProbeTime = metav1.Now()
+		r.Status.Conditions[idx] = condition
+	} else { // if already not ready
+		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationExpired
+		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
 	}
 }
 
 func setReservationUnschedulable(r *schedulingv1alpha1.Reservation, msg string) {
-	r.Status.Phase = schedulingv1alpha1.ReservationFailed
+	// unschedule reservations can try scheduling in next cycles, so we does not update its phase
 	// not duplicate condition info
-	expiredIdx := -1
+	idx := -1
 	isScheduled := false
 	for i, condition := range r.Status.Conditions {
 		if condition.Type == schedulingv1alpha1.ReservationConditionScheduled {
-			expiredIdx = i
+			idx = i
 			isScheduled = condition.Status == schedulingv1alpha1.ConditionStatusTrue
 		}
 	}
-	if expiredIdx < 0 { // if not set condition
-		expiredCondition := schedulingv1alpha1.ReservationCondition{
+	if idx < 0 { // if not set condition
+		condition := schedulingv1alpha1.ReservationCondition{
 			Type:               schedulingv1alpha1.ReservationConditionScheduled,
 			Status:             schedulingv1alpha1.ConditionStatusFalse,
 			Reason:             schedulingv1alpha1.ReasonReservationUnschedulable,
@@ -215,19 +226,13 @@ func setReservationUnschedulable(r *schedulingv1alpha1.Reservation, msg string) 
 			LastProbeTime:      metav1.Now(),
 			LastTransitionTime: metav1.Now(),
 		}
-		r.Status.Conditions = append(r.Status.Conditions, expiredCondition)
-	} else if isScheduled { // if was scheduled
-		expiredCondition := schedulingv1alpha1.ReservationCondition{
-			Type:               schedulingv1alpha1.ReservationConditionScheduled,
-			Status:             schedulingv1alpha1.ConditionStatusFalse,
-			Reason:             schedulingv1alpha1.ReasonReservationUnschedulable,
-			Message:            msg,
-			LastProbeTime:      metav1.Now(),
-			LastTransitionTime: metav1.Now(),
-		}
-		r.Status.Conditions[expiredIdx] = expiredCondition
-	} else { // if already unschedulable
-		r.Status.Conditions[expiredIdx].LastProbeTime = metav1.Now()
+		r.Status.Conditions = append(r.Status.Conditions, condition)
+	} else if isScheduled { // if is scheduled, keep the condition status
+		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
+	} else { // if already unschedulable, update the message
+		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationUnschedulable
+		r.Status.Conditions[idx].Message = msg
+		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
 	}
 }
 
@@ -265,16 +270,19 @@ func setReservationSucceeded(r *schedulingv1alpha1.Reservation) {
 			idx = i
 		}
 	}
-	condition := schedulingv1alpha1.ReservationCondition{
-		Type:          schedulingv1alpha1.ReservationConditionReady,
-		Status:        schedulingv1alpha1.ConditionStatusFalse,
-		Reason:        schedulingv1alpha1.ReasonReservationSucceeded,
-		LastProbeTime: metav1.Now(),
-	}
 	if idx < 0 { // if not set condition
+		condition := schedulingv1alpha1.ReservationCondition{
+			Type:               schedulingv1alpha1.ReservationConditionReady,
+			Status:             schedulingv1alpha1.ConditionStatusFalse,
+			Reason:             schedulingv1alpha1.ReasonReservationSucceeded,
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
+		}
 		r.Status.Conditions = append(r.Status.Conditions, condition)
 	} else {
-		r.Status.Conditions[idx] = condition
+		r.Status.Conditions[idx].Status = schedulingv1alpha1.ConditionStatusFalse
+		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationSucceeded
+		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
 	}
 }
 
@@ -316,13 +324,9 @@ func removeReservationSucceeded(r *schedulingv1alpha1.Reservation) {
 		}
 	}
 	if idx >= 0 {
-		condition := schedulingv1alpha1.ReservationCondition{
-			Type:          schedulingv1alpha1.ReservationConditionReady,
-			Status:        schedulingv1alpha1.ConditionStatusTrue,
-			Reason:        schedulingv1alpha1.ReasonReservationAvailable,
-			LastProbeTime: r.Status.Conditions[idx].LastTransitionTime,
-		}
-		r.Status.Conditions[idx] = condition
+		r.Status.Conditions[idx].Status = schedulingv1alpha1.ConditionStatusTrue
+		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationAvailable
+		r.Status.Conditions[idx].LastProbeTime = r.Status.Conditions[idx].LastTransitionTime
 	}
 }
 

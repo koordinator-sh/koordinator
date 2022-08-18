@@ -196,17 +196,17 @@ type assumedInfo struct {
 // reservationCache caches the active, failed and assumed reservations synced from informer and plugin reserve.
 // returned objects are for read-only usage
 type reservationCache struct {
-	lock    sync.RWMutex
-	failed  map[string]*schedulingv1alpha1.Reservation // UID -> *object; failed reservations
-	active  *AvailableCache                            // available & waiting reservations, sync by informer
-	assumed map[string]*assumedInfo                    // reservation key -> assumed (pod allocated) reservation meta
+	lock     sync.RWMutex
+	inactive map[string]*schedulingv1alpha1.Reservation // UID -> *object; failed & succeeded reservations
+	active   *AvailableCache                            // available & waiting reservations, sync by informer
+	assumed  map[string]*assumedInfo                    // reservation key -> assumed (pod allocated) reservation meta
 }
 
 func newReservationCache() *reservationCache {
 	return &reservationCache{
-		failed:  map[string]*schedulingv1alpha1.Reservation{},
-		active:  newAvailableCache(),
-		assumed: map[string]*assumedInfo{},
+		inactive: map[string]*schedulingv1alpha1.Reservation{},
+		active:   newAvailableCache(),
+		assumed:  map[string]*assumedInfo{},
 	}
 }
 
@@ -233,10 +233,10 @@ func (c *reservationCache) AddToActive(r *schedulingv1alpha1.Reservation) {
 	}
 }
 
-func (c *reservationCache) AddToFailed(r *schedulingv1alpha1.Reservation) {
+func (c *reservationCache) AddToInactive(r *schedulingv1alpha1.Reservation) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.failed[GetReservationKey(r)] = r
+	c.inactive[GetReservationKey(r)] = r
 	c.active.Delete(r)
 }
 
@@ -291,7 +291,7 @@ func (c *reservationCache) Delete(r *schedulingv1alpha1.Reservation) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.active.Delete(r)
-	delete(c.failed, GetReservationKey(r))
+	delete(c.inactive, GetReservationKey(r))
 }
 
 func (c *reservationCache) GetOwned(pod *corev1.Pod) *reservationInfo {
@@ -313,20 +313,20 @@ func (c *reservationCache) GetInCache(r *schedulingv1alpha1.Reservation) *reserv
 	return c.active.Get(GetReservationKey(r))
 }
 
-func (c *reservationCache) GetAllFailed() map[string]*schedulingv1alpha1.Reservation {
+func (c *reservationCache) GetAllInactive() map[string]*schedulingv1alpha1.Reservation {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	m := map[string]*schedulingv1alpha1.Reservation{}
-	for k, v := range c.failed {
+	for k, v := range c.inactive {
 		m[k] = v // for readonly usage
 	}
 	return m
 }
 
-func (c *reservationCache) IsFailed(r *schedulingv1alpha1.Reservation) bool {
+func (c *reservationCache) IsInactive(r *schedulingv1alpha1.Reservation) bool {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
-	_, ok := c.failed[GetReservationKey(r)]
+	_, ok := c.inactive[GetReservationKey(r)]
 	return ok
 }
 

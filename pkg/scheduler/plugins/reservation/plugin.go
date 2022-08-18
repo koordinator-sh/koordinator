@@ -50,8 +50,8 @@ const (
 	ErrReasonNodeNotMatchReservation = "node(s) didn't match the nodeName specified by reservation"
 	// ErrReasonReservationNotFound is the reason for the reservation is not found and should not be used.
 	ErrReasonReservationNotFound = "reservation is not found"
-	// ErrReasonReservationFailed is the reason for the reservation is failed/expired and should not be used.
-	ErrReasonReservationFailed = "reservation is failed"
+	// ErrReasonReservationInactive is the reason for the reservation is failed/succeeded and should not be used.
+	ErrReasonReservationInactive = "reservation is not active"
 	// ErrReasonReservationNotMatchStale is the reason for the assumed reservation does not match the pod any more.
 	ErrReasonReservationNotMatchStale = "reservation is stale and does not match any more"
 	// SkipReasonNotReservation is the reason for pod does not match any reservation.
@@ -228,6 +228,7 @@ func (p *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 		rName := GetReservationNameFromReservePod(pod)
 		klog.V(4).InfoS("Attempting to post-filter reserve pod",
 			"pod", klog.KObj(pod), "reservation", rName)
+		msg := getUnschedulableMessage(filteredNodeStatusMap)
 		err := retryOnConflictOrTooManyRequests(func() error {
 			r, err1 := p.rLister.Get(rName)
 			if errors.IsNotFound(err1) {
@@ -241,7 +242,7 @@ func (p *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 			}
 
 			curR := r.DeepCopy()
-			setReservationUnschedulable(curR, getUnschedulableMessage(filteredNodeStatusMap))
+			setReservationUnschedulable(curR, msg)
 			_, err1 = p.client.Reservations().UpdateStatus(context.TODO(), curR, metav1.UpdateOptions{})
 			if err1 != nil {
 				klog.V(4).InfoS("failed to update reservation status for post-filter",
@@ -322,7 +323,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		rInfo = p.reservationCache.GetInCache(target)
 		if rInfo == nil {
 			// check if the reservation is marked as expired
-			if p.reservationCache.IsFailed(target) { // in case reservation is marked as failed
+			if p.reservationCache.IsInactive(target) { // in case reservation is marked as inactive
 				klog.V(5).InfoS("skip reserve current reservation since it is marked as expired",
 					"pod", klog.KObj(pod), "reservation", klog.KObj(target))
 			} else {
@@ -492,7 +493,7 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 		if !IsReservationAvailable(curR) {
 			klog.Warningf("failed to allocate resources on a non-scheduled reservation %v, phase %v",
 				klog.KObj(curR), curR.Status.Phase)
-			return fmt.Errorf(ErrReasonReservationFailed)
+			return fmt.Errorf(ErrReasonReservationInactive)
 		}
 		// double-check if the latest version does not match the pod any more
 		if !matchReservation(pod, newReservationInfo(curR)) {
@@ -565,9 +566,9 @@ func (p *Plugin) Bind(ctx context.Context, cycleState *framework.CycleState, pod
 				return err1
 			}
 
-			// check if the reservation has been failed
-			if IsReservationFailed(r) || p.reservationCache.IsFailed(r) {
-				return fmt.Errorf(ErrReasonReservationFailed)
+			// check if the reservation has been inactive
+			if IsReservationFailed(r) || p.reservationCache.IsInactive(r) {
+				return fmt.Errorf(ErrReasonReservationInactive)
 			}
 
 			// mark reservation as available
@@ -597,8 +598,8 @@ func (p *Plugin) handleOnAdd(obj interface{}) {
 	}
 	if IsReservationActive(r) {
 		p.reservationCache.AddToActive(r)
-	} else if IsReservationFailed(r) {
-		p.reservationCache.AddToFailed(r)
+	} else if IsReservationFailed(r) || IsReservationSucceeded(r) {
+		p.reservationCache.AddToInactive(r)
 	}
 	klog.V(5).InfoS("reservation cache add", "reservation", klog.KObj(r))
 }
@@ -626,8 +627,8 @@ func (p *Plugin) handleOnUpdate(oldObj, newObj interface{}) {
 
 	if IsReservationActive(newR) {
 		p.reservationCache.AddToActive(newR)
-	} else if IsReservationFailed(newR) {
-		p.reservationCache.AddToFailed(newR)
+	} else if IsReservationFailed(newR) || IsReservationSucceeded(newR) {
+		p.reservationCache.AddToInactive(newR)
 	}
 	klog.V(5).InfoS("reservation cache update", "reservation", klog.KObj(newR))
 }

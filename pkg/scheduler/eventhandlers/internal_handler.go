@@ -43,6 +43,8 @@ type SchedulerInternalQueueHandler interface {
 	Add(pod *corev1.Pod) error
 	Update(oldPod, newPod *corev1.Pod) error
 	Delete(pod *corev1.Pod) error
+	AddUnschedulableIfNotPresent(pod *framework.QueuedPodInfo, podSchedulingCycle int64) error
+	SchedulingCycle() int64
 	AssignedPodAdded(pod *corev1.Pod)
 	AssignedPodUpdated(pod *corev1.Pod)
 }
@@ -110,6 +112,14 @@ func (f *fakeSchedulerInternalHandler) Update(oldPod, newPod *corev1.Pod) error 
 
 func (f *fakeSchedulerInternalHandler) Delete(pod *corev1.Pod) error {
 	return nil
+}
+
+func (f *fakeSchedulerInternalHandler) AddUnschedulableIfNotPresent(pod *framework.QueuedPodInfo, podSchedulingCycle int64) error {
+	return nil
+}
+
+func (f *fakeSchedulerInternalHandler) SchedulingCycle() int64 {
+	return 0
 }
 
 func (f *fakeSchedulerInternalHandler) AssignedPodAdded(pod *corev1.Pod) {
