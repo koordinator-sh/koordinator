@@ -17,7 +17,6 @@ limitations under the License.
 package reservation
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -26,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
@@ -467,19 +465,6 @@ func retryOnConflictOrTooManyRequests(fn func() error) error {
 	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
 		return errors.IsConflict(err) || errors.IsTooManyRequests(err)
 	}, fn)
-}
-
-func generatePodPatch(oldPod, newPod *corev1.Pod) ([]byte, error) {
-	oldData, err := json.Marshal(oldPod)
-	if err != nil {
-		return nil, err
-	}
-
-	newData, err := json.Marshal(newPod)
-	if err != nil {
-		return nil, err
-	}
-	return strategicpatch.CreateTwoWayMergePatch(oldData, newData, &corev1.Pod{})
 }
 
 func getPreFilterState(cycleState *framework.CycleState) *stateData {
