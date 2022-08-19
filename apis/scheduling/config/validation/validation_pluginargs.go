@@ -91,3 +91,10 @@ func validateEstimatedResourceThresholds(thresholds map[corev1.ResourceName]int6
 	}
 	return nil
 }
+
+func ValidateGangSchedulingArgs(gangArgs *config.GangArgs) error {
+	if gangArgs.DefaultTimeoutSeconds != nil && gangArgs.DefaultTimeoutSeconds.Duration < 0 {
+		return fmt.Errorf("gangSchedulingArgs invalid")
+	}
+	return nil
+}

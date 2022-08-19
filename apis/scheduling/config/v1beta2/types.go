@@ -123,3 +123,14 @@ type ReservationArgs struct {
 	// EnablePreemption indicates whether to enable preemption for reservations.
 	EnablePreemption *bool `json:"enablePreemption,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// GangArgs  defines the parameters for Gang Scheduling plugin.
+type GangArgs struct {
+	metav1.TypeMeta
+
+	// DefaultTimeoutSeconds is the default gang's waiting time in Permit stage
+	// default is 600 seconds
+	DefaultTimeoutSeconds *metav1.Duration `json:"defaultTimeoutSeconds,omitempty"`
+}

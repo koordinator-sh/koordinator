@@ -27,6 +27,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/batchresource"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/compatibledefaultpreemption"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/gang"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/nodenumaresource"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
@@ -54,6 +55,7 @@ func main() {
 		app.WithPlugin(compatibledefaultpreemption.Name, compatibledefaultpreemption.New),
 		app.WithPlugin(reservation.Name, reservation.New),
 		app.WithPlugin(batchresource.Name, batchresource.New),
+		app.WithPlugin(gang.Name, gang.New),
 	)
 
 	logs.InitLogs()

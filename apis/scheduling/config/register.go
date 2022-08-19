@@ -37,6 +37,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&LoadAwareSchedulingArgs{},
 		&NodeNUMAResourceArgs{},
 		&ReservationArgs{},
+		&GangArgs{},
 	)
 	return nil
 }

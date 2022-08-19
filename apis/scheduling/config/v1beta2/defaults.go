@@ -17,7 +17,10 @@ limitations under the License.
 package v1beta2
 
 import (
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/utils/pointer"
 )
@@ -52,6 +55,8 @@ var (
 	}
 
 	defaultEnablePreemption = pointer.Bool(false)
+
+	defaultGangTimeoutSeconds = 600 * time.Second
 )
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
@@ -86,5 +91,13 @@ func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
 func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	if obj.EnablePreemption == nil {
 		obj.EnablePreemption = defaultEnablePreemption
+	}
+}
+
+func SetDefaults_GangSchedulingArgs(obj *GangArgs) {
+	if obj.DefaultTimeoutSeconds == nil {
+		obj.DefaultTimeoutSeconds = &metav1.Duration{
+			Duration: defaultGangTimeoutSeconds,
+		}
 	}
 }
