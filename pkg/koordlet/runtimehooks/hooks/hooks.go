@@ -94,3 +94,13 @@ func init() {
 		rmconfig.PreUpdateContainerResources: make([]*Hook, 0),
 	}
 }
+
+func GetStages() []rmconfig.RuntimeHookType {
+	var stages []rmconfig.RuntimeHookType
+	for stage, hooks := range globalStageHooks {
+		if len(hooks) > 0 {
+			stages = append(stages, stage)
+		}
+	}
+	return stages
+}

@@ -18,6 +18,7 @@ package proxyserver
 
 import (
 	"fmt"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 	"net"
 	"syscall"
 
@@ -29,8 +30,9 @@ import (
 )
 
 type Options struct {
-	Network string
-	Address string
+	Network       string
+	Address       string
+	FailurePolicy config.FailurePolicyType
 }
 
 type Server interface {
@@ -86,8 +88,15 @@ func (s *server) createRPCServer() error {
 	return nil
 }
 
+var serverOptions Options
+
 func NewServer(opt Options) (Server, error) {
+	serverOptions = opt
 	return &server{
 		options: opt,
 	}, nil
+}
+
+func GetServerOptions() Options {
+	return serverOptions
 }
