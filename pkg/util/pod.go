@@ -17,6 +17,7 @@ limitations under the License.
 package util
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"path"
@@ -24,6 +25,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
@@ -253,4 +255,17 @@ func GetPodRequest(pod *corev1.Pod, resourceNames ...corev1.ResourceName) corev1
 
 func IsPodTerminated(pod *corev1.Pod) bool {
 	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
+}
+
+func GeneratePodPatch(oldPod, newPod *corev1.Pod) ([]byte, error) {
+	oldData, err := json.Marshal(oldPod)
+	if err != nil {
+		return nil, err
+	}
+
+	newData, err := json.Marshal(newPod)
+	if err != nil {
+		return nil, err
+	}
+	return strategicpatch.CreateTwoWayMergePatch(oldData, newData, &corev1.Pod{})
 }
