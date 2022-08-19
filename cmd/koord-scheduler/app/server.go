@@ -190,12 +190,10 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 	// Start all informers.
 	cc.InformerFactory.Start(ctx.Done())
 	cc.KoordinatorSharedInformerFactory.Start(ctx.Done())
-	cc.NRTSharedInformerFactory.Start(ctx.Done())
 
 	// Wait for all caches to sync before scheduling.
 	cc.InformerFactory.WaitForCacheSync(ctx.Done())
 	cc.KoordinatorSharedInformerFactory.WaitForCacheSync(ctx.Done())
-	cc.NRTSharedInformerFactory.WaitForCacheSync(ctx.Done())
 
 	// If leader election is enabled, runCommand via LeaderElector until done and exit.
 	if cc.LeaderElection != nil {
@@ -332,7 +330,6 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 	extendedHandle := frameworkext.NewExtendedHandle(
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
-		frameworkext.WithNodeResourceTopologySharedInformerFactory(cc.NRTSharedInformerFactory),
 	)
 
 	outOfTreeRegistry := make(runtime.Registry)

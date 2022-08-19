@@ -17,7 +17,7 @@ limitations under the License.
 package nodenumaresource
 
 import (
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 )
 
 // CPUTopology contains details of node cpu
@@ -27,6 +27,50 @@ type CPUTopology struct {
 	NumNodes   int
 	NumSockets int
 	CPUDetails CPUDetails
+}
+
+type CPUTopologyBuilder struct {
+	topologyTracker map[int] /*socket*/ map[int] /*node*/ map[int] /*core*/ struct{}
+	topology        CPUTopology
+}
+
+func NewCPUTopologyBuilder() *CPUTopologyBuilder {
+	return &CPUTopologyBuilder{
+		topologyTracker: map[int]map[int]map[int]struct{}{},
+	}
+}
+
+func (b *CPUTopologyBuilder) AddCPUInfo(socketID, nodeID, coreID, cpuID int) *CPUTopologyBuilder {
+	coreID = socketID<<16 | coreID
+	nodeID = socketID<<16 | nodeID
+	cpuInfo := &CPUInfo{
+		CPUID:    cpuID,
+		CoreID:   coreID,
+		NodeID:   nodeID,
+		SocketID: socketID,
+	}
+	if b.topology.CPUDetails == nil {
+		b.topology.CPUDetails = NewCPUDetails()
+	}
+	b.topology.CPUDetails[cpuInfo.CPUID] = *cpuInfo
+	if b.topologyTracker[cpuInfo.SocketID] == nil {
+		b.topology.NumSockets++
+		b.topologyTracker[cpuInfo.SocketID] = make(map[int]map[int]struct{})
+	}
+	if b.topologyTracker[cpuInfo.SocketID][nodeID] == nil {
+		b.topology.NumNodes++
+		b.topologyTracker[cpuInfo.SocketID][nodeID] = make(map[int]struct{})
+	}
+	if _, ok := b.topologyTracker[cpuInfo.SocketID][nodeID][coreID]; !ok {
+		b.topology.NumCores++
+		b.topologyTracker[cpuInfo.SocketID][nodeID][coreID] = struct{}{}
+	}
+	b.topology.NumCPUs = len(b.topology.CPUDetails)
+	return b
+}
+
+func (b *CPUTopologyBuilder) Result() *CPUTopology {
+	return &b.topology
 }
 
 // IsValid checks if the topology is valid
@@ -73,7 +117,7 @@ type CPUInfo struct {
 	NodeID          int
 	SocketID        int
 	RefCount        int
-	ExclusivePolicy extension.CPUExclusivePolicy
+	ExclusivePolicy schedulingconfig.CPUExclusivePolicy
 }
 
 // Clone clones the CPUDetails

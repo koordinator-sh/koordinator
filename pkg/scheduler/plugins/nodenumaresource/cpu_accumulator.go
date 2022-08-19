@@ -25,18 +25,6 @@ import (
 	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 )
 
-var getAvailableCPUsFunc = getAvailableCPUs
-
-// getAvailableCPUs returns the available logic CPUs in the node
-func getAvailableCPUs(node *nodeNUMAInfo) (availableCPUs CPUSet, allocated CPUDetails) {
-	if !node.cpuTopology.IsValid() {
-		return
-	}
-	allocated = node.allocatedCPUs.Clone()
-	availableCPUs = node.cpuTopology.CPUDetails.CPUs().Difference(allocated.CPUs())
-	return availableCPUs, allocated
-}
-
 func takeCPUs(
 	topology *CPUTopology,
 	availableCPUs CPUSet,
