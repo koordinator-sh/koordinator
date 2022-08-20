@@ -17,17 +17,13 @@ limitations under the License.
 package runtimehooks
 
 import (
-	"encoding/json"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
-	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 	"k8s.io/klog/v2"
-	"os"
-	"path/filepath"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/proxyserver"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
 type HookPlugin interface {
@@ -52,7 +48,7 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	if err := r.reconciler.Run(stopCh); err != nil {
 		return err
 	}
-	if err := registerPluginsToProxy(); err != nil {
+	if err := r.server.RegisterPluginServerToProxy(); err != nil {
 		return err
 	}
 	klog.V(5).Infof("runtime hook server has started")
@@ -62,7 +58,13 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 }
 
 func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook, error) {
-	s, err := proxyserver.NewServer(proxyserver.Options{Network: cfg.RuntimeHooksNetwork, Address: cfg.RuntimeHooksAddr, FailurePolicy: config.FailurePolicyType(cfg.RuntimeHooksFailurePolicy)})
+	newServerOptions := proxyserver.Options{
+		Network:       cfg.RuntimeHooksNetwork,
+		Address:       cfg.RuntimeHooksAddr,
+		FailurePolicy: config.FailurePolicyType(cfg.RuntimeHooksFailurePolicy),
+		ConfigFileDir: cfg.RuntimeHookConfigFilePath,
+	}
+	s, err := proxyserver.NewServer(newServerOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -94,25 +96,4 @@ func registerPlugins() {
 		}
 		klog.Infof("runtime hook plugin %s enable %v", hookFeature, enabled)
 	}
-}
-
-const (
-	defaultRuntimeHookConfigFilePath string = "/etc/runtime/hookserver.d/koordlet.json"
-)
-
-func registerPluginsToProxy() error {
-	serverOptions := proxyserver.GetServerOptions()
-	hookConfig := &config.RuntimeHookConfig{
-		RemoteEndpoint: serverOptions.Address,
-		FailurePolicy:  serverOptions.FailurePolicy,
-		RuntimeHooks:   hooks.GetStages(),
-	}
-
-	configData, _ := json.Marshal(hookConfig)
-
-	// todo: confirm perm value
-	if err := os.WriteFile(filepath.Join(defaultRuntimeHookConfigFilePath), configData, 0666); err != nil {
-		return err
-	}
-	return nil
 }

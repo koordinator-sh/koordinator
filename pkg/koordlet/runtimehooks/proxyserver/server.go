@@ -17,9 +17,11 @@ limitations under the License.
 package proxyserver
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
+	"io/ioutil"
 	"net"
+	"path/filepath"
 	"syscall"
 
 	"google.golang.org/grpc"
@@ -27,18 +29,22 @@ import (
 	"k8s.io/klog/v2"
 
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
 type Options struct {
 	Network       string
 	Address       string
 	FailurePolicy config.FailurePolicyType
+	ConfigFileDir string
 }
 
 type Server interface {
 	Setup() error
 	Start() error
 	Stop()
+	RegisterPluginServerToProxy() error
 }
 
 type server struct {
@@ -69,6 +75,19 @@ func (s *server) Stop() {
 	s.server.Stop()
 }
 
+func (s *server) RegisterPluginServerToProxy() error {
+	hookConfig := &config.RuntimeHookConfig{
+		RemoteEndpoint: s.options.Address,
+		FailurePolicy:  s.options.FailurePolicy,
+		RuntimeHooks:   hooks.GetStages(),
+	}
+	configData, _ := json.Marshal(hookConfig)
+	if err := ioutil.WriteFile(filepath.Join(s.options.ConfigFileDir, "koordlet.json"), configData, 0644); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *server) createRPCServer() error {
 	if s.server != nil {
 		return nil
@@ -88,15 +107,8 @@ func (s *server) createRPCServer() error {
 	return nil
 }
 
-var serverOptions Options
-
 func NewServer(opt Options) (Server, error) {
-	serverOptions = opt
 	return &server{
 		options: opt,
 	}, nil
-}
-
-func GetServerOptions() Options {
-	return serverOptions
 }

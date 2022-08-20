@@ -29,8 +29,9 @@ import (
 )
 
 const (
-	GroupIdentity   featuregate.Feature = "GroupIdentity"
-	CPUSetAllocator featuregate.Feature = "CPUSetAllocator"
+	GroupIdentity                    featuregate.Feature = "GroupIdentity"
+	CPUSetAllocator                  featuregate.Feature = "CPUSetAllocator"
+	defaultRuntimeHookConfigFilePath string              = "/etc/runtime/hookserver.d/koordlet.json"
 )
 
 var (
@@ -52,6 +53,7 @@ type Config struct {
 	RuntimeHooksNetwork       string
 	RuntimeHooksAddr          string
 	RuntimeHooksFailurePolicy string
+	RuntimeHookConfigFilePath string
 	FeatureGates              map[string]bool
 }
 
@@ -60,6 +62,8 @@ func NewDefaultConfig() *Config {
 		RuntimeHooksNetwork:       "tcp",
 		RuntimeHooksAddr:          ":9318",
 		RuntimeHooksFailurePolicy: "Ignore",
+		// todo:默认？
+		RuntimeHookConfigFilePath: defaultRuntimeHookConfigFilePath,
 		FeatureGates:              map[string]bool{},
 	}
 }
@@ -68,6 +72,7 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.RuntimeHooksNetwork, "runtime-hooks-network", c.RuntimeHooksNetwork, "rpc server network type for runtime hooks")
 	fs.StringVar(&c.RuntimeHooksAddr, "runtime-hooks-addr", c.RuntimeHooksAddr, "rpc server address for runtime hooks")
 	fs.StringVar(&c.RuntimeHooksFailurePolicy, "runtime-hooks-failure-policy", c.RuntimeHooksFailurePolicy, "failure policy for runtime hooks")
+	fs.StringVar(&c.RuntimeHookConfigFilePath, "runtime-hooks-config-path", c.RuntimeHookConfigFilePath, "config file path for runtime hooks")
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "runtime-hooks",
 		"A set of key=value pairs that describe feature gates for runtime hooks alpha/experimental features. "+
 			"Options are:\n"+strings.Join(DefaultRuntimeHooksFG.KnownFeatures(), "\n"))
