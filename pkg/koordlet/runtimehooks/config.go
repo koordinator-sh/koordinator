@@ -31,7 +31,7 @@ import (
 const (
 	GroupIdentity                    featuregate.Feature = "GroupIdentity"
 	CPUSetAllocator                  featuregate.Feature = "CPUSetAllocator"
-	defaultRuntimeHookConfigFilePath string              = "/etc/runtime/hookserver.d/koordlet.json"
+	defaultRuntimeHookConfigFilePath string              = "/etc/runtime/hookserver.d"
 )
 
 var (
@@ -62,7 +62,6 @@ func NewDefaultConfig() *Config {
 		RuntimeHooksNetwork:       "tcp",
 		RuntimeHooksAddr:          ":9318",
 		RuntimeHooksFailurePolicy: "Ignore",
-		// todo:默认？
 		RuntimeHookConfigFilePath: defaultRuntimeHookConfigFilePath,
 		FeatureGates:              map[string]bool{},
 	}

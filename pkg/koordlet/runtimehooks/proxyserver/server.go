@@ -34,10 +34,10 @@ import (
 )
 
 type Options struct {
-	Network       string
-	Address       string
-	FailurePolicy config.FailurePolicyType
-	ConfigFileDir string
+	Network        string
+	Address        string
+	FailurePolicy  config.FailurePolicyType
+	ConfigFilePath string
 }
 
 type Server interface {
@@ -82,7 +82,7 @@ func (s *server) RegisterPluginServerToProxy() error {
 		RuntimeHooks:   hooks.GetStages(),
 	}
 	configData, _ := json.Marshal(hookConfig)
-	if err := ioutil.WriteFile(filepath.Join(s.options.ConfigFileDir, "koordlet.json"), configData, 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(s.options.ConfigFilePath, "koordlet.json"), configData, 0644); err != nil {
 		return err
 	}
 	return nil

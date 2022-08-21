@@ -59,10 +59,10 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 
 func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook, error) {
 	newServerOptions := proxyserver.Options{
-		Network:       cfg.RuntimeHooksNetwork,
-		Address:       cfg.RuntimeHooksAddr,
-		FailurePolicy: config.FailurePolicyType(cfg.RuntimeHooksFailurePolicy),
-		ConfigFileDir: cfg.RuntimeHookConfigFilePath,
+		Network:        cfg.RuntimeHooksNetwork,
+		Address:        cfg.RuntimeHooksAddr,
+		FailurePolicy:  config.GetPolicyType(cfg.RuntimeHooksFailurePolicy),
+		ConfigFilePath: cfg.RuntimeHookConfigFilePath,
 	}
 	s, err := proxyserver.NewServer(newServerOptions)
 	if err != nil {

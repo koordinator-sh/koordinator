@@ -27,6 +27,17 @@ const (
 	PolicyIgnore FailurePolicyType = "Ignore"
 )
 
+func GetPolicyType(typeString string) FailurePolicyType {
+	switch typeString {
+	case "Fail":
+		return PolicyFail
+	case "Ignore":
+		return PolicyIgnore
+	default:
+		return PolicyIgnore
+	}
+}
+
 type RuntimeHookType string
 
 const (
