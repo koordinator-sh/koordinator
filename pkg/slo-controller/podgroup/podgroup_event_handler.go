@@ -20,8 +20,6 @@ func (n EnqueueRequestForPodGroup) Create(e event.CreateEvent, q workqueue.RateL
 		return
 	} else {
 		pgName := pg.Name
-		// todo: create and init podGroupInfo in cache
-		//......
 		q.Add(reconcile.Request{
 			NamespacedName: types.NamespacedName{
 				Name:      pgName,
@@ -49,17 +47,6 @@ func (n EnqueueRequestForPodGroup) Update(e event.UpdateEvent, q workqueue.RateL
 	}
 }
 
-func (n EnqueueRequestForPodGroup) Delete(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
-	if pg, ok := e.Object.(*v1alpha1.PodGroup); !ok {
-		return
-	} else {
-		gangName := pg.Name
-		if gangName == "" {
-			return
-		}
-		// todo: handle the  podGroupInfo deletion in cache
-		//......
-	}
-}
+func (n EnqueueRequestForPodGroup) Delete(e event.DeleteEvent, q workqueue.RateLimitingInterface) {}
 
 func (n EnqueueRequestForPodGroup) Generic(e event.GenericEvent, q workqueue.RateLimitingInterface) {}

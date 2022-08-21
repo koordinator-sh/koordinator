@@ -23,8 +23,6 @@ func (n EnqueueRequestForPod) Create(e event.CreateEvent, q workqueue.RateLimiti
 		if pgName == "" {
 			return
 		}
-		// todo: create and init podGroupInfo in cache
-		//......
 		if gang.PgFromAnnotation(pod) {
 			return
 		}
@@ -58,18 +56,7 @@ func (n EnqueueRequestForPod) Update(e event.UpdateEvent, q workqueue.RateLimiti
 	}
 }
 
-func (n EnqueueRequestForPod) Delete(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
-	if pod, ok := e.Object.(*corev1.Pod); !ok {
-		return
-	} else {
-		pgName := gang.GetPodGroupNameByPod(pod)
-		if pgName == "" {
-			return
-		}
-		// todo: handle the  podGroupInfo deletion in cache
-		//......
-	}
-}
+func (n EnqueueRequestForPod) Delete(e event.DeleteEvent, q workqueue.RateLimitingInterface) {}
 
 func (n EnqueueRequestForPod) Generic(event event.GenericEvent, limitingInterface workqueue.RateLimitingInterface) {
 }
