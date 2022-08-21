@@ -27,7 +27,7 @@ const (
 	PolicyIgnore FailurePolicyType = "Ignore"
 )
 
-func GetPolicyType(typeString string) FailurePolicyType {
+func GetFailurePolicyType(typeString string) FailurePolicyType {
 	switch typeString {
 	case "Fail":
 		return PolicyFail

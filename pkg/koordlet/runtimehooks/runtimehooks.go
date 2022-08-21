@@ -61,7 +61,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	newServerOptions := proxyserver.Options{
 		Network:        cfg.RuntimeHooksNetwork,
 		Address:        cfg.RuntimeHooksAddr,
-		FailurePolicy:  config.GetPolicyType(cfg.RuntimeHooksFailurePolicy),
+		FailurePolicy:  config.GetFailurePolicyType(cfg.RuntimeHooksFailurePolicy),
 		ConfigFilePath: cfg.RuntimeHookConfigFilePath,
 	}
 	s, err := proxyserver.NewServer(newServerOptions)
