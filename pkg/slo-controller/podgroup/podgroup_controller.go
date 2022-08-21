@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 // PodGroupReconciler reconciles a PodGroup object
@@ -118,7 +118,6 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 func (r *PodGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.PodGroup{}).
-		//register handler for pod and podGroup to create podGroupInfo in Cache
 		Watches(&source.Kind{Type: &v1.Pod{}}, &EnqueueRequestForPod{}).
 		Watches(&source.Kind{Type: &v1alpha1.PodGroup{}}, &EnqueueRequestForPodGroup{}).
 		Complete(r)

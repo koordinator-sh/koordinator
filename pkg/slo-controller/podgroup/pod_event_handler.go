@@ -8,7 +8,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/gang"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coescheduling"
 )
 
 var _ handler.EventHandler = &EnqueueRequestForPod{}
@@ -19,11 +19,11 @@ func (n EnqueueRequestForPod) Create(e event.CreateEvent, q workqueue.RateLimiti
 	if pod, ok := e.Object.(*corev1.Pod); !ok {
 		return
 	} else {
-		pgName := gang.GetPodGroupNameByPod(pod)
+		pgName := coescheduling.GetGangNameByPod(pod)
 		if pgName == "" {
 			return
 		}
-		if gang.PgFromAnnotation(pod) {
+		if coescheduling.PgFromAnnotation(pod) {
 			return
 		}
 		q.Add(reconcile.Request{
@@ -40,11 +40,11 @@ func (n EnqueueRequestForPod) Update(e event.UpdateEvent, q workqueue.RateLimiti
 	if pod, ok := new.(*corev1.Pod); !ok {
 		return
 	} else {
-		pgName := gang.GetPodGroupNameByPod(pod)
+		pgName := coescheduling.GetGangNameByPod(pod)
 		if pgName == "" {
 			return
 		}
-		if gang.PgFromAnnotation(pod) {
+		if coescheduling.PgFromAnnotation(pod) {
 			return
 		}
 		q.Add(reconcile.Request{

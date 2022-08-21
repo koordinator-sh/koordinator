@@ -7,7 +7,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 var _ handler.EventHandler = &EnqueueRequestForPodGroup{}
