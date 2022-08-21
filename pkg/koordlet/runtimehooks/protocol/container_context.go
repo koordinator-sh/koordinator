@@ -48,7 +48,7 @@ type ContainerRequest struct {
 
 func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookRequest) {
 	c.PodMeta.FromProxy(req.PodMeta)
-	c.ContainerMeta.FromProxy(req.ContainerMata, req.PodAnnotations)
+	c.ContainerMeta.FromProxy(req.ContainerMeta, req.PodAnnotations)
 	c.PodLabels = req.GetPodLabels()
 	c.PodAnnotations = req.GetPodAnnotations()
 	c.CgroupParent, _ = util.GetContainerCgroupPathWithKubeByID(req.GetPodCgroupParent(), c.ContainerMeta.ID)

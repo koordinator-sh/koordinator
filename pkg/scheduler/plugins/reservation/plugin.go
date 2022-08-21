@@ -39,6 +39,7 @@ import (
 	clientschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -442,7 +443,7 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 	if !needPatch {
 		return
 	}
-	patchBytes, err := generatePodPatch(pod, newPod)
+	patchBytes, err := util.GeneratePodPatch(pod, newPod)
 	if err != nil {
 		klog.V(4).InfoS("failed to generate patch for pod unreserve",
 			"pod", klog.KObj(pod), "patch", patchBytes, "err", err)
@@ -528,7 +529,7 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 	// NOTE: the pod annotation can be stale, we should use reservation status as the ground-truth
 	newPod := pod.DeepCopy()
 	apiext.SetReservationAllocated(newPod, target)
-	patchBytes, err := generatePodPatch(pod, newPod)
+	patchBytes, err := util.GeneratePodPatch(pod, newPod)
 	if err != nil {
 		klog.V(4).InfoS("failed to generate patch for pod PreBind",
 			"pod", klog.KObj(pod), "patch", patchBytes, "err", err)

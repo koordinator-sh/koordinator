@@ -36,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -476,7 +477,7 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
-	patchBytes, err := generatePodPatch(podOriginal, pod)
+	patchBytes, err := util.GeneratePodPatch(podOriginal, pod)
 	if err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
 	}
