@@ -16,7 +16,10 @@ limitations under the License.
 
 package config
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type FailurePolicyType string
 
@@ -27,14 +30,14 @@ const (
 	PolicyIgnore FailurePolicyType = "Ignore"
 )
 
-func GetFailurePolicyType(typeString string) FailurePolicyType {
+func GetFailurePolicyType(typeString string) (FailurePolicyType, error) {
 	switch typeString {
 	case "Fail":
-		return PolicyFail
+		return PolicyFail, nil
 	case "Ignore":
-		return PolicyIgnore
+		return PolicyIgnore, nil
 	default:
-		return PolicyIgnore
+		return "", fmt.Errorf("failure policy type not supported")
 	}
 }
 

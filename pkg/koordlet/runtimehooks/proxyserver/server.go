@@ -19,7 +19,6 @@ package proxyserver
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"path/filepath"
 	"syscall"
@@ -31,6 +30,7 @@ import (
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 type Options struct {
@@ -44,7 +44,7 @@ type Server interface {
 	Setup() error
 	Start() error
 	Stop()
-	RegisterPluginServerToProxy() error
+	Register() error
 }
 
 type server struct {
@@ -75,14 +75,14 @@ func (s *server) Stop() {
 	s.server.Stop()
 }
 
-func (s *server) RegisterPluginServerToProxy() error {
+func (s *server) Register() error {
 	hookConfig := &config.RuntimeHookConfig{
 		RemoteEndpoint: s.options.Address,
 		FailurePolicy:  s.options.FailurePolicy,
 		RuntimeHooks:   hooks.GetStages(),
 	}
 	configData, _ := json.Marshal(hookConfig)
-	if err := ioutil.WriteFile(filepath.Join(s.options.ConfigFilePath, "koordlet.json"), configData, 0644); err != nil {
+	if err := system.CommonFileWrite(filepath.Join(s.options.ConfigFilePath, "koordlet.json"), string(configData)); err != nil {
 		return err
 	}
 	return nil

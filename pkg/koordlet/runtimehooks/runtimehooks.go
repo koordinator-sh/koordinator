@@ -48,7 +48,7 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	if err := r.reconciler.Run(stopCh); err != nil {
 		return err
 	}
-	if err := r.server.RegisterPluginServerToProxy(); err != nil {
+	if err := r.server.Register(); err != nil {
 		return err
 	}
 	klog.V(5).Infof("runtime hook server has started")
@@ -58,10 +58,14 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 }
 
 func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook, error) {
+	failurePolicy, err := config.GetFailurePolicyType(cfg.RuntimeHooksFailurePolicy)
+	if err != nil {
+		return nil, err
+	}
 	newServerOptions := proxyserver.Options{
 		Network:        cfg.RuntimeHooksNetwork,
 		Address:        cfg.RuntimeHooksAddr,
-		FailurePolicy:  config.GetFailurePolicyType(cfg.RuntimeHooksFailurePolicy),
+		FailurePolicy:  failurePolicy,
 		ConfigFilePath: cfg.RuntimeHookConfigFilePath,
 	}
 	s, err := proxyserver.NewServer(newServerOptions)

@@ -26,12 +26,12 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/groupidentity"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (
-	GroupIdentity                    featuregate.Feature = "GroupIdentity"
-	CPUSetAllocator                  featuregate.Feature = "CPUSetAllocator"
-	defaultRuntimeHookConfigFilePath string              = "/etc/runtime/hookserver.d"
+	GroupIdentity   featuregate.Feature = "GroupIdentity"
+	CPUSetAllocator featuregate.Feature = "CPUSetAllocator"
 )
 
 var (
@@ -62,7 +62,7 @@ func NewDefaultConfig() *Config {
 		RuntimeHooksNetwork:       "tcp",
 		RuntimeHooksAddr:          ":9318",
 		RuntimeHooksFailurePolicy: "Ignore",
-		RuntimeHookConfigFilePath: defaultRuntimeHookConfigFilePath,
+		RuntimeHookConfigFilePath: system.Conf.RuntimeHooksConfigDir,
 		FeatureGates:              map[string]bool{},
 	}
 }
