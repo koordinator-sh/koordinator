@@ -41,8 +41,10 @@ func Test_runtimeHook_Run(t *testing.T) {
 			name: "run as tcp server",
 			fields: fields{
 				config: &Config{
-					RuntimeHooksNetwork: "tcp",
-					RuntimeHooksAddr:    ":0",
+					RuntimeHooksNetwork:       "tcp",
+					RuntimeHooksAddr:          ":0",
+					RuntimeHooksFailurePolicy: "Fail",
+					RuntimeHookConfigFilePath: ".",
 				},
 			},
 			wantErr: false,
@@ -52,47 +54,10 @@ func Test_runtimeHook_Run(t *testing.T) {
 			name: "run as unix socket",
 			fields: fields{
 				config: &Config{
-					RuntimeHooksNetwork: "unix",
-					RuntimeHooksAddr:    path.Join(tmpDir, "kooordlet.sock"),
-				},
-			},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-			si := mockstatesinformer.NewMockStatesInformer(ctrl)
-			si.EXPECT().RegisterCallbacks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-			r, err := NewRuntimeHook(si, tt.fields.config)
-			assert.NoError(t, err)
-			stop := make(chan struct{})
-
-			go func() { close(stop) }()
-			err = r.Run(stop)
-			assert.NoError(t, err)
-		})
-	}
-}
-
-func Test_runtimeHook_Run_with_auto_register(t *testing.T) {
-	type fields struct {
-		config *Config
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		wantErr bool
-	}{
-		{
-			name: "run as tcp server",
-			fields: fields{
-				config: &Config{
-					RuntimeHooksNetwork:       "tcp",
-					RuntimeHooksAddr:          ":0",
-					RuntimeHookConfigFilePath: ".",
+					RuntimeHooksNetwork:       "unix",
+					RuntimeHooksAddr:          path.Join(tmpDir, "kooordlet.sock"),
 					RuntimeHooksFailurePolicy: "Fail",
+					RuntimeHookConfigFilePath: ".",
 				},
 			},
 			wantErr: false,
@@ -100,8 +65,6 @@ func Test_runtimeHook_Run_with_auto_register(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			DefaultMutableRuntimeHooksFG.Set("GroupIdentity=true")
-			DefaultMutableRuntimeHooksFG.Set("CPUSetAllocator=true")
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			si := mockstatesinformer.NewMockStatesInformer(ctrl)
