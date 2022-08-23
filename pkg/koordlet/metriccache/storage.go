@@ -55,7 +55,7 @@ func newStorage(dsn string) (*storage, error) {
 	return s, nil
 }
 
-func (s *storage) InsertNodResourceMetric(n *nodeResourceMetric) error {
+func (s *storage) InsertNodeResourceMetric(n *nodeResourceMetric) error {
 	return s.db.Create(n).Error
 }
 

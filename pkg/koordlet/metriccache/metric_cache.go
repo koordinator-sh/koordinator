@@ -485,7 +485,7 @@ func (m *metricCache) InsertNodeResourceMetric(t time.Time, nodeResUsed *NodeRes
 		GPUs:            gpuUsages,
 		Timestamp:       t,
 	}
-	return m.db.InsertNodResourceMetric(dbItem)
+	return m.db.InsertNodeResourceMetric(dbItem)
 }
 
 func (m *metricCache) InsertPodResourceMetric(t time.Time, podResUsed *PodResourceMetric) error {
