@@ -18,10 +18,8 @@ package nodemetric
 
 import (
 	"fmt"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
@@ -36,14 +34,7 @@ func (r *NodeMetricReconciler) initNodeMetric(node *corev1.Node, nodeMetric *slo
 		return err
 	}
 
-	nodeMetricStatus := &slov1alpha1.NodeMetricStatus{
-		UpdateTime: &metav1.Time{Time: time.Now()},
-		NodeMetric: &slov1alpha1.NodeMetricInfo{},
-		PodsMetric: make([]*slov1alpha1.PodMetricInfo, 0),
-	}
-
 	nodeMetric.Spec = *nodeMetricSpec
-	nodeMetric.Status = *nodeMetricStatus
 	nodeMetric.SetName(node.GetName())
 	nodeMetric.SetNamespace(node.GetNamespace())
 
