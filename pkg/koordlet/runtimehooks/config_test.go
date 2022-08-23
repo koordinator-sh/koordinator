@@ -20,8 +20,9 @@ import (
 	"flag"
 	"testing"
 
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func Test_NewDefaultConfig(t *testing.T) {
