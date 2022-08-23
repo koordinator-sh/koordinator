@@ -1,7 +1,7 @@
 /*
 Copyright 2022 The Koordinator Authors.
 
-Licensed under the Apache License, Version 2.0 (the "License");
+:Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
@@ -344,7 +344,7 @@ func (gang *Gang) setChildScheduleCycle(pod *v1.Pod, childCycle int) {
 	gang.ChildrenScheduleRoundMap[podId] = childCycle
 }
 
-func (gang *Gang) tryUpdateScheduleCycle() {
+func (gang *Gang) trySetScheduleCycleTrue() {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 
@@ -354,11 +354,10 @@ func (gang *Gang) tryUpdateScheduleCycle() {
 			num++
 		}
 	}
-
 	if num == gang.TotalChildrenNum {
 		gang.ScheduleCycleValid = true
-		gang.ScheduleCycle += 1
-		klog.Infof("TryUpdateScheduleCycle, gangName: %v, ScheduleCycle: %v, ScheduleCycleValid: %v",
+		gang.ScheduleCycle++
+		klog.Infof("trySetScheduleCycleTrue, gangName: %v, ScheduleCycle: %v, ScheduleCycleValid: %v",
 			gang.Name, gang.ScheduleCycle, true)
 	}
 }

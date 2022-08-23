@@ -152,7 +152,7 @@ func (p *GangPlugin) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 	creationTime1 := p.getCreatTime(podInfo1)
 	creationTime2 := p.getCreatTime(podInfo2)
 	if creationTime1.Equal(creationTime2) {
-		return getNamespaceSplicingName(podInfo1.Pod.Name, podInfo1.Pod.Namespace) < getNamespaceSplicingName(podInfo2.Pod.Name, podInfo2.Pod.Namespace)
+		return getNamespaceSplicingName(podInfo1.Pod.Namespace, podInfo1.Pod.Name) < getNamespaceSplicingName(podInfo2.Pod.Namespace, podInfo2.Pod.Name)
 	}
 	return creationTime1.Before(creationTime2)
 }
@@ -175,6 +175,13 @@ func (p *GangPlugin) PreFilter(ctx context.Context, state *framework.CycleState,
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("can't find gang, gangName: %v, podName: %v", gangId,
 			getNamespaceSplicingName(pod.Namespace, pod.Name)))
 	}
+	// first try update the global cycle of gang
+	gang.trySetScheduleCycleTrue()
+
+	gangScheduleCycle := gang.getGangScheduleCycle()
+	defer func() {
+		gang.setChildScheduleCycle(pod, gangScheduleCycle)
+	}()
 	// check if gang is inited
 	if !gang.HasGangInit {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("gang has not init, gangName: %v, podName: %v", gangId,
@@ -194,11 +201,6 @@ func (p *GangPlugin) PreFilter(ctx context.Context, state *framework.CycleState,
 	gangMode := gang.getGangMode()
 	if gangMode == extension.GangModeStrict {
 		podScheduleCycle := gang.getChildScheduleCycle(pod)
-		gangScheduleCycle := gang.getGangScheduleCycle()
-		defer func() {
-			gang.setChildScheduleCycle(pod, gangScheduleCycle)
-			gang.tryUpdateScheduleCycle()
-		}()
 		if !gang.isGangScheduleCycleValid() {
 			return framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("gang scheduleCycle not valid, gangName: %v, podName: %v",
 				gangId, getNamespaceSplicingName(pod.Namespace, pod.Name)))
@@ -248,6 +250,8 @@ func (p *GangPlugin) PostFilter(ctx context.Context, state *framework.CycleState
 			}
 		})
 		gang.setScheduleCycleValid(false)
+		// since we rejected the pod which is waiting in Permit stage, we need to clear the gang's TimeoutStartTime field
+		gang.clearTimeoutStartTime()
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
 			fmt.Sprintf("Gang: %v gets rejected this cycle due to Pod: %v is unschedulable even after "+
 				"PostFilter in StrictMode", gangId, pod.Name))
@@ -325,6 +329,12 @@ func (p *GangPlugin) PermitCheck(pod *corev1.Pod) (time.Duration, Status) {
 					allGangGroupSatisfied = false
 					break
 				}
+			} else {
+				// if we cannot find the gang's group-gang  from the gangCache,
+				// we assumed that this gang should wait until timeout,
+				// user should check if the group-gang exists or the spelling mistakes
+				allGangGroupSatisfied = false
+				break
 			}
 		}
 	}
@@ -402,7 +412,10 @@ func (p *GangPlugin) AllowGangGroup(pod *corev1.Pod) {
 				waitingPod.Allow(p.Name())
 			}
 		})
-
+		// clear the timeoutStartTime of the gang
+		// so that we can ensure the field will be set correctly next round
+		gang := p.gangCache.createGangToCache(gangIdTmp)
+		gang.clearTimeoutStartTime()
 		klog.Infof("Permit allows for gang: %v", gangIdTmp)
 	}
 }
@@ -436,14 +449,14 @@ func (p *GangPlugin) Unreserve(ctx context.Context, state *framework.CycleState,
 			return
 		}
 		for _, podOriginal := range pods {
-			if getNamespaceSplicingName(pod.Namespace,
-				getGangNameByPod(pod)) == gangId {
-				pod = podOriginal.DeepCopy()
-				if pod.Annotations == nil {
-					pod.Annotations = map[string]string{}
+			if getNamespaceSplicingName(podOriginal.Namespace,
+				getGangNameByPod(podOriginal)) == gangId {
+				toPatchPod := podOriginal.DeepCopy()
+				if toPatchPod.Annotations == nil {
+					toPatchPod.Annotations = map[string]string{}
 				}
-				pod.Annotations[extension.AnnotationGangTimeout] = "true"
-				patchBytes, err := generatePodPatch(podOriginal, pod)
+				toPatchPod.Annotations[extension.AnnotationGangTimeout] = "true"
+				patchBytes, err := generatePodPatch(podOriginal, toPatchPod)
 				if err != nil {
 					klog.Errorf("unReserve generatePodPatch got err: %v", err.Error())
 					continue
@@ -455,16 +468,16 @@ func (p *GangPlugin) Unreserve(ctx context.Context, state *framework.CycleState,
 					retry.DefaultRetry,
 					errors.IsTooManyRequests,
 					func() error {
-						_, err = p.frameworkHandle.ClientSet().CoreV1().Pods(pod.Namespace).Patch(ctx, pod.Name,
+						_, err = p.frameworkHandle.ClientSet().CoreV1().Pods(toPatchPod.Namespace).Patch(ctx, toPatchPod.Name,
 							types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 						return err
 					})
 				if err != nil {
 					klog.Errorf("Failed to patch gang timeout annotation after retry to pod: %v, gang: %v, err: %v",
-						getNamespaceSplicingName(pod.Namespace, pod.Name), gangId, err.Error())
+						getNamespaceSplicingName(toPatchPod.Namespace, toPatchPod.Name), gangId, err.Error())
 				} else {
 					klog.Infof("unReserve patch gang timeout annotation to pod: %v, gang: %v success",
-						getNamespaceSplicingName(pod.Namespace, pod.Name), gangId)
+						getNamespaceSplicingName(toPatchPod.Namespace, toPatchPod.Name), gangId)
 				}
 			}
 		}

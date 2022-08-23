@@ -774,7 +774,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			},
 			shouldSetChildCycle:   true,
 			shouldSetTestPodCycle: true,
-			expectedStatus:        framework.UnschedulableAndUnresolvable,
+			expectedStatus:        framework.Success,
 		},
 		{
 			name: "pods count equal with minMember,is StrictMode,but the gang's scheduleCycle is not valid due to pre pod Filter Failed",
@@ -788,7 +788,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			scheduleInValid:     true,
 			// pod7 is the last pod of this schedulingCycle,even if it falied
 			// we should still move the schedulingCycle+1
-			expectedScheduleCycle: 2,
+			expectedScheduleCycle: 1,
 			expectedStatus:        framework.UnschedulableAndUnresolvable,
 		},
 		{
@@ -815,7 +815,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			},
 			totalNum:              5,
 			shouldSetChildCycle:   true,
-			expectedScheduleCycle: 2,
+			expectedScheduleCycle: 1,
 			expectedStatus:        framework.Success,
 		},
 	}
