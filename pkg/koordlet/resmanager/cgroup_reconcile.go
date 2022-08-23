@@ -26,6 +26,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
@@ -342,7 +343,6 @@ func (m *CgroupResourcesReconcile) getMergedPodResourceQoS(pod *corev1.Pod, cfg 
 // config overwrite: pod-level config > pod policy template > node-level config
 func (m *CgroupResourcesReconcile) mergePodResourceQoSForMemoryQoS(pod *corev1.Pod, cfg *slov1alpha1.ResourceQOS) {
 	// get the pod-level config and determine if the pod is allowed
-	// TODO: support namespaced switch
 	if cfg.MemoryQOS == nil {
 		cfg.MemoryQOS = &slov1alpha1.MemoryQOSCfg{}
 	}
@@ -354,6 +354,15 @@ func (m *CgroupResourcesReconcile) mergePodResourceQoSForMemoryQoS(pod *corev1.P
 		klog.Errorf("failed to parse memory qos config, pod %s, err: %s", util.GetPodKey(pod), err)
 		podCfg = nil
 	}
+
+	if podCfg == nil {
+		var greyCtlMemoryQOSCfgIf interface{} = &slov1alpha1.PodMemoryQOSConfig{}
+		injected := configextensions.InjectQOSGreyCtrlPlugins(pod, configextensions.QOSPolicyMemoryQOS, &greyCtlMemoryQOSCfgIf)
+		if greyCtlMemoryQOSCfg, ok := greyCtlMemoryQOSCfgIf.(*slov1alpha1.PodMemoryQOSConfig); ok && injected {
+			podCfg = greyCtlMemoryQOSCfg
+		}
+	}
+
 	if podCfg != nil {
 		policy = podCfg.Policy // policy="" is equal to policy="default"
 	}

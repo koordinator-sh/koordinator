@@ -29,6 +29,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
@@ -571,11 +572,18 @@ func calcStaticCPUBurstVal(container *corev1.Container, burstCfg *slov1alpha1.CP
 
 // use node config by default, overlap if pod specify config
 func genPodBurstConfig(pod *corev1.Pod, nodeCfg *slov1alpha1.CPUBurstConfig) *slov1alpha1.CPUBurstConfig {
-
 	podCPUBurstCfg, err := apiext.GetPodCPUBurstConfig(pod)
 	if err != nil {
 		klog.Infof("parse pod %s/%s cpu burst config failed, error %v", pod.Namespace, pod.Name, err)
 		return nodeCfg
+	}
+
+	if podCPUBurstCfg == nil {
+		var greyCtlCPUBurstCfgIf interface{} = &slov1alpha1.CPUBurstConfig{}
+		injected := configextensions.InjectQOSGreyCtrlPlugins(pod, configextensions.QOSPolicyCPUBurst, &greyCtlCPUBurstCfgIf)
+		if greyCtlCPUBurstCfg, ok := greyCtlCPUBurstCfgIf.(*slov1alpha1.CPUBurstConfig); injected && ok {
+			podCPUBurstCfg = greyCtlCPUBurstCfg
+		}
 	}
 
 	if podCPUBurstCfg == nil {

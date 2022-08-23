@@ -39,6 +39,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	expireCache "github.com/koordinator-sh/koordinator/pkg/tools/cache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -114,6 +115,8 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	klog.Info("Starting resmanager")
 
 	r.podsEvicted.Run(stopCh)
+
+	go configextensions.RunQOSGreyCtrlPlugins(r.kubeClient, stopCh)
 
 	if !cache.WaitForCacheSync(stopCh, r.statesInformer.HasSynced) {
 		return fmt.Errorf("time out waiting for kubelet meta service caches to sync")
