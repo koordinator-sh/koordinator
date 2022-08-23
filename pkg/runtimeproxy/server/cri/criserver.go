@@ -105,8 +105,12 @@ func (c *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeSer
 
 	// pre call hook server
 	// TODO deal with the Dispatch response
-	if response, err := c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest()); err != nil {
+	response, err := c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest())
+	if err != nil {
 		klog.Errorf("fail to call hook server %v", err)
+	} else if response == nil {
+		// when hook is not registered, the response will become nil
+		klog.Warningf("runtime hook path %s does not register any PreHooks", string(runtimeHookPath))
 	} else {
 		if err = resourceExecutor.UpdateRequest(response, request); err != nil {
 			klog.Errorf("failed to update cri request %v", err)
@@ -167,7 +171,7 @@ func (c *RuntimeManagerCriServer) failOver() error {
 	}
 	containerResponse, containerErr := c.backendRuntimeServiceClient.ListContainers(context.TODO(), &runtimeapi.ListContainersRequest{})
 	if containerErr != nil {
-		return podErr
+		return containerErr
 	}
 	for _, pod := range podResponse.Items {
 		podResourceExecutor := cri_resource_executor.NewPodResourceExecutor()
@@ -179,7 +183,10 @@ func (c *RuntimeManagerCriServer) failOver() error {
 
 	for _, container := range containerResponse.Containers {
 		containerExecutor := cri_resource_executor.NewContainerResourceExecutor()
-		containerExecutor.ParseContainer(container)
+		if err := containerExecutor.ParseContainer(container); err != nil {
+			klog.Errorf("failed to parse container %s, err: %v", container.Id, err)
+			continue
+		}
 		containerExecutor.ResourceCheckPoint(&runtimeapi.CreateContainerResponse{
 			ContainerId: container.GetId(),
 		})

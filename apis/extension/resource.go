@@ -25,9 +25,20 @@ import (
 )
 
 const (
-	BatchCPU    corev1.ResourceName = DomainPrefix + "batch-cpu"
-	BatchMemory corev1.ResourceName = DomainPrefix + "batch-memory"
+	// Deprecated because of the limitation of extended resource naming
+	KoordBatchCPU corev1.ResourceName = DomainPrefix + "batch-cpu"
+	// Deprecated because of the limitation of extended resource naming
+	KoordBatchMemory corev1.ResourceName = DomainPrefix + "batch-memory"
 
+	BatchCPU    corev1.ResourceName = ResourceDomainPrefix + "batch-cpu"
+	BatchMemory corev1.ResourceName = ResourceDomainPrefix + "batch-memory"
+
+	GPUCore        corev1.ResourceName = ResourceDomainPrefix + "gpu-core"
+	GPUMemory      corev1.ResourceName = ResourceDomainPrefix + "gpu-memory"
+	GPUMemoryRatio corev1.ResourceName = ResourceDomainPrefix + "gpu-memory-ratio"
+)
+
+const (
 	// AnnotationResourceSpec represents resource allocation API defined by Koordinator.
 	// The user specifies the desired CPU orchestration policy by setting the annotation.
 	AnnotationResourceSpec = SchedulingDomainPrefix + "/resource-spec"
@@ -49,6 +60,8 @@ var (
 type ResourceSpec struct {
 	// PreferredCPUBindPolicy represents best-effort CPU bind policy.
 	PreferredCPUBindPolicy CPUBindPolicy `json:"preferredCPUBindPolicy,omitempty"`
+	// PreferredCPUExclusivePolicy represents best-effort CPU exclusive policy.
+	PreferredCPUExclusivePolicy CPUExclusivePolicy `json:"preferredCPUExclusivePolicy,omitempty"`
 }
 
 // ResourceStatus describes resource allocation result, such as how to bind CPU.
@@ -64,14 +77,25 @@ type ResourceStatus struct {
 type CPUBindPolicy = schedulingconfig.CPUBindPolicy
 
 const (
-	// CPUBindPolicyNone does not perform any bind policy
-	CPUBindPolicyNone CPUBindPolicy = schedulingconfig.CPUBindPolicyNone
+	// CPUBindPolicyDefault performs the default bind policy that specified in koord-scheduler configuration
+	CPUBindPolicyDefault CPUBindPolicy = schedulingconfig.CPUBindPolicyDefault
 	// CPUBindPolicyFullPCPUs favor cpuset allocation that pack in few physical cores
 	CPUBindPolicyFullPCPUs CPUBindPolicy = schedulingconfig.CPUBindPolicyFullPCPUs
 	// CPUBindPolicySpreadByPCPUs favor cpuset allocation that evenly allocate logical cpus across physical cores
 	CPUBindPolicySpreadByPCPUs CPUBindPolicy = schedulingconfig.CPUBindPolicySpreadByPCPUs
 	// CPUBindPolicyConstrainedBurst constrains the CPU Shared Pool range of the Burstable Pod
 	CPUBindPolicyConstrainedBurst CPUBindPolicy = schedulingconfig.CPUBindPolicyConstrainedBurst
+)
+
+type CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicy
+
+const (
+	// CPUExclusivePolicyNone does not perform any exclusive policy
+	CPUExclusivePolicyNone CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicyNone
+	// CPUExclusivePolicyPCPULevel represents mutual exclusion in the physical core dimension
+	CPUExclusivePolicyPCPULevel CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicyPCPULevel
+	// CPUExclusivePolicyNUMANodeLevel indicates mutual exclusion in the NUMA topology dimension
+	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicyNUMANodeLevel
 )
 
 type NUMACPUSharedPools []CPUSharedPool
@@ -85,7 +109,7 @@ type CPUSharedPool struct {
 // GetResourceSpec parses ResourceSpec from annotations
 func GetResourceSpec(annotations map[string]string) (*ResourceSpec, error) {
 	resourceSpec := &ResourceSpec{
-		PreferredCPUBindPolicy: schedulingconfig.CPUBindPolicyNone,
+		PreferredCPUBindPolicy: schedulingconfig.CPUBindPolicyDefault,
 	}
 	data, ok := annotations[AnnotationResourceSpec]
 	if !ok {
@@ -110,6 +134,21 @@ func GetResourceStatus(annotations map[string]string) (*ResourceStatus, error) {
 		return nil, err
 	}
 	return resourceStatus, nil
+}
+
+func SetResourceStatus(pod *corev1.Pod, status *ResourceStatus) error {
+	if pod == nil {
+		return nil
+	}
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	data, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+	pod.Annotations[AnnotationResourceStatus] = string(data)
+	return nil
 }
 
 // TranslateResourceNameByPriorityClass translates defaultResourceName to extend resourceName by PriorityClass

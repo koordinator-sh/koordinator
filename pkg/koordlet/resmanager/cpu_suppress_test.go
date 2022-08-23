@@ -188,7 +188,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			},
 			wantBECFSQuota:           3.2 * defaultCFSPeriod,
 			wantCFSQuotaPolicyStatus: &policyUsing,
-			wantBECPUSet:             "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+			wantBECPUSet:             "0-15",
 			wantCPUSetPolicyStatus:   &policyRecovered,
 		},
 		{
@@ -312,7 +312,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			},
 			wantBECFSQuota:           1.2 * defaultCFSPeriod,
 			wantCFSQuotaPolicyStatus: &policyUsing,
-			wantBECPUSet:             "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+			wantBECPUSet:             "0-15",
 			wantCPUSetPolicyStatus:   &policyRecovered,
 		},
 		{
@@ -436,7 +436,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			},
 			wantBECFSQuota:           -1,
 			wantCFSQuotaPolicyStatus: &policyRecovered,
-			wantBECPUSet:             "15,14",
+			wantBECPUSet:             "0,1",
 			wantCPUSetPolicyStatus:   &policyUsing,
 		},
 		{
@@ -560,7 +560,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			},
 			wantBECFSQuota:           -1,
 			wantCFSQuotaPolicyStatus: &policyRecovered,
-			wantBECPUSet:             "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+			wantBECPUSet:             "0-15",
 			wantCPUSetPolicyStatus:   &policyRecovered,
 		},
 	}
@@ -872,8 +872,27 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 	type args struct {
 		oldCPUSets          string
-		rootCPUSets         string
 		currentPolicyStatus *suppressPolicyStatus
+	}
+	mockNodeInfo := metriccache.NodeCPUInfo{
+		ProcessorInfos: []util.ProcessorInfo{
+			{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 1},
+			{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 1},
+			{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 8, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 9, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 10, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 11, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 12, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 13, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 14, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 15, CoreID: 3, SocketID: 1, NodeID: 1},
+		},
 	}
 	tests := []struct {
 		name             string
@@ -885,30 +904,27 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 			name: "test need recover. currentPolicyStatus is nil",
 			args: args{
 				oldCPUSets:          "7,6,3,2",
-				rootCPUSets:         "0-15",
 				currentPolicyStatus: nil,
 			},
-			wantCPUSet:       "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+			wantCPUSet:       "0-15",
 			wantPolicyStatus: &policyRecovered,
 		},
 		{
 			name: "test need recover. currentPolicyStatus is policyUsing",
 			args: args{
 				oldCPUSets:          "7,6,3,2",
-				rootCPUSets:         "0-15",
 				currentPolicyStatus: &policyUsing,
 			},
-			wantCPUSet:       "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+			wantCPUSet:       "0-15",
 			wantPolicyStatus: &policyRecovered,
 		},
 		{
-			name: "test not need recover. currentPolicyStatus is policyRecovered",
+			name: "test need recover. currentPolicyStatus is policyRecovered",
 			args: args{
 				oldCPUSets:          "7,6,3,2",
-				rootCPUSets:         "0-15",
 				currentPolicyStatus: &policyRecovered,
 			},
-			wantCPUSet:       "7,6,3,2",
+			wantCPUSet:       "0-15",
 			wantPolicyStatus: &policyRecovered,
 		},
 	}
@@ -918,10 +934,17 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
 			podDirs := []string{"pod1", "pod2", "pod3"}
 			testingPrepareBECgroupData(helper, podDirs, tt.args.oldCPUSets)
-			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.CPUSet, tt.args.rootCPUSets)
-
-			r := resmanager{}
-			cpuSuppress := NewCPUSuppress(&r)
+			lsePod := mockLSEPod()
+			ctl := gomock.NewController(t)
+			mockMetricCache := mockmetriccache.NewMockMetricCache(ctl)
+			mockStatesInformer := mockstatesinformer.NewMockStatesInformer(ctl)
+			mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{Pod: lsePod}}).AnyTimes()
+			mockMetricCache.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(&mockNodeInfo, nil).AnyTimes()
+			r := &resmanager{
+				statesInformer: mockStatesInformer,
+				metricCache:    mockMetricCache,
+			}
+			cpuSuppress := NewCPUSuppress(r)
 			if tt.args.currentPolicyStatus != nil {
 				cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = *tt.args.currentPolicyStatus
 			}
@@ -992,9 +1015,9 @@ func Test_cpuSuppress_recoverCFSQuotaIfNeed(t *testing.T) {
 
 func Test_calculateBESuppressCPUSetPolicy(t *testing.T) {
 	type args struct {
-		cpusetQuantity *resource.Quantity
-		nodeCPUInfo    *metriccache.NodeCPUInfo
-		oldCPUSetNum   int
+		cpus          int32
+		processorInfo []util.ProcessorInfo
+		oldCPUSetNum  int
 	}
 	tests := []struct {
 		name string
@@ -1004,186 +1027,135 @@ func Test_calculateBESuppressCPUSetPolicy(t *testing.T) {
 		{
 			name: "do not panic but return empty cpuset for insufficient cpus",
 			args: args{
-				cpusetQuantity: resource.NewQuantity(0, resource.DecimalSI),
-				nodeCPUInfo:    &metriccache.NodeCPUInfo{},
-				oldCPUSetNum:   0,
+				cpus:          0,
+				processorInfo: []util.ProcessorInfo{},
+				oldCPUSetNum:  0,
 			},
 			want: nil,
 		},
 		{
-			name: "at least allocate 2 cpus",
-			args: args{
-				cpusetQuantity: resource.NewQuantity(0, resource.DecimalSI),
-				nodeCPUInfo: &metriccache.NodeCPUInfo{
-					ProcessorInfos: []util.ProcessorInfo{
-						{CPUID: 6, CoreID: 3, SocketID: 0, NodeID: 0},
-						{CPUID: 7, CoreID: 3, SocketID: 0, NodeID: 0},
-						{CPUID: 8, CoreID: 4, SocketID: 0, NodeID: 0},
-						{CPUID: 9, CoreID: 4, SocketID: 0, NodeID: 0},
-						{CPUID: 10, CoreID: 5, SocketID: 0, NodeID: 0},
-						{CPUID: 11, CoreID: 5, SocketID: 0, NodeID: 0},
-					},
-				},
-				oldCPUSetNum: 2,
-			},
-			want: []int32{11, 10},
-		},
-		{
 			name: "allocate cpus with scattering on numa nodes and stacking on HTs 0.",
 			args: args{
-				cpusetQuantity: resource.NewQuantity(3, resource.DecimalSI),
-				nodeCPUInfo: &metriccache.NodeCPUInfo{
-					ProcessorInfos: []util.ProcessorInfo{
-						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 2, CoreID: 2, SocketID: 1, NodeID: 1},
-						{CPUID: 3, CoreID: 3, SocketID: 1, NodeID: 1},
-						{CPUID: 4, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 5, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 6, CoreID: 2, SocketID: 1, NodeID: 1},
-						{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 1},
-					},
+				cpus: 3,
+				processorInfo: []util.ProcessorInfo{
+					{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+					{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0},
+					{CPUID: 2, CoreID: 2, SocketID: 1, NodeID: 1},
+					{CPUID: 3, CoreID: 3, SocketID: 1, NodeID: 1},
+					{CPUID: 4, CoreID: 0, SocketID: 0, NodeID: 0},
+					{CPUID: 5, CoreID: 1, SocketID: 0, NodeID: 0},
+					{CPUID: 6, CoreID: 2, SocketID: 1, NodeID: 1},
+					{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 1},
 				},
+
 				oldCPUSetNum: 3,
 			},
-			want: []int32{7, 3, 5},
+			want: []int32{0, 4, 2},
 		},
 		{
 			name: "allocate cpus with scattering on numa nodes and stacking on HTs 1.",
 			args: args{
-				cpusetQuantity: resource.NewQuantity(3, resource.DecimalSI),
-				nodeCPUInfo: &metriccache.NodeCPUInfo{
-					ProcessorInfos: []util.ProcessorInfo{
-						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 1},
-						{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 1},
-						{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 1},
-						{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 1},
-					},
+				cpus: 3,
+				processorInfo: []util.ProcessorInfo{
+					{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+					{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
+					{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
+					{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
+					{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 1},
+					{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 1},
+					{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 1},
+					{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 1},
 				},
+
 				oldCPUSetNum: 5,
 			},
-			want: []int32{7, 6, 3},
+			want: []int32{0, 1, 4},
 		},
 		{
 			name: "allocate cpus with scattering on numa nodes and stacking on HTs 2. (also scattering on sockets)",
 			args: args{
-				cpusetQuantity: resource.NewQuantity(5, resource.DecimalSI),
-				nodeCPUInfo: &metriccache.NodeCPUInfo{
-					ProcessorInfos: []util.ProcessorInfo{
-						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 0},
-						{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 0},
-						{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 0},
-						{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 0},
-						{CPUID: 8, CoreID: 4, SocketID: 2, NodeID: 1},
-						{CPUID: 9, CoreID: 4, SocketID: 2, NodeID: 1},
-						{CPUID: 10, CoreID: 5, SocketID: 2, NodeID: 1},
-						{CPUID: 11, CoreID: 5, SocketID: 2, NodeID: 1},
-						{CPUID: 12, CoreID: 6, SocketID: 3, NodeID: 1},
-						{CPUID: 13, CoreID: 6, SocketID: 3, NodeID: 1},
-						{CPUID: 14, CoreID: 7, SocketID: 3, NodeID: 1},
-						{CPUID: 15, CoreID: 7, SocketID: 3, NodeID: 1},
-					},
+				cpus: 5,
+				processorInfo: []util.ProcessorInfo{
+					{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+					{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
+					{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
+					{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
+					{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 0},
+					{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 0},
+					{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 0},
+					{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 0},
+					{CPUID: 8, CoreID: 4, SocketID: 2, NodeID: 1},
+					{CPUID: 9, CoreID: 4, SocketID: 2, NodeID: 1},
+					{CPUID: 10, CoreID: 5, SocketID: 2, NodeID: 1},
+					{CPUID: 11, CoreID: 5, SocketID: 2, NodeID: 1},
+					{CPUID: 12, CoreID: 6, SocketID: 3, NodeID: 1},
+					{CPUID: 13, CoreID: 6, SocketID: 3, NodeID: 1},
+					{CPUID: 14, CoreID: 7, SocketID: 3, NodeID: 1},
+					{CPUID: 15, CoreID: 7, SocketID: 3, NodeID: 1},
 				},
+
 				oldCPUSetNum: 8,
 			},
-			want: []int32{15, 14, 11, 10, 7},
+			want: []int32{0, 1, 4, 5, 8},
 		},
 		{
 			name: "allocate cpus with scattering on numa nodes and stacking on HTs 3. (regardless of the initial order)",
 			args: args{
-				cpusetQuantity: resource.NewQuantity(5, resource.DecimalSI),
-				nodeCPUInfo: &metriccache.NodeCPUInfo{
-					ProcessorInfos: []util.ProcessorInfo{
-						{CPUID: 12, CoreID: 6, SocketID: 3, NodeID: 1},
-						{CPUID: 13, CoreID: 6, SocketID: 3, NodeID: 1},
-						{CPUID: 14, CoreID: 7, SocketID: 3, NodeID: 1},
-						{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 11, CoreID: 5, SocketID: 2, NodeID: 1},
-						{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 0},
-						{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 0},
-						{CPUID: 8, CoreID: 4, SocketID: 2, NodeID: 1},
-						{CPUID: 15, CoreID: 7, SocketID: 3, NodeID: 1},
-						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 9, CoreID: 4, SocketID: 2, NodeID: 1},
-						{CPUID: 10, CoreID: 5, SocketID: 2, NodeID: 1},
-						{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 0},
-						{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 0},
-					},
+				cpus: 5,
+				processorInfo: []util.ProcessorInfo{
+					{CPUID: 12, CoreID: 6, SocketID: 3, NodeID: 1},
+					{CPUID: 13, CoreID: 6, SocketID: 3, NodeID: 1},
+					{CPUID: 14, CoreID: 7, SocketID: 3, NodeID: 1},
+					{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
+					{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
+					{CPUID: 11, CoreID: 5, SocketID: 2, NodeID: 1},
+					{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 0},
+					{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 0},
+					{CPUID: 8, CoreID: 4, SocketID: 2, NodeID: 1},
+					{CPUID: 15, CoreID: 7, SocketID: 3, NodeID: 1},
+					{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+					{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
+					{CPUID: 9, CoreID: 4, SocketID: 2, NodeID: 1},
+					{CPUID: 10, CoreID: 5, SocketID: 2, NodeID: 1},
+					{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 0},
+					{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 0},
 				},
+
 				oldCPUSetNum: 8,
 			},
-			want: []int32{15, 14, 11, 10, 7},
-		},
-		{
-			name: "allocate cpus for slow scale up:increase cpunum > maxIncreaseCPUNum",
-			args: args{
-				cpusetQuantity: resource.NewQuantity(5, resource.DecimalSI),
-				nodeCPUInfo: &metriccache.NodeCPUInfo{
-					ProcessorInfos: []util.ProcessorInfo{
-						{CPUID: 12, CoreID: 6, SocketID: 3, NodeID: 1},
-						{CPUID: 13, CoreID: 6, SocketID: 3, NodeID: 1},
-						{CPUID: 14, CoreID: 7, SocketID: 3, NodeID: 1},
-						{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 11, CoreID: 5, SocketID: 2, NodeID: 1},
-						{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 0},
-						{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 0},
-						{CPUID: 8, CoreID: 4, SocketID: 2, NodeID: 1},
-						{CPUID: 15, CoreID: 7, SocketID: 3, NodeID: 1},
-						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 9, CoreID: 4, SocketID: 2, NodeID: 1},
-						{CPUID: 10, CoreID: 5, SocketID: 2, NodeID: 1},
-						{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 0},
-						{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 0},
-					},
-				},
-				oldCPUSetNum: 1, // maxNewCPUSet := oldCPUSetNum + beMaxIncreaseCPUPercent*totalCPUNum = 3
-			},
-			want: []int32{15, 14, 11},
+			want: []int32{0, 1, 4, 5, 8},
 		},
 		{
 			name: "allocate cpus for slow scale up:increase cpunum == maxIncreaseCPUNum",
 			args: args{
-				cpusetQuantity: resource.NewQuantity(5, resource.DecimalSI),
-				nodeCPUInfo: &metriccache.NodeCPUInfo{
-					ProcessorInfos: []util.ProcessorInfo{
-						{CPUID: 12, CoreID: 6, SocketID: 3, NodeID: 1},
-						{CPUID: 13, CoreID: 6, SocketID: 3, NodeID: 1},
-						{CPUID: 14, CoreID: 7, SocketID: 3, NodeID: 1},
-						{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
-						{CPUID: 11, CoreID: 5, SocketID: 2, NodeID: 1},
-						{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 0},
-						{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 0},
-						{CPUID: 8, CoreID: 4, SocketID: 2, NodeID: 1},
-						{CPUID: 15, CoreID: 7, SocketID: 3, NodeID: 1},
-						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
-						{CPUID: 9, CoreID: 4, SocketID: 2, NodeID: 1},
-						{CPUID: 10, CoreID: 5, SocketID: 2, NodeID: 1},
-						{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 0},
-						{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 0},
-					},
+				cpus: 5,
+				processorInfo: []util.ProcessorInfo{
+					{CPUID: 12, CoreID: 6, SocketID: 3, NodeID: 1},
+					{CPUID: 13, CoreID: 6, SocketID: 3, NodeID: 1},
+					{CPUID: 14, CoreID: 7, SocketID: 3, NodeID: 1},
+					{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
+					{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
+					{CPUID: 11, CoreID: 5, SocketID: 2, NodeID: 1},
+					{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 0},
+					{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 0},
+					{CPUID: 8, CoreID: 4, SocketID: 2, NodeID: 1},
+					{CPUID: 15, CoreID: 7, SocketID: 3, NodeID: 1},
+					{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+					{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
+					{CPUID: 9, CoreID: 4, SocketID: 2, NodeID: 1},
+					{CPUID: 10, CoreID: 5, SocketID: 2, NodeID: 1},
+					{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 0},
+					{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 0},
 				},
+
 				oldCPUSetNum: 3,
 			},
-			want: []int32{15, 14, 11, 10, 7},
+			want: []int32{0, 1, 4, 5, 8},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := calculateBESuppressCPUSetPolicy(tt.args.cpusetQuantity, tt.args.oldCPUSetNum, tt.args.nodeCPUInfo)
+			got := calculateBESuppressCPUSetPolicy(tt.args.cpus, tt.args.processorInfo)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -1256,7 +1228,7 @@ func Test_adjustByCPUSet(t *testing.T) {
 				},
 				oldCPUSets: "7,6,3,2",
 			},
-			wantCPUSet: "7,6,3",
+			wantCPUSet: "2,3,4",
 		},
 		{
 			name: "test scale up by cpuset.",
@@ -1276,9 +1248,18 @@ func Test_adjustByCPUSet(t *testing.T) {
 				},
 				oldCPUSets: "7,6",
 			},
-			wantCPUSet: "7,6,3",
+			wantCPUSet: "2,3,4",
 		},
 	}
+	ctrl := gomock.NewController(t)
+	mockStatesInformer := mockstatesinformer.NewMockStatesInformer(ctrl)
+	lsrPod := mockLSRPod()
+	lsePod := mockLSEPod()
+	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{Pod: lsrPod}, {Pod: lsePod}}).AnyTimes()
+	r := &resmanager{
+		statesInformer: mockStatesInformer,
+	}
+	cpuSuppress := NewCPUSuppress(r)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// prepare testing files
@@ -1286,7 +1267,7 @@ func Test_adjustByCPUSet(t *testing.T) {
 			podDirs := []string{"pod1", "pod2", "pod3"}
 			testingPrepareBECgroupData(helper, podDirs, tt.args.oldCPUSets)
 
-			adjustByCPUSet(tt.args.cpusetQuantity, tt.args.nodeCPUInfo)
+			cpuSuppress.adjustByCPUSet(tt.args.cpusetQuantity, tt.args.nodeCPUInfo)
 
 			gotCPUSetBECgroup := helper.ReadCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 			assert.Equal(t, tt.wantCPUSet, gotCPUSetBECgroup, "checkBECPUSet")
@@ -1409,6 +1390,90 @@ func getNodeSLOByThreshold(thresholdConfig *slov1alpha1.ResourceThresholdStrateg
 	return &slov1alpha1.NodeSLO{
 		Spec: slov1alpha1.NodeSLOSpec{
 			ResourceUsedThresholdWithBE: thresholdConfig,
+		},
+	}
+}
+
+func mockLSRPod() *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test-ns",
+			Name:      "test-name-lsr",
+			UID:       "test-pod-uid-lsr",
+			Labels: map[string]string{
+				apiext.LabelPodQoS: string(apiext.QoSLSR),
+			},
+			Annotations: map[string]string{
+				apiext.AnnotationResourceStatus: "{\"cpuset\": \"0,6\" }",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "test-container-1",
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(500, resource.DecimalSI),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(500, resource.DecimalSI),
+						},
+					},
+				},
+				{
+					Name: "test-container-2",
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(1000, resource.DecimalSI),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(1000, resource.DecimalSI),
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func mockLSEPod() *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test-ns",
+			Name:      "test-name-lsr",
+			UID:       "test-pod-uid-lsr",
+			Labels: map[string]string{
+				apiext.LabelPodQoS: string(apiext.QoSLSE),
+			},
+			Annotations: map[string]string{
+				apiext.AnnotationResourceStatus: "{\"cpuset\": \"7\" }",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "test-container-1",
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(500, resource.DecimalSI),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(500, resource.DecimalSI),
+						},
+					},
+				},
+				{
+					Name: "test-container-2",
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(1000, resource.DecimalSI),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(1000, resource.DecimalSI),
+						},
+					},
+				},
+			},
 		},
 	}
 }

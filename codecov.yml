@@ -22,7 +22,7 @@ coverage:
           - unittests
         paths:
           - "pkg"
-        if_ci_failed: error
+        if_ci_failed: success
         if_no_uploads: success
         if_not_found: success
 

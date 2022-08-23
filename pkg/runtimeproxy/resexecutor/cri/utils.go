@@ -81,10 +81,42 @@ func updateResource(a, b *v1alpha1.LinuxContainerResources) *v1alpha1.LinuxConta
 		a.CpuShares = b.CpuShares
 	}
 	if b.MemoryLimitInBytes > 0 {
-		a.MemoryLimitInBytes = b.MemorySwapLimitInBytes
+		a.MemoryLimitInBytes = b.MemoryLimitInBytes
 	}
 	if b.OomScoreAdj >= -1000 && b.OomScoreAdj <= 1000 {
 		a.OomScoreAdj = b.OomScoreAdj
+	}
+
+	a.CpusetCpus = b.CpusetCpus
+	a.CpusetMems = b.CpusetMems
+
+	a.Unified = utils.MergeMap(a.Unified, b.Unified)
+	if b.MemorySwapLimitInBytes > 0 {
+		a.MemorySwapLimitInBytes = b.MemorySwapLimitInBytes
+	}
+	return a
+}
+
+// updateResourceByUpdateContainerResourceRequest updates resources in cache by UpdateContainerResource request.
+// updateResourceByUpdateContainerResourceRequest will omit OomScoreAdj.
+//
+// Normally kubelet won't send UpdateContainerResource request, so if some components want to send it and want to update OomScoreAdj,
+// please use hook to achieve it.
+func updateResourceByUpdateContainerResourceRequest(a, b *v1alpha1.LinuxContainerResources) *v1alpha1.LinuxContainerResources {
+	if a == nil || b == nil {
+		return a
+	}
+	if b.CpuPeriod > 0 {
+		a.CpuPeriod = b.CpuPeriod
+	}
+	if b.CpuQuota > 0 {
+		a.CpuQuota = b.CpuQuota
+	}
+	if b.CpuShares > 0 {
+		a.CpuShares = b.CpuShares
+	}
+	if b.MemoryLimitInBytes > 0 {
+		a.MemoryLimitInBytes = b.MemoryLimitInBytes
 	}
 	if b.CpusetCpus != "" {
 		a.CpusetCpus = b.CpusetCpus

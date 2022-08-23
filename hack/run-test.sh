@@ -38,7 +38,7 @@ function run_test() {
             go test -timeout 30s "github.com/koordinator-sh/koordinator/$pkg" -v
         done <<< "$pkgs"
     else
-        pkgs=`grep "$pattern" -r ./pkg | cut -d: -f1 | grep -E ".go$" | xargs -i dirname {}`
+        pkgs=`grep "$pattern" -r ./pkg | cut -d: -f1 | grep -E ".go$" | xargs -i dirname {} | sort -u`
         while read -r line
         do
             pkg=${line#".//"}

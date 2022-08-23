@@ -554,7 +554,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.koordinator.sh/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.requests.koordinator.sh/batch-memory: Invalid value: "-4Gi": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.koordinator.sh/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.koordinator.sh/batch-memory: Invalid value: "-4Gi": quantity must be positive]`,
+			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive]`,
 		},
 		{
 			name:      "forbidden resources - LS And Prod: requests has cpu/memory and missing limits",
@@ -638,7 +638,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `pod.spec.containers.test-container-a.resources.requests.koordinator.sh/batch-memory: Required value: request of container test-container-a does not have resource koordinator.sh/batch-memory`,
+			wantReason:  `pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Required value: request of container test-container-a does not have resource kubernetes.io/batch-memory`,
 		},
 		{
 			name:      "forbidden resources - BE And Batch: negative resource requirements",
@@ -669,7 +669,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.koordinator.sh/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.requests.koordinator.sh/batch-memory: Invalid value: "-4Gi": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.koordinator.sh/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.koordinator.sh/batch-memory: Invalid value: "-4Gi": quantity must be positive]`,
+			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive]`,
 		},
 		{
 			name:      "forbidden resources - BE And Batch: requests has cpu/memory and missing limits",
@@ -697,7 +697,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.limits.koordinator.sh/batch-cpu: Required value: limit of container test-container-a does not have resource koordinator.sh/batch-cpu, pod.spec.containers.test-container-a.resources: Forbidden: container test-container-a: resource koordinator.sh/batch-cpu quantity should satisify request <= limit, pod.spec.containers.test-container-a.resources.limits.koordinator.sh/batch-memory: Not found: "null", pod.spec.containers.test-container-a.resources: Forbidden: resource koordinator.sh/batch-memory of container test-container-a: quantity of request and limit must be equal]`,
+			wantReason:  `[pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-cpu: Required value: limit of container test-container-a does not have resource kubernetes.io/batch-cpu, pod.spec.containers.test-container-a.resources: Forbidden: container test-container-a: resource kubernetes.io/batch-cpu quantity should satisify request <= limit, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-memory: Required value: limit of container test-container-a does not have resource kubernetes.io/batch-memory, pod.spec.containers.test-container-a.resources: Forbidden: container test-container-a: resource kubernetes.io/batch-memory quantity should satisify request <= limit]`,
 		},
 		{
 			name:      "forbidden resources - BE And Batch: limits has cpu/memory and missing requests",
@@ -725,7 +725,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.koordinator.sh/batch-cpu: Required value: request of container test-container-a does not have resource koordinator.sh/batch-cpu, pod.spec.containers.test-container-a.resources.requests.koordinator.sh/batch-memory: Not found: "null", pod.spec.containers.test-container-a.resources: Forbidden: resource koordinator.sh/batch-memory of container test-container-a: quantity of request and limit must be equal]`,
+			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-cpu: Required value: request of container test-container-a does not have resource kubernetes.io/batch-cpu, pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Required value: request of container test-container-a does not have resource kubernetes.io/batch-memory]`,
 		},
 		{
 			name:      "validate resources - BE And Batch: request memory must equal limits and cpu less than limits",
@@ -790,7 +790,9 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				t.Errorf("clusterColocationProfileValidatingPod() gotAllowed = %v, want %v", gotAllowed, tt.wantAllowed)
 			}
 			if gotReason != tt.wantReason {
-				t.Errorf("clusterColocationProfileValidatingPod() gotReason = %v, want %v", gotReason, tt.wantReason)
+				t.Errorf("clusterColocationProfileValidatingPod():\n"+
+					"gotReason = %v,\n"+
+					"want = %v", gotReason, tt.wantReason)
 			}
 		})
 	}

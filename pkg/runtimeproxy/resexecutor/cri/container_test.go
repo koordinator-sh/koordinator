@@ -244,14 +244,14 @@ func TestContainerResourceExecutor_ResourceCheckPoint(t *testing.T) {
 			fields: fields{
 				ContainerInfo: store.ContainerInfo{
 					ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
-						ContainerMata: &v1alpha1.ContainerMetadata{},
+						ContainerMeta: &v1alpha1.ContainerMetadata{},
 					},
 				},
 			},
 			wantErr: false,
 			wantStoreInfo: &store.ContainerInfo{
 				ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
-					ContainerMata: &v1alpha1.ContainerMetadata{
+					ContainerMeta: &v1alpha1.ContainerMetadata{
 						Id: "111111",
 					},
 				}},
@@ -262,8 +262,204 @@ func TestContainerResourceExecutor_ResourceCheckPoint(t *testing.T) {
 			ContainerInfo: tt.fields.ContainerInfo,
 		}
 		err := c.ResourceCheckPoint(tt.args.rsp)
-		containerInfo := store.GetContainerInfo(c.ContainerInfo.ContainerMata.GetId())
+		containerInfo := store.GetContainerInfo(c.ContainerInfo.ContainerMeta.GetId())
 		assert.Equal(t, tt.wantErr, err != nil, err)
 		assert.Equal(t, tt.wantStoreInfo, containerInfo)
+	}
+}
+
+func TestContainerResourceExecutor_ParseRequest_CreateContainerRequest(t *testing.T) {
+	type args struct {
+		podReq       interface{}
+		containerReq interface{}
+	}
+	tests := []struct {
+		name                  string
+		args                  args
+		wantContainerExecutor store.ContainerInfo
+	}{
+		{
+			name: "normal case",
+			args: args{
+				podReq: &runtimeapi.RunPodSandboxRequest{
+					Config: &runtimeapi.PodSandboxConfig{
+						Metadata: &runtimeapi.PodSandboxMetadata{
+							Name:      "mock pod sandbox",
+							Namespace: "mock namespace",
+							Uid:       "202207121604",
+						},
+						Annotations: map[string]string{
+							"annotation.dummy.koordinator.sh/TestContainerResourceExecutor_ParseRequest_CreateContainerRequest_Pod": "true",
+						},
+						Labels: map[string]string{
+							"label.dummy.koordinator.sh/TestContainerResourceExecutor_ParseRequest_CreateContainerRequest_Pod": "true",
+						},
+						Linux: &runtimeapi.LinuxPodSandboxConfig{
+							CgroupParent: "/kubepods/besteffort",
+						},
+					},
+				},
+				containerReq: &runtimeapi.CreateContainerRequest{
+					PodSandboxId: "202207121604",
+					Config: &runtimeapi.ContainerConfig{
+						Metadata: &runtimeapi.ContainerMetadata{
+							Name:    "test container",
+							Attempt: 101010,
+						},
+						Annotations: map[string]string{
+							"annotation.dummy.koordinator.sh/TestContainerResourceExecutor_ParseRequest_CreateContainerRequest_Container": "true",
+						},
+						Labels: map[string]string{
+							"label.dummy.koordinator.sh/TestContainerResourceExecutor_ParseRequest_CreateContainerRequest_Container": "true",
+						},
+						Linux: &runtimeapi.LinuxContainerConfig{
+							Resources: &runtimeapi.LinuxContainerResources{
+								CpuPeriod:   1000,
+								CpuShares:   500,
+								OomScoreAdj: 10,
+								Unified: map[string]string{
+									"resourceA": "resource A",
+								},
+							},
+						},
+					},
+					SandboxConfig: &runtimeapi.PodSandboxConfig{
+						Linux: &runtimeapi.LinuxPodSandboxConfig{
+							CgroupParent: "/kubepods/besteffort",
+						},
+					},
+				},
+			},
+			wantContainerExecutor: store.ContainerInfo{
+				ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
+					PodMeta: &v1alpha1.PodSandboxMetadata{
+						Name:      "mock pod sandbox",
+						Namespace: "mock namespace",
+						Uid:       "202207121604",
+					},
+					PodLabels: map[string]string{
+						"label.dummy.koordinator.sh/TestContainerResourceExecutor_ParseRequest_CreateContainerRequest_Pod": "true",
+					},
+					PodAnnotations: map[string]string{
+						"annotation.dummy.koordinator.sh/TestContainerResourceExecutor_ParseRequest_CreateContainerRequest_Pod": "true",
+					},
+					ContainerMeta: &v1alpha1.ContainerMetadata{
+						Name:    "test container",
+						Attempt: 101010,
+					},
+					ContainerAnnotations: map[string]string{
+						"annotation.dummy.koordinator.sh/TestContainerResourceExecutor_ParseRequest_CreateContainerRequest_Container": "true",
+					},
+					ContainerResources: &v1alpha1.LinuxContainerResources{
+						CpuPeriod:   1000,
+						CpuShares:   500,
+						OomScoreAdj: 10,
+						Unified: map[string]string{
+							"resourceA": "resource A",
+						},
+					},
+					PodCgroupParent: "/kubepods/besteffort",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		// mock pod cache
+		p := NewPodResourceExecutor()
+		_ = p.ParseRequest(tt.args.podReq)
+		_ = store.WritePodSandboxInfo("202207121604", &p.PodSandboxInfo)
+
+		// write container cache
+		c := NewContainerResourceExecutor()
+		_ = c.ParseRequest(tt.args.containerReq)
+
+		// check if container cache is set correctly
+		assert.Equal(t, tt.wantContainerExecutor, c.ContainerInfo)
+	}
+}
+
+func TestContainerResourceExecutor_ParseRequest_UpdateContainerResourcesRequest(t *testing.T) {
+	type args struct {
+		containerID               string
+		containerReq              interface{}
+		ExistingContainerExecutor store.ContainerInfo
+	}
+	tests := []struct {
+		name              string
+		args              args
+		wantContainerInfo store.ContainerInfo
+	}{
+		{
+			name: "normal case",
+			args: args{
+				containerID: "10101010",
+				containerReq: &runtimeapi.UpdateContainerResourcesRequest{
+					ContainerId: "10101010",
+					Linux: &runtimeapi.LinuxContainerResources{
+						CpusetCpus: "0-31",
+					},
+				},
+				ExistingContainerExecutor: store.ContainerInfo{
+					ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
+						PodMeta: &v1alpha1.PodSandboxMetadata{
+							Name:      "mock pod sandbox",
+							Namespace: "mock namespace",
+							Uid:       "202207121604",
+						},
+						ContainerMeta: &v1alpha1.ContainerMetadata{
+							Name:    "test container",
+							Attempt: 101010,
+						},
+						ContainerAnnotations: map[string]string{
+							"annotation.dummy.koordinator.sh/TestContainerResourceExecutor_ParseRequest_CreateContainerRequest_Container": "true",
+						},
+						ContainerResources: &v1alpha1.LinuxContainerResources{
+							CpuPeriod:   1000,
+							CpuShares:   500,
+							OomScoreAdj: 10,
+							Unified: map[string]string{
+								"resourceA": "resource A",
+							},
+						},
+						PodCgroupParent: "/kubepods/besteffort",
+					},
+				},
+			},
+			wantContainerInfo: store.ContainerInfo{
+				ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
+					PodMeta: &v1alpha1.PodSandboxMetadata{
+						Name:      "mock pod sandbox",
+						Namespace: "mock namespace",
+						Uid:       "202207121604",
+					},
+					ContainerMeta: &v1alpha1.ContainerMetadata{
+						Name:    "test container",
+						Attempt: 101010,
+					},
+					ContainerAnnotations: map[string]string{
+						"annotation.dummy.koordinator.sh/TestContainerResourceExecutor_ParseRequest_CreateContainerRequest_Container": "true",
+					},
+					ContainerResources: &v1alpha1.LinuxContainerResources{
+						CpuPeriod:   1000,
+						CpuShares:   500,
+						OomScoreAdj: 10,
+						CpusetCpus:  "0-31",
+						Unified: map[string]string{
+							"resourceA": "resource A",
+						},
+					},
+					PodCgroupParent: "/kubepods/besteffort",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		c := NewContainerResourceExecutor()
+		// mock container cache
+		_ = store.WriteContainerInfo(tt.args.containerID, &tt.args.ExistingContainerExecutor)
+		_ = c.ParseRequest(tt.args.containerReq)
+
+		// check if container cache is set correctly
+		assert.Equal(t, tt.wantContainerInfo, c.ContainerInfo)
 	}
 }

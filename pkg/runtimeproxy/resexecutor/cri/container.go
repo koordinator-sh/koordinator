@@ -40,13 +40,13 @@ func NewContainerResourceExecutor() *ContainerResourceExecutor {
 func (c *ContainerResourceExecutor) String() string {
 	return fmt.Sprintf("pod(%v/%v)container(%v)",
 		c.GetPodMeta().GetName(), c.GetPodMeta().GetUid(),
-		c.GetContainerMata().GetName())
+		c.GetContainerMeta().GetName())
 }
 
 func (c *ContainerResourceExecutor) GetMetaInfo() string {
 	return fmt.Sprintf("pod(%v/%v)container(%v)",
 		c.GetPodMeta().GetName(), c.GetPodMeta().GetUid(),
-		c.GetContainerMata().GetName())
+		c.GetContainerMeta().GetName())
 }
 
 func (c *ContainerResourceExecutor) GenerateHookRequest() interface{} {
@@ -74,9 +74,11 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
 		}
 		c.ContainerInfo = store.ContainerInfo{
 			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
-				PodMeta:      podCheckPoint.PodMeta,
-				PodResources: podCheckPoint.Resources,
-				ContainerMata: &v1alpha1.ContainerMetadata{
+				PodMeta:        podCheckPoint.PodMeta,
+				PodResources:   podCheckPoint.Resources,
+				PodAnnotations: podCheckPoint.Annotations,
+				PodLabels:      podCheckPoint.Labels,
+				ContainerMeta: &v1alpha1.ContainerMetadata{
 					Name:    request.GetConfig().GetMetadata().GetName(),
 					Attempt: request.GetConfig().GetMetadata().GetAttempt(),
 				},
@@ -89,7 +91,12 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
 	case *runtimeapi.StartContainerRequest:
 		return c.loadContainerInfoFromStore(request.GetContainerId(), "StartContainer")
 	case *runtimeapi.UpdateContainerResourcesRequest:
-		return c.loadContainerInfoFromStore(request.GetContainerId(), "UpdateContainerResource")
+		err := c.loadContainerInfoFromStore(request.GetContainerId(), "UpdateContainerResource")
+		if err != nil {
+			return err
+		}
+		c.ContainerResources = updateResourceByUpdateContainerResourceRequest(c.ContainerResources, transferToKoordResources(request.Linux))
+		return nil
 	case *runtimeapi.StopContainerRequest:
 		return c.loadContainerInfoFromStore(request.GetContainerId(), "StopContainer")
 	}
@@ -107,7 +114,7 @@ func (c *ContainerResourceExecutor) ParseContainer(container *runtimeapi.Contain
 	c.ContainerInfo = store.ContainerInfo{
 		ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
 			ContainerAnnotations: container.GetAnnotations(),
-			ContainerMata: &v1alpha1.ContainerMetadata{
+			ContainerMeta: &v1alpha1.ContainerMetadata{
 				Name:    container.GetMetadata().GetName(),
 				Attempt: container.GetMetadata().GetAttempt(),
 			},
@@ -125,7 +132,7 @@ func (c *ContainerResourceExecutor) ResourceCheckPoint(rsp interface{}) error {
 	// container level resource checkpoint would be triggered during post container create only
 	switch response := rsp.(type) {
 	case *runtimeapi.CreateContainerResponse:
-		c.ContainerMata.Id = response.GetContainerId()
+		c.ContainerMeta.Id = response.GetContainerId()
 		err := store.WriteContainerInfo(response.GetContainerId(), &c.ContainerInfo)
 		if err != nil {
 			return err

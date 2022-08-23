@@ -38,6 +38,7 @@ func TestNewDefaultConfig(t *testing.T) {
 				KubeletSyncTimeout:          3 * time.Second,
 				InsecureKubeletTLS:          false,
 				KubeletReadOnlyPort:         10255,
+				NodeTopologySyncInterval:    3 * time.Second,
 			},
 		},
 	}
@@ -58,6 +59,7 @@ func TestConfig_InitFlags(t *testing.T) {
 		"--kubelet-sync-timeout=10s",
 		"--kubelet-insecure-tls=true",
 		"--kubelet-read-only-port=10258",
+		"--node-topology-sync-interval=10s",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -67,6 +69,7 @@ func TestConfig_InitFlags(t *testing.T) {
 		KubeletSyncTimeout          time.Duration
 		InsecureKubeletTLS          bool
 		KubeletReadOnlyPort         uint
+		NodeTopologySyncInterval    time.Duration
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -84,6 +87,7 @@ func TestConfig_InitFlags(t *testing.T) {
 				KubeletSyncTimeout:          10 * time.Second,
 				InsecureKubeletTLS:          true,
 				KubeletReadOnlyPort:         10258,
+				NodeTopologySyncInterval:    10 * time.Second,
 			},
 			args: args{fs: fs},
 		},
@@ -97,6 +101,7 @@ func TestConfig_InitFlags(t *testing.T) {
 				KubeletSyncTimeout:          tt.fields.KubeletSyncTimeout,
 				InsecureKubeletTLS:          tt.fields.InsecureKubeletTLS,
 				KubeletReadOnlyPort:         tt.fields.KubeletReadOnlyPort,
+				NodeTopologySyncInterval:    tt.fields.NodeTopologySyncInterval,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

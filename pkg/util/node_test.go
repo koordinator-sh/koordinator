@@ -20,9 +20,11 @@ import (
 	"path"
 	"testing"
 
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 	"github.com/stretchr/testify/assert"
+
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func Test_GetKubeQosRelativePath(t *testing.T) {

@@ -17,7 +17,6 @@ limitations under the License.
 package statesinformer
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,7 +28,7 @@ import (
 
 func TestRegisterCallbacksAndRun(t *testing.T) {
 	type args struct {
-		objType     reflect.Type
+		objType     RegisterType
 		name        string
 		description string
 	}
@@ -38,9 +37,25 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 		args args
 	}{
 		{
-			name: "register and run",
+			name: "register RegisterTypeNodeSLOSpec and run",
 			args: args{
-				objType:     reflect.TypeOf(&slov1alpha1.NodeSLO{}),
+				objType:     RegisterTypeNodeSLOSpec,
+				name:        "set-bool-var",
+				description: "set test bool var as true",
+			},
+		},
+		{
+			name: "register RegisterTypeAllPods and run",
+			args: args{
+				objType:     RegisterTypeAllPods,
+				name:        "set-bool-var",
+				description: "set test bool var as true",
+			},
+		},
+		{
+			name: "register RegisterTypeNodeSLOSpec and run",
+			args: args{
+				objType:     RegisterTypeNodeSLOSpec,
 				name:        "set-bool-var",
 				description: "set test bool var as true",
 			},
@@ -49,15 +64,18 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testVar := pointer.BoolPtr(false)
-			callbackFn := func(si StatesInformer) {
+			callbackFn := func(t RegisterType, obj interface{}, pods []*PodMeta) {
 				*testVar = true
 			}
 			si := &statesInformer{
-				stateUpdateCallbacks: map[reflect.Type][]updateCallback{
-					reflect.TypeOf(&slov1alpha1.NodeSLO{}): {},
+				stateUpdateCallbacks: map[RegisterType][]updateCallback{
+					RegisterTypeNodeSLOSpec:  {},
+					RegisterTypeAllPods:      {},
+					RegisterTypeNodeTopology: {},
 				},
 			}
 			si.RegisterCallbacks(tt.args.objType, tt.args.name, tt.args.description, callbackFn)
+			si.getObjByType(tt.args.objType, UpdateCbCtx{})
 			si.runCallbacks(tt.args.objType, &slov1alpha1.NodeSLO{})
 			assert.Equal(t, *testVar, true)
 		})
@@ -66,9 +84,16 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 
 func Test_statesInformer_startCallbackRunners(t *testing.T) {
 	output := make(chan string, 1)
+	nodeSLO := &slov1alpha1.NodeSLO{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				"test-label-key": "test-label-val1",
+			},
+		},
+	}
 	stopCh := make(chan struct{}, 1)
 	type args struct {
-		objType     reflect.Type
+		objType     RegisterType
 		nodeSLO     *slov1alpha1.NodeSLO
 		name        string
 		description string
@@ -82,18 +107,11 @@ func Test_statesInformer_startCallbackRunners(t *testing.T) {
 		{
 			name: "callback get nodeslo label",
 			args: args{
-				objType: reflect.TypeOf(&slov1alpha1.NodeSLO{}),
-				nodeSLO: &slov1alpha1.NodeSLO{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							"test-label-key": "test-label-val1",
-						},
-					},
-				},
+				objType:     RegisterTypeNodeSLOSpec,
+				nodeSLO:     nodeSLO,
 				name:        "get value from node slo label",
 				description: "get value from node slo label",
-				fn: func(s StatesInformer) {
-					nodeSLO := s.GetNodeSLO()
+				fn: func(t RegisterType, obj interface{}, pods []*PodMeta) {
 					output <- nodeSLO.Labels["test-label-key"]
 					stopCh <- struct{}{}
 				},
@@ -105,10 +123,10 @@ func Test_statesInformer_startCallbackRunners(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			si := &statesInformer{
 				nodeSLO: tt.args.nodeSLO,
-				callbackChans: map[reflect.Type]chan struct{}{
-					tt.args.objType: make(chan struct{}, 1),
+				callbackChans: map[RegisterType]chan UpdateCbCtx{
+					tt.args.objType: make(chan UpdateCbCtx, 1),
 				},
-				stateUpdateCallbacks: map[reflect.Type][]updateCallback{
+				stateUpdateCallbacks: map[RegisterType][]updateCallback{
 					tt.args.objType: {},
 				},
 			}

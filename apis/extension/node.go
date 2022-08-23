@@ -20,16 +20,44 @@ import (
 	"encoding/json"
 
 	"k8s.io/apimachinery/pkg/types"
+
+	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 )
 
 const (
 	// AnnotationNodeCPUTopology describes the detailed CPU topology.
 	AnnotationNodeCPUTopology = NodeDomainPrefix + "/cpu-topology"
-	// AnnotationNodeCPUAllocs describes the CPUs allocated by Koordinator LSE/LSR and K8s Guaranteed Pods.
+	// AnnotationNodeCPUAllocs describes K8s Guaranteed Pods.
 	AnnotationNodeCPUAllocs = NodeDomainPrefix + "/pod-cpu-allocs"
 	// AnnotationNodeCPUSharedPools describes the CPU Shared Pool defined by Koordinator.
 	// The shared pool is mainly used by Koordinator LS Pods or K8s Burstable Pods.
 	AnnotationNodeCPUSharedPools = NodeDomainPrefix + "/cpu-shared-pools"
+
+	// LabelNodeCPUBindPolicy constrains how to bind CPU logical CPUs when scheduling.
+	LabelNodeCPUBindPolicy = NodeDomainPrefix + "/cpu-bind-policy"
+	// LabelNodeNUMAAllocateStrategy indicates how to choose satisfied NUMA Nodes when scheduling.
+	LabelNodeNUMAAllocateStrategy = NodeDomainPrefix + "/numa-allocate-strategy"
+)
+
+const (
+	// NodeCPUBindPolicyFullPCPUsOnly requires that the scheduler must allocate full physical cores.
+	// Equivalent to kubelet CPU manager policy option full-pcpus-only=true.
+	NodeCPUBindPolicyFullPCPUsOnly = "FullPCPUsOnly"
+)
+
+const (
+	NodeNUMAAllocateStrategyLeastAllocated = string(schedulingconfig.NUMALeastAllocated)
+	NodeNUMAAllocateStrategyMostAllocated  = string(schedulingconfig.NUMAMostAllocated)
+)
+
+const (
+	// AnnotationKubeletCPUManagerPolicy describes the cpu manager policy options of kubelet
+	AnnotationKubeletCPUManagerPolicy = "kubelet.koordinator.sh/cpu-manager-policy"
+
+	KubeletCPUManagerPolicyStatic                         = "static"
+	KubeletCPUManagerPolicyNone                           = "none"
+	KubeletCPUManagerPolicyFullPCPUsOnlyOption            = "full-pcpus-only"
+	KubeletCPUManagerPolicyDistributeCPUsAcrossNUMAOption = "distribute-cpus-across-numa"
 )
 
 type CPUTopology struct {
@@ -44,13 +72,19 @@ type CPUInfo struct {
 }
 
 type PodCPUAlloc struct {
-	Namespace string    `json:"namespace,omitempty"`
-	Name      string    `json:"name,omitempty"`
-	UID       types.UID `json:"uid,omitempty"`
-	CPUSet    string    `json:"cpuset,omitempty"`
+	Namespace        string    `json:"namespace,omitempty"`
+	Name             string    `json:"name,omitempty"`
+	UID              types.UID `json:"uid,omitempty"`
+	CPUSet           string    `json:"cpuset,omitempty"`
+	ManagedByKubelet bool      `json:"managedByKubelet,omitempty"`
 }
 
 type PodCPUAllocs []PodCPUAlloc
+
+type KubeletCPUManagerPolicy struct {
+	Policy  string            `json:"policy,omitempty"`
+	Options map[string]string `json:"options,omitempty"`
+}
 
 func GetCPUTopology(annotations map[string]string) (*CPUTopology, error) {
 	topology := &CPUTopology{}
@@ -76,4 +110,30 @@ func GetPodCPUAllocs(annotations map[string]string) (PodCPUAllocs, error) {
 		return nil, err
 	}
 	return allocs, nil
+}
+
+func GetNodeCPUSharePools(nodeTopoAnnotations map[string]string) ([]CPUSharedPool, error) {
+	var cpuSharePools []CPUSharedPool
+	data, ok := nodeTopoAnnotations[AnnotationNodeCPUSharedPools]
+	if !ok {
+		return cpuSharePools, nil
+	}
+	err := json.Unmarshal([]byte(data), &cpuSharePools)
+	if err != nil {
+		return nil, err
+	}
+	return cpuSharePools, nil
+}
+
+func GetKubeletCPUManagerPolicy(annotations map[string]string) (*KubeletCPUManagerPolicy, error) {
+	cpuManagerPolicy := &KubeletCPUManagerPolicy{}
+	data, ok := annotations[AnnotationKubeletCPUManagerPolicy]
+	if !ok {
+		return cpuManagerPolicy, nil
+	}
+	err := json.Unmarshal([]byte(data), cpuManagerPolicy)
+	if err != nil {
+		return nil, err
+	}
+	return cpuManagerPolicy, nil
 }

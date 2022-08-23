@@ -23,7 +23,6 @@ import (
 
 	"k8s.io/klog/v2"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -31,12 +30,13 @@ import (
 type Rule struct {
 	name            string
 	description     string
-	parseFunc       ParseRuleFn
+	parseRuleType   statesinformer.RegisterType
+	parseRuleFn     ParseRuleFn
 	callbacks       []UpdateCbFn
 	systemSupported bool
 }
 
-type ParseRuleFn func(nodeSLO *slov1alpha1.NodeSLOSpec) (bool, error)
+type ParseRuleFn func(interface{}) (bool, error)
 type UpdateCbFn func(pods []*statesinformer.PodMeta) error
 type SysSupportFn func() bool
 
@@ -53,6 +53,7 @@ func Register(name, description string, injectOpts ...InjectOption) *Rule {
 	for _, opt := range injectOpts {
 		opt.Apply(r)
 	}
+	klog.V(5).Infof("new rule %v has registered", name)
 	return r
 }
 
@@ -71,28 +72,33 @@ func find(name string) (*Rule, bool) {
 	if r, exist := globalHookRules[name]; exist {
 		return r, true
 	}
-	newRule := &Rule{name: name}
+	newRule := &Rule{name: name, systemSupported: true}
 	globalHookRules[name] = newRule
 	return newRule, false
 }
 
-func UpdateRules(s statesinformer.StatesInformer) {
-	nodeSLO := s.GetNodeSLO()
-	klog.Infof("applying %v rules with new NodeSLO %v", len(globalHookRules), util.DumpJSON(nodeSLO))
+func UpdateRules(ruleType statesinformer.RegisterType, ruleObj interface{}, podsMeta []*statesinformer.PodMeta) {
+	klog.V(3).Infof("applying %v rules with new %v, detail: %v",
+		len(globalHookRules), ruleType.String(), util.DumpJSON(ruleObj))
 	for _, r := range globalHookRules {
+		if ruleType != r.parseRuleType {
+			continue
+		}
 		if !r.systemSupported {
-			klog.Infof("system unsupported for rule %s, do nothing during UpdateRules", r.name)
+			klog.V(4).Infof("system unsupported for rule %s, do nothing during UpdateRules", r.name)
 			return
 		}
-		updated, err := r.parseFunc(&nodeSLO.Spec)
+		if r.parseRuleFn == nil {
+			continue
+		}
+		updated, err := r.parseRuleFn(ruleObj)
 		if err != nil {
 			klog.Warningf("parse rule %s from nodeSLO failed, error: %v", r.name, err)
 			continue
 		}
 		if updated {
-			pods := s.GetAllPods()
-			klog.Infof("rule %s is updated, run update callback for all %v pods", r.name, len(pods))
-			r.runUpdateCallbacks(pods)
+			klog.V(3).Infof("rule %s is updated, run update callback for all %v pods", r.name, len(podsMeta))
+			r.runUpdateCallbacks(podsMeta)
 		}
 	}
 }

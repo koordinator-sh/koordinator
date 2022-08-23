@@ -17,7 +17,7 @@ limitations under the License.
 package metricsadvisor
 
 import (
-	"fmt"
+	"bytes"
 	"os"
 	"os/exec"
 	"strconv"
@@ -46,8 +46,7 @@ const (
 
 var (
 	// jiffies is the duration unit of CPU stats
-	jiffies = float64(10 * time.Millisecond)
-
+	jiffies            = float64(10 * time.Millisecond)
 	localCPUInfoGetter = util.GetLocalCPUInfo
 )
 
@@ -71,6 +70,8 @@ type collectContext struct {
 
 	lastPodCPUThrottled       sync.Map
 	lastContainerCPUThrottled sync.Map
+
+	gpuDeviceManager GPUDeviceManager
 }
 
 func newCollectContext() *collectContext {
@@ -79,6 +80,7 @@ func newCollectContext() *collectContext {
 		lastContainerCPUStat:      sync.Map{},
 		lastPodCPUThrottled:       sync.Map{},
 		lastContainerCPUThrottled: sync.Map{},
+		gpuDeviceManager:          initGPUDeviceManager(),
 	}
 }
 
@@ -101,6 +103,7 @@ func NewCollector(cfg *Config, statesInformer statesinformer.StatesInformer, met
 	if c.config == nil {
 		c.config = NewDefaultConfig()
 	}
+
 	return c
 }
 
@@ -110,6 +113,7 @@ func (c *collector) HasSynced() bool {
 
 func (c *collector) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
+	defer c.context.gpuDeviceManager.shutdown()
 	klog.Info("Starting collector for NodeMetric")
 	defer klog.Info("shutting down daemon")
 	if c.config.CollectResUsedIntervalSeconds <= 0 {
@@ -125,6 +129,7 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 	}
 
 	go wait.Until(func() {
+		c.collectGPUUsage()
 		c.collectNodeResUsed()
 		// add sync metaService cache check before collect pod information
 		// because collect function will get all pods.
@@ -148,26 +153,24 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
+// initJiffies use command "getconf CLK_TCK" to fetch the clock tick on current host,
+// if the command doesn't exist, uses the default value 10ms for jiffies
 func initJiffies() error {
-	// retrieve jiffies
-	clkTckStdout, err := exec.Command("getconf", "CLK_TCK").Output()
+	getconf, err := exec.LookPath("getconf")
+	if err != nil {
+		return nil
+	}
+	cmd := exec.Command(getconf, "CLK_TCK")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	ticks, err := strconv.ParseFloat(strings.TrimSpace(out.String()), 64)
 	if err != nil {
 		return err
 	}
-	clkTckStdoutStrs := strings.Split(string(clkTckStdout), "\n")
-	if len(clkTckStdoutStrs) <= 0 {
-		return fmt.Errorf("getconf CLK_TCK returns empty")
-	}
-	clkTckStdoutStr := strings.Fields(clkTckStdoutStrs[0])
-	if len(clkTckStdoutStr) <= 0 {
-		return fmt.Errorf("getconf CLK_TCK returns empty")
-	}
-	clkTck, err := strconv.Atoi(clkTckStdoutStr[0])
-	if err != nil {
-		return err
-	}
-	// clkTck (Hz)
-	jiffies = float64(time.Second / time.Duration(clkTck))
+	jiffies = float64(time.Second / time.Duration(ticks))
 	return nil
 }
 
@@ -192,6 +195,7 @@ func (c *collector) collectNodeResUsed() {
 	// 1 jiffies could be 10ms
 	// NOTICE: do subtraction and division first to avoid overflow
 	cpuUsageValue := float64(currentCPUTick-lastCPUStat.cpuTick) / float64(collectTime.Sub(lastCPUStat.ts)) * jiffies
+
 	nodeMetric := metriccache.NodeResourceMetric{
 		CPUUsed: metriccache.CPUMetric{
 			// 1.0 CPU = 1000 Milli-CPU
@@ -202,6 +206,8 @@ func (c *collector) collectNodeResUsed() {
 			MemoryWithoutCache: *resource.NewQuantity(memUsageValue*1024, resource.BinarySI),
 		},
 	}
+
+	nodeMetric.GPUs = c.context.gpuDeviceManager.getNodeGPUUsage()
 
 	if err := c.metricCache.InsertNodeResourceMetric(collectTime, &nodeMetric); err != nil {
 		klog.Errorf("insert node resource metric error: %v", err)
@@ -222,6 +228,7 @@ func (c *collector) collectPodResUsed() {
 		collectTime := time.Now()
 		currentCPUUsage, err0 := util.GetPodCPUUsageNanoseconds(meta.CgroupDir)
 		memUsageValue, err1 := util.GetPodMemStatUsageBytes(meta.CgroupDir)
+
 		if err0 != nil || err1 != nil {
 			// higher verbosity for probably non-running pods
 			if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
@@ -242,6 +249,7 @@ func (c *collector) collectPodResUsed() {
 			klog.Infof("ignore the first cpu stat collection for pod %s/%s", pod.Namespace, pod.Name)
 			continue
 		}
+
 		lastCPUStat := lastCPUStatValue.(contextRecord)
 		// NOTICE: do subtraction and division first to avoid overflow
 		cpuUsageValue := float64(currentCPUUsage-lastCPUStat.cpuUsage) / float64(collectTime.Sub(lastCPUStat.ts))
@@ -256,6 +264,12 @@ func (c *collector) collectPodResUsed() {
 				MemoryWithoutCache: *resource.NewQuantity(memUsageValue, resource.BinarySI),
 			},
 		}
+		if gpus, err := c.context.gpuDeviceManager.getPodGPUUsage(meta.CgroupDir, meta.Pod.Status.ContainerStatuses); err == nil {
+			podMetric.GPUs = gpus
+		} else {
+			klog.Errorf("get pod %s/%s gpu usage error: %v", meta.Pod.Namespace, meta.Pod.Name, err)
+		}
+
 		klog.V(6).Infof("collect pod %s/%s, uid %s finished, metric %+v",
 			meta.Pod.Namespace, meta.Pod.Name, meta.Pod.UID, podMetric)
 
@@ -279,6 +293,7 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 		collectTime := time.Now()
 		currentCPUUsage, err0 := util.GetContainerCPUUsageNanoseconds(meta.CgroupDir, containerStat)
 		memUsageValue, err1 := util.GetContainerMemStatUsageBytes(meta.CgroupDir, containerStat)
+
 		if err0 != nil || err1 != nil {
 			// higher verbosity for probably non-running pods
 			if containerStat.State.Running == nil {
@@ -290,6 +305,7 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 			}
 			continue
 		}
+
 		lastCPUStatValue, ok := c.context.lastContainerCPUStat.Load(containerStat.ContainerID)
 		c.context.lastContainerCPUStat.Store(containerStat.ContainerID, contextRecord{
 			cpuUsage: currentCPUUsage,
@@ -314,6 +330,13 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 				MemoryWithoutCache: *resource.NewQuantity(memUsageValue, resource.BinarySI),
 			},
 		}
+
+		if gpus, err := c.context.gpuDeviceManager.getContainerGPUUsage(meta.CgroupDir, containerStat); err == nil {
+			containerMetric.GPUs = gpus
+		} else {
+			klog.Errorf("get container %s/%s/%s gpu usage error: %v", pod.Namespace, pod.Name, containerStat.Name, err)
+		}
+
 		klog.V(6).Infof("collect container %s/%s/%s, id %s finished, metric %+v",
 			meta.Pod.Namespace, meta.Pod.Name, containerStat.Name, meta.Pod.UID, containerMetric)
 		if err := c.metricCache.InsertContainerResourceMetric(collectTime, &containerMetric); err != nil {
@@ -362,7 +385,7 @@ func (c *collector) collectPodThrottledInfo() {
 		if err != nil || currentCPUStat == nil {
 			if pod.Status.Phase == corev1.PodRunning {
 				// print running pod collection error
-				klog.Infof("collect pod %s/%s, uid %v cpu throttled failed, err %v, metric %v",
+				klog.V(4).Infof("collect pod %s/%s, uid %v cpu throttled failed, err %v, metric %v",
 					pod.Namespace, pod.Name, uid, err, currentCPUStat)
 			}
 			continue
@@ -402,7 +425,7 @@ func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMet
 		collectTime := time.Now()
 		containerStat := &pod.Status.ContainerStatuses[i]
 		if len(containerStat.ContainerID) == 0 {
-			klog.Infof("container %s/%s/%s id is empty, maybe not ready, skip this round",
+			klog.V(4).Infof("container %s/%s/%s id is empty, maybe not ready, skip this round",
 				pod.Namespace, pod.Name, containerStat.Name)
 			continue
 		}
@@ -414,7 +437,7 @@ func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMet
 		}
 		currentCPUStat, err := system.GetCPUStatRaw(containerCgroupPath)
 		if err != nil {
-			klog.Infof("collect container %s/%s/%s cpu throttled failed, err %v, metric %v",
+			klog.V(4).Infof("collect container %s/%s/%s cpu throttled failed, err %v, metric %v",
 				pod.Namespace, pod.Name, containerStat.Name, err, currentCPUStat)
 			continue
 		}

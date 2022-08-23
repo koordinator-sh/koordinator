@@ -22,7 +22,6 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"net/http/httputil"
 	"net/url"
 	"strings"
 	"testing"
@@ -32,6 +31,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/types"
+	"github.com/koordinator-sh/koordinator/pkg/util/httputil"
 )
 
 func Test_CreateContainer(t *testing.T) {

@@ -188,6 +188,34 @@ func UpdateUpdateConfigByResource(containerConfig *container.UpdateConfig, resou
 	return containerConfig
 }
 
+func MergeResourceByUpdateConfig(resources *v1alpha1.LinuxContainerResources, containerConfig *container.UpdateConfig) *v1alpha1.LinuxContainerResources {
+	if containerConfig == nil || resources == nil {
+		return resources
+	}
+	if containerConfig.CPUPeriod > 0 {
+		resources.CpuPeriod = containerConfig.CPUPeriod
+	}
+	if containerConfig.CPUQuota > 0 {
+		resources.CpuQuota = containerConfig.CPUQuota
+	}
+	if containerConfig.CPUShares > 0 {
+		resources.CpuShares = containerConfig.CPUShares
+	}
+	if containerConfig.Memory > 0 {
+		resources.MemoryLimitInBytes = containerConfig.Memory
+	}
+	if containerConfig.CpusetCpus != "" {
+		resources.CpusetCpus = containerConfig.CpusetCpus
+	}
+	if containerConfig.CpusetMems != "" {
+		resources.CpusetMems = containerConfig.CpusetMems
+	}
+	if containerConfig.MemorySwap > 0 {
+		resources.MemorySwapLimitInBytes = containerConfig.MemorySwap
+	}
+	return resources
+}
+
 // generateExpectedCgroupParent is adapted from Dockershim
 func generateExpectedCgroupParent(cgroupDriver, cgroupParent string) string {
 	if cgroupParent != "" {
@@ -202,4 +230,23 @@ func generateExpectedCgroupParent(cgroupDriver, cgroupParent string) string {
 	}
 	klog.V(4).Infof("Setting cgroup parent to: %q", cgroupParent)
 	return cgroupParent
+}
+
+func splitDockerEnv(dockerEnvs []string) map[string]string {
+	res := make(map[string]string)
+	for _, str := range dockerEnvs {
+		tokens := strings.Split(str, "=")
+		if len(tokens) != 2 {
+			continue
+		}
+		res[tokens[0]] = tokens[1]
+	}
+	return res
+}
+
+func generateEnvList(envs map[string]string) (result []string) {
+	for key, value := range envs {
+		result = append(result, fmt.Sprintf("%s=%s", key, value))
+	}
+	return
 }

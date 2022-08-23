@@ -118,28 +118,8 @@ func (r *NodeResourceReconciler) resetNodeBEResource(node *corev1.Node, reason, 
 func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResource *nodeBEResource) error {
 	copyNode := node.DeepCopy()
 
-	if beResource.MilliCPU == nil {
-		delete(copyNode.Status.Capacity, extension.BatchCPU)
-		delete(copyNode.Status.Allocatable, extension.BatchCPU)
-	} else {
-		if _, ok := beResource.MilliCPU.AsInt64(); !ok {
-			klog.V(2).Infof("invalid cpu value, cpu quantity %v is not int64", beResource.MilliCPU)
-			return fmt.Errorf("invalid cpu value, cpu quantity %v is not int64", beResource.MilliCPU)
-		}
-		copyNode.Status.Capacity[extension.BatchCPU] = *beResource.MilliCPU
-		copyNode.Status.Allocatable[extension.BatchCPU] = *beResource.MilliCPU
-	}
-
-	if beResource.Memory == nil {
-		delete(copyNode.Status.Capacity, extension.BatchMemory)
-		delete(copyNode.Status.Allocatable, extension.BatchMemory)
-	} else {
-		if _, ok := beResource.Memory.AsInt64(); !ok {
-			klog.V(2).Infof("invalid memory value, memory quantity %v is not int64", beResource.Memory)
-			return fmt.Errorf("invalid memory value, memory quantity %v is not int64", beResource.Memory)
-		}
-		copyNode.Status.Capacity[extension.BatchMemory] = *beResource.Memory
-		copyNode.Status.Allocatable[extension.BatchMemory] = *beResource.Memory
+	if err := r.prepareNodeResource(copyNode, beResource); err != nil {
+		return err
 	}
 
 	if needSync := r.isBEResourceSyncNeeded(node, copyNode); !needSync {
@@ -156,24 +136,13 @@ func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResou
 			return err
 		}
 
-		if beResource.MilliCPU == nil {
-			delete(updateNode.Status.Capacity, extension.BatchCPU)
-			delete(updateNode.Status.Allocatable, extension.BatchCPU)
-		} else {
-			updateNode.Status.Capacity[extension.BatchCPU] = *beResource.MilliCPU
-			updateNode.Status.Allocatable[extension.BatchCPU] = *beResource.MilliCPU
-		}
-
-		if beResource.Memory == nil {
-			delete(updateNode.Status.Capacity, extension.BatchMemory)
-			delete(updateNode.Status.Allocatable, extension.BatchMemory)
-		} else {
-			updateNode.Status.Capacity[extension.BatchMemory] = *beResource.Memory
-			updateNode.Status.Allocatable[extension.BatchMemory] = *beResource.Memory
+		if err := r.prepareNodeResource(updateNode, beResource); err != nil {
+			return err
 		}
 
 		if err := r.Client.Status().Update(context.TODO(), updateNode); err == nil {
 			r.SyncContext.Store(util.GetNodeKey(node), r.Clock.Now())
+			klog.V(5).Infof("update node %v success, detail %+v", updateNode.Name, updateNode)
 			return nil
 		} else {
 			klog.Errorf("failed to update node %v, error: %v", updateNode.Name, err)
@@ -208,6 +177,36 @@ func (r *NodeResourceReconciler) isBEResourceSyncNeeded(old, new *corev1.Node) b
 	}
 
 	// scenario 3: all good, do nothing
-	klog.Info("all good, no need to sync")
+	klog.Info("all good, no need to sync for node %v", new.Name)
 	return false
+}
+
+func (r *NodeResourceReconciler) prepareNodeResource(node *corev1.Node, beResource *nodeBEResource) error {
+	if beResource.MilliCPU == nil {
+		delete(node.Status.Capacity, extension.BatchCPU)
+		delete(node.Status.Allocatable, extension.BatchCPU)
+	} else {
+		if _, ok := beResource.MilliCPU.AsInt64(); !ok {
+			klog.V(2).Infof("invalid cpu value, cpu quantity %v is not int64", beResource.MilliCPU)
+			return fmt.Errorf("invalid cpu value, cpu quantity %v is not int64", beResource.MilliCPU)
+		}
+		node.Status.Capacity[extension.BatchCPU] = *beResource.MilliCPU
+		node.Status.Allocatable[extension.BatchCPU] = *beResource.MilliCPU
+	}
+
+	if beResource.Memory == nil {
+		delete(node.Status.Capacity, extension.BatchMemory)
+		delete(node.Status.Allocatable, extension.BatchMemory)
+	} else {
+		if _, ok := beResource.Memory.AsInt64(); !ok {
+			klog.V(2).Infof("invalid memory value, memory quantity %v is not int64", beResource.Memory)
+			return fmt.Errorf("invalid memory value, memory quantity %v is not int64", beResource.Memory)
+		}
+		node.Status.Capacity[extension.BatchMemory] = *beResource.Memory
+		node.Status.Allocatable[extension.BatchMemory] = *beResource.Memory
+	}
+
+	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
+	runNodePrepareExtenders(strategy, node)
+	return nil
 }

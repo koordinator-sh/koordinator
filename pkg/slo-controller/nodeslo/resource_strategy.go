@@ -46,7 +46,7 @@ func getResourceThresholdSpec(node *corev1.Node, cfg *config.ResourceThresholdCf
 	return cfg.ClusterStrategy.DeepCopy(), nil
 }
 
-func getResourceQoSSpec(node *corev1.Node, cfg *config.ResourceQoSCfg) (*slov1alpha1.ResourceQoSStrategy, error) {
+func getResourceQOSSpec(node *corev1.Node, cfg *config.ResourceQOSCfg) (*slov1alpha1.ResourceQOSStrategy, error) {
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
@@ -55,7 +55,7 @@ func getResourceQoSSpec(node *corev1.Node, cfg *config.ResourceQoSCfg) (*slov1al
 			continue
 		}
 		if selector.Matches(nodeLabels) {
-			return nodeStrategy.ResourceQoSStrategy.DeepCopy(), nil
+			return nodeStrategy.ResourceQOSStrategy.DeepCopy(), nil
 		}
 	}
 
@@ -114,37 +114,37 @@ func caculateResourceThresholdCfgMerged(oldCfg config.ResourceThresholdCfg, conf
 	return mergedCfg, nil
 }
 
-func caculateResourceQoSCfgMerged(oldCfg config.ResourceQoSCfg, configMap *corev1.ConfigMap) (config.ResourceQoSCfg, error) {
-	cfgStr, ok := configMap.Data[config.ResourceQoSConfigKey]
+func caculateResourceQOSCfgMerged(oldCfg config.ResourceQOSCfg, configMap *corev1.ConfigMap) (config.ResourceQOSCfg, error) {
+	cfgStr, ok := configMap.Data[config.ResourceQOSConfigKey]
 	if !ok {
-		return DefaultSLOCfg().ResourceQoSCfgMerged, nil
+		return DefaultSLOCfg().ResourceQOSCfgMerged, nil
 	}
 
-	mergedCfg := DefaultSLOCfg().ResourceQoSCfgMerged
+	mergedCfg := DefaultSLOCfg().ResourceQOSCfgMerged
 	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
-		klog.Errorf("failed to unmarshal config %s, err: %s", config.ResourceQoSConfigKey, err)
+		klog.Errorf("failed to unmarshal config %s, err: %s", config.ResourceQOSConfigKey, err)
 		return oldCfg, err
 	}
 
 	// merge ClusterStrategy
-	clusterMerged := DefaultSLOCfg().ResourceQoSCfgMerged.ClusterStrategy.DeepCopy()
+	clusterMerged := DefaultSLOCfg().ResourceQOSCfgMerged.ClusterStrategy.DeepCopy()
 	if mergedCfg.ClusterStrategy != nil {
 		mergedStrategyInterface, _ := util.MergeCfg(clusterMerged, mergedCfg.ClusterStrategy)
-		clusterMerged = mergedStrategyInterface.(*slov1alpha1.ResourceQoSStrategy)
+		clusterMerged = mergedStrategyInterface.(*slov1alpha1.ResourceQOSStrategy)
 	}
 	mergedCfg.ClusterStrategy = clusterMerged
 
 	for index, nodeStrategy := range mergedCfg.NodeStrategies {
 		// merge with clusterStrategy
-		var mergedNodeStrategy *slov1alpha1.ResourceQoSStrategy
+		var mergedNodeStrategy *slov1alpha1.ResourceQOSStrategy
 		clusterCfgCopy := mergedCfg.ClusterStrategy.DeepCopy()
-		if nodeStrategy.ResourceQoSStrategy != nil {
-			mergedStrategyInterface, _ := util.MergeCfg(clusterCfgCopy, nodeStrategy.ResourceQoSStrategy)
-			mergedNodeStrategy = mergedStrategyInterface.(*slov1alpha1.ResourceQoSStrategy)
+		if nodeStrategy.ResourceQOSStrategy != nil {
+			mergedStrategyInterface, _ := util.MergeCfg(clusterCfgCopy, nodeStrategy.ResourceQOSStrategy)
+			mergedNodeStrategy = mergedStrategyInterface.(*slov1alpha1.ResourceQOSStrategy)
 		} else {
 			mergedNodeStrategy = clusterCfgCopy
 		}
-		mergedCfg.NodeStrategies[index].ResourceQoSStrategy = mergedNodeStrategy
+		mergedCfg.NodeStrategies[index].ResourceQOSStrategy = mergedNodeStrategy
 
 	}
 

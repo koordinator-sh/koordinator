@@ -51,11 +51,11 @@ func NewMemoryEvictor(mgr *resmanager) *MemoryEvictor {
 }
 
 func (m *MemoryEvictor) memoryEvict() {
-	klog.Infof("starting memory evict process")
-	defer klog.Infof("memory evict process completed")
+	klog.V(5).Infof("starting memory evict process")
+	defer klog.V(5).Infof("memory evict process completed")
 
 	if time.Now().Before(m.lastEvictTime.Add(time.Duration(m.resManager.config.MemoryEvictCoolTimeSeconds) * time.Second)) {
-		klog.Infof("skip memory evict process, still in evict cooling time")
+		klog.V(5).Infof("skip memory evict process, still in evict cooling time")
 		return
 	}
 
@@ -110,7 +110,7 @@ func (m *MemoryEvictor) memoryEvict() {
 
 	nodeMemoryUsage := nodeMetric.MemoryUsed.MemoryWithoutCache.Value() * 100 / memoryCapacity
 	if nodeMemoryUsage < *thresholdPercent {
-		klog.Infof("skip memory evict, node memory usage(%v) is below threshold(%v)", nodeMemoryUsage, thresholdConfig)
+		klog.V(5).Infof("skip memory evict, node memory usage(%v) is below threshold(%v)", nodeMemoryUsage, thresholdConfig)
 		return
 	}
 

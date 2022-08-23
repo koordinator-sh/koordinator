@@ -18,15 +18,18 @@ package statesinformer
 
 import (
 	"errors"
-	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 
 	koordclientfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
@@ -188,7 +191,7 @@ func Test_statesInformer_syncPods(t *testing.T) {
 	}
 	c := NewDefaultConfig()
 	c.KubeletSyncInterval = 60 * time.Second
-	m := NewStatesInformer(c, client, crdClient, pleg, "localhost")
+	m := NewStatesInformer(c, client, crdClient, nil, nil, pleg, "localhost")
 	m.(*statesInformer).node = testingNode
 	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
 		Items: []corev1.Pod{
@@ -226,19 +229,21 @@ func Test_newKubeletStub(t *testing.T) {
 			},
 		},
 	}
-	tokenContent := "test_token"
-	f, err := ioutil.TempFile("", "token")
-	if err != nil {
-		t.Fatal(err)
+
+	dir := t.TempDir()
+	cfg := &rest.Config{
+		Host:        net.JoinHostPort("127.0.0.1", "10250"),
+		BearerToken: token,
+		TLSClientConfig: rest.TLSClientConfig{
+			Insecure: true,
+		},
 	}
-	defer os.Remove(f.Name())
-	f.WriteString(tokenContent)
-	kubeStub, _ := NewKubeletStub("127.0.0.7", 10250, 10, tokenContent)
+	setConfigs(t, dir)
+
+	kubeStub, _ := NewKubeletStub("127.0.0.1", 10250, "https", 10, cfg)
 	type args struct {
-		node             *corev1.Node
-		addressPreferred string
-		timeout          time.Duration
-		tokenPath        string
+		node *corev1.Node
+		cfg  *Config
 	}
 	tests := []struct {
 		name    string
@@ -249,10 +254,13 @@ func Test_newKubeletStub(t *testing.T) {
 		{
 			name: "NodeInternalIP",
 			args: args{
-				node:             testingNode,
-				addressPreferred: string(corev1.NodeInternalIP),
-				timeout:          10 * time.Second,
-				tokenPath:        f.Name(),
+				node: testingNode,
+				cfg: &Config{
+					KubeletPreferredAddressType: string(corev1.NodeInternalIP),
+					KubeletSyncTimeout:          10 * time.Second,
+					InsecureKubeletTLS:          true,
+					KubeletReadOnlyPort:         10250,
+				},
 			},
 			want:    kubeStub,
 			wantErr: false,
@@ -260,29 +268,35 @@ func Test_newKubeletStub(t *testing.T) {
 		{
 			name: "Empty IP",
 			args: args{
-				node:             testingNode,
-				addressPreferred: "",
-				timeout:          10 * time.Second,
-				tokenPath:        f.Name(),
+				node: testingNode,
+				cfg: &Config{
+					KubeletPreferredAddressType: "",
+					KubeletSyncTimeout:          10 * time.Second,
+					InsecureKubeletTLS:          true,
+					KubeletReadOnlyPort:         10250,
+				},
 			},
 			want:    kubeStub,
 			wantErr: false,
 		},
 		{
-			name: "Error Path",
+			name: "HTTPS",
 			args: args{
-				node:             testingNode,
-				addressPreferred: "",
-				timeout:          10 * time.Second,
-				tokenPath:        "",
+				node: testingNode,
+				cfg: &Config{
+					KubeletPreferredAddressType: "",
+					KubeletSyncTimeout:          10 * time.Second,
+					InsecureKubeletTLS:          false,
+					KubeletReadOnlyPort:         10250,
+				},
 			},
 			want:    nil,
-			wantErr: true,
+			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := newKubeletStub(tt.args.node, tt.args.addressPreferred, tt.args.timeout, tt.args.tokenPath)
+			got, err := newKubeletStubFromConfig(tt.args.node, tt.args.cfg)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("newKubeletStub() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -294,6 +308,35 @@ func Test_newKubeletStub(t *testing.T) {
 	}
 }
 
+func setConfigs(t *testing.T, dir string) {
+	// Set KUBECONFIG env value
+	kubeconfigEnvPath := filepath.Join(dir, "kubeconfig-text-context")
+	os.WriteFile(kubeconfigEnvPath, []byte(genKubeconfig("from-env")), 0644)
+	t.Setenv(clientcmd.RecommendedConfigPathEnvVar, kubeconfigEnvPath)
+}
+
+func genKubeconfig(contexts ...string) string {
+	var sb strings.Builder
+	sb.WriteString("---\napiVersion: v1\nkind: Config\nclusters:\n")
+	for _, ctx := range contexts {
+		sb.WriteString("- cluster:\n    server: " + ctx + "\n  name: " + ctx + "\n")
+	}
+	sb.WriteString("contexts:\n")
+	for _, ctx := range contexts {
+		sb.WriteString("- context:\n    cluster: " + ctx + "\n    user: " + ctx + "\n  name: " + ctx + "\n")
+	}
+
+	sb.WriteString("users:\n")
+	for _, ctx := range contexts {
+		sb.WriteString("- name: " + ctx + "\n")
+	}
+	sb.WriteString("preferences: {}\n")
+	if len(contexts) > 0 {
+		sb.WriteString("current-context: " + contexts[0] + "\n")
+	}
+	return sb.String()
+}
+
 func Test_statesInformer_syncKubeletLoop(t *testing.T) {
 	client := clientsetfake.NewSimpleClientset()
 	crdClient := koordclientfake.NewSimpleClientset()
@@ -303,7 +346,7 @@ func Test_statesInformer_syncKubeletLoop(t *testing.T) {
 	c := NewDefaultConfig()
 	c.KubeletSyncInterval = 3 * time.Second
 
-	m := NewStatesInformer(c, client, crdClient, pleg, "localhost")
+	m := NewStatesInformer(c, client, crdClient, nil, nil, pleg, "localhost")
 	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
 		Items: []corev1.Pod{
 			{},

@@ -20,10 +20,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -547,6 +550,26 @@ func Test_GetContainerCgroupXXXPath(t *testing.T) {
 			expectPath: "",
 			expectErr:  true,
 		},
+		{
+			name:         "test_cpu_procs_path",
+			fn:           GetContainerCgroupCPUProcsPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "/host-cgroup/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cgroup.procs",
+			expectErr:  false,
+		},
+		{
+			name:         "test_cpu_procs_path_invalid",
+			fn:           GetContainerCgroupCPUProcsPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "",
+			expectErr:  true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -608,7 +631,7 @@ func Test_GetContainerXXXValue(t *testing.T) {
 		},
 		{
 			name: "test_GetContainerBEMilliCPURequest",
-			fn:   GetContainerBEMilliCPURequest,
+			fn:   GetContainerBatchMilliCPURequest,
 			container: &corev1.Container{
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList(
@@ -621,13 +644,13 @@ func Test_GetContainerXXXValue(t *testing.T) {
 		},
 		{
 			name:        "test_GetContainerBEMilliCPURequest_invalid",
-			fn:          GetContainerBEMilliCPURequest,
+			fn:          GetContainerBatchMilliCPURequest,
 			container:   &corev1.Container{},
 			expectValue: -1,
 		},
 		{
 			name: "test_GetContainerBEMilliCPULimit",
-			fn:   GetContainerBEMilliCPULimit,
+			fn:   GetContainerBatchMilliCPULimit,
 			container: &corev1.Container{
 				Resources: corev1.ResourceRequirements{
 					Limits: corev1.ResourceList(
@@ -640,13 +663,13 @@ func Test_GetContainerXXXValue(t *testing.T) {
 		},
 		{
 			name:        "test_GetContainerBEMilliCPULimit_invalid",
-			fn:          GetContainerBEMilliCPULimit,
+			fn:          GetContainerBatchMilliCPULimit,
 			container:   &corev1.Container{},
 			expectValue: -1,
 		},
 		{
 			name: "test_GetContainerBEMemoryByteRequest",
-			fn:   GetContainerBEMemoryByteRequest,
+			fn:   GetContainerBatchMemoryByteRequest,
 			container: &corev1.Container{
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList(
@@ -659,13 +682,13 @@ func Test_GetContainerXXXValue(t *testing.T) {
 		},
 		{
 			name:        "test_GetContainerBEMemoryByteRequest_invalid",
-			fn:          GetContainerBEMemoryByteRequest,
+			fn:          GetContainerBatchMemoryByteRequest,
 			container:   &corev1.Container{},
 			expectValue: -1,
 		},
 		{
 			name: "test_GetContainerBEMemoryByteLimit",
-			fn:   GetContainerBEMemoryByteLimit,
+			fn:   GetContainerBatchMemoryByteLimit,
 			container: &corev1.Container{
 				Resources: corev1.ResourceRequirements{
 					Limits: corev1.ResourceList(
@@ -678,7 +701,7 @@ func Test_GetContainerXXXValue(t *testing.T) {
 		},
 		{
 			name:        "test_GetContainerBEMemoryByteLimit_invalid",
-			fn:          GetContainerBEMemoryByteLimit,
+			fn:          GetContainerBatchMemoryByteLimit,
 			container:   &corev1.Container{},
 			expectValue: -1,
 		},
@@ -690,4 +713,127 @@ func Test_GetContainerXXXValue(t *testing.T) {
 			assert.Equal(t, tt.expectValue, gotValue, "checkValue")
 		})
 	}
+}
+
+func TestGetPIDsInContainer(t *testing.T) {
+	system.SetupCgroupPathFormatter(system.Systemd)
+	defer system.SetupCgroupPathFormatter(system.Systemd)
+	type args struct {
+		podParentDir string
+		c            *corev1.ContainerStatus
+	}
+	dir := t.TempDir()
+	system.Conf.CgroupRootDir = dir
+
+	podCgroupPath := "/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cgroup.procs"
+	sysCgroupPath := path.Join(dir, podCgroupPath)
+	if err := writeCgroupContent(sysCgroupPath, []byte("12\n23")); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		args    args
+		want    []uint32
+		wantErr bool
+	}{
+		{
+			name: "cgroup",
+			args: args{
+				podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				c: &corev1.ContainerStatus{
+					ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+				},
+			},
+			want: []uint32{12, 23},
+		},
+		{
+			name: "not exist",
+			args: args{
+				podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				c: &corev1.ContainerStatus{
+					ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4assf",
+				},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetPIDsInContainer(tt.args.podParentDir, tt.args.c)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetPIDsInContainer() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetPIDsInContainer() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetPIDsInPod(t *testing.T) {
+	system.SetupCgroupPathFormatter(system.Systemd)
+	defer system.SetupCgroupPathFormatter(system.Systemd)
+	dir := t.TempDir()
+	system.Conf.CgroupRootDir = dir
+
+	p1 := "/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cgroup.procs"
+	p1CgroupPath := path.Join(dir, p1)
+	if err := writeCgroupContent(p1CgroupPath, []byte("12\n23")); err != nil {
+		t.Fatal(err)
+	}
+
+	p2 := "/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4acff.scope/cgroup.procs"
+	p2CgroupPath := path.Join(dir, p2)
+	if err := writeCgroupContent(p2CgroupPath, []byte("45\n67")); err != nil {
+		t.Fatal(err)
+	}
+	type args struct {
+		podParentDir string
+		cs           []corev1.ContainerStatus
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    []uint32
+		wantErr bool
+	}{
+		{
+			name: "cgroup",
+			args: args{
+				podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				cs: []corev1.ContainerStatus{
+					{
+						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+					},
+					{
+						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4acff",
+					},
+				},
+			},
+			want:    []uint32{12, 23, 45, 67},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetPIDsInPod(tt.args.podParentDir, tt.args.cs)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetPIDsInPod() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetPIDsInPod() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func writeCgroupContent(filePath string, content []byte) error {
+	err := os.MkdirAll(path.Dir(filePath), os.ModePerm)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(filePath, content, 0655)
 }

@@ -19,6 +19,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -71,7 +72,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
 				PodMeta:      podInfo.PodMeta,
 				PodResources: podInfo.Resources,
-				ContainerMata: &v1alpha1.ContainerMetadata{
+				ContainerMeta: &v1alpha1.ContainerMetadata{
 					Name: tokens[1],
 				},
 				ContainerAnnotations: annos,
@@ -79,6 +80,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 				PodAnnotations:       podInfo.Annotations,
 				PodLabels:            podInfo.Labels,
 				PodCgroupParent:      podInfo.CgroupParent,
+				ContainerEnvs:        splitDockerEnv(ContainerConfig.Env),
 			},
 		}
 		runtimeHookPath = config.CreateContainer
@@ -131,6 +133,10 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 		}
 		cfgBody.HostConfig.CgroupParent = generateExpectedCgroupParent(d.cgroupDriver, resp.PodCgroupParent)
 		containerInfo.PodCgroupParent = resp.PodCgroupParent
+		if resp.ContainerEnvs != nil {
+			cfgBody.Env = generateEnvList(resp.ContainerEnvs)
+			containerInfo.ContainerEnvs = resp.ContainerEnvs
+		}
 	}
 	// send req to docker
 	nBody, err := encodeBody(cfgBody)
@@ -156,7 +162,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 	if runtimeResourceType == resource_executor.RuntimePodResource {
 		store.WritePodSandboxInfo(createResp.ID, podInfo)
 	} else {
-		containerInfo.ContainerMata.Id = createResp.ID
+		containerInfo.ContainerMeta.Id = createResp.ID
 		store.WriteContainerInfo(createResp.ID, containerInfo)
 	}
 }
@@ -212,8 +218,8 @@ func (d *RuntimeManagerDockerServer) HandleStopContainer(ctx context.Context, wr
 		runtimeHookPath = config.StopPodSandbox
 		podInfo := store.GetPodSandboxInfo(containerID)
 		if podInfo == nil {
-			// refuse the req
-			http.Error(wr, "Failed to get pod info", http.StatusInternalServerError)
+			// kubelet will not treat not found error as error, so we need to return err msg as same with docker server to avoid pod terminating
+			http.Error(wr, fmt.Sprintf("No such container: %s", containerID), http.StatusInternalServerError)
 			return
 		}
 		hookReq = podInfo.GetPodSandboxHookRequest()
@@ -261,6 +267,13 @@ func (d *RuntimeManagerDockerServer) HandleUpdateContainer(ctx context.Context, 
 	if containerMeta != nil {
 		runtimeHookPath = config.UpdateContainerResources
 		hookReq = containerMeta.GetContainerResourceHookRequest()
+	}
+
+	// update resources in cache with UpdateConfig
+	if containerConfig != nil && hookReq != nil {
+		if updateReq, ok := hookReq.(*v1alpha1.ContainerResourceHookRequest); ok {
+			updateReq.ContainerResources = MergeResourceByUpdateConfig(updateReq.ContainerResources, containerConfig)
+		}
 	}
 
 	response, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq)

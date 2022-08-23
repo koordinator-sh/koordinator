@@ -71,11 +71,10 @@ type ScoringStrategy struct {
 
 // NodeNUMAResourceArgs holds arguments used to configure the NodeNUMAResource plugin.
 type NodeNUMAResourceArgs struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta
 
-	PreferredCPUBindPolicy CPUBindPolicy        `json:"preferredCPUBindPolicy,omitempty"`
-	NUMAAllocateStrategy   NUMAAllocateStrategy `json:"numaAllocateStrategy,omitempty"`
-	ScoringStrategy        *ScoringStrategy     `json:"scoringStrategy,omitempty"`
+	DefaultCPUBindPolicy CPUBindPolicy    `json:"defaultCPUBindPolicy,omitempty"`
+	ScoringStrategy      *ScoringStrategy `json:"scoringStrategy,omitempty"`
 }
 
 // CPUBindPolicy defines the CPU binding policy
@@ -92,6 +91,17 @@ const (
 	CPUBindPolicyConstrainedBurst CPUBindPolicy = "ConstrainedBurst"
 )
 
+type CPUExclusivePolicy string
+
+const (
+	// CPUExclusivePolicyNone does not perform any exclusive policy
+	CPUExclusivePolicyNone CPUExclusivePolicy = "None"
+	// CPUExclusivePolicyPCPULevel represents mutual exclusion in the physical core dimension
+	CPUExclusivePolicyPCPULevel CPUExclusivePolicy = "PCPULevel"
+	// CPUExclusivePolicyNUMANodeLevel indicates mutual exclusion in the NUMA topology dimension
+	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = "NUMANodeLevel"
+)
+
 // NUMAAllocateStrategy indicates how to choose satisfied NUMA Nodes
 type NUMAAllocateStrategy string
 
@@ -103,3 +113,13 @@ const (
 	// NUMADistributeEvenly indicates that evenly distribute CPUs across NUMA Nodes.
 	NUMADistributeEvenly NUMAAllocateStrategy = "DistributeEvenly"
 )
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ReservationArgs holds arguments used to configure the Reservation plugin.
+type ReservationArgs struct {
+	metav1.TypeMeta
+
+	// EnablePreemption indicates whether to enable preemption for reservations.
+	EnablePreemption *bool `json:"enablePreemption,omitempty"`
+}

@@ -41,7 +41,6 @@ var (
 	}
 
 	defaultPreferredCPUBindPolicy          = CPUBindPolicyFullPCPUs
-	defaultNUMAAllocateStrategy            = NUMAMostAllocated
 	defaultNodeNUMAResourceScoringStrategy = &ScoringStrategy{
 		Type: MostAllocated,
 		Resources: []schedconfig.ResourceSpec{
@@ -51,6 +50,8 @@ var (
 			},
 		},
 	}
+
+	defaultEnablePreemption = pointer.Bool(false)
 )
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
@@ -74,13 +75,16 @@ func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 
 // SetDefaults_NodeNUMAResourceArgs sets the default parameters for NodeNUMANodeResource plugin.
 func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
-	if obj.PreferredCPUBindPolicy == "" {
-		obj.PreferredCPUBindPolicy = defaultPreferredCPUBindPolicy
-	}
-	if obj.NUMAAllocateStrategy == "" {
-		obj.NUMAAllocateStrategy = defaultNUMAAllocateStrategy
+	if obj.DefaultCPUBindPolicy == "" {
+		obj.DefaultCPUBindPolicy = defaultPreferredCPUBindPolicy
 	}
 	if obj.ScoringStrategy == nil {
 		obj.ScoringStrategy = defaultNodeNUMAResourceScoringStrategy
+	}
+}
+
+func SetDefaults_ReservationArgs(obj *ReservationArgs) {
+	if obj.EnablePreemption == nil {
+		obj.EnablePreemption = defaultEnablePreemption
 	}
 }

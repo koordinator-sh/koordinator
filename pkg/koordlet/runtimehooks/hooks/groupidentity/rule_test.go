@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
@@ -29,7 +31,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
-	corev1 "k8s.io/api/core/v1"
 )
 
 func Test_bvtRule_getPodBvtValue(t *testing.T) {
@@ -111,27 +112,27 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			name: "parse normal rules",
 			args: args{
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
-					ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-						LSR: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						LSRClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(true),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(2),
 								},
 							},
 						},
-						LS: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+						LSClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(true),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(2),
 								},
 							},
 						},
-						BE: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+						BEClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(true),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(-1),
 								},
 							},
@@ -163,27 +164,27 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			name: "parse rules with lsr disabled",
 			args: args{
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
-					ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-						LSR: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						LSRClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(false),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(0),
 								},
 							},
 						},
-						LS: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+						LSClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(true),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(2),
 								},
 							},
 						},
-						BE: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+						BEClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(true),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(-1),
 								},
 							},
@@ -215,27 +216,27 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			name: "parse rules with lsr and ls disabled",
 			args: args{
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
-					ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-						LSR: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						LSRClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(false),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(0),
 								},
 							},
 						},
-						LS: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+						LSClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(false),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(0),
 								},
 							},
 						},
-						BE: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+						BEClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(true),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(-1),
 								},
 							},
@@ -267,27 +268,27 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			name: "parse rules with all disabled",
 			args: args{
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
-					ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-						LSR: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						LSRClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(false),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(0),
 								},
 							},
 						},
-						LS: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+						LSClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(false),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(0),
 								},
 							},
 						},
-						BE: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+						BEClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(false),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(0),
 								},
 							},
@@ -336,27 +337,27 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 					},
 				},
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
-					ResourceQoSStrategy: &slov1alpha1.ResourceQoSStrategy{
-						LSR: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						LSRClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(true),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(2),
 								},
 							},
 						},
-						LS: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+						LSClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(true),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(2),
 								},
 							},
 						},
-						BE: &slov1alpha1.ResourceQoS{
-							CPUQoS: &slov1alpha1.CPUQoSCfg{
+						BEClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(true),
-								CPUQoS: slov1alpha1.CPUQoS{
+								CPUQOS: slov1alpha1.CPUQOS{
 									GroupIdentity: pointer.Int64(-1),
 								},
 							},

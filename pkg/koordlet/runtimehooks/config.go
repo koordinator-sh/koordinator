@@ -24,11 +24,13 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/featuregate"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/groupidentity"
 )
 
 const (
-	GroupIdentity featuregate.Feature = "GroupIdentity"
+	GroupIdentity   featuregate.Feature = "GroupIdentity"
+	CPUSetAllocator featuregate.Feature = "CPUSetAllocator"
 )
 
 var (
@@ -36,11 +38,13 @@ var (
 	DefaultRuntimeHooksFG        featuregate.FeatureGate        = DefaultMutableRuntimeHooksFG
 
 	defaultRuntimeHooksFG = map[featuregate.Feature]featuregate.FeatureSpec{
-		GroupIdentity: {Default: false, PreRelease: featuregate.Alpha},
+		GroupIdentity:   {Default: false, PreRelease: featuregate.Alpha},
+		CPUSetAllocator: {Default: false, PreRelease: featuregate.Alpha},
 	}
 
 	runtimeHookPlugins = map[featuregate.Feature]HookPlugin{
-		GroupIdentity: groupidentity.Object(),
+		GroupIdentity:   groupidentity.Object(),
+		CPUSetAllocator: cpuset.Object(),
 	}
 )
 
@@ -59,8 +63,8 @@ func NewDefaultConfig() *Config {
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
-	fs.StringVar(&c.RuntimeHooksNetwork, "RuntimeHooksNetwork", c.RuntimeHooksNetwork, "rpc server network type for runtime hooks")
-	fs.StringVar(&c.RuntimeHooksAddr, "RuntimeHooksAddr", c.RuntimeHooksAddr, "rpc server address for runtime hooks")
+	fs.StringVar(&c.RuntimeHooksNetwork, "runtime-hooks-network", c.RuntimeHooksNetwork, "rpc server network type for runtime hooks")
+	fs.StringVar(&c.RuntimeHooksAddr, "runtime-hooks-addr", c.RuntimeHooksAddr, "rpc server address for runtime hooks")
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "runtime-hooks",
 		"A set of key=value pairs that describe feature gates for runtime hooks alpha/experimental features. "+
 			"Options are:\n"+strings.Join(DefaultRuntimeHooksFG.KnownFeatures(), "\n"))

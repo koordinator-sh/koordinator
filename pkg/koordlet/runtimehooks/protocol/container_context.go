@@ -17,6 +17,8 @@ limitations under the License.
 package protocol
 
 import (
+	"fmt"
+
 	"k8s.io/klog/v2"
 
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
@@ -27,12 +29,13 @@ import (
 
 type ContainerMeta struct {
 	Name string
-	UID  string
+	ID   string // docker://xxx; containerd://
 }
 
-func (c *ContainerMeta) FromProxy(meta *runtimeapi.ContainerMetadata) {
-	c.Name = meta.GetName()
-	c.UID = meta.GetId()
+func (c *ContainerMeta) FromProxy(containerMeta *runtimeapi.ContainerMetadata, podAnnotations map[string]string) {
+	c.Name = containerMeta.GetName()
+	uid := containerMeta.GetId()
+	c.ID = getContainerID(podAnnotations, uid)
 }
 
 type ContainerRequest struct {
@@ -45,23 +48,24 @@ type ContainerRequest struct {
 
 func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookRequest) {
 	c.PodMeta.FromProxy(req.PodMeta)
-	c.ContainerMeta.FromProxy(req.ContainerMata)
+	c.ContainerMeta.FromProxy(req.ContainerMeta, req.PodAnnotations)
 	c.PodLabels = req.GetPodLabels()
 	c.PodAnnotations = req.GetPodAnnotations()
-	c.CgroupParent, _ = util.GetContainerCgroupPathWithKubeByID(req.GetPodCgroupParent(), req.ContainerMata.Id)
+	c.CgroupParent, _ = util.GetContainerCgroupPathWithKubeByID(req.GetPodCgroupParent(), c.ContainerMeta.ID)
 }
 
-func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, containerID string) {
+func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, containerName string) {
 	c.PodMeta.FromReconciler(podMeta.Pod.ObjectMeta)
-	c.ContainerMeta.UID = containerID
+	c.ContainerMeta.Name = containerName
 	for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
-		if containerStat.ContainerID == containerID {
-			c.ContainerMeta.Name = containerStat.Name
+		if containerStat.Name == containerName {
+			c.ContainerMeta.ID = containerStat.ContainerID
+			break
 		}
 	}
 	c.PodLabels = podMeta.Pod.Labels
 	c.PodAnnotations = podMeta.Pod.Annotations
-	c.CgroupParent, _ = util.GetContainerCgroupPathWithKubeByID(podMeta.CgroupDir, containerID)
+	c.CgroupParent, _ = util.GetContainerCgroupPathWithKubeByID(podMeta.CgroupDir, c.ContainerMeta.ID)
 }
 
 type ContainerResponse struct {
@@ -94,8 +98,8 @@ func (c *ContainerContext) ProxyDone(resp *runtimeapi.ContainerResourceHookRespo
 	c.Response.ProxyDone(resp)
 }
 
-func (c *ContainerContext) FromReconciler(podMeta *statesinformer.PodMeta, containerUID string) {
-	c.Request.FromReconciler(podMeta, containerUID)
+func (c *ContainerContext) FromReconciler(podMeta *statesinformer.PodMeta, containerName string) {
+	c.Request.FromReconciler(podMeta, containerName)
 }
 
 func (c *ContainerContext) ReconcilerDone() {
@@ -112,7 +116,7 @@ func (c *ContainerContext) injectForOrigin() {
 			klog.V(5).Infof("set container %v/%v/%v cpuset %v on cgroup parent %v",
 				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
 				*c.Response.Resources.CPUSet, c.Request.CgroupParent)
-			audit.V(2).Container(c.Request.ContainerMeta.UID).Reason("runtime-hooks").Message(
+			audit.V(2).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 				"set container cpuset to %v", *c.Response.Resources.CPUSet).Do()
 		}
 	}
@@ -121,4 +125,13 @@ func (c *ContainerContext) injectForOrigin() {
 
 func (c *ContainerContext) injectForExt() {
 	// TODO
+}
+
+func getContainerID(podAnnotations map[string]string, containerUID string) string {
+	// TODO parse from runtime hook request directly
+	runtimeType := "containerd"
+	if _, exist := podAnnotations["io.kubernetes.docker.type"]; exist {
+		runtimeType = "docker"
+	}
+	return fmt.Sprintf("%s://%s", runtimeType, containerUID)
 }

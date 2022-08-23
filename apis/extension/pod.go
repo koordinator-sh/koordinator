@@ -27,7 +27,7 @@ import (
 const (
 	AnnotationPodCPUBurst = DomainPrefix + "cpuBurst"
 
-	AnnotationPodMemoryQoS = DomainPrefix + "memoryQoS"
+	AnnotationPodMemoryQoS = DomainPrefix + "memoryQOS"
 )
 
 func GetPodCPUBurstConfig(pod *corev1.Pod) (*slov1aplhpa1.CPUBurstConfig, error) {
@@ -47,7 +47,7 @@ func GetPodCPUBurstConfig(pod *corev1.Pod) (*slov1aplhpa1.CPUBurstConfig, error)
 	return &cpuBurst, nil
 }
 
-func GetPodMemoryQoSConfig(pod *corev1.Pod) (*slov1aplhpa1.PodMemoryQoSConfig, error) {
+func GetPodMemoryQoSConfig(pod *corev1.Pod) (*slov1aplhpa1.PodMemoryQOSConfig, error) {
 	if pod == nil || pod.Annotations == nil {
 		return nil, nil
 	}
@@ -55,7 +55,7 @@ func GetPodMemoryQoSConfig(pod *corev1.Pod) (*slov1aplhpa1.PodMemoryQoSConfig, e
 	if !exist {
 		return nil, nil
 	}
-	cfg := slov1aplhpa1.PodMemoryQoSConfig{}
+	cfg := slov1aplhpa1.PodMemoryQOSConfig{}
 	err := json.Unmarshal([]byte(value), &cfg)
 	if err != nil {
 		return nil, err

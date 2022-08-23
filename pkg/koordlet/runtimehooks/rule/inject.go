@@ -18,6 +18,8 @@ package rule
 
 import (
 	"fmt"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
 type InjectOption interface {
@@ -38,11 +40,12 @@ func NewFuncInject(f func(interface{}) error) *funcInject {
 	}
 }
 
-func WithParseFunc(parseFunc ParseRuleFn) InjectOption {
+func WithParseFunc(t statesinformer.RegisterType, parseFunc ParseRuleFn) InjectOption {
 	return NewFuncInject(func(o interface{}) error {
 		switch o := o.(type) {
 		case *Rule:
-			o.parseFunc = parseFunc
+			o.parseRuleType = t
+			o.parseRuleFn = parseFunc
 		default:
 			return fmt.Errorf("WithSystemSupported is invalid for type %T", o)
 		}

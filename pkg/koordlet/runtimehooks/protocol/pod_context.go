@@ -23,6 +23,7 @@ import (
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type PodMeta struct {
@@ -61,7 +62,7 @@ func (p *PodRequest) FromReconciler(podMeta *statesinformer.PodMeta) {
 	p.PodMeta.FromReconciler(podMeta.Pod.ObjectMeta)
 	p.Labels = podMeta.Pod.Labels
 	p.Annotations = podMeta.Pod.Annotations
-	p.CgroupParent = podMeta.CgroupDir
+	p.CgroupParent = util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 }
 
 type PodResponse struct {

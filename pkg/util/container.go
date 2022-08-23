@@ -25,7 +25,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -46,6 +45,16 @@ func GetContainerCgroupPathWithKubeByID(podParentDir string, containerID string)
 		GetPodCgroupDirWithKube(podParentDir),
 		containerDir,
 	), nil
+}
+
+// @parentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cgroup.procs
+func GetContainerCgroupCPUProcsPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return "", err
+	}
+	return system.GetCgroupFilePath(containerPath, system.CPUProcs), nil
 }
 
 func GetContainerCgroupCPUAcctUsagePath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
@@ -98,34 +107,6 @@ func GetContainerMilliCPULimit(c *corev1.Container) int64 {
 
 func GetContainerMemoryByteLimit(c *corev1.Container) int64 {
 	if memLimit, ok := c.Resources.Limits[corev1.ResourceMemory]; ok {
-		return memLimit.Value()
-	}
-	return -1
-}
-
-func GetContainerBEMilliCPURequest(c *corev1.Container) int64 {
-	if cpuRequest, ok := c.Resources.Requests[extension.BatchCPU]; ok {
-		return cpuRequest.Value()
-	}
-	return -1
-}
-
-func GetContainerBEMilliCPULimit(c *corev1.Container) int64 {
-	if cpuLimit, ok := c.Resources.Limits[extension.BatchCPU]; ok {
-		return cpuLimit.Value()
-	}
-	return -1
-}
-
-func GetContainerBEMemoryByteRequest(c *corev1.Container) int64 {
-	if memLimit, ok := c.Resources.Requests[extension.BatchMemory]; ok {
-		return memLimit.Value()
-	}
-	return -1
-}
-
-func GetContainerBEMemoryByteLimit(c *corev1.Container) int64 {
-	if memLimit, ok := c.Resources.Limits[extension.BatchMemory]; ok {
 		return memLimit.Value()
 	}
 	return -1
@@ -217,6 +198,40 @@ func GetContainerCurTasks(podParentDir string, c *corev1.ContainerStatus) ([]int
 		return nil, err
 	}
 	return system.GetCgroupCurTasks(cgroupPath)
+}
+
+func GetPIDsInPod(podParentDir string, cs []corev1.ContainerStatus) ([]uint32, error) {
+	pids := make([]uint32, 0)
+	for i := range cs {
+		p, err := GetPIDsInContainer(podParentDir, &cs[i])
+		if err != nil {
+			return nil, err
+		}
+		pids = append(pids, p...)
+	}
+	return pids, nil
+}
+
+func GetPIDsInContainer(podParentDir string, c *corev1.ContainerStatus) ([]uint32, error) {
+	cgroupPath, err := GetContainerCgroupCPUProcsPath(podParentDir, c)
+	if err != nil {
+		return nil, err
+	}
+	rawContent, err := ioutil.ReadFile(cgroupPath)
+	if err != nil {
+		return nil, err
+	}
+	pidStrs := strings.Fields(strings.TrimSpace(string(rawContent)))
+	pids := make([]uint32, len(pidStrs))
+
+	for i := 0; i < len(pids); i++ {
+		p, err := strconv.ParseUint(pidStrs[i], 10, 32)
+		if err != nil {
+			return nil, err
+		}
+		pids[i] = uint32(p)
+	}
+	return pids, nil
 }
 
 func FindContainerIdAndStatusByName(status *corev1.PodStatus, name string) (string, *corev1.ContainerStatus, error) {

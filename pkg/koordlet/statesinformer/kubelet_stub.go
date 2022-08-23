@@ -20,12 +20,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	utilnet "k8s.io/apimachinery/pkg/util/net"
-	"k8s.io/client-go/transport"
+	"k8s.io/client-go/rest"
 )
 
 type KubeletStub interface {
@@ -35,57 +37,44 @@ type KubeletStub interface {
 type kubeletStub struct {
 	addr       string
 	port       int
+	scheme     string
 	httpClient *http.Client
 }
 
-func NewKubeletStub(addr string, port int, timeout time.Duration, token string) (KubeletStub, error) {
-	preTlsConfig := makeTransportConfig(token, true)
-	tlsConfig, err := transport.TLSConfigFor(preTlsConfig)
-	if err != nil {
-		return nil, err
-	}
-	rt := http.DefaultTransport
-	if tlsConfig != nil {
-		// If SSH Tunnel is turned on
-		rt = utilnet.SetOldTransportDefaults(&http.Transport{
-			TLSClientConfig: tlsConfig,
-		})
-	}
-	roundTripper, err := transport.HTTPWrappersForConfig(makeTransportConfig(token, true), rt)
-	if err != nil {
-		return nil, err
-	}
+func NewKubeletStub(addr string, port int, scheme string, timeout time.Duration, cfg *rest.Config) (KubeletStub, error) {
 	client := &http.Client{
-		Timeout:   timeout,
-		Transport: roundTripper,
+		Timeout: timeout,
 	}
+	if cfg != nil && rest.IsConfigTransportTLS(*cfg) {
+		transport, err := rest.TransportFor(cfg)
+		if err != nil {
+			return nil, err
+		}
+		client.Transport = transport
+	}
+
 	return &kubeletStub{
 		httpClient: client,
 		addr:       addr,
 		port:       port,
+		scheme:     scheme,
 	}, nil
 }
 
-func makeTransportConfig(token string, insecure bool) *transport.Config {
-	tlsConfig := &transport.Config{
-		BearerToken: token,
-		TLS: transport.TLSConfig{
-			Insecure: true,
-		},
-	}
-	return tlsConfig
-}
-
 func (k *kubeletStub) GetAllPods() (corev1.PodList, error) {
+	url := url.URL{
+		Scheme: k.scheme,
+		Host:   net.JoinHostPort(k.addr, strconv.Itoa(k.port)),
+		Path:   "/pods/",
+	}
 	podList := corev1.PodList{}
-	url := fmt.Sprintf("https://%v:%d/pods/", k.addr, k.port)
-	rsp, err := k.httpClient.Get(url)
+	rsp, err := k.httpClient.Get(url.String())
 	if err != nil {
 		return podList, err
 	}
 	defer rsp.Body.Close()
 	if rsp.StatusCode != http.StatusOK {
-		return podList, fmt.Errorf("request %s failed, code %d", url, rsp.StatusCode)
+		return podList, fmt.Errorf("request %s failed, code %d", url.String(), rsp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(rsp.Body)

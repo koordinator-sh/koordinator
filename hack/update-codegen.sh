@@ -60,6 +60,15 @@ ${SCRIPT_ROOT}/hack/generate-internal-groups.sh \
   --output-base "${TEMP_DIR}" \
   --go-header-file hack/boilerplate/boilerplate.go.txt
 
+${SCRIPT_ROOT}/hack/generate-internal-groups.sh \
+  "deepcopy,conversion,defaulter" \
+  github.com/koordinator-sh/koordinator/pkg/descheduler/apis/generated \
+  github.com/koordinator-sh/koordinator/pkg/descheduler/apis \
+  github.com/koordinator-sh/koordinator/pkg/descheduler/apis \
+  "config:v1alpha2" \
+  --output-base "${TEMP_DIR}" \
+  --go-header-file hack/boilerplate/boilerplate.go.txt
+
 # Copy everything back.
 cp -a "${TEMP_DIR}/${ROOT_PKG}/." "${SCRIPT_ROOT}/"
 

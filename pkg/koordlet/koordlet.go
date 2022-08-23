@@ -21,6 +21,7 @@ import (
 	"os"
 	"time"
 
+	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -61,6 +62,7 @@ type daemon struct {
 	reporter       reporter.Reporter
 	resManager     resmanager.ResManager
 	runtimeHook    runtimehooks.RuntimeHook
+	pleg           pleg.Pleg
 }
 
 func NewDaemon(config *config.Configuration) (Daemon, error) {
@@ -100,17 +102,19 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 	kubeClient := clientset.NewForConfigOrDie(config.KubeRestConf)
 	crdClient := clientsetbeta1.NewForConfigOrDie(config.KubeRestConf)
+	topologyClient := topologyclientset.NewForConfigOrDie(config.KubeRestConf)
 
 	pleg, err := pleg.NewPLEG(system.Conf.CgroupRootDir)
 	if err != nil {
 		return nil, err
 	}
 
-	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, pleg, nodeName)
 	metricCache, err := metriccache.NewMetricCache(config.MetricCacheConf)
 	if err != nil {
 		return nil, err
 	}
+
+	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, pleg, nodeName)
 
 	collectorService := metricsadvisor.NewCollector(config.CollectorConf, statesInformer, metricCache)
 	reporterService := reporter.NewReporter(config.ReporterConf, kubeClient, crdClient, nodeName, metricCache, statesInformer)
@@ -129,6 +133,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		reporter:       reporterService,
 		resManager:     resManagerService,
 		runtimeHook:    runtimeHook,
+		pleg:           pleg,
 	}
 
 	return d, nil
@@ -186,6 +191,13 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 	go func() {
 		if err := d.runtimeHook.Run(stopCh); err != nil {
 			klog.Errorf("Unable to run the runtimeHook: ", err)
+			os.Exit(1)
+		}
+	}()
+
+	go func() {
+		if err := d.pleg.Run(stopCh); err != nil {
+			klog.Errorf("Unable to run the pleg: ", err)
 			os.Exit(1)
 		}
 	}()

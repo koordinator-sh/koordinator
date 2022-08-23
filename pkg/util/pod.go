@@ -17,6 +17,7 @@ limitations under the License.
 package util
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"path"
@@ -24,6 +25,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
@@ -114,7 +116,7 @@ func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
 	podCPUMilliReq := int64(0)
 	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
-		containerCPUMilliReq := GetContainerBEMilliCPURequest(&container)
+		containerCPUMilliReq := GetContainerBatchMilliCPURequest(&container)
 		if containerCPUMilliReq <= 0 {
 			containerCPUMilliReq = 0
 		}
@@ -128,7 +130,7 @@ func GetPodBEMilliCPULimit(pod *corev1.Pod) int64 {
 	podCPUMilliLimit := int64(0)
 	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
-		containerCPUMilliLimit := GetContainerBEMilliCPULimit(&container)
+		containerCPUMilliLimit := GetContainerBatchMilliCPULimit(&container)
 		if containerCPUMilliLimit <= 0 {
 			return -1
 		}
@@ -144,7 +146,7 @@ func GetPodBEMemoryByteRequestIgnoreUnlimited(pod *corev1.Pod) int64 {
 	podMemoryByteRequest := int64(0)
 	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
-		containerMemByteRequest := GetContainerBEMemoryByteRequest(&container)
+		containerMemByteRequest := GetContainerBatchMemoryByteRequest(&container)
 		if containerMemByteRequest < 0 {
 			// consider request of unlimited container as 0
 			continue
@@ -158,7 +160,7 @@ func GetPodBEMemoryByteLimit(pod *corev1.Pod) int64 {
 	podMemoryByteLimit := int64(0)
 	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
-		containerMemByteLimit := GetContainerBEMemoryByteLimit(&container)
+		containerMemByteLimit := GetContainerBatchMemoryByteLimit(&container)
 		if containerMemByteLimit <= 0 {
 			return -1
 		}
@@ -253,4 +255,17 @@ func GetPodRequest(pod *corev1.Pod, resourceNames ...corev1.ResourceName) corev1
 
 func IsPodTerminated(pod *corev1.Pod) bool {
 	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
+}
+
+func GeneratePodPatch(oldPod, newPod *corev1.Pod) ([]byte, error) {
+	oldData, err := json.Marshal(oldPod)
+	if err != nil {
+		return nil, err
+	}
+
+	newData, err := json.Marshal(newPod)
+	if err != nil {
+		return nil, err
+	}
+	return strategicpatch.CreateTwoWayMergePatch(oldData, newData, &corev1.Pod{})
 }

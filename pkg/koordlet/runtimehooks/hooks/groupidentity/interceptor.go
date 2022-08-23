@@ -31,11 +31,15 @@ func (b *bvtPlugin) SetPodBvtValue(p protocol.HooksProtocol) error {
 		return nil
 	}
 	r := b.getRule()
+	if r == nil {
+		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
+		return nil
+	}
 	podCtx := p.(*protocol.PodContext)
 	req := podCtx.Request
-	podQoS := ext.GetQoSClassByLabels(req.Labels)
-	podKubeQoS := util.GetKubeQoSByCgroupParent(req.CgroupParent)
-	podBvt := r.getPodBvtValue(podQoS, podKubeQoS)
+	podQOS := ext.GetQoSClassByAttrs(req.Labels, req.Annotations)
+	podKubeQOS := util.GetKubeQoSByCgroupParent(req.CgroupParent)
+	podBvt := r.getPodBvtValue(podQOS, podKubeQOS)
 	podCtx.Response.Resources.CPUBvt = pointer.Int64(podBvt)
 	return nil
 }
@@ -46,9 +50,13 @@ func (b *bvtPlugin) SetKubeQOSBvtValue(p protocol.HooksProtocol) error {
 		return nil
 	}
 	r := b.getRule()
+	if r == nil {
+		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
+		return nil
+	}
 	kubeQOSCtx := p.(*protocol.KubeQOSContext)
 	req := kubeQOSCtx.Request
-	bvtValue := r.getKubeQoSDirBvtValue(req.KubeQOSClass)
+	bvtValue := r.getKubeQOSDirBvtValue(req.KubeQOSClass)
 	kubeQOSCtx.Response.Resources.CPUBvt = pointer.Int64(bvtValue)
 	return nil
 }
