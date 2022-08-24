@@ -194,7 +194,7 @@ func Test_storage_NodeResourceMetric_CRUD(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
 			for _, sample := range tt.args.samples {
-				err := s.InsertNodResourceMetric(&sample)
+				err := s.InsertNodeResourceMetric(&sample)
 				if err != nil {
 					t.Errorf("insert node metric error %v", err)
 				}
