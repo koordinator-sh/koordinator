@@ -109,10 +109,10 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	return r, nil
 }
 
-func newReconciler(controllerArgs *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) (*Reconciler, error) {
+func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) (*Reconciler, error) {
 	manager := options.Manager
 	reservationInterpreter := reservation.NewInterpreter(manager)
-	evictorInterpreter, err := evictor.NewInterpreter(controllerArgs.EvictionPolicy, handle.ClientSet())
+	evictorInterpreter, err := evictor.NewInterpreter(handle.ClientSet(), args.EvictionPolicy, args.EvictQPS, int(args.EvictBurst))
 	if err != nil {
 		return nil, err
 	}
@@ -123,8 +123,8 @@ func newReconciler(controllerArgs *deschedulerconfig.MigrationControllerArgs, ha
 	}
 
 	var selector labels.Selector
-	if controllerArgs.LabelSelector != nil {
-		selector, err = metav1.LabelSelectorAsSelector(controllerArgs.LabelSelector)
+	if args.LabelSelector != nil {
+		selector, err = metav1.LabelSelectorAsSelector(args.LabelSelector)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get label selectors: %v", err)
 		}
@@ -133,16 +133,16 @@ func newReconciler(controllerArgs *deschedulerconfig.MigrationControllerArgs, ha
 	evictorFilter := evictionsutil.NewEvictorFilter(
 		nodesGetter,
 		handle.GetPodsAssignedToNodeFunc(),
-		controllerArgs.EvictLocalStoragePods,
-		controllerArgs.EvictSystemCriticalPods,
-		controllerArgs.IgnorePvcPods,
-		controllerArgs.EvictFailedBarePods,
+		args.EvictLocalStoragePods,
+		args.EvictSystemCriticalPods,
+		args.IgnorePvcPods,
+		args.EvictFailedBarePods,
 		evictionsutil.WithLabelSelector(selector),
 	)
 
 	r := &Reconciler{
 		Client:                 manager.GetClient(),
-		args:                   controllerArgs,
+		args:                   args,
 		eventRecorder:          handle.EventRecorder(),
 		reservationInterpreter: reservationInterpreter,
 		evictorInterpreter:     evictorInterpreter,
@@ -635,7 +635,7 @@ func (r *Reconciler) evictPod(ctx context.Context, job *sev1alpha1.PodMigrationJ
 	}
 	err = r.evictorInterpreter.Evict(ctx, job, pod)
 	if err != nil {
-		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonFailedEvict, "Migrating", "Failed evict Pod %q caused by %v", podNamespacedName, err)
+		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonEvicting, "Migrating", "Failed evict Pod %q caused by %v", podNamespacedName, err)
 		return false, reconcile.Result{}, err
 	}
 

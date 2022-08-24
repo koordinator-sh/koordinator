@@ -76,6 +76,21 @@ func TestValidateMigrationControllerArgs(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "invalid evictQPS",
+			args: &v1alpha2.MigrationControllerArgs{
+				EvictQPS: "xxx",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid evictBurst",
+			args: &v1alpha2.MigrationControllerArgs{
+				EvictQPS:   "1",
+				EvictBurst: 0,
+			},
+			wantErr: true,
+		},
+		{
 			name: "invalid labelSelector",
 			args: &v1alpha2.MigrationControllerArgs{
 				LabelSelector: &metav1.LabelSelector{
