@@ -49,19 +49,18 @@ func GuessCgroupDriverFromCgroupName() CgroupDriverType {
 	return ""
 }
 
-// Guess Kubelet's cgroup driver from command line args.
-// 1. Read kubelet's /proc/${pid}/cmdline.
+// Guess Kubelet's cgroup driver from kubelet port.
+// 1. use KubeletPortToPid to get kubelet pid.
 // 2. If '--cgroup-driver' in args, that's it.
 //    else if '--config' not in args, is default driver('cgroupfs').
 //    else go to step-3.
 // 3. If kubelet config is relative path, join with /proc/${pidof kubelet}/cwd.
 //    search 'cgroupDriver:' in kubelet config file, that's it.
-func GuessCgroupDriverFromKubelet() (CgroupDriverType, error) {
-	pids, err := PidOf(Conf.ProcRootDir, "kubelet")
-	if err != nil || len(pids) == 0 {
+func GuessCgroupDriverFromKubeletPort(port int) (CgroupDriverType, error) {
+	kubeletPid, err := KubeletPortToPid(port)
+	if err != nil {
 		return "", fmt.Errorf("failed to find kubelet's pid, kubelet may stop: %v", err)
 	}
-	kubeletPid := pids[0]
 
 	kubeletArgs, err := ProcCmdLine(Conf.ProcRootDir, kubeletPid)
 	if err != nil || len(kubeletArgs) <= 1 {
