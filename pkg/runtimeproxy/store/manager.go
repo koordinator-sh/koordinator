@@ -56,6 +56,14 @@ type metaManager struct {
 	containerInfos map[string]*ContainerInfo
 }
 
+// reset. currently only used by test case
+func (mm *metaManager) reset() {
+	mm.Lock()
+	defer mm.Unlock()
+	mm.podInfos = make(map[string]*PodSandboxInfo, defaultPoolSize)
+	mm.containerInfos = make(map[string]*ContainerInfo, defaultPoolSize)
+}
+
 var m = &metaManager{
 	podInfos:       make(map[string]*PodSandboxInfo, defaultPoolSize),
 	containerInfos: make(map[string]*ContainerInfo, defaultPoolSize),

@@ -26,6 +26,85 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
 )
 
+func TestPodResourceExecutor_ParsePod(t *testing.T) {
+	type fields struct {
+		podSandbox *runtimeapi.PodSandbox
+	}
+	type want struct {
+		wantErr               error
+		wantPodMetaData       *v1alpha1.PodSandboxMetadata
+		wantPodRuntimeHandler string
+		wantPodAnnotations    map[string]string
+		wantPodLabels         map[string]string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   want
+	}{
+		{
+			name: "input is nil",
+			fields: fields{
+				podSandbox: nil,
+			},
+			want: want{
+				wantErr: nil,
+			},
+		},
+		{
+			name: "normal parse error",
+			fields: fields{
+				podSandbox: &runtimeapi.PodSandbox{
+					Metadata: &runtimeapi.PodSandboxMetadata{
+						Name:      "TestPodName",
+						Namespace: "TestPodNamespace",
+						Uid:       "TestPodUid",
+					},
+					RuntimeHandler: "TestPodRuntimeHandler",
+					Annotations: map[string]string{
+						"TestPodAnnotations/AnnotationKey1": "Value1",
+						"TestPodAnnotations/AnnotationKey2": "Value2",
+					},
+					Labels: map[string]string{
+						"TestPodLabels/Label1": "Value1",
+						"TestPodLabels/Label2": "Value2",
+					},
+				},
+			},
+			want: want{
+				wantErr: nil,
+				wantPodMetaData: &v1alpha1.PodSandboxMetadata{
+					Name:      "TestPodName",
+					Namespace: "TestPodNamespace",
+					Uid:       "TestPodUid",
+				},
+				wantPodRuntimeHandler: "TestPodRuntimeHandler",
+				wantPodAnnotations: map[string]string{
+					"TestPodAnnotations/AnnotationKey1": "Value1",
+					"TestPodAnnotations/AnnotationKey2": "Value2",
+				},
+				wantPodLabels: map[string]string{
+					"TestPodLabels/Label1": "Value1",
+					"TestPodLabels/Label2": "Value2",
+				},
+			},
+		},
+	}
+
+	for i, tt := range tests {
+		podExecutor := NewPodResourceExecutor()
+		if i == 1 {
+			continue
+		}
+		err := podExecutor.ParsePod(tt.fields.podSandbox)
+		assert.Equal(t, tt.want.wantErr, err)
+		assert.Equal(t, tt.want.wantPodMetaData, podExecutor.GetPodMeta())
+		assert.Equal(t, tt.want.wantPodRuntimeHandler, podExecutor.GetRuntimeHandler())
+		assert.Equal(t, tt.want.wantPodAnnotations, podExecutor.GetAnnotations())
+		assert.Equal(t, tt.want.wantPodLabels, podExecutor.GetLabels())
+	}
+}
+
 func TestPodResourceExecutor_UpdateRequestForRunPodSandboxRequest(t *testing.T) {
 	type fields struct {
 		PodSandboxInfo store.PodSandboxInfo
