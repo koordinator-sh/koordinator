@@ -402,3 +402,47 @@ func TestMergeResourceByUpdateConfig(t *testing.T) {
 		assert.Equal(t, tt.want, MergeResourceByUpdateConfig(tt.args.resources, tt.args.containerConfig))
 	}
 }
+
+func Test_splitDockerEnv(t *testing.T) {
+	tests := []struct {
+		dockerEnvs       []string
+		expectedHookEnvs map[string]string
+	}{
+		{
+			dockerEnvs: []string{"a=b", "b=c"},
+			expectedHookEnvs: map[string]string{
+				"a": "b",
+				"b": "c",
+			},
+		},
+		{
+			dockerEnvs: []string{"a=", "b"},
+			expectedHookEnvs: map[string]string{
+				"a": "",
+			},
+		},
+	}
+	for _, tt := range tests {
+		gotEnvs := splitDockerEnv(tt.dockerEnvs)
+		assert.Equal(t, len(tt.expectedHookEnvs), len(gotEnvs))
+	}
+}
+
+func Test_generateEnvList(t *testing.T) {
+	tests := []struct {
+		expectedDockerEnvs []string
+		hookEnvs           map[string]string
+	}{
+		{
+			expectedDockerEnvs: []string{"a=b", "b=c"},
+			hookEnvs: map[string]string{
+				"a": "b",
+				"b": "c",
+			},
+		},
+	}
+	for _, tt := range tests {
+		gotEnvs := generateEnvList(tt.hookEnvs)
+		assert.Equal(t, len(tt.expectedDockerEnvs), len(gotEnvs))
+	}
+}

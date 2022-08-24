@@ -231,3 +231,22 @@ func generateExpectedCgroupParent(cgroupDriver, cgroupParent string) string {
 	klog.V(4).Infof("Setting cgroup parent to: %q", cgroupParent)
 	return cgroupParent
 }
+
+func splitDockerEnv(dockerEnvs []string) map[string]string {
+	res := make(map[string]string)
+	for _, str := range dockerEnvs {
+		tokens := strings.Split(str, "=")
+		if len(tokens) != 2 {
+			continue
+		}
+		res[tokens[0]] = tokens[1]
+	}
+	return res
+}
+
+func generateEnvList(envs map[string]string) (result []string) {
+	for key, value := range envs {
+		result = append(result, fmt.Sprintf("%s=%s", key, value))
+	}
+	return
+}

@@ -17,11 +17,7 @@ limitations under the License.
 package nodenumaresource
 
 import (
-	"encoding/json"
-
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -65,17 +61,4 @@ func buildCPUTopology(topology *nrtv1alpha1.NodeResourceTopology) *CPUTopology {
 	cpuTopology.CPUDetails = details
 	cpuTopology.NumCPUs = len(details)
 	return cpuTopology
-}
-
-func generatePodPatch(oldPod, newPod *corev1.Pod) ([]byte, error) {
-	oldData, err := json.Marshal(oldPod)
-	if err != nil {
-		return nil, err
-	}
-
-	newData, err := json.Marshal(newPod)
-	if err != nil {
-		return nil, err
-	}
-	return strategicpatch.CreateTwoWayMergePatch(oldData, newData, &corev1.Pod{})
 }

@@ -66,7 +66,7 @@ func TestPreFilterHook(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: testNodeName,
 		},
 	}
@@ -221,7 +221,7 @@ func TestFilterHook(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: testNodeName,
 		},
 	}
@@ -387,7 +387,7 @@ func Test_preparePreFilterNodeInfo(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: testNodeName,
 		},
 	}

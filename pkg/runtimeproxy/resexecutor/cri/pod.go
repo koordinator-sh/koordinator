@@ -83,7 +83,7 @@ func (p *PodResourceExecutor) ParseRequest(req interface{}) error {
 }
 
 func (p *PodResourceExecutor) ParsePod(podsandbox *runtimeapi.PodSandbox) error {
-	if p == nil {
+	if p == nil || podsandbox == nil {
 		return nil
 	}
 	p.PodSandboxInfo = store.PodSandboxInfo{

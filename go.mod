@@ -8,6 +8,7 @@ require (
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/golang/mock v1.6.0
+	github.com/golang/protobuf v1.5.2
 	github.com/google/uuid v1.3.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.0.12
 	github.com/mohae/deepcopy v0.0.0-20170603005431-491d3605edfb
@@ -70,7 +71,6 @@ require (
 	github.com/go-openapi/swag v0.19.14 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect

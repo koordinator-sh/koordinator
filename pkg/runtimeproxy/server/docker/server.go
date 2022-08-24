@@ -145,7 +145,7 @@ func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) er
 			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
 				ContainerResources:   HostConfigToResource(c.ContainerJSON.HostConfig),
 				ContainerAnnotations: c.Labels,
-				ContainerMata: &v1alpha1.ContainerMetadata{
+				ContainerMeta: &v1alpha1.ContainerMetadata{
 					Name: c.Name,
 					Id:   c.ID,
 				},
@@ -156,6 +156,9 @@ func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) er
 		if podCheckPoint != nil {
 			cInfo.ContainerResourceHookRequest.PodMeta = podCheckPoint.PodMeta
 			cInfo.ContainerResourceHookRequest.PodResources = podCheckPoint.Resources
+		}
+		if c.Config != nil {
+			cInfo.ContainerResourceHookRequest.ContainerEnvs = splitDockerEnv(c.Config.Env)
 		}
 		store.WriteContainerInfo(c.ID, cInfo)
 	}

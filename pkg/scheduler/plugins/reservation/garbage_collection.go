@@ -178,7 +178,7 @@ func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
 			klog.V(5).InfoS("skip sync for reservation not found", "reservation", klog.KObj(r))
 			return nil
 		} else if err1 != nil {
-			klog.V(4).InfoS("failed to get reservation", "reservation", klog.KObj(r), "err", err1)
+			klog.V(4).InfoS("failed to get reservation", "reservation", klog.KObj(cached), "err", err1)
 			return err1
 		}
 

@@ -139,27 +139,27 @@ func AddScheduleEventHandler(sched *scheduler.Scheduler, internalHandler Schedul
 			},
 		},
 	})
-	// failed reservations
+	// inactive reservations
 	reservationInformer.AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
 			switch t := obj.(type) {
 			case *schedulingv1alpha1.Reservation:
-				// scheduler is always responsible for schedulingv1alpha1.reservation object
-				return reservation.IsReservationFailed(t)
-			default: // else should be processed by other handlers
+				// else should be processed by other handlers
+				return reservation.IsReservationFailed(t) || reservation.IsReservationSucceeded(t)
+			default:
 				klog.Errorf("unable to handle object in %T: %T", obj, sched)
 				return false
 			}
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				handleExpiredReservation(sched, internalHandler, obj)
+				handleInactiveReservation(sched, internalHandler, obj)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				handleExpiredReservation(sched, internalHandler, newObj)
+				handleInactiveReservation(sched, internalHandler, newObj)
 			},
 			DeleteFunc: func(obj interface{}) {
-				handleExpiredReservation(sched, internalHandler, obj)
+				handleInactiveReservation(sched, internalHandler, obj)
 			},
 		},
 	})
@@ -323,10 +323,10 @@ func deleteReservationFromSchedulingQueue(sched *scheduler.Scheduler, internalHa
 	// fwk.RejectWaitingPod(reservePod.UID)
 }
 
-func handleExpiredReservation(sched *scheduler.Scheduler, internalHandler SchedulerInternalHandler, obj interface{}) {
+func handleInactiveReservation(sched *scheduler.Scheduler, internalHandler SchedulerInternalHandler, obj interface{}) {
 	r, ok := obj.(*schedulingv1alpha1.Reservation)
 	if !ok {
-		klog.Errorf("handleExpiredReservation failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
+		klog.Errorf("handleInactiveReservation failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
 		return
 	}
 
@@ -339,7 +339,7 @@ func handleExpiredReservation(sched *scheduler.Scheduler, internalHandler Schedu
 	if err == nil {
 		err = internalHandler.GetCache().RemovePod(reservePod)
 		if err != nil {
-			klog.Errorf("failed to remove expired reserve pod in scheduler cache, reservation %v, err: %s",
+			klog.Errorf("failed to remove inactive reserve pod in scheduler cache, reservation %v, err: %s",
 				klog.KObj(r), err)
 		}
 		internalHandler.MoveAllToActiveOrBackoffQueue(assignedPodDelete)
@@ -349,10 +349,10 @@ func handleExpiredReservation(sched *scheduler.Scheduler, internalHandler Schedu
 		// pod is unscheduled, try dequeue the reserve pod from the scheduling queue
 		err = internalHandler.GetQueue().Delete(reservePod)
 		if err != nil {
-			klog.Errorf("failed to delete expired reserve pod in scheduling queue, reservation %v, err: %v", klog.KObj(r), err)
+			klog.Errorf("failed to delete inactive reserve pod in scheduling queue, reservation %v, err: %v", klog.KObj(r), err)
 		}
 	}
-	klog.V(4).InfoS("handle expired reservation", "reservation", klog.KObj(r), "phase", r.Status.Phase)
+	klog.V(4).InfoS("handle inactive reservation", "reservation", klog.KObj(r), "phase", r.Status.Phase)
 }
 
 func isResponsibleForReservation(profiles profile.Map, r *schedulingv1alpha1.Reservation) bool {
