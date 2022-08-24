@@ -542,7 +542,7 @@ func createTestReconciler() (*NodeMetricReconciler, *config.ColocationHandlerFor
 		Scheme: scheme,
 	}
 	handler := config.NewColocationHandlerForConfigMapEvent(reconciler.Client, *config.NewDefaultColocationCfg(), &record.FakeRecorder{})
-	reconciler.cfgCache = handler.GetCache()
+	reconciler.cfgCache = handler
 	return reconciler, handler
 }
 
