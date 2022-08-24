@@ -32,6 +32,9 @@ const (
 
 	// AnnotationReservationAllocated represents the reservation allocated by the pod.
 	AnnotationReservationAllocated = SchedulingDomainPrefix + "/reservation-allocated"
+
+	// AnnotationDeviceAllocated represents the device allocated by the pod
+	AnnotationDeviceAllocated = SchedulingDomainPrefix + "/device-allocated"
 )
 const (
 	AnnotationGangPrefix = "gang.scheduling.koordinator.sh"
@@ -125,4 +128,70 @@ func RemoveReservationAllocated(pod *corev1.Pod, r *schedulingv1alpha1.Reservati
 		return true, nil
 	}
 	return false, nil
+}
+
+// DeviceAllocations would be injected into Pod as form of annotation during Pre-bind stage.
+/*
+{
+  "gpu": [
+    {
+      "minor": 0,
+      "resources": {
+        "koordinator.sh/gpu-core": 100,
+        "koordinator.sh/gpu-mem-ratio": 100,
+        "koordinator.sh/gpu-mem": "16Gi"
+      }
+    },
+    {
+      "minor": 1,
+      "resources": {
+        "koordinator.sh/gpu-core": 100,
+        "koordinator.sh/gpu-mem-ratio": 100,
+        "koordinator.sh/gpu-mem": "16Gi"
+      }
+    }
+  ]
+}
+*/
+type DeviceAllocations map[schedulingv1alpha1.DeviceType][]*DeviceAllocation
+
+type DeviceAllocation struct {
+	Minor     int32
+	Resources corev1.ResourceList
+}
+
+func GetDeviceAllocations(pod *corev1.Pod) (DeviceAllocations, error) {
+	deviceAllocations := DeviceAllocations{}
+	data, ok := pod.Annotations[AnnotationDeviceAllocated]
+	if !ok {
+		return nil, nil
+	}
+	err := json.Unmarshal([]byte(data), &deviceAllocations)
+	if err != nil {
+		return nil, err
+	}
+	return deviceAllocations, nil
+}
+
+func SetDeviceAllocations(pod *corev1.Pod, dType schedulingv1alpha1.DeviceType, d []*DeviceAllocation) error {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+
+	allocations, err := GetDeviceAllocations(pod)
+	if err != nil {
+		return err
+	}
+	if allocations == nil {
+		allocations = DeviceAllocations{}
+	}
+
+	allocations[dType] = d
+	data, err := json.Marshal(allocations)
+	if err != nil {
+		return err
+	}
+	pod.Annotations[AnnotationDeviceAllocated] = string(data)
+	
+	return nil
 }
