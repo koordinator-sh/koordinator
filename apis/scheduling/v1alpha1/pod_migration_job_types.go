@@ -168,19 +168,19 @@ const (
 
 // These are valid reasons of PodMigrationJob.
 const (
-	PodMigrationJobReasonTimeout                      = "Timeout"
-	PodMigrationJobReasonFailedCreateReservation      = "FailedCreateReservation"
-	PodMigrationJobReasonReservationExpired           = "ReservationExpired"
-	PodMigrationJobReasonReservationBoundByAnotherPod = "ReservationBoundByAnotherPod"
-	PodMigrationJobReasonUnschedulable                = "Unschedulable"
-	PodMigrationJobReasonMissingPod                   = "MissingPod"
-	PodMigrationJobReasonMissingReservation           = "MissingReservation"
-	PodMigrationJobReasonPreempting                   = "Preempting"
-	PodMigrationJobReasonPreemptComplete              = "PreemptComplete"
-	PodMigrationJobReasonEvicting                     = "Evicting"
-	PodMigrationJobReasonFailedEvict                  = "FailedEvict"
-	PodMigrationJobReasonEvictComplete                = "EvictComplete"
-	PodMigrationJobReasonWaitForPodBindReservation    = "WaitForPodBindReservation"
+	PodMigrationJobReasonTimeout                   = "Timeout"
+	PodMigrationJobReasonFailedCreateReservation   = "FailedCreateReservation"
+	PodMigrationJobReasonReservationExpired        = "ReservationExpired"
+	PodMigrationJobReasonUnschedulable             = "Unschedulable"
+	PodMigrationJobReasonForbiddenMigratePod       = "ForbiddenMigratePod"
+	PodMigrationJobReasonMissingPod                = "MissingPod"
+	PodMigrationJobReasonMissingReservation        = "MissingReservation"
+	PodMigrationJobReasonPreempting                = "Preempting"
+	PodMigrationJobReasonPreemptComplete           = "PreemptComplete"
+	PodMigrationJobReasonEvicting                  = "Evicting"
+	PodMigrationJobReasonFailedEvict               = "FailedEvict"
+	PodMigrationJobReasonEvictComplete             = "EvictComplete"
+	PodMigrationJobReasonWaitForPodBindReservation = "WaitForPodBindReservation"
 )
 
 type PodMigrationJobConditionStatus string
