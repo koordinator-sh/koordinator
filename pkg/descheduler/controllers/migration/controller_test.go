@@ -234,7 +234,7 @@ func TestAbortJobByInvalidReservation(t *testing.T) {
 	assert.Nil(t, reconciler.Create(context.TODO(), job))
 	assert.Nil(t, reconciler.abortJobByReservationBound(context.TODO(), job))
 	assert.Equal(t, sev1alpha1.PodMigrationJobFailed, job.Status.Phase)
-	assert.Equal(t, sev1alpha1.PodMigrationJobReasonReservationBoundByAnotherPod, job.Status.Reason)
+	assert.Equal(t, sev1alpha1.PodMigrationJobReasonForbiddenMigratePod, job.Status.Reason)
 }
 
 func TestAbortJobByReservationUnschedulable(t *testing.T) {
@@ -1064,6 +1064,13 @@ func TestMigrateWithReservationSucceeded(t *testing.T) {
 						Status: sev1alpha1.ConditionStatusTrue,
 					},
 				},
+				CurrentOwners: []corev1.ObjectReference{
+					{
+						Namespace: "test",
+						Name:      "other-pod",
+						UID:       uuid.NewUUID(),
+					},
+				},
 			},
 		},
 	}
@@ -1080,7 +1087,7 @@ func TestMigrateWithReservationSucceeded(t *testing.T) {
 	}
 	assert.Nil(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
 	assert.Equal(t, sev1alpha1.PodMigrationJobFailed, job.Status.Phase)
-	assert.Equal(t, sev1alpha1.PodMigrationJobReasonReservationBoundByAnotherPod, job.Status.Reason)
+	assert.Equal(t, sev1alpha1.PodMigrationJobReasonForbiddenMigratePod, job.Status.Reason)
 }
 
 func TestMigrateWithReservationExpired(t *testing.T) {
@@ -1247,4 +1254,59 @@ func TestEvict(t *testing.T) {
 		Name:      "test-pod",
 	}
 	assert.Equal(t, expectPodRef, jobList.Items[0].Spec.PodRef)
+}
+
+func TestAbortJobIfReserveOnSameNode(t *testing.T) {
+	reconciler := newTestReconciler()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test",
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	}
+	assert.NoError(t, reconciler.Client.Create(context.TODO(), pod))
+
+	testReservation := &sev1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation-1",
+			UID:  uuid.NewUUID(),
+		},
+		Status: sev1alpha1.ReservationStatus{
+			NodeName: "test-node-1",
+		},
+	}
+	assert.NoError(t, reconciler.Client.Create(context.TODO(), testReservation))
+
+	job := &sev1alpha1.PodMigrationJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-job-1",
+		},
+		Spec: sev1alpha1.PodMigrationJobSpec{
+			PodRef: &corev1.ObjectReference{
+				Namespace: pod.Namespace,
+				Name:      pod.Name,
+				UID:       pod.UID,
+			},
+			ReservationOptions: &sev1alpha1.PodMigrateReservationOptions{
+				ReservationRef: &corev1.ObjectReference{
+					Name: testReservation.Name,
+					UID:  testReservation.UID,
+				},
+			},
+		},
+	}
+	assert.NoError(t, reconciler.Client.Create(context.TODO(), job))
+
+	reservationObj := reservation.NewReservation(testReservation)
+	aborted, err := reconciler.abortJobIfReserveOnSameNode(context.TODO(), job, reservationObj)
+	assert.NoError(t, err)
+	assert.True(t, aborted)
+
+	assert.NoError(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
+	assert.Equal(t, sev1alpha1.PodMigrationJobFailed, job.Status.Phase)
+	assert.Equal(t, sev1alpha1.PodMigrationJobReasonForbiddenMigratePod, job.Status.Reason)
 }

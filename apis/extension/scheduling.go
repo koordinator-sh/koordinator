@@ -192,6 +192,5 @@ func SetDeviceAllocations(pod *corev1.Pod, dType schedulingv1alpha1.DeviceType, 
 		return err
 	}
 	pod.Annotations[AnnotationDeviceAllocated] = string(data)
-	
 	return nil
 }
