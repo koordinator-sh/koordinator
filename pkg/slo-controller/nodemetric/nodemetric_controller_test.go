@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -426,8 +427,8 @@ func Test_Reconcile_RemoveNodeMetricWhenNodeNotExist(t *testing.T) {
 	}
 }
 
-//1. Test createNodeMetric
-//2. Test updateNodeMetric by invalid config contents
+// 1. Test createNodeMetric
+// 2. Test updateNodeMetric by invalid config contents
 func Test_CreateNodeMetricAndUpdateUnmarshalError(t *testing.T) {
 	reconciler, handler := createTestReconciler()
 	nodeName := "test-node"
@@ -540,7 +541,7 @@ func createTestReconciler() (*NodeMetricReconciler, *config.ColocationHandlerFor
 		Client: client,
 		Scheme: scheme,
 	}
-	handler := config.NewColocationHandlerForConfigMapEvent(reconciler.Client, *config.NewDefaultColocationCfg())
+	handler := config.NewColocationHandlerForConfigMapEvent(reconciler.Client, *config.NewDefaultColocationCfg(), &record.FakeRecorder{})
 	reconciler.cfgCache = handler.GetCache()
 	return reconciler, handler
 }

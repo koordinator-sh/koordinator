@@ -40,7 +40,7 @@ func (f *FakeCfgCache) GetCfgCopy() *config.ColocationCfg {
 	return &f.cfg
 }
 
-func (f *FakeCfgCache) IsAvailable() bool {
+func (f *FakeCfgCache) IsCfgAvailable() bool {
 	return f.available
 }
 

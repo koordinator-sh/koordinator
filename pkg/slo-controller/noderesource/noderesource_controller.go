@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/clock"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,12 +44,13 @@ type NodeResourceReconciler struct {
 	Scheme      *runtime.Scheme
 	Clock       clock.Clock
 	SyncContext SyncContext
+	Recorder    record.EventRecorder
 
 	cfgCache config.ColocationCfgCache
 }
 
 func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	if !r.cfgCache.IsAvailable() {
+	if !r.cfgCache.IsCfgAvailable() {
 		klog.Warningf("colocation config is not available")
 		return ctrl.Result{Requeue: false}, nil
 	}
@@ -113,8 +115,8 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *NodeResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *config.NewDefaultColocationCfg())
-	r.cfgCache = handler.GetCache()
+	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *config.NewDefaultColocationCfg(), r.Recorder)
+	r.cfgCache = handler
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Node{}).
 		Watches(&source.Kind{Type: &slov1alpha1.NodeMetric{}}, &EnqueueRequestForNodeMetric{syncContext: &r.SyncContext}).

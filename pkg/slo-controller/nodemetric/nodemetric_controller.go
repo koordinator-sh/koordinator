@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,6 +41,7 @@ type NodeMetricReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	cfgCache config.ColocationCfgCache
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics,verbs=get;list;watch;create;update;patch;delete
@@ -52,7 +54,7 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	_ = log.FromContext(ctx, "node-metric-reconciler", req.NamespacedName)
 
 	// if cache unavailable, requeue the req
-	if !r.cfgCache.IsAvailable() {
+	if !r.cfgCache.IsCfgAvailable() {
 		// all nodes would be enqueued once the config is available, so here we just drop the req
 		klog.Warningf("colocation config is not available, drop the req %v until a valid config is set",
 			req.NamespacedName)
@@ -161,8 +163,8 @@ func getDefaultSpec() *slov1alpha1.NodeMetricSpec {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *config.NewDefaultColocationCfg())
-	r.cfgCache = handler.GetCache()
+	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *config.NewDefaultColocationCfg(), r.Recorder)
+	r.cfgCache = handler
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&slov1alpha1.NodeMetric{}).
 		Watches(&source.Kind{Type: &corev1.Node{}}, &EnqueueRequestForNode{}).
