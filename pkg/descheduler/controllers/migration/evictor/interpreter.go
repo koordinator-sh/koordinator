@@ -18,16 +18,23 @@ package evictor
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/flowcontrol"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 const (
 	LabelEvictPolicy string = "koordinator.sh/evict-policy"
+)
+
+var (
+	ErrTooManyEvictions = errors.New("TooManyEvictions")
 )
 
 type FactoryFn func(client kubernetes.Interface) Interface
@@ -49,9 +56,16 @@ type Interpreter interface {
 type interpreterImpl struct {
 	evictions       map[string]Interface
 	defaultEviction Interface
+	rateLimiter     flowcontrol.RateLimiter
 }
 
-func NewInterpreter(defaultEvictionPolicy string, client kubernetes.Interface) (Interpreter, error) {
+func NewInterpreter(client kubernetes.Interface, defaultEvictionPolicy string, evictQPS string, evictBurst int) (Interpreter, error) {
+	var qps float32
+	if val, err := strconv.ParseFloat(evictQPS, 64); err == nil && val > 0 {
+		qps = float32(val)
+	}
+	rateLimiter := flowcontrol.NewTokenBucketRateLimiter(qps, evictBurst)
+
 	evictions := map[string]Interface{}
 	for k, v := range registry {
 		evictions[k] = v(client)
@@ -63,10 +77,16 @@ func NewInterpreter(defaultEvictionPolicy string, client kubernetes.Interface) (
 	return &interpreterImpl{
 		evictions:       evictions,
 		defaultEviction: defaultEviction,
+		rateLimiter:     rateLimiter,
 	}, nil
 }
 
 func (p *interpreterImpl) Evict(ctx context.Context, job *sev1alpha1.PodMigrationJob, pod *corev1.Pod) error {
+	if p.rateLimiter != nil {
+		if !p.rateLimiter.TryAccept() {
+			return ErrTooManyEvictions
+		}
+	}
 	action := getCustomEvictionPolicy(pod.Labels)
 	if action != "" {
 		evictor := p.evictions[action]

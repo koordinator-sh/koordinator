@@ -138,6 +138,10 @@ type MigrationControllerArgs struct {
 	// Default is 5 minute
 	DefaultJobTTL *metav1.Duration `json:"defaultJobTTL,omitempty"`
 
+	// EvictQPS controls the number of evict per second
+	EvictQPS string `json:"evictQPS,omitempty"`
+	// EvictBurst is the maximum number of tokens
+	EvictBurst int32 `json:"evictBurst,omitempty"`
 	// EvictionPolicy represents how to delete Pod, support "Delete" and "Eviction", default value is "Eviction"
 	EvictionPolicy string `json:"evictionPolicy,omitempty"`
 	// DefaultDeleteOptions defines options when deleting migrated pods and preempted pods through the method specified by EvictionPolicy
