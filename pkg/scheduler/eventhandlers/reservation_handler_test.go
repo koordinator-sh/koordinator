@@ -20,8 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
-
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,6 +31,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 )
 
 func TestAddReservationErrorHandler(t *testing.T) {
@@ -607,7 +606,7 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 	}
 }
 
-func Test_handleExpiredReservation(t *testing.T) {
+func Test_handleInactiveReservation(t *testing.T) {
 	now := time.Now()
 	type args struct {
 		internalHandler SchedulerInternalHandler
@@ -690,10 +689,37 @@ func Test_handleExpiredReservation(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "handle succeeded reservation",
+			args: args{
+				internalHandler: &fakeSchedulerInternalHandler{},
+				obj: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "r-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "pod-0",
+								},
+							},
+						},
+						Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+					},
+					Status: schedulingv1alpha1.ReservationStatus{
+						Phase:    schedulingv1alpha1.ReservationSucceeded,
+						NodeName: "test-node-0",
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handleExpiredReservation(nil, tt.args.internalHandler, tt.args.obj)
+			handleInactiveReservation(nil, tt.args.internalHandler, tt.args.obj)
 		})
 	}
 }
