@@ -17,6 +17,8 @@ limitations under the License.
 package options
 
 import (
+	appsv1alpha1 "github.com/openkruise/kruise/apis/apps/v1alpha1"
+	appsv1beta1 "github.com/openkruise/kruise/apis/apps/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -29,8 +31,12 @@ var scheme = runtime.NewScheme()
 func init() {
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = sev1alpha1.AddToScheme(clientgoscheme.Scheme)
+	_ = appsv1alpha1.AddToScheme(clientgoscheme.Scheme)
+	_ = appsv1beta1.AddToScheme(clientgoscheme.Scheme)
 
 	_ = sev1alpha1.AddToScheme(scheme)
+	_ = appsv1alpha1.AddToScheme(scheme)
+	_ = appsv1beta1.AddToScheme(scheme)
 
 	scheme.AddUnversionedTypes(metav1.SchemeGroupVersion, &metav1.UpdateOptions{}, &metav1.DeleteOptions{}, &metav1.CreateOptions{})
 	// +kubebuilder:scaffold:scheme

@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -573,13 +574,107 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
-			p := NewColocationHandlerForConfigMapEvent(fakeClient, *NewDefaultColocationCfg())
+			p := NewColocationHandlerForConfigMapEvent(fakeClient, *NewDefaultColocationCfg(), &record.FakeRecorder{})
 			p.cfgCache = colocationCfgCache{available: tt.fields.config.available, colocationCfg: tt.fields.config.colocationCfg}
 			got := p.syncColocationCfgIfChanged(tt.args.configMap)
 			assert.Equal(t, tt.wantChanged, got)
-			assert.Equal(t, tt.wantField.available, p.cfgCache.IsAvailable())
-			assert.Equal(t, tt.wantField.errorStatus, p.cfgCache.IsErrorStatus())
-			assert.Equal(t, tt.wantField.colocationCfg, *p.cfgCache.GetCfgCopy())
+			assert.Equal(t, tt.wantField.available, p.cfgCache.available)
+			assert.Equal(t, tt.wantField.errorStatus, p.cfgCache.errorStatus)
+			assert.Equal(t, tt.wantField.colocationCfg, p.cfgCache.colocationCfg)
+		})
+	}
+}
+
+func Test_IsCfgAvailable(t *testing.T) {
+	defaultConfig := DefaultColocationCfg()
+	type fields struct {
+		config    *colocationCfgCache
+		configMap *corev1.ConfigMap
+	}
+	tests := []struct {
+		name      string
+		fields    fields
+		want      bool
+		wantField *ColocationCfg
+	}{
+		{
+			name: "directly return available",
+			fields: fields{
+				config: &colocationCfgCache{
+					available: true,
+				},
+			},
+			want:      true,
+			wantField: &ColocationCfg{},
+		},
+		{
+			name: "set default when config is not found",
+			fields: fields{
+				config: &colocationCfgCache{
+					colocationCfg: ColocationCfg{
+						ColocationStrategy: ColocationStrategy{
+							MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
+						},
+					},
+					available: false,
+				},
+			},
+			want:      true,
+			wantField: &defaultConfig,
+		},
+		{
+			name: "use cluster config",
+			fields: fields{
+				config: &colocationCfgCache{
+					colocationCfg: ColocationCfg{
+						ColocationStrategy: ColocationStrategy{
+							MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
+						},
+					},
+					available: false,
+				},
+				configMap: &corev1.ConfigMap{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "ConfigMap",
+						APIVersion: "v1",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      SLOCtrlConfigMap,
+						Namespace: ConfigNameSpace,
+					},
+					Data: map[string]string{
+						ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
+							"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
+							"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1}",
+					},
+				},
+			},
+			want: true,
+			wantField: &ColocationCfg{
+				ColocationStrategy: ColocationStrategy{
+					Enable:                         pointer.BoolPtr(true),
+					MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
+					CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
+					MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+					DegradeTimeMinutes:             pointer.Int64Ptr(5),
+					UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
+					ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
+					MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
+			if tt.fields.configMap != nil {
+				fakeClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(tt.fields.configMap).Build()
+			}
+			p := NewColocationHandlerForConfigMapEvent(fakeClient, *NewDefaultColocationCfg(), &record.FakeRecorder{})
+			p.cfgCache = colocationCfgCache{available: tt.fields.config.available, colocationCfg: tt.fields.config.colocationCfg}
+			got := p.IsCfgAvailable()
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantField, &p.cfgCache.colocationCfg)
 		})
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"k8s.io/component-base/featuregate"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/gpu"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/groupidentity"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
@@ -32,6 +33,7 @@ import (
 const (
 	GroupIdentity   featuregate.Feature = "GroupIdentity"
 	CPUSetAllocator featuregate.Feature = "CPUSetAllocator"
+	GPUEnvInject    featuregate.Feature = "GPUEnvInject"
 )
 
 var (
@@ -41,11 +43,13 @@ var (
 	defaultRuntimeHooksFG = map[featuregate.Feature]featuregate.FeatureSpec{
 		GroupIdentity:   {Default: false, PreRelease: featuregate.Alpha},
 		CPUSetAllocator: {Default: false, PreRelease: featuregate.Alpha},
+		GPUEnvInject:    {Default: false, PreRelease: featuregate.Alpha},
 	}
 
 	runtimeHookPlugins = map[featuregate.Feature]HookPlugin{
 		GroupIdentity:   groupidentity.Object(),
 		CPUSetAllocator: cpuset.Object(),
+		GPUEnvInject:    gpu.Object(),
 	}
 )
 

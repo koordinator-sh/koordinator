@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -75,7 +76,7 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 	expectTestingCfg1.CPUBurstCfgMerged.ClusterStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64Ptr(60)
 
 	type fields struct {
-		oldCfg *SLOCfgCache
+		oldCfg *sLOCfgCache
 	}
 	type args struct {
 		configMap *corev1.ConfigMap
@@ -85,38 +86,38 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 		fields      fields
 		args        args
 		wantChanged bool
-		wantField   *SLOCfgCache
+		wantField   *sLOCfgCache
 	}{
 		{
 			name:        "configmap is nil, use default cfg",
-			fields:      fields{oldCfg: &SLOCfgCache{}},
+			fields:      fields{oldCfg: &sLOCfgCache{}},
 			args:        args{configMap: nil},
 			wantChanged: true,
-			wantField:   &SLOCfgCache{sloCfg: DefaultSLOCfg(), available: true},
+			wantField:   &sLOCfgCache{sloCfg: DefaultSLOCfg(), available: true},
 		},
 		{
 			name:        "configmap is nil, old is default, then not changed",
-			fields:      fields{oldCfg: &SLOCfgCache{sloCfg: DefaultSLOCfg(), available: true}},
+			fields:      fields{oldCfg: &sLOCfgCache{sloCfg: DefaultSLOCfg(), available: true}},
 			args:        args{configMap: nil},
 			wantChanged: false,
-			wantField:   &SLOCfgCache{sloCfg: DefaultSLOCfg(), available: true},
+			wantField:   &sLOCfgCache{sloCfg: DefaultSLOCfg(), available: true},
 		},
 		{
 			name: "no slo config in configmap, keep the old,and set available",
-			fields: fields{oldCfg: &SLOCfgCache{
+			fields: fields{oldCfg: &sLOCfgCache{
 				sloCfg:    DefaultSLOCfg(),
 				available: false,
 			}},
 			args:        args{configMap: &corev1.ConfigMap{}},
 			wantChanged: false,
-			wantField: &SLOCfgCache{
+			wantField: &sLOCfgCache{
 				sloCfg:    DefaultSLOCfg(),
 				available: true,
 			},
 		},
 		{
 			name: "unmarshal config failed, keep the old",
-			fields: fields{oldCfg: &SLOCfgCache{
+			fields: fields{oldCfg: &sLOCfgCache{
 				sloCfg:    *oldSLOCfg.DeepCopy(),
 				available: true,
 			}},
@@ -136,33 +137,33 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 				},
 			}},
 			wantChanged: false,
-			wantField: &SLOCfgCache{
+			wantField: &sLOCfgCache{
 				sloCfg:    DefaultSLOCfg(),
 				available: true,
 			},
 		},
 		{
 			name: "config with no change",
-			fields: fields{oldCfg: &SLOCfgCache{
+			fields: fields{oldCfg: &sLOCfgCache{
 				sloCfg:    *expectTestingCfg1,
 				available: true,
 			}},
 			args:        args{configMap: testingConfigMap1},
 			wantChanged: false,
-			wantField: &SLOCfgCache{
+			wantField: &sLOCfgCache{
 				sloCfg:    *expectTestingCfg1,
 				available: true,
 			},
 		},
 		{
 			name: "config changed",
-			fields: fields{oldCfg: &SLOCfgCache{
+			fields: fields{oldCfg: &sLOCfgCache{
 				sloCfg:    oldSLOCfg,
 				available: true,
 			}},
 			args:        args{configMap: testingConfigMap1},
 			wantChanged: true,
-			wantField: &SLOCfgCache{
+			wantField: &sLOCfgCache{
 				sloCfg:    *expectTestingCfg1,
 				available: true,
 			},
@@ -171,13 +172,13 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
-			p := NewSLOCfgHandlerForConfigMapEvent(fakeClient, tt.fields.oldCfg.sloCfg)
-			p.SLOCfgCache = SLOCfgCache{available: tt.fields.oldCfg.available, sloCfg: tt.fields.oldCfg.sloCfg}
-			p.SLOCfgCache.available = tt.fields.oldCfg.available
+			p := NewSLOCfgHandlerForConfigMapEvent(fakeClient, tt.fields.oldCfg.sloCfg, &record.FakeRecorder{})
+			p.cfgCache = sLOCfgCache{available: tt.fields.oldCfg.available, sloCfg: tt.fields.oldCfg.sloCfg}
+			p.cfgCache.available = tt.fields.oldCfg.available
 			got := p.syncNodeSLOSpecIfChanged(tt.args.configMap)
 			assert.Equal(t, tt.wantChanged, got)
-			assert.Equal(t, tt.wantField.available, p.SLOCfgCache.IsAvailable())
-			assert.Equal(t, tt.wantField.sloCfg, *p.SLOCfgCache.GetSLOCfgCopy())
+			assert.Equal(t, tt.wantField.available, p.cfgCache.available)
+			assert.Equal(t, tt.wantField.sloCfg, p.cfgCache.sloCfg)
 		})
 	}
 }

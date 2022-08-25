@@ -157,8 +157,9 @@ func main() {
 	}
 
 	if err = (&nodemetric.NodeMetricReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("nodemetric-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeMetric")
 		os.Exit(1)
@@ -168,13 +169,15 @@ func main() {
 		Scheme:      mgr.GetScheme(),
 		SyncContext: noderesource.NewSyncContext(),
 		Clock:       clock.RealClock{},
+		Recorder:    mgr.GetEventRecorderFor("noderesource-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeResource")
 		os.Exit(1)
 	}
 	if err = (&nodeslo.NodeSLOReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("nodeslo-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeSLO")
 		os.Exit(1)

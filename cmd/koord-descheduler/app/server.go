@@ -57,8 +57,8 @@ import (
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	deschedulercontrollers "github.com/koordinator-sh/koordinator/pkg/descheduler/controllers"
 	deschedulercontrollersoptions "github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/options"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
 	frameworkruntime "github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
-	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
 )
 
 // Option configures a framework.Registry.
@@ -323,7 +323,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 func podAssignedToNode(clt client.Client) descheduler.PodAssignedToNodeFn {
 	return func(nodeName string) ([]*corev1.Pod, error) {
 		podList := &corev1.PodList{}
-		err := clt.List(context.TODO(), podList, &client.ListOptions{FieldSelector: fields.OneTermEqualSelector("spec.nodeName", nodeName)})
+		err := clt.List(context.TODO(), podList, &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexNodeName, nodeName)})
 		if err != nil {
 			return nil, err
 		}

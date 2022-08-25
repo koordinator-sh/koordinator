@@ -18,6 +18,7 @@ package util
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/reservation"
@@ -70,4 +71,24 @@ func IsMigratePendingPod(reservationObj reservation.Object) bool {
 		}
 	}
 	return pending
+}
+
+func GetMaxUnavailable(replicas int, intOrPercent *intstr.IntOrString) (int, error) {
+	if intOrPercent == nil {
+		if replicas > 10 {
+			s := intstr.FromString("10%")
+			intOrPercent = &s
+		} else if replicas >= 4 && replicas <= 10 {
+			s := intstr.FromInt(2)
+			intOrPercent = &s
+		} else {
+			s := intstr.FromInt(1)
+			intOrPercent = &s
+		}
+	}
+	return intstr.GetScaledValueFromIntOrPercent(intOrPercent, replicas, true)
+}
+
+func GetMaxMigrating(replicas int, intOrPercent *intstr.IntOrString) (int, error) {
+	return GetMaxUnavailable(replicas, intOrPercent)
 }

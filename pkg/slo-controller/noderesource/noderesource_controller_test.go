@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -45,6 +46,7 @@ func Test_NodeResourceController_ConfigNotAvaliable(t *testing.T) {
 		},
 		SyncContext: SyncContext{},
 		Clock:       clock.RealClock{},
+		Recorder:    &record.FakeRecorder{},
 	}
 
 	nodeName := "test-node"
@@ -69,6 +71,7 @@ func Test_NodeResourceController_NodeNotFound(t *testing.T) {
 		},
 		SyncContext: SyncContext{},
 		Clock:       clock.RealClock{},
+		Recorder:    &record.FakeRecorder{},
 	}
 
 	nodeName := "test-node"
@@ -103,6 +106,7 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 		},
 		SyncContext: SyncContext{},
 		Clock:       clock.RealClock{},
+		Recorder:    &record.FakeRecorder{},
 	}
 
 	nodeName := "test-node"
@@ -143,6 +147,7 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 		},
 		SyncContext: NewSyncContext(),
 		Clock:       clock.RealClock{},
+		Recorder:    &record.FakeRecorder{},
 	}
 
 	nodeName := "test-node"
