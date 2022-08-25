@@ -1,2 +1,3 @@
 vendor
 pkg/descheduler
+pkg/descheduler/controllers/migration/controllerfinder

@@ -21,6 +21,7 @@ import (
 	"strconv"
 
 	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -47,6 +48,26 @@ func ValidateRemovePodsViolatingNodeAffinityArgs(path *field.Path, args *desched
 func ValidateMigrationControllerArgs(path *field.Path, args *deschedulerconfig.MigrationControllerArgs) error {
 	var allErrs field.ErrorList
 
+	if args.MaxMigratingPerNamespace != nil && *args.MaxMigratingPerNamespace < 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("maxMigratingPerNamespace"), *args.MaxMigratingPerNamespace, "maxMigratingPerNamespace should be greater or equal 0"))
+	}
+
+	if args.MaxMigratingPerNode != nil && *args.MaxMigratingPerNode < 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("maxMigratingPerNode"), *args.MaxMigratingPerNode, "maxMigratingPerNode should be greater or equal 0"))
+	}
+
+	if args.MaxMigratingPerWorkload != nil {
+		if _, err := intstr.GetScaledValueFromIntOrPercent(args.MaxMigratingPerWorkload, 100, true); err != nil {
+			allErrs = append(allErrs, field.Invalid(path.Child("maxMigratingPerWorkload"), *args.MaxMigratingPerWorkload, fmt.Sprintf("maxMigratingPerWorkload is invalid, err: %v ", err)))
+		}
+	}
+
+	if args.MaxUnavailablePerWorkload != nil {
+		if _, err := intstr.GetScaledValueFromIntOrPercent(args.MaxUnavailablePerWorkload, 100, true); err != nil {
+			allErrs = append(allErrs, field.Invalid(path.Child("maxUnavailablePerWorkload"), *args.MaxUnavailablePerWorkload, fmt.Sprintf("maxUnavailablePerWorkload is invalid, err: %v ", err)))
+		}
+	}
+
 	if args.EvictQPS != "" {
 		evictQPS, err := strconv.ParseFloat(args.EvictQPS, 64)
 		if err != nil {
@@ -58,6 +79,11 @@ func ValidateMigrationControllerArgs(path *field.Path, args *deschedulerconfig.M
 
 	if args.LabelSelector != nil {
 		allErrs = append(allErrs, metav1validation.ValidateLabelSelector(args.LabelSelector, field.NewPath("labelSelector"))...)
+	}
+
+	// At most one of include/exclude can be set
+	if args.Namespaces != nil && len(args.Namespaces.Include) > 0 && len(args.Namespaces.Exclude) > 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("namespaces"), args.Namespaces, "only one of Include/Exclude namespaces can be set"))
 	}
 
 	if args.MaxConcurrentReconciles < 1 {

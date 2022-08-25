@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	appsv1alpha1 "github.com/openkruise/kruise/apis/apps/v1alpha1"
+	appsv1beta1 "github.com/openkruise/kruise/apis/apps/v1beta1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,10 +42,12 @@ import (
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/v1alpha2"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/controllerfinder"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/util"
 	evictionsutil "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
+	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
 )
 
 type fakeEvictionInterpreter struct {
@@ -91,22 +95,24 @@ func newTestReconciler() *Reconciler {
 	scheme := runtime.NewScheme()
 	_ = sev1alpha1.AddToScheme(scheme)
 	_ = clientgoscheme.AddToScheme(scheme)
+	_ = appsv1alpha1.AddToScheme(scheme)
+	_ = appsv1beta1.AddToScheme(scheme)
 
 	var v1beta2args v1alpha2.MigrationControllerArgs
 	v1alpha2.SetDefaults_MigrationControllerArgs(&v1beta2args)
-	var migrationJobControllerArgs deschedulerconfig.MigrationControllerArgs
-	err := v1alpha2.Convert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerArgs(&v1beta2args, &migrationJobControllerArgs, nil)
+	var args deschedulerconfig.MigrationControllerArgs
+	err := v1alpha2.Convert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerArgs(&v1beta2args, &args, nil)
 	if err != nil {
 		panic(err)
 	}
 
-	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	runtimeclient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	eventBroadcaster := record.NewBroadcaster()
 	recorder := eventBroadcaster.NewRecorder(scheme, corev1.EventSource{Component: Name})
 
 	nodesGetter := func() ([]*corev1.Node, error) {
 		var nodeList corev1.NodeList
-		err := client.List(context.TODO(), &nodeList)
+		err := runtimeclient.List(context.TODO(), &nodeList)
 		if err != nil {
 			return nil, err
 		}
@@ -125,16 +131,27 @@ func newTestReconciler() *Reconciler {
 		false, false, false, false,
 	)
 
-	return &Reconciler{
-		Client:                 client,
-		args:                   &migrationJobControllerArgs,
+	podFilter, err := podutil.NewOptions().
+		WithFilter(evictorFilter.Filter).
+		BuildFilterFunc()
+	if err != nil {
+		panic(err)
+	}
+
+	controllerFinder := &controllerfinder.ControllerFinder{Client: runtimeclient}
+	r := &Reconciler{
+		Client:                 runtimeclient,
+		args:                   &args,
 		eventRecorder:          record.NewEventRecorderAdapter(recorder),
 		reservationInterpreter: nil,
 		evictorInterpreter:     nil,
-		evictorFilter:          evictorFilter,
+		controllerFinder:       controllerFinder,
+		unretriablePodFilter:   podFilter,
 		assumedCache:           newAssumedCache(),
 		clock:                  clock.RealClock{},
 	}
+
+	return r
 }
 
 func TestAbortJobIfTimeout(t *testing.T) {
@@ -1305,6 +1322,107 @@ func TestAbortJobIfReserveOnSameNode(t *testing.T) {
 	aborted, err := reconciler.abortJobIfReserveOnSameNode(context.TODO(), job, reservationObj)
 	assert.NoError(t, err)
 	assert.True(t, aborted)
+
+	assert.NoError(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
+	assert.Equal(t, sev1alpha1.PodMigrationJobFailed, job.Status.Phase)
+	assert.Equal(t, sev1alpha1.PodMigrationJobReasonForbiddenMigratePod, job.Status.Reason)
+}
+
+func TestRequeueJobIfRetriablePodFilterFailed(t *testing.T) {
+	reconciler := newTestReconciler()
+	enter := false
+	reconciler.retriablePodFilter = func(pod *corev1.Pod) bool {
+		enter = true
+		return false
+	}
+
+	job := &sev1alpha1.PodMigrationJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test",
+			CreationTimestamp: metav1.Time{Time: time.Now()},
+		},
+		Spec: sev1alpha1.PodMigrationJobSpec{
+			PodRef: &corev1.ObjectReference{
+				Namespace: "default",
+				Name:      "test-pod",
+			},
+		},
+	}
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Controller: pointer.Bool(true),
+					Kind:       "StatefulSet",
+					Name:       "test",
+					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
+
+	result, err := reconciler.doMigrate(context.TODO(), job)
+	assert.True(t, enter)
+	assert.NoError(t, err)
+	assert.True(t, result.RequeueAfter != 0)
+	assert.NoError(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
+	assert.Equal(t, sev1alpha1.PodMigrationJobPhase(""), job.Status.Phase)
+	assert.Equal(t, "", job.Status.Reason)
+}
+
+func TestAbortJobIfUnretriablePodFilterFailed(t *testing.T) {
+	reconciler := newTestReconciler()
+	enter := false
+	reconciler.unretriablePodFilter = func(pod *corev1.Pod) bool {
+		enter = true
+		return false
+	}
+
+	job := &sev1alpha1.PodMigrationJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test",
+			CreationTimestamp: metav1.Time{Time: time.Now()},
+		},
+		Spec: sev1alpha1.PodMigrationJobSpec{
+			PodRef: &corev1.ObjectReference{
+				Namespace: "default",
+				Name:      "test-pod",
+			},
+		},
+	}
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Controller: pointer.Bool(true),
+					Kind:       "StatefulSet",
+					Name:       "test",
+					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
+
+	result, err := reconciler.doMigrate(context.TODO(), job)
+	assert.True(t, enter)
+	assert.NoError(t, err)
+	assert.Equal(t, reconcile.Result{}, result)
 
 	assert.NoError(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
 	assert.Equal(t, sev1alpha1.PodMigrationJobFailed, job.Status.Phase)
