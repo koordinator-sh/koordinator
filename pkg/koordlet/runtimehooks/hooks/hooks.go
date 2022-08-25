@@ -98,10 +98,10 @@ func init() {
 func GetStages(disable map[string]struct{}) []rmconfig.RuntimeHookType {
 	var stages []rmconfig.RuntimeHookType
 	for stage, hooks := range globalStageHooks {
+		if _, ok := disable[string(stage)]; ok {
+			continue
+		}
 		if len(hooks) > 0 {
-			if _, ok := disable[string(stage)]; ok {
-				continue
-			}
 			stages = append(stages, stage)
 		}
 	}
