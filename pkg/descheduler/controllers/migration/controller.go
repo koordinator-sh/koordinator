@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
-	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -109,10 +109,10 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	return r, nil
 }
 
-func newReconciler(controllerArgs *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) (*Reconciler, error) {
+func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) (*Reconciler, error) {
 	manager := options.Manager
 	reservationInterpreter := reservation.NewInterpreter(manager)
-	evictorInterpreter, err := evictor.NewInterpreter(controllerArgs.EvictionPolicy, handle.ClientSet())
+	evictorInterpreter, err := evictor.NewInterpreter(handle.ClientSet(), args.EvictionPolicy, args.EvictQPS, int(args.EvictBurst))
 	if err != nil {
 		return nil, err
 	}
@@ -123,8 +123,8 @@ func newReconciler(controllerArgs *deschedulerconfig.MigrationControllerArgs, ha
 	}
 
 	var selector labels.Selector
-	if controllerArgs.LabelSelector != nil {
-		selector, err = metav1.LabelSelectorAsSelector(controllerArgs.LabelSelector)
+	if args.LabelSelector != nil {
+		selector, err = metav1.LabelSelectorAsSelector(args.LabelSelector)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get label selectors: %v", err)
 		}
@@ -133,16 +133,16 @@ func newReconciler(controllerArgs *deschedulerconfig.MigrationControllerArgs, ha
 	evictorFilter := evictionsutil.NewEvictorFilter(
 		nodesGetter,
 		handle.GetPodsAssignedToNodeFunc(),
-		controllerArgs.EvictLocalStoragePods,
-		controllerArgs.EvictSystemCriticalPods,
-		controllerArgs.IgnorePvcPods,
-		controllerArgs.EvictFailedBarePods,
+		args.EvictLocalStoragePods,
+		args.EvictSystemCriticalPods,
+		args.IgnorePvcPods,
+		args.EvictFailedBarePods,
 		evictionsutil.WithLabelSelector(selector),
 	)
 
 	r := &Reconciler{
 		Client:                 manager.GetClient(),
-		args:                   controllerArgs,
+		args:                   args,
 		eventRecorder:          handle.EventRecorder(),
 		reservationInterpreter: reservationInterpreter,
 		evictorInterpreter:     evictorInterpreter,
@@ -353,6 +353,10 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 		return reconcile.Result{}, err
 	}
 
+	if aborted, err := r.abortJobIfReserveOnSameNode(ctx, job, reservationObj); aborted || err != nil {
+		return reconcile.Result{}, err
+	}
+
 	if util.IsMigratePendingPod(reservationObj) {
 		return r.waitForPendingPodScheduled(ctx, job)
 	}
@@ -454,9 +458,13 @@ func (r *Reconciler) abortJobByReservationExpired(ctx context.Context, job *sev1
 func (r *Reconciler) abortJobByReservationBound(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
 	klog.V(4).Infof("MigrationJob %s stop migration because Reservation is already bound by another Pod", job.Name)
 	job.Status.Phase = sev1alpha1.PodMigrationJobFailed
-	job.Status.Reason = sev1alpha1.PodMigrationJobReasonReservationBoundByAnotherPod
+	job.Status.Reason = sev1alpha1.PodMigrationJobReasonForbiddenMigratePod
 	job.Status.Message = "Reservation is already bound by another Pod"
-	return r.Client.Status().Update(ctx, job)
+	err := r.Client.Status().Update(ctx, job)
+	if err == nil {
+		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonForbiddenMigratePod, "Migrating", job.Status.Message)
+	}
+	return err
 }
 
 func (r *Reconciler) abortJobIfReservationBoundByAnotherPod(ctx context.Context, job *sev1alpha1.PodMigrationJob, pod *corev1.Pod) (bool, error) {
@@ -483,6 +491,26 @@ func (r *Reconciler) abortJobIfReservationBoundByAnotherPod(ctx context.Context,
 				return true, err
 			}
 
+		}
+	}
+	return false, nil
+}
+
+func (r *Reconciler) abortJobIfReserveOnSameNode(ctx context.Context, job *sev1alpha1.PodMigrationJob, reservationObj reservation.Object) (bool, error) {
+	pod := &corev1.Pod{}
+	podNamespacedName := types.NamespacedName{Namespace: job.Spec.PodRef.Namespace, Name: job.Spec.PodRef.Name}
+	err := r.Client.Get(ctx, podNamespacedName, pod)
+	if err == nil {
+		scheduledNodeName := reservationObj.GetScheduledNodeName()
+		if scheduledNodeName != "" && scheduledNodeName == pod.Spec.NodeName {
+			job.Status.Phase = sev1alpha1.PodMigrationJobFailed
+			job.Status.Reason = sev1alpha1.PodMigrationJobReasonForbiddenMigratePod
+			job.Status.Message = fmt.Sprintf("Scheduler assignes the Reservation %q on the same node as the Pod", reservationObj)
+			err = r.Client.Status().Update(ctx, job)
+			if err == nil {
+				r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonForbiddenMigratePod, "Migrating", job.Status.Message)
+			}
+			return true, err
 		}
 	}
 	return false, nil
@@ -607,7 +635,7 @@ func (r *Reconciler) evictPod(ctx context.Context, job *sev1alpha1.PodMigrationJ
 	}
 	err = r.evictorInterpreter.Evict(ctx, job, pod)
 	if err != nil {
-		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonFailedEvict, "Migrating", "Failed evict Pod %q caused by %v", podNamespacedName, err)
+		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonEvicting, "Migrating", "Failed evict Pod %q caused by %v", podNamespacedName, err)
 		return false, reconcile.Result{}, err
 	}
 
@@ -717,7 +745,7 @@ func (r *Reconciler) waitForPendingPodScheduled(ctx context.Context, job *sev1al
 		return reconcile.Result{}, err
 	}
 
-	_, podCondition := podutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+	_, podCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
 	if podCondition == nil || podCondition.Status == corev1.ConditionFalse {
 		if aborted, err := r.abortJobIfReservationBoundByAnotherPod(ctx, job, pod); aborted {
 			return reconcile.Result{}, err

@@ -786,7 +786,7 @@ func TestScore(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: testNodeName,
 		},
 	}
@@ -810,7 +810,7 @@ func TestScore(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: "other-node",
 		},
 	}
@@ -928,7 +928,7 @@ func TestReserve(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: testNodeName,
 		},
 	}
@@ -952,7 +952,7 @@ func TestReserve(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: "other-node",
 		},
 	}
@@ -1117,7 +1117,7 @@ func TestUnreserve(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: testNodeName,
 		},
 	}
@@ -1324,7 +1324,7 @@ func TestPreBind(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: testNodeName,
 		},
 	}
@@ -1683,7 +1683,7 @@ func Test_handleOnAdd(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: "test-node-0",
 		},
 	}
@@ -1739,7 +1739,7 @@ func Test_handleOnUpdate(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: "test-node-0",
 		},
 	}
@@ -1804,7 +1804,7 @@ func Test_handleOnDelete(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: "test-node-0",
 		},
 	}
