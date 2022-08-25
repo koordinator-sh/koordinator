@@ -1,7 +1,7 @@
 name: Organization Membership Request
 description: Request membership in a Koordinator Org
 labels: ["kind/github-membership"]
-title: "REQUEST: New membership for <your-GH-handle>"
+title: "REQUEST: New membership for <your-Github-id>"
 body:
   - id: github
     type: input
