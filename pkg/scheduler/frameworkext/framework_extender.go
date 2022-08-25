@@ -37,13 +37,11 @@ type ExtendedHandle interface {
 	framework.Handle
 	KoordinatorClientSet() koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory
-	NodeResourceTopologySharedInformerFactory() nrtinformers.SharedInformerFactory
 }
 
 type extendedHandleOptions struct {
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	nrtSharedInformerFactory         nrtinformers.SharedInformerFactory
 }
 
 type Option func(*extendedHandleOptions)
@@ -57,12 +55,6 @@ func WithKoordinatorClientSet(koordinatorClientSet koordinatorclientset.Interfac
 func WithKoordinatorSharedInformerFactory(informerFactory koordinatorinformers.SharedInformerFactory) Option {
 	return func(options *extendedHandleOptions) {
 		options.koordinatorSharedInformerFactory = informerFactory
-	}
-}
-
-func WithNodeResourceTopologySharedInformerFactory(informerFactory nrtinformers.SharedInformerFactory) Option {
-	return func(options *extendedHandleOptions) {
-		options.nrtSharedInformerFactory = informerFactory
 	}
 }
 
@@ -83,7 +75,6 @@ func NewExtendedHandle(options ...Option) ExtendedHandle {
 	return &frameworkExtendedHandleImpl{
 		koordinatorClientSet:             handleOptions.koordinatorClientSet,
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
-		nrtSharedInformerFactory:         handleOptions.nrtSharedInformerFactory,
 	}
 }
 
@@ -93,10 +84,6 @@ func (ext *frameworkExtendedHandleImpl) KoordinatorClientSet() koordinatorclient
 
 func (ext *frameworkExtendedHandleImpl) KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory {
 	return ext.koordinatorSharedInformerFactory
-}
-
-func (ext *frameworkExtendedHandleImpl) NodeResourceTopologySharedInformerFactory() nrtinformers.SharedInformerFactory {
-	return ext.nrtSharedInformerFactory
 }
 
 type FrameworkExtender interface {
