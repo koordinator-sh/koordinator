@@ -4,6 +4,7 @@ authors:
 - "@buptcozy"
 co-authors:
 - "@eahydra"
+- "@jasonliu747"
 reviewers:
 - "@eahydra"
 - "@hormes"
@@ -12,7 +13,7 @@ reviewers:
 - "@zwzhang0107"
 - "@jasonliu747"
 creation-date: 2022-06-29
-last-updated: 2022-07-18
+last-updated: 2022-08-18
 status: provisional
 
 ---
@@ -22,30 +23,30 @@ status: provisional
 <!-- TOC -->
 
 - [Fine-grained Device Scheduling](#fine-grained-device-scheduling)
-    - [Summary](#summary)
-    - [Motivation](#motivation)
-        - [Goals](#goals)
-        - [Non-goals/Future work](#non-goalsfuture-work)
-    - [Proposal](#proposal)
-        - [API](#api)
-            - [Device resource dimensions](#device-resource-dimensions)
-            - [User apply device resources scenarios](#user-apply-device-resources-scenarios)
-                - [Compatible with nvidia.com/gpu](#compatible-with-nvidiacomgpu)
-                - [Apply whole resources of GPU or part resources of GPU](#apply-whole-resources-of-gpu-or-part-resources-of-gpu)
-                - [Apply koordinator.sh/gpu-core and koordinator.sh/gpu-memory-ratio separately](#apply-koordinatorshgpu-core-and-koordinatorshgpu-memory-ratio-separately)
-                - [Apply koordinator.sh/gpu-core and koordinator.sh/gpu-memory separately](#apply-koordinatorshgpu-core-and-koordinatorshgpu-memory-separately)
-                - [Apply RDMA](#apply-rdma)
-        - [Implementation Details](#implementation-details)
-            - [Scheduling](#scheduling)
-                - [DeviceAllocation](#deviceallocation)
-                - [NodeDevicePlugin](#nodedeviceplugin)
-            - [Device Reporter](#device-reporter)
-            - [koordlet and koord-runtime-proxy](#koordlet-and-koord-runtime-proxy)
-        - [Compatibility](#compatibility)
-    - [Unsolved Problems](#unsolved-problems)
-    - [Alternatives](#alternatives)
-    - [Implementation History](#implementation-history)
-    - [References](#references)
+  - [Summary](#summary)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-goals/Future work](#non-goalsfuture-work)
+  - [Proposal](#proposal)
+    - [API](#api)
+      - [Device resource dimensions](#device-resource-dimensions)
+      - [User apply device resources scenarios](#user-apply-device-resources-scenarios)
+        - [Compatible with `nvidia.com/gpu`](#compatible-with-nvidiacomgpu)
+        - [Apply whole resources of GPU or part resources of GPU](#apply-whole-resources-of-gpu-or-part-resources-of-gpu)
+        - [Apply `koordinator.sh/gpu-core` and `koordinator.sh/gpu-memory-ratio` separately](#apply-koordinatorshgpu-core-and-koordinatorshgpu-memory-ratio-separately)
+        - [Apply `koordinator.sh/gpu-core` and `koordinator.sh/gpu-memory` separately](#apply-koordinatorshgpu-core-and-koordinatorshgpu-memory-separately)
+        - [Apply RDMA](#apply-rdma)
+    - [Implementation Details](#implementation-details)
+      - [Scheduling](#scheduling)
+        - [DeviceAllocation](#deviceallocation)
+        - [NodeDevicePlugin](#nodedeviceplugin)
+      - [Device Reporter](#device-reporter)
+      - [koordlet and koord-runtime-proxy](#koordlet-and-koord-runtime-proxy)
+    - [Compatibility](#compatibility)
+  - [Unsolved Problems](#unsolved-problems)
+  - [Alternatives](#alternatives)
+  - [Implementation History](#implementation-history)
+  - [References](#references)
 
 <!-- /TOC -->
 
@@ -126,7 +127,7 @@ If the user knows exactly or can roughly estimate the specific memory consumptio
 Besides, when dimension's value > 100, means Pod need multi-devices. now only allow the value can be divided by 100.
 
 #### User apply device resources scenarios
-   
+
 ##### Compatible with `nvidia.com/gpu`
 
 ```yaml
@@ -250,6 +251,7 @@ type DeviceAllocations map[DeviceType][]*DeviceAllocation
 
 ```go
 var (
+	_ framework.PreFilterPlugin = &NodeDevicePlugin{}
 	_ framework.FilterPlugin    = &NodeDevicePlugin{}
 	_ framework.ReservePlugin   = &NodeDevicePlugin{}
 	_ framework.PreBindPlugin   = &NodeDevicePlugin{}
@@ -257,30 +259,26 @@ var (
 
 type NodeDevicePlugin struct {
     frameworkHandler     framework.Handle
-    deviceClient         deviceClient.Interface
-    deviceLister         devicelister.DeviceLister
-    nodeLister           listerv1.NodeLister
     nodeDeviceCache      *NodeDeviceCache
 }
 
 type NodeDeviceCache struct {
+    lock        sync.Mutex
     nodeDevices map[string]*nodeDevice
 }
 
 type nodeDevice struct {
-    DeviceTotal map[DeviceType]*deviceResource
-    DeviceFree  map[DeviceType]*deviceResource
-    DeviceUsed  map[DeviceType]*deviceResource
-    AllocateSet map[string]*PodInfo
+    lock        sync.Mutex
+    DeviceTotal map[DeviceType]deviceResource
+    DeviceFree  map[DeviceType]deviceResource
+    DeviceUsed  map[DeviceType]deviceResource
+    AllocateSet map[DeviceType]*corev1.PodList
 }
 
 // We use `deviceResource` to present resources per device.
 // "0": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
 // "1": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
-type deviceResource struct {
-    // key is the minor of device
-    DeviceKeyValueMap map[int32]map[string]resource.Quantity
-}
+type deviceResources map[int]corev1.ResourceList
 
 ```
 
@@ -360,8 +358,10 @@ type DeviceList struct {
 #### koordlet and koord-runtime-proxy
 
 Our target is to work compatible with origin k8s kubelet and k8s device plugins, so:
-1. We still allow kubelet and device plugin to allocate concrete device, which means no matter there's a k8s device 
+
+1. We still allow kubelet and device plugin to allocate concrete device, which means no matter there's a k8s device
 plugin or not, our design can work well.
+
 2. In koord-runtime-proxy, we will use Pod's `DeviceAllocation` in annotation to replace the step1's result of container's 
 args and envs.
 
@@ -415,5 +415,6 @@ in container to pass kubelet resource limitation check. This will be a flag in s
 - 2022-06-29: Initial proposal
 - 2022-07-08: Refactor proposal for review
 - 2022-07-18: Fix Device CRD definition
+- 2022-08-18: Add PreFilter step and update cache structure
 
 ## References
