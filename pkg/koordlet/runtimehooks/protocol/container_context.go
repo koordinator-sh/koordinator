@@ -44,6 +44,7 @@ type ContainerRequest struct {
 	PodLabels      map[string]string
 	PodAnnotations map[string]string
 	CgroupParent   string
+	ContainerEnvs  map[string]string
 }
 
 func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookRequest) {
@@ -52,6 +53,7 @@ func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookReques
 	c.PodLabels = req.GetPodLabels()
 	c.PodAnnotations = req.GetPodAnnotations()
 	c.CgroupParent, _ = util.GetContainerCgroupPathWithKubeByID(req.GetPodCgroupParent(), c.ContainerMeta.ID)
+	c.ContainerEnvs = req.GetContainerEnvs()
 }
 
 func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, containerName string) {
@@ -69,7 +71,8 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 }
 
 type ContainerResponse struct {
-	Resources Resources
+	Resources     Resources
+	ContainerEnvs map[string]string
 }
 
 func (c *ContainerResponse) ProxyDone(resp *runtimeapi.ContainerResourceHookResponse) {
@@ -81,6 +84,9 @@ func (c *ContainerResponse) ProxyDone(resp *runtimeapi.ContainerResourceHookResp
 	}
 	if c.Resources.CPUShares != nil {
 		resp.ContainerResources.CpuShares = *c.Resources.CPUShares
+	}
+	if c.ContainerEnvs != nil {
+		resp.ContainerEnvs = c.ContainerEnvs
 	}
 }
 

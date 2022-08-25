@@ -160,9 +160,9 @@ type DeviceAllocation struct {
 	Resources corev1.ResourceList
 }
 
-func GetDeviceAllocations(pod *corev1.Pod) (DeviceAllocations, error) {
+func GetDeviceAllocations(podAnnotations map[string]string) (DeviceAllocations, error) {
 	deviceAllocations := DeviceAllocations{}
-	data, ok := pod.Annotations[AnnotationDeviceAllocated]
+	data, ok := podAnnotations[AnnotationDeviceAllocated]
 	if !ok {
 		return nil, nil
 	}
@@ -178,7 +178,7 @@ func SetDeviceAllocations(pod *corev1.Pod, dType schedulingv1alpha1.DeviceType, 
 		pod.Annotations = map[string]string{}
 	}
 
-	allocations, err := GetDeviceAllocations(pod)
+	allocations, err := GetDeviceAllocations(pod.Annotations)
 	if err != nil {
 		return err
 	}
