@@ -30,13 +30,14 @@ var Conf = NewDsModeConfig()
 var AgentMode = DS_MODE
 
 type Config struct {
-	CgroupRootDir    string
-	CgroupKubePath   string
-	SysRootDir       string
-	SysFSRootDir     string
-	ProcRootDir      string
-	VarRunRootDir    string
-	NodeNameOverride string
+	CgroupRootDir         string
+	CgroupKubePath        string
+	SysRootDir            string
+	SysFSRootDir          string
+	ProcRootDir           string
+	VarRunRootDir         string
+	NodeNameOverride      string
+	RuntimeHooksConfigDir string
 
 	ContainerdEndPoint string
 	DockerEndPoint     string
@@ -44,12 +45,13 @@ type Config struct {
 
 func NewHostModeConfig() *Config {
 	return &Config{
-		CgroupKubePath: "kubepods/",
-		CgroupRootDir:  "/sys/fs/cgroup/",
-		ProcRootDir:    "/proc/",
-		SysRootDir:     "/sys/",
-		SysFSRootDir:   "/sys/fs/",
-		VarRunRootDir:  "/var/run/",
+		CgroupKubePath:        "kubepods/",
+		CgroupRootDir:         "/sys/fs/cgroup/",
+		ProcRootDir:           "/proc/",
+		SysRootDir:            "/sys/",
+		SysFSRootDir:          "/sys/fs/",
+		VarRunRootDir:         "/var/run/",
+		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
 	}
 }
 
@@ -58,10 +60,11 @@ func NewDsModeConfig() *Config {
 		CgroupKubePath: "kubepods/",
 		CgroupRootDir:  "/host-cgroup/",
 		// some dirs are not covered by ns, or unused with `hostPID` is on
-		ProcRootDir:   "/proc/",
-		SysRootDir:    "/host-sys/",
-		SysFSRootDir:  "/host-sys-fs/",
-		VarRunRootDir: "/host-var-run/",
+		ProcRootDir:           "/proc/",
+		SysRootDir:            "/host-sys/",
+		SysFSRootDir:          "/host-sys-fs/",
+		VarRunRootDir:         "/host-var-run/",
+		RuntimeHooksConfigDir: "/host-etc-hookserver/",
 	}
 }
 

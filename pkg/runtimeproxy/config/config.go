@@ -16,7 +16,10 @@ limitations under the License.
 
 package config
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type FailurePolicyType string
 
@@ -26,6 +29,17 @@ const (
 	// PolicyIgnore transfer cri request to containerd/dockerd when got an error to cri serer
 	PolicyIgnore FailurePolicyType = "Ignore"
 )
+
+func GetFailurePolicyType(typeString string) (FailurePolicyType, error) {
+	switch typeString {
+	case "Fail":
+		return PolicyFail, nil
+	case "Ignore":
+		return PolicyIgnore, nil
+	default:
+		return "", fmt.Errorf("failure policy type not supported")
+	}
+}
 
 type RuntimeHookType string
 

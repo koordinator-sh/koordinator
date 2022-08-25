@@ -41,8 +41,10 @@ func Test_runtimeHook_Run(t *testing.T) {
 			name: "run as tcp server",
 			fields: fields{
 				config: &Config{
-					RuntimeHooksNetwork: "tcp",
-					RuntimeHooksAddr:    ":0",
+					RuntimeHooksNetwork:       "tcp",
+					RuntimeHooksAddr:          ":0",
+					RuntimeHooksFailurePolicy: "Fail",
+					RuntimeHookConfigFilePath: ".",
 				},
 			},
 			wantErr: false,
@@ -52,8 +54,10 @@ func Test_runtimeHook_Run(t *testing.T) {
 			name: "run as unix socket",
 			fields: fields{
 				config: &Config{
-					RuntimeHooksNetwork: "unix",
-					RuntimeHooksAddr:    path.Join(tmpDir, "kooordlet.sock"),
+					RuntimeHooksNetwork:       "unix",
+					RuntimeHooksAddr:          path.Join(tmpDir, "kooordlet.sock"),
+					RuntimeHooksFailurePolicy: "Fail",
+					RuntimeHookConfigFilePath: ".",
 				},
 			},
 			wantErr: false,
