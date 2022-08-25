@@ -21,7 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	slov1aplhpa1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 	AnnotationPodMemoryQoS = DomainPrefix + "memoryQOS"
 )
 
-func GetPodCPUBurstConfig(pod *corev1.Pod) (*slov1aplhpa1.CPUBurstConfig, error) {
+func GetPodCPUBurstConfig(pod *corev1.Pod) (*slov1alpha1.CPUBurstConfig, error) {
 	if pod == nil || pod.Annotations == nil {
 		return nil, nil
 	}
@@ -38,7 +38,7 @@ func GetPodCPUBurstConfig(pod *corev1.Pod) (*slov1aplhpa1.CPUBurstConfig, error)
 	if !exist {
 		return nil, nil
 	}
-	cpuBurst := slov1aplhpa1.CPUBurstConfig{}
+	cpuBurst := slov1alpha1.CPUBurstConfig{}
 
 	err := json.Unmarshal([]byte(annotation), &cpuBurst)
 	if err != nil {
@@ -47,7 +47,7 @@ func GetPodCPUBurstConfig(pod *corev1.Pod) (*slov1aplhpa1.CPUBurstConfig, error)
 	return &cpuBurst, nil
 }
 
-func GetPodMemoryQoSConfig(pod *corev1.Pod) (*slov1aplhpa1.PodMemoryQOSConfig, error) {
+func GetPodMemoryQoSConfig(pod *corev1.Pod) (*slov1alpha1.PodMemoryQOSConfig, error) {
 	if pod == nil || pod.Annotations == nil {
 		return nil, nil
 	}
@@ -55,7 +55,7 @@ func GetPodMemoryQoSConfig(pod *corev1.Pod) (*slov1aplhpa1.PodMemoryQOSConfig, e
 	if !exist {
 		return nil, nil
 	}
-	cfg := slov1aplhpa1.PodMemoryQOSConfig{}
+	cfg := slov1alpha1.PodMemoryQOSConfig{}
 	err := json.Unmarshal([]byte(value), &cfg)
 	if err != nil {
 		return nil, err
