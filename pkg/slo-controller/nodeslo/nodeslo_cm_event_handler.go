@@ -24,6 +24,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,6 +37,11 @@ import (
 )
 
 var _ handler.EventHandler = &SLOCfgHandlerForConfigMapEvent{}
+
+type SLOCfgCache interface {
+	GetCfgCopy() *SLOCfg
+	IsCfgAvailable() bool
+}
 
 type SLOCfg struct {
 	ThresholdCfgMerged   config.ResourceThresholdCfg `json:"thresholdCfgMerged,omitempty"`
@@ -51,23 +57,11 @@ func (in *SLOCfg) DeepCopy() *SLOCfg {
 	return out
 }
 
-type SLOCfgCache struct {
+type sLOCfgCache struct {
 	lock sync.RWMutex
 	// Config could be concurrently used by the Reconciliation and EventHandler
 	sloCfg    SLOCfg
 	available bool
-}
-
-func (c *SLOCfgCache) GetSLOCfgCopy() *SLOCfg {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
-	return c.sloCfg.DeepCopy()
-}
-
-func (c *SLOCfgCache) IsAvailable() bool {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
-	return c.available
 }
 
 func DefaultSLOCfg() SLOCfg {
@@ -81,12 +75,13 @@ func DefaultSLOCfg() SLOCfg {
 type SLOCfgHandlerForConfigMapEvent struct {
 	config.EnqueueRequestForConfigMap
 
-	Client      client.Client
-	SLOCfgCache SLOCfgCache
+	Client   client.Client
+	cfgCache sLOCfgCache
+	recorder record.EventRecorder
 }
 
-func NewSLOCfgHandlerForConfigMapEvent(client client.Client, initCfg SLOCfg) *SLOCfgHandlerForConfigMapEvent {
-	sloHandler := &SLOCfgHandlerForConfigMapEvent{SLOCfgCache: SLOCfgCache{sloCfg: initCfg}, Client: client}
+func NewSLOCfgHandlerForConfigMapEvent(client client.Client, initCfg SLOCfg, recorder record.EventRecorder) *SLOCfgHandlerForConfigMapEvent {
+	sloHandler := &SLOCfgHandlerForConfigMapEvent{cfgCache: sLOCfgCache{sloCfg: initCfg}, Client: client, recorder: recorder}
 	sloHandler.SyncCacheIfChanged = sloHandler.syncNodeSLOSpecIfChanged
 	sloHandler.EnqueueRequest = sloHandler.triggerAllNodeEnqueue
 	return sloHandler
@@ -107,33 +102,75 @@ func (p *SLOCfgHandlerForConfigMapEvent) triggerAllNodeEnqueue(q *workqueue.Rate
 }
 
 func (p *SLOCfgHandlerForConfigMapEvent) syncNodeSLOSpecIfChanged(configMap *corev1.ConfigMap) bool {
-	p.SLOCfgCache.lock.Lock()
-	defer p.SLOCfgCache.lock.Unlock()
+	p.cfgCache.lock.Lock()
+	defer p.cfgCache.lock.Unlock()
+	return p.syncConfig(configMap)
+}
 
+func (p *SLOCfgHandlerForConfigMapEvent) syncConfig(configMap *corev1.ConfigMap) bool {
 	if configMap == nil {
 		klog.Warningf("config map is deleted!,use default config")
 		return p.updateCacheIfChanged(DefaultSLOCfg())
 	}
 
 	var newSLOCfg SLOCfg
-	oldSLOCfgCopy := p.SLOCfgCache.sloCfg.DeepCopy()
-	newSLOCfg.ThresholdCfgMerged, _ = caculateResourceThresholdCfgMerged(oldSLOCfgCopy.ThresholdCfgMerged, configMap)
-	newSLOCfg.ResourceQOSCfgMerged, _ = caculateResourceQOSCfgMerged(oldSLOCfgCopy.ResourceQOSCfgMerged, configMap)
-	newSLOCfg.CPUBurstCfgMerged, _ = caculateCPUBurstCfgMerged(oldSLOCfgCopy.CPUBurstCfgMerged, configMap)
+	oldSLOCfgCopy := p.cfgCache.sloCfg.DeepCopy()
+	var err error
+	newSLOCfg.ThresholdCfgMerged, err = calculateResourceThresholdCfgMerged(oldSLOCfgCopy.ThresholdCfgMerged, configMap)
+	if err != nil {
+		klog.V(5).Infof("failed to get ThresholdCfg, err: %s", err)
+		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal ThresholdCfg, err: %s", err)
+	}
+	newSLOCfg.ResourceQOSCfgMerged, err = calculateResourceQOSCfgMerged(oldSLOCfgCopy.ResourceQOSCfgMerged, configMap)
+	if err != nil {
+		klog.V(5).Infof("failed to get ResourceQOSCfg, err: %s", err)
+		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal ResourceQOSCfg, err: %s", err)
+	}
+	newSLOCfg.CPUBurstCfgMerged, err = calculateCPUBurstCfgMerged(oldSLOCfgCopy.CPUBurstCfgMerged, configMap)
+	if err != nil {
+		klog.V(5).Infof("failed to get CPUBurstCfg, err: %s", err)
+		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal CPUBurstCfg, err: %s", err)
+	}
 
 	return p.updateCacheIfChanged(newSLOCfg)
 }
 
 func (p *SLOCfgHandlerForConfigMapEvent) updateCacheIfChanged(newSLOCfg SLOCfg) bool {
-	changed := !reflect.DeepEqual(p.SLOCfgCache.sloCfg, newSLOCfg)
+	changed := !reflect.DeepEqual(p.cfgCache.sloCfg, newSLOCfg)
 
 	if changed {
-		oldInfoFmt, _ := json.MarshalIndent(p.SLOCfgCache.sloCfg, "", "\t")
+		oldInfoFmt, _ := json.MarshalIndent(p.cfgCache.sloCfg, "", "\t")
 		newInfoFmt, _ := json.MarshalIndent(newSLOCfg, "", "\t")
 		klog.Infof("NodeSLO config Changed success! oldCfg:%s\n,newCfg:%s", string(oldInfoFmt), string(newInfoFmt))
-		p.SLOCfgCache.sloCfg = newSLOCfg
+		p.cfgCache.sloCfg = newSLOCfg
 	}
 	// set the available flag and never change it
-	p.SLOCfgCache.available = true
+	p.cfgCache.available = true
 	return changed
+}
+
+func (p *SLOCfgHandlerForConfigMapEvent) GetCfgCopy() *SLOCfg {
+	p.cfgCache.lock.RLock()
+	defer p.cfgCache.lock.RUnlock()
+	return p.cfgCache.sloCfg.DeepCopy()
+}
+
+func (p *SLOCfgHandlerForConfigMapEvent) IsCfgAvailable() bool {
+	p.cfgCache.lock.RLock()
+	defer p.cfgCache.lock.RUnlock()
+	// if config is available, just return
+	if p.cfgCache.available {
+		return true
+	}
+	// if config is not available, try to get the configmap from informer cache;
+	// set available if configmap is found or get not found error
+	configMap, err := config.GetConfigMapForCache(p.Client)
+	if err != nil {
+		klog.Errorf("failed to get configmap %s/%s, slo cache is unavailable, err: %s",
+			config.ConfigNameSpace, config.SLOCtrlConfigMap, err)
+		return false
+	}
+	p.syncConfig(configMap)
+	klog.V(5).Infof("sync slo cache from configmap %s/%s, available %v", config.ConfigNameSpace, config.SLOCtrlConfigMap, p.cfgCache.available)
+	return p.cfgCache.available
 }

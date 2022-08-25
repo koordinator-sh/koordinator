@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -38,6 +39,9 @@ import (
 )
 
 func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
+	scheme := runtime.NewScheme()
+	clientgoscheme.AddToScheme(scheme)
+	slov1alpha1.AddToScheme(scheme)
 	testingResourceThresholdStrategy := util.DefaultResourceThresholdStrategy()
 	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
 	testingResourceQOSStrategyOld := &slov1alpha1.ResourceQOSStrategy{
@@ -216,9 +220,9 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctr := &NodeSLOReconciler{Client: fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).Build()}
-			configMapCacheHandler := NewSLOCfgHandlerForConfigMapEvent(ctr.Client, DefaultSLOCfg())
-			ctr.sloCfgCache = &configMapCacheHandler.SLOCfgCache
+			ctr := &NodeSLOReconciler{Client: fake.NewClientBuilder().WithScheme(scheme).Build()}
+			configMapCacheHandler := NewSLOCfgHandlerForConfigMapEvent(ctr.Client, DefaultSLOCfg(), &record.FakeRecorder{})
+			ctr.sloCfgCache = configMapCacheHandler
 			if tt.fields.configMap != nil {
 				ctr.Client.Create(context.Background(), tt.fields.configMap)
 				configMapCacheHandler.SyncCacheIfChanged(tt.fields.configMap)
@@ -244,8 +248,8 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 		Scheme: scheme,
 	}
 
-	configMapCacheHandler := NewSLOCfgHandlerForConfigMapEvent(r.Client, DefaultSLOCfg())
-	r.sloCfgCache = &configMapCacheHandler.SLOCfgCache
+	configMapCacheHandler := NewSLOCfgHandlerForConfigMapEvent(r.Client, DefaultSLOCfg(), &record.FakeRecorder{})
+	r.sloCfgCache = configMapCacheHandler
 
 	testingNode := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -306,10 +310,11 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 		t.Errorf("the testing NodeSLO should not exist before getting created, err: %s", err)
 	}
 
-	//test cfg unavailable
+	// test cfg not exist, use default config
 	result, err := r.Reconcile(context.TODO(), nodeReq)
 	assert.NoError(t, err)
 	assert.Equal(t, reconcile.Result{Requeue: false}, result, "check_result")
+	assert.Equal(t, true, r.sloCfgCache.IsCfgAvailable())
 
 	// throw an error if the configmap does not exist
 	err = r.Client.Create(context.TODO(), testingNode)

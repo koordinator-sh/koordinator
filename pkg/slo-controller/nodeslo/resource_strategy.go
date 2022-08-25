@@ -79,7 +79,7 @@ func getCPUBurstConfigSpec(node *corev1.Node, cfg *config.CPUBurstCfg) (*slov1al
 	return cfg.ClusterStrategy.DeepCopy(), nil
 }
 
-func caculateResourceThresholdCfgMerged(oldCfg config.ResourceThresholdCfg, configMap *corev1.ConfigMap) (config.ResourceThresholdCfg, error) {
+func calculateResourceThresholdCfgMerged(oldCfg config.ResourceThresholdCfg, configMap *corev1.ConfigMap) (config.ResourceThresholdCfg, error) {
 	cfgStr, ok := configMap.Data[config.ResourceThresholdConfigKey]
 	if !ok {
 		return DefaultSLOCfg().ThresholdCfgMerged, nil
@@ -114,7 +114,7 @@ func caculateResourceThresholdCfgMerged(oldCfg config.ResourceThresholdCfg, conf
 	return mergedCfg, nil
 }
 
-func caculateResourceQOSCfgMerged(oldCfg config.ResourceQOSCfg, configMap *corev1.ConfigMap) (config.ResourceQOSCfg, error) {
+func calculateResourceQOSCfgMerged(oldCfg config.ResourceQOSCfg, configMap *corev1.ConfigMap) (config.ResourceQOSCfg, error) {
 	cfgStr, ok := configMap.Data[config.ResourceQOSConfigKey]
 	if !ok {
 		return DefaultSLOCfg().ResourceQOSCfgMerged, nil
@@ -151,7 +151,7 @@ func caculateResourceQOSCfgMerged(oldCfg config.ResourceQOSCfg, configMap *corev
 	return mergedCfg, nil
 }
 
-func caculateCPUBurstCfgMerged(oldCfg config.CPUBurstCfg, configMap *corev1.ConfigMap) (config.CPUBurstCfg, error) {
+func calculateCPUBurstCfgMerged(oldCfg config.CPUBurstCfg, configMap *corev1.ConfigMap) (config.CPUBurstCfg, error) {
 	cfgStr, ok := configMap.Data[config.CPUBurstConfigKey]
 	if !ok {
 		return DefaultSLOCfg().CPUBurstCfgMerged, nil

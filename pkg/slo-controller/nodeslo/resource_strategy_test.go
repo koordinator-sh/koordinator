@@ -112,7 +112,7 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 	}
 }
 
-func Test_caculateResourceThresholdCfgMerged(t *testing.T) {
+func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg()
 
 	oldSLOCfg := DefaultSLOCfg()
@@ -236,7 +236,7 @@ func Test_caculateResourceThresholdCfgMerged(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := caculateResourceThresholdCfgMerged(oldSLOCfg.ThresholdCfgMerged, tt.args.configMap)
+			got, gotErr := calculateResourceThresholdCfgMerged(oldSLOCfg.ThresholdCfgMerged, tt.args.configMap)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.want, &got)
 		})
@@ -372,7 +372,7 @@ func Test_getResourceQOSSpec(t *testing.T) {
 	}
 }
 
-func Test_caculateResourceQOSCfgMerged(t *testing.T) {
+func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg().ResourceQOSCfgMerged
 	oldSLOConfig := &config.ResourceQOSCfg{
 		ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -517,7 +517,7 @@ func Test_caculateResourceQOSCfgMerged(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := caculateResourceQOSCfgMerged(*oldSLOConfig, tt.args.configMap)
+			got, gotErr := calculateResourceQOSCfgMerged(*oldSLOConfig, tt.args.configMap)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.want, &got)
 		})
@@ -622,7 +622,7 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 	}
 }
 
-func Test_caculateCPUBurstCfgMerged(t *testing.T) {
+func Test_calculateCPUBurstCfgMerged(t *testing.T) {
 
 	defaultSLOCfg := DefaultSLOCfg()
 
@@ -758,7 +758,7 @@ func Test_caculateCPUBurstCfgMerged(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := caculateCPUBurstCfgMerged(oldSLOConfig.CPUBurstCfgMerged, tt.args.configMap)
+			got, gotErr := calculateCPUBurstCfgMerged(oldSLOConfig.CPUBurstCfgMerged, tt.args.configMap)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.want, &got)
 		})

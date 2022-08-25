@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,8 +38,9 @@ import (
 // NodeSLOReconciler reconciles a NodeSLO object
 type NodeSLOReconciler struct {
 	client.Client
-	sloCfgCache *SLOCfgCache
+	sloCfgCache SLOCfgCache
 	Scheme      *runtime.Scheme
+	Recorder    record.EventRecorder
 }
 
 func (r *NodeSLOReconciler) initNodeSLO(node *corev1.Node, nodeSLO *slov1alpha1.NodeSLO) error {
@@ -65,7 +67,7 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 		nodeSLOSpec = oldSpec.DeepCopy()
 	}
 
-	sloCfg := r.sloCfgCache.GetSLOCfgCopy()
+	sloCfg := r.sloCfgCache.GetCfgCopy()
 
 	var err error
 	nodeSLOSpec.ResourceUsedThresholdWithBE, err = getResourceThresholdSpec(node, &sloCfg.ThresholdCfgMerged)
@@ -97,7 +99,7 @@ func (r *NodeSLOReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	_ = log.FromContext(ctx, "node-slo-reconciler", req.NamespacedName)
 
 	// if cache unavailable, requeue the req
-	if !r.sloCfgCache.IsAvailable() {
+	if !r.sloCfgCache.IsCfgAvailable() {
 		// all nodes would be enqueued once the config is available, so here we just drop the req
 		klog.Warningf("slo config is not available, drop the req %v until a valid config is set",
 			req.NamespacedName)
@@ -179,8 +181,8 @@ func (r *NodeSLOReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *NodeSLOReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	configMapCacheHandler := NewSLOCfgHandlerForConfigMapEvent(r.Client, DefaultSLOCfg())
-	r.sloCfgCache = &configMapCacheHandler.SLOCfgCache
+	configMapCacheHandler := NewSLOCfgHandlerForConfigMapEvent(r.Client, DefaultSLOCfg(), r.Recorder)
+	r.sloCfgCache = configMapCacheHandler
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&slov1alpha1.NodeSLO{}).
 		Watches(&source.Kind{Type: &corev1.Node{}}, &nodemetric.EnqueueRequestForNode{
