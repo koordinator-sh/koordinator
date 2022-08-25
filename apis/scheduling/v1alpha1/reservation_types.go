@@ -177,9 +177,9 @@ type ReservationCondition struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase",description="The phase of reservation"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:printcolumn:name="Node",type="string",JSONPath=".status.nodeName",priority=10
-// +kubebuilder:printcolumn:name="TTL",type="string",JSONPath=".spec.ttl",priority=10
-// +kubebuilder:printcolumn:name="Expires",type="string",JSONPath=".spec.expires",priority=10
+// +kubebuilder:printcolumn:name="Node",type="string",JSONPath=".status.nodeName"
+// +kubebuilder:printcolumn:name="TTL",type="string",JSONPath=".spec.ttl"
+// +kubebuilder:printcolumn:name="Expires",type="string",JSONPath=".spec.expires"
 
 // Reservation is the Schema for the reservation API.
 // A Reservation object is non-namespaced.
