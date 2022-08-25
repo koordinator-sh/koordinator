@@ -31,6 +31,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		RuntimeHooksAddr:          ":9318",
 		RuntimeHooksFailurePolicy: "Ignore",
 		RuntimeHookConfigFilePath: system.Conf.RuntimeHooksConfigDir,
+		RuntimeHookDisableStages:  []string{},
 		FeatureGates:              map[string]bool{},
 	}
 	defaultConfig := NewDefaultConfig()
