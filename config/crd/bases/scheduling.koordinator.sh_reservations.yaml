@@ -25,15 +25,12 @@ spec:
       type: date
     - jsonPath: .status.nodeName
       name: Node
-      priority: 10
       type: string
     - jsonPath: .spec.ttl
       name: TTL
-      priority: 10
       type: string
     - jsonPath: .spec.expires
       name: Expires
-      priority: 10
       type: string
     name: v1alpha1
     schema:
