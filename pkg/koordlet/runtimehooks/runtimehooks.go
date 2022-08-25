@@ -67,6 +67,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		Address:        cfg.RuntimeHooksAddr,
 		FailurePolicy:  failurePolicy,
 		ConfigFilePath: cfg.RuntimeHookConfigFilePath,
+		DisableStages:  getDisableStagesMap(cfg.RuntimeHookDisableStages),
 	}
 	s, err := proxyserver.NewServer(newServerOptions)
 	if err != nil {
@@ -100,4 +101,14 @@ func registerPlugins() {
 		}
 		klog.Infof("runtime hook plugin %s enable %v", hookFeature, enabled)
 	}
+}
+
+func getDisableStagesMap(stagesSlice []string) map[string]struct{} {
+	stagesMap := map[string]struct{}{}
+	for _, item := range stagesSlice {
+		if _, ok := stagesMap[item]; !ok {
+			stagesMap[item] = struct{}{}
+		}
+	}
+	return stagesMap
 }
