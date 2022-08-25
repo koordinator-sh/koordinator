@@ -17,28 +17,60 @@ limitations under the License.
 package eventhandlers
 
 import (
+	"context"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/apis/core/validation"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	schedulingv1alpha1lister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
+// Register schedulingv1alpha1 scheme to report event
+var _ = schedulingv1alpha1.AddToScheme(scheme.Scheme)
+
 func AddReservationErrorHandler(sched *scheduler.Scheduler, internalHandler SchedulerInternalHandler, extendedHandle frameworkext.ExtendedHandle) {
-	reservationLister := extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Lister()
 	defaultErrorFn := sched.Error
-	sched.Error = func(podInfo *framework.QueuedPodInfo, err error) {
+	reservationLister := extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Lister()
+	reservationErrorFn := makeReservationErrorFunc(internalHandler, reservationLister)
+	sched.Error = func(podInfo *framework.QueuedPodInfo, schedulingErr error) {
 		pod := podInfo.Pod
 		// if the pod is not a reserve pod, use the default error handler
 		if !reservation.IsReservePod(pod) {
-			defaultErrorFn(podInfo, err)
+			defaultErrorFn(podInfo, schedulingErr)
 			return
 		}
 
+		reservationErrorFn(podInfo, schedulingErr)
+
+		rName := reservation.GetReservationNameFromReservePod(pod)
+		r, err := reservationLister.Get(rName)
+		if err != nil {
+			return
+		}
+
+		msg := truncateMessage(schedulingErr.Error())
+		extendedHandle.EventRecorder().Eventf(r, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
+
+		updateReservationStatus(extendedHandle.KoordinatorClientSet(), reservationLister, rName, schedulingErr)
+	}
+}
+
+func makeReservationErrorFunc(internalHandler SchedulerInternalHandler, reservationLister schedulingv1alpha1lister.ReservationLister) func(*framework.QueuedPodInfo, error) {
+	return func(podInfo *framework.QueuedPodInfo, err error) {
+		pod := podInfo.Pod
 		// NOTE: If the pod is a reserve pod, we simply check the corresponding reservation status if the reserve pod
 		// need requeue for the next scheduling cycle.
 		if err == scheduler.ErrNoNodesAvailable {
@@ -71,6 +103,39 @@ func AddReservationErrorHandler(sched *scheduler.Scheduler, internalHandler Sche
 			klog.ErrorS(err, "Error occurred")
 		}
 	}
+}
+
+func updateReservationStatus(client koordclientset.Interface, reservationLister schedulingv1alpha1lister.ReservationLister, rName string, schedulingErr error) {
+	err := util.RetryOnConflictOrTooManyRequests(func() error {
+		r, err := reservationLister.Get(rName)
+		if errors.IsNotFound(err) {
+			klog.V(4).Infof("skip the UpdateStatus for reservation %q since the object is not found", rName)
+			return nil
+		} else if err != nil {
+			klog.V(3).ErrorS(err, "failed to get reservation", "reservation", rName)
+			return err
+		}
+
+		curR := r.DeepCopy()
+		reservation.SetReservationUnschedulable(curR, schedulingErr.Error())
+		_, err = client.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), curR, metav1.UpdateOptions{})
+		if err != nil {
+			klog.V(4).ErrorS(err, "failed to UpdateStatus for unschedulable", "reservation", klog.KObj(curR))
+		}
+		return err
+	})
+	if err != nil {
+		klog.Warningf("failed to UpdateStatus reservation %s, err: %v", rName, err)
+	}
+}
+
+func truncateMessage(message string) string {
+	max := validation.NoteLengthLimit
+	if len(message) <= max {
+		return message
+	}
+	suffix := " ..."
+	return message[:max-len(suffix)] + suffix
 }
 
 // AddScheduleEventHandler adds reservation event handlers for the scheduler just like pods'.

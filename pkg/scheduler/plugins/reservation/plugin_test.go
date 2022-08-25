@@ -18,6 +18,7 @@ package reservation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -30,6 +31,8 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/events"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	scheduledconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -236,6 +239,7 @@ type fakeExtendedHandle struct {
 	cs                         *kubefake.Clientset
 	sharedLister               *fakeSharedLister
 	koordSharedInformerFactory *fakeKoordinatorSharedInformerFactory
+	eventRecorder              events.EventRecorder
 }
 
 func (f *fakeExtendedHandle) ClientSet() clientset.Interface {
@@ -253,7 +257,11 @@ func (f *fakeExtendedHandle) KoordinatorSharedInformerFactory() koordinatorinfor
 	if f.koordSharedInformerFactory != nil {
 		return f.koordSharedInformerFactory
 	}
-	return f.KoordinatorSharedInformerFactory()
+	return f.ExtendedHandle.KoordinatorSharedInformerFactory()
+}
+
+func (f *fakeExtendedHandle) EventRecorder() events.EventRecorder {
+	return f.eventRecorder
 }
 
 func fakeParallelizeUntil(handle frameworkext.ExtendedHandle) parallelizeUntilFunc {
@@ -666,59 +674,7 @@ func TestPostFilter(t *testing.T) {
 			want1: framework.NewStatus(framework.Unschedulable),
 		},
 		{
-			name: "failed to get reservation",
-			args: args{
-				pod: reservePod,
-			},
-			fields: fields{
-				lister: &fakeReservationLister{
-					reservations: map[string]*schedulingv1alpha1.Reservation{},
-					getErr: map[string]bool{
-						reservePod.Name: true,
-					},
-				},
-			},
-			want:  nil,
-			want1: framework.NewStatus(framework.Unschedulable),
-		},
-		{
-			name: "failed to get reservation name",
-			args: args{
-				pod: reservePodNoName,
-			},
-			fields: fields{
-				lister: &fakeReservationLister{
-					reservations: map[string]*schedulingv1alpha1.Reservation{},
-					getErr: map[string]bool{
-						"": true,
-					},
-				},
-			},
-			want:  nil,
-			want1: framework.NewStatus(framework.Unschedulable),
-		},
-		{
-			name: "failed to update status",
-			args: args{
-				pod: reservePod,
-			},
-			fields: fields{
-				lister: &fakeReservationLister{
-					reservations: map[string]*schedulingv1alpha1.Reservation{
-						r.Name: r,
-					},
-				},
-				client: &fakeReservationClient{
-					updateStatusErr: map[string]bool{
-						r.Name: true,
-					},
-				},
-			},
-			want:  nil,
-			want1: framework.NewStatus(framework.Unschedulable),
-		},
-		{
-			name: "update unschedulable status successfully",
+			name: "reserve pod",
 			args: args{
 				pod: reservePod,
 				filteredNodeStatusMap: framework.NodeToStatusMap{
@@ -734,7 +690,7 @@ func TestPostFilter(t *testing.T) {
 				client: &fakeReservationClient{},
 			},
 			want:  nil,
-			want1: framework.NewStatus(framework.Unschedulable),
+			want1: framework.NewStatus(framework.Error),
 		},
 	}
 	for _, tt := range tests {
@@ -1592,7 +1548,7 @@ func TestBind(t *testing.T) {
 			args: args{
 				pod: reservePod,
 			},
-			want: framework.NewStatus(framework.Error, "failed to bind reservation, err: get error"),
+			want: framework.AsStatus(errors.New("get error")),
 		},
 		{
 			name: "get failed reservation",
@@ -1607,7 +1563,7 @@ func TestBind(t *testing.T) {
 				pod:      reservePod,
 				nodeName: testNodeName,
 			},
-			want: framework.NewStatus(framework.Error, "failed to bind reservation, err: "+ErrReasonReservationInactive),
+			want: framework.AsStatus(errors.New(ErrReasonReservationInactive)),
 		},
 		{
 			name: "failed to update status",
@@ -1627,7 +1583,7 @@ func TestBind(t *testing.T) {
 				pod:      reservePod,
 				nodeName: testNodeName,
 			},
-			want: framework.NewStatus(framework.Error, "failed to bind reservation, err: updateStatus error"),
+			want: framework.AsStatus(errors.New("updateStatus error")),
 		},
 		{
 			name: "bind reservation successfully",
@@ -1648,9 +1604,15 @@ func TestBind(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			fakeRecorder := record.NewFakeRecorder(1024)
+			eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
+			extendHandle := &fakeExtendedHandle{
+				eventRecorder: eventRecorder,
+			}
 			p := &Plugin{
 				rLister:          tt.fields.lister,
 				client:           tt.fields.client,
+				handle:           extendHandle,
 				reservationCache: newReservationCache(),
 			}
 			if tt.fields.lister != nil && tt.fields.client != nil {

@@ -22,14 +22,11 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/kubernetes/pkg/apis/core/validation"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -204,7 +201,7 @@ func setReservationExpired(r *schedulingv1alpha1.Reservation) {
 	}
 }
 
-func setReservationUnschedulable(r *schedulingv1alpha1.Reservation, msg string) {
+func SetReservationUnschedulable(r *schedulingv1alpha1.Reservation, msg string) {
 	// unschedule reservations can try scheduling in next cycles, so we does not update its phase
 	// not duplicate condition info
 	idx := -1
@@ -335,30 +332,6 @@ func getReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceLi
 	return requests
 }
 
-func getUnschedulableMessage(filteredNodeStatusMap framework.NodeToStatusMap) string {
-	var msg strings.Builder
-	// format: [node=xxx msg=yyy failedPlugin=zzz]
-	for node, status := range filteredNodeStatusMap {
-		msg.WriteString("[node=")
-		msg.WriteString(node)
-		msg.WriteString(", msg=")
-		if status == nil {
-			msg.WriteString("]")
-			continue
-		}
-		msg.WriteString(status.Message())
-		msg.WriteString(", failedPlugin=")
-		msg.WriteString(status.FailedPlugin())
-		msg.WriteByte(']')
-	}
-	max := validation.NoteLengthLimit
-	if msg.Len() <= max {
-		return msg.String()
-	}
-	suffix := " ..."
-	return msg.String()[:max-len(suffix)] + suffix
-}
-
 func matchReservation(pod *corev1.Pod, rMeta *reservationInfo) bool {
 	return matchReservationOwners(pod, rMeta.Reservation) && matchReservationResources(pod, rMeta.Reservation, rMeta.Resources)
 }
@@ -459,12 +432,6 @@ func getPodOwner(pod *corev1.Pod) corev1.ObjectReference {
 
 func getOwnerKey(owner *corev1.ObjectReference) string {
 	return string(owner.UID)
-}
-
-func retryOnConflictOrTooManyRequests(fn func() error) error {
-	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
-		return errors.IsConflict(err) || errors.IsTooManyRequests(err)
-	}, fn)
 }
 
 func getPreFilterState(cycleState *framework.CycleState) *stateData {

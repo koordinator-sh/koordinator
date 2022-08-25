@@ -105,7 +105,7 @@ func (p *Plugin) expireReservation(r *schedulingv1alpha1.Reservation) error {
 	// marked as expired in cache even if the reservation is failed to set expired
 	p.reservationCache.AddToInactive(r)
 	// update reservation status
-	return retryOnConflictOrTooManyRequests(func() error {
+	return util.RetryOnConflictOrTooManyRequests(func() error {
 		curR, err := p.rLister.Get(r.Name)
 		if errors.IsNotFound(err) {
 			klog.V(4).InfoS("reservation not found, abort the update",
@@ -172,7 +172,7 @@ func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
 
 	// pod has allocated reservation, should remove allocation info in the reservation
 	cached := rInfo.GetReservation()
-	err := retryOnConflictOrTooManyRequests(func() error {
+	err := util.RetryOnConflictOrTooManyRequests(func() error {
 		r, err1 := p.rLister.Get(cached.Name)
 		if errors.IsNotFound(err1) {
 			klog.V(5).InfoS("skip sync for reservation not found", "reservation", klog.KObj(r))
