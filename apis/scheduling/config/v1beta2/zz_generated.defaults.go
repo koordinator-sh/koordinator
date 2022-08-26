@@ -29,10 +29,15 @@ import (
 // Public to allow building arbitrary schemes.
 // All generated defaulters are covering - they call all nested defaulters.
 func RegisterDefaults(scheme *runtime.Scheme) error {
+	scheme.AddTypeDefaultingFunc(&ElasticQuotaArgs{}, func(obj interface{}) { SetObjectDefaults_ElasticQuotaArgs(obj.(*ElasticQuotaArgs)) })
 	scheme.AddTypeDefaultingFunc(&LoadAwareSchedulingArgs{}, func(obj interface{}) { SetObjectDefaults_LoadAwareSchedulingArgs(obj.(*LoadAwareSchedulingArgs)) })
 	scheme.AddTypeDefaultingFunc(&NodeNUMAResourceArgs{}, func(obj interface{}) { SetObjectDefaults_NodeNUMAResourceArgs(obj.(*NodeNUMAResourceArgs)) })
 	scheme.AddTypeDefaultingFunc(&ReservationArgs{}, func(obj interface{}) { SetObjectDefaults_ReservationArgs(obj.(*ReservationArgs)) })
 	return nil
+}
+
+func SetObjectDefaults_ElasticQuotaArgs(in *ElasticQuotaArgs) {
+	SetDefaults_ElasticQuotaArgs(in)
 }
 
 func SetObjectDefaults_LoadAwareSchedulingArgs(in *LoadAwareSchedulingArgs) {
