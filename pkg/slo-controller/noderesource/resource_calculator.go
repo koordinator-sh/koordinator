@@ -44,7 +44,7 @@ func (r *NodeResourceReconciler) calculateBEResource(node *corev1.Node,
 	}
 
 	for _, pod := range podList.Items {
-		if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
+		if pod.Status.Phase != corev1.PodRunning || pod.Status.Phase != corev1.PodPending {
 			continue
 		}
 
