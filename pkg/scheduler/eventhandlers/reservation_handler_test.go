@@ -17,12 +17,18 @@ limitations under the License.
 package eventhandlers
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/events"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/kubernetes/pkg/apis/core/validation"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
@@ -33,6 +39,15 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 )
+
+type fakeExtendHandle struct {
+	frameworkext.ExtendedHandle
+	eventRecorder events.EventRecorder
+}
+
+func (h *fakeExtendHandle) EventRecorder() events.EventRecorder {
+	return h.eventRecorder
+}
 
 func TestAddReservationErrorHandler(t *testing.T) {
 	testNodeName := "test-node-0"
@@ -73,11 +88,36 @@ func TestAddReservationErrorHandler(t *testing.T) {
 			frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 		)
 
-		AddReservationErrorHandler(sched, internalHandler, extendHandle)
+		fakeRecorder := record.NewFakeRecorder(1024)
+		eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
+		feh := &fakeExtendHandle{
+			ExtendedHandle: extendHandle,
+			eventRecorder:  eventRecorder,
+		}
 
-		sched.Error(&framework.QueuedPodInfo{
+		AddReservationErrorHandler(sched, internalHandler, feh)
+
+		koordSharedInformerFactory.Start(nil)
+		koordSharedInformerFactory.WaitForCacheSync(nil)
+
+		queuedPodInfo := &framework.QueuedPodInfo{
 			PodInfo: framework.NewPodInfo(testPod),
-		}, nil)
+		}
+
+		expectedErr := errors.New(strings.Repeat("test error", validation.NoteLengthLimit))
+		sched.Error(queuedPodInfo, expectedErr)
+
+		r, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), testR.Name, metav1.GetOptions{})
+		assert.NoError(t, err)
+		assert.NotNil(t, r)
+		var message string
+		for _, v := range r.Status.Conditions {
+			if v.Type == schedulingv1alpha1.ReservationConditionScheduled && v.Reason == schedulingv1alpha1.ReasonReservationUnschedulable {
+				message = v.Message
+			}
+		}
+		assert.Equal(t, expectedErr.Error(), message)
+
 	})
 }
 

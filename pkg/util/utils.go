@@ -20,6 +20,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/util/retry"
 )
 
 // MergeCfg returns a merged interface. Value in new will
@@ -57,4 +60,10 @@ func MaxInt64(i, j int64) int64 {
 		return i
 	}
 	return j
+}
+
+func RetryOnConflictOrTooManyRequests(fn func() error) error {
+	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
+		return errors.IsConflict(err) || errors.IsTooManyRequests(err)
+	}, fn)
 }
