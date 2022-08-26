@@ -17,7 +17,10 @@ limitations under the License.
 package v1beta2
 
 import (
+	"math"
+
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/utils/pointer"
 )
@@ -52,6 +55,18 @@ var (
 	}
 
 	defaultEnablePreemption = pointer.Bool(false)
+
+	defaultMinCandidateNodesPercentage      = pointer.Int32Ptr(10)
+	defaultMinCandidateNodesAbsolute        = pointer.Int32Ptr(100)
+	defaultContinueOverUseCountTriggerEvict = pointer.Int64Ptr(120)
+	defaultDefaultQuotaGroupMax             = corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("96"),
+		corev1.ResourceMemory: resource.MustParse("100Gi"),
+	}
+	defaultSystemQuotaGroupMax = corev1.ResourceList{
+		corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64, resource.DecimalSI),
+		corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64, resource.BinarySI),
+	}
 )
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
@@ -86,5 +101,23 @@ func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
 func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	if obj.EnablePreemption == nil {
 		obj.EnablePreemption = defaultEnablePreemption
+	}
+}
+
+func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
+	if obj.MinCandidateNodesAbsolute == nil {
+		obj.MinCandidateNodesAbsolute = defaultMinCandidateNodesAbsolute
+	}
+	if obj.MinCandidateNodesPercentage == nil {
+		obj.MinCandidateNodesPercentage = defaultMinCandidateNodesPercentage
+	}
+	if obj.ContinueOverUseCountTriggerEvict == nil {
+		obj.ContinueOverUseCountTriggerEvict = defaultContinueOverUseCountTriggerEvict
+	}
+	if len(obj.DefaultQuotaGroupMax) == 0 {
+		obj.DefaultQuotaGroupMax = defaultDefaultQuotaGroupMax
+	}
+	if len(obj.SystemQuotaGroupMax) == 0 {
+		obj.SystemQuotaGroupMax = defaultSystemQuotaGroupMax
 	}
 }

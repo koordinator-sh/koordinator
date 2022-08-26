@@ -329,18 +329,18 @@ type ElasticQuotaStatus struct {
 we will also add new annotation and labels to achieve our desired functionality.
 ```yaml
 annotations:
-  koordinator.quota/runtime: {cpu:4, memory: 8Gi}
-  koordinator.quota/shared-weight: {cpu:4, memory: 8Gi}
+  quota.scheduling.koordinator.sh/runtime: {cpu:4, memory: 8Gi}
+  quota.scheduling.koordinator.sh/shared-weight: {cpu:4, memory: 8Gi}
 labels:
-  koordinator.quota/is-parent: false
-  koordinator.quota/parent-quota-name: "parent"
-  koordinator.quota/allow-lent-resource: true
+  quota.scheduling.koordinator.sh/is-parent: false
+  quota.scheduling.koordinator.sh/parent-quota-name: "parent"
+  quota.scheduling.koordinator.sh/allow-lent-resource: true
 ```
-- `koordinator.quota/runtime` is updated by the scheduler. It reflects the "runtime" of the quota group.
-- `koordinator.quota/is-parent` is disposed by the user. It reflects the "child\parent" attribute of the quota group. Default is child.
-- `koordinator.quota/parent-quota-name` is disposed by the user. It reflects the parent quota name. Default is root.
-- `koordinator.quota/shared-weight` is disposed by the user. It reflects the ability to share the "lent to" resource. Default equals to "max".
-- `koordinator.quota/allow-lent-resource` is disposed by the user. It reflects whether quota group allows lent unused "min" to others.
+- `quota.scheduling.koordinator.sh/runtime` is updated by the scheduler. It reflects the "runtime" of the quota group.
+- `quota.scheduling.koordinator.sh/is-parent` is disposed by the user. It reflects the "child\parent" attribute of the quota group. Default is child.
+- `quota.scheduling.koordinator.sh/parent-quota-name` is disposed by the user. It reflects the parent quota name. Default is root.
+- `quota.scheduling.koordinator.sh/shared-weight` is disposed by the user. It reflects the ability to share the "lent to" resource. Default equals to "max".
+- `quota.scheduling.koordinator.sh/allow-lent-resource` is disposed by the user. It reflects whether quota group allows lent unused "min" to others.
 
 Here is a example:
 ```yaml
@@ -350,12 +350,12 @@ metadata:
   name: test
   namespace: test
   annotations:
-    koordinator.quota/runtime: {cpu:4, memory: 8Gi}
-    koordinator.quota/shared-weight: {cpu:4, memory: 8Gi}
+    quota.scheduling.koordinator.sh/runtime: {cpu:4, memory: 8Gi}
+    quota.scheduling.koordinator.sh/shared-weight: {cpu:4, memory: 8Gi}
   labels:
-    koordinator.quota/is-parent: false
-    koordinator.quota/parent-quota-name: "parent"
-    koordinator.quota/allow-lent-resource: true
+    quota.scheduling.koordinator.sh/is-parent: false
+    quota.scheduling.koordinator.sh/parent-quota-name: "parent"
+    quota.scheduling.koordinator.sh/allow-lent-resource: true
 spec:
   max:
     cpu: 20
@@ -371,7 +371,7 @@ spec:
 We introduce a new label on the pod to associate pod with quota group:
 ```yaml
 labels:
-  koordinator.quota/quota-name: "test1"
+  quota.scheduling.koordinator.sh/quota-name: "test1"
 ```
 
 if pod's don't have the label, we will follow [Elastic Quota](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/9-capacity-scheduling/README.md#goals)
