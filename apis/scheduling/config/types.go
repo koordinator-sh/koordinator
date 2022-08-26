@@ -153,3 +153,17 @@ type ElasticQuotaArgs struct {
 	// SystemQuotaGroupMax limit the maxQuota of SystemQuotaGroup
 	SystemQuotaGroupMax corev1.ResourceList `json:"systemQuotaGroupMax,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// CoschedulingArgs defines the parameters for Gang Scheduling plugin.
+type CoschedulingArgs struct {
+	metav1.TypeMeta
+
+	// DefaultTimeout is the default gang's waiting time in Permit stage
+	// default is 600 seconds
+	DefaultTimeout *metav1.Duration `json:"defaultTimeoutSeconds,omitempty"`
+	// Workers number of podGroupSyncHandler
+	// default is 1
+	ControllerWorkers *int64 `json:"ControllerWorkers,omitempty"`
+}

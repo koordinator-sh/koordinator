@@ -19,8 +19,11 @@ package v1beta2
 import (
 	"math"
 
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/utils/pointer"
 )
@@ -67,6 +70,9 @@ var (
 		corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64, resource.DecimalSI),
 		corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64, resource.BinarySI),
 	}
+
+	defaultTimeout           = 600 * time.Second
+	defaultControllerWorkers = 1
 )
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
@@ -119,5 +125,16 @@ func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
 	}
 	if len(obj.SystemQuotaGroupMax) == 0 {
 		obj.SystemQuotaGroupMax = defaultSystemQuotaGroupMax
+	}
+}
+
+func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
+	if obj.DefaultTimeout == nil {
+		obj.DefaultTimeout = &metav1.Duration{
+			Duration: defaultTimeout,
+		}
+	}
+	if obj.ControllerWorkers == nil {
+		obj.ControllerWorkers = pointer.Int64Ptr(int64(defaultControllerWorkers))
 	}
 }

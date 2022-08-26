@@ -122,3 +122,13 @@ func ValidateElasticQuotaArgs(elasticArgs *config.ElasticQuotaArgs) error {
 
 	return nil
 }
+
+func ValidateCoschedulingArgs(coeSchedulingArgs *config.CoschedulingArgs) error {
+	if coeSchedulingArgs.DefaultTimeout != nil && coeSchedulingArgs.DefaultTimeout.Duration < 0 {
+		return fmt.Errorf("coeSchedulingArgs DefaultTimeoutSeconds invalid")
+	}
+	if coeSchedulingArgs.ControllerWorkers != nil && *coeSchedulingArgs.ControllerWorkers < 1 {
+		return fmt.Errorf("coeSchedulingArgs ControllerWorkers invalid")
+	}
+	return nil
+}
