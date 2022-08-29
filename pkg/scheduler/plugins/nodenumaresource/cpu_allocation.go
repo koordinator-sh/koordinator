@@ -82,8 +82,11 @@ func (n *cpuAllocation) releaseCPUs(podUID types.UID) {
 	}
 }
 
-func (n *cpuAllocation) getAvailableCPUs(cpuTopology *CPUTopology, reservedCPUs CPUSet) (availableCPUs CPUSet, allocated CPUDetails) {
-	allocated = n.allocatedCPUs.Clone()
-	availableCPUs = cpuTopology.CPUDetails.CPUs().Difference(allocated.CPUs()).Difference(reservedCPUs)
+func (n *cpuAllocation) getAvailableCPUs(cpuTopology *CPUTopology, maxRefCount int, reservedCPUs CPUSet) (availableCPUs CPUSet, allocateInfo CPUDetails) {
+	allocateInfo = n.allocatedCPUs.Clone()
+	allocated := allocateInfo.CPUs().Filter(func(cpuID int) bool {
+		return allocateInfo[cpuID].RefCount >= maxRefCount
+	})
+	availableCPUs = cpuTopology.CPUDetails.CPUs().Difference(allocated).Difference(reservedCPUs)
 	return
 }

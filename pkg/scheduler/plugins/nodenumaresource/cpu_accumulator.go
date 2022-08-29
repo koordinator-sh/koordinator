@@ -27,6 +27,7 @@ import (
 
 func takeCPUs(
 	topology *CPUTopology,
+	maxRefCount int,
 	availableCPUs CPUSet,
 	allocatedCPUs CPUDetails,
 	numCPUsNeeded int,
@@ -34,7 +35,7 @@ func takeCPUs(
 	cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy,
 	numaAllocatedStrategy schedulingconfig.NUMAAllocateStrategy,
 ) (CPUSet, error) {
-	acc := newCPUAccumulator(topology, availableCPUs, allocatedCPUs, numCPUsNeeded, cpuExclusivePolicy, numaAllocatedStrategy)
+	acc := newCPUAccumulator(topology, maxRefCount, availableCPUs, allocatedCPUs, numCPUsNeeded, cpuExclusivePolicy, numaAllocatedStrategy)
 	if acc.isSatisfied() {
 		return acc.result, nil
 	}
@@ -173,6 +174,7 @@ func takeCPUs(
 
 type cpuAccumulator struct {
 	topology             *CPUTopology
+	maxRefCount          int
 	allocatableCPUs      CPUDetails
 	numCPUsNeeded        int
 	exclusive            bool
@@ -185,6 +187,7 @@ type cpuAccumulator struct {
 
 func newCPUAccumulator(
 	topology *CPUTopology,
+	maxRefCount int,
 	availableCPUs CPUSet,
 	allocatedCPUs CPUDetails,
 	numCPUsNeeded int,
@@ -200,13 +203,20 @@ func newCPUAccumulator(
 			exclusiveInNUMANodes.Insert(v.NodeID)
 		}
 	}
-	allocatableCPUs := topology.CPUDetails.KeepOnly(availableCPUs)
-
 	exclusive := exclusivePolicy == schedulingconfig.CPUExclusivePolicyPCPULevel ||
 		exclusivePolicy == schedulingconfig.CPUExclusivePolicyNUMANodeLevel
 
+	allocatableCPUs := topology.CPUDetails.KeepOnly(availableCPUs)
+	if maxRefCount > 1 {
+		for _, v := range allocatableCPUs {
+			v.RefCount = allocatedCPUs[v.CPUID].RefCount
+			allocatableCPUs[v.CPUID] = v
+		}
+	}
+
 	return &cpuAccumulator{
 		topology:             topology,
+		maxRefCount:          maxRefCount,
 		allocatableCPUs:      allocatableCPUs,
 		exclusiveInCores:     exclusiveInCores,
 		exclusiveInNUMANodes: exclusiveInNUMANodes,
@@ -273,7 +283,7 @@ func (a *cpuAccumulator) extractCPU(cpus []int) []int {
 	return selected
 }
 
-func (a *cpuAccumulator) sortCores(cores []int, cpusInCores map[int][]int) {
+func (a *cpuAccumulator) sortCores(details CPUDetails, cores []int, cpusInCores map[int][]int) {
 	if len(cores) <= 1 {
 		return
 	}
@@ -286,6 +296,13 @@ func (a *cpuAccumulator) sortCores(cores []int, cpusInCores map[int][]int) {
 		jCPUsCount := len(cpusInCores[jCore])
 		if iCPUsCount != jCPUsCount {
 			return iCPUsCount > jCPUsCount
+		}
+		if a.maxRefCount > 1 {
+			iRefCount := getCoreRefCount(details, iCore)
+			jRefCount := getCoreRefCount(details, jCore)
+			if iRefCount != jRefCount {
+				return iRefCount < jRefCount
+			}
 		}
 		return cores[i] < cores[j]
 	})
@@ -330,7 +347,7 @@ func (a *cpuAccumulator) freeCoresInNode(filterFullFreeCore bool, filterExclusiv
 	cpusInNodes := make(map[int][]int)
 	for node, cores := range coresInNodes {
 		nodeIDs = append(nodeIDs, node)
-		a.sortCores(cores, cpusInCores)
+		a.sortCores(allocatableCPUs, cores, cpusInCores)
 		cpusInCore := make([]int, 0, numCPUs)
 		for _, c := range cores {
 			cpus := cpusInCores[c]
@@ -418,7 +435,7 @@ func (a *cpuAccumulator) freeCoresInSocket(filterFullFreeCore bool) [][]int {
 	cpusInSockets := make(map[int][]int)
 	for socket, cores := range coresInSockets {
 		socketIDs = append(socketIDs, socket)
-		a.sortCores(cores, cpusInCores)
+		a.sortCores(allocatableCPUs, cores, cpusInCores)
 		cpusInCore := make([]int, 0, numCPUs)
 		for _, c := range cores {
 			cpus := cpusInCores[c]
@@ -473,6 +490,9 @@ func (a *cpuAccumulator) freeCPUsInNode(filterExclusive bool) [][]int {
 	for nodeID, cpus := range cpusInNodes {
 		nodeIDs = append(nodeIDs, nodeID)
 		sort.Ints(cpus)
+		if a.maxRefCount > 1 {
+			a.sortCPUsByRefCount(cpus)
+		}
 		if filterExclusive {
 			cpus = a.extractCPU(cpus)
 		}
@@ -545,6 +565,9 @@ func (a *cpuAccumulator) freeCPUsInSocket(filterExclusive bool) [][]int {
 	for socketID, cpus := range cpusInSockets {
 		socketIDs = append(socketIDs, socketID)
 		sort.Ints(cpus)
+		if a.maxRefCount > 1 {
+			a.sortCPUsByRefCount(cpus)
+		}
 		if filterExclusive {
 			cpus = a.extractCPU(cpus)
 		}
@@ -579,6 +602,7 @@ func (a *cpuAccumulator) freeCPUsInSocket(filterExclusive bool) [][]int {
 // - number of CPUs available on the same core
 // - socket ID
 // - node ID
+// - reference count if maxRefCount > 1
 // - core ID
 func (a *cpuAccumulator) freeCPUs(filterExclusive bool) []int {
 	allocatableCPUs := a.allocatableCPUs
@@ -665,6 +689,14 @@ func (a *cpuAccumulator) freeCPUs(filterExclusive bool) []int {
 				return iSocket < jSocket
 			}
 
+			if a.maxRefCount > 1 {
+				iRefCount := getCoreRefCount(allocatableCPUs, iCore)
+				jRefCount := getCoreRefCount(allocatableCPUs, jCore)
+				if iRefCount != jRefCount {
+					return iRefCount < jRefCount
+				}
+			}
+
 			return iCore < jCore
 		})
 
@@ -673,10 +705,35 @@ func (a *cpuAccumulator) freeCPUs(filterExclusive bool) []int {
 	for _, core := range cores {
 		cpus := cpusInCores[core]
 		sort.Ints(cpus)
+		if a.maxRefCount > 1 {
+			a.sortCPUsByRefCount(cpus)
+		}
 		result = append(result, cpus...)
 	}
 
 	return result
+}
+
+func getCoreRefCount(details CPUDetails, core int) int {
+	cpus := details.CPUsInCores(core).ToSliceNoSort()
+	refCount := 0
+	for _, cpu := range cpus {
+		refCount += details[cpu].RefCount
+	}
+	return refCount
+}
+
+func (a *cpuAccumulator) sortCPUsByRefCount(cpus []int) {
+	sort.Slice(cpus, func(i, j int) bool {
+		iCPU := cpus[i]
+		jCPU := cpus[j]
+		iRefCount := a.topology.CPUDetails[iCPU].RefCount
+		jRefCount := a.topology.CPUDetails[jCPU].RefCount
+		if iRefCount != jRefCount {
+			return iRefCount < jRefCount
+		}
+		return iCPU < jCPU
+	})
 }
 
 func (a *cpuAccumulator) spreadCPUs(cpus []int) []int {
