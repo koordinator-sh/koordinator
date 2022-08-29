@@ -231,6 +231,19 @@ func (s CPUSet) ToSliceNoSort() []int {
 	return result
 }
 
+func (s CPUSet) MarshalText() ([]byte, error) {
+	return []byte(s.String()), nil
+}
+
+func (s *CPUSet) UnmarshalText(data []byte) error {
+	r, err := Parse(string(data))
+	if err != nil {
+		return err
+	}
+	s.elems = r.elems
+	return nil
+}
+
 // String returns a new string representation of the elements in this CPUSet
 // in canonical linux CPU list format.
 //

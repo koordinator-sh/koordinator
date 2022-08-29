@@ -29,6 +29,7 @@ import (
 
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 )
 
 // ExtendedHandle extends the k8s scheduling framework Handle interface
@@ -40,11 +41,18 @@ type ExtendedHandle interface {
 }
 
 type extendedHandleOptions struct {
+	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 }
 
 type Option func(*extendedHandleOptions)
+
+func WithServicesEngine(engine *services.Engine) Option {
+	return func(options *extendedHandleOptions) {
+		options.servicesEngine = engine
+	}
+}
 
 func WithKoordinatorClientSet(koordinatorClientSet koordinatorclientset.Interface) Option {
 	return func(options *extendedHandleOptions) {
@@ -61,6 +69,7 @@ func WithKoordinatorSharedInformerFactory(informerFactory koordinatorinformers.S
 type frameworkExtendedHandleImpl struct {
 	once sync.Once
 	framework.Handle
+	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	nrtSharedInformerFactory         nrtinformers.SharedInformerFactory
@@ -73,6 +82,7 @@ func NewExtendedHandle(options ...Option) ExtendedHandle {
 	}
 
 	return &frameworkExtendedHandleImpl{
+		servicesEngine:                   handleOptions.servicesEngine,
 		koordinatorClientSet:             handleOptions.koordinatorClientSet,
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
 	}
@@ -187,6 +197,13 @@ func PluginFactoryProxy(extendHandle ExtendedHandle, factoryFn frameworkruntime.
 		impl.once.Do(func() {
 			impl.Handle = handle
 		})
-		return factoryFn(args, extendHandle)
+		plugin, err := factoryFn(args, extendHandle)
+		if err != nil {
+			return nil, err
+		}
+		if impl.servicesEngine != nil {
+			impl.servicesEngine.RegisterPluginService(plugin)
+		}
+		return plugin, nil
 	}
 }

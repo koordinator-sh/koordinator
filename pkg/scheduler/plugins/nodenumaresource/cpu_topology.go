@@ -22,11 +22,11 @@ import (
 
 // CPUTopology contains details of node cpu
 type CPUTopology struct {
-	NumCPUs    int
-	NumCores   int
-	NumNodes   int
-	NumSockets int
-	CPUDetails CPUDetails
+	NumCPUs    int        `json:"numCPUs"`
+	NumCores   int        `json:"numCores"`
+	NumNodes   int        `json:"numNodes"`
+	NumSockets int        `json:"numSockets"`
+	CPUDetails CPUDetails `json:"cpuDetails"`
 }
 
 type CPUTopologyBuilder struct {
@@ -112,12 +112,12 @@ func NewCPUDetails() CPUDetails {
 
 // CPUInfo contains the NUMA, socket, and core IDs associated with a CPU.
 type CPUInfo struct {
-	CPUID           int
-	CoreID          int
-	NodeID          int
-	SocketID        int
-	RefCount        int
-	ExclusivePolicy schedulingconfig.CPUExclusivePolicy
+	CPUID           int                                 `json:"cpuID"`
+	CoreID          int                                 `json:"coreID"`
+	NodeID          int                                 `json:"nodeID"`
+	SocketID        int                                 `json:"socketID"`
+	RefCount        int                                 `json:"refCount"`
+	ExclusivePolicy schedulingconfig.CPUExclusivePolicy `json:"exclusivePolicy"`
 }
 
 // Clone clones the CPUDetails
