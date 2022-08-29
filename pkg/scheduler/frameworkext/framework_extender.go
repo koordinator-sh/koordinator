@@ -20,7 +20,6 @@ import (
 	"context"
 	"sync"
 
-	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
@@ -38,13 +37,17 @@ type ExtendedHandle interface {
 	framework.Handle
 	KoordinatorClientSet() koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory
+	SnapshotSharedLister() framework.SharedLister
 }
 
 type extendedHandleOptions struct {
 	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	sharedListerAdapter              SharedListerAdapter
 }
+
+type SharedListerAdapter func(lister framework.SharedLister) framework.SharedLister
 
 type Option func(*extendedHandleOptions)
 
@@ -66,13 +69,19 @@ func WithKoordinatorSharedInformerFactory(informerFactory koordinatorinformers.S
 	}
 }
 
+func WithSharedListerFactory(adapter SharedListerAdapter) Option {
+	return func(options *extendedHandleOptions) {
+		options.sharedListerAdapter = adapter
+	}
+}
+
 type frameworkExtendedHandleImpl struct {
 	once sync.Once
 	framework.Handle
 	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	nrtSharedInformerFactory         nrtinformers.SharedInformerFactory
+	sharedListerAdapter              SharedListerAdapter
 }
 
 func NewExtendedHandle(options ...Option) ExtendedHandle {
@@ -85,6 +94,7 @@ func NewExtendedHandle(options ...Option) ExtendedHandle {
 		servicesEngine:                   handleOptions.servicesEngine,
 		koordinatorClientSet:             handleOptions.koordinatorClientSet,
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
+		sharedListerAdapter:              handleOptions.sharedListerAdapter,
 	}
 }
 
@@ -94,6 +104,14 @@ func (ext *frameworkExtendedHandleImpl) KoordinatorClientSet() koordinatorclient
 
 func (ext *frameworkExtendedHandleImpl) KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory {
 	return ext.koordinatorSharedInformerFactory
+}
+
+func (ext *frameworkExtendedHandleImpl) SnapshotSharedLister() framework.SharedLister {
+	if ext.sharedListerAdapter != nil {
+		return ext.sharedListerAdapter(ext.Handle.SnapshotSharedLister())
+	}
+	return ext.Handle.SnapshotSharedLister()
+
 }
 
 type FrameworkExtender interface {
