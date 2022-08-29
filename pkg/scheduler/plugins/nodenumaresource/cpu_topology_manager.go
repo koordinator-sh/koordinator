@@ -30,10 +30,10 @@ type CPUTopologyManager interface {
 }
 
 type CPUTopologyOptions struct {
-	CPUTopology  *CPUTopology
-	ReservedCPUs CPUSet
-	MaxRefCount  int
-	Policy       *extension.KubeletCPUManagerPolicy
+	CPUTopology  *CPUTopology                       `json:"cpuTopology,omitempty"`
+	ReservedCPUs CPUSet                             `json:"reservedCPUs,omitempty"`
+	MaxRefCount  int                                `json:"maxRefCount,omitempty"`
+	Policy       *extension.KubeletCPUManagerPolicy `json:"policy,omitempty"`
 }
 
 type cpuTopologyManager struct {

@@ -17,12 +17,14 @@ limitations under the License.
 package options
 
 import (
+	"github.com/gin-gonic/gin"
 	"k8s.io/apimachinery/pkg/runtime"
 	scheduleroptions "k8s.io/kubernetes/cmd/kube-scheduler/app/options"
 
 	schedulerappconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 )
 
 // Options has all the params needed to run a Scheduler
@@ -56,6 +58,7 @@ func (o *Options) Config() (*schedulerappconfig.Config, error) {
 
 	return &schedulerappconfig.Config{
 		Config:                           config,
+		ServicesEngine:                   services.NewEngine(gin.Default()),
 		KoordinatorClient:                koordinatorClient,
 		KoordinatorSharedInformerFactory: koordinatorSharedInformerFactory,
 	}, nil

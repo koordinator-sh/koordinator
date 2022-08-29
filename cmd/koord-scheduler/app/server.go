@@ -60,6 +60,7 @@ import (
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/options"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/eventhandlers"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 )
 
 // Option configures a framework.Registry.
@@ -167,9 +168,9 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 	// Start up the healthz server.
 	if cc.InsecureServing != nil {
 		separateMetrics := cc.InsecureMetricsServing != nil
-		handler := buildHandlerChain(newHealthzHandler(&cc.ComponentConfig, cc.InformerFactory, isLeader, separateMetrics, checks...), nil, nil)
+		handler := buildHandlerChain(newAPIHandler(&cc.ComponentConfig, cc.InformerFactory, cc.ServicesEngine, sched, isLeader, separateMetrics, checks...), nil, nil)
 		if err := cc.InsecureServing.Serve(handler, 0, ctx.Done()); err != nil {
-			return fmt.Errorf("failed to start healthz server: %v", err)
+			return fmt.Errorf("failed to start insecure server: %v", err)
 		}
 	}
 	if cc.InsecureMetricsServing != nil {
@@ -179,7 +180,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 		}
 	}
 	if cc.SecureServing != nil {
-		handler := buildHandlerChain(newHealthzHandler(&cc.ComponentConfig, cc.InformerFactory, isLeader, false, checks...), cc.Authentication.Authenticator, cc.Authorization.Authorizer)
+		handler := buildHandlerChain(newAPIHandler(&cc.ComponentConfig, cc.InformerFactory, cc.ServicesEngine, sched, isLeader, false, checks...), cc.Authentication.Authenticator, cc.Authorization.Authorizer)
 		// TODO: handle stoppedCh returned by c.SecureServing.Serve
 		if _, err := cc.SecureServing.Serve(handler, 0, ctx.Done()); err != nil {
 			// fail early for secure handlers, removing the old error loop from above
@@ -260,7 +261,7 @@ func installMetricHandler(pathRecorderMux *mux.PathRecorderMux, informers inform
 
 // newMetricsHandler builds a metrics server from the config.
 func newMetricsHandler(config *kubeschedulerconfig.KubeSchedulerConfiguration, informers informers.SharedInformerFactory, isLeader func() bool) http.Handler {
-	pathRecorderMux := mux.NewPathRecorderMux("kube-scheduler")
+	pathRecorderMux := mux.NewPathRecorderMux("koord-scheduler")
 	installMetricHandler(pathRecorderMux, informers, isLeader)
 	if config.EnableProfiling {
 		routes.Profiling{}.Install(pathRecorderMux)
@@ -272,11 +273,11 @@ func newMetricsHandler(config *kubeschedulerconfig.KubeSchedulerConfiguration, i
 	return pathRecorderMux
 }
 
-// newHealthzHandler creates a healthz server from the config, and will also
+// newAPIHandler creates a healthz server from the config, and will also
 // embed the metrics handler if the healthz and metrics address configurations
 // are the same.
-func newHealthzHandler(config *kubeschedulerconfig.KubeSchedulerConfiguration, informers informers.SharedInformerFactory, isLeader func() bool, separateMetrics bool, checks ...healthz.HealthChecker) http.Handler {
-	pathRecorderMux := mux.NewPathRecorderMux("kube-scheduler")
+func newAPIHandler(config *kubeschedulerconfig.KubeSchedulerConfiguration, informers informers.SharedInformerFactory, engine *services.Engine, sched *scheduler.Scheduler, isLeader func() bool, separateMetrics bool, checks ...healthz.HealthChecker) http.Handler {
+	pathRecorderMux := mux.NewPathRecorderMux("koord-scheduler")
 	healthz.InstallHandler(pathRecorderMux, checks...)
 	if !separateMetrics {
 		installMetricHandler(pathRecorderMux, informers, isLeader)
@@ -288,6 +289,7 @@ func newHealthzHandler(config *kubeschedulerconfig.KubeSchedulerConfiguration, i
 		}
 		routes.DebugFlags{}.Install(pathRecorderMux, "v", routes.StringFlagPutHandler(logs.GlogSetter))
 	}
+	services.InstallAPIHandler(pathRecorderMux, engine, sched, isLeader)
 	return pathRecorderMux
 }
 
@@ -328,6 +330,7 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 	// NOTE(joseph): K8s scheduling framework does not provide extension point for initialization.
 	// Currently, only by copying the initialization code and implementing custom initialization.
 	extendedHandle := frameworkext.NewExtendedHandle(
+		frameworkext.WithServicesEngine(cc.ServicesEngine),
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
 	)
