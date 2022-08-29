@@ -17,6 +17,8 @@ limitations under the License.
 package cri
 
 import (
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -238,5 +240,117 @@ func Test_updateResourceByUpdateContainerResourceRequest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equalf(t, tt.want, updateResourceByUpdateContainerResourceRequest(tt.args.a, tt.args.b), "updateResourceByUpdateContainerResourceRequest(%v, %v)", tt.args.a, tt.args.b)
 		})
+	}
+}
+
+func Test_transferToKoordContainerEnvs(t *testing.T) {
+	tests := []struct {
+		name            string
+		containerdEnvs  []*runtimeapi.KeyValue
+		expectKoordEnvs map[string]string
+	}{
+		{
+			name:            "containerdEnvs is nil",
+			containerdEnvs:  nil,
+			expectKoordEnvs: map[string]string{},
+		},
+		{
+			name:            "containerdEnvs is not nil but with 0 item",
+			containerdEnvs:  []*runtimeapi.KeyValue{},
+			expectKoordEnvs: map[string]string{},
+		},
+		{
+			name: "normal case with 1 item",
+			containerdEnvs: []*runtimeapi.KeyValue{
+				{
+					Key:   "key1",
+					Value: "value1",
+				},
+			},
+			expectKoordEnvs: map[string]string{
+				"key1": "value1",
+			},
+		},
+		{
+			name: "normal case with multi item",
+			containerdEnvs: []*runtimeapi.KeyValue{
+				{
+					Key:   "key1",
+					Value: "value1",
+				},
+				{
+					Key:   "key2",
+					Value: "value2",
+				},
+			},
+			expectKoordEnvs: map[string]string{
+				"key1": "value1",
+				"key2": "value2",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		realKoordEnvs := transferToKoordContainerEnvs(tt.containerdEnvs)
+		assert.Equalf(t, realKoordEnvs, tt.expectKoordEnvs, tt.name)
+	}
+}
+
+func Test_transferToCRIContainerEnvs(t *testing.T) {
+	tests := []struct {
+		name                   string
+		koordEnvs              map[string]string
+		expectedContainerdEnvs []*runtimeapi.KeyValue
+	}{
+		{
+			name:                   "koordEnvs is nil, should return nil",
+			koordEnvs:              nil,
+			expectedContainerdEnvs: nil,
+		},
+		{
+			name:                   "koordEnvs is not nil but with 0 item, should return nil",
+			koordEnvs:              map[string]string{},
+			expectedContainerdEnvs: nil,
+		},
+		{
+			name: "normal case with 1 item",
+			koordEnvs: map[string]string{
+				"key1": "value1",
+			},
+			expectedContainerdEnvs: []*runtimeapi.KeyValue{
+				{
+					Key:   "key1",
+					Value: "value1",
+				},
+			},
+		},
+		{
+			name: "normal case with multi items",
+			koordEnvs: map[string]string{
+				"key1": "value1",
+				"key2": "value2",
+			},
+			expectedContainerdEnvs: []*runtimeapi.KeyValue{
+				{
+					Key:   "key1",
+					Value: "value1",
+				},
+				{
+					Key:   "key2",
+					Value: "value2",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		realContainerdEnvs := transferToCRIContainerEnvs(tt.koordEnvs)
+		sort.Slice(realContainerdEnvs, func(i, j int) bool {
+			return strings.Compare(realContainerdEnvs[i].GetKey(), realContainerdEnvs[j].GetKey()) > 0
+		})
+		sort.Slice(tt.expectedContainerdEnvs, func(i, j int) bool {
+			return strings.Compare(tt.expectedContainerdEnvs[i].GetKey(), tt.expectedContainerdEnvs[j].GetKey()) > 0
+		})
+		assert.Equalf(t, realContainerdEnvs, tt.expectedContainerdEnvs, tt.name)
 	}
 }
