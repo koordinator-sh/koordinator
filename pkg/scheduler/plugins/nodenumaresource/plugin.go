@@ -120,7 +120,7 @@ func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option
 	}
 
 	if options.cpuManager == nil {
-		defaultNUMAAllocateStrategy := getDefaultNUMAAllocateStrategy(pluginArgs)
+		defaultNUMAAllocateStrategy := GetDefaultNUMAAllocateStrategy(pluginArgs)
 		options.cpuManager = NewCPUManager(handle, defaultNUMAAllocateStrategy, options.topologyManager)
 	}
 
@@ -143,7 +143,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	return NewWithOptions(args, handle)
 }
 
-func getDefaultNUMAAllocateStrategy(pluginArgs *schedulingconfig.NodeNUMAResourceArgs) schedulingconfig.NUMAAllocateStrategy {
+func GetDefaultNUMAAllocateStrategy(pluginArgs *schedulingconfig.NodeNUMAResourceArgs) schedulingconfig.NUMAAllocateStrategy {
 	numaAllocateStrategy := schedulingconfig.NUMAMostAllocated
 	if pluginArgs != nil && pluginArgs.ScoringStrategy != nil && pluginArgs.ScoringStrategy.Type == schedulingconfig.LeastAllocated {
 		numaAllocateStrategy = schedulingconfig.NUMALeastAllocated
