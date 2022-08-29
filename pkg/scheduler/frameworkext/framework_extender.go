@@ -69,7 +69,7 @@ func WithKoordinatorSharedInformerFactory(informerFactory koordinatorinformers.S
 	}
 }
 
-func WithSharedListerFactory(adapter SharedListerAdapter) Option {
+func WithSharedListerAdapter(adapter SharedListerAdapter) Option {
 	return func(options *extendedHandleOptions) {
 		options.sharedListerAdapter = adapter
 	}

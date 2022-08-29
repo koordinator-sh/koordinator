@@ -333,6 +333,7 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 		frameworkext.WithServicesEngine(cc.ServicesEngine),
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
+		frameworkext.WithSharedListerAdapter(cc.SharedListerAdapter),
 	)
 
 	outOfTreeRegistry := make(runtime.Registry)
