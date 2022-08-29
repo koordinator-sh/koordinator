@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.6.1-base-ubuntu20.04
+FROM nvidia/cuda:11.2.2-base-ubuntu20.04
 WORKDIR /
 COPY koordlet .
 ENTRYPOINT ["/koordlet"]

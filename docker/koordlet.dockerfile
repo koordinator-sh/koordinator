@@ -12,7 +12,7 @@ COPY pkg/ pkg/
 
 RUN GOOS=linux GOARCH=amd64 go build -a -o koordlet cmd/koordlet/main.go
 
-FROM nvidia/cuda:11.6.1-base-ubuntu20.04
+FROM nvidia/cuda:11.2.2-base-ubuntu20.04
 WORKDIR /
 COPY --from=builder /go/src/github.com/koordinator-sh/koordinator/koordlet .
 ENTRYPOINT ["/koordlet"]
