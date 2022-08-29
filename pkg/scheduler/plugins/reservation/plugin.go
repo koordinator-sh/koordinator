@@ -19,6 +19,7 @@ package reservation
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 
 	"go.uber.org/atomic"
@@ -32,6 +33,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	pluginhelper "k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/config"
@@ -44,6 +46,8 @@ import (
 
 const (
 	Name = "Reservation" // the plugin name
+
+	mostPreferredScore = 1000
 
 	preFilterStateKey = "PreFilter" + Name // what nodes the scheduling pod match any reservation at
 
@@ -76,6 +80,7 @@ type Plugin struct {
 	rLister          listerschedulingv1alpha1.ReservationLister
 	podLister        listercorev1.PodLister
 	client           clientschedulingv1alpha1.SchedulingV1alpha1Interface // for updates
+	parallelizeUntil parallelizeUntilFunc
 	reservationCache *reservationCache
 }
 
@@ -110,6 +115,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		rLister:          reservationInterface.Lister(),
 		podLister:        extendedHandle.SharedInformerFactory().Core().V1().Pods().Lister(),
 		client:           extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
+		parallelizeUntil: defaultParallelizeUntil(handle),
 		reservationCache: newReservationCache(),
 	}
 
@@ -231,6 +237,44 @@ func (p *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 	return nil, framework.NewStatus(framework.Unschedulable)
 }
 
+func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+	// if pod is a reserve pod, ignored
+	if IsReservePod(pod) {
+		return nil
+	}
+
+	state := getPreFilterState(cycleState)
+	if state == nil {
+		return nil
+	}
+	if state.skip {
+		return nil
+	}
+
+	nodeOrders := make([]int64, len(nodes))
+	p.parallelizeUntil(ctx, len(nodes), func(piece int) {
+		node := nodes[piece]
+		rOnNode := state.matchedCache.GetOnNode(node.Name)
+		if len(rOnNode) <= 0 {
+			return
+		}
+		_, order := findMostPreferredReservationByOrder(rOnNode)
+		nodeOrders[piece] = order
+	})
+	var selectOrder int64 = math.MaxInt64
+	var nodeIndex int
+	for i, order := range nodeOrders {
+		if order != 0 && selectOrder > order {
+			selectOrder = order
+			nodeIndex = i
+		}
+	}
+	if selectOrder != math.MaxInt64 {
+		state.mostPreferredNode = nodes[nodeIndex].Name
+	}
+	return nil
+}
+
 func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
 	// if pod is a reserve pod, ignored
 	if IsReservePod(pod) {
@@ -239,27 +283,39 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 
 	state := getPreFilterState(cycleState)
 	if state == nil { // expected matchedCache is prepared
-		klog.V(5).InfoS("skip the Reservation Score", "pod", klog.KObj(pod), "node", nodeName)
 		return framework.MinNodeScore, nil
 	}
 	if state.skip {
 		return framework.MinNodeScore, nil
 	}
 
+	if state.mostPreferredNode == nodeName {
+		return mostPreferredScore, nil
+	}
+
 	rOnNode := state.matchedCache.GetOnNode(nodeName)
-	klog.V(5).InfoS("Attempting to score pod for reservation state", "pod", klog.KObj(pod),
-		"node", nodeName, "matched count", len(rOnNode))
 	if len(rOnNode) <= 0 {
 		return framework.MinNodeScore, nil
 	}
 
-	// prefer the nodes which have reservation matched
-	// TODO: enable fine-grained scoring algorithm for reservations
-	return framework.MaxNodeScore, nil
+	// select one reservation for the pod to allocate
+	// sort: here we use MostAllocated (simply set all weights as 1.0)
+	for i := range rOnNode {
+		rOnNode[i].ScoreForPod(pod)
+	}
+	sort.Slice(rOnNode, func(i, j int) bool {
+		return rOnNode[i].Score >= rOnNode[j].Score
+	})
+
+	return rOnNode[0].Score, nil
 }
 
 func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
 	return nil
+}
+
+func (p *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, scores framework.NodeScoreList) *framework.Status {
+	return pluginhelper.DefaultNormalizeScore(framework.MaxNodeScore, false, scores)
 }
 
 func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
@@ -281,7 +337,16 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 
 	// select one reservation for the pod to allocate
 	// sort: here we use MostAllocated (simply set all weights as 1.0)
+	var order int64 = math.MaxInt64
 	for i := range rOnNode {
+		var rInfo *reservationInfo
+		if order == math.MaxInt64 {
+			rInfo, order = findMostPreferredReservationByOrder(rOnNode)
+			if order > 0 && rInfo != nil {
+				rInfo.Score = mostPreferredScore
+				continue
+			}
+		}
 		rOnNode[i].ScoreForPod(pod)
 	}
 	sort.Slice(rOnNode, func(i, j int) bool {

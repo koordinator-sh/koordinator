@@ -26,16 +26,24 @@ import (
 )
 
 const (
+	// LabelReservationOrder controls the preference logic for Reservation.
+	// Reservation with lower order is preferred to be selected before Reservation with higher order.
+	// But if it is 0, Reservation will be selected according to the capacity score.
+	LabelReservationOrder = SchedulingDomainPrefix + "/reservation-order"
+
+	// AnnotationReservationAllocated represents the reservation allocated by the pod.
+	AnnotationReservationAllocated = SchedulingDomainPrefix + "/reservation-allocated"
+)
+
+const (
 	// AnnotationCustomUsageThresholds represents the user-defined resource utilization threshold.
 	// For specific value definitions, see CustomUsageThresholds
 	AnnotationCustomUsageThresholds = SchedulingDomainPrefix + "/usage-thresholds"
 
-	// AnnotationReservationAllocated represents the reservation allocated by the pod.
-	AnnotationReservationAllocated = SchedulingDomainPrefix + "/reservation-allocated"
-
 	// AnnotationDeviceAllocated represents the device allocated by the pod
 	AnnotationDeviceAllocated = SchedulingDomainPrefix + "/device-allocated"
 )
+
 const (
 	AnnotationGangPrefix = "gang.scheduling.koordinator.sh"
 	// AnnotationGangName specifies the name of the gang

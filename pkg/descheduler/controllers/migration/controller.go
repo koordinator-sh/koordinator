@@ -19,6 +19,7 @@ package migration
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -41,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/validation"
@@ -363,6 +365,11 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 	if job.Spec.ReservationOptions == nil || job.Spec.ReservationOptions.ReservationRef == nil {
 		err = r.createReservation(ctx, job)
 		return reconcile.Result{}, err
+	} else {
+		err = r.setReservationOrder(ctx, job)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 	}
 
 	if err = r.handleReservationCreateSuccess(ctx, job); err != nil {
@@ -820,6 +827,23 @@ func (r *Reconciler) createReservation(ctx context.Context, job *sev1alpha1.PodM
 		r.eventRecorder.Eventf(job, nil, corev1.EventTypeNormal, string(sev1alpha1.PodMigrationJobConditionReservationCreated), "Migrating", "Successfully create Reservation %q", reservationObj)
 	}
 	return err
+}
+
+func (r *Reconciler) setReservationOrder(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
+	reservationObj, err := r.reservationInterpreter.GetReservation(ctx, job.Spec.ReservationOptions.ReservationRef)
+	if err != nil {
+		return err
+	}
+	obj := reservationObj.OriginObject()
+	objLabels := obj.GetLabels()
+	if _, ok := objLabels[extension.LabelReservationOrder]; ok {
+		return nil
+	}
+	if objLabels == nil {
+		objLabels = make(map[string]string)
+	}
+	objLabels[extension.LabelReservationOrder] = strconv.FormatInt(time.Now().UnixMilli(), 10)
+	return r.Client.Update(ctx, obj)
 }
 
 func (r *Reconciler) handleReservationCreateSuccess(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {

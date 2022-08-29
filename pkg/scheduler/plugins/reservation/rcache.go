@@ -17,6 +17,8 @@ limitations under the License.
 package reservation
 
 import (
+	"math"
+	"strconv"
 	"sync"
 	"time"
 
@@ -25,6 +27,7 @@ import (
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
@@ -85,6 +88,27 @@ func (m *reservationInfo) ScoreForPod(pod *corev1.Pod) {
 		s += framework.MaxNodeScore * req.MilliValue() / alloc.MilliValue()
 	}
 	m.Score = s / w
+}
+
+func findMostPreferredReservationByOrder(rOnNode []*reservationInfo) (*reservationInfo, int64) {
+	var selectOrder int64 = math.MaxInt64
+	var rInfo *reservationInfo
+	for _, v := range rOnNode {
+		s := v.Reservation.Labels[apiext.LabelReservationOrder]
+		if s == "" {
+			continue
+		}
+		order, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			continue
+		}
+		// The smaller the order value is, the reservation will be selected first
+		if order != 0 && selectOrder > order {
+			selectOrder = order
+			rInfo = v
+		}
+	}
+	return rInfo, selectOrder
 }
 
 // AvailableCache is for efficiently querying the reservation allocation results.
@@ -333,10 +357,11 @@ func (c *reservationCache) IsInactive(r *schedulingv1alpha1.Reservation) bool {
 var _ framework.StateData = &stateData{}
 
 type stateData struct {
-	skip         bool                            // set true if pod does not allocate reserved resources
-	preBind      bool                            // set true if pod succeeds the reservation pre-bind
-	matchedCache *AvailableCache                 // matched reservations for the scheduling pod
-	assumed      *schedulingv1alpha1.Reservation // assumed reservation to be allocated by the pod
+	skip              bool            // set true if pod does not allocate reserved resources
+	preBind           bool            // set true if pod succeeds the reservation pre-bind
+	matchedCache      *AvailableCache // matched reservations for the scheduling pod
+	mostPreferredNode string
+	assumed           *schedulingv1alpha1.Reservation // assumed reservation to be allocated by the pod
 }
 
 func (d *stateData) Clone() framework.StateData {

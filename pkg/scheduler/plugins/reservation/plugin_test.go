@@ -25,6 +25,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
@@ -41,6 +42,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/config"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/config/v1beta2"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -264,7 +266,7 @@ func (f *fakeExtendedHandle) EventRecorder() events.EventRecorder {
 	return f.eventRecorder
 }
 
-func fakeParallelizeUntil(handle frameworkext.ExtendedHandle) parallelizeUntilFunc {
+func fakeParallelizeUntil(handle framework.Handle) parallelizeUntilFunc {
 	return func(ctx context.Context, pieces int, doWorkPiece workqueue.DoWorkPieceFunc) {
 		for i := 0; i < pieces; i++ {
 			doWorkPiece(i)
@@ -719,6 +721,19 @@ func TestScore(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-pod-1",
 		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "main",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("4"),
+							corev1.ResourceMemory: resource.MustParse("8Gi"),
+						},
+					},
+				},
+			},
+		},
 	}
 	testNodeName := "test-node-0"
 	testNodeNameNotMatched := "test-node-1"
@@ -730,6 +745,19 @@ func TestScore(t *testing.T) {
 			Template: &corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "reserve-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
 				},
 			},
 			Owners: []schedulingv1alpha1.ReservationOwner{
@@ -755,6 +783,19 @@ func TestScore(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "reserve-pod-2",
 				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
 			},
 			Owners: []schedulingv1alpha1.ReservationOwner{
 				{
@@ -770,6 +811,46 @@ func TestScore(t *testing.T) {
 			NodeName: "other-node",
 		},
 	}
+	rScheduled2 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-3",
+			Labels: map[string]string{
+				apiext.LabelReservationOrder: "123456",
+			},
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-3",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-3",
+					},
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: testNodeName,
+		},
+	}
 	stateSkip := framework.NewCycleState()
 	stateSkip.Write(preFilterStateKey, &stateData{
 		skip: true,
@@ -778,6 +859,25 @@ func TestScore(t *testing.T) {
 	stateForMatch.Write(preFilterStateKey, &stateData{
 		matchedCache: newAvailableCache(rScheduled, rScheduled1),
 	})
+
+	stateForOrderMatch := framework.NewCycleState()
+	stateForOrderMatch.Write(preFilterStateKey, &stateData{
+		matchedCache: newAvailableCache(rScheduled, rScheduled1, rScheduled2),
+	})
+
+	nodes := []*corev1.Node{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNodeName,
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "other-node",
+			},
+		},
+	}
+
 	type args struct {
 		cycleState *framework.CycleState
 		pod        *corev1.Pod
@@ -835,10 +935,24 @@ func TestScore(t *testing.T) {
 			want:  framework.MaxNodeScore,
 			want1: nil,
 		},
+		{
+			name: "reservation matched by order",
+			args: args{
+				cycleState: stateForOrderMatch,
+				pod:        normalPod,
+				nodeName:   testNodeName,
+			},
+			want:  mostPreferredScore,
+			want1: nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Plugin{}
+			p := &Plugin{
+				parallelizeUntil: fakeParallelizeUntil(nil),
+			}
+			status := p.PreScore(context.TODO(), tt.args.cycleState, tt.args.pod, nodes)
+			assert.True(t, status.IsSuccess())
 			got, got1 := p.Score(context.TODO(), tt.args.cycleState, tt.args.pod, tt.args.nodeName)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1)
@@ -923,10 +1037,22 @@ func TestReserve(t *testing.T) {
 		matchedCache: newAvailableCache(rScheduled, rScheduled1),
 	})
 	stateForMatch1 := stateForMatch.Clone()
+	rscheduled2 := rScheduled.DeepCopy()
+	rscheduled2.Labels = map[string]string{
+		apiext.LabelReservationOrder: "1234567",
+	}
+	setReservationAllocated(rscheduled2, normalPod)
+	stateForOrderMatch := framework.NewCycleState()
+	stateForOrderMatch.Write(preFilterStateKey, &stateData{
+		matchedCache: newAvailableCache(rScheduled, rScheduled1, rscheduled2),
+	})
 	cacheNotActive := newReservationCache()
 	cacheNotActive.AddToInactive(rScheduled)
 	cacheMatched := newReservationCache()
 	cacheMatched.AddToActive(rScheduled)
+	cacheOrderMatched := newReservationCache()
+	cacheOrderMatched.AddToActive(rScheduled)
+	cacheOrderMatched.AddToActive(rscheduled2)
 	cacheAssumed := newReservationCache()
 	cacheAssumed.Assume(rScheduled.DeepCopy())
 	type args struct {
@@ -1001,6 +1127,19 @@ func TestReserve(t *testing.T) {
 			},
 			want:      nil,
 			wantField: rAllocated,
+		},
+		{
+			name: "reservation matched by order",
+			fields: fields{
+				reservationCache: cacheOrderMatched,
+			},
+			args: args{
+				cycleState: stateForOrderMatch,
+				pod:        normalPod,
+				nodeName:   testNodeName,
+			},
+			want:      nil,
+			wantField: rscheduled2,
 		},
 		{
 			name: "reservation assumed",
