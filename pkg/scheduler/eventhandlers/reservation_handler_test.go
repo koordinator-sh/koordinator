@@ -37,7 +37,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type fakeExtendHandle struct {
@@ -76,7 +76,7 @@ func TestAddReservationErrorHandler(t *testing.T) {
 			NodeName: testNodeName,
 		},
 	}
-	testPod := reservation.NewReservePod(testR)
+	testPod := util.NewReservePod(testR)
 
 	t.Run("test not panic", func(t *testing.T) {
 		sched := &scheduler.Scheduler{}

@@ -27,6 +27,7 @@ import (
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func TestPreFilterHook(t *testing.T) {
@@ -77,7 +78,7 @@ func TestPreFilterHook(t *testing.T) {
 		},
 	}
 	testHandle1 := &fakeExtendedHandle{
-		sharedLister: newFakeSharedLister([]*corev1.Pod{NewReservePod(rScheduled)}, []*corev1.Node{testNode}, false),
+		sharedLister: newFakeSharedLister([]*corev1.Pod{util.NewReservePod(rScheduled)}, []*corev1.Node{testNode}, false),
 		koordSharedInformerFactory: &fakeKoordinatorSharedInformerFactory{
 			informer: &fakeIndexedInformer{
 				rOnNode: map[string][]*schedulingv1alpha1.Reservation{
