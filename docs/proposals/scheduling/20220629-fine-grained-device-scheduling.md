@@ -379,7 +379,7 @@ type ContainerResourceHookResponse struct {
 }
 ```
 
-Then we will add a new `gpu-hook` in koordlet's runtimehooks. It's used in `PreStartContainer` and `PostContainerstage`. 
+Then we will add a new `gpu-hook` in koordlet's runtimehooks, registered to `PreCreateContainer` stage. 
 We will generate new GPU env `NVIDIA_VISIBLE_DEVICES` by Pod GPU allocation result in annotation. 
 
 When we handle hot-update processing, we can handle the existing scheduled Pods without device allocation in pod's annotation. If GPU allocation info is not in annotation, we will find the GPU allocations from `ContainerResourceHookRequest`'s `Env`, and we will update all GPU allocations to Device CRD instance. 
