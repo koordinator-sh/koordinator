@@ -17,11 +17,13 @@ limitations under the License.
 package resmanager
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strconv"
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -574,6 +576,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			si.EXPECT().GetAllPods().Return(tt.args.podMetas).AnyTimes()
 			si.EXPECT().GetNode().Return(tt.args.node).AnyTimes()
 			si.EXPECT().GetNodeSLO().Return(getNodeSLOByThreshold(tt.args.thresholdConfig)).AnyTimes()
+			si.EXPECT().GetNodeTopo().Return(&topov1alpha1.NodeResourceTopology{}).AnyTimes()
 
 			// prepareData: mockMetricCache pods node beMetrics(AVG,current)
 			mockMetricCache := mockmetriccache.NewMockMetricCache(ctl)
@@ -948,7 +951,7 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 			if tt.args.currentPolicyStatus != nil {
 				cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = *tt.args.currentPolicyStatus
 			}
-			cpuSuppress.recoverCPUSetIfNeed()
+			cpuSuppress.recoverCPUSetIfNeed(containerCgroupPathRelativeDepth)
 			gotPolicyStatus := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)]
 			assert.Equal(t, *tt.wantPolicyStatus, gotPolicyStatus, "checkStatus")
 			gotCPUSetBECgroup := helper.ReadCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
@@ -1161,7 +1164,7 @@ func Test_calculateBESuppressCPUSetPolicy(t *testing.T) {
 	}
 }
 
-func Test_applyBESuppressCPUSetPolicy(t *testing.T) {
+func Test_applyCPUSetWithNonePolicy(t *testing.T) {
 	// prepare testing files
 	helper := system.NewFileTestUtil(t)
 	podDirs := []string{"pod1", "pod2", "pod3"}
@@ -1173,7 +1176,7 @@ func Test_applyBESuppressCPUSetPolicy(t *testing.T) {
 	oldCPUSet, err := util.GetRootCgroupCurCPUSet(corev1.PodQOSBestEffort)
 	assert.NoError(t, err)
 
-	err = applyBESuppressCPUSetPolicy(cpuset, oldCPUSet)
+	err = applyCPUSetWithNonePolicy(cpuset, oldCPUSet)
 	assert.NoError(t, err)
 	gotCPUSetBECgroup := helper.ReadCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 	assert.Equal(t, wantCPUSetStr, gotCPUSetBECgroup, "checkBECPUSet")
@@ -1194,7 +1197,7 @@ func Test_getBECgroupCPUSetPathsRecursive(t *testing.T) {
 		wantPaths = append(wantPaths, filepath.Join(util.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort), podDir))
 	}
 
-	paths, err := getBECgroupCPUSetPathsRecursive()
+	paths, err := getBECPUSetPathsByMaxDepth(containerCgroupPathRelativeDepth)
 	assert.NoError(t, err)
 	assert.Equal(t, len(wantPaths), len(paths))
 }
@@ -1256,6 +1259,7 @@ func Test_adjustByCPUSet(t *testing.T) {
 	lsrPod := mockLSRPod()
 	lsePod := mockLSEPod()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{Pod: lsrPod}, {Pod: lsePod}}).AnyTimes()
+	mockStatesInformer.EXPECT().GetNodeTopo().Return(&topov1alpha1.NodeResourceTopology{}).AnyTimes()
 	r := &resmanager{
 		statesInformer: mockStatesInformer,
 	}
@@ -1386,6 +1390,13 @@ func testingPrepareBECgroupData(helper *system.FileTestUtil, podDirs []string, c
 	}
 }
 
+func testingPrepareBEContainerCgroupData(helper *system.FileTestUtil, groupDirs []string, cpusets string) {
+	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet, cpusets)
+	for _, dir := range groupDirs {
+		helper.WriteCgroupFileContents(filepath.Join(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), dir), system.CPUSet, cpusets)
+	}
+}
+
 func getNodeSLOByThreshold(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) *slov1alpha1.NodeSLO {
 	return &slov1alpha1.NodeSLO{
 		Spec: slov1alpha1.NodeSLOSpec{
@@ -1475,5 +1486,117 @@ func mockLSEPod() *corev1.Pod {
 				},
 			},
 		},
+	}
+}
+
+func TestCPUSuppress_applyBESuppressCPUSet(t *testing.T) {
+	mockNodeInfo := &metriccache.NodeCPUInfo{
+		ProcessorInfos: []util.ProcessorInfo{
+			{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 1},
+			{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 1},
+			{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 8, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 9, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 10, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 11, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 12, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 13, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 14, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 15, CoreID: 3, SocketID: 1, NodeID: 1},
+		},
+	}
+	type fields struct {
+		cpuPolicy *apiext.KubeletCPUManagerPolicy
+	}
+	type args struct {
+		beCPUSet     []int32
+		oldCPUSet    []int32
+		oldCPUSetStr string
+	}
+	type wants struct {
+		beDirCPUSet        string
+		podDirCPUSet       string
+		containerDirCPUSet string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		wants  wants
+	}{
+		{
+			name: "apply with static poicy",
+			fields: fields{
+				cpuPolicy: &apiext.KubeletCPUManagerPolicy{
+					Policy: apiext.KubeletCPUManagerPolicyStatic,
+				},
+			},
+			args: args{
+				beCPUSet:     []int32{0, 1, 2, 3},
+				oldCPUSet:    []int32{0, 1, 2},
+				oldCPUSetStr: "0-2",
+			},
+			wants: wants{
+				beDirCPUSet:        "0-15",
+				podDirCPUSet:       "0-15",
+				containerDirCPUSet: "0,1,2,3",
+			},
+		},
+	}
+	for _, tt := range tests {
+		helper := system.NewFileTestUtil(t)
+		podDirs := []string{"pod1", "pod2", "pod3"}
+		containerDirs := []string{
+			"pod1/container11", "pod1/container12",
+			"pod2/container21", "pod2/container22",
+			"pod3/container31",
+		}
+		testDirs := []string{}
+		testDirs = append(testDirs, podDirs...)
+		testDirs = append(testDirs, containerDirs...)
+		testingPrepareBEContainerCgroupData(helper, testDirs, tt.args.oldCPUSetStr)
+
+		ctl := gomock.NewController(t)
+		defer ctl.Finish()
+		nodeTopo := &topov1alpha1.NodeResourceTopology{}
+		if tt.fields.cpuPolicy != nil {
+			cpuPolicyStr, _ := json.Marshal(tt.fields.cpuPolicy)
+			nodeTopo.Annotations = map[string]string{
+				apiext.AnnotationKubeletCPUManagerPolicy: string(cpuPolicyStr),
+			}
+		}
+		t.Run(tt.name, func(t *testing.T) {
+			si := mockstatesinformer.NewMockStatesInformer(ctl)
+			si.EXPECT().GetNodeTopo().Return(nodeTopo).AnyTimes()
+			si.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
+			mc := mockmetriccache.NewMockMetricCache(ctl)
+			mc.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(mockNodeInfo, nil).AnyTimes()
+			r := &CPUSuppress{
+				resmanager: &resmanager{
+					statesInformer: si,
+					metricCache:    mc,
+				},
+				suppressPolicyStatuses: map[string]suppressPolicyStatus{},
+			}
+
+			err := r.applyBESuppressCPUSet(tt.args.beCPUSet, tt.args.oldCPUSet)
+
+			assert.NoError(t, err)
+			gotCPUSetBECgroup := helper.ReadCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+			assert.Equal(t, tt.wants.beDirCPUSet, gotCPUSetBECgroup, "checkBECPUSet")
+			for _, podDir := range podDirs {
+				gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
+				assert.Equal(t, tt.wants.podDirCPUSet, gotPodCPUSet, "checkPodCPUSet")
+			}
+			for _, containerDir := range containerDirs {
+				gotContainerCPUSet := helper.ReadCgroupFileContents(filepath.Join(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), containerDir), system.CPUSet)
+				assert.Equal(t, tt.wants.containerDirCPUSet, gotContainerCPUSet, "checkContainerCPUSet")
+			}
+		})
 	}
 }

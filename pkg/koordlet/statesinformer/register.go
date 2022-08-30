@@ -128,7 +128,7 @@ func (s *statesInformer) getObjByType(objType RegisterType, cbCtx UpdateCbCtx) i
 	case RegisterTypeAllPods:
 		return &struct{}{}
 	case RegisterTypeNodeTopology:
-		return s.getNodeTopo()
+		return s.GetNodeTopo()
 	}
 	return nil
 }

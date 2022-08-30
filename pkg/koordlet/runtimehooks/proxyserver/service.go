@@ -40,7 +40,7 @@ func (s *server) PreRunPodSandboxHook(ctx context.Context,
 	podCtx.FromProxy(req)
 	hooks.RunHooks(rmconfig.PreRunPodSandbox, podCtx)
 	podCtx.ProxyDone(resp)
-	klog.V(5).Infof("send PreRunPodSandboxHook response %v", resp.String())
+	klog.V(5).Infof("send PreRunPodSandboxHook for pod %v response %v", req.PodMeta.String(), resp.String())
 	return resp, nil
 }
 
@@ -57,7 +57,7 @@ func (s *server) PostStopPodSandboxHook(ctx context.Context,
 	podCtx.FromProxy(req)
 	hooks.RunHooks(rmconfig.PostStopPodSandbox, podCtx)
 	podCtx.ProxyDone(resp)
-	klog.V(5).Infof("send PostStopPodSandboxHook response %v", resp.String())
+	klog.V(5).Infof("send PostStopPodSandboxHook for pod %v response %v", req.PodMeta.String(), resp.String())
 	return resp, nil
 }
 
@@ -73,7 +73,8 @@ func (s *server) PreCreateContainerHook(ctx context.Context,
 	containerCtx.FromProxy(req)
 	hooks.RunHooks(rmconfig.PreCreateContainer, containerCtx)
 	containerCtx.ProxyDone(resp)
-	klog.V(5).Infof("send PreCreateContainerHook response %v", resp.String())
+	klog.V(5).Infof("send PreCreateContainerHook response for pod %v container %v response %v",
+		req.PodMeta.String(), req.ContainerMeta.String(), resp.String())
 	return resp, nil
 }
 
@@ -89,7 +90,8 @@ func (s *server) PreStartContainerHook(ctx context.Context,
 	containerCtx.FromProxy(req)
 	hooks.RunHooks(rmconfig.PreStartContainer, containerCtx)
 	containerCtx.ProxyDone(resp)
-	klog.V(5).Infof("send PreStartContainerHook response %v", resp.String())
+	klog.V(5).Infof("send PreStartContainerHook for pod %v container %v response %v",
+		req.PodMeta.String(), req.ContainerMeta.String(), resp.String())
 	return resp, nil
 }
 
@@ -105,7 +107,8 @@ func (s *server) PostStartContainerHook(ctx context.Context,
 	containerCtx.FromProxy(req)
 	hooks.RunHooks(rmconfig.PostStartContainer, containerCtx)
 	containerCtx.ProxyDone(resp)
-	klog.V(5).Infof("send PostStartContainerHook response %v", resp.String())
+	klog.V(5).Infof("send PostStartContainerHook for pod %v container %v response %v",
+		req.PodMeta.String(), req.ContainerMeta.String(), resp.String())
 	return resp, nil
 }
 
@@ -121,7 +124,8 @@ func (s *server) PostStopContainerHook(ctx context.Context,
 	containerCtx.FromProxy(req)
 	hooks.RunHooks(rmconfig.PostStopContainer, containerCtx)
 	containerCtx.ProxyDone(resp)
-	klog.V(5).Infof("send PostStopContainerHook response %v", resp.String())
+	klog.V(5).Infof("send PostStopContainerHook for pod %v container %v response %v",
+		req.PodMeta.String(), req.ContainerMeta.String(), resp.String())
 	return resp, nil
 }
 
@@ -137,6 +141,7 @@ func (s *server) PreUpdateContainerResourcesHook(ctx context.Context,
 	containerCtx.FromProxy(req)
 	hooks.RunHooks(rmconfig.PreUpdateContainerResources, containerCtx)
 	containerCtx.ProxyDone(resp)
-	klog.V(5).Infof("send PreUpdateContainerResourcesHook response %v", resp.String())
+	klog.V(5).Infof("send PreUpdateContainerResourcesHook for pod %v container %v response %v",
+		req.PodMeta.String(), req.ContainerMeta.String(), resp.String())
 	return resp, nil
 }

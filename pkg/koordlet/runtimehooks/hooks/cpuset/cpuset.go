@@ -46,6 +46,7 @@ type cpusetPlugin struct {
 func (p *cpusetPlugin) Register() {
 	klog.V(5).Infof("register hook %v", name)
 	hooks.Register(rmconfig.PreCreateContainer, name, description, p.SetContainerCPUSet)
+	hooks.Register(rmconfig.PreUpdateContainerResources, name, description, p.SetContainerCPUSet)
 	rule.Register(name, description,
 		rule.WithParseFunc(statesinformer.RegisterTypeNodeTopology, p.parseRule),
 		rule.WithUpdateCallback(p.ruleUpdateCb))

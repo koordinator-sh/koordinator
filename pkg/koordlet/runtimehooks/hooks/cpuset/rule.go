@@ -81,6 +81,7 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 	if kubeQOS == corev1.PodQOSBestEffort {
 		// besteffort pods including QoS=BE, clear cpuset of BE container to avoid conflict with kubelet static policy,
 		// which will pass cpuset in StartContainerRequest of CRI
+		// TODO remove this in the future since cpu suppress will keep besteffort dir as all cpuset
 		return pointer.String(""), nil
 	}
 
