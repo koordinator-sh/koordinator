@@ -62,8 +62,6 @@ spec:
                       type: string
                   type: object
                 type: array
-            required:
-            - devices
             type: object
           status:
             properties:
@@ -73,9 +71,10 @@ spec:
                     entries:
                       items:
                         properties:
-                          devices:
+                          minors:
                             items:
-                              type: string
+                              format: int32
+                              type: integer
                             type: array
                           name:
                             type: string
@@ -83,22 +82,12 @@ spec:
                             type: string
                           uuid:
                             type: string
-                        required:
-                        - devices
-                        - name
-                        - namespace
-                        - uuid
                         type: object
                       type: array
                     type:
                       type: string
-                  required:
-                  - entries
-                  - type
                   type: object
                 type: array
-            required:
-            - allocations
             type: object
         type: object
     served: true

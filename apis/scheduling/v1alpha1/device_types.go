@@ -30,7 +30,7 @@ const (
 )
 
 type DeviceSpec struct {
-	Devices []DeviceInfo `json:"devices"`
+	Devices []DeviceInfo `json:"devices,omitempty"`
 }
 
 type DeviceInfo struct {
@@ -47,19 +47,19 @@ type DeviceInfo struct {
 }
 
 type DeviceStatus struct {
-	Allocations []DeviceAllocation `json:"allocations"`
+	Allocations []DeviceAllocation `json:"allocations,omitempty"`
 }
 
 type DeviceAllocation struct {
-	Type    DeviceType             `json:"type"`
-	Entries []DeviceAllocationItem `json:"entries"`
+	Type    DeviceType             `json:"type,omitempty"`
+	Entries []DeviceAllocationItem `json:"entries,omitempty"`
 }
 
 type DeviceAllocationItem struct {
-	Name      string   `json:"name"`
-	Namespace string   `json:"namespace"`
-	UUID      string   `json:"uuid"`
-	Devices   []string `json:"devices"`
+	Name      string  `json:"name,omitempty"`
+	Namespace string  `json:"namespace,omitempty"`
+	UUID      string  `json:"uuid,omitempty"`
+	Minors    []int32 `json:"minors,omitempty"`
 }
 
 // +genclient
