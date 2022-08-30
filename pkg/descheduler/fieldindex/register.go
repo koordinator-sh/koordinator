@@ -29,11 +29,11 @@ import (
 )
 
 const (
-	IndexNodeName          = "spec.nodeName"
-	IndexPodUUID           = "pod.uuid"
-	IndexPodNamespacedName = "pod.namespacedName"
-	IndexPodNamespace      = "pod.namespace"
-	IndexPodOwnerRefUID    = "ownerRefUID"
+	IndexPodByNodeName        = "pod.spec.nodeName"
+	IndexPodByOwnerRefUID     = "pod.ownerRefUID"
+	IndexJobByPodUID          = "job.pod.uid"
+	IndexJobPodNamespacedName = "job.pod.namespacedName"
+	IndexJobByPodNamespace    = "job.pod.namespace"
 )
 
 var (
@@ -43,7 +43,7 @@ var (
 func RegisterFieldIndexes(c cache.Cache) error {
 	var err error
 	registerOnce.Do(func() {
-		err = c.IndexField(context.Background(), &corev1.Pod{}, IndexNodeName, func(obj client.Object) []string {
+		err = c.IndexField(context.Background(), &corev1.Pod{}, IndexPodByNodeName, func(obj client.Object) []string {
 			pod, ok := obj.(*corev1.Pod)
 			if !ok {
 				return []string{}
@@ -57,7 +57,18 @@ func RegisterFieldIndexes(c cache.Cache) error {
 			return
 		}
 
-		err = c.IndexField(context.Background(), &sev1alpha1.PodMigrationJob{}, IndexPodUUID, func(obj client.Object) []string {
+		err = c.IndexField(context.TODO(), &corev1.Pod{}, IndexPodByOwnerRefUID, func(obj client.Object) []string {
+			var owners []string
+			for _, ref := range obj.GetOwnerReferences() {
+				owners = append(owners, string(ref.UID))
+			}
+			return owners
+		})
+		if err != nil {
+			return
+		}
+
+		err = c.IndexField(context.Background(), &sev1alpha1.PodMigrationJob{}, IndexJobByPodUID, func(obj client.Object) []string {
 			migrationJob, ok := obj.(*sev1alpha1.PodMigrationJob)
 			if !ok {
 				return []string{}
@@ -70,7 +81,7 @@ func RegisterFieldIndexes(c cache.Cache) error {
 		if err != nil {
 			return
 		}
-		err = c.IndexField(context.Background(), &sev1alpha1.PodMigrationJob{}, IndexPodNamespacedName, func(obj client.Object) []string {
+		err = c.IndexField(context.Background(), &sev1alpha1.PodMigrationJob{}, IndexJobPodNamespacedName, func(obj client.Object) []string {
 			migrationJob, ok := obj.(*sev1alpha1.PodMigrationJob)
 			if !ok {
 				return []string{}
@@ -83,7 +94,7 @@ func RegisterFieldIndexes(c cache.Cache) error {
 		if err != nil {
 			return
 		}
-		err = c.IndexField(context.Background(), &sev1alpha1.PodMigrationJob{}, IndexPodNamespace, func(obj client.Object) []string {
+		err = c.IndexField(context.Background(), &sev1alpha1.PodMigrationJob{}, IndexJobByPodNamespace, func(obj client.Object) []string {
 			migrationJob, ok := obj.(*sev1alpha1.PodMigrationJob)
 			if !ok {
 				return []string{}
@@ -92,16 +103,6 @@ func RegisterFieldIndexes(c cache.Cache) error {
 				return []string{}
 			}
 			return []string{migrationJob.Spec.PodRef.Namespace}
-		})
-		if err != nil {
-			return
-		}
-		err = c.IndexField(context.TODO(), &corev1.Pod{}, IndexPodOwnerRefUID, func(obj client.Object) []string {
-			var owners []string
-			for _, ref := range obj.GetOwnerReferences() {
-				owners = append(owners, string(ref.UID))
-			}
-			return owners
 		})
 		if err != nil {
 			return

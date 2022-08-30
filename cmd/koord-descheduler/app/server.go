@@ -323,7 +323,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 func podAssignedToNode(clt client.Client) descheduler.PodAssignedToNodeFn {
 	return func(nodeName string) ([]*corev1.Pod, error) {
 		podList := &corev1.PodList{}
-		err := clt.List(context.TODO(), podList, &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexNodeName, nodeName)})
+		err := clt.List(context.TODO(), podList, &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexPodByNodeName, nodeName)})
 		if err != nil {
 			return nil, err
 		}
