@@ -26,6 +26,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/common/reason"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 )
 
@@ -90,7 +91,7 @@ func (m *MemoryEvictor) memoryEvict() {
 		return
 	}
 
-	nodeMetric, podMetrics := m.resManager.collectNodeAndPodMetricLast()
+	nodeMetric, podMetrics := m.resManager.CollectNodeAndPodMetricLast()
 	if nodeMetric == nil {
 		klog.Warningf("skip memory evict, NodeMetric is nil")
 		return
@@ -143,7 +144,7 @@ func (m *MemoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics []*metr
 		}
 	}
 
-	m.resManager.evictPodsIfNotEvicted(killedPods, node, evictPodByNodeMemoryUsage, message)
+	m.resManager.evictPodsIfNotEvicted(killedPods, node, reason.EvictPodByNodeMemoryUsage, message)
 
 	m.lastEvictTime = time.Now()
 	klog.Infof("killAndEvictBEPods completed, memoryNeedRelease(%v) memoryReleased(%v)", memoryNeedRelease, memoryReleased)

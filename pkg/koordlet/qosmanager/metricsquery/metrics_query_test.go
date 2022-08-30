@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resmanager
+package metricsquery
 
 import (
 	"testing"
@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/common/testutil"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
@@ -116,8 +117,9 @@ func Test_collectNodeMetricsAvg(t *testing.T) {
 			for _, nodeMetric := range tt.nodeMetrics {
 				_ = metricCache.InsertNodeResourceMetric(nodeMetric.timestamp, nodeMetric.nodeResUsed)
 			}
-			resmanager := &resmanager{metricCache: metricCache}
-			queryResult := resmanager.collectNodeMetricsAvg(tt.windowSize)
+
+			metricsQuery := NewMetricsQuery(metricCache, nil)
+			queryResult := metricsQuery.CollectNodeMetricsAvg(tt.windowSize)
 			gotNodeMetric := queryResult.Metric
 			assert.Equal(t, tt.expectNodeMetric, gotNodeMetric)
 		})
@@ -142,13 +144,13 @@ func Test_collectNodeAndPodMetricLast(t *testing.T) {
 	tests := []args{
 		{
 			name:             "test no metrics in db",
-			pod:              &statesinformer.PodMeta{Pod: createTestPod(extension.QoSLSR, "test_pod")},
+			pod:              &statesinformer.PodMeta{Pod: testutil.MockTestPod(extension.QoSLSR, "test_pod")},
 			expectNodeMetric: nil,
 			expectPodMetric:  nil,
 		},
 		{
 			name: "test normal",
-			pod:  &statesinformer.PodMeta{Pod: createTestPod(extension.QoSLSR, "test_pod")},
+			pod:  &statesinformer.PodMeta{Pod: testutil.MockTestPod(extension.QoSLSR, "test_pod")},
 			metricInfos: []*metricInfos{
 				{
 					timestamp: time.Now().Add(-3 * time.Second),
@@ -200,8 +202,8 @@ func Test_collectNodeAndPodMetricLast(t *testing.T) {
 			mockstatesinformer := mock_statesinformer.NewMockStatesInformer(ctl)
 			mockstatesinformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{tt.pod}).AnyTimes()
 
-			resmanager := &resmanager{metricCache: metricCache, statesInformer: mockstatesinformer, collectResUsedIntervalSeconds: 60}
-			gotNodeMetric, gotPodMetrics := resmanager.CollectNodeAndPodMetricLast()
+			metricsQuery := NewMetricsQuery(metricCache, mockstatesinformer)
+			gotNodeMetric, gotPodMetrics := metricsQuery.CollectNodeAndPodMetricLast(60)
 			assert.Equal(t, tt.expectNodeMetric, gotNodeMetric)
 			if tt.expectPodMetric == nil {
 				assert.True(t, len(gotPodMetrics) == 0)

@@ -14,18 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resmanager
+package types
 
 const (
-	updateCPU             = "UpdateCPU"
-	updateMemory          = "UpdateMemory"
-	updateCgroups         = "UpdateCgroups" // update cgroups excluding the options already stated above
-	updateSystemConfig    = "UpdateSystemConfig"
-	updateResctrlSchemata = "UpdateResctrlSchemata" // update resctrl l3 cat schemata
-	updateResctrlTasks    = "UpdateResctrlTasks"    // update resctrl tasks
-
-	evictPodByNodeMemoryUsage   = "EvictPodByNodeMemoryUsage"
-	evictPodByBECPUSatisfaction = "EvictPodByBECPUSatisfaction"
-
-	adjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
+	DefaultCFSPeriod  = 100000
+	DefaultMemUnlimit = 9223372036854771712
 )

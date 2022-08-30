@@ -14,18 +14,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resmanager
+package cpusuppress
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/component-base/featuregate"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
@@ -36,10 +40,14 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/common/reason"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/metricsquery"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
+
+var _ plugins.Plugin = &CPUSuppress{}
 
 var (
 	// if destQuota - currentQuota < suppressMinQuotaDeltaRatio * totalCpu; then bypass;
@@ -57,13 +65,74 @@ var (
 	policyRecovered suppressPolicyStatus = "recovered"
 )
 
+var DefaultReconcileIntervalInSeconds = 5
+var DefaultCollectMetricsIntervalSeconds = int64(1)
+
+type Config struct {
+	ReconcileIntervalInSeconds    int   `json:"reconcileIntervalInSeconds"`
+	CollectMetricsIntervalSeconds int64 `json:"collectMetricsIntervalSeconds"`
+}
+
 type CPUSuppress struct {
-	resmanager             *resmanager
+	stopCh chan struct{}
+	cfg    *Config
+
+	statesInformer         statesinformer.StatesInformer
+	metricCache            metriccache.MetricCache
+	metricsQuery           metricsquery.MetricsQuery
 	suppressPolicyStatuses map[string]suppressPolicyStatus
 }
 
-func NewCPUSuppress(resmanager *resmanager) *CPUSuppress {
-	return &CPUSuppress{resmanager: resmanager, suppressPolicyStatuses: map[string]suppressPolicyStatus{}}
+func New(pluginCtx *plugins.PluginContext) plugins.Plugin {
+
+	cpuSuppress := &CPUSuppress{
+		statesInformer:         pluginCtx.StatesInformer,
+		metricCache:            pluginCtx.MetricCache,
+		metricsQuery:           pluginCtx.MetricsQuery,
+		suppressPolicyStatuses: map[string]suppressPolicyStatus{},
+	}
+
+	cfg := Config{}
+	if pluginCtx.ExtraConfig != nil {
+		if err := json.Unmarshal([]byte(*pluginCtx.ExtraConfig), &cfg); err != nil {
+			klog.Errorf("[Plugin: %v] failed to parse extra config: %s", cpuSuppress.Name(), *pluginCtx.ExtraConfig)
+		}
+	}
+	if cfg.ReconcileIntervalInSeconds <= 0 {
+		cfg.ReconcileIntervalInSeconds = DefaultReconcileIntervalInSeconds
+	}
+	if cfg.CollectMetricsIntervalSeconds <= 0 {
+		cfg.CollectMetricsIntervalSeconds = DefaultCollectMetricsIntervalSeconds
+	}
+	cpuSuppress.cfg = &cfg
+	
+	return cpuSuppress
+}
+
+// Name impl interface Plugin.
+func (_ *CPUSuppress) Name() string {
+	return "CPUSuppress"
+}
+
+// Name impl interface Plugin.
+func (_ *CPUSuppress) Feature() featuregate.Feature {
+	return features.BECPUSuppress
+}
+
+// Start impl interface Plugin.
+func (r *CPUSuppress) Start() error {
+	r.stopCh = make(chan struct{})
+	go wait.Until(r.suppressBECPU, time.Duration(r.cfg.ReconcileIntervalInSeconds)*time.Second, r.stopCh)
+	return nil
+}
+
+// Stop impl interface Plugin.
+func (r *CPUSuppress) Stop() error {
+	if r.stopCh != nil {
+		close(r.stopCh)
+		r.stopCh = nil
+	}
+	return nil
 }
 
 // getPodMetricCPUUsage gets pod usage cpu from the PodResourceMetric
@@ -311,8 +380,8 @@ func (r *CPUSuppress) suppressBECPU() {
 	// 3. apply best-effort cgroups cpuset or cfsquota
 
 	// Step 0.
-	nodeSLO := r.resmanager.getNodeSLOCopy()
-	if disabled, err := isFeatureDisabled(nodeSLO, features.BECPUSuppress); err != nil {
+	nodeSLO := r.statesInformer.GetNodeSLO()
+	if disabled, err := features.IsFeatureDisabled(nodeSLO, features.BECPUSuppress); err != nil {
 		klog.Warningf("suppressBECPU failed, cannot check the featuregate, err: %s", err)
 		return
 	} else if disabled {
@@ -323,18 +392,18 @@ func (r *CPUSuppress) suppressBECPU() {
 	}
 
 	// Step 1.
-	node := r.resmanager.statesInformer.GetNode()
+	node := r.statesInformer.GetNode()
 	if node == nil {
-		klog.Warningf("suppressBECPU failed, got nil node %s", r.resmanager.nodeName)
+		klog.Warning("suppressBECPU failed, got nil node")
 		return
 	}
-	podMetas := r.resmanager.statesInformer.GetAllPods()
+	podMetas := r.statesInformer.GetAllPods()
 	if podMetas == nil || len(podMetas) <= 0 {
 		klog.Warningf("suppressBECPU failed, got empty pod metas %v", podMetas)
 		return
 	}
 
-	nodeMetric, podMetrics := r.resmanager.CollectNodeAndPodMetricLast()
+	nodeMetric, podMetrics := r.metricsQuery.CollectNodeAndPodMetricLast(r.cfg.CollectMetricsIntervalSeconds)
 	if nodeMetric == nil || podMetrics == nil {
 		klog.Warningf("suppressBECPU failed, got nil node metric or nil pod metrics, nodeMetric %v, podMetrics %v",
 			nodeMetric, podMetrics)
@@ -345,7 +414,7 @@ func (r *CPUSuppress) suppressBECPU() {
 		*nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent)
 
 	// Step 2.
-	nodeCPUInfo, err := r.resmanager.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
+	nodeCPUInfo, err := r.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
 	if err != nil {
 		klog.Warningf("suppressBECPU failed to get nodeCPUInfo from metriccache, err: %s", err)
 		return
@@ -368,7 +437,7 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 		return
 	}
 
-	podMetas := r.resmanager.statesInformer.GetAllPods()
+	podMetas := r.statesInformer.GetAllPods()
 	// value: 0 -> lse, 1 -> lsr, not exists -> others
 	cpuIdToPool := map[int32]apiext.QoSClass{}
 	for _, podMeta := range podMetas {
@@ -433,7 +502,7 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 
 func (r *CPUSuppress) recoverCPUSetIfNeed() {
 	cpus := []int{}
-	nodeInfo, err := r.resmanager.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
+	nodeInfo, err := r.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
 	if err != nil {
 		return
 	}
@@ -443,7 +512,7 @@ func (r *CPUSuppress) recoverCPUSetIfNeed() {
 
 	beCPUSet := cpuset.NewCPUSet(cpus...)
 	lseCPUID := make(map[int]bool)
-	podMetas := r.resmanager.statesInformer.GetAllPods()
+	podMetas := r.statesInformer.GetAllPods()
 	for _, podMeta := range podMetas {
 		alloc, err := apiext.GetResourceStatus(podMeta.Pod.Annotations)
 		if err != nil {
