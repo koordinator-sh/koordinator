@@ -25,7 +25,7 @@ import (
 // CPUTopologyManager manages the CPU Topology and CPU assignments options.
 type CPUTopologyManager interface {
 	GetCPUTopologyOptions(nodeName string) CPUTopologyOptions
-	UpdateCPUTopologyOptions(nodeName string, options CPUTopologyOptions)
+	UpdateCPUTopologyOptions(nodeName string, updateFn func(options *CPUTopologyOptions))
 	Delete(nodeName string)
 }
 
@@ -54,12 +54,14 @@ func (m *cpuTopologyManager) GetCPUTopologyOptions(nodeName string) CPUTopologyO
 	return m.topologyOptions[nodeName]
 }
 
-func (m *cpuTopologyManager) UpdateCPUTopologyOptions(nodeName string, options CPUTopologyOptions) {
+func (m *cpuTopologyManager) UpdateCPUTopologyOptions(nodeName string, updateFn func(options *CPUTopologyOptions)) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	options := m.topologyOptions[nodeName]
+	updateFn(&options)
 	if options.MaxRefCount == 0 {
 		options.MaxRefCount = 1
 	}
-	m.lock.Lock()
-	defer m.lock.Unlock()
 	m.topologyOptions[nodeName] = options
 }
 

@@ -48,7 +48,9 @@ func TestEndpointsQueryCPUTopologyOptions(t *testing.T) {
 			},
 		},
 	}
-	p.topologyManager.UpdateCPUTopologyOptions("test-node-1", expectedCPUTopologyOptions)
+	p.topologyManager.UpdateCPUTopologyOptions("test-node-1", func(options *CPUTopologyOptions) {
+		*options = expectedCPUTopologyOptions
+	})
 
 	engine := gin.Default()
 	p.RegisterEndpoints(engine.Group("/"))
@@ -80,7 +82,9 @@ func TestEndpointsQueryAvailableCPUsOptions(t *testing.T) {
 			},
 		},
 	}
-	p.topologyManager.UpdateCPUTopologyOptions("test-node-1", cpuTopologyOptions)
+	p.topologyManager.UpdateCPUTopologyOptions("test-node-1", func(options *CPUTopologyOptions) {
+		*options = cpuTopologyOptions
+	})
 
 	p.cpuManager.UpdateAllocatedCPUSet("test-node-1", uuid.NewUUID(), MustParse("0,2,4,6"), schedulingconfig.CPUExclusivePolicyNone)
 

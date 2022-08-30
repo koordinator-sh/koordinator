@@ -549,7 +549,9 @@ func TestPlugin_Filter(t *testing.T) {
 					CPUTopology: tt.cpuTopology,
 					Policy:      tt.kubeletPolicy,
 				}
-				plg.topologyManager.UpdateCPUTopologyOptions(tt.allocationState.nodeName, topologyOptions)
+				plg.topologyManager.UpdateCPUTopologyOptions(tt.allocationState.nodeName, func(options *CPUTopologyOptions) {
+					*options = topologyOptions
+				})
 
 				cpuManager := plg.cpuManager.(*cpuManagerImpl)
 				cpuManager.allocationStates[tt.allocationState.nodeName] = tt.allocationState
@@ -763,8 +765,8 @@ func TestPlugin_Score(t *testing.T) {
 			plg := p.(*Plugin)
 			if tt.allocationState != nil {
 				if tt.cpuTopology != nil {
-					plg.topologyManager.UpdateCPUTopologyOptions(tt.allocationState.nodeName, CPUTopologyOptions{
-						CPUTopology: tt.cpuTopology,
+					plg.topologyManager.UpdateCPUTopologyOptions(tt.allocationState.nodeName, func(options *CPUTopologyOptions) {
+						options.CPUTopology = tt.cpuTopology
 					})
 				}
 
@@ -937,8 +939,8 @@ func TestPlugin_Reserve(t *testing.T) {
 			plg := p.(*Plugin)
 			if tt.allocationState != nil {
 				if tt.cpuTopology != nil {
-					plg.topologyManager.UpdateCPUTopologyOptions(tt.allocationState.nodeName, CPUTopologyOptions{
-						CPUTopology: tt.cpuTopology,
+					plg.topologyManager.UpdateCPUTopologyOptions(tt.allocationState.nodeName, func(options *CPUTopologyOptions) {
+						options.CPUTopology = tt.cpuTopology
 					})
 					if len(tt.allocatedCPUs) > 0 {
 						tt.allocationState.addCPUs(tt.cpuTopology, uuid.NewUUID(), NewCPUSet(tt.allocatedCPUs...), schedulingconfig.CPUExclusivePolicyNone)
@@ -991,8 +993,8 @@ func TestPlugin_Unreserve(t *testing.T) {
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
 	topologyManager := NewCPUTopologyManager()
-	topologyManager.UpdateCPUTopologyOptions("test-node-1", CPUTopologyOptions{
-		CPUTopology: cpuTopology,
+	topologyManager.UpdateCPUTopologyOptions("test-node-1", func(options *CPUTopologyOptions) {
+		options.CPUTopology = cpuTopology
 	})
 	plg := &Plugin{
 		cpuManager: &cpuManagerImpl{

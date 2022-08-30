@@ -103,8 +103,8 @@ func TestPodEventHandler(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cpuTopology := buildCPUTopologyForTest(2, 2, 4, 2)
 			topologyManager := NewCPUTopologyManager()
-			topologyManager.UpdateCPUTopologyOptions("test-node-1", CPUTopologyOptions{
-				CPUTopology: cpuTopology,
+			topologyManager.UpdateCPUTopologyOptions("test-node-1", func(options *CPUTopologyOptions) {
+				options.CPUTopology = cpuTopology
 			})
 			cpuManager := &cpuManagerImpl{
 				topologyManager:  topologyManager,
