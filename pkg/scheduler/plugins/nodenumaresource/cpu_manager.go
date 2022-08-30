@@ -130,10 +130,11 @@ func (c *cpuManagerImpl) Allocate(
 	allocation.lock.Lock()
 	defer allocation.lock.Unlock()
 
-	availableCPUs, allocated := allocation.getAvailableCPUs(cpuTopologyOptions.CPUTopology, reservedCPUs)
+	availableCPUs, allocated := allocation.getAvailableCPUs(cpuTopologyOptions.CPUTopology, cpuTopologyOptions.MaxRefCount, reservedCPUs)
 	numaAllocateStrategy := c.getNUMAAllocateStrategy(node)
 	result, err := takeCPUs(
 		cpuTopologyOptions.CPUTopology,
+		cpuTopologyOptions.MaxRefCount,
 		availableCPUs,
 		allocated,
 		numCPUsNeeded,
@@ -183,9 +184,10 @@ func (c *cpuManagerImpl) Score(
 	defer allocation.lock.Unlock()
 
 	cpuTopology := cpuTopologyOptions.CPUTopology
-	availableCPUs, allocated := allocation.getAvailableCPUs(cpuTopology, reservedCPUs)
+	availableCPUs, allocated := allocation.getAvailableCPUs(cpuTopology, cpuTopologyOptions.MaxRefCount, reservedCPUs)
 	acc := newCPUAccumulator(
 		cpuTopology,
+		cpuTopologyOptions.MaxRefCount,
 		availableCPUs,
 		allocated,
 		numCPUsNeeded,
@@ -286,6 +288,6 @@ func (c *cpuManagerImpl) GetAvailableCPUs(nodeName string) (availableCPUs CPUSet
 	allocation := c.getOrCreateAllocation(nodeName)
 	allocation.lock.Lock()
 	defer allocation.lock.Unlock()
-	availableCPUs, allocated = allocation.getAvailableCPUs(cpuTopologyOptions.CPUTopology, cpuTopologyOptions.ReservedCPUs)
+	availableCPUs, allocated = allocation.getAvailableCPUs(cpuTopologyOptions.CPUTopology, cpuTopologyOptions.MaxRefCount, cpuTopologyOptions.ReservedCPUs)
 	return availableCPUs, allocated, nil
 }
