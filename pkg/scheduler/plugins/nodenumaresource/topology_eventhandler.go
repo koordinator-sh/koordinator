@@ -120,11 +120,13 @@ func (m *nodeResourceTopologyEventHandler) updateNodeResourceTopology(oldNodeRes
 	reservedCPUs := m.getPodAllocsCPUSet(podCPUAllocs)
 
 	nodeName := newNodeResTopology.Name
-	m.topologyManager.UpdateCPUTopologyOptions(nodeName, CPUTopologyOptions{
-		CPUTopology:  cpuTopology,
-		ReservedCPUs: reservedCPUs,
-		MaxRefCount:  0,
-		Policy:       kubeletPolicy,
+	m.topologyManager.UpdateCPUTopologyOptions(nodeName, func(options *CPUTopologyOptions) {
+		*options = CPUTopologyOptions{
+			CPUTopology:  cpuTopology,
+			ReservedCPUs: reservedCPUs,
+			Policy:       kubeletPolicy,
+			MaxRefCount:  options.MaxRefCount,
+		}
 	})
 }
 
