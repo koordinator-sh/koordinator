@@ -33,8 +33,11 @@ const (
 	BatchCPU    corev1.ResourceName = ResourceDomainPrefix + "batch-cpu"
 	BatchMemory corev1.ResourceName = ResourceDomainPrefix + "batch-memory"
 
-	NvidiaGPU corev1.ResourceName = "nvidia.com/gpu"
+	KoordRDMA corev1.ResourceName = ResourceDomainPrefix + "rdma"
+	KoordFPGA corev1.ResourceName = ResourceDomainPrefix + "fpga"
+
 	KoordGPU  corev1.ResourceName = ResourceDomainPrefix + "gpu"
+	NvidiaGPU corev1.ResourceName = "nvidia.com/gpu"
 
 	GPUCore        corev1.ResourceName = ResourceDomainPrefix + "gpu-core"
 	GPUMemory      corev1.ResourceName = ResourceDomainPrefix + "gpu-memory"
