@@ -85,7 +85,7 @@ func (m *reservationInfo) ScoreForPod(pod *corev1.Pod) {
 		return
 	}
 	var s int64
-	for resource, capacity := range m.Resources {
+	for resource, capacity := range resources {
 		req := requested[resource]
 		s += framework.MaxNodeScore * req.MilliValue() / capacity.MilliValue()
 	}
