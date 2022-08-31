@@ -88,7 +88,7 @@ func TestPreFilterHook(t *testing.T) {
 	}
 	type fields struct {
 		pluginEnabled    bool
-		parallelizeUntil func(handle frameworkext.ExtendedHandle) parallelizeUntilFunc
+		parallelizeUntil func(handle framework.Handle) parallelizeUntilFunc
 	}
 	type args struct {
 		handle     frameworkext.ExtendedHandle

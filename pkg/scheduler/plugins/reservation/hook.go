@@ -35,7 +35,7 @@ import (
 // for internal interface testing
 type parallelizeUntilFunc func(ctx context.Context, pieces int, doWorkPiece workqueue.DoWorkPieceFunc)
 
-func defaultParallelizeUntil(handle frameworkext.ExtendedHandle) parallelizeUntilFunc {
+func defaultParallelizeUntil(handle framework.Handle) parallelizeUntilFunc {
 	return handle.Parallelizer().Until
 }
 
@@ -45,7 +45,7 @@ var (
 )
 
 type Hook struct {
-	parallelizeUntil func(handle frameworkext.ExtendedHandle) parallelizeUntilFunc
+	parallelizeUntil func(handle framework.Handle) parallelizeUntilFunc
 }
 
 func NewHook() *Hook {

@@ -760,45 +760,48 @@ func TestMigrate(t *testing.T) {
 	}
 	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
 
-	reconciler.reservationInterpreter = fakeReservationInterpreter{
-		reservation: &sev1alpha1.Reservation{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-reservation",
-			},
-			Spec: sev1alpha1.ReservationSpec{
-				Owners: []sev1alpha1.ReservationOwner{
-					{
-						Controller: &sev1alpha1.ReservationControllerReference{
-							Namespace: "default",
-							OwnerReference: metav1.OwnerReference{
-								APIVersion: "apps/v1",
-								Controller: pointer.Bool(true),
-								Kind:       "StatefulSet",
-								Name:       "test",
-								UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
-							},
+	r := &sev1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+		},
+		Spec: sev1alpha1.ReservationSpec{
+			Owners: []sev1alpha1.ReservationOwner{
+				{
+					Controller: &sev1alpha1.ReservationControllerReference{
+						Namespace: "default",
+						OwnerReference: metav1.OwnerReference{
+							APIVersion: "apps/v1",
+							Controller: pointer.Bool(true),
+							Kind:       "StatefulSet",
+							Name:       "test",
+							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
 						},
 					},
 				},
 			},
-			Status: sev1alpha1.ReservationStatus{
-				Phase: sev1alpha1.ReservationAvailable,
-				Conditions: []sev1alpha1.ReservationCondition{
-					{
-						Type:   sev1alpha1.ReservationConditionScheduled,
-						Reason: sev1alpha1.ReasonReservationScheduled,
-						Status: sev1alpha1.ConditionStatusTrue,
-					},
-				},
-				CurrentOwners: []corev1.ObjectReference{
-					{
-						Namespace: "default",
-						Name:      "test-pod-1",
-					},
-				},
-				NodeName: "test-node-1",
-			},
 		},
+		Status: sev1alpha1.ReservationStatus{
+			Phase: sev1alpha1.ReservationAvailable,
+			Conditions: []sev1alpha1.ReservationCondition{
+				{
+					Type:   sev1alpha1.ReservationConditionScheduled,
+					Reason: sev1alpha1.ReasonReservationScheduled,
+					Status: sev1alpha1.ConditionStatusTrue,
+				},
+			},
+			CurrentOwners: []corev1.ObjectReference{
+				{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+			},
+			NodeName: "test-node-1",
+		},
+	}
+	assert.NoError(t, reconciler.Client.Create(context.TODO(), r))
+
+	reconciler.reservationInterpreter = fakeReservationInterpreter{
+		reservation: r,
 	}
 	for {
 		_, err := reconciler.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: job.Name}})
@@ -863,45 +866,47 @@ func TestMigrateWhenEvictingWithSucceededReservation(t *testing.T) {
 	}
 	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
 
-	reconciler.reservationInterpreter = fakeReservationInterpreter{
-		reservation: &sev1alpha1.Reservation{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-reservation",
-			},
-			Spec: sev1alpha1.ReservationSpec{
-				Owners: []sev1alpha1.ReservationOwner{
-					{
-						Controller: &sev1alpha1.ReservationControllerReference{
-							Namespace: "default",
-							OwnerReference: metav1.OwnerReference{
-								APIVersion: "apps/v1",
-								Controller: pointer.Bool(true),
-								Kind:       "StatefulSet",
-								Name:       "test",
-								UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
-							},
+	r := &sev1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+		},
+		Spec: sev1alpha1.ReservationSpec{
+			Owners: []sev1alpha1.ReservationOwner{
+				{
+					Controller: &sev1alpha1.ReservationControllerReference{
+						Namespace: "default",
+						OwnerReference: metav1.OwnerReference{
+							APIVersion: "apps/v1",
+							Controller: pointer.Bool(true),
+							Kind:       "StatefulSet",
+							Name:       "test",
+							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
 						},
 					},
 				},
 			},
-			Status: sev1alpha1.ReservationStatus{
-				Phase: sev1alpha1.ReservationSucceeded,
-				Conditions: []sev1alpha1.ReservationCondition{
-					{
-						Type:   sev1alpha1.ReservationConditionScheduled,
-						Reason: sev1alpha1.ReasonReservationScheduled,
-						Status: sev1alpha1.ConditionStatusTrue,
-					},
-				},
-				CurrentOwners: []corev1.ObjectReference{
-					{
-						Namespace: "default",
-						Name:      "test-pod-1",
-					},
-				},
-				NodeName: "test-node-1",
-			},
 		},
+		Status: sev1alpha1.ReservationStatus{
+			Phase: sev1alpha1.ReservationSucceeded,
+			Conditions: []sev1alpha1.ReservationCondition{
+				{
+					Type:   sev1alpha1.ReservationConditionScheduled,
+					Reason: sev1alpha1.ReasonReservationScheduled,
+					Status: sev1alpha1.ConditionStatusTrue,
+				},
+			},
+			CurrentOwners: []corev1.ObjectReference{
+				{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+			},
+			NodeName: "test-node-1",
+		},
+	}
+	assert.NoError(t, reconciler.Create(context.TODO(), r))
+	reconciler.reservationInterpreter = fakeReservationInterpreter{
+		reservation: r,
 	}
 	for {
 		_, err := reconciler.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: job.Name}})
@@ -964,38 +969,40 @@ func TestMigrateWithReservationScheduleFailed(t *testing.T) {
 	}
 	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
 
-	reconciler.reservationInterpreter = fakeReservationInterpreter{
-		reservation: &sev1alpha1.Reservation{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-reservation",
-			},
-			Spec: sev1alpha1.ReservationSpec{
-				Owners: []sev1alpha1.ReservationOwner{
-					{
-						Controller: &sev1alpha1.ReservationControllerReference{
-							Namespace: "default",
-							OwnerReference: metav1.OwnerReference{
-								APIVersion: "apps/v1",
-								Controller: pointer.Bool(true),
-								Kind:       "StatefulSet",
-								Name:       "test",
-								UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
-							},
+	r := &sev1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+		},
+		Spec: sev1alpha1.ReservationSpec{
+			Owners: []sev1alpha1.ReservationOwner{
+				{
+					Controller: &sev1alpha1.ReservationControllerReference{
+						Namespace: "default",
+						OwnerReference: metav1.OwnerReference{
+							APIVersion: "apps/v1",
+							Controller: pointer.Bool(true),
+							Kind:       "StatefulSet",
+							Name:       "test",
+							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
 						},
 					},
 				},
 			},
-			Status: sev1alpha1.ReservationStatus{
-				Phase: sev1alpha1.ReservationFailed,
-				Conditions: []sev1alpha1.ReservationCondition{
-					{
-						Type:    sev1alpha1.ReservationConditionScheduled,
-						Reason:  sev1alpha1.ReasonReservationUnschedulable,
-						Message: "expired reservation",
-					},
+		},
+		Status: sev1alpha1.ReservationStatus{
+			Phase: sev1alpha1.ReservationFailed,
+			Conditions: []sev1alpha1.ReservationCondition{
+				{
+					Type:    sev1alpha1.ReservationConditionScheduled,
+					Reason:  sev1alpha1.ReasonReservationUnschedulable,
+					Message: "expired reservation",
 				},
 			},
 		},
+	}
+	assert.NoError(t, reconciler.Create(context.TODO(), r))
+	reconciler.reservationInterpreter = fakeReservationInterpreter{
+		reservation: r,
 	}
 	for {
 		_, err := reconciler.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: job.Name}})
@@ -1050,46 +1057,48 @@ func TestMigrateWithReservationSucceeded(t *testing.T) {
 	}
 	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
 
-	reconciler.reservationInterpreter = fakeReservationInterpreter{
-		reservation: &sev1alpha1.Reservation{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-reservation",
-			},
-			Spec: sev1alpha1.ReservationSpec{
-				Owners: []sev1alpha1.ReservationOwner{
-					{
-						Controller: &sev1alpha1.ReservationControllerReference{
-							Namespace: "default",
-							OwnerReference: metav1.OwnerReference{
-								APIVersion: "apps/v1",
-								Controller: pointer.Bool(true),
-								Kind:       "StatefulSet",
-								Name:       "test",
-								UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
-							},
+	r := &sev1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+		},
+		Spec: sev1alpha1.ReservationSpec{
+			Owners: []sev1alpha1.ReservationOwner{
+				{
+					Controller: &sev1alpha1.ReservationControllerReference{
+						Namespace: "default",
+						OwnerReference: metav1.OwnerReference{
+							APIVersion: "apps/v1",
+							Controller: pointer.Bool(true),
+							Kind:       "StatefulSet",
+							Name:       "test",
+							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
 						},
 					},
 				},
 			},
-			Status: sev1alpha1.ReservationStatus{
-				NodeName: "test-node-1",
-				Phase:    sev1alpha1.ReservationSucceeded,
-				Conditions: []sev1alpha1.ReservationCondition{
-					{
-						Type:   sev1alpha1.ReservationConditionScheduled,
-						Reason: sev1alpha1.ReasonReservationScheduled,
-						Status: sev1alpha1.ConditionStatusTrue,
-					},
+		},
+		Status: sev1alpha1.ReservationStatus{
+			NodeName: "test-node-1",
+			Phase:    sev1alpha1.ReservationSucceeded,
+			Conditions: []sev1alpha1.ReservationCondition{
+				{
+					Type:   sev1alpha1.ReservationConditionScheduled,
+					Reason: sev1alpha1.ReasonReservationScheduled,
+					Status: sev1alpha1.ConditionStatusTrue,
 				},
-				CurrentOwners: []corev1.ObjectReference{
-					{
-						Namespace: "test",
-						Name:      "other-pod",
-						UID:       uuid.NewUUID(),
-					},
+			},
+			CurrentOwners: []corev1.ObjectReference{
+				{
+					Namespace: "test",
+					Name:      "other-pod",
+					UID:       uuid.NewUUID(),
 				},
 			},
 		},
+	}
+	assert.NoError(t, reconciler.Client.Create(context.TODO(), r))
+	reconciler.reservationInterpreter = fakeReservationInterpreter{
+		reservation: r,
 	}
 	for {
 		_, err := reconciler.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: job.Name}})
@@ -1144,38 +1153,40 @@ func TestMigrateWithReservationExpired(t *testing.T) {
 	}
 	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
 
-	reconciler.reservationInterpreter = fakeReservationInterpreter{
-		reservation: &sev1alpha1.Reservation{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-reservation",
-			},
-			Spec: sev1alpha1.ReservationSpec{
-				Owners: []sev1alpha1.ReservationOwner{
-					{
-						Controller: &sev1alpha1.ReservationControllerReference{
-							Namespace: "default",
-							OwnerReference: metav1.OwnerReference{
-								APIVersion: "apps/v1",
-								Controller: pointer.Bool(true),
-								Kind:       "StatefulSet",
-								Name:       "test",
-								UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
-							},
+	r := &sev1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+		},
+		Spec: sev1alpha1.ReservationSpec{
+			Owners: []sev1alpha1.ReservationOwner{
+				{
+					Controller: &sev1alpha1.ReservationControllerReference{
+						Namespace: "default",
+						OwnerReference: metav1.OwnerReference{
+							APIVersion: "apps/v1",
+							Controller: pointer.Bool(true),
+							Kind:       "StatefulSet",
+							Name:       "test",
+							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
 						},
 					},
 				},
 			},
-			Status: sev1alpha1.ReservationStatus{
-				NodeName: "test-node-1",
-				Phase:    sev1alpha1.ReservationFailed,
-				Conditions: []sev1alpha1.ReservationCondition{
-					{
-						Type:   sev1alpha1.ReservationConditionReady,
-						Reason: sev1alpha1.ReasonReservationExpired,
-					},
+		},
+		Status: sev1alpha1.ReservationStatus{
+			NodeName: "test-node-1",
+			Phase:    sev1alpha1.ReservationFailed,
+			Conditions: []sev1alpha1.ReservationCondition{
+				{
+					Type:   sev1alpha1.ReservationConditionReady,
+					Reason: sev1alpha1.ReasonReservationExpired,
 				},
 			},
 		},
+	}
+	assert.NoError(t, reconciler.Client.Create(context.TODO(), r))
+	reconciler.reservationInterpreter = fakeReservationInterpreter{
+		reservation: r,
 	}
 	for {
 		_, err := reconciler.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: job.Name}})

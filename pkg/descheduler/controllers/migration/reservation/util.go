@@ -17,11 +17,15 @@ limitations under the License.
 package reservation
 
 import (
+	"strconv"
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
@@ -78,6 +82,7 @@ func CreateOrUpdateReservationOptions(job *sev1alpha1.PodMigrationJob, pod *core
 		reservationOptions.Template.ObjectMeta.Labels = map[string]string{}
 	}
 	reservationOptions.Template.ObjectMeta.Labels[LabelCreatedBy] = DefaultCreator
+	reservationOptions.Template.ObjectMeta.Labels[extension.LabelReservationOrder] = strconv.FormatInt(time.Now().UnixMilli(), 10)
 
 	if (reservationOptions.Template.Spec.TTL == nil && reservationOptions.Template.Spec.Expires == nil) &&
 		job.Spec.TTL != nil && job.Spec.TTL.Duration > 0 {
