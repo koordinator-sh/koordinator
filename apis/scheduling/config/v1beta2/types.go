@@ -162,8 +162,8 @@ type CoschedulingArgs struct {
 
 	// DefaultTimeout is the default gang's waiting time in Permit stage
 	// default is 600 seconds
-	DefaultTimeout *metav1.Duration `json:"defaultTimeoutSeconds,omitempty"`
+	DefaultTimeout *metav1.Duration `json:"defaultTimeout,omitempty"`
 	// Workers number of podGroupSyncHandler
 	// default is 1
-	ControllerWorkers *int64 `json:"ControllerWorkers,omitempty"`
+	ControllerWorkers *int64 `json:"controllerWorkers,omitempty"`
 }
