@@ -101,7 +101,7 @@ func (r *ControllerFinder) GetPodsForRef(apiVersion, kind, name, ns string, labe
 		podList := &corev1.PodList{}
 		listOption := &client.ListOptions{
 			Namespace:     ns,
-			FieldSelector: fields.SelectorFromSet(fields.Set{fieldindex.IndexPodOwnerRefUID: string(uid)}),
+			FieldSelector: fields.SelectorFromSet(fields.Set{fieldindex.IndexPodByOwnerRefUID: string(uid)}),
 		}
 		if selector != nil {
 			listOption.LabelSelector = selector

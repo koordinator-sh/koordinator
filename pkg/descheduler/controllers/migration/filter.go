@@ -60,14 +60,14 @@ func (r *Reconciler) filterExistingPodMigrationJob(pod *corev1.Pod) bool {
 }
 
 func (r *Reconciler) existingPodMigrationJob(pod *corev1.Pod) bool {
-	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexPodUUID, string(pod.UID))}
+	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodUID, string(pod.UID))}
 	existing := false
 	r.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
 		existing = true
 		return false
 	})
 	if !existing {
-		opts = &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexPodNamespacedName, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))}
+		opts = &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobPodNamespacedName, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))}
 		r.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
 			existing = true
 			return false
@@ -82,7 +82,7 @@ func (r *Reconciler) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 	}
 
 	podList := &corev1.PodList{}
-	listOpts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexNodeName, pod.Spec.NodeName)}
+	listOpts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexPodByNodeName, pod.Spec.NodeName)}
 	err := r.Client.List(context.TODO(), podList, listOpts, utilclient.DisableDeepCopy)
 	if err != nil {
 		return true
@@ -106,7 +106,7 @@ func (r *Reconciler) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
 		return true
 	}
 
-	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexPodNamespace, pod.Namespace)}
+	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodNamespace, pod.Namespace)}
 	count := 0
 	r.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
 		count++
@@ -129,7 +129,7 @@ func (r *Reconciler) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod)
 		return false
 	}
 
-	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexPodNamespace, pod.Namespace)}
+	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodNamespace, pod.Namespace)}
 	migratingPods := map[types.NamespacedName]struct{}{}
 	r.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
 		podNamespacedName := types.NamespacedName{

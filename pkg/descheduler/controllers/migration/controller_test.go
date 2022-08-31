@@ -356,7 +356,7 @@ func TestHandleScheduleSuccess(t *testing.T) {
 			NodeName: "test-node",
 		},
 	})
-	assert.Nil(t, reconciler.syncReservationScheduleSuccess(context.TODO(), job, reservationObj))
+	assert.Nil(t, reconciler.prepareJobWithReservationScheduleSuccess(context.TODO(), job, reservationObj))
 	_, cond := util.GetCondition(&job.Status, sev1alpha1.PodMigrationJobConditionReservationScheduled)
 	assert.NotNil(t, cond)
 	expectCond := &sev1alpha1.PodMigrationJobCondition{
@@ -821,6 +821,113 @@ func TestMigrate(t *testing.T) {
 		_, cond := util.GetCondition(&job.Status, sev1alpha1.PodMigrationJobConditionEviction)
 		if cond != nil && cond.Status == sev1alpha1.PodMigrationJobConditionStatusFalse {
 			assert.Nil(t, reconciler.Client.Delete(context.TODO(), pod))
+		}
+	}
+	assert.Nil(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
+	assert.Equal(t, sev1alpha1.PodMigrationJobSucceeded, job.Status.Phase)
+	assert.Equal(t, "Complete", job.Status.Status)
+}
+
+func TestMigrateWithSamePodName(t *testing.T) {
+	reconciler := newTestReconciler()
+	reconciler.evictorInterpreter = fakeEvictionInterpreter{}
+
+	job := &sev1alpha1.PodMigrationJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test",
+			CreationTimestamp: metav1.Time{Time: time.Now()},
+		},
+		Spec: sev1alpha1.PodMigrationJobSpec{
+			Paused: true,
+			PodRef: &corev1.ObjectReference{
+				Namespace: "default",
+				Name:      "test-pod",
+			},
+		},
+	}
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod",
+			UID:       uuid.NewUUID(),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Controller: pointer.Bool(true),
+					Kind:       "StatefulSet",
+					Name:       "test",
+					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+	podCopy := pod.DeepCopy()
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
+
+	reconciler.reservationInterpreter = fakeReservationInterpreter{
+		reservation: &sev1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-reservation",
+			},
+			Spec: sev1alpha1.ReservationSpec{
+				Owners: []sev1alpha1.ReservationOwner{
+					{
+						Controller: &sev1alpha1.ReservationControllerReference{
+							Namespace: "default",
+							OwnerReference: metav1.OwnerReference{
+								APIVersion: "apps/v1",
+								Controller: pointer.Bool(true),
+								Kind:       "StatefulSet",
+								Name:       "test",
+								UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
+							},
+						},
+					},
+				},
+			},
+			Status: sev1alpha1.ReservationStatus{
+				Phase: sev1alpha1.ReservationAvailable,
+				Conditions: []sev1alpha1.ReservationCondition{
+					{
+						Type:   sev1alpha1.ReservationConditionScheduled,
+						Reason: sev1alpha1.ReasonReservationScheduled,
+						Status: sev1alpha1.ConditionStatusTrue,
+					},
+				},
+				CurrentOwners: []corev1.ObjectReference{
+					{
+						Namespace: "default",
+						Name:      "test-pod-1",
+					},
+				},
+				NodeName: "test-node-1",
+			},
+		},
+	}
+	for {
+		_, err := reconciler.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: job.Name}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assert.Nil(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
+
+		if job.Spec.Paused {
+			job.Spec.Paused = false
+			assert.Nil(t, reconciler.Client.Update(context.TODO(), job))
+		}
+
+		if job.Status.Phase != "" && job.Status.Phase != sev1alpha1.PodMigrationJobRunning {
+			break
+		}
+		_, cond := util.GetCondition(&job.Status, sev1alpha1.PodMigrationJobConditionEviction)
+		if cond != nil && cond.Status == sev1alpha1.PodMigrationJobConditionStatusFalse {
+			assert.Nil(t, reconciler.Client.Delete(context.TODO(), pod))
+			podCopy.UID = uuid.NewUUID()
+			assert.NoError(t, reconciler.Client.Create(context.TODO(), podCopy))
 		}
 	}
 	assert.Nil(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
@@ -1432,7 +1539,7 @@ func TestAbortJobIfUnretriablePodFilterFailed(t *testing.T) {
 
 	result, err := reconciler.doMigrate(context.TODO(), job)
 	assert.True(t, enter)
-	assert.NoError(t, err)
+	assert.NotNil(t, err)
 	assert.Equal(t, reconcile.Result{}, result)
 
 	assert.NoError(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
