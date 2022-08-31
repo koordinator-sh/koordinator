@@ -14,21 +14,29 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resmanager
+package cpuevict
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/component-base/featuregate"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/common/reason"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/common/utils"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/k8s"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/metricsquery"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -38,16 +46,85 @@ const (
 	beCPUUsageHighEnough             = 0.9
 )
 
+const (
+	DefaultReconcileIntervalInSeconds    = 5
+	DefaultCollectMetricsIntervalSeconds = int64(1)
+	DefaultCPUEvictCoolTimeSeconds       = 20
+)
+
+type Config struct {
+	ReconcileIntervalInSeconds    int   `json:"reconcileIntervalInSeconds"`
+	CollectMetricsIntervalSeconds int64 `json:"collectMetricsIntervalSeconds"`
+	CPUEvictCoolTimeSeconds       int   `json:"cpuEvictCoolTimeSeconds"`
+}
+
 type CPUEvictor struct {
-	resmanager    *resmanager
+	stopCh chan struct{}
+	cfg    *Config
+
+	k8sClient      k8s.K8sClient
+	statesInformer statesinformer.StatesInformer
+	metricCache    metriccache.MetricCache
+	metricsQuery   metricsquery.MetricsQuery
+
 	lastEvictTime time.Time
 }
 
-func NewCPUEvictor(resmanager *resmanager) *CPUEvictor {
-	return &CPUEvictor{
-		resmanager:    resmanager,
-		lastEvictTime: time.Now(),
+func New(pluginCtx *plugins.PluginContext) plugins.Plugin {
+	pl := &CPUEvictor{
+		k8sClient:      pluginCtx.K8sClient,
+		statesInformer: pluginCtx.StatesInformer,
+		metricCache:    pluginCtx.MetricCache,
+		metricsQuery:   pluginCtx.MetricsQuery,
+		lastEvictTime:  time.Now(),
 	}
+
+	cfg := Config{}
+	if pluginCtx.ExtraConfig != nil {
+		if err := json.Unmarshal([]byte(*pluginCtx.ExtraConfig), &cfg); err != nil {
+			klog.Errorf("[Plugin: %v] failed to parse extra config: %s", pl.Name(), *pluginCtx.ExtraConfig)
+		}
+	}
+	if cfg.ReconcileIntervalInSeconds <= 0 {
+		cfg.ReconcileIntervalInSeconds = DefaultReconcileIntervalInSeconds
+	}
+	if cfg.CollectMetricsIntervalSeconds <= 0 {
+		cfg.CollectMetricsIntervalSeconds = DefaultCollectMetricsIntervalSeconds
+	}
+	if cfg.CPUEvictCoolTimeSeconds <= 0 {
+		cfg.CPUEvictCoolTimeSeconds = DefaultCPUEvictCoolTimeSeconds
+	}
+
+	pl.cfg = &cfg
+
+	return pl
+}
+
+// Name impl interface Plugin.
+func (_ *CPUEvictor) Name() string {
+	return "CPUBurst"
+}
+
+// Name impl interface Plugin.
+func (_ *CPUEvictor) Feature() featuregate.Feature {
+	return features.BECPUEvict
+}
+
+// Start impl interface Plugin.
+func (r *CPUEvictor) Start() error {
+	r.stopCh = make(chan struct{})
+	r.k8sClient.Run(r.stopCh)
+	go wait.Until(r.cpuEvict, time.Duration(r.cfg.ReconcileIntervalInSeconds)*time.Second, r.stopCh)
+	return nil
+}
+
+// Stop impl interface Plugin.
+func (r *CPUEvictor) Stop() error {
+	if r.stopCh != nil {
+		close(r.stopCh)
+		r.stopCh = nil
+	}
+	return nil
 }
 
 type podEvictCPUInfo struct {
@@ -60,8 +137,8 @@ type podEvictCPUInfo struct {
 func (c *CPUEvictor) cpuEvict() {
 	klog.V(5).Infof("cpu evict process start")
 
-	nodeSLO := c.resmanager.getNodeSLOCopy()
-	if disabled, err := isFeatureDisabled(nodeSLO, features.BECPUEvict); err != nil {
+	nodeSLO := c.statesInformer.GetNodeSLO()
+	if disabled, err := features.IsFeatureDisabled(nodeSLO, features.BECPUEvict); err != nil {
 		klog.Warningf("cpuEvict failed, cannot check the feature gate, err: %s", err)
 		return
 	} else if disabled {
@@ -69,20 +146,20 @@ func (c *CPUEvictor) cpuEvict() {
 		return
 	}
 
-	if time.Since(c.lastEvictTime) < time.Duration(c.resmanager.config.CPUEvictCoolTimeSeconds)*time.Second {
+	if time.Since(c.lastEvictTime) < time.Duration(c.cfg.CPUEvictCoolTimeSeconds)*time.Second {
 		klog.Warningf("skip CPU evict process, still in evict cool time")
 		return
 	}
 
 	thresholdConfig := nodeSLO.Spec.ResourceUsedThresholdWithBE
-	windowSeconds := c.resmanager.collectResUsedIntervalSeconds * 2
-	if thresholdConfig.CPUEvictTimeWindowSeconds != nil && *thresholdConfig.CPUEvictTimeWindowSeconds > c.resmanager.collectResUsedIntervalSeconds {
+	windowSeconds := c.cfg.CollectMetricsIntervalSeconds * 2
+	if thresholdConfig.CPUEvictTimeWindowSeconds != nil && *thresholdConfig.CPUEvictTimeWindowSeconds > c.cfg.CollectMetricsIntervalSeconds {
 		windowSeconds = *thresholdConfig.CPUEvictTimeWindowSeconds
 	}
 
-	node := c.resmanager.statesInformer.GetNode()
+	node := c.statesInformer.GetNode()
 	if node == nil {
-		klog.Warningf("cpuEvict failed, got nil node %s", c.resmanager.nodeName)
+		klog.Warningf("[Plugin: %s] cpuEvict failed, got nil node", c.Name())
 		return
 	}
 
@@ -98,8 +175,8 @@ func (c *CPUEvictor) cpuEvict() {
 
 func (c *CPUEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, windowSeconds int64) (*metriccache.BECPUResourceMetric, int64) {
 	// Step1: Calculate release resource by BECPUResourceMetric in window
-	avgBECPUQueryResult := c.resmanager.metricCache.GetBECPUResourceMetric(generateQueryParamsAvg(windowSeconds))
-	if !isAvgQueryResultValid(avgBECPUQueryResult, windowSeconds, c.resmanager.collectResUsedIntervalSeconds) {
+	avgBECPUQueryResult := c.metricCache.GetBECPUResourceMetric(metricsquery.GenerateQueryParamsAvg(windowSeconds))
+	if !isAvgQueryResultValid(avgBECPUQueryResult, windowSeconds, c.cfg.CollectMetricsIntervalSeconds) {
 		return nil, 0
 	}
 
@@ -115,7 +192,7 @@ func (c *CPUEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 	}
 
 	// Step2: Calculate release resource current
-	currentBECPUQueryResult := c.resmanager.metricCache.GetBECPUResourceMetric(generateQueryParamsLast(c.resmanager.collectResUsedIntervalSeconds * 2))
+	currentBECPUQueryResult := c.metricCache.GetBECPUResourceMetric(metricsquery.GenerateQueryParamsLast(c.cfg.CollectMetricsIntervalSeconds * 2))
 	if !isQueryResultValid(currentBECPUQueryResult) {
 		return nil, 0
 	}
@@ -150,21 +227,27 @@ func (c *CPUEvictor) evictByResourceSatisfaction(node *corev1.Node, thresholdCon
 }
 
 func (c *CPUEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*podEvictCPUInfo, cpuNeedMilliRelease int64) {
-	message := fmt.Sprintf("killAndEvictBEPodsRelease for node(%s), need realase CPU : %d", c.resmanager.nodeName, cpuNeedMilliRelease)
+
+	nodeName := c.statesInformer.GetNodeSLO().Name
+	if node := c.statesInformer.GetNode(); node == nil {
+		nodeName = node.Name
+	}
+
+	message := fmt.Sprintf("killAndEvictBEPodsRelease for node(%s), need realase CPU : %d", nodeName, cpuNeedMilliRelease)
 
 	cpuMilliReleased := int64(0)
 	var killedPods []*corev1.Pod
 	for _, bePod := range bePodInfos {
 		if cpuMilliReleased < cpuNeedMilliRelease {
 			podKillMsg := fmt.Sprintf("%s, kill pod : %s", message, bePod.pod.Name)
-			killContainers(bePod.pod, podKillMsg)
+			utils.KillContainers(bePod.pod, podKillMsg)
 
 			killedPods = append(killedPods, bePod.pod)
 			cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
 		}
 	}
 
-	c.resmanager.evictPodsIfNotEvicted(killedPods, node, reason.EvictPodByBECPUSatisfaction, message)
+	c.k8sClient.EvictPods(killedPods, node, reason.EvictPodByBECPUSatisfaction, message)
 
 	if len(killedPods) > 0 {
 		c.lastEvictTime = time.Now()
@@ -175,12 +258,12 @@ func (c *CPUEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 func (c *CPUEvictor) getPodEvictInfoAndSort(beMetric *metriccache.BECPUResourceMetric) []*podEvictCPUInfo {
 	var bePodInfos []*podEvictCPUInfo
 
-	for _, podMeta := range c.resmanager.statesInformer.GetAllPods() {
+	for _, podMeta := range c.statesInformer.GetAllPods() {
 		pod := podMeta.Pod
 		if apiext.GetPodQoSClass(pod) == apiext.QoSBE {
 
 			bePodInfo := &podEvictCPUInfo{pod: podMeta.Pod}
-			podQueryResult := c.resmanager.collectPodMetric(podMeta, generateQueryParamsLast(c.resmanager.collectResUsedIntervalSeconds*2))
+			podQueryResult := c.metricsQuery.CollectPodMetric(podMeta, metricsquery.GenerateQueryParamsLast(c.cfg.CollectMetricsIntervalSeconds*2))
 			podMetric := podQueryResult.Metric
 			if podQueryResult.Error == nil && podMetric != nil {
 				bePodInfo.milliUsedCores = podMetric.CPUUsed.CPUUsed.MilliValue()

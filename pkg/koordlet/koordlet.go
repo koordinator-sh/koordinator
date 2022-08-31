@@ -36,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
@@ -61,6 +62,7 @@ type daemon struct {
 	metricCache    metriccache.MetricCache
 	reporter       reporter.Reporter
 	resManager     resmanager.ResManager
+	qosManager     qosmanager.QoSManager
 	runtimeHook    runtimehooks.RuntimeHook
 	pleg           pleg.Pleg
 }

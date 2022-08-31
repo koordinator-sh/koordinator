@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resmanager
+package metricsquery
 
 import (
 	"fmt"
@@ -26,19 +26,55 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
-func (r *resmanager) collectNodeMetricsAvg(windowSeconds int64) metriccache.NodeResourceQueryResult {
-	queryParam := generateQueryParamsAvg(windowSeconds)
+type MetricsQuery interface {
+	CollectNodeAndPodMetricLast(collectResUsedIntervalSeconds int64) (
+		*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric)
+
+	CollectNodeMetricsAvg(windowSeconds int64) metriccache.NodeResourceQueryResult
+
+	CollectNodeAndPodMetrics(queryParam *metriccache.QueryParam) (
+		*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric)
+
+	CollectContainerResMetricLast(containerID *string, collectResUsedIntervalSeconds int64) metriccache.ContainerResourceQueryResult
+
+	CollectContainerThrottledMetricLast(containerID *string, collectResUsedIntervalSeconds int64) metriccache.ContainerThrottledQueryResult
+
+	CollectPodMetric(podMeta *statesinformer.PodMeta, queryParam *metriccache.QueryParam) metriccache.PodResourceQueryResult
+}
+
+var _ MetricsQuery = &metricsQuery{}
+
+// NewMetricsQuery creates an instance which implements interface MetricsQuery.
+func NewMetricsQuery(metricCache metriccache.MetricCache, statesInformer statesinformer.StatesInformer) MetricsQuery {
+	return &metricsQuery{
+		metricCache:    metricCache,
+		statesInformer: statesInformer,
+	}
+}
+
+type metricsQuery struct {
+	metricCache    metriccache.MetricCache
+	statesInformer statesinformer.StatesInformer
+}
+
+//  CollectNodeMetricsAvg impl plugins.MetricQuery interface.
+func (r *metricsQuery) CollectNodeMetricsAvg(windowSeconds int64) metriccache.NodeResourceQueryResult {
+	queryParam := GenerateQueryParamsAvg(windowSeconds)
 	return r.collectNodeMetric(queryParam)
 }
 
 //  CollectNodeAndPodMetricLast impl plugins.MetricQuery interface.
-// query data for 2 * collectResUsedIntervalSeconds.
-func (r *resmanager) CollectNodeAndPodMetricLast() (*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
-	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
-	return r.collectNodeAndPodMetrics(queryParam)
+func (r *metricsQuery) CollectNodeAndPodMetricLast(collectResUsedIntervalSeconds int64) (
+	*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
+
+	queryParam := GenerateQueryParamsLast(collectResUsedIntervalSeconds * 2)
+	return r.CollectNodeAndPodMetrics(queryParam)
 }
 
-func (r *resmanager) collectNodeAndPodMetrics(queryParam *metriccache.QueryParam) (*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
+//  CollectNodeAndPodMetrics impl plugins.MetricQuery interface.
+func (r *metricsQuery) CollectNodeAndPodMetrics(queryParam *metriccache.QueryParam) (
+	*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
+
 	// collect node's and all pods' metrics with the same query param
 	nodeQueryResult := r.collectNodeMetric(queryParam)
 	nodeMetric := nodeQueryResult.Metric
@@ -46,7 +82,7 @@ func (r *resmanager) collectNodeAndPodMetrics(queryParam *metriccache.QueryParam
 	podsMeta := r.statesInformer.GetAllPods()
 	podsMetrics := make([]*metriccache.PodResourceMetric, 0, len(podsMeta))
 	for _, podMeta := range podsMeta {
-		podQueryResult := r.collectPodMetric(podMeta, queryParam)
+		podQueryResult := r.CollectPodMetric(podMeta, queryParam)
 		podMetric := podQueryResult.Metric
 		if podMetric != nil {
 			podsMetrics = append(podsMetrics, podMetric)
@@ -55,7 +91,7 @@ func (r *resmanager) collectNodeAndPodMetrics(queryParam *metriccache.QueryParam
 	return nodeMetric, podsMetrics
 }
 
-func (r *resmanager) collectNodeMetric(queryParam *metriccache.QueryParam) metriccache.NodeResourceQueryResult {
+func (r *metricsQuery) collectNodeMetric(queryParam *metriccache.QueryParam) metriccache.NodeResourceQueryResult {
 	queryResult := r.metricCache.GetNodeResourceMetric(queryParam)
 	if queryResult.Error != nil {
 		klog.Warningf("get node resource metric failed, error %v", queryResult.Error)
@@ -68,7 +104,9 @@ func (r *resmanager) collectNodeMetric(queryParam *metriccache.QueryParam) metri
 	return queryResult
 }
 
-func (r *resmanager) collectPodMetric(podMeta *statesinformer.PodMeta, queryParam *metriccache.QueryParam) metriccache.PodResourceQueryResult {
+func (r *metricsQuery) CollectPodMetric(podMeta *statesinformer.PodMeta,
+	queryParam *metriccache.QueryParam) metriccache.PodResourceQueryResult {
+
 	if podMeta == nil || podMeta.Pod == nil {
 		return metriccache.PodResourceQueryResult{QueryResult: metriccache.QueryResult{Error: fmt.Errorf("pod is nil")}}
 	}
@@ -85,13 +123,14 @@ func (r *resmanager) collectPodMetric(podMeta *statesinformer.PodMeta, queryPara
 	return queryResult
 }
 
-func (r *resmanager) collectContainerResMetricLast(containerID *string) metriccache.ContainerResourceQueryResult {
+// CollectContainerResMetricLast creates an instance which implements interface MetricsQuery.
+func (r *metricsQuery) CollectContainerResMetricLast(containerID *string, collectResUsedIntervalSeconds int64) metriccache.ContainerResourceQueryResult {
 	if containerID == nil {
 		return metriccache.ContainerResourceQueryResult{
 			QueryResult: metriccache.QueryResult{Error: fmt.Errorf("container is nil")},
 		}
 	}
-	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
+	queryParam := GenerateQueryParamsLast(collectResUsedIntervalSeconds * 2)
 	queryResult := r.metricCache.GetContainerResourceMetric(containerID, queryParam)
 	if queryResult.Error != nil {
 		klog.Warningf("get container %v resource metric failed, error %v", containerID, queryResult.Error)
@@ -104,13 +143,14 @@ func (r *resmanager) collectContainerResMetricLast(containerID *string) metricca
 	return queryResult
 }
 
-func (r *resmanager) collectContainerThrottledMetricLast(containerID *string) metriccache.ContainerThrottledQueryResult {
+// CollectContainerThrottledMetricLast creates an instance which implements interface MetricsQuery.
+func (r *metricsQuery) CollectContainerThrottledMetricLast(containerID *string, collectResUsedIntervalSeconds int64) metriccache.ContainerThrottledQueryResult {
 	if containerID == nil {
 		return metriccache.ContainerThrottledQueryResult{
 			QueryResult: metriccache.QueryResult{Error: fmt.Errorf("container is nil")},
 		}
 	}
-	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
+	queryParam := GenerateQueryParamsLast(collectResUsedIntervalSeconds * 2)
 	queryResult := r.metricCache.GetContainerThrottledMetric(containerID, queryParam)
 	if queryResult.Error != nil {
 		klog.Warningf("get container %v throttled metric failed, error %v", containerID, queryResult.Error)
@@ -123,7 +163,7 @@ func (r *resmanager) collectContainerThrottledMetricLast(containerID *string) me
 	return queryResult
 }
 
-func generateQueryParamsAvg(windowSeconds int64) *metriccache.QueryParam {
+func GenerateQueryParamsAvg(windowSeconds int64) *metriccache.QueryParam {
 	end := time.Now()
 	start := end.Add(-time.Duration(windowSeconds) * time.Second)
 	queryParam := &metriccache.QueryParam{
@@ -134,7 +174,7 @@ func generateQueryParamsAvg(windowSeconds int64) *metriccache.QueryParam {
 	return queryParam
 }
 
-func generateQueryParamsLast(windowSeconds int64) *metriccache.QueryParam {
+func GenerateQueryParamsLast(windowSeconds int64) *metriccache.QueryParam {
 	end := time.Now()
 	start := end.Add(-time.Duration(windowSeconds) * time.Second)
 	queryParam := &metriccache.QueryParam{
