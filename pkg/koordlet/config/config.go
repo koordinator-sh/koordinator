@@ -28,6 +28,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
+	qosmanagerconfig "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/config"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
@@ -42,6 +43,7 @@ type Configuration struct {
 	CollectorConf      *metricsadvisor.Config
 	MetricCacheConf    *metriccache.Config
 	ResManagerConf     *resmanager.Config
+	QosManagerConf     *qosmanagerconfig.Config
 	RuntimeHookConf    *runtimehooks.Config
 	AuditConf          *audit.Config
 	FeatureGates       map[string]bool
@@ -54,6 +56,7 @@ func NewConfiguration() *Configuration {
 		CollectorConf:      metricsadvisor.NewDefaultConfig(),
 		MetricCacheConf:    metriccache.NewDefaultConfig(),
 		ResManagerConf:     resmanager.NewDefaultConfig(),
+		QosManagerConf:     qosmanagerconfig.NewDefaultConfig(),
 		RuntimeHookConf:    runtimehooks.NewDefaultConfig(),
 		AuditConf:          audit.NewDefaultConfig(),
 	}
@@ -66,6 +69,7 @@ func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 	c.CollectorConf.InitFlags(fs)
 	c.MetricCacheConf.InitFlags(fs)
 	c.ResManagerConf.InitFlags(fs)
+	c.QosManagerConf.InitFlags(fs)
 	c.RuntimeHookConf.InitFlags(fs)
 	c.AuditConf.InitFlags(fs)
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "feature-gates", "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
