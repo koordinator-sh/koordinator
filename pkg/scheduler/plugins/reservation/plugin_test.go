@@ -53,6 +53,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/scheduling/v1alpha1"
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 var _ listerschedulingv1alpha1.ReservationLister = &fakeReservationLister{}
@@ -521,7 +522,7 @@ func TestFilter(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-0",
 			Annotations: map[string]string{
-				AnnotationReservationNode: testNode.Name,
+				util.AnnotationReservationNode: testNode.Name,
 			},
 		},
 	})
@@ -529,7 +530,7 @@ func TestFilter(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-1",
 			Annotations: map[string]string{
-				AnnotationReservationNode: testNode.Name,
+				util.AnnotationReservationNode: testNode.Name,
 			},
 		},
 	})
@@ -537,7 +538,7 @@ func TestFilter(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-1",
 			Annotations: map[string]string{
-				AnnotationReservationNode: "other-node",
+				util.AnnotationReservationNode: "other-node",
 			},
 		},
 	})
@@ -625,7 +626,7 @@ func TestPostFilter(t *testing.T) {
 			Name: "reserve-pod-no-name",
 		},
 	})
-	delete(reservePodNoName.Annotations, AnnotationReservationName)
+	delete(reservePodNoName.Annotations, util.AnnotationReservationName)
 	r := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-0",
@@ -1945,7 +1946,7 @@ func testGetReservePod(pod *corev1.Pod) *corev1.Pod {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
-	pod.Annotations[AnnotationReservePod] = "true"
-	pod.Annotations[AnnotationReservationName] = pod.Name
+	pod.Annotations[util.AnnotationReservePod] = "true"
+	pod.Annotations[util.AnnotationReservationName] = pod.Name
 	return pod
 }

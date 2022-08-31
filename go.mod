@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/NVIDIA/go-nvml v0.11.6-0.0.20220715143214-a79f46f2a6f7
 	github.com/docker/docker v20.10.17+incompatible
+	github.com/evanphx/json-patch v4.11.0+incompatible
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/gin-gonic/gin v1.8.1
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
@@ -66,7 +67,6 @@ require (
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/emicklei/go-restful v2.9.5+incompatible // indirect
-	github.com/evanphx/json-patch v4.11.0+incompatible // indirect
 	github.com/felixge/httpsnoop v1.0.1 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-logr/logr v0.4.0 // indirect

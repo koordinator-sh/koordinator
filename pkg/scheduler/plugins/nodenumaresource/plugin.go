@@ -22,11 +22,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	apimachinerytypes "k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -373,26 +369,14 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
-	patchBytes, err := util.GeneratePodPatch(podOriginal, pod)
+	// patch pod or reservation (if the pod is a reserve pod) with new annotations
+	err = util.RetryOnConflictOrTooManyRequests(func() error {
+		_, err1 := util.NewPatch().WithHandle(p.handle).AddAnnotations(pod.Annotations).PatchPodOrReservation(podOriginal)
+		return err1
+	})
 	if err != nil {
-		return framework.NewStatus(framework.Error, err.Error())
-	}
-	if string(patchBytes) == "{}" {
-		return nil
-	}
-
-	err = retry.OnError(
-		retry.DefaultRetry,
-		errors.IsTooManyRequests,
-		func() error {
-			_, err := p.handle.ClientSet().CoreV1().Pods(pod.Namespace).
-				Patch(ctx, pod.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
-			if err != nil {
-				klog.Error("Failed to patch Pod %s/%s, patch: %v, err: %v", pod.Namespace, pod.Name, string(patchBytes), err)
-			}
-			return err
-		})
-	if err != nil {
+		klog.V(3).ErrorS(err, "Failed to preBind Pod with CPUSet",
+			"pod", klog.KObj(pod), "CPUSet", state.allocatedCPUs, "node", nodeName)
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
