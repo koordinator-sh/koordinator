@@ -868,45 +868,48 @@ func TestMigrateWithSamePodName(t *testing.T) {
 	podCopy := pod.DeepCopy()
 	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
 
-	reconciler.reservationInterpreter = fakeReservationInterpreter{
-		reservation: &sev1alpha1.Reservation{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-reservation",
-			},
-			Spec: sev1alpha1.ReservationSpec{
-				Owners: []sev1alpha1.ReservationOwner{
-					{
-						Controller: &sev1alpha1.ReservationControllerReference{
-							Namespace: "default",
-							OwnerReference: metav1.OwnerReference{
-								APIVersion: "apps/v1",
-								Controller: pointer.Bool(true),
-								Kind:       "StatefulSet",
-								Name:       "test",
-								UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
-							},
+	r := &sev1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+		},
+		Spec: sev1alpha1.ReservationSpec{
+			Owners: []sev1alpha1.ReservationOwner{
+				{
+					Controller: &sev1alpha1.ReservationControllerReference{
+						Namespace: "default",
+						OwnerReference: metav1.OwnerReference{
+							APIVersion: "apps/v1",
+							Controller: pointer.Bool(true),
+							Kind:       "StatefulSet",
+							Name:       "test",
+							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
 						},
 					},
 				},
 			},
-			Status: sev1alpha1.ReservationStatus{
-				Phase: sev1alpha1.ReservationAvailable,
-				Conditions: []sev1alpha1.ReservationCondition{
-					{
-						Type:   sev1alpha1.ReservationConditionScheduled,
-						Reason: sev1alpha1.ReasonReservationScheduled,
-						Status: sev1alpha1.ConditionStatusTrue,
-					},
-				},
-				CurrentOwners: []corev1.ObjectReference{
-					{
-						Namespace: "default",
-						Name:      "test-pod-1",
-					},
-				},
-				NodeName: "test-node-1",
-			},
 		},
+		Status: sev1alpha1.ReservationStatus{
+			Phase: sev1alpha1.ReservationAvailable,
+			Conditions: []sev1alpha1.ReservationCondition{
+				{
+					Type:   sev1alpha1.ReservationConditionScheduled,
+					Reason: sev1alpha1.ReasonReservationScheduled,
+					Status: sev1alpha1.ConditionStatusTrue,
+				},
+			},
+			CurrentOwners: []corev1.ObjectReference{
+				{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+			},
+			NodeName: "test-node-1",
+		},
+	}
+	assert.NoError(t, reconciler.Client.Create(context.TODO(), r))
+
+	reconciler.reservationInterpreter = fakeReservationInterpreter{
+		reservation: r,
 	}
 	for {
 		_, err := reconciler.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: job.Name}})
