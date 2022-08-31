@@ -53,13 +53,13 @@ var (
 
 type Config struct {
 	FeatureGates       map[string]bool
-	PluginExtraConfigs map[featuregate.Feature]string
+	PluginExtraConfigs map[string]string
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
 		FeatureGates:       map[string]bool{},
-		PluginExtraConfigs: map[featuregate.Feature]string{},
+		PluginExtraConfigs: map[string]string{},
 	}
 }
 

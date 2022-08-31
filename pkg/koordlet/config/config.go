@@ -17,7 +17,12 @@ limitations under the License.
 package config
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"flag"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"strings"
 
 	"k8s.io/client-go/rest"
@@ -36,7 +41,16 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
+const (
+	DefaultKoordletConfigMapNamespace = "koordinator-system"
+	DefaultKoordletConfigMapName      = "koordlet-config"
+
+	CMKeyQoSPluginExtraConfigs = "qos-plugin-extra-configs"
+)
+
 type Configuration struct {
+	ConfigMapName      string
+	ConfigMapNamesapce string
 	KubeRestConf       *rest.Config
 	StatesInformerConf *statesinformer.Config
 	ReporterConf       *reporter.Config
@@ -51,6 +65,8 @@ type Configuration struct {
 
 func NewConfiguration() *Configuration {
 	return &Configuration{
+		ConfigMapName:      DefaultKoordletConfigMapName,
+		ConfigMapNamesapce: DefaultKoordletConfigMapNamespace,
 		StatesInformerConf: statesinformer.NewDefaultConfig(),
 		ReporterConf:       reporter.NewDefaultConfig(),
 		CollectorConf:      metricsadvisor.NewDefaultConfig(),
@@ -63,6 +79,8 @@ func NewConfiguration() *Configuration {
 }
 
 func (c *Configuration) InitFlags(fs *flag.FlagSet) {
+	fs.StringVar(&c.ConfigMapName, "configmap-name", DefaultKoordletConfigMapName, "determines the name the koordlet configmap uses.")
+	fs.StringVar(&c.ConfigMapNamesapce, "configmap-namespace", DefaultKoordletConfigMapNamespace, "determines the namespace of configmap uses.")
 	system.Conf.InitFlags(fs)
 	c.StatesInformerConf.InitFlags(fs)
 	c.ReporterConf.InitFlags(fs)
@@ -83,5 +101,30 @@ func (c *Configuration) InitClient() error {
 	}
 	cfg.UserAgent = "koordlet"
 	c.KubeRestConf = cfg
+	return nil
+}
+
+func (c *Configuration) InitFromConfigMap() error {
+	if c.KubeRestConf == nil {
+		return errors.New("KubeRestConf is nil")
+	}
+	cli, err := kubernetes.NewForConfig(c.KubeRestConf)
+	if err != nil {
+		return err
+	}
+	cm, err := cli.CoreV1().ConfigMaps(c.ConfigMapNamesapce).Get(context.TODO(), c.ConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	// Setup extra configs for QoS Manager.
+	if qosPluginExtraConfigRaw, found := cm.Data[CMKeyQoSPluginExtraConfigs]; found {
+		var extraConfigs map[string]string
+		if err = json.Unmarshal([]byte(qosPluginExtraConfigRaw), &extraConfigs); err != nil {
+			return err
+		}
+		c.QosManagerConf.PluginExtraConfigs = extraConfigs
+	}
+
 	return nil
 }
