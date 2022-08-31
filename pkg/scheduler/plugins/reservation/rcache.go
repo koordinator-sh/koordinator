@@ -72,21 +72,22 @@ func (m *reservationInfo) GetReservation() *schedulingv1alpha1.Reservation {
 func (m *reservationInfo) ScoreForPod(pod *corev1.Pod) {
 	// assert pod.request <= r.request
 	// score := sum_i (w_i * sum(pod.request_i) / r.allocatable_i)) / sum_i(w_i)
-	requests, _ := resourceapi.PodRequestsAndLimits(pod)
+	requested, _ := resourceapi.PodRequestsAndLimits(pod)
 	if allocated := m.Reservation.Status.Allocated; allocated != nil {
 		// consider multi owners sharing one reservation
-		requests = quotav1.Add(requests, allocated)
+		requested = quotav1.Add(requested, allocated)
 	}
+	resources := quotav1.RemoveZeros(m.Resources)
 
-	w := int64(len(m.Resources))
+	w := int64(len(resources))
 	if w <= 0 {
 		m.Score = 0
 		return
 	}
 	var s int64
-	for resource, alloc := range m.Resources {
-		req := requests[resource]
-		s += framework.MaxNodeScore * req.MilliValue() / alloc.MilliValue()
+	for resource, capacity := range m.Resources {
+		req := requested[resource]
+		s += framework.MaxNodeScore * req.MilliValue() / capacity.MilliValue()
 	}
 	m.Score = s / w
 }
