@@ -36,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
@@ -61,6 +62,7 @@ type daemon struct {
 	metricCache    metriccache.MetricCache
 	reporter       reporter.Reporter
 	resManager     resmanager.ResManager
+	qosManager     qosmanager.QoSManager
 	runtimeHook    runtimehooks.RuntimeHook
 	pleg           pleg.Pleg
 }
@@ -121,6 +123,8 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(config.CollectorConf.CollectResUsedIntervalSeconds))
 
+	qosManager := qosmanager.NewQosManager(config.QosManagerConf, scheme, kubeClient, nodeName, statesInformer, metricCache)
+
 	runtimeHook, err := runtimehooks.NewRuntimeHook(statesInformer, config.RuntimeHookConf)
 	if err != nil {
 		return nil, err
@@ -132,6 +136,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		metricCache:    metricCache,
 		reporter:       reporterService,
 		resManager:     resManagerService,
+		qosManager:     qosManager,
 		runtimeHook:    runtimeHook,
 		pleg:           pleg,
 	}
@@ -184,6 +189,14 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 	go func() {
 		if err := d.resManager.Run(stopCh); err != nil {
 			klog.Error("Unable to run the resManager: ", err)
+			os.Exit(1)
+		}
+	}()
+
+	// start QoS Manager
+	go func() {
+		if err := d.qosManager.Run(stopCh); err != nil {
+			klog.Error("Unable to run the QoSManager: ", err)
 			os.Exit(1)
 		}
 	}()
