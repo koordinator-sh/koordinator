@@ -333,7 +333,7 @@ func (s *statesInformer) updateNodeTopo(newTopo *v1alpha1.NodeResourceTopology) 
 func (s *statesInformer) setNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
 	s.nodeTopoMutex.Lock()
 	defer s.nodeTopoMutex.Unlock()
-	s.nodeTopology = newTopo
+	s.nodeTopology = newTopo.DeepCopy()
 }
 
 func (s *statesInformer) getNodeTopo() *v1alpha1.NodeResourceTopology {
