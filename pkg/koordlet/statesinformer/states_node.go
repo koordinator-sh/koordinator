@@ -58,7 +58,7 @@ func (s *statesInformer) syncNode(newNode *corev1.Node) {
 	klog.V(5).Infof("node update detail %v", newNode)
 	s.nodeRWMutex.Lock()
 	defer s.nodeRWMutex.Unlock()
-	s.node = newNode
+	s.node = newNode.DeepCopy()
 
 	// also register node for metrics
 	metrics.Register(newNode)
