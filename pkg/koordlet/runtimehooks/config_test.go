@@ -27,10 +27,11 @@ import (
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		RuntimeHooksNetwork:       "tcp",
-		RuntimeHooksAddr:          ":9318",
+		RuntimeHooksNetwork:       "unix",
+		RuntimeHooksAddr:          "/host-var-run-koordlet/koordlet.sock",
 		RuntimeHooksFailurePolicy: "Ignore",
 		RuntimeHookConfigFilePath: system.Conf.RuntimeHooksConfigDir,
+		RuntimeHookHostEndpoint:   "/var/run/koordlet/koordlet.sock",
 		RuntimeHookDisableStages:  []string{},
 		FeatureGates:              map[string]bool{},
 	}

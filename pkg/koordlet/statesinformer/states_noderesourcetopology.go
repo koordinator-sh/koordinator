@@ -336,7 +336,7 @@ func (s *statesInformer) setNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
 	s.nodeTopology = newTopo.DeepCopy()
 }
 
-func (s *statesInformer) getNodeTopo() *v1alpha1.NodeResourceTopology {
+func (s *statesInformer) GetNodeTopo() *v1alpha1.NodeResourceTopology {
 	s.nodeTopoMutex.RLock()
 	defer s.nodeTopoMutex.RUnlock()
 	return s.nodeTopology.DeepCopy()

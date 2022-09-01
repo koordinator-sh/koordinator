@@ -59,6 +59,8 @@ type StatesInformer interface {
 
 	GetAllPods() []*PodMeta
 
+	GetNodeTopo() *topov1alpha1.NodeResourceTopology
+
 	RegisterCallbacks(objType RegisterType, name, description string, callbackFn UpdateCbFn)
 }
 
