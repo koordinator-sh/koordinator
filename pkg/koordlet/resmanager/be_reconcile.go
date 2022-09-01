@@ -38,7 +38,7 @@ func (r *resmanager) reconcileBECgroup() {
 		if extension.GetPodQoSClass(podMeta.Pod) != extension.QoSBE {
 			continue
 		}
-		if getCPUSuppressPolicy(nodeSLO) != v1alpha1.CPUCfsQuotaPolicy {
+		if enable, policy := getCPUSuppressPolicy(nodeSLO); enable || policy != v1alpha1.CPUCfsQuotaPolicy {
 			reconcileBECPULimit(podMeta)
 		}
 		reconcileBECPUShare(podMeta)
