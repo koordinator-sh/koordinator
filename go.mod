@@ -35,7 +35,7 @@ require (
 	k8s.io/component-base v0.22.6
 	k8s.io/component-helpers v0.22.6
 	k8s.io/cri-api v0.22.6
-	k8s.io/klog/v2 v2.10.0
+	k8s.io/klog/v2 v2.80.0
 	k8s.io/kube-scheduler v0.22.6
 	k8s.io/kubernetes v1.22.6
 	k8s.io/utils v0.0.0-20210819203725-bdf08cb9a70a
@@ -69,7 +69,7 @@ require (
 	github.com/emicklei/go-restful v2.9.5+incompatible // indirect
 	github.com/felixge/httpsnoop v1.0.1 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
-	github.com/go-logr/logr v0.4.0 // indirect
+	github.com/go-logr/logr v1.2.0 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.19.6 // indirect
 	github.com/go-openapi/swag v0.21.1 // indirect
