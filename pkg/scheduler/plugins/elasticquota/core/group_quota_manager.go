@@ -278,7 +278,7 @@ func (gqm *GroupQuotaManager) getQuotaInfoByNameNoLock(quotaName string) *QuotaI
 	return gqm.quotaInfoMap[quotaName]
 }
 
-func (gqm *GroupQuotaManager) getRuntimeQuotaCalculatorByNameNoLock(quotaName string) (treeWrapperPtr *RuntimeQuotaCalculator) {
+func (gqm *GroupQuotaManager) getRuntimeQuotaCalculatorByNameNoLock(quotaName string) *RuntimeQuotaCalculator {
 	return gqm.runtimeQuotaCalculatorMap[quotaName]
 }
 
@@ -452,6 +452,17 @@ func (gqm *GroupQuotaManager) updateResourceKeyNoLock() {
 			runtimeQuotaCalculator.UpdateResourceKeys(resourceKeys)
 		}
 	}
+}
+
+func (gqm *GroupQuotaManager) GetQuotaInfoMap() map[string]struct{} {
+	quotaInfoMap := make(map[string]struct{})
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	for name := range gqm.quotaInfoMap {
+		quotaInfoMap[name] = struct{}{}
+	}
+	return quotaInfoMap
 }
 
 func (gqm *GroupQuotaManager) SetQuotaInfoForTest(quotaInfo *QuotaInfo) {

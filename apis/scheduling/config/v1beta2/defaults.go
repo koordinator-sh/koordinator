@@ -59,8 +59,6 @@ var (
 
 	defaultEnablePreemption = pointer.Bool(false)
 
-	defaultMinCandidateNodesPercentage      = pointer.Int32Ptr(10)
-	defaultMinCandidateNodesAbsolute        = pointer.Int32Ptr(100)
 	defaultContinueOverUseCountTriggerEvict = pointer.Int64Ptr(120)
 	defaultDefaultQuotaGroupMax             = corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("96"),
@@ -111,12 +109,6 @@ func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 }
 
 func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
-	if obj.MinCandidateNodesAbsolute == nil {
-		obj.MinCandidateNodesAbsolute = defaultMinCandidateNodesAbsolute
-	}
-	if obj.MinCandidateNodesPercentage == nil {
-		obj.MinCandidateNodesPercentage = defaultMinCandidateNodesPercentage
-	}
 	if obj.ContinueOverUseCountTriggerEvict == nil {
 		obj.ContinueOverUseCountTriggerEvict = defaultContinueOverUseCountTriggerEvict
 	}

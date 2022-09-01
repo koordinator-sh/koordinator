@@ -130,20 +130,6 @@ type ReservationArgs struct {
 type ElasticQuotaArgs struct {
 	metav1.TypeMeta
 
-	// MinCandidateNodesPercentage is the minimum number of candidates to
-	// shortlist when dry running preemption as a percentage of number of nodes.
-	// Must be in the range [0, 100]. Defaults to 10% of the cluster size if
-	// unspecified.
-	MinCandidateNodesPercentage *int32 `json:"minCandidateNodesPercentage,omitempty"`
-	// MinCandidateNodesAbsolute is the absolute minimum number of candidates to
-	// shortlist. The likely number of candidates enumerated for dry running
-	// preemption is given by the formula:
-	// numCandidates = max(numNodes * minCandidateNodesPercentage, minCandidateNodesAbsolute)
-	// We say "likely" because there are other factors such as PDB violations
-	// that play a role in the number of candidates shortlisted. Must be at least
-	// 0 nodes. Defaults to 100 nodes if unspecified.
-	MinCandidateNodesAbsolute *int32 `json:"minCandidateNodesAbsolute,omitempty"`
-
 	// ContinueOverUseCountTriggerEvict is the number to handle the jitter of used and runtime
 	ContinueOverUseCountTriggerEvict *int64 `json:"continueOverUseCountTriggerEvict,omitempty"`
 

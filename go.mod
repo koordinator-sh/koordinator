@@ -6,11 +6,13 @@ require (
 	github.com/NVIDIA/go-nvml v0.11.6-0.0.20220715143214-a79f46f2a6f7
 	github.com/docker/docker v20.10.17+incompatible
 	github.com/evanphx/json-patch v4.11.0+incompatible
+	github.com/emirpasic/gods v1.18.1
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/gin-gonic/gin v1.8.1
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.2
+	github.com/google/go-cmp v0.5.8
 	github.com/google/uuid v1.3.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.0.12
 	github.com/mohae/deepcopy v0.0.0-20170603005431-491d3605edfb
@@ -79,7 +81,6 @@ require (
 	github.com/goccy/go-json v0.9.7 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect

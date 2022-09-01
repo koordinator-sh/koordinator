@@ -67,16 +67,6 @@ func (in *CoschedulingArgs) DeepCopyObject() runtime.Object {
 func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	if in.MinCandidateNodesPercentage != nil {
-		in, out := &in.MinCandidateNodesPercentage, &out.MinCandidateNodesPercentage
-		*out = new(int32)
-		**out = **in
-	}
-	if in.MinCandidateNodesAbsolute != nil {
-		in, out := &in.MinCandidateNodesAbsolute, &out.MinCandidateNodesAbsolute
-		*out = new(int32)
-		**out = **in
-	}
 	if in.ContinueOverUseCountTriggerEvict != nil {
 		in, out := &in.ContinueOverUseCountTriggerEvict, &out.ContinueOverUseCountTriggerEvict
 		*out = new(int64)

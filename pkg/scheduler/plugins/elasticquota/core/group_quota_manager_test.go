@@ -79,7 +79,7 @@ func TestGroupQuotaManager_QuotaAdd_AutoMakeUpScaleRatio2(t *testing.T) {
 
 	quota := &v1alpha1.ElasticQuota{
 		TypeMeta: metav1.TypeMeta{
-			Kind: "Quota",
+			Kind: "ElasticQuota",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "test",
