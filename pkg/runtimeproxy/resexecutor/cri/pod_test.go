@@ -91,17 +91,80 @@ func TestPodResourceExecutor_ParsePod(t *testing.T) {
 		},
 	}
 
-	for i, tt := range tests {
+	for _, tt := range tests {
 		podExecutor := NewPodResourceExecutor()
-		if i == 1 {
-			continue
-		}
 		err := podExecutor.ParsePod(tt.fields.podSandbox)
 		assert.Equal(t, tt.want.wantErr, err)
 		assert.Equal(t, tt.want.wantPodMetaData, podExecutor.GetPodMeta())
 		assert.Equal(t, tt.want.wantPodRuntimeHandler, podExecutor.GetRuntimeHandler())
 		assert.Equal(t, tt.want.wantPodAnnotations, podExecutor.GetAnnotations())
 		assert.Equal(t, tt.want.wantPodLabels, podExecutor.GetLabels())
+	}
+}
+
+func TestPodResourceExecutor_ResourceCheckPoint(t *testing.T) {
+	const podID string = "podID"
+	tests := []struct {
+		name                   string
+		responseFromContainerd interface{}
+		podSandboxForThisPod   *store.PodSandboxInfo
+		podSandboxFromStore    *store.PodSandboxInfo
+	}{
+		{
+			name:                   "response is nil, should not store the podinfo",
+			responseFromContainerd: nil,
+			podSandboxForThisPod: &store.PodSandboxInfo{
+				PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
+					PodMeta: &v1alpha1.PodSandboxMetadata{
+						Name: "podName",
+					},
+				},
+			},
+			podSandboxFromStore: nil,
+		},
+		{
+			name: "response is is RunPodSandboxResponse, should store podinfo",
+			responseFromContainerd: &runtimeapi.RunPodSandboxResponse{
+				PodSandboxId: podID,
+			},
+			podSandboxForThisPod: &store.PodSandboxInfo{
+				PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
+					PodMeta: &v1alpha1.PodSandboxMetadata{
+						Name: "podName",
+					},
+				},
+			},
+			podSandboxFromStore: &store.PodSandboxInfo{
+				PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
+					PodMeta: &v1alpha1.PodSandboxMetadata{
+						Name: "podName",
+					},
+				},
+			},
+		},
+		{
+			name: "response is is not RunPodSandboxResponse, should not store podinfo",
+			responseFromContainerd: &runtimeapi.StopPodSandboxRequest{
+				PodSandboxId: podID,
+			},
+			podSandboxForThisPod: &store.PodSandboxInfo{
+				PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
+					PodMeta: &v1alpha1.PodSandboxMetadata{
+						Name: "podName",
+					},
+				},
+			},
+			podSandboxFromStore: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		podExecutor := NewPodResourceExecutor()
+		podExecutor.PodSandboxInfo = *tt.podSandboxForThisPod
+
+		podExecutor.ResourceCheckPoint(tt.responseFromContainerd)
+		assert.Equal(t, store.GetPodSandboxInfo(podID), tt.podSandboxFromStore, tt.name)
+		store.DeletePodSandboxInfo(podID)
 	}
 }
 
