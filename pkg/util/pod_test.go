@@ -17,8 +17,6 @@ limitations under the License.
 package util
 
 import (
-	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -618,40 +616,5 @@ func Test_GetPodBEMemoryRequest(t *testing.T) {
 			assert.Equal(tc.wantRequest, GetPodBEMemoryByteRequestIgnoreUnlimited(tc.pod))
 			assert.Equal(tc.wantLimit, GetPodBEMemoryByteLimit(tc.pod))
 		})
-	}
-}
-
-func Test_GeneratePodPatch(t *testing.T) {
-	pod1 := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "default",
-			Name:      "test-pod-1",
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{Name: "test-container-1"},
-				{Name: "test-container-2"},
-			},
-		},
-	}
-	patchAnnotation := map[string]string{"test_case": "Test_GeneratePodPatch"}
-	pod2 := pod1.DeepCopy()
-	pod2.SetAnnotations(patchAnnotation)
-	patchBytes, err := GeneratePodPatch(pod1, pod2)
-	if err != nil {
-		t.Errorf("error creating patch bytes %v", err)
-	}
-	var patchMap map[string]interface{}
-	err = json.Unmarshal(patchBytes, &patchMap)
-	if err != nil {
-		t.Errorf("error unmarshalling json patch : %v", err)
-	}
-	metadata, ok := patchMap["metadata"].(map[string]interface{})
-	if !ok {
-		t.Errorf("error converting metadata to version map")
-	}
-	annotation, _ := metadata["annotations"].(map[string]interface{})
-	if fmt.Sprint(annotation) != fmt.Sprint(patchAnnotation) {
-		t.Errorf("expect patchBytes: %q, got: %q", patchAnnotation, annotation)
 	}
 }

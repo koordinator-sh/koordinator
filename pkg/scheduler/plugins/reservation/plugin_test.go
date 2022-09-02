@@ -53,6 +53,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/scheduling/v1alpha1"
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 var _ listerschedulingv1alpha1.ReservationLister = &fakeReservationLister{}
@@ -521,7 +522,7 @@ func TestFilter(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-0",
 			Annotations: map[string]string{
-				AnnotationReservationNode: testNode.Name,
+				util.AnnotationReservationNode: testNode.Name,
 			},
 		},
 	})
@@ -529,7 +530,7 @@ func TestFilter(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-1",
 			Annotations: map[string]string{
-				AnnotationReservationNode: testNode.Name,
+				util.AnnotationReservationNode: testNode.Name,
 			},
 		},
 	})
@@ -537,7 +538,7 @@ func TestFilter(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-1",
 			Annotations: map[string]string{
-				AnnotationReservationNode: "other-node",
+				util.AnnotationReservationNode: "other-node",
 			},
 		},
 	})
@@ -625,7 +626,7 @@ func TestPostFilter(t *testing.T) {
 			Name: "reserve-pod-no-name",
 		},
 	})
-	delete(reservePodNoName.Annotations, AnnotationReservationName)
+	delete(reservePodNoName.Annotations, util.AnnotationReservationName)
 	r := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-0",
@@ -735,6 +736,43 @@ func TestScore(t *testing.T) {
 			},
 		},
 	}
+	emptyResourcesPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod-4",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "main",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("0"),
+							corev1.ResourceMemory: resource.MustParse("0"),
+						},
+					},
+				},
+			},
+		},
+	}
+	partEmptyResourcesPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod-4",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "main",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("4"),
+							corev1.ResourceMemory: resource.MustParse("0"),
+						},
+					},
+				},
+			},
+		},
+	}
+
 	testNodeName := "test-node-0"
 	testNodeNameNotMatched := "test-node-1"
 	rScheduled := &schedulingv1alpha1.Reservation{
@@ -851,6 +889,83 @@ func TestScore(t *testing.T) {
 			NodeName: testNodeName,
 		},
 	}
+	// rScheduled3 with empty resources requests
+	rScheduled3 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-4",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-4",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("0"),
+									corev1.ResourceMemory: resource.MustParse("0"),
+								},
+							},
+						},
+					},
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-4",
+					},
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: testNodeName,
+		},
+	}
+
+	rScheduled4 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-5",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-5",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("0"),
+								},
+							},
+						},
+					},
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-5",
+					},
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: testNodeName,
+		},
+	}
+
 	stateSkip := framework.NewCycleState()
 	stateSkip.Write(preFilterStateKey, &stateData{
 		skip: true,
@@ -863,6 +978,16 @@ func TestScore(t *testing.T) {
 	stateForOrderMatch := framework.NewCycleState()
 	stateForOrderMatch.Write(preFilterStateKey, &stateData{
 		matchedCache: newAvailableCache(rScheduled, rScheduled1, rScheduled2),
+	})
+
+	stateForEmptyResources := framework.NewCycleState()
+	stateForEmptyResources.Write(preFilterStateKey, &stateData{
+		matchedCache: newAvailableCache(rScheduled, rScheduled1, rScheduled3),
+	})
+
+	stateForPartEmptyResources := framework.NewCycleState()
+	stateForPartEmptyResources.Write(preFilterStateKey, &stateData{
+		matchedCache: newAvailableCache(rScheduled, rScheduled1, rScheduled3, rScheduled4),
 	})
 
 	nodes := []*corev1.Node{
@@ -943,6 +1068,26 @@ func TestScore(t *testing.T) {
 				nodeName:   testNodeName,
 			},
 			want:  mostPreferredScore,
+			want1: nil,
+		},
+		{
+			name: "reservation and pod has empty resource requests",
+			args: args{
+				cycleState: stateForEmptyResources,
+				pod:        emptyResourcesPod,
+				nodeName:   testNodeName,
+			},
+			want:  0,
+			want1: nil,
+		},
+		{
+			name: "reservation and pod has part empty resource requests",
+			args: args{
+				cycleState: stateForPartEmptyResources,
+				pod:        partEmptyResourcesPod,
+				nodeName:   testNodeName,
+			},
+			want:  100,
 			want1: nil,
 		},
 	}
@@ -1945,7 +2090,7 @@ func testGetReservePod(pod *corev1.Pod) *corev1.Pod {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
-	pod.Annotations[AnnotationReservePod] = "true"
-	pod.Annotations[AnnotationReservationName] = pod.Name
+	pod.Annotations[util.AnnotationReservePod] = "true"
+	pod.Annotations[util.AnnotationReservationName] = pod.Name
 	return pod
 }

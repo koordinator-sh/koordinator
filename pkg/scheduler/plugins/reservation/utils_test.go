@@ -18,7 +18,6 @@ package reservation
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -55,75 +54,6 @@ func TestStatusNodeNameIndexFunc(t *testing.T) {
 		got, err = StatusNodeNameIndexFunc(rActive)
 		assert.NoError(t, err)
 		assert.Equal(t, []string{"test-node-0"}, got)
-	})
-}
-
-func TestNewReservePod(t *testing.T) {
-	t.Run("test not panic", func(t *testing.T) {
-		r := &schedulingv1alpha1.Reservation{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "reserve-pod-0",
-			},
-			Spec: schedulingv1alpha1.ReservationSpec{
-				Template: &corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "reserve-pod-0",
-					},
-					Spec: corev1.PodSpec{
-						NodeName: "test-node-0",
-					},
-				},
-				Owners: []schedulingv1alpha1.ReservationOwner{
-					{
-						Object: &corev1.ObjectReference{
-							Kind: "Pod",
-							Name: "test-pod-0",
-						},
-					},
-				},
-				TTL: &metav1.Duration{Duration: 30 * time.Minute},
-			},
-		}
-		reservePod := NewReservePod(r)
-		assert.NotNil(t, reservePod)
-		assert.True(t, IsReservePod(reservePod))
-	})
-}
-
-func TestIsReservationActive(t *testing.T) {
-	t.Run("test not panic", func(t *testing.T) {
-		rPending := &schedulingv1alpha1.Reservation{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "reserve-pod-0",
-			},
-			Spec: schedulingv1alpha1.ReservationSpec{
-				Template: &corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "reserve-pod-0",
-					},
-					Spec: corev1.PodSpec{
-						NodeName: "test-node-0",
-					},
-				},
-				Owners: []schedulingv1alpha1.ReservationOwner{
-					{
-						Object: &corev1.ObjectReference{
-							Kind: "Pod",
-							Name: "test-pod-0",
-						},
-					},
-				},
-				TTL: &metav1.Duration{Duration: 30 * time.Minute},
-			},
-		}
-		assert.Equal(t, false, IsReservationActive(rPending))
-
-		rActive := rPending.DeepCopy()
-		rActive.Status = schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReservationAvailable,
-			NodeName: "test-node-0",
-		}
-		assert.Equal(t, true, IsReservationActive(rActive))
 	})
 }
 
@@ -309,53 +239,6 @@ func Test_matchReservationOwners(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := matchReservationOwners(tt.args.pod, tt.args.r)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func TestGetReservationSchedulerName(t *testing.T) {
-	tests := []struct {
-		name string
-		arg  *schedulingv1alpha1.Reservation
-		want string
-	}{
-		{
-			name: "empty reservation",
-			arg:  nil,
-			want: corev1.DefaultSchedulerName,
-		},
-		{
-			name: "empty template",
-			arg:  &schedulingv1alpha1.Reservation{},
-			want: corev1.DefaultSchedulerName,
-		},
-		{
-			name: "empty scheduler name",
-			arg: &schedulingv1alpha1.Reservation{
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{},
-				},
-			},
-			want: corev1.DefaultSchedulerName,
-		},
-		{
-			name: "get scheduler name successfully",
-			arg: &schedulingv1alpha1.Reservation{
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{
-						Spec: corev1.PodSpec{
-							SchedulerName: "test-scheduler",
-						},
-					},
-				},
-			},
-			want: "test-scheduler",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := GetReservationSchedulerName(tt.arg)
 			assert.Equal(t, tt.want, got)
 		})
 	}

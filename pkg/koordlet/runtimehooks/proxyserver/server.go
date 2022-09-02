@@ -36,6 +36,7 @@ import (
 type Options struct {
 	Network        string
 	Address        string
+	HostEndpoint   string
 	FailurePolicy  config.FailurePolicyType
 	ConfigFilePath string
 	DisableStages  map[string]struct{}
@@ -78,11 +79,11 @@ func (s *server) Stop() {
 
 func (s *server) Register() error {
 	hookConfig := &config.RuntimeHookConfig{
-		RemoteEndpoint: s.options.Address,
+		RemoteEndpoint: s.options.HostEndpoint,
 		FailurePolicy:  s.options.FailurePolicy,
 		RuntimeHooks:   hooks.GetStages(s.options.DisableStages),
 	}
-	configData, _ := json.Marshal(hookConfig)
+	configData, _ := json.MarshalIndent(hookConfig, "", "\t")
 	if err := system.CommonFileWrite(filepath.Join(s.options.ConfigFilePath, "koordlet.json"), string(configData)); err != nil {
 		return err
 	}

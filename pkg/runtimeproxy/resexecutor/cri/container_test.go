@@ -463,3 +463,68 @@ func TestContainerResourceExecutor_ParseRequest_UpdateContainerResourcesRequest(
 		assert.Equal(t, tt.wantContainerInfo, c.ContainerInfo)
 	}
 }
+
+func TestContainerResourceExecutor_ParseContainer(t *testing.T) {
+	tests := []struct {
+		name              string
+		container         *runtimeapi.Container
+		podSandboxID      string
+		pod               *store.PodSandboxInfo // this is the pod in store belonging to this container
+		containerInternal *store.ContainerInfo
+	}{
+		{
+			name: "container failover normal",
+			container: &runtimeapi.Container{
+				PodSandboxId: "podSandboxID0",
+				Annotations: map[string]string{
+					"containerAnnotationKey1": "containerAnnotationValue1",
+				},
+				Metadata: &runtimeapi.ContainerMetadata{
+					Name:    "container",
+					Attempt: 2,
+				},
+			},
+			podSandboxID: "podSandboxID0",
+			pod: &store.PodSandboxInfo{
+				PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
+					PodMeta: &v1alpha1.PodSandboxMetadata{
+						Name: "podName",
+					},
+					Annotations: map[string]string{
+						"annotationKey1": "annotationValue1",
+					},
+					Labels: map[string]string{
+						"labelsKey1": "labelsValue1",
+					},
+				},
+			},
+			containerInternal: &store.ContainerInfo{
+				ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
+					ContainerAnnotations: map[string]string{
+						"containerAnnotationKey1": "containerAnnotationValue1",
+					},
+					ContainerMeta: &v1alpha1.ContainerMetadata{
+						Name:    "container",
+						Attempt: 2,
+					},
+					PodMeta: &v1alpha1.PodSandboxMetadata{
+						Name: "podName",
+					},
+					PodAnnotations: map[string]string{
+						"annotationKey1": "annotationValue1",
+					},
+					PodLabels: map[string]string{
+						"labelsKey1": "labelsValue1",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		containerExecutor := NewContainerResourceExecutor()
+		store.WritePodSandboxInfo(tt.podSandboxID, tt.pod)
+		containerExecutor.ParseContainer(tt.container)
+		assert.Equal(t, tt.containerInternal, &containerExecutor.ContainerInfo, tt.name)
+	}
+}

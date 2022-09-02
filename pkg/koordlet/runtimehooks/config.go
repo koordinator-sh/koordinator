@@ -58,16 +58,18 @@ type Config struct {
 	RuntimeHooksAddr          string
 	RuntimeHooksFailurePolicy string
 	RuntimeHookConfigFilePath string
+	RuntimeHookHostEndpoint   string
 	RuntimeHookDisableStages  []string
 	FeatureGates              map[string]bool
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
-		RuntimeHooksNetwork:       "tcp",
-		RuntimeHooksAddr:          ":9318",
+		RuntimeHooksNetwork:       "unix",
+		RuntimeHooksAddr:          "/host-var-run-koordlet/koordlet.sock",
 		RuntimeHooksFailurePolicy: "Ignore",
 		RuntimeHookConfigFilePath: system.Conf.RuntimeHooksConfigDir,
+		RuntimeHookHostEndpoint:   "/var/run/koordlet/koordlet.sock",
 		RuntimeHookDisableStages:  []string{},
 		FeatureGates:              map[string]bool{},
 	}
@@ -78,6 +80,7 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.RuntimeHooksAddr, "runtime-hooks-addr", c.RuntimeHooksAddr, "rpc server address for runtime hooks")
 	fs.StringVar(&c.RuntimeHooksFailurePolicy, "runtime-hooks-failure-policy", c.RuntimeHooksFailurePolicy, "failure policy for runtime hooks")
 	fs.StringVar(&c.RuntimeHookConfigFilePath, "runtime-hooks-config-path", c.RuntimeHookConfigFilePath, "config file path for runtime hooks")
+	fs.StringVar(&c.RuntimeHookHostEndpoint, "runtime-hooks-host-endpoint", c.RuntimeHookHostEndpoint, "host endpoint of runtime proxy")
 	fs.Var(cliflag.NewStringSlice(&c.RuntimeHookDisableStages), "runtime-hooks-disable-stages", "disable stages for runtime hooks")
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "runtime-hooks",
 		"A set of key=value pairs that describe feature gates for runtime hooks alpha/experimental features. "+

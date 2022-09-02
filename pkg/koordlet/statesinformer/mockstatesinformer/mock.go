@@ -24,7 +24,8 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	v1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	v1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	v1alpha10 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	v1 "k8s.io/api/core/v1"
 )
@@ -81,10 +82,10 @@ func (mr *MockStatesInformerMockRecorder) GetNode() *gomock.Call {
 }
 
 // GetNodeSLO mocks base method.
-func (m *MockStatesInformer) GetNodeSLO() *v1alpha1.NodeSLO {
+func (m *MockStatesInformer) GetNodeSLO() *v1alpha10.NodeSLO {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetNodeSLO")
-	ret0, _ := ret[0].(*v1alpha1.NodeSLO)
+	ret0, _ := ret[0].(*v1alpha10.NodeSLO)
 	return ret0
 }
 
@@ -92,6 +93,20 @@ func (m *MockStatesInformer) GetNodeSLO() *v1alpha1.NodeSLO {
 func (mr *MockStatesInformerMockRecorder) GetNodeSLO() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeSLO", reflect.TypeOf((*MockStatesInformer)(nil).GetNodeSLO))
+}
+
+// GetNodeTopo mocks base method.
+func (m *MockStatesInformer) GetNodeTopo() *v1alpha1.NodeResourceTopology {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNodeTopo")
+	ret0, _ := ret[0].(*v1alpha1.NodeResourceTopology)
+	return ret0
+}
+
+// GetNodeTopo indicates an expected call of GetNodeTopo.
+func (mr *MockStatesInformerMockRecorder) GetNodeTopo() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeTopo", reflect.TypeOf((*MockStatesInformer)(nil).GetNodeTopo))
 }
 
 // HasSynced mocks base method.

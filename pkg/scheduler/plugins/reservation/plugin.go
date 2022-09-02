@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	apimachinerytypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	listercorev1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -179,10 +178,10 @@ func (p *Plugin) Name() string { return Name }
 // Also do validations in this phase.
 func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
 	// if the pod is a reserve pod
-	if IsReservePod(pod) {
+	if util.IsReservePod(pod) {
 		// validate reserve pod and reservation
 		klog.V(4).InfoS("Attempting to pre-filter reserve pod", "pod", klog.KObj(pod))
-		rName := GetReservationNameFromReservePod(pod)
+		rName := util.GetReservationNameFromReservePod(pod)
 		r, err := p.rLister.Get(rName)
 		if errors.IsNotFound(err) {
 			klog.V(3).InfoS("skip the pre-filter for reservation since the object is not found",
@@ -191,7 +190,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		} else if err != nil {
 			return framework.NewStatus(framework.Error, "cannot get reservation, err: "+err.Error())
 		}
-		err = ValidateReservation(r)
+		err = util.ValidateReservation(r)
 		if err != nil {
 			return framework.NewStatus(framework.Error, err.Error())
 		}
@@ -214,10 +213,10 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	}
 
 	// the pod is a reserve pod
-	if IsReservePod(pod) {
+	if util.IsReservePod(pod) {
 		klog.V(4).InfoS("Attempting to filter reserve pod", "pod", klog.KObj(pod), "node", node.Name)
 		// if the reservation specifies a nodeName initially, check if the nodeName matches
-		rNodeName := GetReservePodNodeName(pod)
+		rNodeName := util.GetReservePodNodeName(pod)
 		if len(rNodeName) > 0 && rNodeName != nodeInfo.Node().Name {
 			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonNodeNotMatchReservation)
 		}
@@ -230,7 +229,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 }
 
 func (p *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	if IsReservePod(pod) {
+	if util.IsReservePod(pod) {
 		// return err to stop default preemption
 		return nil, framework.NewStatus(framework.Error)
 	}
@@ -239,7 +238,7 @@ func (p *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 
 func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
 	// if pod is a reserve pod, ignored
-	if IsReservePod(pod) {
+	if util.IsReservePod(pod) {
 		return nil
 	}
 
@@ -277,7 +276,7 @@ func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState,
 
 func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
 	// if pod is a reserve pod, ignored
-	if IsReservePod(pod) {
+	if util.IsReservePod(pod) {
 		return framework.MinNodeScore, nil
 	}
 
@@ -320,7 +319,7 @@ func (p *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleState
 
 func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	// if the pod is a reserve pod
-	if IsReservePod(pod) {
+	if util.IsReservePod(pod) {
 		return nil
 	}
 
@@ -398,7 +397,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 
 func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
 	// if the pod is a reserve pod
-	if IsReservePod(pod) {
+	if util.IsReservePod(pod) {
 		return
 	}
 
@@ -445,7 +444,7 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 		} else if err1 != nil {
 			return err1
 		}
-		if !IsReservationAvailable(curR) {
+		if !util.IsReservationAvailable(curR) {
 			klog.V(5).InfoS("skip unreserve resources on a non-scheduled reservation",
 				"reservation", klog.KObj(curR), "phase", curR.Status.Phase)
 			return nil
@@ -480,23 +479,19 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 	if !needPatch {
 		return
 	}
-	patchBytes, err := util.GeneratePodPatch(pod, newPod)
-	if err != nil {
-		klog.V(4).InfoS("failed to generate patch for pod unreserve",
-			"pod", klog.KObj(pod), "patch", patchBytes, "err", err)
-		return
-	}
-	_, err = p.handle.ClientSet().CoreV1().Pods(pod.Namespace).
-		Patch(ctx, pod.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+	err = util.RetryOnConflictOrTooManyRequests(func() error {
+		_, err1 := util.NewPatch().WithClientset(p.handle.ClientSet()).AddAnnotations(newPod.Annotations).PatchPod(pod)
+		return err1
+	})
 	if err != nil {
 		klog.V(4).InfoS("failed to patch pod for unreserve",
-			"pod", klog.KObj(pod), "patch", patchBytes, "err", err)
+			"pod", klog.KObj(pod), "err", err)
 	}
 }
 
 func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	// if the pod is a reserve pod
-	if IsReservePod(pod) {
+	if util.IsReservePod(pod) {
 		return nil
 	}
 
@@ -528,7 +523,7 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 			return err1
 		}
 
-		if !IsReservationAvailable(curR) {
+		if !util.IsReservationAvailable(curR) {
 			klog.Warningf("failed to allocate resources on a non-scheduled reservation %v, phase %v",
 				klog.KObj(curR), curR.Status.Phase)
 			return fmt.Errorf(ErrReasonReservationInactive)
@@ -547,8 +542,8 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 
 		_, err1 = p.client.Reservations().UpdateStatus(context.TODO(), curR, metav1.UpdateOptions{})
 		if err1 != nil {
-			klog.Warningf("failed to update reservation status for pod allocation, reservation %v, pod %v, err: %v",
-				klog.KObj(curR), klog.KObj(pod), err1)
+			klog.V(4).ErrorS(err1, "failed to update reservation status for pod allocation",
+				"reservation", klog.KObj(curR), "pod", klog.KObj(pod))
 		}
 
 		return err1
@@ -566,20 +561,13 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 	// NOTE: the pod annotation can be stale, we should use reservation status as the ground-truth
 	newPod := pod.DeepCopy()
 	apiext.SetReservationAllocated(newPod, target)
-	patchBytes, err := util.GeneratePodPatch(pod, newPod)
-	if err != nil {
-		klog.V(4).InfoS("failed to generate patch for pod PreBind",
-			"pod", klog.KObj(pod), "patch", patchBytes, "err", err)
-		return nil
-	}
 	err = util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err1 := p.handle.ClientSet().CoreV1().Pods(pod.Namespace).
-			Patch(ctx, pod.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		_, err1 := util.NewPatch().WithClientset(p.handle.ClientSet()).AddAnnotations(newPod.Annotations).PatchPod(pod)
 		return err1
 	})
 	if err != nil {
 		klog.V(4).InfoS("failed to patch pod for PreBind allocating reservation",
-			"pod", klog.KObj(pod), "patch", patchBytes, "err", err)
+			"pod", klog.KObj(pod), "err", err)
 	}
 
 	return nil
@@ -588,11 +576,11 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 // Bind fake binds reserve pod and mark corresponding reservation as Available.
 // NOTE: This Bind plugin should get called before DefaultBinder; plugin order should be configured.
 func (p *Plugin) Bind(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
-	if !IsReservePod(pod) {
+	if !util.IsReservePod(pod) {
 		return framework.NewStatus(framework.Skip, SkipReasonNotReservation)
 	}
 
-	rName := GetReservationNameFromReservePod(pod)
+	rName := util.GetReservationNameFromReservePod(pod)
 	klog.V(4).InfoS("Attempting to fake bind reserve pod to node",
 		"pod", klog.KObj(pod), "reservation", rName, "node", nodeName)
 
@@ -610,7 +598,7 @@ func (p *Plugin) Bind(ctx context.Context, cycleState *framework.CycleState, pod
 		}
 
 		// check if the reservation has been inactive
-		if IsReservationFailed(reservation) || p.reservationCache.IsInactive(reservation) {
+		if util.IsReservationFailed(reservation) || p.reservationCache.IsInactive(reservation) {
 			return fmt.Errorf(ErrReasonReservationInactive)
 		}
 
@@ -620,7 +608,7 @@ func (p *Plugin) Bind(ctx context.Context, cycleState *framework.CycleState, pod
 		setReservationAvailable(reservation, nodeName)
 		_, err = p.client.Reservations().UpdateStatus(context.TODO(), reservation, metav1.UpdateOptions{})
 		if err != nil {
-			klog.Warningf("failed to update reservation %v, err: %v", klog.KObj(reservation), err)
+			klog.V(4).ErrorS(err, "failed to update reservation", "reservation", klog.KObj(reservation))
 		}
 		return err
 	})
@@ -639,9 +627,9 @@ func (p *Plugin) handleOnAdd(obj interface{}) {
 		klog.V(3).Infof("reservation cache add failed to parse, obj %T", obj)
 		return
 	}
-	if IsReservationActive(r) {
+	if util.IsReservationActive(r) {
 		p.reservationCache.AddToActive(r)
-	} else if IsReservationFailed(r) || IsReservationSucceeded(r) {
+	} else if util.IsReservationFailed(r) || util.IsReservationSucceeded(r) {
 		p.reservationCache.AddToInactive(r)
 	}
 	klog.V(5).InfoS("reservation cache add", "reservation", klog.KObj(r))
@@ -668,9 +656,9 @@ func (p *Plugin) handleOnUpdate(oldObj, newObj interface{}) {
 		return
 	}
 
-	if IsReservationActive(newR) {
+	if util.IsReservationActive(newR) {
 		p.reservationCache.AddToActive(newR)
-	} else if IsReservationFailed(newR) || IsReservationSucceeded(newR) {
+	} else if util.IsReservationFailed(newR) || util.IsReservationSucceeded(newR) {
 		p.reservationCache.AddToInactive(newR)
 	}
 	klog.V(5).InfoS("reservation cache update", "reservation", klog.KObj(newR))

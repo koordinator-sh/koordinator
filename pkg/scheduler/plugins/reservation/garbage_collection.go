@@ -51,10 +51,10 @@ func (p *Plugin) gcReservations() {
 			if err = p.expireReservation(r); err != nil {
 				klog.Warningf("failed to update reservation %s as expired, err: %s", klog.KObj(r), err)
 			}
-		} else if IsReservationActive(r) {
+		} else if util.IsReservationActive(r) {
 			// sync active reservation for correct owner statuses
 			p.syncActiveReservation(r)
-		} else if IsReservationExpired(r) || IsReservationSucceeded(r) {
+		} else if util.IsReservationExpired(r) || util.IsReservationSucceeded(r) {
 			p.reservationCache.AddToInactive(r)
 		}
 	}
@@ -183,7 +183,7 @@ func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
 		}
 
 		// check if the reservation is still scheduled; succeeded ones are ignored to update
-		if !IsReservationAvailable(r) {
+		if !util.IsReservationAvailable(r) {
 			klog.V(4).InfoS("skip sync for reservation no longer available or scheduled",
 				"reservation", klog.KObj(r))
 			return nil
