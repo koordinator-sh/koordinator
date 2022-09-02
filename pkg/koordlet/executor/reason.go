@@ -14,18 +14,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resmanager
+package executor
 
 const (
-	updateCPU             = "UpdateCPU"
-	updateMemory          = "UpdateMemory"
+	UpdateCPU             = "UpdateCPU"
+	UpdateMemory          = "UpdateMemory"
 	updateCgroups         = "UpdateCgroups" // update cgroups excluding the options already stated above
 	updateSystemConfig    = "UpdateSystemConfig"
 	updateResctrlSchemata = "UpdateResctrlSchemata" // update resctrl l3 cat schemata
 	updateResctrlTasks    = "UpdateResctrlTasks"    // update resctrl tasks
 
-	evictPodByNodeMemoryUsage   = "EvictPodByNodeMemoryUsage"
-	evictPodByBECPUSatisfaction = "EvictPodByBECPUSatisfaction"
+	EvictPodByNodeMemoryUsage   = "EvictPodByNodeMemoryUsage"
+	EvictPodByBECPUSatisfaction = "EvictPodByBECPUSatisfaction"
 
-	adjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
+	AdjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
 )

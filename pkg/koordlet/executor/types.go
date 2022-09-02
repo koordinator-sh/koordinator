@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resmanager
+package executor
 
 import (
 	"os"
@@ -59,10 +59,11 @@ type MergeableResourceUpdater interface {
 type OwnerType int
 
 const (
-	nodeType = iota
-	podType
-	containerType
-	groupType
+	NodeType = iota
+	PodType
+	ContainerType
+	GroupType
+	OthersType
 )
 
 // OwnerRef is used to record the object that needs to be modified
@@ -153,6 +154,11 @@ type CgroupResourceUpdater struct {
 	needMerge       bool // compatible to resource which just need to update once
 }
 
+func (c *CgroupResourceUpdater) ClearUpdateFunc() {
+	c.updateFunc = nil
+	c.mergeUpdateFunc = nil
+}
+
 func (c *CgroupResourceUpdater) Owner() *OwnerRef {
 	return c.owner
 }
@@ -197,13 +203,13 @@ func CommonCgroupUpdateFunc(resource ResourceUpdater) error {
 	info := resource.(*CgroupResourceUpdater)
 	if info.owner != nil {
 		switch info.owner.Type {
-		case podType:
+		case PodType:
 			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
-		case containerType:
+		case ContainerType:
 			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Container(info.owner.Container).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
-		case nodeType:
+		case NodeType:
 			audit.V(5).Node().Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
-		case groupType:
+		case GroupType:
 			audit.V(5).Group(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
 		default:
 			audit.V(5).Unknown(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
@@ -223,18 +229,18 @@ func NewMergeableCgroupResourceUpdater(owner *OwnerRef, parentDir string, file s
 }
 
 func GroupOwnerRef(name string) *OwnerRef {
-	return &OwnerRef{Type: groupType, Name: name}
+	return &OwnerRef{Type: GroupType, Name: name}
 }
 
 func PodOwnerRef(ns string, name string) *OwnerRef {
-	return &OwnerRef{Type: podType, Namespace: ns, Name: name}
+	return &OwnerRef{Type: PodType, Namespace: ns, Name: name}
 }
 
 func ContainerOwnerRef(ns string, name string, container string) *OwnerRef {
-	return &OwnerRef{Type: podType, Namespace: ns, Name: name, Container: container}
+	return &OwnerRef{Type: PodType, Namespace: ns, Name: name, Container: container}
 }
 
-func updateResctrlSchemataFunc(resource ResourceUpdater) error {
+func UpdateResctrlSchemataFunc(resource ResourceUpdater) error {
 	// NOTE: currently, only l3 schemata is to update, so do not read or compare before the write
 	// eg.
 	// $ cat /sys/fs/resctrl/schemata/BE/schemata
@@ -250,7 +256,7 @@ func updateResctrlSchemataFunc(resource ResourceUpdater) error {
 	return system.CommonFileWrite(info.file, info.value)
 }
 
-func updateResctrlTasksFunc(resource ResourceUpdater) error {
+func UpdateResctrlTasksFunc(resource ResourceUpdater) error {
 	// NOTE: resctrl/{...}/tasks file is required to appending write a task id once a time, and any duplicate would be
 	//       dropped automatically without an exception
 	// eg.
@@ -295,7 +301,7 @@ func updateResctrlTasksFunc(resource ResourceUpdater) error {
 	return f.Close()
 }
 
-func mergeFuncUpdateCgroupIfLarger(resource MergeableResourceUpdater) (MergeableResourceUpdater, error) {
+func MergeFuncUpdateCgroupIfLarger(resource MergeableResourceUpdater) (MergeableResourceUpdater, error) {
 	info := resource.(*CgroupResourceUpdater)
 
 	cur, err := strconv.ParseInt(info.value, 10, 64)
@@ -319,13 +325,13 @@ func mergeFuncUpdateCgroupIfLarger(resource MergeableResourceUpdater) (Mergeable
 	// otherwise, do write for the current value
 	if info.owner != nil {
 		switch info.owner.Type {
-		case podType:
+		case PodType:
 			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
-		case containerType:
+		case ContainerType:
 			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Container(info.owner.Container).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
-		case nodeType:
+		case NodeType:
 			audit.V(5).Node().Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
-		case groupType:
+		case GroupType:
 			audit.V(5).Group(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
 		default:
 			audit.V(5).Unknown(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()

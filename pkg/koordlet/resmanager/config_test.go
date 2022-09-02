@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/plugins"
 )
 
 func Test_NewDefaultConfig(t *testing.T) {
@@ -31,6 +33,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		MemoryEvictIntervalSeconds: 1,
 		MemoryEvictCoolTimeSeconds: 4,
 		CPUEvictCoolTimeSeconds:    20,
+		QOSExtensionCfg:            &plugins.QOSExtensionConfig{FeatureGates: map[string]bool{}},
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -45,6 +48,7 @@ func Test_InitFlags(t *testing.T) {
 		"--memory-evict-interval-seconds=2",
 		"--memory-evict-cool-time-seconds=8",
 		"--cpu-evict-cool-time-seconds=40",
+		"--qos-extension-plugins=test-plugin=true",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -55,6 +59,7 @@ func Test_InitFlags(t *testing.T) {
 		MemoryEvictIntervalSeconds int
 		MemoryEvictCoolTimeSeconds int
 		CPUEvictCoolTimeSeconds    int
+		QOSExtensionCfg            *plugins.QOSExtensionConfig
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -73,6 +78,7 @@ func Test_InitFlags(t *testing.T) {
 				MemoryEvictIntervalSeconds: 2,
 				MemoryEvictCoolTimeSeconds: 8,
 				CPUEvictCoolTimeSeconds:    40,
+				QOSExtensionCfg:            &plugins.QOSExtensionConfig{FeatureGates: map[string]bool{"test-plugin": true}},
 			},
 			args: args{fs: fs},
 		},
@@ -86,6 +92,7 @@ func Test_InitFlags(t *testing.T) {
 				MemoryEvictIntervalSeconds: tt.fields.MemoryEvictIntervalSeconds,
 				MemoryEvictCoolTimeSeconds: tt.fields.MemoryEvictCoolTimeSeconds,
 				CPUEvictCoolTimeSeconds:    tt.fields.CPUEvictCoolTimeSeconds,
+				QOSExtensionCfg:            tt.fields.QOSExtensionCfg,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

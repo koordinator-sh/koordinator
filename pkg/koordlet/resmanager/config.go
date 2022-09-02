@@ -18,6 +18,8 @@ package resmanager
 
 import (
 	"flag"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/plugins"
 )
 
 type Config struct {
@@ -27,6 +29,7 @@ type Config struct {
 	MemoryEvictIntervalSeconds int
 	MemoryEvictCoolTimeSeconds int
 	CPUEvictCoolTimeSeconds    int
+	QOSExtensionCfg            *plugins.QOSExtensionConfig
 }
 
 func NewDefaultConfig() *Config {
@@ -37,6 +40,7 @@ func NewDefaultConfig() *Config {
 		MemoryEvictIntervalSeconds: 1,
 		MemoryEvictCoolTimeSeconds: 4,
 		CPUEvictCoolTimeSeconds:    20,
+		QOSExtensionCfg:            &plugins.QOSExtensionConfig{FeatureGates: map[string]bool{}},
 	}
 }
 
@@ -47,4 +51,5 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.MemoryEvictIntervalSeconds, "memory-evict-interval-seconds", c.MemoryEvictIntervalSeconds, "evict be pod(memory) interval by seconds")
 	fs.IntVar(&c.MemoryEvictCoolTimeSeconds, "memory-evict-cool-time-seconds", c.MemoryEvictCoolTimeSeconds, "cooling time: memory next evict time should after lastEvictTime + MemoryEvictCoolTimeSeconds")
 	fs.IntVar(&c.CPUEvictCoolTimeSeconds, "cpu-evict-cool-time-seconds", c.CPUEvictCoolTimeSeconds, "cooltime: CPU next evict time should after lastEvictTime + CPUEvictCoolTimeSeconds")
+	c.QOSExtensionCfg.InitFlags(fs)
 }

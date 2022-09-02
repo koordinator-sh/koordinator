@@ -27,6 +27,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -163,7 +164,7 @@ func (c *CPUEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 		}
 	}
 
-	c.resmanager.evictPodsIfNotEvicted(killedPods, node, evictPodByBECPUSatisfaction, message)
+	c.resmanager.evictPodsIfNotEvicted(killedPods, node, executor.EvictPodByBECPUSatisfaction, message)
 
 	if len(killedPods) > 0 {
 		c.lastEvictTime = time.Now()

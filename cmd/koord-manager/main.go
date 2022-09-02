@@ -39,6 +39,7 @@ import (
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/cmd/koord-manager/extensions"
 	extclient "github.com/koordinator-sh/koordinator/pkg/client"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	sloconfig "github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
@@ -186,7 +187,7 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeSLO")
 		os.Exit(1)
 	}
-
+	extensions.PrepareExtensions(cfg, mgr)
 	// +kubebuilder:scaffold:builder
 
 	ctx := ctrl.SetupSignalHandler()
@@ -212,6 +213,7 @@ func main() {
 	}()
 
 	setupLog.Info("starting manager")
+	extensions.StartExtensions(ctx, mgr)
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)

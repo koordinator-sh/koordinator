@@ -19,6 +19,8 @@ package system
 import (
 	"fmt"
 	"io/ioutil"
+	"math"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -175,4 +177,49 @@ func CheckAndTryEnableResctrlCat() error {
 		return fmt.Errorf("resctrl cat is not enabled, err: %s", err)
 	}
 	return nil
+}
+
+func InitCatGroupIfNotExist(group string) error {
+	path := GetResctrlGroupRootDirPath(group)
+	_, err := os.Stat(path)
+	if err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check dir %v for group %s but got unexpected err: %v", path, group, err)
+	}
+	err = os.Mkdir(path, 0755)
+	if err != nil {
+		return fmt.Errorf("create dir %v failed for group %s, err: %v", path, group, err)
+	}
+	return nil
+}
+
+func CalculateCatL3MaskValue(cbm uint, startPercent, endPercent int64) (string, error) {
+	// check if the parsed cbm value is valid, eg. 0xff, 0x1, 0x7ff, ...
+	// NOTE: (Cache Bit Masks) X86 hardware requires that these masks have all the '1' bits in a contiguous block.
+	//       ref: https://www.kernel.org/doc/Documentation/x86/intel_rdt_ui.txt
+	// since the input cbm here is the cbm value of the resctrl root, every lower bit is required to be `1` additionally
+	if bits.OnesCount(cbm+1) != 1 {
+		return "", fmt.Errorf("illegal cbm %v", cbm)
+	}
+
+	// check if the startPercent and endPercent are valid
+	if startPercent < 0 || endPercent > 100 || endPercent <= startPercent {
+		return "", fmt.Errorf("illegal l3 cat percent: start %v, end %v", startPercent, endPercent)
+	}
+
+	// calculate a bit mask belonging to interval [startPercent% * ways, endPercent% * ways)
+	// eg.
+	// cbm 0x3ff ('b1111111111), start 10%, end 80%
+	// ways 10, l3Mask 0xfe ('b11111110)
+	// cbm 0x7ff ('b11111111111), start 10%, end 50%
+	// ways 11, l3Mask 0x3c ('b111100)
+	// cbm 0x7ff ('b11111111111), start 0%, end 30%
+	// ways 11, l3Mask 0xf ('b1111)
+	ways := float64(bits.Len(cbm))
+	startWay := uint64(math.Ceil(ways * float64(startPercent) / 100))
+	endWay := uint64(math.Ceil(ways * float64(endPercent) / 100))
+
+	var l3Mask uint64 = (1 << endWay) - (1 << startWay)
+	return strconv.FormatUint(l3Mask, 16), nil
 }

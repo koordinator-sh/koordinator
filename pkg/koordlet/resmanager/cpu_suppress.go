@@ -34,6 +34,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -497,7 +498,7 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 		klog.Warningf("suppressBECPU failed to apply be cpu suppress policy, err: %s", err)
 		return
 	}
-	audit.V(1).Node().Reason(adjustBEByNodeCPUUsage).Message("update BE group to cpuset: %v", beCPUSet).Do()
+	audit.V(1).Node().Reason(executor.AdjustBEByNodeCPUUsage).Message("update BE group to cpuset: %v", beCPUSet).Do()
 	klog.Infof("suppressBECPU finished, suppress be cpu successfully: current cpuset %v", beCPUSet)
 }
 
@@ -579,7 +580,7 @@ func adjustByCfsQuota(cpuQuantity *resource.Quantity, node *corev1.Node) {
 		return
 	}
 	metrics.RecordBESuppressCores(string(slov1alpha1.CPUCfsQuotaPolicy), float64(newBeQuota)/float64(cfsPeriod))
-	audit.V(1).Node().Reason(adjustBEByNodeCPUUsage).Message("update BE group to cfs_quota: %v", newBeQuota).Do()
+	audit.V(1).Node().Reason(executor.AdjustBEByNodeCPUUsage).Message("update BE group to cfs_quota: %v", newBeQuota).Do()
 	klog.Infof("suppressBECPU: succeeded to write cfs_quota_us for offline pods, new value: %d", newBeQuota)
 }
 
