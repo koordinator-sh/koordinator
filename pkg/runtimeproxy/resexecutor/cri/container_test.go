@@ -359,6 +359,7 @@ func TestContainerResourceExecutor_ParseRequest_CreateContainerRequest(t *testin
 						},
 					},
 					PodCgroupParent: "/kubepods/besteffort",
+					ContainerEnvs:   map[string]string{},
 				},
 			},
 		},
@@ -374,7 +375,7 @@ func TestContainerResourceExecutor_ParseRequest_CreateContainerRequest(t *testin
 		_ = c.ParseRequest(tt.args.containerReq)
 
 		// check if container cache is set correctly
-		assert.Equal(t, tt.wantContainerExecutor, c.ContainerInfo)
+		assert.Equal(t, tt.wantContainerExecutor, c.ContainerInfo, tt.name)
 	}
 }
 
