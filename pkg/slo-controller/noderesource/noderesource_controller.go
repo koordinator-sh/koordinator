@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
@@ -30,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 )
@@ -41,12 +43,12 @@ const (
 
 type NodeResourceReconciler struct {
 	client.Client
-	Scheme      *runtime.Scheme
-	Clock       clock.Clock
-	SyncContext SyncContext
-	Recorder    record.EventRecorder
-
-	cfgCache config.ColocationCfgCache
+	Recorder       record.EventRecorder
+	Scheme         *runtime.Scheme
+	Clock          clock.Clock
+	BESyncContext  SyncContext
+	GPUSyncContext SyncContext
+	cfgCache       config.ColocationCfgCache
 }
 
 func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -110,6 +112,19 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		klog.Errorf("failed to update node %v BE resource, error: %v", node.Name, err)
 		return ctrl.Result{Requeue: true}, err
 	}
+	device := &schedulingv1alpha1.Device{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: node.Name, Namespace: node.Namespace}, device)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			klog.Errorf("failed to get device %s, err: %v", node.Name, err)
+			return ctrl.Result{Requeue: true}, err
+		}
+		return ctrl.Result{Requeue: false}, nil
+	}
+	if err := r.updateGPUNodeResource(node, device); err != nil {
+		klog.Errorf("failed to update node %v gpu resource, error: %v", node.Name, err)
+		return ctrl.Result{Requeue: true}, err
+	}
 
 	return ctrl.Result{Requeue: false}, nil
 }
@@ -119,7 +134,8 @@ func (r *NodeResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.cfgCache = handler
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Node{}).
-		Watches(&source.Kind{Type: &slov1alpha1.NodeMetric{}}, &EnqueueRequestForNodeMetric{syncContext: &r.SyncContext}).
+		Watches(&source.Kind{Type: &slov1alpha1.NodeMetric{}}, &EnqueueRequestForNodeMetric{syncContext: &r.BESyncContext}).
+		Watches(&source.Kind{Type: &schedulingv1alpha1.Device{}}, &EnqueueRequestForDevice{syncContext: &r.GPUSyncContext}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler).
 		Complete(r)
 }

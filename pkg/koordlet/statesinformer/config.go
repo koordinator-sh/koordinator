@@ -49,5 +49,5 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.KubeletSyncTimeout, "kubelet-sync-timeout", c.KubeletSyncTimeout, "The length of time to wait before giving up on a single request to Kubelet. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.BoolVar(&c.InsecureKubeletTLS, "kubelet-insecure-tls", c.InsecureKubeletTLS, "Using read-only port to communicate with Kubelet. For testing purposes only, not recommended for production use.")
 	fs.UintVar(&c.KubeletReadOnlyPort, "kubelet-read-only-port", c.KubeletReadOnlyPort, "The read-only port for the kubelet to serve on with no authentication/authorization. Default: 10255.")
-	fs.DurationVar(&c.NodeTopologySyncInterval, "node-topology-sync-interval", c.NodeTopologySyncInterval, "The interval which Koordlet will report the node topology info")
+	fs.DurationVar(&c.NodeTopologySyncInterval, "node-topology-sync-interval", c.NodeTopologySyncInterval, "The interval which Koordlet will report the node topology info, include cpu and gpu")
 }

@@ -30,6 +30,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -115,6 +116,77 @@ func (r *NodeResourceReconciler) resetNodeBEResource(node *corev1.Node, reason, 
 	return r.updateNodeBEResource(node, beResource)
 }
 
+func (r *NodeResourceReconciler) isGPUResourceNeedSync(new, old *corev1.Node) bool {
+	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), new)
+
+	lastUpdatedTime, ok := r.GPUSyncContext.Load(util.GenerateNodeKey(&new.ObjectMeta))
+	if !ok || r.Clock.Now().After(lastUpdatedTime.Add(time.Duration(*strategy.UpdateTimeThresholdSeconds)*time.Second)) {
+		klog.Warningf("node %v resource expired, need sync", new.Name)
+		return true
+	}
+
+	for _, resourceName := range []corev1.ResourceName{extension.GPUMemoryRatio, extension.GPUMemoryRatio, extension.GPUMemory} {
+		if util.IsResourceDiff(old.Status.Allocatable, new.Status.Allocatable, resourceName, *strategy.ResourceDiffThreshold) {
+			klog.Warningf("node %v resource diff bigger than %v, need sync", resourceName, *strategy.ResourceDiffThreshold)
+			return true
+		}
+	}
+	return false
+}
+
+func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device *schedulingv1alpha1.Device) error {
+	if device == nil {
+		return nil
+	}
+	memoryTotal := resource.NewQuantity(0, resource.DecimalSI)
+	coreTotal := resource.NewQuantity(0, resource.BinarySI)
+	ratioTotal := resource.NewQuantity(0, resource.DecimalSI)
+	for _, gpu := range device.Spec.Devices {
+		if gpu.Health {
+			memoryTotal.Add(gpu.Resources[extension.GPUMemory])
+			coreTotal.Add(gpu.Resources[extension.GPUCore])
+			ratioTotal.Add(gpu.Resources[extension.GPUMemoryRatio])
+		}
+	}
+
+	copyNode := node.DeepCopy()
+	copyNode.Status.Allocatable[extension.GPUCore] = *coreTotal
+	copyNode.Status.Allocatable[extension.GPUMemory] = *memoryTotal
+	copyNode.Status.Allocatable[extension.GPUMemoryRatio] = *ratioTotal
+
+	if !r.isGPUResourceNeedSync(copyNode, node) {
+		return nil
+	}
+
+	err := util.RetryOnConflictOrTooManyRequests(func() error {
+		updateNode := &corev1.Node{}
+		if err := r.Client.Get(context.TODO(), types.NamespacedName{Name: node.Name}, updateNode); err != nil {
+			klog.Errorf("failed to get node %v, error: %v", node.Name, err)
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+
+		updateNode.Status.Capacity[extension.GPUMemory] = *memoryTotal
+		updateNode.Status.Allocatable[extension.GPUMemory] = *memoryTotal
+		updateNode.Status.Capacity[extension.GPUCore] = *coreTotal
+		updateNode.Status.Allocatable[extension.GPUCore] = *coreTotal
+		updateNode.Status.Capacity[extension.GPUMemoryRatio] = *ratioTotal
+		updateNode.Status.Allocatable[extension.GPUMemoryRatio] = *ratioTotal
+
+		if err := r.Client.Status().Update(context.TODO(), updateNode); err != nil {
+			klog.Errorf("failed to update node gpu resource %v, error: %v", updateNode.Name, err)
+			return err
+		}
+		return nil
+	})
+	if err == nil {
+		r.GPUSyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), r.Clock.Now())
+	}
+	return err
+}
+
 func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResource *nodeBEResource) error {
 	copyNode := node.DeepCopy()
 
@@ -141,7 +213,7 @@ func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResou
 		}
 
 		if err := r.Client.Status().Update(context.TODO(), updateNode); err == nil {
-			r.SyncContext.Store(util.GetNodeKey(node), r.Clock.Now())
+			r.BESyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), r.Clock.Now())
 			klog.V(5).Infof("update node %v success, detail %+v", updateNode.Name, updateNode)
 			return nil
 		} else {
@@ -160,7 +232,7 @@ func (r *NodeResourceReconciler) isBEResourceSyncNeeded(old, new *corev1.Node) b
 	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), new)
 
 	// scenario 1: update time gap is bigger than UpdateTimeThresholdSeconds
-	lastUpdatedTime, ok := r.SyncContext.Load(util.GetNodeKey(new))
+	lastUpdatedTime, ok := r.BESyncContext.Load(util.GenerateNodeKey(&new.ObjectMeta))
 	if !ok || r.Clock.Now().After(lastUpdatedTime.Add(time.Duration(*strategy.UpdateTimeThresholdSeconds)*time.Second)) {
 		klog.Warningf("node %v resource expired, need sync", new.Name)
 		return true
