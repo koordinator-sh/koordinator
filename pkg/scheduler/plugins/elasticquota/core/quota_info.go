@@ -79,6 +79,52 @@ func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *Qu
 		},
 	}
 }
+func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
+	if qi == nil {
+		return nil
+	}
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	return &QuotaInfo{
+		Name:              qi.Name,
+		ParentName:        qi.ParentName,
+		IsParent:          qi.IsParent,
+		AllowLentResource: qi.AllowLentResource,
+		RuntimeVersion:    qi.RuntimeVersion,
+		CalculateInfo: QuotaCalculateInfo{
+			Max:          qi.CalculateInfo.Max.DeepCopy(),
+			AutoScaleMin: qi.CalculateInfo.AutoScaleMin.DeepCopy(),
+			OriginalMin:  qi.CalculateInfo.OriginalMin.DeepCopy(),
+			Used:         qi.CalculateInfo.Used.DeepCopy(),
+			Request:      qi.CalculateInfo.Request.DeepCopy(),
+			SharedWeight: qi.CalculateInfo.SharedWeight.DeepCopy(),
+			Runtime:      qi.CalculateInfo.Runtime.DeepCopy(),
+		},
+	}
+}
+
+// UpdateQuotaInfoFromRemote the CRD(max/oriMin/sharedWeight/allowLentResource/isParent/ParentName) of the quota maybe changed,
+// so need update localQuotaInfo's information from inputQuotaInfo.
+func (qi *QuotaInfo) UpdateQuotaInfoFromRemote(quotaInfo *QuotaInfo) {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	if quotaInfo.Name == extension.SystemQuotaName {
+		return
+	}
+
+	qi.setMaxQuotaNoLock(quotaInfo.CalculateInfo.Max)
+	qi.setOriginalMinQuotaNoLock(quotaInfo.CalculateInfo.OriginalMin)
+	sharedWeight := quotaInfo.CalculateInfo.SharedWeight.DeepCopy()
+	if quotav1.IsZero(sharedWeight) {
+		sharedWeight = quotaInfo.CalculateInfo.Max.DeepCopy()
+	}
+	qi.CalculateInfo.SharedWeight = sharedWeight
+	qi.AllowLentResource = quotaInfo.AllowLentResource
+	qi.IsParent = quotaInfo.IsParent
+	qi.ParentName = quotaInfo.ParentName
+}
 
 // getLimitRequestNoLock returns the min value of request and max, as max is the quotaGroup's upper limit of resources.
 // As the multi-hierarchy quota Model described in the PR, when passing a request upwards, passing a request exceeding its
@@ -105,6 +151,13 @@ func (qi *QuotaInfo) addRequestNonNegativeNoLock(delta v1.ResourceList) {
 	}
 }
 
+func (qi *QuotaInfo) addUsedNonNegativeNoLock(delta v1.ResourceList) {
+	qi.CalculateInfo.Used = quotav1.Add(qi.CalculateInfo.Used, delta)
+	for _, resName := range quotav1.IsNegative(qi.CalculateInfo.Used) {
+		qi.CalculateInfo.Used[resName] = *resource.NewQuantity(0, resource.DecimalSI)
+	}
+}
+
 func (qi *QuotaInfo) setMaxQuotaNoLock(res v1.ResourceList) {
 	qi.CalculateInfo.Max = res.DeepCopy()
 }
@@ -121,6 +174,30 @@ func (qi *QuotaInfo) setSharedWeightNoLock(res v1.ResourceList) {
 	qi.CalculateInfo.SharedWeight = res.DeepCopy()
 }
 
+func (qi *QuotaInfo) GetRequest() v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.CalculateInfo.Request.DeepCopy()
+}
+
+func (qi *QuotaInfo) GetUsed() v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.CalculateInfo.Used.DeepCopy()
+}
+
+func (qi *QuotaInfo) GetRuntime() v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.CalculateInfo.Runtime.DeepCopy()
+}
+
+func (qi *QuotaInfo) GetMax() v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.CalculateInfo.Max.DeepCopy()
+}
+
 func NewQuotaInfoFromQuota(quota *v1alpha1.ElasticQuota) *QuotaInfo {
 	isParent := extension.IsParentQuota(quota)
 	parentName := extension.GetParentQuotaName(quota)
@@ -134,4 +211,44 @@ func NewQuotaInfoFromQuota(quota *v1alpha1.ElasticQuota) *QuotaInfo {
 	quotaInfo.setSharedWeightNoLock(newSharedWeight)
 
 	return quotaInfo
+}
+
+func (qi *QuotaInfo) getMaskedRuntimeNoLock() v1.ResourceList {
+	return quotav1.Mask(qi.CalculateInfo.Runtime, quotav1.ResourceNames(qi.CalculateInfo.Max))
+}
+
+func (qi *QuotaInfo) clearForResetNoLock() {
+	qi.CalculateInfo.Request = v1.ResourceList{}
+	qi.CalculateInfo.Used = v1.ResourceList{}
+	qi.CalculateInfo.Runtime = v1.ResourceList{}
+	qi.RuntimeVersion = 0
+}
+
+// QuotaTopoNode only contains the topology of the parent/child relationship,
+// helps to reconstruct quotaTree from the rootQuotaGroup to all the leafQuotaNode.
+type QuotaTopoNode struct {
+	name                 string
+	quotaInfo            *QuotaInfo
+	parQuotaTopoNode     *QuotaTopoNode
+	childGroupQuotaInfos map[string]*QuotaTopoNode
+}
+
+func NewQuotaTopoNode(quotaInfo *QuotaInfo) *QuotaTopoNode {
+	return &QuotaTopoNode{
+		name:                 quotaInfo.Name,
+		quotaInfo:            quotaInfo, // not deepCopy
+		childGroupQuotaInfos: make(map[string]*QuotaTopoNode),
+	}
+}
+
+func (qtn *QuotaTopoNode) AddChildGroupQuotaInfo(childNode *QuotaTopoNode) {
+	qtn.childGroupQuotaInfos[childNode.name] = childNode
+}
+
+func (qtn *QuotaTopoNode) GetChildGroupQuotaInfos() map[string]*QuotaTopoNode {
+	group := make(map[string]*QuotaTopoNode)
+	for key, v := range qtn.childGroupQuotaInfos {
+		group[key] = v
+	}
+	return group
 }
