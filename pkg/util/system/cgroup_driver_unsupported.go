@@ -23,6 +23,6 @@ func GuessCgroupDriverFromCgroupName() CgroupDriverType {
 	return ""
 }
 
-func GuessCgroupDriverFromKubelet() (CgroupDriverType, error) {
+func GuessCgroupDriverFromKubeletPort(int) (CgroupDriverType, error) {
 	return kubeletDefaultCgroupDriver, nil
 }

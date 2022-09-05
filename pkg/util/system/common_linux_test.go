@@ -20,14 +20,55 @@ limitations under the License.
 package system
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func Test_KubeletPortToPid(t *testing.T) {
+	expireTime = time.Second
+	addr, _ := net.ResolveTCPAddr("tcp", "localhost:0")
+	l, _ := net.ListenTCP("tcp", addr)
+	port := l.Addr().(*net.TCPAddr).Port
+	defer l.Close()
+	t.Run("testing existent port", func(t *testing.T) {
+		pid, err := KubeletPortToPid(port)
+		assert.Equal(t, os.Getpid(), pid)
+		assert.NoError(t, err)
+	})
+	t.Run("testing existent port for cache map", func(t *testing.T) {
+		pid, err := KubeletPortToPid(port)
+		assert.Equal(t, os.Getpid(), pid)
+		assert.NoError(t, err)
+	})
+	time.Sleep(time.Second)
+	t.Run("testing existent port for cache expired", func(t *testing.T) {
+		pid, err := KubeletPortToPid(port)
+		assert.Equal(t, os.Getpid(), pid)
+		assert.NoError(t, err)
+	})
+	// use net.ResolveTCPAddr get a unused port
+	addr2, _ := net.ResolveTCPAddr("tcp", "localhost:0")
+	l2, _ := net.ListenTCP("tcp", addr2)
+	port2 := l2.Addr().(*net.TCPAddr).Port
+	l2.Close()
+	t.Run("testing nonexistent port", func(t *testing.T) {
+		pid, err := KubeletPortToPid(port2)
+		assert.Equal(t, -1, pid)
+		assert.Error(t, err)
+	})
+	t.Run("testing wrong port", func(t *testing.T) {
+		pid, err := KubeletPortToPid(-1)
+		assert.Equal(t, -1, pid)
+		assert.Error(t, err)
+	})
+}
 
 func Test_ProcCmdLine(t *testing.T) {
 	t.Run("testing process cmdline args should match", func(t *testing.T) {
