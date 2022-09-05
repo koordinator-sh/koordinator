@@ -25,12 +25,12 @@ last-updated: 2022-07-01
     * [Summary](#summary)
     * [Motivation](#motivation)
       * [Compared with competitors](#Compared-with-competitors)
-        * [Coescheduling](#Coescheduling)
+        * [Coscheduling](#Coscheduling)
       * [Goals](#goals)
       * [Non Goals and Future Work](#Non-Goals-and-Future-Work)
     * [Proposal](#Proposal)
       * [Key concept](#key-concept)
-        * [Strict-mode and non-strict-mode](#strict-mode-and-non-strict-mode)
+        * [Strict and NonStrict](#Strict-and-NonStrict)
         * [GangGroup](#ganggroup)
         * [After gang](#after-gang)
       * [API](#API)
@@ -51,30 +51,30 @@ last-updated: 2022-07-01
 
 ## Summary
 This proposal provides Gang mechanism for the scheduler to control pods binding opportunity. User can declare a resource-collection-minimum number, 
-only when assigned-resources reach the given limitation can trigger the binding. We provide `strict-mode` and `non-strict-mode` to 
+only when assigned-resources reach the given limitation can trigger the binding. We provide `Strict` and `NonStrict` to 
 control the resource-accumulation-process by a configuration. We also provide a two-level Gang description for better matching 
 the real scenario, which is different from community.
 
 ## Motivation
-In AI scenarios, lots of jobs need Gang scheduling. The community have lots of related implements such as `coescheduling` or `vocalno`.
+In AI scenarios, lots of jobs need Gang scheduling. The community have lots of related implements such as `Coscheduling` or `vocalno`.
 We received lots of inspirations in the design process from them.
 
 ### Compared with competitors
 
-#### Coescheduling
-1. `coescheduling` implement a new queue-sort interface and other methods to let one Gang's pods get out of the queue in order as much as possible.
+#### Coscheduling
+1. `Coscheduling` implement a new queue-sort interface and other methods to let one Gang's pods get out of the queue in order as much as possible.
 If a pod failed to be scheduled, the requests that have been successfully scheduled in this round of Gang scheduling cycle will be rolled back,
 and the remaining pods waiting for scheduling will be rejected in PreFilter check until this scheduling cycle passed. 
 For example, there is a Gang requires 10 tasks to be scheduled, if first 5 tasks allocated, the 6th task failed to be scheduled,
-`coescheduling` will roll-back first 5 tasks and ignore the remaining 4 tasks in this Gang scheduling cycle. `coescheduling` simply use a 
+`Coscheduling` will roll-back first 5 tasks and ignore the remaining 4 tasks in this Gang scheduling cycle. `Coscheduling` simply use a 
 global time interval to control the Gang scheduling cycle. The first defect is that the uniform time interval will cause 
 some problems. If the time configuration is too long, it will lead to useless waiting; If the time configuration is too short, 
 it will lead to useless scheduling. Secondly, it is very difficult for a large job to meet all resource requests at one time. 
-This mechanism will lead to a very low probability of full resources, and eventually make the job starve to death. We call this process as `strict-mode`.
+This mechanism will lead to a very low probability of full resources, and eventually make the job starve to death. We call this process as `Strict`.
 
 2. Some jobs have complex Gang requirements. For example, a job has several roles. Each role will have several pods 
 and its own Gang conditions. Jobs also need different roles to form different GangGroups. All pods in a GangGroup can 
-trigger the bind process only after all roles in a GangGroup meet their Gang conditions. The `coescheduling` can't meet
+trigger the bind process only after all roles in a GangGroup meet their Gang conditions. The `Coscheduling` can't meet
 this requirement.
 
 ### Goals
@@ -83,19 +83,19 @@ this requirement.
 2. Provides a scheduler plugin to achieve Gang scheduling ability.
 
 ### Non Goals and Future Work
-1. Provide ability to solve Gang resource deadlock problems with `non-strict-mode`.
+1. Provide ability to solve Gang resource deadlock problems with `NonStrict`.
 
 ## Proposal
 
 ### Key concept
 
-#### strict-mode and non-strict-mode
+#### Strict and NonStrict
 
-As mentioned above, in `strict-mode`, if a pod failed to be scheduled, the pods that have been successfully scheduled in 
+As mentioned above, in `Strict`, if a pod failed to be scheduled, the pods that have been successfully scheduled in 
 this scheduling cycle will be rolled back, and the remaining pods waiting for scheduling will be rejected in 
-PreFilter check util this scheduling cycle passed. We call this mode is `strict-mode`.
+PreFilter check util this scheduling cycle passed. We call this mode is `Strict`.
 
-In `non-strict-mode`, if a pod failed to be scheduled, it has no impact on any other pod. We will continue to accumulate 
+In `NonStrict`, if a pod failed to be scheduled, it has no impact on any other pod. We will continue to accumulate 
 the allocated pod until the condition of Gang is met. This process is friendly to Gangs with large number of pods, but it 
 will increase the risk of resource deadlock between Gangs. For example, the quota of the quota group is 10(quota will be proposed later), 
 and the user submits three Gangs with 5 pods. Due to various plugin constraints, Gang1\2\3 may allocate resources of 3\3\4 respectively. 
@@ -147,18 +147,20 @@ Pod should use `pod-group.scheduling.sigs.k8s.io` in label to associate with `Po
 Also, we introduce some optional definitions as below:
 ```yaml
 gang.scheduling.koordinator.sh/total-number
-gang.scheduling.koordinator.sh/gang-mode        
+gang.scheduling.koordinator.sh/mode        
 gang.scheduling.koordinator.sh/groups
 ```
+- `gang.scheduling.koordinator.sh/name` indicates the gang's name, it should be emphasized that the name should be in the form of RFC 1123 
 
 - `gang.scheduling.koordinator.sh/total-number` helps to calculate Gang scheduling cycle in `strict mode`, you can 
 find more detail in `Data-Structure` chapter. Default equals to `gang.scheduling.koordinator.sh/min-available`.
 
-- `gang.scheduling.koordinator.sh/gang-mode` determines `strict-mode` or `non-strict-mode`. Default is `strict-mode`.
+- `gang.scheduling.koordinator.sh/mode` determines `Strict` or `NonStrict`. Default is `Strict`.
 
-- `gang.scheduling.koordinator.sh/groups` describes GangGroups. Default is empty, which means don't need to form a `GangGroup` with others.
+- `gang.scheduling.koordinator.sh/groups` describes GangGroups. Default is empty, which means don't need to form a `GangGroup` with others,
+and the gangs in one gangGroup can from different namespaces.
 
-`gang.scheduling.koordinator.sh/total-number`, `gang.scheduling.koordinator.sh/gang-mode`, `gang.scheduling.koordinator.sh/gang-groups` should be found in
+`gang.scheduling.koordinator.sh/total-number`, `gang.scheduling.koordinator.sh/mode`, `gang.scheduling.koordinator.sh/gang-groups` should be found in
 `PodGroup`'s annotation if needed.
 
 ##### Example
@@ -168,7 +170,7 @@ apiVersion: v1alpha1
 kind: PodGroup
 metadata:
   creationTimestamp: "2022-07-11T18:26:33Z"
-  name: gangA
+  name: gang-a
   namespace: default
 spec:
   minMember: 5
@@ -185,12 +187,12 @@ apiVersion: v1alpha1
 kind: PodGroup
 metadata:
   creationTimestamp: "2022-07-11T18:26:33Z"
-  name: gangA
-  namespace: default
+  name: gang-a
+  namespace: namespaceA
   annotations:
     gang.scheduling.koordinator.sh/total-number: 5
-    gang.scheduling.koordinator.sh/gang-mode: strict-mode
-    gang.scheduling.koordinator.sh/groups: ["gangA", "gangB"]
+    gang.scheduling.koordinator.sh/mode: Strict
+    gang.scheduling.koordinator.sh/groups: ["namespaceA/gang-a", "namespaceB/gang-b"]
 spec:
   minMember: 5
   minResources:
@@ -217,7 +219,7 @@ Also, we introduce some optional definitions as below, most are mentioned above:
 ```yaml
 gang.scheduling.koordinator.sh/waiting-time
 gang.scheduling.koordinator.sh/total-number
-gang.scheduling.koordinator.sh/gang-mode        
+gang.scheduling.koordinator.sh/mode        
 gang.scheduling.koordinator.sh/groups
 ```
 
@@ -226,18 +228,19 @@ gang.scheduling.koordinator.sh/groups
 - `gang.scheduling.koordinator.sh/total-number` helps to calculate Gang scheduling cycle in `strict mode`, you can 
 find more detail in `Data-Structure` chapter. Default equals to `gang.scheduling.koordinator.sh/min-available`.
 
-- `gang.scheduling.koordinator.sh/gang-mode` determines `strict-mode` or `non-strict-mode`. Default is `strict-mode`.
+- `gang.scheduling.koordinator.sh/mode` determines `Strict` or `NonStrict`. Default is `Strict`.
 
 - `gang.scheduling.koordinator.sh/groups` describes GangGroups. Default is empty, which means don't need to form a `GangGroup` with others.
 
 It should be noted that, the annotation mode's parameter will overwrite CRD's mode if both exist.
+And gangGroup should be announced with " gangNamespace" + "/" + "gangName "
 
 ##### Example
 When user apply a basic gang, the example is as follows:
 ```yaml
 metadata:
    annotations:
-    gang.scheduling.koordinator.sh/name: gangA
+    gang.scheduling.koordinator.sh/name: gang-a
     gang.scheduling.koordinator.sh/min-available: 5
 ```
 
@@ -246,20 +249,20 @@ roleA and roleB belongs to one GangGroup, the example is as follows:
 ```yaml
 metadata:
    annotations:
-     gang.scheduling.koordinator.sh/name: gangA
+     gang.scheduling.koordinator.sh/name: gang-a
      gang.scheduling.koordinator.sh/waiting-time: 3600s 
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5
-     gang.scheduling.koordinator.sh/gang-mode: strict-mode
-     gang.scheduling.koordinator.sh/groups: ["gangA", "gangB"]
+     gang.scheduling.koordinator.sh/mode: Strict
+     gang.scheduling.koordinator.sh/groups: ["namespaceA/gang-a", "namespaceB/gang-b"]
 metadata:
    annotations:
-     gang.scheduling.koordinator.sh/name: gangB
+     gang.scheduling.koordinator.sh/name: gang-b
      gang.scheduling.koordinator.sh/waiting-time: 3600s 
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5
-     gang.scheduling.koordinator.sh/gang-mode: strict-mode
-     gang.scheduling.koordinator.sh/groups: ["gangA", "gangB"]
+     gang.scheduling.koordinator.sh/mode: Strict
+     gang.scheduling.koordinator.sh/groups: ["namespaceA/gang-a", "namespaceB/gang-b"]
 ```
 
 Assuming a job has two roles: A and B, each role has several pods. podA belongs to roleA, podB belongs to roleB.
@@ -267,19 +270,19 @@ roleA and roleB belongs to different GangGroup, the example as follows:
 ```yaml
 metadata:
   annotations:
-     gang.scheduling.koordinator.sh/name: gangA
+     gang.scheduling.koordinator.sh/name: gang-a
      gang.scheduling.koordinator.sh/waiting-time: 3600s 
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5
-     gang.scheduling.koordinator.sh/gang-mode: strict-mode
+     gang.scheduling.koordinator.sh/mode: Strict
      gang.scheduling.koordinator.sh/groups: ""
 metadata:
    annotations:
-     gang.scheduling.koordinator.sh/name: gangB
+     gang.scheduling.koordinator.sh/name: gang-b
      gang.scheduling.koordinator.sh/waiting-time: 3600s 
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5
-     gang.scheduling.koordinator.sh/gang-mode: strict-mode
+     gang.scheduling.koordinator.sh/mode: Strict
      gang.scheduling.koordinator.sh/groups: ""
 ```
 
@@ -311,7 +314,7 @@ type QueueSortPlugin interface{
 type Gang struct {
     Name                         string                
     WaitTime                     time.Duration                       
-    Mode                         string                 //strict-mode or non-strict-mode
+    Mode                         string                 //Strict or NonStrict
     GangGroup                    []string               
     MinRequiredNumber            int                    
     TotalChildrenNum             int
@@ -342,7 +345,7 @@ We continue to explain `scheduleCycleValid` field, during the scheduling,  When 
 false in PostFilter stage, which means any pod in this Gang shouldn't be scheduled until it is set to "true",
 and the remaining pods should be rejected in PreFilter stage. Only When `scheduleCycle` added by 1, we will reset the `scheduleCycleValid` to true.
 
-It should be emphasized that `scheduleCycle\scheduleCycleValid\childrenScheduleRoundMap` only work in `strict-mode`. 
+It should be emphasized that `scheduleCycle\scheduleCycleValid\childrenScheduleRoundMap` only work in `Strict`. 
 
 ##### GangPlugin
 
@@ -374,7 +377,7 @@ type GangScheduling interface{
 ```
 ###### **PreFilter**
 
-if `non-strict-mode`, we only do step1 and step2:
+if `NonStrict`, we only do step1 and step2:
 
 - Check whether childes in Gang has met the requirements of minimum number under each Gang, and reject the pod if negative.
 
@@ -389,9 +392,9 @@ if `non-strict-mode`, we only do step1 and step2:
 
 At this point means the pod didn't pass the Filter Plugin, we should:
 
-- If `strict-mode`, we will set `scheduleCycleValid` to false and release all assumed pods.
+- If `Strict`, we will set `scheduleCycleValid` to false and release all assumed pods.
 
-- If `non-strict mode`, we will do nothing.
+- If `NonStrict`, we will do nothing.
 
 ###### **Permit**
 
@@ -428,7 +431,7 @@ We will register pod's event handler to watch pod event for updating Gang.
 ## Unsolved Problems
 
 ## Alternatives
-User can choose use Gang by `strict-mode` and `non-strict-mode` case by case.
+User can choose use Gang by `Strict` and `NonStrict` case by case.
 
 ## Implementation History
 
