@@ -49,6 +49,20 @@ func TestQuotaInfo_GetLimitRequest(t *testing.T) {
 	assertObj.Equal(*resource.NewQuantity(2000, resource.DecimalSI), quotaInfo.getLimitRequestNoLock()[corev1.ResourceMemory])
 }
 
+func TestQuotaInfo_AddRequestNonNegativeNoLock(t *testing.T) {
+	req1 := createResourceList(-100, -100)
+	quotaInfo := &QuotaInfo{
+		CalculateInfo: QuotaCalculateInfo{
+			Request: createResourceList(50, 50),
+			Used:    createResourceList(40, 40),
+		},
+	}
+	quotaInfo.addRequestNonNegativeNoLock(req1)
+	quotaInfo.addUsedNonNegativeNoLock(req1)
+	assert.Equal(t, quotaInfo.CalculateInfo.Request, createResourceList(0, 0))
+	assert.Equal(t, quotaInfo.CalculateInfo.Used, createResourceList(0, 0))
+}
+
 func TestNewQuotaInfoFromQuota(t *testing.T) {
 	eQ := createElasticQuota()
 	quotaInfo := NewQuotaInfoFromQuota(eQ)
@@ -108,8 +122,8 @@ func createElasticQuota() *v1alpha1.ElasticQuota {
 	return eQ
 }
 
-func TestQuotaTreeWrapper_Iteration4AdjustQuota(t *testing.T) {
-	qtw := NewQuotaTreeWrapper("testTreeName")
+func TestRuntimeQuotaCalculator_Iteration4AdjustQuota(t *testing.T) {
+	qtw := NewRuntimeQuotaCalculator("testTreeName")
 	resourceKey := make(map[corev1.ResourceName]struct{})
 	cpu := corev1.ResourceCPU
 	resourceKey[cpu] = struct{}{}
@@ -120,7 +134,7 @@ func TestQuotaTreeWrapper_Iteration4AdjustQuota(t *testing.T) {
 	qtw.quotaTree[cpu].insert("node4", 80, 70, 15, true)
 	qtw.totalResource = corev1.ResourceList{}
 	qtw.totalResource[corev1.ResourceCPU] = *resource.NewQuantity(100, resource.DecimalSI)
-	qtw.adjustQuotaNoLock()
+	qtw.calculateRuntimeNoLock()
 	if qtw.globalRuntimeVersion == 0 {
 		t.Error("error")
 	}
@@ -141,8 +155,8 @@ func createQuotaInfoWithRes(name string, max, min corev1.ResourceList) *QuotaInf
 	return quotaInfo
 }
 
-func createQuotaTreeWrapper() *QuotaTreeWrapper {
-	qtw := NewQuotaTreeWrapper("0")
+func createRuntimeQuotaCalculator() *RuntimeQuotaCalculator {
+	qtw := NewRuntimeQuotaCalculator("0")
 	resKeys := make(map[corev1.ResourceName]struct{})
 	resKeys[corev1.ResourceCPU] = struct{}{}
 	resKeys[corev1.ResourceMemory] = struct{}{}
@@ -151,9 +165,9 @@ func createQuotaTreeWrapper() *QuotaTreeWrapper {
 	return qtw
 }
 
-func TestQuotaTreeWrapper_UpdateResourceKeys(t *testing.T) {
+func TestRuntimeQuotaCalculator_UpdateResourceKeys(t *testing.T) {
 	assertObj := assert.New(t)
-	qtw := NewQuotaTreeWrapper("0")
+	qtw := NewRuntimeQuotaCalculator("0")
 	resKeys := make(map[corev1.ResourceName]struct{})
 	resKeys[corev1.ResourceCPU] = struct{}{}
 	resKeys[corev1.ResourceMemory] = struct{}{}
@@ -180,11 +194,11 @@ func TestQuotaTreeWrapper_UpdateResourceKeys(t *testing.T) {
 	assertObj.True(exist, "update quota tree failed")
 }
 
-func TestQuotaTreeWrapper_DeleteOneGroup(t *testing.T) {
+func TestRuntimeQuotaCalculator_DeleteOneGroup(t *testing.T) {
 	max := createResourceList(100, 1000)
 	min := createResourceList(70, 7000)
 	quotaInfo := createQuotaInfoWithRes("aliyun", max, min)
-	qtw := createQuotaTreeWrapper()
+	qtw := createRuntimeQuotaCalculator()
 
 	quotaInfo.setMaxQuotaNoLock(max)
 	qtw.UpdateOneGroupMaxQuota(quotaInfo)
@@ -198,11 +212,11 @@ func TestQuotaTreeWrapper_DeleteOneGroup(t *testing.T) {
 	assert.Equal(t, 0, len(qtw.quotaTree["cpu"].quotaNodes))
 }
 
-func TestQuotaTreeWrapper_UpdateOneGroupMaxQuota(t *testing.T) {
+func TestRuntimeQuotaCalculator_UpdateOneGroupMaxQuota(t *testing.T) {
 	max := createResourceList(100, 1000)
 	min := createResourceList(70, 7000)
 	quotaInfo := createQuotaInfoWithRes("aliyun", max, min)
-	qtw := createQuotaTreeWrapper()
+	qtw := createRuntimeQuotaCalculator()
 	quotaInfo.setMaxQuotaNoLock(max)
 	qtw.UpdateOneGroupMaxQuota(quotaInfo)
 
@@ -227,7 +241,7 @@ func TestQuotaTreeWrapper_UpdateOneGroupMaxQuota(t *testing.T) {
 	assert.Equal(t, max, qtw.totalResource)
 }
 
-func TestQuotaTreeWrapper_UpdateOneGroupMinQuota(t *testing.T) {
+func TestRuntimeQuotaCalculator_UpdateOneGroupMinQuota(t *testing.T) {
 	assertObj := assert.New(t)
 	max := createResourceList(100, 10000)
 	minQuota := createResourceList(70, 7000)
@@ -235,7 +249,7 @@ func TestQuotaTreeWrapper_UpdateOneGroupMinQuota(t *testing.T) {
 
 	// totalRequest = request = min,  totalResource = max
 	quotaInfo.CalculateInfo.Request = minQuota.DeepCopy()
-	qtw := createQuotaTreeWrapper()
+	qtw := createRuntimeQuotaCalculator()
 	qtw.groupReqLimit[quotaInfo.Name] = minQuota
 	qtw.SetClusterTotalResource(max)
 	quotaInfo.setAutoScaleMinQuotaNoLock(minQuota)
@@ -244,6 +258,7 @@ func TestQuotaTreeWrapper_UpdateOneGroupMinQuota(t *testing.T) {
 	assertObj.Equal(2, len(qtw.resourceKeys))
 	assertObj.Equal(max.Name(corev1.ResourceCPU, resource.DecimalSI), qtw.totalResource.Name(corev1.ResourceCPU, resource.DecimalSI))
 	assertObj.Equal(max.Name(corev1.ResourceMemory, resource.DecimalSI), qtw.totalResource.Name(corev1.ResourceMemory, resource.DecimalSI))
+	qtw.UpdateOneGroupRuntimeQuota(quotaInfo)
 	assertObj.Equal(qtw.quotaTree["cpu"].quotaNodes[quotaInfo.Name].runtimeQuota, int64(70))
 	assertObj.Equal(qtw.quotaTree["memory"].quotaNodes[quotaInfo.Name].runtimeQuota, int64(7000))
 	assertObj.Equal(qtw.quotaTree["cpu"].quotaNodes[quotaInfo.Name].min, int64(70))
@@ -251,16 +266,17 @@ func TestQuotaTreeWrapper_UpdateOneGroupMinQuota(t *testing.T) {
 	newMin := createResourceList(50, 5000)
 	quotaInfo.setAutoScaleMinQuotaNoLock(newMin)
 	qtw.UpdateOneGroupMinQuota(quotaInfo)
+	qtw.UpdateOneGroupRuntimeQuota(quotaInfo)
 	assertObj.Equal(qtw.quotaTree["cpu"].quotaNodes[quotaInfo.Name].runtimeQuota, int64(70))
 	assertObj.Equal(qtw.quotaTree["memory"].quotaNodes[quotaInfo.Name].runtimeQuota, int64(7000))
 	assertObj.Equal(qtw.quotaTree["cpu"].quotaNodes[quotaInfo.Name].min, int64(50))
 }
 
-func TestQuotaTreeWrapper_UpdateOneGroupSharedWeight(t *testing.T) {
+func TestRuntimeQuotaCalculator_UpdateOneGroupSharedWeight(t *testing.T) {
 	max := createResourceList(100, 1000)
 	min := createResourceList(70, 7000)
 	quotaInfo := createQuotaInfoWithRes("aliyun", max, min)
-	qtw := createQuotaTreeWrapper()
+	qtw := createRuntimeQuotaCalculator()
 
 	qtw.UpdateOneGroupSharedWeight(quotaInfo)
 	maxCpu := max["cpu"]
@@ -279,11 +295,11 @@ func TestQuotaTreeWrapper_UpdateOneGroupSharedWeight(t *testing.T) {
 	assert.Equal(t, sharedCpu.Value(), qtw.quotaTree["cpu"].quotaNodes[quotaInfo.Name].sharedWeight)
 }
 
-func TestQuotaTreeWrapper_NeedUpdateOneGroupRequest(t *testing.T) {
+func TestRuntimeQuotaCalculator_NeedUpdateOneGroupRequest(t *testing.T) {
 	max := createResourceList(100, 1000)
 	min := createResourceList(70, 7000)
 	quotaInfo := createQuotaInfoWithRes("aliyun", max, min)
-	qtw := createQuotaTreeWrapper()
+	qtw := createRuntimeQuotaCalculator()
 
 	update := qtw.NeedUpdateOneGroupRequest(quotaInfo)
 	assert.False(t, update)
@@ -293,8 +309,8 @@ func TestQuotaTreeWrapper_NeedUpdateOneGroupRequest(t *testing.T) {
 	assert.True(t, update)
 }
 
-func TestQuotaTreeWrapper_UpdateOneGroupRequest(t *testing.T) {
-	qtw := createQuotaTreeWrapper()
+func TestRuntimeQuotaCalculator_UpdateOneGroupRequest(t *testing.T) {
+	qtw := createRuntimeQuotaCalculator()
 	totalResource := createResourceList(50, 5000)
 	qtw.SetClusterTotalResource(totalResource)
 	quotaCount := 5
@@ -320,8 +336,8 @@ func TestQuotaTreeWrapper_UpdateOneGroupRequest(t *testing.T) {
 	}
 }
 
-func TestQuotaTreeWrapper_UpdateOneGroupRuntimeQuota(t *testing.T) {
-	qtw := createQuotaTreeWrapper()
+func TestRuntimeQuotaCalculator_UpdateOneGroupRuntimeQuota(t *testing.T) {
+	qtw := createRuntimeQuotaCalculator()
 	totalResource := createResourceList(100, 1000)
 	qtw.SetClusterTotalResource(totalResource)
 
@@ -373,8 +389,8 @@ func TestQuotaTreeWrapper_UpdateOneGroupRuntimeQuota(t *testing.T) {
 	assert.Equal(t, aliYun.CalculateInfo.AutoScaleMin, aliYun.CalculateInfo.Runtime)
 }
 
-func TestQuotaTreeWrapper_UpdateOneGroupRuntimeQuota2(t *testing.T) {
-	qtw := createQuotaTreeWrapper()
+func TestRuntimeQuotaCalculator_UpdateOneGroupRuntimeQuota2(t *testing.T) {
+	qtw := createRuntimeQuotaCalculator()
 	totalResource := createResourceList(120, 1200)
 	qtw.SetClusterTotalResource(totalResource)
 
@@ -407,11 +423,27 @@ func TestQuotaTreeWrapper_UpdateOneGroupRuntimeQuota2(t *testing.T) {
 	assert.Equal(t, aliYun.CalculateInfo.Runtime, createResourceList(60, 600))
 }
 
-func updateQuotaInfo(wrapper *QuotaTreeWrapper, info *QuotaInfo, max, min, sharedWeight corev1.ResourceList) {
+func updateQuotaInfo(wrapper *RuntimeQuotaCalculator, info *QuotaInfo, max, min, sharedWeight corev1.ResourceList) {
 	info.setMaxQuotaNoLock(max)
 	wrapper.UpdateOneGroupMaxQuota(info)
 	info.setAutoScaleMinQuotaNoLock(min)
 	wrapper.UpdateOneGroupMinQuota(info)
 	info.setSharedWeightNoLock(sharedWeight)
 	wrapper.UpdateOneGroupSharedWeight(info)
+}
+
+func TestQuotaInfo_GetRuntime(t *testing.T) {
+	qi := &QuotaInfo{
+		Name: "3",
+		CalculateInfo: QuotaCalculateInfo{
+			Max: createResourceList(100, 200),
+			Runtime: corev1.ResourceList{
+				"GPU": *resource.NewQuantity(20, resource.DecimalSI),
+				"cpu": *resource.NewQuantity(10, resource.DecimalSI),
+			},
+		},
+	}
+	assert.Equal(t, qi.getMaskedRuntimeNoLock(), corev1.ResourceList{
+		"cpu": *resource.NewQuantity(10, resource.DecimalSI),
+	})
 }
