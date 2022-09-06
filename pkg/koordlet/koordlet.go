@@ -31,6 +31,7 @@ import (
 	"k8s.io/klog/v2"
 
 	clientsetbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	"github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/config"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
@@ -79,32 +80,10 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	klog.Infof("sysconf: %+v,agentMode:%v", system.Conf, system.AgentMode)
 	klog.Infof("kernel version INFO : %+v", system.HostSystemInfo)
 
-	// setup cgroup path formatter from cgroup driver type
-	var detectCgroupDriver system.CgroupDriverType
-	if pollErr := wait.PollImmediate(time.Second*10, time.Minute, func() (bool, error) {
-		driver := system.GuessCgroupDriverFromCgroupName()
-		if driver.Validate() {
-			detectCgroupDriver = driver
-			return true, nil
-		}
-		klog.Infof("can not detect cgroup driver from 'kubepods' cgroup name")
-
-		if driver, err := system.GuessCgroupDriverFromKubelet(); err == nil && driver.Validate() {
-			detectCgroupDriver = driver
-			return true, nil
-		} else {
-			klog.Errorf("guess kubelet cgroup driver failed, retry...: %v", err)
-			return false, nil
-		}
-	}); pollErr != nil {
-		return nil, fmt.Errorf("can not detect kubelet cgroup driver: %v", pollErr)
-	}
-	system.SetupCgroupPathFormatter(detectCgroupDriver)
-	klog.Infof("Node %s use '%s' as cgroup driver", nodeName, string(detectCgroupDriver))
-
 	kubeClient := clientset.NewForConfigOrDie(config.KubeRestConf)
 	crdClient := clientsetbeta1.NewForConfigOrDie(config.KubeRestConf)
 	topologyClient := topologyclientset.NewForConfigOrDie(config.KubeRestConf)
+	schedulingClient := v1alpha1.NewForConfigOrDie(config.KubeRestConf)
 
 	pleg, err := pleg.NewPLEG(system.Conf.CgroupRootDir)
 	if err != nil {
@@ -116,7 +95,31 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, err
 	}
 
-	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, pleg, nodeName)
+	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, pleg, nodeName, schedulingClient)
+
+	// setup cgroup path formatter from cgroup driver type
+	var detectCgroupDriver system.CgroupDriverType
+	if pollErr := wait.PollImmediate(time.Second*10, time.Minute, func() (bool, error) {
+		driver := system.GuessCgroupDriverFromCgroupName()
+		if driver.Validate() {
+			detectCgroupDriver = driver
+			return true, nil
+		}
+		klog.Infof("can not detect cgroup driver from 'kubepods' cgroup name")
+
+		port := int(statesInformer.GetNode().Status.DaemonEndpoints.KubeletEndpoint.Port)
+		if driver, err := system.GuessCgroupDriverFromKubeletPort(port); err == nil && driver.Validate() {
+			detectCgroupDriver = driver
+			return true, nil
+		} else {
+			klog.Errorf("guess kubelet cgroup driver failed, retry...: %v", err)
+			return false, nil
+		}
+	}); pollErr != nil {
+		return nil, fmt.Errorf("can not detect kubelet cgroup driver: %v", pollErr)
+	}
+	system.SetupCgroupPathFormatter(detectCgroupDriver)
+	klog.Infof("Node %s use '%s' as cgroup driver", nodeName, string(detectCgroupDriver))
 
 	collectorService := metricsadvisor.NewCollector(config.CollectorConf, statesInformer, metricCache)
 	reporterService := reporter.NewReporter(config.ReporterConf, kubeClient, crdClient, nodeName, metricCache, statesInformer)

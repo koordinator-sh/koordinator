@@ -63,6 +63,10 @@ type Resources struct {
 	CPUBvt *int64
 }
 
+func (r *Resources) IsOriginResSet() bool {
+	return r.CPUShares != nil || r.CFSQuota != nil || r.CPUSet != nil
+}
+
 func injectCPUSet(cgroupParent string, cpuset string) error {
 	if err := sysutil.CgroupFileWrite(cgroupParent, sysutil.CPUSet, cpuset); err != nil {
 		return err

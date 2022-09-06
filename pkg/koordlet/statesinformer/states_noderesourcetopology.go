@@ -164,8 +164,8 @@ func (s *statesInformer) reportNodeTopology() {
 	cpuManagerPolicy := extension.KubeletCPUManagerPolicy{
 		Policy: "none",
 	}
-
-	filePath, err := system.GuessConfigFilePathFromKubelet()
+	kubeletPort := int(s.GetNode().Status.DaemonEndpoints.KubeletEndpoint.Port)
+	filePath, err := system.GuessConfigFilePathFromKubeletPort(kubeletPort)
 	if err != nil {
 		klog.Error("failed to read config file path from kubelet args")
 	}
@@ -183,7 +183,7 @@ func (s *statesInformer) reportNodeTopology() {
 		}
 	}
 
-	cpuPolicy, stateFilePath, cpuManagerOpt, err := system.GuessCPUManagerOptFromKubelet()
+	cpuPolicy, stateFilePath, cpuManagerOpt, err := system.GuessCPUManagerOptFromKubeletPort(kubeletPort)
 	if err != nil {
 		klog.Errorf("failed to guess kubelet cpu manager opt, err: %v", err)
 	}

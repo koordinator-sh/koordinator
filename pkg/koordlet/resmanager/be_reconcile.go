@@ -26,6 +26,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
@@ -290,7 +291,7 @@ func applyPodBECPULimitIfSpecified(podMeta *statesinformer.PodMeta) error {
 	}
 	targetCFSQuota := int(float64(milliCPULimit*podCFSPeriod) / float64(1000))
 	podCFSQuotaPath := util.GetPodCgroupCFSQuotaPath(podMeta.CgroupDir)
-	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(updateCPU).Message("set cfs_quota to %v", targetCFSQuota).Do()
+	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(executor.UpdateCPU).Message("set cfs_quota to %v", targetCFSQuota).Do()
 	return ioutil.WriteFile(podCFSQuotaPath, []byte(strconv.Itoa(targetCFSQuota)), 0644)
 }
 
@@ -308,7 +309,7 @@ func applyContainerBECPULimitIfSpecified(podMeta *statesinformer.PodMeta, contai
 	if err != nil {
 		return err
 	}
-	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(updateCPU).Message("set cfs_quota to %v", targetCFSQuota).Do()
+	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(executor.UpdateCPU).Message("set cfs_quota to %v", targetCFSQuota).Do()
 	return ioutil.WriteFile(containerCFSQuotaPath, []byte(strconv.Itoa(targetCFSQuota)), 0644)
 }
 
@@ -319,7 +320,7 @@ func applyPodBECPURequestIfSpecified(podMeta *statesinformer.PodMeta) error {
 	}
 	targetCPUShare := int(float64(milliCPURequest*system.CPUShareUnitValue) / float64(1000))
 	podDir := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
-	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(updateCPU).Message("set cfs_shares to %v", targetCPUShare).Do()
+	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(executor.UpdateCPU).Message("set cfs_shares to %v", targetCPUShare).Do()
 	return system.CgroupFileWrite(podDir, system.CPUShares, strconv.Itoa(targetCPUShare))
 }
 
@@ -333,7 +334,7 @@ func applyContainerBECPUShareIfSpecified(podMeta *statesinformer.PodMeta, contai
 	if err != nil {
 		return err
 	}
-	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(updateCPU).Message("set cfs_shares to %v", targetCPUShare).Do()
+	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(executor.UpdateCPU).Message("set cfs_shares to %v", targetCPUShare).Do()
 	return ioutil.WriteFile(containerCPUSharePath, []byte(strconv.Itoa(targetCPUShare)), 0644)
 }
 
@@ -343,7 +344,7 @@ func applyPodBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta) error {
 		return nil
 	}
 	podMemLimitPath := util.GetPodCgroupMemLimitPath(podMeta.CgroupDir)
-	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(updateMemory).Message("set memory.limits to %v", memoryLimit).Do()
+	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(executor.UpdateMemory).Message("set memory.limits to %v", memoryLimit).Do()
 	return ioutil.WriteFile(podMemLimitPath, []byte(strconv.Itoa(int(memoryLimit))), 0644)
 }
 
@@ -356,6 +357,6 @@ func applyContainerBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta, contai
 	if err != nil {
 		return err
 	}
-	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(updateMemory).Message("set memory.limits to %v", memoryLimit).Do()
+	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(executor.UpdateMemory).Message("set memory.limits to %v", memoryLimit).Do()
 	return ioutil.WriteFile(containerMemLimitPath, []byte(strconv.Itoa(int(memoryLimit))), 0644)
 }

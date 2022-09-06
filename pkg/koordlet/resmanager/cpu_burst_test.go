@@ -35,6 +35,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -691,7 +692,7 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
 
 			b := &CPUBurst{
-				executor: NewResourceUpdateExecutor("CPUBurstTestExecutor", 60),
+				executor: executor.NewResourceUpdateExecutor("CPUBurstTestExecutor", 60),
 			}
 
 			stop := make(chan struct{})
@@ -1218,7 +1219,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			}
 			b := &CPUBurst{
 				resmanager:       resmanager,
-				executor:         NewResourceUpdateExecutor("CPUBurstTestExecutor", 60),
+				executor:         executor.NewResourceUpdateExecutor("CPUBurstTestExecutor", 60),
 				containerLimiter: make(map[string]*burstLimiter),
 			}
 			_ = b.init(stop)

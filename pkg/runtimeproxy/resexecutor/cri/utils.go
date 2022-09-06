@@ -130,3 +130,28 @@ func updateResourceByUpdateContainerResourceRequest(a, b *v1alpha1.LinuxContaine
 	}
 	return a
 }
+
+func transferToKoordContainerEnvs(envs []*runtimeapi.KeyValue) map[string]string {
+	res := make(map[string]string)
+	if envs == nil {
+		return res
+	}
+	for _, item := range envs {
+		res[item.GetKey()] = item.GetValue()
+	}
+	return res
+}
+
+func transferToCRIContainerEnvs(envs map[string]string) []*runtimeapi.KeyValue {
+	var res []*runtimeapi.KeyValue
+	if envs == nil {
+		return res
+	}
+	for key, val := range envs {
+		res = append(res, &runtimeapi.KeyValue{
+			Key:   key,
+			Value: val,
+		})
+	}
+	return res
+}

@@ -85,6 +85,7 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
 				ContainerAnnotations: request.GetConfig().GetAnnotations(),
 				ContainerResources:   transferToKoordResources(request.GetConfig().GetLinux().GetResources()),
 				PodCgroupParent:      request.GetSandboxConfig().GetLinux().GetCgroupParent(),
+				ContainerEnvs:        transferToKoordContainerEnvs(request.GetConfig().GetEnvs()),
 			},
 		}
 		klog.Infof("success parse container info %v during container create", c)
@@ -122,7 +123,8 @@ func (c *ContainerResourceExecutor) ParseContainer(container *runtimeapi.Contain
 			PodAnnotations:  podInfo.GetAnnotations(),
 			PodLabels:       podInfo.GetLabels(),
 			PodCgroupParent: podInfo.GetCgroupParent(),
-			// TODO: How to get resource when failOver
+			// envs info would be loss during failover.
+			// TODO: How to get resource and envs when failOver
 		},
 	}
 	return nil
@@ -166,6 +168,10 @@ func (c *ContainerResourceExecutor) UpdateRequest(rsp interface{}, req interface
 	if response.PodCgroupParent != "" {
 		c.PodCgroupParent = response.PodCgroupParent
 	}
+	if response.GetContainerEnvs() != nil {
+		c.ContainerEnvs = response.GetContainerEnvs()
+	}
+
 	// update CRI request
 	switch request := req.(type) {
 	case *runtimeapi.CreateContainerRequest:
@@ -178,6 +184,7 @@ func (c *ContainerResourceExecutor) UpdateRequest(rsp interface{}, req interface
 		if c.PodCgroupParent != "" {
 			request.SandboxConfig.Linux.CgroupParent = c.PodCgroupParent
 		}
+		request.Config.Envs = transferToCRIContainerEnvs(c.ContainerEnvs)
 	case *runtimeapi.UpdateContainerResourcesRequest:
 		if c.ContainerAnnotations != nil {
 			request.Annotations = c.ContainerAnnotations

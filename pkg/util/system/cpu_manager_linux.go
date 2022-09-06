@@ -29,12 +29,11 @@ import (
 )
 
 // return cpu policy, cpu state file path and cpu manager opt
-func GuessCPUManagerOptFromKubelet() (string, string, map[string]string, error) {
-	pids, err := PidOf(Conf.ProcRootDir, "kubelet")
-	if err != nil || len(pids) == 0 {
+func GuessCPUManagerOptFromKubeletPort(port int) (string, string, map[string]string, error) {
+	kubeletPid, err := KubeletPortToPid(port)
+	if err != nil {
 		return "", "", nil, fmt.Errorf("failed to find kubelet's pid, kubelet may stop: %v", err)
 	}
-	kubeletPid := pids[0]
 
 	kubeletArgs, err := ProcCmdLine(Conf.ProcRootDir, kubeletPid)
 	if err != nil || len(kubeletArgs) <= 1 {
@@ -55,12 +54,11 @@ func GuessCPUManagerOptFromKubelet() (string, string, map[string]string, error) 
 }
 
 // return kubelet config file path
-func GuessConfigFilePathFromKubelet() (string, error) {
-	pids, err := PidOf(Conf.ProcRootDir, "kubelet")
-	if err != nil || len(pids) == 0 {
+func GuessConfigFilePathFromKubeletPort(port int) (string, error) {
+	kubeletPid, err := KubeletPortToPid(port)
+	if err != nil {
 		return "", fmt.Errorf("failed to find kubelet's pid, kubelet may stop: %v", err)
 	}
-	kubeletPid := pids[0]
 
 	kubeletArgs, err := ProcCmdLine(Conf.ProcRootDir, kubeletPid)
 	if err != nil || len(kubeletArgs) <= 1 {

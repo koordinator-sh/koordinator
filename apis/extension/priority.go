@@ -16,7 +16,11 @@ limitations under the License.
 
 package extension
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	"strconv"
+
+	corev1 "k8s.io/api/core/v1"
+)
 
 type PriorityClass string
 
@@ -64,4 +68,16 @@ func getPriorityClassByPriority(priority *int32) PriorityClass {
 	}
 
 	return PriorityNone
+}
+
+// GetPodSubPriority get pod's sub-priority in Koordinator from label
+func GetPodSubPriority(labels map[string]string) (int32, error) {
+	if s := labels[LabelPodPriority]; s != "" {
+		val, err := strconv.ParseInt(s, 0, 32)
+		if err != nil {
+			return 0, err
+		}
+		return int32(val), nil
+	}
+	return 0, nil
 }

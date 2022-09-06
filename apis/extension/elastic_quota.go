@@ -18,8 +18,10 @@ package extension
 
 import (
 	"encoding/json"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/apiserver/pkg/quota/v1"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
@@ -59,9 +61,18 @@ func GetSharedWeight(quota *v1alpha1.ElasticQuota) corev1.ResourceList {
 	if exist {
 		resList := corev1.ResourceList{}
 		err := json.Unmarshal([]byte(value), &resList)
-		if err == nil {
+		if err == nil && !v1.IsZero(resList) {
 			return resList
 		}
 	}
 	return quota.Spec.Max.DeepCopy() //default equals to max
+}
+
+func IsForbiddenModify(quota *v1alpha1.ElasticQuota) (bool, error) {
+	if quota.Name == SystemQuotaName || quota.Name == RootQuotaName {
+		// can't modify SystemQuotaGroup
+		return true, fmt.Errorf("invalid quota %s", quota.Name)
+	}
+
+	return false, nil
 }

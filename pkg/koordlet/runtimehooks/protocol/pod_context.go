@@ -75,6 +75,10 @@ type PodContext struct {
 }
 
 func (p *PodResponse) ProxyDone(resp *runtimeapi.PodSandboxHookResponse) {
+	if p.Resources.IsOriginResSet() && resp.Resources == nil {
+		// resource value is injected but origin request is nil, init resource response
+		resp.Resources = &runtimeapi.LinuxContainerResources{}
+	}
 	if p.Resources.CPUSet != nil {
 		resp.Resources.CpusetCpus = *p.Resources.CPUSet
 	}

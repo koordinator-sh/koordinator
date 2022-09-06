@@ -31,10 +31,54 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"syscall"
+	"time"
 	"unicode"
 
+	"github.com/cakturk/go-netstat/netstat"
 	"k8s.io/klog/v2"
 )
+
+var (
+	kubeletPortAndPid atomic.Value
+	expireTime        = time.Minute
+)
+
+type portAndPid struct {
+	port           int
+	pid            int
+	lastUpdateTime time.Time
+}
+
+// KubeletPortToPid Query pid by tcp port number with the help of go-netstat
+// note: Due to the low efficiency of full traversal, we cache the result and verify each time
+func KubeletPortToPid(port int) (int, error) {
+	if port < 0 {
+		return -1, fmt.Errorf("failed to get pid, the port is invalid")
+	}
+	if val, ok := kubeletPortAndPid.Load().(portAndPid); ok && val.port == port {
+		if time.Now().Before(val.lastUpdateTime.Add(expireTime)) &&
+			syscall.Kill(val.pid, 0) == nil {
+			return val.pid, nil
+		}
+	}
+	socks, err := netstat.TCPSocks(func(entry *netstat.SockTabEntry) bool {
+		if entry.State == netstat.Listen && entry.LocalAddr.Port == uint16(port) {
+			return true
+		}
+		return false
+	})
+	if err != nil {
+		return -1, fmt.Errorf("failed to get pid, err is %v", err)
+	}
+	if len(socks) == 0 || socks[0].Process == nil {
+		return -1, fmt.Errorf("failed to get pid, the port is not used")
+	}
+	pid := socks[0].Process.Pid
+	kubeletPortAndPid.Store(portAndPid{port: port, pid: pid, lastUpdateTime: time.Now()})
+	return pid, nil
+}
 
 // CmdLine returns the command line args of a process.
 func ProcCmdLine(procRoot string, pid int) ([]string, error) {

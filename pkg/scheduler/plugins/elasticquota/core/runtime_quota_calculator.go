@@ -159,9 +159,9 @@ func (qt *quotaTree) iterationForRedistribution(totalRes, totalSharedWeight int6
 type quotaResMapType map[string]v1.ResourceList
 type quotaTreeMapType map[v1.ResourceName]*quotaTree
 
-// QuotaTreeWrapper helps to calculate the childGroups' all resource dimensions' runtimeQuota of the
+// RuntimeQuotaCalculator helps to calculate the childGroups' all resource dimensions' runtimeQuota of the
 // corresponding quotaInfo(treeName)
-type QuotaTreeWrapper struct {
+type RuntimeQuotaCalculator struct {
 	globalRuntimeVersion int64                        // increase as the runtimeQuota changed
 	resourceKeys         map[v1.ResourceName]struct{} // the resource dimensions
 	groupReqLimit        quotaResMapType              // all childQuotaInfos' limitedRequest
@@ -171,8 +171,8 @@ type QuotaTreeWrapper struct {
 	treeName             string // the same as the parentQuotaInfo's Name
 }
 
-func NewQuotaTreeWrapper(treeName string) *QuotaTreeWrapper {
-	return &QuotaTreeWrapper{
+func NewRuntimeQuotaCalculator(treeName string) *RuntimeQuotaCalculator {
+	return &RuntimeQuotaCalculator{
 		globalRuntimeVersion: 1,
 		resourceKeys:         make(map[v1.ResourceName]struct{}),
 		groupReqLimit:        make(quotaResMapType),
@@ -182,7 +182,7 @@ func NewQuotaTreeWrapper(treeName string) *QuotaTreeWrapper {
 	}
 }
 
-func (qtw *QuotaTreeWrapper) UpdateResourceKeys(resourceKeys map[v1.ResourceName]struct{}) {
+func (qtw *RuntimeQuotaCalculator) UpdateResourceKeys(resourceKeys map[v1.ResourceName]struct{}) {
 	newResourceKey := make(map[v1.ResourceName]struct{})
 	for resKey := range resourceKeys {
 		newResourceKey[resKey] = struct{}{}
@@ -195,7 +195,7 @@ func (qtw *QuotaTreeWrapper) UpdateResourceKeys(resourceKeys map[v1.ResourceName
 	qtw.updateQuotaTreeDimensionByResourceKeysNoLock()
 }
 
-func (qtw *QuotaTreeWrapper) updateQuotaTreeDimensionByResourceKeysNoLock() {
+func (qtw *RuntimeQuotaCalculator) updateQuotaTreeDimensionByResourceKeysNoLock() {
 	//lock outside
 	for resKey := range qtw.quotaTree {
 		if _, exist := qtw.resourceKeys[resKey]; !exist {
@@ -210,8 +210,8 @@ func (qtw *QuotaTreeWrapper) updateQuotaTreeDimensionByResourceKeysNoLock() {
 	}
 }
 
-// DeleteOneGroup delete a childGroup, should delete both the quotaTree and groupReqLimit, then adjustQuota to refresh runtimeQuota.
-func (qtw *QuotaTreeWrapper) DeleteOneGroup(quotaInfo *QuotaInfo) {
+// DeleteOneGroup delete a childGroup, should delete both the quotaTree and groupReqLimit, then increase globalRuntimeVersion.
+func (qtw *RuntimeQuotaCalculator) DeleteOneGroup(quotaInfo *QuotaInfo) {
 	qtw.lock.Lock()
 	defer qtw.lock.Unlock()
 
@@ -220,7 +220,7 @@ func (qtw *QuotaTreeWrapper) DeleteOneGroup(quotaInfo *QuotaInfo) {
 	}
 	delete(qtw.groupReqLimit, quotaInfo.Name)
 
-	qtw.adjustQuotaNoLock()
+	qtw.globalRuntimeVersion++
 
 	if klog.V(5).Enabled() {
 		qtw.logQuotaInfoNoLock("DeleteOneGroup finish", quotaInfo)
@@ -228,9 +228,9 @@ func (qtw *QuotaTreeWrapper) DeleteOneGroup(quotaInfo *QuotaInfo) {
 }
 
 // UpdateOneGroupMaxQuota updates a childGroup's maxQuota, the limitedReq of the quotaGroup may change, so
-// should update reqLimit in the process, then adjustQuota to refresh runtimeQuota.
+// should update reqLimit in the process, then increase globalRuntimeVersion
 // need use newMaxQuota to adjust dimension.
-func (qtw *QuotaTreeWrapper) UpdateOneGroupMaxQuota(quotaInfo *QuotaInfo) {
+func (qtw *RuntimeQuotaCalculator) UpdateOneGroupMaxQuota(quotaInfo *QuotaInfo) {
 	qtw.lock.Lock()
 	defer qtw.lock.Unlock()
 
@@ -260,15 +260,15 @@ func (qtw *QuotaTreeWrapper) UpdateOneGroupMaxQuota(quotaInfo *QuotaInfo) {
 		localReqLimit[resKey] = reqLimitPerKey
 	}
 
-	qtw.adjustQuotaNoLock()
+	qtw.globalRuntimeVersion++
 
 	if klog.V(5).Enabled() {
 		qtw.logQuotaInfoNoLock("UpdateOneGroupMaxQuota finish", quotaInfo)
 	}
 }
 
-// UpdateOneGroupMinQuota the autoScaleMin change, need adjustQuota to refresh runtime.
-func (qtw *QuotaTreeWrapper) UpdateOneGroupMinQuota(quotaInfo *QuotaInfo) {
+// UpdateOneGroupMinQuota the autoScaleMin change, then increase globalRuntimeVersion
+func (qtw *RuntimeQuotaCalculator) UpdateOneGroupMinQuota(quotaInfo *QuotaInfo) {
 	qtw.lock.Lock()
 	defer qtw.lock.Unlock()
 
@@ -287,15 +287,15 @@ func (qtw *QuotaTreeWrapper) UpdateOneGroupMinQuota(quotaInfo *QuotaInfo) {
 		}
 	}
 
-	qtw.adjustQuotaNoLock()
+	qtw.globalRuntimeVersion++
 
 	if klog.V(5).Enabled() {
 		qtw.logQuotaInfoNoLock("UpdateOneGroupMinQuota finish", quotaInfo)
 	}
 }
 
-// UpdateOneGroupSharedWeight , the ability to share the "lent to" resource change, need adjustQuota to refresh runtime.
-func (qtw *QuotaTreeWrapper) UpdateOneGroupSharedWeight(quotaInfo *QuotaInfo) {
+// UpdateOneGroupSharedWeight , the ability to share the "lent to" resource change, then increase globalRuntimeVersion
+func (qtw *RuntimeQuotaCalculator) UpdateOneGroupSharedWeight(quotaInfo *QuotaInfo) {
 	qtw.lock.Lock()
 	defer qtw.lock.Unlock()
 
@@ -314,7 +314,7 @@ func (qtw *QuotaTreeWrapper) UpdateOneGroupSharedWeight(quotaInfo *QuotaInfo) {
 		}
 	}
 
-	qtw.adjustQuotaNoLock()
+	qtw.globalRuntimeVersion++
 
 	if klog.V(5).Enabled() {
 		qtw.logQuotaInfoNoLock("UpdateOneGroupSharedWeight finish", quotaInfo)
@@ -324,7 +324,7 @@ func (qtw *QuotaTreeWrapper) UpdateOneGroupSharedWeight(quotaInfo *QuotaInfo) {
 // NeedUpdateOneGroupRequest if oldReqLimit is the same as newReqLimit, no need to adjustQuota.
 // the request of one group may change frequently, but the cost of adjustQuota is high, so here
 // need to judge whether you need to update QuotaNode's request or not.
-func (qtw *QuotaTreeWrapper) NeedUpdateOneGroupRequest(quotaInfo *QuotaInfo) bool {
+func (qtw *RuntimeQuotaCalculator) NeedUpdateOneGroupRequest(quotaInfo *QuotaInfo) bool {
 	qtw.lock.Lock()
 	defer qtw.lock.Unlock()
 
@@ -340,7 +340,8 @@ func (qtw *QuotaTreeWrapper) NeedUpdateOneGroupRequest(quotaInfo *QuotaInfo) boo
 	return false
 }
 
-func (qtw *QuotaTreeWrapper) UpdateOneGroupRequest(quotaInfo *QuotaInfo) {
+// UpdateOneGroupRequest the request of one group change, need increase globalRuntimeVersion
+func (qtw *RuntimeQuotaCalculator) UpdateOneGroupRequest(quotaInfo *QuotaInfo) {
 	qtw.lock.Lock()
 	defer qtw.lock.Unlock()
 
@@ -363,22 +364,22 @@ func (qtw *QuotaTreeWrapper) UpdateOneGroupRequest(quotaInfo *QuotaInfo) {
 		reqLimit[resKey] = reqLimitPerKey
 	}
 
-	qtw.adjustQuotaNoLock()
+	qtw.globalRuntimeVersion++
 
 	if klog.V(5).Enabled() {
 		qtw.logQuotaInfoNoLock("UpdateOneGroupRequest finish", quotaInfo)
 	}
 }
 
-// SetClusterTotalResource increase/decrease the totalResource of the quotaTreeWrapper, the resource that can be "lent to" will
-// change, need adjustQuota to refresh runtime.
-func (qtw *QuotaTreeWrapper) SetClusterTotalResource(full v1.ResourceList) {
+// SetClusterTotalResource increase/decrease the totalResource of the RuntimeQuotaCalculator, the resource that can be "lent to" will
+// change, then increase globalRuntimeVersion
+func (qtw *RuntimeQuotaCalculator) SetClusterTotalResource(full v1.ResourceList) {
 	qtw.lock.Lock()
 	defer qtw.lock.Unlock()
 
 	oldTotalRes := qtw.totalResource.DeepCopy()
 	qtw.totalResource = full.DeepCopy()
-	qtw.adjustQuotaNoLock()
+	qtw.globalRuntimeVersion++
 
 	klog.V(5).Infof("UpdateClusterTotalResource"+
 		"treeName:%v oldTotalResource:%v newTotalResource:%v reqLimit:%v refreshedVersion:%v",
@@ -386,23 +387,29 @@ func (qtw *QuotaTreeWrapper) SetClusterTotalResource(full v1.ResourceList) {
 }
 
 // UpdateOneGroupRuntimeQuota update the quotaInfo's runtimeQuota as the quotaNode's runtime.
-func (qtw *QuotaTreeWrapper) UpdateOneGroupRuntimeQuota(quotaInfo *QuotaInfo) {
+func (qtw *RuntimeQuotaCalculator) UpdateOneGroupRuntimeQuota(quotaInfo *QuotaInfo) {
 	qtw.lock.Lock()
 	defer qtw.lock.Unlock()
+
+	if quotaInfo.RuntimeVersion == qtw.globalRuntimeVersion {
+		return
+	}
+
+	qtw.calculateRuntimeNoLock()
 
 	for resKey := range qtw.resourceKeys {
 		if exist, quotaNode := qtw.quotaTree[resKey].find(quotaInfo.Name); exist {
 			quotaInfo.CalculateInfo.Runtime[resKey] = *resource.NewQuantity(quotaNode.runtimeQuota, resource.DecimalSI)
 		}
 	}
-
 	quotaInfo.RuntimeVersion = qtw.globalRuntimeVersion
+
 	if klog.V(5).Enabled() {
 		qtw.logQuotaInfoNoLock("UpdateOneGroupRuntimeQuota finish", quotaInfo)
 	}
 }
 
-func (qtw *QuotaTreeWrapper) getGroupRequestLimitNoLock(quotaName string) v1.ResourceList {
+func (qtw *RuntimeQuotaCalculator) getGroupRequestLimitNoLock(quotaName string) v1.ResourceList {
 	res, exist := qtw.groupReqLimit[quotaName]
 	if !exist {
 		res = v1.ResourceList{}
@@ -411,23 +418,21 @@ func (qtw *QuotaTreeWrapper) getGroupRequestLimitNoLock(quotaName string) v1.Res
 	return res
 }
 
-func (qtw *QuotaTreeWrapper) GetVersion() int64 {
+func (qtw *RuntimeQuotaCalculator) GetVersion() int64 {
 	qtw.lock.Lock()
 	defer qtw.lock.Unlock()
 	return qtw.globalRuntimeVersion
 }
 
-func (qtw *QuotaTreeWrapper) adjustQuotaNoLock() {
+func (qtw *RuntimeQuotaCalculator) calculateRuntimeNoLock() {
 	//lock outside
 	for resKey := range qtw.resourceKeys {
 		totalResourcePerKey := *qtw.totalResource.Name(resKey, resource.DecimalSI)
 		qtw.quotaTree[resKey].redistribution(totalResourcePerKey.Value())
 	}
-
-	qtw.globalRuntimeVersion++
 }
 
-func (qtw *QuotaTreeWrapper) logQuotaInfoNoLock(verb string, quotaInfo *QuotaInfo) {
+func (qtw *RuntimeQuotaCalculator) logQuotaInfoNoLock(verb string, quotaInfo *QuotaInfo) {
 	klog.Infof("%s\n"+
 		"quotaName:%v quotaParentName:%v IsParent:%v request:%v maxQuota:%v OriginalMinQuota:%v"+
 		"autoScaleMinQuota:%v  SharedWeight:%v runtime:%v used:%v treeName:%v totalResource:%v reqLimit:%v refreshedVersion:%v", verb,

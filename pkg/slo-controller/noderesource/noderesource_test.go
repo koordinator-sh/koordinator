@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/utils/pointer"
@@ -32,7 +33,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	schedulingfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 )
 
@@ -192,6 +195,204 @@ func Test_isDegradeNeeded(t *testing.T) {
 			}
 			assert.Equal(t, tt.want, r.isDegradeNeeded(tt.args.nodeMetric, tt.args.node))
 		})
+	}
+}
+
+func Test_updateNodeGPUResource(t *testing.T) {
+	fakeClient := schedulingfake.NewSimpleClientset().SchedulingV1alpha1().Devices()
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				apiext.BatchCPU:    resource.MustParse("20"),
+				apiext.BatchMemory: resource.MustParse("40G"),
+			},
+			Capacity: corev1.ResourceList{
+				apiext.BatchCPU:    resource.MustParse("20"),
+				apiext.BatchMemory: resource.MustParse("40G"),
+			},
+		},
+	}
+	scheme := runtime.NewScheme()
+	schedulingv1alpha1.AddToScheme(scheme)
+	metav1.AddMetaToScheme(scheme)
+	corev1.AddToScheme(scheme)
+	r := &NodeResourceReconciler{
+		Client:         fake.NewClientBuilder().WithRuntimeObjects(testNode).WithScheme(scheme).Build(),
+		GPUSyncContext: NewSyncContext(),
+		Clock:          clock.RealClock{},
+		cfgCache: &FakeCfgCache{
+			cfg: config.ColocationCfg{
+				ColocationStrategy: config.ColocationStrategy{
+					Enable:                        pointer.BoolPtr(true),
+					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+					DegradeTimeMinutes:            pointer.Int64Ptr(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+				},
+			},
+		},
+	}
+	fakeDevice := &schedulingv1alpha1.Device{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNode.Name,
+		},
+		Spec: schedulingv1alpha1.DeviceSpec{
+			Devices: []schedulingv1alpha1.DeviceInfo{
+				{
+					UUID:   "1",
+					Minor:  0,
+					Health: true,
+					Resources: map[corev1.ResourceName]resource.Quantity{
+						apiext.GPUCore:        *resource.NewQuantity(100, resource.BinarySI),
+						apiext.GPUMemory:      *resource.NewQuantity(8000, resource.BinarySI),
+						apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.BinarySI),
+					},
+				},
+				{
+					UUID:   "2",
+					Minor:  1,
+					Health: true,
+					Resources: map[corev1.ResourceName]resource.Quantity{
+						apiext.GPUCore:        *resource.NewQuantity(100, resource.BinarySI),
+						apiext.GPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
+						apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.BinarySI),
+					},
+				},
+			},
+		},
+	}
+	fakeClient.Create(context.TODO(), fakeDevice, metav1.CreateOptions{})
+	r.updateGPUNodeResource(testNode, fakeDevice)
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: testNode.Name}, testNode)
+	assert.Equal(t, nil, err)
+	actualMemoryRatio := testNode.Status.Allocatable[apiext.GPUMemoryRatio]
+	actualMemory := testNode.Status.Allocatable[apiext.GPUMemory]
+	actualCore := testNode.Status.Allocatable[apiext.GPUCore]
+	assert.Equal(t, actualMemoryRatio.Value(), resource.NewQuantity(200, resource.DecimalSI).Value())
+	assert.Equal(t, actualMemory.Value(), resource.NewQuantity(18000, resource.BinarySI).Value())
+	assert.Equal(t, actualCore.Value(), resource.NewQuantity(200, resource.BinarySI).Value())
+}
+
+func Test_isGPUResourceNeedSync(t *testing.T) {
+	tests := []struct {
+		oldNode     *corev1.Node
+		newNode     *corev1.Node
+		SyncContext *SyncContext
+		expected    bool
+	}{
+		{
+			&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node0",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						apiext.GPUCore:        resource.MustParse("20"),
+						apiext.GPUMemory:      resource.MustParse("40G"),
+						apiext.GPUMemoryRatio: resource.MustParse("20"),
+					},
+				},
+			},
+			&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node0",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						apiext.GPUCore:        resource.MustParse("20"),
+						apiext.GPUMemory:      resource.MustParse("40G"),
+						apiext.GPUMemoryRatio: resource.MustParse("20"),
+					},
+				},
+			},
+			&SyncContext{
+				contextMap: map[string]time.Time{"/test-node0": time.Now()},
+			},
+			false,
+		},
+		{
+			&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node0",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						apiext.GPUCore:        resource.MustParse("20"),
+						apiext.GPUMemory:      resource.MustParse("40G"),
+						apiext.GPUMemoryRatio: resource.MustParse("21"),
+					},
+				},
+			},
+			&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node0",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						apiext.GPUCore:        resource.MustParse("21"),
+						apiext.GPUMemory:      resource.MustParse("40G"),
+						apiext.GPUMemoryRatio: resource.MustParse("20"),
+					},
+				},
+			},
+			&SyncContext{
+				contextMap: map[string]time.Time{"/test-node0": time.Now()},
+			},
+			false,
+		},
+		{
+			&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node0",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						apiext.GPUCore:        resource.MustParse("20"),
+						apiext.GPUMemory:      resource.MustParse("40G"),
+						apiext.GPUMemoryRatio: resource.MustParse("20"),
+					},
+				},
+			},
+			&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node0",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						apiext.GPUCore:        resource.MustParse("20"),
+						apiext.GPUMemory:      resource.MustParse("40G"),
+						apiext.GPUMemoryRatio: resource.MustParse("20"),
+					},
+				},
+			},
+			&SyncContext{
+				contextMap: map[string]time.Time{"/test-node0": time.Now().Add(-time.Duration(600) * time.Second)},
+			},
+			true,
+		},
+	}
+	configf := &config.ColocationCfg{
+		ColocationStrategy: config.ColocationStrategy{
+			Enable:                        pointer.BoolPtr(true),
+			CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
+			MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+			DegradeTimeMinutes:            pointer.Int64Ptr(15),
+			UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+			ResourceDiffThreshold:         pointer.Float64Ptr(0.2),
+		},
+	}
+	for _, tt := range tests {
+		r := &NodeResourceReconciler{
+			GPUSyncContext: SyncContext{contextMap: tt.SyncContext.contextMap},
+			cfgCache:       &FakeCfgCache{cfg: *configf},
+			Clock:          clock.RealClock{},
+		}
+		actual := r.isGPUResourceNeedSync(tt.newNode, tt.oldNode)
+		assert.Equal(t, tt.expected, actual)
 	}
 }
 
@@ -613,8 +814,8 @@ func Test_updateNodeBEResource(t *testing.T) {
 				cfgCache: &FakeCfgCache{
 					cfg: *tt.fields.config,
 				},
-				SyncContext: SyncContext{contextMap: tt.fields.SyncContext.contextMap},
-				Clock:       clock.RealClock{},
+				BESyncContext: SyncContext{contextMap: tt.fields.SyncContext.contextMap},
+				Clock:         clock.RealClock{},
 			}
 			got := r.updateNodeBEResource(tt.args.oldNode, tt.args.beResource)
 			assert.Equal(t, tt.wantErr, got != nil, got)
@@ -866,7 +1067,7 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 				cfgCache: &FakeCfgCache{
 					cfg: *tt.fields.config,
 				},
-				SyncContext: SyncContext{
+				BESyncContext: SyncContext{
 					contextMap: tt.fields.SyncContext.contextMap,
 				},
 				Clock: clock.RealClock{},

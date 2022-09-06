@@ -18,18 +18,15 @@ package resmanager
 
 import (
 	"fmt"
-	"math"
-	"math/bits"
 	"os"
-	"sort"
 	"strconv"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -47,10 +44,6 @@ const (
 	BEResctrlGroup = "BE"
 	// UnknownResctrlGroup is the resctrl group which is unknown to reconcile
 	UnknownResctrlGroup = "Unknown"
-	// L3SchemataPrefix is the prefix of l3 cat schemata
-	L3SchemataPrefix = "L3:"
-	// MbSchemataPrefix is the prefix of l3 cat schemata
-	MbSchemataPrefix = "MB:"
 )
 
 var (
@@ -60,11 +53,11 @@ var (
 
 type ResctrlReconcile struct {
 	resManager *resmanager
-	executor   *ResourceUpdateExecutor
+	executor   *executor.ResourceUpdateExecutor
 }
 
 func NewResctrlReconcile(resManager *resmanager) *ResctrlReconcile {
-	executor := NewResourceUpdateExecutor("ResctrlExecutor", resManager.config.ReconcileIntervalSeconds*60)
+	executor := executor.NewResourceUpdateExecutor("ResctrlExecutor", resManager.config.ReconcileIntervalSeconds*60)
 	return &ResctrlReconcile{
 		resManager: resManager,
 		executor:   executor,
@@ -135,68 +128,6 @@ func initCatGroupIfNotExist(group string) error {
 	return nil
 }
 
-func calculateCatL3MaskValue(cbm uint, startPercent, endPercent int64) (string, error) {
-	// check if the parsed cbm value is valid, eg. 0xff, 0x1, 0x7ff, ...
-	// NOTE: (Cache Bit Masks) X86 hardware requires that these masks have all the '1' bits in a contiguous block.
-	//       ref: https://www.kernel.org/doc/Documentation/x86/intel_rdt_ui.txt
-	// since the input cbm here is the cbm value of the resctrl root, every lower bit is required to be `1` additionally
-	if bits.OnesCount(cbm+1) != 1 {
-		return "", fmt.Errorf("illegal cbm %v", cbm)
-	}
-
-	// check if the startPercent and endPercent are valid
-	if startPercent < 0 || endPercent > 100 || endPercent <= startPercent {
-		return "", fmt.Errorf("illegal l3 cat percent: start %v, end %v", startPercent, endPercent)
-	}
-
-	// calculate a bit mask belonging to interval [startPercent% * ways, endPercent% * ways)
-	// eg.
-	// cbm 0x3ff ('b1111111111), start 10%, end 80%
-	// ways 10, l3Mask 0xfe ('b11111110)
-	// cbm 0x7ff ('b11111111111), start 10%, end 50%
-	// ways 11, l3Mask 0x3c ('b111100)
-	// cbm 0x7ff ('b11111111111), start 0%, end 30%
-	// ways 11, l3Mask 0xf ('b1111)
-	ways := float64(bits.Len(cbm))
-	startWay := uint64(math.Ceil(ways * float64(startPercent) / 100))
-	endWay := uint64(math.Ceil(ways * float64(endPercent) / 100))
-
-	var l3Mask uint64 = (1 << endWay) - (1 << startWay)
-	return strconv.FormatUint(l3Mask, 16), nil
-}
-
-func calculateL3SchemataResource(group, schemataDelta string, l3Num int) ResourceUpdater {
-	schemata := L3SchemataPrefix
-	// the last ';' will be auto ignored
-	for i := 0; i < l3Num; i++ {
-		schemata = schemata + strconv.Itoa(i) + "=" + schemataDelta + ";"
-	}
-	// the trailing '\n' is necessary to append
-	schemata += "\n"
-
-	schemataFile := system.GetResctrlSchemataFilePath(group)
-
-	// write to $schemataFile with valued $schemata
-	updaterKey := schemataFile + ":" + L3SchemataPrefix
-	return NewDetailCommonResourceUpdater(updaterKey, schemataFile, schemata, GroupOwnerRef(group), updateResctrlSchemataFunc)
-}
-
-func calculateMbSchemataResource(group, schemataDelta string, l3Num int) ResourceUpdater {
-	schemata := MbSchemataPrefix
-	// the last ';' will be auto ignored
-	for i := 0; i < l3Num; i++ {
-		schemata = schemata + strconv.Itoa(i) + "=" + schemataDelta + ";"
-	}
-	// the trailing '\n' is necessary to append
-	schemata += "\n"
-
-	schemataFile := system.GetResctrlSchemataFilePath(group)
-
-	// write to $schemataFile with valued $schemata
-	updaterKey := schemataFile + ":" + MbSchemataPrefix
-	return NewDetailCommonResourceUpdater(updaterKey, schemataFile, schemata, GroupOwnerRef(group), updateResctrlSchemataFunc)
-}
-
 func calculateMbaPercentForGroup(group string, mbaPercentConfig *int64) string {
 	if mbaPercentConfig == nil {
 		klog.Warningf("cat MBA will not change, since MBAPercent is nil for group %v, "+
@@ -260,21 +191,6 @@ func getPodCgroupNewTaskIds(podMeta *statesinformer.PodMeta, tasksMap map[int]st
 	return taskIds
 }
 
-func calculateL3TasksResource(group string, taskIds []int) ResourceUpdater {
-	// join ids into updater value and make the id updates one by one
-	tasksPath := system.GetResctrlTasksFilePath(group)
-
-	// use ordered slice
-	sort.Ints(taskIds)
-	var builder strings.Builder
-	for _, id := range taskIds {
-		builder.WriteString(strconv.Itoa(id))
-		builder.WriteByte('\n')
-	}
-
-	return NewDetailCommonResourceUpdater(tasksPath, tasksPath, builder.String(), GroupOwnerRef(group), updateResctrlTasksFunc)
-}
-
 func (r *ResctrlReconcile) calculateAndApplyCatL3PolicyForGroup(group string, cbm uint, l3Num int,
 	resourceQoS *slov1alpha1.ResourceQOS) error {
 	if resourceQoS == nil || resourceQoS.ResctrlQOS == nil || resourceQoS.ResctrlQOS.CATRangeStartPercent == nil ||
@@ -286,14 +202,14 @@ func (r *ResctrlReconcile) calculateAndApplyCatL3PolicyForGroup(group string, cb
 
 	startPercent, endPercent := *resourceQoS.ResctrlQOS.CATRangeStartPercent, *resourceQoS.ResctrlQOS.CATRangeEndPercent
 	// calculate policy
-	l3MaskValue, err := calculateCatL3MaskValue(cbm, startPercent, endPercent)
+	l3MaskValue, err := system.CalculateCatL3MaskValue(cbm, startPercent, endPercent)
 	if err != nil {
 		klog.Warningf("failed to calculate l3 cat schemata for group %v, err: %v", group, err)
 		return err
 	}
 
 	// calculate updating resource
-	resource := calculateL3SchemataResource(group, l3MaskValue, l3Num)
+	resource := executor.CalculateL3SchemataResource(group, l3MaskValue, l3Num)
 
 	// write policy into resctrl files if need update
 	isUpdated, err := r.executor.UpdateByCache(resource)
@@ -319,7 +235,7 @@ func (r *ResctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3
 		return nil
 	}
 	// calculate updating resource
-	resource := calculateMbSchemataResource(group, memBwPercent, l3Num)
+	resource := executor.CalculateMbSchemataResource(group, memBwPercent, l3Num)
 
 	// write policy into resctrl files if need update
 	isUpdated, err := r.executor.UpdateByCache(resource)
@@ -333,7 +249,7 @@ func (r *ResctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3
 }
 
 func (r *ResctrlReconcile) calculateAndApplyCatL3GroupTasks(group string, taskIds []int) error {
-	resource := calculateL3TasksResource(group, taskIds)
+	resource := executor.CalculateL3TasksResource(group, taskIds)
 
 	// write policy into resctrl files
 	// NOTE: the operation should not be cacheable, since old tid has chance to be reused by a new task and here the

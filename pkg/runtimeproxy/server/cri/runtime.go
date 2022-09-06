@@ -114,7 +114,14 @@ func (c *RuntimeManagerCriServer) ListContainers(ctx context.Context, req *runti
 }
 
 func (c *RuntimeManagerCriServer) UpdateContainerResources(ctx context.Context, req *runtimeapi.UpdateContainerResourcesRequest) (*runtimeapi.UpdateContainerResourcesResponse, error) {
-	return c.backendRuntimeServiceClient.UpdateContainerResources(ctx, req)
+	rsp, err := c.interceptRuntimeRequest(UpdateContainerResources, ctx, req,
+		func(ctx context.Context, req interface{}) (interface{}, error) {
+			return c.backendRuntimeServiceClient.UpdateContainerResources(ctx, req.(*runtimeapi.UpdateContainerResourcesRequest))
+		})
+	if err != nil {
+		return nil, err
+	}
+	return rsp.(*runtimeapi.UpdateContainerResourcesResponse), err
 }
 
 func (c *RuntimeManagerCriServer) ContainerStats(ctx context.Context, req *runtimeapi.ContainerStatsRequest) (*runtimeapi.ContainerStatsResponse, error) {
