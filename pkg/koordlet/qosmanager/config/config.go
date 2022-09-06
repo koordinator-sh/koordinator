@@ -25,30 +25,15 @@ import (
 	"k8s.io/component-base/featuregate"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/cpuburst"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/cpuevict"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/cpusuppress"
 )
 
 var (
 	DefaultMutableQoSManagerFG featuregate.MutableFeatureGate = featuregate.NewFeatureGate()
 	DefaultQoSManagerFG        featuregate.FeatureGate        = DefaultMutableQoSManagerFG
 
-	cpuSuppressFeature = new(cpusuppress.CPUSuppress).Feature()
-	cpuBurstFeature    = new(cpuburst.CPUBurst).Feature()
-	cpuEvictFeature    = new(cpuevict.CPUEvictor).Feature()
+	defaultQoSManagerFG = map[featuregate.Feature]featuregate.FeatureSpec{}
 
-	defaultQoSManagerFG = map[featuregate.Feature]featuregate.FeatureSpec{
-		cpuSuppressFeature: {Default: false, PreRelease: featuregate.Alpha},
-		cpuBurstFeature:    {Default: false, PreRelease: featuregate.Alpha},
-		cpuEvictFeature:    {Default: false, PreRelease: featuregate.Alpha},
-	}
-
-	QoSPluginFactories = map[featuregate.Feature]plugins.PluginFactoryFn{
-		cpuSuppressFeature: cpusuppress.New,
-		cpuBurstFeature:    cpuburst.New,
-		cpuEvictFeature:    cpuevict.New,
-	}
+	QoSPluginFactories = map[featuregate.Feature]plugins.PluginFactoryFn{}
 )
 
 type Config struct {

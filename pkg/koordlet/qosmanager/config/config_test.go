@@ -25,7 +25,8 @@ import (
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		FeatureGates: map[string]bool{},
+		FeatureGates:       map[string]bool{},
+		PluginExtraConfigs: map[string]string{},
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
