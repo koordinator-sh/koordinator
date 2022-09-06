@@ -42,8 +42,8 @@ var (
 func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	reservePod := &corev1.Pod{}
 	if r.Spec.Template != nil {
-		reservePod.ObjectMeta = r.Spec.Template.ObjectMeta
-		reservePod.Spec = r.Spec.Template.Spec
+		reservePod.ObjectMeta = *r.Spec.Template.ObjectMeta.DeepCopy()
+		reservePod.Spec = *r.Spec.Template.Spec.DeepCopy()
 	} else {
 		klog.V(4).InfoS("failed to set valid spec for new reserve pod, template is nil", "spec", r.Spec)
 	}
