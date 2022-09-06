@@ -27,6 +27,7 @@ const ( // subsystems
 	CgroupCPUSetDir  string = "cpuset/"
 	CgroupCPUacctDir string = "cpuacct/"
 	CgroupMemDir     string = "memory/"
+	CgroupBlkioDir   string = "blkio/"
 )
 
 const (
@@ -53,7 +54,13 @@ const (
 	MemLowFileName              = "memory.low"
 	MemHighFileName             = "memory.high"
 	MemoryLimitFileName         = "memory.limit_in_bytes"
+	MemorySWLimitFileName       = "memory.memsw.limit_in_bytes"
 	MemStatFileName             = "memory.stat"
+
+	BlkioTRIopsFileName = "blkio.throttle.read_iops_device"
+	BlkioTRBpsFileName  = "blkio.throttle.read_bps_device"
+	BlkioTWIopsFileName = "blkio.throttle.write_iops_device"
+	BlkioTWBpsFileName  = "blkio.throttle.write_bps_device"
 
 	ProcsFileName = "cgroup.procs"
 )
@@ -70,6 +77,11 @@ var (
 	MemMinValidator                      = &RangeValidator{name: MemMinFileName, min: 0, max: math.MaxInt64}
 	MemLowValidator                      = &RangeValidator{name: MemLowFileName, min: 0, max: math.MaxInt64}
 	MemHighValidator                     = &RangeValidator{name: MemHighFileName, min: 0, max: math.MaxInt64} // write value(>node.total) -> read "max"
+
+	BlkioReadIopsValidator  = &RangeValidator{name: BlkioTRIopsFileName, min: 0, max: math.MaxInt64}
+	BlkioReadBpsValidator   = &RangeValidator{name: BlkioTRBpsFileName, min: 0, max: math.MaxInt64}
+	BlkioWriteIopsValidator = &RangeValidator{name: BlkioTWIopsFileName, min: 0, max: math.MaxInt64}
+	BlkioWriteBpsValidator  = &RangeValidator{name: BlkioTWBpsFileName, min: 0, max: math.MaxInt64}
 )
 
 var (
@@ -86,6 +98,7 @@ var (
 	CpuacctUsage = CgroupFile{ResourceFileName: CpuacctUsageFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: false}
 
 	MemStat             = CgroupFile{ResourceFileName: MemStatFileName, Subfs: CgroupMemDir, IsAnolisOS: false}
+	MemorySWLimit       = CgroupFile{ResourceFileName: MemorySWLimitFileName, Subfs: CgroupMemDir, IsAnolisOS: false}
 	MemoryLimit         = CgroupFile{ResourceFileName: MemoryLimitFileName, Subfs: CgroupMemDir, IsAnolisOS: false}
 	MemWmarkRatio       = CgroupFile{ResourceFileName: MemWmarkRatioFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemWmarkRatioValidator}
 	MemPriority         = CgroupFile{ResourceFileName: MemPriorityFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemPriorityValidator}
@@ -96,6 +109,11 @@ var (
 	MemMin              = CgroupFile{ResourceFileName: MemMinFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemMinValidator}
 	MemLow              = CgroupFile{ResourceFileName: MemLowFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemLowValidator}
 	MemHigh             = CgroupFile{ResourceFileName: MemHighFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemHighValidator}
+
+	BlkioReadIops  = CgroupFile{ResourceFileName: BlkioTRIopsFileName, Subfs: CgroupBlkioDir, IsAnolisOS: false, Validator: BlkioReadIopsValidator}
+	BlkioReadBps   = CgroupFile{ResourceFileName: BlkioTRBpsFileName, Subfs: CgroupBlkioDir, IsAnolisOS: false, Validator: BlkioReadBpsValidator}
+	BlkioWriteIops = CgroupFile{ResourceFileName: BlkioTWIopsFileName, Subfs: CgroupBlkioDir, IsAnolisOS: false, Validator: BlkioWriteIopsValidator}
+	BlkioWriteBps  = CgroupFile{ResourceFileName: BlkioTWBpsFileName, Subfs: CgroupBlkioDir, IsAnolisOS: false, Validator: BlkioWriteBpsValidator}
 
 	CPUProcs = CgroupFile{ResourceFileName: ProcsFileName, Subfs: CgroupCPUDir, IsAnolisOS: false}
 )

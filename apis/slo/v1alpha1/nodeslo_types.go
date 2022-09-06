@@ -254,6 +254,8 @@ type NodeSLOSpec struct {
 	ResourceQOSStrategy *ResourceQOSStrategy `json:"resourceQOSStrategy,omitempty"`
 	// CPU Burst Strategy
 	CPUBurstStrategy *CPUBurstStrategy `json:"cpuBurstStrategy,omitempty"`
+	// Third party extensions for NodeSLO
+	Extensions *ExtensionsMap `json:"extensions,omitempty"`
 }
 
 // NodeSLOStatus defines the observed state of NodeSLO

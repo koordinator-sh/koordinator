@@ -40,6 +40,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/plugins"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	expireCache "github.com/koordinator-sh/koordinator/pkg/tools/cache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -144,6 +145,10 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	rdtResCtrl := NewResctrlReconcile(r)
 	util.RunFeatureWithInit(func() error { return rdtResCtrl.RunInit(stopCh) }, rdtResCtrl.reconcile,
 		[]featuregate.Feature{features.RdtResctrl}, r.config.ReconcileIntervalSeconds, stopCh)
+
+	klog.Infof("start resmanager extensions")
+	plugins.SetupPlugins(r.kubeClient, r.metricCache, r.statesInformer)
+	utilruntime.Must(plugins.StartPlugins(r.config.QOSExtensionCfg, stopCh))
 
 	klog.Info("Starting resmanager successfully")
 	<-stopCh

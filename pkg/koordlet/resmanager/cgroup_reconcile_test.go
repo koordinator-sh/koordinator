@@ -33,6 +33,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mockstatesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -478,9 +479,9 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 		name   string
 		fields fields
 		args   args
-		want   []MergeableResourceUpdater // qosLevelResources
-		want1  []MergeableResourceUpdater // podLevelResources
-		want2  []MergeableResourceUpdater // containerLevelResources
+		want   []executor.MergeableResourceUpdater // qosLevelResources
+		want1  []executor.MergeableResourceUpdater // podLevelResources
+		want2  []executor.MergeableResourceUpdater // containerLevelResources
 	}{
 		{
 			name:   "not panic when no pods exists",
@@ -534,50 +535,50 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 					testingPodLS,
 				},
 			},
-			want: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemOomGroup, "0"),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemOomGroup, "0"),
-				NewCommonCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemOomGroup, "0"),
+			want: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemOomGroup, "0"),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemOomGroup, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemOomGroup, "0"),
 			},
-			want1: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkMinAdj, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemOomGroup, "0"),
+			want1: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkMinAdj, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemOomGroup, "0"),
 			},
-			want2: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemHigh, strconv.FormatInt(math.MaxInt64, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkMinAdj, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemOomGroup, "0"),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemHigh, strconv.FormatInt(math.MaxInt64, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkMinAdj, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemOomGroup, "0"),
+			want2: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemHigh, strconv.FormatInt(math.MaxInt64, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkMinAdj, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemOomGroup, "0"),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemHigh, strconv.FormatInt(math.MaxInt64, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkMinAdj, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemOomGroup, "0"),
 			},
 		},
 		{
@@ -604,41 +605,41 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 					testingPodBEWithMemQOS,
 				},
 			},
-			want: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+			want: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
 			},
-			want1: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
+			want1: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
 			},
-			want2: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
+			want2: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
 			},
 		},
 		{
@@ -678,60 +679,60 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 					testingPodBEWithMemQOS,
 				},
 			},
-			want: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+			want: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
 			},
-			want1: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkRatio, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkScaleFactor, "50"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkMinAdj, "0"),
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
+			want1: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkRatio, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkScaleFactor, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemWmarkMinAdj, "0"),
+				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
 			},
-			want2: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemHigh, strconv.FormatInt(math.MaxInt64, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkRatio, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkScaleFactor, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkMinAdj, "0"),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemHigh, strconv.FormatInt(math.MaxInt64, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkRatio, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkScaleFactor, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkMinAdj, "0"),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
+			want2: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemHigh, strconv.FormatInt(math.MaxInt64, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkRatio, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkScaleFactor, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "test"), containerDirLS, system.MemWmarkMinAdj, "0"),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemHigh, strconv.FormatInt(math.MaxInt64, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkRatio, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkScaleFactor, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name, "main"), containerDirLS1, system.MemWmarkMinAdj, "0"),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
 			},
 		},
 		{
@@ -758,41 +759,41 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 					testingPodBEWithMemQoS1,
 				},
 			},
-			want: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
+			want: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
 			},
-			want1: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
+			want1: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemWmarkMinAdj, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemOomGroup, "0"),
 			},
-			want2: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*40/100, 10), mergeFuncUpdateCgroupIfLarger), // node allocatable * throttling factor
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", mergeFuncUpdateCgroupIfLarger),
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
+			want2: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*40/100, 10), executor.MergeFuncUpdateCgroupIfLarger), // node allocatable * throttling factor
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemWmarkMinAdj, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "test"), containerDirBE, system.MemOomGroup, "0"),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemWmarkMinAdj, "50"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name, "main"), containerDirBE1, system.MemOomGroup, "0"),
 			},
 		},
 	}
@@ -992,7 +993,7 @@ func Test_makeCgroupResources(t *testing.T) {
 		notAnolisOS bool
 	}
 	type args struct {
-		owner     *OwnerRef
+		owner     *executor.OwnerRef
 		parentDir string
 		summary   *cgroupResourceSummary
 	}
@@ -1000,7 +1001,7 @@ func Test_makeCgroupResources(t *testing.T) {
 		name   string
 		fields fields
 		args   args
-		want   []MergeableResourceUpdater
+		want   []executor.MergeableResourceUpdater
 	}{
 		{
 			name:   "return nothing when kernel is not AnolisOS",
@@ -1010,20 +1011,20 @@ func Test_makeCgroupResources(t *testing.T) {
 		{
 			name: "make qos resources",
 			args: args{
-				owner:     GroupOwnerRef(string(corev1.PodQOSBurstable)),
+				owner:     executor.GroupOwnerRef(string(corev1.PodQOSBurstable)),
 				parentDir: "burstable",
 				summary: &cgroupResourceSummary{
 					memoryWmarkRatio: pointer.Int64Ptr(90),
 				},
 			},
-			want: []MergeableResourceUpdater{
-				NewCommonCgroupResourceUpdater(GroupOwnerRef(string(corev1.PodQOSBurstable)), "burstable", system.MemWmarkRatio, "90"),
+			want: []executor.MergeableResourceUpdater{
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), "burstable", system.MemWmarkRatio, "90"),
 			},
 		},
 		{
 			name: "make pod resources",
 			args: args{
-				owner:     PodOwnerRef("", "pod0"),
+				owner:     executor.PodOwnerRef("", "pod0"),
 				parentDir: "pod0",
 				summary: &cgroupResourceSummary{
 					memoryMin:              pointer.Int64Ptr(testingPodMemRequestLimitBytes),
@@ -1032,17 +1033,17 @@ func Test_makeCgroupResources(t *testing.T) {
 					memoryWmarkMinAdj:      pointer.Int64Ptr(-25),
 				},
 			},
-			want: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(PodOwnerRef("", "pod0"), "pod0", system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "pod0", system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "pod0", system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(PodOwnerRef("", "pod0"), "pod0", system.MemWmarkMinAdj, "-25"),
+			want: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef("", "pod0"), "pod0", system.MemMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef("", "pod0"), "pod0", system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef("", "pod0"), "pod0", system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.PodOwnerRef("", "pod0"), "pod0", system.MemWmarkMinAdj, "-25"),
 			},
 		},
 		{
 			name: "make container resources",
 			args: args{
-				owner:     ContainerOwnerRef("", "pod0", "container1"),
+				owner:     executor.ContainerOwnerRef("", "pod0", "container1"),
 				parentDir: "pod0/container1",
 				summary: &cgroupResourceSummary{
 					memoryHigh:             pointer.Int64Ptr(testingPodMemRequestLimitBytes * 80 / 100),
@@ -1051,11 +1052,11 @@ func Test_makeCgroupResources(t *testing.T) {
 					memoryWmarkMinAdj:      pointer.Int64Ptr(-25),
 				},
 			},
-			want: []MergeableResourceUpdater{
-				NewMergeableCgroupResourceUpdater(ContainerOwnerRef("", "pod0", "container1"), "pod0/container1", system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), mergeFuncUpdateCgroupIfLarger),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef("", "pod0", "container1"), "pod0/container1", system.MemWmarkRatio, "95"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef("", "pod0", "container1"), "pod0/container1", system.MemWmarkScaleFactor, "20"),
-				NewCommonCgroupResourceUpdater(ContainerOwnerRef("", "pod0", "container1"), "pod0/container1", system.MemWmarkMinAdj, "-25"),
+			want: []executor.MergeableResourceUpdater{
+				executor.NewMergeableCgroupResourceUpdater(executor.ContainerOwnerRef("", "pod0", "container1"), "pod0/container1", system.MemHigh, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef("", "pod0", "container1"), "pod0/container1", system.MemWmarkRatio, "95"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef("", "pod0", "container1"), "pod0/container1", system.MemWmarkScaleFactor, "20"),
+				executor.NewCommonCgroupResourceUpdater(executor.ContainerOwnerRef("", "pod0", "container1"), "pod0/container1", system.MemWmarkMinAdj, "-25"),
 			},
 		},
 	}
@@ -1331,22 +1332,20 @@ func createNodeSLOWithQOSStrategy(qosStrategy *slov1alpha1.ResourceQOSStrategy) 
 	}
 }
 
-func assertCgroupResourceEqual(t *testing.T, expect, got []MergeableResourceUpdater) {
+func assertCgroupResourceEqual(t *testing.T, expect, got []executor.MergeableResourceUpdater) {
 	assert.Equal(t, len(expect), len(got))
 	for i := range expect {
 		if i >= len(got) {
 			t.Errorf("index %v of expect exceeds size of got (%v)", i, len(got))
 			return
 		}
-		e, ok := expect[i].(*CgroupResourceUpdater)
+		e, ok := expect[i].(*executor.CgroupResourceUpdater)
 		assert.Equal(t, true, ok, fmt.Sprintf("check for index %v", i))
-		g, ok := got[i].(*CgroupResourceUpdater)
+		g, ok := got[i].(*executor.CgroupResourceUpdater)
 		assert.Equal(t, true, ok, fmt.Sprintf("check for index %v", i))
 		// assert not support func arguments
-		e.updateFunc = nil
-		e.mergeUpdateFunc = nil
-		g.updateFunc = nil
-		g.mergeUpdateFunc = nil
+		e.ClearUpdateFunc()
+		g.ClearUpdateFunc()
 		assert.Equal(t, e, g, fmt.Sprintf("check for index %v", i))
 	}
 }

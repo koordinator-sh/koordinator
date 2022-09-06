@@ -67,6 +67,10 @@ spec:
                     format: int64
                     type: integer
                 type: object
+              extensions:
+                description: Third party extensions for NodeSLO
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
               resourceQOSStrategy:
                 description: QoS config strategy for pods of different qos-class
                 properties:
