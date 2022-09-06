@@ -76,6 +76,10 @@ type ContainerResponse struct {
 }
 
 func (c *ContainerResponse) ProxyDone(resp *runtimeapi.ContainerResourceHookResponse) {
+	if c.Resources.IsOriginResSet() && resp.ContainerResources == nil {
+		// resource value is injected but origin request is nil, init resource response
+		resp.ContainerResources = &runtimeapi.LinuxContainerResources{}
+	}
 	if c.Resources.CPUSet != nil {
 		resp.ContainerResources.CpusetCpus = *c.Resources.CPUSet
 	}
