@@ -164,8 +164,8 @@ func RemoveReservationAllocated(pod *corev1.Pod, r *schedulingv1alpha1.Reservati
 type DeviceAllocations map[schedulingv1alpha1.DeviceType][]*DeviceAllocation
 
 type DeviceAllocation struct {
-	Minor     int32
-	Resources corev1.ResourceList
+	Minor     int32               `json:"minor"`
+	Resources corev1.ResourceList `json:"resources"`
 }
 
 func GetDeviceAllocations(podAnnotations map[string]string) (DeviceAllocations, error) {
@@ -181,24 +181,16 @@ func GetDeviceAllocations(podAnnotations map[string]string) (DeviceAllocations, 
 	return deviceAllocations, nil
 }
 
-func SetDeviceAllocations(pod *corev1.Pod, dType schedulingv1alpha1.DeviceType, d []*DeviceAllocation) error {
+func SetDeviceAllocations(pod *corev1.Pod, allocations DeviceAllocations) error {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 
-	allocations, err := GetDeviceAllocations(pod.Annotations)
-	if err != nil {
-		return err
-	}
-	if allocations == nil {
-		allocations = DeviceAllocations{}
-	}
-
-	allocations[dType] = d
 	data, err := json.Marshal(allocations)
 	if err != nil {
 		return err
 	}
+
 	pod.Annotations[AnnotationDeviceAllocated] = string(data)
 	return nil
 }
