@@ -310,10 +310,13 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 }
 
 func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
-	return nil
+	return p
 }
 
 func (p *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, scores framework.NodeScoreList) *framework.Status {
+	if util.IsReservePod(pod) {
+		return nil
+	}
 	return pluginhelper.DefaultNormalizeScore(framework.MaxNodeScore, false, scores)
 }
 

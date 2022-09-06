@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -1067,7 +1069,7 @@ func TestScore(t *testing.T) {
 				pod:        normalPod,
 				nodeName:   testNodeName,
 			},
-			want:  mostPreferredScore,
+			want:  framework.MaxNodeScore,
 			want1: nil,
 		},
 		{
@@ -1098,11 +1100,138 @@ func TestScore(t *testing.T) {
 			}
 			status := p.PreScore(context.TODO(), tt.args.cycleState, tt.args.pod, nodes)
 			assert.True(t, status.IsSuccess())
-			got, got1 := p.Score(context.TODO(), tt.args.cycleState, tt.args.pod, tt.args.nodeName)
+			score, status := p.Score(context.TODO(), tt.args.cycleState, tt.args.pod, tt.args.nodeName)
+			assert.True(t, status.IsSuccess())
+			scoreList := framework.NodeScoreList{
+				{Name: tt.args.nodeName, Score: score},
+			}
+			got1 := p.ScoreExtensions().NormalizeScore(context.TODO(), tt.args.cycleState, tt.args.pod, scoreList)
+			got := scoreList[0].Score
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1)
 		})
 	}
+}
+
+func TestScoreWithOrder(t *testing.T) {
+	normalPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod-1",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "main",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("4"),
+							corev1.ResourceMemory: resource.MustParse("8Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	stateData := &stateData{
+		skip:         false,
+		preBind:      false,
+		matchedCache: newAvailableCache(),
+	}
+
+	reservationTemplateFn := func(i int) *schedulingv1alpha1.Reservation {
+		return &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:  uuid.NewUUID(),
+				Name: fmt.Sprintf("test-reservation-%d", i),
+			},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template: &corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name: "main",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("4"),
+										corev1.ResourceMemory: resource.MustParse("8Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			Status: schedulingv1alpha1.ReservationStatus{
+				Phase:    schedulingv1alpha1.ReservationAvailable,
+				NodeName: fmt.Sprintf("test-node-%d", i),
+			},
+		}
+	}
+
+	// add three Reservations to three node
+	for i := 0; i < 3; i++ {
+		stateData.matchedCache.Add(reservationTemplateFn(i + 1))
+	}
+
+	// add Reservation with LabelReservationOrder
+	reservationWithOrder := reservationTemplateFn(4)
+	reservationWithOrder.Labels = map[string]string{
+		apiext.LabelReservationOrder: "123456",
+	}
+	stateData.matchedCache.Add(reservationWithOrder)
+
+	p := &Plugin{
+		parallelizeUntil: fakeParallelizeUntil(nil),
+	}
+
+	cycleState := framework.NewCycleState()
+	cycleState.Write(preFilterStateKey, stateData)
+
+	var nodes []*corev1.Node
+	for nodeName := range stateData.matchedCache.nodeToR {
+		nodes = append(nodes, &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: nodeName,
+			},
+		})
+	}
+
+	status := p.PreScore(context.TODO(), cycleState, normalPod, nodes)
+	assert.True(t, status.IsSuccess())
+	assert.Equal(t, "test-node-4", stateData.mostPreferredNode)
+
+	var scoreList framework.NodeScoreList
+	for _, v := range nodes {
+		score, status := p.Score(context.TODO(), cycleState, normalPod, v.Name)
+		assert.True(t, status.IsSuccess())
+		scoreList = append(scoreList, framework.NodeScore{
+			Name:  v.Name,
+			Score: score,
+		})
+	}
+
+	expectedNodeScoreList := framework.NodeScoreList{
+		{Name: "test-node-1", Score: framework.MaxNodeScore},
+		{Name: "test-node-2", Score: framework.MaxNodeScore},
+		{Name: "test-node-3", Score: framework.MaxNodeScore},
+		{Name: "test-node-4", Score: mostPreferredScore},
+	}
+	sort.Slice(scoreList, func(i, j int) bool {
+		return scoreList[i].Name < scoreList[j].Name
+	})
+	assert.Equal(t, expectedNodeScoreList, scoreList)
+
+	status = p.ScoreExtensions().NormalizeScore(context.TODO(), cycleState, normalPod, scoreList)
+	assert.True(t, status.IsSuccess())
+
+	expectedNodeScoreList = framework.NodeScoreList{
+		{Name: "test-node-1", Score: 10},
+		{Name: "test-node-2", Score: 10},
+		{Name: "test-node-3", Score: 10},
+		{Name: "test-node-4", Score: framework.MaxNodeScore},
+	}
+	assert.Equal(t, expectedNodeScoreList, scoreList)
 }
 
 func TestReserve(t *testing.T) {
