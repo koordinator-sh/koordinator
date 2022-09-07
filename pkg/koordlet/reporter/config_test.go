@@ -19,13 +19,14 @@ package reporter
 import (
 	"flag"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		ReportIntervalSeconds: 60,
+		ReportInterval: 60 * time.Second,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -34,12 +35,12 @@ func Test_NewDefaultConfig(t *testing.T) {
 func Test_InitFlags(t *testing.T) {
 	cmdArgs := []string{
 		"",
-		"--report-interval-seconds=30",
+		"--report-interval=30s",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
 	type fields struct {
-		ReportIntervalSeconds int
+		ReportInterval time.Duration
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -51,13 +52,13 @@ func Test_InitFlags(t *testing.T) {
 	}{
 		{
 			name:   "not default",
-			fields: fields{ReportIntervalSeconds: 30},
+			fields: fields{ReportInterval: 30 * time.Second},
 			args:   args{fs: fs},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw := &Config{ReportIntervalSeconds: tt.fields.ReportIntervalSeconds}
+			raw := &Config{ReportInterval: tt.fields.ReportInterval}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)
 			tt.args.fs.Parse(cmdArgs[1:])

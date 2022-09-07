@@ -16,18 +16,21 @@ limitations under the License.
 
 package reporter
 
-import "flag"
+import (
+	"flag"
+	"time"
+)
 
 type Config struct {
-	ReportIntervalSeconds int
+	ReportInterval time.Duration
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
-		ReportIntervalSeconds: 60,
+		ReportInterval: 60 * time.Second,
 	}
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
-	fs.IntVar(&c.ReportIntervalSeconds, "report-interval-seconds", c.ReportIntervalSeconds, "Report interval by seconds")
+	fs.DurationVar(&c.ReportInterval, "report-interval", c.ReportInterval, "Report interval time. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 }
