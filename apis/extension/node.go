@@ -82,8 +82,9 @@ type PodCPUAlloc struct {
 type PodCPUAllocs []PodCPUAlloc
 
 type KubeletCPUManagerPolicy struct {
-	Policy  string            `json:"policy,omitempty"`
-	Options map[string]string `json:"options,omitempty"`
+	Policy       string            `json:"policy,omitempty"`
+	Options      map[string]string `json:"options,omitempty"`
+	ReservedCPUs string            `json:"reservedCPUs,omitempty"`
 }
 
 func GetCPUTopology(annotations map[string]string) (*CPUTopology, error) {

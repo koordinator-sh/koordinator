@@ -18,6 +18,9 @@ package statesinformer
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -27,6 +30,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
@@ -227,6 +231,11 @@ func Test_calGuaranteedCpu(t *testing.T) {
 }
 
 func Test_reportNodeTopology(t *testing.T) {
+	oldFn := getKubeletCommandlineFn
+	defer func() {
+		getKubeletCommandlineFn = oldFn
+	}()
+
 	client := topologyclientsetfake.NewSimpleClientset()
 	testNode := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -248,30 +257,14 @@ func Test_reportNodeTopology(t *testing.T) {
 	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
 	mockNodeCPUInfo := metriccache.NodeCPUInfo{
 		ProcessorInfos: []util.ProcessorInfo{
-			{
-				CPUID:    0,
-				CoreID:   0,
-				NodeID:   0,
-				SocketID: 0,
-			},
-			{
-				CPUID:    1,
-				CoreID:   0,
-				NodeID:   0,
-				SocketID: 0,
-			},
-			{
-				CPUID:    2,
-				CoreID:   1,
-				NodeID:   1,
-				SocketID: 1,
-			},
-			{
-				CPUID:    3,
-				CoreID:   1,
-				NodeID:   1,
-				SocketID: 1,
-			},
+			{CPUID: 0, CoreID: 0, NodeID: 0, SocketID: 0},
+			{CPUID: 1, CoreID: 0, NodeID: 0, SocketID: 0},
+			{CPUID: 2, CoreID: 1, NodeID: 0, SocketID: 0},
+			{CPUID: 3, CoreID: 1, NodeID: 0, SocketID: 0},
+			{CPUID: 4, CoreID: 2, NodeID: 1, SocketID: 1},
+			{CPUID: 5, CoreID: 2, NodeID: 1, SocketID: 1},
+			{CPUID: 6, CoreID: 3, NodeID: 1, SocketID: 1},
+			{CPUID: 7, CoreID: 3, NodeID: 1, SocketID: 1},
 		},
 	}
 
@@ -282,7 +275,7 @@ func Test_reportNodeTopology(t *testing.T) {
 					Name:      "pod1",
 					Namespace: "ns1",
 					Annotations: map[string]string{
-						extension.AnnotationResourceStatus: "{\"cpuset\": \"0-1\" }",
+						extension.AnnotationResourceStatus: `{"cpuset": "4-5" }`,
 					},
 				},
 			},
@@ -293,7 +286,7 @@ func Test_reportNodeTopology(t *testing.T) {
 					Name:      "pod2",
 					Namespace: "ns2",
 					Annotations: map[string]string{
-						extension.AnnotationResourceStatus: "{\"cpuset\": \"3\" }",
+						extension.AnnotationResourceStatus: `{"cpuset": "3" }`,
 					},
 				},
 			},
@@ -307,10 +300,26 @@ func Test_reportNodeTopology(t *testing.T) {
 		node:           testNode,
 	}
 
+	getKubeletCommandlineFn = func(port int) ([]string, error) {
+		tempDir := os.TempDir()
+		args := []string{"/usr/bin/kubelet", fmt.Sprintf("--root-dir=%s", tempDir), "--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf", "--kubeconfig=/etc/kubernetes/kubelet.conf", "--container-log-max-files", "10", "--container-log-max-size=100Mi", "--max-pods", "213", "--pod-max-pids", "16384", "--pod-manifest-path=/etc/kubernetes/manifests", "--network-plugin=cni", "--cni-conf-dir=/etc/cni/net.d", "--cni-bin-dir=/opt/cni/bin", "--v=3", "--enable-controller-attach-detach=true", "--cluster-dns=192.168.0.10", "--pod-infra-container-image=registry-vpc.cn-hangzhou.aliyuncs.com/acs/pause:3.5", "--enable-load-reader", "--cluster-domain=cluster.local", "--cloud-provider=external", "--hostname-override=cn-hangzhou.10.0.4.18", "--provider-id=cn-hangzhou.i-bp1049apy5ggvw0qbuh6", "--authorization-mode=Webhook", "--authentication-token-webhook=true", "--anonymous-auth=false", "--client-ca-file=/etc/kubernetes/pki/ca.crt", "--cgroup-driver=systemd", "--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_128_GCM_SHA256", "--tls-cert-file=/var/lib/kubelet/pki/kubelet.crt", "--tls-private-key-file=/var/lib/kubelet/pki/kubelet.key", "--rotate-certificates=true", "--cert-dir=/var/lib/kubelet/pki", "--node-labels=alibabacloud.com/nodepool-id=npab2a7b3f6ce84f5aacc55b08df6b8ecd,ack.aliyun.com=c5558876cbc06429782797388d4abe3e0", "--eviction-hard=imagefs.available<15%,memory.available<300Mi,nodefs.available<10%,nodefs.inodesFree<5%", "--system-reserved=cpu=200m,memory=2732Mi", "--kube-reserved=cpu=1800m,memory=2732Mi", "--kube-reserved=pid=1000", "--system-reserved=pid=1000", "--cpu-manager-policy=static", "--container-runtime=remote", "--container-runtime-endpoint=/var/run/containerd/containerd.sock"}
+		return args, nil
+	}
+
 	r.reportNodeTopology()
 
 	topology, err := client.TopologyV1alpha1().NodeResourceTopologies().Get(context.TODO(), topologyName, metav1.GetOptions{})
 	assert.Equal(t, nil, err)
-	assert.Equal(t, "[{\"socket\":1,\"node\":1,\"cpuset\":\"2\"}]", topology.Annotations[extension.AnnotationNodeCPUSharedPools])
-	assert.Equal(t, "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":0,\"socket\":0,\"node\":0},{\"id\":2,\"core\":1,\"socket\":1,\"node\":1},{\"id\":3,\"core\":1,\"socket\":1,\"node\":1}]}", topology.Annotations[extension.AnnotationNodeCPUTopology])
+
+	expectKubeletCPUManagerPolicy := extension.KubeletCPUManagerPolicy{
+		Policy:       string(cpumanager.PolicyStatic),
+		ReservedCPUs: "0-1",
+	}
+	var kubeletCPUManagerPolicy extension.KubeletCPUManagerPolicy
+	err = json.Unmarshal([]byte(topology.Annotations[extension.AnnotationKubeletCPUManagerPolicy]), &kubeletCPUManagerPolicy)
+	assert.NoError(t, err)
+	assert.Equal(t, expectKubeletCPUManagerPolicy, kubeletCPUManagerPolicy)
+
+	assert.Equal(t, `[{"socket":0,"node":0,"cpuset":"2"},{"socket":1,"node":1,"cpuset":"6-7"}]`, topology.Annotations[extension.AnnotationNodeCPUSharedPools])
+	assert.Equal(t, `{"detail":[{"id":0,"core":0,"socket":0,"node":0},{"id":1,"core":0,"socket":0,"node":0},{"id":2,"core":1,"socket":0,"node":0},{"id":3,"core":1,"socket":0,"node":0},{"id":4,"core":2,"socket":1,"node":1},{"id":5,"core":2,"socket":1,"node":1},{"id":6,"core":3,"socket":1,"node":1},{"id":7,"core":3,"socket":1,"node":1}]}`, topology.Annotations[extension.AnnotationNodeCPUTopology])
 }
