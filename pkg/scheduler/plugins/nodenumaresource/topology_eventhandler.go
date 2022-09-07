@@ -110,6 +110,13 @@ func (m *nodeResourceTopologyEventHandler) updateNodeResourceTopology(oldNodeRes
 	if err != nil {
 		klog.Errorf("Failed to GetKubeletCPUManagerPolicy from NodeResourceTopology %s, err: %v", newNodeResTopology.Name, err)
 	}
+	var kubeletReservedCPUs CPUSet
+	if kubeletPolicy != nil {
+		kubeletReservedCPUs, err = Parse(kubeletPolicy.ReservedCPUs)
+		if err != nil {
+			klog.Errorf("Failed to Parse kubelet reserved CPUs %s, err: %v", kubeletPolicy.ReservedCPUs, err)
+		}
+	}
 
 	reportedCPUTopology, err := extension.GetCPUTopology(newNodeResTopology.Annotations)
 	if err != nil {
@@ -118,6 +125,7 @@ func (m *nodeResourceTopologyEventHandler) updateNodeResourceTopology(oldNodeRes
 
 	cpuTopology := convertCPUTopology(reportedCPUTopology)
 	reservedCPUs := m.getPodAllocsCPUSet(podCPUAllocs)
+	reservedCPUs = reservedCPUs.Union(kubeletReservedCPUs)
 
 	nodeName := newNodeResTopology.Name
 	m.topologyManager.UpdateCPUTopologyOptions(nodeName, func(options *CPUTopologyOptions) {
