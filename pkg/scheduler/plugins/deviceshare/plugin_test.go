@@ -19,6 +19,7 @@ package deviceshare
 import (
 	"context"
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1416,9 +1417,20 @@ func Test_Plugin_Reserve(t *testing.T) {
 			status := p.Reserve(context.TODO(), cycleState, tt.args.pod, tt.args.nodeName)
 			assert.Equal(t, tt.wants.status, status)
 			if tt.wants.allocationResult != nil {
+				sortDeviceAllocations(tt.wants.allocationResult)
+				sortDeviceAllocations(tt.args.state.allocationResult)
 				assert.Equal(t, tt.wants.allocationResult, tt.args.state.allocationResult)
 			}
 		})
+	}
+}
+
+func sortDeviceAllocations(deviceAllocations apiext.DeviceAllocations) {
+	for k, v := range deviceAllocations {
+		sort.Slice(v, func(i, j int) bool {
+			return v[i].Minor < v[j].Minor
+		})
+		deviceAllocations[k] = v
 	}
 }
 
