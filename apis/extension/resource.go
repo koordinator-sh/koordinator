@@ -107,8 +107,8 @@ const (
 type NUMACPUSharedPools []CPUSharedPool
 
 type CPUSharedPool struct {
-	Socket int32  `json:"socket"`
-	Node   int32  `json:"node"`
+	Socket int32  `json:"socket,omitempty"`
+	Node   int32  `json:"node,omitempty"`
 	CPUSet string `json:"cpuset,omitempty"`
 }
 

@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,19 +29,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
+	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/configfiles"
+	utilfs "k8s.io/kubernetes/pkg/util/filesystem"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	"github.com/koordinator-sh/koordinator/pkg/util"
-	kubeletutil "github.com/koordinator-sh/koordinator/pkg/util/kubelet"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
-)
-
-var (
-	getKubeletCommandlineFn = system.GetKubeletCommandline
 )
 
 func (s *statesInformer) syncNodeResourceTopology(node *corev1.Node) {
@@ -87,12 +82,12 @@ func (s *statesInformer) syncNodeResourceTopology(node *corev1.Node) {
 	}
 }
 
-func (s *statesInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInfo, stateJSON string) ([]extension.PodCPUAlloc, error) {
-	if stateJSON == "" {
+func (s *statesInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInfo, stateJson string) ([]extension.PodCPUAlloc, error) {
+	if stateJson == "" {
 		return nil, fmt.Errorf("empty state file")
 	}
-	checkpoint := &state.CPUManagerCheckpoint{}
-	err := json.Unmarshal([]byte(stateJSON), checkpoint)
+	checkPoint := &state.CPUManagerCheckpoint{}
+	err := json.Unmarshal([]byte(stateJson), checkPoint)
 	if err != nil {
 		return nil, err
 	}
@@ -116,12 +111,12 @@ func (s *statesInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInfo,
 	}
 
 	var podAllocs []extension.PodCPUAlloc
-	for podUID := range checkpoint.Entries {
+	for podUID := range checkPoint.Entries {
 		if _, ok := managedPods[types.UID(podUID)]; ok {
 			continue
 		}
 		cpuSet := cpuset.NewCPUSet()
-		for container, cpuString := range checkpoint.Entries[podUID] {
+		for container, cpuString := range checkPoint.Entries[podUID] {
 			if containerCPUSet, err := cpuset.Parse(cpuString); err != nil {
 				klog.Errorf("could not parse cpuset %q for container %q in pod %q: %v", cpuString, container, podUID, err)
 				continue
@@ -160,107 +155,97 @@ func (s *statesInformer) reportNodeTopology() {
 	nodeName := s.node.Name
 	s.nodeRWMutex.RUnlock()
 	ctx := context.TODO()
-	nodeCPUInfo, cpuTopology, sharedPoolCPUs, err := s.calCPUTopology()
+	cpuTopology, usedCPUs, err := s.calCpuTopology()
 	if err != nil {
-		return
-	}
-
-	kubeletPort := int(s.GetNode().Status.DaemonEndpoints.KubeletEndpoint.Port)
-	args, err := getKubeletCommandlineFn(kubeletPort)
-	if err != nil {
-		klog.Errorf("Failed to GetKubeletCommandline with kubeletPort %d, err: %v", kubeletPort, err)
-		return
-	}
-
-	klog.V(5).Infof("kubelet args: %v", args)
-
-	kubeletOptions, err := kubeletutil.NewKubeletOptions(args)
-	if err != nil {
-		klog.Errorf("Failed to NewKubeletOptions, err: %v", err)
 		return
 	}
 
 	// default policy is none
 	cpuManagerPolicy := extension.KubeletCPUManagerPolicy{
-		Policy:  kubeletOptions.CPUManagerPolicy,
-		Options: kubeletOptions.CPUManagerPolicyOptions,
+		Policy: "none",
 	}
-
-	if kubeletOptions.CPUManagerPolicy == string(cpumanager.PolicyStatic) {
-		topology := kubeletutil.NewCPUTopology((*util.LocalCPUInfo)(nodeCPUInfo))
-		reservedCPUs, err := kubeletutil.GetStaticCPUManagerPolicyReservedCPUs(topology, kubeletOptions)
-		if err != nil {
-			klog.Errorf("Failed to GetStaticCPUManagerPolicyReservedCPUs, err: %v", err)
-		}
-		cpuManagerPolicy.ReservedCPUs = reservedCPUs.String()
-
-		for _, cpuID := range reservedCPUs.ToSliceNoSort() {
-			delete(sharedPoolCPUs, int32(cpuID))
-		}
-	}
-
-	cpuManagerPolicyJSON, err := json.Marshal(cpuManagerPolicy)
+	kubeletPort := int(s.GetNode().Status.DaemonEndpoints.KubeletEndpoint.Port)
+	filePath, err := system.GuessConfigFilePathFromKubeletPort(kubeletPort)
 	if err != nil {
-		klog.Errorf("failed to marshal cpu manager policy, err: %v", err)
-		return
+		klog.Error("failed to read config file path from kubelet args")
 	}
-
-	var podAllocsJSON []byte
-	stateFilePath := kubeletutil.GetCPUManagerStateFilePath(kubeletOptions.RootDirectory)
-	data, err := os.ReadFile(stateFilePath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			klog.Errorf("failed to read file, err: %v", err)
-			return
-		}
-	}
-	// TODO: report lse/lsr pod from cgroup
-	if len(data) > 0 {
-		podAllocs, err := s.calGuaranteedCpu(sharedPoolCPUs, string(data))
+	if filePath != "" {
+		kubeletConfig, err := loadConfigFile(filePath)
 		if err != nil {
-			klog.Errorf("failed to cal GuaranteedCpu, err: %v", err)
-			return
-		}
-		if len(podAllocs) != 0 {
-			podAllocsJSON, err = json.Marshal(podAllocs)
-			if err != nil {
-				klog.Errorf("failed to marshal pod allocs, err: %v", err)
-				return
+			klog.Errorf("failed to load kubelet config, err: %v", err)
+		} else {
+			if len(kubeletConfig.CPUManagerPolicyOptions) != 0 {
+				cpuManagerPolicy.Options = kubeletConfig.CPUManagerPolicyOptions
+			}
+			if kubeletConfig.CPUManagerPolicy != "" {
+				cpuManagerPolicy.Policy = kubeletConfig.CPUManagerPolicy
 			}
 		}
 	}
 
-	cpuTopologyJSON, err := json.Marshal(cpuTopology)
+	cpuPolicy, stateFilePath, cpuManagerOpt, err := system.GuessCPUManagerOptFromKubeletPort(kubeletPort)
 	if err != nil {
-		klog.Errorf("failed to marshal cpu topology of node %s, err: %v", nodeName, err)
-		return
+		klog.Errorf("failed to guess kubelet cpu manager opt, err: %v", err)
+	}
+	// use args first
+	if cpuPolicy != "" {
+		cpuManagerPolicy.Policy = cpuPolicy
+	}
+	if len(cpuManagerOpt) != 0 {
+		cpuManagerPolicy.Options = cpuManagerOpt
 	}
 
-	sharePools := s.calCPUSharePools(sharedPoolCPUs)
-	cpuSharePoolsJSON, err := json.Marshal(sharePools)
+	cpuManagerPolicyJson, err := json.Marshal(cpuManagerPolicy)
+	if err != nil {
+		klog.Errorf("failed to marshal cpu manager policy, err: %v", err)
+	}
+	var podAllocsJson []byte
+	if stateFilePath != "" {
+		data, err := os.ReadFile(stateFilePath)
+		if err != nil {
+			klog.Errorf("failed to read file, err: %v", err)
+		}
+		podAllocs, err := s.calGuaranteedCpu(usedCPUs, string(data))
+		if err != nil {
+			klog.Errorf("failed to cal GuaranteedCpu, err: %v", err)
+		}
+		if len(podAllocs) != 0 {
+			podAllocsJson, err = json.Marshal(podAllocs)
+			if err != nil {
+				klog.Errorf("failed to marshal pod allocs, err: %v", err)
+			}
+		}
+	}
+	// TODO: report lse/lsr pod from cgroup
+	sharePools := s.calCPUSharePools(usedCPUs)
+
+	cpuTopologyJson, err := json.Marshal(cpuTopology)
+	if err != nil {
+		klog.Errorf("failed to marshal cpu topology of node %s, err: %v", nodeName, err)
+	}
+	cpuSharePoolsJson, err := json.Marshal(sharePools)
 	if err != nil {
 		klog.Errorf("failed to marshal cpushare pools of node %s, err: %v", nodeName, err)
-		return
 	}
 
 	err = retry.OnError(retry.DefaultBackoff, errors.IsTooManyRequests, func() error {
-		nodeResourceTopology, err := s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, nodeName, metav1.GetOptions{ResourceVersion: "0"})
+		topology, err := s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, nodeName, metav1.GetOptions{ResourceVersion: "0"})
 		if err != nil {
-			klog.Errorf("failed to get nodeResourceTopology %s, err: %v", nodeName, err)
+			klog.Errorf("failed to get node resource topology %s, err: %v", nodeName, err)
 			return err
 		}
-		if nodeResourceTopology.Annotations == nil {
-			nodeResourceTopology.Annotations = make(map[string]string)
+		if topology.Annotations == nil {
+			topology.Annotations = make(map[string]string)
 		}
 		// TODO only update if necessary
-		s.updateNodeTopo(nodeResourceTopology)
-		nodeResourceTopology.Annotations[extension.AnnotationNodeCPUTopology] = string(cpuTopologyJSON)
-		nodeResourceTopology.Annotations[extension.AnnotationNodeCPUSharedPools] = string(cpuSharePoolsJSON)
-		nodeResourceTopology.Annotations[extension.AnnotationKubeletCPUManagerPolicy] = string(cpuManagerPolicyJSON)
-		if len(podAllocsJSON) != 0 {
-			nodeResourceTopology.Annotations[extension.AnnotationNodeCPUAllocs] = string(podAllocsJSON)
+		s.updateNodeTopo(topology)
+		topology.Annotations[extension.AnnotationNodeCPUTopology] = string(cpuTopologyJson)
+		topology.Annotations[extension.AnnotationNodeCPUSharedPools] = string(cpuSharePoolsJson)
+		topology.Annotations[extension.AnnotationKubeletCPUManagerPolicy] = string(cpuManagerPolicyJson)
+		if len(podAllocsJson) != 0 {
+			topology.Annotations[extension.AnnotationNodeCPUAllocs] = string(podAllocsJson)
 		}
-		_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
+		_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), topology, metav1.UpdateOptions{})
 		if err != nil {
 			klog.Errorf("failed to update cpu info of node %s, err: %v", nodeName, err)
 			return err
@@ -272,7 +257,7 @@ func (s *statesInformer) reportNodeTopology() {
 	}
 }
 
-func (s *statesInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.CPUInfo) []extension.CPUSharedPool {
+func (s *statesInformer) calCPUSharePools(usedCPUs map[int32]*extension.CPUInfo) []extension.CPUSharedPool {
 	podMetas := s.GetAllPods()
 	for _, podMeta := range podMetas {
 		status, err := extension.GetResourceStatus(podMeta.Pod.Annotations)
@@ -290,19 +275,19 @@ func (s *statesInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.CP
 			continue
 		}
 		for _, cpuID := range set.ToSliceNoSort() {
-			delete(sharedPoolCPUs, int32(cpuID))
+			delete(usedCPUs, int32(cpuID))
 		}
 	}
 
 	// nodeID -> cpulist
 	nodeIDToCpus := make(map[int32][]int)
-	for cpuID, info := range sharedPoolCPUs {
+	for cpuID, info := range usedCPUs {
 		if info != nil {
 			nodeIDToCpus[info.Node] = append(nodeIDToCpus[info.Node], int(cpuID))
 		}
 	}
 
-	var sharePools []extension.CPUSharedPool
+	sharePools := []extension.CPUSharedPool{}
 	for nodeID, cpus := range nodeIDToCpus {
 		if len(cpus) <= 0 {
 			continue
@@ -311,29 +296,22 @@ func (s *statesInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.CP
 		sharePools = append(sharePools, extension.CPUSharedPool{
 			CPUSet: set.String(),
 			Node:   nodeID,
-			Socket: sharedPoolCPUs[int32(cpus[0])].Socket,
+			Socket: usedCPUs[int32(cpus[0])].Socket,
 		})
 	}
-	sort.Slice(sharePools, func(i, j int) bool {
-		iPool := sharePools[i]
-		jPool := sharePools[j]
-		iID := int(iPool.Socket)<<32 | int(iPool.Node)
-		jID := int(jPool.Socket)<<32 | int(jPool.Node)
-		return iID < jID
-	})
 	return sharePools
 }
 
-func (s *statesInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extension.CPUTopology, map[int32]*extension.CPUInfo, error) {
-	nodeCPUInfo, err := s.metricsCache.GetNodeCPUInfo(&metriccache.QueryParam{})
+func (s *statesInformer) calCpuTopology() (*extension.CPUTopology, map[int32]*extension.CPUInfo, error) {
+	nodeCpuInfo, err := s.metricsCache.GetNodeCPUInfo(&metriccache.QueryParam{})
 	if err != nil {
 		klog.Errorf("failed to get node cpu info")
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
-	cpus := make(map[int32]*extension.CPUInfo)
+	usedCPUs := make(map[int32]*extension.CPUInfo)
 	cpuTopology := &extension.CPUTopology{}
-	for _, cpu := range nodeCPUInfo.ProcessorInfos {
+	for _, cpu := range nodeCpuInfo.ProcessorInfos {
 		info := extension.CPUInfo{
 			ID:     cpu.CPUID,
 			Core:   cpu.CoreID,
@@ -341,9 +319,9 @@ func (s *statesInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extension.
 			Node:   cpu.NodeID,
 		}
 		cpuTopology.Detail = append(cpuTopology.Detail, info)
-		cpus[cpu.CPUID] = &info
+		usedCPUs[cpu.CPUID] = &info
 	}
-	return nodeCPUInfo, cpuTopology, cpus, nil
+	return cpuTopology, usedCPUs, nil
 }
 
 func (s *statesInformer) updateNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
@@ -362,4 +340,17 @@ func (s *statesInformer) GetNodeTopo() *v1alpha1.NodeResourceTopology {
 	s.nodeTopoMutex.RLock()
 	defer s.nodeTopoMutex.RUnlock()
 	return s.nodeTopology.DeepCopy()
+}
+
+func loadConfigFile(kubeletConfigFile string) (*kubeletconfig.KubeletConfiguration, error) {
+	const errFmt = "failed to load Kubelet config file %s, error %v"
+	loader, err := configfiles.NewFsLoader(&utilfs.DefaultFs{}, kubeletConfigFile)
+	if err != nil {
+		return nil, fmt.Errorf(errFmt, kubeletConfigFile, err)
+	}
+	kc, err := loader.Load()
+	if err != nil {
+		return nil, fmt.Errorf(errFmt, kubeletConfigFile, err)
+	}
+	return kc, err
 }

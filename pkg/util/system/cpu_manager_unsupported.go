@@ -19,10 +19,10 @@ limitations under the License.
 
 package system
 
-import (
-	"fmt"
-)
+func GuessCPUManagerOptFromKubeletPort(int) (string, string, map[string]string, error) {
+	return "", "", nil, nil
+}
 
-func GetKubeletCommandline(port int) ([]string, error) {
-	return nil, fmt.Errorf("unsupported")
+func GuessConfigFilePathFromKubeletPort(int) (string, error) {
+	return "", nil
 }

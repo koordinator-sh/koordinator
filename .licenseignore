@@ -2,4 +2,3 @@ vendor
 pkg/descheduler
 pkg/descheduler/controllers/migration/controllerfinder
 pkg/scheduler/plugins/coscheduling
-pkg/util/kubelet
