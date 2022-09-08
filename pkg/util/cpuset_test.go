@@ -17,7 +17,7 @@ limitations under the License.
 package util
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -159,7 +159,7 @@ func Test_UtilCgroupCPUSet(t *testing.T) {
 	err := WriteCgroupCPUSet(dname, cpusetStr)
 	assert.NoError(t, err)
 
-	rawContent, err := ioutil.ReadFile(filepath.Join(dname, system.CPUSFileName))
+	rawContent, err := os.ReadFile(filepath.Join(dname, system.CPUSFileName))
 	assert.NoError(t, err)
 
 	gotCPUSetStr := string(rawContent)

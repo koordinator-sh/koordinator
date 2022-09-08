@@ -19,7 +19,7 @@ package audit
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -32,7 +32,7 @@ func TestEventLogger(t *testing.T) {
 	logger.Log(0, &Event{Reason: "world"})
 	logger.Close()
 
-	content, err := ioutil.ReadFile(fmt.Sprintf("%s/audit.log", tempDir))
+	content, err := os.ReadFile(fmt.Sprintf("%s/audit.log", tempDir))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -62,7 +62,7 @@ func TestAuditorLogger(t *testing.T) {
 	}
 
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	response := &JsonResponse{}
 	if err := json.Unmarshal(body, response); err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestAuditorLogger(t *testing.T) {
 		t.Fatalf("failed to get events: %v", err)
 	}
 	defer resp.Body.Close()
-	body, err = ioutil.ReadAll(resp.Body)
+	body, err = io.ReadAll(resp.Body)
 	response = &JsonResponse{}
 	if err := json.Unmarshal(body, response); err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestAuditorLogger(t *testing.T) {
 				t.Fatalf("failed to get events: %v", err)
 			}
 			defer resp.Body.Close()
-			body, err = ioutil.ReadAll(resp.Body)
+			body, err = io.ReadAll(resp.Body)
 			response = &JsonResponse{}
 			if err := json.Unmarshal(body, response); err != nil {
 				t.Fatal(err)
@@ -145,7 +145,7 @@ func TestAuditorLoggerTxtOutput(t *testing.T) {
 		t.Fatalf("failed to get events: %v", err)
 	}
 	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	lines := bytes.Split(bytes.TrimSpace(body), []byte{'\n'})
 	if len(lines) != 10 {
 		t.Errorf("failed to load events, expected %d actual %d", 10, len(lines))
@@ -183,7 +183,7 @@ func TestAuditorLoggerReaderInvalidPageToken(t *testing.T) {
 		t.Fatalf("failed to get events: %v", err)
 	}
 	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	lines := bytes.Split(bytes.TrimSpace(body), []byte{'\n'})
 	if len(lines) != 10 {
 		t.Errorf("failed to load events, expected %d actual %d", 10, len(lines))

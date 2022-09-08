@@ -18,7 +18,6 @@ package kubelet
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -95,7 +94,7 @@ cpuManagerPolicy: static`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tempFile, err := ioutil.TempFile("", "koordlet-ut-")
+			tempFile, err := os.CreateTemp("", "koordlet-ut-")
 			assert.NoError(t, err)
 			assert.NotNil(t, tempFile)
 			fileName := tempFile.Name()

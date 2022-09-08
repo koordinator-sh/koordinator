@@ -19,7 +19,7 @@ package util
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -80,7 +80,7 @@ type LocalCPUInfo struct {
 // getHyperThreadEnabled returns whether the cpu is HT-enabled or not
 // NOTE: currently only support intel cpu, otherwise it can always return false
 func getHyperThreadEnabled() (bool, error) {
-	out, err := ioutil.ReadFile("/sys/devices/system/cpu/smt/active")
+	out, err := os.ReadFile("/sys/devices/system/cpu/smt/active")
 	if err == nil {
 		active, err := strconv.Atoi(strings.TrimSpace(strings.Trim(string(out), "\n")))
 		if err != nil {

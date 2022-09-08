@@ -18,7 +18,6 @@ package util
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -275,7 +274,7 @@ func Test_GetContainerCurTasks(t *testing.T) {
 			err := os.MkdirAll(dname, 0700)
 			assert.NoError(t, err)
 			fname := filepath.Join(dname, system.CPUTaskFileName)
-			_ = ioutil.WriteFile(fname, []byte(tt.field.tasksFileStr), 0666)
+			_ = os.WriteFile(fname, []byte(tt.field.tasksFileStr), 0666)
 
 			system.Conf = &system.Config{
 				CgroupRootDir: cgroupRootDir,
@@ -835,5 +834,5 @@ func writeCgroupContent(filePath string, content []byte) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(filePath, content, 0655)
+	return os.WriteFile(filePath, content, 0655)
 }

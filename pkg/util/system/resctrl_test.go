@@ -17,7 +17,6 @@ limitations under the License.
 package system
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -80,7 +79,7 @@ func Test_ReadResctrlTasksMap(t *testing.T) {
 			assert.NoError(t, err)
 
 			tasksPath := filepath.Join(resctrlDir, ResctrlTaskFileName)
-			err = ioutil.WriteFile(tasksPath, []byte(tt.fields.tasksStr), 0666)
+			err = os.WriteFile(tasksPath, []byte(tt.fields.tasksStr), 0666)
 			assert.NoError(t, err)
 
 			Conf = &Config{
@@ -129,7 +128,7 @@ func Test_CheckAndTryEnableResctrlCat(t *testing.T) {
 			assert.NoError(t, err)
 
 			cbmPath := filepath.Join(l3CatDir, CbmMaskFileName)
-			err = ioutil.WriteFile(cbmPath, []byte(tt.fields.cbmStr), 0666)
+			err = os.WriteFile(cbmPath, []byte(tt.fields.cbmStr), 0666)
 			assert.NoError(t, err)
 
 			Conf = &Config{
@@ -154,7 +153,7 @@ func Test_MountResctrlSubsystem(t *testing.T) {
 		assert.NoError(t, err)
 
 		schemataPath := filepath.Join(resctrlDir, SchemataFileName)
-		err = ioutil.WriteFile(schemataPath, []byte("    L3:0=ff;1=ff\n    MB:0=100;1=100\n"), 0666)
+		err = os.WriteFile(schemataPath, []byte("    L3:0=ff;1=ff\n    MB:0=100;1=100\n"), 0666)
 		assert.NoError(t, err)
 
 		Conf = &Config{

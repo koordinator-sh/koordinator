@@ -19,7 +19,7 @@ package kubelet
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"path/filepath"
 	"strconv"
@@ -56,7 +56,7 @@ func NewKubeletOptions(args []string) (*KubeletOptions, error) {
 
 	cleanFlagSet := pflag.NewFlagSet("kubelet", pflag.ContinueOnError)
 	cleanFlagSet.ParseErrorsWhitelist.UnknownFlags = true
-	cleanFlagSet.SetOutput(ioutil.Discard)
+	cleanFlagSet.SetOutput(io.Discard)
 	cleanFlagSet.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
 	kubeletFlags := options.NewKubeletFlags()
 	kubeletFlags.AddFlags(cleanFlagSet)
@@ -123,7 +123,7 @@ func kubeletConfigFlagPrecedence(kc *kubeletconfiginternal.KubeletConfiguration,
 	// as some Set implementations accumulate values from multiple flag invocations.
 	fs := newFakeFlagSet(newFlagSetWithGlobals())
 	fs.ParseErrorsWhitelist.UnknownFlags = true
-	fs.SetOutput(ioutil.Discard)
+	fs.SetOutput(io.Discard)
 	// register throwaway KubeletFlags
 	options.NewKubeletFlags().AddFlags(fs)
 	// register new KubeletConfiguration

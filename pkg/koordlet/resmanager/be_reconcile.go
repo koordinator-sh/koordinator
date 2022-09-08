@@ -17,7 +17,7 @@ limitations under the License.
 package resmanager
 
 import (
-	"io/ioutil"
+	"os"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
@@ -292,7 +292,7 @@ func applyPodBECPULimitIfSpecified(podMeta *statesinformer.PodMeta) error {
 	targetCFSQuota := int(float64(milliCPULimit*podCFSPeriod) / float64(1000))
 	podCFSQuotaPath := util.GetPodCgroupCFSQuotaPath(podMeta.CgroupDir)
 	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(executor.UpdateCPU).Message("set cfs_quota to %v", targetCFSQuota).Do()
-	return ioutil.WriteFile(podCFSQuotaPath, []byte(strconv.Itoa(targetCFSQuota)), 0644)
+	return os.WriteFile(podCFSQuotaPath, []byte(strconv.Itoa(targetCFSQuota)), 0644)
 }
 
 func applyContainerBECPULimitIfSpecified(podMeta *statesinformer.PodMeta, container *corev1.Container, containerStatus *corev1.ContainerStatus) error {
@@ -310,7 +310,7 @@ func applyContainerBECPULimitIfSpecified(podMeta *statesinformer.PodMeta, contai
 		return err
 	}
 	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(executor.UpdateCPU).Message("set cfs_quota to %v", targetCFSQuota).Do()
-	return ioutil.WriteFile(containerCFSQuotaPath, []byte(strconv.Itoa(targetCFSQuota)), 0644)
+	return os.WriteFile(containerCFSQuotaPath, []byte(strconv.Itoa(targetCFSQuota)), 0644)
 }
 
 func applyPodBECPURequestIfSpecified(podMeta *statesinformer.PodMeta) error {
@@ -335,7 +335,7 @@ func applyContainerBECPUShareIfSpecified(podMeta *statesinformer.PodMeta, contai
 		return err
 	}
 	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(executor.UpdateCPU).Message("set cfs_shares to %v", targetCPUShare).Do()
-	return ioutil.WriteFile(containerCPUSharePath, []byte(strconv.Itoa(targetCPUShare)), 0644)
+	return os.WriteFile(containerCPUSharePath, []byte(strconv.Itoa(targetCPUShare)), 0644)
 }
 
 func applyPodBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta) error {
@@ -345,7 +345,7 @@ func applyPodBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta) error {
 	}
 	podMemLimitPath := util.GetPodCgroupMemLimitPath(podMeta.CgroupDir)
 	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(executor.UpdateMemory).Message("set memory.limits to %v", memoryLimit).Do()
-	return ioutil.WriteFile(podMemLimitPath, []byte(strconv.Itoa(int(memoryLimit))), 0644)
+	return os.WriteFile(podMemLimitPath, []byte(strconv.Itoa(int(memoryLimit))), 0644)
 }
 
 func applyContainerBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta, container *corev1.Container, containerStatus *corev1.ContainerStatus) error {
@@ -358,5 +358,5 @@ func applyContainerBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta, contai
 		return err
 	}
 	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Container(container.Name).Reason(executor.UpdateMemory).Message("set memory.limits to %v", memoryLimit).Do()
-	return ioutil.WriteFile(containerMemLimitPath, []byte(strconv.Itoa(int(memoryLimit))), 0644)
+	return os.WriteFile(containerMemLimitPath, []byte(strconv.Itoa(int(memoryLimit))), 0644)
 }

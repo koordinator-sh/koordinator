@@ -23,7 +23,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -154,7 +153,7 @@ func getPids(procRoot string, re *regexp.Regexp) []int {
 				continue
 			}
 
-			cmdline, err := ioutil.ReadFile(filepath.Join(procRoot, entry.Name(), "cmdline"))
+			cmdline, err := os.ReadFile(filepath.Join(procRoot, entry.Name(), "cmdline"))
 			if err != nil {
 				klog.V(4).Infof("Error reading file %s: %+v", filepath.Join(procRoot, entry.Name(), "cmdline"), err)
 				continue

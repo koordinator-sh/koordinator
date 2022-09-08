@@ -17,7 +17,6 @@ limitations under the License.
 package util
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -192,7 +191,7 @@ func Test_GetRootCgroupCurCPUSet(t *testing.T) {
 		return
 	}
 	fname := filepath.Join(dname, system.CPUSFileName)
-	_ = ioutil.WriteFile(fname, []byte{'1', ',', '2'}, 0666)
+	_ = os.WriteFile(fname, []byte{'1', ',', '2'}, 0666)
 
 	system.Conf = &system.Config{
 		CgroupRootDir: cgroupRootDir,

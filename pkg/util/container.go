@@ -18,7 +18,7 @@ package util
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -149,7 +149,7 @@ func GetContainerCurCPUShare(podParentDir string, c *corev1.ContainerStatus) (in
 	if err != nil {
 		return 0, err
 	}
-	rawContent, err := ioutil.ReadFile(cgroupPath)
+	rawContent, err := os.ReadFile(cgroupPath)
 	if err != nil {
 		return 0, err
 	}
@@ -161,7 +161,7 @@ func GetContainerCurCFSPeriod(podParentDir string, c *corev1.ContainerStatus) (i
 	if err != nil {
 		return 0, err
 	}
-	rawContent, err := ioutil.ReadFile(cgroupPath)
+	rawContent, err := os.ReadFile(cgroupPath)
 	if err != nil {
 		return 0, err
 	}
@@ -173,7 +173,7 @@ func GetContainerCurCFSQuota(podParentDir string, c *corev1.ContainerStatus) (in
 	if err != nil {
 		return 0, err
 	}
-	rawContent, err := ioutil.ReadFile(cgroupPath)
+	rawContent, err := os.ReadFile(cgroupPath)
 	if err != nil {
 		return 0, err
 	}
@@ -185,7 +185,7 @@ func GetContainerCurMemLimitBytes(podParentDir string, c *corev1.ContainerStatus
 	if err != nil {
 		return 0, err
 	}
-	rawContent, err := ioutil.ReadFile(cgroupPath)
+	rawContent, err := os.ReadFile(cgroupPath)
 	if err != nil {
 		return 0, err
 	}
@@ -217,7 +217,7 @@ func GetPIDsInContainer(podParentDir string, c *corev1.ContainerStatus) ([]uint3
 	if err != nil {
 		return nil, err
 	}
-	rawContent, err := ioutil.ReadFile(cgroupPath)
+	rawContent, err := os.ReadFile(cgroupPath)
 	if err != nil {
 		return nil, err
 	}

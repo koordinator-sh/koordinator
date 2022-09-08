@@ -19,7 +19,7 @@ package statesinformer
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -77,7 +77,7 @@ func (k *kubeletStub) GetAllPods() (corev1.PodList, error) {
 		return podList, fmt.Errorf("request %s failed, code %d", url.String(), rsp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(rsp.Body)
+	body, err := io.ReadAll(rsp.Body)
 	if err != nil {
 		return podList, err
 	}

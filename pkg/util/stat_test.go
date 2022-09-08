@@ -17,7 +17,6 @@ limitations under the License.
 package util
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -43,7 +42,7 @@ func Test_readTotalCPUStat(t *testing.T) {
 		"procs_running 53\n" +
 		"procs_blocked 0\n" +
 		"softirq 134422017 2 39835165 107003 28614585 2166152 0 2398085 30750729 0 30550296\n"
-	err := ioutil.WriteFile(tempStatPath, []byte(statContentStr), 0666)
+	err := os.WriteFile(tempStatPath, []byte(statContentStr), 0666)
 	if err != nil {
 		t.Error(err)
 	}
@@ -99,13 +98,13 @@ func Test_readPodCPUUsage(t *testing.T) {
 	tempDir := t.TempDir()
 	tempInvalidPodCgroupDir := filepath.Join(tempDir, "no_cgroup")
 	tempPodStatPath := filepath.Join(tempDir, system.CpuacctUsageFileName)
-	err := ioutil.WriteFile(tempPodStatPath, []byte(getUsageContents()), 0666)
+	err := os.WriteFile(tempPodStatPath, []byte(getUsageContents()), 0666)
 	assert.NoError(t, err)
 	tempInvalidPodCgroupDir1 := filepath.Join(tempDir, "no_cgroup_1")
 	err = os.Mkdir(tempInvalidPodCgroupDir1, 0755)
 	assert.NoError(t, err)
 	tempPodInvalidStatPath := filepath.Join(tempInvalidPodCgroupDir1, system.CpuacctUsageFileName)
-	err = ioutil.WriteFile(tempPodInvalidStatPath, []byte(getInvalidUsageContents()), 0666)
+	err = os.WriteFile(tempPodInvalidStatPath, []byte(getInvalidUsageContents()), 0666)
 	assert.NoError(t, err)
 	type args struct {
 		podCgroupDir string
