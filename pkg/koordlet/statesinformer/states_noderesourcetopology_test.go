@@ -320,6 +320,6 @@ func Test_reportNodeTopology(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, expectKubeletCPUManagerPolicy, kubeletCPUManagerPolicy)
 
-	assert.Equal(t, `[{"socket":0,"node":0,"cpuset":"2"},{"socket":1,"node":1,"cpuset":"6-7"}]`, topology.Annotations[extension.AnnotationNodeCPUSharedPools])
+	assert.Equal(t, `[{"socket":0,"node":0,"cpuset":"0-2"},{"socket":1,"node":1,"cpuset":"6-7"}]`, topology.Annotations[extension.AnnotationNodeCPUSharedPools])
 	assert.Equal(t, `{"detail":[{"id":0,"core":0,"socket":0,"node":0},{"id":1,"core":0,"socket":0,"node":0},{"id":2,"core":1,"socket":0,"node":0},{"id":3,"core":1,"socket":0,"node":0},{"id":4,"core":2,"socket":1,"node":1},{"id":5,"core":2,"socket":1,"node":1},{"id":6,"core":3,"socket":1,"node":1},{"id":7,"core":3,"socket":1,"node":1}]}`, topology.Annotations[extension.AnnotationNodeCPUTopology])
 }

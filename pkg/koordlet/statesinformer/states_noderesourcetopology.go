@@ -194,9 +194,9 @@ func (s *statesInformer) reportNodeTopology() {
 		}
 		cpuManagerPolicy.ReservedCPUs = reservedCPUs.String()
 
-		for _, cpuID := range reservedCPUs.ToSliceNoSort() {
-			delete(sharedPoolCPUs, int32(cpuID))
-		}
+		// NOTE: We should not remove reservedCPUs from sharedPoolCPUs to
+		//  ensure that Burstable Pods (e.g. Pods request 0C but are limited to 4C)
+		//  at least there are reservedCPUs available when nodes are allocated
 	}
 
 	cpuManagerPolicyJSON, err := json.Marshal(cpuManagerPolicy)

@@ -133,7 +133,7 @@ As the application scaling or rolling deployment, the best-fit allocatable space
 
 1. Only supports the CPU allocation mechanism of the Pod dimension.
 1. Koordinator divides the CPU on the machine into `CPU Shared Pool`, `statically exclusive CPUs` and `BE CPU Shared Pool`. 
-    1. The `CPU Shared Pool` is the set of CPUs on which any containers in `K8s Burstable` and `Koordinator LSE` Pods run. Containers in `K8s Guaranteed` pods with `fractional CPU requests` also run on CPUs in the shared pool. The shared pool contains all unallocated CPUs in the node but excluding CPUs allocated by K8s Guaranteed, LSE and LSR Pods. If kubelet reserved CPUs, the shared pool includes the reserved CPUs. 
+    1. The `CPU Shared Pool` is the set of CPUs on which any containers in `K8s Burstable` and `Koordinator LS` Pods run. Containers in `K8s Guaranteed` pods with `fractional CPU requests` also run on CPUs in the shared pool. The shared pool contains all unallocated CPUs in the node but excluding CPUs allocated by K8s Guaranteed, LSE and LSR Pods. If kubelet reserved CPUs, the shared pool includes the reserved CPUs. 
     1. The `statically exclusive CPUs` are the set of CPUs on which any containers in `K8s Guaranteed`, `Koordinator LSE` and `LSR` Pods that have integer CPU run. When K8s Guaranteed, LSE and LSR Pods request CPU, koord-scheduler will be allocated from the `CPU Shared Pool`.
     1. The `BE CPU Shared pool` is the set of CPUs on which any containers in `K8s BestEffort` and `Koordinator BE` Pods run. The `BE CPU Shared Pool` contains all CPUs in the node but excluding CPUs allocated by K8s Guaranteed and Koordinator Pods.
 
@@ -360,6 +360,7 @@ const (
 type KubeletCPUManagerPolicy struct {
   Policy  string            `json:"policy,omitempty"`
   Options map[string]string `json:"options,omitempty"`
+  ReservedCPUs string       `json:"reservedCPUs,omitempty"`
 }
 
 ```
@@ -399,8 +400,8 @@ type PodCPUAllocs []PodCPUAlloc
 type NUMACPUSharedPools []CPUSharedPool
 
 type CPUSharedPool struct {
-  Socket int32  `json:"socket,omitempty"`
-  Node   int32  `json:"node,omitempty"`
+  Socket int32  `json:"socket"`
+  Node   int32  `json:"node"`
   CPUSet string `json:"cpuset,omitempty"`
 }
 ```
@@ -702,3 +703,4 @@ type ScoringStrategy struct {
 - 2022-06-24: Fix typo
 - 2022-07-11: Adjust CPUBindPolicyNone to CPUBindPolicyDefault
 - 2022-08-02: Update PodCPUAllocs definition
+- 2022-09-08: Add ReservedCPUs in KubeletCPUManagerPolicy
