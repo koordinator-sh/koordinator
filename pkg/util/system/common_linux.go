@@ -51,6 +51,18 @@ type portAndPid struct {
 	lastUpdateTime time.Time
 }
 
+func TCPSocks(fn netstat.AcceptFn) ([]netstat.SockTabEntry, error) {
+	socks, err := netstat.TCPSocks(fn)
+	if err != nil {
+		return nil, err
+	}
+	v6Socks, err := netstat.TCP6Socks(fn)
+	if err != nil {
+		return nil, err
+	}
+	return append(socks, v6Socks...), nil
+}
+
 // KubeletPortToPid Query pid by tcp port number with the help of go-netstat
 // note: Due to the low efficiency of full traversal, we cache the result and verify each time
 func KubeletPortToPid(port int) (int, error) {
@@ -63,7 +75,7 @@ func KubeletPortToPid(port int) (int, error) {
 			return val.pid, nil
 		}
 	}
-	socks, err := netstat.TCPSocks(func(entry *netstat.SockTabEntry) bool {
+	socks, err := TCPSocks(func(entry *netstat.SockTabEntry) bool {
 		if entry.State == netstat.Listen && entry.LocalAddr.Port == uint16(port) {
 			return true
 		}
