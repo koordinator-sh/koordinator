@@ -23,6 +23,7 @@ import (
 	"flag"
 	"strings"
 
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -113,18 +114,17 @@ func (c *Configuration) InitFromConfigMap() error {
 		return err
 	}
 	cm, err := cli.CoreV1().ConfigMaps(c.ConfigMapNamesapce).Get(context.TODO(), c.ConfigMapName, metav1.GetOptions{})
-	if err != nil {
+	if err == nil {
+		// Setup extra configs for QoS Manager.
+		if qosPluginExtraConfigRaw, found := cm.Data[CMKeyQoSPluginExtraConfigs]; found {
+			var extraConfigs map[string]string
+			if err = json.Unmarshal([]byte(qosPluginExtraConfigRaw), &extraConfigs); err != nil {
+				return err
+			}
+			c.QosManagerConf.PluginExtraConfigs = extraConfigs
+		}
+	} else if !k8serrors.IsNotFound(err) {
 		return err
 	}
-
-	// Setup extra configs for QoS Manager.
-	if qosPluginExtraConfigRaw, found := cm.Data[CMKeyQoSPluginExtraConfigs]; found {
-		var extraConfigs map[string]string
-		if err = json.Unmarshal([]byte(qosPluginExtraConfigRaw), &extraConfigs); err != nil {
-			return err
-		}
-		c.QosManagerConf.PluginExtraConfigs = extraConfigs
-	}
-
 	return nil
 }
