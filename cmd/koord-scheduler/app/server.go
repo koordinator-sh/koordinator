@@ -61,6 +61,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/eventhandlers"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	utilroutes "github.com/koordinator-sh/koordinator/pkg/util/routes"
 )
 
 // Option configures a framework.Registry.
@@ -98,6 +99,7 @@ for cost reduction and efficiency enhancement.
 	nfs := opts.Flags
 	verflag.AddFlags(nfs.FlagSet("global"))
 	globalflag.AddGlobalFlags(nfs.FlagSet("global"), cmd.Name())
+	frameworkext.AddFlags(nfs.FlagSet("extend"))
 	fs := cmd.Flags()
 	for _, f := range nfs.FlagSets {
 		fs.AddFlagSet(f)
@@ -259,16 +261,24 @@ func installMetricHandler(pathRecorderMux *mux.PathRecorderMux, informers inform
 	})
 }
 
+func installProfilingHandler(pathRecorderMux *mux.PathRecorderMux, enableContentionProfiling bool) {
+	routes.Profiling{}.Install(pathRecorderMux)
+	if enableContentionProfiling {
+		goruntime.SetBlockProfileRate(1)
+	}
+	// NOTE: Use utilroutes.DebugFlags instead of k8s.io/apiserver/pkg/server/routes.DebugFlags
+	//  as using the latter will print a useless stack when installing multiple flags
+	debugFlags := utilroutes.NewDebugFlags(pathRecorderMux)
+	debugFlags.Install("v", utilroutes.StringFlagPutHandler(logs.GlogSetter))
+	debugFlags.Install("s", utilroutes.StringFlagPutHandler(frameworkext.DebugScoresSetter))
+}
+
 // newMetricsHandler builds a metrics server from the config.
 func newMetricsHandler(config *kubeschedulerconfig.KubeSchedulerConfiguration, informers informers.SharedInformerFactory, isLeader func() bool) http.Handler {
 	pathRecorderMux := mux.NewPathRecorderMux("koord-scheduler")
 	installMetricHandler(pathRecorderMux, informers, isLeader)
 	if config.EnableProfiling {
-		routes.Profiling{}.Install(pathRecorderMux)
-		if config.EnableContentionProfiling {
-			goruntime.SetBlockProfileRate(1)
-		}
-		routes.DebugFlags{}.Install(pathRecorderMux, "v", routes.StringFlagPutHandler(logs.GlogSetter))
+		installProfilingHandler(pathRecorderMux, config.EnableContentionProfiling)
 	}
 	return pathRecorderMux
 }
@@ -283,11 +293,7 @@ func newAPIHandler(config *kubeschedulerconfig.KubeSchedulerConfiguration, infor
 		installMetricHandler(pathRecorderMux, informers, isLeader)
 	}
 	if config.EnableProfiling {
-		routes.Profiling{}.Install(pathRecorderMux)
-		if config.EnableContentionProfiling {
-			goruntime.SetBlockProfileRate(1)
-		}
-		routes.DebugFlags{}.Install(pathRecorderMux, "v", routes.StringFlagPutHandler(logs.GlogSetter))
+		installProfilingHandler(pathRecorderMux, config.EnableContentionProfiling)
 	}
 	services.InstallAPIHandler(pathRecorderMux, engine, sched, isLeader)
 	return pathRecorderMux

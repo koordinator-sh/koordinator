@@ -58,7 +58,7 @@ func (o *Options) Config() (*schedulerappconfig.Config, error) {
 
 	return &schedulerappconfig.Config{
 		Config:                           config,
-		ServicesEngine:                   services.NewEngine(gin.Default()),
+		ServicesEngine:                   services.NewEngine(gin.New()),
 		KoordinatorClient:                koordinatorClient,
 		KoordinatorSharedInformerFactory: koordinatorSharedInformerFactory,
 	}, nil
