@@ -17,6 +17,7 @@ limitations under the License.
 package resmanager
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -194,6 +195,9 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric *metr
 
 func (r *CPUSuppress) applyBESuppressCPUSet(beCPUSet []int32, oldCPUSet []int32) error {
 	nodeTopo := r.resmanager.statesInformer.GetNodeTopo()
+	if nodeTopo == nil {
+		return errors.New("NodeTopo is nil")
+	}
 	kubeletPolicy, err := apiext.GetKubeletCPUManagerPolicy(nodeTopo.Annotations)
 	if err != nil {
 		klog.Warningf("failed to get kubelet cpu manager policy, error %v", err)
