@@ -18,7 +18,6 @@ package docker
 
 import (
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -75,7 +74,7 @@ func Test_CreateContainer(t *testing.T) {
 	if err != nil {
 		t.Fatal("failed to encode", err)
 	}
-	req.Body = ioutil.NopCloser(nBody)
+	req.Body = io.NopCloser(nBody)
 	nBody, _ = encodeBody(cfg)
 	newLength, _ := calculateContentLength(nBody)
 	req.ContentLength = newLength
@@ -132,7 +131,7 @@ func Test_StopContainer(t *testing.T) {
 	if err != nil {
 		t.Fatal("failed to encode", err)
 	}
-	req.Body = ioutil.NopCloser(nBody)
+	req.Body = io.NopCloser(nBody)
 	nBody, _ = encodeBody(cfg)
 	newLength, _ := calculateContentLength(nBody)
 	req.ContentLength = newLength
@@ -196,7 +195,7 @@ func Test_StartContainer(t *testing.T) {
 	if err != nil {
 		t.Fatal("failed to encode", err)
 	}
-	req.Body = ioutil.NopCloser(nBody)
+	req.Body = io.NopCloser(nBody)
 	nBody, _ = encodeBody(cfg)
 	newLength, _ := calculateContentLength(nBody)
 	req.ContentLength = newLength
@@ -287,7 +286,7 @@ func Test_UpdateContainer(t *testing.T) {
 	if err != nil {
 		t.Fatal("failed to encode", err)
 	}
-	req.Body = ioutil.NopCloser(nBody)
+	req.Body = io.NopCloser(nBody)
 	nBody, _ = encodeBody(cfg)
 	newLength, _ := calculateContentLength(nBody)
 	req.ContentLength = newLength
@@ -312,7 +311,7 @@ func Test_UpdateContainer(t *testing.T) {
 	if err != nil {
 		t.Fatal("failed to encode", err)
 	}
-	req.Body = ioutil.NopCloser(nBody)
+	req.Body = io.NopCloser(nBody)
 	nBody, _ = encodeBody(updateCfg)
 	newLength, _ = calculateContentLength(nBody)
 	req.ContentLength = newLength

@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -145,7 +144,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 		http.Error(wr, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	req.Body = ioutil.NopCloser(nBody)
+	req.Body = io.NopCloser(nBody)
 	nBody, _ = encodeBody(cfgBody)
 	newLength, _ := calculateContentLength(nBody)
 	req.ContentLength = newLength
@@ -299,7 +298,7 @@ func (d *RuntimeManagerDockerServer) HandleUpdateContainer(ctx context.Context, 
 		http.Error(wr, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	req.Body = ioutil.NopCloser(nBody)
+	req.Body = io.NopCloser(nBody)
 	nBody, _ = encodeBody(containerConfig)
 	newLength, _ := calculateContentLength(nBody)
 	req.ContentLength = newLength

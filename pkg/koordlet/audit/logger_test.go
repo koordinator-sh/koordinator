@@ -19,7 +19,7 @@ package audit
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 )
@@ -40,7 +40,7 @@ func TestLogWriter(t *testing.T) {
 	}
 
 	writer.Flush()
-	fileContent, err := ioutil.ReadFile(name)
+	fileContent, err := os.ReadFile(name)
 	if err != nil {
 		t.Fatal("failed to read file", err)
 	}

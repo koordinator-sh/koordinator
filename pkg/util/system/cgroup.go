@@ -18,8 +18,8 @@ package system
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -94,7 +94,7 @@ func CgroupFileRead(cgroupTaskDir string, file CgroupFile) (string, error) {
 	klog.V(5).Infof("read %s,%s", cgroupTaskDir, file.ResourceFileName)
 	filePath := GetCgroupFilePath(cgroupTaskDir, file)
 
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	return strings.Trim(string(data), "\n"), err
 }
 
@@ -106,7 +106,7 @@ func CgroupFileWrite(cgroupTaskDir string, file CgroupFile, data string) error {
 	klog.V(5).Infof("write %s,%s [%s]", cgroupTaskDir, file.ResourceFileName, data)
 	filePath := GetCgroupFilePath(cgroupTaskDir, file)
 
-	return ioutil.WriteFile(filePath, []byte(data), 0644)
+	return os.WriteFile(filePath, []byte(data), 0644)
 }
 
 // @cgroupTaskDir kubepods.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
@@ -117,7 +117,7 @@ func GetCgroupFilePath(cgroupTaskDir string, file CgroupFile) string {
 
 func GetCgroupCurTasks(cgroupPath string) ([]int, error) {
 	var tasks []int
-	rawContent, err := ioutil.ReadFile(cgroupPath)
+	rawContent, err := os.ReadFile(cgroupPath)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func GetCgroupCurTasks(cgroupPath string) ([]int, error) {
 }
 
 func GetCPUStatRaw(cgroupPath string) (*CPUStatRaw, error) {
-	content, err := ioutil.ReadFile(cgroupPath)
+	content, err := os.ReadFile(cgroupPath)
 	if err != nil {
 		return nil, err
 	}

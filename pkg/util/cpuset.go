@@ -18,7 +18,7 @@ package util
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -101,5 +101,5 @@ func GenerateCPUSetStr(cpuset []int32) string {
 
 // WriteCgroupCPUSet writes the cgroup cpuset file according to the specified cgroup dir
 func WriteCgroupCPUSet(cgroupFileDir, cpusetStr string) error {
-	return ioutil.WriteFile(filepath.Join(cgroupFileDir, system.CPUSFileName), []byte(cpusetStr), 0644)
+	return os.WriteFile(filepath.Join(cgroupFileDir, system.CPUSFileName), []byte(cpusetStr), 0644)
 }

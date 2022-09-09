@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -40,7 +40,7 @@ func Test_Docker_NewDockerRuntimeHandler(t *testing.T) {
 		ping := func(req *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
-				Body:       ioutil.NopCloser(bytes.NewReader([]byte(""))),
+				Body:       io.NopCloser(bytes.NewReader([]byte(""))),
 			}, nil
 		}
 		return createDockerClient(newMockClient(ping), fmt.Sprintf("unix://%s", DockerEndpoint))
@@ -74,7 +74,7 @@ func Test_Docker_StopContainer(t *testing.T) {
 		}
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       ioutil.NopCloser(bytes.NewReader([]byte(""))),
+			Body:       io.NopCloser(bytes.NewReader([]byte(""))),
 		}, nil
 	}
 	endPoint := fmt.Sprintf("unix://%s", DockerEndpoint)
@@ -110,7 +110,7 @@ func Test_Docker_UpdateContainerResources(t *testing.T) {
 		}
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       ioutil.NopCloser(bytes.NewReader(b)),
+			Body:       io.NopCloser(bytes.NewReader(b)),
 		}, nil
 	}
 	endPoint := fmt.Sprintf("unix://%s", DockerEndpoint)

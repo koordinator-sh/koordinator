@@ -18,7 +18,7 @@ package util
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -194,7 +194,7 @@ func GetPodBEMemoryByteLimit(pod *corev1.Pod) int64 {
 
 func GetPodCurCPUShare(podParentDir string) (int64, error) {
 	cgroupPath := GetPodCgroupCPUSharePath(podParentDir)
-	rawContent, err := ioutil.ReadFile(cgroupPath)
+	rawContent, err := os.ReadFile(cgroupPath)
 	if err != nil {
 		return 0, err
 	}
@@ -203,7 +203,7 @@ func GetPodCurCPUShare(podParentDir string) (int64, error) {
 
 func GetPodCurCFSPeriod(podParentDir string) (int64, error) {
 	cgroupPath := GetPodCgroupCFSPeriodPath(podParentDir)
-	rawContent, err := ioutil.ReadFile(cgroupPath)
+	rawContent, err := os.ReadFile(cgroupPath)
 	if err != nil {
 		return 0, err
 	}
@@ -212,7 +212,7 @@ func GetPodCurCFSPeriod(podParentDir string) (int64, error) {
 
 func GetPodCurCFSQuota(podParentDir string) (int64, error) {
 	cgroupPath := GetPodCgroupCFSQuotaPath(podParentDir)
-	rawContent, err := ioutil.ReadFile(cgroupPath)
+	rawContent, err := os.ReadFile(cgroupPath)
 	if err != nil {
 		return 0, err
 	}
@@ -221,7 +221,7 @@ func GetPodCurCFSQuota(podParentDir string) (int64, error) {
 
 func GetPodCurMemLimitBytes(podParentDir string) (int64, error) {
 	cgroupPath := GetPodCgroupMemLimitPath(podParentDir)
-	rawContent, err := ioutil.ReadFile(cgroupPath)
+	rawContent, err := os.ReadFile(cgroupPath)
 	if err != nil {
 		return 0, err
 	}

@@ -19,7 +19,6 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,7 +154,7 @@ func (m *Manager) updateHookConfig(filepath string) error {
 	}
 
 	updateTime := time.Now()
-	data, err := ioutil.ReadFile(filepath)
+	data, err := os.ReadFile(filepath)
 	if err != nil {
 		return err
 	}
@@ -205,7 +204,7 @@ func (m *Manager) Setup() error {
 }
 
 func (m *Manager) collectAllConfigs() error {
-	items, err := ioutil.ReadDir(defaultRuntimeHookConfigPath)
+	items, err := os.ReadDir(defaultRuntimeHookConfigPath)
 	if err != nil {
 		return err
 	}

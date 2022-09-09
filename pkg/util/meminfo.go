@@ -18,7 +18,7 @@ package util
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -78,7 +78,7 @@ type MemInfo struct {
 }
 
 func readMemInfo(path string) (*MemInfo, error) {
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 
 	if err != nil {
 		return nil, err
@@ -134,7 +134,7 @@ func readCgroupMemStat(memStatPath string) (int64, error) {
 	// format: ...total_inactive_anon $total_inactive_anon\ntotal_active_anon $total_active_anon\n
 	//         total_inactive_file $total_inactive_file\ntotal_active_file $total_active_file\n
 	//         total_unevictable $total_unevictable\n
-	rawStats, err := ioutil.ReadFile(memStatPath)
+	rawStats, err := os.ReadFile(memStatPath)
 	if err != nil {
 		return 0, err
 	}

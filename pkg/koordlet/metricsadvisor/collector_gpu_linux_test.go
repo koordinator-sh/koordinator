@@ -17,7 +17,6 @@ limitations under the License.
 package metricsadvisor
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"reflect"
@@ -631,5 +630,5 @@ func writeCgroupContent(filePath string, content []byte) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(filePath, content, 0655)
+	return os.WriteFile(filePath, content, 0655)
 }

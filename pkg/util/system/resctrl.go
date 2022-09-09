@@ -18,7 +18,6 @@ package system
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/bits"
 	"os"
@@ -121,7 +120,7 @@ func GetResctrlTasksFilePath(groupPath string) string {
 // ReadCatL3Cbm reads and returns the value of cat l3 cbm_mask
 func ReadCatL3CbmString() (string, error) {
 	cbmFile := GetResctrlL3CbmFilePath()
-	out, err := ioutil.ReadFile(cbmFile)
+	out, err := os.ReadFile(cbmFile)
 	if err != nil {
 		return "", err
 	}
@@ -131,7 +130,7 @@ func ReadCatL3CbmString() (string, error) {
 // ReadResctrlTasksMap reads and returns the map of given resctrl group's task ids
 func ReadResctrlTasksMap(groupPath string) (map[int]struct{}, error) {
 	tasksPath := GetResctrlTasksFilePath(groupPath)
-	rawContent, err := ioutil.ReadFile(tasksPath)
+	rawContent, err := os.ReadFile(tasksPath)
 	if err != nil {
 		return nil, err
 	}

@@ -18,7 +18,7 @@ package util
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 
@@ -34,7 +34,7 @@ var (
 
 func readTotalCPUStat(statPath string) (uint64, error) {
 	// stat usage: $user + $nice + $system + $irq + $softirq
-	rawStats, err := ioutil.ReadFile(statPath)
+	rawStats, err := os.ReadFile(statPath)
 	if err != nil {
 		return 0, err
 	}
@@ -66,7 +66,7 @@ func GetCPUStatUsageTicks() (uint64, error) {
 }
 
 func readCPUAcctUsage(usagePath string) (uint64, error) {
-	v, err := ioutil.ReadFile(usagePath)
+	v, err := os.ReadFile(usagePath)
 	if err != nil {
 		return 0, err
 	}

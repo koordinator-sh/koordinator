@@ -17,7 +17,7 @@ limitations under the License.
 package util
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -48,7 +48,7 @@ func Test_readMemInfo(t *testing.T) {
 		"CmaFree:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\n" +
 		"HugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\n" +
 		"DirectMap4k:      414760 kB\nDirectMap2M:     8876032 kB\nDirectMap1G:    261095424 kB\n"
-	err := ioutil.WriteFile(tempMemInfoPath, []byte(memInfoContentStr), 0666)
+	err := os.WriteFile(tempMemInfoPath, []byte(memInfoContentStr), 0666)
 	assert.NoError(t, err)
 	tempMemInfoPath1 := filepath.Join(tempDir, "meminfo1")
 	memInfoContentStr1 := "MemTotal:       263432804 kB\nMemFree:        254391744 kB\nMemAvailable:   256703236 kB\n" +
@@ -67,7 +67,7 @@ func Test_readMemInfo(t *testing.T) {
 		"CmaFree:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\n" +
 		"HugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\n" +
 		"DirectMap4k:      414760 kB\nDirectMap2M:     8876032 kB\nDirectMap1G:    261095424 kB\n"
-	err = ioutil.WriteFile(tempMemInfoPath1, []byte(memInfoContentStr1), 0666)
+	err = os.WriteFile(tempMemInfoPath1, []byte(memInfoContentStr1), 0666)
 	assert.NoError(t, err)
 	type args struct {
 		path string
@@ -189,7 +189,7 @@ func Test_readPodMemStat(t *testing.T) {
 		"total_pg_pgscan 0\ntotal_pgrefill 0\ntotal_inactive_anon 1331200\n" +
 		"total_active_anon 310775808\ntotal_inactive_file 2277351424\ntotal_active_file 2564194304\n" +
 		"total_unevictable 0"
-	err := ioutil.WriteFile(tempPodMemStatPath, []byte(memStatContentStr), 0666)
+	err := os.WriteFile(tempPodMemStatPath, []byte(memStatContentStr), 0666)
 	if err != nil {
 		t.Error(err)
 	}

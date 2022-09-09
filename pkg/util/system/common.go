@@ -18,7 +18,6 @@ package system
 
 import (
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
@@ -33,7 +32,7 @@ var (
 func CommonFileRead(file string) (string, error) {
 	file = path.Join(CommonRootDir, file)
 	klog.V(5).Infof("read %s", file)
-	data, err := ioutil.ReadFile(file)
+	data, err := os.ReadFile(file)
 	return strings.Trim(string(data), "\n"), err
 }
 
@@ -52,7 +51,7 @@ func CommonFileWriteIfDifferent(file string, value string) error {
 func CommonFileWrite(file string, data string) error {
 	file = path.Join(CommonRootDir, file)
 	klog.V(5).Infof("write %s [%s]", file, data)
-	return ioutil.WriteFile(file, []byte(data), 0644)
+	return os.WriteFile(file, []byte(data), 0644)
 }
 
 // ReadFileNoStat uses ioutil.ReadAll to read contents of entire file.
@@ -70,7 +69,7 @@ func ReadFileNoStat(filename string) ([]byte, error) {
 	defer f.Close()
 
 	reader := io.LimitReader(f, maxBufferSize)
-	return ioutil.ReadAll(reader)
+	return io.ReadAll(reader)
 }
 
 func FileExists(path string) bool {
