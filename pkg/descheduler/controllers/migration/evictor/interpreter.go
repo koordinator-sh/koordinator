@@ -88,6 +88,9 @@ func (p *interpreterImpl) Evict(ctx context.Context, job *sev1alpha1.PodMigratio
 		}
 	}
 	action := getCustomEvictionPolicy(pod.Labels)
+	if action == "" {
+		action = getCustomEvictionPolicy(job.Labels)
+	}
 	if action != "" {
 		evictor := p.evictions[action]
 		if evictor != nil {
