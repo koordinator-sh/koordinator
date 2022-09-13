@@ -208,6 +208,14 @@ func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.
 	return ext.Framework.RunFilterPluginsWithNominatedPods(ctx, cycleState, pod, nodeInfo)
 }
 
+func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (framework.PluginToNodeScores, *framework.Status) {
+	pluginToNodeScores, status := ext.handle.RunScorePlugins(ctx, state, pod, nodes)
+	if status.IsSuccess() && debugTopNScores > 0 {
+		debugScores(debugTopNScores, pod, pluginToNodeScores, nodes)
+	}
+	return pluginToNodeScores, status
+}
+
 // PluginFactoryProxy is used to proxy the call to the PluginFactory function and pass in the ExtendedHandle for the custom plugin
 func PluginFactoryProxy(extendHandle ExtendedHandle, factoryFn frameworkruntime.PluginFactory) frameworkruntime.PluginFactory {
 	return func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
