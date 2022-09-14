@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
@@ -177,14 +177,15 @@ func (r *resmanager) evictPodIfNotEvicted(evictPod *corev1.Pod, node *corev1.Nod
 func (r *resmanager) evictPod(evictPod *corev1.Pod, node *corev1.Node, reason string, message string) bool {
 	podEvictMessage := fmt.Sprintf("evict Pod:%s, reason: %s, message: %v", evictPod.Name, reason, message)
 	_ = audit.V(0).Pod(evictPod.Namespace, evictPod.Name).Reason(reason).Message(message).Do()
-	podEvict := policyv1.Eviction{
+	podEvict := policyv1beta1.Eviction{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      evictPod.Name,
 			Namespace: evictPod.Namespace,
 		},
 	}
 
-	if err := r.kubeClient.CoreV1().Pods(evictPod.Namespace).EvictV1(context.TODO(), &podEvict); err == nil {
+	// TODO EvictV1 only supports k8s 1.22+, use EvictV1beta1 for compatible reason
+	if err := r.kubeClient.CoreV1().Pods(evictPod.Namespace).EvictV1beta1(context.TODO(), &podEvict); err == nil {
 		r.eventRecorder.Eventf(node, corev1.EventTypeWarning, evictPodSuccess, podEvictMessage)
 		metrics.RecordPodEviction(reason)
 		klog.Infof("evict pod %v/%v success, reason: %v", evictPod.Namespace, evictPod.Name, reason)

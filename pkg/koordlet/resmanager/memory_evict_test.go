@@ -25,7 +25,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/policy/v1"
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -421,7 +421,7 @@ func Test_memoryEvict(t *testing.T) {
 			for _, pod := range tt.expectEvictPods {
 				getEvictObject, err := client.Tracker().Get(podsResource, pod.Namespace, pod.Name)
 				assert.NotNil(t, getEvictObject, "evictPod Fail", err)
-				assert.IsType(t, &v1.Eviction{}, getEvictObject, "evictPod Fail", pod.Name)
+				assert.IsType(t, &policyv1beta1.Eviction{}, getEvictObject, "evictPod Fail", pod.Name)
 			}
 
 			for _, pod := range tt.expectNotEvictPods {
