@@ -67,10 +67,11 @@ func NewKubeletOptions(args []string) (*KubeletOptions, error) {
 		return nil, err
 	}
 
+	// NOTE: options.ValidateKubeletFlags is not compatible with kubelet v1.18, now skip validation
 	// validate the initial KubeletFlags
-	if err := options.ValidateKubeletFlags(kubeletFlags); err != nil {
-		return nil, fmt.Errorf("failed to validate kubelet flags: %w", err)
-	}
+	// if err := options.ValidateKubeletFlags(kubeletFlags); err != nil {
+	// 	return nil, fmt.Errorf("failed to validate kubelet flags: %w", err)
+	// }
 
 	// load kubelet config file, if provided
 	if configFile := kubeletFlags.KubeletConfigFile; len(configFile) > 0 {
