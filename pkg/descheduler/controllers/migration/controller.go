@@ -63,6 +63,10 @@ const (
 	defaultRequeueAfter = 3 * time.Second
 )
 
+var (
+	UUIDGenerateFn = uuid.NewUUID
+)
+
 var _ framework.Evictor = &Reconciler{}
 
 type Reconciler struct {
@@ -210,7 +214,7 @@ func (r *Reconciler) Filter(pod *corev1.Pod) bool {
 	return true
 }
 
-// Evict evicts a pod (no pre-check performed)
+// Evict evicts a pod
 func (r *Reconciler) Evict(ctx context.Context, pod *corev1.Pod, evictOptions framework.EvictOptions) bool {
 	if r.args.DryRun {
 		klog.Infof("%s Try to evict pod %s/%s by dryRun mode caused by %s", evictOptions.PluginName, pod.Namespace, pod.Name, evictOptions.Reason)
@@ -222,12 +226,17 @@ func (r *Reconciler) Evict(ctx context.Context, pod *corev1.Pod, evictOptions fr
 		return false
 	}
 
+	err := CreatePodMigrationJob(ctx, pod, evictOptions, r.Client, r.args)
+	return err == nil
+}
+
+func CreatePodMigrationJob(ctx context.Context, pod *corev1.Pod, evictOptions framework.EvictOptions, client client.Client, args *deschedulerconfig.MigrationControllerArgs) error {
 	if evictOptions.DeleteOptions == nil {
-		evictOptions.DeleteOptions = r.args.DefaultDeleteOptions
+		evictOptions.DeleteOptions = args.DefaultDeleteOptions
 	}
 	job := &sev1alpha1.PodMigrationJob{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: string(uuid.NewUUID()),
+			Name: string(UUIDGenerateFn()),
 		},
 		Spec: sev1alpha1.PodMigrationJobSpec{
 			PodRef: &corev1.ObjectReference{
@@ -235,20 +244,27 @@ func (r *Reconciler) Evict(ctx context.Context, pod *corev1.Pod, evictOptions fr
 				Name:      pod.Name,
 				UID:       pod.UID,
 			},
-			Mode:          sev1alpha1.PodMigrationJobMode(r.args.DefaultJobMode),
-			TTL:           r.args.DefaultJobTTL.DeepCopy(),
+			Mode:          sev1alpha1.PodMigrationJobMode(args.DefaultJobMode),
+			TTL:           args.DefaultJobTTL.DeepCopy(),
 			DeleteOptions: evictOptions.DeleteOptions,
 		},
 		Status: sev1alpha1.PodMigrationJobStatus{
 			Phase: sev1alpha1.PodMigrationJobPending,
 		},
 	}
-	err := r.Client.Create(ctx, job)
+
+	jobCtx := FromContext(ctx)
+	if err := jobCtx.ApplyTo(job); err != nil {
+		klog.Errorf("Failed to apply JobContext to PodMigrationJob for Pod %s/%s, err: %v", pod.Namespace, pod.Name, err)
+		return err
+	}
+
+	err := client.Create(ctx, job)
 	if err != nil {
 		klog.Errorf("Failed to create PodMigrationJob for Pod %s/s, err: %v", pod.Namespace, pod.Name, err)
-		return false
+		return err
 	}
-	return true
+	return nil
 }
 
 func (r *Reconciler) Start(ctx context.Context) error {
