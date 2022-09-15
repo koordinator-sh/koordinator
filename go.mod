@@ -3,7 +3,7 @@ module github.com/koordinator-sh/koordinator
 go 1.17
 
 require (
-	github.com/NVIDIA/go-nvml v0.11.6-0.0.20220715143214-a79f46f2a6f7
+	github.com/NVIDIA/go-nvml v0.11.6-0.0.20220823120812-7e2082095e82
 	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5
 	github.com/docker/docker v20.10.18+incompatible
 	github.com/evanphx/json-patch v5.6.0+incompatible
