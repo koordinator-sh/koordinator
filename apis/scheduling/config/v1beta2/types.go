@@ -130,28 +130,23 @@ type ReservationArgs struct {
 type ElasticQuotaArgs struct {
 	metav1.TypeMeta
 
-	// MinCandidateNodesPercentage is the minimum number of candidates to
-	// shortlist when dry running preemption as a percentage of number of nodes.
-	// Must be in the range [0, 100]. Defaults to 10% of the cluster size if
-	// unspecified.
-	MinCandidateNodesPercentage *int32 `json:"minCandidateNodesPercentage,omitempty"`
-	// MinCandidateNodesAbsolute is the absolute minimum number of candidates to
-	// shortlist. The likely number of candidates enumerated for dry running
-	// preemption is given by the formula:
-	// numCandidates = max(numNodes * minCandidateNodesPercentage, minCandidateNodesAbsolute)
-	// We say "likely" because there are other factors such as PDB violations
-	// that play a role in the number of candidates shortlisted. Must be at least
-	// 0 nodes. Defaults to 100 nodes if unspecified.
-	MinCandidateNodesAbsolute *int32 `json:"minCandidateNodesAbsolute,omitempty"`
+	// DelayEvictTime is the duration to handle the jitter of used and runtime
+	DelayEvictTime *metav1.Duration `json:"delayEvictTime,omitempty"`
 
-	// ContinueOverUseCountTriggerEvict is the number to handle the jitter of used and runtime
-	ContinueOverUseCountTriggerEvict *int64 `json:"continueOverUseCountTriggerEvict"`
+	// RevokePodInterval is the interval to check quotaGroup's used and runtime
+	RevokePodInterval *metav1.Duration `json:"revokePodInterval,omitempty"`
 
 	// DefaultQuotaGroupMax limit the maxQuota of DefaultQuotaGroup
 	DefaultQuotaGroupMax corev1.ResourceList `json:"defaultQuotaGroupMax,omitempty"`
 
 	// SystemQuotaGroupMax limit the maxQuota of SystemQuotaGroup
 	SystemQuotaGroupMax corev1.ResourceList `json:"systemQuotaGroupMax,omitempty"`
+
+	// QuotaGroupNamespace is the namespace of the DefaultQuotaGroup
+	QuotaGroupNamespace string `json:"quotaGroupNamespace,omitempty"`
+
+	// MonitorAllQuotas monitor the quotaGroups' used and runtime Quota to revoke pods
+	MonitorAllQuotas *bool `json:"monitorAllQuotas,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

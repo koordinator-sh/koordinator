@@ -17,11 +17,14 @@ limitations under the License.
 package core
 
 import (
+	"fmt"
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	"k8s.io/klog/v2"
+	resourcev1 "k8s.io/kubernetes/pkg/api/v1/resource"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -47,17 +50,18 @@ type QuotaCalculateInfo struct {
 }
 
 type QuotaInfo struct {
-	// QuotaName
+	// Name
 	Name string `json:"name,omitempty"`
 	// Quota's ParentName
 	ParentName string `json:"parentName,omitempty"`
-	//IsParent quota group
+	// IsParent quota group
 	IsParent bool `json:"isParent"`
 	// If runtimeVersion not equal to quotaTree runtimeVersion, means runtime has been updated.
 	RuntimeVersion int64 `json:"runtimeVersion"`
 	// Allow lent resource to other quota group
-	AllowLentResource bool               `json:"allowLentResource"`
-	CalculateInfo     QuotaCalculateInfo `json:"calculateInfo,omitempty"`
+	AllowLentResource bool                `json:"allowLentResource"`
+	CalculateInfo     QuotaCalculateInfo  `json:"calculateInfo,omitempty"`
+	PodCache          map[string]*PodInfo `json:"podCache,omitempty"`
 	lock              sync.Mutex
 }
 
@@ -68,6 +72,7 @@ func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *Qu
 		IsParent:          isParent,
 		AllowLentResource: allowLentResource,
 		RuntimeVersion:    0,
+		PodCache:          make(map[string]*PodInfo),
 		CalculateInfo: QuotaCalculateInfo{
 			Max:          v1.ResourceList{},
 			AutoScaleMin: v1.ResourceList{},
@@ -79,6 +84,7 @@ func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *Qu
 		},
 	}
 }
+
 func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 	if qi == nil {
 		return nil
@@ -86,12 +92,13 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
-	return &QuotaInfo{
+	quotaInfo := &QuotaInfo{
 		Name:              qi.Name,
 		ParentName:        qi.ParentName,
 		IsParent:          qi.IsParent,
 		AllowLentResource: qi.AllowLentResource,
 		RuntimeVersion:    qi.RuntimeVersion,
+		PodCache:          make(map[string]*PodInfo),
 		CalculateInfo: QuotaCalculateInfo{
 			Max:          qi.CalculateInfo.Max.DeepCopy(),
 			AutoScaleMin: qi.CalculateInfo.AutoScaleMin.DeepCopy(),
@@ -102,11 +109,15 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 			Runtime:      qi.CalculateInfo.Runtime.DeepCopy(),
 		},
 	}
+	for name, pod := range qi.PodCache {
+		quotaInfo.PodCache[name] = pod
+	}
+	return quotaInfo
 }
 
-// UpdateQuotaInfoFromRemote the CRD(max/oriMin/sharedWeight/allowLentResource/isParent/ParentName) of the quota maybe changed,
+// updateQuotaInfoFromRemote the CRD(max/oriMin/sharedWeight/allowLentResource/isParent/ParentName) of the quota maybe changed,
 // so need update localQuotaInfo's information from inputQuotaInfo.
-func (qi *QuotaInfo) UpdateQuotaInfoFromRemote(quotaInfo *QuotaInfo) {
+func (qi *QuotaInfo) updateQuotaInfoFromRemote(quotaInfo *QuotaInfo) {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
@@ -192,7 +203,7 @@ func (qi *QuotaInfo) GetRuntime() v1.ResourceList {
 	return qi.CalculateInfo.Runtime.DeepCopy()
 }
 
-func (qi *QuotaInfo) GetMax() v1.ResourceList {
+func (qi *QuotaInfo) getMax() v1.ResourceList {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 	return qi.CalculateInfo.Max.DeepCopy()
@@ -224,6 +235,90 @@ func (qi *QuotaInfo) clearForResetNoLock() {
 	qi.RuntimeVersion = 0
 }
 
+func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	if !quotav1.Equals(qi.CalculateInfo.Max, quotaInfo.CalculateInfo.Max) ||
+		!quotav1.Equals(qi.CalculateInfo.OriginalMin, quotaInfo.CalculateInfo.OriginalMin) ||
+		!quotav1.Equals(qi.CalculateInfo.SharedWeight, quotaInfo.CalculateInfo.SharedWeight) ||
+		qi.AllowLentResource != quotaInfo.AllowLentResource ||
+		qi.IsParent != quotaInfo.IsParent ||
+		qi.ParentName != quotaInfo.ParentName {
+		return true
+	}
+	return false
+}
+
+func (qi *QuotaInfo) AddPodIfNotPresent(pod *v1.Pod) {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	if _, exist := qi.PodCache[pod.Name]; exist {
+		klog.Errorf("pod already exist in PodCache quota:%v, podName:%v", qi.Name, pod.Name)
+	}
+	qi.PodCache[pod.Name] = NewPodInfo(pod)
+
+}
+
+func (qi *QuotaInfo) RemovePodIfPreSent(podName string) {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	if _, exist := qi.PodCache[podName]; !exist {
+		klog.Errorf("pod not exist in PodRequestMap quota:%v, podName:%v", qi.Name, podName)
+	}
+
+	delete(qi.PodCache, podName)
+}
+
+func (qi *QuotaInfo) UpdatePodIsAssigned(podName string, isAssigned bool) error {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	pod, exist := qi.PodCache[podName]
+	if !exist {
+		return fmt.Errorf("pod is not in PodCache quota:%v, podName:%v", qi.Name, podName)
+	}
+	if pod.isAssigned == isAssigned {
+		return fmt.Errorf("pod's running phase doesn't change, quota:%v, pod:%v", qi.Name, podName)
+	}
+	qi.PodCache[podName].isAssigned = isAssigned
+	return nil
+}
+
+func (qi *QuotaInfo) GetPodCache() map[string]*v1.Pod {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	pods := make(map[string]*v1.Pod)
+	for name, podInfo := range qi.PodCache {
+		pods[name] = podInfo.pod
+	}
+	return pods
+}
+
+func (qi *QuotaInfo) GetPodIsAssigned(pod *v1.Pod) bool {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	if pod == nil {
+		return false
+	}
+
+	if podInfo, exist := qi.PodCache[pod.Name]; exist {
+		return podInfo.isAssigned
+	}
+	return false
+}
+
+func (qi *QuotaInfo) Lock() {
+	qi.lock.Lock()
+}
+
+func (qi *QuotaInfo) UnLock() {
+	qi.lock.Unlock()
+}
+
 // QuotaTopoNode only contains the topology of the parent/child relationship,
 // helps to reconstruct quotaTree from the rootQuotaGroup to all the leafQuotaNode.
 type QuotaTopoNode struct {
@@ -241,14 +336,28 @@ func NewQuotaTopoNode(quotaInfo *QuotaInfo) *QuotaTopoNode {
 	}
 }
 
-func (qtn *QuotaTopoNode) AddChildGroupQuotaInfo(childNode *QuotaTopoNode) {
+func (qtn *QuotaTopoNode) addChildGroupQuotaInfo(childNode *QuotaTopoNode) {
 	qtn.childGroupQuotaInfos[childNode.name] = childNode
 }
 
-func (qtn *QuotaTopoNode) GetChildGroupQuotaInfos() map[string]*QuotaTopoNode {
+func (qtn *QuotaTopoNode) getChildGroupQuotaInfos() map[string]*QuotaTopoNode {
 	group := make(map[string]*QuotaTopoNode)
 	for key, v := range qtn.childGroupQuotaInfos {
 		group[key] = v
 	}
 	return group
+}
+
+type PodInfo struct {
+	pod        *v1.Pod
+	isAssigned bool
+	resource   v1.ResourceList
+}
+
+func NewPodInfo(pod *v1.Pod) *PodInfo {
+	res, _ := resourcev1.PodRequestsAndLimits(pod)
+	return &PodInfo{
+		pod:      pod,
+		resource: res,
+	}
 }

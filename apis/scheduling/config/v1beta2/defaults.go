@@ -59,17 +59,21 @@ var (
 
 	defaultEnablePreemption = pointer.Bool(false)
 
-	defaultMinCandidateNodesPercentage      = pointer.Int32Ptr(10)
-	defaultMinCandidateNodesAbsolute        = pointer.Int32Ptr(100)
-	defaultContinueOverUseCountTriggerEvict = pointer.Int64Ptr(120)
-	defaultDefaultQuotaGroupMax             = corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse("96"),
-		corev1.ResourceMemory: resource.MustParse("100Gi"),
+	defaultDelayEvictTime       = 120 * time.Second
+	defaultRevokePodInterval    = 1 * time.Second
+	defaultDefaultQuotaGroupMax = corev1.ResourceList{
+		// pkg/scheduler/plugins/elasticquota/controller.go syncHandler patch will overflow when the spec Max/Min is too high.
+		corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
+		corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
 	}
 	defaultSystemQuotaGroupMax = corev1.ResourceList{
-		corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64, resource.DecimalSI),
-		corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64, resource.BinarySI),
+		corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
+		corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.BinarySI),
 	}
+
+	defaultQuotaGroupNamespace = "koordinator-system"
+
+	defaultMonitorAllQuotas = pointer.Bool(true)
 
 	defaultTimeout           = 600 * time.Second
 	defaultControllerWorkers = 1
@@ -111,20 +115,27 @@ func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 }
 
 func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
-	if obj.MinCandidateNodesAbsolute == nil {
-		obj.MinCandidateNodesAbsolute = defaultMinCandidateNodesAbsolute
+	if obj.DelayEvictTime == nil {
+		obj.DelayEvictTime = &metav1.Duration{
+			Duration: defaultDelayEvictTime,
+		}
 	}
-	if obj.MinCandidateNodesPercentage == nil {
-		obj.MinCandidateNodesPercentage = defaultMinCandidateNodesPercentage
-	}
-	if obj.ContinueOverUseCountTriggerEvict == nil {
-		obj.ContinueOverUseCountTriggerEvict = defaultContinueOverUseCountTriggerEvict
+	if obj.RevokePodInterval == nil {
+		obj.RevokePodInterval = &metav1.Duration{
+			Duration: defaultRevokePodInterval,
+		}
 	}
 	if len(obj.DefaultQuotaGroupMax) == 0 {
 		obj.DefaultQuotaGroupMax = defaultDefaultQuotaGroupMax
 	}
 	if len(obj.SystemQuotaGroupMax) == 0 {
 		obj.SystemQuotaGroupMax = defaultSystemQuotaGroupMax
+	}
+	if len(obj.QuotaGroupNamespace) == 0 {
+		obj.QuotaGroupNamespace = defaultQuotaGroupNamespace
+	}
+	if obj.MonitorAllQuotas == nil {
+		obj.MonitorAllQuotas = defaultMonitorAllQuotas
 	}
 }
 

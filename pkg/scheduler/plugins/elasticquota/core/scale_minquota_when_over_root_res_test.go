@@ -36,42 +36,42 @@ func TestScaleMinQuotaWhenOverRootResInfo_GetScaledMinQuota(t *testing.T) {
 		subQuotaName := "1"
 		subMinQuota := createResourceList(50, 50)
 		enableScaleMinQuota := false
-		info.Update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
+		info.update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
 	}
 	{
 		parQuotaName := "100"
 		subQuotaName := "2"
 		subMinQuota := createResourceList(50, 50)
 		enableScaleMinQuota := true
-		info.Update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
+		info.update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
 	}
 	{
 		parQuotaName := "100"
 		subQuotaName := "3"
 		subMinQuota := createResourceList(50, 50)
 		enableScaleMinQuota := true
-		info.Update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
+		info.update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
 	}
 
 	{
 		totalResource := createResourceList(200, 200)
-		result, newMinQuota := info.GetScaledMinQuota(totalResource, "101", "1")
+		result, newMinQuota := info.getScaledMinQuota(totalResource, "101", "1")
 		if result != false || newMinQuota != nil {
 			t.Error("error")
 		}
-		result, newMinQuota = info.GetScaledMinQuota(totalResource, "101", "11")
+		result, newMinQuota = info.getScaledMinQuota(totalResource, "101", "11")
 		if result != false || newMinQuota != nil {
 			t.Error("error")
 		}
-		result, newMinQuota = info.GetScaledMinQuota(totalResource, "100", "1")
+		result, newMinQuota = info.getScaledMinQuota(totalResource, "100", "1")
 		if result != false || newMinQuota != nil {
 			t.Error("error")
 		}
-		result, newMinQuota = info.GetScaledMinQuota(totalResource, "100", "2")
+		result, newMinQuota = info.getScaledMinQuota(totalResource, "100", "2")
 		if result != true || !quotav1.Equals(newMinQuota, createResourceList(50, 50)) {
 			t.Error("error")
 		}
-		result, newMinQuota = info.GetScaledMinQuota(util.NewZeroResourceList(), "100", "2")
+		result, newMinQuota = info.getScaledMinQuota(util.NewZeroResourceList(), "100", "2")
 		if result != true || !quotav1.Equals(newMinQuota, createResourceList(0, 0)) {
 			t.Error("error")
 		}
@@ -79,37 +79,37 @@ func TestScaleMinQuotaWhenOverRootResInfo_GetScaledMinQuota(t *testing.T) {
 
 	{
 		totalResource := createResourceList(100, 100)
-		result, newMinQuota := info.GetScaledMinQuota(totalResource, "100", "1")
+		result, newMinQuota := info.getScaledMinQuota(totalResource, "100", "1")
 		if result != false || newMinQuota != nil {
 			t.Error("error")
 		}
-		result, newMinQuota = info.GetScaledMinQuota(totalResource, "100", "2")
+		result, newMinQuota = info.getScaledMinQuota(totalResource, "100", "2")
 		if result != true || !quotav1.Equals(newMinQuota, createResourceList(25, 25)) {
 			t.Error("error")
 		}
-		result, newMinQuota = info.GetScaledMinQuota(totalResource, "100", "3")
+		result, newMinQuota = info.getScaledMinQuota(totalResource, "100", "3")
 		if result != true || !quotav1.Equals(newMinQuota, createResourceList(25, 25)) {
 			t.Error("error")
 		}
 	}
 	{
 		totalResource := createResourceList(50, 50)
-		result, newMinQuota := info.GetScaledMinQuota(totalResource, "100", "1")
+		result, newMinQuota := info.getScaledMinQuota(totalResource, "100", "1")
 		if result != false || newMinQuota != nil {
 			t.Error("error")
 		}
-		result, newMinQuota = info.GetScaledMinQuota(totalResource, "100", "2")
+		result, newMinQuota = info.getScaledMinQuota(totalResource, "100", "2")
 		if result != true || !quotav1.Equals(newMinQuota, createResourceList(0, 0)) {
 			t.Error("error")
 		}
-		result, newMinQuota = info.GetScaledMinQuota(totalResource, "100", "3")
+		result, newMinQuota = info.getScaledMinQuota(totalResource, "100", "3")
 		if result != true || !quotav1.Equals(newMinQuota, createResourceList(0, 0)) {
 			t.Error("error")
 		}
 	}
 }
 
-func TestScaleMinQuotaWhenOverRootResInfo_UpdateAndDelete(t *testing.T) {
+func TestScaleMinQuotaWhenOverRootResInfo_Update(t *testing.T) {
 	info := NewScaleMinQuotaManager()
 	if len(info.enableScaleSubsSumMinQuotaMap) != 0 ||
 		len(info.disableScaleSubsSumMinQuotaMap) != 0 || len(info.originalMinQuotaMap) != 0 || len(info.quotaEnableMinQuotaScaleMap) != 0 {
@@ -120,7 +120,7 @@ func TestScaleMinQuotaWhenOverRootResInfo_UpdateAndDelete(t *testing.T) {
 		subQuotaName := "1"
 		subMinQuota := createResourceList(50, 50)
 		enableScaleMinQuota := false
-		info.Update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
+		info.update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
 
 		if len(info.enableScaleSubsSumMinQuotaMap) != 1 ||
 			len(info.disableScaleSubsSumMinQuotaMap) != 1 || len(info.originalMinQuotaMap) != 1 || len(info.quotaEnableMinQuotaScaleMap) != 1 {
@@ -137,7 +137,7 @@ func TestScaleMinQuotaWhenOverRootResInfo_UpdateAndDelete(t *testing.T) {
 		subQuotaName := "1"
 		subMinQuota := createResourceList(40, 40)
 		enableScaleMinQuota := true
-		info.Update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
+		info.update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
 
 		if len(info.enableScaleSubsSumMinQuotaMap) != 1 ||
 			len(info.disableScaleSubsSumMinQuotaMap) != 1 || len(info.originalMinQuotaMap) != 1 || len(info.quotaEnableMinQuotaScaleMap) != 1 {
@@ -155,7 +155,7 @@ func TestScaleMinQuotaWhenOverRootResInfo_UpdateAndDelete(t *testing.T) {
 		subQuotaName := "1"
 		subMinQuota := createResourceList(50, 50)
 		enableScaleMinQuota := true
-		info.Update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
+		info.update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
 
 		if len(info.enableScaleSubsSumMinQuotaMap) != 1 ||
 			len(info.disableScaleSubsSumMinQuotaMap) != 1 || len(info.originalMinQuotaMap) != 1 || len(info.quotaEnableMinQuotaScaleMap) != 1 {
@@ -173,7 +173,7 @@ func TestScaleMinQuotaWhenOverRootResInfo_UpdateAndDelete(t *testing.T) {
 		subQuotaName := "2"
 		subMinQuota := createResourceList(50, 50)
 		enableScaleMinQuota := true
-		info.Update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
+		info.update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
 
 		if len(info.enableScaleSubsSumMinQuotaMap) != 1 ||
 			len(info.disableScaleSubsSumMinQuotaMap) != 1 || len(info.originalMinQuotaMap) != 2 || len(info.quotaEnableMinQuotaScaleMap) != 2 {
@@ -192,7 +192,7 @@ func TestScaleMinQuotaWhenOverRootResInfo_UpdateAndDelete(t *testing.T) {
 		subQuotaName := "3"
 		subMinQuota := createResourceList(50, 50)
 		enableScaleMinQuota := false
-		info.Update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
+		info.update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
 
 		if len(info.enableScaleSubsSumMinQuotaMap) != 1 ||
 			len(info.disableScaleSubsSumMinQuotaMap) != 1 || len(info.originalMinQuotaMap) != 3 || len(info.quotaEnableMinQuotaScaleMap) != 3 {
@@ -212,7 +212,7 @@ func TestScaleMinQuotaWhenOverRootResInfo_UpdateAndDelete(t *testing.T) {
 		subQuotaName := "4"
 		subMinQuota := createResourceList(50, 50)
 		enableScaleMinQuota := false
-		info.Update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
+		info.update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
 
 		if len(info.enableScaleSubsSumMinQuotaMap) != 2 ||
 			len(info.disableScaleSubsSumMinQuotaMap) != 2 || len(info.originalMinQuotaMap) != 4 || len(info.quotaEnableMinQuotaScaleMap) != 4 {
@@ -227,77 +227,6 @@ func TestScaleMinQuotaWhenOverRootResInfo_UpdateAndDelete(t *testing.T) {
 			!quotav1.Equals(info.originalMinQuotaMap["2"], createResourceList(50, 50)) || info.quotaEnableMinQuotaScaleMap["2"] != true ||
 			!quotav1.Equals(info.originalMinQuotaMap["3"], createResourceList(50, 50)) || info.quotaEnableMinQuotaScaleMap["3"] != false ||
 			!quotav1.Equals(info.originalMinQuotaMap["4"], createResourceList(50, 50)) || info.quotaEnableMinQuotaScaleMap["4"] != false {
-			t.Error("error")
-		}
-	}
-
-	//begin delete
-	{
-		parQuotaName := "101"
-		subQuotaName := "4"
-		info.Delete(parQuotaName, subQuotaName)
-		if len(info.enableScaleSubsSumMinQuotaMap) != 2 ||
-			len(info.disableScaleSubsSumMinQuotaMap) != 2 || len(info.originalMinQuotaMap) != 3 || len(info.quotaEnableMinQuotaScaleMap) != 3 {
-			t.Errorf("error")
-		}
-		if !quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["100"], createResourceList(100, 100)) ||
-			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["100"], createResourceList(50, 50)) ||
-			!quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["101"], v1.ResourceList{}) ||
-			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["101"], createResourceList(0, 0)) ||
-			!quotav1.Equals(info.originalMinQuotaMap["1"], createResourceList(50, 50)) || info.quotaEnableMinQuotaScaleMap["1"] != true ||
-			!quotav1.Equals(info.originalMinQuotaMap["2"], createResourceList(50, 50)) || info.quotaEnableMinQuotaScaleMap["2"] != true ||
-			!quotav1.Equals(info.originalMinQuotaMap["3"], createResourceList(50, 50)) || info.quotaEnableMinQuotaScaleMap["3"] != false {
-			t.Error("error")
-		}
-	}
-	//begin delete
-	{
-		parQuotaName := "100"
-		subQuotaName := "3"
-		info.Delete(parQuotaName, subQuotaName)
-		if len(info.enableScaleSubsSumMinQuotaMap) != 2 ||
-			len(info.disableScaleSubsSumMinQuotaMap) != 2 || len(info.originalMinQuotaMap) != 2 || len(info.quotaEnableMinQuotaScaleMap) != 2 {
-			t.Errorf("error")
-		}
-		if !quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["100"], createResourceList(100, 100)) ||
-			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["100"], createResourceList(0, 0)) ||
-			!quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["101"], v1.ResourceList{}) ||
-			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["101"], createResourceList(0, 0)) ||
-			!quotav1.Equals(info.originalMinQuotaMap["1"], createResourceList(50, 50)) || info.quotaEnableMinQuotaScaleMap["1"] != true ||
-			!quotav1.Equals(info.originalMinQuotaMap["2"], createResourceList(50, 50)) || info.quotaEnableMinQuotaScaleMap["2"] != true {
-			t.Error("error")
-		}
-	}
-	//begin delete
-	{
-		parQuotaName := "100"
-		subQuotaName := "2"
-		info.Delete(parQuotaName, subQuotaName)
-		if len(info.enableScaleSubsSumMinQuotaMap) != 2 ||
-			len(info.disableScaleSubsSumMinQuotaMap) != 2 || len(info.originalMinQuotaMap) != 1 || len(info.quotaEnableMinQuotaScaleMap) != 1 {
-			t.Errorf("error")
-		}
-		if !quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["100"], createResourceList(50, 50)) ||
-			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["100"], createResourceList(0, 0)) ||
-			!quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["101"], v1.ResourceList{}) ||
-			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["101"], createResourceList(0, 0)) ||
-			!quotav1.Equals(info.originalMinQuotaMap["1"], createResourceList(50, 50)) || info.quotaEnableMinQuotaScaleMap["1"] != true {
-			t.Error("error")
-		}
-	}
-	//begin delete
-	{
-		parQuotaName := "100"
-		subQuotaName := "1"
-		info.Delete(parQuotaName, subQuotaName)
-		if len(info.enableScaleSubsSumMinQuotaMap) != 2 ||
-			len(info.disableScaleSubsSumMinQuotaMap) != 2 || len(info.originalMinQuotaMap) != 0 || len(info.quotaEnableMinQuotaScaleMap) != 0 {
-			t.Errorf("error")
-		}
-		if !quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["100"], createResourceList(0, 0)) ||
-			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["100"], createResourceList(0, 0)) ||
-			!quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["101"], v1.ResourceList{}) ||
-			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["101"], createResourceList(0, 0)) {
 			t.Error("error")
 		}
 	}

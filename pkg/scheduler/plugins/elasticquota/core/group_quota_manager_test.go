@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
+	schetesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -80,7 +81,7 @@ func TestGroupQuotaManager_QuotaAdd_AutoMakeUpScaleRatio2(t *testing.T) {
 
 	quota := &v1alpha1.ElasticQuota{
 		TypeMeta: metav1.TypeMeta{
-			Kind: "Quota",
+			Kind: "ElasticQuota",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "test",
@@ -1135,7 +1136,7 @@ func BenchmarkGroupQuotaManager_RefreshRuntime(b *testing.B) {
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		gqm.RefreshRuntime("0")
-		gqm.getQuotaInfoByNameNoLock("0").RuntimeVersion = 0
+		gqm.GetQuotaInfoByNameNoLock("0").RuntimeVersion = 0
 	}
 }
 
@@ -1144,4 +1145,67 @@ func AddQuotaToManager2(gqm *GroupQuotaManager, quotaName string, parent string,
 	quota := CreateQuota(quotaName, parent, maxCpu, maxMem, minCpu, minMem, allowLentResource, isParent)
 	gqm.UpdateQuota(quota, false)
 	return quota
+}
+
+func TestGroupQuotaManager_GetAllQuotaNames(t *testing.T) {
+	gqm := NewGroupQuotaManager4Test()
+	gqm.scaleMinQuotaEnabled = true
+
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	qi1 := createQuota("1", extension.RootQuotaName, 40, 40, 10, 10)
+	qi2 := createQuota("2", extension.RootQuotaName, 40, 40, 10, 10)
+	gqm.UpdateQuota(qi1, false)
+	gqm.UpdateQuota(qi2, false)
+	quotaNames := gqm.GetAllQuotaNames()
+
+	assert.NotNil(t, quotaNames["1"])
+	assert.NotNil(t, quotaNames["2"])
+}
+
+func TestGroupQuotaManager_UpdatePodCache_UpdatePodIsAssigned_GetPodIsAssigned_UpdatePodRequest_UpdatePodUsed(t *testing.T) {
+	gqm := NewGroupQuotaManager4Test()
+	gqm.scaleMinQuotaEnabled = true
+
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	qi1 := createQuota("1", extension.RootQuotaName, 40, 40, 10, 10)
+	qi2 := createQuota("2", extension.RootQuotaName, 40, 40, 10, 10)
+	gqm.UpdateQuota(qi1, false)
+	gqm.UpdateQuota(qi2, false)
+
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	pod1.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	gqm.UpdatePodCache("1", pod1, true)
+	assert.Equal(t, 1, len(gqm.GetQuotaInfoByName("1").GetPodCache()))
+	gqm.UpdatePodCache("1", pod1, false)
+	assert.Equal(t, 0, len(gqm.GetQuotaInfoByName("1").GetPodCache()))
+	gqm.UpdatePodCache("2", pod1, true)
+	assert.False(t, gqm.GetPodIsAssigned("2", pod1))
+	gqm.UpdatePodIsAssigned("2", pod1, true)
+	assert.True(t, gqm.GetPodIsAssigned("2", pod1))
+
+	gqm.UpdatePodRequest("1", nil, pod1)
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetRequest())
+	gqm.UpdatePodUsed("2", nil, pod1)
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetUsed())
+	gqm.UpdatePodRequest("1", pod1, nil)
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
+	gqm.UpdatePodUsed("2", pod1, nil)
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("2").GetUsed())
+}
+
+func TestNewGroupQuotaManager(t *testing.T) {
+	gqm := NewGroupQuotaManager(createResourceList(100, 100), createResourceList(300, 300))
+	assert.Equal(t, createResourceList(100, 100), gqm.GetQuotaInfoByName("system").getMax())
+	assert.Equal(t, createResourceList(300, 300), gqm.GetQuotaInfoByName("default").getMax())
+	assert.True(t, gqm.scaleMinQuotaEnabled)
+	gqm.UpdateClusterTotalResource(createResourceList(500, 500))
+	assert.Equal(t, createResourceList(500, 500), gqm.GetClusterTotalResource())
 }
