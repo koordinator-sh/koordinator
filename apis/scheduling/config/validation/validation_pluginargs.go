@@ -94,18 +94,6 @@ func validateEstimatedResourceThresholds(thresholds map[corev1.ResourceName]int6
 }
 
 func ValidateElasticQuotaArgs(elasticArgs *config.ElasticQuotaArgs) error {
-	if *elasticArgs.MinCandidateNodesPercentage < 0 {
-		return fmt.Errorf("elasticQuotaArgs error, minCandidateNodesPercentage should be a positive value,got %v", *elasticArgs.MinCandidateNodesPercentage)
-	}
-
-	if *elasticArgs.MinCandidateNodesPercentage > 100 {
-		return fmt.Errorf("elasticQuotaArgs error, minCandidateNodesPercentage should be a less than 100,got %v", *elasticArgs.MinCandidateNodesPercentage)
-	}
-
-	if *elasticArgs.MinCandidateNodesAbsolute < 0 {
-		return fmt.Errorf("elasticQuotaArgs error, minCandidateNodesAbsolute should be a positive value,got %v", *elasticArgs.MinCandidateNodesAbsolute)
-	}
-
 	for resName, q := range elasticArgs.DefaultQuotaGroupMax {
 		if q.Cmp(*resource.NewQuantity(0, resource.DecimalSI)) == -1 {
 			return fmt.Errorf("elasticQuotaArgs error, defaultQuotaGroupMax should be a positive value, resourceName:%v, got %v",
@@ -118,6 +106,14 @@ func ValidateElasticQuotaArgs(elasticArgs *config.ElasticQuotaArgs) error {
 			return fmt.Errorf("elasticQuotaArgs error, systemQuotaGroupMax should be a positive value, resourceName:%v, got %v",
 				resName, q)
 		}
+	}
+
+	if elasticArgs.DelayEvictTime != nil && elasticArgs.DelayEvictTime.Duration < 0 {
+		return fmt.Errorf("elasticQuotaArgs error, DelayEvictTime should be a positive value")
+	}
+
+	if elasticArgs.RevokePodInterval != nil && elasticArgs.RevokePodInterval.Duration < 0 {
+		return fmt.Errorf("elasticQuotaArgs error, RevokePodCycle should be a positive value")
 	}
 
 	return nil

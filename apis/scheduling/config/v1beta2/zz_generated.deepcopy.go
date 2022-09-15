@@ -67,19 +67,14 @@ func (in *CoschedulingArgs) DeepCopyObject() runtime.Object {
 func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	if in.MinCandidateNodesPercentage != nil {
-		in, out := &in.MinCandidateNodesPercentage, &out.MinCandidateNodesPercentage
-		*out = new(int32)
+	if in.DelayEvictTime != nil {
+		in, out := &in.DelayEvictTime, &out.DelayEvictTime
+		*out = new(v1.Duration)
 		**out = **in
 	}
-	if in.MinCandidateNodesAbsolute != nil {
-		in, out := &in.MinCandidateNodesAbsolute, &out.MinCandidateNodesAbsolute
-		*out = new(int32)
-		**out = **in
-	}
-	if in.ContinueOverUseCountTriggerEvict != nil {
-		in, out := &in.ContinueOverUseCountTriggerEvict, &out.ContinueOverUseCountTriggerEvict
-		*out = new(int64)
+	if in.RevokePodInterval != nil {
+		in, out := &in.RevokePodInterval, &out.RevokePodInterval
+		*out = new(v1.Duration)
 		**out = **in
 	}
 	if in.DefaultQuotaGroupMax != nil {
@@ -95,6 +90,11 @@ func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
+	}
+	if in.MonitorAllQuotas != nil {
+		in, out := &in.MonitorAllQuotas, &out.MonitorAllQuotas
+		*out = new(bool)
+		**out = **in
 	}
 	return
 }
