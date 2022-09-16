@@ -83,14 +83,21 @@ func (gqm *GroupQuotaManager) UpdateClusterTotalResource(deltaRes v1.ResourceLis
 	defer gqm.hierarchyUpdateLock.Unlock()
 
 	klog.V(3).Infof("UpdateClusterResource deltaRes:%v", deltaRes)
+	gqm.GetQuotaInfoByNameNoLock(extension.DefaultQuotaName).Lock()
+	defer gqm.GetQuotaInfoByNameNoLock(extension.DefaultQuotaName).UnLock()
+
+	gqm.GetQuotaInfoByNameNoLock(extension.SystemQuotaName).Lock()
+	defer gqm.GetQuotaInfoByNameNoLock(extension.SystemQuotaName).UnLock()
+
 	gqm.updateClusterTotalResourceNoLock(deltaRes)
 }
 
+// updateClusterTotalResourceNoLock no need to lock gqm.hierarchyUpdateLock and system/defaultQuotaGroup's lock
 func (gqm *GroupQuotaManager) updateClusterTotalResourceNoLock(deltaRes v1.ResourceList) {
 	gqm.totalResource = quotav1.Add(gqm.totalResource, deltaRes)
 
-	sysAndDefaultUsed := gqm.quotaInfoMap[extension.DefaultQuotaName].GetUsed()
-	sysAndDefaultUsed = quotav1.Add(sysAndDefaultUsed, gqm.quotaInfoMap[extension.SystemQuotaName].GetUsed())
+	sysAndDefaultUsed := gqm.quotaInfoMap[extension.DefaultQuotaName].CalculateInfo.Used.DeepCopy()
+	sysAndDefaultUsed = quotav1.Add(sysAndDefaultUsed, gqm.quotaInfoMap[extension.SystemQuotaName].CalculateInfo.Used.DeepCopy())
 	totalResNoSysOrDefault := quotav1.Subtract(gqm.totalResource, sysAndDefaultUsed)
 
 	diffRes := quotav1.Subtract(totalResNoSysOrDefault, gqm.totalResourceExceptSystemAndDefaultUsed)
@@ -155,15 +162,10 @@ func (gqm *GroupQuotaManager) UpdateGroupDeltaUsed(quotaName string, delta v1.Re
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	gqm.updateGroupDeltaUsedNoLock(quotaName, delta)
-
-	// if systemQuotaGroup or DefaultQuotaGroup's used change, update cluster total resource.
-	if quotaName == extension.SystemQuotaName || quotaName == extension.DefaultQuotaName {
-		gqm.updateClusterTotalResourceNoLock(v1.ResourceList{})
-	}
 }
 
 // updateGroupDeltaUsedNoLock updates the usedQuota of a node, it also updates all parent nodes
-// no need to lock gqm.lock
+// no need to lock gqm.hierarchyUpdateLock
 func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta v1.ResourceList) {
 	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)
 	allQuotaInfoLen := len(curToAllParInfos)
@@ -175,6 +177,11 @@ func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta
 	for i := 0; i < allQuotaInfoLen; i++ {
 		quotaInfo := curToAllParInfos[i]
 		quotaInfo.addUsedNonNegativeNoLock(delta)
+	}
+
+	// if systemQuotaGroup or DefaultQuotaGroup's used change, update cluster total resource.
+	if quotaName == extension.SystemQuotaName || quotaName == extension.DefaultQuotaName {
+		gqm.updateClusterTotalResourceNoLock(v1.ResourceList{})
 	}
 }
 
