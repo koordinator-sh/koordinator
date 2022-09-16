@@ -32,36 +32,36 @@ import (
 
 type QuotaCalculateInfo struct {
 	// The semantics of "max" is the quota group's upper limit of resources.
-	Max v1.ResourceList `json:"max,omitempty"`
+	Max v1.ResourceList
 	// The semantics of "min" is the quota group's guaranteed resources, if quota group's "request" less than or
 	// equal to "min", the quota group can obtain equivalent resources to the "request"
-	OriginalMin v1.ResourceList `json:"originalMin,omitempty"`
-	// If Child's sumMin is larger than totalResource, the value of OriginalMin should be scaled in equal proportion
+	Min v1.ResourceList
+	// If Child's sumMin is larger than totalResource, the value of Min should be scaled in equal proportion
 	//to ensure the correctness and fairness of min
-	AutoScaleMin v1.ResourceList `json:"autoScaleMin,omitempty"`
+	AutoScaleMin v1.ResourceList
 	// All assigned pods used
-	Used v1.ResourceList `json:"used,omitempty"`
+	Used v1.ResourceList
 	// All pods request
-	Request v1.ResourceList `json:"request,omitempty"`
+	Request v1.ResourceList
 	// SharedWeight determines the ability of quota groups to compete for shared resources
-	SharedWeight v1.ResourceList `json:"sharedWeight,omitempty"`
+	SharedWeight v1.ResourceList
 	// Runtime is the current actual resource that can be used by the quota group
-	Runtime v1.ResourceList `json:"runtime,omitempty"`
+	Runtime v1.ResourceList
 }
 
 type QuotaInfo struct {
 	// Name
-	Name string `json:"name,omitempty"`
+	Name string
 	// Quota's ParentName
-	ParentName string `json:"parentName,omitempty"`
+	ParentName string
 	// IsParent quota group
-	IsParent bool `json:"isParent"`
+	IsParent bool
 	// If runtimeVersion not equal to quotaTree runtimeVersion, means runtime has been updated.
-	RuntimeVersion int64 `json:"runtimeVersion"`
+	RuntimeVersion int64
 	// Allow lent resource to other quota group
-	AllowLentResource bool                `json:"allowLentResource"`
-	CalculateInfo     QuotaCalculateInfo  `json:"calculateInfo,omitempty"`
-	PodCache          map[string]*PodInfo `json:"podCache,omitempty"`
+	AllowLentResource bool
+	CalculateInfo     QuotaCalculateInfo
+	PodCache          map[string]*PodInfo
 	lock              sync.Mutex
 }
 
@@ -76,7 +76,7 @@ func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *Qu
 		CalculateInfo: QuotaCalculateInfo{
 			Max:          v1.ResourceList{},
 			AutoScaleMin: v1.ResourceList{},
-			OriginalMin:  v1.ResourceList{},
+			Min:          v1.ResourceList{},
 			Used:         v1.ResourceList{},
 			Request:      v1.ResourceList{},
 			SharedWeight: v1.ResourceList{},
@@ -102,7 +102,7 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 		CalculateInfo: QuotaCalculateInfo{
 			Max:          qi.CalculateInfo.Max.DeepCopy(),
 			AutoScaleMin: qi.CalculateInfo.AutoScaleMin.DeepCopy(),
-			OriginalMin:  qi.CalculateInfo.OriginalMin.DeepCopy(),
+			Min:          qi.CalculateInfo.Min.DeepCopy(),
 			Used:         qi.CalculateInfo.Used.DeepCopy(),
 			Request:      qi.CalculateInfo.Request.DeepCopy(),
 			SharedWeight: qi.CalculateInfo.SharedWeight.DeepCopy(),
@@ -113,6 +113,34 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 		quotaInfo.PodCache[name] = pod
 	}
 	return quotaInfo
+}
+
+func (qi *QuotaInfo) GetQuotaSummary() *QuotaInfoSummary {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	quotaInfoSummary := NewQuotaInfoSummary()
+	quotaInfoSummary.Name = qi.Name
+	quotaInfoSummary.ParentName = qi.ParentName
+	quotaInfoSummary.IsParent = qi.IsParent
+	quotaInfoSummary.RuntimeVersion = qi.RuntimeVersion
+	quotaInfoSummary.AllowLentResource = qi.AllowLentResource
+	quotaInfoSummary.Max = qi.CalculateInfo.Max.DeepCopy()
+	quotaInfoSummary.Min = qi.CalculateInfo.Min.DeepCopy()
+	quotaInfoSummary.AutoScaleMin = qi.CalculateInfo.AutoScaleMin.DeepCopy()
+	quotaInfoSummary.Used = qi.CalculateInfo.Used.DeepCopy()
+	quotaInfoSummary.Request = qi.CalculateInfo.Request.DeepCopy()
+	quotaInfoSummary.SharedWeight = qi.CalculateInfo.SharedWeight.DeepCopy()
+	quotaInfoSummary.Runtime = qi.CalculateInfo.Runtime.DeepCopy()
+
+	for podName, podInfo := range qi.PodCache {
+		quotaInfoSummary.PodCache[podName] = &SimplePodInfo{
+			IsAssigned: podInfo.isAssigned,
+			Resource:   podInfo.resource,
+		}
+	}
+
+	return quotaInfoSummary
 }
 
 // updateQuotaInfoFromRemote the CRD(max/oriMin/sharedWeight/allowLentResource/isParent/ParentName) of the quota maybe changed,
@@ -126,7 +154,7 @@ func (qi *QuotaInfo) updateQuotaInfoFromRemote(quotaInfo *QuotaInfo) {
 	}
 
 	qi.setMaxQuotaNoLock(quotaInfo.CalculateInfo.Max)
-	qi.setOriginalMinQuotaNoLock(quotaInfo.CalculateInfo.OriginalMin)
+	qi.setMinQuotaNoLock(quotaInfo.CalculateInfo.Min)
 	sharedWeight := quotaInfo.CalculateInfo.SharedWeight.DeepCopy()
 	if quotav1.IsZero(sharedWeight) {
 		sharedWeight = quotaInfo.CalculateInfo.Max.DeepCopy()
@@ -173,8 +201,8 @@ func (qi *QuotaInfo) setMaxQuotaNoLock(res v1.ResourceList) {
 	qi.CalculateInfo.Max = res.DeepCopy()
 }
 
-func (qi *QuotaInfo) setOriginalMinQuotaNoLock(res v1.ResourceList) {
-	qi.CalculateInfo.OriginalMin = res.DeepCopy()
+func (qi *QuotaInfo) setMinQuotaNoLock(res v1.ResourceList) {
+	qi.CalculateInfo.Min = res.DeepCopy()
 }
 
 func (qi *QuotaInfo) setAutoScaleMinQuotaNoLock(res v1.ResourceList) {
@@ -216,7 +244,7 @@ func NewQuotaInfoFromQuota(quota *v1alpha1.ElasticQuota) *QuotaInfo {
 	allowLentResource := extension.IsAllowLentResource(quota)
 
 	quotaInfo := NewQuotaInfo(isParent, allowLentResource, quota.Name, parentName)
-	quotaInfo.setOriginalMinQuotaNoLock(quota.Spec.Min)
+	quotaInfo.setMinQuotaNoLock(quota.Spec.Min)
 	quotaInfo.setMaxQuotaNoLock(quota.Spec.Max)
 	newSharedWeight := extension.GetSharedWeight(quota)
 	quotaInfo.setSharedWeightNoLock(newSharedWeight)
@@ -239,7 +267,7 @@ func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 	if !quotav1.Equals(qi.CalculateInfo.Max, quotaInfo.CalculateInfo.Max) ||
-		!quotav1.Equals(qi.CalculateInfo.OriginalMin, quotaInfo.CalculateInfo.OriginalMin) ||
+		!quotav1.Equals(qi.CalculateInfo.Min, quotaInfo.CalculateInfo.Min) ||
 		!quotav1.Equals(qi.CalculateInfo.SharedWeight, quotaInfo.CalculateInfo.SharedWeight) ||
 		qi.AllowLentResource != quotaInfo.AllowLentResource ||
 		qi.IsParent != quotaInfo.IsParent ||

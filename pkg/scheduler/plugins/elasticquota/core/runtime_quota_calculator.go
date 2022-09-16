@@ -414,7 +414,7 @@ func (qtw *RuntimeQuotaCalculator) logQuotaInfoNoLock(verb string, quotaInfo *Qu
 		"quotaName:%v quotaParentName:%v IsParent:%v request:%v maxQuota:%v OriginalMinQuota:%v"+
 		"autoScaleMinQuota:%v  SharedWeight:%v runtime:%v used:%v treeName:%v totalResource:%v reqLimit:%v refreshedVersion:%v", verb,
 		quotaInfo.Name, quotaInfo.ParentName, quotaInfo.IsParent, quotaInfo.CalculateInfo.Request,
-		quotaInfo.CalculateInfo.Max, quotaInfo.CalculateInfo.OriginalMin, quotaInfo.CalculateInfo.AutoScaleMin, quotaInfo.CalculateInfo.SharedWeight,
+		quotaInfo.CalculateInfo.Max, quotaInfo.CalculateInfo.Min, quotaInfo.CalculateInfo.AutoScaleMin, quotaInfo.CalculateInfo.SharedWeight,
 		quotaInfo.CalculateInfo.Runtime, quotaInfo.CalculateInfo.Used, qtw.treeName, qtw.totalResource, qtw.groupReqLimit,
 		qtw.globalRuntimeVersion)
 }

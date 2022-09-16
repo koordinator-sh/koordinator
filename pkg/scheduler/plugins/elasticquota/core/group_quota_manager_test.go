@@ -752,7 +752,7 @@ func AddQuotaToManager(t *testing.T,
 	assert.True(t, quotaInfo != nil)
 	assert.Equal(t, quotaName, quotaInfo.Name)
 	assert.Equal(t, quotaInfo.CalculateInfo.Max, createResourceList(maxCpu, maxMem))
-	assert.Equal(t, quotaInfo.CalculateInfo.OriginalMin, createResourceList(minCpu, minMem))
+	assert.Equal(t, quotaInfo.CalculateInfo.Min, createResourceList(minCpu, minMem))
 	assert.Equal(t, quotaInfo.CalculateInfo.SharedWeight.Memory().Value(), maxMem)
 	assert.Equal(t, quotaInfo.CalculateInfo.SharedWeight.Cpu().Value(), maxCpu)
 

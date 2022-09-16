@@ -429,7 +429,7 @@ func (gqm *GroupQuotaManager) updateOneGroupMaxQuotaNoLock(quotaInfo *QuotaInfo)
 func (gqm *GroupQuotaManager) updateMinQuotaNoLock(quotaInfo *QuotaInfo) {
 	gqm.updateOneGroupOriginalMinQuotaNoLock(quotaInfo)
 	gqm.scaleMinQuotaManager.update(quotaInfo.ParentName, quotaInfo.Name,
-		quotaInfo.CalculateInfo.OriginalMin, gqm.scaleMinQuotaEnabled)
+		quotaInfo.CalculateInfo.Min, gqm.scaleMinQuotaEnabled)
 }
 
 // updateOneGroupOriginalMinQuotaNoLock no need to lock gqm.lock
@@ -437,7 +437,7 @@ func (gqm *GroupQuotaManager) updateOneGroupOriginalMinQuotaNoLock(quotaInfo *Qu
 	quotaInfo.lock.Lock()
 	defer quotaInfo.lock.Unlock()
 
-	quotaInfo.setAutoScaleMinQuotaNoLock(quotaInfo.CalculateInfo.OriginalMin)
+	quotaInfo.setAutoScaleMinQuotaNoLock(quotaInfo.CalculateInfo.Min)
 	gqm.runtimeQuotaCalculatorMap[quotaInfo.ParentName].updateOneGroupMinQuota(quotaInfo)
 }
 
@@ -568,4 +568,19 @@ func (gqm *GroupQuotaManager) RLock() {
 
 func (gqm *GroupQuotaManager) RUnLock() {
 	gqm.hierarchyUpdateLock.RUnlock()
+}
+
+func (gqm *GroupQuotaManager) GetQuotaSummary(quotaName string) (*QuotaInfoSummary, bool) {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	quotaInfo := gqm.GetQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo == nil {
+		return nil, false
+	}
+
+	runtime := gqm.RefreshRuntimeNoLock(quotaName)
+	quotaSummary := quotaInfo.GetQuotaSummary()
+	quotaSummary.Runtime = runtime.DeepCopy()
+	return quotaSummary, true
 }
