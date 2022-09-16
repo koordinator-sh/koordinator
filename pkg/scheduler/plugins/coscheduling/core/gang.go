@@ -42,38 +42,38 @@ const (
 
 // Gang  basic podGroup info recorded in gangCache:
 type Gang struct {
-	Name       string
-	WaitTime   time.Duration
-	CreateTime time.Time
+	Name       string        `json:"name"`
+	WaitTime   time.Duration `json:"waitTime"`
+	CreateTime time.Time     `json:"createTime"`
 
 	// strict-mode or non-strict-mode
-	Mode              string
-	MinRequiredNumber int
-	TotalChildrenNum  int
-	GangGroup         []string
-	Children          map[string]*v1.Pod
+	Mode              string             `json:"mode"`
+	MinRequiredNumber int                `json:"minRequiredNumber"`
+	TotalChildrenNum  int                `json:"totalChildrenNum"`
+	GangGroup         []string           `json:"gangGroup"`
+	Children          map[string]*v1.Pod `json:"children"`
 	// pods that have already assumed(waiting in Permit stage)
-	WaitingForBindChildren map[string]*v1.Pod
+	WaitingForBindChildren map[string]*v1.Pod `json:"waitingForBindChildren"`
 	// pods that have already bound
-	BoundChildren map[string]*v1.Pod
+	BoundChildren map[string]*v1.Pod `json:"boundChildren"`
 	// OnceResourceSatisfied indicates whether the gang has ever reached the ResourceSatisfied state，which means the
 	// children number has reached the minNum in the early step,
 	// once this variable is set true, it is irreversible.
-	OnceResourceSatisfied bool
+	OnceResourceSatisfied bool `json:"onceResourceSatisfied"`
 
 	// if the podGroup should be passed at PreFilter stage(Strict-Mode)
-	ScheduleCycleValid bool
+	ScheduleCycleValid bool `json:"scheduleCycleValid"`
 	// these fields used to count the cycle
 	// For example, at the beginning, `scheduleCycle` is 1, and each pod's cycle in `childrenScheduleRoundMap` is 0. When each pod comes to PreFilter,
 	// we will check if the pod's value in `childrenScheduleRoundMap` is smaller than Gang's `scheduleCycle`, If result is positive,
 	// we set the pod's cycle in `childrenScheduleRoundMap` equal with `scheduleCycle` and pass the check. If result is negative, means
 	// the pod has been scheduled in this cycle, so we should reject it. With `totalChildrenNum`'s help, when the last pod comes to make all
 	// `childrenScheduleRoundMap`'s values equal to `scheduleCycle`, Gang's `scheduleCycle` will be added by 1, which means a new schedule cycle.
-	ScheduleCycle            int
-	ChildrenScheduleRoundMap map[string]int
+	ScheduleCycle            int            `json:"scheduleCycle"`
+	ChildrenScheduleRoundMap map[string]int `json:"childrenScheduleRoundMap"`
 
-	GangFrom    string
-	HasGangInit bool
+	GangFrom    string `json:"gangFrom"`
+	HasGangInit bool   `json:"hasGangInit"`
 
 	lock sync.Mutex
 }

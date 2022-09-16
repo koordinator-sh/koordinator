@@ -65,6 +65,7 @@ type Manager interface {
 	ActivateSiblings(*corev1.Pod, *framework.CycleState)
 	AllowGangGroup(*corev1.Pod, framework.Handle, string)
 	Unreserve(context.Context, *framework.CycleState, *corev1.Pod, string, framework.Handle, string)
+	GetGang(gangId string) *Gang
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -451,4 +452,56 @@ func (pgMgr *PodGroupManager) GetAllPodsFromGang(gangId string) []*corev1.Pod {
 	}
 	pods = gang.getChildrenFromGang()
 	return pods
+}
+
+func (pgMgr *PodGroupManager) GetGang(gangId string) *Gang {
+	gang := pgMgr.cache.getGangFromCacheByGangId(gangId, false)
+	return pgMgr.deepCopyGang(gang)
+}
+
+func (pgMgr *PodGroupManager) deepCopyGang(gang *Gang) *Gang {
+	if gang == nil {
+		return nil
+	}
+	newGang := &Gang{}
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	newGang.Name = gang.Name
+	newGang.WaitTime = gang.WaitTime
+	newGang.CreateTime = gang.CreateTime
+	newGang.Mode = gang.Mode
+	newGang.MinRequiredNumber = gang.MinRequiredNumber
+	newGang.TotalChildrenNum = gang.TotalChildrenNum
+
+	newGang.GangGroup = make([]string, len(gang.GangGroup))
+	copy(newGang.GangGroup, gang.GangGroup)
+
+	newGang.Children = make(map[string]*corev1.Pod)
+	for k, v := range gang.Children {
+		newGang.Children[k] = v.DeepCopy()
+	}
+
+	newGang.WaitingForBindChildren = make(map[string]*corev1.Pod)
+	for k, v := range gang.WaitingForBindChildren {
+		newGang.WaitingForBindChildren[k] = v.DeepCopy()
+	}
+
+	newGang.BoundChildren = make(map[string]*corev1.Pod)
+	for k, v := range gang.BoundChildren {
+		newGang.BoundChildren[k] = v.DeepCopy()
+	}
+
+	newGang.OnceResourceSatisfied = gang.OnceResourceSatisfied
+	newGang.ScheduleCycleValid = gang.ScheduleCycleValid
+	newGang.ScheduleCycle = gang.ScheduleCycle
+
+	newGang.ChildrenScheduleRoundMap = make(map[string]int)
+	for k, v := range gang.ChildrenScheduleRoundMap {
+		newGang.ChildrenScheduleRoundMap[k] = v
+	}
+
+	newGang.GangFrom = gang.GangFrom
+	newGang.HasGangInit = gang.HasGangInit
+
+	return newGang
 }
