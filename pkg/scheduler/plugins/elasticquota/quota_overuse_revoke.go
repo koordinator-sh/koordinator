@@ -74,7 +74,7 @@ func (monitor *QuotaOverUsedGroupMonitor) monitor() bool {
 		monitor.lastUnderUsedTime = time.Now()
 	}
 
-	if overUseContinueDuration >= monitor.overUsedTriggerEvictDuration {
+	if overUseContinueDuration > monitor.overUsedTriggerEvictDuration {
 		klog.V(5).Infof("Quota used continue large than runtime, prepare trigger evict, quotaName:%v,"+
 			"overUseContinueDuration:%v, config:%v", monitor.quotaName, overUseContinueDuration,
 			monitor.overUsedTriggerEvictDuration)
