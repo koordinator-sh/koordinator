@@ -105,7 +105,13 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		}
 		klog.Infof("can not detect cgroup driver from 'kubepods' cgroup name")
 
-		port := int(statesInformer.GetNode().Status.DaemonEndpoints.KubeletEndpoint.Port)
+		node := statesInformer.GetNode()
+		if node == nil {
+			klog.Error("Can't get node")
+			return false, nil
+		}
+
+		port := int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
 		if driver, err := system.GuessCgroupDriverFromKubeletPort(port); err == nil && driver.Validate() {
 			detectCgroupDriver = driver
 			return true, nil
