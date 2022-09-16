@@ -29,7 +29,7 @@ require (
 	google.golang.org/grpc v1.38.0
 	google.golang.org/protobuf v1.28.1
 	gorm.io/driver/sqlite v1.3.6
-	gorm.io/gorm v1.23.8
+	gorm.io/gorm v1.23.9
 	k8s.io/api v0.22.6
 	k8s.io/apimachinery v0.22.6
 	k8s.io/apiserver v0.22.6
