@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -79,19 +80,16 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 	assert.Nil(t, err)
 	suit.start()
 	gp := p.(*Coscheduling)
-	gangExpected := core.Gang{
-		Name:              "ganga_ns/ganga",
-		WaitTime:          time.Second * 600,
-		CreateTime:        podToCreateGangA.CreationTimestamp.Time,
-		Mode:              extension.GangModeStrict,
-		MinRequiredNumber: 2,
-		TotalChildrenNum:  2,
-		Children: map[string]*corev1.Pod{
-			"ganga_ns/pod1": podToCreateGangA,
-		},
-		GangGroup:                make([]string, 0),
-		WaitingForBindChildren:   map[string]*corev1.Pod{},
-		BoundChildren:            map[string]*corev1.Pod{},
+	gangExpected := core.GangSummary{
+		Name:                     "ganga_ns/ganga",
+		WaitTime:                 time.Second * 600,
+		CreateTime:               podToCreateGangA.CreationTimestamp.Time,
+		Mode:                     extension.GangModeStrict,
+		MinRequiredNumber:        2,
+		TotalChildrenNum:         2,
+		Children:                 sets.NewString("ganga_ns/pod1"),
+		WaitingForBindChildren:   sets.NewString(),
+		BoundChildren:            sets.NewString(),
 		OnceResourceSatisfied:    false,
 		ScheduleCycleValid:       true,
 		ScheduleCycle:            1,
@@ -105,8 +103,8 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/gang/ganga_ns/ganga", nil)
 	engine.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
-	gang := &core.Gang{}
-	err = json.NewDecoder(w.Result().Body).Decode(gang)
+	gangMarshal := &core.GangSummary{}
+	err = json.NewDecoder(w.Result().Body).Decode(gangMarshal)
 	assert.NoError(t, err)
-	assert.Equal(t, &gangExpected, gang)
+	assert.Equal(t, &gangExpected, gangMarshal)
 }
