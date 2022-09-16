@@ -225,6 +225,7 @@ func (ctrl *PodGroupController) syncHandler(key string) error {
 			return err
 		}
 		pods = append(pods, podFromInformer)
+		klog.Infof("pgController get pod from informer : %v", podFromInformer.Name)
 	}
 
 	switch pgCopy.Status.Phase {
@@ -232,6 +233,7 @@ func (ctrl *PodGroupController) syncHandler(key string) error {
 		pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
 	case schedv1alpha1.PodGroupPending:
 		if len(pods) >= int(pg.Spec.MinMember) {
+			klog.Infof("pgController get pods from informer > pg.Spec.MinMember")
 			pgCopy.Status.Phase = schedv1alpha1.PodGroupPreScheduling
 			fillOccupiedObj(pgCopy, pods[0])
 		}
@@ -312,5 +314,6 @@ func fillOccupiedObj(pg *schedv1alpha1.PodGroup, pod *v1.Pod) {
 	if len(refs) != 0 {
 		sort.Strings(refs)
 		pg.Status.OccupiedBy = strings.Join(refs, ",")
+		klog.Infof("podGroup occupied changed to %v", pg.Status.OccupiedBy)
 	}
 }
