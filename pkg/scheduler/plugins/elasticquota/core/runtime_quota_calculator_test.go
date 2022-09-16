@@ -72,13 +72,13 @@ func TestNewQuotaInfoFromQuota(t *testing.T) {
 		quotaInfo.ParentName != "test_parent" {
 		t.Error("error")
 	}
-	assert.Equal(t, quotaInfo.CalculateInfo.OriginalMin, createResourceList(100, 1000))
+	assert.Equal(t, quotaInfo.CalculateInfo.Min, createResourceList(100, 1000))
 	assert.Equal(t, quotaInfo.CalculateInfo.Max, createResourceList(1000, 10000))
 	if !v12.Equals(quotaInfo.CalculateInfo.SharedWeight, createResourceList(10, 100)) {
 		t.Error("error")
 	}
-	quotaInfo.CalculateInfo.OriginalMin["test"] = *resource.NewQuantity(1, resource.DecimalSI)
-	if v12.Equals(quotaInfo.CalculateInfo.OriginalMin, createResourceList(100, 1000)) {
+	quotaInfo.CalculateInfo.Min["test"] = *resource.NewQuantity(1, resource.DecimalSI)
+	if v12.Equals(quotaInfo.CalculateInfo.Min, createResourceList(100, 1000)) {
 		t.Error("error")
 	}
 	delete(quotaInfo.CalculateInfo.Max, corev1.ResourceCPU)

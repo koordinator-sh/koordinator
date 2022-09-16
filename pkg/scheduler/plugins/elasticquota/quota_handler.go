@@ -21,6 +21,7 @@ import (
 	schedulerv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 func (g *Plugin) OnQuotaAdd(obj interface{}) {
@@ -72,4 +73,8 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 		klog.Errorf("OnQuotaDeleteFunc failed: %v.%v", quota.Namespace, quota.Name)
 	}
 	klog.V(5).Infof("OnQuotaDeleteFunc success: %v.%v", quota.Namespace, quota.Name)
+}
+
+func (g *Plugin) GetQuotaSummary(quotaName string) (*core.QuotaInfoSummary, bool) {
+	return g.groupQuotaManager.GetQuotaSummary(quotaName)
 }

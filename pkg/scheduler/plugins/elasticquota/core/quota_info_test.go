@@ -61,7 +61,7 @@ func TestQuotaInfo_DeepCopy(t *testing.T) {
 		CalculateInfo: QuotaCalculateInfo{
 			Max:          createResourceList(20, 20),
 			AutoScaleMin: createResourceList(10, 23),
-			OriginalMin:  createResourceList(20, 10),
+			Min:          createResourceList(20, 10),
 			Used:         createResourceList(20, 14),
 			Request:      createResourceList(31, 40),
 			SharedWeight: createResourceList(32, 40),
