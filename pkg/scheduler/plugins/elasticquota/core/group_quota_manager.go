@@ -116,13 +116,6 @@ func (gqm *GroupQuotaManager) GetClusterTotalResource() v1.ResourceList {
 	return gqm.totalResource.DeepCopy()
 }
 
-func (gqm *GroupQuotaManager) UpdateGroupDeltaRequest(quotaName string, deltaReq v1.ResourceList) {
-	gqm.hierarchyUpdateLock.RLock()
-	defer gqm.hierarchyUpdateLock.RUnlock()
-
-	gqm.updateGroupDeltaRequestNoLock(quotaName, deltaReq)
-}
-
 // updateGroupDeltaRequestNoLock no need lock gqm.lock
 func (gqm *GroupQuotaManager) updateGroupDeltaRequestNoLock(quotaName string, deltaReq v1.ResourceList) {
 	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)

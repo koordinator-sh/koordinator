@@ -122,8 +122,8 @@ func (ctrl *Controller) syncHandler() []error {
 				return
 			}
 			used := quotaInfo.GetUsed()
-			runtime, _ := json.MarshalIndent(ctrl.groupQuotaManager.RefreshRuntimeNoLock(eq.Name), "", "")
-			request, _ := json.MarshalIndent(quotaInfo.GetRequest(), "", "")
+			runtime, _ := json.Marshal(ctrl.groupQuotaManager.RefreshRuntimeNoLock(eq.Name))
+			request, _ := json.Marshal(quotaInfo.GetRequest())
 
 			// Ignore this loop if the runtime/request/used doesn't change
 			if quotav1.Equals(eq.Status.Used, used) &&

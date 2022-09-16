@@ -653,8 +653,11 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	mmQuota := plugin.addQuota("mm-a", "alimm", 96, 160, 50, 80, 96, 160, false, "")
 	gqm.UpdateClusterTotalResource(createResourceList(96, 160))
 	request := createResourceList(60, 100)
-	gqm.UpdateGroupDeltaRequest("a-123", request)
-	gqm.UpdateGroupDeltaUsed("a-123", request)
+	pod := makePod2("pod", request)
+	gqm.UpdatePodRequest("a-123", nil, pod)
+	gqm.UpdatePodCache("a-123", pod, true)
+	gqm.UpdatePodIsAssigned("a-123", pod, true)
+	gqm.UpdatePodUsed("a-123", nil, pod)
 	runtime := gqm.RefreshRuntime("a-123")
 	assert.Equal(t, request, runtime)
 
@@ -666,8 +669,11 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 
 	// mm-a request [20,40]
 	request = createResourceList(20, 40)
-	gqm.UpdateGroupDeltaRequest("mm-a", request)
-	gqm.UpdateGroupDeltaUsed("mm-a", request)
+	pod1 := makePod2("pod1", request)
+	gqm.UpdatePodRequest("mm-a", nil, pod1)
+	gqm.UpdatePodCache("mm-a", pod1, true)
+	gqm.UpdatePodIsAssigned("mm-a", pod1, true)
+	gqm.UpdatePodUsed("mm-a", nil, pod1)
 	runtime = gqm.RefreshRuntime("mm-a")
 	assert.Equal(t, request, runtime)
 
@@ -870,8 +876,9 @@ func TestPlugin_Reserve(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
 			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 			gp := p.(*Plugin)
-			gp.groupQuotaManager.UpdateGroupDeltaUsed(tt.quotaInfo.Name, tt.quotaInfo.CalculateInfo.Used)
-			gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name).AddPodIfNotPresent(tt.pod)
+			pod := makePod2("pod", tt.quotaInfo.CalculateInfo.Used)
+			gp.OnPodAdd(pod)
+			gp.OnPodAdd(tt.pod)
 			ctx := context.TODO()
 			gp.Reserve(ctx, framework.NewCycleState(), tt.pod, "")
 			assert.Equal(t, gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name).GetUsed(), tt.expectedUsed)
@@ -899,19 +906,6 @@ func TestPlugin_Unreserve(t *testing.T) {
 			},
 			expectedUsed: MakeResourceList().CPU(9).Mem(18).GPU(9).Obj(),
 		},
-		{
-			name: "nonNegative",
-			pod: MakePod("t1-ns1", "pod1").Container(
-				MakeResourceList().CPU(20).Mem(30).GPU(9).Obj()).Phase(corev1.PodRunning).UID("pod1").Obj(),
-			quotaInfo: &core.QuotaInfo{
-				Name: extension.DefaultQuotaName,
-				CalculateInfo: core.QuotaCalculateInfo{
-					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
-				},
-				PodCache: make(map[string]*core.PodInfo),
-			},
-			expectedUsed: MakeResourceList().CPU(0).Mem(0).GPU(1).Obj(),
-		},
 	}
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
@@ -919,14 +913,14 @@ func TestPlugin_Unreserve(t *testing.T) {
 			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 			gp := p.(*Plugin)
 			ctx := context.TODO()
+			pod := makePod2("pod", tt.quotaInfo.CalculateInfo.Used)
+			gp.OnPodAdd(pod)
 			qi := gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name)
-			gp.groupQuotaManager.UpdateGroupDeltaUsed(tt.quotaInfo.Name, tt.quotaInfo.CalculateInfo.Used)
 			qi.AddPodIfNotPresent(tt.pod)
 			gp.groupQuotaManager.UpdatePodIsAssigned(tt.quotaInfo.Name, tt.pod, true)
-			assert.Equal(t, 1, len(gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name).PodCache))
+			assert.Equal(t, 2, len(gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name).GetPodCache()))
 			gp.Unreserve(ctx, framework.NewCycleState(), tt.pod, "")
 			assert.Equal(t, gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name).GetUsed(), tt.expectedUsed)
-			assert.Equal(t, 1, len(gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name).PodCache))
 		})
 	}
 }
@@ -960,9 +954,9 @@ func TestPlugin_AddPod(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
 			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 			gp := p.(*Plugin)
-			qi := gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name)
-			gp.groupQuotaManager.UpdateGroupDeltaUsed(tt.quotaInfo.Name, tt.quotaInfo.CalculateInfo.Used)
-			qi.AddPodIfNotPresent(tt.podInfo.Pod)
+			pod := makePod2("test", tt.quotaInfo.CalculateInfo.Used)
+			gp.OnPodAdd(pod)
+			gp.OnPodAdd(tt.podInfo.Pod)
 			state := framework.NewCycleState()
 			ctx := context.TODO()
 			gp.snapshotPostFilterState(gp.getPodAssociateQuotaName(tt.podInfo.Pod), state)
@@ -995,30 +989,16 @@ func TestPlugin_RemovePod(t *testing.T) {
 			},
 			expectedUsed: MakeResourceList().CPU(9).Mem(18).GPU(9).Obj(),
 		},
-		{
-			name: "non-negative",
-			podInfo: &framework.PodInfo{
-				Pod: MakePod("t1-ns1", "pod1").Container(
-					MakeResourceList().CPU(11).Mem(21).GPU(11).Obj()).
-					Label(extension.LabelQuotaName, "t1-eq1").UID("1").Phase(corev1.PodRunning).Obj(),
-			},
-			quotaInfo: &core.QuotaInfo{
-				Name: "default",
-				CalculateInfo: core.QuotaCalculateInfo{
-					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
-				},
-			},
-			expectedUsed: MakeResourceList().CPU(0).Mem(0).GPU(0).Obj(),
-		},
 	}
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
 			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 			gp := p.(*Plugin)
-
+			pod := makePod2("pod", tt.quotaInfo.CalculateInfo.Used)
+			gp.OnPodAdd(pod)
+			gp.OnPodAdd(tt.podInfo.Pod)
 			qi := gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name)
-			gp.groupQuotaManager.UpdateGroupDeltaUsed(tt.quotaInfo.Name, tt.quotaInfo.CalculateInfo.Used)
 			qi.AddPodIfNotPresent(tt.podInfo.Pod)
 			state := framework.NewCycleState()
 			ctx := context.TODO()
@@ -1255,6 +1235,17 @@ func makePod(podName string, namespace string, memReq int64, cpuReq int64, gpuRe
 		},
 	}
 	pod.Status.Phase = corev1.PodRunning
+	return pod
+}
+
+func makePod2(podName string, request corev1.ResourceList) *corev1.Pod {
+	pause := imageutils.GetPauseImageName()
+	pod := schedulertesting.MakePod().Namespace(extension.DefaultQuotaName).Name(podName).Container(pause).ZeroTerminationGracePeriod().Obj()
+	pod.Spec.Containers[0].Resources = corev1.ResourceRequirements{
+		Requests: request,
+	}
+	pod.Status.Phase = corev1.PodRunning
+	pod.Spec.NodeName = "testNode"
 	return pod
 }
 
