@@ -12,8 +12,6 @@ labels: kind/question
 
 **What you expected to happen:**
 
-**How to reproduce it (as minimally and precisely as possible):**
-
 **Environment:**
 
 <!-- Please add environment information, if you know what is necessary, just provide some -->
