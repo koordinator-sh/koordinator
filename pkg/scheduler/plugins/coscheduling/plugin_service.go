@@ -16,11 +16,11 @@ func (p *Coscheduling) RegisterEndpoints(group *gin.RouterGroup) {
 		gangNamespace := c.Param("namespace")
 		gangName := c.Param("name")
 		gangId := util.GetId(gangNamespace, gangName)
-		gang := p.pgMgr.GetGang(gangId)
-		if gang == nil {
+		gangSummary, exist := p.pgMgr.GetGangSummary(gangId)
+		if !exist {
 			services.ResponseErrorMessage(c, http.StatusNotFound, "cannot find gang %s/%s", gangNamespace, gangName)
 			return
 		}
-		c.JSON(http.StatusOK, gang)
+		c.JSON(http.StatusOK, gangSummary)
 	})
 }
