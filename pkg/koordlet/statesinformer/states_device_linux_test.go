@@ -69,7 +69,7 @@ func Test_reportGPUDevice(t *testing.T) {
 		metricsCache: mockMetricCache,
 	}
 	r.reportDevice()
-	extectedDevices := []schedulingv1alpha1.DeviceInfo{
+	expectedDevices := []schedulingv1alpha1.DeviceInfo{
 		{
 			UUID:   "1",
 			Minor:  0,
@@ -95,5 +95,30 @@ func Test_reportGPUDevice(t *testing.T) {
 	}
 	device, err := fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
 	assert.Equal(t, nil, err)
-	assert.Equal(t, device.Spec.Devices, extectedDevices)
+	assert.Equal(t, device.Spec.Devices, expectedDevices)
+
+	fakeResult.Metric.GPUs = append(fakeResult.Metric.GPUs, metriccache.GPUMetric{
+		DeviceUUID:  "3",
+		Minor:       2,
+		SMUtil:      40,
+		MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
+		MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+	})
+	mockMetricCache.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(fakeResult).AnyTimes()
+	r.reportDevice()
+
+	expectedDevices = append(expectedDevices, schedulingv1alpha1.DeviceInfo{
+		UUID:   "3",
+		Minor:  2,
+		Type:   schedulingv1alpha1.GPU,
+		Health: true,
+		Resources: map[corev1.ResourceName]resource.Quantity{
+			extension.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+			extension.GPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
+			extension.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+		},
+	})
+	device, err = fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
+	assert.Equal(t, nil, err)
+	assert.Equal(t, device.Spec.Devices, expectedDevices)
 }

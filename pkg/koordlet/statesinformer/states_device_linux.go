@@ -19,10 +19,12 @@ package statesinformer
 import (
 	"context"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +33,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func generateQueryParam() *metriccache.QueryParam {
@@ -44,18 +47,38 @@ func generateQueryParam() *metriccache.QueryParam {
 }
 
 func (s *statesInformer) reportDevice() {
-	copyNode := s.GetNode()
+	node := s.GetNode()
 	gpuDevices := s.buildGPUDevice()
+
+	err := s.updateDevice(node.Name, gpuDevices)
+	if err == nil {
+		klog.V(4).Infof("successfully update Device %s", node.Name)
+		return
+	}
+	if !errors.IsNotFound(err) {
+		klog.Errorf("Failed to updateDevice %s, err: %v", node.Name, err)
+		return
+	}
+
+	err = s.createDevice(node, gpuDevices)
+	if err == nil {
+		klog.V(4).Infof("successfully create Device %s", node.Name)
+	} else {
+		klog.Errorf("Failed to create Device %s, err: %v", node.Name, err)
+	}
+}
+
+func (s *statesInformer) createDevice(node *corev1.Node, gpuDevices []schedulingv1alpha1.DeviceInfo) error {
 	blocker := true
 	device := &schedulingv1alpha1.Device{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: copyNode.Name,
+			Name: node.Name,
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion:         "v1",
 					Kind:               "Node",
-					Name:               copyNode.Name,
-					UID:                copyNode.UID,
+					Name:               node.Name,
+					UID:                node.UID,
 					Controller:         &blocker,
 					BlockOwnerDeletion: &blocker,
 				},
@@ -65,19 +88,36 @@ func (s *statesInformer) reportDevice() {
 			Devices: gpuDevices,
 		},
 	}
-	// TODO: compare diff before update
-	_, err := s.deviceClient.Update(context.TODO(), device, metav1.UpdateOptions{})
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			klog.Errorf("failed to update device %s, err: %v", copyNode.Name, err)
-			return
-		}
-		_, err = s.deviceClient.Create(context.TODO(), device, metav1.CreateOptions{})
-		if err != nil {
-			klog.Errorf("failed to create device %s, err: %v", copyNode.Name, err)
-			return
-		}
+	_, err := s.deviceClient.Create(context.TODO(), device, metav1.CreateOptions{})
+	return err
+}
+
+func (s *statesInformer) updateDevice(name string, gpuDevices []schedulingv1alpha1.DeviceInfo) error {
+	sorter := func(devices []schedulingv1alpha1.DeviceInfo) {
+		sort.Slice(devices, func(i, j int) bool {
+			return devices[i].Minor < devices[j].Minor
+		})
 	}
+	sorter(gpuDevices)
+
+	return util.RetryOnConflictOrTooManyRequests(func() error {
+		device, err := s.deviceClient.Get(context.TODO(), name, metav1.GetOptions{ResourceVersion: "0"})
+		if err != nil {
+			return err
+		}
+		sorter(device.Spec.Devices)
+
+		if apiequality.Semantic.DeepEqual(gpuDevices, device.Spec.Devices) {
+			klog.V(4).Infof("Device %s has not changed and does not need to be updated", name)
+			return nil
+		}
+
+		device.Spec = schedulingv1alpha1.DeviceSpec{
+			Devices: gpuDevices,
+		}
+		_, err = s.deviceClient.Update(context.TODO(), device, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
