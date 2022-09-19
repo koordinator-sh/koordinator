@@ -62,5 +62,9 @@ func IsResourceDiff(old, new corev1.ResourceList, resourceName corev1.ResourceNa
 		return true
 	}
 
+	if !oldExist && !newExist {
+		return false
+	}
+
 	return newQuant >= oldQuant*(1+diffThreshold) || newQuant <= oldQuant*(1-diffThreshold)
 }

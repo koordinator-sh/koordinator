@@ -125,7 +125,7 @@ func (r *NodeResourceReconciler) isGPUResourceNeedSync(new, old *corev1.Node) bo
 		return true
 	}
 
-	for _, resourceName := range []corev1.ResourceName{extension.GPUMemoryRatio, extension.GPUMemoryRatio, extension.GPUMemory} {
+	for _, resourceName := range []corev1.ResourceName{extension.GPUCore, extension.GPUMemoryRatio, extension.GPUMemory} {
 		if util.IsResourceDiff(old.Status.Allocatable, new.Status.Allocatable, resourceName, *strategy.ResourceDiffThreshold) {
 			klog.Warningf("node %v resource diff bigger than %v, need sync", resourceName, *strategy.ResourceDiffThreshold)
 			return true
@@ -138,15 +138,24 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 	if device == nil {
 		return nil
 	}
-	memoryTotal := resource.NewQuantity(0, resource.DecimalSI)
-	coreTotal := resource.NewQuantity(0, resource.BinarySI)
+	memoryTotal := resource.NewQuantity(0, resource.BinarySI)
+	coreTotal := resource.NewQuantity(0, resource.DecimalSI)
 	ratioTotal := resource.NewQuantity(0, resource.DecimalSI)
-	for _, gpu := range device.Spec.Devices {
-		if gpu.Health {
-			memoryTotal.Add(gpu.Resources[extension.GPUMemory])
-			coreTotal.Add(gpu.Resources[extension.GPUCore])
-			ratioTotal.Add(gpu.Resources[extension.GPUMemoryRatio])
+	hasGPUDevice := false
+	for _, device := range device.Spec.Devices {
+		if device.Type != schedulingv1alpha1.GPU {
+			continue
 		}
+		hasGPUDevice = true
+		if device.Health {
+			memoryTotal.Add(device.Resources[extension.GPUMemory])
+			coreTotal.Add(device.Resources[extension.GPUCore])
+			ratioTotal.Add(device.Resources[extension.GPUMemoryRatio])
+		}
+	}
+
+	if !hasGPUDevice {
+		return nil
 	}
 
 	copyNode := node.DeepCopy()
