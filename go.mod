@@ -117,7 +117,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/mattn/go-sqlite3 v1.14.12 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
-	github.com/mindprince/gonvml v0.0.0-20190828220739-9ebdce4bb989 // indirect
 	github.com/mistifyio/go-zfs v2.1.2-0.20190413222219-f784269be439+incompatible // indirect
 	github.com/moby/spdystream v0.2.0 // indirect
 	github.com/moby/sys/mountinfo v0.4.1 // indirect
@@ -190,6 +189,7 @@ require (
 )
 
 replace (
+	github.com/google/cadvisor => github.com/koordinator-sh/cadvisor v0.0.0-20220919031936-833eb74e858e
 	k8s.io/api => k8s.io/api v0.22.6
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.22.6
 	k8s.io/apimachinery => k8s.io/apimachinery v0.22.6
