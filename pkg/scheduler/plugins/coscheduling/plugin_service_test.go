@@ -21,6 +21,8 @@ import (
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	fakepgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 
+	"k8s.io/kubernetes/pkg/scheduler/framework"
+
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/config"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/config/v1beta2"
@@ -35,7 +37,8 @@ func newPluginTestSuitForGangAPI(t *testing.T, nodes []*corev1.Node) *pluginTest
 	assert.NoError(t, err)
 
 	pgClientSet := fakepgclientset.NewSimpleClientset()
-	proxyNew := GangPluginFactoryProxy(pgClientSet, New)
+	var plugin framework.Plugin
+	proxyNew := GangPluginFactoryProxy(pgClientSet, New, &plugin)
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
@@ -56,7 +59,6 @@ func newPluginTestSuitForGangAPI(t *testing.T, nodes []*corev1.Node) *pluginTest
 		Handle:             fh,
 		proxyNew:           proxyNew,
 		gangSchedulingArgs: &gangSchedulingArgs,
-		pgClient:           pgClientSet,
 	}
 }
 func TestEndpointsQueryGangInfo(t *testing.T) {

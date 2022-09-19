@@ -275,6 +275,8 @@ func setUp(ctx context.Context, podNames []string, pgName string, podPhase v1.Po
 
 	pgInformerFactory.Start(ctx.Done())
 	informerFactory.Start(ctx.Done())
+	pgInformerFactory.WaitForCacheSync(ctx.Done())
+	informerFactory.WaitForCacheSync(ctx.Done())
 	return ctrl, kubeClient, pgClient
 }
 

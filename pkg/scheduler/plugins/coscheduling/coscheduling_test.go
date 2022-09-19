@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
@@ -55,9 +56,11 @@ type PodGroupClientSetAndHandle struct {
 	pgclientset.Interface
 }
 
-func GangPluginFactoryProxy(clientSet pgclientset.Interface, factoryFn frameworkruntime.PluginFactory) frameworkruntime.PluginFactory {
+func GangPluginFactoryProxy(clientSet pgclientset.Interface, factoryFn frameworkruntime.PluginFactory, plugin *framework.Plugin) frameworkruntime.PluginFactory {
 	return func(args apiruntime.Object, handle framework.Handle) (framework.Plugin, error) {
-		return factoryFn(args, PodGroupClientSetAndHandle{Handle: handle, Interface: clientSet})
+		var err error
+		*plugin, err = factoryFn(args, PodGroupClientSetAndHandle{Handle: handle, Interface: clientSet})
+		return *plugin, err
 	}
 }
 
@@ -135,10 +138,10 @@ type pluginTestSuit struct {
 	framework.Handle
 	proxyNew           runtime.PluginFactory
 	gangSchedulingArgs *config.CoschedulingArgs
-	pgClient           *fakepgclientset.Clientset
+	plugin             framework.Plugin
 }
 
-func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
+func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pgClientSet pgclientset.Interface, cs kubernetes.Interface) *pluginTestSuit {
 	var v1beta2args v1beta2.CoschedulingArgs
 	v1beta2.SetDefaults_CoschedulingArgs(&v1beta2args)
 	var gangSchedulingArgs config.CoschedulingArgs
@@ -150,8 +153,8 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 		Args: &gangSchedulingArgs,
 	}
 
-	pgClientSet := fakepgclientset.NewSimpleClientset()
-	proxyNew := GangPluginFactoryProxy(pgClientSet, New)
+	var plugin framework.Plugin
+	proxyNew := GangPluginFactoryProxy(pgClientSet, New, &plugin)
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
 		func(reg *runtime.Registry, profile *scheduledconfig.KubeSchedulerProfile) {
@@ -165,7 +168,6 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 		schedulertesting.RegisterPermitPlugin(Name, proxyNew),
 	}
 
-	cs := kubefake.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nodes)
 	fh, err := schedulertesting.NewFramework(
@@ -180,7 +182,7 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 		Handle:             fh,
 		proxyNew:           proxyNew,
 		gangSchedulingArgs: &gangSchedulingArgs,
-		pgClient:           pgClientSet,
+		plugin:             plugin,
 	}
 }
 
@@ -190,18 +192,11 @@ func (p *pluginTestSuit) start() {
 	p.Handle.SharedInformerFactory().WaitForCacheSync(ctx.Done())
 }
 
-func TestNew(t *testing.T) {
-	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.gangSchedulingArgs, suit.Handle)
-	assert.NotNil(t, p)
-	assert.Nil(t, err)
-}
-
 func TestLess(t *testing.T) {
-	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.gangSchedulingArgs, suit.Handle)
-	assert.NotNil(t, p)
-	assert.Nil(t, err)
+	pgClientSet := fakepgclientset.NewSimpleClientset()
+	cs := kubefake.NewSimpleClientset()
+	suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+	gp := suit.plugin.(*Coscheduling)
 
 	var lowPriority, highPriority = int32(10), int32(100)
 	//koordinator priority announced in pod's Labels
@@ -230,10 +225,9 @@ func TestLess(t *testing.T) {
 	gangBCreatTime := now.Add(5 * time.Second)
 	pg := makePg("gangB", gangB_ns, 2, &gangBCreatTime, nil)
 	suit.start()
-	gp := p.(*Coscheduling)
 	//creat gangA and gangB
 
-	err = retry.OnError(
+	err := retry.OnError(
 		retry.DefaultRetry,
 		errors.IsTooManyRequests,
 		func() error {
@@ -249,7 +243,7 @@ func TestLess(t *testing.T) {
 		errors.IsTooManyRequests,
 		func() error {
 			var err error
-			_, err = suit.pgClient.SchedulingV1alpha1().PodGroups(gangB_ns).Create(context.TODO(), pg, metav1.CreateOptions{})
+			_, err = pgClientSet.SchedulingV1alpha1().PodGroups(gangB_ns).Create(context.TODO(), pg, metav1.CreateOptions{})
 			return err
 		})
 	if err != nil {
@@ -459,24 +453,22 @@ func TestPostFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.gangSchedulingArgs, suit.Handle)
-			assert.NotNil(t, p)
-			assert.Nil(t, err)
-			suit.start()
-			gp := p.(*Coscheduling)
+			pgClientSet := fakepgclientset.NewSimpleClientset()
+			cs := kubefake.NewSimpleClientset()
 			//create gang by podGroup
 			if tt.pg != nil {
 				if tt.annotations != nil {
 					tt.pg.Annotations = tt.annotations
 				}
-				_, err = suit.pgClient.SchedulingV1alpha1().PodGroups(tt.pg.Namespace).Create(context.TODO(), tt.pg, metav1.CreateOptions{})
+				_, err := pgClientSet.SchedulingV1alpha1().PodGroups(tt.pg.Namespace).Create(context.TODO(), tt.pg, metav1.CreateOptions{})
 				if err != nil {
 					t.Errorf("create podGroup err: %v", err)
 				}
 			}
-			time.Sleep(10 * time.Millisecond)
 
+			suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+			gp := suit.plugin.(*Coscheduling)
+			suit.start()
 			gangId := util.GetId(tt.pod.Namespace, util.GetGangNameByPod(tt.pod))
 			if tt.resourceSatisfied {
 				gp.PostBind(context.TODO(), nil, tt.pod, "test")
@@ -615,26 +607,23 @@ func TestPermit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.gangSchedulingArgs, suit.Handle)
-			assert.NotNil(t, p)
-			assert.Nil(t, err)
-			suit.start()
-			gp := p.(*Coscheduling)
+			pgClientSet := fakepgclientset.NewSimpleClientset()
+			cs := kubefake.NewSimpleClientset()
 			//create gang by podGroup
-			suit.pgClient.SchedulingV1alpha1().PodGroups(pg1.Namespace).Create(context.Background(), pg1, metav1.CreateOptions{})
-			suit.pgClient.SchedulingV1alpha1().PodGroups(pg2.Namespace).Create(context.Background(), pg2, metav1.CreateOptions{})
-			suit.pgClient.SchedulingV1alpha1().PodGroups(pg3.Namespace).Create(context.Background(), pg3, metav1.CreateOptions{})
-			suit.pgClient.SchedulingV1alpha1().PodGroups(pg4.Namespace).Create(context.Background(), pg4, metav1.CreateOptions{})
-			time.Sleep(10 * time.Millisecond)
-
+			pgClientSet.SchedulingV1alpha1().PodGroups(pg1.Namespace).Create(context.Background(), pg1, metav1.CreateOptions{})
+			pgClientSet.SchedulingV1alpha1().PodGroups(pg2.Namespace).Create(context.Background(), pg2, metav1.CreateOptions{})
+			pgClientSet.SchedulingV1alpha1().PodGroups(pg3.Namespace).Create(context.Background(), pg3, metav1.CreateOptions{})
+			pgClientSet.SchedulingV1alpha1().PodGroups(pg4.Namespace).Create(context.Background(), pg4, metav1.CreateOptions{})
 			//create  pods
 			for _, pod := range tt.pods {
-				suit.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+				cs.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 			}
-			suit.ClientSet().CoreV1().Pods(tt.pod.Namespace).Create(context.TODO(), tt.pod, metav1.CreateOptions{})
+			cs.CoreV1().Pods(tt.pod.Namespace).Create(context.TODO(), tt.pod, metav1.CreateOptions{})
 
-			time.Sleep(10 * time.Millisecond)
+			suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+			suit.start()
+			gp := suit.plugin.(*Coscheduling)
+
 			//add assumed pods
 			ctx := context.Background()
 			cycleState := framework.NewCycleState()
@@ -701,15 +690,12 @@ func TestPermit(t *testing.T) {
 }
 
 func TestUnreserve(t *testing.T) {
-	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.gangSchedulingArgs, suit.Handle)
-	assert.NotNil(t, p)
-	assert.Nil(t, err)
+	pgClientSet := fakepgclientset.NewSimpleClientset()
+	cs := kubefake.NewSimpleClientset()
 	gangACreatedTime := time.Now()
 	// we created gangA by PodGroup,
 	pg1 := makePg("gangA", "gangA_ns", 2, &gangACreatedTime, nil)
-	suit.pgClient.SchedulingV1alpha1().PodGroups("gangA_ns").Create(context.TODO(), pg1, metav1.CreateOptions{})
-	time.Sleep(100 * time.Millisecond)
+	pgClientSet.SchedulingV1alpha1().PodGroups("gangA_ns").Create(context.TODO(), pg1, metav1.CreateOptions{})
 
 	tests := []struct {
 		name    string
@@ -728,14 +714,17 @@ func TestUnreserve(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			suit.start()
-			_, status := suit.Handle.ClientSet().CoreV1().Pods("gangA_ns").Create(context.TODO(), tt.pod, metav1.CreateOptions{})
+			_, status := cs.CoreV1().Pods("gangA_ns").Create(context.TODO(), tt.pod, metav1.CreateOptions{})
 			assert.Nil(t, status)
 			for _, pod := range tt.pods {
-				_, status := suit.Handle.ClientSet().CoreV1().Pods("gangA_ns").Create(context.TODO(), pod, metav1.CreateOptions{})
+				_, status := cs.CoreV1().Pods("gangA_ns").Create(context.TODO(), pod, metav1.CreateOptions{})
 				assert.Nil(t, status)
 			}
-			gp := p.(*Coscheduling)
+
+			suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+			gp := suit.plugin.(*Coscheduling)
+			suit.start()
+
 			ctx := context.TODO()
 			cycleState := framework.NewCycleState()
 			gangId := tt.pod.Namespace + "/" + tt.pod.Labels[v1alpha1.PodGroupLabel]
