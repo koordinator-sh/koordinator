@@ -32,12 +32,12 @@ type AvailableCPUsResponse struct {
 }
 
 func (p *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
-	group.GET("/:nodeName/cpuTopologyOptions", func(c *gin.Context) {
+	group.GET("/cpuTopologyOptions/:nodeName", func(c *gin.Context) {
 		nodeName := c.Param("nodeName")
 		topologyOptions := p.topologyManager.GetCPUTopologyOptions(nodeName)
 		c.JSON(http.StatusOK, topologyOptions)
 	})
-	group.GET("/:nodeName/availableCPUs", func(c *gin.Context) {
+	group.GET("/availableCPUs/:nodeName", func(c *gin.Context) {
 		nodeName := c.Param("nodeName")
 		availableCPUs, allocated, err := p.cpuManager.GetAvailableCPUs(nodeName)
 		if err != nil {
