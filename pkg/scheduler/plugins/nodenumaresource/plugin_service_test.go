@@ -55,7 +55,7 @@ func TestEndpointsQueryCPUTopologyOptions(t *testing.T) {
 	engine := gin.Default()
 	p.RegisterEndpoints(engine.Group("/"))
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/test-node-1/cpuTopologyOptions", nil)
+	req, _ := http.NewRequest("GET", "/cpuTopologyOptions/test-node-1", nil)
 	engine.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 	cpuTopologyOptions := &CPUTopologyOptions{}
@@ -91,7 +91,7 @@ func TestEndpointsQueryAvailableCPUsOptions(t *testing.T) {
 	engine := gin.Default()
 	p.RegisterEndpoints(engine.Group("/"))
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/test-node-1/availableCPUs", nil)
+	req, _ := http.NewRequest("GET", "/availableCPUs/test-node-1", nil)
 	engine.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 	response := &AvailableCPUsResponse{}
