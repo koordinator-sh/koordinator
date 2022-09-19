@@ -17,6 +17,7 @@ limitations under the License.
 package deviceshare
 
 import (
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
@@ -66,9 +67,7 @@ func (n *nodeDeviceCache) remove(nodeName string) {
 	if nodeName == "" {
 		return
 	}
-	n.lock.Lock()
-	defer n.lock.Unlock()
-	delete(n.nodeDeviceInfos, nodeName)
+	n.removeNodeDevice(nodeName)
 }
 
 func (n *nodeDeviceCache) update(nodeName string, device *schedulingv1alpha1.Device) {
@@ -89,7 +88,15 @@ func (n *nodeDeviceCache) update(nodeName string, device *schedulingv1alpha1.Dev
 		if nodeDeviceResource[deviceInfo.Type] == nil {
 			nodeDeviceResource[deviceInfo.Type] = make(deviceResources)
 		}
-		nodeDeviceResource[deviceInfo.Type][int(deviceInfo.Minor)] = deviceInfo.Resources
+		if !deviceInfo.Health {
+			nodeDeviceResource[deviceInfo.Type][int(deviceInfo.Minor)] = make(v1.ResourceList)
+			klog.Errorf("Find device unhealthy, nodeName:%v, deviceType:%v, minor:%v",
+				nodeName, deviceInfo.Type, deviceInfo.Minor)
+		} else {
+			nodeDeviceResource[deviceInfo.Type][int(deviceInfo.Minor)] = deviceInfo.Resources
+			klog.V(5).Infof("Find device resource update, nodeName:%v, deviceType:%v, minor:%v, res:%v",
+				nodeName, deviceInfo.Type, deviceInfo.Minor, deviceInfo.Resources)
+		}
 	}
 
 	info.resetDeviceTotal(nodeDeviceResource)

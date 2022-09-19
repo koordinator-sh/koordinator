@@ -78,7 +78,7 @@ func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
 							},
 						},
 						deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{},
+						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{},
 					},
 				},
 			},
@@ -109,7 +109,7 @@ func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
 							},
 						},
 						deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{},
+						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{},
 					},
 				},
 			},
@@ -144,7 +144,7 @@ func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
 						},
 					},
 					deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{},
+					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{},
 				},
 			},
 		},
@@ -184,9 +184,10 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 				Spec: schedulingv1alpha1.DeviceSpec{
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
-							UUID:  string(uuid.NewUUID()),
-							Minor: 1,
-							Type:  schedulingv1alpha1.GPU,
+							UUID:   string(uuid.NewUUID()),
+							Minor:  1,
+							Health: true,
+							Type:   schedulingv1alpha1.GPU,
 							Resources: corev1.ResourceList{
 								apiext.GPUCore:        resource.MustParse("100"),
 								apiext.GPUMemoryRatio: resource.MustParse("100"),
@@ -220,7 +221,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 						},
 					},
 					deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{},
+					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{},
 				},
 			},
 		},
@@ -247,7 +248,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 						schedulingv1alpha1.GPU: {},
 					},
 					deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{},
+					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{},
 				},
 			},
 		},
@@ -313,7 +314,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 							},
 						},
 						deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{},
+						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{},
 					},
 				},
 			},
@@ -340,7 +341,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 						schedulingv1alpha1.FPGA: {},
 					},
 					deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{},
+					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{},
 				},
 			},
 		},
@@ -413,9 +414,10 @@ func generateFakeDevice() *schedulingv1alpha1.Device {
 		Spec: schedulingv1alpha1.DeviceSpec{
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
-					UUID:  string(uuid.NewUUID()),
-					Minor: 1,
-					Type:  schedulingv1alpha1.GPU,
+					UUID:   string(uuid.NewUUID()),
+					Minor:  1,
+					Health: true,
+					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{
 						apiext.GPUCore:        resource.MustParse("100"),
 						apiext.GPUMemoryRatio: resource.MustParse("100"),
@@ -435,9 +437,10 @@ func generateMultipleFakeDevice() *schedulingv1alpha1.Device {
 		Spec: schedulingv1alpha1.DeviceSpec{
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
-					UUID:  string(uuid.NewUUID()),
-					Minor: 0,
-					Type:  schedulingv1alpha1.GPU,
+					UUID:   string(uuid.NewUUID()),
+					Minor:  0,
+					Health: true,
+					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{
 						apiext.GPUCore:        resource.MustParse("100"),
 						apiext.GPUMemoryRatio: resource.MustParse("100"),
@@ -445,9 +448,10 @@ func generateMultipleFakeDevice() *schedulingv1alpha1.Device {
 					},
 				},
 				{
-					UUID:  string(uuid.NewUUID()),
-					Minor: 1,
-					Type:  schedulingv1alpha1.GPU,
+					UUID:   string(uuid.NewUUID()),
+					Minor:  1,
+					Health: true,
+					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{
 						apiext.GPUCore:        resource.MustParse("100"),
 						apiext.GPUMemoryRatio: resource.MustParse("100"),
@@ -481,7 +485,7 @@ func generateFakeNodeDeviceInfos() map[string]*nodeDevice {
 				},
 			},
 			deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-			allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{},
+			allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{},
 		},
 	}
 }
