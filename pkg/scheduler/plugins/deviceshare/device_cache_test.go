@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -37,7 +38,7 @@ func Test_newNodeDevice(t *testing.T) {
 		deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{},
 		deviceFree:  map[schedulingv1alpha1.DeviceType]deviceResources{},
 		deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-		allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{},
+		allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]v1.ResourceList{},
 	}
 	assert.Equal(t, expectNodeDevice, newNodeDevice())
 }

@@ -30,41 +30,11 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
-type nodeDeviceCache struct {
-	lock sync.Mutex
-	// nodeDeviceInfos stores nodeDevice for each node
-	// and uses node name as map key.
-	nodeDeviceInfos map[string]*nodeDevice
-}
-
-type nodeDevice struct {
-	lock        sync.RWMutex
-	deviceTotal map[schedulingv1alpha1.DeviceType]deviceResources
-	deviceFree  map[schedulingv1alpha1.DeviceType]deviceResources
-	deviceUsed  map[schedulingv1alpha1.DeviceType]deviceResources
-	allocateSet map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}
-}
-
 // deviceResources is used to present resources per device.
 // we use the minor of device as key
 // "0": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
 // "1": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
 type deviceResources map[int]corev1.ResourceList
-
-func newNodeDeviceCache() *nodeDeviceCache {
-	return &nodeDeviceCache{
-		nodeDeviceInfos: make(map[string]*nodeDevice),
-	}
-}
-
-func newNodeDevice() *nodeDevice {
-	return &nodeDevice{
-		deviceTotal: make(map[schedulingv1alpha1.DeviceType]deviceResources),
-		deviceFree:  make(map[schedulingv1alpha1.DeviceType]deviceResources),
-		deviceUsed:  make(map[schedulingv1alpha1.DeviceType]deviceResources),
-		allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}),
-	}
-}
 
 func (in deviceResources) DeepCopy() deviceResources {
 	if in == nil {
@@ -77,17 +47,63 @@ func (in deviceResources) DeepCopy() deviceResources {
 	return out
 }
 
-func (n *nodeDeviceCache) getNodeDevice(nodeName string) *nodeDevice {
-	n.lock.Lock()
-	defer n.lock.Unlock()
-	return n.nodeDeviceInfos[nodeName]
+type nodeDevice struct {
+	lock        sync.RWMutex
+	deviceTotal map[schedulingv1alpha1.DeviceType]deviceResources
+	deviceFree  map[schedulingv1alpha1.DeviceType]deviceResources
+	deviceUsed  map[schedulingv1alpha1.DeviceType]deviceResources
+	allocateSet map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList
 }
 
-func (n *nodeDeviceCache) createNodeDevice(nodeName string) *nodeDevice {
-	n.lock.Lock()
-	defer n.lock.Unlock()
-	n.nodeDeviceInfos[nodeName] = newNodeDevice()
-	return n.nodeDeviceInfos[nodeName]
+func newNodeDevice() *nodeDevice {
+	return &nodeDevice{
+		deviceTotal: make(map[schedulingv1alpha1.DeviceType]deviceResources),
+		deviceFree:  make(map[schedulingv1alpha1.DeviceType]deviceResources),
+		deviceUsed:  make(map[schedulingv1alpha1.DeviceType]deviceResources),
+		allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList),
+	}
+}
+
+func (n *nodeDevice) getNodeDeviceSummary() *NodeDeviceSummary {
+	n.lock.RLock()
+	defer n.lock.RUnlock()
+
+	nodeDeviceSummary := NewNodeDeviceSummary()
+	calFunc := func(localDeviceRes map[schedulingv1alpha1.DeviceType]deviceResources,
+		deviceResSummary map[corev1.ResourceName]*resource.Quantity,
+		deviceResDetailSummary map[schedulingv1alpha1.DeviceType]deviceResources) {
+
+		for deviceType, resourceMap := range localDeviceRes {
+			deviceResDetailSummary[deviceType] = make(deviceResources)
+			for minor, deviceResource := range resourceMap {
+				deviceResDetailSummary[deviceType][minor] = deviceResource.DeepCopy()
+				for key, value := range deviceResource {
+					if _, exist := deviceResSummary[key]; !exist {
+						deviceResSummary[key] = &resource.Quantity{}
+						*deviceResSummary[key] = value.DeepCopy()
+					} else {
+						deviceResSummary[key].Add(value)
+					}
+				}
+			}
+		}
+	}
+
+	calFunc(n.deviceTotal, nodeDeviceSummary.DeviceTotal, nodeDeviceSummary.DeviceTotalDetail)
+	calFunc(n.deviceFree, nodeDeviceSummary.DeviceFree, nodeDeviceSummary.DeviceFreeDetail)
+	calFunc(n.deviceUsed, nodeDeviceSummary.DeviceUsed, nodeDeviceSummary.DeviceUsedDetail)
+
+	for deviceType, allocateSet := range n.allocateSet {
+		nodeDeviceSummary.AllocateSet[deviceType] = make(map[string]map[int]corev1.ResourceList)
+		for podNamespacedName, allocations := range allocateSet {
+			nodeDeviceSummary.AllocateSet[deviceType][podNamespacedName.String()] = make(map[int]corev1.ResourceList)
+			for minor, resource := range allocations {
+				nodeDeviceSummary.AllocateSet[deviceType][podNamespacedName.String()][minor] = resource.DeepCopy()
+			}
+		}
+	}
+
+	return nodeDeviceSummary
 }
 
 func (n *nodeDevice) resetDeviceTotal(resources map[schedulingv1alpha1.DeviceType]deviceResources) {
@@ -104,29 +120,15 @@ func (n *nodeDevice) resetDeviceTotal(resources map[schedulingv1alpha1.DeviceTyp
 
 // updateCacheUsed is used to update deviceUsed when there is a new pod created/deleted
 func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations, pod *corev1.Pod, add bool) {
-	podNamespacedName := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
 	if len(deviceAllocations) > 0 {
 		for deviceType, allocations := range deviceAllocations {
-			allocateSet := n.allocateSet[deviceType]
-			if allocateSet == nil {
-				allocateSet = make(map[types.NamespacedName]struct{})
-			}
-			n.allocateSet[deviceType] = allocateSet
-
-			if add {
-				if _, ok := allocateSet[podNamespacedName]; ok {
-					// for non-failover scenario, pod might already exist in cache after Reserve step.
-					continue
-				}
-			} else {
-				if _, ok := allocateSet[podNamespacedName]; !ok {
-					continue
-				}
+			if !n.isValid(deviceType, pod, add) {
+				continue
 			}
 			n.updateDeviceUsed(deviceType, allocations, add)
 			n.resetDeviceFree(deviceType)
+			n.updateAllocateSet(deviceType, allocations, pod, add)
 		}
-		n.updateAllocateSet(deviceAllocations, pod, add)
 	}
 }
 
@@ -171,23 +173,45 @@ func (n *nodeDevice) updateDeviceUsed(deviceType schedulingv1alpha1.DeviceType, 
 	}
 }
 
-func (n *nodeDevice) updateAllocateSet(allocations apiext.DeviceAllocations, pod *corev1.Pod, add bool) {
+func (n *nodeDevice) isValid(deviceType schedulingv1alpha1.DeviceType, pod *corev1.Pod, add bool) bool {
+	allocateSet := n.allocateSet[deviceType]
+	if allocateSet == nil {
+		allocateSet = make(map[types.NamespacedName]map[int]corev1.ResourceList)
+	}
+	n.allocateSet[deviceType] = allocateSet
+
+	podNamespacedName := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
+	if add {
+		if _, ok := allocateSet[podNamespacedName]; ok {
+			// for non-failover scenario, pod might already exist in cache after Reserve step.
+			return false
+		}
+	} else {
+		if _, ok := allocateSet[podNamespacedName]; !ok {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (n *nodeDevice) updateAllocateSet(deviceType schedulingv1alpha1.DeviceType,
+	allocations []*apiext.DeviceAllocation, pod *corev1.Pod, add bool) {
 	podNamespacedName := types.NamespacedName{
 		Namespace: pod.Namespace,
 		Name:      pod.Name,
 	}
-	for deviceType, v := range allocations {
-		if v == nil || len(v) == 0 {
-			break
+
+	if n.allocateSet[deviceType] == nil {
+		n.allocateSet[deviceType] = make(map[types.NamespacedName]map[int]corev1.ResourceList)
+	}
+	if add {
+		n.allocateSet[deviceType][podNamespacedName] = make(map[int]corev1.ResourceList)
+		for _, allocation := range allocations {
+			n.allocateSet[deviceType][podNamespacedName][int(allocation.Minor)] = allocation.Resources.DeepCopy()
 		}
-		if n.allocateSet[deviceType] == nil {
-			n.allocateSet[deviceType] = make(map[types.NamespacedName]struct{})
-		}
-		if add {
-			n.allocateSet[deviceType][podNamespacedName] = struct{}{}
-		} else {
-			delete(n.allocateSet[deviceType], podNamespacedName)
-		}
+	} else {
+		delete(n.allocateSet[deviceType], podNamespacedName)
 	}
 }
 
@@ -323,4 +347,59 @@ func (n *nodeDevice) tryAllocateGPU(podRequest corev1.ResourceList, allocateResu
 	}
 	klog.V(5).Infof("node GPU resource does not satisfy pod's request")
 	return fmt.Errorf("node does not have enough GPU")
+}
+
+type nodeDeviceCache struct {
+	lock sync.RWMutex
+	// nodeDeviceInfos stores nodeDevice for each node
+	// and uses node name as map key.
+	nodeDeviceInfos map[string]*nodeDevice
+}
+
+func newNodeDeviceCache() *nodeDeviceCache {
+	return &nodeDeviceCache{
+		nodeDeviceInfos: make(map[string]*nodeDevice),
+	}
+}
+
+func (n *nodeDeviceCache) getNodeDevice(nodeName string) *nodeDevice {
+	n.lock.RLock()
+	defer n.lock.RUnlock()
+	return n.nodeDeviceInfos[nodeName]
+}
+
+func (n *nodeDeviceCache) createNodeDevice(nodeName string) *nodeDevice {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	n.nodeDeviceInfos[nodeName] = newNodeDevice()
+	return n.nodeDeviceInfos[nodeName]
+}
+
+func (n *nodeDeviceCache) removeNodeDevice(nodeName string) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	delete(n.nodeDeviceInfos, nodeName)
+}
+
+func (n *nodeDeviceCache) getNodeDeviceSummary(nodeName string) (*NodeDeviceSummary, bool) {
+	n.lock.RLock()
+	defer n.lock.RUnlock()
+
+	if _, exist := n.nodeDeviceInfos[nodeName]; !exist {
+		return nil, false
+	}
+
+	nodeDeviceSummary := n.nodeDeviceInfos[nodeName].getNodeDeviceSummary()
+	return nodeDeviceSummary, true
+}
+
+func (n *nodeDeviceCache) getAllNodeDeviceSummary() map[string]*NodeDeviceSummary {
+	n.lock.RLock()
+	defer n.lock.RUnlock()
+
+	nodeDeviceSummaries := make(map[string]*NodeDeviceSummary)
+	for nodeName, nodeDeviceInfo := range n.nodeDeviceInfos {
+		nodeDeviceSummaries[nodeName] = nodeDeviceInfo.getNodeDeviceSummary()
+	}
+	return nodeDeviceSummaries
 }

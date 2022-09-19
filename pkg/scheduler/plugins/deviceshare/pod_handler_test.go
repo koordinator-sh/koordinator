@@ -191,7 +191,7 @@ func Test_nodeDeviceCache_onPodAdd(t *testing.T) {
 						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {},
 						},
-						allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}),
+						allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList),
 					},
 				},
 			},
@@ -224,9 +224,15 @@ func Test_nodeDeviceCache_onPodAdd(t *testing.T) {
 							},
 						},
 					},
-					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{
+					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{
 						schedulingv1alpha1.GPU: {
-							podNamespacedName: {},
+							podNamespacedName: {
+								1: corev1.ResourceList{
+									apiext.GPUCore:        resource.MustParse("60"),
+									apiext.GPUMemoryRatio: resource.MustParse("50"),
+									apiext.GPUMemory:      resource.MustParse("8Gi"),
+								},
+							},
 						},
 					},
 				},
@@ -441,7 +447,7 @@ func Test_nodeDeviceCache_onPodDelete(t *testing.T) {
 								},
 							},
 						},
-						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{
+						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{
 							schedulingv1alpha1.GPU: {
 								podNamespacedName: {},
 							},
@@ -478,7 +484,7 @@ func Test_nodeDeviceCache_onPodDelete(t *testing.T) {
 							},
 						},
 					},
-					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{
+					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{
 						schedulingv1alpha1.GPU: {},
 					},
 				},

@@ -1066,7 +1066,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 								},
 							},
 							deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-							allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}),
+							allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList),
 						},
 					},
 				},
@@ -1243,7 +1243,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 								},
 							},
 							deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-							allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}),
+							allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList),
 						},
 					},
 				},
@@ -1629,15 +1629,40 @@ func Test_Plugin_Unreserve(t *testing.T) {
 									},
 								},
 							},
-							allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{
+							allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{
 								schedulingv1alpha1.GPU: {
-									namespacedName: struct{}{},
+									namespacedName: {
+										0: corev1.ResourceList{
+											apiext.GPUCore:        resource.MustParse("100"),
+											apiext.GPUMemoryRatio: resource.MustParse("100"),
+											apiext.GPUMemory:      resource.MustParse("16Gi"),
+										},
+										1: corev1.ResourceList{
+											apiext.GPUCore:        resource.MustParse("100"),
+											apiext.GPUMemoryRatio: resource.MustParse("100"),
+											apiext.GPUMemory:      resource.MustParse("16Gi"),
+										},
+									},
 								},
 								schedulingv1alpha1.FPGA: {
-									namespacedName: struct{}{},
+									namespacedName: {
+										0: corev1.ResourceList{
+											apiext.KoordFPGA: resource.MustParse("100"),
+										},
+										1: corev1.ResourceList{
+											apiext.KoordFPGA: resource.MustParse("100"),
+										},
+									},
 								},
 								schedulingv1alpha1.RDMA: {
-									namespacedName: struct{}{},
+									namespacedName: {
+										0: corev1.ResourceList{
+											apiext.KoordRDMA: resource.MustParse("100"),
+										},
+										1: corev1.ResourceList{
+											apiext.KoordRDMA: resource.MustParse("100"),
+										},
+									},
 								},
 							},
 						},
@@ -1739,7 +1764,7 @@ func Test_Plugin_Unreserve(t *testing.T) {
 								},
 							},
 						},
-						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]struct{}{
+						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{
 							schedulingv1alpha1.GPU:  {},
 							schedulingv1alpha1.FPGA: {},
 							schedulingv1alpha1.RDMA: {},
