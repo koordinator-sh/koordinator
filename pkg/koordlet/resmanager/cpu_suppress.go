@@ -602,10 +602,12 @@ func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
 	r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyRecovered
 }
 
-func getCPUSuppressPolicy(nodeSLO *slov1alpha1.NodeSLO) slov1alpha1.CPUSuppressPolicy {
+func getCPUSuppressPolicy(nodeSLO *slov1alpha1.NodeSLO) (bool, slov1alpha1.CPUSuppressPolicy) {
 	if nodeSLO == nil || nodeSLO.Spec.ResourceUsedThresholdWithBE == nil ||
 		nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy == "" {
-		return util.DefaultResourceThresholdStrategy().CPUSuppressPolicy
+		return *util.DefaultResourceThresholdStrategy().Enable,
+			util.DefaultResourceThresholdStrategy().CPUSuppressPolicy
 	}
-	return nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy
+	return *nodeSLO.Spec.ResourceUsedThresholdWithBE.Enable,
+		nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy
 }
