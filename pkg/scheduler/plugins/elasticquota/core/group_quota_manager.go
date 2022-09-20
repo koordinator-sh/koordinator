@@ -335,9 +335,9 @@ func (gqm *GroupQuotaManager) updateQuotaGroupConfigNoLock() {
 	gqm.resetAllGroupQuotaNoLock()
 }
 
-//BuildSubParGroupTopoNoLock reBuild a nodeTree from root, no need to lock gqm.lock
+// buildSubParGroupTopoNoLock reBuild a nodeTree from root, no need to lock gqm.lock
 func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
-	//rebuild QuotaTopoNodeMap
+	// rebuild QuotaTopoNodeMap
 	gqm.quotaTopoNodeMap = make(map[string]*QuotaTopoNode)
 	rootNode := NewQuotaTopoNode(NewQuotaInfo(false, true, extension.RootQuotaName, extension.RootQuotaName))
 	gqm.quotaTopoNodeMap[extension.RootQuotaName] = rootNode
@@ -409,7 +409,7 @@ func (gqm *GroupQuotaManager) resetAllGroupQuotaRecursiveNoLock(rootNode *QuotaT
 	}
 }
 
-//updateOneGroupMaxQuotaNoLock no need to lock gqm.lock
+// updateOneGroupMaxQuotaNoLock no need to lock gqm.lock
 func (gqm *GroupQuotaManager) updateOneGroupMaxQuotaNoLock(quotaInfo *QuotaInfo) {
 	quotaInfo.lock.Lock()
 	defer quotaInfo.lock.Unlock()
@@ -502,6 +502,9 @@ func (gqm *GroupQuotaManager) UpdatePodUsed(quotaName string, oldPod, newPod *v1
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	quotaInfo := gqm.GetQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo == nil {
+		return
+	}
 	if !quotaInfo.GetPodIsAssigned(newPod) && !quotaInfo.GetPodIsAssigned(oldPod) {
 		return
 	}
@@ -531,6 +534,9 @@ func (gqm *GroupQuotaManager) UpdatePodCache(quotaName string, pod *v1.Pod, isAd
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	quotaInfo := gqm.GetQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo == nil {
+		return
+	}
 
 	if isAdd {
 		quotaInfo.AddPodIfNotPresent(pod)
@@ -552,6 +558,9 @@ func (gqm *GroupQuotaManager) GetPodIsAssigned(quotaName string, pod *v1.Pod) bo
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	quotaInfo := gqm.GetQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo == nil {
+		return false
+	}
 	return quotaInfo.GetPodIsAssigned(pod)
 }
 
