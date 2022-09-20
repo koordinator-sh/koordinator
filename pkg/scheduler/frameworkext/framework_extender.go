@@ -159,16 +159,18 @@ func NewFrameworkExtenderFactory(handle ExtendedHandle, hooks ...SchedulingPhase
 		preFilter, ok := h.(PreFilterPhaseHook)
 		if ok {
 			i.preFilterHooks = append(i.preFilterHooks, preFilter)
+			klog.V(4).InfoS("framework extender got scheduling hooks registered", "preFilter", preFilter.Name())
 		}
 		filter, ok := h.(FilterPhaseHook)
 		if ok {
 			i.filterHooks = append(i.filterHooks, filter)
+			klog.V(4).InfoS("framework extender got scheduling hooks registered", "filter", filter.Name())
 		}
 		score, ok := h.(ScorePhaseHook)
 		if ok {
 			i.scoreHooks = append(i.scoreHooks, score)
+			klog.V(4).InfoS("framework extender got scheduling hooks registered", "score", score.Name())
 		}
-		klog.V(4).InfoS("framework extender got scheduling hooks registered", "preFilter", preFilter.Name(), "filter", filter.Name())
 	}
 	return i
 }
