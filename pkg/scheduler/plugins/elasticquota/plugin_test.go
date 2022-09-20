@@ -641,16 +641,16 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
-	// alimm Max[96, 160]  Min[50,80] request[20,40]
-	//   `-- mm-a Max[96, 160]  Min[50,80] request[20,40]
-	// aliyun Max[96, 160]  Min[50,80] request[60,100]
-	//   `-- yun-a Max[96, 160]  Min[50,80] request[60,100]
+	// test2 Max[96, 160]  Min[50,80] request[20,40]
+	//   `-- test2-a Max[96, 160]  Min[50,80] request[20,40]
+	// test1 Max[96, 160]  Min[50,80] request[60,100]
+	//   `-- test1-a Max[96, 160]  Min[50,80] request[60,100]
 	//         `-- a-123 Max[96, 160]  Min[50,80] request[60,100]
-	plugin.addQuota("aliyun", "root", 96, 160, 100, 160, 96, 160, true, "")
-	plugin.addQuota("yun-a", "aliyun", 96, 160, 50, 80, 96, 160, true, "")
-	changeQuota := plugin.addQuota("a-123", "yun-a", 96, 160, 50, 80, 96, 160, false, "")
-	plugin.addQuota("alimm", "root", 96, 160, 100, 160, 96, 160, true, "")
-	mmQuota := plugin.addQuota("mm-a", "alimm", 96, 160, 50, 80, 96, 160, false, "")
+	plugin.addQuota("test1", "root", 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test1-a", "test1", 96, 160, 50, 80, 96, 160, true, "")
+	changeQuota := plugin.addQuota("a-123", "test1-a", 96, 160, 50, 80, 96, 160, false, "")
+	plugin.addQuota("test2", "root", 96, 160, 100, 160, 96, 160, true, "")
+	mmQuota := plugin.addQuota("test2-a", "test2", 96, 160, 50, 80, 96, 160, false, "")
 	gqm.UpdateClusterTotalResource(createResourceList(96, 160))
 	request := createResourceList(60, 100)
 	pod := makePod2("pod", request)
@@ -661,45 +661,45 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	runtime := gqm.RefreshRuntime("a-123")
 	assert.Equal(t, request, runtime)
 
-	runtime = gqm.RefreshRuntime("yun-a")
+	runtime = gqm.RefreshRuntime("test1-a")
 	assert.Equal(t, request, runtime)
 
-	runtime = gqm.RefreshRuntime("aliyun")
+	runtime = gqm.RefreshRuntime("test1")
 	assert.Equal(t, request, runtime)
 
-	// mm-a request [20,40]
+	// test2-a request [20,40]
 	request = createResourceList(20, 40)
 	pod1 := makePod2("pod1", request)
-	gqm.UpdatePodRequest("mm-a", nil, pod1)
-	gqm.UpdatePodCache("mm-a", pod1, true)
-	gqm.UpdatePodIsAssigned("mm-a", pod1, true)
-	gqm.UpdatePodUsed("mm-a", nil, pod1)
-	runtime = gqm.RefreshRuntime("mm-a")
+	gqm.UpdatePodRequest("test2-a", nil, pod1)
+	gqm.UpdatePodCache("test2-a", pod1, true)
+	gqm.UpdatePodIsAssigned("test2-a", pod1, true)
+	gqm.UpdatePodUsed("test2-a", nil, pod1)
+	runtime = gqm.RefreshRuntime("test2-a")
 	assert.Equal(t, request, runtime)
 
-	runtime = gqm.RefreshRuntime("alimm")
+	runtime = gqm.RefreshRuntime("test2")
 	assert.Equal(t, request, runtime)
 
-	// a-123 mv alimm
-	// alimm Max[96, 160]  Min[100,160] request[80,140]
-	//   `-- mm-a Max[96, 160]  Min[50,80] request[20,40]
+	// a-123 mv test2
+	// test2 Max[96, 160]  Min[100,160] request[80,140]
+	//   `-- test2-a Max[96, 160]  Min[50,80] request[20,40]
 	//   `-- a-123 Max[96, 160]  Min[50,80] request[60,100]
-	// aliyun Max[96, 160]  Min[100,160] request[0,0]
-	//   `-- yun-a Max[96, 160]  Min[50,80] request[0,0]
+	// test1 Max[96, 160]  Min[100,160] request[0,0]
+	//   `-- test1-a Max[96, 160]  Min[50,80] request[0,0]
 	oldQuota := changeQuota.DeepCopy()
-	changeQuota.Labels[extension.LabelQuotaParent] = "alimm"
+	changeQuota.Labels[extension.LabelQuotaParent] = "test2"
 	changeQuota.ResourceVersion = "2"
-	gqm.GetQuotaInfoByName("yun-a").IsParent = true
+	gqm.GetQuotaInfoByName("test1-a").IsParent = true
 
 	plugin.OnQuotaUpdate(oldQuota, changeQuota)
-	quotaInfo := gqm.GetQuotaInfoByName("yun-a")
-	gqm.RefreshRuntime("yun-a")
+	quotaInfo := gqm.GetQuotaInfoByName("test1-a")
+	gqm.RefreshRuntime("test1-a")
 	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetRequest())
 	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetRuntime())
 
-	quotaInfo = gqm.GetQuotaInfoByName("aliyun")
-	gqm.RefreshRuntime("aliyun")
+	quotaInfo = gqm.GetQuotaInfoByName("test1")
+	gqm.RefreshRuntime("test1")
 	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetRequest())
 	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetRuntime())
@@ -709,16 +709,16 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	assert.Equal(t, createResourceList(60, 100), quotaInfo.GetRequest())
 	assert.Equal(t, createResourceList(60, 100), quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(60, 100), quotaInfo.GetRuntime())
-	assert.Equal(t, "alimm", quotaInfo.ParentName)
+	assert.Equal(t, "test2", quotaInfo.ParentName)
 
-	quotaInfo = gqm.GetQuotaInfoByName("mm-a")
-	gqm.RefreshRuntime("mm-a")
+	quotaInfo = gqm.GetQuotaInfoByName("test2-a")
+	gqm.RefreshRuntime("test2-a")
 	assert.Equal(t, createResourceList(20, 40), quotaInfo.GetRequest())
 	assert.Equal(t, createResourceList(20, 40), quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(20, 40), quotaInfo.GetRuntime())
 
-	quotaInfo = gqm.GetQuotaInfoByName("alimm")
-	gqm.RefreshRuntime("alimm")
+	quotaInfo = gqm.GetQuotaInfoByName("test2")
+	gqm.RefreshRuntime("test2")
 	assert.Equal(t, createResourceList(80, 140), quotaInfo.GetRequest())
 	assert.Equal(t, createResourceList(80, 140), quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(80, 140), quotaInfo.GetRuntime())
@@ -729,9 +729,9 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	changeQuota.ResourceVersion = "3"
 	plugin.OnQuotaUpdate(oldQuota, changeQuota)
 	plugin.OnQuotaDelete(mmQuota)
-	assert.Nil(t, gqm.GetQuotaInfoByName("mm-a"))
-	quotaInfo = gqm.GetQuotaInfoByName("alimm")
-	gqm.RefreshRuntime("alimm")
+	assert.Nil(t, gqm.GetQuotaInfoByName("test2-a"))
+	quotaInfo = gqm.GetQuotaInfoByName("test2")
+	gqm.RefreshRuntime("test2")
 	assert.Equal(t, createResourceList(60, 100), quotaInfo.GetRequest())
 	assert.Equal(t, createResourceList(60, 100), quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(60, 100), quotaInfo.GetRuntime())
@@ -741,38 +741,38 @@ func TestPlugin_OnPodAdd_Update_Delete(t *testing.T) {
 	suit := newPluginTestSuitWithPod(t, nil, nil)
 	plugin := suit.plugin.(*Plugin)
 	gqm := plugin.groupQuotaManager
-	plugin.addQuota("aliyun", "root", 96, 160, 100, 160, 96, 160, true, "")
-	plugin.addQuota("alimm", "root", 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test1", "root", 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test2", "root", 96, 160, 100, 160, 96, 160, true, "")
 	pods := []*corev1.Pod{
-		defaultCreatePodWithQuotaName("1", "aliyun", 10, 10, 10),
-		defaultCreatePodWithQuotaName("2", "aliyun", 10, 10, 10),
-		defaultCreatePodWithQuotaName("3", "aliyun", 10, 10, 10),
-		defaultCreatePodWithQuotaName("4", "aliyun", 10, 10, 10),
+		defaultCreatePodWithQuotaName("1", "test1", 10, 10, 10),
+		defaultCreatePodWithQuotaName("2", "test1", 10, 10, 10),
+		defaultCreatePodWithQuotaName("3", "test1", 10, 10, 10),
+		defaultCreatePodWithQuotaName("4", "test1", 10, 10, 10),
 	}
 	time.Sleep(100 * time.Millisecond)
 	for _, pod := range pods {
 		plugin.OnPodAdd(pod)
 	}
 	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, gqm.GetQuotaInfoByName("aliyun").GetRequest(), createResourceList(40, 40))
-	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName("aliyun").PodCache))
+	assert.Equal(t, gqm.GetQuotaInfoByName("test1").GetRequest(), createResourceList(40, 40))
+	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName("test1").PodCache))
 	newPods := []*corev1.Pod{
-		defaultCreatePodWithQuotaNameAndVersion("1", "alimm", "2", 10, 10, 10),
-		defaultCreatePodWithQuotaNameAndVersion("2", "alimm", "2", 10, 10, 10),
-		defaultCreatePodWithQuotaNameAndVersion("3", "alimm", "2", 10, 10, 10),
-		defaultCreatePodWithQuotaNameAndVersion("4", "alimm", "2", 10, 10, 10),
+		defaultCreatePodWithQuotaNameAndVersion("1", "test2", "2", 10, 10, 10),
+		defaultCreatePodWithQuotaNameAndVersion("2", "test2", "2", 10, 10, 10),
+		defaultCreatePodWithQuotaNameAndVersion("3", "test2", "2", 10, 10, 10),
+		defaultCreatePodWithQuotaNameAndVersion("4", "test2", "2", 10, 10, 10),
 	}
 	for i, pod := range pods {
 		plugin.OnPodUpdate(pod, newPods[i])
 	}
 	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, 0, len(gqm.GetQuotaInfoByName("aliyun").GetPodCache()))
-	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName("alimm").GetPodCache()))
+	assert.Equal(t, 0, len(gqm.GetQuotaInfoByName("test1").GetPodCache()))
+	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName("test2").GetPodCache()))
 	for _, pod := range newPods {
 		plugin.OnPodDelete(pod)
 	}
 	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, len(gqm.GetQuotaInfoByName("alimm").GetPodCache()), 0)
+	assert.Equal(t, len(gqm.GetQuotaInfoByName("test2").GetPodCache()), 0)
 }
 
 func setLoglevel(logLevel string) {
@@ -1392,13 +1392,13 @@ func TestPlugin_Recover(t *testing.T) {
 		suit.Handle.ClientSet().CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
 	}
 	time.Sleep(100 * time.Millisecond)
-	suit.AddQuota("aliyun", "", 100, 1000, 0, 0, 0, 0, false, "")
+	suit.AddQuota("test1", "", 100, 1000, 0, 0, 0, 0, false, "")
 	time.Sleep(100 * time.Millisecond)
 	pods := []*corev1.Pod{
-		defaultCreatePodWithQuotaName("1", "aliyun", 10, 10, 10),
-		defaultCreatePodWithQuotaName("2", "aliyun", 10, 10, 10),
-		defaultCreatePodWithQuotaName("3", "aliyun", 10, 10, 10),
-		defaultCreatePodWithQuotaName("4", "aliyun", 10, 10, 10),
+		defaultCreatePodWithQuotaName("1", "test1", 10, 10, 10),
+		defaultCreatePodWithQuotaName("2", "test1", 10, 10, 10),
+		defaultCreatePodWithQuotaName("3", "test1", 10, 10, 10),
+		defaultCreatePodWithQuotaName("4", "test1", 10, 10, 10),
 	}
 	for _, pod := range pods {
 		suit.Handle.ClientSet().CoreV1().Pods("").Create(context.TODO(), pod, metav1.CreateOptions{})
@@ -1407,9 +1407,9 @@ func TestPlugin_Recover(t *testing.T) {
 	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 	pl := p.(*Plugin)
 	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("aliyun").GetRequest(), createResourceList(40, 40))
-	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("aliyun").GetUsed(), createResourceList(40, 40))
-	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("default").GetRequest(), createResourceList(0, 0))
+	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetRequest(), createResourceList(40, 40))
+	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetUsed(), createResourceList(40, 40))
+	assert.True(t, v1.IsZero(pl.groupQuotaManager.GetQuotaInfoByName("default").GetRequest()))
 }
 
 func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {
@@ -1417,29 +1417,29 @@ func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {
 	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
-	plugin.addQuota("alimm", "root", 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test2", "root", 96, 160, 100, 160, 96, 160, true, "")
 	pods := []*corev1.Pod{
-		defaultCreatePodWithQuotaName("1", "aliyun", 10, 10, 10),
-		defaultCreatePodWithQuotaName("2", "aliyun", 10, 10, 10),
-		defaultCreatePodWithQuotaName("3", "aliyun", 10, 10, 10),
-		defaultCreatePodWithQuotaName("4", "aliyun", 10, 10, 10),
+		defaultCreatePodWithQuotaName("1", "test1", 10, 10, 10),
+		defaultCreatePodWithQuotaName("2", "test1", 10, 10, 10),
+		defaultCreatePodWithQuotaName("3", "test1", 10, 10, 10),
+		defaultCreatePodWithQuotaName("4", "test1", 10, 10, 10),
 	}
 	for _, pod := range pods {
 		plugin.OnPodAdd(pod)
 	}
 	assert.Equal(t, gqm.GetQuotaInfoByName("default").GetRequest(), createResourceList(40, 40))
 	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName("default").PodCache))
-	plugin.addQuota("aliyun", "root", 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test1", "root", 96, 160, 100, 160, 96, 160, true, "")
 	time.Sleep(100 * time.Millisecond)
 	for i := 0; i < 10; i++ {
-		if len(gqm.GetQuotaInfoByName("default").GetPodCache()) != 0 || len(gqm.GetQuotaInfoByName("aliyun").GetPodCache()) != 4 {
+		if len(gqm.GetQuotaInfoByName("default").GetPodCache()) != 0 || len(gqm.GetQuotaInfoByName("test1").GetPodCache()) != 4 {
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		break
 	}
 	assert.Equal(t, 0, len(gqm.GetQuotaInfoByName("default").PodCache))
-	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName("aliyun").PodCache))
+	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName("test1").PodCache))
 }
 
 func defaultCreatePodWithQuotaNameAndVersion(name, quotaName, version string, priority int32, cpu, mem int64) *corev1.Pod {
