@@ -129,13 +129,16 @@ func (g *Plugin) createSystemQuotaIfNotPresent() {
 	}
 }
 
-func (g *Plugin) snapshotPostFilterState(quotaName string, state *framework.CycleState) {
+func (g *Plugin) snapshotPostFilterState(quotaName string, state *framework.CycleState) bool {
 	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(quotaName)
+	if quotaInfo == nil {
+		return false
+	}
 	postFilterState := &PostFilterState{
-		isPostFilter: true,
-		quotaInfo:    quotaInfo.DeepCopy(),
+		quotaInfo: quotaInfo.DeepCopy(),
 	}
 	state.Write(postFilterKey, postFilterState)
+	return true
 }
 
 func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, error) {

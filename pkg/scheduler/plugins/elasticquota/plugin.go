@@ -48,14 +48,12 @@ const (
 )
 
 type PostFilterState struct {
-	isPostFilter bool
-	quotaInfo    *core.QuotaInfo
+	quotaInfo *core.QuotaInfo
 }
 
 func (p *PostFilterState) Clone() framework.StateData {
 	return &PostFilterState{
-		isPostFilter: p.isPostFilter,
-		quotaInfo:    p.quotaInfo.DeepCopy(),
+		quotaInfo: p.quotaInfo.DeepCopy(),
 	}
 }
 
@@ -66,7 +64,7 @@ type Plugin struct {
 	podLister   v1.PodLister
 	pdbLister   policylisters.PodDisruptionBudgetLister
 	nodeLister  v1.NodeLister
-	//only used in OnNodeAdd,in case Recover and normal Watch double call OnNodeAdd
+	// only used in OnNodeAdd,in case Recover and normal Watch double call OnNodeAdd
 	nodeResourceMapLock sync.Mutex
 	nodeResourceMap     map[string]struct{}
 	groupQuotaManager   *core.GroupQuotaManager
@@ -165,6 +163,9 @@ func (g *Plugin) Name() string {
 func (g *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) *framework.Status {
 	quotaName := g.getPodAssociateQuotaName(pod)
 	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(quotaName)
+	if quotaInfo == nil {
+		return framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))
+	}
 	quotaUsed := quotaInfo.GetUsed()
 	quotaRuntime := quotaInfo.GetRuntime()
 
@@ -224,7 +225,9 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 func (g *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod,
 	filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 	quotaName := g.getPodAssociateQuotaName(pod)
-	g.snapshotPostFilterState(quotaName, state)
+	if !g.snapshotPostFilterState(quotaName, state) {
+		return nil, framework.NewStatus(framework.Unschedulable)
+	}
 
 	nnn, status := g.preempt(ctx, state, pod, filteredNodeStatusMap)
 	if !status.IsSuccess() {
