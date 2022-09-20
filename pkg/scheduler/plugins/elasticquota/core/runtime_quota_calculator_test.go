@@ -227,7 +227,7 @@ func TestRuntimeQuotaCalculator_UpdateOneGroupMinQuota(t *testing.T) {
 	assertObj := assert.New(t)
 	max := createResourceList(100, 10000)
 	minQuota := createResourceList(70, 7000)
-	quotaInfo := createQuotaInfoWithRes("aliyun", max, minQuota)
+	quotaInfo := createQuotaInfoWithRes("test1", max, minQuota)
 
 	// totalRequest = request = min,  totalResource = max
 	quotaInfo.CalculateInfo.Request = minQuota.DeepCopy()
@@ -257,7 +257,7 @@ func TestRuntimeQuotaCalculator_UpdateOneGroupMinQuota(t *testing.T) {
 func TestRuntimeQuotaCalculator_UpdateOneGroupSharedWeight(t *testing.T) {
 	max := createResourceList(100, 1000)
 	min := createResourceList(70, 7000)
-	quotaInfo := createQuotaInfoWithRes("aliyun", max, min)
+	quotaInfo := createQuotaInfoWithRes("test1", max, min)
 	qtw := createRuntimeQuotaCalculator()
 
 	qtw.updateOneGroupSharedWeight(quotaInfo)
@@ -280,7 +280,7 @@ func TestRuntimeQuotaCalculator_UpdateOneGroupSharedWeight(t *testing.T) {
 func TestRuntimeQuotaCalculator_NeedUpdateOneGroupRequest(t *testing.T) {
 	max := createResourceList(100, 1000)
 	min := createResourceList(70, 7000)
-	quotaInfo := createQuotaInfoWithRes("aliyun", max, min)
+	quotaInfo := createQuotaInfoWithRes("test1", max, min)
 	qtw := createRuntimeQuotaCalculator()
 
 	update := qtw.needUpdateOneGroupRequest(quotaInfo)
@@ -300,7 +300,7 @@ func TestRuntimeQuotaCalculator_UpdateOneGroupRequest(t *testing.T) {
 		max := createResourceList(int64(i*100), int64(i*10000))
 		min := createResourceList(int64(i*80), int64(i*8000))
 		request := createResourceList(int64(i*10), int64(i*1000))
-		quotaName := fmt.Sprintf("aliyun-%d", i)
+		quotaName := fmt.Sprintf("test-%d", i)
 		quotaInfo := createQuotaInfoWithRes(quotaName, max, min)
 		quotaInfo.addRequestNonNegativeNoLock(request)
 
@@ -323,52 +323,52 @@ func TestRuntimeQuotaCalculator_UpdateOneGroupRuntimeQuota(t *testing.T) {
 	totalResource := createResourceList(100, 1000)
 	qtw.setClusterTotalResource(totalResource)
 
-	// aliMM max[80, 800], min[60, 600], request[0, 0], runtime[0, 0]
-	// aliYun max[100, 1000], min[50, 500], request[90, 900], runtime[90, 900]
+	// test1 max[80, 800], min[60, 600], request[0, 0], runtime[0, 0]
+	// test2 max[100, 1000], min[50, 500], request[90, 900], runtime[90, 900]
 	max := createResourceList(80, 800)
 	min := createResourceList(60, 600)
 	sharedWeight := createResourceList(1, 1)
-	aliMM := createQuotaInfoWithRes("alimama", max, min)
-	updateQuotaInfo(qtw, aliMM, max, min, sharedWeight)
+	test1 := createQuotaInfoWithRes("test1", max, min)
+	updateQuotaInfo(qtw, test1, max, min, sharedWeight)
 
 	max = createResourceList(100, 1000)
 	min = createResourceList(50, 500)
 	request := createResourceList(90, 900)
-	aliYun := createQuotaInfoWithRes("aliyun", max, min)
-	aliYun.CalculateInfo.Request = request.DeepCopy()
-	updateQuotaInfo(qtw, aliYun, max, min, sharedWeight)
+	test2 := createQuotaInfoWithRes("test2", max, min)
+	test2.CalculateInfo.Request = request.DeepCopy()
+	updateQuotaInfo(qtw, test2, max, min, sharedWeight)
 
-	qtw.updateOneGroupRequest(aliYun)
-	qtw.updateOneGroupRuntimeQuota(aliMM)
-	qtw.updateOneGroupRuntimeQuota(aliYun)
+	qtw.updateOneGroupRequest(test2)
+	qtw.updateOneGroupRuntimeQuota(test1)
+	qtw.updateOneGroupRuntimeQuota(test2)
 	assert.Equal(t, totalResource, qtw.totalResource)
 	assert.Equal(t, 2, len(qtw.quotaTree))
-	assert.Equal(t, int64(0), aliMM.CalculateInfo.Runtime.Name("cpu", resource.DecimalSI).Value())
-	assert.Equal(t, int64(0), aliMM.CalculateInfo.Runtime.Name("memory", resource.DecimalSI).Value())
-	assert.Equal(t, request, aliYun.CalculateInfo.Runtime)
+	assert.Equal(t, int64(0), test1.CalculateInfo.Runtime.Name("cpu", resource.DecimalSI).Value())
+	assert.Equal(t, int64(0), test1.CalculateInfo.Runtime.Name("memory", resource.DecimalSI).Value())
+	assert.Equal(t, request, test2.CalculateInfo.Runtime)
 
-	// aliMM max[80, 800], min[60, 600], request[30, 300], runtime[30, 300]
-	// aliYun max[100, 1000], min[50, 500], request[90, 900], runtime[70, 700]
+	// test1 max[80, 800], min[60, 600], request[30, 300], runtime[30, 300]
+	// test2 max[100, 1000], min[50, 500], request[90, 900], runtime[70, 700]
 	request = createResourceList(30, 300)
-	aliMM.CalculateInfo.Request = request.DeepCopy()
-	qtw.updateOneGroupRequest(aliMM)
-	qtw.updateOneGroupRuntimeQuota(aliMM)
-	qtw.updateOneGroupRuntimeQuota(aliYun)
+	test1.CalculateInfo.Request = request.DeepCopy()
+	qtw.updateOneGroupRequest(test1)
+	qtw.updateOneGroupRuntimeQuota(test1)
+	qtw.updateOneGroupRuntimeQuota(test2)
 
-	assert.Equal(t, request, aliMM.CalculateInfo.Runtime)
-	assert.Equal(t, v12.Subtract(totalResource, request), aliYun.CalculateInfo.Runtime)
+	assert.Equal(t, request, test1.CalculateInfo.Runtime)
+	assert.Equal(t, v12.Subtract(totalResource, request), test2.CalculateInfo.Runtime)
 
-	// aliMM max[80, 800], min[60, 600], request[60, 600], runtime[60, 600]
-	// aliYun max[100, 1000], min[50, 500], request[90, 900], runtime[50, 500]
+	// test1 max[80, 800], min[60, 600], request[60, 600], runtime[60, 600]
+	// test2 max[100, 1000], min[50, 500], request[90, 900], runtime[50, 500]
 	request = createResourceList(60, 600)
-	aliMM.CalculateInfo.Request = request.DeepCopy()
-	qtw.updateOneGroupRequest(aliMM)
-	qtw.updateOneGroupRuntimeQuota(aliMM)
+	test1.CalculateInfo.Request = request.DeepCopy()
+	qtw.updateOneGroupRequest(test1)
+	qtw.updateOneGroupRuntimeQuota(test1)
 
-	assert.Equal(t, request, aliMM.CalculateInfo.Runtime)
+	assert.Equal(t, request, test1.CalculateInfo.Runtime)
 
-	qtw.updateOneGroupRuntimeQuota(aliYun)
-	assert.Equal(t, aliYun.CalculateInfo.AutoScaleMin, aliYun.CalculateInfo.Runtime)
+	qtw.updateOneGroupRuntimeQuota(test2)
+	assert.Equal(t, test2.CalculateInfo.AutoScaleMin, test2.CalculateInfo.Runtime)
 }
 
 func TestRuntimeQuotaCalculator_UpdateOneGroupRuntimeQuota2(t *testing.T) {
@@ -379,30 +379,30 @@ func TestRuntimeQuotaCalculator_UpdateOneGroupRuntimeQuota2(t *testing.T) {
 	max := createResourceList(80, 800)
 	min := createResourceList(50, 500)
 	sharedWeight := createResourceList(1, 1)
-	aliMM := createQuotaInfoWithRes("alimama", max, min)
-	updateQuotaInfo(qtw, aliMM, max, min, sharedWeight)
+	test1 := createQuotaInfoWithRes("test1", max, min)
+	updateQuotaInfo(qtw, test1, max, min, sharedWeight)
 	request := createResourceList(100, 1000)
-	aliMM.CalculateInfo.Request = request.DeepCopy()
+	test1.CalculateInfo.Request = request.DeepCopy()
 
-	qtw.updateOneGroupRequest(aliMM)
-	qtw.updateOneGroupRuntimeQuota(aliMM)
+	qtw.updateOneGroupRequest(test1)
+	qtw.updateOneGroupRuntimeQuota(test1)
 
 	assert.Equal(t, totalResource, qtw.totalResource)
-	assert.Equal(t, max, aliMM.CalculateInfo.Runtime)
+	assert.Equal(t, max, test1.CalculateInfo.Runtime)
 
 	max = createResourceList(100, 1000)
 	min = createResourceList(50, 500)
-	aliYun := createQuotaInfoWithRes("aliyun", max, min)
-	updateQuotaInfo(qtw, aliYun, max, min, sharedWeight)
+	test2 := createQuotaInfoWithRes("test2", max, min)
+	updateQuotaInfo(qtw, test2, max, min, sharedWeight)
 	request = createResourceList(150, 1500)
-	aliYun.CalculateInfo.Request = request.DeepCopy()
-	qtw.updateOneGroupRequest(aliYun)
+	test2.CalculateInfo.Request = request.DeepCopy()
+	qtw.updateOneGroupRequest(test2)
 
-	qtw.updateOneGroupRuntimeQuota(aliYun)
-	qtw.updateOneGroupRuntimeQuota(aliMM)
+	qtw.updateOneGroupRuntimeQuota(test2)
+	qtw.updateOneGroupRuntimeQuota(test1)
 
-	assert.Equal(t, aliMM.CalculateInfo.Runtime, createResourceList(60, 600))
-	assert.Equal(t, aliYun.CalculateInfo.Runtime, createResourceList(60, 600))
+	assert.Equal(t, test1.CalculateInfo.Runtime, createResourceList(60, 600))
+	assert.Equal(t, test2.CalculateInfo.Runtime, createResourceList(60, 600))
 }
 
 func updateQuotaInfo(wrapper *RuntimeQuotaCalculator, info *QuotaInfo, max, min, sharedWeight corev1.ResourceList) {

@@ -42,13 +42,13 @@ const (
 func TestGroupQuotaManager_QuotaAdd(t *testing.T) {
 	gqm := NewGroupQuotaManager4Test()
 	gqm.UpdateClusterTotalResource(createResourceList(10000000, 3000*GigaByte))
-	AddQuotaToManager(t, gqm, "aliyun", extension.RootQuotaName, 96000, 160*GigaByte, 50000, 50*GigaByte, true, false)
-	AddQuotaToManager(t, gqm, "alimm", extension.RootQuotaName, 96000, 160*GigaByte, 80000, 80*GigaByte, true, false)
-	AddQuotaToManager(t, gqm, "hema", extension.RootQuotaName, 96000, 160*GigaByte, 40000, 40*GigaByte, true, false)
-	AddQuotaToManager(t, gqm, "kaola", extension.RootQuotaName, 96000, 160*GigaByte, 0, 0*GigaByte, true, false)
-	AddQuotaToManager(t, gqm, "youku", extension.RootQuotaName, 96000, 160*GigaByte, 96000, 96*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96000, 160*GigaByte, 50000, 50*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96000, 160*GigaByte, 80000, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test3", extension.RootQuotaName, 96000, 160*GigaByte, 40000, 40*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test4", extension.RootQuotaName, 96000, 160*GigaByte, 0, 0*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test5", extension.RootQuotaName, 96000, 160*GigaByte, 96000, 96*GigaByte, true, false)
 
-	quotaInfo := gqm.GetQuotaInfoByName("aliyun")
+	quotaInfo := gqm.GetQuotaInfoByName("test1")
 	if quotaInfo.CalculateInfo.SharedWeight.Name(v1.ResourceCPU, resource.DecimalSI).Value() != 96000 {
 		t.Errorf("error")
 	}
@@ -62,15 +62,13 @@ func TestGroupQuotaManager_QuotaAdd_AutoMakeUpSharedWeight(t *testing.T) {
 	gqm := NewGroupQuotaManager4Test()
 	gqm.UpdateClusterTotalResource(createResourceList(1000000, 200*GigaByte))
 
-	quota := CreateQuota("aliyun", extension.RootQuotaName, 96000, 160*GigaByte, 50000, 80*GigaByte, true, false)
+	quota := CreateQuota("test", extension.RootQuotaName, 96000, 160*GigaByte, 50000, 80*GigaByte, true, false)
 	delete(quota.Annotations, extension.AnnotationSharedWeight)
 
 	err := gqm.UpdateQuota(quota, false)
-	if err != nil {
-		klog.Infof("error")
-	}
+	assert.Nil(t, err)
 
-	quotaInfo := gqm.quotaInfoMap["aliyun"]
+	quotaInfo := gqm.quotaInfoMap["test"]
 	if quotaInfo.CalculateInfo.SharedWeight.Cpu().Value() != 96000 || quotaInfo.CalculateInfo.SharedWeight.Memory().Value() != 160*GigaByte {
 		t.Errorf("error:%v", quotaInfo.CalculateInfo.SharedWeight)
 	}
@@ -114,11 +112,11 @@ func TestGroupQuotaManager_QuotaAdd_AutoMakeUpScaleRatio2(t *testing.T) {
 func TestGroupQuotaManager_UpdateQuotaInternal(t *testing.T) {
 	gqm := NewGroupQuotaManager4Test()
 
-	AddQuotaToManager(t, gqm, "aliyun", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
-	quota := CreateQuota("aliyun", extension.RootQuotaName, 64, 100*GigaByte, 50, 80*GigaByte, true, false)
+	quota := CreateQuota("test1", extension.RootQuotaName, 64, 100*GigaByte, 50, 80*GigaByte, true, false)
 	gqm.UpdateQuota(quota, false)
-	quotaInfo := gqm.quotaInfoMap["aliyun"]
+	quotaInfo := gqm.quotaInfoMap["test1"]
 	assert.True(t, quotaInfo != nil)
 	assert.False(t, quotaInfo.IsParent)
 	assert.Equal(t, createResourceList(64, 100*GigaByte), quotaInfo.CalculateInfo.Max)
@@ -126,15 +124,13 @@ func TestGroupQuotaManager_UpdateQuotaInternal(t *testing.T) {
 	assert.Equal(t, int64(64), quotaInfo.CalculateInfo.SharedWeight.Cpu().Value())
 	assert.Equal(t, int64(100*GigaByte), quotaInfo.CalculateInfo.SharedWeight.Memory().Value())
 
-	AddQuotaToManager(t, gqm, "alimm", extension.RootQuotaName, 96, 160*GigaByte, 80, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96, 160*GigaByte, 80, 80*GigaByte, true, false)
 
-	quota = CreateQuota("aliyun", extension.RootQuotaName, 84, 120*GigaByte, 60, 100*GigaByte, true, false)
+	quota = CreateQuota("test1", extension.RootQuotaName, 84, 120*GigaByte, 60, 100*GigaByte, true, false)
 	quota.Labels[extension.LabelQuotaIsParent] = "true"
 	err := gqm.UpdateQuota(quota, false)
-	if err != nil {
-		klog.Infof("err:%v", err)
-	}
-	quotaInfo = gqm.quotaInfoMap["aliyun"]
+	assert.Nil(t, err)
+	quotaInfo = gqm.quotaInfoMap["test1"]
 	assert.True(t, quotaInfo != nil)
 	assert.True(t, quotaInfo.IsParent)
 	assert.Equal(t, createResourceList(84, 120*GigaByte), quotaInfo.CalculateInfo.Max)
@@ -153,56 +149,47 @@ func TestGroupQuotaManager_UpdateQuotaInternalAndRequest(t *testing.T) {
 	totalRes := gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].totalResource.DeepCopy()
 	assert.Equal(t, deltaRes, totalRes)
 
-	AddQuotaToManager(t, gqm, "aliyun", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
-	// aliyun request[120, 290]  runtime == maxQuota
+	// test1 request[120, 290]  runtime == maxQuota
 	request := createResourceList(120, 290*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("aliyun", request)
-	runtime := gqm.RefreshRuntime("aliyun")
+	gqm.updateGroupDeltaRequestNoLock("test1", request)
+	runtime := gqm.RefreshRuntime("test1")
 	assert.Equal(t, deltaRes, runtime)
 
-	quota1 := CreateQuota("aliyun", extension.RootQuotaName, 64, 100*GigaByte, 60, 90*GigaByte, true, false)
+	quota1 := CreateQuota("test1", extension.RootQuotaName, 64, 100*GigaByte, 60, 90*GigaByte, true, false)
 	quota1.Labels[extension.LabelQuotaIsParent] = "false"
 	err := gqm.UpdateQuota(quota1, false)
-	if err != nil {
-		klog.Infof("error:%v", err)
-	}
-	quotaInfo := gqm.GetQuotaInfoByName("aliyun")
+	assert.Nil(t, err)
+	quotaInfo := gqm.GetQuotaInfoByName("test1")
 	assert.Equal(t, createResourceList(64, 100*GigaByte), quotaInfo.CalculateInfo.Max)
 
-	runtime = gqm.RefreshRuntime("aliyun")
+	runtime = gqm.RefreshRuntime("test1")
 	assert.Equal(t, createResourceList(64, 100*GigaByte), runtime)
 }
 
 func TestGroupQuotaManager_DeleteOneGroup(t *testing.T) {
 	gqm := NewGroupQuotaManager4Test()
 	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000*GigaByte))
-	quota1 := AddQuotaToManager(t, gqm, "aliyun", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
-	quota2 := AddQuotaToManager(t, gqm, "alimm", extension.RootQuotaName, 96, 160*GigaByte, 80, 80*GigaByte, true, false)
-	quota3 := AddQuotaToManager(t, gqm, "hema", extension.RootQuotaName, 96, 160*GigaByte, 40, 40*GigaByte, true, false)
+	quota1 := AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	quota2 := AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96, 160*GigaByte, 80, 80*GigaByte, true, false)
+	quota3 := AddQuotaToManager(t, gqm, "test3", extension.RootQuotaName, 96, 160*GigaByte, 40, 40*GigaByte, true, false)
 	assert.Equal(t, 4, len(gqm.runtimeQuotaCalculatorMap))
 	assert.Equal(t, 5, len(gqm.quotaInfoMap))
 
-	//err := gqm.DeleteOneGroup(quota1)
 	err := gqm.UpdateQuota(quota1, true)
-	if err != nil {
-		klog.Infof("err:%v", err)
-	}
-	quotaInfo := gqm.GetQuotaInfoByName("aliyun")
+	assert.Nil(t, err)
+	quotaInfo := gqm.GetQuotaInfoByName("test1")
 	assert.True(t, quotaInfo == nil)
 
 	err = gqm.UpdateQuota(quota2, true)
-	if err != nil {
-		klog.Infof("err:%v", err)
-	}
-	quotaInfo = gqm.GetQuotaInfoByName("alimm")
+	assert.Nil(t, err)
+	quotaInfo = gqm.GetQuotaInfoByName("test2")
 	assert.True(t, quotaInfo == nil)
 
 	err = gqm.UpdateQuota(quota3, true)
-	if err != nil {
-		klog.Infof("err:%v", err)
-	}
-	quotaInfo = gqm.GetQuotaInfoByName("hema")
+	assert.Nil(t, err)
+	quotaInfo = gqm.GetQuotaInfoByName("test3")
 	assert.True(t, quotaInfo == nil)
 
 	assert.Equal(t, 1, len(gqm.runtimeQuotaCalculatorMap))
@@ -210,7 +197,7 @@ func TestGroupQuotaManager_DeleteOneGroup(t *testing.T) {
 
 	AddQuotaToManager(t, gqm, "youku", extension.RootQuotaName, 96, 160*GigaByte, 70, 70*GigaByte, true, false)
 	quotaInfo = gqm.GetQuotaInfoByName("youku")
-	assert.True(t, quotaInfo != nil)
+	assert.NotNil(t, quotaInfo)
 	assert.Equal(t, 2, len(gqm.runtimeQuotaCalculatorMap))
 	assert.Equal(t, 3, len(gqm.quotaInfoMap))
 }
@@ -224,21 +211,21 @@ func TestGroupQuotaManager_UpdateQuotaDeltaRequest(t *testing.T) {
 	totalRes := gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].totalResource.DeepCopy()
 	assert.Equal(t, deltaRes, totalRes)
 
-	AddQuotaToManager(t, gqm, "aliyun", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
-	AddQuotaToManager(t, gqm, "alimm", extension.RootQuotaName, 96, 160*GigaByte, 40, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96, 160*GigaByte, 40, 80*GigaByte, true, false)
 
-	// aliyun request[120, 290]  runtime == maxQuota
+	// test1 request[120, 290]  runtime == maxQuota
 	request := createResourceList(120, 200*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("aliyun", request)
-	runtime := gqm.RefreshRuntime("aliyun")
+	gqm.updateGroupDeltaRequestNoLock("test1", request)
+	runtime := gqm.RefreshRuntime("test1")
 	assert.Equal(t, deltaRes, runtime)
 
-	// alimm request[150, 210]  runtime
+	// test2 request[150, 210]  runtime
 	request = createResourceList(150, 210*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("alimm", request)
-	runtime = gqm.RefreshRuntime("aliyun")
+	gqm.updateGroupDeltaRequestNoLock("test2", request)
+	runtime = gqm.RefreshRuntime("test1")
 	assert.Equal(t, createResourceList(53, 80*GigaByte), runtime)
-	runtime = gqm.RefreshRuntime("alimm")
+	runtime = gqm.RefreshRuntime("test2")
 	assert.Equal(t, createResourceList(43, 80*GigaByte), runtime)
 }
 
@@ -248,14 +235,14 @@ func TestGroupQuotaManager_NotAllowLentResource(t *testing.T) {
 	deltaRes := createResourceList(100, 0)
 	gqm.UpdateClusterTotalResource(deltaRes)
 
-	AddQuotaToManager(t, gqm, "aliyun", extension.RootQuotaName, 96, 0, 60, 0, true, false)
-	AddQuotaToManager(t, gqm, "alimm", extension.RootQuotaName, 96, 0, 40, 0, false, false)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 0, 60, 0, true, false)
+	AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96, 0, 40, 0, false, false)
 
 	request := createResourceList(120, 0)
-	gqm.updateGroupDeltaRequestNoLock("aliyun", request)
-	runtime := gqm.RefreshRuntime("aliyun")
+	gqm.updateGroupDeltaRequestNoLock("test1", request)
+	runtime := gqm.RefreshRuntime("test1")
 	assert.Equal(t, int64(60), runtime.Cpu().Value())
-	runtime = gqm.RefreshRuntime("alimm")
+	runtime = gqm.RefreshRuntime("test2")
 	assert.Equal(t, int64(40), runtime.Cpu().Value())
 }
 
@@ -268,76 +255,76 @@ func TestGroupQuotaManager_UpdateQuotaRequest(t *testing.T) {
 	totalRes := gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].totalResource.DeepCopy()
 	assert.Equal(t, deltaRes, totalRes)
 
-	AddQuotaToManager(t, gqm, "aliyun", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
-	AddQuotaToManager(t, gqm, "alimm", extension.RootQuotaName, 96, 160*GigaByte, 40, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96, 160*GigaByte, 40, 80*GigaByte, true, false)
 
-	// 1. initial aliyun request [60, 100]
+	// 1. initial test1 request [60, 100]
 	request := createResourceList(60, 100*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("aliyun", request)
-	runtime := gqm.RefreshRuntime("aliyun")
+	gqm.updateGroupDeltaRequestNoLock("test1", request)
+	runtime := gqm.RefreshRuntime("test1")
 	assert.Equal(t, request, runtime)
 
-	// aliyun request[120, 290]  runtime == maxQuota
+	// test1 request[120, 290]  runtime == maxQuota
 	newRequest := createResourceList(120, 200*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("aliyun", newRequest)
-	runtime = gqm.RefreshRuntime("aliyun")
+	gqm.updateGroupDeltaRequestNoLock("test1", newRequest)
+	runtime = gqm.RefreshRuntime("test1")
 	assert.Equal(t, deltaRes, runtime)
 
-	// alimm request[150, 210]  runtime
+	// test2 request[150, 210]  runtime
 	request = createResourceList(150, 210*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("alimm", request)
-	runtime = gqm.RefreshRuntime("aliyun")
+	gqm.updateGroupDeltaRequestNoLock("test2", request)
+	runtime = gqm.RefreshRuntime("test1")
 	assert.Equal(t, createResourceList(53, 80*GigaByte), runtime)
-	runtime = gqm.RefreshRuntime("alimm")
+	runtime = gqm.RefreshRuntime("test2")
 	assert.Equal(t, createResourceList(43, 80*GigaByte), runtime)
 }
 
 func TestGroupQuotaManager_UpdateGroupDeltaUsed(t *testing.T) {
 	gqm := NewGroupQuotaManager4Test()
 
-	AddQuotaToManager(t, gqm, "aliyun", "root", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", "root", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
-	// 1. aliyun used[120, 290]  runtime == maxQuota
+	// 1. test1 used[120, 290]  runtime == maxQuota
 	used := createResourceList(120, 290*GigaByte)
-	gqm.updateGroupDeltaUsedNoLock("aliyun", used)
-	quotaInfo := gqm.GetQuotaInfoByName("aliyun")
-	assert.True(t, quotaInfo != nil)
+	gqm.updateGroupDeltaUsedNoLock("test1", used)
+	quotaInfo := gqm.GetQuotaInfoByName("test1")
+	assert.NotNil(t, quotaInfo)
 	assert.Equal(t, used, quotaInfo.CalculateInfo.Used)
 
 	// 2. used increases to [130,300]
 	used = createResourceList(10, 10*GigaByte)
-	gqm.updateGroupDeltaUsedNoLock("aliyun", used)
-	quotaInfo = gqm.GetQuotaInfoByName("aliyun")
-	assert.True(t, quotaInfo != nil)
+	gqm.updateGroupDeltaUsedNoLock("test1", used)
+	quotaInfo = gqm.GetQuotaInfoByName("test1")
+	assert.NotNil(t, quotaInfo)
 	assert.Equal(t, createResourceList(130, 300*GigaByte), quotaInfo.CalculateInfo.Used)
 
 	// 3. used decreases to [90,100]
 	used = createResourceList(-40, -200*GigaByte)
-	gqm.updateGroupDeltaUsedNoLock("aliyun", used)
-	quotaInfo = gqm.GetQuotaInfoByName("aliyun")
-	assert.True(t, quotaInfo != nil)
+	gqm.updateGroupDeltaUsedNoLock("test1", used)
+	quotaInfo = gqm.GetQuotaInfoByName("test1")
+	assert.NotNil(t, quotaInfo)
 	assert.Equal(t, createResourceList(90, 100*GigaByte), quotaInfo.CalculateInfo.Used)
 }
 
 func TestGroupQuotaManager_MultiQuotaAdd(t *testing.T) {
 	gqm := NewGroupQuotaManager4Test()
 
-	AddQuotaToManager(t, gqm, "aliyun", extension.RootQuotaName, 96, 160*GigaByte, 60, 100*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "odps", "aliyun", 96, 160*GigaByte, 10, 30*GigaByte, true, false)
-	AddQuotaToManager(t, gqm, "holo", "aliyun", 96, 160*GigaByte, 20, 30*GigaByte, true, false)
-	AddQuotaToManager(t, gqm, "blink", "aliyun", 96, 160*GigaByte, 30, 40*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 60, 100*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1-sub1", "test1", 96, 160*GigaByte, 10, 30*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1-sub2", "test1", 96, 160*GigaByte, 20, 30*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1-sub3", "test1", 96, 160*GigaByte, 30, 40*GigaByte, true, false)
 
-	AddQuotaToManager(t, gqm, "alimm", extension.RootQuotaName, 300, 400*GigaByte, 200, 300*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "youku", "alimm", 96, 160*GigaByte, 96, 160*GigaByte, true, false)
-	AddQuotaToManager(t, gqm, "search", "alimm", 82, 100*GigaByte, 80, 80*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "store", "search", 96, 160*GigaByte, 0, 0*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 300, 400*GigaByte, 200, 300*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test2-sub1", "test2", 96, 160*GigaByte, 96, 160*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test2-sub2", "test2", 82, 100*GigaByte, 80, 80*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test2-sub2-1", "test2-sub2", 96, 160*GigaByte, 0, 0*GigaByte, true, false)
 
 	assert.Equal(t, 9, len(gqm.runtimeQuotaCalculatorMap))
 	assert.Equal(t, 10, len(gqm.quotaInfoMap))
 	assert.Equal(t, 2, len(gqm.resourceKeys))
 	assert.Equal(t, 2, len(gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].quotaTree[v1.ResourceCPU].quotaNodes))
-	assert.Equal(t, 2, len(gqm.runtimeQuotaCalculatorMap["alimm"].quotaTree[v1.ResourceCPU].quotaNodes))
-	assert.Equal(t, 1, len(gqm.runtimeQuotaCalculatorMap["search"].quotaTree[v1.ResourceCPU].quotaNodes))
+	assert.Equal(t, 2, len(gqm.runtimeQuotaCalculatorMap["test2"].quotaTree[v1.ResourceCPU].quotaNodes))
+	assert.Equal(t, 1, len(gqm.runtimeQuotaCalculatorMap["test2-sub2"].quotaTree[v1.ResourceCPU].quotaNodes))
 }
 
 // TestGroupQuotaManager_MultiUpdateQuotaRequest  test the relationship of request and max
@@ -351,26 +338,26 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest(t *testing.T) {
 	totalRes := gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].totalResource.DeepCopy()
 	assert.Equal(t, deltaRes, totalRes)
 
-	// aliyun Max[96, 160]  Min[50,80] request[96,130]
-	//   |-- yun-a Max[96, 160]  Min[50,80] request[96,130]
+	// test1 Max[96, 160]  Min[50,80] request[96,130]
+	//   |-- test1-a Max[96, 160]  Min[50,80] request[96,130]
 	//         |-- a-123 Max[96, 160]  Min[50,80] request[96,130]
-	AddQuotaToManager(t, gqm, "aliyun", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "yun-a", "aliyun", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "a-123", "yun-a", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1-a", "test1", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "a-123", "test1-a", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
 	request := createResourceList(96, 130*GigaByte)
 	gqm.updateGroupDeltaRequestNoLock("a-123", request)
 	runtime := gqm.RefreshRuntime("a-123")
 	assert.Equal(t, request, runtime)
-	runtime = gqm.RefreshRuntime("yun-a")
+	runtime = gqm.RefreshRuntime("test1-a")
 	assert.Equal(t, request, runtime)
-	runtime = gqm.RefreshRuntime("aliyun")
+	runtime = gqm.RefreshRuntime("test1")
 	assert.Equal(t, request, runtime)
 
 	// decrease a-123 Max[64, 128]  Min[50,80] request[96,130]
-	quota1 := CreateQuota("a-123", "yun-a", 64, 128*GigaByte, 50, 80*GigaByte, true, false)
+	quota1 := CreateQuota("a-123", "test1-a", 64, 128*GigaByte, 50, 80*GigaByte, true, false)
 	gqm.UpdateQuota(quota1, false)
-	quotaInfo := gqm.GetQuotaInfoByName("yun-a")
+	quotaInfo := gqm.GetQuotaInfoByName("test1-a")
 	assert.Equal(t, createResourceList(96, 160*GigaByte), quotaInfo.CalculateInfo.Max)
 	runtime = gqm.RefreshRuntime("a-123")
 	assert.Equal(t, runtime, quotaInfo.CalculateInfo.Request)
@@ -379,9 +366,9 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest(t *testing.T) {
 	assert.Equal(t, request, quotaInfo.CalculateInfo.Request)
 
 	// increase
-	quota1 = CreateQuota("a-123", "yun-a", 100, 200*GigaByte, 90, 160*GigaByte, true, false)
+	quota1 = CreateQuota("a-123", "test1-a", 100, 200*GigaByte, 90, 160*GigaByte, true, false)
 	gqm.UpdateQuota(quota1, false)
-	quotaInfo = gqm.GetQuotaInfoByName("yun-a")
+	quotaInfo = gqm.GetQuotaInfoByName("test1-a")
 	assert.Equal(t, createResourceList(96, 160*GigaByte), quotaInfo.CalculateInfo.Max)
 	assert.Equal(t, createResourceList(96, 130*GigaByte), quotaInfo.CalculateInfo.Request)
 	runtime = gqm.RefreshRuntime("a-123")
@@ -418,21 +405,21 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest2(t *testing.T) {
 	totalRes := gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].totalResource.DeepCopy()
 	assert.Equal(t, deltaRes, totalRes)
 
-	// aliyun Max[96, 160]  Min[80,80]
-	//   |-- yun-a Max[60, 120]  Min[50,80]
+	// test1 Max[96, 160]  Min[80,80]
+	//   |-- test1-a Max[60, 120]  Min[50,80]
 	//         |-- a-123 Max[30, 60]  Min[20,40]
-	AddQuotaToManager(t, gqm, "aliyun", extension.RootQuotaName, 96, 160*GigaByte, 80, 80*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "yun-a", "aliyun", 60, 80*GigaByte, 50, 80*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "a-123", "yun-a", 30, 60*GigaByte, 20, 40*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 80, 80*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1-a", "test1", 60, 80*GigaByte, 50, 80*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "a-123", "test1-a", 30, 60*GigaByte, 20, 40*GigaByte, true, false)
 
 	// a-123 request[10,30]  request < min
 	request := createResourceList(10, 30*GigaByte)
 	gqm.updateGroupDeltaRequestNoLock("a-123", request)
 	runtime := gqm.RefreshRuntime("a-123")
 	assert.Equal(t, request, runtime)
-	runtime = gqm.RefreshRuntime("yun-a")
+	runtime = gqm.RefreshRuntime("test1-a")
 	assert.Equal(t, request, runtime)
-	runtime = gqm.RefreshRuntime("aliyun")
+	runtime = gqm.RefreshRuntime("test1")
 	assert.Equal(t, request, runtime)
 
 	// a-123 add request[15,15]  totalRequest[25,45] request > min
@@ -440,9 +427,9 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest2(t *testing.T) {
 	gqm.updateGroupDeltaRequestNoLock("a-123", request)
 	runtime = gqm.RefreshRuntime("a-123")
 	assert.Equal(t, createResourceList(25, 45*GigaByte), runtime)
-	quotaInfo := gqm.GetQuotaInfoByName("yun-a")
+	quotaInfo := gqm.GetQuotaInfoByName("test1-a")
 	assert.Equal(t, createResourceList(25, 45*GigaByte), quotaInfo.CalculateInfo.Request)
-	quotaInfo = gqm.GetQuotaInfoByName("aliyun")
+	quotaInfo = gqm.GetQuotaInfoByName("test1")
 	assert.Equal(t, createResourceList(25, 45*GigaByte), quotaInfo.CalculateInfo.Request)
 
 	// a-123 add request[30,30]  totalRequest[55,75] request > max
@@ -450,9 +437,9 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest2(t *testing.T) {
 	gqm.updateGroupDeltaRequestNoLock("a-123", request)
 	runtime = gqm.RefreshRuntime("a-123")
 	assert.Equal(t, createResourceList(30, 60*GigaByte), runtime)
-	quotaInfo = gqm.GetQuotaInfoByName("yun-a")
+	quotaInfo = gqm.GetQuotaInfoByName("test1-a")
 	assert.Equal(t, createResourceList(30, 60*GigaByte), quotaInfo.CalculateInfo.Request)
-	quotaInfo = gqm.GetQuotaInfoByName("aliyun")
+	quotaInfo = gqm.GetQuotaInfoByName("test1")
 	assert.Equal(t, createResourceList(30, 60*GigaByte), quotaInfo.CalculateInfo.Request)
 }
 
@@ -577,21 +564,21 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota2(t *testin
 func TestGroupQuotaManager_MultiUpdateQuotaUsed(t *testing.T) {
 	gqm := NewGroupQuotaManager4Test()
 
-	AddQuotaToManager(t, gqm, "aliyun", "root", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "yun-1", "aliyun", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "yun1-1", "yun-1", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", "root", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1-sub1", "test1", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1-sub1-1", "test1-sub1", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
 	used := createResourceList(120, 290*GigaByte)
-	gqm.updateGroupDeltaUsedNoLock("yun1-1", used)
-	quotaInfo := gqm.GetQuotaInfoByName("yun1-1")
+	gqm.updateGroupDeltaUsedNoLock("test1-sub1", used)
+	quotaInfo := gqm.GetQuotaInfoByName("test1-sub1")
 	assert.True(t, quotaInfo != nil)
 	assert.Equal(t, used, quotaInfo.CalculateInfo.Used)
 
-	quotaInfo = gqm.GetQuotaInfoByName("yun-1")
+	quotaInfo = gqm.GetQuotaInfoByName("test1-sub1")
 	assert.True(t, quotaInfo != nil)
 	assert.Equal(t, used, quotaInfo.CalculateInfo.Used)
 
-	quotaInfo = gqm.GetQuotaInfoByName("aliyun")
+	quotaInfo = gqm.GetQuotaInfoByName("test1")
 	assert.True(t, quotaInfo != nil)
 	assert.Equal(t, used, quotaInfo.CalculateInfo.Used)
 }
@@ -605,17 +592,17 @@ func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 	totalRes := gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].totalResource.DeepCopy()
 	assert.Equal(t, deltaRes, totalRes)
 
-	// alimm Max[96, 160]  Min[50,80] request[20,40]
-	//   `-- mm-a Max[96, 160]  Min[50,80] request[20,40]
-	// aliyun Max[96, 160]  Min[50,80] request[60,100]
-	//   `-- yun-a Max[96, 160]  Min[50,80] request[60,100]
+	// test2 Max[96, 160]  Min[50,80] request[20,40]
+	//   `-- test2-a Max[96, 160]  Min[50,80] request[20,40]
+	// test1 Max[96, 160]  Min[50,80] request[60,100]
+	//   `-- test1-a Max[96, 160]  Min[50,80] request[60,100]
 	//         `-- a-123 Max[96, 160]  Min[50,80] request[60,100]
-	AddQuotaToManager(t, gqm, "aliyun", "root", 96, 160*GigaByte, 100, 160*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "yun-a", "aliyun", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
-	changeQuota := AddQuotaToManager(t, gqm, "a-123", "yun-a", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", "root", 96, 160*GigaByte, 100, 160*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1-a", "test1", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
+	changeQuota := AddQuotaToManager(t, gqm, "a-123", "test1-a", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
-	AddQuotaToManager(t, gqm, "alimm", "root", 96, 160*GigaByte, 100, 160*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "mm-a", "alimm", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test2", "root", 96, 160*GigaByte, 100, 160*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test2-a", "test2", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
 	// a-123 request [60,100]
 	request := createResourceList(60, 100*GigaByte)
@@ -624,39 +611,39 @@ func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 	runtime := gqm.RefreshRuntime("a-123")
 	assert.Equal(t, request, runtime)
 
-	runtime = gqm.RefreshRuntime("yun-a")
+	runtime = gqm.RefreshRuntime("test1-a")
 	assert.Equal(t, request, runtime)
 
-	runtime = gqm.RefreshRuntime("aliyun")
+	runtime = gqm.RefreshRuntime("test1")
 	assert.Equal(t, request, runtime)
 
-	// mm-a request [20,40]
+	// test2-a request [20,40]
 	request = createResourceList(20, 40*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("mm-a", request)
-	gqm.updateGroupDeltaUsedNoLock("mm-a", request)
-	runtime = gqm.RefreshRuntime("mm-a")
+	gqm.updateGroupDeltaRequestNoLock("test2-a", request)
+	gqm.updateGroupDeltaUsedNoLock("test2-a", request)
+	runtime = gqm.RefreshRuntime("test2-a")
 	assert.Equal(t, request, runtime)
 
-	runtime = gqm.RefreshRuntime("alimm")
+	runtime = gqm.RefreshRuntime("test2")
 	assert.Equal(t, request, runtime)
 
-	// a-123 mv alimm
-	// alimm Max[96, 160]  Min[100,160] request[80,140]
-	//   `-- mm-a Max[96, 160]  Min[50,80] request[20,40]
+	// a-123 mv test2
+	// test2 Max[96, 160]  Min[100,160] request[80,140]
+	//   `-- test2-a Max[96, 160]  Min[50,80] request[20,40]
 	//   `-- a-123 Max[96, 160]  Min[50,80] request[60,100]
-	// aliyun Max[96, 160]  Min[100,160] request[0,0]
-	//   `-- yun-a Max[96, 160]  Min[50,80] request[0,0]
-	changeQuota.Labels[extension.LabelQuotaParent] = "alimm"
+	// test1 Max[96, 160]  Min[100,160] request[0,0]
+	//   `-- test1-a Max[96, 160]  Min[50,80] request[0,0]
+	changeQuota.Labels[extension.LabelQuotaParent] = "test2"
 	gqm.UpdateQuota(changeQuota, false)
 
-	quotaInfo := gqm.GetQuotaInfoByName("yun-a")
-	gqm.RefreshRuntime("yun-a")
+	quotaInfo := gqm.GetQuotaInfoByName("test1-a")
+	gqm.RefreshRuntime("test1-a")
 	assert.Equal(t, v1.ResourceList{}, quotaInfo.CalculateInfo.Request)
 	assert.Equal(t, v1.ResourceList{}, quotaInfo.CalculateInfo.Used)
 	assert.Equal(t, createResourceList(0, 0), quotaInfo.CalculateInfo.Runtime)
 
-	quotaInfo = gqm.GetQuotaInfoByName("aliyun")
-	gqm.RefreshRuntime("aliyun")
+	quotaInfo = gqm.GetQuotaInfoByName("test1")
+	gqm.RefreshRuntime("test1")
 	assert.Equal(t, v1.ResourceList{}, quotaInfo.CalculateInfo.Request)
 	assert.Equal(t, v1.ResourceList{}, quotaInfo.CalculateInfo.Used)
 	assert.Equal(t, createResourceList(0, 0), quotaInfo.CalculateInfo.Runtime)
@@ -666,16 +653,16 @@ func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 	assert.Equal(t, createResourceList(60, 100*GigaByte), quotaInfo.CalculateInfo.Request)
 	assert.Equal(t, createResourceList(60, 100*GigaByte), quotaInfo.CalculateInfo.Used)
 	assert.Equal(t, createResourceList(60, 100*GigaByte), quotaInfo.CalculateInfo.Runtime)
-	assert.Equal(t, "alimm", quotaInfo.ParentName)
+	assert.Equal(t, "test2", quotaInfo.ParentName)
 
-	quotaInfo = gqm.GetQuotaInfoByName("mm-a")
-	gqm.RefreshRuntime("mm-a")
+	quotaInfo = gqm.GetQuotaInfoByName("test2-a")
+	gqm.RefreshRuntime("test2-a")
 	assert.Equal(t, createResourceList(20, 40*GigaByte), quotaInfo.CalculateInfo.Request)
 	assert.Equal(t, createResourceList(20, 40*GigaByte), quotaInfo.CalculateInfo.Used)
 	assert.Equal(t, createResourceList(20, 40*GigaByte), quotaInfo.CalculateInfo.Runtime)
 
-	quotaInfo = gqm.GetQuotaInfoByName("alimm")
-	gqm.RefreshRuntime("alimm")
+	quotaInfo = gqm.GetQuotaInfoByName("test2")
+	gqm.RefreshRuntime("test2")
 	assert.Equal(t, createResourceList(80, 140*GigaByte), quotaInfo.CalculateInfo.Request)
 	assert.Equal(t, createResourceList(80, 140*GigaByte), quotaInfo.CalculateInfo.Used)
 	assert.Equal(t, createResourceList(80, 140*GigaByte), quotaInfo.CalculateInfo.Runtime)
@@ -745,9 +732,7 @@ func AddQuotaToManager(t *testing.T,
 	maxCpu, maxMem, minCpu, minMem int64, allowLentResource bool, isParent bool) *v1alpha1.ElasticQuota {
 	quota := CreateQuota(quotaName, parent, maxCpu, maxMem, minCpu, minMem, allowLentResource, isParent)
 	err := gqm.UpdateQuota(quota, false)
-	if err != nil {
-		klog.Infof("error:%v", err)
-	}
+	assert.Nil(t, err)
 	quotaInfo := gqm.quotaInfoMap[quotaName]
 	assert.True(t, quotaInfo != nil)
 	assert.Equal(t, quotaName, quotaInfo.Name)
@@ -758,9 +743,9 @@ func AddQuotaToManager(t *testing.T,
 
 	//assert whether the parent quotaTree has the sub quota group
 	quotaTreeWrapper := gqm.runtimeQuotaCalculatorMap[quotaName]
-	assert.True(t, quotaTreeWrapper != nil)
+	assert.NotNil(t, quotaTreeWrapper)
 	quotaTreeWrapper = gqm.runtimeQuotaCalculatorMap[parent]
-	assert.True(t, quotaTreeWrapper != nil)
+	assert.NotNil(t, quotaTreeWrapper)
 	find, nodeInfo := quotaTreeWrapper.quotaTree[v1.ResourceCPU].find(quotaName)
 	assert.True(t, find)
 	assert.Equal(t, nodeInfo.quotaName, quotaName)
@@ -802,32 +787,32 @@ func TestGroupQuotaManager_MultiChildMaxGreaterParentMax_MaxGreaterThanTotalRes(
 	deltaRes := createResourceList(300, 8000)
 	gqm.UpdateClusterTotalResource(deltaRes)
 
-	// odps Max[600, 4096]  Min[100, 100]
-	//   |-- admin Max[500, 2048]  Min[100, 100]  Req[500, 4096]
-	AddQuotaToManager(t, gqm, "odps", "root", 600, 4096, 100, 100, true, true)
-	AddQuotaToManager(t, gqm, "admin", "odps", 500, 2048, 100, 100, true, false)
+	// test1 Max[600, 4096]  Min[100, 100]
+	//   |-- test1-sub1 Max[500, 2048]  Min[100, 100]  Req[500, 4096]
+	AddQuotaToManager(t, gqm, "test1", "root", 600, 4096, 100, 100, true, true)
+	AddQuotaToManager(t, gqm, "test1-sub1", "test1", 500, 2048, 100, 100, true, false)
 
-	// admin Request [500, 4096] limitRequest [500, 2048]
-	// odps Request [500,2048] limitedRequest [500, 2048] limited by rootRes [300, 8000] -> [300,2048]
+	// test1 Request [500, 4096] limitRequest [500, 2048]
+	// test1-sub Request [500,2048] limitedRequest [500, 2048] limited by rootRes [300, 8000] -> [300,2048]
 	request := createResourceList(500, 4096)
-	gqm.updateGroupDeltaRequestNoLock("admin", request)
-	runtime := gqm.RefreshRuntime("admin")
+	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request)
+	runtime := gqm.RefreshRuntime("test1-sub1")
 	assert.Equal(t, createResourceList(300, 2048), runtime)
 	fmt.Printf("quota1 runtime:%v\n", runtime)
 
-	// admin Request [1050, 8192] limitRequest [500, 2048]
-	// odps Request [500,2048] limitedRequest [500, 2048] limited by rootRes [300, 8000] -> [300,2048]
+	// test1 Request [1050, 8192] limitRequest [500, 2048]
+	// test1-sub1 Request [500,2048] limitedRequest [500, 2048] limited by rootRes [300, 8000] -> [300,2048]
 	request = createResourceList(550, 4096)
-	gqm.updateGroupDeltaRequestNoLock("admin", request)
-	runtime = gqm.RefreshRuntime("admin")
+	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request)
+	runtime = gqm.RefreshRuntime("test1-sub")
 	fmt.Printf("quota1 runtime:%v\n", runtime)
 
-	quotaInfo := gqm.GetQuotaInfoByName("odps")
+	quotaInfo := gqm.GetQuotaInfoByName("test1")
 	assert.Equal(t, quotaInfo.CalculateInfo.Request, createResourceList(500, 2048))
 	assert.Equal(t, quotaInfo.getLimitRequestNoLock(), createResourceList(500, 2048))
 	assert.Equal(t, quotaInfo.CalculateInfo.Max, createResourceList(600, 4096))
 	assert.Equal(t, quotaInfo.CalculateInfo.Runtime, createResourceList(300, 2048))
-	quotaInfo = gqm.GetQuotaInfoByName("admin")
+	quotaInfo = gqm.GetQuotaInfoByName("test1-sub1")
 	assert.Equal(t, quotaInfo.CalculateInfo.Request, createResourceList(1050, 8192))
 	assert.Equal(t, quotaInfo.getLimitRequestNoLock(), createResourceList(500, 2048))
 	assert.Equal(t, quotaInfo.CalculateInfo.Max, createResourceList(500, 2048))
@@ -840,29 +825,29 @@ func TestGroupQuotaManager_MultiChildMaxGreaterParentMax(t *testing.T) {
 	deltaRes := createResourceList(350, 1800*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
 
-	// odps Max[300, 1024]  Min[176, 756]
-	//   |-- admin Max[500, 2048]  Min[100, 512]
-	AddQuotaToManager(t, gqm, "odps", "root", 300, 1024*GigaByte, 176, 756*GigaByte, true, true)
-	AddQuotaToManager(t, gqm, "admin", "odps", 500, 2048*GigaByte, 100, 512*GigaByte, true, false)
+	// test1 Max[300, 1024]  Min[176, 756]
+	//   |-- test1-sub1 Max[500, 2048]  Min[100, 512]
+	AddQuotaToManager(t, gqm, "test1", "root", 300, 1024*GigaByte, 176, 756*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1-sub1", "test1", 500, 2048*GigaByte, 100, 512*GigaByte, true, false)
 
-	// odps max < request < admin max
-	// admin Request[400, 1500] limitedRequest [400, 1500]
-	// odps Request [400,1500] limitedRequest [300, 1024]
+	// test1 max < request < test1-sub1 max
+	// test1-sub1 Request[400, 1500] limitedRequest [400, 1500]
+	// test1 Request [400,1500] limitedRequest [300, 1024]
 	request := createResourceList(400, 1500*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("admin", request)
-	quotaInfo := gqm.GetQuotaInfoByName("odps")
+	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request)
+	quotaInfo := gqm.GetQuotaInfoByName("test1")
 	assert.Equal(t, quotaInfo.CalculateInfo.Request, createResourceList(400, 1500*GigaByte))
-	quotaInfo = gqm.GetQuotaInfoByName("admin")
+	quotaInfo = gqm.GetQuotaInfoByName("test1-sub1")
 	assert.Equal(t, quotaInfo.CalculateInfo.Request, createResourceList(400, 1500*GigaByte))
-	runtime := gqm.RefreshRuntime("admin")
+	runtime := gqm.RefreshRuntime("test1-sub1")
 	assert.Equal(t, createResourceList(300, 1024*GigaByte), runtime)
 	fmt.Printf("quota1 runtime:%v\n", runtime)
 
-	// odps max < admin max < request
-	// admin Request[800, 3000] limitedRequest [500, 2048]
-	// odps Request [500, 2048] limitedRequest [300, 1024]
-	gqm.updateGroupDeltaRequestNoLock("admin", request)
-	runtime = gqm.RefreshRuntime("admin")
+	// test1 max < test1-sub1 max < request
+	// test1-sub1 Request[800, 3000] limitedRequest [500, 2048]
+	// test1 Request [500, 2048] limitedRequest [300, 1024]
+	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request)
+	runtime = gqm.RefreshRuntime("test1-sub1")
 	assert.Equal(t, createResourceList(300, 1024*GigaByte), runtime)
 	fmt.Printf("quota1 runtime:%v\n", runtime)
 }
