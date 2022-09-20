@@ -199,18 +199,18 @@ func TestLess(t *testing.T) {
 	gp := suit.plugin.(*Coscheduling)
 
 	var lowPriority, highPriority = int32(10), int32(100)
-	//koordinator priority announced in pod's Labels
+	// koordinator priority announced in pod's Labels
 	var lowSubPriority, highSubPriority = "111", "222"
 	var gangA_ns, gangB_ns = "namespace1", "namespace2"
 	now := time.Now()
 	earltTime := now.Add(1 * time.Second)
 	lateTime := now.Add(3 * time.Second)
 
-	//we assume that there are tow gang: gangA and gangB
-	//gangA is announced by the pod's annotation,gangB is created by the podGroup
-	//so here we need to add two gangs to the cluster
+	// we assume that there are tow gang: gangA and gangB
+	// gangA is announced by the pod's annotation,gangB is created by the podGroup
+	// so here we need to add two gangs to the cluster
 
-	//GangA by Annotations
+	// GangA by Annotations
 	podToCreateGangA := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: gangA_ns,
@@ -221,11 +221,11 @@ func TestLess(t *testing.T) {
 			},
 		},
 	}
-	//GangB by PodGroup
+	// GangB by PodGroup
 	gangBCreatTime := now.Add(5 * time.Second)
 	pg := makePg("gangB", gangB_ns, 2, &gangBCreatTime, nil)
 	suit.start()
-	//creat gangA and gangB
+	// create gangA and gangB
 
 	err := retry.OnError(
 		retry.DefaultRetry,
@@ -455,7 +455,7 @@ func TestPostFilter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pgClientSet := fakepgclientset.NewSimpleClientset()
 			cs := kubefake.NewSimpleClientset()
-			//create gang by podGroup
+			// create gang by podGroup
 			if tt.pg != nil {
 				if tt.annotations != nil {
 					tt.pg.Annotations = tt.annotations
@@ -476,14 +476,14 @@ func TestPostFilter(t *testing.T) {
 
 			cycleState := framework.NewCycleState()
 			var wg sync.WaitGroup
-			//pod3 case should test waitingPods
+			// pod3 case should test waitingPods
 			if tt.pod.Name == "pod3" {
 				wg.Add(2)
 			}
 			for _, pod := range tt.pods {
 				tmpPod := pod
 				suit.Handle.(framework.Framework).RunPermitPlugins(context.Background(), cycleState, tmpPod, "")
-				//start goroutine to wait for the waitingPod's status channel from PostFilter stage
+				// start goroutine to wait for the waitingPod's status channel from PostFilter stage
 				go func() {
 					status := suit.Handle.(framework.Framework).WaitOnPermit(context.Background(), tmpPod)
 					if status.IsSuccess() {
@@ -511,7 +511,7 @@ func TestPostFilter(t *testing.T) {
 					t.Error()
 				}
 			}
-			//reject waitingPods
+			// reject waitingPods
 			_, code := gp.PostFilter(context.Background(), cycleState, tt.pod, nil)
 			if code.Message() == "" != tt.expectedEmptyMsg {
 				t.Errorf("expectedEmptyMsg %v, got %v", tt.expectedEmptyMsg, code.Message() == "")
@@ -543,6 +543,7 @@ func TestPermit(t *testing.T) {
 		want                  framework.Code
 		toActivePodsKeys      []string
 		needInWaitingPods     bool
+		shouldWait            bool
 		waitingGangMap        map[string]bool
 		shouldTestTimeoutTime bool
 	}{
@@ -563,6 +564,7 @@ func TestPermit(t *testing.T) {
 				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
 			},
 			want:             framework.Wait,
+			shouldWait:       true,
 			toActivePodsKeys: []string{"gangA_ns/pod3-1"},
 		},
 		{
@@ -586,6 +588,7 @@ func TestPermit(t *testing.T) {
 				st.MakePod().Name("pod5-2").UID("pod5-2").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
 			},
 			toActivePodsKeys: []string{"gangB_ns/pod5-1"},
+			shouldWait:       true,
 			want:             framework.Wait,
 		},
 		{
@@ -624,33 +627,34 @@ func TestPermit(t *testing.T) {
 			suit.start()
 			gp := suit.plugin.(*Coscheduling)
 
-			//add assumed pods
+			// add assumed pods
 			ctx := context.Background()
 			cycleState := framework.NewCycleState()
 
 			podsToActivate := framework.NewPodsToActivate()
 			cycleState.Write(framework.PodsToActivateKey, podsToActivate)
 
-			waitNum := len(tt.pods)
 			var wg sync.WaitGroup
+			waitNum := len(tt.pods)
+
+			if tt.shouldWait {
+				for _, pod := range tt.pods {
+					suit.Handle.(framework.Framework).RunPermitPlugins(ctx, cycleState, pod, "")
+				}
+			}
 			if tt.needInWaitingPods {
 				wg.Add(waitNum)
-			}
-			for _, pod := range tt.pods {
-				tmpPod := pod
-				suit.Handle.(framework.Framework).RunPermitPlugins(ctx, cycleState, tmpPod, "")
-				gp.Permit(ctx, cycleState, pod, "")
-				//start goroutine to wait for the waitingPod's Allow signal from Permit stage
-				go func() {
-					status := suit.Handle.(framework.Framework).WaitOnPermit(context.Background(), tmpPod)
-					if !status.IsSuccess() {
-						t.Error()
-					}
-					defer wg.Done()
-				}()
-			}
-
-			if tt.needInWaitingPods {
+				for _, pod := range tt.pods {
+					suit.Handle.(framework.Framework).RunPermitPlugins(ctx, cycleState, pod, "")
+					// start goroutine to wait for the waitingPod's Allow signal from Permit stage
+					go func(pod *corev1.Pod) {
+						defer wg.Done()
+						status := suit.Handle.(framework.Framework).WaitOnPermit(context.Background(), pod)
+						if !status.IsSuccess() {
+							t.Error()
+						}
+					}(pod)
+				}
 				totalWaitingPods := 0
 				suit.Handle.IterateOverWaitingPods(
 					func(waitingPod framework.WaitingPod) {
