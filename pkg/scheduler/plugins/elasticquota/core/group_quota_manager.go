@@ -75,14 +75,14 @@ func (gqm *GroupQuotaManager) setScaleMinQuotaEnabled(flag bool) {
 	defer gqm.hierarchyUpdateLock.Unlock()
 
 	gqm.scaleMinQuotaEnabled = flag
-	klog.V(3).Infof("Set ScaleMinQuotaEnabled, flag:%v", gqm.scaleMinQuotaEnabled)
+	klog.V(5).Infof("Set ScaleMinQuotaEnabled, flag:%v", gqm.scaleMinQuotaEnabled)
 }
 
 func (gqm *GroupQuotaManager) UpdateClusterTotalResource(deltaRes v1.ResourceList) {
 	gqm.hierarchyUpdateLock.Lock()
 	defer gqm.hierarchyUpdateLock.Unlock()
 
-	klog.V(3).Infof("UpdateClusterResource deltaRes:%v", deltaRes)
+	klog.V(5).Infof("UpdateClusterResource deltaRes:%v", deltaRes)
 	gqm.GetQuotaInfoByNameNoLock(extension.DefaultQuotaName).Lock()
 	defer gqm.GetQuotaInfoByNameNoLock(extension.DefaultQuotaName).UnLock()
 
@@ -105,7 +105,7 @@ func (gqm *GroupQuotaManager) updateClusterTotalResourceNoLock(deltaRes v1.Resou
 	if !quotav1.IsZero(diffRes) {
 		gqm.totalResourceExceptSystemAndDefaultUsed = totalResNoSysOrDefault.DeepCopy()
 		gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(totalResNoSysOrDefault)
-		klog.V(3).Infof("UpdateClusterResource finish totalResourceExceptSystemAndDefaultUsed:%v", gqm.totalResourceExceptSystemAndDefaultUsed)
+		klog.V(5).Infof("UpdateClusterResource finish totalResourceExceptSystemAndDefaultUsed:%v", gqm.totalResourceExceptSystemAndDefaultUsed)
 	}
 }
 
