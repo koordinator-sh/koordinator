@@ -58,7 +58,7 @@ func (g *Plugin) OnQuotaUpdate(oldObj, newObj interface{}) {
 	klog.V(5).Infof("OnQuotaUpdateFunc success: %v.%v", newQuota.Namespace, newQuota.Name)
 }
 
-// OnQuotaDelete only allows to delete leafQuotaNode.
+// OnQuotaDelete if a quotaGroup is deleted, the pods should migrate to defaultQuotaGroup.
 func (g *Plugin) OnQuotaDelete(obj interface{}) {
 	quota := obj.(*schedulerv1alpha1.ElasticQuota)
 
@@ -69,6 +69,7 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 
 	klog.V(5).Infof("OnQuotaDeleteFunc delete quota:%+v", quota)
 
+	g.migratePods(quota.Name, extension.DefaultQuotaName)
 	if err := g.groupQuotaManager.UpdateQuota(quota, true); err != nil {
 		klog.Errorf("OnQuotaDeleteFunc failed: %v.%v", quota.Namespace, quota.Name)
 	}

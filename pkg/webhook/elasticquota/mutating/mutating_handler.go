@@ -14,14 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package validating
+package mutating
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"reflect"
 
-	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	clientcache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -33,75 +35,74 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
 
-// PodValidatingHandler handles Pod
-type PodValidatingHandler struct {
+// ElasticQuotaMutatingHandler handles ElasticQuota
+type ElasticQuotaMutatingHandler struct {
 	Client client.Client
 
-	// Decoder decodes objects
+	// Decoder decodes the objects
 	Decoder *admission.Decoder
 }
 
-var _ admission.Handler = &PodValidatingHandler{}
+var _ admission.Handler = &ElasticQuotaMutatingHandler{}
 
-func shouldIgnoreIfNotPod(req admission.Request) bool {
+func shouldIgnoreIfNotElasticQuotas(req admission.Request) bool {
 	// Ignore all calls to sub resources or resources other than pods.
 	if len(req.AdmissionRequest.SubResource) != 0 ||
-		req.AdmissionRequest.Resource.Resource != "pods" {
+		req.AdmissionRequest.Resource.Resource != "elasticquotas" {
 		return true
 	}
 	return false
 }
 
-func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admission.Request) (allowed bool, reason string, err error) {
-	allowed = true
-	if shouldIgnoreIfNotPod(req) {
-		return
-	}
-	if req.Operation == admissionv1.Delete && len(req.OldObject.Raw) == 0 {
-		klog.Warningf("Skip to validate pod %s/%s deletion for no old object, maybe because of Kubernetes version < 1.16", req.Namespace, req.Name)
-		return
+func (h *ElasticQuotaMutatingHandler) Handle(ctx context.Context, request admission.Request) (resp admission.Response) {
+	if shouldIgnoreIfNotElasticQuotas(request) {
+		return admission.Allowed("")
 	}
 
-	allowed, reason, err = h.clusterColocationProfileValidatingPod(ctx, req)
-	if err == nil {
-		plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
-		if err = plugin.ValidatePod(ctx, req); err != nil {
-			return false, "", err
-		}
-	}
-	return
-}
-
-var _ admission.Handler = &PodValidatingHandler{}
-
-// Handle handles admission requests.
-func (h *PodValidatingHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
-	allowed, reason, err := h.validatingPodFn(ctx, req)
-	if err != nil {
+	obj := &v1alpha1.ElasticQuota{}
+	if err := h.Decoder.Decode(request, obj); err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
 	}
-	return admission.ValidationResponse(allowed, reason)
+
+	var copied runtime.Object = obj.DeepCopy()
+
+	klog.V(5).Infof("Webhook start mutating quota %s", obj.Name)
+
+	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
+	if err := plugin.AdmitQuota(ctx, request, copied); err != nil {
+		klog.Errorf("Failed to mutating Quota %s/%s by quotaTopology, err: %v", obj.Namespace, obj.Name, err)
+		return admission.Errored(http.StatusBadRequest, err)
+	}
+
+	if reflect.DeepEqual(obj, copied) {
+		return admission.Allowed("")
+	}
+	marshaled, err := json.Marshal(copied)
+	if err != nil {
+		return admission.Errored(http.StatusInternalServerError, err)
+	}
+	return admission.PatchResponseFromRaw(request.AdmissionRequest.Object.Raw, marshaled)
 }
 
-var _ inject.Client = &PodValidatingHandler{}
+var _ inject.Client = &ElasticQuotaMutatingHandler{}
 
-// InjectClient injects the client into the PodValidatingHandler
-func (h *PodValidatingHandler) InjectClient(c client.Client) error {
+// InjectClient injects the client into the ElasticQuotaMutatingHandler
+func (h *ElasticQuotaMutatingHandler) InjectClient(c client.Client) error {
 	h.Client = c
 	return nil
 }
 
-var _ admission.DecoderInjector = &PodValidatingHandler{}
+var _ admission.DecoderInjector = &ElasticQuotaMutatingHandler{}
 
-// InjectDecoder injects the decoder into the PodValidatingHandler
-func (h *PodValidatingHandler) InjectDecoder(d *admission.Decoder) error {
-	h.Decoder = d
+// InjectDecoder injects the decoder into the ElasticQuotaMutatingHandler
+func (h *ElasticQuotaMutatingHandler) InjectDecoder(decoder *admission.Decoder) error {
+	h.Decoder = decoder
 	return nil
 }
 
-var _ inject.Cache = &PodValidatingHandler{}
+var _ inject.Cache = &ElasticQuotaMutatingHandler{}
 
-func (h *PodValidatingHandler) InjectCache(cache cache.Cache) error {
+func (h *ElasticQuotaMutatingHandler) InjectCache(cache cache.Cache) error {
 	ctx := context.TODO()
 	quotaInformer, err := cache.GetInformer(ctx, &v1alpha1.ElasticQuota{
 		TypeMeta: metav1.TypeMeta{

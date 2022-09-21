@@ -63,16 +63,18 @@ func (g *Plugin) migrateDefaultQuotaGroupsPod() {
 	for _, pod := range defaultQuotaInfo.GetPodCache() {
 		quotaName := g.getPodAssociateQuotaName(pod)
 		if quotaName != extension.DefaultQuotaName {
-			isAssigned := g.groupQuotaManager.GetPodIsAssigned(extension.DefaultQuotaName, pod)
-			g.groupQuotaManager.UpdatePodRequest(extension.DefaultQuotaName, pod, nil)
-			g.groupQuotaManager.UpdatePodUsed(extension.DefaultQuotaName, pod, nil)
-			g.groupQuotaManager.UpdatePodCache(extension.DefaultQuotaName, pod, false)
+			g.groupQuotaManager.MigratePod(pod, extension.DefaultQuotaName, quotaName)
+		}
+	}
+}
 
-			g.groupQuotaManager.UpdatePodCache(quotaName, pod, true)
-			g.groupQuotaManager.UpdatePodIsAssigned(quotaName, pod, isAssigned)
-			g.groupQuotaManager.UpdatePodRequest(quotaName, nil, pod)
-			g.groupQuotaManager.UpdatePodUsed(quotaName, nil, pod)
-			klog.V(5).Infof("migrate pod :%v from defaultQuotaGroup to quota:%v, podPhase:%v", pod.Name, quotaName, pod.Status.Phase)
+// migratePods if a quotaGroup is deleted, migrate its pods to defaultQuotaGroup
+func (g *Plugin) migratePods(out, in string) {
+	outQuota := g.groupQuotaManager.GetQuotaInfoByName(out)
+	inQuota := g.groupQuotaManager.GetQuotaInfoByName(in)
+	if outQuota != nil && inQuota != nil {
+		for _, pod := range outQuota.GetPodCache() {
+			g.groupQuotaManager.MigratePod(pod, out, in)
 		}
 	}
 }

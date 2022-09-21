@@ -14,10 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package validating
+package mutating
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"testing"
 
 	admissionv1 "k8s.io/api/admission/v1"
@@ -26,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -34,7 +37,8 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 )
 
-func makeTestHandler() *PodValidatingHandler {
+func makeTestHandler(t *testing.T) *ElasticQuotaMutatingHandler {
+	setLoglevel("5")
 	client := fake.NewClientBuilder().Build()
 	sche := client.Scheme()
 	sche.AddKnownTypes(schema.GroupVersion{
@@ -42,7 +46,7 @@ func makeTestHandler() *PodValidatingHandler {
 		Version: "v1alpha1",
 	}, &v1alpha1.ElasticQuota{}, &v1alpha1.ElasticQuotaList{})
 	decoder, _ := admission.NewDecoder(sche)
-	handler := &PodValidatingHandler{}
+	handler := &ElasticQuotaMutatingHandler{}
 	handler.InjectClient(client)
 	handler.InjectDecoder(decoder)
 
@@ -68,17 +72,18 @@ func gvr(resource string) metav1.GroupVersionResource {
 	}
 }
 
-func TestValidatingHandler(t *testing.T) {
-	handler := makeTestHandler()
+func TestElasticQuotaMutatingHandler_Handle(t *testing.T) {
+	handler := makeTestHandler(t)
 	ctx := context.Background()
 
 	testCases := []struct {
 		name    string
 		request admission.Request
 		allowed bool
+		code    int32
 	}{
 		{
-			name: "not a pod",
+			name: "not a elasticQuota",
 			request: admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
 					Resource:  gvr("configmaps"),
@@ -88,10 +93,10 @@ func TestValidatingHandler(t *testing.T) {
 			allowed: true,
 		},
 		{
-			name: "pod with subresource",
+			name: "elasticQuota with subresource",
 			request: admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
-					Resource:    gvr("pods"),
+					Resource:    gvr("elasticquotas"),
 					Operation:   admissionv1.Create,
 					SubResource: "status",
 				},
@@ -99,22 +104,23 @@ func TestValidatingHandler(t *testing.T) {
 			allowed: true,
 		},
 		{
-			name: "pod with empty object",
+			name: "elasticQuota with empty object",
 			request: admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
-					Resource:  gvr("pods"),
-					Operation: admissionv1.Delete,
+					Resource:  gvr("elasticquotas"),
+					Operation: admissionv1.Create,
 					Object:    runtime.RawExtension{},
 				},
 			},
-			allowed: true,
+			allowed: false,
+			code:    http.StatusBadRequest,
 		},
 		{
-			name: "pod with object",
+			name: "elasticQuota update, oldObj empty",
 			request: admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
-					Resource:  gvr("pods"),
-					Operation: admissionv1.Create,
+					Resource:  gvr("elasticquotas"),
+					Operation: admissionv1.Update,
 					Object: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"name":"pod1"}}`),
 					},
@@ -122,14 +128,37 @@ func TestValidatingHandler(t *testing.T) {
 			},
 			allowed: true,
 		},
+		{
+			name: "elasticQuota with object",
+			request: admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Resource:  gvr("elasticquotas"),
+					Operation: admissionv1.Create,
+					Object: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"quota1"}}`),
+					},
+				},
+			},
+			allowed: true,
+		},
 	}
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			response := handler.Handle(ctx, tc.request)
 			if tc.allowed && !response.Allowed {
 				t.Errorf("unexpeced failed to handler %#v", response)
 			}
+			if !tc.allowed && response.AdmissionResponse.Result.Code != tc.code {
+				t.Errorf("unexpected code, got %v expected %v", response.AdmissionResponse.Result.Code, tc.code)
+			}
 		})
 	}
+}
+
+func setLoglevel(logLevel string) {
+	var level klog.Level
+	if err := level.Set(logLevel); err != nil {
+		fmt.Printf("failed set klog.logging.verbosity %v: %v", logLevel, err)
+	}
+	fmt.Printf("successfully set klog.logging.verbosity to %v", logLevel)
 }
