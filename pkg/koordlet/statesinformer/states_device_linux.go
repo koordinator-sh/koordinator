@@ -60,6 +60,10 @@ func (s *statesInformer) reportDevice() {
 		return
 	}
 
+	if len(gpuDevices) == 0 {
+		return
+	}
+
 	err = s.createDevice(node, gpuDevices)
 	if err == nil {
 		klog.V(4).Infof("successfully create Device %s", node.Name)

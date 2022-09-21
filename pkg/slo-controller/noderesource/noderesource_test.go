@@ -246,6 +246,7 @@ func Test_updateNodeGPUResource(t *testing.T) {
 					UUID:   "1",
 					Minor:  0,
 					Health: true,
+					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
 						apiext.GPUCore:        *resource.NewQuantity(100, resource.BinarySI),
 						apiext.GPUMemory:      *resource.NewQuantity(8000, resource.BinarySI),
@@ -256,6 +257,7 @@ func Test_updateNodeGPUResource(t *testing.T) {
 					UUID:   "2",
 					Minor:  1,
 					Health: true,
+					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
 						apiext.GPUCore:        *resource.NewQuantity(100, resource.BinarySI),
 						apiext.GPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
