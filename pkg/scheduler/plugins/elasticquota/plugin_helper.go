@@ -82,52 +82,58 @@ func (g *Plugin) migratePods(out, in string) {
 // createDefaultQuotaIfNotPresent create DefaultQuotaGroup's CRD
 func (g *Plugin) createDefaultQuotaIfNotPresent() {
 	eq, _ := g.quotaLister.ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(extension.DefaultQuotaName)
-	if eq == nil {
-		defaultElasticQuota := &schedulerv1alpha1.ElasticQuota{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        extension.DefaultQuotaName,
-				Namespace:   g.pluginArgs.QuotaGroupNamespace,
-				Annotations: make(map[string]string),
-			},
-			Spec: schedulerv1alpha1.ElasticQuotaSpec{
-				Max: g.pluginArgs.DefaultQuotaGroupMax.DeepCopy(),
-			},
-		}
-		sharedWeight, _ := json.Marshal(defaultElasticQuota.Spec.Max)
-		defaultElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
-		eq, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
-			Create(context.TODO(), defaultElasticQuota, metav1.CreateOptions{})
-		if err != nil {
-			klog.Errorf("create default group fail, err:%v", err.Error())
-		}
-		klog.V(5).Infof("create default group success, quota:%+v", eq)
+	if eq != nil {
+		return
 	}
+
+	defaultElasticQuota := &schedulerv1alpha1.ElasticQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        extension.DefaultQuotaName,
+			Namespace:   g.pluginArgs.QuotaGroupNamespace,
+			Annotations: make(map[string]string),
+		},
+		Spec: schedulerv1alpha1.ElasticQuotaSpec{
+			Max: g.pluginArgs.DefaultQuotaGroupMax.DeepCopy(),
+		},
+	}
+	sharedWeight, _ := json.Marshal(defaultElasticQuota.Spec.Max)
+	defaultElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
+	eq, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
+		Create(context.TODO(), defaultElasticQuota, metav1.CreateOptions{})
+	if err != nil {
+		klog.Errorf("create default group fail, err:%v", err.Error())
+		return
+	}
+	klog.V(5).Infof("create default group success, quota:%+v", eq)
 }
 
 // defaultQuotaInfo and systemQuotaInfo are created once the groupQuotaManager is created, but we also want to see
 // the used/request of the two quotaGroups, so we create the two quota's CRD if not present.
 func (g *Plugin) createSystemQuotaIfNotPresent() {
 	eq, _ := g.quotaLister.ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(extension.SystemQuotaName)
-	if eq == nil {
-		systemElasticQuota := &schedulerv1alpha1.ElasticQuota{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        extension.SystemQuotaName,
-				Namespace:   g.pluginArgs.QuotaGroupNamespace,
-				Annotations: make(map[string]string),
-			},
-			Spec: schedulerv1alpha1.ElasticQuotaSpec{
-				Max: g.pluginArgs.SystemQuotaGroupMax.DeepCopy(),
-			},
-		}
-		sharedWeight, _ := json.Marshal(systemElasticQuota.Spec.Max)
-		systemElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
-		eq, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
-			Create(context.TODO(), systemElasticQuota, metav1.CreateOptions{})
-		if err != nil {
-			klog.Errorf("create system group fail, err:%v", err.Error())
-		}
-		klog.V(5).Infof("create system group success, quota:%+v", eq)
+	if eq != nil {
+		return
 	}
+
+	systemElasticQuota := &schedulerv1alpha1.ElasticQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        extension.SystemQuotaName,
+			Namespace:   g.pluginArgs.QuotaGroupNamespace,
+			Annotations: make(map[string]string),
+		},
+		Spec: schedulerv1alpha1.ElasticQuotaSpec{
+			Max: g.pluginArgs.SystemQuotaGroupMax.DeepCopy(),
+		},
+	}
+	sharedWeight, _ := json.Marshal(systemElasticQuota.Spec.Max)
+	systemElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
+	eq, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
+		Create(context.TODO(), systemElasticQuota, metav1.CreateOptions{})
+	if err != nil {
+		klog.Errorf("create system group fail, err:%v", err.Error())
+		return
+	}
+	klog.V(5).Infof("create system group success, quota:%+v", eq)
 }
 
 func (g *Plugin) snapshotPostFilterState(quotaName string, state *framework.CycleState) bool {
