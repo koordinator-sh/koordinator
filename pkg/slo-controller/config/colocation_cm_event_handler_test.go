@@ -32,6 +32,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 	clearDefaultColocationExtension()
 	oldCfg := *NewDefaultColocationCfg()
 	oldCfg.MemoryReclaimThresholdPercent = pointer.Int64Ptr(40)
+	memoryCalcPolicyByUsage := CalculateByPodUsage
+	memoryCalcPolicyByRequest := CalculateByPodRequest
 
 	type fields struct {
 		config *colocationCfgCache
@@ -192,6 +194,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(70),
+						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64Ptr(15),
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(100),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
@@ -279,6 +282,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64Ptr(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
@@ -296,6 +300,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
 								CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 								MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+								MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 								DegradeTimeMinutes:             pointer.Int64Ptr(5),
 								UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 								ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
@@ -337,6 +342,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64Ptr(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
@@ -356,6 +362,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64Ptr(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
@@ -387,6 +394,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64Ptr(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
@@ -458,6 +466,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64Ptr(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
@@ -475,6 +484,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
 								CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 								MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+								MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 								DegradeTimeMinutes:             pointer.Int64Ptr(5),
 								UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 								ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
@@ -487,7 +497,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 			},
 		},
 		{
-			name: "node config  with change",
+			name: "node config with change",
 			fields: fields{config: &colocationCfgCache{
 				colocationCfg: ColocationCfg{
 					ColocationStrategy: ColocationStrategy{
@@ -496,6 +506,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64Ptr(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
@@ -541,6 +552,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+						MemoryCalculatePolicy:          &memoryCalcPolicyByRequest,
 						DegradeTimeMinutes:             pointer.Int64Ptr(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
@@ -557,6 +569,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								MetricAggregateDurationSeconds: pointer.Int64Ptr(30),
 								MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
 								MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+								MemoryCalculatePolicy:          &memoryCalcPolicyByRequest,
 								DegradeTimeMinutes:             pointer.Int64Ptr(5),
 								UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 								ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
@@ -587,6 +600,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 
 func Test_IsCfgAvailable(t *testing.T) {
 	defaultConfig := DefaultColocationCfg()
+	memoryCalcPolicyByUsage := CalculateByPodUsage
 	type fields struct {
 		config    *colocationCfgCache
 		configMap *corev1.ConfigMap
@@ -656,6 +670,7 @@ func Test_IsCfgAvailable(t *testing.T) {
 					MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 					CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 					MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
+					MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 					DegradeTimeMinutes:             pointer.Int64Ptr(5),
 					UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 					ResourceDiffThreshold:          pointer.Float64Ptr(0.1),

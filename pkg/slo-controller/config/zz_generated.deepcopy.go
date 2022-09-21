@@ -104,6 +104,11 @@ func (in *ColocationStrategy) DeepCopyInto(out *ColocationStrategy) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.MemoryCalculatePolicy != nil {
+		in, out := &in.MemoryCalculatePolicy, &out.MemoryCalculatePolicy
+		*out = new(CalculatePolicy)
+		**out = **in
+	}
 	if in.DegradeTimeMinutes != nil {
 		in, out := &in.DegradeTimeMinutes, &out.DegradeTimeMinutes
 		*out = new(int64)

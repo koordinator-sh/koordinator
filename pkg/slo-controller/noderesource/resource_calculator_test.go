@@ -122,11 +122,11 @@ func Test_calculateBEResource(t *testing.T) {
 				MilliCPU: resource.NewQuantity(0, resource.DecimalSI),
 				Memory:   resource.NewScaledQuantity(6, 9),
 				Message: "nodeAllocatableBE[CPU(Milli-Core)]:0 = nodeAllocatable:20000 - nodeReservation:7000 - systemUsage:0 - podLSUsed:20000\n" +
-					" nodeAllocatableBE[Mem(GB)]:6 = nodeAllocatable:40 - nodeReservation:14 - systemUsage:0 - podLSUsed:20\n",
+					"nodeAllocatableBE[Mem(GB)]:6 = nodeAllocatable:40 - nodeReservation:14 - systemUsage:0 - podLSUsed:20\n",
 			},
 		},
 		{
-			name: "calculate normal result correctly",
+			name: "calculate normal result correctly by usage",
 			args: args{
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -307,11 +307,11 @@ func Test_calculateBEResource(t *testing.T) {
 				MilliCPU: resource.NewQuantity(25000, resource.DecimalSI),
 				Memory:   resource.NewScaledQuantity(33, 9),
 				Message: "nodeAllocatableBE[CPU(Milli-Core)]:25000 = nodeAllocatable:100000 - nodeReservation:35000 - systemUsage:7000 - podLSUsed:33000\n" +
-					" nodeAllocatableBE[Mem(GB)]:33 = nodeAllocatable:120 - nodeReservation:42 - systemUsage:12 - podLSUsed:33\n",
+					"nodeAllocatableBE[Mem(GB)]:33 = nodeAllocatable:120 - nodeReservation:42 - systemUsage:12 - podLSUsed:33\n",
 			},
 		},
 		{
-			name: "calculate normal result correctly with node-specified config",
+			name: "calculate normal result correctly with node-specified config by memory usage",
 			args: args{
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -495,12 +495,201 @@ func Test_calculateBEResource(t *testing.T) {
 				MilliCPU: resource.NewQuantity(30000, resource.DecimalSI),
 				Memory:   resource.NewScaledQuantity(39, 9),
 				Message: "nodeAllocatableBE[CPU(Milli-Core)]:30000 = nodeAllocatable:100000 - nodeReservation:30000 - systemUsage:7000 - podLSUsed:33000\n" +
-					" nodeAllocatableBE[Mem(GB)]:39 = nodeAllocatable:120 - nodeReservation:36 - systemUsage:12 - podLSUsed:33\n",
+					"nodeAllocatableBE[Mem(GB)]:39 = nodeAllocatable:120 - nodeReservation:36 - systemUsage:12 - podLSUsed:33\n",
+			},
+		},
+		{
+			name: "calculate normal result correctly with node-specified by request",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+						Labels: map[string]string{
+							"memory-calculate-by-request": "true",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("120G"),
+						},
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("120G"),
+						},
+					},
+				},
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podA",
+								Namespace: "test",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSLS),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("20"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("20"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podB",
+								Namespace: "test",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName:   "test-node1",
+								Containers: []corev1.Container{{}},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podC",
+								Namespace: "test",
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+										},
+									}, {
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodPending,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podD",
+								Namespace: "test",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("10G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("10G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodSucceeded,
+							},
+						},
+					},
+				},
+				nodeMetric: &slov1alpha1.NodeMetric{
+					Status: slov1alpha1.NodeMetricStatus{
+						UpdateTime: &metav1.Time{Time: time.Now()},
+						NodeMetric: &slov1alpha1.NodeMetricInfo{
+							NodeUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("50"),
+									corev1.ResourceMemory: resource.MustParse("55G"),
+								},
+							},
+						},
+						PodsMetric: []*slov1alpha1.PodMetricInfo{
+							{
+								Namespace: "test",
+								Name:      "podA",
+								PodUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("11"),
+										corev1.ResourceMemory: resource.MustParse("11G"),
+									},
+								},
+							}, {
+								Namespace: "test",
+								Name:      "podB",
+								PodUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("10"),
+										corev1.ResourceMemory: resource.MustParse("10G"),
+									},
+								},
+							},
+							{
+								Namespace: "test",
+								Name:      "podC",
+								PodUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("22"),
+										corev1.ResourceMemory: resource.MustParse("22G"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: &nodeBEResource{
+				MilliCPU: resource.NewQuantity(30000, resource.DecimalSI),
+				Memory:   resource.NewScaledQuantity(36, 9),
+				Message: "nodeAllocatableBE[CPU(Milli-Core)]:30000 = nodeAllocatable:100000 - nodeReservation:30000 - systemUsage:7000 - podLSUsed:33000\n" +
+					"nodeAllocatableBE[Mem(GB)]:36 = nodeAllocatable:120 - nodeReservation:24 - podLSRequest:60\n",
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			memoryCalculateByReq := config.CalculateByPodRequest
 			r := NodeResourceReconciler{cfgCache: &FakeCfgCache{
 				cfg: config.ColocationCfg{
 					ColocationStrategy: config.ColocationStrategy{
@@ -521,6 +710,18 @@ func Test_calculateBEResource(t *testing.T) {
 							ColocationStrategy: config.ColocationStrategy{
 								CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
 								MemoryReclaimThresholdPercent: pointer.Int64Ptr(70),
+							},
+						},
+						{
+							NodeSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"memory-calculate-by-request": "true",
+								},
+							},
+							ColocationStrategy: config.ColocationStrategy{
+								CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
+								MemoryReclaimThresholdPercent: pointer.Int64Ptr(80),
+								MemoryCalculatePolicy:         &memoryCalculateByReq,
 							},
 						},
 						{
