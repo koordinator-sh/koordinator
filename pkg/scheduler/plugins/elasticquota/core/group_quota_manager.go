@@ -564,6 +564,19 @@ func (gqm *GroupQuotaManager) GetPodIsAssigned(quotaName string, pod *v1.Pod) bo
 	return quotaInfo.GetPodIsAssigned(pod)
 }
 
+func (gqm *GroupQuotaManager) MigratePod(pod *v1.Pod, out, in string) {
+	isAssigned := gqm.GetPodIsAssigned(out, pod)
+	gqm.UpdatePodRequest(out, pod, nil)
+	gqm.UpdatePodUsed(out, pod, nil)
+	gqm.UpdatePodCache(out, pod, false)
+
+	gqm.UpdatePodCache(in, pod, true)
+	gqm.UpdatePodIsAssigned(in, pod, isAssigned)
+	gqm.UpdatePodRequest(in, nil, pod)
+	gqm.UpdatePodUsed(in, nil, pod)
+	klog.V(5).Infof("migrate pod :%v from quota:%v to quota:%v, podPhase:%v", pod.Name, out, in, pod.Status.Phase)
+}
+
 func (gqm *GroupQuotaManager) RLock() {
 	gqm.hierarchyUpdateLock.RLock()
 }
