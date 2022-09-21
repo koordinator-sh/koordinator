@@ -170,11 +170,16 @@ func (m *MemoryEvictor) getSortedBEPodInfos(podMetrics []*metriccache.PodResourc
 
 	sort.Slice(bePodInfos, func(i, j int) bool {
 		// TODO: https://github.com/koordinator-sh/koordinator/pull/65#discussion_r849048467
-		if bePodInfos[i].pod.Spec.Priority == nil || bePodInfos[j].pod.Spec.Priority == nil ||
-			*bePodInfos[i].pod.Spec.Priority == *bePodInfos[j].pod.Spec.Priority {
-			return bePodInfos[i].podMetric.MemoryUsed.MemoryWithoutCache.Value() > bePodInfos[j].podMetric.MemoryUsed.MemoryWithoutCache.Value()
+		// compare priority > podMetric > name
+		if bePodInfos[i].pod.Spec.Priority != nil && bePodInfos[j].pod.Spec.Priority != nil && *bePodInfos[i].pod.Spec.Priority != *bePodInfos[j].pod.Spec.Priority {
+			return *bePodInfos[i].pod.Spec.Priority < *bePodInfos[j].pod.Spec.Priority
 		}
-		return *bePodInfos[i].pod.Spec.Priority < *bePodInfos[j].pod.Spec.Priority
+		if bePodInfos[i].podMetric != nil && bePodInfos[j].podMetric != nil {
+			return bePodInfos[i].podMetric.MemoryUsed.MemoryWithoutCache.Value() > bePodInfos[j].podMetric.MemoryUsed.MemoryWithoutCache.Value()
+		} else if bePodInfos[i].podMetric == nil && bePodInfos[j].podMetric == nil {
+			return bePodInfos[i].pod.Name > bePodInfos[j].pod.Name
+		}
+		return bePodInfos[j].podMetric == nil
 	})
 
 	return bePodInfos
