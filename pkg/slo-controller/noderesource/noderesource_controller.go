@@ -63,19 +63,17 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			// skip non-existing node and return no error to forget the request
 			klog.V(3).Infof("skip for node %v not found", req.Name)
 			return ctrl.Result{Requeue: false}, nil
-		} else {
-			klog.Errorf("failed to get node %v, error: %v", req.Name, err)
-			return ctrl.Result{Requeue: true}, err
 		}
+		klog.Errorf("failed to get node %v, error: %v", req.Name, err)
+		return ctrl.Result{Requeue: true}, err
 	}
 
 	if r.isColocationCfgDisabled(node) {
 		klog.Infof("colocation for node %v is disabled, reset BE resource", req.Name)
 		if err := r.resetNodeBEResource(node, disableInConfig, "node colocation is disabled in Config"); err != nil {
 			return ctrl.Result{Requeue: true}, err
-		} else {
-			return ctrl.Result{Requeue: false}, nil
 		}
+		return ctrl.Result{Requeue: false}, nil
 	}
 
 	nodeMetric := &slov1alpha1.NodeMetric{}
@@ -84,19 +82,17 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			// skip non-existing node metric and return no error to forget the request
 			klog.V(3).Infof("skip for nodemetric %v not found", req.Name)
 			return ctrl.Result{Requeue: false}, nil
-		} else {
-			klog.Errorf("failed to get nodemetric %v, error: %v", req.Name, err)
-			return ctrl.Result{Requeue: true}, err
 		}
+		klog.Errorf("failed to get nodemetric %v, error: %v", req.Name, err)
+		return ctrl.Result{Requeue: true}, err
 	}
 
 	if r.isDegradeNeeded(nodeMetric, node) {
 		klog.Warningf("node %v need degradation, reset BE resource", req.Name)
 		if err := r.resetNodeBEResource(node, degradeByKoordController, "degrade node resource because of abnormal NodeMetric"); err != nil {
 			return ctrl.Result{Requeue: true}, err
-		} else {
-			return ctrl.Result{Requeue: false}, nil
 		}
+		return ctrl.Result{Requeue: false}, nil
 	}
 
 	podList := &corev1.PodList{}

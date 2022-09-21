@@ -221,14 +221,13 @@ func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResou
 			return err
 		}
 
-		if err := r.Client.Status().Update(context.TODO(), updateNode); err == nil {
-			r.BESyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), r.Clock.Now())
-			klog.V(5).Infof("update node %v success, detail %+v", updateNode.Name, updateNode)
-			return nil
-		} else {
+		if err := r.Client.Status().Update(context.TODO(), updateNode); err != nil {
 			klog.Errorf("failed to update node %v, error: %v", updateNode.Name, err)
 			return err
 		}
+		r.BESyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), r.Clock.Now())
+		klog.V(5).Infof("update node %v success, detail %+v", updateNode.Name, updateNode)
+		return nil
 	})
 }
 

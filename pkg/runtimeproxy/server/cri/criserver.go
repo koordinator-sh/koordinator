@@ -169,10 +169,6 @@ func (c *RuntimeManagerCriServer) failOver() error {
 	if podErr != nil {
 		return podErr
 	}
-	containerResponse, containerErr := c.backendRuntimeServiceClient.ListContainers(context.TODO(), &runtimeapi.ListContainersRequest{})
-	if containerErr != nil {
-		return containerErr
-	}
 	for _, pod := range podResponse.Items {
 		podResourceExecutor := cri_resource_executor.NewPodResourceExecutor()
 		podResourceExecutor.ParsePod(pod)
@@ -181,6 +177,10 @@ func (c *RuntimeManagerCriServer) failOver() error {
 		})
 	}
 
+	containerResponse, containerErr := c.backendRuntimeServiceClient.ListContainers(context.TODO(), &runtimeapi.ListContainersRequest{})
+	if containerErr != nil {
+		return containerErr
+	}
 	for _, container := range containerResponse.Containers {
 		containerExecutor := cri_resource_executor.NewContainerResourceExecutor()
 		if err := containerExecutor.ParseContainer(container); err != nil {
@@ -191,5 +191,6 @@ func (c *RuntimeManagerCriServer) failOver() error {
 			ContainerId: container.GetId(),
 		})
 	}
+
 	return nil
 }
