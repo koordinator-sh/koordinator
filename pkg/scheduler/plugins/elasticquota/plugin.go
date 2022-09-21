@@ -59,6 +59,7 @@ func (p *PostFilterState) Clone() framework.StateData {
 
 type Plugin struct {
 	handle      framework.Handle
+	client      versioned.Interface
 	pluginArgs  *config.ElasticQuotaArgs
 	quotaLister v1alpha1.ElasticQuotaLister
 	podLister   v1.PodLister
@@ -97,6 +98,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 
 	elasticQuota := &Plugin{
 		handle:            handle,
+		client:            client,
 		pluginArgs:        pluginArgs,
 		podLister:         handle.SharedInformerFactory().Core().V1().Pods().Lister(),
 		quotaLister:       elasticQuotaInformer.Lister(),
@@ -149,7 +151,7 @@ func (g *Plugin) Start() {
 
 	quotaOverUsedRevokeController := NewQuotaOverUsedRevokeController(g.handle.ClientSet(), g.pluginArgs.DelayEvictTime.Duration,
 		g.pluginArgs.RevokePodInterval.Duration, g.groupQuotaManager, *g.pluginArgs.MonitorAllQuotas)
-	elasticQuotaController := NewElasticQuotaController(g.handle, g.quotaLister, g.groupQuotaManager)
+	elasticQuotaController := NewElasticQuotaController(g.client, g.quotaLister, g.groupQuotaManager)
 
 	go wait.Until(g.migrateDefaultQuotaGroupsPod, MigrateDefaultQuotaGroupsPodCycle, nil)
 	go quotaOverUsedRevokeController.Start()

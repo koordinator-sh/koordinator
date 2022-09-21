@@ -28,7 +28,6 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedulerv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
@@ -94,7 +93,7 @@ func (g *Plugin) createDefaultQuotaIfNotPresent() {
 		}
 		sharedWeight, _ := json.Marshal(defaultElasticQuota.Spec.Max)
 		defaultElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
-		eq, err := g.handle.(versioned.Interface).SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
+		eq, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
 			Create(context.TODO(), defaultElasticQuota, metav1.CreateOptions{})
 		if err != nil {
 			klog.Errorf("create default group fail, err:%v", err.Error())
@@ -120,7 +119,7 @@ func (g *Plugin) createSystemQuotaIfNotPresent() {
 		}
 		sharedWeight, _ := json.Marshal(systemElasticQuota.Spec.Max)
 		systemElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
-		eq, err := g.handle.(versioned.Interface).SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
+		eq, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
 			Create(context.TODO(), systemElasticQuota, metav1.CreateOptions{})
 		if err != nil {
 			klog.Errorf("create system group fail, err:%v", err.Error())
