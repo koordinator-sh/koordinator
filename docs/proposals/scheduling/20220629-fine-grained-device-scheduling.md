@@ -33,8 +33,8 @@ status: provisional
             - [User apply device resources scenarios](#user-apply-device-resources-scenarios)
                 - [Compatible with nvidia.com/gpu](#compatible-with-nvidiacomgpu)
                 - [Apply whole resources of GPU or part resources of GPU](#apply-whole-resources-of-gpu-or-part-resources-of-gpu)
-                - [Apply koordinator.sh/gpu-core and koordinator.sh/gpu-memory-ratio separately](#apply-koordinatorshgpu-core-and-koordinatorshgpu-memory-ratio-separately)
-                - [Apply koordinator.sh/gpu-core and koordinator.sh/gpu-memory separately](#apply-koordinatorshgpu-core-and-koordinatorshgpu-memory-separately)
+                - [Apply kubernetes.io/gpu-core and kubernetes.io/gpu-memory-ratio separately](#apply-kubernetesiogpu-core-and-kubernetesiogpu-memory-ratio-separately)
+                - [Apply kubernetes.io/gpu-core and kubernetes.io/gpu-memory separately](#apply-kubernetesiogpu-core-and-kubernetesiogpu-memory-separately)
                 - [Apply RDMA](#apply-rdma)
         - [Implementation Details](#implementation-details)
             - [Scheduling](#scheduling)
@@ -87,46 +87,46 @@ Due to GPU is complicated, we will introduce GPU first. As we all know there is 
 
 We abstract GPU resources into different dimensions:
 
-- `koordinator.sh/gpu-core` represents the computing capacity of the GPU. Similar to K8s MilliCPU, we abstract the total computing power of GPU into one hundred, and users can apply for the corresponding amount of GPU computing power according to their needs.
-- `koordinator.sh/gpu-memory` represents the memory capacity of the GPU in bytes.
-- `koordinator.sh/gpu-memory-ratio` represents the percentage of the GPU's memory.
+- `kubernetes.io/gpu-core` represents the computing capacity of the GPU. Similar to K8s MilliCPU, we abstract the total computing power of GPU into one hundred, and users can apply for the corresponding amount of GPU computing power according to their needs.
+- `kubernetes.io/gpu-memory` represents the memory capacity of the GPU in bytes.
+- `kubernetes.io/gpu-memory-ratio` represents the percentage of the GPU's memory.
 
 Assuming that node A has 4 GPU instances, and the total memory of each instance is 8GB, when device reporter reports GPU capacity information to `Node.Status.Allocatable`, it no longer reports nvidia.com/gpu=4, but reports the following information:
 
 ```yaml
 status:
   capacity:
-    koordinator.sh/gpu-core: 400
-    koordinator.sh/gpu-memory: "32GB"
-    koordinator.sh/gpu-memory-ratio: 400
+    kubernetes.io/gpu-core: 400
+    kubernetes.io/gpu-memory: "32GB"
+    kubernetes.io/gpu-memory-ratio: 400
   allocatable:
-    koordinator.sh/gpu-core: 400
-    koordinator.sh/gpu-memory: "32GB"
-    koordinator.sh/gpu-memory-ratio: 400
+    kubernetes.io/gpu-core: 400
+    kubernetes.io/gpu-memory: "32GB"
+    kubernetes.io/gpu-memory-ratio: 400
 ```
 
-For the convenience of users, an independent resource name `koordinator.sh/gpu` is defined. For example, when a user wants to use half of the computing resources and memory resources of a GPU instance, the user can directly declare `koordinator.sh/gpu: 50`, and the scheduler will convert it to `koordinator.sh/gpu-core: 50, koordinator.sh/gpu-memory-ratio: 50`
+For the convenience of users, an independent resource name `kubernetes.io/gpu` is defined. For example, when a user wants to use half of the computing resources and memory resources of a GPU instance, the user can directly declare `kubernetes.io/gpu: 50`, and the scheduler will convert it to `kubernetes.io/gpu-core: 50, kubernetes.io/gpu-memory-ratio: 50`
 
 For other devices like RDMA and FPGA, the node has 1 RDMA and 1 FGPA, will report the following information:
 
 ```yaml
 status:
   capacity:
-    koordinator.sh/rdma: 100
-    koordinator.sh/fpga: 100
+    kubernetes.io/rdma: 100
+    kubernetes.io/fpga: 100
   allocatable:
-    koordinator.sh/rdma: 100
-    koordinator.sh/fpga: 100
+    kubernetes.io/rdma: 100
+    kubernetes.io/fpga: 100
 ```
 
-Why do we need `koordinator.sh/gpu-memory-ratio` and `koordinator.sh/gpu-memory` ? 
+Why do we need `kubernetes.io/gpu-memory-ratio` and `kubernetes.io/gpu-memory` ? 
 When user apply 0.5/0.25 GPU, the user don't know the exact memory total bytes per GPU, only wants to use 
-half or quarter percentage of memory, so user can request the GPU memory with `koordinator.sh/gpu-memory-ratio`. 
-When scheduler assigned Pod on concrete node, scheduler will translate the `koordinator.sh/gpu-memory-ratio` to `koordinator.sh/gpu-memory` by the formulas:  ***allocatedMemory = totalMemoryOf(GPU)  * `koordinator.sh/gpu-memory-ratio`***, so that the GPU isolation can work.
+half or quarter percentage of memory, so user can request the GPU memory with `kubernetes.io/gpu-memory-ratio`. 
+When scheduler assigned Pod on concrete node, scheduler will translate the `kubernetes.io/gpu-memory-ratio` to `kubernetes.io/gpu-memory` by the formulas:  ***allocatedMemory = totalMemoryOf(GPU)  * `kubernetes.io/gpu-memory-ratio`***, so that the GPU isolation can work.
 
-During the scheduling filter phase, the scheduler will do special processing for `koordinator.sh/gpu-memory` and `koordinator.sh/gpu-memory-ratio`. When a Pod specifies `koordinator.sh/gpu-memory-ratio`, the scheduler checks each GPU instance on each node for unallocated or remaining resources to ensure that the remaining memory on each GPU instance meets the ratio requirement.
+During the scheduling filter phase, the scheduler will do special processing for `kubernetes.io/gpu-memory` and `kubernetes.io/gpu-memory-ratio`. When a Pod specifies `kubernetes.io/gpu-memory-ratio`, the scheduler checks each GPU instance on each node for unallocated or remaining resources to ensure that the remaining memory on each GPU instance meets the ratio requirement.
 
-If the user knows exactly or can roughly estimate the specific memory consumption of the workload, he can apply for GPU memory through `koordinator.sh/gpu-memory`. All details can be seen below.
+If the user knows exactly or can roughly estimate the specific memory consumption of the workload, he can apply for GPU memory through `kubernetes.io/gpu-memory`. All details can be seen below.
 
 Besides, when dimension's value > 100, means Pod need multi-devices. now only allow the value can be divided by 100.
 
@@ -147,9 +147,9 @@ The scheduler translates the `nvida.com/gpu: 2` to the following spec:
 ```yaml
 resources:
   requests:
-    koordinator.sh/gpu-core: "200"
-    koordinator.sh/gpu-memory-ratio: "200"
-    koordinator.sh/gpu-memory: "16Gi" # assume 8G memory in bytes per GPU
+    kubernetes.io/gpu-core: "200"
+    kubernetes.io/gpu-memory-ratio: "200"
+    kubernetes.io/gpu-memory: "16Gi" # assume 8G memory in bytes per GPU
     cpu: "4"
     memory: "8Gi"
 ```
@@ -159,41 +159,41 @@ resources:
 ```yaml
 resources:
    requests:
-    koordinator.sh/gpu: "50"
+    kubernetes.io/gpu: "50"
     cpu: "4"
     memory: "8Gi"
 ```
 
-The scheduler translates the `koordinator.sh/gpu: "50"` to the following spec:
+The scheduler translates the `kubernetes.io/gpu: "50"` to the following spec:
 
 ```yaml
 resources:
   requests:
-    koordinator.sh/gpu-core: "50"
-    koordinator.sh/gpu-memory-ratio: "50"
-    koordinator.sh/gpu-memory: "4Gi" # assume 8G memory in bytes for the GPU
+    kubernetes.io/gpu-core: "50"
+    kubernetes.io/gpu-memory-ratio: "50"
+    kubernetes.io/gpu-memory: "4Gi" # assume 8G memory in bytes for the GPU
     cpu: "4"
     memory: "8Gi"
 ```
 
-##### Apply `koordinator.sh/gpu-core` and `koordinator.sh/gpu-memory-ratio` separately
+##### Apply `kubernetes.io/gpu-core` and `kubernetes.io/gpu-memory-ratio` separately
 
 ```yaml
 resources:
   requests:
-    koordinator.sh/gpu-core: "50"
-    koordinator.sh/gpu-memory-ratio: "60"
+    kubernetes.io/gpu-core: "50"
+    kubernetes.io/gpu-memory-ratio: "60"
     cpu: "4"
     memory: "8Gi"
 ```
 
-##### Apply `koordinator.sh/gpu-core` and `koordinator.sh/gpu-memory` separately
+##### Apply `kubernetes.io/gpu-core` and `kubernetes.io/gpu-memory` separately
 
 ```yaml
 resources:
   requests:
-    koordinator.sh/gpu-core: "60"
-    koordinator.sh/gpu-memory: "4Gi"
+    kubernetes.io/gpu-core: "60"
+    kubernetes.io/gpu-memory: "4Gi"
     cpu: "4"
     memory: "8Gi"
 ```
@@ -203,7 +203,7 @@ resources:
 ```yaml
 resources:
   requests:
-    koordinator.sh/rdma: "100"
+    kubernetes.io/rdma: "100"
     cpu: "4"
     memory: "8Gi"
 ```
@@ -227,17 +227,17 @@ In the PreBind stage, the scheduler will update the device (including GPU) alloc
     {
       "minor": 0,
       "resouurces": {
-        "koordinator.sh/gpu-core": 100,
-        "koordinator.sh/gpu-mem-ratio": 100,
-        "koordinator.sh/gpu-mem": "16Gi"
+        "kubernetes.io/gpu-core": 100,
+        "kubernetes.io/gpu-mem-ratio": 100,
+        "kubernetes.io/gpu-mem": "16Gi"
       }
     },
     {
       "minor": 1,
       "resouurces": {
-        "koordinator.sh/gpu-core": 100,
-        "koordinator.sh/gpu-mem-ratio": 100,
-        "koordinator.sh/gpu-mem": "16Gi"
+        "kubernetes.io/gpu-core": 100,
+        "kubernetes.io/gpu-mem-ratio": 100,
+        "kubernetes.io/gpu-mem": "16Gi"
       }
     }
   ]
@@ -280,8 +280,8 @@ type nodeDevice struct {
 }
 
 // We use `deviceResource` to present resources per device.
-// "0": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
-// "1": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
+// "0": {kubernetes.io/gpu-core:100, kubernetes.io/gpu-memory-ratio:100, kubernetes.io/gpu-memory: 16GB}
+// "1": {kubernetes.io/gpu-core:100, kubernetes.io/gpu-memory-ratio:100, kubernetes.io/gpu-memory: 16GB}
 type deviceResources map[int]corev1.ResourceList
 
 ```
@@ -469,5 +469,6 @@ In the future Koordinator will provide a webhook to solve the upgrade existing c
 - 2022-08-18: Add PreFilter step and update cache structure
 - 2022-09-01: Update details about compatible existing GPU Pods
 - 2022-09-02: Simplify the definition of DeviceStatus and Supplementary upgrade strategy
+- 2022-09-21: Update resource names
 
 ## References
