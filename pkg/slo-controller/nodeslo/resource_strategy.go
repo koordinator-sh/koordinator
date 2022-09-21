@@ -30,7 +30,6 @@ import (
 )
 
 func getResourceThresholdSpec(node *corev1.Node, cfg *config.ResourceThresholdCfg) (*slov1alpha1.ResourceThresholdStrategy, error) {
-
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
