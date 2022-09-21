@@ -22,19 +22,13 @@ import (
 	"fmt"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/client-go/kubernetes"
-	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	schedlister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
@@ -58,26 +52,14 @@ type Controller struct {
 
 // NewElasticQuotaController returns a new *Controller
 func NewElasticQuotaController(
-	handle framework.Handle,
+	client schedclientset.Interface,
 	eqLister schedlister.ElasticQuotaLister,
 	groupQuotaManager *core.GroupQuotaManager,
 	newOpt ...func(ctrl *Controller),
 ) *Controller {
-	kubeConfig := *handle.KubeConfig()
-	kubeConfig.ContentType = runtime.ContentTypeJSON
-	kubeConfig.AcceptContentTypes = runtime.ContentTypeJSON
-	kubeClient := kubernetes.NewForConfigOrDie(&kubeConfig)
-	schedClient, ok := handle.(schedclientset.Interface)
-	if !ok {
-		schedClient = schedclientset.NewForConfigOrDie(&kubeConfig)
-	}
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartRecordingToSink(&corev1.EventSinkImpl{
-		Interface: kubeClient.CoreV1().Events(v1.NamespaceAll),
-	})
 	//set up elastic quota ctrl
 	ctrl := &Controller{
-		schedClient:       schedClient,
+		schedClient:       client,
 		eqLister:          eqLister,
 		groupQuotaManager: groupQuotaManager,
 	}
