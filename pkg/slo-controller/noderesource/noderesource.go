@@ -18,7 +18,6 @@ package noderesource
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -199,9 +198,7 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResource *nodeBEResource) error {
 	copyNode := node.DeepCopy()
 
-	if err := r.prepareNodeResource(copyNode, beResource); err != nil {
-		return err
-	}
+	r.prepareNodeResource(copyNode, beResource)
 
 	if needSync := r.isBEResourceSyncNeeded(node, copyNode); !needSync {
 		return nil
@@ -217,9 +214,7 @@ func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResou
 			return err
 		}
 
-		if err := r.prepareNodeResource(updateNode, beResource); err != nil {
-			return err
-		}
+		r.prepareNodeResource(updateNode, beResource)
 
 		if err := r.Client.Status().Update(context.TODO(), updateNode); err != nil {
 			klog.Errorf("failed to update node %v, error: %v", updateNode.Name, err)
@@ -261,14 +256,16 @@ func (r *NodeResourceReconciler) isBEResourceSyncNeeded(old, new *corev1.Node) b
 	return false
 }
 
-func (r *NodeResourceReconciler) prepareNodeResource(node *corev1.Node, beResource *nodeBEResource) error {
+func (r *NodeResourceReconciler) prepareNodeResource(node *corev1.Node, beResource *nodeBEResource) {
 	if beResource.MilliCPU == nil {
 		delete(node.Status.Capacity, extension.BatchCPU)
 		delete(node.Status.Allocatable, extension.BatchCPU)
 	} else {
+		// NOTE: extended resource would be validated as an integer, so beResource should be checked before the update
 		if _, ok := beResource.MilliCPU.AsInt64(); !ok {
-			klog.V(2).Infof("invalid cpu value, cpu quantity %v is not int64", beResource.MilliCPU)
-			return fmt.Errorf("invalid cpu value, cpu quantity %v is not int64", beResource.MilliCPU)
+			klog.V(2).Infof("batch cpu quantity is not int64 type and will be rounded, original value %v",
+				*beResource.MilliCPU)
+			beResource.MilliCPU.Set(beResource.MilliCPU.Value())
 		}
 		node.Status.Capacity[extension.BatchCPU] = *beResource.MilliCPU
 		node.Status.Allocatable[extension.BatchCPU] = *beResource.MilliCPU
@@ -278,9 +275,11 @@ func (r *NodeResourceReconciler) prepareNodeResource(node *corev1.Node, beResour
 		delete(node.Status.Capacity, extension.BatchMemory)
 		delete(node.Status.Allocatable, extension.BatchMemory)
 	} else {
+		// NOTE: extended resource would be validated as an integer, so beResource should be checked before the update
 		if _, ok := beResource.Memory.AsInt64(); !ok {
-			klog.V(2).Infof("invalid memory value, memory quantity %v is not int64", beResource.Memory)
-			return fmt.Errorf("invalid memory value, memory quantity %v is not int64", beResource.Memory)
+			klog.V(2).Infof("batch memory quantity is not int64 type and will be rounded, original value %v",
+				*beResource.Memory)
+			beResource.Memory.Set(beResource.Memory.Value())
 		}
 		node.Status.Capacity[extension.BatchMemory] = *beResource.Memory
 		node.Status.Allocatable[extension.BatchMemory] = *beResource.Memory
@@ -288,5 +287,4 @@ func (r *NodeResourceReconciler) prepareNodeResource(node *corev1.Node, beResour
 
 	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
 	runNodePrepareExtenders(strategy, node)
-	return nil
 }
