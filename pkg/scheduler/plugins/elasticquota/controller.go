@@ -57,7 +57,7 @@ func NewElasticQuotaController(
 	groupQuotaManager *core.GroupQuotaManager,
 	newOpt ...func(ctrl *Controller),
 ) *Controller {
-	//set up elastic quota ctrl
+	// set up elastic quota ctrl
 	ctrl := &Controller{
 		schedClient:       client,
 		eqLister:          eqLister,
@@ -117,6 +117,9 @@ func (ctrl *Controller) syncHandler() []error {
 				eq.Name, eq.Status.Used, used, eq.Annotations[extension.AnnotationRuntime], string(runtime),
 				eq.Annotations[extension.AnnotationRequest], string(request))
 			newEQ := eq.DeepCopy()
+			if newEQ.Annotations == nil {
+				newEQ.Annotations = make(map[string]string)
+			}
 			newEQ.Annotations[extension.AnnotationRuntime] = string(runtime)
 			newEQ.Annotations[extension.AnnotationRequest] = string(request)
 			newEQ.Status.Used = used
