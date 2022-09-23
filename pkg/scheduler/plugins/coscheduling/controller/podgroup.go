@@ -69,9 +69,14 @@ func NewPodGroupController(client kubernetes.Interface,
 	pgClient schedclientset.Interface, podGroupManager *core.PodGroupManager, recorder events.EventRecorder) *PodGroupController {
 
 	ctrl := &PodGroupController{
-		eventRecorder: recorder,
-		pgQueue:       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "PodGroup"),
-		pgManager:     podGroupManager,
+		eventRecorder:   recorder,
+		pgManager:       podGroupManager,
+		pgClient:        pgClient,
+		pgLister:        pgInformer.Lister(),
+		podLister:       podInformer.Lister(),
+		pgListerSynced:  pgInformer.Informer().HasSynced,
+		podListerSynced: podInformer.Informer().HasSynced,
+		pgQueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "PodGroup"),
 	}
 
 	pgInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -83,12 +88,6 @@ func NewPodGroupController(client kubernetes.Interface,
 		AddFunc:    ctrl.podAdded,
 		UpdateFunc: ctrl.podUpdated,
 	})
-
-	ctrl.pgLister = pgInformer.Lister()
-	ctrl.podLister = podInformer.Lister()
-	ctrl.pgListerSynced = pgInformer.Informer().HasSynced
-	ctrl.podListerSynced = podInformer.Informer().HasSynced
-	ctrl.pgClient = pgClient
 	return ctrl
 }
 
