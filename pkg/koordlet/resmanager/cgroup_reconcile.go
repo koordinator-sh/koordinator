@@ -193,8 +193,8 @@ func (m *CgroupResourcesReconcile) calculatePodAndContainerResources(podMeta *st
 	for _, container := range pod.Spec.Containers {
 		_, containerStatus, err := util.FindContainerIdAndStatusByName(&pod.Status, container.Name)
 		if err != nil {
-			klog.Warningf("failed to find containerStatus, pod %s, container %s, err: %v", util.GetPodKey(pod),
-				container.Name, err)
+			klog.V(4).Infof("failed to find containerStatus, pod %s, container %s, err: %v",
+				util.GetPodKey(pod), container.Name, err)
 			continue
 		}
 		containerDir, err := util.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStatus)

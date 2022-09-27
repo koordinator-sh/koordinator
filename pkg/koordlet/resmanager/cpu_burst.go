@@ -194,9 +194,8 @@ func (b *CPUBurst) start() {
 			klog.Warningf("podMeta is illegal, detail %v", podMeta)
 			continue
 		}
-		podQOS := apiext.GetPodQoSClass(podMeta.Pod)
-		if podQOS == apiext.QoSLSR || podQOS == apiext.QoSBE {
-			// ignore LSR and BE pod
+		if !util.IsPodCPUBurstable(podMeta.Pod) {
+			// ignore non-burstable pod, e.g. LSR, BE pods
 			continue
 		}
 		// merge burst config from pod and node

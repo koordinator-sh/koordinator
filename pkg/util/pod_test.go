@@ -617,3 +617,39 @@ func Test_GetPodBEMemoryRequest(t *testing.T) {
 		})
 	}
 }
+
+func Test_GetCPUSetFromPod(t *testing.T) {
+	type args struct {
+		podAnnotations map[string]string
+		podAlloc       *apiext.ResourceStatus
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "get cpuset from annotation",
+			args: args{
+				podAnnotations: map[string]string{},
+				podAlloc: &apiext.ResourceStatus{
+					CPUSet: "2-4",
+				},
+			},
+			want:    "2-4",
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.args.podAlloc != nil {
+				podAllocJson := DumpJSON(tt.args.podAlloc)
+				tt.args.podAnnotations[apiext.AnnotationResourceStatus] = podAllocJson
+			}
+			got, err := GetCPUSetFromPod(tt.args.podAnnotations)
+			assert.Equal(t, tt.wantErr, err != nil)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

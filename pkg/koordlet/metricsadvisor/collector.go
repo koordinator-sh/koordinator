@@ -300,7 +300,7 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 				klog.V(6).Infof("failed to collect non-running container usage for %s/%s/%s, "+
 					"CPU err: %s, Memory err: %s", pod.Namespace, pod.Name, containerStat.Name, err0, err1)
 			} else {
-				klog.Warningf("failed to collect container usage for %s/%s/%s, CPU err: %s, Memory err: %s",
+				klog.V(4).Infof("failed to collect container usage for %s/%s/%s, CPU err: %s, Memory err: %s",
 					pod.Namespace, pod.Name, containerStat.Name, err0, err1)
 			}
 			continue
