@@ -12,7 +12,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.2
-	github.com/google/go-cmp v0.5.8
+	github.com/google/go-cmp v0.5.9
 	github.com/google/uuid v1.3.0
 	github.com/jedib0t/go-pretty/v6 v6.3.8
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.0.12
