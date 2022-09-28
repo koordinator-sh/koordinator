@@ -27,6 +27,7 @@ import (
 )
 
 func Test_GetNodeColocationStrategy(t *testing.T) {
+	memoryCalcPolicyByUsage := CalculateByPodUsage
 	defaultCfg := NewDefaultColocationCfg()
 	type args struct {
 		cfg  *ColocationCfg
@@ -98,6 +99,7 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 						Enable:                        pointer.BoolPtr(false),
 						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+						MemoryCalculatePolicy:         &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:            pointer.Int64Ptr(15),
 						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
 						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
@@ -128,6 +130,7 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 				Enable:                        pointer.BoolPtr(true),
 				CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 				MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+				MemoryCalculatePolicy:         &memoryCalcPolicyByUsage,
 				DegradeTimeMinutes:            pointer.Int64Ptr(15),
 				UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
 				ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
@@ -176,6 +179,7 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 				MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
 				CPUReclaimThresholdPercent:     pointer.Int64Ptr(60),
 				MemoryReclaimThresholdPercent:  pointer.Int64Ptr(65),
+				MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 				DegradeTimeMinutes:             pointer.Int64Ptr(15),
 				UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 				ResourceDiffThreshold:          pointer.Float64Ptr(0.1),

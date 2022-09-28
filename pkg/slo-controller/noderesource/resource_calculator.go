@@ -34,6 +34,7 @@ import (
 func (r *NodeResourceReconciler) calculateBEResource(node *corev1.Node,
 	podList *corev1.PodList, nodeMetric *slov1alpha1.NodeMetric) *nodeBEResource {
 	// NOTE: for pod usage calculation, currently non-BE pods are considered as LS
+	podLSRequest := util.NewZeroResourceList()
 	podLSUsed := util.NewZeroResourceList()
 	// pod(All).Used = pod(LS).Used + pod(BE).Used
 	podAllUsed := util.NewZeroResourceList()
@@ -48,18 +49,23 @@ func (r *NodeResourceReconciler) calculateBEResource(node *corev1.Node,
 			continue
 		}
 
+		qosClass := extension.GetPodQoSClass(&pod)
+
+		podRequest := util.GetPodRequest(&pod, corev1.ResourceCPU, corev1.ResourceMemory)
+		if qosClass != extension.QoSBE {
+			podLSRequest = quotav1.Add(podLSRequest, podRequest)
+		}
 		podKey := util.GetPodKey(&pod)
 		podMetric, ok := podMetricMap[podKey]
 		if !ok {
-			podRequest := util.GetPodRequest(&pod, corev1.ResourceCPU, corev1.ResourceMemory)
-			if extension.GetPodQoSClass(&pod) != extension.QoSBE {
+			if qosClass != extension.QoSBE {
 				podLSUsed = quotav1.Add(podLSUsed, podRequest)
 			}
 			podAllUsed = quotav1.Add(podAllUsed, podRequest)
 			continue
 		}
 
-		if extension.GetPodQoSClass(&pod) != extension.QoSBE {
+		if qosClass != extension.QoSBE {
 			podLSUsed = quotav1.Add(podLSUsed, r.getPodMetricUsage(podMetric))
 		}
 		podAllUsed = quotav1.Add(podAllUsed, r.getPodMetricUsage(podMetric))
@@ -72,32 +78,15 @@ func (r *NodeResourceReconciler) calculateBEResource(node *corev1.Node,
 	nodeUsage := r.getNodeMetricUsage(nodeMetric.Status.NodeMetric)
 	systemUsed := quotav1.Max(quotav1.Subtract(nodeUsage, podAllUsed), util.NewZeroResourceList())
 
-	// Node(BE).Alloc = Node.Total - Node.Reserved - System.Used - Pod(LS).Used; it's also equal to
-	// Node.Total - Node.Reserved - Node.Usage + Pod(BE).Used, Pod(All).Used = Pod(BE).Used + Pod(LS).Used
-	nodeAllocatableBE := quotav1.Max(quotav1.Subtract(
-		quotav1.Subtract(quotav1.Subtract(
-			nodeAllocatable, nodeReservation), systemUsed),
-		podLSUsed), util.NewZeroResourceList())
+	nodeAllocatableBE, message := r.calculateBEResourceByPolicy(node, nodeAllocatable, nodeReservation, systemUsed,
+		podLSRequest, podLSUsed)
 
 	return &nodeBEResource{
 		// transform cores into milli-cores
 		MilliCPU:              resource.NewQuantity(nodeAllocatableBE.Cpu().MilliValue(), resource.DecimalSI),
 		Memory:                nodeAllocatableBE.Memory(),
 		IsColocationAvailable: true,
-		Message: fmt.Sprintf(
-			"nodeAllocatableBE[CPU(Milli-Core)]:%v = nodeAllocatable:%v - nodeReservation:%v - systemUsage:%v - podLSUsed:%v\n"+
-				" nodeAllocatableBE[Mem(GB)]:%v = nodeAllocatable:%v - nodeReservation:%v - systemUsage:%v - podLSUsed:%v\n",
-			nodeAllocatableBE.Cpu().MilliValue(),
-			nodeAllocatable.Cpu().MilliValue(),
-			nodeReservation.Cpu().MilliValue(),
-			systemUsed.Cpu().MilliValue(),
-			podLSUsed.Cpu().MilliValue(),
-			nodeAllocatableBE.Memory().ScaledValue(resource.Giga),
-			nodeAllocatable.Memory().ScaledValue(resource.Giga),
-			nodeReservation.Memory().ScaledValue(resource.Giga),
-			systemUsed.Memory().ScaledValue(resource.Giga),
-			podLSUsed.Memory().ScaledValue(resource.Giga),
-		),
+		Message:               message,
 	}
 }
 
@@ -128,7 +117,6 @@ func (r *NodeResourceReconciler) getNodeAllocatable(node *corev1.Node) corev1.Re
 
 // getNodeReservation gets node-level safe-guarding reservation with the node's allocatable
 func (r *NodeResourceReconciler) getNodeReservation(node *corev1.Node) corev1.ResourceList {
-
 	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
 
 	nodeAllocatable := r.getNodeAllocatable(node)
@@ -144,4 +132,38 @@ func (r *NodeResourceReconciler) getNodeReservation(node *corev1.Node) corev1.Re
 // getReserveRatio returns resource reserved ratio
 func (r *NodeResourceReconciler) getReserveRatio(reclaimThreshold int64) float64 {
 	return float64(100-reclaimThreshold) / 100.0
+}
+
+func (r *NodeResourceReconciler) calculateBEResourceByPolicy(node *corev1.Node,
+	nodeAllocatable, nodeReserve, systemUsed, podLSReq, podLSUsed corev1.ResourceList) (corev1.ResourceList, string) {
+	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
+
+	// Node(BE).Alloc = Node.Total - Node.Reserved - System.Used - Pod(LS).Used
+	beAllocatableByUsage := quotav1.Max(quotav1.Subtract(quotav1.Subtract(quotav1.Subtract(nodeAllocatable, nodeReserve),
+		systemUsed), podLSUsed), util.NewZeroResourceList())
+
+	// Node(BE).Alloc = Node.Total - Node.Reserved - Pod(LS).Request
+	beAllocatableByRequest := quotav1.Max(quotav1.Subtract(quotav1.Subtract(nodeAllocatable, nodeReserve),
+		podLSReq), util.NewZeroResourceList())
+
+	beAllocatable := beAllocatableByUsage
+	cpuMsg := fmt.Sprintf("nodeAllocatableBE[CPU(Milli-Core)]:%v = nodeAllocatable:%v - nodeReservation:%v - systemUsage:%v - podLSUsed:%v",
+		beAllocatable.Cpu().MilliValue(), nodeAllocatable.Cpu().MilliValue(), nodeReserve.Cpu().MilliValue(),
+		systemUsed.Cpu().MilliValue(), podLSUsed.Cpu().MilliValue())
+
+	var memMsg string
+	if strategy != nil && strategy.MemoryCalculatePolicy != nil && *strategy.MemoryCalculatePolicy == config.CalculateByPodRequest {
+		beAllocatable[corev1.ResourceMemory] = *beAllocatableByRequest.Memory()
+		memMsg = fmt.Sprintf("nodeAllocatableBE[Mem(GB)]:%v = nodeAllocatable:%v - nodeReservation:%v - podLSRequest:%v",
+			beAllocatable.Memory().ScaledValue(resource.Giga), nodeAllocatable.Memory().ScaledValue(resource.Giga),
+			nodeReserve.Memory().ScaledValue(resource.Giga), podLSReq.Memory().ScaledValue(resource.Giga))
+	} else { // use CalculatePolicy "usage" by default
+		memMsg = fmt.Sprintf("nodeAllocatableBE[Mem(GB)]:%v = nodeAllocatable:%v - nodeReservation:%v - systemUsage:%v - podLSUsed:%v",
+			beAllocatable.Memory().ScaledValue(resource.Giga), nodeAllocatable.Memory().ScaledValue(resource.Giga),
+			nodeReserve.Memory().ScaledValue(resource.Giga), systemUsed.Memory().ScaledValue(resource.Giga),
+			podLSUsed.Memory().ScaledValue(resource.Giga))
+	}
+
+	message := cpuMsg + "\n" + memMsg + "\n"
+	return beAllocatable, message
 }
