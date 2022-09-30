@@ -37,7 +37,7 @@ type DeviceInfo struct {
 	// UUID represents the UUID of device
 	UUID string `json:"id,omitempty"`
 	// Minor represents the Minor number of Device, starting from 0
-	Minor int32 `json:"minor,omitempty"`
+	Minor *int32 `json:"minor,omitempty"`
 	// Type represents the type of device
 	Type DeviceType `json:"type,omitempty"`
 	// Health indicates whether the device is normal

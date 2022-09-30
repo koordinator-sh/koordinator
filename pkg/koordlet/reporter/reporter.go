@@ -362,7 +362,7 @@ func convertNodeMetricToResourceMap(nodeMetric *metriccache.NodeResourceMetric) 
 			memoryRatioRaw := 100 * float64(gpu.MemoryUsed.Value()) / float64(gpu.MemoryTotal.Value())
 			gpuInfo := schedulingv1alpha1.DeviceInfo{
 				UUID:  gpu.DeviceUUID,
-				Minor: gpu.Minor,
+				Minor: &gpu.Minor,
 				Type:  schedulingv1alpha1.GPU,
 				// TODO: how to check the health status of GPU
 				Resources: map[corev1.ResourceName]resource.Quantity{
@@ -390,7 +390,7 @@ func convertPodMetricToResourceMap(podMetric *metriccache.PodResourceMetric) *sl
 			memoryRatioRaw := 100 * float64(gpu.MemoryUsed.Value()) / float64(gpu.MemoryTotal.Value())
 			gpuInfo := schedulingv1alpha1.DeviceInfo{
 				UUID:  gpu.DeviceUUID,
-				Minor: gpu.Minor,
+				Minor: &gpu.Minor,
 				Type:  schedulingv1alpha1.GPU,
 				// TODO: how to check the health status of GPU
 				Resources: map[corev1.ResourceName]resource.Quantity{
