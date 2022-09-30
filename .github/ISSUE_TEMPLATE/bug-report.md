@@ -20,5 +20,10 @@ labels: kind/bug
 - App version:
 - Kubernetes version (use `kubectl version`):
 - Install details (e.g. helm install args):
+- Node environment (for koordlet/runtime-proxy issue):
+  - Containerd/Docker version:
+  - OS version:
+  - Kernal version:
+  - Cgroup driver: cgroupfs/systemd
 - Others:
 
