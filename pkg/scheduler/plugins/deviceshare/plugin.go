@@ -288,7 +288,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    deviceCache.onPodAdd,
 		UpdateFunc: deviceCache.onPodUpdate,
-		DeleteFunc: deviceCache.onDeviceDelete,
+		DeleteFunc: deviceCache.onPodDelete,
 	})
 	// make sure Pods are loaded before scheduler starts working
 	podInformerFactory.Start(context.TODO().Done())
