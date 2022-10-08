@@ -124,7 +124,7 @@ func (r *NodeResourceReconciler) isGPUResourceNeedSync(new, old *corev1.Node) bo
 		return true
 	}
 
-	for _, resourceName := range []corev1.ResourceName{extension.GPUCore, extension.GPUMemoryRatio, extension.GPUMemory} {
+	for _, resourceName := range []corev1.ResourceName{extension.GPUCore, extension.GPUMemoryRatio, extension.GPUMemory, extension.KoordGPU} {
 		if util.IsResourceDiff(old.Status.Allocatable, new.Status.Allocatable, resourceName, *strategy.ResourceDiffThreshold) {
 			klog.Warningf("node %v resource diff bigger than %v, need sync", resourceName, *strategy.ResourceDiffThreshold)
 			return true
@@ -140,6 +140,7 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 	memoryTotal := resource.NewQuantity(0, resource.BinarySI)
 	coreTotal := resource.NewQuantity(0, resource.DecimalSI)
 	ratioTotal := resource.NewQuantity(0, resource.DecimalSI)
+	koordGpuTotal := resource.NewQuantity(0, resource.DecimalSI)
 	hasGPUDevice := false
 	for _, device := range device.Spec.Devices {
 		if device.Type != schedulingv1alpha1.GPU {
@@ -150,6 +151,7 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 			memoryTotal.Add(device.Resources[extension.GPUMemory])
 			coreTotal.Add(device.Resources[extension.GPUCore])
 			ratioTotal.Add(device.Resources[extension.GPUMemoryRatio])
+			koordGpuTotal.Add(device.Resources[extension.GPUCore])
 		}
 	}
 
@@ -161,6 +163,7 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 	copyNode.Status.Allocatable[extension.GPUCore] = *coreTotal
 	copyNode.Status.Allocatable[extension.GPUMemory] = *memoryTotal
 	copyNode.Status.Allocatable[extension.GPUMemoryRatio] = *ratioTotal
+	copyNode.Status.Allocatable[extension.KoordGPU] = *koordGpuTotal
 
 	if !r.isGPUResourceNeedSync(copyNode, node) {
 		return nil
@@ -182,6 +185,8 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 		updateNode.Status.Allocatable[extension.GPUCore] = *coreTotal
 		updateNode.Status.Capacity[extension.GPUMemoryRatio] = *ratioTotal
 		updateNode.Status.Allocatable[extension.GPUMemoryRatio] = *ratioTotal
+		updateNode.Status.Capacity[extension.KoordGPU] = *koordGpuTotal
+		updateNode.Status.Allocatable[extension.KoordGPU] = *koordGpuTotal
 
 		if err := r.Client.Status().Update(context.TODO(), updateNode); err != nil {
 			klog.Errorf("failed to update node gpu resource %v, error: %v", updateNode.Name, err)
