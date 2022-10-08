@@ -77,7 +77,6 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 		Name:              "test1",
 		ParentName:        "root",
 		IsParent:          false,
-		RuntimeVersion:    7,
 		AllowLentResource: true,
 		Max:               createResourceList(100, 100),
 		Min:               createResourceList(10, 10),
@@ -115,7 +114,6 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 	assert.Equal(t, quotaSummary.Name, quotaExpected.Name)
 	assert.Equal(t, quotaSummary.ParentName, quotaExpected.ParentName)
 	assert.Equal(t, quotaSummary.IsParent, quotaExpected.IsParent)
-	assert.Equal(t, quotaSummary.RuntimeVersion, quotaExpected.RuntimeVersion)
 	assert.Equal(t, quotaSummary.AllowLentResource, quotaExpected.AllowLentResource)
 	assert.Equal(t, len(quotaSummary.PodCache), 1)
 	assert.Equal(t, quotaSummary.PodCache["pod1"].IsAssigned, true)

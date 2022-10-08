@@ -62,11 +62,6 @@ func TestQuotaTopology_basicItemCheck(t *testing.T) {
 			err:   nil,
 		},
 		{
-			name:  "forbidden modify",
-			quota: MakeQuota("root").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).Obj(),
-			err:   fmt.Errorf("invalid quota root"),
-		},
-		{
 			name:  "max <0",
 			quota: MakeQuota("temp").Max(MakeResourceList().CPU(-1).Mem(1048576).Obj()).Obj(),
 			err:   fmt.Errorf("%v quota.Spec.Max's value < 0, in dimensions :%v", "temp", "[cpu]"),
@@ -366,7 +361,7 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 
 	sub1.Name = "root"
 	err = qt.ValidUpdateQuota(nil, sub1)
-	assert.Equal(t, "can not update quotaGroup :root", err.Error())
+	assert.Equal(t, "invalid quota root", err.Error())
 
 	quota.Labels[extension.LabelQuotaIsParent] = "false"
 	err = qt.ValidUpdateQuota(oldQuotaCopy, quota)

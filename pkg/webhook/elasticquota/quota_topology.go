@@ -87,8 +87,9 @@ func (qt *quotaTopology) ValidUpdateQuota(oldQuota, newQuota *v1alpha1.ElasticQu
 	}
 
 	quotaName := newQuota.Name
-	if quotaName == extension.SystemQuotaName || quotaName == extension.RootQuotaName {
-		return fmt.Errorf("can not update quotaGroup :%v", quotaName)
+
+	if _, err := extension.IsForbiddenModify(newQuota); err != nil {
+		return err
 	}
 
 	qt.lock.Lock()

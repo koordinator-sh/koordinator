@@ -38,10 +38,7 @@ import (
 func makeTestHandler() *ElasticQuotaValidatingHandler {
 	client := fake.NewClientBuilder().Build()
 	sche := client.Scheme()
-	sche.AddKnownTypes(schema.GroupVersion{
-		Group:   "scheduling.sigs.k8s.io",
-		Version: "v1alpha1",
-	}, &v1alpha1.ElasticQuota{}, &v1alpha1.ElasticQuotaList{})
+	v1alpha1.AddToScheme(sche)
 	decoder, _ := admission.NewDecoder(sche)
 	handler := &ElasticQuotaValidatingHandler{}
 	handler.InjectClient(client)
