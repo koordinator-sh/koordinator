@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -198,6 +199,30 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 		r.GPUSyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), r.Clock.Now())
 	}
 	return err
+}
+
+func (r *NodeResourceReconciler) updateGPUDriverAndModel(node *corev1.Node, device *schedulingv1alpha1.Device) error {
+	if device == nil || device.Labels == nil {
+		return nil
+	}
+
+	if device.Labels[extension.GPUModel] == "" && device.Labels[extension.GPUDriver] == "" {
+		return nil
+	}
+
+	copyNode := node.DeepCopy()
+	if copyNode.Labels == nil {
+		copyNode.Labels = make(map[string]string)
+	}
+	copyNode.Labels[extension.GPUModel] = device.Labels[extension.GPUModel]
+	copyNode.Labels[extension.GPUDriver] = device.Labels[extension.GPUDriver]
+
+	patch := client.MergeFrom(node)
+	if err := r.Client.Patch(context.Background(), copyNode, patch); err != nil {
+		klog.Errorf("failed to patch node gpu model and version, err:%v", err)
+		return err
+	}
+	return nil
 }
 
 func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResource *nodeBEResource) error {

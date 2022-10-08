@@ -19,14 +19,14 @@ limitations under the License.
 
 package statesinformer
 
-func (s *statesInformer) reportDevice() {
-	return
-}
-
 func (s *statesInformer) initGPU() bool {
 	return false
 }
 
 func (s *statesInformer) gpuHealCheck(stopCh <-chan struct{}) {
 	return
+}
+
+func (s *statesInformer) getGPUDriverAndModel() (string, string) {
+	return "", ""
 }

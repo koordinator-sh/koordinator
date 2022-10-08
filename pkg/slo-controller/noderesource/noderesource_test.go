@@ -198,7 +198,7 @@ func Test_isDegradeNeeded(t *testing.T) {
 	}
 }
 
-func Test_updateNodeGPUResource(t *testing.T) {
+func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 	fakeClient := schedulingfake.NewSimpleClientset().SchedulingV1alpha1().Devices()
 	testNode := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -239,6 +239,10 @@ func Test_updateNodeGPUResource(t *testing.T) {
 	fakeDevice := &schedulingv1alpha1.Device{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNode.Name,
+			Labels: map[string]string{
+				apiext.GPUModel:  "A100",
+				apiext.GPUDriver: "480",
+			},
 		},
 		Spec: schedulingv1alpha1.DeviceSpec{
 			Devices: []schedulingv1alpha1.DeviceInfo{
@@ -277,6 +281,12 @@ func Test_updateNodeGPUResource(t *testing.T) {
 	assert.Equal(t, actualMemoryRatio.Value(), resource.NewQuantity(200, resource.DecimalSI).Value())
 	assert.Equal(t, actualMemory.Value(), resource.NewQuantity(18000, resource.BinarySI).Value())
 	assert.Equal(t, actualCore.Value(), resource.NewQuantity(200, resource.BinarySI).Value())
+
+	r.updateGPUDriverAndModel(testNode, fakeDevice)
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: testNode.Name}, testNode)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, testNode.Labels[apiext.GPUModel], "A100")
+	assert.Equal(t, testNode.Labels[apiext.GPUDriver], "480")
 }
 
 func Test_isGPUResourceNeedSync(t *testing.T) {

@@ -4,10 +4,10 @@ GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 GIT_COMMIT_ID ?= $(shell git rev-parse --short HEAD)
 
 # Image URL to use all building/pushing image targets
-REG ?= ghcr.io
-REG_NS ?= koordinator-sh
-REG_USER ?= ""
-REG_PWD ?= ""
+REG ?= docker.io
+REG_NS ?= xxxxf
+REG_USER ?= "xxxxf"
+REG_PWD ?= "xulinfei1996"
 
 KOORDLET_IMG ?= "${REG}/${REG_NS}/koordlet:${GIT_BRANCH}-${GIT_COMMIT_ID}"
 KOORD_MANAGER_IMG ?= "${REG}/${REG_NS}/koord-manager:${GIT_BRANCH}-${GIT_COMMIT_ID}"

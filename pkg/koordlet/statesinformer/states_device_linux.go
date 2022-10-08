@@ -17,146 +17,67 @@ limitations under the License.
 package statesinformer
 
 import (
-	"context"
-	"os"
-	"sort"
-	"time"
-
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
-	corev1 "k8s.io/api/core/v1"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
-
-	"github.com/koordinator-sh/koordinator/apis/extension"
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	"os"
+	"strings"
 )
 
-func generateQueryParam() *metriccache.QueryParam {
-	end := time.Now()
-	start := end.Add(-time.Duration(60) * time.Second)
-	return &metriccache.QueryParam{
-		Aggregate: metriccache.AggregationTypeLast,
-		Start:     &start,
-		End:       &end,
+func (s *statesInformer) getGPUDriverAndModel() (string, string) {
+	count, ret := nvml.DeviceGetCount()
+	if ret != nvml.SUCCESS {
+		klog.Errorf("unable to get device count: %v", nvml.ErrorString(ret))
+		return "", ""
 	}
-}
-
-func (s *statesInformer) reportDevice() {
-	node := s.GetNode()
-	gpuDevices := s.buildGPUDevice()
-
-	err := s.updateDevice(node.Name, gpuDevices)
-	if err == nil {
-		klog.V(4).Infof("successfully update Device %s", node.Name)
-		return
-	}
-	if !errors.IsNotFound(err) {
-		klog.Errorf("Failed to updateDevice %s, err: %v", node.Name, err)
-		return
+	if count == 0 {
+		klog.Errorf("no gpu device found")
+		return "", ""
 	}
 
-	if len(gpuDevices) == 0 {
-		return
-	}
-
-	err = s.createDevice(node, gpuDevices)
-	if err == nil {
-		klog.V(4).Infof("successfully create Device %s", node.Name)
-	} else {
-		klog.Errorf("Failed to create Device %s, err: %v", node.Name, err)
-	}
-}
-
-func (s *statesInformer) createDevice(node *corev1.Node, gpuDevices []schedulingv1alpha1.DeviceInfo) error {
-	blocker := true
-	device := &schedulingv1alpha1.Device{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: node.Name,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion:         "v1",
-					Kind:               "Node",
-					Name:               node.Name,
-					UID:                node.UID,
-					Controller:         &blocker,
-					BlockOwnerDeletion: &blocker,
-				},
-			},
-		},
-		Spec: schedulingv1alpha1.DeviceSpec{
-			Devices: gpuDevices,
-		},
-	}
-	_, err := s.deviceClient.Create(context.TODO(), device, metav1.CreateOptions{})
-	return err
-}
-
-func (s *statesInformer) updateDevice(name string, gpuDevices []schedulingv1alpha1.DeviceInfo) error {
-	sorter := func(devices []schedulingv1alpha1.DeviceInfo) {
-		sort.Slice(devices, func(i, j int) bool {
-			return *(devices[i].Minor) < *(devices[j].Minor)
-		})
-	}
-	sorter(gpuDevices)
-
-	return util.RetryOnConflictOrTooManyRequests(func() error {
-		device, err := s.deviceClient.Get(context.TODO(), name, metav1.GetOptions{ResourceVersion: "0"})
-		if err != nil {
-			return err
+	var modelList []string
+	for deviceIndex := 0; deviceIndex < count; deviceIndex++ {
+		gpuDevice, ret := nvml.DeviceGetHandleByIndex(deviceIndex)
+		if ret != nvml.SUCCESS {
+			klog.Errorf("unable to get device model: %v", nvml.ErrorString(ret))
+			continue
 		}
-		sorter(device.Spec.Devices)
-
-		if apiequality.Semantic.DeepEqual(gpuDevices, device.Spec.Devices) {
-			klog.V(4).Infof("Device %s has not changed and does not need to be updated", name)
-			return nil
-		}
-
-		device.Spec = schedulingv1alpha1.DeviceSpec{
-			Devices: gpuDevices,
-		}
-		_, err = s.deviceClient.Update(context.TODO(), device, metav1.UpdateOptions{})
-		return err
-	})
-}
-
-func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
-	queryParam := generateQueryParam()
-	nodeResource := s.metricsCache.GetNodeResourceMetric(queryParam)
-	if nodeResource.Error != nil {
-		klog.Errorf("failed to get node resource metric, err: %v", nodeResource.Error)
-		return nil
+		deviceModel, _ := gpuDevice.GetName()
+		modelList = append(modelList, deviceModel)
 	}
-	if len(nodeResource.Metric.GPUs) == 0 {
-		klog.V(5).Info("no gpu device found")
-		return nil
-	}
-	var deviceInfos []schedulingv1alpha1.DeviceInfo
-	for i := range nodeResource.Metric.GPUs {
-		gpu := nodeResource.Metric.GPUs[i]
-		health := true
-		s.gpuMutex.RLock()
-		if _, ok := s.unhealthyGPU[gpu.DeviceUUID]; ok {
-			health = false
+
+	model := ""
+	for i, v := range modelList {
+		if v == "" {
+			klog.Errorf("device model invalid: %v", modelList)
+			return "", ""
+		} else if i == 0 {
+			model = v
+		} else if model != v {
+			klog.Errorf("device model invalid: %v", modelList)
+			return "", ""
 		}
-		s.gpuMutex.RUnlock()
-		deviceInfos = append(deviceInfos, schedulingv1alpha1.DeviceInfo{
-			UUID:   gpu.DeviceUUID,
-			Minor:  &gpu.Minor,
-			Type:   schedulingv1alpha1.GPU,
-			Health: health,
-			Resources: map[corev1.ResourceName]resource.Quantity{
-				extension.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-				extension.GPUMemory:      gpu.MemoryTotal,
-				extension.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
-			},
-		})
 	}
-	return deviceInfos
+
+	// NVIDIA Driver 470 report GPU Model with "NVIDIA " Prefix
+	model = strings.TrimPrefix(model, "NVIDIA ")
+
+	// A100 SXM4 80GB -> A100-SXM4-80GB
+	// Tesla P100-PCIE-16GB -> Tesla-P100-PCIE-16GB
+	// Tesla V100-SXM2-16GB -> Tesla-V100-SXM2-16GB
+	// Tesla T4 -> Tesla-T4
+	// Tesla P40 -> Tesla-P40
+	// Tesla M40 -> Tesla-M40
+	// GeForce RTX 2080 Ti -> GeForce-RTX-2080-Ti
+	// GeForce GTX 1080 Ti -> GeForce-GTX-1080-Ti
+	transModel := strings.ReplaceAll(model, " ", "-")
+
+	driverVersion, ret := nvml.SystemGetDriverVersion()
+	if ret != nvml.SUCCESS {
+		klog.Errorf("unable to get device driver version: %v", nvml.ErrorString(ret))
+		return "", ""
+	}
+
+	return transModel, driverVersion
 }
 
 func (s *statesInformer) initGPU() bool {

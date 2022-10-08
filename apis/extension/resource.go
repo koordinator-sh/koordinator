@@ -40,6 +40,9 @@ const (
 	GPUCore        corev1.ResourceName = ResourceDomainPrefix + "gpu-core"
 	GPUMemory      corev1.ResourceName = ResourceDomainPrefix + "gpu-memory"
 	GPUMemoryRatio corev1.ResourceName = ResourceDomainPrefix + "gpu-memory-ratio"
+
+	GPUDriver string = ResourceDomainPrefix + "gpu-driver"
+	GPUModel string = ResourceDomainPrefix + "gpu-model"
 )
 
 const (

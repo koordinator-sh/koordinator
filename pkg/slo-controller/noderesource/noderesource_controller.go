@@ -130,6 +130,10 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		klog.Errorf("failed to update node %v gpu resource, error: %v", node.Name, err)
 		return ctrl.Result{Requeue: true}, err
 	}
+	if err := r.updateGPUDriverAndModel(node, device); err != nil {
+		klog.Errorf("failed to update node %v gpu model and driver, error: %v", node.Name, err)
+		return ctrl.Result{Requeue: true}, err
+	}
 
 	return ctrl.Result{Requeue: false}, nil
 }
