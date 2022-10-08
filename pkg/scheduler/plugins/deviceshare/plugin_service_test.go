@@ -37,7 +37,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
-	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -114,7 +113,7 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 		},
 	}
 	deviceInfo0 := schedulingv1alpha1.DeviceInfo{}
-	deviceInfo0.Minor = pointer.Int32Ptr(0)
+	deviceInfo0.Minor = 0
 	deviceInfo0.Health = true
 	deviceInfo0.Type = schedulingv1alpha1.GPU
 	deviceInfo0.Resources = corev1.ResourceList{
@@ -122,7 +121,7 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 		apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 	}
 	deviceInfo1 := schedulingv1alpha1.DeviceInfo{}
-	deviceInfo1.Minor = pointer.Int32Ptr(1)
+	deviceInfo1.Minor = 1
 	deviceInfo1.Health = true
 	deviceInfo1.Type = schedulingv1alpha1.GPU
 	deviceInfo1.Resources = corev1.ResourceList{
@@ -130,7 +129,7 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 		apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 	}
 	deviceInfo2 := schedulingv1alpha1.DeviceInfo{}
-	deviceInfo2.Minor = pointer.Int32Ptr(2)
+	deviceInfo2.Minor = 2
 	deviceInfo2.Health = true
 	deviceInfo2.Type = schedulingv1alpha1.FPGA
 	deviceInfo2.Resources = corev1.ResourceList{

@@ -89,11 +89,11 @@ func (n *nodeDeviceCache) update(nodeName string, device *schedulingv1alpha1.Dev
 			nodeDeviceResource[deviceInfo.Type] = make(deviceResources)
 		}
 		if !deviceInfo.Health {
-			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = make(v1.ResourceList)
+			nodeDeviceResource[deviceInfo.Type][int(deviceInfo.Minor)] = make(v1.ResourceList)
 			klog.Errorf("Find device unhealthy, nodeName:%v, deviceType:%v, minor:%v",
 				nodeName, deviceInfo.Type, deviceInfo.Minor)
 		} else {
-			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = deviceInfo.Resources
+			nodeDeviceResource[deviceInfo.Type][int(deviceInfo.Minor)] = deviceInfo.Resources
 			klog.V(5).Infof("Find device resource update, nodeName:%v, deviceType:%v, minor:%v, res:%v",
 				nodeName, deviceInfo.Type, deviceInfo.Minor, deviceInfo.Resources)
 		}

@@ -244,7 +244,7 @@ func Test_updateNodeGPUResource(t *testing.T) {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   "1",
-					Minor:  pointer.Int32Ptr(0),
+					Minor:  0,
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -255,7 +255,7 @@ func Test_updateNodeGPUResource(t *testing.T) {
 				},
 				{
 					UUID:   "2",
-					Minor:  pointer.Int32Ptr(1),
+					Minor:  1,
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{

@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -186,7 +185,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
 							UUID:   string(uuid.NewUUID()),
-							Minor:  pointer.Int32Ptr(1),
+							Minor:  1,
 							Health: true,
 							Type:   schedulingv1alpha1.GPU,
 							Resources: corev1.ResourceList{
@@ -263,7 +262,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
 							UUID:  string(uuid.NewUUID()),
-							Minor: pointer.Int32Ptr(1),
+							Minor: 1,
 							Type:  schedulingv1alpha1.GPU,
 							Resources: corev1.ResourceList{
 								apiext.GPUCore:        resource.MustParse("100"),
@@ -273,7 +272,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 						},
 						{
 							UUID:  string(uuid.NewUUID()),
-							Minor: pointer.Int32Ptr(1),
+							Minor: 1,
 							Type:  schedulingv1alpha1.FPGA,
 							Resources: corev1.ResourceList{
 								apiext.KoordFPGA: resource.MustParse("100"),
@@ -416,7 +415,7 @@ func generateFakeDevice() *schedulingv1alpha1.Device {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   string(uuid.NewUUID()),
-					Minor:  pointer.Int32Ptr(1),
+					Minor:  1,
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{
@@ -439,7 +438,7 @@ func generateMultipleFakeDevice() *schedulingv1alpha1.Device {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   string(uuid.NewUUID()),
-					Minor:  pointer.Int32Ptr(0),
+					Minor:  0,
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{
@@ -450,7 +449,7 @@ func generateMultipleFakeDevice() *schedulingv1alpha1.Device {
 				},
 				{
 					UUID:   string(uuid.NewUUID()),
-					Minor:  pointer.Int32Ptr(1),
+					Minor:  1,
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{

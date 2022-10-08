@@ -99,7 +99,7 @@ func (s *statesInformer) createDevice(node *corev1.Node, gpuDevices []scheduling
 func (s *statesInformer) updateDevice(name string, gpuDevices []schedulingv1alpha1.DeviceInfo) error {
 	sorter := func(devices []schedulingv1alpha1.DeviceInfo) {
 		sort.Slice(devices, func(i, j int) bool {
-			return *(devices[i].Minor) < *(devices[j].Minor)
+			return devices[i].Minor < devices[j].Minor
 		})
 	}
 	sorter(gpuDevices)
@@ -136,8 +136,7 @@ func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
 		return nil
 	}
 	var deviceInfos []schedulingv1alpha1.DeviceInfo
-	for i := range nodeResource.Metric.GPUs {
-		gpu := nodeResource.Metric.GPUs[i]
+	for _, gpu := range nodeResource.Metric.GPUs {
 		health := true
 		s.gpuMutex.RLock()
 		if _, ok := s.unhealthyGPU[gpu.DeviceUUID]; ok {
@@ -146,7 +145,7 @@ func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
 		s.gpuMutex.RUnlock()
 		deviceInfos = append(deviceInfos, schedulingv1alpha1.DeviceInfo{
 			UUID:   gpu.DeviceUUID,
-			Minor:  &gpu.Minor,
+			Minor:  gpu.Minor,
 			Type:   schedulingv1alpha1.GPU,
 			Health: health,
 			Resources: map[corev1.ResourceName]resource.Quantity{
