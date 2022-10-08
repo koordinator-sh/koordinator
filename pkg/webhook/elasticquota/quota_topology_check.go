@@ -34,10 +34,6 @@ import (
 )
 
 func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) error {
-	if invalid, err := extension.IsForbiddenModify(quota); invalid {
-		return err
-	}
-
 	// min and max's each dimension should not have negative value
 	if resourceNames := quotav1.IsNegative(quota.Spec.Max); len(resourceNames) > 0 {
 		return fmt.Errorf("%v quota.Spec.Max's value < 0, in dimensions :%v", quota.Name, resourceNames)

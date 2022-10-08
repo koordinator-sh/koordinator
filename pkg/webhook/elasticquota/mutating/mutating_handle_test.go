@@ -18,7 +18,6 @@ package mutating
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"testing"
 
@@ -26,43 +25,21 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	pgfake "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
-	"sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 )
 
 func makeTestHandler(t *testing.T) *ElasticQuotaMutatingHandler {
-	setLoglevel("5")
 	client := fake.NewClientBuilder().Build()
 	sche := client.Scheme()
-	sche.AddKnownTypes(schema.GroupVersion{
-		Group:   "scheduling.sigs.k8s.io",
-		Version: "v1alpha1",
-	}, &v1alpha1.ElasticQuota{}, &v1alpha1.ElasticQuotaList{})
+	v1alpha1.AddToScheme(sche)
 	decoder, _ := admission.NewDecoder(sche)
 	handler := &ElasticQuotaMutatingHandler{}
 	handler.InjectClient(client)
 	handler.InjectDecoder(decoder)
-
-	cacheTmp := &informertest.FakeInformers{
-		InformersByGVK: map[schema.GroupVersionKind]cache.SharedIndexInformer{},
-		Scheme:         sche,
-	}
-	pgClient := pgfake.NewSimpleClientset()
-	quotaSharedInformerFactory := externalversions.NewSharedInformerFactory(pgClient, 0)
-	quotaInformer := quotaSharedInformerFactory.Scheduling().V1alpha1().ElasticQuotas().Informer()
-	cacheTmp.InformersByGVK[elasticquotasKind] = quotaInformer
-	handler.InjectCache(cacheTmp)
 	return handler
 }
-
-var elasticquotasKind = schema.GroupVersionKind{Group: "scheduling.sigs.k8s.io", Version: "v1alpha1", Kind: "ElasticQuota"}
 
 func gvr(resource string) metav1.GroupVersionResource {
 	return metav1.GroupVersionResource{
@@ -153,12 +130,4 @@ func TestElasticQuotaMutatingHandler_Handle(t *testing.T) {
 			}
 		})
 	}
-}
-
-func setLoglevel(logLevel string) {
-	var level klog.Level
-	if err := level.Set(logLevel); err != nil {
-		fmt.Printf("failed set klog.logging.verbosity %v: %v", logLevel, err)
-	}
-	fmt.Printf("successfully set klog.logging.verbosity to %v", logLevel)
 }

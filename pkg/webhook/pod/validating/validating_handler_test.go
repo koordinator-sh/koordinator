@@ -25,13 +25,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/tools/cache"
+	clientcache "k8s.io/client-go/tools/cache"
+	sigcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgfake "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
+
+	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
 
 func makeTestHandler() *PodValidatingHandler {
@@ -47,7 +51,7 @@ func makeTestHandler() *PodValidatingHandler {
 	handler.InjectDecoder(decoder)
 
 	cacheTmp := &informertest.FakeInformers{
-		InformersByGVK: map[schema.GroupVersionKind]cache.SharedIndexInformer{},
+		InformersByGVK: map[schema.GroupVersionKind]clientcache.SharedIndexInformer{},
 		Scheme:         sche,
 	}
 	pgClient := pgfake.NewSimpleClientset()
@@ -132,4 +136,22 @@ func TestValidatingHandler(t *testing.T) {
 			}
 		})
 	}
+}
+
+var _ inject.Cache = &PodValidatingHandler{}
+
+func (h *PodValidatingHandler) InjectCache(cache sigcache.Cache) error {
+	ctx := context.TODO()
+	quotaInformer, err := cache.GetInformer(ctx, &v1alpha1.ElasticQuota{})
+	if err != nil {
+		return err
+	}
+	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
+	qt := plugin.QuotaTopo
+	quotaInformer.AddEventHandler(clientcache.ResourceEventHandlerFuncs{
+		AddFunc:    qt.OnQuotaAdd,
+		UpdateFunc: qt.OnQuotaUpdate,
+		DeleteFunc: qt.OnQuotaDelete,
+	})
+	return nil
 }

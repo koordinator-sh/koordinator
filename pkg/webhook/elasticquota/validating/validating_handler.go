@@ -123,10 +123,5 @@ func (h *ElasticQuotaValidatingHandler) InjectCache(cache cache.Cache) error {
 		UpdateFunc: qt.OnQuotaUpdate,
 		DeleteFunc: qt.OnQuotaDelete,
 	})
-
-	sharedInformer := quotaInformer.(clientcache.SharedIndexInformer)
-
-	go sharedInformer.Run(ctx.Done())
-	clientcache.WaitForCacheSync(ctx.Done(), sharedInformer.HasSynced)
 	return nil
 }
