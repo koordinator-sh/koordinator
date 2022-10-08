@@ -74,6 +74,14 @@ func injectCPUSet(cgroupParent string, cpuset string) error {
 	return nil
 }
 
+func injectCPUQuota(cgroupParent string, cpuQuota int64) error {
+	cpuQuotaStr := strconv.FormatInt(cpuQuota, 10)
+	if err := sysutil.CgroupFileWrite(cgroupParent, sysutil.CPUCFSQuota, cpuQuotaStr); err != nil {
+		return err
+	}
+	return nil
+}
+
 func injectCPUBvt(cgroupParent string, bvtValue int64) error {
 	bvtValueStr := strconv.FormatInt(bvtValue, 10)
 	if err := sysutil.CgroupFileWrite(cgroupParent, sysutil.CPUBVTWarpNs, bvtValueStr); err != nil {

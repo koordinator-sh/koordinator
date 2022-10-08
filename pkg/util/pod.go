@@ -27,6 +27,7 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
@@ -275,4 +276,15 @@ func GetPodRequest(pod *corev1.Pod, resourceNames ...corev1.ResourceName) corev1
 
 func IsPodTerminated(pod *corev1.Pod) bool {
 	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
+}
+
+func GetCPUSetFromPod(podAnnotations map[string]string) (string, error) {
+	if podAnnotations == nil {
+		return "", nil
+	}
+	podAlloc, err := apiext.GetResourceStatus(podAnnotations)
+	if err != nil {
+		return "", err
+	}
+	return podAlloc.CPUSet, nil
 }

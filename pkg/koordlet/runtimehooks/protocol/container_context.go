@@ -121,13 +121,25 @@ func (c *ContainerContext) injectForOrigin() {
 	if c.Response.Resources.CPUSet != nil {
 		if err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet); err != nil {
 			klog.Infof("set container %v/%v/%v cpuset %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
-				c.Request.PodMeta.Name, *c.Response.Resources.CPUSet, c.Request.CgroupParent, err)
+				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CPUSet, c.Request.CgroupParent, err)
 		} else {
 			klog.V(5).Infof("set container %v/%v/%v cpuset %v on cgroup parent %v",
 				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
 				*c.Response.Resources.CPUSet, c.Request.CgroupParent)
 			audit.V(2).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 				"set container cpuset to %v", *c.Response.Resources.CPUSet).Do()
+		}
+	}
+	if c.Response.Resources.CFSQuota != nil {
+		if err := injectCPUQuota(c.Request.CgroupParent, *c.Response.Resources.CFSQuota); err != nil {
+			klog.Infof("set container %v/%v/%v cfs quota %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
+				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CFSQuota, c.Request.CgroupParent, err)
+		} else {
+			klog.V(5).Infof("set container %v/%v/%v cfs quota %v on cgroup parent %v",
+				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
+				*c.Response.Resources.CFSQuota, c.Request.CgroupParent)
+			audit.V(2).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
+				"set container cfs quota to %v", *c.Response.Resources.CFSQuota).Do()
 		}
 	}
 	// TODO other fields

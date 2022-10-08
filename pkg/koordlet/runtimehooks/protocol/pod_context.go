@@ -124,4 +124,16 @@ func (p *PodContext) injectForExt() {
 				"set pod bvt to %v", *p.Response.Resources.CPUBvt).Do()
 		}
 	}
+	// pod-level cfs_quota is manually updated since pod-stage hooks do not support it
+	if p.Response.Resources.CFSQuota != nil {
+		if err := injectCPUQuota(p.Request.CgroupParent, *p.Response.Resources.CFSQuota); err != nil {
+			klog.Infof("set pod %v/%v cfs quota %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
+				p.Request.PodMeta.Name, *p.Response.Resources.CFSQuota, p.Request.CgroupParent, err)
+		} else {
+			klog.V(5).Infof("set pod %v/%v/%v cfs quota %v on cgroup parent %v",
+				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.CFSQuota, p.Request.CgroupParent)
+			audit.V(2).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
+				"set pod cfs quota to %v", *p.Response.Resources.CFSQuota).Do()
+		}
+	}
 }

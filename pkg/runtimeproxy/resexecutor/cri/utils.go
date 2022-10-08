@@ -74,7 +74,7 @@ func updateResource(a, b *v1alpha1.LinuxContainerResources) *v1alpha1.LinuxConta
 	if b.CpuPeriod > 0 {
 		a.CpuPeriod = b.CpuPeriod
 	}
-	if b.CpuQuota > 0 {
+	if b.CpuQuota != 0 { // -1 is valid
 		a.CpuQuota = b.CpuQuota
 	}
 	if b.CpuShares > 0 {
@@ -109,7 +109,7 @@ func updateResourceByUpdateContainerResourceRequest(a, b *v1alpha1.LinuxContaine
 	if b.CpuPeriod > 0 {
 		a.CpuPeriod = b.CpuPeriod
 	}
-	if b.CpuQuota > 0 {
+	if b.CpuQuota != 0 { // -1 is valid
 		a.CpuQuota = b.CpuQuota
 	}
 	if b.CpuShares > 0 {

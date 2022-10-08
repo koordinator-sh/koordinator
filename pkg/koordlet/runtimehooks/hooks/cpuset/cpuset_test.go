@@ -17,6 +17,7 @@ limitations under the License.
 package cpuset
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,6 +35,14 @@ func initCPUSet(dirWithKube string, value string, helper *system.FileTestUtil) {
 
 func getCPUSet(dirWithKube string, helper *system.FileTestUtil) string {
 	return helper.ReadCgroupFileContents(dirWithKube, system.CPUSet)
+}
+
+func initCPUQuota(dirWithKube string, value string, helper *system.FileTestUtil) {
+	helper.WriteCgroupFileContents(dirWithKube, system.CPUCFSQuota, value)
+}
+
+func getCPUQuota(dirWithKube string, helper *system.FileTestUtil) string {
+	return helper.ReadCgroupFileContents(dirWithKube, system.CPUCFSQuota)
 }
 
 func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
@@ -225,42 +234,250 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 	}
 }
 
-func Test_getCPUSetFromPod(t *testing.T) {
+func TestUnsetPodCPUQuota(t *testing.T) {
 	type args struct {
-		podAnnotations map[string]string
-		podAlloc       *ext.ResourceStatus
+		podAlloc *ext.ResourceStatus
+		proto    protocol.HooksProtocol
 	}
 	tests := []struct {
-		name    string
-		args    args
-		want    string
-		wantErr bool
+		name         string
+		args         args
+		wantErr      bool
+		wantCPUQuota *int64
 	}{
 		{
-			name: "get cpuset from annotation",
+			name: "not change cfs quota with nil protocol",
 			args: args{
-				podAnnotations: map[string]string{},
+				proto: nil,
+			},
+			wantErr:      true,
+			wantCPUQuota: nil,
+		},
+		{
+			name: "not change cfs quota by bad pod allocated format",
+			args: args{
+				proto: &protocol.PodContext{
+					Request: protocol.PodRequest{
+						Labels: map[string]string{
+							ext.LabelPodQoS: string(ext.QoSLS),
+						},
+						Annotations: map[string]string{
+							ext.AnnotationResourceStatus: "bad-format",
+						},
+						CgroupParent: "kubepods/pod-guaranteed-test-uid/",
+					},
+					Response: protocol.PodResponse{},
+				},
+			},
+			wantErr:      true,
+			wantCPUQuota: nil,
+		},
+		{
+			name: "set cfs quota by pod allocated",
+			args: args{
 				podAlloc: &ext.ResourceStatus{
 					CPUSet: "2-4",
 				},
+				proto: &protocol.PodContext{
+					Request: protocol.PodRequest{
+						Labels: map[string]string{
+							ext.LabelPodQoS: string(ext.QoSLS),
+						},
+						CgroupParent: "kubepods/pod-guaranteed-test-uid/",
+					},
+					Response: protocol.PodResponse{},
+				},
 			},
-			want:    "2-4",
-			wantErr: false,
+			wantErr:      false,
+			wantCPUQuota: pointer.Int64Ptr(-1),
+		},
+		{
+			name: "not change cfs quota by pod allocated share pool",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					CPUSharedPools: []ext.CPUSharedPool{
+						{
+							Socket: 0,
+							Node:   0,
+						},
+					},
+				},
+				proto: &protocol.PodContext{
+					Request: protocol.PodRequest{
+						Labels: map[string]string{
+							ext.LabelPodQoS: string(ext.QoSLS),
+						},
+						CgroupParent: "kubepods/pod-guaranteed-test-uid/",
+					},
+					Response: protocol.PodResponse{},
+				},
+			},
+			wantErr:      false,
+			wantCPUQuota: nil,
+		},
+		{
+			name: "not change cfs quota for origin besteffort pod",
+			args: args{
+				proto: &protocol.PodContext{
+					Request: protocol.PodRequest{
+						CgroupParent: "kubepods/besteffort/pod-besteffort-test-uid/",
+					},
+					Response: protocol.PodResponse{},
+				},
+			},
+			wantErr:      false,
+			wantCPUQuota: nil,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.args.podAlloc != nil {
-				podAllocJson := util.DumpJSON(tt.args.podAlloc)
-				tt.args.podAnnotations[ext.AnnotationResourceStatus] = podAllocJson
+			testHelper := system.NewFileTestUtil(t)
+			var podCtx *protocol.PodContext
+
+			if tt.args.proto != nil {
+				podCtx = tt.args.proto.(*protocol.PodContext)
+				initCPUQuota(podCtx.Request.CgroupParent, "", testHelper)
+				if tt.args.podAlloc != nil {
+					podAllocJson := util.DumpJSON(tt.args.podAlloc)
+					podCtx.Request.Annotations = map[string]string{
+						ext.AnnotationResourceStatus: podAllocJson,
+					}
+				}
 			}
-			got, err := getCPUSetFromPod(tt.args.podAnnotations)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("getCPUSetFromPod() error = %v, wantErr %v", err, tt.wantErr)
+
+			err := UnsetPodCPUQuota(podCtx)
+			assert.Equal(t, err != nil, tt.wantErr)
+
+			if podCtx == nil {
 				return
 			}
-			if got != tt.want {
-				t.Errorf("getCPUSetFromPod() got = %v, want %v", got, tt.want)
+			if tt.wantCPUQuota == nil {
+				assert.Nil(t, podCtx.Response.Resources.CFSQuota, "cfs quota value should be nil")
+			} else {
+				podCtx.ReconcilerDone()
+				assert.Equal(t, *tt.wantCPUQuota, *podCtx.Response.Resources.CFSQuota, "pod cfs quota should be equal")
+				gotCPUQuota := getCPUQuota(podCtx.Request.CgroupParent, testHelper)
+				gotCPUQuotaStr, err := strconv.ParseInt(gotCPUQuota, 10, 64)
+				assert.NoError(t, err)
+				assert.Equal(t, *tt.wantCPUQuota, gotCPUQuotaStr, "pod cfs quota should be equal")
+			}
+		})
+	}
+}
+
+func TestUnsetContainerCPUQuota(t *testing.T) {
+	type args struct {
+		podAlloc *ext.ResourceStatus
+		proto    protocol.HooksProtocol
+	}
+	tests := []struct {
+		name         string
+		args         args
+		wantErr      bool
+		wantCPUQuota *int64
+	}{
+		{
+			name: "not change cfs quota with nil protocol",
+			args: args{
+				proto: nil,
+			},
+			wantErr:      true,
+			wantCPUQuota: nil,
+		},
+		{
+			name: "not change cfs quota by bad pod allocated format",
+			args: args{
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+						PodAnnotations: map[string]string{
+							ext.AnnotationResourceStatus: "bad-format",
+						},
+					},
+				},
+			},
+			wantErr:      true,
+			wantCPUQuota: nil,
+		},
+		{
+			name: "set cfs quota by pod allocated",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					CPUSet: "2-4",
+				},
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+					},
+				},
+			},
+			wantErr:      false,
+			wantCPUQuota: pointer.Int64Ptr(-1),
+		},
+		{
+			name: "not change cfs quota by pod allocated share pool",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					CPUSharedPools: []ext.CPUSharedPool{
+						{
+							Socket: 0,
+							Node:   0,
+						},
+					},
+				},
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+					},
+				},
+			},
+			wantErr:      false,
+			wantCPUQuota: nil,
+		},
+		{
+			name: "not change cfs quota for origin besteffort pod",
+			args: args{
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/besteffort/test-pod/test-container/",
+					},
+				},
+			},
+			wantErr:      false,
+			wantCPUQuota: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testHelper := system.NewFileTestUtil(t)
+			var containerCtx *protocol.ContainerContext
+
+			if tt.args.proto != nil {
+				containerCtx = tt.args.proto.(*protocol.ContainerContext)
+				initCPUQuota(containerCtx.Request.CgroupParent, "", testHelper)
+				if tt.args.podAlloc != nil {
+					podAllocJson := util.DumpJSON(tt.args.podAlloc)
+					containerCtx.Request.PodAnnotations = map[string]string{
+						ext.AnnotationResourceStatus: podAllocJson,
+					}
+				}
+			}
+
+			err := UnsetContainerCPUQuota(containerCtx)
+			assert.Equal(t, err != nil, tt.wantErr)
+
+			if containerCtx == nil {
+				return
+			}
+			if tt.wantCPUQuota == nil {
+				assert.Nil(t, containerCtx.Response.Resources.CFSQuota, "cfs quota value should be nil")
+			} else {
+				containerCtx.ReconcilerDone()
+				assert.Equal(t, *tt.wantCPUQuota, *containerCtx.Response.Resources.CFSQuota, "container cfs quota should be equal")
+				gotCPUQuota := getCPUQuota(containerCtx.Request.CgroupParent, testHelper)
+				gotCPUQuotaStr, err := strconv.ParseInt(gotCPUQuota, 10, 64)
+				assert.NoError(t, err)
+				assert.Equal(t, *tt.wantCPUQuota, gotCPUQuotaStr, "container cfs quota should be equal")
 			}
 		})
 	}
