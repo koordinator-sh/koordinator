@@ -40,15 +40,18 @@ import (
 
 func Test_syncNodeResourceTopology(t *testing.T) {
 	client := topologyclientsetfake.NewSimpleClientset()
-	r := &statesInformer{
-		topologyClient: client,
-	}
 	testNode := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test",
 		},
 	}
-	r.syncNodeResourceTopology(testNode)
+	r := &nodeTopoInformer{
+		topologyClient: client,
+		nodeInformer: &nodeInformer{
+			node: testNode,
+		},
+	}
+	r.createNodeTopoIfNotExist()
 
 	topologyName := testNode.Name
 
@@ -220,8 +223,10 @@ func Test_calGuaranteedCpu(t *testing.T) {
 	}
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &statesInformer{
-				podMap: tt.podMap,
+			s := &nodeTopoInformer{
+				podsInformer: &podsInformer{
+					podMap: tt.podMap,
+				},
 			}
 			podAllocs, err := s.calGuaranteedCpu(map[int32]*extension.CPUInfo{}, tt.checkpointContent)
 			assert.Equal(t, tt.expectedError, err != nil)
@@ -293,11 +298,16 @@ func Test_reportNodeTopology(t *testing.T) {
 		},
 	}
 	mockMetricCache.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(&mockNodeCPUInfo, nil).AnyTimes()
-	r := &statesInformer{
+	r := &nodeTopoInformer{
 		topologyClient: client,
-		metricsCache:   mockMetricCache,
-		podMap:         mockPodMeta,
-		node:           testNode,
+		metricCache:    mockMetricCache,
+		podsInformer: &podsInformer{
+			podMap: mockPodMeta,
+		},
+		nodeInformer: &nodeInformer{
+			node: testNode,
+		},
+		callbackRunner: NewCallbackRunner(),
 	}
 
 	getKubeletCommandlineFn = func(port int) ([]string, error) {

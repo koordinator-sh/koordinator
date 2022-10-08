@@ -17,342 +17,274 @@ limitations under the License.
 package statesinformer
 
 import (
-	"errors"
-	"net"
-	"os"
-	"path/filepath"
-	"strings"
+	"context"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
+	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	faketopologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clientsetfake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/apimachinery/pkg/util/wait"
+	fakeclientset "k8s.io/client-go/kubernetes/fake"
 
-	koordclientfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
+	fakeschedv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1/fake"
+	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 )
 
-func Test_genPodCgroupParentDirWithSystemdDriver(t *testing.T) {
-	system.SetupCgroupPathFormatter(system.Systemd)
-	defer system.SetupCgroupPathFormatter(system.Systemd)
-	tests := []struct {
-		name string
-		args *corev1.Pod
-		want string
-	}{
-		{
-			name: "Guaranteed",
-			args: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID: "111-222-333",
-				},
-				Status: corev1.PodStatus{
-					QOSClass: corev1.PodQOSGuaranteed,
-				},
-			},
-			want: "/kubepods-pod111_222_333.slice",
-		},
-		{
-			name: "BestEffort",
-			args: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID: "111-222-333",
-				},
-				Status: corev1.PodStatus{
-					QOSClass: corev1.PodQOSBestEffort,
-				},
-			},
-			want: "/kubepods-besteffort.slice/kubepods-besteffort-pod111_222_333.slice",
-		},
-		{
-			name: "Burstable",
-			args: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID: "111-222-333",
-				},
-				Status: corev1.PodStatus{
-					QOSClass: corev1.PodQOSBurstable,
-				},
-			},
-			want: "/kubepods-burstable.slice/kubepods-burstable-pod111_222_333.slice",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := filepath.Join("/", genPodCgroupParentDir(tt.args))
-			if tt.want != got {
-				t.Errorf("genPodCgroupParentDir want %v but got %v", tt.want, got)
-			}
-		})
-	}
-}
-
-func Test_genPodCgroupParentDirWithCgroupfsDriver(t *testing.T) {
-	system.SetupCgroupPathFormatter(system.Cgroupfs)
-	defer system.SetupCgroupPathFormatter(system.Systemd)
-	tests := []struct {
-		name string
-		args *corev1.Pod
-		want string
-	}{
-		{
-			name: "Guaranteed",
-			args: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID: "111-222-333",
-				},
-				Status: corev1.PodStatus{
-					QOSClass: corev1.PodQOSGuaranteed,
-				},
-			},
-			want: "/pod111-222-333",
-		},
-		{
-			name: "BestEffort",
-			args: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID: "111-222-333",
-				},
-				Status: corev1.PodStatus{
-					QOSClass: corev1.PodQOSBestEffort,
-				},
-			},
-			want: "/besteffort/pod111-222-333",
-		},
-		{
-			name: "Burstable",
-			args: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID: "111-222-333",
-				},
-				Status: corev1.PodStatus{
-					QOSClass: corev1.PodQOSBurstable,
-				},
-			},
-			want: "/burstable/pod111-222-333",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := filepath.Join("/", genPodCgroupParentDir(tt.args))
-			if tt.want != got {
-				t.Errorf("genPodCgroupParentDir want %v but got %v", tt.want, got)
-			}
-		})
-	}
-}
-
-func Test_statesInformer_syncNode(t *testing.T) {
-	testingNode := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   "test",
-			Labels: map[string]string{},
-		},
-	}
-
-	m := statesInformer{}
-	metrics.Register(testingNode)
-	defer metrics.Register(nil)
-
-	m.syncNode(testingNode)
-}
-
-type testKubeletStub struct {
-	pods corev1.PodList
-}
-
-func (t *testKubeletStub) GetAllPods() (corev1.PodList, error) {
-	return t.pods, nil
-}
-
-type testErrorKubeletStub struct {
-}
-
-func (t *testErrorKubeletStub) GetAllPods() (corev1.PodList, error) {
-	return corev1.PodList{}, errors.New("test error")
-}
-
-func Test_statesInformer_syncPods(t *testing.T) {
-	client := clientsetfake.NewSimpleClientset()
-	crdClient := koordclientfake.NewSimpleClientset()
-	pleg, _ := pleg.NewPLEG(system.Conf.CgroupRootDir)
-	stopCh := make(chan struct{}, 1)
-	defer close(stopCh)
-	testingNode := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   "test",
-			Labels: map[string]string{},
-		},
-	}
-	c := NewDefaultConfig()
-	c.KubeletSyncInterval = 60 * time.Second
-	m := NewStatesInformer(c, client, crdClient, nil, nil, pleg, "localhost", nil)
-	m.(*statesInformer).node = testingNode
-	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
-		Items: []corev1.Pod{
-			{},
-		},
-	}}
-
-	m.(*statesInformer).syncPods()
-	if len(m.(*statesInformer).GetAllPods()) != 1 {
-		t.Fatal("failed to update pods")
-	}
-
-	m.(*statesInformer).kubelet = &testErrorKubeletStub{}
-
-	err := m.(*statesInformer).syncPods()
-	if err == nil {
-		t.Fatalf("need not nil error, but get error %+v", err)
-	}
-}
-
-func Test_newKubeletStub(t *testing.T) {
-	testingNode := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   "test",
-			Labels: map[string]string{},
-		},
-		Status: corev1.NodeStatus{
-			DaemonEndpoints: corev1.NodeDaemonEndpoints{
-				KubeletEndpoint: corev1.DaemonEndpoint{
-					Port: 10250,
-				},
-			},
-			Addresses: []corev1.NodeAddress{
-				{Type: corev1.NodeInternalIP, Address: "127.0.0.1"},
-			},
-		},
-	}
-
-	dir := t.TempDir()
-	cfg := &rest.Config{
-		Host:        net.JoinHostPort("127.0.0.1", "10250"),
-		BearerToken: token,
-		TLSClientConfig: rest.TLSClientConfig{
-			Insecure: true,
-		},
-	}
-	setConfigs(t, dir)
-
-	kubeStub, _ := NewKubeletStub("127.0.0.1", 10250, "https", 10, cfg)
-	type args struct {
+func Test_statesInformer_GetNode(t *testing.T) {
+	type fields struct {
 		node *corev1.Node
-		cfg  *Config
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   *corev1.Node
+	}{
+		{
+			name: "get node info",
+			fields: fields{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node-name",
+						UID:  "test-node-uid",
+					},
+				},
+			},
+			want: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-name",
+					UID:  "test-node-uid",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeInformer := &nodeInformer{
+				node: tt.fields.node,
+			}
+			s := &statesInformer{
+				states: &pluginState{
+					informerPlugins: map[pluginName]informerPlugin{
+						nodeInformerName: nodeInformer,
+					},
+				},
+			}
+			if got := s.GetNode(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetNode() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_statesInformer_GetNodeSLO(t *testing.T) {
+	type fields struct {
+		nodeSLO *slov1alpha1.NodeSLO
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   *slov1alpha1.NodeSLO
+	}{
+		{
+			name: "get node slo",
+			fields: fields{
+				nodeSLO: &slov1alpha1.NodeSLO{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node-slo-name",
+						UID:  "test-node-slo-uid",
+					},
+				},
+			},
+			want: &slov1alpha1.NodeSLO{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-slo-name",
+					UID:  "test-node-slo-uid",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeSLOInformer := &nodeSLOInformer{
+				nodeSLO: tt.fields.nodeSLO,
+			}
+			s := &statesInformer{
+				states: &pluginState{
+					informerPlugins: map[pluginName]informerPlugin{
+						nodeSLOInformerName: nodeSLOInformer,
+					},
+				},
+			}
+			if got := s.GetNodeSLO(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetNodeSLO() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_statesInformer_GetNodeTopo(t *testing.T) {
+	type fields struct {
+		nodeTopo *topov1alpha1.NodeResourceTopology
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   *topov1alpha1.NodeResourceTopology
+	}{
+		{
+			name: "get node topo",
+			fields: fields{
+				nodeTopo: &topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-ndoe-topo-name",
+						UID:  "test-node-topo-uid",
+					},
+				},
+			},
+			want: &topov1alpha1.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-ndoe-topo-name",
+					UID:  "test-node-topo-uid",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeTopoInformer := &nodeTopoInformer{
+				nodeTopology: tt.fields.nodeTopo,
+			}
+			s := &statesInformer{
+				states: &pluginState{
+					informerPlugins: map[pluginName]informerPlugin{
+						nodeTopoInformerName: nodeTopoInformer,
+					},
+				},
+			}
+			if got := s.GetNodeTopo(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetNodeTopo() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_statesInformer_GetAllPods(t *testing.T) {
+	type fields struct {
+		podMap map[string]*PodMeta
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   []*PodMeta
+	}{
+		{
+			name: "get all pods",
+			fields: fields{
+				podMap: map[string]*PodMeta{
+					"test-pod": {
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "test-pod-name",
+								UID:  "test-pod-uid",
+							},
+						},
+						CgroupDir: "test-cgroup-dir",
+					},
+				},
+			},
+			want: []*PodMeta{
+				{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-pod-name",
+							UID:  "test-pod-uid",
+						},
+					},
+					CgroupDir: "test-cgroup-dir",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			podsInformer := &podsInformer{
+				podMap: tt.fields.podMap,
+			}
+			s := &statesInformer{
+				states: &pluginState{
+					informerPlugins: map[pluginName]informerPlugin{
+						podsInformerName: podsInformer,
+					},
+				},
+			}
+			if got := s.GetAllPods(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetAllPods() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_statesInformer_Run(t *testing.T) {
+	type fields struct {
+		config *Config
+		node   corev1.Node
 	}
 	tests := []struct {
 		name    string
-		args    args
-		want    KubeletStub
+		fields  fields
 		wantErr bool
 	}{
 		{
-			name: "NodeInternalIP",
-			args: args{
-				node: testingNode,
-				cfg: &Config{
-					KubeletPreferredAddressType: string(corev1.NodeInternalIP),
-					KubeletSyncTimeout:          10 * time.Second,
-					InsecureKubeletTLS:          true,
-					KubeletReadOnlyPort:         10250,
+			name: "run with default config",
+			fields: fields{
+				config: NewDefaultConfig(),
+				node: corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node-name",
+					},
+					Status: corev1.NodeStatus{
+						Addresses: []corev1.NodeAddress{
+							{
+								Type:    corev1.NodeInternalIP,
+								Address: "192.168.0.1",
+							},
+						},
+					},
 				},
 			},
-			want:    kubeStub,
-			wantErr: false,
-		},
-		{
-			name: "Empty IP",
-			args: args{
-				node: testingNode,
-				cfg: &Config{
-					KubeletPreferredAddressType: "",
-					KubeletSyncTimeout:          10 * time.Second,
-					InsecureKubeletTLS:          true,
-					KubeletReadOnlyPort:         10250,
-				},
-			},
-			want:    kubeStub,
-			wantErr: false,
-		},
-		{
-			name: "HTTPS",
-			args: args{
-				node: testingNode,
-				cfg: &Config{
-					KubeletPreferredAddressType: "",
-					KubeletSyncTimeout:          10 * time.Second,
-					InsecureKubeletTLS:          false,
-					KubeletReadOnlyPort:         10250,
-				},
-			},
-			want:    nil,
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := newKubeletStubFromConfig(tt.args.node, tt.args.cfg)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("newKubeletStub() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if tt.wantErr && got != nil {
-				t.Errorf("newKubeletStub() = %v, want %v", got, tt.want)
+			kubeClient := fakeclientset.NewSimpleClientset()
+			kubeClient.CoreV1().Nodes().Create(context.TODO(), &tt.fields.node, metav1.CreateOptions{})
+			koordClient := fakekoordclientset.NewSimpleClientset()
+			topoClient := faketopologyclientset.NewSimpleClientset()
+			ctrl := gomock.NewController(t)
+			metricCache := mock_metriccache.NewMockMetricCache(ctrl)
+			nodeName := tt.fields.node.Name
+			schedClient := &fakeschedv1alpha1.FakeSchedulingV1alpha1{}
+			si := NewStatesInformer(tt.fields.config, kubeClient, koordClient, topoClient, metricCache, nodeName, schedClient)
+			s := si.(*statesInformer)
+			// pods informer needs a fake kubelet stub
+			delete(s.states.informerPlugins, podsInformerName)
+			delete(s.states.informerPlugins, nodeTopoInformerName)
+			stopChannel := make(chan struct{}, 1)
+			go wait.Until(func() {
+				if s.started.Load() {
+					close(stopChannel)
+				}
+			}, time.Second, stopChannel)
+			if err := s.Run(stopChannel); (err != nil) != tt.wantErr {
+				t.Errorf("Run() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
-}
-
-func setConfigs(t *testing.T, dir string) {
-	// Set KUBECONFIG env value
-	kubeconfigEnvPath := filepath.Join(dir, "kubeconfig-text-context")
-	os.WriteFile(kubeconfigEnvPath, []byte(genKubeconfig("from-env")), 0644)
-	t.Setenv(clientcmd.RecommendedConfigPathEnvVar, kubeconfigEnvPath)
-}
-
-func genKubeconfig(contexts ...string) string {
-	var sb strings.Builder
-	sb.WriteString("---\napiVersion: v1\nkind: Config\nclusters:\n")
-	for _, ctx := range contexts {
-		sb.WriteString("- cluster:\n    server: " + ctx + "\n  name: " + ctx + "\n")
-	}
-	sb.WriteString("contexts:\n")
-	for _, ctx := range contexts {
-		sb.WriteString("- context:\n    cluster: " + ctx + "\n    user: " + ctx + "\n  name: " + ctx + "\n")
-	}
-
-	sb.WriteString("users:\n")
-	for _, ctx := range contexts {
-		sb.WriteString("- name: " + ctx + "\n")
-	}
-	sb.WriteString("preferences: {}\n")
-	if len(contexts) > 0 {
-		sb.WriteString("current-context: " + contexts[0] + "\n")
-	}
-	return sb.String()
-}
-
-func Test_statesInformer_syncKubeletLoop(t *testing.T) {
-	client := clientsetfake.NewSimpleClientset()
-	crdClient := koordclientfake.NewSimpleClientset()
-	pleg, _ := pleg.NewPLEG(system.Conf.CgroupRootDir)
-	stopCh := make(chan struct{}, 1)
-
-	c := NewDefaultConfig()
-	c.KubeletSyncInterval = 3 * time.Second
-
-	m := NewStatesInformer(c, client, crdClient, nil, nil, pleg, "localhost", nil)
-	m.(*statesInformer).kubelet = &testKubeletStub{pods: corev1.PodList{
-		Items: []corev1.Pod{
-			{},
-		},
-	}}
-	go m.(*statesInformer).syncKubeletLoop(c.KubeletSyncInterval, stopCh)
-	time.Sleep(5 * time.Second)
-	close(stopCh)
 }
