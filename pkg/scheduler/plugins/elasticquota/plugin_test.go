@@ -579,8 +579,10 @@ func defaultCreateNode(nodeName string) *corev1.Node {
 
 func createResourceList(cpu, mem int64) corev1.ResourceList {
 	return corev1.ResourceList{
-		corev1.ResourceCPU:    *resource.NewQuantity(cpu, resource.DecimalSI),
-		corev1.ResourceMemory: *resource.NewQuantity(mem, resource.DecimalSI),
+		// use NewMilliQuantity to calculate the runtimeQuota correctly in cpu dimension
+		// when the request is smaller than 1 core.
+		corev1.ResourceCPU:    *resource.NewMilliQuantity(cpu*1000, resource.DecimalSI),
+		corev1.ResourceMemory: *resource.NewQuantity(mem, resource.BinarySI),
 	}
 }
 

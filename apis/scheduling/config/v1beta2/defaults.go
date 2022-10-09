@@ -73,7 +73,7 @@ var (
 
 	defaultQuotaGroupNamespace = "koordinator-system"
 
-	defaultMonitorAllQuotas = pointer.Bool(true)
+	defaultMonitorAllQuotas = pointer.Bool(false)
 
 	defaultTimeout           = 600 * time.Second
 	defaultControllerWorkers = 1

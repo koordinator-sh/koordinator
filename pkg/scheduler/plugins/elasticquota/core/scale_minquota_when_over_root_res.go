@@ -139,11 +139,11 @@ func (s *ScaleMinQuotaManager) getScaledMinQuota(newTotalRes v1.ResourceList, pa
 
 			newMinQuotaValue := int64(0)
 			if enableTotalValue.Value() > 0 {
-				newMinQuotaValue = int64(float64(needScaleTotal.Value()) *
-					float64(originalMinQuotaValue.Value()) / float64(enableTotalValue.Value()))
+				newMinQuotaValue = int64(float64(getQuantityValue(needScaleTotal, resourceDimension)) *
+					float64(getQuantityValue(*originalMinQuotaValue, resourceDimension)) / float64(getQuantityValue(*enableTotalValue, resourceDimension)))
 			}
 
-			newMinQuota[resourceDimension] = *resource.NewQuantity(newMinQuotaValue, resource.DecimalSI)
+			newMinQuota[resourceDimension] = createQuantity(newMinQuotaValue, resourceDimension)
 		}
 	}
 	return true, newMinQuota

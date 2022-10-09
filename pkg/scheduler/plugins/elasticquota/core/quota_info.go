@@ -21,7 +21,6 @@ import (
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	resourcev1 "k8s.io/kubernetes/pkg/api/v1/resource"
@@ -186,14 +185,14 @@ func (qi *QuotaInfo) getLimitRequestNoLock() v1.ResourceList {
 func (qi *QuotaInfo) addRequestNonNegativeNoLock(delta v1.ResourceList) {
 	qi.CalculateInfo.Request = quotav1.Add(qi.CalculateInfo.Request, delta)
 	for _, resName := range quotav1.IsNegative(qi.CalculateInfo.Request) {
-		qi.CalculateInfo.Request[resName] = *resource.NewQuantity(0, resource.DecimalSI)
+		qi.CalculateInfo.Request[resName] = createQuantity(0, resName)
 	}
 }
 
 func (qi *QuotaInfo) addUsedNonNegativeNoLock(delta v1.ResourceList) {
 	qi.CalculateInfo.Used = quotav1.Add(qi.CalculateInfo.Used, delta)
 	for _, resName := range quotav1.IsNegative(qi.CalculateInfo.Used) {
-		qi.CalculateInfo.Used[resName] = *resource.NewQuantity(0, resource.DecimalSI)
+		qi.CalculateInfo.Used[resName] = createQuantity(0, resName)
 	}
 }
 
