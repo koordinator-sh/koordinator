@@ -106,7 +106,7 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) (utils.CallHoo
 	if err != nil {
 		return utils.Unknown, err
 	}
-	if exist := IsKeyValExistInAnnotations(c.GetPodAnnotations(), options.RuntimeHookServerKey, options.RuntimeHookServerVal); exist {
+	if exist := IsKeyValExistInLabels(c.GetPodLabels(), options.RuntimeHookServerKey, options.RuntimeHookServerVal); exist {
 		return utils.ShouldNotCallHookPluginAlways, nil
 	}
 	return utils.ShouldCallHookPlugin, nil

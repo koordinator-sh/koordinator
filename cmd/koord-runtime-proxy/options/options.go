@@ -26,7 +26,7 @@ const (
 	BackendRuntimeModeDocker     = "Docker"
 	DefaultBackendRuntimeMode    = BackendRuntimeModeContainerd
 
-	DefaultHookServerKey = "runtimeproxy.koordinator.sh/is-hookserver"
+	DefaultHookServerKey = "runtimeproxy.koordinator.sh/skip-hookserver"
 	DefaultHookServerVal = "true"
 )
 

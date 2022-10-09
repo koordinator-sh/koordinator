@@ -19,6 +19,8 @@ package types
 import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+
+	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/options"
 )
 
 const (
@@ -32,4 +34,11 @@ type ConfigWrapper struct {
 	*container.Config
 	HostConfig       *container.HostConfig
 	NetworkingConfig *network.NetworkingConfig
+}
+
+func SkipRuntimeHook(labels map[string]string) bool {
+	if val, ok := labels[options.RuntimeHookServerKey]; ok && val == options.RuntimeHookServerVal {
+		return true
+	}
+	return false
 }
