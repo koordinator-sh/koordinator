@@ -498,6 +498,8 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 				if err != nil {
 					t.Errorf("retry pgClient Get PodGroup err: %v", err)
 				} else {
+					targetPg.Status.ScheduleStartTime = metav1.Time{}
+					pg.Status.ScheduleStartTime = metav1.Time{}
 					assert.Equal(t, targetPg, pg)
 				}
 			}
