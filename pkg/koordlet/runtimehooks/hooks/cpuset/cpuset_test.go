@@ -45,6 +45,75 @@ func getCPUQuota(dirWithKube string, helper *system.FileTestUtil) string {
 	return helper.ReadCgroupFileContents(dirWithKube, system.CPUCFSQuota)
 }
 
+func Test_cpusetPlugin_Register(t *testing.T) {
+	t.Run("test not panic", func(t *testing.T) {
+		testRule := &cpusetRule{
+			sharePools: []ext.CPUSharedPool{
+				{
+					Socket: 0,
+					Node:   0,
+					CPUSet: "0-7",
+				},
+				{
+					Socket: 1,
+					Node:   0,
+					CPUSet: "8-15",
+				},
+			},
+		}
+		p := &cpusetPlugin{
+			rule: testRule,
+		}
+
+		p.Register()
+	})
+}
+
+func Test_cpusetPlugin_SetContainerCPUSetAndUnsetCFS(t *testing.T) {
+	t.Run("test not panic", func(t *testing.T) {
+		testRule := &cpusetRule{
+			sharePools: []ext.CPUSharedPool{
+				{
+					Socket: 0,
+					Node:   0,
+					CPUSet: "0-7",
+				},
+				{
+					Socket: 1,
+					Node:   0,
+					CPUSet: "8-15",
+				},
+			},
+		}
+		p := &cpusetPlugin{
+			rule: testRule,
+		}
+
+		var testNilProto *protocol.ContainerContext
+		err := p.SetContainerCPUSetAndUnsetCFS(testNilProto)
+		assert.Error(t, err)
+
+		testProto := &protocol.ContainerContext{
+			Request: protocol.ContainerRequest{
+				CgroupParent: "kubepods/test-pod/test-container/",
+			},
+		}
+		err = p.SetContainerCPUSetAndUnsetCFS(testProto)
+		assert.NoError(t, err)
+
+		testInvalidProto := &protocol.ContainerContext{
+			Request: protocol.ContainerRequest{
+				CgroupParent: "kubepods/test-pod/test-container/",
+				PodAnnotations: map[string]string{
+					ext.AnnotationResourceStatus: "bad-format",
+				},
+			},
+		}
+		err = p.SetContainerCPUSetAndUnsetCFS(testInvalidProto)
+		assert.Error(t, err)
+	})
+}
+
 func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 	type fields struct {
 		rule *cpusetRule
