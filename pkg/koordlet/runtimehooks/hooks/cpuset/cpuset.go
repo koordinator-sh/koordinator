@@ -45,20 +45,16 @@ type cpusetPlugin struct {
 
 func (p *cpusetPlugin) Register() {
 	klog.V(5).Infof("register hook %v", name)
-	hooks.Register(rmconfig.PreCreateContainer, name, description, p.SetContainerCPUSet)
-	hooks.Register(rmconfig.PreUpdateContainerResources, name, description, p.SetContainerCPUSet)
-	hooks.Register(rmconfig.PreRunPodSandbox, name, "unset pod cpu quota", UnsetPodCPUQuota)
-	hooks.Register(rmconfig.PreCreateContainer, name, "unset container cpu quota", UnsetContainerCPUQuota)
-	hooks.Register(rmconfig.PreUpdateContainerResources, name, "unset container cpu quota", UnsetContainerCPUQuota)
+	hooks.Register(rmconfig.PreCreateContainer, name, description, p.SetContainerCPUSetAndUnsetCFS)
+	hooks.Register(rmconfig.PreUpdateContainerResources, name, description, p.SetContainerCPUSetAndUnsetCFS)
+	hooks.Register(rmconfig.PreRunPodSandbox, name, "unset pod cpu quota if needed", UnsetPodCPUQuota)
 	rule.Register(name, description,
 		rule.WithParseFunc(statesinformer.RegisterTypeNodeTopology, p.parseRule),
 		rule.WithUpdateCallback(p.ruleUpdateCb))
-	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSet, p.SetContainerCPUSet,
-		"set container cpuset")
+	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSet, p.SetContainerCPUSetAndUnsetCFS,
+		"set container cpuset and unset container cpu quota if needed")
 	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUCFSQuota, UnsetPodCPUQuota,
-		"unset pod cpu quota")
-	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUCFSQuota, UnsetContainerCPUQuota,
-		"unset container cpu quota")
+		"unset pod cpu quota if needed")
 }
 
 var singleton *cpusetPlugin
@@ -68,6 +64,17 @@ func Object() *cpusetPlugin {
 		singleton = &cpusetPlugin{}
 	}
 	return singleton
+}
+
+func (p *cpusetPlugin) SetContainerCPUSetAndUnsetCFS(proto protocol.HooksProtocol) error {
+	// set container-level cpuset.cpus
+	err := p.SetContainerCPUSet(proto)
+	if err != nil {
+		return err
+	}
+
+	// unset container-level cpu.cfs_quota_us if needed
+	return UnsetContainerCPUQuota(proto)
 }
 
 func (p *cpusetPlugin) SetContainerCPUSet(proto protocol.HooksProtocol) error {
