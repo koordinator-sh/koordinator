@@ -39,14 +39,6 @@ const (
 	GigaByte = 1024 * 1048576
 )
 
-func setLoglevel(logLevel string) {
-	var level klog.Level
-	if err := level.Set(logLevel); err != nil {
-		fmt.Printf("failed set klog.logging.verbosity %v: %v", 5, err)
-	}
-	fmt.Printf("successfully set klog.logging.verbosity to %v", 5)
-}
-
 func TestGroupQuotaManager_QuotaAdd(t *testing.T) {
 	gqm := NewGroupQuotaManager4Test()
 	gqm.UpdateClusterTotalResource(createResourceList(10000000, 3000*GigaByte))
@@ -150,7 +142,6 @@ func TestGroupQuotaManager_UpdateQuotaInternal(t *testing.T) {
 func TestGroupQuotaManager_UpdateQuotaInternalAndRequest(t *testing.T) {
 	gqm := NewGroupQuotaManager4Test()
 
-	setLoglevel("3")
 	deltaRes := createResourceList(96, 160*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
 	assert.Equal(t, deltaRes, gqm.totalResource)
@@ -476,22 +467,22 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota1(t *testin
 	gqm.RefreshRuntime("b")
 	gqm.RefreshRuntime("c")
 	runtime = gqm.RefreshRuntime("a")
-	assert.Equal(t, createResourceList(67, 200*GigaByte/3+1), runtime)
+	assert.Equal(t, createResourceList2(66667, 200*GigaByte/3+1), runtime)
 	// after group "c" refreshRuntime, the runtime of "a" and "b" has changed
-	assert.Equal(t, createResourceList(67, 200*GigaByte/3+1), gqm.RefreshRuntime("a"))
-	assert.Equal(t, createResourceList(67, 200*GigaByte/3+1), gqm.RefreshRuntime("b"))
+	assert.Equal(t, createResourceList2(66667, 200*GigaByte/3+1), gqm.RefreshRuntime("a"))
+	assert.Equal(t, createResourceList2(66667, 200*GigaByte/3+1), gqm.RefreshRuntime("b"))
 
 	quotaInfo := gqm.GetQuotaInfoByName("p")
 	assert.Equal(t, createResourceList(200, 200*GigaByte), quotaInfo.CalculateInfo.AutoScaleMin)
 
 	quotaInfo = gqm.GetQuotaInfoByName("a")
-	assert.Equal(t, createResourceList(66, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
+	assert.Equal(t, createResourceList2(66666, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
 
 	quotaInfo = gqm.GetQuotaInfoByName("b")
-	assert.Equal(t, createResourceList(66, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
+	assert.Equal(t, createResourceList2(66666, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
 
 	quotaInfo = gqm.GetQuotaInfoByName("c")
-	assert.Equal(t, createResourceList(66, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
+	assert.Equal(t, createResourceList2(66666, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
 
 	// large
 	deltaRes = createResourceList(400, 400*GigaByte)
@@ -560,13 +551,13 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota2(t *testin
 	assert.Equal(t, createResourceList(200, 200*GigaByte), quotaInfo.CalculateInfo.AutoScaleMin)
 
 	quotaInfo = gqm.GetQuotaInfoByName("a")
-	assert.Equal(t, createResourceList(66, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
+	assert.Equal(t, createResourceList2(66666, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
 
 	quotaInfo = gqm.GetQuotaInfoByName("b")
-	assert.Equal(t, createResourceList(66, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
+	assert.Equal(t, createResourceList2(66666, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
 
 	quotaInfo = gqm.GetQuotaInfoByName("c")
-	assert.Equal(t, createResourceList(66, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
+	assert.Equal(t, createResourceList2(66666, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
 }
 
 func TestGroupQuotaManager_MultiUpdateQuotaUsed(t *testing.T) {
@@ -861,9 +852,7 @@ func TestGroupQuotaManager_MultiChildMaxGreaterParentMax(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateQuotaTreeDimension_UpdateQuota(t *testing.T) {
-	setLoglevel("3")
 	gqm := NewGroupQuotaManager4Test()
-
 	info3 := CreateQuota("3", extension.RootQuotaName, 1000, 10000, 100, 1000, true, false)
 	info3.Spec.Max["tmp"] = *resource.NewQuantity(1, resource.DecimalSI)
 	res := createResourceList(1000, 10000)

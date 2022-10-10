@@ -157,7 +157,7 @@ func TestQuotaOverUsedRevokeController_GetToMonitorQuotas(t *testing.T) {
 	gqm := plugin.groupQuotaManager
 	gqm.UpdateClusterTotalResource(createResourceList(10850060000, 0))
 	cc := NewQuotaOverUsedRevokeController(plugin.handle.ClientSet(), 0*time.Second,
-		plugin.pluginArgs.RevokePodInterval.Duration, plugin.groupQuotaManager, *plugin.pluginArgs.MonitorAllQuotas)
+		plugin.pluginArgs.RevokePodInterval.Duration, plugin.groupQuotaManager, true)
 
 	suit.AddQuota("test1", "root", 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
 	suit.AddQuota("test2", "root", 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
