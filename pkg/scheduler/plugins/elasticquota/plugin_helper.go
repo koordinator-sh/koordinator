@@ -37,6 +37,9 @@ import (
 func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
 	quotaName := pod.Labels[extension.LabelQuotaName]
 	if quotaName == "" {
+		quotaName = pod.Labels[extension.LabelQuotaId]
+	}
+	if quotaName == "" {
 		list, err := g.quotaLister.ElasticQuotas(pod.Namespace).List(labels.Everything())
 		if err != nil {
 			runtime.HandleError(err)

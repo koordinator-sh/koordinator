@@ -18,9 +18,13 @@ package extension
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
@@ -73,6 +77,10 @@ const (
 
 	GangModeStrict    = "Strict"
 	GangModeNonStrict = "NonStrict"
+
+	LabelGangPrefix = "pod-group.scheduling.sigs.k8s.io"
+	LabelGangName   = LabelGangPrefix + "/name"
+	LabelGangMinNum = LabelGangPrefix + "/min-available"
 )
 
 // CustomUsageThresholds supports user-defined node resource utilization thresholds.
@@ -191,6 +199,21 @@ func SetDeviceAllocations(pod *corev1.Pod, allocations DeviceAllocations) error 
 		return err
 	}
 
+	var deviceMinors []string
+	for deviceType, deviceAllocations := range allocations {
+		if deviceType != schedulingv1alpha1.GPU {
+			continue
+		}
+		for _, deviceAlloc := range deviceAllocations {
+			deviceMinors = append(deviceMinors, fmt.Sprintf("%v", deviceAlloc.Minor))
+		}
+	}
+	envResourceIndex := strings.Join(deviceMinors, ",")
+
+	pod.Annotations[AnnotationEnvResourceIndex] = envResourceIndex
+	pod.Annotations[AnnotationEnvAssignedFlag] = "false"
+	pod.Annotations[AnnotationEnvResourceAssumeTime] = fmt.Sprintf("%v", time.Now().UnixNano())
+	klog.Infof("patch pod:%v, Annotations:%v", pod.Name, pod.Annotations)
 	pod.Annotations[AnnotationDeviceAllocated] = string(data)
 	return nil
 }

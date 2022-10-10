@@ -33,10 +33,11 @@ const (
 	gpuCoreExist
 	gpuMemoryExist
 	gpuMemoryRatioExist
+	gpuComputeExist
 )
 
 var deviceResourceNames = map[schedulingv1alpha1.DeviceType][]corev1.ResourceName{
-	schedulingv1alpha1.GPU:  {apiext.NvidiaGPU, apiext.KoordGPU, apiext.GPUCore, apiext.GPUMemory, apiext.GPUMemoryRatio},
+	schedulingv1alpha1.GPU:  {apiext.NvidiaGPU, apiext.KoordGPU, apiext.GPUCore, apiext.GPUMemory, apiext.GPUMemoryRatio, apiext.DeprecatedGpuMilliCoreName},
 	schedulingv1alpha1.RDMA: {apiext.KoordRDMA},
 	schedulingv1alpha1.FPGA: {apiext.KoordFPGA},
 }
@@ -109,11 +110,18 @@ func validateGPURequest(podRequest corev1.ResourceList) (uint, error) {
 		}
 		gpuCombination |= gpuMemoryRatioExist
 	}
+	if gpuCompute, exist := podRequest[apiext.DeprecatedGpuMilliCoreName]; exist {
+		if gpuCompute.Value() > 100 && gpuCompute.Value()%100 != 0 {
+			return gpuCombination, fmt.Errorf("failed to validate %v: %v", apiext.DeprecatedGpuMilliCoreName, gpuCompute.Value())
+		}
+		gpuCombination |= gpuComputeExist
+	}
 
 	if gpuCombination == (nvidiaGpuExist) ||
 		gpuCombination == (koordGpuExist) ||
 		gpuCombination == (gpuCoreExist|gpuMemoryExist) ||
-		gpuCombination == (gpuCoreExist|gpuMemoryRatioExist) {
+		gpuCombination == (gpuCoreExist|gpuMemoryRatioExist) ||
+		gpuCombination == (gpuComputeExist) {
 		return gpuCombination, nil
 	}
 
@@ -175,6 +183,11 @@ func convertGPUResource(podRequest corev1.ResourceList, combination uint) corev1
 		return corev1.ResourceList{
 			apiext.GPUCore:        *resource.NewQuantity(nvidiaGpu.Value()*100, resource.DecimalSI),
 			apiext.GPUMemoryRatio: *resource.NewQuantity(nvidiaGpu.Value()*100, resource.DecimalSI),
+		}
+	case gpuComputeExist:
+		return corev1.ResourceList{
+			apiext.GPUCore:        podRequest[apiext.DeprecatedGpuMilliCoreName],
+			apiext.GPUMemoryRatio: podRequest[apiext.DeprecatedGpuMilliCoreName],
 		}
 	}
 	return nil

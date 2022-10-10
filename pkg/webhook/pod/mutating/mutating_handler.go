@@ -70,6 +70,10 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
+	if obj.Spec.SchedulerName == "default-scheduler" {
+		obj.Spec.SchedulerName = "koord-scheduler"
+	}
+
 	if reflect.DeepEqual(obj, clone) {
 		return admission.Allowed("")
 	}

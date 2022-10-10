@@ -218,6 +218,14 @@ func Test_validateGPURequest(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "invalid gpu request 5",
+			podRequest: corev1.ResourceList{
+				apiext.DeprecatedGpuMilliCoreName: resource.MustParse("101"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
 			name: "valid gpu request 1",
 			podRequest: corev1.ResourceList{
 				apiext.NvidiaGPU: resource.MustParse("2"),
@@ -249,6 +257,14 @@ func Test_validateGPURequest(t *testing.T) {
 				apiext.GPUMemoryRatio: resource.MustParse("200"),
 			},
 			want:    gpuCoreExist | gpuMemoryRatioExist,
+			wantErr: false,
+		},
+		{
+			name: "valid gpu request 5",
+			podRequest: corev1.ResourceList{
+				apiext.DeprecatedGpuMilliCoreName: resource.MustParse("200"),
+			},
+			want:    gpuComputeExist,
 			wantErr: false,
 		},
 	}
@@ -404,6 +420,19 @@ func Test_convertGPUResource(t *testing.T) {
 			want: corev1.ResourceList{
 				apiext.GPUCore:   resource.MustParse("50"),
 				apiext.GPUMemory: resource.MustParse("32Gi"),
+			},
+		},
+		{
+			name: "gpuComputeExist",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.DeprecatedGpuMilliCoreName: resource.MustParse("50"),
+				},
+				gpuCombination: gpuComputeExist,
+			},
+			want: corev1.ResourceList{
+				apiext.GPUCore:        resource.MustParse("50"),
+				apiext.GPUMemoryRatio: resource.MustParse("50"),
 			},
 		},
 	}

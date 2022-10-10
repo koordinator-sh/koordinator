@@ -35,6 +35,7 @@ const (
 	LabelQuotaParent       = QuotaKoordinatorPrefix + "/parent"
 	LabelAllowLentResource = QuotaKoordinatorPrefix + "/allow-lent-resource"
 	LabelQuotaName         = QuotaKoordinatorPrefix + "/name"
+	LabelQuotaId           = "quota-id"
 	AnnotationSharedWeight = QuotaKoordinatorPrefix + "/shared-weight"
 	AnnotationRuntime      = QuotaKoordinatorPrefix + "/runtime"
 	AnnotationRequest      = QuotaKoordinatorPrefix + "/request"

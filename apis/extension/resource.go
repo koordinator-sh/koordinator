@@ -42,6 +42,8 @@ const (
 	GPUCore        corev1.ResourceName = ResourceDomainPrefix + "gpu-core"
 	GPUMemory      corev1.ResourceName = ResourceDomainPrefix + "gpu-memory"
 	GPUMemoryRatio corev1.ResourceName = ResourceDomainPrefix + "gpu-memory-ratio"
+
+	DeprecatedGpuMilliCoreName = "aliyun.com/gpu-compute"
 )
 
 const (
@@ -51,6 +53,11 @@ const (
 	// AnnotationResourceStatus represents resource allocation result.
 	// koord-scheduler patch Pod with the annotation before binding to node.
 	AnnotationResourceStatus = SchedulingDomainPrefix + "/resource-status"
+
+	// AnnotationEnvResourceIndex represents the minor of the gpuAllocation in order to adapt to gpuShare-device-plugin
+	AnnotationEnvResourceIndex      = "ALIYUN_COM_GPU_MEM_IDX"
+	AnnotationEnvAssignedFlag       = "ALIYUN_COM_GPU_ASSIGNED"
+	AnnotationEnvResourceAssumeTime = "ALIYUN_COM_GPU_MEM_ASSUME_TIME"
 )
 
 var (
