@@ -99,33 +99,36 @@ func (gangCache *GangCache) onPodAdd(obj interface{}) {
 	gangNamespace := pod.Namespace
 	gangId := util.GetId(gangNamespace, gangName)
 	gang := gangCache.getGangFromCacheByGangId(gangId, true)
+
 	// the gang is created in Annotation way
+	shouldCreatePg := false
 	if _, exist := pod.Labels[v1alpha1.PodGroupLabel]; !exist {
-		shouldCreatePg := gang.tryInitByPodConfig(pod, gangCache.pluginArgs)
-		if shouldCreatePg {
-			pg, _ := gangCache.pgLister.PodGroups(gangNamespace).Get(gangName)
-			// cluster doesn't have the podGroup
-			if pg == nil {
-				pgFromAnnotation := generateNewPodGroup(gang, pod)
-				err := retry.OnError(
-					retry.DefaultRetry,
-					errors.IsTooManyRequests,
-					func() error {
-						_, err := gangCache.pgClient.SchedulingV1alpha1().PodGroups(pod.Namespace).Create(context.TODO(), pgFromAnnotation, metav1.CreateOptions{})
-						return err
-					})
-				if err != nil {
-					klog.Errorf("Create podGroup by pod's annotations error, pod: %v, err: %v ", util.GetId(pod.Namespace, pod.Name), err)
-				} else {
-					klog.Infof("Create podGroup by pod's annotations success, pg: %v, pod: %v", gangId, util.GetId(pod.Namespace, pod.Name))
-				}
-			}
-		}
+		shouldCreatePg = gang.tryInitByPodConfig(pod, gangCache.pluginArgs)
 	}
 	gang.setChild(pod)
 	if pod.Spec.NodeName != "" {
 		gang.addBoundPod(pod)
 		gang.setResourceSatisfied()
+	}
+
+	if shouldCreatePg {
+		pg, _ := gangCache.pgLister.PodGroups(gangNamespace).Get(gangName)
+		// cluster doesn't have the podGroup
+		if pg == nil {
+			pgFromAnnotation := generateNewPodGroup(gang, pod)
+			err := retry.OnError(
+				retry.DefaultRetry,
+				errors.IsTooManyRequests,
+				func() error {
+					_, err := gangCache.pgClient.SchedulingV1alpha1().PodGroups(pod.Namespace).Create(context.TODO(), pgFromAnnotation, metav1.CreateOptions{})
+					return err
+				})
+			if err != nil {
+				klog.Errorf("Create podGroup by pod's annotations error, pod: %v, err: %v ", util.GetId(pod.Namespace, pod.Name), err)
+			} else {
+				klog.Infof("Create podGroup by pod's annotations success, pg: %v, pod: %v", gangId, util.GetId(pod.Namespace, pod.Name))
+			}
+		}
 	}
 }
 
@@ -225,6 +228,9 @@ func generateNewPodGroup(gang *Gang, pod *v1.Pod) *v1alpha1.PodGroup {
 		Spec: v1alpha1.PodGroupSpec{
 			ScheduleTimeoutSeconds: pointer.Int32(int32(gang.getGangWaitTime() / time.Second)),
 			MinMember:              int32(gang.getGangMinNum()),
+		},
+		Status: v1alpha1.PodGroupStatus{
+			ScheduleStartTime: metav1.Now(),
 		},
 	}
 	return pg
