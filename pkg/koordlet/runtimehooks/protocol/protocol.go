@@ -67,6 +67,14 @@ func (r *Resources) IsOriginResSet() bool {
 	return r.CPUShares != nil || r.CFSQuota != nil || r.CPUSet != nil
 }
 
+func injectCPUShares(cgroupParent string, cpuShares int64) error {
+	cpuShareStr := strconv.FormatInt(cpuShares, 10)
+	if err := sysutil.CgroupFileWrite(cgroupParent, sysutil.CPUShares, cpuShareStr); err != nil {
+		return err
+	}
+	return nil
+}
+
 func injectCPUSet(cgroupParent string, cpuset string) error {
 	if err := sysutil.CgroupFileWrite(cgroupParent, sysutil.CPUSet, cpuset); err != nil {
 		return err

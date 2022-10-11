@@ -65,6 +65,17 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 			break
 		}
 	}
+	for _, containerSpec := range podMeta.Pod.Spec.Containers {
+		if containerSpec.Name == containerName {
+			if c.ContainerEnvs == nil {
+				c.ContainerEnvs = map[string]string{}
+			}
+			for _, envVar := range containerSpec.Env {
+				c.ContainerEnvs[envVar.Name] = envVar.Value
+			}
+			break
+		}
+	}
 	c.PodLabels = podMeta.Pod.Labels
 	c.PodAnnotations = podMeta.Pod.Annotations
 	c.CgroupParent, _ = util.GetContainerCgroupPathWithKubeByID(podMeta.CgroupDir, c.ContainerMeta.ID)
@@ -118,6 +129,18 @@ func (c *ContainerContext) ReconcilerDone() {
 }
 
 func (c *ContainerContext) injectForOrigin() {
+	if c.Response.Resources.CPUShares != nil {
+		if err := injectCPUShares(c.Request.CgroupParent, *c.Response.Resources.CPUShares); err != nil {
+			klog.Infof("set container %v/%v/%v cpu share %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
+				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CPUShares, c.Request.CgroupParent, err)
+		} else {
+			klog.V(5).Infof("set container %v/%v/%v cpu share %v on cgroup parent %v",
+				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
+				*c.Response.Resources.CPUShares, c.Request.CgroupParent)
+			audit.V(2).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
+				"set container cpu share to %v", *c.Response.Resources.CPUShares).Do()
+		}
+	}
 	if c.Response.Resources.CPUSet != nil {
 		if err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet); err != nil {
 			klog.Infof("set container %v/%v/%v cpuset %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
