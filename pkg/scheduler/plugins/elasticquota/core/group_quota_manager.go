@@ -594,8 +594,23 @@ func (gqm *GroupQuotaManager) GetQuotaSummary(quotaName string) (*QuotaInfoSumma
 		return nil, false
 	}
 
-	runtime := gqm.RefreshRuntimeNoLock(quotaName)
 	quotaSummary := quotaInfo.GetQuotaSummary()
+	runtime := gqm.RefreshRuntimeNoLock(quotaName)
 	quotaSummary.Runtime = runtime.DeepCopy()
 	return quotaSummary, true
+}
+
+func (gqm *GroupQuotaManager) GetQuotaSummaries() map[string]*QuotaInfoSummary {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	result := make(map[string]*QuotaInfoSummary)
+	for quotaName, quotaInfo := range gqm.quotaInfoMap {
+		quotaSummary := quotaInfo.GetQuotaSummary()
+		runtime := gqm.RefreshRuntimeNoLock(quotaName)
+		quotaSummary.Runtime = runtime.DeepCopy()
+		result[quotaName] = quotaSummary
+	}
+
+	return result
 }

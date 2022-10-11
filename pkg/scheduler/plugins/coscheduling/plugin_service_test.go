@@ -99,14 +99,28 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 		GangFrom:                 core.GangFromPodAnnotation,
 		HasGangInit:              true,
 	}
-	engine := gin.Default()
-	gp.RegisterEndpoints(engine.Group("/"))
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/gang/ganga_ns/ganga", nil)
-	engine.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
-	gangMarshal := &core.GangSummary{}
-	err = json.NewDecoder(w.Result().Body).Decode(gangMarshal)
-	assert.NoError(t, err)
-	assert.Equal(t, &gangExpected, gangMarshal)
+	{
+		engine := gin.Default()
+		gp.RegisterEndpoints(engine.Group("/"))
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/gang/ganga_ns/ganga", nil)
+		engine.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+		gangMarshal := &core.GangSummary{}
+		err = json.NewDecoder(w.Result().Body).Decode(gangMarshal)
+		assert.NoError(t, err)
+		assert.Equal(t, &gangExpected, gangMarshal)
+	}
+	{
+		engine := gin.Default()
+		gp.RegisterEndpoints(engine.Group("/"))
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/gangs", nil)
+		engine.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+		gangMarshalMap := make(map[string]*core.GangSummary)
+		err = json.Unmarshal([]byte(w.Body.String()), &gangMarshalMap)
+		assert.NoError(t, err)
+		assert.Equal(t, &gangExpected, gangMarshalMap["ganga_ns/ganga"])
+	}
 }

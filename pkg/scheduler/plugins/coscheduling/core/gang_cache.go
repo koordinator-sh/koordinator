@@ -71,6 +71,18 @@ func (gangCache *GangCache) getGangFromCacheByGangId(gangId string, createIfNotE
 	return gang
 }
 
+func (gangCache *GangCache) getAllGangsFromCache() map[string]*Gang {
+	gangCache.lock.RLock()
+	defer gangCache.lock.RUnlock()
+
+	result := make(map[string]*Gang)
+	for gangId, gang := range gangCache.gangItems {
+		result[gangId] = gang
+	}
+
+	return result
+}
+
 func (gangCache *GangCache) deleteGangFromCacheByGangId(gangId string) {
 	gangCache.lock.Lock()
 	defer gangCache.lock.Unlock()

@@ -79,3 +79,7 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 func (g *Plugin) GetQuotaSummary(quotaName string) (*core.QuotaInfoSummary, bool) {
 	return g.groupQuotaManager.GetQuotaSummary(quotaName)
 }
+
+func (g *Plugin) GetQuotaSummaries() map[string]*core.QuotaInfoSummary {
+	return g.groupQuotaManager.GetQuotaSummaries()
+}

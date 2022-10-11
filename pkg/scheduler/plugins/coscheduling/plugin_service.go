@@ -23,4 +23,8 @@ func (p *Coscheduling) RegisterEndpoints(group *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, gangSummary)
 	})
+	group.GET("/gangs", func(c *gin.Context) {
+		allGangSummaries := p.pgMgr.GetGangSummaries()
+		c.JSON(http.StatusOK, allGangSummaries)
+	})
 }
