@@ -33,8 +33,11 @@ const (
 	BatchCPU    corev1.ResourceName = ResourceDomainPrefix + "batch-cpu"
 	BatchMemory corev1.ResourceName = ResourceDomainPrefix + "batch-memory"
 
-	NvidiaGPU corev1.ResourceName = "nvidia.com/gpu"
+	KoordRDMA corev1.ResourceName = ResourceDomainPrefix + "rdma"
+	KoordFPGA corev1.ResourceName = ResourceDomainPrefix + "fpga"
+
 	KoordGPU  corev1.ResourceName = ResourceDomainPrefix + "gpu"
+	NvidiaGPU corev1.ResourceName = "nvidia.com/gpu"
 
 	GPUCore        corev1.ResourceName = ResourceDomainPrefix + "gpu-core"
 	GPUMemory      corev1.ResourceName = ResourceDomainPrefix + "gpu-memory"
@@ -104,8 +107,8 @@ const (
 type NUMACPUSharedPools []CPUSharedPool
 
 type CPUSharedPool struct {
-	Socket int32  `json:"socket,omitempty"`
-	Node   int32  `json:"node,omitempty"`
+	Socket int32  `json:"socket"`
+	Node   int32  `json:"node"`
 	CPUSet string `json:"cpuset,omitempty"`
 }
 

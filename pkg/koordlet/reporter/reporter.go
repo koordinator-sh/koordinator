@@ -134,7 +134,7 @@ func (r *reporter) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
 	klog.Infof("starting reporter")
 
-	if r.config.ReportIntervalSeconds > 0 {
+	if r.config.ReportInterval > 0 {
 		klog.Info("starting informer for NodeMetric")
 		go r.nodeMetricInformer.Run(stopCh)
 		if !cache.WaitForCacheSync(stopCh, r.nodeMetricInformer.HasSynced, r.statesInformer.HasSynced) {
@@ -144,8 +144,7 @@ func (r *reporter) Run(stopCh <-chan struct{}) error {
 		go r.syncNodeMetricWorker(stopCh)
 
 	} else {
-		klog.Infof("ReportIntervalSeconds is %d, sync node metric to apiserver is disabled",
-			r.config.ReportIntervalSeconds)
+		klog.Infof("ReportInterval is %d, sync node metric to apiserver is disabled", r.config.ReportInterval)
 	}
 
 	klog.Info("start reporter successfully")
@@ -168,7 +167,7 @@ func (r *reporter) syncNodeMetricWorker(stopCh <-chan struct{}) {
 }
 
 func (r *reporter) getNodeMetricReportInterval() time.Duration {
-	reportInterval := time.Duration(r.config.ReportIntervalSeconds) * time.Second
+	reportInterval := r.config.ReportInterval
 	nodeMetric, err := r.nodeMetricLister.Get(r.nodeName)
 	if err == nil &&
 		nodeMetric.Spec.CollectPolicy != nil &&
