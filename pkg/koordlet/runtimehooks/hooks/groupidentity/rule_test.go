@@ -141,6 +141,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 				},
 			},
 			wantRule: bvtRule{
+				enable: true,
 				podQOSParams: map[ext.QoSClass]int64{
 					ext.QoSLSR: 2,
 					ext.QoSLS:  2,
@@ -193,6 +194,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 				},
 			},
 			wantRule: bvtRule{
+				enable: true,
 				podQOSParams: map[ext.QoSClass]int64{
 					ext.QoSLSR: 0,
 					ext.QoSLS:  2,
@@ -245,6 +247,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 				},
 			},
 			wantRule: bvtRule{
+				enable: true,
 				podQOSParams: map[ext.QoSClass]int64{
 					ext.QoSLSR: 0,
 					ext.QoSLS:  0,
@@ -297,6 +300,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 				},
 			},
 			wantRule: bvtRule{
+				enable: false,
 				podQOSParams: map[ext.QoSClass]int64{
 					ext.QoSLSR: 0,
 					ext.QoSLS:  0,
@@ -320,6 +324,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			name: "parse same normal rules",
 			args: args{
 				rule: &bvtRule{
+					enable: true,
 					podQOSParams: map[ext.QoSClass]int64{
 						ext.QoSLSR: 2,
 						ext.QoSLS:  2,
@@ -366,6 +371,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 				},
 			},
 			wantRule: bvtRule{
+				enable: true,
 				podQOSParams: map[ext.QoSClass]int64{
 					ext.QoSLSR: 2,
 					ext.QoSLS:  2,

@@ -32,9 +32,17 @@ import (
 )
 
 type bvtRule struct {
+	enable           bool
 	podQOSParams     map[ext.QoSClass]int64
 	kubeQOSDirParams map[corev1.PodQOSClass]int64
 	kubeQOSPodParams map[corev1.PodQOSClass]int64
+}
+
+func (r *bvtRule) getEnable() bool {
+	if r == nil {
+		return false
+	}
+	return r.enable
 }
 
 func (r *bvtRule) getPodBvtValue(podQoSClass ext.QoSClass, podKubeQOS corev1.PodQOSClass) int64 {
@@ -56,6 +64,11 @@ func (r *bvtRule) getKubeQOSDirBvtValue(kubeQOS corev1.PodQOSClass) int64 {
 
 func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
 	mergedNodeSLO := mergedNodeSLOIf.(*slov1alpha1.NodeSLOSpec)
+
+	// check if bvt is enabled
+	enable := *mergedNodeSLO.ResourceQOSStrategy.LSRClass.CPUQOS.Enable ||
+		*mergedNodeSLO.ResourceQOSStrategy.LSClass.CPUQOS.Enable ||
+		*mergedNodeSLO.ResourceQOSStrategy.BEClass.CPUQOS.Enable
 
 	// setting pod rule by qos config
 	lsrValue := *mergedNodeSLO.ResourceQOSStrategy.LSRClass.CPUQOS.CPUQOS.GroupIdentity
@@ -81,6 +94,7 @@ func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
 	}
 
 	newRule := &bvtRule{
+		enable: enable,
 		podQOSParams: map[ext.QoSClass]int64{
 			ext.QoSLSR: lsrValue,
 			ext.QoSLS:  lsValue,
