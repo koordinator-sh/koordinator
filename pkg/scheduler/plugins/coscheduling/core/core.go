@@ -66,6 +66,7 @@ type Manager interface {
 	AllowGangGroup(*corev1.Pod, framework.Handle, string)
 	Unreserve(context.Context, *framework.CycleState, *corev1.Pod, string, framework.Handle, string)
 	GetGangSummary(gangId string) (*GangSummary, bool)
+	GetGangSummaries() map[string]*GangSummary
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -460,4 +461,14 @@ func (pgMgr *PodGroupManager) GetGangSummary(gangId string) (*GangSummary, bool)
 		return nil, false
 	}
 	return gang.GetGangSummary(), true
+}
+
+func (pgMgr *PodGroupManager) GetGangSummaries() map[string]*GangSummary {
+	result := make(map[string]*GangSummary)
+	allGangs := pgMgr.cache.getAllGangsFromCache()
+	for gangName, gang := range allGangs {
+		result[gangName] = gang.GetGangSummary()
+	}
+
+	return result
 }
