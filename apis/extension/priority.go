@@ -37,7 +37,7 @@ var (
 	PriorityProdValueMax int32 = 9999
 	PriorityProdValueMin int32 = 9000
 
-	PriorityMidValueMax int32 = 7099
+	PriorityMidValueMax int32 = 7999
 	PriorityMidValueMin int32 = 7000
 
 	PriorityBatchValueMax int32 = 5999
