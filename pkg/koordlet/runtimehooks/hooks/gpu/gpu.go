@@ -66,9 +66,9 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 	for _, d := range devices {
 		gpuIDs = append(gpuIDs, fmt.Sprintf("%d", d.Minor))
 	}
-	if containerCtx.Response.ContainerEnvs == nil {
-		containerCtx.Response.ContainerEnvs = make(map[string]string)
+	if containerCtx.Response.AddContainerEnvs == nil {
+		containerCtx.Response.AddContainerEnvs = make(map[string]string)
 	}
-	containerCtx.Response.ContainerEnvs[GpuAllocEnv] = strings.Join(gpuIDs, ",")
+	containerCtx.Response.AddContainerEnvs[GpuAllocEnv] = strings.Join(gpuIDs, ",")
 	return nil
 }
