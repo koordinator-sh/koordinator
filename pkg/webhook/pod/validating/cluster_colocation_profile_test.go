@@ -18,6 +18,7 @@ package validating
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	admissionv1 "k8s.io/api/admission/v1"
@@ -185,7 +186,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `spec.priority: Invalid value: "": field is immutable`,
+			wantReason:  fmt.Sprintf(`spec.priority: Invalid value: %q: field is immutable`, extension.GetPriorityClass(&corev1.Pod{})),
 		},
 		{
 			name:      "validate koordinator priority",
