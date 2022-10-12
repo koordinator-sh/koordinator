@@ -100,7 +100,7 @@ func (c *FileTestUtil) CreateProcSubFile(fileRelativePath string) {
 func (c *FileTestUtil) WriteProcSubFileContents(relativeFilePath string, contents string) {
 	file := path.Join(Conf.ProcRootDir, relativeFilePath)
 	if !FileExists(file) {
-		c.CreateProcSubFile(file)
+		c.CreateProcSubFile(relativeFilePath)
 	}
 	err := os.WriteFile(file, []byte(contents), 0644)
 	if err != nil {

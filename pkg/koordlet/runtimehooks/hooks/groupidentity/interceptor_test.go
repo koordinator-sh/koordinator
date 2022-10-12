@@ -32,6 +32,7 @@ import (
 
 func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 	defaultRule := &bvtRule{
+		enable: true,
 		podQOSParams: map[ext.QoSClass]int64{
 			ext.QoSLSR: 2,
 			ext.QoSLS:  2,
@@ -48,9 +49,30 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			corev1.PodQOSBestEffort: -1,
 		},
 	}
+	noneRule := &bvtRule{
+		enable: false,
+		podQOSParams: map[ext.QoSClass]int64{
+			ext.QoSLSR: 0,
+			ext.QoSLS:  0,
+			ext.QoSBE:  0,
+		},
+		kubeQOSDirParams: map[corev1.PodQOSClass]int64{
+			corev1.PodQOSGuaranteed: 0,
+			corev1.PodQOSBurstable:  0,
+			corev1.PodQOSBestEffort: 0,
+		},
+		kubeQOSPodParams: map[corev1.PodQOSClass]int64{
+			corev1.PodQOSGuaranteed: 0,
+			corev1.PodQOSBurstable:  0,
+			corev1.PodQOSBestEffort: 0,
+		},
+	}
 	type fields struct {
-		rule            *bvtRule
-		systemSupported *bool
+		rule                         *bvtRule
+		systemSupported              *bool
+		hasKernelEnable              *bool
+		initKernelGroupIdentity      bool
+		initKernelGroupIdentityValue int
 	}
 	type args struct {
 		request  *runtimeapi.PodSandboxHookRequest
@@ -141,15 +163,81 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 				bvtValue: nil,
 			},
 		},
+		{
+			name: "set guaranteed dir bvt and initialize kernel sysctl",
+			fields: fields{
+				rule:                         defaultRule,
+				systemSupported:              pointer.BoolPtr(true),
+				initKernelGroupIdentity:      true,
+				initKernelGroupIdentityValue: 0,
+			},
+			args: args{
+				request: &runtimeapi.PodSandboxHookRequest{
+					Labels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSLS),
+					},
+					CgroupParent: "kubepods/pod-guaranteed-test-uid/",
+				},
+				response: &runtimeapi.PodSandboxHookResponse{},
+			},
+			want: want{
+				bvtValue: pointer.Int64(2),
+			},
+		},
+		{
+			name: "skip set guaranteed dir bvt since kernel sysctl not changed",
+			fields: fields{
+				rule:                         noneRule,
+				systemSupported:              pointer.BoolPtr(true),
+				initKernelGroupIdentity:      true,
+				initKernelGroupIdentityValue: 0,
+			},
+			args: args{
+				request: &runtimeapi.PodSandboxHookRequest{
+					Labels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSLS),
+					},
+					CgroupParent: "kubepods/pod-guaranteed-test-uid/",
+				},
+				response: &runtimeapi.PodSandboxHookResponse{},
+			},
+			want: want{
+				bvtValue: nil,
+			},
+		},
+		{
+			name: "abort to set guaranteed dir bvt since init failed",
+			fields: fields{
+				rule:            noneRule,
+				systemSupported: pointer.BoolPtr(true),
+				hasKernelEnable: pointer.Bool(true),
+			},
+			args: args{
+				request: &runtimeapi.PodSandboxHookRequest{
+					Labels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSLS),
+					},
+					CgroupParent: "kubepods/pod-guaranteed-test-uid/",
+				},
+				response: &runtimeapi.PodSandboxHookResponse{},
+			},
+			want: want{
+				bvtValue: nil,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
 			initCPUBvt(tt.args.request.CgroupParent, 0, testHelper)
+			if tt.fields.initKernelGroupIdentity {
+				initKernelGroupIdentity(int64(tt.fields.initKernelGroupIdentityValue), testHelper)
+			}
 
 			b := &bvtPlugin{
-				rule:         tt.fields.rule,
-				sysSupported: tt.fields.systemSupported,
+				rule:             tt.fields.rule,
+				sysSupported:     tt.fields.systemSupported,
+				hasKernelEnabled: tt.fields.hasKernelEnable,
 			}
 			ctx := &protocol.PodContext{}
 			ctx.FromProxy(tt.args.request)
@@ -170,6 +258,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 
 func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 	defaultRule := &bvtRule{
+		enable: true,
 		podQOSParams: map[ext.QoSClass]int64{
 			ext.QoSLSR: 2,
 			ext.QoSLS:  2,
@@ -186,9 +275,30 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			corev1.PodQOSBestEffort: -1,
 		},
 	}
+	noneRule := &bvtRule{
+		enable: false,
+		podQOSParams: map[ext.QoSClass]int64{
+			ext.QoSLSR: 0,
+			ext.QoSLS:  0,
+			ext.QoSBE:  0,
+		},
+		kubeQOSDirParams: map[corev1.PodQOSClass]int64{
+			corev1.PodQOSGuaranteed: 0,
+			corev1.PodQOSBurstable:  0,
+			corev1.PodQOSBestEffort: 0,
+		},
+		kubeQOSPodParams: map[corev1.PodQOSClass]int64{
+			corev1.PodQOSGuaranteed: 0,
+			corev1.PodQOSBurstable:  0,
+			corev1.PodQOSBestEffort: 0,
+		},
+	}
 	type fields struct {
-		rule         *bvtRule
-		sysSupported *bool
+		rule                         *bvtRule
+		sysSupported                 *bool
+		hasKernelEnable              *bool
+		initKernelGroupIdentity      bool
+		initKernelGroupIdentityValue int
 	}
 	type args struct {
 		kubeQOS corev1.PodQOSClass
@@ -267,16 +377,64 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 				bvtValue: nil,
 			},
 		},
+		{
+			name: "set guaranteed dir bvt and initialize kernel sysctl",
+			fields: fields{
+				rule:                         defaultRule,
+				sysSupported:                 pointer.BoolPtr(true),
+				initKernelGroupIdentity:      true,
+				initKernelGroupIdentityValue: 0,
+			},
+			args: args{
+				kubeQOS: corev1.PodQOSGuaranteed,
+			},
+			want: want{
+				bvtValue: pointer.Int64(0),
+			},
+		},
+		{
+			name: "skip set guaranteed dir bvt since kernel sysctl not changed",
+			fields: fields{
+				rule:                         noneRule,
+				sysSupported:                 pointer.BoolPtr(true),
+				initKernelGroupIdentity:      true,
+				initKernelGroupIdentityValue: 0,
+			},
+			args: args{
+				kubeQOS: corev1.PodQOSGuaranteed,
+			},
+			want: want{
+				bvtValue: nil,
+			},
+		},
+		{
+			name: "abort to set guaranteed dir bvt since init failed",
+			fields: fields{
+				rule:            noneRule,
+				sysSupported:    pointer.BoolPtr(true),
+				hasKernelEnable: pointer.Bool(true),
+			},
+			args: args{
+				kubeQOS: corev1.PodQOSGuaranteed,
+			},
+			want: want{
+				bvtValue: nil,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
 			kubeQOSDir := util.GetKubeQosRelativePath(tt.args.kubeQOS)
 			initCPUBvt(kubeQOSDir, 0, testHelper)
+			if tt.fields.initKernelGroupIdentity {
+				initKernelGroupIdentity(int64(tt.fields.initKernelGroupIdentityValue), testHelper)
+			}
 
 			b := &bvtPlugin{
-				rule:         tt.fields.rule,
-				sysSupported: tt.fields.sysSupported,
+				rule:             tt.fields.rule,
+				sysSupported:     tt.fields.sysSupported,
+				hasKernelEnabled: tt.fields.hasKernelEnable,
 			}
 			ctx := &protocol.KubeQOSContext{}
 			ctx.FromReconciler(tt.args.kubeQOS)

@@ -17,6 +17,7 @@ limitations under the License.
 package groupidentity
 
 import (
+	"fmt"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -38,9 +39,11 @@ const (
 )
 
 type bvtPlugin struct {
-	rule         *bvtRule
-	ruleRWMutex  sync.RWMutex
-	sysSupported *bool
+	rule             *bvtRule
+	ruleRWMutex      sync.RWMutex
+	sysSupported     *bool
+	hasKernelEnabled *bool // whether kernel is configurable for enabling bvt (via `kernel.sched_group_identity_enabled`)
+	kernelEnabled    *bool // if not nil, indicates whether bvt feature is enabled via `kernel.sched_group_identity_enabled`
 }
 
 func (b *bvtPlugin) Register() {
@@ -60,10 +63,50 @@ func (b *bvtPlugin) SystemSupported() bool {
 	if b.sysSupported == nil {
 		bvtFilePath := sysutil.GetCgroupFilePath(
 			util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), sysutil.CPUBVTWarpNs)
-		b.sysSupported = pointer.BoolPtr(sysutil.FileExists(bvtFilePath))
+		bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
+		b.sysSupported = pointer.BoolPtr(sysutil.FileExists(bvtFilePath) || sysutil.FileExists(bvtConfigPath))
 		klog.Infof("update system supported info to %v for plugin %v", *b.sysSupported, name)
 	}
 	return *b.sysSupported
+}
+
+func (b *bvtPlugin) hasKernelEnable() bool {
+	if b.hasKernelEnabled == nil {
+		bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
+		b.hasKernelEnabled = pointer.BoolPtr(sysutil.FileExists(bvtConfigPath))
+	}
+	return *b.hasKernelEnabled
+}
+
+// initKernelEnable checks if the kernel supports sysctl configuration for bvt (group identity).
+// It returns:
+// 1. whether the feature is enabled after initialization (set sysctl config if the kernel supports)
+// 2. any error for the initialization
+func (b *bvtPlugin) initialize() (bool, error) {
+	// NOTE: bvt (group identity) is supported and can be initialized in the system if:
+	// 1. anolis os kernel (<26.4): cgroup cpu.bvt_warp_ns exists but sysctl kernel.sched_group_identity_enabled no exist,
+	//    the bvt feature is enabled by default, no need to set sysctl.
+	// 2. anolis os kernel (>=26.4): both cgroup cpu.bvt_warp_ns and sysctl kernel.sched_group_identity_enabled exist,
+	//    the bvt feature is enabled when kernel.sched_group_identity_enabled is set as `1`.
+	enable := b.getRule().getEnable()
+	if !b.hasKernelEnable() {
+		return enable, nil
+	}
+
+	// if cpu qos is enabled/disabled in rule, check if we need to change the sysctl config for bvt (group identity)
+	if b.kernelEnabled != nil && *b.kernelEnabled == enable {
+		klog.V(6).Infof("skip initialize bvt to %v, hook plugin rule not change", enable)
+		return enable, nil
+	}
+
+	// try to set bvt kernel enabled via sysctl
+	err := sysutil.SetSchedGroupIdentity(enable)
+	if err != nil {
+		return false, fmt.Errorf("cannot enable kernel sysctl for bvt, err: %v", err)
+	}
+	b.kernelEnabled = pointer.BoolPtr(enable)
+	klog.V(4).Infof("hook plugin %s is successfully initialized to %v", name, enable)
+	return enable, nil
 }
 
 var singleton *bvtPlugin
