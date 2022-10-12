@@ -30,7 +30,10 @@ const (
 	PriorityBatch PriorityClass = "koord-batch"
 	PriorityFree  PriorityClass = "koord-free"
 	PriorityNone  PriorityClass = ""
+)
 
+// Define Koordinator priority as a variable value to support customizing different priority ranges
+var (
 	PriorityProdValueMax int32 = 9999
 	PriorityProdValueMin int32 = 9000
 
