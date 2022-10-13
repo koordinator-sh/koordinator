@@ -32,12 +32,6 @@ func (n *nodeDeviceCache) onPodAdd(obj interface{}) {
 		return
 	}
 
-	info := n.getNodeDevice(pod.Spec.NodeName)
-	if info == nil {
-		klog.Errorf("node device cache not found, nodeName: %v", pod.Spec.NodeName)
-		return
-	}
-
 	podRequest, _ := resource.PodRequestsAndLimits(pod)
 
 	deviceExist := false
@@ -56,6 +50,12 @@ func (n *nodeDeviceCache) onPodAdd(obj interface{}) {
 	if err != nil {
 		klog.Errorf("failed to get device allocation, pod: %v, err: %v", pod.Name, err)
 		return
+	}
+
+	info := n.getNodeDevice(pod.Spec.NodeName)
+	if info == nil {
+		info = n.createNodeDevice(pod.Spec.NodeName)
+		klog.V(5).Infof("node device cache not found, nodeName: %v, pod:%v, createNodeDevice", pod.Spec.NodeName, pod.Name)
 	}
 
 	info.lock.Lock()
