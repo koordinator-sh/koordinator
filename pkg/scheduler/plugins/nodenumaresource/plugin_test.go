@@ -38,10 +38,10 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
-	schedulingconfigv1beta2 "github.com/koordinator-sh/koordinator/apis/scheduling/config/v1beta2"
+	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 
-	_ "github.com/koordinator-sh/koordinator/apis/scheduling/config/scheme"
+	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 )
 
 var _ framework.SharedLister = &testSharedLister{}
@@ -122,10 +122,10 @@ type pluginTestSuit struct {
 }
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
-	var v1beta2args schedulingconfigv1beta2.NodeNUMAResourceArgs
-	schedulingconfigv1beta2.SetDefaults_NodeNUMAResourceArgs(&v1beta2args)
+	var v1beta2args v1beta2.NodeNUMAResourceArgs
+	v1beta2.SetDefaults_NodeNUMAResourceArgs(&v1beta2args)
 	var nodeNUMAResourceArgs schedulingconfig.NodeNUMAResourceArgs
-	err := schedulingconfigv1beta2.Convert_v1beta2_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(&v1beta2args, &nodeNUMAResourceArgs, nil)
+	err := v1beta2.Convert_v1beta2_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(&v1beta2args, &nodeNUMAResourceArgs, nil)
 	assert.NoError(t, err)
 
 	nrtClientSet := nrtfake.NewSimpleClientset()
@@ -266,7 +266,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			wantState: &preFilterState{
 				skip:                   false,
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyDefault},
-				preferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
 			},
 		},

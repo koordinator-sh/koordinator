@@ -35,7 +35,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 
 	// Ensure scheme package is initialized.
-	_ "github.com/koordinator-sh/koordinator/apis/scheduling/config/scheme"
+	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 )
 
 func main() {

@@ -101,9 +101,11 @@ func computeNodeBatchAllocatable(nodeInfo *framework.NodeInfo) *batchResource {
 		Memory:   0,
 	}
 	// compatible with old format, overwrite BatchCPU, BatchMemory if exist
+	// nolint:staticcheck // SA1019: apiext.KoordBatchCPU is deprecated: because of the limitation of extended resource naming
 	if koordBatchCPU, exist := nodeInfo.Allocatable.ScalarResources[apiext.KoordBatchCPU]; exist {
 		nodeAllocatable.MilliCPU = koordBatchCPU
 	}
+	// nolint:staticcheck // SA1019: apiext.KoordBatchMemory is deprecated: because of the limitation of extended resource naming
 	if koordBatchMemory, exist := nodeInfo.Allocatable.ScalarResources[apiext.KoordBatchMemory]; exist {
 		nodeAllocatable.Memory = koordBatchMemory
 	}
@@ -126,12 +128,14 @@ func computeNodeBatchRequested(nodeInfo *framework.NodeInfo) *batchResource {
 	if batchCPU, exist := nodeInfo.Requested.ScalarResources[apiext.BatchCPU]; exist {
 		nodeRequested.MilliCPU += batchCPU
 	}
+	// nolint:staticcheck // SA1019: apiext.KoordBatchCPU is deprecated: because of the limitation of extended resource naming
 	if koordBatchCPU, exist := nodeInfo.Requested.ScalarResources[apiext.KoordBatchCPU]; exist {
 		nodeRequested.MilliCPU += koordBatchCPU
 	}
 	if batchMemory, exist := nodeInfo.Requested.ScalarResources[apiext.BatchMemory]; exist {
 		nodeRequested.Memory += batchMemory
 	}
+	// nolint:staticcheck // SA1019: apiext.KoordBatchMemory is deprecated: because of the limitation of extended resource naming
 	if koordBatchMemory, exist := nodeInfo.Requested.ScalarResources[apiext.KoordBatchMemory]; exist {
 		nodeRequested.Memory += koordBatchMemory
 	}
@@ -162,9 +166,11 @@ func computePodBatchRequest(pod *corev1.Pod) *batchResource {
 		Memory:   0,
 	}
 	// compatible with old format, overwrite BatchCPU, BatchMemory if exist
+	// nolint:staticcheck // SA1019: apiext.KoordBatchCPU is deprecated: because of the limitation of extended resource naming
 	if koordBatchCPU, exist := podRequest.ScalarResources[apiext.KoordBatchCPU]; exist {
 		result.MilliCPU = koordBatchCPU
 	}
+	// nolint:staticcheck // SA1019: apiext.KoordBatchMemory is deprecated: because of the limitation of extended resource naming
 	if koordBatchMemory, exist := podRequest.ScalarResources[apiext.KoordBatchMemory]; exist {
 		result.Memory = koordBatchMemory
 	}

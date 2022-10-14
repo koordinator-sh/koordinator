@@ -30,6 +30,8 @@ import (
 )
 
 func newContainerKoordBatchRes(milliCPU, memory int64) corev1.ResourceList {
+	// nolint:staticcheck // SA1019: apiext.KoordBatchCPU is deprecated: because of the limitation of extended resource naming
+	// nolint:staticcheck // SA1019: apiext.KoordBatchMemory is deprecated: because of the limitation of extended resource naming
 	return corev1.ResourceList{
 		apiext.KoordBatchCPU:    *resource.NewQuantity(milliCPU, resource.DecimalSI),
 		apiext.KoordBatchMemory: *resource.NewQuantity(memory, resource.BinarySI),
@@ -76,9 +78,11 @@ func newNodeBatchRes(koordMilliCPU, koordMemory, milliCPU, memory *int64) *frame
 		ScalarResources: map[corev1.ResourceName]int64{},
 	}
 	if koordMilliCPU != nil {
+		// nolint:staticcheck // SA1019: apiext.KoordBatchCPU is deprecated: because of the limitation of extended resource naming
 		result.ScalarResources[apiext.KoordBatchCPU] = *koordMilliCPU
 	}
 	if koordMemory != nil {
+		// nolint:staticcheck // SA1019: apiext.KoordBatchMemory is deprecated: because of the limitation of extended resource naming
 		result.ScalarResources[apiext.KoordBatchMemory] = *koordMemory
 	}
 	if milliCPU != nil {

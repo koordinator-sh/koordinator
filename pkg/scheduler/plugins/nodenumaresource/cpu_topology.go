@@ -17,7 +17,7 @@ limitations under the License.
 package nodenumaresource
 
 import (
-	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
+	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
 // CPUTopology contains details of node cpu

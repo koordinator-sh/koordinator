@@ -20,6 +20,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -78,40 +80,40 @@ type NodeNUMAResourceArgs struct {
 }
 
 // CPUBindPolicy defines the CPU binding policy
-type CPUBindPolicy string
+type CPUBindPolicy = extension.CPUBindPolicy
 
 const (
-	// CPUBindPolicyNone does not perform any bind policy
-	CPUBindPolicyNone CPUBindPolicy = "None"
+	// CPUBindPolicyDefault performs the default bind policy that specified in koord-scheduler configuration
+	CPUBindPolicyDefault CPUBindPolicy = extension.CPUBindPolicyDefault
 	// CPUBindPolicyFullPCPUs favor cpuset allocation that pack in few physical cores
-	CPUBindPolicyFullPCPUs CPUBindPolicy = "FullPCPUs"
+	CPUBindPolicyFullPCPUs CPUBindPolicy = extension.CPUBindPolicyFullPCPUs
 	// CPUBindPolicySpreadByPCPUs favor cpuset allocation that evenly allocate logical cpus across physical cores
-	CPUBindPolicySpreadByPCPUs CPUBindPolicy = "SpreadByPCPUs"
+	CPUBindPolicySpreadByPCPUs CPUBindPolicy = extension.CPUBindPolicySpreadByPCPUs
 	// CPUBindPolicyConstrainedBurst constrains the CPU Shared Pool range of the Burstable Pod
-	CPUBindPolicyConstrainedBurst CPUBindPolicy = "ConstrainedBurst"
+	CPUBindPolicyConstrainedBurst CPUBindPolicy = extension.CPUBindPolicyConstrainedBurst
 )
 
-type CPUExclusivePolicy string
+type CPUExclusivePolicy = extension.CPUExclusivePolicy
 
 const (
 	// CPUExclusivePolicyNone does not perform any exclusive policy
-	CPUExclusivePolicyNone CPUExclusivePolicy = "None"
+	CPUExclusivePolicyNone CPUExclusivePolicy = extension.CPUExclusivePolicyNone
 	// CPUExclusivePolicyPCPULevel represents mutual exclusion in the physical core dimension
-	CPUExclusivePolicyPCPULevel CPUExclusivePolicy = "PCPULevel"
+	CPUExclusivePolicyPCPULevel CPUExclusivePolicy = extension.CPUExclusivePolicyPCPULevel
 	// CPUExclusivePolicyNUMANodeLevel indicates mutual exclusion in the NUMA topology dimension
-	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = "NUMANodeLevel"
+	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = extension.CPUExclusivePolicyNUMANodeLevel
 )
 
 // NUMAAllocateStrategy indicates how to choose satisfied NUMA Nodes
-type NUMAAllocateStrategy string
+type NUMAAllocateStrategy = extension.NUMAAllocateStrategy
 
 const (
 	// NUMAMostAllocated indicates that allocates from the NUMA Node with the least amount of available resource.
-	NUMAMostAllocated NUMAAllocateStrategy = "MostAllocated"
+	NUMAMostAllocated NUMAAllocateStrategy = extension.NUMAMostAllocated
 	// NUMALeastAllocated indicates that allocates from the NUMA Node with the most amount of available resource.
-	NUMALeastAllocated NUMAAllocateStrategy = "LeastAllocated"
+	NUMALeastAllocated NUMAAllocateStrategy = extension.NUMALeastAllocated
 	// NUMADistributeEvenly indicates that evenly distribute CPUs across NUMA Nodes.
-	NUMADistributeEvenly NUMAAllocateStrategy = "DistributeEvenly"
+	NUMADistributeEvenly NUMAAllocateStrategy = extension.NUMADistributeEvenly
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
