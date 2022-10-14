@@ -17,23 +17,47 @@ limitations under the License.
 package statesinformer
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
+	"sync"
+	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-func (s *statesInformer) GetNodeSLO() *slov1alpha1.NodeSLO {
+const (
+	nodeSLOInformerName pluginName = "nodeSLOInformer"
+)
+
+type nodeSLOInformer struct {
+	nodeSLOInformer cache.SharedIndexInformer
+	nodeSLORWMutex  sync.RWMutex
+	nodeSLO         *slov1alpha1.NodeSLO
+
+	callbackRunner *callbackRunner
+}
+
+func NewNodeSLOInformer() *nodeSLOInformer {
+	return &nodeSLOInformer{}
+}
+
+func (s *nodeSLOInformer) GetNodeSLO() *slov1alpha1.NodeSLO {
 	s.nodeSLORWMutex.RLock()
 	defer s.nodeSLORWMutex.RUnlock()
 	return s.nodeSLO.DeepCopy()
 }
 
-func (s *statesInformer) setupNodeSLOInformer() {
+func (s *nodeSLOInformer) Setup(ctx *pluginOption, state *pluginState) {
+	s.nodeSLOInformer = newNodeSLOInformer(ctx.KoordClient, ctx.NodeName)
 	s.nodeSLOInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			nodeSLO, ok := obj.(*slov1alpha1.NodeSLO)
@@ -59,14 +83,30 @@ func (s *statesInformer) setupNodeSLOInformer() {
 			s.updateNodeSLOSpec(newNodeSLO)
 		},
 	})
+	s.callbackRunner = state.callbackRunner
 }
 
-func (s *statesInformer) updateNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
+func (s *nodeSLOInformer) Start(stopCh <-chan struct{}) {
+	klog.V(2).Infof("starting node slo informer")
+	go s.nodeSLOInformer.Run(stopCh)
+	klog.V(2).Infof("node slo informer started")
+}
+
+func (s *nodeSLOInformer) HasSynced() bool {
+	if s.nodeSLOInformer == nil {
+		return false
+	}
+	synced := s.nodeSLOInformer.HasSynced()
+	klog.V(5).Infof("node slo informer has synced %v", synced)
+	return synced
+}
+
+func (s *nodeSLOInformer) updateNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	s.setNodeSLOSpec(nodeSLO)
-	s.sendCallbacks(RegisterTypeNodeSLOSpec)
+	s.callbackRunner.SendCallback(RegisterTypeNodeSLOSpec)
 }
 
-func (s *statesInformer) setNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
+func (s *nodeSLOInformer) setNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	s.nodeSLORWMutex.Lock()
 	defer s.nodeSLORWMutex.Unlock()
 
@@ -85,7 +125,7 @@ func (s *statesInformer) setNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	klog.Infof("update nodeSLO content: old %s, new %s", oldNodeSLOStr, newNodeSLOStr)
 }
 
-func (s *statesInformer) mergeNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
+func (s *nodeSLOInformer) mergeNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	if s.nodeSLO == nil || nodeSLO == nil {
 		klog.Errorf("failed to merge with nil nodeSLO, old is nil: %v, new is nil: %v", s.nodeSLO == nil, nodeSLO == nil)
 		return
@@ -112,6 +152,27 @@ func (s *statesInformer) mergeNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	if mergedCPUBurstStrategySpec != nil {
 		s.nodeSLO.Spec.CPUBurstStrategy = mergedCPUBurstStrategySpec
 	}
+}
+
+func newNodeSLOInformer(client koordclientset.Interface, nodeName string) cache.SharedIndexInformer {
+	tweakListOptionFunc := func(opt *metav1.ListOptions) {
+		opt.FieldSelector = "metadata.name=" + nodeName
+	}
+	return cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (apiruntime.Object, error) {
+				tweakListOptionFunc(&options)
+				return client.SloV1alpha1().NodeSLOs().List(context.TODO(), options)
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				tweakListOptionFunc(&options)
+				return client.SloV1alpha1().NodeSLOs().Watch(context.TODO(), options)
+			},
+		},
+		&slov1alpha1.NodeSLO{},
+		time.Hour*12,
+		cache.Indexers{},
+	)
 }
 
 // mergeSLOSpecResourceUsedThresholdWithBE merges the nodeSLO ResourceUsedThresholdWithBE with default configs

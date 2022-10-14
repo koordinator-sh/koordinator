@@ -22,12 +22,16 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"sync"
 
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
+	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
@@ -41,11 +45,73 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
+const (
+	nodeTopoInformerName pluginName = "nodeTopoInformer"
+)
+
 var (
 	getKubeletCommandlineFn = system.GetKubeletCommandline
 )
 
-func (s *statesInformer) syncNodeResourceTopology(node *corev1.Node) {
+type nodeTopoInformer struct {
+	config         *Config
+	topologyClient topologyclientset.Interface
+	nodeTopoMutex  sync.RWMutex
+	nodeTopology   *topov1alpha1.NodeResourceTopology
+
+	metricCache    metriccache.MetricCache
+	callbackRunner *callbackRunner
+
+	nodeInformer *nodeInformer
+	podsInformer *podsInformer
+}
+
+func NewNodeTopoInformer() *nodeTopoInformer {
+	return &nodeTopoInformer{}
+}
+
+func (s *nodeTopoInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology {
+	s.nodeTopoMutex.RLock()
+	defer s.nodeTopoMutex.RUnlock()
+	return s.nodeTopology.DeepCopy()
+}
+
+func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
+	s.config = ctx.config
+	s.topologyClient = ctx.TopoClient
+	s.metricCache = state.metricCache
+	s.callbackRunner = state.callbackRunner
+
+	nodeInformerIf := state.informerPlugins[nodeInformerName]
+	nodeInformer, ok := nodeInformerIf.(*nodeInformer)
+	if !ok {
+		klog.Fatalf("node informer format error")
+	}
+	s.nodeInformer = nodeInformer
+
+	podsInformerIf := state.informerPlugins[podsInformerName]
+	podsInformer, ok := podsInformerIf.(*podsInformer)
+	if !ok {
+		klog.Fatalf("pods informer format error")
+	}
+	s.podsInformer = podsInformer
+}
+
+func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
+	klog.V(2).Infof("starting node topo informer")
+	if !cache.WaitForCacheSync(stopCh, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
+		klog.Fatalf("timed out waiting for pod caches to sync")
+	}
+	go wait.Until(s.reportNodeTopology, s.config.NodeTopologySyncInterval, stopCh)
+	klog.V(2).Infof("node topo informer started")
+}
+
+func (s *nodeTopoInformer) HasSynced() bool {
+	return true
+}
+
+func (s *nodeTopoInformer) createNodeTopoIfNotExist() {
+	node := s.nodeInformer.GetNode()
 	topologyName := node.Name
 	ctx := context.TODO()
 	blocker := true
@@ -87,7 +153,7 @@ func (s *statesInformer) syncNodeResourceTopology(node *corev1.Node) {
 	}
 }
 
-func (s *statesInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInfo, stateJSON string) ([]extension.PodCPUAlloc, error) {
+func (s *nodeTopoInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInfo, stateJSON string) ([]extension.PodCPUAlloc, error) {
 	if stateJSON == "" {
 		return nil, fmt.Errorf("empty state file")
 	}
@@ -99,7 +165,7 @@ func (s *statesInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInfo,
 
 	pods := make(map[types.UID]*PodMeta)
 	managedPods := make(map[types.UID]struct{})
-	for _, podMeta := range s.GetAllPods() {
+	for _, podMeta := range s.podsInformer.GetAllPods() {
 		pods[podMeta.Pod.UID] = podMeta
 		qosClass := extension.GetPodQoSClass(podMeta.Pod)
 		if qosClass == extension.QoSLS || qosClass == extension.QoSBE {
@@ -154,18 +220,16 @@ func (s *statesInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInfo,
 	return podAllocs, nil
 }
 
-func (s *statesInformer) reportNodeTopology() {
+func (s *nodeTopoInformer) reportNodeTopology() {
 	klog.Info("start to report node topology")
-	s.nodeRWMutex.RLock()
-	nodeName := s.node.Name
-	s.nodeRWMutex.RUnlock()
+	s.createNodeTopoIfNotExist()
 	ctx := context.TODO()
 	nodeCPUInfo, cpuTopology, sharedPoolCPUs, err := s.calCPUTopology()
 	if err != nil {
 		return
 	}
 
-	kubeletPort := int(s.GetNode().Status.DaemonEndpoints.KubeletEndpoint.Port)
+	kubeletPort := int(s.nodeInformer.GetNode().Status.DaemonEndpoints.KubeletEndpoint.Port)
 	args, err := getKubeletCommandlineFn(kubeletPort)
 	if err != nil {
 		klog.Errorf("Failed to GetKubeletCommandline with kubeletPort %d, err: %v", kubeletPort, err)
@@ -232,21 +296,22 @@ func (s *statesInformer) reportNodeTopology() {
 
 	cpuTopologyJSON, err := json.Marshal(cpuTopology)
 	if err != nil {
-		klog.Errorf("failed to marshal cpu topology of node %s, err: %v", nodeName, err)
+		klog.Errorf("failed to marshal cpu topology of node, err: %v", err)
 		return
 	}
 
 	sharePools := s.calCPUSharePools(sharedPoolCPUs)
 	cpuSharePoolsJSON, err := json.Marshal(sharePools)
 	if err != nil {
-		klog.Errorf("failed to marshal cpushare pools of node %s, err: %v", nodeName, err)
+		klog.Errorf("failed to marshal cpushare pools of node, err: %v", err)
 		return
 	}
 
+	node := s.nodeInformer.GetNode()
 	err = retry.OnError(retry.DefaultBackoff, errors.IsTooManyRequests, func() error {
-		nodeResourceTopology, err := s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, nodeName, metav1.GetOptions{ResourceVersion: "0"})
+		nodeResourceTopology, err := s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, node.Name, metav1.GetOptions{ResourceVersion: "0"})
 		if err != nil {
-			klog.Errorf("failed to get nodeResourceTopology %s, err: %v", nodeName, err)
+			klog.Errorf("failed to get node resource topology %s, err: %v", node.Name, err)
 			return err
 		}
 		if nodeResourceTopology.Annotations == nil {
@@ -262,7 +327,7 @@ func (s *statesInformer) reportNodeTopology() {
 		}
 		_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
 		if err != nil {
-			klog.Errorf("failed to update cpu info of node %s, err: %v", nodeName, err)
+			klog.Errorf("failed to update cpu info of node %s, err: %v", node.Name, err)
 			return err
 		}
 		return nil
@@ -272,8 +337,8 @@ func (s *statesInformer) reportNodeTopology() {
 	}
 }
 
-func (s *statesInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.CPUInfo) []extension.CPUSharedPool {
-	podMetas := s.GetAllPods()
+func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.CPUInfo) []extension.CPUSharedPool {
+	podMetas := s.podsInformer.GetAllPods()
 	for _, podMeta := range podMetas {
 		status, err := extension.GetResourceStatus(podMeta.Pod.Annotations)
 		if err != nil {
@@ -324,8 +389,8 @@ func (s *statesInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.CP
 	return sharePools
 }
 
-func (s *statesInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extension.CPUTopology, map[int32]*extension.CPUInfo, error) {
-	nodeCPUInfo, err := s.metricsCache.GetNodeCPUInfo(&metriccache.QueryParam{})
+func (s *nodeTopoInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extension.CPUTopology, map[int32]*extension.CPUInfo, error) {
+	nodeCPUInfo, err := s.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
 	if err != nil {
 		klog.Errorf("failed to get node cpu info")
 		return nil, nil, nil, err
@@ -346,20 +411,14 @@ func (s *statesInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extension.
 	return nodeCPUInfo, cpuTopology, cpus, nil
 }
 
-func (s *statesInformer) updateNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
+func (s *nodeTopoInformer) updateNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
 	s.setNodeTopo(newTopo)
 	klog.V(5).Infof("local node topology info updated %v", newTopo)
-	s.sendCallbacks(RegisterTypeNodeTopology)
+	s.callbackRunner.SendCallback(RegisterTypeNodeTopology)
 }
 
-func (s *statesInformer) setNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
+func (s *nodeTopoInformer) setNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
 	s.nodeTopoMutex.Lock()
 	defer s.nodeTopoMutex.Unlock()
 	s.nodeTopology = newTopo.DeepCopy()
-}
-
-func (s *statesInformer) GetNodeTopo() *v1alpha1.NodeResourceTopology {
-	s.nodeTopoMutex.RLock()
-	defer s.nodeTopoMutex.RUnlock()
-	return s.nodeTopology.DeepCopy()
 }

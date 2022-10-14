@@ -36,7 +36,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
@@ -63,7 +62,6 @@ type daemon struct {
 	reporter       reporter.Reporter
 	resManager     resmanager.ResManager
 	runtimeHook    runtimehooks.RuntimeHook
-	pleg           pleg.Pleg
 }
 
 func NewDaemon(config *config.Configuration) (Daemon, error) {
@@ -83,17 +81,12 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	topologyClient := topologyclientset.NewForConfigOrDie(config.KubeRestConf)
 	schedulingClient := v1alpha1.NewForConfigOrDie(config.KubeRestConf)
 
-	pleg, err := pleg.NewPLEG(system.Conf.CgroupRootDir)
-	if err != nil {
-		return nil, err
-	}
-
 	metricCache, err := metriccache.NewMetricCache(config.MetricCacheConf)
 	if err != nil {
 		return nil, err
 	}
 
-	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, pleg, nodeName, schedulingClient)
+	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, nodeName, schedulingClient)
 
 	// setup cgroup path formatter from cgroup driver type
 	var detectCgroupDriver system.CgroupDriverType
@@ -142,7 +135,6 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		reporter:       reporterService,
 		resManager:     resManagerService,
 		runtimeHook:    runtimeHook,
-		pleg:           pleg,
 	}
 
 	return d, nil
@@ -159,13 +151,18 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 		}
 	}()
 
-	// start meta service
+	// start states informer
 	go func() {
 		if err := d.statesInformer.Run(stopCh); err != nil {
-			klog.Error("Unable to run the meta service: ", err)
+			klog.Error("Unable to run the states informer: ", err)
 			os.Exit(1)
 		}
 	}()
+	// wait for collector sync
+	if !cache.WaitForCacheSync(stopCh, d.statesInformer.HasSynced) {
+		klog.Error("time out waiting for states informer to sync")
+		os.Exit(1)
+	}
 
 	// start collector
 	go func() {
@@ -200,13 +197,6 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 	go func() {
 		if err := d.runtimeHook.Run(stopCh); err != nil {
 			klog.Errorf("Unable to run the runtimeHook: ", err)
-			os.Exit(1)
-		}
-	}()
-
-	go func() {
-		if err := d.pleg.Run(stopCh); err != nil {
-			klog.Errorf("Unable to run the pleg: ", err)
 			os.Exit(1)
 		}
 	}()

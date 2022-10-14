@@ -17,22 +17,52 @@ limitations under the License.
 package statesinformer
 
 import (
+	"context"
 	"reflect"
+	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
+	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 )
 
-func (s *statesInformer) setupNodeInformer() {
+const (
+	nodeInformerName pluginName = "nodeInformer"
+)
+
+type nodeInformer struct {
+	nodeInformer cache.SharedIndexInformer
+	nodeRWMutex  sync.RWMutex
+	node         *corev1.Node
+}
+
+func NewNodeInformer() *nodeInformer {
+	return &nodeInformer{}
+}
+
+func (s *nodeInformer) GetNode() *corev1.Node {
+	s.nodeRWMutex.RLock()
+	defer s.nodeRWMutex.RUnlock()
+	if s.node == nil {
+		return nil
+	}
+	return s.node.DeepCopy()
+}
+
+func (s *nodeInformer) Setup(ctx *pluginOption, state *pluginState) {
+	s.nodeInformer = newNodeInformer(ctx.KubeClient, ctx.NodeName)
 	s.nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			node, ok := obj.(*corev1.Node)
 			if ok {
 				s.syncNode(node)
-				s.syncNodeResourceTopology(node)
 			} else {
 				klog.Errorf("node informer add func parse Node failed, obj %T", obj)
 			}
@@ -49,12 +79,74 @@ func (s *statesInformer) setupNodeInformer() {
 				return
 			}
 			s.syncNode(newNode)
-			s.syncNodeResourceTopology(newNode)
 		},
 	})
 }
 
-func (s *statesInformer) syncNode(newNode *corev1.Node) {
+func (s *nodeInformer) Start(stopCh <-chan struct{}) {
+	klog.V(2).Infof("starting node informer")
+	go s.nodeInformer.Run(stopCh)
+	klog.V(2).Infof("node informer started")
+}
+
+func (s *nodeInformer) HasSynced() bool {
+	if s.nodeInformer == nil {
+		return false
+	}
+	synced := s.nodeInformer.HasSynced()
+	klog.V(5).Infof("node informer has synced %v", synced)
+	return synced
+}
+
+func newNodeInformer(client clientset.Interface, nodeName string) cache.SharedIndexInformer {
+	tweakListOptionsFunc := func(opt *metav1.ListOptions) {
+		opt.FieldSelector = "metadata.name=" + nodeName
+	}
+
+	return cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (apiruntime.Object, error) {
+				tweakListOptionsFunc(&options)
+				return client.CoreV1().Nodes().List(context.TODO(), options)
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				tweakListOptionsFunc(&options)
+				return client.CoreV1().Nodes().Watch(context.TODO(), options)
+			},
+		},
+		&corev1.Node{},
+		time.Hour*12,
+		cache.Indexers{},
+	)
+}
+
+func (s *nodeInformer) setupNodeInformer() {
+	s.nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			node, ok := obj.(*corev1.Node)
+			if ok {
+				s.syncNode(node)
+			} else {
+				klog.Errorf("node informer add func parse Node failed, obj %T", obj)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldNode, oldOK := oldObj.(*corev1.Node)
+			newNode, newOK := newObj.(*corev1.Node)
+			if !oldOK || !newOK {
+				klog.Errorf("unable to convert object to *corev1.Node, old %T, new %T", oldObj, newObj)
+				return
+			}
+			if reflect.DeepEqual(oldNode, newNode) {
+				klog.V(5).Infof("find node %s has not changed", newNode.Name)
+				return
+			}
+			s.syncNode(newNode)
+		},
+	})
+}
+
+func (s *nodeInformer) syncNode(newNode *corev1.Node) {
 	klog.V(5).Infof("node update detail %v", newNode)
 	s.nodeRWMutex.Lock()
 	defer s.nodeRWMutex.Unlock()

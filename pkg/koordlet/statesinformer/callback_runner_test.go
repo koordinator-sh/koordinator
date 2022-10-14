@@ -67,11 +67,23 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 			callbackFn := func(t RegisterType, obj interface{}, pods []*PodMeta) {
 				*testVar = true
 			}
-			si := &statesInformer{
+			si := &callbackRunner{
 				stateUpdateCallbacks: map[RegisterType][]updateCallback{
 					RegisterTypeNodeSLOSpec:  {},
 					RegisterTypeAllPods:      {},
 					RegisterTypeNodeTopology: {},
+				},
+				statesInformer: &statesInformer{
+					states: &pluginState{
+						informerPlugins: map[pluginName]informerPlugin{
+							nodeSLOInformerName: &nodeSLOInformer{
+								nodeSLO: &slov1alpha1.NodeSLO{},
+							},
+							podsInformerName: &podsInformer{
+								podMap: map[string]*PodMeta{},
+							},
+						},
+					},
 				},
 			}
 			si.RegisterCallbacks(tt.args.objType, tt.args.name, tt.args.description, callbackFn)
@@ -121,8 +133,7 @@ func Test_statesInformer_startCallbackRunners(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			si := &statesInformer{
-				nodeSLO: tt.args.nodeSLO,
+			cr := &callbackRunner{
 				callbackChans: map[RegisterType]chan UpdateCbCtx{
 					tt.args.objType: make(chan UpdateCbCtx, 1),
 				},
@@ -130,9 +141,23 @@ func Test_statesInformer_startCallbackRunners(t *testing.T) {
 					tt.args.objType: {},
 				},
 			}
-			si.RegisterCallbacks(tt.args.objType, tt.args.name, tt.args.description, tt.args.fn)
-			si.startCallbackRunners(stopCh)
-			si.sendCallbacks(tt.args.objType)
+			si := &statesInformer{
+				states: &pluginState{
+					callbackRunner: cr,
+					informerPlugins: map[pluginName]informerPlugin{
+						nodeSLOInformerName: &nodeSLOInformer{
+							nodeSLO: tt.args.nodeSLO,
+						},
+						podsInformerName: &podsInformer{
+							podMap: map[string]*PodMeta{},
+						},
+					},
+				},
+			}
+			cr.Setup(si)
+			cr.RegisterCallbacks(tt.args.objType, tt.args.name, tt.args.description, tt.args.fn)
+			cr.Start(stopCh)
+			cr.SendCallback(tt.args.objType)
 			gotOutput := <-output
 			assert.Equal(t, tt.wantOutput, gotOutput, "send callback for type %v got wrong",
 				tt.args.objType.String())

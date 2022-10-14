@@ -17,34 +17,25 @@ limitations under the License.
 package statesinformer
 
 import (
-	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	_ "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/scheme"
 	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/apimachinery/pkg/watch"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
-	"github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
+	schedv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -66,120 +57,95 @@ type StatesInformer interface {
 	RegisterCallbacks(objType RegisterType, name, description string, callbackFn UpdateCbFn)
 }
 
+type pluginName string
+
+type pluginOption struct {
+	config      *Config
+	KubeClient  clientset.Interface
+	KoordClient koordclientset.Interface
+	TopoClient  topologyclientset.Interface
+	NodeName    string
+}
+
+type pluginState struct {
+	metricCache     metriccache.MetricCache
+	callbackRunner  *callbackRunner
+	informerPlugins map[pluginName]informerPlugin
+}
+
 type statesInformer struct {
+	// TODO refactor device as plugin
 	config       *Config
-	kubelet      KubeletStub
-	podHasSynced *atomic.Bool
-	// use pleg to accelerate the efficiency of Pod meta update
-	pleg       pleg.Pleg
-	podCreated chan string
-
-	nodeInformer cache.SharedIndexInformer
-	nodeRWMutex  sync.RWMutex
-	node         *corev1.Node
-
-	nodeSLOInformer cache.SharedIndexInformer
-	nodeSLORWMutex  sync.RWMutex
-	nodeSLO         *slov1alpha1.NodeSLO
-
-	nodeTopoMutex  sync.RWMutex
-	nodeTopology   *topov1alpha1.NodeResourceTopology
-	topologyClient topologyclientset.Interface
-
-	deviceClient v1alpha1.DeviceInterface
+	metricsCache metriccache.MetricCache
+	deviceClient schedv1alpha1.DeviceInterface
 	unhealthyGPU map[string]struct{}
 	gpuMutex     sync.RWMutex
 
-	podRWMutex     sync.RWMutex
-	podMap         map[string]*PodMeta
-	podUpdatedTime time.Time
-	metricsCache   metriccache.MetricCache
-
-	callbackChans        map[RegisterType]chan UpdateCbCtx
-	stateUpdateCallbacks map[RegisterType][]updateCallback
+	option  *pluginOption
+	states  *pluginState
+	started *atomic.Bool
 }
 
-func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient *topologyclientset.Clientset, metricsCache metriccache.MetricCache, pleg pleg.Pleg, nodeName string, schedulingClient *v1alpha1.SchedulingV1alpha1Client) StatesInformer {
-	nodeInformer := newNodeInformer(kubeClient, nodeName)
-	nodeSLOInformer := newNodeSLOInformer(crdClient, nodeName)
+type informerPlugin interface {
+	Setup(ctx *pluginOption, state *pluginState)
+	Start(stopCh <-chan struct{})
+	HasSynced() bool
+}
 
-	return &statesInformer{
+// TODO merge all clients into one struct
+func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient topologyclientset.Interface, metricsCache metriccache.MetricCache, nodeName string, schedulingClient schedv1alpha1.SchedulingV1alpha1Interface) StatesInformer {
+	opt := &pluginOption{
+		config:      config,
+		KubeClient:  kubeClient,
+		KoordClient: crdClient,
+		TopoClient:  topologyClient,
+		NodeName:    nodeName,
+	}
+	stat := &pluginState{
+		metricCache:     metricsCache,
+		informerPlugins: map[pluginName]informerPlugin{},
+		callbackRunner:  NewCallbackRunner(),
+	}
+	s := &statesInformer{
 		config:       config,
-		podHasSynced: atomic.NewBool(false),
+		metricsCache: metricsCache,
+		deviceClient: schedulingClient.Devices(),
+		unhealthyGPU: make(map[string]struct{}),
 
-		pleg: pleg,
+		option:  opt,
+		states:  stat,
+		started: atomic.NewBool(false),
+	}
+	s.initInformerPlugins()
+	return s
+}
 
-		nodeInformer:    nodeInformer,
-		nodeSLOInformer: nodeSLOInformer,
-
-		podMap:     map[string]*PodMeta{},
-		podCreated: make(chan string, 1), // set 1 buffer
-
-		callbackChans: map[RegisterType]chan UpdateCbCtx{
-			RegisterTypeNodeSLOSpec:  make(chan UpdateCbCtx, 1),
-			RegisterTypeAllPods:      make(chan UpdateCbCtx, 1),
-			RegisterTypeNodeTopology: make(chan UpdateCbCtx, 1),
-		},
-		stateUpdateCallbacks: map[RegisterType][]updateCallback{
-			RegisterTypeNodeSLOSpec:  {},
-			RegisterTypeAllPods:      {},
-			RegisterTypeNodeTopology: {},
-		},
-		topologyClient: topologyClient,
-		metricsCache:   metricsCache,
-		deviceClient:   schedulingClient.Devices(),
-		unhealthyGPU:   make(map[string]struct{}),
+func (s *statesInformer) setupPlugins() {
+	for name, plugin := range s.states.informerPlugins {
+		plugin.Setup(s.option, s.states)
+		klog.V(2).Infof("plugin %v has been setup", name)
 	}
 }
 
 func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	klog.Infof("setup statesInformer")
-	s.setupInformers()
-	klog.Infof("starting informers")
-	go s.nodeInformer.Run(stopCh)
-	go s.nodeSLOInformer.Run(stopCh)
+	klog.V(2).Infof("setup statesInformer")
+
+	klog.V(2).Infof("starting callback runner")
+	s.states.callbackRunner.Setup(s)
+	go s.states.callbackRunner.Start(stopCh)
+
+	klog.V(2).Infof("starting informer plugins")
+	s.setupPlugins()
+	s.startPlugins(stopCh)
 
 	// waiting for node synced.
-	waitInformersSynced := []cache.InformerSynced{
-		s.nodeInformer.HasSynced, s.nodeSLOInformer.HasSynced}
+	klog.V(2).Infof("waiting for informer syncing")
+	waitInformersSynced := s.waitForSyncFunc()
 	if !cache.WaitForCacheSync(stopCh, waitInformersSynced...) {
 		return fmt.Errorf("timed out waiting for states informer caches to sync")
 	}
 
-	stub, err := newKubeletStubFromConfig(s.GetNode(), s.config)
-	if err != nil {
-		klog.ErrorS(err, "create kubelet stub")
-		return err
-	}
-	s.kubelet = stub
-
-	if s.config.KubeletSyncInterval > 0 {
-		hdlID := s.pleg.AddHandler(pleg.PodLifeCycleHandlerFuncs{
-			PodAddedFunc: func(podID string) {
-				// There is no need to notify to update the data when the channel is not empty
-				if len(s.podCreated) == 0 {
-					s.podCreated <- podID
-				}
-			},
-		})
-		defer s.pleg.RemoverHandler(hdlID)
-
-		go s.syncKubeletLoop(s.config.KubeletSyncInterval, stopCh)
-	} else {
-		klog.Fatalf("KubeletSyncIntervalSeconds is %d, statesInformer sync of kubelet is disabled",
-			s.config.KubeletSyncInterval)
-	}
-
-	// waiting for pods synced.
-	waitPodSynced := []cache.InformerSynced{s.podHasSynced.Load}
-	if !cache.WaitForCacheSync(stopCh, waitPodSynced...) {
-		return fmt.Errorf("timed out waiting for pod caches to sync")
-	}
-
-	go s.startCallbackRunners(stopCh)
-
-	go wait.Until(s.reportNodeTopology, s.config.NodeTopologySyncInterval, stopCh)
 	if features.DefaultKoordletFeatureGate.Enabled(features.Accelerators) {
 		go wait.Until(s.reportDevice, s.config.NodeTopologySyncInterval, stopCh)
 		// check is nvml is available
@@ -189,115 +155,72 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	}
 
 	klog.Infof("start states informer successfully")
+	s.started.Store(true)
 	<-stopCh
 	klog.Infof("shutting down states informer daemon")
 	return nil
 }
 
+func (s *statesInformer) waitForSyncFunc() []cache.InformerSynced {
+	waitInformersSynced := make([]cache.InformerSynced, 0, len(s.states.informerPlugins))
+	for _, p := range s.states.informerPlugins {
+		waitInformersSynced = append(waitInformersSynced, p.HasSynced)
+	}
+	return waitInformersSynced
+}
+
+func (s *statesInformer) startPlugins(stopCh <-chan struct{}) {
+	for name, p := range s.states.informerPlugins {
+		klog.V(4).Infof("starting informer plugin %v", name)
+		go p.Start(stopCh)
+	}
+}
+
 func (s *statesInformer) HasSynced() bool {
-	return s.podHasSynced.Load() && s.nodeSLOInformer.HasSynced() && s.nodeInformer.HasSynced()
+	for _, p := range s.states.informerPlugins {
+		if !p.HasSynced() {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *statesInformer) GetNode() *corev1.Node {
-	s.nodeRWMutex.RLock()
-	defer s.nodeRWMutex.RUnlock()
-	if s.node == nil {
-		return nil
+	nodeInformerIf := s.states.informerPlugins[nodeInformerName]
+	nodeInformer, ok := nodeInformerIf.(*nodeInformer)
+	if !ok {
+		klog.Fatalf("node informer format error")
 	}
-	return s.node.DeepCopy()
+	return nodeInformer.GetNode()
+}
+
+func (s *statesInformer) GetNodeSLO() *slov1alpha1.NodeSLO {
+	nodeSLOInformerIf := s.states.informerPlugins[nodeSLOInformerName]
+	nodeSLOInformer, ok := nodeSLOInformerIf.(*nodeSLOInformer)
+	if !ok {
+		klog.Fatalf("node slo informer format error")
+	}
+	return nodeSLOInformer.GetNodeSLO()
+}
+
+func (s *statesInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology {
+	nodeTopoInformerIf := s.states.informerPlugins[nodeTopoInformerName]
+	nodeTopoInformer, ok := nodeTopoInformerIf.(*nodeTopoInformer)
+	if !ok {
+		klog.Fatalf("node topo informer format error")
+	}
+	return nodeTopoInformer.GetNodeTopo()
 }
 
 func (s *statesInformer) GetAllPods() []*PodMeta {
-	s.podRWMutex.RLock()
-	defer s.podRWMutex.RUnlock()
-	pods := make([]*PodMeta, 0, len(s.podMap))
-	for _, pod := range s.podMap {
-		pods = append(pods, pod.DeepCopy())
+	podsInformerIf := s.states.informerPlugins[podsInformerName]
+	podsInformer, ok := podsInformerIf.(*podsInformer)
+	if !ok {
+		klog.Fatalf("pods informer format error")
 	}
-	return pods
+	return podsInformer.GetAllPods()
 }
 
-func newNodeInformer(client clientset.Interface, nodeName string) cache.SharedIndexInformer {
-	tweakListOptionsFunc := func(opt *metav1.ListOptions) {
-		opt.FieldSelector = "metadata.name=" + nodeName
-	}
-
-	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (apiruntime.Object, error) {
-				tweakListOptionsFunc(&options)
-				return client.CoreV1().Nodes().List(context.TODO(), options)
-			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				tweakListOptionsFunc(&options)
-				return client.CoreV1().Nodes().Watch(context.TODO(), options)
-			},
-		},
-		&corev1.Node{},
-		time.Hour*12,
-		cache.Indexers{},
-	)
-}
-
-func newNodeSLOInformer(client koordclientset.Interface, nodeName string) cache.SharedIndexInformer {
-	tweakListOptionFunc := func(opt *metav1.ListOptions) {
-		opt.FieldSelector = "metadata.name=" + nodeName
-	}
-	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (apiruntime.Object, error) {
-				tweakListOptionFunc(&options)
-				return client.SloV1alpha1().NodeSLOs().List(context.TODO(), options)
-			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				tweakListOptionFunc(&options)
-				return client.SloV1alpha1().NodeSLOs().Watch(context.TODO(), options)
-			},
-		},
-		&slov1alpha1.NodeSLO{},
-		time.Hour*12,
-		cache.Indexers{},
-	)
-}
-
-func (s *statesInformer) setupInformers() {
-	s.setupNodeInformer()
-	s.setupNodeSLOInformer()
-}
-
-func newKubeletStubFromConfig(node *corev1.Node, cfg *Config) (KubeletStub, error) {
-	var address string
-	var err error
-	var port int
-	var scheme string
-	var restConfig *rest.Config
-
-	addressPreferredType := corev1.NodeAddressType(cfg.KubeletPreferredAddressType)
-	// if the address of the specified type has not been set or error type, InternalIP will be used.
-	if !util.IsNodeAddressTypeSupported(addressPreferredType) {
-		klog.Warningf("Wrong address type or empty type, InternalIP will be used, error: (%+v).", addressPreferredType)
-		addressPreferredType = corev1.NodeInternalIP
-	}
-	address, err = util.GetNodeAddress(node, addressPreferredType)
-	if err != nil {
-		klog.Fatalf("Get node address error: %v type(%s) ", err, cfg.KubeletPreferredAddressType)
-		return nil, err
-	}
-
-	if cfg.InsecureKubeletTLS {
-		port = int(cfg.KubeletReadOnlyPort)
-		scheme = HTTPScheme
-	} else {
-		restConfig, err = config.GetConfig()
-		if err != nil {
-			return nil, err
-		}
-		restConfig.TLSClientConfig.Insecure = true
-		restConfig.TLSClientConfig.CAData = nil
-		restConfig.TLSClientConfig.CAFile = ""
-		port = int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
-		scheme = HTTPSScheme
-	}
-
-	return NewKubeletStub(address, port, scheme, cfg.KubeletSyncTimeout, restConfig)
+func (s *statesInformer) RegisterCallbacks(rType RegisterType, name, description string, callbackFn UpdateCbFn) {
+	s.states.callbackRunner.RegisterCallbacks(rType, name, description, callbackFn)
 }

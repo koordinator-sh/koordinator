@@ -66,8 +66,14 @@ func Test_reportGPUDevice(t *testing.T) {
 	mockMetricCache.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(fakeResult).AnyTimes()
 	r := &statesInformer{
 		deviceClient: fakeClient,
-		node:         testNode,
 		metricsCache: mockMetricCache,
+		states: &pluginState{
+			informerPlugins: map[pluginName]informerPlugin{
+				nodeInformerName: &nodeInformer{
+					node: testNode,
+				},
+			},
+		},
 	}
 	r.reportDevice()
 	expectedDevices := []schedulingv1alpha1.DeviceInfo{

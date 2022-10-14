@@ -147,7 +147,7 @@ func Test_mergeNodeSLOSpec(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := statesInformer{nodeSLO: tt.field.nodeSLO}
+			r := nodeSLOInformer{nodeSLO: tt.field.nodeSLO}
 			r.mergeNodeSLOSpec(tt.args.nodeSLO)
 			assert.Equal(t, tt.want, r.nodeSLO)
 		})
@@ -185,7 +185,10 @@ func Test_createNodeSLO(t *testing.T) {
 	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeStartPercent = pointer.Int64Ptr(0)
 	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeEndPercent = pointer.Int64Ptr(20)
 
-	r := statesInformer{nodeSLO: nil}
+	r := nodeSLOInformer{
+		nodeSLO:        nil,
+		callbackRunner: NewCallbackRunner(),
+	}
 
 	r.updateNodeSLOSpec(testingNewNodeSLO)
 	assert.Equal(t, testingCreatedNodeSLO, r.nodeSLO)
@@ -230,7 +233,7 @@ func Test_updateNodeSLOSpec(t *testing.T) {
 	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeStartPercent = pointer.Int64Ptr(0)
 	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeEndPercent = pointer.Int64Ptr(20)
 
-	r := statesInformer{
+	r := nodeSLOInformer{
 		nodeSLO: &slov1alpha1.NodeSLO{
 			Spec: slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
@@ -239,6 +242,7 @@ func Test_updateNodeSLOSpec(t *testing.T) {
 				},
 			},
 		},
+		callbackRunner: NewCallbackRunner(),
 	}
 
 	r.updateNodeSLOSpec(testingNewNodeSLO)
