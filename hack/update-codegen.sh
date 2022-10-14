@@ -53,9 +53,9 @@ $SCRIPT_ROOT/hack/generate-groups.sh "client,informer,lister" \
 
 ${SCRIPT_ROOT}/hack/generate-internal-groups.sh \
   "deepcopy,conversion,defaulter" \
-  github.com/koordinator-sh/koordinator/apis/scheduling/generated \
-  github.com/koordinator-sh/koordinator/apis/scheduling \
-  github.com/koordinator-sh/koordinator/apis/scheduling \
+  github.com/koordinator-sh/koordinator/pkg/scheduler/apis/generated \
+  github.com/koordinator-sh/koordinator/pkg/scheduler/apis \
+  github.com/koordinator-sh/koordinator/pkg/scheduler/apis \
   "config:v1beta2" \
   --output-base "${TEMP_DIR}" \
   --go-header-file hack/boilerplate/boilerplate.go.txt

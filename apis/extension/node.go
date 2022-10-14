@@ -20,8 +20,6 @@ import (
 	"encoding/json"
 
 	"k8s.io/apimachinery/pkg/types"
-
-	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 )
 
 const (
@@ -46,8 +44,8 @@ const (
 )
 
 const (
-	NodeNUMAAllocateStrategyLeastAllocated = string(schedulingconfig.NUMALeastAllocated)
-	NodeNUMAAllocateStrategyMostAllocated  = string(schedulingconfig.NUMAMostAllocated)
+	NodeNUMAAllocateStrategyLeastAllocated = string(NUMALeastAllocated)
+	NodeNUMAAllocateStrategyMostAllocated  = string(NUMAMostAllocated)
 )
 
 const (

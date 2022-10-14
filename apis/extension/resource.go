@@ -20,14 +20,12 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
-
-	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
 )
 
 const (
-	// Deprecated because of the limitation of extended resource naming
+	// Deprecated: because of the limitation of extended resource naming
 	KoordBatchCPU corev1.ResourceName = DomainPrefix + "batch-cpu"
-	// Deprecated because of the limitation of extended resource naming
+	// Deprecated: because of the limitation of extended resource naming
 	KoordBatchMemory corev1.ResourceName = DomainPrefix + "batch-memory"
 
 	BatchCPU    corev1.ResourceName = ResourceDomainPrefix + "batch-cpu"
@@ -80,28 +78,40 @@ type ResourceStatus struct {
 }
 
 // CPUBindPolicy defines the CPU binding policy
-type CPUBindPolicy = schedulingconfig.CPUBindPolicy
+type CPUBindPolicy string
 
 const (
 	// CPUBindPolicyDefault performs the default bind policy that specified in koord-scheduler configuration
-	CPUBindPolicyDefault CPUBindPolicy = schedulingconfig.CPUBindPolicyDefault
+	CPUBindPolicyDefault CPUBindPolicy = "Default"
 	// CPUBindPolicyFullPCPUs favor cpuset allocation that pack in few physical cores
-	CPUBindPolicyFullPCPUs CPUBindPolicy = schedulingconfig.CPUBindPolicyFullPCPUs
+	CPUBindPolicyFullPCPUs CPUBindPolicy = "FullPCPUs"
 	// CPUBindPolicySpreadByPCPUs favor cpuset allocation that evenly allocate logical cpus across physical cores
-	CPUBindPolicySpreadByPCPUs CPUBindPolicy = schedulingconfig.CPUBindPolicySpreadByPCPUs
+	CPUBindPolicySpreadByPCPUs CPUBindPolicy = "SpreadByPCPUs"
 	// CPUBindPolicyConstrainedBurst constrains the CPU Shared Pool range of the Burstable Pod
-	CPUBindPolicyConstrainedBurst CPUBindPolicy = schedulingconfig.CPUBindPolicyConstrainedBurst
+	CPUBindPolicyConstrainedBurst CPUBindPolicy = "ConstrainedBurst"
 )
 
-type CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicy
+type CPUExclusivePolicy string
 
 const (
 	// CPUExclusivePolicyNone does not perform any exclusive policy
-	CPUExclusivePolicyNone CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicyNone
+	CPUExclusivePolicyNone CPUExclusivePolicy = "None"
 	// CPUExclusivePolicyPCPULevel represents mutual exclusion in the physical core dimension
-	CPUExclusivePolicyPCPULevel CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicyPCPULevel
+	CPUExclusivePolicyPCPULevel CPUExclusivePolicy = "PCPULevel"
 	// CPUExclusivePolicyNUMANodeLevel indicates mutual exclusion in the NUMA topology dimension
-	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = schedulingconfig.CPUExclusivePolicyNUMANodeLevel
+	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = "NUMANodeLevel"
+)
+
+// NUMAAllocateStrategy indicates how to choose satisfied NUMA Nodes
+type NUMAAllocateStrategy string
+
+const (
+	// NUMAMostAllocated indicates that allocates from the NUMA Node with the least amount of available resource.
+	NUMAMostAllocated NUMAAllocateStrategy = "MostAllocated"
+	// NUMALeastAllocated indicates that allocates from the NUMA Node with the most amount of available resource.
+	NUMALeastAllocated NUMAAllocateStrategy = "LeastAllocated"
+	// NUMADistributeEvenly indicates that evenly distribute CPUs across NUMA Nodes.
+	NUMADistributeEvenly NUMAAllocateStrategy = "DistributeEvenly"
 )
 
 type NUMACPUSharedPools []CPUSharedPool
@@ -115,7 +125,7 @@ type CPUSharedPool struct {
 // GetResourceSpec parses ResourceSpec from annotations
 func GetResourceSpec(annotations map[string]string) (*ResourceSpec, error) {
 	resourceSpec := &ResourceSpec{
-		PreferredCPUBindPolicy: schedulingconfig.CPUBindPolicyDefault,
+		PreferredCPUBindPolicy: CPUBindPolicyDefault,
 	}
 	data, ok := annotations[AnnotationResourceSpec]
 	if !ok {

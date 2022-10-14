@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/retry"
@@ -35,18 +36,16 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	fakepgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 
-	"k8s.io/client-go/informers"
-	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/apis/scheduling/config"
-	"github.com/koordinator-sh/koordinator/apis/scheduling/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
@@ -612,12 +611,12 @@ func TestPermit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pgClientSet := fakepgclientset.NewSimpleClientset()
 			cs := kubefake.NewSimpleClientset()
-			//create gang by podGroup
+			// create gang by podGroup
 			pgClientSet.SchedulingV1alpha1().PodGroups(pg1.Namespace).Create(context.Background(), pg1, metav1.CreateOptions{})
 			pgClientSet.SchedulingV1alpha1().PodGroups(pg2.Namespace).Create(context.Background(), pg2, metav1.CreateOptions{})
 			pgClientSet.SchedulingV1alpha1().PodGroups(pg3.Namespace).Create(context.Background(), pg3, metav1.CreateOptions{})
 			pgClientSet.SchedulingV1alpha1().PodGroups(pg4.Namespace).Create(context.Background(), pg4, metav1.CreateOptions{})
-			//create  pods
+			// create  pods
 			for _, pod := range tt.pods {
 				cs.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 			}
@@ -740,7 +739,7 @@ func TestUnreserve(t *testing.T) {
 				for _, pod := range tt.pods {
 					tmpPod := pod
 					suit.Handle.(framework.Framework).RunPermitPlugins(context.Background(), cycleState, tmpPod, "")
-					//start goroutine to wait for the waitingPod's Reject signal from Unreserve stage
+					// start goroutine to wait for the waitingPod's Reject signal from Unreserve stage
 					go func() {
 						status := suit.Handle.(framework.Framework).WaitOnPermit(context.Background(), tmpPod)
 						if status.IsSuccess() {
@@ -749,7 +748,7 @@ func TestUnreserve(t *testing.T) {
 						defer wg.Done()
 					}()
 				}
-				//assert waitingPods
+				// assert waitingPods
 				totalWaitingPods := 0
 				suit.Handle.IterateOverWaitingPods(
 					func(waitingPod framework.WaitingPod) {

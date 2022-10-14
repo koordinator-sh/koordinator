@@ -36,7 +36,7 @@ import (
 	pginformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/apis/scheduling/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
@@ -391,7 +391,7 @@ func TestPermit(t *testing.T) {
 				mgr.cache.onPodGroupAdd(pg)
 			}
 			ctx := context.TODO()
-			//create  pods
+			// create  pods
 			for _, pod := range tt.pods {
 				mgr.cache.onPodAdd(pod)
 				mgr.Permit(ctx, pod)

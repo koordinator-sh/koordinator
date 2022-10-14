@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	schedulingconfig "github.com/koordinator-sh/koordinator/apis/scheduling/config"
+	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
 func TestEndpointsQueryCPUTopologyOptions(t *testing.T) {
