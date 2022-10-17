@@ -18,7 +18,7 @@ package system
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -65,7 +65,7 @@ func NewProcSysctl() utilsysctl.Interface {
 }
 
 func (*ProcSysctl) GetSysctl(sysctl string) (int, error) {
-	data, err := ioutil.ReadFile(GetProcSysFilePath(sysctl))
+	data, err := os.ReadFile(GetProcSysFilePath(sysctl))
 	if err != nil {
 		return -1, err
 	}
@@ -78,7 +78,7 @@ func (*ProcSysctl) GetSysctl(sysctl string) (int, error) {
 
 // SetSysctl modifies the specified sysctl flag to the new value
 func (*ProcSysctl) SetSysctl(sysctl string, newVal int) error {
-	return ioutil.WriteFile(GetProcSysFilePath(sysctl), []byte(strconv.Itoa(newVal)), 0640)
+	return os.WriteFile(GetProcSysFilePath(sysctl), []byte(strconv.Itoa(newVal)), 0640)
 }
 
 func SetSchedGroupIdentity(enable bool) error {
