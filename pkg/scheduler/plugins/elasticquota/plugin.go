@@ -151,7 +151,7 @@ func (g *Plugin) Start() {
 
 	quotaOverUsedRevokeController := NewQuotaOverUsedRevokeController(g.handle.ClientSet(), g.pluginArgs.DelayEvictTime.Duration,
 		g.pluginArgs.RevokePodInterval.Duration, g.groupQuotaManager, *g.pluginArgs.MonitorAllQuotas)
-	elasticQuotaController := NewElasticQuotaController(g.client, g.quotaLister, g.groupQuotaManager)
+	elasticQuotaController := NewElasticQuotaController(g.client, g.quotaLister, g.groupQuotaManager, g.pluginArgs.SyncHandlerInterval.Duration)
 
 	go wait.Until(g.migrateDefaultQuotaGroupsPod, MigrateDefaultQuotaGroupsPodCycle, nil)
 	go quotaOverUsedRevokeController.Start()

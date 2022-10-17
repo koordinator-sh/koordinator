@@ -38,16 +38,13 @@ import (
 	koordutil "github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-const (
-	SyncHandlerCycle = 1 * time.Second
-)
-
 // Controller is a controller that update elastic quota crd
 type Controller struct {
 	// schedClient is a clientSet for SchedulingV1alpha1 API group
-	schedClient       schedclientset.Interface
-	eqLister          schedlister.ElasticQuotaLister
-	groupQuotaManager *core.GroupQuotaManager
+	schedClient         schedclientset.Interface
+	eqLister            schedlister.ElasticQuotaLister
+	groupQuotaManager   *core.GroupQuotaManager
+	syncHandlerInterval time.Duration
 }
 
 // NewElasticQuotaController returns a new *Controller
@@ -55,13 +52,15 @@ func NewElasticQuotaController(
 	client schedclientset.Interface,
 	eqLister schedlister.ElasticQuotaLister,
 	groupQuotaManager *core.GroupQuotaManager,
+	syncHandlerInterval time.Duration,
 	newOpt ...func(ctrl *Controller),
 ) *Controller {
 	// set up elastic quota ctrl
 	ctrl := &Controller{
-		schedClient:       client,
-		eqLister:          eqLister,
-		groupQuotaManager: groupQuotaManager,
+		schedClient:         client,
+		eqLister:            eqLister,
+		groupQuotaManager:   groupQuotaManager,
+		syncHandlerInterval: syncHandlerInterval,
 	}
 	for _, f := range newOpt {
 		f(ctrl)
@@ -71,7 +70,7 @@ func NewElasticQuotaController(
 }
 
 func (ctrl *Controller) Start() {
-	go wait.Until(ctrl.Run, SyncHandlerCycle, context.TODO().Done())
+	go wait.Until(ctrl.Run, ctrl.syncHandlerInterval, context.TODO().Done())
 }
 
 func (ctrl *Controller) Run() {

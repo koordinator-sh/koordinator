@@ -212,6 +212,10 @@ func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1
 	err := v1beta2.Convert_v1beta2_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1beta2args, &elasticQuotaArgs, nil)
 	assert.NoError(t, err)
 
+	elasticQuotaArgs.SyncHandlerInterval = &metav1.Duration{
+		Duration: 1 * time.Second,
+	}
+
 	elasticQuotaPluginConfig := schedulerconfig.PluginConfig{
 		Name: Name,
 		Args: &elasticQuotaArgs,

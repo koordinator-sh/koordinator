@@ -180,8 +180,6 @@ func TestController_Run(t *testing.T) {
 				},
 			}
 			suit := newPluginTestSuitWithPod(t, nodes, nil)
-			//pl := suit.plugin.(*Plugin)
-			//ctrl := NewElasticQuotaController(pl.handle, pl.quotaLister, pl.groupQuotaManager)
 
 			for _, v := range c.elasticQuotas {
 				suit.client.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Create(ctx, v, metav1.CreateOptions{})

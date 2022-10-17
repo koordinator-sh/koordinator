@@ -61,6 +61,7 @@ var (
 
 	defaultDelayEvictTime       = 120 * time.Second
 	defaultRevokePodInterval    = 1 * time.Second
+	defaultSyncHandlerInterval  = 10 * time.Second
 	defaultDefaultQuotaGroupMax = corev1.ResourceList{
 		// pkg/scheduler/plugins/elasticquota/controller.go syncHandler patch will overflow when the spec Max/Min is too high.
 		corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
@@ -123,6 +124,11 @@ func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
 	if obj.RevokePodInterval == nil {
 		obj.RevokePodInterval = &metav1.Duration{
 			Duration: defaultRevokePodInterval,
+		}
+	}
+	if obj.SyncHandlerInterval == nil {
+		obj.SyncHandlerInterval = &metav1.Duration{
+			Duration: defaultSyncHandlerInterval,
 		}
 	}
 	if len(obj.DefaultQuotaGroupMax) == 0 {

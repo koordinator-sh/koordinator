@@ -138,6 +138,9 @@ type ElasticQuotaArgs struct {
 	// RevokePodInterval is the interval to check quotaGroup's used and runtime
 	RevokePodInterval *metav1.Duration `json:"revokePodInterval,omitempty"`
 
+	// SyncHandlerInterval is the interval to check whether elasticQuota's crd need to update.
+	SyncHandlerInterval *metav1.Duration `json:"syncHandlerInterval,omitempty"`
+
 	// DefaultQuotaGroupMax limit the maxQuota of DefaultQuotaGroup
 	DefaultQuotaGroupMax corev1.ResourceList `json:"defaultQuotaGroupMax,omitempty"`
 

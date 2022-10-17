@@ -77,6 +77,11 @@ func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 		*out = new(v1.Duration)
 		**out = **in
 	}
+	if in.SyncHandlerInterval != nil {
+		in, out := &in.SyncHandlerInterval, &out.SyncHandlerInterval
+		*out = new(v1.Duration)
+		**out = **in
+	}
 	if in.DefaultQuotaGroupMax != nil {
 		in, out := &in.DefaultQuotaGroupMax, &out.DefaultQuotaGroupMax
 		*out = make(corev1.ResourceList, len(*in))

@@ -128,6 +128,7 @@ func Convert_config_CoschedulingArgs_To_v1beta2_CoschedulingArgs(in *config.Cosc
 func autoConvert_v1beta2_ElasticQuotaArgs_To_config_ElasticQuotaArgs(in *ElasticQuotaArgs, out *config.ElasticQuotaArgs, s conversion.Scope) error {
 	out.DelayEvictTime = (*v1.Duration)(unsafe.Pointer(in.DelayEvictTime))
 	out.RevokePodInterval = (*v1.Duration)(unsafe.Pointer(in.RevokePodInterval))
+	out.SyncHandlerInterval = (*v1.Duration)(unsafe.Pointer(in.SyncHandlerInterval))
 	out.DefaultQuotaGroupMax = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultQuotaGroupMax))
 	out.SystemQuotaGroupMax = *(*corev1.ResourceList)(unsafe.Pointer(&in.SystemQuotaGroupMax))
 	out.QuotaGroupNamespace = in.QuotaGroupNamespace
@@ -143,6 +144,7 @@ func Convert_v1beta2_ElasticQuotaArgs_To_config_ElasticQuotaArgs(in *ElasticQuot
 func autoConvert_config_ElasticQuotaArgs_To_v1beta2_ElasticQuotaArgs(in *config.ElasticQuotaArgs, out *ElasticQuotaArgs, s conversion.Scope) error {
 	out.DelayEvictTime = (*v1.Duration)(unsafe.Pointer(in.DelayEvictTime))
 	out.RevokePodInterval = (*v1.Duration)(unsafe.Pointer(in.RevokePodInterval))
+	out.SyncHandlerInterval = (*v1.Duration)(unsafe.Pointer(in.SyncHandlerInterval))
 	out.DefaultQuotaGroupMax = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultQuotaGroupMax))
 	out.SystemQuotaGroupMax = *(*corev1.ResourceList)(unsafe.Pointer(&in.SystemQuotaGroupMax))
 	out.QuotaGroupNamespace = in.QuotaGroupNamespace
