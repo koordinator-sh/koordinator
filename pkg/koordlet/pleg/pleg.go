@@ -81,10 +81,12 @@ func NewPLEG(cgroupRootPath string) (Pleg, error) {
 	podWatcher, err := NewWatcher()
 	if err != nil {
 		klog.Error("failed to create pod watcher", err)
+		return nil, err
 	}
 	containerWatcher, err := NewWatcher()
 	if err != nil {
 		klog.Error("failed to create container watcher", err)
+		return nil, err
 	}
 
 	p := &pleg{
