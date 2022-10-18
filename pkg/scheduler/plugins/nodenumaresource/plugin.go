@@ -57,7 +57,12 @@ var (
 	SetResourceStatus = extension.SetResourceStatus
 	GetPodQoSClass    = extension.GetPodQoSClass
 	GetPriorityClass  = extension.GetPriorityClass
-	AllowUseCPUSet    = func(qosClass extension.QoSClass, priorityClass extension.PriorityClass) bool {
+	AllowUseCPUSet    = func(pod *corev1.Pod) bool {
+		if pod == nil {
+			return false
+		}
+		qosClass := GetPodQoSClass(pod)
+		priorityClass := GetPriorityClass(pod)
 		return (qosClass == extension.QoSLSE || qosClass == extension.QoSLSR) && priorityClass == extension.PriorityProd
 	}
 )
@@ -186,10 +191,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	state := &preFilterState{
 		skip: true,
 	}
-
-	qosClass := GetPodQoSClass(pod)
-	priorityClass := GetPriorityClass(pod)
-	if AllowUseCPUSet(qosClass, priorityClass) {
+	if AllowUseCPUSet(pod) {
 		preferredCPUBindPolicy := resourceSpec.PreferredCPUBindPolicy
 		if preferredCPUBindPolicy == "" || preferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault {
 			preferredCPUBindPolicy = p.pluginArgs.DefaultCPUBindPolicy
