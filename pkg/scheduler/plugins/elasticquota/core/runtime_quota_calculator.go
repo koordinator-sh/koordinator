@@ -94,7 +94,7 @@ func (qt *quotaTree) find(groupName string) (bool, *quotaNode) {
 	return false, nil
 }
 
-//redistribution distribute the parentQuotaGroup's (or totalResource of the cluster (except the
+// redistribution distribute the parentQuotaGroup's (or totalResource of the cluster (except the
 // DefaultQuotaGroup/SystemQuotaGroup) resource to the childQuotaGroup's according to the PR's rule
 func (qt *quotaTree) redistribution(totalResource int64) {
 	toPartitionResource := totalResource

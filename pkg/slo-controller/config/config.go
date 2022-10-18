@@ -40,7 +40,7 @@ func InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&ConfigNameSpace, "config-namespace", ConfigNameSpace, "determines the namespace of configmap uses.")
 }
 
-//TODO move under apis in the next PR
+// TODO move under apis in the next PR
 // +k8s:deepcopy-gen=true
 type ColocationCfg struct {
 	ColocationStrategy `json:",inline"`
