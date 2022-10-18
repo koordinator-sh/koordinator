@@ -84,19 +84,19 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 
 	podRequest, _ := resource.PodRequestsAndLimits(pod)
 
-	for deviceType := range deviceResourceNames {
+	for deviceType := range DeviceResourceNames {
 		switch deviceType {
 		case schedulingv1alpha1.GPU:
 			if !hasDeviceResource(podRequest, deviceType) {
 				break
 			}
-			combination, err := validateGPURequest(podRequest)
+			combination, err := ValidateGPURequest(podRequest)
 			if err != nil {
 				return framework.NewStatus(framework.Error, err.Error())
 			}
 			state.convertedDeviceResource = quotav1.Add(
 				state.convertedDeviceResource,
-				convertGPUResource(podRequest, combination),
+				ConvertGPUResource(podRequest, combination),
 			)
 			state.skip = false
 		case schedulingv1alpha1.RDMA, schedulingv1alpha1.FPGA:

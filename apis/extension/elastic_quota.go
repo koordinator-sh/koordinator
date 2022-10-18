@@ -76,3 +76,7 @@ func IsForbiddenModify(quota *v1alpha1.ElasticQuota) (bool, error) {
 
 	return false, nil
 }
+
+var GetQuotaName = func(pod *corev1.Pod) string {
+	return pod.Labels[LabelQuotaName]
+}

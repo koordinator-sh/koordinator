@@ -40,7 +40,7 @@ func GetGangNameByPod(pod *v1.Pod) string {
 	var gangName string
 	gangName = pod.Labels[v1alpha1.PodGroupLabel]
 	if gangName == "" {
-		gangName = pod.Annotations[extension.AnnotationGangName]
+		gangName = extension.GetGangName(pod)
 	}
 	return gangName
 }

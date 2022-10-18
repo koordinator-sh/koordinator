@@ -18,6 +18,7 @@ package extension
 
 import (
 	"encoding/json"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -193,4 +194,16 @@ func SetDeviceAllocations(pod *corev1.Pod, allocations DeviceAllocations) error 
 
 	pod.Annotations[AnnotationDeviceAllocated] = string(data)
 	return nil
+}
+
+func GetMinNum(pod *corev1.Pod) (int, error) {
+	minRequiredNum, err := strconv.ParseInt(pod.Annotations[AnnotationGangMinNum], 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return int(minRequiredNum), nil
+}
+
+func GetGangName(pod *corev1.Pod) string {
+	return pod.Annotations[AnnotationGangName]
 }
