@@ -727,8 +727,8 @@ func (a *cpuAccumulator) sortCPUsByRefCount(cpus []int) {
 	sort.Slice(cpus, func(i, j int) bool {
 		iCPU := cpus[i]
 		jCPU := cpus[j]
-		iRefCount := a.topology.CPUDetails[iCPU].RefCount
-		jRefCount := a.topology.CPUDetails[jCPU].RefCount
+		iRefCount := a.allocatableCPUs[iCPU].RefCount
+		jRefCount := a.allocatableCPUs[jCPU].RefCount
 		if iRefCount != jRefCount {
 			return iRefCount < jRefCount
 		}
