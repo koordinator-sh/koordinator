@@ -597,6 +597,60 @@ func TestTakeCPUsWithMaxRefCount(t *testing.T) {
 	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
 }
 
+func TestTakeCPUsSortByRefCount(t *testing.T) {
+	cpuTopology := buildCPUTopologyForTest(1, 1, 16, 2)
+	for _, v := range cpuTopology.CPUDetails {
+		v.CoreID = v.SocketID<<16 | v.CoreID
+		cpuTopology.CPUDetails[v.CPUID] = v
+	}
+
+	allocationState := newCPUAllocation("test-node-1")
+	assert.NotNil(t, allocationState)
+
+	// first pod request 16 CPUs
+	podUID := uuid.NewUUID()
+	availableCPUs, allocatedCPUsDetails := allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	result, err := takeCPUs(
+		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
+		16, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	assert.True(t, result.Equals(MustParse("0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30")))
+	assert.NoError(t, err)
+	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
+
+	// second pod request 16 CPUs
+	podUID = uuid.NewUUID()
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	result, err = takeCPUs(
+		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
+		16, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	assert.True(t, result.Equals(MustParse("0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15")))
+	assert.NoError(t, err)
+	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
+
+	// third pod request 16 cpus
+	podUID = uuid.NewUUID()
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	result, err = takeCPUs(
+		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
+		16, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	assert.True(t, result.Equals(MustParse("1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31")))
+	assert.NoError(t, err)
+	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
+
+	// forth pod request 16 cpus
+	podUID = uuid.NewUUID()
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	result, err = takeCPUs(
+		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
+		16, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	assert.True(t, result.Equals(MustParse("16-31")))
+	assert.NoError(t, err)
+	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
+
+	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	assert.Equal(t, MustParse(""), availableCPUs)
+}
+
 func BenchmarkTakeCPUsWithSameCoreFirst(b *testing.B) {
 	tests := []struct {
 		name          string
