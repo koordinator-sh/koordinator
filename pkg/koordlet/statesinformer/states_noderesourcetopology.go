@@ -39,6 +39,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	kubeletutil "github.com/koordinator-sh/koordinator/pkg/util/kubelet"
@@ -98,6 +99,10 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 }
 
 func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
+	if !features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+		klog.V(3).Infof("feature %v not enalbed, no need to run module", features.NodeTopologyReport)
+		return
+	}
 	klog.V(2).Infof("starting node topo informer")
 	if !cache.WaitForCacheSync(stopCh, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
 		klog.Fatalf("timed out waiting for pod caches to sync")

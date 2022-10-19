@@ -49,6 +49,9 @@ const (
 	// CgroupReconcile reconciles qos config for resources like cpu, memory, disk, etc.
 	CgroupReconcile featuregate.Feature = "CgroupReconcile"
 
+	// CgroupReconcile report node topology info to api-server through crd.
+	NodeTopologyReport featuregate.Feature = "NodeTopologyReport"
+
 	// Accelerators enables GPU related feature in koordlet.
 	// Only Nvidia GPUs are supported as of v0.6.
 	Accelerators featuregate.Feature = "Accelerators"
@@ -72,6 +75,7 @@ var (
 		CPUBurst:               {Default: false, PreRelease: featuregate.Alpha},
 		RdtResctrl:             {Default: false, PreRelease: featuregate.Alpha},
 		CgroupReconcile:        {Default: false, PreRelease: featuregate.Alpha},
+		NodeTopologyReport:     {Default: false, PreRelease: featuregate.Alpha},
 		Accelerators:           {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
