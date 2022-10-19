@@ -17,6 +17,9 @@ limitations under the License.
 package pleg
 
 import (
+	"fmt"
+	"runtime"
+
 	"k8s.io/utils/inotify"
 )
 
@@ -49,6 +52,8 @@ const (
 	DirRemoved
 	UnknownType
 )
+
+var errNotSupported = fmt.Errorf("watch not supported on %s", runtime.GOOS)
 
 type Watcher interface {
 	AddWatch(path string) error
