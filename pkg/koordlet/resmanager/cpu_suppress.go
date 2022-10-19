@@ -451,15 +451,16 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 		if err != nil {
 			continue
 		}
-		if alloc.CPUSet != "" {
-			set, err := cpuset.Parse(alloc.CPUSet)
-			if err != nil {
-				klog.Errorf("failed to parse cpuset info of pod %s, err: %v", podMeta.Pod.Name, err)
-				continue
-			}
-			for _, cpuID := range set.ToSliceNoSort() {
-				cpuIdToPool[int32(cpuID)] = apiext.GetPodQoSClass(podMeta.Pod)
-			}
+		if alloc.CPUSet == "" {
+			continue
+		}
+		set, err := cpuset.Parse(alloc.CPUSet)
+		if err != nil {
+			klog.Errorf("failed to parse cpuset info of pod %s, err: %v", podMeta.Pod.Name, err)
+			continue
+		}
+		for _, cpuID := range set.ToSliceNoSort() {
+			cpuIdToPool[int32(cpuID)] = apiext.GetPodQoSClass(podMeta.Pod)
 		}
 	}
 	lsrCpus := []util.ProcessorInfo{}
@@ -527,15 +528,16 @@ func (r *CPUSuppress) recoverCPUSetIfNeed(maxDepth int) {
 		if apiext.GetPodQoSClass(podMeta.Pod) != apiext.QoSLSE {
 			continue
 		}
-		if alloc.CPUSet != "" {
-			set, err := cpuset.Parse(alloc.CPUSet)
-			if err != nil {
-				klog.Errorf("failed to parse cpuset info of pod %s, err: %v", podMeta.Pod.Name, err)
-				continue
-			}
-			for _, cpuID := range set.ToSliceNoSort() {
-				lseCPUID[cpuID] = true
-			}
+		if alloc.CPUSet == "" {
+			continue
+		}
+		set, err := cpuset.Parse(alloc.CPUSet)
+		if err != nil {
+			klog.Errorf("failed to parse cpuset info of pod %s, err: %v", podMeta.Pod.Name, err)
+			continue
+		}
+		for _, cpuID := range set.ToSliceNoSort() {
+			lseCPUID[cpuID] = true
 		}
 	}
 	beCPUSet.Filter(func(ID int) bool {
