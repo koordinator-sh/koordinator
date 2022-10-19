@@ -17,9 +17,15 @@ limitations under the License.
 package config
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"flag"
 	"strings"
 
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	cliflag "k8s.io/component-base/cli/flag"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -28,6 +34,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
+	qosmanagerconfig "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/config"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
@@ -35,13 +42,23 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
+const (
+	DefaultKoordletConfigMapNamespace = "koordinator-system"
+	DefaultKoordletConfigMapName      = "koordlet-config"
+
+	CMKeyQoSPluginExtraConfigs = "qos-plugin-extra-configs"
+)
+
 type Configuration struct {
+	ConfigMapName      string
+	ConfigMapNamesapce string
 	KubeRestConf       *rest.Config
 	StatesInformerConf *statesinformer.Config
 	ReporterConf       *reporter.Config
 	CollectorConf      *metricsadvisor.Config
 	MetricCacheConf    *metriccache.Config
 	ResManagerConf     *resmanager.Config
+	QosManagerConf     *qosmanagerconfig.Config
 	RuntimeHookConf    *runtimehooks.Config
 	AuditConf          *audit.Config
 	FeatureGates       map[string]bool
@@ -49,23 +66,29 @@ type Configuration struct {
 
 func NewConfiguration() *Configuration {
 	return &Configuration{
+		ConfigMapName:      DefaultKoordletConfigMapName,
+		ConfigMapNamesapce: DefaultKoordletConfigMapNamespace,
 		StatesInformerConf: statesinformer.NewDefaultConfig(),
 		ReporterConf:       reporter.NewDefaultConfig(),
 		CollectorConf:      metricsadvisor.NewDefaultConfig(),
 		MetricCacheConf:    metriccache.NewDefaultConfig(),
 		ResManagerConf:     resmanager.NewDefaultConfig(),
+		QosManagerConf:     qosmanagerconfig.NewDefaultConfig(),
 		RuntimeHookConf:    runtimehooks.NewDefaultConfig(),
 		AuditConf:          audit.NewDefaultConfig(),
 	}
 }
 
 func (c *Configuration) InitFlags(fs *flag.FlagSet) {
+	fs.StringVar(&c.ConfigMapName, "configmap-name", DefaultKoordletConfigMapName, "determines the name the koordlet configmap uses.")
+	fs.StringVar(&c.ConfigMapNamesapce, "configmap-namespace", DefaultKoordletConfigMapNamespace, "determines the namespace of configmap uses.")
 	system.Conf.InitFlags(fs)
 	c.StatesInformerConf.InitFlags(fs)
 	c.ReporterConf.InitFlags(fs)
 	c.CollectorConf.InitFlags(fs)
 	c.MetricCacheConf.InitFlags(fs)
 	c.ResManagerConf.InitFlags(fs)
+	c.QosManagerConf.InitFlags(fs)
 	c.RuntimeHookConf.InitFlags(fs)
 	c.AuditConf.InitFlags(fs)
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "feature-gates", "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
@@ -79,5 +102,29 @@ func (c *Configuration) InitClient() error {
 	}
 	cfg.UserAgent = "koordlet"
 	c.KubeRestConf = cfg
+	return nil
+}
+
+func (c *Configuration) InitFromConfigMap() error {
+	if c.KubeRestConf == nil {
+		return errors.New("KubeRestConf is nil")
+	}
+	cli, err := kubernetes.NewForConfig(c.KubeRestConf)
+	if err != nil {
+		return err
+	}
+	cm, err := cli.CoreV1().ConfigMaps(c.ConfigMapNamesapce).Get(context.TODO(), c.ConfigMapName, metav1.GetOptions{})
+	if err == nil {
+		// Setup extra configs for QoS Manager.
+		if qosPluginExtraConfigRaw, found := cm.Data[CMKeyQoSPluginExtraConfigs]; found {
+			var extraConfigs map[string]string
+			if err = json.Unmarshal([]byte(qosPluginExtraConfigRaw), &extraConfigs); err != nil {
+				return err
+			}
+			c.QosManagerConf.PluginExtraConfigs = extraConfigs
+		}
+	} else if !k8serrors.IsNotFound(err) {
+		return err
+	}
 	return nil
 }
