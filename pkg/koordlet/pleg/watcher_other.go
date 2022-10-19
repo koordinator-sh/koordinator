@@ -20,13 +20,8 @@ limitations under the License.
 package pleg
 
 import (
-	"fmt"
-	"runtime"
-
 	"k8s.io/utils/inotify"
 )
-
-var errNotSupported = fmt.Errorf("watch not supported on %s", runtime.GOOS)
 
 func NewWatcher() (Watcher, error) {
 	return nil, errNotSupported
