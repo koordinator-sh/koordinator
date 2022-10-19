@@ -417,7 +417,7 @@ func TestPlugin_Filter(t *testing.T) {
 				skip: false,
 			},
 			pod:  &corev1.Pod{},
-			want: framework.NewStatus(framework.Error, ErrNotFoundCPUTopology),
+			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNotFoundCPUTopology),
 		},
 		{
 			name: "error with invalid cpu topology",
