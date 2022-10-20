@@ -31,7 +31,7 @@ type GPUMetric struct {
 	DeviceUUID  string            // device UUID
 	SMUtil      uint32            // current utilization rate for the device
 	MemoryUsed  resource.Quantity // used memory on the device, in bytes
-	MemoryTotal resource.Quantity // total memroy on device, in bytes
+	MemoryTotal resource.Quantity // total memory on device, in bytes
 }
 
 type MemoryMetric struct {
