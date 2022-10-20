@@ -19,8 +19,6 @@ package elasticquota
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 // todo the eventHandler's operation should be a complete transaction in the future work.
@@ -32,13 +30,7 @@ func (g *Plugin) OnPodAdd(obj interface{}) {
 	}
 
 	quotaName := g.getPodAssociateQuotaName(pod)
-	g.groupQuotaManager.UpdatePodCache(quotaName, pod, true)
-	g.groupQuotaManager.UpdatePodRequest(quotaName, nil, pod)
-	// in case failOver, update pod isAssigned explicitly according to its phase and NodeName.
-	if pod.Spec.NodeName != "" && !util.IsPodTerminated(pod) {
-		g.groupQuotaManager.UpdatePodIsAssigned(quotaName, pod, true)
-		g.groupQuotaManager.UpdatePodUsed(quotaName, nil, pod)
-	}
+	g.groupQuotaManager.OnPodAdd(quotaName, pod)
 	klog.V(5).Infof("OnPodAddFunc %v.%v add success, quotaName:%v", pod.Namespace, pod.Name, quotaName)
 }
 
@@ -53,22 +45,7 @@ func (g *Plugin) OnPodUpdate(oldObj, newObj interface{}) {
 
 	oldQuotaName := g.getPodAssociateQuotaName(oldPod)
 	newQuotaName := g.getPodAssociateQuotaName(newPod)
-
-	if oldQuotaName == newQuotaName {
-		g.groupQuotaManager.UpdatePodRequest(newQuotaName, oldPod, newPod)
-		g.groupQuotaManager.UpdatePodUsed(newQuotaName, oldPod, newPod)
-	} else {
-		isAssigned := g.groupQuotaManager.GetPodIsAssigned(oldQuotaName, oldPod)
-		g.groupQuotaManager.UpdatePodRequest(oldQuotaName, oldPod, nil)
-		g.groupQuotaManager.UpdatePodUsed(oldQuotaName, oldPod, nil)
-		g.groupQuotaManager.UpdatePodCache(oldQuotaName, oldPod, false)
-
-		g.groupQuotaManager.UpdatePodCache(newQuotaName, newPod, true)
-		g.groupQuotaManager.UpdatePodIsAssigned(newQuotaName, newPod, isAssigned)
-		g.groupQuotaManager.UpdatePodRequest(newQuotaName, nil, newPod)
-		g.groupQuotaManager.UpdatePodUsed(newQuotaName, nil, newPod)
-	}
-
+	g.groupQuotaManager.OnPodUpdate(newQuotaName, oldQuotaName, newPod, oldPod)
 	klog.V(5).Infof("OnPodUpdateFunc %v.%v update success, quotaName:%v", newPod.Namespace, newPod.Name, newQuotaName)
 }
 
@@ -79,8 +56,6 @@ func (g *Plugin) OnPodDelete(obj interface{}) {
 	}
 
 	quotaName := g.getPodAssociateQuotaName(pod)
-	g.groupQuotaManager.UpdatePodRequest(quotaName, pod, nil)
-	g.groupQuotaManager.UpdatePodUsed(quotaName, pod, nil)
-	g.groupQuotaManager.UpdatePodCache(quotaName, pod, false)
+	g.groupQuotaManager.OnPodDelete(quotaName, pod)
 	klog.V(5).Infof("OnPodDeleteFunc %v.%v delete success", pod.Namespace, pod.Name)
 }

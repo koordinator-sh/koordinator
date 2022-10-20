@@ -37,6 +37,7 @@ func (g *Plugin) OnNodeAdd(obj interface{}) {
 
 	g.nodeResourceMapLock.Lock()
 	defer g.nodeResourceMapLock.Unlock()
+
 	if _, ok := g.nodeResourceMap[node.Name]; ok {
 		klog.Infof("OnNodeAddFunc skip due onAdd twice:%v", node.Name)
 		return
