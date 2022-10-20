@@ -153,7 +153,7 @@ func (rm *ResourceUpdateExecutor) needUpdate(currentResource ResourceUpdater) bo
 }
 
 func NewLeveledResourceUpdateExecutor(name string, forceUpdateSeconds int) *LeveledResourceUpdateExecutor {
-	executor := &LeveledResourceUpdateExecutor{
+	return &LeveledResourceUpdateExecutor{
 		ResourceUpdateExecutor: ResourceUpdateExecutor{
 			name:               name,
 			resourceCache:      cache.NewCacheDefault(),
@@ -161,7 +161,6 @@ func NewLeveledResourceUpdateExecutor(name string, forceUpdateSeconds int) *Leve
 			locker:             &sync.Mutex{},
 		},
 	}
-	return executor
 }
 
 // LeveledUpdateBatchByCache update a batch of resources by the level order cacheable. It firstly merge updates
