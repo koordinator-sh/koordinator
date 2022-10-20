@@ -166,7 +166,7 @@ func NewLeveledResourceUpdateExecutor(name string, forceUpdateSeconds int) *Leve
 // LeveledUpdateBatchByCache update a batch of resources by the level order cacheable. It firstly merge updates
 // resources from top to bottom, and then updates resources from bottom to top. It is compatible for some of resources
 // which just need to update once but not have an additional merge update.
-func (e *LeveledResourceUpdateExecutor) LeveledUpdateBatchByCache(resources [][]MergeableResourceUpdater) (updated bool) {
+func (e *LeveledResourceUpdateExecutor) LeveledUpdateBatchByCache(resources [][]MergeableResourceUpdater) {
 	e.locker.Lock()
 	defer e.locker.Unlock()
 	var err error
@@ -219,11 +219,10 @@ func (e *LeveledResourceUpdateExecutor) LeveledUpdateBatchByCache(resources [][]
 			}
 		}
 	}
-	return
 }
 
 // LeveledUpdateBatch update a batch of resources by the level order.
-func (e *LeveledResourceUpdateExecutor) LeveledUpdateBatch(resources [][]MergeableResourceUpdater) (updated bool) {
+func (e *LeveledResourceUpdateExecutor) LeveledUpdateBatch(resources [][]MergeableResourceUpdater) {
 	e.locker.Lock()
 	defer e.locker.Unlock()
 	var err error
@@ -252,5 +251,4 @@ func (e *LeveledResourceUpdateExecutor) LeveledUpdateBatch(resources [][]Mergeab
 			}
 		}
 	}
-	return
 }
