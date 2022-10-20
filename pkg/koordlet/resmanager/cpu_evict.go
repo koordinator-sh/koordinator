@@ -156,9 +156,6 @@ func (c *CPUEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 	var killedPods []*corev1.Pod
 	for _, bePod := range bePodInfos {
 		if cpuMilliReleased < cpuNeedMilliRelease {
-			podKillMsg := fmt.Sprintf("%s, kill pod : %s", message, bePod.pod.Name)
-			killContainers(bePod.pod, podKillMsg)
-
 			killedPods = append(killedPods, bePod.pod)
 			cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
 		}
