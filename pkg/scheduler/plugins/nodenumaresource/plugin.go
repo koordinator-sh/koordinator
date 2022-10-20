@@ -247,7 +247,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 
 	cpuTopologyOptions := p.topologyManager.GetCPUTopologyOptions(node.Name)
 	if cpuTopologyOptions.CPUTopology == nil {
-		return framework.NewStatus(framework.Error, ErrNotFoundCPUTopology)
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNotFoundCPUTopology)
 	}
 
 	// It's necessary to force node to have NodeResourceTopology and CPUTopology
