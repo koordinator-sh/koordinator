@@ -245,13 +245,11 @@ func (g *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 
 func (g *Plugin) Reserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
 	quotaName := g.getPodAssociateQuotaName(p)
-	g.groupQuotaManager.UpdatePodIsAssigned(quotaName, p, true)
-	g.groupQuotaManager.UpdatePodUsed(quotaName, nil, p)
+	g.groupQuotaManager.ReservePod(quotaName, p)
 	return framework.NewStatus(framework.Success, "")
 }
 
 func (g *Plugin) Unreserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) {
 	quotaName := g.getPodAssociateQuotaName(p)
-	g.groupQuotaManager.UpdatePodUsed(quotaName, p, nil)
-	g.groupQuotaManager.UpdatePodIsAssigned(quotaName, p, false)
+	g.groupQuotaManager.UnreservePod(quotaName, p)
 }

@@ -35,8 +35,6 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 	suit.AddQuota("test1", "root", 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
 	gqm := pg.groupQuotaManager
 	gqm.UpdateClusterTotalResource(createResourceList(100, 1000))
-	pod1 := makePod2("pod1", createResourceList(1000, 100000))
-	gqm.UpdatePodRequest("test1", nil, pod1)
 	gqm.RefreshRuntime("test1")
 	quotaOverUsedRevokeController := NewQuotaOverUsedRevokeController(pg.handle.ClientSet(), pg.pluginArgs.DelayEvictTime.Duration,
 		pg.pluginArgs.RevokePodInterval.Duration, pg.groupQuotaManager, *pg.pluginArgs.MonitorAllQuotas)
@@ -46,9 +44,7 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 		usedQuota := createResourceList(0, 0)
 		usedQuota["extended"] = *resource.NewQuantity(10000, resource.DecimalSI)
 		pod := makePod2("pod", usedQuota)
-		gqm.UpdatePodCache("test1", pod, true)
-		gqm.UpdatePodIsAssigned("test1", pod, true)
-		gqm.UpdatePodUsed("test1", nil, pod)
+		gqm.OnPodAdd("test1", pod)
 
 		result := monitor.monitor()
 		if result {
@@ -59,9 +55,8 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 		usedQuota := createResourceList(1000, 0)
 		usedQuota["extended"] = *resource.NewQuantity(10000, resource.DecimalSI)
 		pod := makePod2("pod", usedQuota)
-		gqm.UpdatePodCache("test1", pod, true)
-		gqm.UpdatePodIsAssigned("test1", pod, true)
-		gqm.UpdatePodUsed("test1", nil, pod)
+		gqm.OnPodAdd("test1", pod)
+
 		result := monitor.monitor()
 		if result {
 			t.Errorf("error")
@@ -71,9 +66,8 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 		usedQuota := createResourceList(-1000, 0)
 		usedQuota["extended"] = *resource.NewQuantity(10000, resource.DecimalSI)
 		pod := makePod2("pod", usedQuota)
-		gqm.UpdatePodCache("test1", pod, true)
-		gqm.UpdatePodIsAssigned("test1", pod, true)
-		gqm.UpdatePodUsed("test1", nil, pod)
+		gqm.OnPodAdd("test1", pod)
+
 		result := monitor.monitor()
 		if result {
 			t.Errorf("error")
@@ -83,9 +77,8 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 		usedQuota := createResourceList(1000, 0)
 		usedQuota["extended"] = *resource.NewQuantity(10000, resource.DecimalSI)
 		pod := makePod2("pod", usedQuota)
-		gqm.UpdatePodCache("test1", pod, true)
-		gqm.UpdatePodIsAssigned("test1", pod, true)
-		gqm.UpdatePodUsed("test1", nil, pod)
+		gqm.OnPodAdd("test1", pod)
+
 		monitor.overUsedTriggerEvictDuration = 0 * time.Second
 
 		result := monitor.monitor()
@@ -114,18 +107,10 @@ func TestQuotaOverUsedRevokeController_GetToRevokePodList(t *testing.T) {
 	pod2 := defaultCreatePod("2", 9, 10, 1)
 	pod3 := defaultCreatePod("3", 8, 20, 0)
 	pod4 := defaultCreatePod("4", 7, 40, 0)
-	gqm.UpdatePodCache("test1", pod1, true)
-	gqm.UpdatePodCache("test1", pod2, true)
-	gqm.UpdatePodCache("test1", pod3, true)
-	gqm.UpdatePodCache("test1", pod4, true)
-	quotaInfo.UpdatePodIsAssigned("1", true)
-	quotaInfo.UpdatePodIsAssigned("3", true)
-	quotaInfo.UpdatePodIsAssigned("2", true)
-	quotaInfo.UpdatePodIsAssigned("4", true)
-	gqm.UpdatePodUsed("test1", nil, pod1)
-	gqm.UpdatePodUsed("test1", nil, pod2)
-	gqm.UpdatePodUsed("test1", nil, pod3)
-	gqm.UpdatePodUsed("test1", nil, pod4)
+	gqm.OnPodAdd("test1", pod1)
+	gqm.OnPodAdd("test1", pod2)
+	gqm.OnPodAdd("test1", pod3)
+	gqm.OnPodAdd("test1", pod4)
 
 	result := con.monitors["test1"].getToRevokePodList("test1")
 	if len(result) != 2 {
@@ -164,15 +149,9 @@ func TestQuotaOverUsedRevokeController_GetToMonitorQuotas(t *testing.T) {
 	suit.AddQuota("test3", "root", 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
 	time.Sleep(10 * time.Millisecond)
 	pod := makePod2("pod", createResourceList(100, 0))
-	gqm.UpdatePodCache("test1", pod, true)
-	gqm.UpdatePodCache("test2", pod, true)
-	gqm.UpdatePodCache("test3", pod, true)
-	gqm.UpdatePodIsAssigned("test1", pod, true)
-	gqm.UpdatePodIsAssigned("test2", pod, true)
-	gqm.UpdatePodIsAssigned("test3", pod, true)
-	gqm.UpdatePodUsed("test1", nil, pod)
-	gqm.UpdatePodUsed("test2", nil, pod)
-	gqm.UpdatePodUsed("test3", nil, pod)
+	gqm.OnPodAdd("test1", pod)
+	gqm.OnPodAdd("test2", pod)
+	gqm.OnPodAdd("test3", pod)
 	yun1 := gqm.GetQuotaInfoByName("test1")
 	yun1.Lock()
 	yun1.CalculateInfo.Runtime = createResourceList(10, 0)

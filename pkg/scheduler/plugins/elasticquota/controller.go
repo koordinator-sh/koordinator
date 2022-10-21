@@ -18,8 +18,6 @@ package elasticquota
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -93,35 +91,27 @@ func (ctrl *Controller) syncHandler() []error {
 
 	for _, eq := range eqList {
 		func() {
-			ctrl.groupQuotaManager.RLock()
-			defer ctrl.groupQuotaManager.RUnLock()
-
-			klog.V(5).InfoS("Try to process elastic quota", "elasticQuota", eq.Name)
-
-			quotaInfo := ctrl.groupQuotaManager.GetQuotaInfoByNameNoLock(eq.Name)
-			if quotaInfo == nil {
-				errors = append(errors, fmt.Errorf("qroupQuotaManager has not have this quota:%v", eq.Name))
+			used, request, runtime, err := ctrl.groupQuotaManager.GetQuotaInformationForSyncHandler(eq.Name)
+			if err != nil {
+				errors = append(errors, err)
 				return
 			}
-			used := quotaInfo.GetUsed()
-			runtime, _ := json.Marshal(ctrl.groupQuotaManager.RefreshRuntimeNoLock(eq.Name))
-			request, _ := json.Marshal(quotaInfo.GetRequest())
 
 			// Ignore this loop if the runtime/request/used doesn't change
 			if quotav1.Equals(eq.Status.Used, used) &&
-				eq.Annotations[extension.AnnotationRuntime] == string(runtime) &&
-				eq.Annotations[extension.AnnotationRequest] == string(request) {
+				eq.Annotations[extension.AnnotationRuntime] == runtime &&
+				eq.Annotations[extension.AnnotationRequest] == request {
 				return
 			}
 			klog.V(5).Infof("quota:%v, oldUsed:%v, newUsed:%v, oldRuntime:%v, newRuntime:%v, oldRequest:%v, newRequest:%v",
-				eq.Name, eq.Status.Used, used, eq.Annotations[extension.AnnotationRuntime], string(runtime),
-				eq.Annotations[extension.AnnotationRequest], string(request))
+				eq.Name, eq.Status.Used, used, eq.Annotations[extension.AnnotationRuntime], runtime,
+				eq.Annotations[extension.AnnotationRequest], request)
 			newEQ := eq.DeepCopy()
 			if newEQ.Annotations == nil {
 				newEQ.Annotations = make(map[string]string)
 			}
-			newEQ.Annotations[extension.AnnotationRuntime] = string(runtime)
-			newEQ.Annotations[extension.AnnotationRequest] = string(request)
+			newEQ.Annotations[extension.AnnotationRuntime] = runtime
+			newEQ.Annotations[extension.AnnotationRequest] = request
 			newEQ.Status.Used = used
 
 			patch, err := util.CreateMergePatch(eq, newEQ)

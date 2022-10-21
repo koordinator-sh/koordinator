@@ -26,9 +26,9 @@ import (
 func TestQuotaInfo_AddPodIfNotPresent_RemovePodIfPresent_GetPodCache(t *testing.T) {
 	qi := NewQuotaInfo(false, true, "qi1", "root")
 	pod := schetesting.MakePod().Name("test").Obj()
-	qi.AddPodIfNotPresent(pod)
+	qi.addPodIfNotPresent(pod)
 	assert.Equal(t, 1, len(qi.GetPodCache()))
-	qi.AddPodIfNotPresent(pod)
+	qi.addPodIfNotPresent(pod)
 	assert.False(t, qi.GetPodIsAssigned(pod))
 	err := qi.UpdatePodIsAssigned(pod.Name, false)
 	assert.NotNil(t, err)
@@ -36,9 +36,8 @@ func TestQuotaInfo_AddPodIfNotPresent_RemovePodIfPresent_GetPodCache(t *testing.
 	assert.Nil(t, err)
 	assert.True(t, qi.GetPodIsAssigned(pod))
 
-	qi.RemovePodIfPreSent(pod.Name)
+	qi.removePodIfPresent(pod.Name)
 	assert.Equal(t, 0, len(qi.GetPodCache()))
-	qi.RemovePodIfPreSent(pod.Name)
 }
 
 func TestQuotaInfo_DeepCopy(t *testing.T) {
