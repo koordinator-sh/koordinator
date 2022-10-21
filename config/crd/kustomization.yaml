@@ -2,7 +2,15 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
+- bases/config.koordinator.sh_clustercolocationprofiles.yaml
+- bases/scheduling.koordinator.sh_devices.yaml
+- bases/scheduling.koordinator.sh_podmigrationjobs.yaml
+- bases/scheduling.koordinator.sh_reservations.yaml
 - bases/slo.koordinator.sh_nodemetrics.yaml
+- bases/slo.koordinator.sh_nodeslos.yaml
+- bases/scheduling.sigs.k8s.io_elasticquotas.yaml
+- bases/scheduling.sigs.k8s.io_podgroups.yaml
+- bases/topology.node.k8s.io_noderesourcetopologies.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

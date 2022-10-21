@@ -34,6 +34,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
 
+// +kubebuilder:rbac:groups=scheduling.sigs.k8s.io,resources=elasticquotas,verbs=get;list;watch
+
 type ElasticQuotaValidatingHandler struct {
 	Client client.Client
 

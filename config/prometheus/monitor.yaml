@@ -5,7 +5,7 @@ kind: ServiceMonitor
 metadata:
   labels:
     koord-app: koord-manager
-  name: controller-manager-metrics-monitor
+  name: manager-metrics-monitor
   namespace: system
 spec:
   endpoints:
