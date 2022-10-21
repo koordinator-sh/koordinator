@@ -35,7 +35,7 @@ import (
 // getPodAssociateQuotaName If pod's don't have the "quota-name" label, we will use the namespace to associate pod with quota
 // group. If the plugin can't find the matched quota group, it will force the pod to associate with the "default-group".
 func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
-	quotaName := pod.Labels[extension.LabelQuotaName]
+	quotaName := extension.GetQuotaName(pod)
 	if quotaName == "" {
 		list, err := g.quotaLister.ElasticQuotas(pod.Namespace).List(labels.Everything())
 		if err != nil {

@@ -53,7 +53,7 @@ func (qt *quotaTopology) ValidateUpdatePod(oldPod, newPod *corev1.Pod) error {
 }
 
 func (qt *quotaTopology) getQuotaNameFromPodNoLock(pod *corev1.Pod) string {
-	quotaLabelName := pod.Labels[extension.LabelQuotaName]
+	quotaLabelName := extension.GetQuotaName(pod)
 	if quotaLabelName == "" {
 		quotaList := &v1alpha1.ElasticQuotaList{}
 		opts := &client.ListOptions{
