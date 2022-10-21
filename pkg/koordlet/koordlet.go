@@ -17,11 +17,13 @@ limitations under the License.
 package agent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
 
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -98,8 +100,8 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		}
 		klog.Infof("can not detect cgroup driver from 'kubepods' cgroup name")
 
-		node := statesInformer.GetNode()
-		if node == nil {
+		node, err := kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, v1.GetOptions{})
+		if err != nil || node == nil {
 			klog.Error("Can't get node")
 			return false, nil
 		}
