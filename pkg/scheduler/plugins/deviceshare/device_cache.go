@@ -336,14 +336,16 @@ func (n *nodeDevice) tryAllocateGPU(podRequest corev1.ResourceList, allocateResu
 		return fmt.Errorf("node does not have enough GPU")
 	}
 	for minor, resources := range n.deviceFree[schedulingv1alpha1.GPU] {
-		if satisfied, _ := quotav1.LessThanOrEqual(podRequest, resources); satisfied {
-			deviceAllocations = append(deviceAllocations, &apiext.DeviceAllocation{
-				Minor:     int32(minor),
-				Resources: podRequest,
-			})
-			allocateResult[schedulingv1alpha1.GPU] = deviceAllocations
-			return nil
+		if satisfied, _ := quotav1.LessThanOrEqual(podRequest, resources); !satisfied {
+			continue
 		}
+
+		deviceAllocations = append(deviceAllocations, &apiext.DeviceAllocation{
+			Minor:     int32(minor),
+			Resources: podRequest,
+		})
+		allocateResult[schedulingv1alpha1.GPU] = deviceAllocations
+		return nil
 	}
 	klog.V(5).Infof("node GPU resource does not satisfy pod's request")
 	return fmt.Errorf("node does not have enough GPU")
