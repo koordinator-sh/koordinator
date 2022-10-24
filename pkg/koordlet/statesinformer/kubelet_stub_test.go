@@ -18,7 +18,6 @@ package statesinformer
 
 import (
 	"encoding/json"
-	"flag"
 	"log"
 	"net"
 	"net/http"
@@ -80,35 +79,36 @@ func parseHostAndPort(rawURL string) (string, string, error) {
 }
 
 func Test_kubeletStub_GetAllPods(t *testing.T) {
-	flag.StringVar(&token, "token", "mockTest", "")
-	flag.Parse()
+	t.Run("test not panic", func(t *testing.T) {
+		token = "token"
 
-	server := httptest.NewTLSServer(http.HandlerFunc(mockPodsList))
-	defer server.Close()
+		server := httptest.NewTLSServer(http.HandlerFunc(mockPodsList))
+		defer server.Close()
 
-	address, portStr, err := parseHostAndPort(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+		address, portStr, err := parseHostAndPort(server.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	port, _ := strconv.Atoi(portStr)
-	cfg := &rest.Config{
-		Host:        net.JoinHostPort(address, portStr),
-		BearerToken: token,
-		TLSClientConfig: rest.TLSClientConfig{
-			Insecure: true,
-		},
-	}
+		port, _ := strconv.Atoi(portStr)
+		cfg := &rest.Config{
+			Host:        net.JoinHostPort(address, portStr),
+			BearerToken: token,
+			TLSClientConfig: rest.TLSClientConfig{
+				Insecure: true,
+			},
+		}
 
-	client, err := NewKubeletStub(address, port, "https", 10*time.Second, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ps, err := client.GetAllPods()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("podList %+v\n", ps)
+		client, err := NewKubeletStub(address, port, "https", 10*time.Second, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ps, err := client.GetAllPods()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("podList %+v\n", ps)
+	})
 }
 
 func TestNewKubeletStub(t *testing.T) {
