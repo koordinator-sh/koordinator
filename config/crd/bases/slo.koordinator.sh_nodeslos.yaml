@@ -39,19 +39,16 @@ spec:
                 description: CPU Burst Strategy
                 properties:
                   cfsQuotaBurstPercent:
-                    default: 300
                     description: pod cfs quota scale up ceil percentage, default =
                       300 (300%)
                     format: int64
                     type: integer
                   cfsQuotaBurstPeriodSeconds:
-                    default: -1
                     description: specifies a period of time for pod can use at burst,
                       default = -1 (unlimited)
                     format: int64
                     type: integer
                   cpuBurstPercent:
-                    default: 1000
                     description: 'cpu burst percentage for setting cpu.cfs_burst_us,
                       legal range: [0, 10000], default as 1000 (1000%)'
                     format: int64
@@ -61,7 +58,6 @@ spec:
                   policy:
                     type: string
                   sharePoolThresholdPercent:
-                    default: 50
                     description: scale down cfs quota if node cpu overload, default
                       = 50
                     format: int64
@@ -195,14 +191,12 @@ spec:
                           qos
                         properties:
                           catRangeEndPercent:
-                            default: 100
                             description: LLC available range end for pods by percentage
                             format: int64
                             maximum: 100
                             minimum: 0
                             type: integer
                           catRangeStartPercent:
-                            default: 0
                             description: LLC available range start for pods by percentage
                             format: int64
                             maximum: 100
@@ -213,7 +207,6 @@ spec:
                               is enabled.
                             type: boolean
                           mbaPercent:
-                            default: 100
                             description: MBA percent
                             format: int64
                             maximum: 100
@@ -342,14 +335,12 @@ spec:
                           qos
                         properties:
                           catRangeEndPercent:
-                            default: 100
                             description: LLC available range end for pods by percentage
                             format: int64
                             maximum: 100
                             minimum: 0
                             type: integer
                           catRangeStartPercent:
-                            default: 0
                             description: LLC available range start for pods by percentage
                             format: int64
                             maximum: 100
@@ -360,7 +351,6 @@ spec:
                               is enabled.
                             type: boolean
                           mbaPercent:
-                            default: 100
                             description: MBA percent
                             format: int64
                             maximum: 100
@@ -489,14 +479,12 @@ spec:
                           qos
                         properties:
                           catRangeEndPercent:
-                            default: 100
                             description: LLC available range end for pods by percentage
                             format: int64
                             maximum: 100
                             minimum: 0
                             type: integer
                           catRangeStartPercent:
-                            default: 0
                             description: LLC available range start for pods by percentage
                             format: int64
                             maximum: 100
@@ -507,7 +495,6 @@ spec:
                               is enabled.
                             type: boolean
                           mbaPercent:
-                            default: 100
                             description: MBA percent
                             format: int64
                             maximum: 100
@@ -636,14 +623,12 @@ spec:
                           qos
                         properties:
                           catRangeEndPercent:
-                            default: 100
                             description: LLC available range end for pods by percentage
                             format: int64
                             maximum: 100
                             minimum: 0
                             type: integer
                           catRangeStartPercent:
-                            default: 0
                             description: LLC available range start for pods by percentage
                             format: int64
                             maximum: 100
@@ -654,7 +639,6 @@ spec:
                               is enabled.
                             type: boolean
                           mbaPercent:
-                            default: 100
                             description: MBA percent
                             format: int64
                             maximum: 100
@@ -783,14 +767,12 @@ spec:
                           qos
                         properties:
                           catRangeEndPercent:
-                            default: 100
                             description: LLC available range end for pods by percentage
                             format: int64
                             maximum: 100
                             minimum: 0
                             type: integer
                           catRangeStartPercent:
-                            default: 0
                             description: LLC available range start for pods by percentage
                             format: int64
                             maximum: 100
@@ -801,7 +783,6 @@ spec:
                               is enabled.
                             type: boolean
                           mbaPercent:
-                            default: 100
                             description: MBA percent
                             format: int64
                             maximum: 100
@@ -833,7 +814,6 @@ spec:
                     description: CPUSuppressPolicy
                     type: string
                   cpuSuppressThresholdPercent:
-                    default: 65
                     description: cpu suppress threshold percentage (0,100), default
                       = 65
                     format: int64
@@ -852,7 +832,6 @@ spec:
                     minimum: 0
                     type: integer
                   memoryEvictThresholdPercent:
-                    default: 70
                     description: 'upper: memory evict threshold percentage (0,100),
                       default = 70'
                     format: int64
