@@ -196,7 +196,7 @@ func SetDeviceAllocations(pod *corev1.Pod, allocations DeviceAllocations) error 
 	return nil
 }
 
-func GetMinNum(pod *corev1.Pod) (int, error) {
+var GetMinNum = func(pod *corev1.Pod) (int, error) {
 	minRequiredNum, err := strconv.ParseInt(pod.Annotations[AnnotationGangMinNum], 10, 32)
 	if err != nil {
 		return 0, err
@@ -204,6 +204,6 @@ func GetMinNum(pod *corev1.Pod) (int, error) {
 	return int(minRequiredNum), nil
 }
 
-func GetGangName(pod *corev1.Pod) string {
+var GetGangName = func(pod *corev1.Pod) string {
 	return pod.Annotations[AnnotationGangName]
 }
