@@ -73,7 +73,7 @@ func Test_InjectContainerGPUEnv(t *testing.T) {
 		assert.Equal(t, tt.expectedError, err != nil, tt.name)
 		if tt.proto != nil {
 			containerCtx := tt.proto.(*protocol.ContainerContext)
-			assert.Equal(t, containerCtx.Response.ContainerEnvs[GpuAllocEnv], tt.expectedAllocStr, tt.name)
+			assert.Equal(t, containerCtx.Response.AddContainerEnvs[GpuAllocEnv], tt.expectedAllocStr, tt.name)
 		}
 	}
 }
