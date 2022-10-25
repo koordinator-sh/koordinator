@@ -821,8 +821,7 @@ spec:
                     minimum: 0
                     type: integer
                   enable:
-                    default: true
-                    description: whether the strategy is enabled, default = true
+                    description: whether the strategy is enabled, default = false
                     type: boolean
                   memoryEvictLowerPercent:
                     description: 'lower: memory release util usage under MemoryEvictLowerPercent,
