@@ -20,6 +20,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	v1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientcache "k8s.io/client-go/tools/cache"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/services"
 )
 
 type ElasticQuotaValidatingHandler struct {
@@ -124,4 +126,15 @@ func (h *ElasticQuotaValidatingHandler) InjectCache(cache cache.Cache) error {
 		DeleteFunc: qt.OnQuotaDelete,
 	})
 	return nil
+}
+
+var _ services.WebhookServiceProvider = &ElasticQuotaValidatingHandler{}
+
+func (h *ElasticQuotaValidatingHandler) RegisterServices(group *gin.RouterGroup) {
+	group.GET("/quotaTopologySummaries", func(c *gin.Context) {
+		plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
+		allQuotaTopologySummary := plugin.GetQuotaTopologyInfo()
+		klog.Infof("quota Topo")
+		c.JSON(http.StatusOK, allQuotaTopologySummary)
+	})
 }

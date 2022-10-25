@@ -21,6 +21,7 @@ import (
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota/mutating"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota/validating"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/services"
 )
 
 func init() {
@@ -31,4 +32,6 @@ func init() {
 	addHandlersWithGate(validating.HandlerMap, func() (enabled bool) {
 		return utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaValidatingWebhook)
 	})
+
+	services.RegisterWebhookService("elasticQuota", &validating.ElasticQuotaValidatingHandler{})
 }

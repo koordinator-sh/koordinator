@@ -18,11 +18,16 @@ package validating
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -33,6 +38,9 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgfake "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
 
 func makeTestHandler() *ElasticQuotaValidatingHandler {
@@ -134,4 +142,89 @@ func TestElasticQuotaValidatingHandler_Handle(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestElasticQuotaValidatingHandler_RegisterWebhookEndpoints(t *testing.T) {
+	engine := gin.Default()
+	handler := makeTestHandler()
+	handler.RegisterServices(engine.Group("/"))
+	w := httptest.NewRecorder()
+	plugin := elasticquota.NewPlugin(handler.Decoder, handler.Client)
+	qt := plugin.QuotaTopo
+
+	sub1 := MakeQuota("sub-1").ParentName("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+		Min(MakeResourceList().CPU(60).Mem(12800).Obj()).IsParent(false).Obj()
+	qt.OnQuotaAdd(sub1)
+
+	req, _ := http.NewRequest("GET", "/quotaTopologySummaries", nil)
+	engine.ServeHTTP(w, req)
+	quotaTopologyInfo := elasticquota.NewQuotaTopologyForMarshal()
+	err := json.NewDecoder(w.Result().Body).Decode(quotaTopologyInfo)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(quotaTopologyInfo.QuotaHierarchyInfo["temp"]))
+}
+
+type quotaWrapper struct {
+	*v1alpha1.ElasticQuota
+}
+
+func MakeQuota(name string) *quotaWrapper {
+	eq := &v1alpha1.ElasticQuota{
+		TypeMeta: metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Labels:      make(map[string]string),
+			Annotations: make(map[string]string),
+		},
+	}
+	return &quotaWrapper{eq}
+}
+
+func (q *quotaWrapper) Min(min corev1.ResourceList) *quotaWrapper {
+	q.ElasticQuota.Spec.Min = min
+	return q
+}
+
+func (q *quotaWrapper) Max(max corev1.ResourceList) *quotaWrapper {
+	q.ElasticQuota.Spec.Max = max
+	return q
+}
+
+func (q *quotaWrapper) IsParent(isParent bool) *quotaWrapper {
+	if isParent {
+		q.Labels[extension.LabelQuotaIsParent] = "true"
+	} else {
+		q.Labels[extension.LabelQuotaIsParent] = "false"
+	}
+	return q
+}
+
+func (q *quotaWrapper) ParentName(parentName string) *quotaWrapper {
+	q.Labels[extension.LabelQuotaParent] = parentName
+	return q
+}
+
+func (q *quotaWrapper) Obj() *v1alpha1.ElasticQuota {
+	return q.ElasticQuota
+}
+
+type resourceWrapper struct{ corev1.ResourceList }
+
+func MakeResourceList() *resourceWrapper {
+	return &resourceWrapper{corev1.ResourceList{}}
+}
+
+func (r *resourceWrapper) CPU(val int64) *resourceWrapper {
+	r.ResourceList[corev1.ResourceCPU] = *resource.NewQuantity(val, resource.DecimalSI)
+	return r
+}
+
+func (r *resourceWrapper) Mem(val int64) *resourceWrapper {
+	r.ResourceList[corev1.ResourceMemory] = *resource.NewQuantity(val, resource.DecimalSI)
+	return r
+}
+
+func (r *resourceWrapper) Obj() corev1.ResourceList {
+	return r.ResourceList
 }
