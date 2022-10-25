@@ -28,7 +28,39 @@ rules:
 - apiGroups:
   - config.koordinator.sh
   resources:
-  - clustercolocationprofile
+  - clustercolocationprofiles
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - nodes/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - pods
   verbs:
   - get
   - list
@@ -49,6 +81,14 @@ rules:
   - scheduling.k8s.io
   resources:
   - priorityclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - scheduling.koordinator.sh
+  resources:
+  - devices
   verbs:
   - get
   - list
@@ -86,6 +126,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - scheduling.sigs.k8s.io
+  resources:
+  - elasticquotas
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - slo.koordinator.sh
   resources:
   - nodemetrics
@@ -97,12 +145,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - slo.koordinator.sh
-  resources:
-  - nodemetrics/finalizers
-  verbs:
-  - update
 - apiGroups:
   - slo.koordinator.sh
   resources:

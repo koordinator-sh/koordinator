@@ -39,7 +39,7 @@ import (
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
-// +kubebuilder:rbac:groups=config.koordinator.sh,resources=clustercolocationprofile,verbs=get;list;watch
+// +kubebuilder:rbac:groups=config.koordinator.sh,resources=clustercolocationprofiles,verbs=get;list;watch
 
 func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Context, req admission.Request, pod *corev1.Pod) error {
 	if req.Operation != admissionv1.Create {

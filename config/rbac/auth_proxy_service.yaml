@@ -3,7 +3,7 @@ kind: Service
 metadata:
   labels:
     koord-app: koord-manager
-  name: controller-manager-metrics-service
+  name: manager-metrics-service
   namespace: system
 spec:
   ports:
