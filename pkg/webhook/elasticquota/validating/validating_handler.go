@@ -18,6 +18,7 @@ package validating
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	v1 "k8s.io/api/admission/v1"
@@ -124,4 +125,15 @@ func (h *ElasticQuotaValidatingHandler) InjectCache(cache cache.Cache) error {
 		DeleteFunc: qt.OnQuotaDelete,
 	})
 	return nil
+}
+
+var _ http.Handler = &ElasticQuotaValidatingHandler{}
+
+func (h *ElasticQuotaValidatingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
+	allQuotaTopologySummary := plugin.GetQuotaTopologyInfo()
+	allQuotaTopologySummaryJson, _ := json.Marshal(allQuotaTopologySummary)
+
+	w.WriteHeader(200)
+	w.Write(allQuotaTopologySummaryJson)
 }

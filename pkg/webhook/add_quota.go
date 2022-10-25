@@ -31,4 +31,6 @@ func init() {
 	addHandlersWithGate(validating.HandlerMap, func() (enabled bool) {
 		return utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaValidatingWebhook)
 	})
+
+	RegisterDebugAPIProvider("/elasticQuota", &validating.ElasticQuotaValidatingHandler{})
 }

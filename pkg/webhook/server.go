@@ -96,6 +96,8 @@ func SetupWithManager(mgr manager.Manager) error {
 	// register health handler
 	server.Register("/healthz", &health.Handler{})
 
+	InstallDebugAPIHandler(server)
+
 	return nil
 }
 

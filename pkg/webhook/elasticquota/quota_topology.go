@@ -168,3 +168,35 @@ func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuot
 	}
 	return nil
 }
+
+type QuotaTopologySummary struct {
+	QuotaInfoMap       map[string]*core.QuotaInfoSummary `json:"quotaInfoMap"`
+	QuotaHierarchyInfo map[string][]string               `json:"quotaHierarchyInfo"`
+}
+
+func NewQuotaTopologySummary() *QuotaTopologySummary {
+	return &QuotaTopologySummary{
+		QuotaInfoMap:       make(map[string]*core.QuotaInfoSummary),
+		QuotaHierarchyInfo: make(map[string][]string),
+	}
+}
+
+func (qt *quotaTopology) getQuotaTopologyInfo() *QuotaTopologySummary {
+	result := NewQuotaTopologySummary()
+
+	qt.lock.Lock()
+	defer qt.lock.Unlock()
+
+	for key, value := range qt.quotaInfoMap {
+		result.QuotaInfoMap[key] = value.GetQuotaSummary()
+	}
+
+	for key, value := range qt.quotaHierarchyInfo {
+		childQuotas := make([]string, 0, len(value))
+		for name := range value {
+			childQuotas = append(childQuotas, name)
+		}
+		result.QuotaHierarchyInfo[key] = childQuotas
+	}
+	return result
+}
