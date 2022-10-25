@@ -156,8 +156,7 @@ const (
 )
 
 type ResourceThresholdStrategy struct {
-	// whether the strategy is enabled, default = true
-	// +kubebuilder:default=true
+	// whether the strategy is enabled, default = false
 	Enable *bool `json:"enable,omitempty"`
 
 	// cpu suppress threshold percentage (0,100), default = 65
