@@ -74,6 +74,9 @@ func Test_reportGPUDevice(t *testing.T) {
 				},
 			},
 		},
+		getGPUDriverAndModelFunc: func() (string, string) {
+			return "A100", "470"
+		},
 	}
 	r.reportDevice()
 	expectedDevices := []schedulingv1alpha1.DeviceInfo{
@@ -128,4 +131,6 @@ func Test_reportGPUDevice(t *testing.T) {
 	device, err = fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
 	assert.Equal(t, nil, err)
 	assert.Equal(t, device.Spec.Devices, expectedDevices)
+	assert.Equal(t, device.Labels[extension.GPUModel], "A100")
+	assert.Equal(t, device.Labels[extension.GPUDriver], "470")
 }

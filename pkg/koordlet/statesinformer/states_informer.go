@@ -73,6 +73,8 @@ type pluginState struct {
 	informerPlugins map[pluginName]informerPlugin
 }
 
+type GetGPUDriverAndModelFunc func() (string, string)
+
 type statesInformer struct {
 	// TODO refactor device as plugin
 	config       *Config
@@ -84,6 +86,8 @@ type statesInformer struct {
 	option  *pluginOption
 	states  *pluginState
 	started *atomic.Bool
+
+	getGPUDriverAndModelFunc GetGPUDriverAndModelFunc
 }
 
 type informerPlugin interface {
@@ -116,6 +120,7 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 		states:  stat,
 		started: atomic.NewBool(false),
 	}
+	s.getGPUDriverAndModelFunc = s.getGPUDriverAndModel
 	s.initInformerPlugins()
 	return s
 }
