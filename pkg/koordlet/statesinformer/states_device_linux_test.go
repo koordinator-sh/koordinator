@@ -75,6 +75,7 @@ func Test_reportGPUDevice(t *testing.T) {
 			},
 		},
 	}
+	assert.True(t, r.initGPU())
 	r.reportDevice()
 	expectedDevices := []schedulingv1alpha1.DeviceInfo{
 		{

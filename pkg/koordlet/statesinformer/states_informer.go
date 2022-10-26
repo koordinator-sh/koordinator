@@ -147,7 +147,13 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	}
 
 	if features.DefaultKoordletFeatureGate.Enabled(features.Accelerators) {
-		go wait.Until(s.reportDevice, s.config.NodeTopologySyncInterval, stopCh)
+		var once sync.Once
+		go wait.Until(func() {
+			once.Do(func() {
+				s.initGPU()
+			})
+			s.reportDevice()
+		}, s.config.NodeTopologySyncInterval, stopCh)
 		// check is nvml is available
 		if s.initGPU() {
 			go s.gpuHealCheck(stopCh)
