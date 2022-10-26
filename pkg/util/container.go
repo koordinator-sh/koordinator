@@ -57,6 +57,14 @@ func GetContainerCgroupCPUProcsPath(podParentDir string, c *corev1.ContainerStat
 	return system.GetCgroupFilePath(containerPath, system.CPUProcs), nil
 }
 
+func GetContainerCgroupPerfPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(system.Conf.CgroupRootDir, "perf_event/", containerPath), nil
+}
+
 func GetContainerCgroupCPUAcctUsagePath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
 	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
 	if err != nil {

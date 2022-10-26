@@ -70,6 +70,14 @@ func EqualBECPUResourceMetric(a, b *beCPUResourceMetric) bool {
 	return reflect.DeepEqual(a, b)
 }
 
+func EqualContainerCPIMetric(a, b *containerCPIMetric) bool {
+	if !a.Timestamp.Equal(b.Timestamp) {
+		return false
+	}
+	a.Timestamp = b.Timestamp
+	return reflect.DeepEqual(a, b)
+}
+
 func EqualRawRecord(a, b *rawRecord) bool {
 	return reflect.DeepEqual(a, b)
 }
@@ -612,6 +620,86 @@ func Test_storage_PodThrottledMetric_CRUD(t *testing.T) {
 			}
 			if len(gotAfterDelete) != 0 {
 				t.Errorf("GetPodThrottledMetric after delete %v", gotAfterDelete)
+			}
+		})
+	}
+}
+
+func Test_storage_ContainerCPIMetric_CRUD(t *testing.T) {
+	now := time.Now()
+	uid := "test-container-uid"
+	type args struct {
+		samples []containerCPIMetric
+		uid     string
+		start   time.Time
+		end     time.Time
+	}
+	tests := []struct {
+		name string
+		args args
+		want []containerCPIMetric
+	}{
+		{
+			name: "container-cpi-metric-crud",
+			args: args{
+				samples: []containerCPIMetric{
+					{
+						ID:           uint64(now.UnixNano()),
+						ContainerID:  uid,
+						Cycles:       6,
+						Instructions: 6,
+						Timestamp:    now,
+					},
+				},
+				uid:   uid,
+				start: now.Add(-5 * time.Second),
+				end:   now.Add(5 * time.Second),
+			},
+			want: []containerCPIMetric{
+				{
+					ID:           uint64(now.UnixNano()),
+					ContainerID:  uid,
+					Cycles:       6,
+					Instructions: 6,
+					Timestamp:    now,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := NewStorage()
+			for _, sample := range tt.args.samples {
+				err := s.InsertContainerCPIMetric(&sample)
+				if err != nil {
+					t.Errorf("insert container cpi metric error %v", err)
+				}
+			}
+
+			got, err := s.GetContainerCPIMetric(&tt.args.uid, &tt.args.start, &tt.args.end)
+			if err != nil {
+				t.Errorf("GetContainerCPIMetric got error %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Errorf("GetContainerCPIMetric() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if !EqualContainerCPIMetric(&got[i], &tt.want[i]) {
+					t.Errorf("GetContainerCPIMetric() = %v, want %v", got[i], tt.want[i])
+				}
+			}
+
+			err = s.DeleteContainerCPIMetric(&tt.args.start, &tt.args.end)
+			if err != nil {
+				t.Errorf("DeleteContainerCPIMetric got error %v", err)
+			}
+
+			gotAfterDelete, err := s.GetContainerCPIMetric(&tt.args.uid, &tt.args.start, &tt.args.end)
+			if err != nil {
+				t.Errorf("GetContainerCPIMetric got error %v", err)
+			}
+			if len(gotAfterDelete) != 0 {
+				t.Errorf("GetContainerCPIMetric after delete %v", gotAfterDelete)
 			}
 		})
 	}

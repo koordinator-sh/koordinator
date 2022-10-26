@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"github.com/koordinator-sh/koordinator/pkg/util/perf"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -96,4 +97,37 @@ func GetRootCgroupCPUUsageNanoseconds(qosClass corev1.PodQOSClass) (uint64, erro
 	rootCgroupParentDir := GetKubeQosRelativePath(qosClass)
 	statPath := system.GetCgroupFilePath(rootCgroupParentDir, system.CpuacctUsage)
 	return readCPUAcctUsage(statPath)
+}
+
+func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, number int32) (*perf.PerfCollector, error) {
+	cpus := make([]int, number)
+	for i := range cpus {
+		cpus[i] = i
+	}
+	// get file descriptor for cgroup mode perf_event_open
+	containerCgroupFd, err := getContainerCgroupFd(podCgroupDir, c)
+	if err != nil {
+		return nil, err
+	}
+	collector, err := perf.GetAndStartPerfCollectorOnContainer(containerCgroupFd, cpus)
+	if err != nil {
+		return nil, err
+	}
+	return collector, nil
+}
+
+func GetContainerCyclesAndInstructions(collector *perf.PerfCollector) (uint64, uint64, error) {
+	return perf.GetContainerCyclesAndInstructions(collector)
+}
+
+func getContainerCgroupFd(podCgroupDir string, c *corev1.ContainerStatus) (int, error) {
+	containerCgroupFilePath, err := GetContainerCgroupPerfPath(podCgroupDir, c)
+	if err != nil {
+		return 0, err
+	}
+	f, err := os.OpenFile(containerCgroupFilePath, os.O_RDONLY, os.ModeDir)
+	if err != nil {
+		return 0, err
+	}
+	return int(f.Fd()), nil
 }
