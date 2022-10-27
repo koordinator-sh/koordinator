@@ -107,3 +107,10 @@ func (c *QuotaMetaChecker) ValidatePod(ctx context.Context, req admission.Reques
 	}
 	return nil
 }
+
+func (c *QuotaMetaChecker) GetQuotaTopologyInfo() *QuotaTopologySummary {
+	if c.QuotaTopo == nil {
+		return nil
+	}
+	return quotaMetaCheck.QuotaTopo.getQuotaTopologyInfo()
+}
