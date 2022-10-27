@@ -25,6 +25,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
+	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/options"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
 )
@@ -59,7 +60,9 @@ func (p *PodResourceExecutor) loadPodSandboxFromStore(podID string) error {
 	return nil
 }
 
-func (p *PodResourceExecutor) ParseRequest(req interface{}) error {
+// ParseRequest would
+func (p *PodResourceExecutor) ParseRequest(req interface{}) (utils.CallHookPluginOperation, error) {
+	var err error
 	switch request := req.(type) {
 	case *runtimeapi.RunPodSandboxRequest:
 		p.PodSandboxInfo = store.PodSandboxInfo{
@@ -77,9 +80,16 @@ func (p *PodResourceExecutor) ParseRequest(req interface{}) error {
 		}
 		klog.Infof("success parse pod Info %v during pod run", p)
 	case *runtimeapi.StopPodSandboxRequest:
-		return p.loadPodSandboxFromStore(request.GetPodSandboxId())
+		err = p.loadPodSandboxFromStore(request.GetPodSandboxId())
 	}
-	return nil
+	if err != nil {
+		return utils.Unknown, err
+	}
+	if exist := IsKeyValExistInAnnotations(p.PodSandboxInfo.GetAnnotations(), options.RuntimeHookServerKey,
+		options.RuntimeHookServerVal); exist {
+		return utils.ShouldNotCallHookPluginAlways, nil
+	}
+	return utils.ShouldCallHookPlugin, nil
 }
 
 func (p *PodResourceExecutor) ParsePod(podsandbox *runtimeapi.PodSandbox) error {

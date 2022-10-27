@@ -25,6 +25,9 @@ const (
 	BackendRuntimeModeContainerd = "Containerd"
 	BackendRuntimeModeDocker     = "Docker"
 	DefaultBackendRuntimeMode    = BackendRuntimeModeContainerd
+
+	DefaultHookServerKey = "runtimeproxy.koordinator.sh/is-hookserver"
+	DefaultHookServerVal = "true"
 )
 
 var (
@@ -34,4 +37,7 @@ var (
 
 	// BackendRuntimeMode default to 'containerd'
 	BackendRuntimeMode string
+
+	RuntimeHookServerKey string
+	RuntimeHookServerVal string
 )

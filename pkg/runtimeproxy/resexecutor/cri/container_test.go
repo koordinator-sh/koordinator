@@ -25,6 +25,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
 )
 
 func TestContainerResourceExecutor_UpdateRequestForCreateContainerRequest(t *testing.T) {
@@ -277,6 +278,7 @@ func TestContainerResourceExecutor_ParseRequest_CreateContainerRequest(t *testin
 		name                  string
 		args                  args
 		wantContainerExecutor store.ContainerInfo
+		expectedOperation     utils.CallHookPluginOperation
 	}{
 		{
 			name: "normal case",
@@ -362,19 +364,22 @@ func TestContainerResourceExecutor_ParseRequest_CreateContainerRequest(t *testin
 					ContainerEnvs:   map[string]string{},
 				},
 			},
+			expectedOperation: utils.ShouldCallHookPlugin,
 		},
 	}
 	for _, tt := range tests {
 		// mock pod cache
 		p := NewPodResourceExecutor()
-		_ = p.ParseRequest(tt.args.podReq)
+		operation, _ := p.ParseRequest(tt.args.podReq)
 		_ = store.WritePodSandboxInfo("202207121604", &p.PodSandboxInfo)
+		assert.Equal(t, tt.expectedOperation, operation, tt.name)
 
 		// write container cache
 		c := NewContainerResourceExecutor()
-		_ = c.ParseRequest(tt.args.containerReq)
+		operation, _ = c.ParseRequest(tt.args.containerReq)
 
 		// check if container cache is set correctly
+		assert.Equal(t, tt.expectedOperation, operation, tt.name)
 		assert.Equal(t, tt.wantContainerExecutor, c.ContainerInfo, tt.name)
 	}
 }
@@ -458,7 +463,7 @@ func TestContainerResourceExecutor_ParseRequest_UpdateContainerResourcesRequest(
 		c := NewContainerResourceExecutor()
 		// mock container cache
 		_ = store.WriteContainerInfo(tt.args.containerID, &tt.args.ExistingContainerExecutor)
-		_ = c.ParseRequest(tt.args.containerReq)
+		_, _ = c.ParseRequest(tt.args.containerReq)
 
 		// check if container cache is set correctly
 		assert.Equal(t, tt.wantContainerInfo, c.ContainerInfo)
