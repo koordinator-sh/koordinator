@@ -18,8 +18,10 @@ package elasticquota
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -97,22 +99,46 @@ func (ctrl *Controller) syncHandler() []error {
 				return
 			}
 
+			var oriRuntime, oriRequest v1.ResourceList
+			if eq.Annotations[extension.AnnotationRequest] != "" {
+				if err := json.Unmarshal([]byte(eq.Annotations[extension.AnnotationRequest]), &oriRequest); err != nil {
+					errors = append(errors, err)
+					return
+				}
+			}
+			if eq.Annotations[extension.AnnotationRuntime] != "" {
+				if err := json.Unmarshal([]byte(eq.Annotations[extension.AnnotationRuntime]), &oriRuntime); err != nil {
+					errors = append(errors, err)
+					return
+				}
+			}
 			// Ignore this loop if the runtime/request/used doesn't change
-			if quotav1.Equals(eq.Status.Used, used) &&
-				eq.Annotations[extension.AnnotationRuntime] == runtime &&
-				eq.Annotations[extension.AnnotationRequest] == request {
+			if quotav1.Equals(quotav1.RemoveZeros(eq.Status.Used), quotav1.RemoveZeros(used)) &&
+				quotav1.Equals(quotav1.RemoveZeros(oriRuntime), quotav1.RemoveZeros(runtime)) &&
+				quotav1.Equals(quotav1.RemoveZeros(oriRequest), quotav1.RemoveZeros(request)) {
 				return
 			}
-			klog.V(5).Infof("quota:%v, oldUsed:%v, newUsed:%v, oldRuntime:%v, newRuntime:%v, oldRequest:%v, newRequest:%v",
-				eq.Name, eq.Status.Used, used, eq.Annotations[extension.AnnotationRuntime], runtime,
-				eq.Annotations[extension.AnnotationRequest], request)
 			newEQ := eq.DeepCopy()
 			if newEQ.Annotations == nil {
 				newEQ.Annotations = make(map[string]string)
 			}
-			newEQ.Annotations[extension.AnnotationRuntime] = runtime
-			newEQ.Annotations[extension.AnnotationRequest] = request
+			runtimeBytes, err := json.Marshal(runtime)
+			if err != nil {
+				errors = append(errors, err)
+				return
+			}
+			requestBytes, err := json.Marshal(request)
+			if err != nil {
+				errors = append(errors, err)
+				return
+			}
+			newEQ.Annotations[extension.AnnotationRuntime] = string(runtimeBytes)
+			newEQ.Annotations[extension.AnnotationRequest] = string(requestBytes)
 			newEQ.Status.Used = used
+
+			klog.V(5).Infof("quota:%v, oldUsed:%v, newUsed:%v, oldRuntime:%v, newRuntime:%v, oldRequest:%v, newRequest:%v",
+				eq.Name, eq.Status.Used, used, eq.Annotations[extension.AnnotationRuntime], runtimeBytes,
+				eq.Annotations[extension.AnnotationRequest], requestBytes)
 
 			patch, err := util.CreateMergePatch(eq, newEQ)
 			if err != nil {
