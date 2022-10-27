@@ -642,7 +642,16 @@ func (m *metricCache) recycleDB() {
 		klog.Warningf("DeleteContainerThrottledMetric failed during recycle, error %v", err)
 	}
 	// raw records do not need to cleanup
-	klog.Infof("expired metric data before %v has been recycled", expiredTime)
+	nodeResCount, _ := m.db.CountNodeResourceMetric()
+	podResCount, _ := m.db.CountPodResourceMetric()
+	containerResCount, _ := m.db.CountContainerResourceMetric()
+	beCPUResCount, _ := m.db.CountBECPUResourceMetric()
+	podThrottledResCount, _ := m.db.CountPodThrottledMetric()
+	containerThrottledResCount, _ := m.db.CountContainerThrottledMetric()
+	klog.V(4).Infof("expired metric data before %v has been recycled, remaining in db size: "+
+		"nodeResCount=%v, podResCount=%v, containerResCount=%v, beCPUResCount=%v, podThrottledResCount=%v, "+
+		"containerThrottledResCount=%v", expiredTime, nodeResCount, podResCount, containerResCount, beCPUResCount,
+		podThrottledResCount, containerThrottledResCount)
 }
 
 func getAggregateFunc(aggregationType AggregationType) AggregationFunc {
