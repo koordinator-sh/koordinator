@@ -28,6 +28,8 @@ const (
 	PolicyFail FailurePolicyType = "Fail"
 	// PolicyIgnore transfer cri request to containerd/dockerd when got an error to cri serer
 	PolicyIgnore FailurePolicyType = "Ignore"
+	// PolicyNone when no Policy configured. Proxy would ignore errors for PolicyNone like PolicyIgnore.
+	PolicyNone = ""
 )
 
 func GetFailurePolicyType(typeString string) (FailurePolicyType, error) {

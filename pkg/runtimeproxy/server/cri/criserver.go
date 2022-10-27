@@ -18,6 +18,7 @@ package cri
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"time"
 
@@ -107,13 +108,13 @@ func (c *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeSer
 	switch callHookOperation {
 	case utils.ShouldCallHookPlugin:
 		// TODO deal with the Dispatch response
-		response, err := c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest())
+		response, err, policy := c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest())
 		if err != nil {
 			klog.Errorf("fail to call hook server %v", err)
-		} else if response == nil {
-			// when hook is not registered, the response will become nil
-			klog.Warningf("runtime hook path %s does not register any PreHooks", string(runtimeHookPath))
-		} else {
+			if policy == config.PolicyFail {
+				return nil, fmt.Errorf("hook server err: %v", err)
+			}
+		} else if response != nil {
 			if err = resourceExecutor.UpdateRequest(response, request); err != nil {
 				klog.Errorf("failed to update cri request %v", err)
 			}

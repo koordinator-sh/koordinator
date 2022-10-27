@@ -35,6 +35,11 @@ const (
 	defaultConfigFileNums = 2
 )
 
+type ManagerInterface interface {
+	GetAllHook() []*RuntimeHookConfig
+	Run() error
+}
+
 type Manager struct {
 	sync.Mutex
 	configs map[string]*RuntimeHookConfigItem
@@ -176,7 +181,7 @@ func (m *Manager) updateHookConfig(filepath string) error {
 	return nil
 }
 
-func (m *Manager) Setup() error {
+func (m *Manager) Run() error {
 	if _, err := os.Stat(defaultRuntimeHookConfigPath); os.IsNotExist(err) {
 		klog.Infof("create %v", defaultRuntimeHookConfigPath)
 		if err := os.MkdirAll(defaultRuntimeHookConfigPath, 0755); err != nil {

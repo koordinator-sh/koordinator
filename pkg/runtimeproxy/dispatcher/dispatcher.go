@@ -25,26 +25,27 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/client"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
 // RuntimeHookDispatcher dispatches hook request to RuntimeHookServer(e.g. koordlet)
 type RuntimeHookDispatcher struct {
-	cm          *HookServerClientManager
-	hookManager *config.Manager
+	cm          client.HookServerClientManagerInterface
+	hookManager config.ManagerInterface
 }
 
 func NewRuntimeDispatcher() *RuntimeHookDispatcher {
 	hookManager := config.NewConfigManager()
-	hookManager.Setup()
+	hookManager.Run()
 	return &RuntimeHookDispatcher{
-		cm:          NewClientManager(),
+		cm:          client.NewClientManager(),
 		hookManager: hookManager,
 	}
 }
 
 func (rd *RuntimeHookDispatcher) dispatchInternal(ctx context.Context, hookType config.RuntimeHookType,
-	client *RuntimeHookClient, request interface{}) (response interface{}, err error) {
+	client *client.RuntimeHookClient, request interface{}) (response interface{}, err error) {
 	switch hookType {
 	case config.PreRunPodSandbox:
 		return client.PreRunPodSandboxHook(ctx, request.(*v1alpha1.PodSandboxHookRequest))
@@ -65,7 +66,7 @@ func (rd *RuntimeHookDispatcher) dispatchInternal(ctx context.Context, hookType 
 }
 
 func (rd *RuntimeHookDispatcher) Dispatch(ctx context.Context, runtimeRequestPath config.RuntimeRequestPath,
-	stage config.RuntimeHookStage, request interface{}) (interface{}, error) {
+	stage config.RuntimeHookStage, request interface{}) (interface{}, error, config.FailurePolicyType) {
 	hookServers := rd.hookManager.GetAllHook()
 	for _, hookServer := range hookServers {
 		for _, hookType := range hookServer.RuntimeHooks {
@@ -75,7 +76,7 @@ func (rd *RuntimeHookDispatcher) Dispatch(ctx context.Context, runtimeRequestPat
 			if hookType.HookStage() != stage {
 				continue
 			}
-			client, err := rd.cm.RuntimeHookServerClient(HookServerPath{
+			client, err := rd.cm.RuntimeHookServerClient(client.HookServerPath{
 				Path: hookServer.RemoteEndpoint,
 			})
 			if err != nil {
@@ -84,8 +85,9 @@ func (rd *RuntimeHookDispatcher) Dispatch(ctx context.Context, runtimeRequestPat
 			}
 			// currently, only one hook be called during one runtime
 			// TODO: multi hook server to merge response
-			return rd.dispatchInternal(ctx, hookType, client, request)
+			rsp, err := rd.dispatchInternal(ctx, hookType, client, request)
+			return rsp, err, hookServer.FailurePolicy
 		}
 	}
-	return nil, nil
+	return nil, nil, config.PolicyNone
 }
