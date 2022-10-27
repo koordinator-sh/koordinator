@@ -36,6 +36,7 @@ import (
 	schedv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/util/kubelet"
 )
 
 const (
@@ -60,11 +61,12 @@ type StatesInformer interface {
 type pluginName string
 
 type pluginOption struct {
-	config      *Config
-	KubeClient  clientset.Interface
-	KoordClient koordclientset.Interface
-	TopoClient  topologyclientset.Interface
-	NodeName    string
+	config            *Config
+	kubeletStubConfig *kubelet.KubeletStubConfig
+	KubeClient        clientset.Interface
+	KoordClient       koordclientset.Interface
+	TopoClient        topologyclientset.Interface
+	NodeName          string
 }
 
 type pluginState struct {
@@ -93,13 +95,14 @@ type informerPlugin interface {
 }
 
 // TODO merge all clients into one struct
-func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient topologyclientset.Interface, metricsCache metriccache.MetricCache, nodeName string, schedulingClient schedv1alpha1.SchedulingV1alpha1Interface) StatesInformer {
+func NewStatesInformer(config *Config, kubeletStubConfig *kubelet.KubeletStubConfig, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient topologyclientset.Interface, metricsCache metriccache.MetricCache, nodeName string, schedulingClient schedv1alpha1.SchedulingV1alpha1Interface) StatesInformer {
 	opt := &pluginOption{
-		config:      config,
-		KubeClient:  kubeClient,
-		KoordClient: crdClient,
-		TopoClient:  topologyClient,
-		NodeName:    nodeName,
+		config:            config,
+		kubeletStubConfig: kubeletStubConfig,
+		KubeClient:        kubeClient,
+		KoordClient:       crdClient,
+		TopoClient:        topologyClient,
+		NodeName:          nodeName,
 	}
 	stat := &pluginState{
 		metricCache:     metricsCache,

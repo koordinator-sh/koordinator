@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/koordinator-sh/koordinator/pkg/util/kubelet"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -162,14 +163,14 @@ func Test_newKubeletStub(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &rest.Config{
 		Host:        net.JoinHostPort("127.0.0.1", "10250"),
-		BearerToken: token,
+		BearerToken: kubelet.token,
 		TLSClientConfig: rest.TLSClientConfig{
 			Insecure: true,
 		},
 	}
 	setConfigs(t, dir)
 
-	kubeStub, _ := NewKubeletStub("127.0.0.1", 10250, "https", 10, cfg)
+	kubeStub, _ := kubelet.NewKubeletStub("127.0.0.1", 10250, "https", 10, cfg)
 	type args struct {
 		node *corev1.Node
 		cfg  *Config
@@ -177,7 +178,7 @@ func Test_newKubeletStub(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    KubeletStub
+		want    kubelet.KubeletStub
 		wantErr bool
 	}{
 		{

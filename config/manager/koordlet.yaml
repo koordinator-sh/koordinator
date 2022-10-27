@@ -26,7 +26,7 @@ spec:
             - -runtime-hooks=AllAlpha=true
             - -runtime-hooks-network=unix
             - -runtime-hooks-addr=/host-var-run-koordlet/koordlet.sock
-            - -runtime-hooks-host-endpoint=/var/run/koordlet//koordlet.sock
+            - -runtime-hooks-host-endpoint=/var/run/koordlet/koordlet.sock
             - --logtostderr=true
             - --v=4
           command:

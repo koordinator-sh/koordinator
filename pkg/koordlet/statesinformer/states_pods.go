@@ -23,13 +23,12 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/kubelet"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -38,7 +37,8 @@ const (
 )
 
 type podsInformer struct {
-	config *Config
+	config        *Config
+	kubeletConfig *kubelet.KubeletStubConfig
 
 	podRWMutex     sync.RWMutex
 	podMap         map[string]*PodMeta
@@ -49,7 +49,7 @@ type podsInformer struct {
 	pleg       pleg.Pleg
 	podCreated chan string
 
-	kubelet      KubeletStub
+	kubelet      kubelet.KubeletStub
 	nodeInformer *nodeInformer
 
 	callbackRunner *callbackRunner
@@ -71,6 +71,7 @@ func NewPodsInformer() *podsInformer {
 
 func (s *podsInformer) Setup(ctx *pluginOption, states *pluginState) {
 	s.config = ctx.config
+	s.kubeletConfig = ctx.kubeletStubConfig
 
 	nodeInformerIf := states.informerPlugins[nodeInformerName]
 	nodeInformer, ok := nodeInformerIf.(*nodeInformer)
@@ -90,7 +91,7 @@ func (s *podsInformer) Start(stopCh <-chan struct{}) {
 	if s.config.KubeletSyncInterval <= 0 {
 		return
 	}
-	stub, err := newKubeletStubFromConfig(s.nodeInformer.GetNode(), s.config)
+	stub, err := kubelet.NewKubeletStubFromConfig(s.nodeInformer.GetNode(), s.kubeletConfig)
 	if err != nil {
 		klog.Fatalf("create kubelet stub, %v", err)
 	}
@@ -179,43 +180,6 @@ func (s *podsInformer) syncKubeletLoop(duration time.Duration, stopCh <-chan str
 			return
 		}
 	}
-}
-
-func newKubeletStubFromConfig(node *corev1.Node, cfg *Config) (KubeletStub, error) {
-	var address string
-	var err error
-	var port int
-	var scheme string
-	var restConfig *rest.Config
-
-	addressPreferredType := corev1.NodeAddressType(cfg.KubeletPreferredAddressType)
-	// if the address of the specified type has not been set or error type, InternalIP will be used.
-	if !util.IsNodeAddressTypeSupported(addressPreferredType) {
-		klog.Warningf("Wrong address type or empty type, InternalIP will be used, error: (%+v).", addressPreferredType)
-		addressPreferredType = corev1.NodeInternalIP
-	}
-	address, err = util.GetNodeAddress(node, addressPreferredType)
-	if err != nil {
-		klog.Fatalf("Get node address error: %v type(%s) ", err, cfg.KubeletPreferredAddressType)
-		return nil, err
-	}
-
-	if cfg.InsecureKubeletTLS {
-		port = int(cfg.KubeletReadOnlyPort)
-		scheme = HTTPScheme
-	} else {
-		restConfig, err = config.GetConfig()
-		if err != nil {
-			return nil, err
-		}
-		restConfig.TLSClientConfig.Insecure = true
-		restConfig.TLSClientConfig.CAData = nil
-		restConfig.TLSClientConfig.CAFile = ""
-		port = int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
-		scheme = HTTPSScheme
-	}
-
-	return NewKubeletStub(address, port, scheme, cfg.KubeletSyncTimeout, restConfig)
 }
 
 func genPodCgroupParentDir(pod *corev1.Pod) string {

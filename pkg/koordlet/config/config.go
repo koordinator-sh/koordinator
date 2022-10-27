@@ -32,11 +32,13 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/util/kubelet"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 type Configuration struct {
 	KubeRestConf       *rest.Config
+	KubeletStubConf    *kubelet.KubeletStubConfig
 	StatesInformerConf *statesinformer.Config
 	ReporterConf       *reporter.Config
 	CollectorConf      *metricsadvisor.Config
@@ -49,6 +51,7 @@ type Configuration struct {
 
 func NewConfiguration() *Configuration {
 	return &Configuration{
+		KubeletStubConf:    kubelet.NewKubeletStubDefaultConfig(),
 		StatesInformerConf: statesinformer.NewDefaultConfig(),
 		ReporterConf:       reporter.NewDefaultConfig(),
 		CollectorConf:      metricsadvisor.NewDefaultConfig(),
@@ -61,6 +64,7 @@ func NewConfiguration() *Configuration {
 
 func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 	system.Conf.InitFlags(fs)
+	c.KubeletStubConf.InitFlags(fs)
 	c.StatesInformerConf.InitFlags(fs)
 	c.ReporterConf.InitFlags(fs)
 	c.CollectorConf.InitFlags(fs)
