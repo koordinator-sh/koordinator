@@ -30,6 +30,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/dispatcher"
 	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor"
 	cri_resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor/cri"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
 )
 
 const (
@@ -94,45 +95,47 @@ func (c *RuntimeManagerCriServer) getRuntimeHookInfo(serviceType RuntimeServiceT
 
 func (c *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeServiceType,
 	ctx context.Context, request interface{}, handler grpc.UnaryHandler) (interface{}, error) {
-
 	runtimeHookPath, runtimeResourceType := c.getRuntimeHookInfo(serviceType)
 	resourceExecutor := resource_executor.NewRuntimeResourceExecutor(runtimeResourceType)
 
-	if err := resourceExecutor.ParseRequest(request); err != nil {
+	callHookOperation, err := resourceExecutor.ParseRequest(request)
+	if err != nil {
 		klog.Errorf("fail to parse request %v %v", request, err)
 	}
 	defer resourceExecutor.DeleteCheckpointIfNeed(request)
 
-	// pre call hook server
-	// TODO deal with the Dispatch response
-	response, err := c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest())
-	if err != nil {
-		klog.Errorf("fail to call hook server %v", err)
-	} else if response == nil {
-		// when hook is not registered, the response will become nil
-		klog.Warningf("runtime hook path %s does not register any PreHooks", string(runtimeHookPath))
-	} else {
-		if err = resourceExecutor.UpdateRequest(response, request); err != nil {
-			klog.Errorf("failed to update cri request %v", err)
+	switch callHookOperation {
+	case utils.ShouldCallHookPlugin:
+		// TODO deal with the Dispatch response
+		response, err := c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest())
+		if err != nil {
+			klog.Errorf("fail to call hook server %v", err)
+		} else if response == nil {
+			// when hook is not registered, the response will become nil
+			klog.Warningf("runtime hook path %s does not register any PreHooks", string(runtimeHookPath))
+		} else {
+			if err = resourceExecutor.UpdateRequest(response, request); err != nil {
+				klog.Errorf("failed to update cri request %v", err)
+			}
 		}
 	}
-
 	// call the backend runtime engine
 	res, err := handler(ctx, request)
 	if err == nil {
-		klog.Infof("%v call on backend %v success", resourceExecutor.GetMetaInfo(), string(runtimeHookPath))
-		// store checkpoint info basing request
-		// checkpoint only when response success
+		klog.Infof("%v call containerd %v success", resourceExecutor.GetMetaInfo(), string(runtimeHookPath))
+		// store checkpoint info basing request only when response success
 		if err := resourceExecutor.ResourceCheckPoint(res); err != nil {
 			klog.Errorf("fail to checkpoint %v %v", resourceExecutor.GetMetaInfo(), err)
 		}
 	} else {
-		klog.Errorf("%v call on backend %v fail %v", resourceExecutor.GetMetaInfo(), string(runtimeHookPath), err)
+		klog.Errorf("%v call containerd %v fail %v", resourceExecutor.GetMetaInfo(), string(runtimeHookPath), err)
 	}
-
-	// post call hook server
-	// TODO the response
-	c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, resourceExecutor.GenerateHookRequest())
+	switch callHookOperation {
+	case utils.ShouldCallHookPlugin:
+		// post call hook server
+		// TODO the response
+		c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, resourceExecutor.GenerateHookRequest())
+	}
 	return res, err
 }
 

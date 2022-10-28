@@ -25,6 +25,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
+	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/options"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
 )
@@ -63,14 +64,16 @@ func (c *ContainerResourceExecutor) loadContainerInfoFromStore(containerID, stag
 	return nil
 }
 
-func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
+func (c *ContainerResourceExecutor) ParseRequest(req interface{}) (utils.CallHookPluginOperation, error) {
+	var err error
 	switch request := req.(type) {
 	case *runtimeapi.CreateContainerRequest:
 		// get the pod info from local store
 		podID := request.GetPodSandboxId()
 		podCheckPoint := store.GetPodSandboxInfo(podID)
 		if podCheckPoint == nil {
-			return fmt.Errorf("fail to get pod(%v) related to container", podID)
+			err = fmt.Errorf("fail to get pod(%v) related to container", podID)
+			break
 		}
 		c.ContainerInfo = store.ContainerInfo{
 			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
@@ -90,18 +93,23 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) error {
 		}
 		klog.Infof("success parse container info %v during container create", c)
 	case *runtimeapi.StartContainerRequest:
-		return c.loadContainerInfoFromStore(request.GetContainerId(), "StartContainer")
+		err = c.loadContainerInfoFromStore(request.GetContainerId(), "StartContainer")
 	case *runtimeapi.UpdateContainerResourcesRequest:
-		err := c.loadContainerInfoFromStore(request.GetContainerId(), "UpdateContainerResource")
+		err = c.loadContainerInfoFromStore(request.GetContainerId(), "UpdateContainerResource")
 		if err != nil {
-			return err
+			break
 		}
 		c.ContainerResources = updateResourceByUpdateContainerResourceRequest(c.ContainerResources, transferToKoordResources(request.Linux))
-		return nil
 	case *runtimeapi.StopContainerRequest:
-		return c.loadContainerInfoFromStore(request.GetContainerId(), "StopContainer")
+		err = c.loadContainerInfoFromStore(request.GetContainerId(), "StopContainer")
 	}
-	return nil
+	if err != nil {
+		return utils.Unknown, err
+	}
+	if exist := IsKeyValExistInAnnotations(c.GetPodAnnotations(), options.RuntimeHookServerKey, options.RuntimeHookServerVal); exist {
+		return utils.ShouldNotCallHookPluginAlways, nil
+	}
+	return utils.ShouldCallHookPlugin, nil
 }
 
 func (c *ContainerResourceExecutor) ParseContainer(container *runtimeapi.Container) error {

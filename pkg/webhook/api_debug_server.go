@@ -14,14 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package options
+package webhook
 
 import (
-	"flag"
+	"net/http"
+
+	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
-var (
-	ServerAddr  = flag.String("addr", ":9316", "port of koordlet server")
-	EnablePprof = flag.Bool("enable-pprof", false, "Enable pprof for controller manager.")
-	PprofAddr   = flag.String("pprof-addr", ":9317", "The address the pprof binds to.")
-)
+var debugAPIProviderMap = map[string]http.Handler{}
+
+func RegisterDebugAPIProvider(name string, provider http.Handler) {
+	debugAPIProviderMap[name] = provider
+}
+
+func InstallDebugAPIHandler(server *webhook.Server) {
+	for name, provider := range debugAPIProviderMap {
+		server.Register(name, provider)
+		klog.Infof("Success register debug api handler, name:%v, tcpAddr:%v", name)
+	}
+}

@@ -89,7 +89,7 @@ func (c *Cache) gcExpiredCache() {
 	for _, key := range gcKeys {
 		delete(c.items, key)
 	}
-	klog.V(5).Infof("gc resource update executor, current size %v", len(c.items))
+	klog.V(4).Infof("gc resource update executor, current size %v", len(c.items))
 }
 
 func (c *Cache) Set(key string, value interface{}, expiration time.Duration) error {

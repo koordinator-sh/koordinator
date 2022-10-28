@@ -39,6 +39,11 @@ func main() {
 		"backend image service endpoint.")
 	flag.StringVar(&options.BackendRuntimeMode, "backend-runtime-mode", options.DefaultBackendRuntimeMode,
 		"backend container engine(Containerd|Docker).")
+	flag.StringVar(&options.RuntimeHookServerKey, "runtime-hook-server-key", options.DefaultHookServerKey,
+		"if pod tag itself with runtime-hook-server-key in annotations, runtime-proxy would regard this pod as runtime hook server and "+
+			"skip transferring cri events to hook server")
+	flag.StringVar(&options.RuntimeHookServerVal, "runtime-hook-server-val", options.DefaultHookServerVal,
+		"working combined with runtime-hook-server-key")
 
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 	pflag.Parse()

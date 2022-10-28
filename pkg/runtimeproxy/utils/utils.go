@@ -16,6 +16,14 @@ limitations under the License.
 
 package utils
 
+type CallHookPluginOperation string
+
+const (
+	ShouldCallHookPlugin          CallHookPluginOperation = "ShouldCallHookPlugin"
+	ShouldNotCallHookPluginAlways CallHookPluginOperation = "ShouldNotCallHookPluginAlways"
+	Unknown                       CallHookPluginOperation = "Unknown"
+)
+
 func MergeMap(a, b map[string]string) map[string]string {
 	if a == nil {
 		a = make(map[string]string)

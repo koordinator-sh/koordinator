@@ -20,12 +20,17 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor/cri"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
 )
 
 type RuntimeResourceExecutor interface {
 	GetMetaInfo() string
 	GenerateHookRequest() interface{}
-	ParseRequest(request interface{}) error
+	// ParseRequest would be the first function after request intercepted, during which,
+	// pod/container's meta/resource info would be parsed from request or loaded from local store,
+	// and some hint info should also be offered during ParseRequest stage, e.g. to check if executor
+	// should call hook plugins when pod/container is system component.
+	ParseRequest(request interface{}) (utils.CallHookPluginOperation, error)
 	ResourceCheckPoint(response interface{}) error
 	DeleteCheckpointIfNeed(request interface{}) error
 	UpdateRequest(response interface{}, request interface{}) error
@@ -66,8 +71,8 @@ func (n *NoopResourceExecutor) GenerateHookRequest() interface{} {
 	return store.ContainerInfo{}
 }
 
-func (n *NoopResourceExecutor) ParseRequest(request interface{}) error {
-	return nil
+func (n *NoopResourceExecutor) ParseRequest(request interface{}) (utils.CallHookPluginOperation, error) {
+	return utils.Unknown, nil
 }
 func (n *NoopResourceExecutor) ResourceCheckPoint(response interface{}) error {
 	return nil

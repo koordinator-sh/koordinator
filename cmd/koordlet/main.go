@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -45,6 +46,15 @@ func main() {
 
 	go wait.Forever(klog.Flush, 5*time.Second)
 	defer klog.Flush()
+
+	if *options.EnablePprof {
+		go func() {
+			klog.V(4).Infof("Starting pprof on %v", *options.PprofAddr)
+			if err := http.ListenAndServe(*options.PprofAddr, nil); err != nil {
+				klog.Errorf("Unable to start pprof on %v, error: %v", *options.PprofAddr, err)
+			}
+		}()
+	}
 
 	if err := features.DefaultMutableKoordletFeatureGate.SetFromMap(cfg.FeatureGates); err != nil {
 		klog.Fatalf("Unable to setup feature-gates: %v", err)
