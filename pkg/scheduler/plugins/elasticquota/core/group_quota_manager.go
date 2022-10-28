@@ -17,7 +17,6 @@ limitations under the License.
 package core
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
@@ -495,6 +494,8 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 		return
 	}
 	if !quotaInfo.GetPodIsAssigned(newPod) && !quotaInfo.GetPodIsAssigned(oldPod) {
+		klog.V(5).Infof("updatePodUsed, isAssigned is false, quotaName:%v, podName:%v",
+			quotaName, getPodName(oldPod, newPod))
 		return
 	}
 
@@ -513,6 +514,8 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 
 	deltaUsed := quotav1.Subtract(newPodUsed, oldPodUsed)
 	if quotav1.IsZero(deltaUsed) {
+		klog.V(5).Infof("updatePodUsed, deltaUsedIsZero, quotaName:%v, podName:%v, podUsed:%v",
+			quotaName, getPodName(oldPod, newPod), newPodUsed)
 		return
 	}
 	gqm.updateGroupDeltaUsedNoLock(quotaName, deltaUsed)
@@ -655,17 +658,24 @@ func (gqm *GroupQuotaManager) UnreservePod(quotaName string, p *v1.Pod) {
 	gqm.updatePodIsAssignedNoLock(quotaName, p, false)
 }
 
-func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used v1.ResourceList, request, runtime string, err error) {
+func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used, request, runtime v1.ResourceList, err error) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
-		return nil, "", "", fmt.Errorf("qroupQuotaManager has not have this quota:%v", quotaName)
+		return nil, nil, nil, fmt.Errorf("groupQuotaManager doesn't have this quota:%v", quotaName)
 	}
 
-	used = quotaInfo.GetUsed()
-	runtimeBytes, _ := json.Marshal(gqm.RefreshRuntimeNoLock(quotaName))
-	requestBytes, _ := json.Marshal(quotaInfo.GetRequest())
-	return used, string(requestBytes), string(runtimeBytes), nil
+	return quotaInfo.GetUsed(), quotaInfo.GetRequest(), quotaInfo.GetRuntime(), nil
+}
+
+func getPodName(oldPod, newPod *v1.Pod) string {
+	if oldPod != nil {
+		return oldPod.Name
+	}
+	if newPod != nil {
+		return newPod.Name
+	}
+	return ""
 }
