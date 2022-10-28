@@ -21,5 +21,7 @@ import (
 )
 
 var (
-	ServerAddr = flag.String("addr", ":9316", "port of koordlet server")
+	ServerAddr  = flag.String("addr", ":9316", "port of koordlet server")
+	EnablePprof = flag.Bool("enable-pprof", false, "Enable pprof for controller manager.")
+	PprofAddr   = flag.String("pprof-addr", ":9317", "The address the pprof binds to.")
 )
