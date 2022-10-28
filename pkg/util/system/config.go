@@ -69,7 +69,6 @@ func NewDsModeConfig() *Config {
 }
 
 func init() {
-	Conf = NewDsModeConfig()
 	agentMode := os.Getenv("agent_mode")
 	if agentMode == HOST_MODE {
 		Conf = NewHostModeConfig()
