@@ -25,8 +25,10 @@ import (
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		CollectResUsedIntervalSeconds:     1,
-		CollectNodeCPUInfoIntervalSeconds: 60,
+		CollectResUsedIntervalSeconds:         1,
+		CollectNodeCPUInfoIntervalSeconds:     60,
+		PerformanceCollectorIntervalSeconds:   60,
+		PerformanceCollectorTimeWindowSeconds: 10,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -37,12 +39,16 @@ func Test_InitFlags(t *testing.T) {
 		"",
 		"--collect-res-used-interval-seconds=3",
 		"--collect-node-cpu-info-interval-seconds=90",
+		"--collect-interference-interval-seconds=90",
+		"--collect-interference-timewindow-seconds=15",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
 	type fields struct {
-		CollectResUsedIntervalSeconds     int
-		CollectNodeCPUInfoIntervalSeconds int
+		CollectResUsedIntervalSeconds        int
+		CollectNodeCPUInfoIntervalSeconds    int
+		CollectInterferenceIntervalSeconds   int
+		CollectInterferenceTimeWindowSeconds int
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -55,8 +61,10 @@ func Test_InitFlags(t *testing.T) {
 		{
 			name: "not default",
 			fields: fields{
-				CollectResUsedIntervalSeconds:     3,
-				CollectNodeCPUInfoIntervalSeconds: 90,
+				CollectResUsedIntervalSeconds:        3,
+				CollectNodeCPUInfoIntervalSeconds:    90,
+				CollectInterferenceIntervalSeconds:   90,
+				CollectInterferenceTimeWindowSeconds: 15,
 			},
 			args: args{fs: fs},
 		},
@@ -64,8 +72,10 @@ func Test_InitFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			raw := &Config{
-				CollectResUsedIntervalSeconds:     tt.fields.CollectResUsedIntervalSeconds,
-				CollectNodeCPUInfoIntervalSeconds: tt.fields.CollectNodeCPUInfoIntervalSeconds,
+				CollectResUsedIntervalSeconds:         tt.fields.CollectResUsedIntervalSeconds,
+				CollectNodeCPUInfoIntervalSeconds:     tt.fields.CollectNodeCPUInfoIntervalSeconds,
+				PerformanceCollectorIntervalSeconds:   tt.fields.CollectInterferenceIntervalSeconds,
+				PerformanceCollectorTimeWindowSeconds: tt.fields.CollectInterferenceTimeWindowSeconds,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

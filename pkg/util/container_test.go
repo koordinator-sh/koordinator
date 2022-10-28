@@ -569,6 +569,26 @@ func Test_GetContainerCgroupXXXPath(t *testing.T) {
 			expectPath: "",
 			expectErr:  true,
 		},
+		{
+			name:         "test_perf_path",
+			fn:           GetContainerCgroupPerfPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "/host-cgroup/perf_event/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope",
+			expectErr:  false,
+		},
+		{
+			name:         "test_perf_path_invalid",
+			fn:           GetContainerCgroupPerfPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: "",
+			expectErr:  true,
+		},
 	}
 
 	for _, tt := range tests {
