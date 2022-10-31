@@ -31,12 +31,11 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 func newFakeQuotaTopology() *quotaTopology {
 	qt := &quotaTopology{
-		quotaInfoMap:       make(map[string]*core.QuotaInfo),
+		quotaInfoMap:       make(map[string]*QuotaInfo),
 		quotaHierarchyInfo: make(map[string]map[string]struct{}),
 	}
 	qt.quotaHierarchyInfo[extension.RootQuotaName] = make(map[string]struct{})
@@ -45,7 +44,7 @@ func newFakeQuotaTopology() *quotaTopology {
 
 func TestNew(t *testing.T) {
 	qt := newFakeQuotaTopology()
-	qt.quotaInfoMap["1"] = core.NewQuotaInfo(false, false, "tmp", "root")
+	qt.quotaInfoMap["1"] = NewQuotaInfo(false, false, "tmp", "root")
 	qt.quotaHierarchyInfo["1"] = make(map[string]struct{})
 	assert.NotNil(t, qt)
 }
@@ -185,7 +184,7 @@ func TestQuotaTopology_checkSubAndParentGroupMaxQuotaKeySame(t *testing.T) {
 			qt.OnQuotaAdd(tt.parQuota)
 			qt.OnQuotaAdd(tt.quota)
 			qt.OnQuotaAdd(tt.subQuota)
-			quotaInfo := core.NewQuotaInfoFromQuota(tt.quota)
+			quotaInfo := NewQuotaInfoFromQuota(tt.quota)
 			if tt.eraseSub {
 				delete(qt.quotaInfoMap, tt.subQuota.Name)
 			}
@@ -245,7 +244,7 @@ func TestQuotaTopology_checkMinQuotaSum(t *testing.T) {
 			qt.OnQuotaAdd(tt.parentQuota)
 			qt.OnQuotaAdd(tt.quota)
 			qt.OnQuotaAdd(tt.subQuota)
-			quota := core.NewQuotaInfoFromQuota(tt.quota)
+			quota := NewQuotaInfoFromQuota(tt.quota)
 			if tt.eraseSub {
 				delete(qt.quotaInfoMap, tt.subQuota.Name)
 			}
@@ -317,10 +316,6 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 	quota.Annotations[extension.AnnotationSharedWeight] = fmt.Sprintf("{\"cpu\":%v, \"memory\":\"%v\"}", 96, 655360)
 	err = qt.ValidUpdateQuota(nil, quota)
 	assert.True(t, err == nil)
-
-	quotaInfo := qt.quotaInfoMap["temp"]
-	assert.Equal(t, int64(96), quotaInfo.CalculateInfo.SharedWeight.Name("cpu", resource.DecimalSI).Value())
-	assert.Equal(t, int64(655360), quotaInfo.CalculateInfo.SharedWeight.Name("memory", resource.DecimalSI).Value())
 
 	quota1 := MakeQuota("temp2").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
 		Min(MakeResourceList().CPU(64).Mem(51200).Obj()).IsParent(true).Obj()
@@ -420,7 +415,7 @@ func TestQuotaTopology_ValidDeleteQuota(t *testing.T) {
 	err = qt.ValidDeleteQuota(notFoundQuota)
 	assert.NotNil(t, err)
 
-	qt.quotaInfoMap[notFoundQuota.Name] = core.NewQuotaInfoFromQuota(notFoundQuota)
+	qt.quotaInfoMap[notFoundQuota.Name] = NewQuotaInfoFromQuota(notFoundQuota)
 	err = qt.ValidDeleteQuota(notFoundQuota)
 	assert.NotNil(t, err)
 }
