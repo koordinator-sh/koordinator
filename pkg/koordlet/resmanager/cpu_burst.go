@@ -198,6 +198,14 @@ func (b *CPUBurst) start() {
 			// ignore non-burstable pod, e.g. LSR, BE pods
 			continue
 		}
+		if podMeta.Pod.Status.Phase != corev1.PodPending && podMeta.Pod.Status.Phase != corev1.PodRunning {
+			// ignore pods that status.phase is not pending or running,
+			// because the other pods(include succeed,failed and unknown) do not have any containers running
+			// and therefore do not have a cgroup file,
+			// so there is no need to deal with it
+			continue
+		}
+
 		// merge burst config from pod and node
 		cpuBurstCfg := genPodBurstConfig(podMeta.Pod, &b.nodeCPUBurstStrategy.CPUBurstConfig)
 		if cpuBurstCfg == nil {

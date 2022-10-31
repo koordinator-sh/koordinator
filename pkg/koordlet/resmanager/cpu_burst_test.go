@@ -140,6 +140,7 @@ func newTestPodWithQOS(name string, qos apiext.QoSClass, cpuMilli, memoryBytes i
 					ContainerID: genTestContainerIDByName(containerName),
 				},
 			},
+			Phase: corev1.PodRunning,
 		},
 	}
 }
