@@ -182,6 +182,7 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -393,6 +394,7 @@ func Test_metricCache_PodResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -678,6 +680,7 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -776,6 +779,7 @@ func Test_metricCache_BECPUResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -916,6 +920,7 @@ func Test_metricCache_NodeCPUInfo_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -1024,6 +1029,7 @@ func Test_metricCache_ContainerThrottledMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -1139,6 +1145,7 @@ func Test_metricCache_PodThrottledMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -1343,6 +1350,7 @@ func Test_metricCache_aggregateGPUUsages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.fields.config,
 				db:     s,

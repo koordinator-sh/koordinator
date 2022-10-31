@@ -56,6 +56,15 @@ func newStorage(dsn string) (*storage, error) {
 	return s, nil
 }
 
+// for ut only, Close() is not necessary for gorm
+func (s *storage) Close() error {
+	d, err := s.db.DB()
+	if err != nil {
+		return err
+	}
+	return d.Close()
+}
+
 func (s *storage) InsertNodeResourceMetric(n *nodeResourceMetric) error {
 	return s.db.Create(n).Error
 }
@@ -173,4 +182,40 @@ func (s *storage) DeleteContainerThrottledMetric(start, end *time.Time) error {
 
 func (s *storage) DeleteContainerCPIMetric(start, end *time.Time) error {
 	return s.db.Where("timestamp BETWEEN ? AND ?", start, end).Delete(&containerCPIMetric{}).Error
+}
+
+func (s *storage) CountNodeResourceMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&nodeResourceMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountPodResourceMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&podResourceMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountContainerResourceMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&containerResourceMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountBECPUResourceMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&beCPUResourceMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountPodThrottledMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&podThrottledMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountContainerThrottledMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&containerThrottledMetric{}).Count(&count).Error
+	return count, err
 }

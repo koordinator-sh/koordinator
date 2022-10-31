@@ -490,18 +490,24 @@ func (c *collector) cleanupContext() {
 	cleanupTime := time.Now()
 	expiredTime := time.Duration(c.config.CollectResUsedIntervalSeconds*contextExpiredRatio) * time.Second
 
-	cleanFunc := func(m *sync.Map) {
+	cleanFunc := func(m *sync.Map) int {
+		count := 0
 		m.Range(func(k, v interface{}) bool {
 			record, _ := v.(contextRecord)
 			if cleanupTime.Sub(record.ts) > expiredTime {
 				m.Delete(k)
+			} else {
+				count++
 			}
 			return true
 		})
+		return count
 	}
-	cleanFunc(&c.context.lastPodCPUStat)
-	cleanFunc(&c.context.lastContainerCPUStat)
-	cleanFunc(&c.context.lastPodCPUThrottled)
-	cleanFunc(&c.context.lastContainerCPUThrottled)
-
+	lastPodCPUStatSize := cleanFunc(&c.context.lastPodCPUStat)
+	lastContainerCPUStatSize := cleanFunc(&c.context.lastContainerCPUStat)
+	lastPodCPUThrottledSize := cleanFunc(&c.context.lastPodCPUThrottled)
+	lastContainerCPUThrottledSize := cleanFunc(&c.context.lastContainerCPUThrottled)
+	klog.V(4).Infof("clear outdated last stat, remaining size: lastPodCPUStat=%v, lastContainerCPUStat=%v, "+
+		"lastPodCPUThrottled=%v, lastContainerCPUThrottled=%v", lastPodCPUStatSize, lastContainerCPUStatSize,
+		lastPodCPUThrottledSize, lastContainerCPUThrottledSize)
 }

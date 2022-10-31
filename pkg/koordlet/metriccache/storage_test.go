@@ -126,6 +126,7 @@ func Test_storage_PodResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			for _, sample := range tt.args.samples {
 				err := s.InsertPodResourceMetric(&sample)
 				if err != nil {
@@ -144,6 +145,14 @@ func Test_storage_PodResourceMetric_CRUD(t *testing.T) {
 				if !EqualPodResourceMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetPodResourceMetric() = %v, want %v", got[i], tt.want[i])
 				}
+			}
+
+			gotNum, err := s.CountPodResourceMetric()
+			if err != nil {
+				t.Errorf("CountPodResourceMetric got error %v", err)
+			}
+			if gotNum != int64(len(tt.want)) {
+				t.Errorf("CountPodResourceMetric() = %v, want %v", gotNum, len(tt.want))
 			}
 
 			err = s.DeletePodResourceMetric(&tt.args.start, &tt.args.end)
@@ -201,6 +210,7 @@ func Test_storage_NodeResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			for _, sample := range tt.args.samples {
 				err := s.InsertNodeResourceMetric(&sample)
 				if err != nil {
@@ -220,6 +230,14 @@ func Test_storage_NodeResourceMetric_CRUD(t *testing.T) {
 				if !EqualNodeResourceMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetNodeResourceMetric() = %v, want %v", got, tt.want)
 				}
+			}
+
+			gotNum, err := s.CountNodeResourceMetric()
+			if err != nil {
+				t.Errorf("CountNodeResourceMetric got error %v", err)
+			}
+			if gotNum != int64(len(tt.want)) {
+				t.Errorf("CountNodeResourceMetric() = %v, want %v", gotNum, len(tt.want))
 			}
 
 			err = s.DeleteNodeResourceMetric(&tt.args.start, &tt.args.end)
@@ -282,6 +300,7 @@ func Test_storage_ContainerResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			for _, sample := range tt.args.samples {
 				err := s.InsertContainerResourceMetric(&sample)
 				if err != nil {
@@ -300,6 +319,14 @@ func Test_storage_ContainerResourceMetric_CRUD(t *testing.T) {
 				if !EqualContainerResourceMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetContainerResourceMetric() = %v, want %v", got[i], tt.want[i])
 				}
+			}
+
+			gotNum, err := s.CountContainerResourceMetric()
+			if err != nil {
+				t.Errorf("CountContainerResourceMetric got error %v", err)
+			}
+			if gotNum != int64(len(tt.want)) {
+				t.Errorf("CountContainerResourceMetric() = %v, want %v", gotNum, len(tt.want))
 			}
 
 			err = s.DeleteContainerResourceMetric(&tt.args.start, &tt.args.end)
@@ -359,6 +386,7 @@ func Test_storage_BECPUResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			for _, sample := range tt.args.samples {
 				err := s.InsertBECPUResourceMetric(&sample)
 				if err != nil {
@@ -378,6 +406,14 @@ func Test_storage_BECPUResourceMetric_CRUD(t *testing.T) {
 				if !EqualBECPUResourceMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetBECPUResourceMetric() = %v, want %v", got, tt.want)
 				}
+			}
+
+			gotNum, err := s.CountBECPUResourceMetric()
+			if err != nil {
+				t.Errorf("CountBECPUResourceMetric got error %v", err)
+			}
+			if gotNum != int64(len(tt.want)) {
+				t.Errorf("CountBECPUResourceMetric() = %v, want %v", gotNum, len(tt.want))
 			}
 
 			err = s.DeleteBECPUResourceMetric(&tt.args.start, &tt.args.end)
@@ -447,6 +483,7 @@ func Test_storage_rawRecord_CRUD(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var err error
 			s, _ := NewStorage()
+			defer s.Close()
 
 			for i := range tt.args.samples {
 				err = s.InsertRawRecord(tt.args.samples[i])
@@ -511,6 +548,7 @@ func Test_storage_ContainerThrottledMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			for _, sample := range tt.args.samples {
 				err := s.InsertContainerThrottledMetric(&sample)
 				if err != nil {
@@ -529,6 +567,14 @@ func Test_storage_ContainerThrottledMetric_CRUD(t *testing.T) {
 				if !EqualContainerThrottledMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetContainerThrottledMetric() = %v, want %v", got[i], tt.want[i])
 				}
+			}
+
+			gotNum, err := s.CountContainerThrottledMetric()
+			if err != nil {
+				t.Errorf("CountContainerThrottledMetric got error %v", err)
+			}
+			if gotNum != int64(len(tt.want)) {
+				t.Errorf("CountContainerThrottledMetric() = %v, want %v", gotNum, len(tt.want))
 			}
 
 			err = s.DeleteContainerThrottledMetric(&tt.args.start, &tt.args.end)
@@ -589,6 +635,7 @@ func Test_storage_PodThrottledMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			for _, sample := range tt.args.samples {
 				err := s.InsertPodThrottledMetric(&sample)
 				if err != nil {
@@ -607,6 +654,14 @@ func Test_storage_PodThrottledMetric_CRUD(t *testing.T) {
 				if !EqualPodThrottledMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetPodThrottledMetric() = %v, want %v", got[i], tt.want[i])
 				}
+			}
+
+			gotNum, err := s.CountPodThrottledMetric()
+			if err != nil {
+				t.Errorf("CountPodThrottledMetric got error %v", err)
+			}
+			if gotNum != int64(len(tt.want)) {
+				t.Errorf("CountPodThrottledMetric() = %v, want %v", gotNum, len(tt.want))
 			}
 
 			err = s.DeletePodThrottledMetric(&tt.args.start, &tt.args.end)
