@@ -52,14 +52,14 @@ type portAndPid struct {
 }
 
 func TCPSocks(fn netstat.AcceptFn) ([]netstat.SockTabEntry, error) {
+	v6Socks, v6Err := netstat.TCP6Socks(fn)
+	if v6Err == nil && v6Socks != nil && len(v6Socks) > 0 {
+		return v6Socks, nil
+	}
+
 	socks, err := netstat.TCPSocks(fn)
 	if err == nil && socks != nil {
 		return socks, nil
-	}
-
-	v6Socks, v6Err := netstat.TCP6Socks(fn)
-	if v6Err == nil && v6Socks != nil {
-		return v6Socks, nil
 	}
 
 	return nil, utilerrors.NewAggregate([]error{err, v6Err})
