@@ -109,3 +109,26 @@ type ContainerThrottledQueryResult struct {
 	QueryResult
 	Metric *ContainerThrottledMetric
 }
+
+type ContainerInterferenceMetric struct {
+	MetricName  InterferenceMetricName
+	PodUID      string
+	ContainerID string
+	MetricValue interface{}
+}
+
+type PodInterferenceMetric struct {
+	MetricName  InterferenceMetricName
+	PodUID      string
+	MetricValue interface{}
+}
+
+type ContainerInterferenceQueryResult struct {
+	QueryResult
+	Metric *ContainerInterferenceMetric
+}
+
+type PodInterferenceQueryResult struct {
+	QueryResult
+	Metric *PodInterferenceMetric
+}

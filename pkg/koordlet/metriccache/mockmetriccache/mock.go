@@ -65,6 +65,20 @@ func (mr *MockMetricCacheMockRecorder) GetBECPUResourceMetric(param interface{})
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBECPUResourceMetric", reflect.TypeOf((*MockMetricCache)(nil).GetBECPUResourceMetric), param)
 }
 
+// GetContainerInterferenceMetric mocks base method.
+func (m *MockMetricCache) GetContainerInterferenceMetric(metricName metriccache.InterferenceMetricName, podUID, containerID *string, param *metriccache.QueryParam) metriccache.ContainerInterferenceQueryResult {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetContainerInterferenceMetric", metricName, podUID, containerID, param)
+	ret0, _ := ret[0].(metriccache.ContainerInterferenceQueryResult)
+	return ret0
+}
+
+// GetContainerInterferenceMetric indicates an expected call of GetContainerInterferenceMetric.
+func (mr *MockMetricCacheMockRecorder) GetContainerInterferenceMetric(metricName, podUID, containerID, param interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContainerInterferenceMetric", reflect.TypeOf((*MockMetricCache)(nil).GetContainerInterferenceMetric), metricName, podUID, containerID, param)
+}
+
 // GetContainerResourceMetric mocks base method.
 func (m *MockMetricCache) GetContainerResourceMetric(containerID *string, param *metriccache.QueryParam) metriccache.ContainerResourceQueryResult {
 	m.ctrl.T.Helper()
@@ -122,6 +136,20 @@ func (mr *MockMetricCacheMockRecorder) GetNodeResourceMetric(param interface{}) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeResourceMetric", reflect.TypeOf((*MockMetricCache)(nil).GetNodeResourceMetric), param)
 }
 
+// GetPodInterferenceMetric mocks base method.
+func (m *MockMetricCache) GetPodInterferenceMetric(metricName metriccache.InterferenceMetricName, podUID *string, param *metriccache.QueryParam) metriccache.PodInterferenceQueryResult {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPodInterferenceMetric", metricName, podUID, param)
+	ret0, _ := ret[0].(metriccache.PodInterferenceQueryResult)
+	return ret0
+}
+
+// GetPodInterferenceMetric indicates an expected call of GetPodInterferenceMetric.
+func (mr *MockMetricCacheMockRecorder) GetPodInterferenceMetric(metricName, podUID, param interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPodInterferenceMetric", reflect.TypeOf((*MockMetricCache)(nil).GetPodInterferenceMetric), metricName, podUID, param)
+}
+
 // GetPodResourceMetric mocks base method.
 func (m *MockMetricCache) GetPodResourceMetric(podUID *string, param *metriccache.QueryParam) metriccache.PodResourceQueryResult {
 	m.ctrl.T.Helper()
@@ -162,6 +190,20 @@ func (m *MockMetricCache) InsertBECPUResourceMetric(t time.Time, metric *metricc
 func (mr *MockMetricCacheMockRecorder) InsertBECPUResourceMetric(t, metric interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertBECPUResourceMetric", reflect.TypeOf((*MockMetricCache)(nil).InsertBECPUResourceMetric), t, metric)
+}
+
+// InsertContainerInterferenceMetrics mocks base method.
+func (m *MockMetricCache) InsertContainerInterferenceMetrics(t time.Time, metric *metriccache.ContainerInterferenceMetric) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InsertContainerInterferenceMetrics", t, metric)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InsertContainerInterferenceMetrics indicates an expected call of InsertContainerInterferenceMetrics.
+func (mr *MockMetricCacheMockRecorder) InsertContainerInterferenceMetrics(t, metric interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertContainerInterferenceMetrics", reflect.TypeOf((*MockMetricCache)(nil).InsertContainerInterferenceMetrics), t, metric)
 }
 
 // InsertContainerResourceMetric mocks base method.

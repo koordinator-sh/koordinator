@@ -42,6 +42,7 @@ func newStorage(dsn string) (*storage, error) {
 	db.AutoMigrate(&nodeResourceMetric{}, &podResourceMetric{}, &containerResourceMetric{}, &beCPUResourceMetric{})
 	db.AutoMigrate(&rawRecord{})
 	db.AutoMigrate(&podThrottledMetric{}, &containerThrottledMetric{})
+	db.AutoMigrate(&containerCPIMetric{})
 
 	database, err := db.DB()
 	if err != nil {
@@ -95,6 +96,10 @@ func (s *storage) InsertContainerThrottledMetric(m *containerThrottledMetric) er
 	return s.db.Create(m).Error
 }
 
+func (s *storage) InsertContainerCPIMetric(m *containerCPIMetric) error {
+	return s.db.Create(m).Error
+}
+
 func (s *storage) GetNodeResourceMetric(start, end *time.Time) ([]nodeResourceMetric, error) {
 	var nodeMetrics []nodeResourceMetric
 	err := s.db.Where("timestamp BETWEEN ? AND ?", start, end).Find(&nodeMetrics).Error
@@ -139,6 +144,18 @@ func (s *storage) GetContainerThrottledMetric(id *string, start, end *time.Time)
 	return metrics, err
 }
 
+func (s *storage) GetContainerCPIMetric(containerID *string, start, end *time.Time) ([]containerCPIMetric, error) {
+	var metrics []containerCPIMetric
+	err := s.db.Where("container_id = ? AND timestamp BETWEEN ? AND ?", containerID, start, end).Find(&metrics).Error
+	return metrics, err
+}
+
+func (s *storage) GetContainerCPIMetricByPodUid(podUid *string, start, end *time.Time) ([]containerCPIMetric, error) {
+	var metrics []containerCPIMetric
+	err := s.db.Where("pod_uid = ? AND timestamp BETWEEN ? AND ?", podUid, start, end).Find(&metrics).Error
+	return metrics, err
+}
+
 func (s *storage) DeleteNodeResourceMetric(start, end *time.Time) error {
 	return s.db.Where("timestamp BETWEEN ? AND ?", start, end).Delete(&nodeResourceMetric{}).Error
 }
@@ -161,6 +178,10 @@ func (s *storage) DeletePodThrottledMetric(start, end *time.Time) error {
 
 func (s *storage) DeleteContainerThrottledMetric(start, end *time.Time) error {
 	return s.db.Where("timestamp BETWEEN ? AND ?", start, end).Delete(&containerThrottledMetric{}).Error
+}
+
+func (s *storage) DeleteContainerCPIMetric(start, end *time.Time) error {
+	return s.db.Where("timestamp BETWEEN ? AND ?", start, end).Delete(&containerCPIMetric{}).Error
 }
 
 func (s *storage) CountNodeResourceMetric() (int64, error) {

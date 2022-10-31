@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/koordinator-sh/koordinator/pkg/util/perf"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -164,6 +165,30 @@ func Test_GetRootCgroupCPUUsageNanoseconds(t *testing.T) {
 	got, err := GetRootCgroupCPUUsageNanoseconds(corev1.PodQOSBestEffort)
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(1356232), got)
+}
+
+func Test_GetContainerCyclesAndInstructions(t *testing.T) {
+	collector, _ := perf.NewPerfCollector(0, []int{})
+	_, _, err := GetContainerCyclesAndInstructions(collector)
+	assert.Nil(t, err)
+}
+
+func Test_GetContainerPerfCollector(t *testing.T) {
+	tempDir := t.TempDir()
+	containerStatus := &corev1.ContainerStatus{
+		ContainerID: "containerd://test",
+	}
+	assert.NotPanics(t, func() {
+		_, err := GetContainerPerfCollector(tempDir, containerStatus, 1)
+		if err != nil {
+			return
+		}
+	})
+	wrongContainerStatus := &corev1.ContainerStatus{
+		ContainerID: "wrong-container-status-test",
+	}
+	_, err := GetContainerPerfCollector(tempDir, wrongContainerStatus, 1)
+	assert.NotNil(t, err)
 }
 
 func getUsageContents() string {

@@ -148,10 +148,6 @@ func (qi *QuotaInfo) updateQuotaInfoFromRemote(quotaInfo *QuotaInfo) {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
-	if quotaInfo.Name == extension.SystemQuotaName {
-		return
-	}
-
 	qi.setMaxQuotaNoLock(quotaInfo.CalculateInfo.Max)
 	qi.setMinQuotaNoLock(quotaInfo.CalculateInfo.Min)
 	sharedWeight := quotaInfo.CalculateInfo.SharedWeight.DeepCopy()

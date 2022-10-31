@@ -38,6 +38,13 @@ const (
 	AggregationTypeCount AggregationType = "count"
 )
 
+type InterferenceMetricName string
+
+const (
+	MetricNameContainerCPI InterferenceMetricName = "ContainerCPI"
+	MetricNamePodCPI       InterferenceMetricName = "PodCPI"
+)
+
 type QueryParam struct {
 	Aggregate AggregationType
 	Start     *time.Time
@@ -71,6 +78,8 @@ type MetricCache interface {
 	GetBECPUResourceMetric(param *QueryParam) BECPUResourceQueryResult
 	GetPodThrottledMetric(podUID *string, param *QueryParam) PodThrottledQueryResult
 	GetContainerThrottledMetric(containerID *string, param *QueryParam) ContainerThrottledQueryResult
+	GetContainerInterferenceMetric(metricName InterferenceMetricName, podUID *string, containerID *string, param *QueryParam) ContainerInterferenceQueryResult
+	GetPodInterferenceMetric(metricName InterferenceMetricName, podUID *string, param *QueryParam) PodInterferenceQueryResult
 	InsertNodeResourceMetric(t time.Time, nodeResUsed *NodeResourceMetric) error
 	InsertPodResourceMetric(t time.Time, podResUsed *PodResourceMetric) error
 	InsertContainerResourceMetric(t time.Time, containerResUsed *ContainerResourceMetric) error
@@ -78,6 +87,7 @@ type MetricCache interface {
 	InsertBECPUResourceMetric(t time.Time, metric *BECPUResourceMetric) error
 	InsertPodThrottledMetrics(t time.Time, metric *PodThrottledMetric) error
 	InsertContainerThrottledMetrics(t time.Time, metric *ContainerThrottledMetric) error
+	InsertContainerInterferenceMetrics(t time.Time, metric *ContainerInterferenceMetric) error
 }
 
 type metricCache struct {
@@ -466,6 +476,115 @@ func (m *metricCache) GetContainerThrottledMetric(containerID *string, param *Qu
 	return result
 }
 
+func (m *metricCache) GetContainerInterferenceMetric(metricName InterferenceMetricName, podUID *string, containerID *string, param *QueryParam) ContainerInterferenceQueryResult {
+	result := ContainerInterferenceQueryResult{}
+	if param == nil || param.Start == nil || param.End == nil {
+		result.Error = fmt.Errorf("GetContainerInterferenceMetric %v query parameters are illegal %v", containerID, param)
+		return result
+	}
+	metrics, err := m.convertAndGetContainerInterferenceMetric(metricName, containerID, param.Start, param.End)
+	if err != nil {
+		result.Error = fmt.Errorf("GetContainerInterferenceMetric %v of %v failed, query params %v, error %v", metricName, containerID, param, err)
+		return result
+	}
+
+	aggregateFunc := getAggregateFunc(param.Aggregate)
+	metricValue, err := aggregateContainerInterferenceMetricByName(metricName, metrics, aggregateFunc)
+	if err != nil {
+		result.Error = fmt.Errorf("GetContainerInterferenceMetric %v aggregate failed, metrics %v, error %v",
+			containerID, metrics, err)
+		return result
+	}
+
+	count, err := count(metrics)
+	if err != nil {
+		result.Error = fmt.Errorf("GetContainerInterferenceMetric %v aggregate failed, metrics %v, error %v",
+			containerID, metrics, err)
+		return result
+	}
+
+	result.AggregateInfo = &AggregateInfo{MetricsCount: int64(count)}
+	result.Metric = &ContainerInterferenceMetric{
+		MetricName:  metricName,
+		PodUID:      *podUID,
+		ContainerID: *containerID,
+		MetricValue: metricValue,
+	}
+	return result
+}
+
+func (m *metricCache) GetPodInterferenceMetric(metricName InterferenceMetricName, podUID *string, param *QueryParam) PodInterferenceQueryResult {
+	result := PodInterferenceQueryResult{}
+	if param == nil || param.Start == nil || param.End == nil {
+		result.Error = fmt.Errorf("GetPodInterferenceMetric %v query parameters are illegal %v", podUID, param)
+		return result
+	}
+	metrics, err := m.convertAndGetPodInterferenceMetric(metricName, podUID, param.Start, param.End)
+	if err != nil {
+		result.Error = fmt.Errorf("GetPodInterferenceMetric %v of %v failed, query params %v, error %v", metricName, podUID, param, err)
+		return result
+	}
+
+	aggregateFunc := getAggregateFunc(param.Aggregate)
+	metricValue, err := aggregatePodInterferenceMetricByName(metricName, metrics, aggregateFunc)
+	if err != nil {
+		result.Error = fmt.Errorf("GetPodInterferenceMetric %v aggregate failed, metrics %v, error %v",
+			podUID, metrics, err)
+		return result
+	}
+
+	count, err := count(metrics)
+	if err != nil {
+		result.Error = fmt.Errorf("GetPodInterferenceMetric %v aggregate failed, metrics %v, error %v",
+			podUID, metrics, err)
+		return result
+	}
+
+	result.AggregateInfo = &AggregateInfo{MetricsCount: int64(count)}
+	result.Metric = &PodInterferenceMetric{
+		MetricName:  metricName,
+		PodUID:      *podUID,
+		MetricValue: metricValue,
+	}
+	return result
+}
+
+func aggregateContainerInterferenceMetricByName(metricName InterferenceMetricName, metrics interface{}, aggregateFunc AggregationFunc) (interface{}, error) {
+	switch metricName {
+	case MetricNameContainerCPI:
+		return aggregateCPI(metrics, aggregateFunc)
+	default:
+		return nil, fmt.Errorf("get unknown metric name")
+	}
+}
+
+func aggregatePodInterferenceMetricByName(metricName InterferenceMetricName, metrics interface{}, aggregateFunc AggregationFunc) (interface{}, error) {
+	switch metricName {
+	case MetricNamePodCPI:
+		return aggregateCPI(metrics, aggregateFunc)
+	default:
+		return nil, fmt.Errorf("get unknown metric name")
+	}
+}
+
+func aggregateCPI(metrics interface{}, aggregateFunc AggregationFunc) (interface{}, error) {
+	cycles, err := aggregateFunc(metrics, AggregateParam{
+		ValueFieldName: "Cycles", TimeFieldName: "Timestamp"})
+	if err != nil {
+		return nil, err
+	}
+	instructions, err := aggregateFunc(metrics, AggregateParam{
+		ValueFieldName: "Instructions", TimeFieldName: "Timestamp"})
+	if err != nil {
+		return nil, err
+	}
+	metricValue := &CPIMetric{
+		Cycles:       uint64(cycles),
+		Instructions: uint64(instructions),
+	}
+	return metricValue, nil
+}
+
 func (m *metricCache) InsertNodeResourceMetric(t time.Time, nodeResUsed *NodeResourceMetric) error {
 	gpuUsages := make([]gpuResourceMetric, len(nodeResUsed.GPUs))
 	for idx, usage := range nodeResUsed.GPUs {
@@ -575,6 +694,14 @@ func (m *metricCache) InsertContainerThrottledMetrics(t time.Time, metric *Conta
 	return m.db.InsertContainerThrottledMetric(dbItem)
 }
 
+func (m *metricCache) InsertContainerInterferenceMetrics(t time.Time, metric *ContainerInterferenceMetric) error {
+	return m.convertAndInsertContainerInterferenceMetric(t, metric)
+}
+
+func (m *metricCache) InsertPodInterferenceMetrics(t time.Time, metric *PodInterferenceMetric) error {
+	return m.convertAndInsertPodInterferenceMetric(t, metric)
+}
+
 func (m *metricCache) aggregateGPUUsages(gpuResourceMetricsByTime [][]gpuResourceMetric, aggregateFunc AggregationFunc) ([]GPUMetric, error) {
 	if len(gpuResourceMetricsByTime) == 0 {
 		return nil, nil
@@ -641,6 +768,9 @@ func (m *metricCache) recycleDB() {
 	if err := m.db.DeleteContainerThrottledMetric(&oldTime, &expiredTime); err != nil {
 		klog.Warningf("DeleteContainerThrottledMetric failed during recycle, error %v", err)
 	}
+	if err := m.db.DeleteContainerCPIMetric(&oldTime, &expiredTime); err != nil {
+		klog.Warningf("DeleteContainerCPIMetric failed during recycle, error %v", err)
+	}
 	// raw records do not need to cleanup
 	nodeResCount, _ := m.db.CountNodeResourceMetric()
 	podResCount, _ := m.db.CountPodResourceMetric()
@@ -672,4 +802,76 @@ func getAggregateFunc(aggregationType AggregationType) AggregationFunc {
 func count(metrics interface{}) (float64, error) {
 	aggregateFunc := getAggregateFunc(AggregationTypeCount)
 	return aggregateFunc(metrics, AggregateParam{})
+}
+
+type CPIMetric struct {
+	Cycles       uint64
+	Instructions uint64
+}
+
+func (m *metricCache) convertAndInsertContainerInterferenceMetric(t time.Time, metric *ContainerInterferenceMetric) error {
+	switch metric.MetricName {
+	case MetricNameContainerCPI:
+		dbItem := &containerCPIMetric{
+			PodUID:       metric.PodUID,
+			ContainerID:  metric.ContainerID,
+			Cycles:       float64(metric.MetricValue.(*CPIMetric).Cycles),
+			Instructions: float64(metric.MetricValue.(*CPIMetric).Instructions),
+			Timestamp:    t,
+		}
+		return m.db.InsertContainerCPIMetric(dbItem)
+	default:
+		return fmt.Errorf("get unknown metric name")
+	}
+}
+
+// todo: do not insert podCPI, will implement at psi branch
+func (m *metricCache) convertAndInsertPodInterferenceMetric(t time.Time, metric *PodInterferenceMetric) error {
+	return nil
+}
+
+func (m *metricCache) convertAndGetContainerInterferenceMetric(metricName InterferenceMetricName, containerID *string, start, end *time.Time) (interface{}, error) {
+	switch metricName {
+	case MetricNameContainerCPI:
+		return m.db.GetContainerCPIMetric(containerID, start, end)
+	default:
+		return nil, fmt.Errorf("get unknown metric name")
+	}
+}
+
+type podCPIMetric struct {
+	PodUID       string
+	Cycles       float64
+	Instructions float64
+	Timestamp    time.Time
+}
+
+func (m *metricCache) convertAndGetPodInterferenceMetric(metricName InterferenceMetricName, podUID *string, start, end *time.Time) (interface{}, error) {
+	switch metricName {
+	case MetricNamePodCPI:
+		// get container CPI and compute pod CPI
+		containerCPIMetrics, err := m.db.GetContainerCPIMetricByPodUid(podUID, start, end)
+		if err != nil {
+			return nil, err
+		}
+		if len(containerCPIMetrics) <= 0 {
+			return []podCPIMetric{}, nil
+		}
+		var sumCycles, sumInstructions float64
+		for _, containerCPI := range containerCPIMetrics {
+			sumCycles += containerCPI.Cycles
+			sumInstructions += containerCPI.Instructions
+		}
+		podMetric := podCPIMetric{
+			PodUID:       *podUID,
+			Cycles:       sumCycles,
+			Instructions: sumInstructions,
+			Timestamp:    containerCPIMetrics[len(containerCPIMetrics)-1].Timestamp,
+		}
+		return []podCPIMetric{
+			podMetric,
+		}, nil
+	default:
+		return nil, fmt.Errorf("get unknown metric name")
+	}
 }
