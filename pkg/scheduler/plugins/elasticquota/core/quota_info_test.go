@@ -26,9 +26,9 @@ import (
 func TestQuotaInfo_AddPodIfNotPresent_RemovePodIfPresent_GetPodCache(t *testing.T) {
 	qi := NewQuotaInfo(false, true, "qi1", "root")
 	pod := schetesting.MakePod().Name("test").Obj()
-	qi.AddPodIfNotPresent(pod)
+	qi.addPodIfNotPresent(pod)
 	assert.Equal(t, 1, len(qi.GetPodCache()))
-	qi.AddPodIfNotPresent(pod)
+	qi.addPodIfNotPresent(pod)
 	assert.False(t, qi.GetPodIsAssigned(pod))
 	err := qi.UpdatePodIsAssigned(pod.Name, false)
 	assert.NotNil(t, err)
@@ -36,9 +36,8 @@ func TestQuotaInfo_AddPodIfNotPresent_RemovePodIfPresent_GetPodCache(t *testing.
 	assert.Nil(t, err)
 	assert.True(t, qi.GetPodIsAssigned(pod))
 
-	qi.RemovePodIfPreSent(pod.Name)
+	qi.removePodIfPresent(pod.Name)
 	assert.Equal(t, 0, len(qi.GetPodCache()))
-	qi.RemovePodIfPreSent(pod.Name)
 }
 
 func TestQuotaInfo_DeepCopy(t *testing.T) {
@@ -72,4 +71,41 @@ func TestQuotaInfo_DeepCopy(t *testing.T) {
 	assert.Equal(t, copyObj, qi)
 	assert.Equal(t, createResourceList(31, 40), copyObj.GetRequest())
 	assert.Equal(t, createResourceList(3, 4), copyObj.GetRuntime())
+}
+
+func TestUpdateQuotaInfoFromRemote(t *testing.T) {
+	remoteQuotaInfo := &QuotaInfo{
+		Name:              "test",
+		ParentName:        "root",
+		IsParent:          false,
+		RuntimeVersion:    10,
+		AllowLentResource: true,
+		PodCache: map[string]*PodInfo{
+			"testPod": {
+				pod:        schetesting.MakePod().Name("testPod").Obj(),
+				isAssigned: true,
+				resource:   createResourceList(10, 10),
+			},
+		},
+		CalculateInfo: QuotaCalculateInfo{
+			Max:          createResourceList(20, 20),
+			AutoScaleMin: createResourceList(10, 23),
+			Min:          createResourceList(20, 10),
+			Used:         createResourceList(20, 14),
+			Request:      createResourceList(31, 40),
+			SharedWeight: createResourceList(32, 40),
+			Runtime:      createResourceList(3, 4),
+		},
+	}
+	qi := &QuotaInfo{}
+	qi.updateQuotaInfoFromRemote(remoteQuotaInfo)
+	assert.Equal(t, qi.CalculateInfo.Max, remoteQuotaInfo.CalculateInfo.Max)
+	assert.Equal(t, qi.CalculateInfo.Min, remoteQuotaInfo.CalculateInfo.Min)
+	assert.Equal(t, qi.AllowLentResource, remoteQuotaInfo.AllowLentResource)
+	assert.Equal(t, qi.IsParent, remoteQuotaInfo.IsParent)
+	assert.Equal(t, qi.ParentName, remoteQuotaInfo.ParentName)
+	assert.Equal(t, qi.CalculateInfo.SharedWeight, remoteQuotaInfo.CalculateInfo.SharedWeight)
+	assert.NotEqual(t, qi.CalculateInfo.Used, remoteQuotaInfo.CalculateInfo.Used)
+	assert.NotEqual(t, qi.CalculateInfo.Request, remoteQuotaInfo.CalculateInfo.Request)
+	assert.NotEqual(t, qi.CalculateInfo.Runtime, remoteQuotaInfo.CalculateInfo.Runtime)
 }

@@ -20,9 +20,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
+// +kubebuilder:webhook:path=/mutate-scheduling-sigs-k8s-io-v1alpha1-elasticquota,mutating=true,failurePolicy=fail,sideEffects=None,admissionReviewVersions=v1;v1beta1,groups=scheduling.sigs.k8s.io,resources=elasticquotas,verbs=create,versions=v1alpha1,name=melasticquota.kb.io
+
 var (
 	// HandlerMap contains admission webhook handlers
 	HandlerMap = map[string]admission.Handler{
-		"mutate-quota": &ElasticQuotaMutatingHandler{},
+		"mutate-scheduling-sigs-k8s-io-v1alpha1-elasticquota": &ElasticQuotaMutatingHandler{},
 	}
 )

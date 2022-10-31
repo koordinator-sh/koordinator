@@ -51,6 +51,15 @@ type NodeResourceReconciler struct {
 	cfgCache       config.ColocationCfgCache
 }
 
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=nodes/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups=scheduling.koordinator.sh,resources=devices,verbs=get;list;watch
+// +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics,verbs=get;list;watch
+// +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodeslos,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodeslos/status,verbs=get;update;patch
+
 func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	if !r.cfgCache.IsCfgAvailable() {
 		klog.Warningf("colocation config is not available")
@@ -118,7 +127,11 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{Requeue: false}, nil
 	}
 	if err := r.updateGPUNodeResource(node, device); err != nil {
-		klog.Errorf("failed to update node %v gpu resource, error: %v", node.Name, err)
+		klog.Errorf("failed to update node %v gpu resource and label, error: %v", node.Name, err)
+		return ctrl.Result{Requeue: true}, err
+	}
+	if err := r.updateGPUDriverAndModel(node, device); err != nil {
+		klog.Errorf("failed to update node %v gpu model and driver, error: %v", node.Name, err)
 		return ctrl.Result{Requeue: true}, err
 	}
 

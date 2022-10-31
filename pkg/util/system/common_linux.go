@@ -36,6 +36,7 @@ import (
 	"unicode"
 
 	"github.com/cakturk/go-netstat/netstat"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/klog/v2"
 )
 
@@ -51,15 +52,17 @@ type portAndPid struct {
 }
 
 func TCPSocks(fn netstat.AcceptFn) ([]netstat.SockTabEntry, error) {
+	v6Socks, v6Err := netstat.TCP6Socks(fn)
+	if v6Err == nil && v6Socks != nil && len(v6Socks) > 0 {
+		return v6Socks, nil
+	}
+
 	socks, err := netstat.TCPSocks(fn)
-	if err != nil {
-		return nil, err
+	if err == nil && socks != nil {
+		return socks, nil
 	}
-	v6Socks, err := netstat.TCP6Socks(fn)
-	if err != nil {
-		return nil, err
-	}
-	return append(socks, v6Socks...), nil
+
+	return nil, utilerrors.NewAggregate([]error{err, v6Err})
 }
 
 // KubeletPortToPid Query pid by tcp port number with the help of go-netstat

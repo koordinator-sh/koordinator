@@ -82,8 +82,8 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 }
 
 type ContainerResponse struct {
-	Resources     Resources
-	ContainerEnvs map[string]string
+	Resources        Resources
+	AddContainerEnvs map[string]string
 }
 
 func (c *ContainerResponse) ProxyDone(resp *runtimeapi.ContainerResourceHookResponse) {
@@ -100,8 +100,13 @@ func (c *ContainerResponse) ProxyDone(resp *runtimeapi.ContainerResourceHookResp
 	if c.Resources.CPUShares != nil {
 		resp.ContainerResources.CpuShares = *c.Resources.CPUShares
 	}
-	if c.ContainerEnvs != nil {
-		resp.ContainerEnvs = c.ContainerEnvs
+	if c.AddContainerEnvs != nil {
+		if resp.ContainerEnvs == nil {
+			resp.ContainerEnvs = make(map[string]string)
+		}
+		for k, v := range c.AddContainerEnvs {
+			resp.ContainerEnvs[k] = v
+		}
 	}
 }
 

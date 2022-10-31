@@ -31,7 +31,7 @@ type GPUMetric struct {
 	DeviceUUID  string            // device UUID
 	SMUtil      uint32            // current utilization rate for the device
 	MemoryUsed  resource.Quantity // used memory on the device, in bytes
-	MemoryTotal resource.Quantity // total memroy on device, in bytes
+	MemoryTotal resource.Quantity // total memory on device, in bytes
 }
 
 type MemoryMetric struct {
@@ -108,4 +108,27 @@ type PodThrottledQueryResult struct {
 type ContainerThrottledQueryResult struct {
 	QueryResult
 	Metric *ContainerThrottledMetric
+}
+
+type ContainerInterferenceMetric struct {
+	MetricName  InterferenceMetricName
+	PodUID      string
+	ContainerID string
+	MetricValue interface{}
+}
+
+type PodInterferenceMetric struct {
+	MetricName  InterferenceMetricName
+	PodUID      string
+	MetricValue interface{}
+}
+
+type ContainerInterferenceQueryResult struct {
+	QueryResult
+	Metric *ContainerInterferenceMetric
+}
+
+type PodInterferenceQueryResult struct {
+	QueryResult
+	Metric *PodInterferenceMetric
 }

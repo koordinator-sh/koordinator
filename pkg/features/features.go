@@ -35,6 +35,9 @@ const (
 
 	// ElasticQuotaValidatingWebhook enables validating webhook for ElasticQuotas creations or updates
 	ElasticQuotaValidatingWebhook featuregate.Feature = "ElasticValidatingWebhook"
+
+	// WebhookFramework enables webhook framework
+	WebhookFramework featuregate.Feature = "WebhookFramework"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -42,6 +45,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	PodValidatingWebhook:          {Default: true, PreRelease: featuregate.Beta},
 	ElasticQuotaMutatingWebhook:   {Default: true, PreRelease: featuregate.Beta},
 	ElasticQuotaValidatingWebhook: {Default: true, PreRelease: featuregate.Beta},
+	WebhookFramework:              {Default: true, PreRelease: featuregate.Beta},
 }
 
 func init() {

@@ -44,9 +44,10 @@ type NodeMetricReconciler struct {
 	Recorder record.EventRecorder
 }
 
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -131,7 +132,7 @@ func (r *NodeMetricReconciler) getNodeMetricSpec(node *corev1.Node, oldSpec *slo
 		return nil, fmt.Errorf("invalid node input")
 	}
 
-	//if cfg cache error status(like umashall error),then use oldSpec
+	// if cfg cache error status(like unmarshall error),then use oldSpec
 	if oldSpec != nil && r.cfgCache.IsErrorStatus() {
 		return oldSpec, nil
 	}

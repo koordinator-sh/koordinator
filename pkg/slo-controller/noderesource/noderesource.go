@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -133,6 +134,11 @@ func (r *NodeResourceReconciler) isGPUResourceNeedSync(new, old *corev1.Node) bo
 	return false
 }
 
+func (r *NodeResourceReconciler) isGPULabelNeedSync(new, old map[string]string) bool {
+	return new[extension.GPUModel] != old[extension.GPUModel] ||
+		new[extension.GPUDriver] != old[extension.GPUDriver]
+}
+
 func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device *schedulingv1alpha1.Device) error {
 	if device == nil {
 		return nil
@@ -189,7 +195,7 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 		updateNode.Status.Allocatable[extension.KoordGPU] = *koordGpuTotal
 
 		if err := r.Client.Status().Update(context.TODO(), updateNode); err != nil {
-			klog.Errorf("failed to update node gpu resource %v, error: %v", updateNode.Name, err)
+			klog.Errorf("failed to update node gpu resource, %v, error: %v", updateNode.Name, err)
 			return err
 		}
 		return nil
@@ -198,6 +204,49 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 		r.GPUSyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), r.Clock.Now())
 	}
 	return err
+}
+
+func (r *NodeResourceReconciler) updateGPUDriverAndModel(node *corev1.Node, device *schedulingv1alpha1.Device) error {
+	if device == nil || device.Labels == nil {
+		return nil
+	}
+
+	if !r.isGPULabelNeedSync(device.Labels, node.Labels) {
+		return nil
+	}
+
+	err := util.RetryOnConflictOrTooManyRequests(func() error {
+		updateNode := &corev1.Node{}
+		if err := r.Client.Get(context.TODO(), types.NamespacedName{Name: node.Name}, updateNode); err != nil {
+			klog.Errorf("failed to get node %v, error: %v", node.Name, err)
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+
+		updateNodeNew := updateNode.DeepCopy()
+		if updateNodeNew.Labels == nil {
+			updateNodeNew.Labels = make(map[string]string)
+		}
+		updateNodeNew.Labels[extension.GPUModel] = device.Labels[extension.GPUModel]
+		updateNodeNew.Labels[extension.GPUDriver] = device.Labels[extension.GPUDriver]
+
+		patch := client.MergeFrom(updateNode)
+		if err := r.Client.Patch(context.Background(), updateNodeNew, patch); err != nil {
+			klog.Errorf("failed to patch node gpu model and version, err:%v", err)
+			return err
+		} else {
+			klog.Infof("Success to patch node:%v gpu model:%v and version:%v",
+				node.Name, device.Labels[extension.GPUModel], device.Labels[extension.GPUDriver])
+		}
+		return nil
+	})
+	if err == nil {
+		r.GPUSyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), r.Clock.Now())
+	}
+
+	return nil
 }
 
 func (r *NodeResourceReconciler) updateNodeBEResource(node *corev1.Node, beResource *nodeBEResource) error {

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package dispatcher
+package client
 
 import (
 	"fmt"
@@ -26,6 +26,10 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 )
+
+type HookServerClientManagerInterface interface {
+	RuntimeHookServerClient(serverPath HookServerPath) (*RuntimeHookClient, error)
+}
 
 type HookServerClientManager struct {
 	cache *lru.Cache

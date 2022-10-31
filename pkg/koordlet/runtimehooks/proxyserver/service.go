@@ -68,6 +68,7 @@ func (s *server) PreCreateContainerHook(ctx context.Context,
 		ContainerAnnotations: req.GetContainerAnnotations(),
 		ContainerResources:   req.GetContainerResources(),
 		PodCgroupParent:      req.GetPodCgroupParent(),
+		ContainerEnvs:        req.GetContainerEnvs(),
 	}
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromProxy(req)
@@ -85,6 +86,7 @@ func (s *server) PreStartContainerHook(ctx context.Context,
 		ContainerAnnotations: req.GetContainerAnnotations(),
 		ContainerResources:   req.GetContainerResources(),
 		PodCgroupParent:      req.GetPodCgroupParent(),
+		ContainerEnvs:        req.GetContainerEnvs(),
 	}
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromProxy(req)
@@ -102,6 +104,7 @@ func (s *server) PostStartContainerHook(ctx context.Context,
 		ContainerAnnotations: req.GetContainerAnnotations(),
 		ContainerResources:   req.GetContainerResources(),
 		PodCgroupParent:      req.GetPodCgroupParent(),
+		ContainerEnvs:        req.GetContainerEnvs(),
 	}
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromProxy(req)
@@ -119,6 +122,7 @@ func (s *server) PostStopContainerHook(ctx context.Context,
 		ContainerAnnotations: req.GetContainerAnnotations(),
 		ContainerResources:   req.GetContainerResources(),
 		PodCgroupParent:      req.GetPodCgroupParent(),
+		ContainerEnvs:        req.GetContainerEnvs(),
 	}
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromProxy(req)
@@ -136,6 +140,7 @@ func (s *server) PreUpdateContainerResourcesHook(ctx context.Context,
 		ContainerAnnotations: req.GetContainerAnnotations(),
 		ContainerResources:   req.GetContainerResources(),
 		PodCgroupParent:      req.GetPodCgroupParent(),
+		ContainerEnvs:        req.GetContainerEnvs(),
 	}
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromProxy(req)

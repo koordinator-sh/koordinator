@@ -101,23 +101,23 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 	if gang.HasGangInit {
 		return false
 	}
-	minRequiredNumber, err := strconv.ParseInt(pod.Annotations[extension.AnnotationGangMinNum], 10, 32)
+	minRequiredNumber, err := extension.GetMinNum(pod)
 	if err != nil {
 		klog.Errorf("pod's annotation MinRequiredNumber illegal, gangName: %v, value: %v",
 			gang.Name, pod.Annotations[extension.AnnotationGangMinNum])
 		return false
 	}
-	gang.MinRequiredNumber = int(minRequiredNumber)
+	gang.MinRequiredNumber = minRequiredNumber
 
 	totalChildrenNum, err := strconv.ParseInt(pod.Annotations[extension.AnnotationGangTotalNum], 10, 32)
 	if err != nil {
 		klog.Errorf("pod's annotation totalNumber illegal, gangName: %v, value: %v",
 			gang.Name, pod.Annotations[extension.AnnotationGangTotalNum])
-		totalChildrenNum = minRequiredNumber
-	} else if totalChildrenNum != 0 && totalChildrenNum < minRequiredNumber {
+		totalChildrenNum = int64(minRequiredNumber)
+	} else if totalChildrenNum != 0 && totalChildrenNum < int64(minRequiredNumber) {
 		klog.Errorf("pod's annotation totalNumber cannot less than minRequiredNumber, gangName: %v, totalNumber: %v,minRequiredNumber: %v",
 			gang.Name, pod.Annotations[extension.AnnotationGangTotalNum], minRequiredNumber)
-		totalChildrenNum = minRequiredNumber
+		totalChildrenNum = int64(minRequiredNumber)
 	}
 	gang.TotalChildrenNum = int(totalChildrenNum)
 

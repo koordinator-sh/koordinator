@@ -368,11 +368,13 @@ func filterPodsWithPDBViolation(podInfos []*framework.PodInfo, pdbs []*policy.Po
 
 // TODO if the kubernetes version is before 1.20, will return nil.
 func getPDBLister(handle framework.Handle) policylisters.PodDisruptionBudgetLister {
-	if feature.DefaultFeatureGate.Enabled(features.PodDisruptionBudget) {
-		resources, err := handle.ClientSet().Discovery().ServerResourcesForGroupVersion(policy.SchemeGroupVersion.String())
-		if err != nil && resources.Size() != 0 {
-			return handle.SharedInformerFactory().Policy().V1().PodDisruptionBudgets().Lister()
-		}
+	if !feature.DefaultFeatureGate.Enabled(features.PodDisruptionBudget) {
+		return nil
+	}
+
+	resources, err := handle.ClientSet().Discovery().ServerResourcesForGroupVersion(policy.SchemeGroupVersion.String())
+	if err == nil && resources.Size() != 0 {
+		return handle.SharedInformerFactory().Policy().V1().PodDisruptionBudgets().Lister()
 	}
 
 	return nil

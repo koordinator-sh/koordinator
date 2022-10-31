@@ -17,6 +17,7 @@ limitations under the License.
 package pleg
 
 import (
+	"errors"
 	"path"
 	"sync"
 
@@ -79,12 +80,12 @@ type Pleg interface {
 
 func NewPLEG(cgroupRootPath string) (Pleg, error) {
 	podWatcher, err := NewWatcher()
-	if err != nil {
+	if err != nil && !errors.Is(err, errNotSupported) {
 		klog.Error("failed to create pod watcher", err)
 		return nil, err
 	}
 	containerWatcher, err := NewWatcher()
-	if err != nil {
+	if err != nil && !errors.Is(err, errNotSupported) {
 		klog.Error("failed to create container watcher", err)
 		return nil, err
 	}
@@ -135,6 +136,10 @@ func (p *pleg) RemoverHandler(id HandlerID) PodLifeCycleHandler {
 }
 
 func (p *pleg) Run(stopCh <-chan struct{}) error {
+	if p.podWatcher == nil || p.containerWatcher == nil {
+		klog.Errorf("podWatcher or containerWatcher failed to init, skip running pleg")
+		return nil
+	}
 	qosClasses := []corev1.PodQOSClass{corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort}
 	for _, qosClass := range qosClasses {
 		// here we choose cpu subsystem as ground truth,

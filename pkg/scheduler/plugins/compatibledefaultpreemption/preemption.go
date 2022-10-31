@@ -41,27 +41,22 @@ type CompatibleDefaultPreemption struct {
 }
 
 func New(dpArgs runtime.Object, fh framework.Handle) (framework.Plugin, error) {
-	if dpArgs == nil {
-		defaultPreemptionArgs, err := getDefaultPreemptionArgs()
-		if err != nil {
-			return nil, err
-		}
-		dpArgs = defaultPreemptionArgs
-	} else {
+	defaultPreemptionArgs, err := getDefaultPreemptionArgs()
+	if err != nil {
+		return nil, err
+	}
+
+	if dpArgs != nil {
 		unknownObj, ok := dpArgs.(*runtime.Unknown)
 		if !ok {
 			return nil, fmt.Errorf("got args of type %T, want *DefaultPreemptionArgs", dpArgs)
 		}
 
-		defaultPreemptionArgs, err := getDefaultPreemptionArgs()
-		if err != nil {
-			return nil, err
-		}
 		if err := frameworkruntime.DecodeInto(unknownObj, defaultPreemptionArgs); err != nil {
 			return nil, err
 		}
-		dpArgs = defaultPreemptionArgs
 	}
+	dpArgs = defaultPreemptionArgs
 
 	fts := plfeature.Features{
 		EnablePodAffinityNamespaceSelector: feature.DefaultFeatureGate.Enabled(features.PodAffinityNamespaceSelector),

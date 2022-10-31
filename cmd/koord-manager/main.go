@@ -156,12 +156,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("setup webhook")
-	if err = webhook.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to setup webhook")
-		os.Exit(1)
-	}
-
 	if err = (&nodemetric.NodeMetricReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
@@ -193,26 +187,34 @@ func main() {
 	// +kubebuilder:scaffold:builder
 
 	ctx := ctrl.SetupSignalHandler()
-	setupLog.Info("initialize webhook")
-	if err := webhook.Initialize(ctx, cfg); err != nil {
-		setupLog.Error(err, "unable to initialize webhook")
-		os.Exit(1)
-	}
 
-	if err := mgr.AddReadyzCheck("webhook-ready", webhook.Checker); err != nil {
-		setupLog.Error(err, "unable to add readyz check")
-		os.Exit(1)
-	}
-
-	go func() {
-		setupLog.Info("wait webhook ready")
-		if err = webhook.WaitReady(); err != nil {
-			setupLog.Error(err, "unable to wait webhook ready")
+	if utilfeature.DefaultFeatureGate.Enabled(features.WebhookFramework) {
+		setupLog.Info("setup webhook")
+		if err = webhook.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to setup webhook")
 			os.Exit(1)
 		}
+		setupLog.Info("initialize webhook")
+		if err := webhook.Initialize(ctx, cfg); err != nil {
+			setupLog.Error(err, "unable to initialize webhook")
+			os.Exit(1)
+		}
+		if err := mgr.AddReadyzCheck("webhook-ready", webhook.Checker); err != nil {
+			setupLog.Error(err, "unable to add readyz check")
+			os.Exit(1)
+		}
+		go func() {
+			setupLog.Info("wait webhook ready")
+			if err = webhook.WaitReady(); err != nil {
+				setupLog.Error(err, "unable to wait webhook ready")
+				os.Exit(1)
+			}
 
-		// NOTE: Controllers can be started here if needed
-	}()
+			// NOTE: Controllers can be started here if needed
+		}()
+	} else {
+		klog.V(4).Infof("webhook framework feature gate not enabled")
+	}
 
 	setupLog.Info("starting manager")
 	extensions.StartExtensions(ctx, mgr)

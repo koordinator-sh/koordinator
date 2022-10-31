@@ -30,8 +30,10 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/component-base/featuregate"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -145,6 +147,18 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 	}, time.Duration(c.config.CollectResUsedIntervalSeconds)*time.Second, stopCh)
 
 	go wait.Until(c.collectNodeCPUInfo, time.Duration(c.config.CollectNodeCPUInfoIntervalSeconds)*time.Second, stopCh)
+
+	ic := NewPerformanceCollector(c.statesInformer, c.metricCache, c.config.PerformanceCollectorTimeWindowSeconds)
+	util.RunFeature(func() {
+		// add sync metaService cache check before collect pod information
+		// because collect function will get all pods.
+		if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
+			// Koordlet exit because of metaService sync failed.
+			klog.Fatalf("timed out waiting for meta service caches to sync")
+			return
+		}
+		ic.collectContainerCPI()
+	}, []featuregate.Feature{features.PerformanceCollector}, c.config.PerformanceCollectorIntervalSeconds, stopCh)
 
 	go wait.Until(c.cleanupContext, cleanupInterval, stopCh)
 
@@ -476,18 +490,24 @@ func (c *collector) cleanupContext() {
 	cleanupTime := time.Now()
 	expiredTime := time.Duration(c.config.CollectResUsedIntervalSeconds*contextExpiredRatio) * time.Second
 
-	cleanFunc := func(m *sync.Map) {
+	cleanFunc := func(m *sync.Map) int {
+		count := 0
 		m.Range(func(k, v interface{}) bool {
 			record, _ := v.(contextRecord)
 			if cleanupTime.Sub(record.ts) > expiredTime {
 				m.Delete(k)
+			} else {
+				count++
 			}
 			return true
 		})
+		return count
 	}
-	cleanFunc(&c.context.lastPodCPUStat)
-	cleanFunc(&c.context.lastContainerCPUStat)
-	cleanFunc(&c.context.lastPodCPUThrottled)
-	cleanFunc(&c.context.lastContainerCPUThrottled)
-
+	lastPodCPUStatSize := cleanFunc(&c.context.lastPodCPUStat)
+	lastContainerCPUStatSize := cleanFunc(&c.context.lastContainerCPUStat)
+	lastPodCPUThrottledSize := cleanFunc(&c.context.lastPodCPUThrottled)
+	lastContainerCPUThrottledSize := cleanFunc(&c.context.lastContainerCPUThrottled)
+	klog.V(4).Infof("clear outdated last stat, remaining size: lastPodCPUStat=%v, lastContainerCPUStat=%v, "+
+		"lastPodCPUThrottled=%v, lastContainerCPUThrottled=%v", lastPodCPUStatSize, lastContainerCPUStatSize,
+		lastPodCPUThrottledSize, lastContainerCPUThrottledSize)
 }

@@ -156,12 +156,10 @@ const (
 )
 
 type ResourceThresholdStrategy struct {
-	// whether the strategy is enabled, default = true
-	// +kubebuilder:default=true
+	// whether the strategy is enabled, default = false
 	Enable *bool `json:"enable,omitempty"`
 
 	// cpu suppress threshold percentage (0,100), default = 65
-	// +kubebuilder:default=65
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
 	CPUSuppressThresholdPercent *int64 `json:"cpuSuppressThresholdPercent,omitempty"`
@@ -169,7 +167,6 @@ type ResourceThresholdStrategy struct {
 	CPUSuppressPolicy CPUSuppressPolicy `json:"cpuSuppressPolicy,omitempty"`
 
 	// upper: memory evict threshold percentage (0,100), default = 70
-	// +kubebuilder:default=70
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
 	MemoryEvictThresholdPercent *int64 `json:"memoryEvictThresholdPercent,omitempty"`
@@ -195,17 +192,14 @@ type ResctrlQOSCfg struct {
 
 type ResctrlQOS struct {
 	// LLC available range start for pods by percentage
-	// +kubebuilder:default=0
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
 	CATRangeStartPercent *int64 `json:"catRangeStartPercent,omitempty"`
 	// LLC available range end for pods by percentage
-	// +kubebuilder:default=100
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
 	CATRangeEndPercent *int64 `json:"catRangeEndPercent,omitempty"`
 	// MBA percent
-	// +kubebuilder:default=100
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
 	MBAPercent *int64 `json:"mbaPercent,omitempty"`
@@ -229,20 +223,16 @@ type CPUBurstConfig struct {
 	// cpu burst percentage for setting cpu.cfs_burst_us, legal range: [0, 10000], default as 1000 (1000%)
 	// +kubebuilder:validation:Maximum=10000
 	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:default=1000
 	CPUBurstPercent *int64 `json:"cpuBurstPercent,omitempty"`
 	// pod cfs quota scale up ceil percentage, default = 300 (300%)
-	// +kubebuilder:default=300
 	CFSQuotaBurstPercent *int64 `json:"cfsQuotaBurstPercent,omitempty"`
 	// specifies a period of time for pod can use at burst, default = -1 (unlimited)
-	// +kubebuilder:default=-1
 	CFSQuotaBurstPeriodSeconds *int64 `json:"cfsQuotaBurstPeriodSeconds,omitempty"`
 }
 
 type CPUBurstStrategy struct {
 	CPUBurstConfig `json:",inline"`
 	// scale down cfs quota if node cpu overload, default = 50
-	// +kubebuilder:default=50
 	SharePoolThresholdPercent *int64 `json:"sharePoolThresholdPercent,omitempty"`
 }
 

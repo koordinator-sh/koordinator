@@ -148,10 +148,6 @@ func (qi *QuotaInfo) updateQuotaInfoFromRemote(quotaInfo *QuotaInfo) {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
-	if quotaInfo.Name == extension.SystemQuotaName {
-		return
-	}
-
 	qi.setMaxQuotaNoLock(quotaInfo.CalculateInfo.Max)
 	qi.setMinQuotaNoLock(quotaInfo.CalculateInfo.Min)
 	sharedWeight := quotaInfo.CalculateInfo.SharedWeight.DeepCopy()
@@ -265,6 +261,7 @@ func (qi *QuotaInfo) clearForResetNoLock() {
 func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
+
 	if !quotav1.Equals(qi.CalculateInfo.Max, quotaInfo.CalculateInfo.Max) ||
 		!quotav1.Equals(qi.CalculateInfo.Min, quotaInfo.CalculateInfo.Min) ||
 		!quotav1.Equals(qi.CalculateInfo.SharedWeight, quotaInfo.CalculateInfo.SharedWeight) ||
@@ -276,7 +273,7 @@ func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 	return false
 }
 
-func (qi *QuotaInfo) AddPodIfNotPresent(pod *v1.Pod) {
+func (qi *QuotaInfo) addPodIfNotPresent(pod *v1.Pod) {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
@@ -284,10 +281,9 @@ func (qi *QuotaInfo) AddPodIfNotPresent(pod *v1.Pod) {
 		klog.Errorf("pod already exist in PodCache quota:%v, podName:%v", qi.Name, pod.Name)
 	}
 	qi.PodCache[pod.Name] = NewPodInfo(pod)
-
 }
 
-func (qi *QuotaInfo) RemovePodIfPreSent(podName string) {
+func (qi *QuotaInfo) removePodIfPresent(podName string) {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 

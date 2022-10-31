@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type GroupQuotaManager struct {
@@ -83,11 +84,11 @@ func (gqm *GroupQuotaManager) UpdateClusterTotalResource(deltaRes v1.ResourceLis
 	defer gqm.hierarchyUpdateLock.Unlock()
 
 	klog.V(5).Infof("UpdateClusterResource deltaRes:%v", deltaRes)
-	gqm.GetQuotaInfoByNameNoLock(extension.DefaultQuotaName).Lock()
-	defer gqm.GetQuotaInfoByNameNoLock(extension.DefaultQuotaName).UnLock()
+	gqm.getQuotaInfoByNameNoLock(extension.DefaultQuotaName).lock.Lock()
+	defer gqm.getQuotaInfoByNameNoLock(extension.DefaultQuotaName).lock.Unlock()
 
-	gqm.GetQuotaInfoByNameNoLock(extension.SystemQuotaName).Lock()
-	defer gqm.GetQuotaInfoByNameNoLock(extension.SystemQuotaName).UnLock()
+	gqm.getQuotaInfoByNameNoLock(extension.SystemQuotaName).lock.Lock()
+	defer gqm.getQuotaInfoByNameNoLock(extension.SystemQuotaName).lock.Unlock()
 
 	gqm.updateClusterTotalResourceNoLock(deltaRes)
 }
@@ -150,13 +151,6 @@ func (gqm *GroupQuotaManager) updateGroupDeltaRequestTopoRecursiveNoLock(deltaRe
 	}
 }
 
-func (gqm *GroupQuotaManager) UpdateGroupDeltaUsed(quotaName string, delta v1.ResourceList) {
-	gqm.hierarchyUpdateLock.RLock()
-	defer gqm.hierarchyUpdateLock.RUnlock()
-
-	gqm.updateGroupDeltaUsedNoLock(quotaName, delta)
-}
-
 // updateGroupDeltaUsedNoLock updates the usedQuota of a node, it also updates all parent nodes
 // no need to lock gqm.hierarchyUpdateLock
 func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta v1.ResourceList) {
@@ -186,7 +180,7 @@ func (gqm *GroupQuotaManager) RefreshRuntime(quotaName string) v1.ResourceList {
 }
 
 func (gqm *GroupQuotaManager) RefreshRuntimeNoLock(quotaName string) v1.ResourceList {
-	quotaInfo := gqm.GetQuotaInfoByNameNoLock(quotaName)
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
 		return nil
 	}
@@ -250,7 +244,7 @@ func (gqm *GroupQuotaManager) updateOneGroupAutoScaleMinQuotaNoLock(quotaInfo *Q
 
 func (gqm *GroupQuotaManager) getCurToAllParentGroupQuotaInfoNoLock(quotaName string) []*QuotaInfo {
 	curToAllParInfos := make([]*QuotaInfo, 0)
-	quotaInfo := gqm.GetQuotaInfoByNameNoLock(quotaName)
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
 		return curToAllParInfos
 	}
@@ -261,7 +255,7 @@ func (gqm *GroupQuotaManager) getCurToAllParentGroupQuotaInfoNoLock(quotaName st
 			break
 		}
 
-		quotaInfo = gqm.GetQuotaInfoByNameNoLock(quotaInfo.ParentName)
+		quotaInfo = gqm.getQuotaInfoByNameNoLock(quotaInfo.ParentName)
 		if quotaInfo == nil {
 			return curToAllParInfos
 		}
@@ -274,10 +268,10 @@ func (gqm *GroupQuotaManager) GetQuotaInfoByName(quotaName string) *QuotaInfo {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
-	return gqm.GetQuotaInfoByNameNoLock(quotaName)
+	return gqm.getQuotaInfoByNameNoLock(quotaName)
 }
 
-func (gqm *GroupQuotaManager) GetQuotaInfoByNameNoLock(quotaName string) *QuotaInfo {
+func (gqm *GroupQuotaManager) getQuotaInfoByNameNoLock(quotaName string) *QuotaInfo {
 	return gqm.quotaInfoMap[quotaName]
 }
 
@@ -473,10 +467,7 @@ func (gqm *GroupQuotaManager) GetAllQuotaNames() map[string]struct{} {
 	return quotaInfoMap
 }
 
-func (gqm *GroupQuotaManager) UpdatePodRequest(quotaName string, oldPod, newPod *v1.Pod) {
-	gqm.hierarchyUpdateLock.RLock()
-	defer gqm.hierarchyUpdateLock.RUnlock()
-
+func (gqm *GroupQuotaManager) updatePodRequestNoLock(quotaName string, oldPod, newPod *v1.Pod) {
 	var oldPodReq, newPodReq v1.ResourceList
 	if oldPod != nil {
 		oldPodReq, _ = resource.PodRequestsAndLimits(oldPod)
@@ -497,15 +488,14 @@ func (gqm *GroupQuotaManager) UpdatePodRequest(quotaName string, oldPod, newPod 
 	gqm.updateGroupDeltaRequestNoLock(quotaName, deltaReq)
 }
 
-func (gqm *GroupQuotaManager) UpdatePodUsed(quotaName string, oldPod, newPod *v1.Pod) {
-	gqm.hierarchyUpdateLock.RLock()
-	defer gqm.hierarchyUpdateLock.RUnlock()
-
-	quotaInfo := gqm.GetQuotaInfoByNameNoLock(quotaName)
+func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newPod *v1.Pod) {
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
 		return
 	}
 	if !quotaInfo.GetPodIsAssigned(newPod) && !quotaInfo.GetPodIsAssigned(oldPod) {
+		klog.V(5).Infof("updatePodUsed, isAssigned is false, quotaName:%v, podName:%v",
+			quotaName, getPodName(oldPod, newPod))
 		return
 	}
 
@@ -524,24 +514,23 @@ func (gqm *GroupQuotaManager) UpdatePodUsed(quotaName string, oldPod, newPod *v1
 
 	deltaUsed := quotav1.Subtract(newPodUsed, oldPodUsed)
 	if quotav1.IsZero(deltaUsed) {
+		klog.V(5).Infof("updatePodUsed, deltaUsedIsZero, quotaName:%v, podName:%v, podUsed:%v",
+			quotaName, getPodName(oldPod, newPod), newPodUsed)
 		return
 	}
 	gqm.updateGroupDeltaUsedNoLock(quotaName, deltaUsed)
 }
 
-func (gqm *GroupQuotaManager) UpdatePodCache(quotaName string, pod *v1.Pod, isAdd bool) {
-	gqm.hierarchyUpdateLock.RLock()
-	defer gqm.hierarchyUpdateLock.RUnlock()
-
-	quotaInfo := gqm.GetQuotaInfoByNameNoLock(quotaName)
+func (gqm *GroupQuotaManager) updatePodCacheNoLock(quotaName string, pod *v1.Pod, isAdd bool) {
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
 		return
 	}
 
 	if isAdd {
-		quotaInfo.AddPodIfNotPresent(pod)
+		quotaInfo.addPodIfNotPresent(pod)
 	} else {
-		quotaInfo.RemovePodIfPreSent(pod.Name)
+		quotaInfo.removePodIfPresent(pod.Name)
 	}
 }
 
@@ -549,15 +538,16 @@ func (gqm *GroupQuotaManager) UpdatePodIsAssigned(quotaName string, pod *v1.Pod,
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
-	quotaInfo := gqm.GetQuotaInfoByNameNoLock(quotaName)
+	return gqm.updatePodIsAssignedNoLock(quotaName, pod, isAssigned)
+}
+
+func (gqm *GroupQuotaManager) updatePodIsAssignedNoLock(quotaName string, pod *v1.Pod, isAssigned bool) error {
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	return quotaInfo.UpdatePodIsAssigned(pod.Name, isAssigned)
 }
 
-func (gqm *GroupQuotaManager) GetPodIsAssigned(quotaName string, pod *v1.Pod) bool {
-	gqm.hierarchyUpdateLock.RLock()
-	defer gqm.hierarchyUpdateLock.RUnlock()
-
-	quotaInfo := gqm.GetQuotaInfoByNameNoLock(quotaName)
+func (gqm *GroupQuotaManager) getPodIsAssignedNoLock(quotaName string, pod *v1.Pod) bool {
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
 		return false
 	}
@@ -565,31 +555,26 @@ func (gqm *GroupQuotaManager) GetPodIsAssigned(quotaName string, pod *v1.Pod) bo
 }
 
 func (gqm *GroupQuotaManager) MigratePod(pod *v1.Pod, out, in string) {
-	isAssigned := gqm.GetPodIsAssigned(out, pod)
-	gqm.UpdatePodRequest(out, pod, nil)
-	gqm.UpdatePodUsed(out, pod, nil)
-	gqm.UpdatePodCache(out, pod, false)
-
-	gqm.UpdatePodCache(in, pod, true)
-	gqm.UpdatePodIsAssigned(in, pod, isAssigned)
-	gqm.UpdatePodRequest(in, nil, pod)
-	gqm.UpdatePodUsed(in, nil, pod)
-	klog.V(5).Infof("migrate pod :%v from quota:%v to quota:%v, podPhase:%v", pod.Name, out, in, pod.Status.Phase)
-}
-
-func (gqm *GroupQuotaManager) RLock() {
 	gqm.hierarchyUpdateLock.RLock()
-}
+	defer gqm.hierarchyUpdateLock.RUnlock()
 
-func (gqm *GroupQuotaManager) RUnLock() {
-	gqm.hierarchyUpdateLock.RUnlock()
+	isAssigned := gqm.getPodIsAssignedNoLock(out, pod)
+	gqm.updatePodRequestNoLock(out, pod, nil)
+	gqm.updatePodUsedNoLock(out, pod, nil)
+	gqm.updatePodCacheNoLock(out, pod, false)
+
+	gqm.updatePodCacheNoLock(in, pod, true)
+	gqm.updatePodIsAssignedNoLock(in, pod, isAssigned)
+	gqm.updatePodRequestNoLock(in, nil, pod)
+	gqm.updatePodUsedNoLock(in, nil, pod)
+	klog.V(5).Infof("migrate pod :%v from quota:%v to quota:%v, podPhase:%v", pod.Name, out, in, pod.Status.Phase)
 }
 
 func (gqm *GroupQuotaManager) GetQuotaSummary(quotaName string) (*QuotaInfoSummary, bool) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
-	quotaInfo := gqm.GetQuotaInfoByNameNoLock(quotaName)
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
 		return nil, false
 	}
@@ -613,4 +598,84 @@ func (gqm *GroupQuotaManager) GetQuotaSummaries() map[string]*QuotaInfoSummary {
 	}
 
 	return result
+}
+
+func (gqm *GroupQuotaManager) OnPodAdd(quotaName string, pod *v1.Pod) {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	gqm.updatePodCacheNoLock(quotaName, pod, true)
+	gqm.updatePodRequestNoLock(quotaName, nil, pod)
+	// in case failOver, update pod isAssigned explicitly according to its phase and NodeName.
+	if pod.Spec.NodeName != "" && !util.IsPodTerminated(pod) {
+		gqm.updatePodIsAssignedNoLock(quotaName, pod, true)
+		gqm.updatePodUsedNoLock(quotaName, nil, pod)
+	}
+}
+
+func (gqm *GroupQuotaManager) OnPodUpdate(newQuotaName, oldQuotaName string, newPod, oldPod *v1.Pod) {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	if oldQuotaName == newQuotaName {
+		gqm.updatePodRequestNoLock(newQuotaName, oldPod, newPod)
+		gqm.updatePodUsedNoLock(newQuotaName, oldPod, newPod)
+	} else {
+		isAssigned := gqm.getPodIsAssignedNoLock(oldQuotaName, oldPod)
+		gqm.updatePodRequestNoLock(oldQuotaName, oldPod, nil)
+		gqm.updatePodUsedNoLock(oldQuotaName, oldPod, nil)
+		gqm.updatePodCacheNoLock(oldQuotaName, oldPod, false)
+
+		gqm.updatePodCacheNoLock(newQuotaName, newPod, true)
+		gqm.updatePodIsAssignedNoLock(newQuotaName, newPod, isAssigned)
+		gqm.updatePodRequestNoLock(newQuotaName, nil, newPod)
+		gqm.updatePodUsedNoLock(newQuotaName, nil, newPod)
+	}
+}
+
+func (gqm *GroupQuotaManager) OnPodDelete(quotaName string, pod *v1.Pod) {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	gqm.updatePodRequestNoLock(quotaName, pod, nil)
+	gqm.updatePodUsedNoLock(quotaName, pod, nil)
+	gqm.updatePodCacheNoLock(quotaName, pod, false)
+}
+
+func (gqm *GroupQuotaManager) ReservePod(quotaName string, p *v1.Pod) {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	gqm.updatePodIsAssignedNoLock(quotaName, p, true)
+	gqm.updatePodUsedNoLock(quotaName, nil, p)
+}
+
+func (gqm *GroupQuotaManager) UnreservePod(quotaName string, p *v1.Pod) {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	gqm.updatePodUsedNoLock(quotaName, p, nil)
+	gqm.updatePodIsAssignedNoLock(quotaName, p, false)
+}
+
+func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used, request, runtime v1.ResourceList, err error) {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo == nil {
+		return nil, nil, nil, fmt.Errorf("groupQuotaManager doesn't have this quota:%v", quotaName)
+	}
+
+	return quotaInfo.GetUsed(), quotaInfo.GetRequest(), quotaInfo.GetRuntime(), nil
+}
+
+func getPodName(oldPod, newPod *v1.Pod) string {
+	if oldPod != nil {
+		return oldPod.Name
+	}
+	if newPod != nil {
+		return newPod.Name
+	}
+	return ""
 }

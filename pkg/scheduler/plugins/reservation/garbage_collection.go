@@ -62,16 +62,15 @@ func (p *Plugin) gcReservations() {
 	expiredMap := p.reservationCache.GetAllInactive()
 	// TBD: cleanup orphan reservations
 	for _, r := range expiredMap {
-		// cleanup expired reservations
-		if isReservationNeedCleanup(r) {
-			err = p.client.Reservations().Delete(context.TODO(), r.Name, metav1.DeleteOptions{})
-			if err != nil {
-				klog.V(3).InfoS("failed to delete reservation", "reservation", klog.KObj(r), "err", err)
-				continue
-			}
-
-			p.reservationCache.Delete(r)
+		if !isReservationNeedCleanup(r) {
+			continue
 		}
+		// cleanup expired reservations
+		if err = p.client.Reservations().Delete(context.TODO(), r.Name, metav1.DeleteOptions{}); err != nil {
+			klog.V(3).InfoS("failed to delete reservation", "reservation", klog.KObj(r), "err", err)
+			continue
+		}
+		p.reservationCache.Delete(r)
 	}
 }
 
@@ -107,11 +106,12 @@ func (p *Plugin) expireReservation(r *schedulingv1alpha1.Reservation) error {
 	// update reservation status
 	return util.RetryOnConflictOrTooManyRequests(func() error {
 		curR, err := p.rLister.Get(r.Name)
-		if errors.IsNotFound(err) {
-			klog.V(4).InfoS("reservation not found, abort the update",
-				"reservation", klog.KObj(r))
-			return nil
-		} else if err != nil {
+		if err != nil {
+			if errors.IsNotFound(err) {
+				klog.V(4).InfoS("reservation not found, abort the update",
+					"reservation", klog.KObj(r))
+				return nil
+			}
 			klog.V(3).InfoS("failed to get reservation",
 				"reservation", klog.KObj(r), "err", err)
 			return err
@@ -174,10 +174,11 @@ func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
 	cached := rInfo.GetReservation()
 	err := util.RetryOnConflictOrTooManyRequests(func() error {
 		r, err1 := p.rLister.Get(cached.Name)
-		if errors.IsNotFound(err1) {
-			klog.V(5).InfoS("skip sync for reservation not found", "reservation", klog.KObj(r))
-			return nil
-		} else if err1 != nil {
+		if err1 != nil {
+			if errors.IsNotFound(err1) {
+				klog.V(5).InfoS("skip sync for reservation not found", "reservation", klog.KObj(r))
+				return nil
+			}
 			klog.V(4).InfoS("failed to get reservation", "reservation", klog.KObj(cached), "err", err1)
 			return err1
 		}

@@ -141,7 +141,6 @@ func TestGroupQuotaManager_UpdateQuotaInternal(t *testing.T) {
 
 func TestGroupQuotaManager_UpdateQuotaInternalAndRequest(t *testing.T) {
 	gqm := NewGroupQuotaManager4Test()
-
 	deltaRes := createResourceList(96, 160*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
 	assert.Equal(t, deltaRes, gqm.totalResource)
@@ -1110,7 +1109,7 @@ func BenchmarkGroupQuotaManager_RefreshRuntime(b *testing.B) {
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		gqm.RefreshRuntime("0")
-		gqm.GetQuotaInfoByNameNoLock("0").RuntimeVersion = 0
+		gqm.getQuotaInfoByNameNoLock("0").RuntimeVersion = 0
 	}
 }
 
@@ -1156,22 +1155,22 @@ func TestGroupQuotaManager_UpdatePodCache_UpdatePodIsAssigned_GetPodIsAssigned_U
 			},
 		},
 	}
-	gqm.UpdatePodCache("1", pod1, true)
+	gqm.updatePodCacheNoLock("1", pod1, true)
 	assert.Equal(t, 1, len(gqm.GetQuotaInfoByName("1").GetPodCache()))
-	gqm.UpdatePodCache("1", pod1, false)
+	gqm.updatePodCacheNoLock("1", pod1, false)
 	assert.Equal(t, 0, len(gqm.GetQuotaInfoByName("1").GetPodCache()))
-	gqm.UpdatePodCache("2", pod1, true)
-	assert.False(t, gqm.GetPodIsAssigned("2", pod1))
-	gqm.UpdatePodIsAssigned("2", pod1, true)
-	assert.True(t, gqm.GetPodIsAssigned("2", pod1))
+	gqm.updatePodCacheNoLock("2", pod1, true)
+	assert.False(t, gqm.getPodIsAssignedNoLock("2", pod1))
+	gqm.updatePodIsAssignedNoLock("2", pod1, true)
+	assert.True(t, gqm.getPodIsAssignedNoLock("2", pod1))
 
-	gqm.UpdatePodRequest("1", nil, pod1)
+	gqm.updatePodRequestNoLock("1", nil, pod1)
 	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetRequest())
-	gqm.UpdatePodUsed("2", nil, pod1)
+	gqm.updatePodUsedNoLock("2", nil, pod1)
 	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetUsed())
-	gqm.UpdatePodRequest("1", pod1, nil)
+	gqm.updatePodRequestNoLock("1", pod1, nil)
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
-	gqm.UpdatePodUsed("2", pod1, nil)
+	gqm.updatePodUsedNoLock("2", pod1, nil)
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("2").GetUsed())
 }
 
@@ -1182,4 +1181,25 @@ func TestNewGroupQuotaManager(t *testing.T) {
 	assert.True(t, gqm.scaleMinQuotaEnabled)
 	gqm.UpdateClusterTotalResource(createResourceList(500, 500))
 	assert.Equal(t, createResourceList(500, 500), gqm.GetClusterTotalResource())
+}
+
+func TestGroupQuotaManager_GetQuotaInformationForSyncHandler(t *testing.T) {
+	gqm := NewGroupQuotaManager4Test()
+	qi1 := createQuota("1", extension.RootQuotaName, 400, 400, 10, 10)
+	gqm.UpdateQuota(qi1, false)
+	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000))
+	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100))
+	gqm.RefreshRuntime("1")
+	gqm.updateGroupDeltaUsedNoLock("1", createResourceList(10, 10))
+	used, request, runtime, err := gqm.GetQuotaInformationForSyncHandler("1")
+	assert.Nil(t, err)
+	assert.Equal(t, used, createResourceList(10, 10))
+	assert.Equal(t, request, createResourceList(100, 100))
+	assert.Equal(t, runtime, createResourceList(100, 100))
+}
+
+func TestGetPodName(t *testing.T) {
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	assert.Equal(t, pod1.Name, getPodName(pod1, nil))
+	assert.Equal(t, pod1.Name, getPodName(nil, pod1))
 }

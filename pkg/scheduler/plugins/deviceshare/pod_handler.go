@@ -35,7 +35,7 @@ func (n *nodeDeviceCache) onPodAdd(obj interface{}) {
 	podRequest, _ := resource.PodRequestsAndLimits(pod)
 
 	deviceExist := false
-	for deviceType := range deviceResourceNames {
+	for deviceType := range DeviceResourceNames {
 		if hasDeviceResource(podRequest, deviceType) {
 			deviceExist = true
 		}
@@ -94,7 +94,7 @@ func (n *nodeDeviceCache) onPodDelete(obj interface{}) {
 	podRequest, _ := resource.PodRequestsAndLimits(pod)
 
 	deviceExist := false
-	for deviceType := range deviceResourceNames {
+	for deviceType := range DeviceResourceNames {
 		if hasDeviceResource(podRequest, deviceType) {
 			deviceExist = true
 		}

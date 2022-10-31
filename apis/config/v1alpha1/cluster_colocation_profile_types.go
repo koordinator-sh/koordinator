@@ -42,7 +42,7 @@ type ClusterColocationProfileSpec struct {
 	// The value will be injected into Pod as label koordinator.sh/qosClass.
 	// Options are LSE/LSR/LS/BE/SYSTEM.
 	// +kubebuilder:validation:Enum=LSE;LSR;LS;BE;SYSTEM
-	// +required
+	// +optional
 	QoSClass string `json:"qosClass"`
 
 	// If specified, the priorityClassName and the priority value defined in PriorityClass
@@ -51,7 +51,7 @@ type ClusterColocationProfileSpec struct {
 	// KoordinatorPriority will affect the scheduling, preemption and
 	// other behaviors of Koordinator system.
 	// +kubebuilder:validation:Enum=koord-prod;koord-mid;koord-batch;koord-free
-	// +required
+	// +optional
 	PriorityClassName string `json:"priorityClassName"`
 
 	// KoordinatorPriority defines the Pod sub-priority in Koordinator.

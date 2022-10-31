@@ -104,8 +104,8 @@ func TestContainerResponse_ProxyDone(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &ContainerResponse{
-				Resources:     tt.fields.Resources,
-				ContainerEnvs: tt.fields.ContainerEnvs,
+				Resources:        tt.fields.Resources,
+				AddContainerEnvs: tt.fields.ContainerEnvs,
 			}
 			c.ProxyDone(tt.args.resp)
 			assert.Equal(t, tt.wants.CPUSet, c.Resources.CPUSet, "cpu set equal")

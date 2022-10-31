@@ -27,18 +27,19 @@ import (
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	kubeletutil "github.com/koordinator-sh/koordinator/pkg/util/kubelet"
@@ -114,7 +115,6 @@ func (s *nodeTopoInformer) createNodeTopoIfNotExist() {
 	node := s.nodeInformer.GetNode()
 	topologyName := node.Name
 	ctx := context.TODO()
-	blocker := true
 	_, err := s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, topologyName, metav1.GetOptions{ResourceVersion: "0"})
 	if err == nil {
 		return
@@ -124,33 +124,100 @@ func (s *nodeTopoInformer) createNodeTopoIfNotExist() {
 		return
 	}
 
-	topology := &v1alpha1.NodeResourceTopology{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: topologyName,
-			Labels: map[string]string{
-				extension.LabelManagedBy: "Koordinator",
-			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion:         "v1",
-					Kind:               "Node",
-					Name:               node.Name,
-					UID:                node.GetUID(),
-					Controller:         &blocker,
-					BlockOwnerDeletion: &blocker,
-				},
-			},
-		},
-		// fields are required
-		TopologyPolicies: []string{string(v1alpha1.None)},
-		Zones:            v1alpha1.ZoneList{v1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
-	}
+	topology := newNodeTopo(node)
 	// TODO: add retry if create fail
 	_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Create(ctx, topology, metav1.CreateOptions{})
 	if err != nil {
 		klog.Errorf("failed to create NodeResourceTopology %s, err: %v", topologyName, err)
 		return
 	}
+}
+
+func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
+	nodeCPUInfo, cpuTopology, sharedPoolCPUs, err := s.calCPUTopology()
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate cpu topology, err: %v", err)
+	}
+
+	kubeletPort := int(s.nodeInformer.GetNode().Status.DaemonEndpoints.KubeletEndpoint.Port)
+	args, err := getKubeletCommandlineFn(kubeletPort)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Kubelet commandline with kubeletPort %d, err: %v", kubeletPort, err)
+	}
+
+	klog.V(5).Infof("kubelet args: %v", args)
+
+	kubeletOptions, err := kubeletutil.NewKubeletOptions(args)
+	if err != nil {
+		return nil, fmt.Errorf("failed to NewKubeletOptions, err: %v", err)
+	}
+
+	// default policy is none
+	cpuManagerPolicy := extension.KubeletCPUManagerPolicy{
+		Policy:  kubeletOptions.CPUManagerPolicy,
+		Options: kubeletOptions.CPUManagerPolicyOptions,
+	}
+
+	if kubeletOptions.CPUManagerPolicy == string(cpumanager.PolicyStatic) {
+		topology := kubeletutil.NewCPUTopology((*util.LocalCPUInfo)(nodeCPUInfo))
+		reservedCPUs, err := kubeletutil.GetStaticCPUManagerPolicyReservedCPUs(topology, kubeletOptions)
+		if err != nil {
+			klog.Errorf("Failed to GetStaticCPUManagerPolicyReservedCPUs, err: %v", err)
+		}
+		cpuManagerPolicy.ReservedCPUs = reservedCPUs.String()
+
+		// NOTE: We should not remove reservedCPUs from sharedPoolCPUs to
+		//  ensure that Burstable Pods (e.g. Pods request 0C but are limited to 4C)
+		//  at least there are reservedCPUs available when nodes are allocated
+	}
+
+	cpuManagerPolicyJSON, err := json.Marshal(cpuManagerPolicy)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal cpu manager policy, err: %v", err)
+	}
+
+	var podAllocsJSON []byte
+	stateFilePath := kubeletutil.GetCPUManagerStateFilePath(kubeletOptions.RootDirectory)
+	data, err := os.ReadFile(stateFilePath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to read state file, err: %v", err)
+		}
+	}
+	// TODO: report lse/lsr pod from cgroup
+	if len(data) > 0 {
+		podAllocs, err := s.calGuaranteedCpu(sharedPoolCPUs, string(data))
+		if err != nil {
+			return nil, fmt.Errorf("failed to cal GuaranteedCpu, err: %v", err)
+		}
+		if len(podAllocs) != 0 {
+			podAllocsJSON, err = json.Marshal(podAllocs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal pod allocs, err: %v", err)
+			}
+		}
+	}
+
+	cpuTopologyJSON, err := json.Marshal(cpuTopology)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal cpu topology of node, err: %v", err)
+	}
+
+	sharePools := s.calCPUSharePools(sharedPoolCPUs)
+	cpuSharePoolsJSON, err := json.Marshal(sharePools)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal cpushare pools of node, err: %v", err)
+	}
+
+	annotations := map[string]string{}
+	annotations[extension.AnnotationNodeCPUTopology] = string(cpuTopologyJSON)
+	annotations[extension.AnnotationNodeCPUSharedPools] = string(cpuSharePoolsJSON)
+	annotations[extension.AnnotationKubeletCPUManagerPolicy] = string(cpuManagerPolicyJSON)
+	if len(podAllocsJSON) != 0 {
+		annotations[extension.AnnotationNodeCPUAllocs] = string(podAllocsJSON)
+	}
+
+	return annotations, nil
 }
 
 func (s *nodeTopoInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInfo, stateJSON string) ([]extension.PodCPUAlloc, error) {
@@ -222,113 +289,51 @@ func (s *nodeTopoInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInf
 
 func (s *nodeTopoInformer) reportNodeTopology() {
 	klog.Info("start to report node topology")
-	s.createNodeTopoIfNotExist()
+	// do not CREATE if reporting is disabled,
+	// but update the node topo object internally
+	if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+		s.createNodeTopoIfNotExist()
+	} else {
+		klog.V(5).Infof("feature %v not enabled, node topo will not be reported", features.NodeTopologyReport)
+	}
+
+	nodeTopoAnnotations, err := s.calcNodeTopo()
+	if err != nil {
+		klog.Errorf("failed to calculate node topology, err: %v", err)
+		return
+	}
+
 	ctx := context.TODO()
-	nodeCPUInfo, cpuTopology, sharedPoolCPUs, err := s.calCPUTopology()
-	if err != nil {
-		return
-	}
-
-	kubeletPort := int(s.nodeInformer.GetNode().Status.DaemonEndpoints.KubeletEndpoint.Port)
-	args, err := getKubeletCommandlineFn(kubeletPort)
-	if err != nil {
-		klog.Errorf("Failed to GetKubeletCommandline with kubeletPort %d, err: %v", kubeletPort, err)
-		return
-	}
-
-	klog.V(5).Infof("kubelet args: %v", args)
-
-	kubeletOptions, err := kubeletutil.NewKubeletOptions(args)
-	if err != nil {
-		klog.Errorf("Failed to NewKubeletOptions, err: %v", err)
-		return
-	}
-
-	// default policy is none
-	cpuManagerPolicy := extension.KubeletCPUManagerPolicy{
-		Policy:  kubeletOptions.CPUManagerPolicy,
-		Options: kubeletOptions.CPUManagerPolicyOptions,
-	}
-
-	if kubeletOptions.CPUManagerPolicy == string(cpumanager.PolicyStatic) {
-		topology := kubeletutil.NewCPUTopology((*util.LocalCPUInfo)(nodeCPUInfo))
-		reservedCPUs, err := kubeletutil.GetStaticCPUManagerPolicyReservedCPUs(topology, kubeletOptions)
-		if err != nil {
-			klog.Errorf("Failed to GetStaticCPUManagerPolicyReservedCPUs, err: %v", err)
-		}
-		cpuManagerPolicy.ReservedCPUs = reservedCPUs.String()
-
-		// NOTE: We should not remove reservedCPUs from sharedPoolCPUs to
-		//  ensure that Burstable Pods (e.g. Pods request 0C but are limited to 4C)
-		//  at least there are reservedCPUs available when nodes are allocated
-	}
-
-	cpuManagerPolicyJSON, err := json.Marshal(cpuManagerPolicy)
-	if err != nil {
-		klog.Errorf("failed to marshal cpu manager policy, err: %v", err)
-		return
-	}
-
-	var podAllocsJSON []byte
-	stateFilePath := kubeletutil.GetCPUManagerStateFilePath(kubeletOptions.RootDirectory)
-	data, err := os.ReadFile(stateFilePath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			klog.Errorf("failed to read file, err: %v", err)
-			return
-		}
-	}
-	// TODO: report lse/lsr pod from cgroup
-	if len(data) > 0 {
-		podAllocs, err := s.calGuaranteedCpu(sharedPoolCPUs, string(data))
-		if err != nil {
-			klog.Errorf("failed to cal GuaranteedCpu, err: %v", err)
-			return
-		}
-		if len(podAllocs) != 0 {
-			podAllocsJSON, err = json.Marshal(podAllocs)
-			if err != nil {
-				klog.Errorf("failed to marshal pod allocs, err: %v", err)
-				return
-			}
-		}
-	}
-
-	cpuTopologyJSON, err := json.Marshal(cpuTopology)
-	if err != nil {
-		klog.Errorf("failed to marshal cpu topology of node, err: %v", err)
-		return
-	}
-
-	sharePools := s.calCPUSharePools(sharedPoolCPUs)
-	cpuSharePoolsJSON, err := json.Marshal(sharePools)
-	if err != nil {
-		klog.Errorf("failed to marshal cpushare pools of node, err: %v", err)
-		return
-	}
-
 	node := s.nodeInformer.GetNode()
-	err = retry.OnError(retry.DefaultBackoff, errors.IsTooManyRequests, func() error {
-		nodeResourceTopology, err := s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, node.Name, metav1.GetOptions{ResourceVersion: "0"})
-		if err != nil {
-			klog.Errorf("failed to get node resource topology %s, err: %v", node.Name, err)
-			return err
+	err = util.RetryOnConflictOrTooManyRequests(func() error {
+		var nodeResourceTopology *v1alpha1.NodeResourceTopology
+		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+			nodeResourceTopology, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, node.Name, metav1.GetOptions{ResourceVersion: "0"})
+			if err != nil {
+				klog.Errorf("failed to get node resource topology %s, err: %v", node.Name, err)
+				return err
+			}
+		} else {
+			nodeResourceTopology = newNodeTopo(node)
 		}
+
+		// set fields
 		if nodeResourceTopology.Annotations == nil {
 			nodeResourceTopology.Annotations = make(map[string]string)
 		}
+		for k, v := range nodeTopoAnnotations {
+			nodeResourceTopology.Annotations[k] = v
+		}
 		// TODO only update if necessary
 		s.updateNodeTopo(nodeResourceTopology)
-		nodeResourceTopology.Annotations[extension.AnnotationNodeCPUTopology] = string(cpuTopologyJSON)
-		nodeResourceTopology.Annotations[extension.AnnotationNodeCPUSharedPools] = string(cpuSharePoolsJSON)
-		nodeResourceTopology.Annotations[extension.AnnotationKubeletCPUManagerPolicy] = string(cpuManagerPolicyJSON)
-		if len(podAllocsJSON) != 0 {
-			nodeResourceTopology.Annotations[extension.AnnotationNodeCPUAllocs] = string(podAllocsJSON)
-		}
-		_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
-		if err != nil {
-			klog.Errorf("failed to update cpu info of node %s, err: %v", node.Name, err)
-			return err
+
+		// do UPDATE
+		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+			_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
+			if err != nil {
+				klog.Errorf("failed to update cpu info of node %s, err: %v", node.Name, err)
+				return err
+			}
 		}
 		return nil
 	})
@@ -421,4 +426,29 @@ func (s *nodeTopoInformer) setNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
 	s.nodeTopoMutex.Lock()
 	defer s.nodeTopoMutex.Unlock()
 	s.nodeTopology = newTopo.DeepCopy()
+}
+
+func newNodeTopo(node *corev1.Node) *v1alpha1.NodeResourceTopology {
+	blocker := true
+	return &v1alpha1.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: node.Name,
+			Labels: map[string]string{
+				extension.LabelManagedBy: "Koordinator",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion:         "v1",
+					Kind:               "Node",
+					Name:               node.Name,
+					UID:                node.GetUID(),
+					Controller:         &blocker,
+					BlockOwnerDeletion: &blocker,
+				},
+			},
+		},
+		// fields are required
+		TopologyPolicies: []string{string(v1alpha1.None)},
+		Zones:            v1alpha1.ZoneList{v1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
+	}
 }

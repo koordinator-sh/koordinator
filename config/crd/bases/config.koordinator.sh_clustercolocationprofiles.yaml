@@ -180,9 +180,6 @@ spec:
                       are ANDed.
                     type: object
                 type: object
-            required:
-            - priorityClassName
-            - qosClass
             type: object
           status:
             description: ClusterColocationProfileStatus represents information about

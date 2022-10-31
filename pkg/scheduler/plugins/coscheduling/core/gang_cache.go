@@ -228,9 +228,10 @@ func (gangCache *GangCache) onPodGroupDelete(obj interface{}) {
 }
 
 func generateNewPodGroup(gang *Gang, pod *v1.Pod) *v1alpha1.PodGroup {
+	gangName := extension.GetGangName(pod)
 	pg := &v1alpha1.PodGroup{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:              pod.Annotations[extension.AnnotationGangName],
+			Name:              gangName,
 			Namespace:         pod.Namespace,
 			CreationTimestamp: metav1.Time{Time: gang.CreateTime},
 			Annotations: map[string]string{

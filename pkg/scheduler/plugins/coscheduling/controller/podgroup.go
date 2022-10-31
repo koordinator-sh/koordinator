@@ -199,13 +199,12 @@ func (ctrl *PodGroupController) syncHandler(key string) error {
 		}
 	}()
 	pg, err := ctrl.pgLister.PodGroups(namespace).Get(name)
-	if apierrs.IsNotFound(err) {
-		klog.Infof("PodGroup has been deleted, podGroup: %v", key)
-		return nil
-	}
 	if err != nil {
+		if apierrs.IsNotFound(err) {
+			klog.Warningf("PodGroup has been deleted, podGroup: %v", key)
+			return nil
+		}
 		klog.Errorf("Unable to retrieve podGroup from store err, podGroup: %v, err: %v", key, err)
-
 		return err
 	}
 
@@ -285,19 +284,18 @@ func (ctrl *PodGroupController) syncHandler(key string) error {
 }
 
 func (ctrl *PodGroupController) patchPodGroup(old, new *schedv1alpha1.PodGroup) error {
-	if !reflect.DeepEqual(old, new) {
-		patch, err := util.CreateMergePatch(old, new)
-		if err != nil {
-			return err
-		}
-
-		_, err = ctrl.pgClient.SchedulingV1alpha1().PodGroups(old.Namespace).Patch(context.TODO(), old.Name, types.MergePatchType,
-			patch, metav1.PatchOptions{})
-		if err != nil {
-			return err
-		}
+	if reflect.DeepEqual(old, new) {
+		return nil
 	}
-	return nil
+
+	patch, err := util.CreateMergePatch(old, new)
+	if err != nil {
+		return err
+	}
+
+	_, err = ctrl.pgClient.SchedulingV1alpha1().PodGroups(old.Namespace).Patch(context.TODO(),
+		old.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	return err
 }
 
 func fillOccupiedObj(pg *schedv1alpha1.PodGroup, pod *v1.Pod) {

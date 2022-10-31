@@ -42,6 +42,7 @@ func newStorage(dsn string) (*storage, error) {
 	db.AutoMigrate(&nodeResourceMetric{}, &podResourceMetric{}, &containerResourceMetric{}, &beCPUResourceMetric{})
 	db.AutoMigrate(&rawRecord{})
 	db.AutoMigrate(&podThrottledMetric{}, &containerThrottledMetric{})
+	db.AutoMigrate(&containerCPIMetric{})
 
 	database, err := db.DB()
 	if err != nil {
@@ -53,6 +54,15 @@ func newStorage(dsn string) (*storage, error) {
 		db: db,
 	}
 	return s, nil
+}
+
+// for ut only, Close() is not necessary for gorm
+func (s *storage) Close() error {
+	d, err := s.db.DB()
+	if err != nil {
+		return err
+	}
+	return d.Close()
 }
 
 func (s *storage) InsertNodeResourceMetric(n *nodeResourceMetric) error {
@@ -83,6 +93,10 @@ func (s *storage) InsertPodThrottledMetric(m *podThrottledMetric) error {
 }
 
 func (s *storage) InsertContainerThrottledMetric(m *containerThrottledMetric) error {
+	return s.db.Create(m).Error
+}
+
+func (s *storage) InsertContainerCPIMetric(m *containerCPIMetric) error {
 	return s.db.Create(m).Error
 }
 
@@ -130,6 +144,18 @@ func (s *storage) GetContainerThrottledMetric(id *string, start, end *time.Time)
 	return metrics, err
 }
 
+func (s *storage) GetContainerCPIMetric(containerID *string, start, end *time.Time) ([]containerCPIMetric, error) {
+	var metrics []containerCPIMetric
+	err := s.db.Where("container_id = ? AND timestamp BETWEEN ? AND ?", containerID, start, end).Find(&metrics).Error
+	return metrics, err
+}
+
+func (s *storage) GetContainerCPIMetricByPodUid(podUid *string, start, end *time.Time) ([]containerCPIMetric, error) {
+	var metrics []containerCPIMetric
+	err := s.db.Where("pod_uid = ? AND timestamp BETWEEN ? AND ?", podUid, start, end).Find(&metrics).Error
+	return metrics, err
+}
+
 func (s *storage) DeleteNodeResourceMetric(start, end *time.Time) error {
 	return s.db.Where("timestamp BETWEEN ? AND ?", start, end).Delete(&nodeResourceMetric{}).Error
 }
@@ -152,4 +178,44 @@ func (s *storage) DeletePodThrottledMetric(start, end *time.Time) error {
 
 func (s *storage) DeleteContainerThrottledMetric(start, end *time.Time) error {
 	return s.db.Where("timestamp BETWEEN ? AND ?", start, end).Delete(&containerThrottledMetric{}).Error
+}
+
+func (s *storage) DeleteContainerCPIMetric(start, end *time.Time) error {
+	return s.db.Where("timestamp BETWEEN ? AND ?", start, end).Delete(&containerCPIMetric{}).Error
+}
+
+func (s *storage) CountNodeResourceMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&nodeResourceMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountPodResourceMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&podResourceMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountContainerResourceMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&containerResourceMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountBECPUResourceMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&beCPUResourceMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountPodThrottledMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&podThrottledMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountContainerThrottledMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&containerThrottledMetric{}).Count(&count).Error
+	return count, err
 }

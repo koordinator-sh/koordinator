@@ -103,11 +103,13 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 		hookReq = podInfo.GetPodSandboxHookRequest()
 	}
 
-	hookResp, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq)
+	hookResp, err, failPolicy := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq)
 	if err != nil {
-		klog.Errorf("Failed to call hook server %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
+		klog.Errorf("failed to call hook server %v, failPolicy: %v", err, failPolicy)
+		if failPolicy == config.PolicyFail {
+			http.Error(wr, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	cfgBody := types.ConfigWrapper{
@@ -140,7 +142,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 	// send req to docker
 	nBody, err := encodeBody(cfgBody)
 	if err != nil {
-		klog.Errorf("Failed to parse req to local store, err: %v", err)
+		klog.Errorf("failed to parse req to local store, err: %v", err)
 		http.Error(wr, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -183,16 +185,18 @@ func (d *RuntimeManagerDockerServer) HandleStartContainer(ctx context.Context, w
 	}
 
 	// no need to care about the resp
-	if _, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq); err != nil {
-		klog.Errorf("Failed to call pre start container hook server %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
+	if _, err, failPolicy := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq); err != nil {
+		klog.Errorf("failed to call pre start container hook server %v, failPolicy: %v", err, failPolicy)
+		if failPolicy == config.PolicyFail {
+			http.Error(wr, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	d.Direct(wr, req)
 
-	if _, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, hookReq); err != nil {
-		klog.Errorf("Failed to call post start container hook server %v", err)
+	if _, err, _ := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, hookReq); err != nil {
+		klog.Errorf("failed to call post start container hook server %v", err)
 		http.Error(wr, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -232,7 +236,7 @@ func (d *RuntimeManagerDockerServer) HandleStopContainer(ctx context.Context, wr
 		store.DeletePodSandboxInfo(containerID)
 	}
 
-	if _, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, hookReq); err != nil {
+	if _, err, _ := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, hookReq); err != nil {
 		klog.Errorf("Failed to call post stop hook server %v", err)
 		http.Error(wr, err.Error(), http.StatusInternalServerError)
 		return
@@ -275,11 +279,13 @@ func (d *RuntimeManagerDockerServer) HandleUpdateContainer(ctx context.Context, 
 		}
 	}
 
-	response, err := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq)
+	response, err, failPolicy := d.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, hookReq)
 	if err != nil {
-		klog.Errorf("Failed to call pre update hook server %v", err)
-		http.Error(wr, err.Error(), http.StatusInternalServerError)
-		return
+		klog.Errorf("failed to call pre update hook server %v, failPolicy: %v", err, failPolicy)
+		if failPolicy == config.PolicyFail {
+			http.Error(wr, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	if containerMeta != nil && response != nil {

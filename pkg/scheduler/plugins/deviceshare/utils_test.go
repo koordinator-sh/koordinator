@@ -222,7 +222,7 @@ func Test_validateGPURequest(t *testing.T) {
 			podRequest: corev1.ResourceList{
 				apiext.NvidiaGPU: resource.MustParse("2"),
 			},
-			want:    nvidiaGpuExist,
+			want:    NvidiaGPUExist,
 			wantErr: false,
 		},
 		{
@@ -230,7 +230,7 @@ func Test_validateGPURequest(t *testing.T) {
 			podRequest: corev1.ResourceList{
 				apiext.KoordGPU: resource.MustParse("200"),
 			},
-			want:    koordGpuExist,
+			want:    KoordGPUExist,
 			wantErr: false,
 		},
 		{
@@ -239,7 +239,7 @@ func Test_validateGPURequest(t *testing.T) {
 				apiext.GPUCore:   resource.MustParse("200"),
 				apiext.GPUMemory: resource.MustParse("64Gi"),
 			},
-			want:    gpuCoreExist | gpuMemoryExist,
+			want:    GPUCoreExist | GPUMemoryExist,
 			wantErr: false,
 		},
 		{
@@ -248,13 +248,13 @@ func Test_validateGPURequest(t *testing.T) {
 				apiext.GPUCore:        resource.MustParse("200"),
 				apiext.GPUMemoryRatio: resource.MustParse("200"),
 			},
-			want:    gpuCoreExist | gpuMemoryRatioExist,
+			want:    GPUCoreExist | GPUMemoryRatioExist,
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := validateGPURequest(tt.podRequest)
+			got, err := ValidateGPURequest(tt.podRequest)
 			assert.Equal(t, tt.wantErr, err != nil)
 			if !tt.wantErr {
 				assert.Equal(t, tt.want, got)
@@ -348,7 +348,7 @@ func Test_convertGPUResource(t *testing.T) {
 				podRequest: corev1.ResourceList{
 					apiext.NvidiaGPU: resource.MustParse("2"),
 				},
-				gpuCombination: gpuCoreExist | gpuMemoryExist | gpuMemoryRatioExist,
+				gpuCombination: GPUCoreExist | GPUMemoryExist | GPUMemoryRatioExist,
 			},
 			want: nil,
 		},
@@ -358,7 +358,7 @@ func Test_convertGPUResource(t *testing.T) {
 				podRequest: corev1.ResourceList{
 					apiext.NvidiaGPU: resource.MustParse("2"),
 				},
-				gpuCombination: nvidiaGpuExist,
+				gpuCombination: NvidiaGPUExist,
 			},
 			want: corev1.ResourceList{
 				apiext.GPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
@@ -371,7 +371,7 @@ func Test_convertGPUResource(t *testing.T) {
 				podRequest: corev1.ResourceList{
 					apiext.KoordGPU: resource.MustParse("50"),
 				},
-				gpuCombination: koordGpuExist,
+				gpuCombination: KoordGPUExist,
 			},
 			want: corev1.ResourceList{
 				apiext.GPUCore:        resource.MustParse("50"),
@@ -385,7 +385,7 @@ func Test_convertGPUResource(t *testing.T) {
 					apiext.GPUCore:        resource.MustParse("50"),
 					apiext.GPUMemoryRatio: resource.MustParse("50"),
 				},
-				gpuCombination: gpuCoreExist | gpuMemoryRatioExist,
+				gpuCombination: GPUCoreExist | GPUMemoryRatioExist,
 			},
 			want: corev1.ResourceList{
 				apiext.GPUCore:        resource.MustParse("50"),
@@ -399,7 +399,7 @@ func Test_convertGPUResource(t *testing.T) {
 					apiext.GPUCore:   resource.MustParse("50"),
 					apiext.GPUMemory: resource.MustParse("32Gi"),
 				},
-				gpuCombination: gpuCoreExist | gpuMemoryExist,
+				gpuCombination: GPUCoreExist | GPUMemoryExist,
 			},
 			want: corev1.ResourceList{
 				apiext.GPUCore:   resource.MustParse("50"),
@@ -409,7 +409,7 @@ func Test_convertGPUResource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := convertGPUResource(tt.args.podRequest, tt.args.gpuCombination)
+			got := ConvertGPUResource(tt.args.podRequest, tt.args.gpuCombination)
 			assert.Equal(t, tt.want, got)
 		})
 	}

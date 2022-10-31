@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -180,6 +182,7 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -391,6 +394,7 @@ func Test_metricCache_PodResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -676,6 +680,7 @@ func Test_metricCache_ContainerResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -774,6 +779,7 @@ func Test_metricCache_BECPUResourceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -914,6 +920,7 @@ func Test_metricCache_NodeCPUInfo_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -1022,6 +1029,7 @@ func Test_metricCache_ContainerThrottledMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -1137,6 +1145,7 @@ func Test_metricCache_PodThrottledMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -1341,6 +1350,7 @@ func Test_metricCache_aggregateGPUUsages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.fields.config,
 				db:     s,
@@ -1352,6 +1362,682 @@ func Test_metricCache_aggregateGPUUsages(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("metricCache.aggregateGPUUsages() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_metricCache_ContainerInterferenceMetric_CRUD(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		config       *Config
+		metricName   InterferenceMetricName
+		containerID  string
+		podUID       string
+		aggregateArg AggregationType
+		samples      map[time.Time]ContainerInterferenceMetric
+	}
+
+	tests := []struct {
+		name            string
+		args            args
+		want            ContainerInterferenceQueryResult
+		wantAfterDelete ContainerInterferenceQueryResult
+	}{
+		// test container CPI CRUD
+		{
+			name: "container-cpi-latest-crud",
+			args: args{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+				metricName:   MetricNameContainerCPI,
+				containerID:  "container-uid-1",
+				podUID:       "pod-uid-1",
+				aggregateArg: AggregationTypeLast,
+				samples: map[time.Time]ContainerInterferenceMetric{
+					now.Add(-time.Second * 120): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-1",
+						PodUID:      "pod-uid-1",
+						MetricValue: &CPIMetric{
+							Cycles:       7,
+							Instructions: 7,
+						},
+					},
+					now.Add(-time.Second * 10): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-1",
+						PodUID:      "pod-uid-1",
+						MetricValue: &CPIMetric{
+							Cycles:       6,
+							Instructions: 6,
+						},
+					},
+					now.Add(-time.Second * 5): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-1",
+						PodUID:      "pod-uid-1",
+						MetricValue: &CPIMetric{
+							Cycles:       5,
+							Instructions: 5,
+						},
+					},
+					now.Add(-time.Second * 4): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-2",
+						PodUID:      "pod-uid-2",
+						MetricValue: &CPIMetric{
+							Cycles:       4,
+							Instructions: 4,
+						},
+					},
+				},
+			},
+			want: ContainerInterferenceQueryResult{
+				Metric: &ContainerInterferenceMetric{
+					MetricName:  MetricNameContainerCPI,
+					ContainerID: "container-uid-1",
+					PodUID:      "pod-uid-1",
+					MetricValue: &CPIMetric{
+						Cycles:       5,
+						Instructions: 5,
+					},
+				},
+				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 3}},
+			},
+			wantAfterDelete: ContainerInterferenceQueryResult{
+				Metric: &ContainerInterferenceMetric{
+					MetricName:  MetricNameContainerCPI,
+					ContainerID: "container-uid-1",
+					PodUID:      "pod-uid-1",
+					MetricValue: &CPIMetric{
+						Cycles:       5,
+						Instructions: 5,
+					},
+				},
+				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 2}},
+			},
+		},
+		{
+			name: "container-cpi-avg-crud",
+			args: args{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+				metricName:   MetricNameContainerCPI,
+				containerID:  "container-uid-3",
+				podUID:       "pod-uid-3",
+				aggregateArg: AggregationTypeAVG,
+				samples: map[time.Time]ContainerInterferenceMetric{
+					now.Add(-time.Second * 120): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-3",
+						PodUID:      "pod-uid-3",
+						MetricValue: &CPIMetric{
+							Cycles:       7,
+							Instructions: 7,
+						},
+					},
+					now.Add(-time.Second * 10): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-3",
+						PodUID:      "pod-uid-3",
+						MetricValue: &CPIMetric{
+							Cycles:       6,
+							Instructions: 6,
+						},
+					},
+					now.Add(-time.Second * 5): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-3",
+						PodUID:      "pod-uid-3",
+						MetricValue: &CPIMetric{
+							Cycles:       5,
+							Instructions: 5,
+						},
+					},
+					now.Add(-time.Second * 4): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-4",
+						PodUID:      "pod-uid-4",
+						MetricValue: &CPIMetric{
+							Cycles:       4,
+							Instructions: 4,
+						},
+					},
+				},
+			},
+			want: ContainerInterferenceQueryResult{
+				Metric: &ContainerInterferenceMetric{
+					MetricName:  MetricNameContainerCPI,
+					ContainerID: "container-uid-3",
+					PodUID:      "pod-uid-3",
+					MetricValue: &CPIMetric{
+						Cycles:       6,
+						Instructions: 6,
+					},
+				},
+				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 3}},
+			},
+			wantAfterDelete: ContainerInterferenceQueryResult{
+				Metric: &ContainerInterferenceMetric{
+					MetricName:  MetricNameContainerCPI,
+					ContainerID: "container-uid-3",
+					PodUID:      "pod-uid-3",
+					MetricValue: &CPIMetric{
+						Cycles:       5,
+						Instructions: 5,
+					},
+				},
+				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 2}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := NewStorage()
+			m := &metricCache{
+				config: tt.args.config,
+				db:     s,
+			}
+			for ts, sample := range tt.args.samples {
+				err := m.InsertContainerInterferenceMetrics(ts, &sample)
+				if err != nil {
+					t.Errorf("insert interference metric failed %v", err)
+				}
+			}
+
+			oldStartTime := time.Unix(0, 0)
+			params := &QueryParam{
+				Aggregate: tt.args.aggregateArg,
+				Start:     &oldStartTime,
+				End:       &now,
+			}
+
+			got := m.GetContainerInterferenceMetric(tt.args.metricName, &tt.args.podUID, &tt.args.containerID, params)
+			if got.Error != nil {
+				t.Errorf("get interference metric failed %v", got.Error)
+			}
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetContainerInterferenceMetric() got = %v, want %v", got, tt.want)
+			}
+			// delete expire items
+			m.recycleDB()
+
+			gotAfterDel := m.GetContainerInterferenceMetric(tt.args.metricName, &tt.args.podUID, &tt.args.containerID, params)
+			if gotAfterDel.Error != nil {
+				t.Errorf("get interference metric failed %v", gotAfterDel.Error)
+			}
+			if !reflect.DeepEqual(gotAfterDel, tt.wantAfterDelete) {
+				t.Errorf("GetContainerInterferenceMetric() after delete, got = %v, want %v",
+					gotAfterDel, tt.wantAfterDelete)
+			}
+		})
+	}
+}
+
+func Test_metricCache_PodInterferenceMetric_CRUD(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		config       *Config
+		metricName   InterferenceMetricName
+		containerID  string
+		podUID       string
+		aggregateArg AggregationType
+		samples      map[time.Time]ContainerInterferenceMetric
+	}
+
+	tests := []struct {
+		name            string
+		args            args
+		want            PodInterferenceQueryResult
+		wantAfterDelete PodInterferenceQueryResult
+	}{
+		// test pod CPI CRUD
+		{
+			name: "pod-cpi-latest-crud",
+			args: args{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+				metricName:   MetricNamePodCPI,
+				containerID:  "container-uid-5",
+				podUID:       "pod-uid-5",
+				aggregateArg: AggregationTypeLast,
+				samples: map[time.Time]ContainerInterferenceMetric{
+					now.Add(-time.Second * 120): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-5",
+						PodUID:      "pod-uid-5",
+						MetricValue: &CPIMetric{
+							Cycles:       7,
+							Instructions: 7,
+						},
+					},
+					now.Add(-time.Second * 10): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-5",
+						PodUID:      "pod-uid-5",
+						MetricValue: &CPIMetric{
+							Cycles:       6,
+							Instructions: 6,
+						},
+					},
+					now.Add(-time.Second * 5): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-6",
+						PodUID:      "pod-uid-5",
+						MetricValue: &CPIMetric{
+							Cycles:       5,
+							Instructions: 5,
+						},
+					},
+					now.Add(-time.Second * 4): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-6",
+						PodUID:      "pod-uid-6",
+						MetricValue: &CPIMetric{
+							Cycles:       4,
+							Instructions: 4,
+						},
+					},
+				},
+			},
+			want: PodInterferenceQueryResult{
+				Metric: &PodInterferenceMetric{
+					MetricName: MetricNamePodCPI,
+					PodUID:     "pod-uid-5",
+					MetricValue: &CPIMetric{
+						Cycles:       18,
+						Instructions: 18,
+					},
+				},
+				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 1}},
+			},
+			wantAfterDelete: PodInterferenceQueryResult{
+				Metric: &PodInterferenceMetric{
+					MetricName: MetricNamePodCPI,
+					PodUID:     "pod-uid-5",
+					MetricValue: &CPIMetric{
+						Cycles:       11,
+						Instructions: 11,
+					},
+				},
+				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 1}},
+			},
+		},
+		{
+			name: "pod-cpi-avg-crud",
+			args: args{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+				metricName:   MetricNamePodCPI,
+				containerID:  "container-uid-7",
+				podUID:       "pod-uid-7",
+				aggregateArg: AggregationTypeAVG,
+				samples: map[time.Time]ContainerInterferenceMetric{
+					now.Add(-time.Second * 120): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-7",
+						PodUID:      "pod-uid-7",
+						MetricValue: &CPIMetric{
+							Cycles:       7,
+							Instructions: 7,
+						},
+					},
+					now.Add(-time.Second * 10): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-7",
+						PodUID:      "pod-uid-7",
+						MetricValue: &CPIMetric{
+							Cycles:       6,
+							Instructions: 6,
+						},
+					},
+					now.Add(-time.Second * 5): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-8",
+						PodUID:      "pod-uid-7",
+						MetricValue: &CPIMetric{
+							Cycles:       5,
+							Instructions: 5,
+						},
+					},
+					now.Add(-time.Second * 4): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-8",
+						PodUID:      "pod-uid-8",
+						MetricValue: &CPIMetric{
+							Cycles:       4,
+							Instructions: 4,
+						},
+					},
+				},
+			},
+			want: PodInterferenceQueryResult{
+				Metric: &PodInterferenceMetric{
+					MetricName: MetricNamePodCPI,
+					PodUID:     "pod-uid-7",
+					MetricValue: &CPIMetric{
+						Cycles:       18,
+						Instructions: 18,
+					},
+				},
+				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 1}},
+			},
+			wantAfterDelete: PodInterferenceQueryResult{
+				Metric: &PodInterferenceMetric{
+					MetricName: MetricNamePodCPI,
+					PodUID:     "pod-uid-7",
+					MetricValue: &CPIMetric{
+						Cycles:       11,
+						Instructions: 11,
+					},
+				},
+				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 1}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := NewStorage()
+			m := &metricCache{
+				config: tt.args.config,
+				db:     s,
+			}
+			for ts, sample := range tt.args.samples {
+				err := m.InsertContainerInterferenceMetrics(ts, &sample)
+				if err != nil {
+					t.Errorf("insert interference metric failed %v", err)
+				}
+			}
+
+			oldStartTime := time.Unix(0, 0)
+			params := &QueryParam{
+				Aggregate: tt.args.aggregateArg,
+				Start:     &oldStartTime,
+				End:       &now,
+			}
+
+			got := m.GetPodInterferenceMetric(tt.args.metricName, &tt.args.podUID, params)
+			if got.Error != nil {
+				t.Errorf("get interference metric failed %v", got.Error)
+			}
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetPodInterferenceMetric() got = %v, want %v", got, tt.want)
+			}
+			// delete expire items
+			m.recycleDB()
+
+			gotAfterDel := m.GetPodInterferenceMetric(tt.args.metricName, &tt.args.podUID, params)
+			if gotAfterDel.Error != nil {
+				t.Errorf("get interference metric failed %v", gotAfterDel.Error)
+			}
+			if !reflect.DeepEqual(gotAfterDel, tt.wantAfterDelete) {
+				t.Errorf("GetPodInterferenceMetric() after delete, got = %v, want %v",
+					gotAfterDel, tt.wantAfterDelete)
+			}
+		})
+	}
+}
+
+func Test_convertAndGetPodInterferenceMetric_zeroResult(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		config       *Config
+		metricName   InterferenceMetricName
+		containerID  string
+		podUID       string
+		aggregateArg AggregationType
+		samples      map[time.Time]ContainerInterferenceMetric
+	}
+
+	tests := []struct {
+		name string
+		args args
+	}{
+		// test get pod CPI 0 result
+		{
+			name: "get-pod-cpi-0-result",
+			args: args{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+				metricName:   MetricNamePodCPI,
+				containerID:  "container-uid-9",
+				podUID:       "pod-uid-9",
+				aggregateArg: AggregationTypeLast,
+				samples: map[time.Time]ContainerInterferenceMetric{
+					now.Add(-time.Second * 4): {
+						MetricName:  MetricNameContainerCPI,
+						ContainerID: "container-uid-10",
+						PodUID:      "pod-uid-10",
+						MetricValue: &CPIMetric{
+							Cycles:       4,
+							Instructions: 4,
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := NewStorage()
+			m := &metricCache{
+				config: tt.args.config,
+				db:     s,
+			}
+			for ts, sample := range tt.args.samples {
+				err := m.InsertContainerInterferenceMetrics(ts, &sample)
+				if err != nil {
+					t.Errorf("insert interference metric failed %v", err)
+				}
+			}
+
+			oldStartTime := time.Unix(0, 0)
+			params := &QueryParam{
+				Aggregate: tt.args.aggregateArg,
+				Start:     &oldStartTime,
+				End:       &now,
+			}
+
+			got := m.GetPodInterferenceMetric(tt.args.metricName, &tt.args.podUID, params)
+			assert.NotNil(t, got.Error)
+		})
+	}
+}
+
+func Test_GetContainerInterferenceMetric_errWrongMetricName(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		config       *Config
+		metricName   InterferenceMetricName
+		containerID  string
+		podUID       string
+		aggregateArg AggregationType
+	}
+
+	tests := []struct {
+		name string
+		args args
+	}{
+		// test wrong metric name err
+		{
+			name: "container-wrong-metric-name",
+			args: args{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+				metricName:   "WrongMetricName",
+				containerID:  "container-uid-1",
+				podUID:       "pod-uid-1",
+				aggregateArg: AggregationTypeLast,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := NewStorage()
+			m := &metricCache{
+				config: tt.args.config,
+				db:     s,
+			}
+
+			oldStartTime := time.Unix(0, 0)
+			params := &QueryParam{
+				Aggregate: tt.args.aggregateArg,
+				Start:     &oldStartTime,
+				End:       &now,
+			}
+
+			got := m.GetContainerInterferenceMetric(tt.args.metricName, &tt.args.podUID, &tt.args.containerID, params)
+			if got.Error == nil {
+				t.Errorf("get interference metric did not report err")
+			}
+		})
+	}
+}
+
+func Test_GetContainerInterferenceMetric_errNilParam(t *testing.T) {
+	type args struct {
+		config      *Config
+		metricName  InterferenceMetricName
+		containerID string
+		podUID      string
+	}
+
+	tests := []struct {
+		name string
+		args args
+	}{
+		// test nil param err
+		{
+			name: "container-nil-param",
+			args: args{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+				metricName:  MetricNameContainerCPI,
+				containerID: "container-uid-1",
+				podUID:      "pod-uid-1",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := NewStorage()
+			m := &metricCache{
+				config: tt.args.config,
+				db:     s,
+			}
+
+			got := m.GetContainerInterferenceMetric(tt.args.metricName, &tt.args.podUID, &tt.args.containerID, nil)
+			if got.Error == nil {
+				t.Errorf("get interference metric did not report err")
+			}
+		})
+	}
+}
+
+func Test_GetPodInterferenceMetric_errWrongMetricName(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		config       *Config
+		metricName   InterferenceMetricName
+		containerID  string
+		podUID       string
+		aggregateArg AggregationType
+	}
+
+	tests := []struct {
+		name string
+		args args
+	}{
+		// test wrong metric name err
+		{
+			name: "pod-wrong-metric-name",
+			args: args{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+				metricName:   "WrongMetricName",
+				podUID:       "pod-uid-1",
+				aggregateArg: AggregationTypeLast,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := NewStorage()
+			m := &metricCache{
+				config: tt.args.config,
+				db:     s,
+			}
+
+			oldStartTime := time.Unix(0, 0)
+			params := &QueryParam{
+				Aggregate: tt.args.aggregateArg,
+				Start:     &oldStartTime,
+				End:       &now,
+			}
+
+			got := m.GetPodInterferenceMetric(tt.args.metricName, &tt.args.podUID, params)
+			if got.Error == nil {
+				t.Errorf("get interference metric did not report err")
+			}
+		})
+	}
+}
+
+func Test_GetPodInterferenceMetric_errNilParam(t *testing.T) {
+	type args struct {
+		config      *Config
+		metricName  InterferenceMetricName
+		containerID string
+		podUID      string
+	}
+
+	tests := []struct {
+		name string
+		args args
+	}{
+		// test nil param err
+		{
+			name: "pod-nil-param",
+			args: args{
+				config: &Config{
+					MetricGCIntervalSeconds: 60,
+					MetricExpireSeconds:     60,
+				},
+				metricName: MetricNameContainerCPI,
+				podUID:     "pod-uid-1",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := NewStorage()
+			m := &metricCache{
+				config: tt.args.config,
+				db:     s,
+			}
+
+			got := m.GetPodInterferenceMetric(tt.args.metricName, &tt.args.podUID, nil)
+			if got.Error == nil {
+				t.Errorf("get interference metric did not report err")
 			}
 		})
 	}
