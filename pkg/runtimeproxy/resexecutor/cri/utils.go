@@ -156,11 +156,11 @@ func transferToCRIContainerEnvs(envs map[string]string) []*runtimeapi.KeyValue {
 	return res
 }
 
-func IsKeyValExistInAnnotations(annotations map[string]string, key, val string) bool {
-	if annotations == nil {
+func IsKeyValExistInLabels(labels map[string]string, key, val string) bool {
+	if labels == nil {
 		return false
 	}
-	for curKey, curVal := range annotations {
+	for curKey, curVal := range labels {
 		if curKey == key && curVal == val {
 			return true
 		}

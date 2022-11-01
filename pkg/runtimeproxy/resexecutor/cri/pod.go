@@ -85,7 +85,7 @@ func (p *PodResourceExecutor) ParseRequest(req interface{}) (utils.CallHookPlugi
 	if err != nil {
 		return utils.Unknown, err
 	}
-	if exist := IsKeyValExistInAnnotations(p.PodSandboxInfo.GetAnnotations(), options.RuntimeHookServerKey,
+	if exist := IsKeyValExistInLabels(p.PodSandboxInfo.GetLabels(), options.RuntimeHookServerKey,
 		options.RuntimeHookServerVal); exist {
 		return utils.ShouldNotCallHookPluginAlways, nil
 	}
