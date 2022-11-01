@@ -166,8 +166,27 @@ func (v *requestLimitValidator) ExpectPositive() *requestLimitValidator {
 	return v
 }
 
+type ContainerFilterFunc func(container *corev1.Container) bool
+
+var containerFilterFns []ContainerFilterFunc
+
+func RegisterContainerFilterFunc(fn ContainerFilterFunc) {
+	containerFilterFns = append(containerFilterFns, fn)
+}
+
 func (v *requestLimitValidator) Validate() field.ErrorList {
 	for _, container := range v.containers {
+		filtered := false
+		for _, filterFn := range containerFilterFns {
+			if !filterFn(container) {
+				filtered = true
+				break
+			}
+		}
+		if filtered {
+			continue
+		}
+
 		for _, predicate := range v.predicates {
 			if err := predicate(container); err != nil {
 				v.allErrs = append(v.allErrs, err...)
