@@ -34,6 +34,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/nodenumaresource"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 
+	// Ensure metric package is initialized
+	_ "k8s.io/component-base/metrics/prometheus/clientgo"
 	// Ensure scheme package is initialized.
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 )
