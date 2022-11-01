@@ -20,7 +20,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 // webhook works with multiple copies at the same time, so it needs to watch other copies' writes to task effect locally.
@@ -33,7 +32,7 @@ func (qt *quotaTopology) OnQuotaAdd(obj interface{}) {
 		return
 	}
 
-	quotaInfo := core.NewQuotaInfoFromQuota(quota)
+	quotaInfo := NewQuotaInfoFromQuota(quota)
 	qt.lock.Lock()
 	defer qt.lock.Unlock()
 
@@ -60,8 +59,8 @@ func (qt *quotaTopology) OnQuotaUpdate(oldObj, newObj interface{}) {
 		return
 	}
 
-	oldQuotaInfo := core.NewQuotaInfoFromQuota(oldQuota)
-	newQuotaInfo := core.NewQuotaInfoFromQuota(newQuota)
+	oldQuotaInfo := NewQuotaInfoFromQuota(oldQuota)
+	newQuotaInfo := NewQuotaInfoFromQuota(newQuota)
 
 	qt.lock.Lock()
 	defer qt.lock.Unlock()

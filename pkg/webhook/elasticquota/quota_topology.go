@@ -27,13 +27,12 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 type quotaTopology struct {
 	lock sync.Mutex
 	// quotaInfoMap stores all quota information
-	quotaInfoMap map[string]*core.QuotaInfo
+	quotaInfoMap map[string]*QuotaInfo
 	// quotaHierarchyInfo stores the quota's all children
 	quotaHierarchyInfo map[string]map[string]struct{}
 
@@ -42,7 +41,7 @@ type quotaTopology struct {
 
 func NewQuotaTopology(client client.Client) *quotaTopology {
 	topology := &quotaTopology{
-		quotaInfoMap:       make(map[string]*core.QuotaInfo),
+		quotaInfoMap:       make(map[string]*QuotaInfo),
 		quotaHierarchyInfo: make(map[string]map[string]struct{}),
 		client:             client,
 	}
@@ -66,7 +65,7 @@ func (qt *quotaTopology) ValidAddQuota(quota *v1alpha1.ElasticQuota) error {
 		return err
 	}
 
-	quotaInfo := core.NewQuotaInfoFromQuota(quota)
+	quotaInfo := NewQuotaInfoFromQuota(quota)
 	if err := qt.validateQuotaTopology(nil, quotaInfo); err != nil {
 		return err
 	}
@@ -104,7 +103,7 @@ func (qt *quotaTopology) ValidUpdateQuota(oldQuota, newQuota *v1alpha1.ElasticQu
 		return err
 	}
 
-	newQuotaInfo := core.NewQuotaInfoFromQuota(newQuota)
+	newQuotaInfo := NewQuotaInfoFromQuota(newQuota)
 	if err := qt.validateQuotaTopology(oldQuotaInfo, newQuotaInfo); err != nil {
 		return err
 	}
@@ -170,13 +169,13 @@ func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuot
 }
 
 type QuotaTopologySummary struct {
-	QuotaInfoMap       map[string]*core.QuotaInfoSummary `json:"quotaInfoMap"`
-	QuotaHierarchyInfo map[string][]string               `json:"quotaHierarchyInfo"`
+	QuotaInfoMap       map[string]*QuotaInfoSummary `json:"quotaInfoMap"`
+	QuotaHierarchyInfo map[string][]string          `json:"quotaHierarchyInfo"`
 }
 
 func NewQuotaTopologySummary() *QuotaTopologySummary {
 	return &QuotaTopologySummary{
-		QuotaInfoMap:       make(map[string]*core.QuotaInfoSummary),
+		QuotaInfoMap:       make(map[string]*QuotaInfoSummary),
 		QuotaHierarchyInfo: make(map[string][]string),
 	}
 }

@@ -30,7 +30,6 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) error {
@@ -64,7 +63,7 @@ func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) err
 }
 
 // validateQuotaTopology checks the quotaInfo's topology with its parent and its children (when update calls the function).
-func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, quotaInfo *core.QuotaInfo) error {
+func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, quotaInfo *QuotaInfo) error {
 	// interchange between parentQuotaGroup and childQuotaGroup is prohibited now.
 	if oldQuotaInfo != nil && oldQuotaInfo.IsParent != quotaInfo.IsParent {
 		return fmt.Errorf("IsParent is forbidden modify now, quotaName:%v", oldQuotaInfo.Name)
@@ -106,7 +105,7 @@ func (qt *quotaTopology) checkParentQuotaInfo(quotaName, parentName string) erro
 	return nil
 }
 
-func (qt *quotaTopology) checkSubAndParentGroupMaxQuotaKeySame(quotaInfo *core.QuotaInfo) error {
+func (qt *quotaTopology) checkSubAndParentGroupMaxQuotaKeySame(quotaInfo *QuotaInfo) error {
 	if quotaInfo.ParentName != extension.RootQuotaName {
 		parentInfo := qt.quotaInfoMap[quotaInfo.ParentName]
 		if !checkQuotaKeySame(parentInfo.CalculateInfo.Max, quotaInfo.CalculateInfo.Max) {
@@ -135,7 +134,7 @@ func (qt *quotaTopology) checkSubAndParentGroupMaxQuotaKeySame(quotaInfo *core.Q
 }
 
 // checkMinQuotaSum parent's minQuota should be larger or equal than the sum of allChildren's minQuota.
-func (qt *quotaTopology) checkMinQuotaSum(quotaInfo *core.QuotaInfo) error {
+func (qt *quotaTopology) checkMinQuotaSum(quotaInfo *QuotaInfo) error {
 	if quotaInfo.ParentName != extension.RootQuotaName {
 		childMinSumNotIncludeSelf, err := qt.getChildMinQuotaSumExceptSpecificChild(quotaInfo.ParentName, quotaInfo.Name)
 		if err != nil {
@@ -230,9 +229,6 @@ func quotaFieldsCopy(q *v1alpha1.ElasticQuota) v1alpha1.ElasticQuota {
 			Labels: map[string]string{
 				extension.LabelQuotaParent:   q.Labels[extension.LabelQuotaParent],
 				extension.LabelQuotaIsParent: q.Labels[extension.LabelQuotaIsParent],
-			},
-			Annotations: map[string]string{
-				extension.AnnotationSharedWeight: q.Annotations[extension.AnnotationSharedWeight],
 			},
 		},
 		Spec: *q.Spec.DeepCopy(),
