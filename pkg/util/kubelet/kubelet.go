@@ -60,7 +60,7 @@ func NewKubeletOptions(args []string) (*KubeletOptions, error) {
 	cleanFlagSet.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
 	kubeletFlags := options.NewKubeletFlags()
 	kubeletFlags.AddFlags(cleanFlagSet)
-	options.AddKubeletConfigFlags(cleanFlagSet, kubeletConfig)
+	AddKubeletConfigFlags(cleanFlagSet, kubeletConfig)
 
 	err = cleanFlagSet.Parse(args)
 	if err != nil {
@@ -100,7 +100,7 @@ func newFlagSetWithGlobals() *pflag.FlagSet {
 	// set the normalize func, similar to k8s.io/component-base/cli//flags.go:InitFlags
 	fs.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
 	// explicitly add flags from libs that register global flags
-	options.AddGlobalFlags(fs)
+	// options.AddGlobalFlags(fs)
 	return fs
 }
 

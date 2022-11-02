@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
 )
 
@@ -116,4 +117,15 @@ cpuManagerPolicy: static`
 			assert.Equal(t, tt.wantPolicy, options.CPUManagerPolicy)
 		})
 	}
+}
+
+func TestKubeletLogFlags(t *testing.T) {
+	kubeletArgs := make([]string, len(kubeletArgsWithNoneCPUManagerPolicy))
+	copy(kubeletArgs, kubeletArgsWithNoneCPUManagerPolicy)
+	kubeletArgs = append(kubeletArgs, "--v=666")
+
+	assert.False(t, klog.V(666).Enabled())
+	_, err := NewKubeletOptions(kubeletArgs)
+	assert.NoError(t, err)
+	assert.False(t, klog.V(666).Enabled())
 }
