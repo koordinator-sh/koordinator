@@ -53,10 +53,10 @@ func (b *bvtPlugin) Register() {
 		rule.WithParseFunc(statesinformer.RegisterTypeNodeSLOSpec, b.parseRule),
 		rule.WithUpdateCallback(b.ruleUpdateCb),
 		rule.WithSystemSupported(b.SystemSupported))
-	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUBVTWarpNs, b.SetPodBvtValue,
-		"reconcile pod level cpu bvt value")
-	reconciler.RegisterCgroupReconciler(reconciler.KubeQOSLevel, sysutil.CPUBVTWarpNs, b.SetKubeQOSBvtValue,
-		"reconcile kubeqos level cpu bvt value")
+	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUBVTWarpNs, "reconcile pod level cpu bvt value",
+		b.SetPodBvtValue, reconciler.NoneFilter())
+	reconciler.RegisterCgroupReconciler(reconciler.KubeQOSLevel, sysutil.CPUBVTWarpNs, "reconcile kubeqos level cpu bvt value",
+		b.SetKubeQOSBvtValue, reconciler.NoneFilter())
 }
 
 func (b *bvtPlugin) SystemSupported() bool {

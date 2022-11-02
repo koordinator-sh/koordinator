@@ -26,8 +26,48 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
+
+func GetEmptyContainerExtendedResources() *apiext.ExtendedResourceContainerSpec {
+	return &apiext.ExtendedResourceContainerSpec{
+		Requests: corev1.ResourceList{},
+		Limits:   corev1.ResourceList{},
+	}
+}
+
+func GetContainerExtendedResources(container *corev1.Container) *apiext.ExtendedResourceContainerSpec {
+	return GetContainerTargetExtendedResources(container, ExtendedResourceNames...)
+}
+
+// GetContainerTargetExtendedResources gets the resource requirements of a container with given extended resources.
+// It returns nil if container is nil or specifies no extended resource.
+func GetContainerTargetExtendedResources(container *corev1.Container, resourceNames ...corev1.ResourceName) *apiext.ExtendedResourceContainerSpec {
+	if container == nil {
+		return nil
+	}
+
+	r := GetEmptyContainerExtendedResources()
+
+	for _, name := range resourceNames {
+		// assert container.Resources.Requests != nil && container.Resources.Limits != nil
+		q, ok := container.Resources.Requests[name]
+		if ok {
+			r.Requests[name] = q
+		}
+		q, ok = container.Resources.Limits[name]
+		if ok {
+			r.Limits[name] = q
+		}
+	}
+
+	if len(r.Requests) <= 0 && len(r.Limits) <= 0 { // no requirement of specified extended resources
+		return nil
+	}
+
+	return r
+}
 
 // @parentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/****.scope

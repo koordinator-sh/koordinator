@@ -24,6 +24,7 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/featuregate"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/batchresource"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/gpu"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/groupidentity"
@@ -34,6 +35,7 @@ const (
 	GroupIdentity   featuregate.Feature = "GroupIdentity"
 	CPUSetAllocator featuregate.Feature = "CPUSetAllocator"
 	GPUEnvInject    featuregate.Feature = "GPUEnvInject"
+	BatchResource   featuregate.Feature = "BatchResource"
 )
 
 var (
@@ -44,12 +46,14 @@ var (
 		GroupIdentity:   {Default: false, PreRelease: featuregate.Alpha},
 		CPUSetAllocator: {Default: false, PreRelease: featuregate.Alpha},
 		GPUEnvInject:    {Default: false, PreRelease: featuregate.Alpha},
+		BatchResource:   {Default: false, PreRelease: featuregate.Alpha},
 	}
 
 	runtimeHookPlugins = map[featuregate.Feature]HookPlugin{
 		GroupIdentity:   groupidentity.Object(),
 		CPUSetAllocator: cpuset.Object(),
 		GPUEnvInject:    gpu.Object(),
+		BatchResource:   batchresource.Object(),
 	}
 )
 

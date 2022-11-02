@@ -30,6 +30,42 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
+func GetEmptyPodExtendedResources() *apiext.ExtendedResourceSpec {
+	return &apiext.ExtendedResourceSpec{
+		Containers: map[string]apiext.ExtendedResourceContainerSpec{},
+	}
+}
+
+func GetPodExtendedResources(pod *corev1.Pod) *apiext.ExtendedResourceSpec {
+	return GetPodTargetExtendedResources(pod, ExtendedResourceNames...)
+}
+
+// GetPodTargetExtendedResources gets the resource requirements of a pod with given extended resources.
+// It returns nil if pod specifies no extended resource.
+func GetPodTargetExtendedResources(pod *corev1.Pod, resourceNames ...corev1.ResourceName) *apiext.ExtendedResourceSpec {
+	if pod == nil {
+		return nil
+	}
+
+	extendedResources := GetEmptyPodExtendedResources()
+
+	// TODO: count init containers and pod overhead
+	for i := range pod.Spec.Containers {
+		container := &pod.Spec.Containers[i]
+		r := GetContainerTargetExtendedResources(container, resourceNames...)
+		if r == nil {
+			continue
+		}
+		extendedResources.Containers[container.Name] = *r
+	}
+
+	if len(extendedResources.Containers) <= 0 {
+		return nil
+	}
+
+	return extendedResources
+}
+
 // @kubeRelativeDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 func GetPodCgroupDirWithKube(podKubeRelativeDir string) string {

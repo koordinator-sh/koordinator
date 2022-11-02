@@ -55,28 +55,29 @@ var HooksProtocolBuilder = hooksProtocolBuilder{
 
 type Resources struct {
 	// origin resources
-	CPUShares *int64
-	CFSQuota  *int64
-	CPUSet    *string
+	CPUShares   *int64
+	CFSQuota    *int64
+	CPUSet      *string
+	MemoryLimit *int64
 
 	// extended resources
 	CPUBvt *int64
 }
 
 func (r *Resources) IsOriginResSet() bool {
-	return r.CPUShares != nil || r.CFSQuota != nil || r.CPUSet != nil
+	return r.CPUShares != nil || r.CFSQuota != nil || r.CPUSet != nil || r.MemoryLimit != nil
 }
 
 func injectCPUShares(cgroupParent string, cpuShares int64) error {
 	cpuShareStr := strconv.FormatInt(cpuShares, 10)
-	if err := sysutil.CgroupFileWrite(cgroupParent, sysutil.CPUShares, cpuShareStr); err != nil {
+	if err := sysutil.CgroupFileWriteIfDifferent(cgroupParent, sysutil.CPUShares, cpuShareStr); err != nil {
 		return err
 	}
 	return nil
 }
 
 func injectCPUSet(cgroupParent string, cpuset string) error {
-	if err := sysutil.CgroupFileWrite(cgroupParent, sysutil.CPUSet, cpuset); err != nil {
+	if err := sysutil.CgroupFileWriteIfDifferent(cgroupParent, sysutil.CPUSet, cpuset); err != nil {
 		return err
 	}
 	return nil
@@ -84,7 +85,15 @@ func injectCPUSet(cgroupParent string, cpuset string) error {
 
 func injectCPUQuota(cgroupParent string, cpuQuota int64) error {
 	cpuQuotaStr := strconv.FormatInt(cpuQuota, 10)
-	if err := sysutil.CgroupFileWrite(cgroupParent, sysutil.CPUCFSQuota, cpuQuotaStr); err != nil {
+	if err := sysutil.CgroupFileWriteIfDifferent(cgroupParent, sysutil.CPUCFSQuota, cpuQuotaStr); err != nil {
+		return err
+	}
+	return nil
+}
+
+func injectMemoryLimit(cgroupParent string, memoryLimit int64) error {
+	memoryLimitStr := strconv.FormatInt(memoryLimit, 10)
+	if err := sysutil.CgroupFileWriteIfDifferent(cgroupParent, sysutil.MemoryLimit, memoryLimitStr); err != nil {
 		return err
 	}
 	return nil
@@ -92,7 +101,7 @@ func injectCPUQuota(cgroupParent string, cpuQuota int64) error {
 
 func injectCPUBvt(cgroupParent string, bvtValue int64) error {
 	bvtValueStr := strconv.FormatInt(bvtValue, 10)
-	if err := sysutil.CgroupFileWrite(cgroupParent, sysutil.CPUBVTWarpNs, bvtValueStr); err != nil {
+	if err := sysutil.CgroupFileWriteIfDifferent(cgroupParent, sysutil.CPUBVTWarpNs, bvtValueStr); err != nil {
 		return err
 	}
 	return nil

@@ -64,6 +64,26 @@ func Test_runtimeHook_Run(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			// grpcurl -plaintext -unix $file runtime.v1alpha1.RuntimeHookService/PreRunPodSandboxHook
+			name: "run all feature-gates",
+			fields: fields{
+				config: &Config{
+					RuntimeHooksNetwork:       "unix",
+					RuntimeHooksAddr:          path.Join(tmpDir, "kooordlet.sock"),
+					RuntimeHooksFailurePolicy: "Fail",
+					RuntimeHookDisableStages:  []string{"PreRunPodSandbox"},
+					RuntimeHookConfigFilePath: tmpDir,
+					FeatureGates: map[string]bool{
+						string(GroupIdentity):   true,
+						string(CPUSetAllocator): true,
+						string(GPUEnvInject):    true,
+						string(BatchResource):   true,
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

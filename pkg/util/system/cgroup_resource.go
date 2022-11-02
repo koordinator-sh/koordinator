@@ -32,6 +32,8 @@ const ( // subsystems
 
 const (
 	CFSBasePeriodValue int64 = 100000
+	CFSQuotaMinValue   int64 = 1000 // min value except `-1`
+	CPUSharesMinValue  int64 = 2
 
 	CPUStatFileName   = "cpu.stat"
 	CPUSharesFileName = "cpu.shares"

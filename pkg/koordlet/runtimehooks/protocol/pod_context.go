@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -45,10 +46,11 @@ func (p *PodMeta) FromReconciler(meta metav1.ObjectMeta) {
 }
 
 type PodRequest struct {
-	PodMeta      PodMeta
-	Labels       map[string]string
-	Annotations  map[string]string
-	CgroupParent string
+	PodMeta           PodMeta
+	Labels            map[string]string
+	Annotations       map[string]string
+	CgroupParent      string
+	ExtendedResources *apiext.ExtendedResourceSpec
 }
 
 func (p *PodRequest) FromProxy(req *runtimeapi.PodSandboxHookRequest) {
@@ -56,6 +58,15 @@ func (p *PodRequest) FromProxy(req *runtimeapi.PodSandboxHookRequest) {
 	p.Labels = req.GetLabels()
 	p.Annotations = req.GetAnnotations()
 	p.CgroupParent = req.GetCgroupParent()
+	// retrieve ExtendedResources from pod annotations
+	spec, err := apiext.GetExtendedResourceSpec(req.GetAnnotations())
+	if err != nil {
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from proxy via annotation, pod %s/%s, err: %s",
+			p.PodMeta.Namespace, p.PodMeta.Name, err)
+	}
+	if spec != nil && spec.Containers != nil {
+		p.ExtendedResources = spec
+	}
 }
 
 func (p *PodRequest) FromReconciler(podMeta *statesinformer.PodMeta) {
@@ -63,6 +74,18 @@ func (p *PodRequest) FromReconciler(podMeta *statesinformer.PodMeta) {
 	p.Labels = podMeta.Pod.Labels
 	p.Annotations = podMeta.Pod.Annotations
 	p.CgroupParent = util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+	// retrieve ExtendedResources from pod spec and pod annotations (prefer pod spec)
+	specFromAnnotations, err := apiext.GetExtendedResourceSpec(podMeta.Pod.Annotations)
+	if err != nil {
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from reconciler via annotation, pod %s/%s, err: %s",
+			p.PodMeta.Namespace, p.PodMeta.Name, err)
+	}
+	specFromPod := util.GetPodExtendedResources(podMeta.Pod)
+	if specFromPod != nil {
+		p.ExtendedResources = specFromPod
+	} else if specFromAnnotations != nil && specFromAnnotations.Containers != nil { // specFromPod == nil
+		p.ExtendedResources = specFromAnnotations
+	}
 }
 
 type PodResponse struct {
@@ -87,6 +110,9 @@ func (p *PodResponse) ProxyDone(resp *runtimeapi.PodSandboxHookResponse) {
 	}
 	if p.Resources.CFSQuota != nil {
 		resp.Resources.CpuQuota = *p.Resources.CFSQuota
+	}
+	if p.Resources.MemoryLimit != nil {
+		resp.Resources.MemoryLimitInBytes = *p.Resources.MemoryLimit
 	}
 }
 
@@ -124,7 +150,19 @@ func (p *PodContext) injectForExt() {
 				"set pod bvt to %v", *p.Response.Resources.CPUBvt).Do()
 		}
 	}
-	// pod-level cfs_quota is manually updated since pod-stage hooks do not support it
+	// some of pod-level cgroups are manually updated since pod-stage hooks do not support it;
+	// kubelet may set the cgroups when pod is created or restarted, so we need to update the cgroups repeatedly
+	if p.Response.Resources.CPUShares != nil {
+		if err := injectCPUShares(p.Request.CgroupParent, *p.Response.Resources.CPUShares); err != nil {
+			klog.Infof("set pod %v/%v cpu shares %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
+				p.Request.PodMeta.Name, *p.Response.Resources.CPUShares, p.Request.CgroupParent, err)
+		} else {
+			klog.V(5).Infof("set pod %v/%v/%v cpu shares %v on cgroup parent %v",
+				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.CPUShares, p.Request.CgroupParent)
+			audit.V(2).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
+				"set pod cpu shares to %v", *p.Response.Resources.CPUShares).Do()
+		}
+	}
 	if p.Response.Resources.CFSQuota != nil {
 		if err := injectCPUQuota(p.Request.CgroupParent, *p.Response.Resources.CFSQuota); err != nil {
 			klog.Infof("set pod %v/%v cfs quota %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
@@ -134,6 +172,17 @@ func (p *PodContext) injectForExt() {
 				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.CFSQuota, p.Request.CgroupParent)
 			audit.V(2).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
 				"set pod cfs quota to %v", *p.Response.Resources.CFSQuota).Do()
+		}
+	}
+	if p.Response.Resources.MemoryLimit != nil {
+		if err := injectMemoryLimit(p.Request.CgroupParent, *p.Response.Resources.MemoryLimit); err != nil {
+			klog.Infof("set pod %v/%v memory limit %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
+				p.Request.PodMeta.Name, *p.Response.Resources.MemoryLimit, p.Request.CgroupParent, err)
+		} else {
+			klog.V(5).Infof("set pod %v/%v/%v memory limit %v on cgroup parent %v",
+				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.MemoryLimit, p.Request.CgroupParent)
+			audit.V(2).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
+				"set pod memory limit to %v", *p.Response.Resources.MemoryLimit).Do()
 		}
 	}
 }
