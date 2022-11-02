@@ -34,27 +34,56 @@ import (
 )
 
 var (
-	token string
+	token              string
+	kubeletConfigzData = []byte(`
+		{
+		    "kubeletconfig": {
+		        "enableServer": true,
+		        "cpuManagerPolicy": "static",
+		        "cpuManagerReconcilePeriod": "10s",
+		        "evictionHard": {
+		            "imagefs.available": "15%",
+		            "memory.available": "222Mi",
+		            "nodefs.available": "10%",
+		            "nodefs.inodesFree": "5%"
+		        },
+		        "systemReserved": {
+		            "cpu": "200m",
+		            "memory": "1111Mi",
+		            "pid": "1000"
+		        },
+		        "kubeReserved": {
+		            "cpu": "200m",
+		            "memory": "6666Mi",
+		            "pid": "1000"
+		        }
+		    }
+		}`,
+	)
 )
 
-func mockPodsList(w http.ResponseWriter, r *http.Request) {
+func validateAuth(r *http.Request) bool {
 	bear := r.Header.Get("Authorization")
 	if bear == "" {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
+		return false
 	}
 	parts := strings.Split(bear, "Bearer")
 	if len(parts) != 2 {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
+		return false
 	}
 
-	http_token := strings.TrimSpace(parts[1])
-	if len(http_token) < 1 {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
+	httpToken := strings.TrimSpace(parts[1])
+	if len(httpToken) < 1 {
+		return false
 	}
-	if http_token != token {
+	if httpToken != token {
+		return false
+	}
+	return true
+}
+
+func mockPodsList(w http.ResponseWriter, r *http.Request) {
+	if !validateAuth(r) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -68,6 +97,16 @@ func mockPodsList(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(b)
+}
+
+func mockGetKubeletConfiguration(w http.ResponseWriter, r *http.Request) {
+	if !validateAuth(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(kubeletConfigzData)
 }
 
 func parseHostAndPort(rawURL string) (string, string, error) {
@@ -109,6 +148,56 @@ func Test_kubeletStub_GetAllPods(t *testing.T) {
 		}
 		t.Logf("podList %+v\n", ps)
 	})
+}
+
+func Test_kubeletStub_GetKubeletConfiguration(t *testing.T) {
+	token = "token"
+
+	server := httptest.NewTLSServer(http.HandlerFunc(mockGetKubeletConfiguration))
+	defer server.Close()
+
+	address, portStr, err := parseHostAndPort(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	port, _ := strconv.Atoi(portStr)
+	cfg := &rest.Config{
+		Host:        net.JoinHostPort(address, portStr),
+		BearerToken: token,
+		TLSClientConfig: rest.TLSClientConfig{
+			Insecure: true,
+		},
+	}
+
+	client, err := NewKubeletStub(address, port, "https", 10*time.Second, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kubeletConfiguration, err := client.GetKubeletConfiguration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, "static", kubeletConfiguration.CPUManagerPolicy)
+	expectedEvictionHard := map[string]string{
+		"imagefs.available": "15%",
+		"memory.available":  "222Mi",
+		"nodefs.available":  "10%",
+		"nodefs.inodesFree": "5%",
+	}
+	expectedSystemReserved := map[string]string{
+		"cpu":    "200m",
+		"memory": "1111Mi",
+		"pid":    "1000",
+	}
+	expectedKubeReserved := map[string]string{
+		"cpu":    "200m",
+		"memory": "6666Mi",
+		"pid":    "1000",
+	}
+	assert.Equal(t, expectedEvictionHard, kubeletConfiguration.EvictionHard)
+	assert.Equal(t, expectedSystemReserved, kubeletConfiguration.SystemReserved)
+	assert.Equal(t, expectedKubeReserved, kubeletConfiguration.KubeReserved)
 }
 
 func TestNewKubeletStub(t *testing.T) {

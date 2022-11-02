@@ -30,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
@@ -90,11 +91,16 @@ func Test_genPodCgroupParentDirWithCgroupfsDriver(t *testing.T) {
 }
 
 type testKubeletStub struct {
-	pods corev1.PodList
+	pods   corev1.PodList
+	config *kubeletconfiginternal.KubeletConfiguration
 }
 
 func (t *testKubeletStub) GetAllPods() (corev1.PodList, error) {
 	return t.pods, nil
+}
+
+func (t *testKubeletStub) GetKubeletConfiguration() (*kubeletconfiginternal.KubeletConfiguration, error) {
+	return t.config, nil
 }
 
 type testErrorKubeletStub struct {
@@ -102,6 +108,10 @@ type testErrorKubeletStub struct {
 
 func (t *testErrorKubeletStub) GetAllPods() (corev1.PodList, error) {
 	return corev1.PodList{}, errors.New("test error")
+}
+
+func (t *testErrorKubeletStub) GetKubeletConfiguration() (*kubeletconfiginternal.KubeletConfiguration, error) {
+	return nil, errors.New("test error")
 }
 
 func Test_statesInformer_syncPods(t *testing.T) {
