@@ -168,7 +168,7 @@ func Test_Run(t *testing.T) {
 					kubeClient.CoreV1().Pods(p.Namespace).UpdateStatus(ctx, p, metav1.UpdateOptions{})
 				}
 			}
-			go ctrl.Run(1, ctx.Done())
+			go ctrl.Start()
 			err := wait.Poll(200*time.Millisecond, 1*time.Second, func() (done bool, err error) {
 				pg, err := pgClient.SchedulingV1alpha1().PodGroups("default").Get(ctx, c.pgName, metav1.GetOptions{})
 				if err != nil {
@@ -234,7 +234,7 @@ func TestFillGroupStatusOccupied(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			ctrl, _, pgClient := setUp(ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.groupPhase, nil, c.podOwnerReference)
-			go ctrl.Run(1, ctx.Done())
+			go ctrl.Start()
 			err := wait.Poll(200*time.Millisecond, 1*time.Second, func() (done bool, err error) {
 				pg, err := pgClient.SchedulingV1alpha1().PodGroups("default").Get(ctx, c.pgName, metav1.GetOptions{})
 				if err != nil {
@@ -271,7 +271,7 @@ func setUp(ctx context.Context, podNames []string, pgName string, podPhase v1.Po
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 
 	pgMgr := core.NewPodGroupManager(pgClient, pgInformer, podInformer, &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: time.Second}})
-	ctrl := NewPodGroupController(kubeClient, pgInformer, podInformer, pgClient, pgMgr, nil)
+	ctrl := NewPodGroupController(kubeClient, pgInformer, podInformer, pgClient, pgMgr, nil, 1)
 
 	pgInformerFactory.Start(ctx.Done())
 	informerFactory.Start(ctx.Done())

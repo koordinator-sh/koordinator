@@ -39,7 +39,8 @@ import (
 )
 
 const (
-	SyncHandlerCycle = 1 * time.Second
+	SyncHandlerCycle           = 1 * time.Second
+	ElasticQuotaControllerName = "QuotaCRDController"
 )
 
 // Controller is a controller that update elastic quota crd
@@ -70,8 +71,13 @@ func NewElasticQuotaController(
 	return ctrl
 }
 
+func (ctrl *Controller) Name() string {
+	return ElasticQuotaControllerName
+}
+
 func (ctrl *Controller) Start() {
 	go wait.Until(ctrl.Run, SyncHandlerCycle, context.TODO().Done())
+	klog.Infof("start elasticQuota controller syncHandler")
 }
 
 func (ctrl *Controller) Run() {
@@ -137,8 +143,8 @@ func (ctrl *Controller) syncHandler() []error {
 			newEQ.Status.Used = used
 
 			klog.V(5).Infof("quota:%v, oldUsed:%v, newUsed:%v, oldRuntime:%v, newRuntime:%v, oldRequest:%v, newRequest:%v",
-				eq.Name, eq.Status.Used, used, eq.Annotations[extension.AnnotationRuntime], runtimeBytes,
-				eq.Annotations[extension.AnnotationRequest], requestBytes)
+				eq.Name, eq.Status.Used, used, eq.Annotations[extension.AnnotationRuntime], string(runtimeBytes),
+				eq.Annotations[extension.AnnotationRequest], string(requestBytes))
 
 			patch, err := util.CreateMergePatch(eq, newEQ)
 			if err != nil {

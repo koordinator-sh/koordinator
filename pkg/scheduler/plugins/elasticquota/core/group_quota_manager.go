@@ -667,7 +667,8 @@ func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string
 		return nil, nil, nil, fmt.Errorf("groupQuotaManager doesn't have this quota:%v", quotaName)
 	}
 
-	return quotaInfo.GetUsed(), quotaInfo.GetRequest(), quotaInfo.GetRuntime(), nil
+	runtime = gqm.RefreshRuntimeNoLock(quotaName)
+	return quotaInfo.GetUsed(), quotaInfo.GetRequest(), runtime, nil
 }
 
 func getPodName(oldPod, newPod *v1.Pod) string {

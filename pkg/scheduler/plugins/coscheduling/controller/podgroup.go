@@ -48,7 +48,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
-const maxGCTime = 48 * time.Hour
+const (
+	maxGCTime              = 48 * time.Hour
+	PodGroupControllerName = "PodGroupController"
+)
 
 // PodGroupController  is used to control that process pod groups using provided Handler interface
 type PodGroupController struct {
@@ -60,13 +63,14 @@ type PodGroupController struct {
 	podListerSynced cache.InformerSynced
 	pgClient        schedclientset.Interface
 	pgManager       core.Manager
+	workers         int
 }
 
 // NewPodGroupController returns a new *PodGroupController
 func NewPodGroupController(client kubernetes.Interface,
 	pgInformer schedinformer.PodGroupInformer,
 	podInformer coreinformer.PodInformer,
-	pgClient schedclientset.Interface, podGroupManager *core.PodGroupManager, recorder events.EventRecorder) *PodGroupController {
+	pgClient schedclientset.Interface, podGroupManager *core.PodGroupManager, recorder events.EventRecorder, workers int) *PodGroupController {
 
 	ctrl := &PodGroupController{
 		eventRecorder:   recorder,
@@ -77,6 +81,7 @@ func NewPodGroupController(client kubernetes.Interface,
 		pgListerSynced:  pgInformer.Informer().HasSynced,
 		podListerSynced: podInformer.Informer().HasSynced,
 		pgQueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "PodGroup"),
+		workers:         workers,
 	}
 
 	pgInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -91,8 +96,16 @@ func NewPodGroupController(client kubernetes.Interface,
 	return ctrl
 }
 
+func (ctrl PodGroupController) Name() string {
+	return PodGroupControllerName
+}
+
+func (ctrl *PodGroupController) Start() {
+	go ctrl.Run(context.TODO().Done())
+}
+
 // Run starts listening on channel events
-func (ctrl *PodGroupController) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *PodGroupController) Run(stopCh <-chan struct{}) {
 	defer ctrl.pgQueue.ShutDown()
 	klog.Infof("Starting Pod Group SyncHandler")
 	defer klog.Infof("Shutting Pod Group SyncHandler")
@@ -102,7 +115,8 @@ func (ctrl *PodGroupController) Run(workers int, stopCh <-chan struct{}) {
 		return
 	}
 	klog.Infof("Pod Group sync finished")
-	for i := 0; i < workers; i++ {
+
+	for i := 0; i < ctrl.workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
 	}
 
