@@ -58,6 +58,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 		newPod      *corev1.Pod
 		wantAllowed bool
 		wantReason  string
+		filterFunc  ContainerFilterFunc
 		wantErr     bool
 	}{
 		{
@@ -758,10 +759,50 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: true,
 		},
+		{
+			name:      "forbidden resources - LSR And Prod: zeroed resource requests but filtered",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSR),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32Ptr(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-skip",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("0"),
+									corev1.ResourceMemory: resource.MustParse("0Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			filterFunc: func(container *corev1.Container) bool {
+				if container.Name == "test-container-skip" {
+					return false
+				}
+				return true
+			},
+			wantAllowed: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.filterFunc != nil {
+				RegisterContainerFilterFunc(tt.filterFunc)
+				defer func() { containerFilterFns = nil }()
+			}
 			client := fake.NewClientBuilder().Build()
 			decoder, _ := admission.NewDecoder(scheme.Scheme)
 			h := &PodValidatingHandler{
