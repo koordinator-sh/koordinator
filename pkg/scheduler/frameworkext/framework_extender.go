@@ -232,7 +232,7 @@ func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.
 
 func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (framework.PluginToNodeScores, *framework.Status) {
 	for _, hook := range ext.scoreHooks {
-		// hook can change the args (cycleState, pod, nodeInfo) for filter plugins
+		// hook can change the args (cycleState, pod, nodeInfo) for score plugins
 		newPod, newNodes, hooked := hook.ScoreHook(ext.handle, state, pod, nodes)
 		if hooked {
 			klog.V(5).InfoS("RunScorePlugins hooked", "hook", hook.Name(), "pod", klog.KObj(pod))
