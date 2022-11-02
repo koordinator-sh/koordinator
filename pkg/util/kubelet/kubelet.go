@@ -19,143 +19,23 @@ package kubelet
 
 import (
 	"fmt"
-	"io"
 	"math"
 	"path/filepath"
 	"strconv"
 
-	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/cmd/kubelet/app/options"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	"k8s.io/kubernetes/pkg/kubelet/eviction"
 	evictionapi "k8s.io/kubernetes/pkg/kubelet/eviction/api"
-	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/configfiles"
 	"k8s.io/kubernetes/pkg/kubelet/stats/pidlimit"
-	utilfs "k8s.io/kubernetes/pkg/util/filesystem"
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
-
-type KubeletOptions struct {
-	*options.KubeletFlags
-	*kubeletconfiginternal.KubeletConfiguration
-}
-
-func NewKubeletOptions(args []string) (*KubeletOptions, error) {
-	kubeletConfig, err := options.NewKubeletConfiguration()
-	if err != nil {
-		return nil, err
-	}
-
-	cleanFlagSet := pflag.NewFlagSet("kubelet", pflag.ContinueOnError)
-	cleanFlagSet.ParseErrorsWhitelist.UnknownFlags = true
-	cleanFlagSet.SetOutput(io.Discard)
-	cleanFlagSet.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
-	kubeletFlags := options.NewKubeletFlags()
-	kubeletFlags.AddFlags(cleanFlagSet)
-	options.AddKubeletConfigFlags(cleanFlagSet, kubeletConfig)
-
-	err = cleanFlagSet.Parse(args)
-	if err != nil {
-		return nil, err
-	}
-
-	// NOTE: options.ValidateKubeletFlags is not compatible with kubelet v1.18, now skip validation
-	// validate the initial KubeletFlags
-	// if err := options.ValidateKubeletFlags(kubeletFlags); err != nil {
-	// 	return nil, fmt.Errorf("failed to validate kubelet flags: %w", err)
-	// }
-
-	// load kubelet config file, if provided
-	if configFile := kubeletFlags.KubeletConfigFile; len(configFile) > 0 {
-		kubeletConfig, err = loadConfigFile(configFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load kubelet config file, error: %w, path: %s", err, configFile)
-		}
-		// We must enforce flag precedence by re-parsing the command line into the new object.
-		// This is necessary to preserve backwards-compatibility across binary upgrades.
-		// See issue #56171 for more details.
-		if err := kubeletConfigFlagPrecedence(kubeletConfig, args); err != nil {
-			return nil, fmt.Errorf("failed to precedence kubeletConfigFlag: %w", err)
-		}
-	}
-
-	return &KubeletOptions{
-		KubeletFlags:         kubeletFlags,
-		KubeletConfiguration: kubeletConfig,
-	}, nil
-}
-
-// newFlagSetWithGlobals constructs a new pflag.FlagSet with global flags registered
-// on it.
-func newFlagSetWithGlobals() *pflag.FlagSet {
-	fs := pflag.NewFlagSet("", pflag.ExitOnError)
-	// set the normalize func, similar to k8s.io/component-base/cli//flags.go:InitFlags
-	fs.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
-	// explicitly add flags from libs that register global flags
-	options.AddGlobalFlags(fs)
-	return fs
-}
-
-// newFakeFlagSet constructs a pflag.FlagSet with the same flags as fs, but where
-// all values have noop Set implementations
-func newFakeFlagSet(fs *pflag.FlagSet) *pflag.FlagSet {
-	ret := pflag.NewFlagSet("", pflag.ExitOnError)
-	ret.SetNormalizeFunc(fs.GetNormalizeFunc())
-	fs.VisitAll(func(f *pflag.Flag) {
-		ret.VarP(cliflag.NoOp{}, f.Name, f.Shorthand, f.Usage)
-	})
-	return ret
-}
-
-// kubeletConfigFlagPrecedence re-parses flags over the KubeletConfiguration object.
-// We must enforce flag precedence by re-parsing the command line into the new object.
-// This is necessary to preserve backwards-compatibility across binary upgrades.
-// See issue #56171 for more details.
-func kubeletConfigFlagPrecedence(kc *kubeletconfiginternal.KubeletConfiguration, args []string) error {
-	// We use a throwaway kubeletFlags and a fake global flagset to avoid double-parses,
-	// as some Set implementations accumulate values from multiple flag invocations.
-	fs := newFakeFlagSet(newFlagSetWithGlobals())
-	fs.ParseErrorsWhitelist.UnknownFlags = true
-	fs.SetOutput(io.Discard)
-	// register throwaway KubeletFlags
-	options.NewKubeletFlags().AddFlags(fs)
-	// register new KubeletConfiguration
-	options.AddKubeletConfigFlags(fs, kc)
-	// Remember original feature gates, so we can merge with flag gates later
-	original := kc.FeatureGates
-	// re-parse flags
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	// Add back feature gates that were set in the original kc, but not in flags
-	for k, v := range original {
-		if _, ok := kc.FeatureGates[k]; !ok {
-			kc.FeatureGates[k] = v
-		}
-	}
-	return nil
-}
-
-func loadConfigFile(kubeletConfigFile string) (*kubeletconfiginternal.KubeletConfiguration, error) {
-	const errFmt = "failed to load Kubelet config file %s, error %v"
-	loader, err := configfiles.NewFsLoader(&utilfs.DefaultFs{}, kubeletConfigFile)
-	if err != nil {
-		return nil, fmt.Errorf(errFmt, kubeletConfigFile, err)
-	}
-	kc, err := loader.Load()
-	if err != nil {
-		return nil, fmt.Errorf(errFmt, kubeletConfigFile, err)
-	}
-	return kc, err
-}
 
 func NewCPUTopology(cpuInfo *util.LocalCPUInfo) *topology.CPUTopology {
 	cpuTopology := &topology.CPUTopology{
@@ -174,18 +54,18 @@ func NewCPUTopology(cpuInfo *util.LocalCPUInfo) *topology.CPUTopology {
 	return cpuTopology
 }
 
-func GetStaticCPUManagerPolicyReservedCPUs(topology *topology.CPUTopology, kubeletOptions *KubeletOptions) (cpuset.CPUSet, error) {
-	if kubeletOptions.CPUManagerPolicy != string(cpumanager.PolicyStatic) {
+func GetStaticCPUManagerPolicyReservedCPUs(topology *topology.CPUTopology, kubeletConfiguration *kubeletconfiginternal.KubeletConfiguration) (cpuset.CPUSet, error) {
+	if kubeletConfiguration.CPUManagerPolicy != string(cpumanager.PolicyStatic) {
 		return cpuset.CPUSet{}, nil
 	}
 
-	reservedCPUs, kubeReserved, systemReserved, err := GetKubeletReservedOptions(kubeletOptions, topology)
+	reservedCPUs, kubeReserved, systemReserved, err := GetKubeletReservedOptions(kubeletConfiguration, topology)
 	if err != nil {
 		return cpuset.CPUSet{}, err
 	}
 
 	nodeAllocatableReservation, err := GetNodeAllocatableReservation(topology.NumCPUs, 0,
-		kubeletOptions.EvictionHard, systemReserved, kubeReserved, kubeletOptions.ExperimentalNodeAllocatableIgnoreEvictionThreshold)
+		kubeletConfiguration.EvictionHard, systemReserved, kubeReserved, false)
 	if err != nil {
 		return cpuset.CPUSet{}, err
 	}
@@ -238,29 +118,29 @@ func getNumReservedCPUs(nodeAllocatableReservation corev1.ResourceList) (int, er
 	return numReservedCPUs, nil
 }
 
-func GetKubeletReservedOptions(kubeletOptions *KubeletOptions, topology *topology.CPUTopology) (reservedSystemCPUs cpuset.CPUSet, kubeReserved, systemReserved corev1.ResourceList, err error) {
-	reservedSystemCPUs, err = getReservedCPUs(topology, kubeletOptions.ReservedSystemCPUs)
+func GetKubeletReservedOptions(kubeletConfiguration *kubeletconfiginternal.KubeletConfiguration, topology *topology.CPUTopology) (reservedSystemCPUs cpuset.CPUSet, kubeReserved, systemReserved corev1.ResourceList, err error) {
+	reservedSystemCPUs, err = getReservedCPUs(topology, kubeletConfiguration.ReservedSystemCPUs)
 	if err != nil {
 		return
 	}
 	if reservedSystemCPUs.Size() > 0 {
 		// at cmd option validation phase it is tested either --system-reserved-cgroup or --kube-reserved-cgroup is specified, so overwrite should be ok
-		klog.InfoS("Option --reserved-cpus is specified, it will overwrite the cpu setting in KubeReserved and SystemReserved", "kubeReservedCPUs", kubeletOptions.KubeReserved, "systemReservedCPUs", kubeletOptions.SystemReserved)
-		if kubeletOptions.KubeReserved != nil {
-			delete(kubeletOptions.KubeReserved, "cpu")
+		klog.InfoS("Option --reserved-cpus is specified, it will overwrite the cpu setting in KubeReserved and SystemReserved", "kubeReservedCPUs", kubeletConfiguration.KubeReserved, "systemReservedCPUs", kubeletConfiguration.SystemReserved)
+		if kubeletConfiguration.KubeReserved != nil {
+			delete(kubeletConfiguration.KubeReserved, "cpu")
 		}
-		if kubeletOptions.SystemReserved == nil {
-			kubeletOptions.SystemReserved = make(map[string]string)
+		if kubeletConfiguration.SystemReserved == nil {
+			kubeletConfiguration.SystemReserved = make(map[string]string)
 		}
-		kubeletOptions.SystemReserved["cpu"] = strconv.Itoa(reservedSystemCPUs.Size())
-		klog.InfoS("After cpu setting is overwritten", "kubeReservedCPUs", kubeletOptions.KubeReserved, "systemReservedCPUs", kubeletOptions.SystemReserved)
+		kubeletConfiguration.SystemReserved["cpu"] = strconv.Itoa(reservedSystemCPUs.Size())
+		klog.InfoS("After cpu setting is overwritten", "kubeReservedCPUs", kubeletConfiguration.KubeReserved, "systemReservedCPUs", kubeletConfiguration.SystemReserved)
 	}
 
-	kubeReserved, err = parseResourceList(kubeletOptions.KubeReserved)
+	kubeReserved, err = parseResourceList(kubeletConfiguration.KubeReserved)
 	if err != nil {
 		return
 	}
-	systemReserved, err = parseResourceList(kubeletOptions.SystemReserved)
+	systemReserved, err = parseResourceList(kubeletConfiguration.SystemReserved)
 	if err != nil {
 		return
 	}

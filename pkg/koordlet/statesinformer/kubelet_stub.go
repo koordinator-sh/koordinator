@@ -28,10 +28,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
+	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
+	"k8s.io/kubernetes/cmd/kubelet/app/options"
+	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
+	kubeletscheme "k8s.io/kubernetes/pkg/kubelet/apis/config/scheme"
 )
 
 type KubeletStub interface {
 	GetAllPods() (corev1.PodList, error)
+	GetKubeletConfiguration() (*kubeletconfiginternal.KubeletConfiguration, error)
 }
 
 type kubeletStub struct {
@@ -88,4 +93,49 @@ func (k *kubeletStub) GetAllPods() (corev1.PodList, error) {
 		return podList, fmt.Errorf("parse kubelet pod list failed, err: %v", err)
 	}
 	return podList, nil
+}
+
+type kubeletConfigz struct {
+	ComponentConfig kubeletconfigv1beta1.KubeletConfiguration `json:"kubeletconfig"`
+}
+
+func (k *kubeletStub) GetKubeletConfiguration() (*kubeletconfiginternal.KubeletConfiguration, error) {
+	configzURL := url.URL{
+		Scheme: k.scheme,
+		Host:   net.JoinHostPort(k.addr, strconv.Itoa(k.port)),
+		Path:   "/configz",
+	}
+	rsp, err := k.httpClient.Get(configzURL.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rsp.Body.Close()
+
+	if rsp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("request %s failed, code %d", configzURL.String(), rsp.StatusCode)
+	}
+
+	body, err := io.ReadAll(rsp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var configz kubeletConfigz
+	if err = json.Unmarshal(body, &configz); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal kubeletConfigz: %v", err)
+	}
+
+	kubeletConfiguration, err := options.NewKubeletConfiguration()
+	if err != nil {
+		return nil, err
+	}
+
+	scheme, _, err := kubeletscheme.NewSchemeAndCodecs()
+	if err != nil {
+		return nil, err
+	}
+	if err = scheme.Convert(&configz.ComponentConfig, kubeletConfiguration, nil); err != nil {
+		return nil, err
+	}
+	return kubeletConfiguration, nil
 }

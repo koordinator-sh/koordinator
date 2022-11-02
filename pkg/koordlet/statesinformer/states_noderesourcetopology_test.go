@@ -19,8 +19,6 @@ package statesinformer
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"os"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -30,7 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
+	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
@@ -249,11 +247,6 @@ func Test_reportNodeTopology(t *testing.T) {
 			assert.NoError(t, err)
 		}()
 
-		oldFn := getKubeletCommandlineFn
-		defer func() {
-			getKubeletCommandlineFn = oldFn
-		}()
-
 		client := topologyclientsetfake.NewSimpleClientset()
 		testNode := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
@@ -322,12 +315,14 @@ func Test_reportNodeTopology(t *testing.T) {
 				node: testNode,
 			},
 			callbackRunner: NewCallbackRunner(),
-		}
-
-		getKubeletCommandlineFn = func(port int) ([]string, error) {
-			tempDir := os.TempDir()
-			args := []string{"/usr/bin/kubelet", fmt.Sprintf("--root-dir=%s", tempDir), "--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf", "--kubeconfig=/etc/kubernetes/kubelet.conf", "--container-log-max-files", "10", "--container-log-max-size=100Mi", "--max-pods", "213", "--pod-max-pids", "16384", "--pod-manifest-path=/etc/kubernetes/manifests", "--network-plugin=cni", "--cni-conf-dir=/etc/cni/net.d", "--cni-bin-dir=/opt/cni/bin", "--v=3", "--enable-controller-attach-detach=true", "--cluster-dns=192.168.0.10", "--pod-infra-container-image=registry-vpc.cn-hangzhou.aliyuncs.com/acs/pause:3.5", "--enable-load-reader", "--cluster-domain=cluster.local", "--cloud-provider=external", "--hostname-override=cn-hangzhou.10.0.4.18", "--provider-id=cn-hangzhou.i-bp1049apy5ggvw0qbuh6", "--authorization-mode=Webhook", "--authentication-token-webhook=true", "--anonymous-auth=false", "--client-ca-file=/etc/kubernetes/pki/ca.crt", "--cgroup-driver=systemd", "--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_128_GCM_SHA256", "--tls-cert-file=/var/lib/kubelet/pki/kubelet.crt", "--tls-private-key-file=/var/lib/kubelet/pki/kubelet.key", "--rotate-certificates=true", "--cert-dir=/var/lib/kubelet/pki", "--node-labels=alibabacloud.com/nodepool-id=npab2a7b3f6ce84f5aacc55b08df6b8ecd,ack.aliyun.com=c5558876cbc06429782797388d4abe3e0", "--eviction-hard=imagefs.available<15%,memory.available<300Mi,nodefs.available<10%,nodefs.inodesFree<5%", "--system-reserved=cpu=200m,memory=2732Mi", "--kube-reserved=cpu=1800m,memory=2732Mi", "--kube-reserved=pid=1000", "--system-reserved=pid=1000", "--cpu-manager-policy=static", "--container-runtime=remote", "--container-runtime-endpoint=/var/run/containerd/containerd.sock"}
-			return args, nil
+			kubelet: &testKubeletStub{
+				config: &kubeletconfiginternal.KubeletConfiguration{
+					CPUManagerPolicy: "static",
+					KubeReserved: map[string]string{
+						"cpu": "2000m",
+					},
+				},
+			},
 		}
 
 		// reporting enabled
@@ -337,7 +332,7 @@ func Test_reportNodeTopology(t *testing.T) {
 		assert.Equal(t, nil, err)
 
 		expectKubeletCPUManagerPolicy := extension.KubeletCPUManagerPolicy{
-			Policy:       string(cpumanager.PolicyStatic),
+			Policy:       "static",
 			ReservedCPUs: "0-1",
 		}
 		var kubeletCPUManagerPolicy extension.KubeletCPUManagerPolicy

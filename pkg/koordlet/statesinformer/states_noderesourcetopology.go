@@ -43,15 +43,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	kubeletutil "github.com/koordinator-sh/koordinator/pkg/util/kubelet"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (
 	nodeTopoInformerName pluginName = "nodeTopoInformer"
-)
-
-var (
-	getKubeletCommandlineFn = system.GetKubeletCommandline
 )
 
 type nodeTopoInformer struct {
@@ -63,6 +58,7 @@ type nodeTopoInformer struct {
 	metricCache    metriccache.MetricCache
 	callbackRunner *callbackRunner
 
+	kubelet      KubeletStub
 	nodeInformer *nodeInformer
 	podsInformer *podsInformer
 }
@@ -103,6 +99,14 @@ func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 	if !cache.WaitForCacheSync(stopCh, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
 		klog.Fatalf("timed out waiting for pod caches to sync")
 	}
+	if s.config.NodeTopologySyncInterval <= 0 {
+		return
+	}
+	stub, err := newKubeletStubFromConfig(s.nodeInformer.GetNode(), s.config)
+	if err != nil {
+		klog.Fatalf("create kubelet stub, %v", err)
+	}
+	s.kubelet = stub
 	go wait.Until(s.reportNodeTopology, s.config.NodeTopologySyncInterval, stopCh)
 	klog.V(2).Infof("node topo informer started")
 }
@@ -139,28 +143,21 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 		return nil, fmt.Errorf("failed to calculate cpu topology, err: %v", err)
 	}
 
-	kubeletPort := int(s.nodeInformer.GetNode().Status.DaemonEndpoints.KubeletEndpoint.Port)
-	args, err := getKubeletCommandlineFn(kubeletPort)
+	kubeletConfiguration, err := s.kubelet.GetKubeletConfiguration()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Kubelet commandline with kubeletPort %d, err: %v", kubeletPort, err)
+		return nil, fmt.Errorf("failed to GetKubeletConfiguration, err: %v", err)
 	}
-
-	klog.V(5).Infof("kubelet args: %v", args)
-
-	kubeletOptions, err := kubeletutil.NewKubeletOptions(args)
-	if err != nil {
-		return nil, fmt.Errorf("failed to NewKubeletOptions, err: %v", err)
-	}
+	klog.V(5).Infof("kubelet args: %v", kubeletConfiguration)
 
 	// default policy is none
 	cpuManagerPolicy := extension.KubeletCPUManagerPolicy{
-		Policy:  kubeletOptions.CPUManagerPolicy,
-		Options: kubeletOptions.CPUManagerPolicyOptions,
+		Policy:  kubeletConfiguration.CPUManagerPolicy,
+		Options: kubeletConfiguration.CPUManagerPolicyOptions,
 	}
 
-	if kubeletOptions.CPUManagerPolicy == string(cpumanager.PolicyStatic) {
+	if kubeletConfiguration.CPUManagerPolicy == string(cpumanager.PolicyStatic) {
 		topology := kubeletutil.NewCPUTopology((*util.LocalCPUInfo)(nodeCPUInfo))
-		reservedCPUs, err := kubeletutil.GetStaticCPUManagerPolicyReservedCPUs(topology, kubeletOptions)
+		reservedCPUs, err := kubeletutil.GetStaticCPUManagerPolicyReservedCPUs(topology, kubeletConfiguration)
 		if err != nil {
 			klog.Errorf("Failed to GetStaticCPUManagerPolicyReservedCPUs, err: %v", err)
 		}
@@ -176,8 +173,9 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 		return nil, fmt.Errorf("failed to marshal cpu manager policy, err: %v", err)
 	}
 
-	var podAllocsJSON []byte
-	stateFilePath := kubeletutil.GetCPUManagerStateFilePath(kubeletOptions.RootDirectory)
+	// Users can specify the kubelet RootDirectory on the host in the koordlet DaemonSet,
+	// but inside koordlet it is always mounted to the path /var/lib/kubelet
+	stateFilePath := kubeletutil.GetCPUManagerStateFilePath("/var/lib/kubelet")
 	data, err := os.ReadFile(stateFilePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -185,6 +183,7 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 		}
 	}
 	// TODO: report lse/lsr pod from cgroup
+	var podAllocsJSON []byte
 	if len(data) > 0 {
 		podAllocs, err := s.calGuaranteedCpu(sharedPoolCPUs, string(data))
 		if err != nil {
