@@ -38,6 +38,7 @@ type ExtendedHandle interface {
 	KoordinatorClientSet() koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory
 	SnapshotSharedLister() framework.SharedLister
+	Run()
 }
 
 type extendedHandleOptions struct {
@@ -82,6 +83,7 @@ type frameworkExtendedHandleImpl struct {
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	sharedListerAdapter              SharedListerAdapter
+	controllerMaps                   *ControllersMap
 }
 
 func NewExtendedHandle(options ...Option) ExtendedHandle {
@@ -95,7 +97,12 @@ func NewExtendedHandle(options ...Option) ExtendedHandle {
 		koordinatorClientSet:             handleOptions.koordinatorClientSet,
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
 		sharedListerAdapter:              handleOptions.sharedListerAdapter,
+		controllerMaps:                   NewControllersMap(),
 	}
+}
+
+func (ext *frameworkExtendedHandleImpl) Run() {
+	go ext.controllerMaps.Start()
 }
 
 func (ext *frameworkExtendedHandleImpl) KoordinatorClientSet() koordinatorclientset.Interface {
@@ -253,6 +260,9 @@ func PluginFactoryProxy(extendHandle ExtendedHandle, factoryFn frameworkruntime.
 		}
 		if impl.servicesEngine != nil {
 			impl.servicesEngine.RegisterPluginService(plugin)
+		}
+		if impl.controllerMaps != nil {
+			impl.controllerMaps.RegisterControllers(plugin)
 		}
 		return plugin, nil
 	}

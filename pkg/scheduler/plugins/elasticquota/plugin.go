@@ -38,6 +38,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
@@ -140,22 +141,22 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	handle.SharedInformerFactory().WaitForCacheSync(ctx.Done())
 
 	elasticQuota.migrateDefaultQuotaGroupsPod()
-	elasticQuota.Start()
+	elasticQuota.createSystemQuotaIfNotPresent()
+	elasticQuota.createDefaultQuotaIfNotPresent()
 
 	return elasticQuota, nil
 }
 
 func (g *Plugin) Start() {
-	g.createDefaultQuotaIfNotPresent()
-	g.createSystemQuotaIfNotPresent()
+	go wait.Until(g.migrateDefaultQuotaGroupsPod, MigrateDefaultQuotaGroupsPodCycle, nil)
+	klog.Infof("start migrate pod from defaultQuotaGroup")
+}
 
+func (g *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 	quotaOverUsedRevokeController := NewQuotaOverUsedRevokeController(g.handle.ClientSet(), g.pluginArgs.DelayEvictTime.Duration,
 		g.pluginArgs.RevokePodInterval.Duration, g.groupQuotaManager, *g.pluginArgs.MonitorAllQuotas)
 	elasticQuotaController := NewElasticQuotaController(g.client, g.quotaLister, g.groupQuotaManager)
-
-	go wait.Until(g.migrateDefaultQuotaGroupsPod, MigrateDefaultQuotaGroupsPodCycle, nil)
-	go quotaOverUsedRevokeController.Start()
-	go elasticQuotaController.Start()
+	return []frameworkext.Controller{g, quotaOverUsedRevokeController, elasticQuotaController}, nil
 }
 
 func (g *Plugin) Name() string {

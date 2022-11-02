@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -180,9 +179,8 @@ func TestController_Run(t *testing.T) {
 				},
 			}
 			suit := newPluginTestSuitWithPod(t, nodes, nil)
-			//pl := suit.plugin.(*Plugin)
-			//ctrl := NewElasticQuotaController(pl.handle, pl.quotaLister, pl.groupQuotaManager)
-
+			p := suit.plugin.(*Plugin)
+			ctrl := NewElasticQuotaController(p.client, p.quotaLister, p.groupQuotaManager)
 			for _, v := range c.elasticQuotas {
 				suit.client.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Create(ctx, v, metav1.CreateOptions{})
 			}
@@ -191,6 +189,7 @@ func TestController_Run(t *testing.T) {
 				suit.Handle.ClientSet().CoreV1().Pods(p.Namespace).Create(ctx, p, metav1.CreateOptions{})
 			}
 			time.Sleep(100 * time.Millisecond)
+			ctrl.Start()
 			var err error
 			for i := 0; i < 10; i++ {
 				for _, v := range c.want {
@@ -212,7 +211,6 @@ func TestController_Run(t *testing.T) {
 			}
 			if err != nil {
 				klog.ErrorS(err, "Elastic Quota Test Failed\n")
-				os.Exit(1)
 			}
 		})
 	}

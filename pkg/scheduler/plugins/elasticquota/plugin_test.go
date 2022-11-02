@@ -1425,6 +1425,7 @@ func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {
 	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName("default").PodCache))
 	plugin.addQuota("test1", "root", 96, 160, 100, 160, 96, 160, true, "")
 	time.Sleep(100 * time.Millisecond)
+	go plugin.Start()
 	for i := 0; i < 10; i++ {
 		if len(gqm.GetQuotaInfoByName("default").GetPodCache()) != 0 || len(gqm.GetQuotaInfoByName("test1").GetPodCache()) != 4 {
 			time.Sleep(1 * time.Second)

@@ -35,6 +35,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/controller"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
@@ -44,6 +45,7 @@ import (
 type Coscheduling struct {
 	frameworkHandler framework.Handle
 	pgMgr            core.Manager
+	workers          int
 }
 
 var _ framework.QueueSortPlugin = &Coscheduling{}
@@ -82,20 +84,17 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	ctx := context.TODO()
 
 	pgMgr := core.NewPodGroupManager(pgClient, pgInformer, podInformer, args)
-	plugin := &Coscheduling{
-		frameworkHandler: handle,
-		pgMgr:            pgMgr,
-	}
-
-	// start the PodGroupController
-	podGroupController := controller.NewPodGroupController(handle.ClientSet(), pgInformer, podInformer, pgClient, pgMgr, handle.EventRecorder())
 	var controllerWorkers int
 	if args == nil {
 		controllerWorkers = 1
 	} else {
 		controllerWorkers = int(*args.ControllerWorkers)
 	}
-	go podGroupController.Run(controllerWorkers, ctx.Done())
+	plugin := &Coscheduling{
+		frameworkHandler: handle,
+		pgMgr:            pgMgr,
+		workers:          controllerWorkers,
+	}
 
 	pgInformerFactory.Start(ctx.Done())
 	handle.SharedInformerFactory().Start(ctx.Done())
@@ -104,6 +103,24 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	handle.SharedInformerFactory().WaitForCacheSync(ctx.Done())
 
 	return plugin, nil
+}
+
+func (cs *Coscheduling) NewControllers() ([]frameworkext.Controller, error) {
+	handle := cs.frameworkHandler
+	pgClient, ok := handle.(pgclientset.Interface)
+	if !ok {
+		kubeConfig := *handle.KubeConfig()
+		kubeConfig.ContentType = runtime.ContentTypeJSON
+		kubeConfig.AcceptContentTypes = runtime.ContentTypeJSON
+		pgClient = pgclientset.NewForConfigOrDie(&kubeConfig)
+	}
+	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
+	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
+	podInformer := handle.SharedInformerFactory().Core().V1().Pods()
+	// start the PodGroupController
+	pgMgr := cs.pgMgr.(*core.PodGroupManager)
+	podGroupController := controller.NewPodGroupController(handle.ClientSet(), pgInformer, podInformer, pgClient, pgMgr, handle.EventRecorder(), cs.workers)
+	return []frameworkext.Controller{podGroupController}, nil
 }
 
 func (cs *Coscheduling) EventsToRegister() []framework.ClusterEvent {

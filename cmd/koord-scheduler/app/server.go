@@ -126,16 +126,16 @@ func runCommand(cmd *cobra.Command, opts *options.Options, schedulingHooks []fra
 		cancel()
 	}()
 
-	cc, sched, err := Setup(ctx, opts, schedulingHooks, registryOptions...)
+	cc, sched, extendedHandle, err := Setup(ctx, opts, schedulingHooks, registryOptions...)
 	if err != nil {
 		return err
 	}
 
-	return Run(ctx, cc, sched)
+	return Run(ctx, cc, sched, extendedHandle)
 }
 
 // Run executes the scheduler based on the given configuration. It only returns on error or when context is done.
-func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *scheduler.Scheduler) error {
+func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *scheduler.Scheduler, extendedHandle frameworkext.ExtendedHandle) error {
 	// To help debugging, immediately log version
 	klog.V(1).InfoS("Starting Koordinator Scheduler version", "version", version.Get())
 
@@ -203,6 +203,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 		cc.LeaderElection.Callbacks = leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				close(waitingForLeader)
+				go extendedHandle.Run()
 				sched.Run(ctx)
 			},
 			OnStoppedLeading: func() {
@@ -229,6 +230,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 
 	// Leader election is disabled, so runCommand inline until done.
 	close(waitingForLeader)
+	go extendedHandle.Run()
 	sched.Run(ctx)
 	return fmt.Errorf("finished without leader elect")
 }
@@ -314,20 +316,20 @@ func WithPlugin(name string, factory runtime.PluginFactory) Option {
 }
 
 // Setup creates a completed config and a scheduler based on the command args and options
-func Setup(ctx context.Context, opts *options.Options, schedulingHooks []frameworkext.SchedulingPhaseHook, outOfTreeRegistryOptions ...Option) (*schedulerserverconfig.CompletedConfig, *scheduler.Scheduler, error) {
+func Setup(ctx context.Context, opts *options.Options, schedulingHooks []frameworkext.SchedulingPhaseHook, outOfTreeRegistryOptions ...Option) (*schedulerserverconfig.CompletedConfig, *scheduler.Scheduler, frameworkext.ExtendedHandle, error) {
 	if cfg, err := latest.Default(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	} else {
 		opts.ComponentConfig = cfg
 	}
 
 	if errs := opts.Validate(); len(errs) > 0 {
-		return nil, nil, utilerrors.NewAggregate(errs)
+		return nil, nil, nil, utilerrors.NewAggregate(errs)
 	}
 
 	c, err := opts.Config()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Get the completed config
@@ -344,7 +346,7 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 	outOfTreeRegistry := make(runtime.Registry)
 	for _, option := range outOfTreeRegistryOptions {
 		if err := option(extendedHandle, outOfTreeRegistry); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -371,10 +373,10 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 		}),
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := scheduleroptions.LogOrWriteConfig(opts.WriteConfigTo, &cc.ComponentConfig, completedProfiles); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// TODO(joseph): Some extensions can also be made in the future,
@@ -392,5 +394,5 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 	eventhandlers.AddScheduleEventHandler(sched, schedulerInternalHandler, extendedHandle)
 	eventhandlers.AddReservationErrorHandler(sched, schedulerInternalHandler, extendedHandle)
 
-	return &cc, sched, nil
+	return &cc, sched, extendedHandle, nil
 }

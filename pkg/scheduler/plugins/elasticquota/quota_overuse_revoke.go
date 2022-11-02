@@ -38,6 +38,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
+const (
+	QuotaOverUsedRevokeControllerName = "QuotaOverUsedRevokeController"
+)
+
 type QuotaOverUsedGroupMonitor struct {
 	groupQuotaManger             *core.GroupQuotaManager
 	quotaName                    string
@@ -166,8 +170,13 @@ func NewQuotaOverUsedRevokeController(client clientset.Interface, overUsedTrigge
 	return controller
 }
 
+func (controller *QuotaOverUsedRevokeController) Name() string {
+	return QuotaOverUsedRevokeControllerName
+}
+
 func (controller *QuotaOverUsedRevokeController) Start() {
 	go wait.Until(controller.revokePodDueToQuotaOverUsed, controller.revokePodCycle, nil)
+	klog.Infof("start elasticQuota QuotaOverUsedRevokeController")
 }
 
 func (controller *QuotaOverUsedRevokeController) revokePodDueToQuotaOverUsed() {
