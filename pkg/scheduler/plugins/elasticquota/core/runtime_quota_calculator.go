@@ -17,6 +17,8 @@ limitations under the License.
 package core
 
 import (
+	"math"
+	"sort"
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
@@ -48,17 +50,21 @@ func NewQuotaNode(quotaName string, sharedWeight, request, min int64, allowLentR
 // quotaTree abstract the struct to calculate each resource dimension's runtime Quota independently
 type quotaTree struct {
 	quotaNodes map[string]*quotaNode
+	sortQuota  *SortQ
 }
 
 func NewQuotaTree() *quotaTree {
 	return &quotaTree{
 		quotaNodes: make(map[string]*quotaNode),
+		sortQuota:  &SortQ{},
 	}
 }
 
 func (qt *quotaTree) insert(groupName string, sharedWeight, request, min int64, allowLentResource bool) {
 	if _, exist := qt.quotaNodes[groupName]; !exist {
-		qt.quotaNodes[groupName] = NewQuotaNode(groupName, sharedWeight, request, min, allowLentResource)
+		node := NewQuotaNode(groupName, sharedWeight, request, min, allowLentResource)
+		qt.quotaNodes[groupName] = node
+		qt.sortQuota.insert(node)
 	}
 }
 
@@ -100,20 +106,28 @@ func (qt *quotaTree) redistribution(totalResource int64) {
 	toPartitionResource := totalResource
 	totalSharedWeight := int64(0)
 	needAdjustQuotaNodes := make([]*quotaNode, 0)
-	for _, node := range qt.quotaNodes {
+	for _, node := range qt.sortQuota.items {
 		if node.request > node.min {
 			// if a node's request > autoScaleMin, the node needs adjustQuota
-			// the node's runtime is autoScaleMin
-			needAdjustQuotaNodes = append(needAdjustQuotaNodes, node)
-			totalSharedWeight += node.sharedWeight
-			node.runtimeQuota = node.min
-		} else {
-			if node.allowLentResource {
-				node.runtimeQuota = node.request
-			} else {
-				// if node is not allowLentResource, even if the request is smaller
-				// than autoScaleMin, runtimeQuota is request.
+			// the node's fairshare is autoScaleMin
+			if toPartitionResource > node.min {
+				needAdjustQuotaNodes = append(needAdjustQuotaNodes, node)
+				totalSharedWeight += node.sharedWeight
 				node.runtimeQuota = node.min
+			} else {
+				node.runtimeQuota = toPartitionResource
+			}
+		} else {
+			if toPartitionResource > node.request {
+				if node.allowLentResource {
+					node.runtimeQuota = node.request
+				} else {
+					// if node is not allowLentResource, even if the request is smaller
+					// than autoScaleMin, fairShare is request.
+					node.runtimeQuota = int64(math.Min(float64(node.min), float64(toPartitionResource)))
+				}
+			} else {
+				node.runtimeQuota = toPartitionResource
 			}
 		}
 		toPartitionResource -= node.runtimeQuota
@@ -148,6 +162,20 @@ func (qt *quotaTree) iterationForRedistribution(totalRes, totalSharedWeight int6
 	if toPartitionResource > 0 && len(needAdjustQuotaNodes) > 0 {
 		qt.iterationForRedistribution(toPartitionResource, needAdjustTotalSharedWeight, needAdjustQuotaNodes)
 	}
+}
+
+type SortQ struct {
+	items []*quotaNode
+}
+
+//insert sort by quota quotaName
+func (sq *SortQ) insert(sn *quotaNode) {
+	i := sort.Search(len(sq.items), func(i int) bool {
+		return sq.items[i].quotaName > sn.quotaName
+	})
+	sq.items = append(sq.items, nil)
+	copy(sq.items[i+1:], sq.items[i:])
+	sq.items[i] = sn
 }
 
 type quotaResMapType map[string]v1.ResourceList

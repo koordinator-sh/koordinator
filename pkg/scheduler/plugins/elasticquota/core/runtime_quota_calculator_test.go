@@ -300,7 +300,7 @@ func TestRuntimeQuotaCalculator_NeedUpdateOneGroupRequest(t *testing.T) {
 
 func TestRuntimeQuotaCalculator_UpdateOneGroupRequest(t *testing.T) {
 	qtw := createRuntimeQuotaCalculator()
-	totalResource := createResourceList(50, 5000)
+	totalResource := createResourceList(150, 15000)
 	qtw.setClusterTotalResource(totalResource)
 	quotaCount := 5
 	for i := 1; i <= quotaCount; i++ {
@@ -375,7 +375,7 @@ func TestRuntimeQuotaCalculator_UpdateOneGroupRuntimeQuota(t *testing.T) {
 	assert.Equal(t, request, test1.CalculateInfo.Runtime)
 
 	qtw.updateOneGroupRuntimeQuota(test2)
-	assert.Equal(t, test2.CalculateInfo.AutoScaleMin, test2.CalculateInfo.Runtime)
+	assert.Equal(t, createResourceList(40, 400), test2.CalculateInfo.Runtime)
 }
 
 func TestRuntimeQuotaCalculator_UpdateOneGroupRuntimeQuota2(t *testing.T) {
@@ -435,4 +435,24 @@ func TestQuotaInfo_GetRuntime(t *testing.T) {
 	assert.Equal(t, qi.getMaskedRuntimeNoLock(), corev1.ResourceList{
 		"cpu": *resource.NewQuantity(10, resource.DecimalSI),
 	})
+}
+
+func TestQuotaInfo_SortQuota(t *testing.T) {
+	ss := []*quotaNode{
+		{quotaName: "a1", min: 20},
+		{quotaName: "a2", min: 10},
+		{quotaName: "a3", min: 30},
+		{quotaName: "a4", min: 10},
+		{quotaName: "a5", min: 30},
+	}
+	sq := SortQ{}
+	for _, i := range ss {
+		sq.insert(i)
+	}
+	assert.Equal(t, 5, len(sq.items))
+	assert.Equal(t, int64(20), sq.items[0].min)
+	assert.Equal(t, int64(10), sq.items[1].min)
+	assert.Equal(t, int64(30), sq.items[2].min)
+	assert.Equal(t, int64(10), sq.items[3].min)
+	assert.Equal(t, int64(30), sq.items[4].min)
 }
