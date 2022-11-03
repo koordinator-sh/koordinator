@@ -23,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sys/unix"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
@@ -92,11 +91,16 @@ func (c *performanceCollector) collectContainerCPI() {
 			if !ok {
 				return
 			}
-			c.profilePerfOnSingleContainer(status, oneCollector.(*perf.PerfCollector), podUid)
+			perfCollector, ok := oneCollector.(*perf.PerfCollector)
+			if !ok {
+				klog.Errorf("PerfCollector type convert failed")
+				return
+			}
+			c.profilePerfOnSingleContainer(status, perfCollector, podUid)
 
-			err1 := unix.Close(oneCollector.(*perf.PerfCollector).CgroupFd)
-			if err1 != nil {
-				klog.Errorf("close CgroupFd %v, err : %v", oneCollector.(*perf.PerfCollector).CgroupFd, err1)
+			cleanErr := perfCollector.CleanUp()
+			if cleanErr != nil {
+				klog.Errorf("PerfCollector cleanup err : %v", cleanErr)
 			}
 		}(containerStatus, string(podUid))
 	}
