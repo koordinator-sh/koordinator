@@ -99,5 +99,6 @@ func (g *Plugin) OnNodeDelete(obj interface{}) {
 	allocatable := node.Status.Allocatable
 	delta := quotav1.Subtract(corev1.ResourceList{}, allocatable)
 	g.groupQuotaManager.UpdateClusterTotalResource(delta)
+	delete(g.nodeResourceMap, node.Name)
 	klog.V(5).Infof("OnNodeDeleteFunc success:%v [%v]", node.Name, delta)
 }
