@@ -1386,7 +1386,8 @@ func TestPlugin_Recover(t *testing.T) {
 		suit.Handle.ClientSet().CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
 	}
 	time.Sleep(100 * time.Millisecond)
-	suit.AddQuota("test1", "", 100, 1000, 0, 0, 0, 0, false, "")
+	suit.AddQuota("test1", "test-parent", 100, 1000, 0, 0, 0, 0, false, "")
+	suit.AddQuota("test-parent", "root", 100, 1000, 0, 0, 0, 0, true, "")
 	time.Sleep(100 * time.Millisecond)
 	pods := []*corev1.Pod{
 		defaultCreatePodWithQuotaName("1", "test1", 10, 10, 10),
@@ -1404,6 +1405,7 @@ func TestPlugin_Recover(t *testing.T) {
 	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetRequest(), createResourceList(40, 40))
 	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetUsed(), createResourceList(40, 40))
 	assert.True(t, v1.IsZero(pl.groupQuotaManager.GetQuotaInfoByName("default").GetRequest()))
+	assert.Equal(t, len(pl.groupQuotaManager.GetAllQuotaNames()), 4)
 }
 
 func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {
