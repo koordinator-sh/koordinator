@@ -262,6 +262,20 @@ func (mr *MockMetricCacheMockRecorder) InsertNodeResourceMetric(t, nodeResUsed i
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertNodeResourceMetric", reflect.TypeOf((*MockMetricCache)(nil).InsertNodeResourceMetric), t, nodeResUsed)
 }
 
+// InsertPodInterferenceMetrics mocks base method.
+func (m *MockMetricCache) InsertPodInterferenceMetrics(t time.Time, metric *metriccache.PodInterferenceMetric) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InsertPodInterferenceMetrics", t, metric)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InsertPodInterferenceMetrics indicates an expected call of InsertPodInterferenceMetrics.
+func (mr *MockMetricCacheMockRecorder) InsertPodInterferenceMetrics(t, metric interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertPodInterferenceMetrics", reflect.TypeOf((*MockMetricCache)(nil).InsertPodInterferenceMetrics), t, metric)
+}
+
 // InsertPodResourceMetric mocks base method.
 func (m *MockMetricCache) InsertPodResourceMetric(t time.Time, podResUsed *metriccache.PodResourceMetric) error {
 	m.ctrl.T.Helper()

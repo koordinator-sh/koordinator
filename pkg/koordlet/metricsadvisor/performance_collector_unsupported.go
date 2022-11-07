@@ -31,3 +31,7 @@ func NewPerformanceCollector(statesInformer statesinformer.StatesInformer, metri
 }
 
 func (p *performanceCollector) collectContainerCPI() {}
+
+func (c *performanceCollector) collectContainerPSI() {}
+
+func (c *performanceCollector) collectPodPSI() {}

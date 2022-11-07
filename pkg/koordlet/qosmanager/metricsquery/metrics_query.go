@@ -57,13 +57,13 @@ type metricsQuery struct {
 	statesInformer statesinformer.StatesInformer
 }
 
-//  CollectNodeMetricsAvg impl plugins.MetricQuery interface.
+// CollectNodeMetricsAvg impl plugins.MetricQuery interface.
 func (r *metricsQuery) CollectNodeMetricsAvg(windowSeconds int64) metriccache.NodeResourceQueryResult {
 	queryParam := GenerateQueryParamsAvg(windowSeconds)
 	return r.collectNodeMetric(queryParam)
 }
 
-//  CollectNodeAndPodMetricLast impl plugins.MetricQuery interface.
+// CollectNodeAndPodMetricLast impl plugins.MetricQuery interface.
 func (r *metricsQuery) CollectNodeAndPodMetricLast(collectResUsedIntervalSeconds int64) (
 	*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
 
@@ -71,7 +71,7 @@ func (r *metricsQuery) CollectNodeAndPodMetricLast(collectResUsedIntervalSeconds
 	return r.CollectNodeAndPodMetrics(queryParam)
 }
 
-//  CollectNodeAndPodMetrics impl plugins.MetricQuery interface.
+// CollectNodeAndPodMetrics impl plugins.MetricQuery interface.
 func (r *metricsQuery) CollectNodeAndPodMetrics(queryParam *metriccache.QueryParam) (
 	*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
 

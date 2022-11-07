@@ -193,6 +193,21 @@ func Test_GetContainerPerfCollector(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
+func Test_GetPodPSI(t *testing.T) {
+	tempDir := t.TempDir()
+	_, err := GetPodPSI(tempDir)
+	assert.NotNil(t, err)
+}
+
+func Test_GetContainerPSI(t *testing.T) {
+	tempDir := t.TempDir()
+	c := &corev1.ContainerStatus{
+		ContainerID: "containerd://test",
+	}
+	_, err := GetContainerPSI(tempDir, c)
+	assert.NotNil(t, err)
+}
+
 func getUsageContents() string {
 	return "1356232"
 }

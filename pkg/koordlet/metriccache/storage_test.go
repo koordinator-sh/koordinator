@@ -78,6 +78,22 @@ func EqualContainerCPIMetric(a, b *containerCPIMetric) bool {
 	return reflect.DeepEqual(a, b)
 }
 
+func EqualContainerPSIMetric(a, b *containerPSIMetric) bool {
+	if !a.Timestamp.Equal(b.Timestamp) {
+		return false
+	}
+	a.Timestamp = b.Timestamp
+	return reflect.DeepEqual(a, b)
+}
+
+func EqualPodCPIMetric(a, b *podPSIMetric) bool {
+	if !a.Timestamp.Equal(b.Timestamp) {
+		return false
+	}
+	a.Timestamp = b.Timestamp
+	return reflect.DeepEqual(a, b)
+}
+
 func EqualRawRecord(a, b *rawRecord) bool {
 	return reflect.DeepEqual(a, b)
 }
@@ -755,6 +771,182 @@ func Test_storage_ContainerCPIMetric_CRUD(t *testing.T) {
 			}
 			if len(gotAfterDelete) != 0 {
 				t.Errorf("GetContainerCPIMetric after delete %v", gotAfterDelete)
+			}
+		})
+	}
+}
+
+func Test_storage_ContainerPSIMetric_CRUD(t *testing.T) {
+	now := time.Now()
+	uid := "test-container-uid"
+	type args struct {
+		samples []containerPSIMetric
+		uid     string
+		start   time.Time
+		end     time.Time
+	}
+	tests := []struct {
+		name string
+		args args
+		want []containerPSIMetric
+	}{
+		{
+			name: "container-psi-metric-crud",
+			args: args{
+				samples: []containerPSIMetric{
+					{
+						ID:           uint64(now.UnixNano()),
+						ContainerID:  uid,
+						SomeCPUAvg10: 6,
+						SomeMemAvg10: 6,
+						SomeIOAvg10:  6,
+						FullCPUAvg10: 6,
+						FullMemAvg10: 6,
+						FullIOAvg10:  6,
+						Timestamp:    now,
+					},
+				},
+				uid:   uid,
+				start: now.Add(-5 * time.Second),
+				end:   now.Add(5 * time.Second),
+			},
+			want: []containerPSIMetric{
+				{
+					ID:           uint64(now.UnixNano()),
+					ContainerID:  uid,
+					SomeCPUAvg10: 6,
+					SomeMemAvg10: 6,
+					SomeIOAvg10:  6,
+					FullCPUAvg10: 6,
+					FullMemAvg10: 6,
+					FullIOAvg10:  6,
+					Timestamp:    now,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := NewStorage()
+			for _, sample := range tt.args.samples {
+				err := s.InsertContainerPSIMetric(&sample)
+				if err != nil {
+					t.Errorf("insert container psi metric error %v", err)
+				}
+			}
+
+			got, err := s.GetContainerPSIMetric(&tt.args.uid, &tt.args.start, &tt.args.end)
+			if err != nil {
+				t.Errorf("GetContainerPSIMetric got error %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Errorf("GetContainerPSIMetric() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if !EqualContainerPSIMetric(&got[i], &tt.want[i]) {
+					t.Errorf("GetContainerPSIMetric() = %v, want %v", got[i], tt.want[i])
+				}
+			}
+
+			err = s.DeleteContainerPSIMetric(&tt.args.start, &tt.args.end)
+			if err != nil {
+				t.Errorf("DeleteContainerPSIMetric got error %v", err)
+			}
+
+			gotAfterDelete, err := s.GetContainerPSIMetric(&tt.args.uid, &tt.args.start, &tt.args.end)
+			if err != nil {
+				t.Errorf("GetContainerPSIMetric got error %v", err)
+			}
+			if len(gotAfterDelete) != 0 {
+				t.Errorf("GetContainerPSIMetric after delete %v", gotAfterDelete)
+			}
+		})
+	}
+}
+
+func Test_storage_PodPSIMetric_CRUD(t *testing.T) {
+	now := time.Now()
+	uid := "test-pod-uid"
+	type args struct {
+		samples []podPSIMetric
+		uid     string
+		start   time.Time
+		end     time.Time
+	}
+	tests := []struct {
+		name string
+		args args
+		want []podPSIMetric
+	}{
+		{
+			name: "pod-psi-metric-crud",
+			args: args{
+				samples: []podPSIMetric{
+					{
+						ID:           uint64(now.UnixNano()),
+						PodUID:       uid,
+						SomeCPUAvg10: 6,
+						SomeMemAvg10: 6,
+						SomeIOAvg10:  6,
+						FullCPUAvg10: 6,
+						FullMemAvg10: 6,
+						FullIOAvg10:  6,
+						Timestamp:    now,
+					},
+				},
+				uid:   uid,
+				start: now.Add(-5 * time.Second),
+				end:   now.Add(5 * time.Second),
+			},
+			want: []podPSIMetric{
+				{
+					ID:           uint64(now.UnixNano()),
+					PodUID:       uid,
+					SomeCPUAvg10: 6,
+					SomeMemAvg10: 6,
+					SomeIOAvg10:  6,
+					FullCPUAvg10: 6,
+					FullMemAvg10: 6,
+					FullIOAvg10:  6,
+					Timestamp:    now,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := NewStorage()
+			for _, sample := range tt.args.samples {
+				err := s.InsertPodPSIMetric(&sample)
+				if err != nil {
+					t.Errorf("insert pod psi metric error %v", err)
+				}
+			}
+
+			got, err := s.GetPodPSIMetric(&tt.args.uid, &tt.args.start, &tt.args.end)
+			if err != nil {
+				t.Errorf("GetPodPSIMetric got error %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Errorf("GetPodPSIMetric() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if !EqualPodCPIMetric(&got[i], &tt.want[i]) {
+					t.Errorf("GetPodPSIMetric() = %v, want %v", got[i], tt.want[i])
+				}
+			}
+
+			err = s.DeletePodPSIMetric(&tt.args.start, &tt.args.end)
+			if err != nil {
+				t.Errorf("DeletePodPSIMetric got error %v", err)
+			}
+
+			gotAfterDelete, err := s.GetPodPSIMetric(&tt.args.uid, &tt.args.start, &tt.args.end)
+			if err != nil {
+				t.Errorf("GetPodPSIMetric got error %v", err)
+			}
+			if len(gotAfterDelete) != 0 {
+				t.Errorf("GetPodPSIMetric after delete %v", gotAfterDelete)
 			}
 		})
 	}

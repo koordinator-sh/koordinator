@@ -60,8 +60,17 @@ const (
 	// Only Nvidia GPUs are supported as of v0.6.
 	Accelerators featuregate.Feature = "Accelerators"
 
-	// PerformanceCollector enables interference detection feature of koordlet.
+	// nolint:staticcheck // SA1019 this deprecated field still needs to be used for now.
+	// Deprecated: This feature gate will be removed in v1.1,
+	// please use CPICollector instead ASAP.
+	// PerformanceCollector enables cpi collector feature of koordlet.
 	PerformanceCollector featuregate.Feature = "PerformanceCollector"
+
+	// CPICollector enables cpi collector feature of koordlet.
+	CPICollector featuregate.Feature = "CPICollector"
+
+	// PSICollector enables psi collector feature of koordlet.
+	PSICollector featuregate.Feature = "PSICollector"
 )
 
 func init() {
@@ -85,6 +94,8 @@ var (
 		NodeTopologyReport:     {Default: false, PreRelease: featuregate.Alpha},
 		Accelerators:           {Default: false, PreRelease: featuregate.Alpha},
 		PerformanceCollector:   {Default: false, PreRelease: featuregate.Alpha},
+		CPICollector:           {Default: false, PreRelease: featuregate.Alpha},
+		PSICollector:           {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 

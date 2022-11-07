@@ -25,10 +25,11 @@ import (
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		CollectResUsedIntervalSeconds:         1,
-		CollectNodeCPUInfoIntervalSeconds:     60,
-		PerformanceCollectorIntervalSeconds:   60,
-		PerformanceCollectorTimeWindowSeconds: 10,
+		CollectResUsedIntervalSeconds:     1,
+		CollectNodeCPUInfoIntervalSeconds: 60,
+		CPICollectorIntervalSeconds:       60,
+		PSICollectorIntervalSeconds:       10,
+		CPICollectorTimeWindowSeconds:     10,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -39,16 +40,18 @@ func Test_InitFlags(t *testing.T) {
 		"",
 		"--collect-res-used-interval-seconds=3",
 		"--collect-node-cpu-info-interval-seconds=90",
-		"--collect-interference-interval-seconds=90",
-		"--collect-interference-timewindow-seconds=15",
+		"--cpi-collector-interval-seconds=90",
+		"--psi-collector-interval-seconds=5",
+		"--collect-cpi-timewindow-seconds=15",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
 	type fields struct {
-		CollectResUsedIntervalSeconds        int
-		CollectNodeCPUInfoIntervalSeconds    int
-		CollectInterferenceIntervalSeconds   int
-		CollectInterferenceTimeWindowSeconds int
+		CollectResUsedIntervalSeconds     int
+		CollectNodeCPUInfoIntervalSeconds int
+		CPICollectorIntervalSeconds       int
+		PSICollectorIntervalSeconds       int
+		CPICollectorTimeWindowSeconds     int
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -61,10 +64,11 @@ func Test_InitFlags(t *testing.T) {
 		{
 			name: "not default",
 			fields: fields{
-				CollectResUsedIntervalSeconds:        3,
-				CollectNodeCPUInfoIntervalSeconds:    90,
-				CollectInterferenceIntervalSeconds:   90,
-				CollectInterferenceTimeWindowSeconds: 15,
+				CollectResUsedIntervalSeconds:     3,
+				CollectNodeCPUInfoIntervalSeconds: 90,
+				CPICollectorIntervalSeconds:       90,
+				PSICollectorIntervalSeconds:       5,
+				CPICollectorTimeWindowSeconds:     15,
 			},
 			args: args{fs: fs},
 		},
@@ -72,10 +76,11 @@ func Test_InitFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			raw := &Config{
-				CollectResUsedIntervalSeconds:         tt.fields.CollectResUsedIntervalSeconds,
-				CollectNodeCPUInfoIntervalSeconds:     tt.fields.CollectNodeCPUInfoIntervalSeconds,
-				PerformanceCollectorIntervalSeconds:   tt.fields.CollectInterferenceIntervalSeconds,
-				PerformanceCollectorTimeWindowSeconds: tt.fields.CollectInterferenceTimeWindowSeconds,
+				CollectResUsedIntervalSeconds:     tt.fields.CollectResUsedIntervalSeconds,
+				CollectNodeCPUInfoIntervalSeconds: tt.fields.CollectNodeCPUInfoIntervalSeconds,
+				CPICollectorIntervalSeconds:       tt.fields.CPICollectorIntervalSeconds,
+				PSICollectorIntervalSeconds:       tt.fields.PSICollectorIntervalSeconds,
+				CPICollectorTimeWindowSeconds:     tt.fields.CPICollectorTimeWindowSeconds,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

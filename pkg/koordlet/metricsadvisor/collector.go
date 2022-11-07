@@ -148,7 +148,7 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 
 	go wait.Until(c.collectNodeCPUInfo, time.Duration(c.config.CollectNodeCPUInfoIntervalSeconds)*time.Second, stopCh)
 
-	ic := NewPerformanceCollector(c.statesInformer, c.metricCache, c.config.PerformanceCollectorTimeWindowSeconds)
+	ic := NewPerformanceCollector(c.statesInformer, c.metricCache, c.config.CPICollectorTimeWindowSeconds)
 	util.RunFeature(func() {
 		// add sync metaService cache check before collect pod information
 		// because collect function will get all pods.
@@ -158,7 +158,24 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 			return
 		}
 		ic.collectContainerCPI()
-	}, []featuregate.Feature{features.PerformanceCollector}, c.config.PerformanceCollectorIntervalSeconds, stopCh)
+	}, []featuregate.Feature{features.PerformanceCollector, features.CPICollector}, c.config.CPICollectorIntervalSeconds, stopCh)
+
+	util.RunFeature(func() {
+		// psi collector support only on anolis os currently
+		if !system.HostSystemInfo.IsAnolisOS {
+			klog.Fatalf("collect psi fail, need anolis os")
+			return
+		}
+		// add sync metaService cache check before collect pod information
+		// because collect function will get all pods.
+		if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
+			// Koordlet exit because of metaService sync failed.
+			klog.Fatalf("timed out waiting for meta service caches to sync")
+			return
+		}
+		ic.collectContainerPSI()
+		ic.collectPodPSI()
+	}, []featuregate.Feature{features.PSICollector}, c.config.PSICollectorIntervalSeconds, stopCh)
 
 	go wait.Until(c.cleanupContext, cleanupInterval, stopCh)
 

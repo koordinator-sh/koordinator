@@ -19,18 +19,20 @@ package metricsadvisor
 import "flag"
 
 type Config struct {
-	CollectResUsedIntervalSeconds         int
-	CollectNodeCPUInfoIntervalSeconds     int
-	PerformanceCollectorIntervalSeconds   int
-	PerformanceCollectorTimeWindowSeconds int
+	CollectResUsedIntervalSeconds     int
+	CollectNodeCPUInfoIntervalSeconds int
+	CPICollectorIntervalSeconds       int
+	PSICollectorIntervalSeconds       int
+	CPICollectorTimeWindowSeconds     int
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
-		CollectResUsedIntervalSeconds:         1,
-		CollectNodeCPUInfoIntervalSeconds:     60,
-		PerformanceCollectorIntervalSeconds:   60,
-		PerformanceCollectorTimeWindowSeconds: 10,
+		CollectResUsedIntervalSeconds:     1,
+		CollectNodeCPUInfoIntervalSeconds: 60,
+		CPICollectorIntervalSeconds:       60,
+		PSICollectorIntervalSeconds:       10,
+		CPICollectorTimeWindowSeconds:     10,
 	}
 }
 
@@ -38,6 +40,7 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	// todo: replace with DurationVar and modify run feature util
 	fs.IntVar(&c.CollectResUsedIntervalSeconds, "collect-res-used-interval-seconds", c.CollectResUsedIntervalSeconds, "Collect node/pod resource usage interval by seconds")
 	fs.IntVar(&c.CollectNodeCPUInfoIntervalSeconds, "collect-node-cpu-info-interval-seconds", c.CollectNodeCPUInfoIntervalSeconds, "Collect node cpu info interval by seconds")
-	fs.IntVar(&c.PerformanceCollectorIntervalSeconds, "collect-interference-interval-seconds", c.PerformanceCollectorIntervalSeconds, "Collect interference interval by seconds")
-	fs.IntVar(&c.PerformanceCollectorTimeWindowSeconds, "collect-interference-timewindow-seconds", c.PerformanceCollectorTimeWindowSeconds, "Collect interference time window by seconds")
+	fs.IntVar(&c.CPICollectorIntervalSeconds, "cpi-collector-interval-seconds", c.CPICollectorIntervalSeconds, "Collect cpi interval by seconds")
+	fs.IntVar(&c.PSICollectorIntervalSeconds, "psi-collector-interval-seconds", c.PSICollectorIntervalSeconds, "Collect psi interval by seconds")
+	fs.IntVar(&c.CPICollectorTimeWindowSeconds, "collect-cpi-timewindow-seconds", c.CPICollectorTimeWindowSeconds, "Collect cpi time window by seconds")
 }

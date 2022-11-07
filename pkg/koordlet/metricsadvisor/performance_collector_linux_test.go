@@ -19,13 +19,13 @@ package metricsadvisor
 import (
 	"fmt"
 	"os"
+	"path"
 	"testing"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mockmetriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
@@ -170,7 +170,108 @@ func Test_profilePerfOnSingleContainer(t *testing.T) {
 	perfCollector, _ := perf.NewPerfCollector(f, []int{})
 
 	c := NewPerformanceCollector(nil, m, 0)
+	testingPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test_pod",
+			Namespace: "test_pod_namespace",
+			UID:       "test01",
+		},
+	}
 	assert.NotPanics(t, func() {
-		c.profilePerfOnSingleContainer(containerStatus, perfCollector, "test-1")
+		c.profilePerfOnSingleContainer(containerStatus, perfCollector, testingPod)
 	})
+}
+
+func mockInterferencePodMeta(cgroupDir string) *statesinformer.PodMeta {
+	return &statesinformer.PodMeta{
+		Pod: &corev1.Pod{
+			Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{
+					{
+						ContainerID: "containerd://test01",
+					},
+				},
+			},
+		},
+		CgroupDir: cgroupDir,
+	}
+}
+
+const (
+	FullCorrectPSIContents = "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+)
+
+func Test_collectContainerPSI(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	cgroupDir := t.TempDir()
+	mockStatesInformer := mockstatesinformer.NewMockStatesInformer(ctrl)
+	mockMetricCache := mockmetriccache.NewMockMetricCache(ctrl)
+	testPodMeta := mockInterferencePodMeta(t.TempDir())
+	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{testPodMeta}).AnyTimes()
+
+	paths := util.GetPodCgroupCPUAcctPSIPath(cgroupDir)
+	errCreateCPU := createTestPSIFile(paths.CPU, FullCorrectPSIContents)
+	if errCreateCPU != nil {
+		t.Fatalf("got error when create psi files: %v", errCreateCPU)
+	}
+	errCreateMem := createTestPSIFile(paths.Mem, FullCorrectPSIContents)
+	if errCreateMem != nil {
+		t.Fatalf("got error when create psi files: %v", errCreateMem)
+	}
+	errCreateIO := createTestPSIFile(paths.IO, FullCorrectPSIContents)
+	if errCreateIO != nil {
+		t.Fatalf("got error when create psi files: %v", errCreateIO)
+	}
+
+	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, 1)
+	assert.NotPanics(t, func() {
+		c.collectContainerPSI()
+	})
+}
+
+func Test_collectPodPSI(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	cgroupDir := t.TempDir()
+	mockStatesInformer := mockstatesinformer.NewMockStatesInformer(ctrl)
+	mockMetricCache := mockmetriccache.NewMockMetricCache(ctrl)
+	testPodMeta := mockInterferencePodMeta(t.TempDir())
+	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{testPodMeta}).AnyTimes()
+
+	paths := util.GetPodCgroupCPUAcctPSIPath(cgroupDir)
+	errCreateCPU := createTestPSIFile(paths.CPU, FullCorrectPSIContents)
+	if errCreateCPU != nil {
+		t.Fatalf("got error when create psi files: %v", errCreateCPU)
+	}
+	errCreateMem := createTestPSIFile(paths.Mem, FullCorrectPSIContents)
+	if errCreateMem != nil {
+		t.Fatalf("got error when create psi files: %v", errCreateMem)
+	}
+	errCreateIO := createTestPSIFile(paths.IO, FullCorrectPSIContents)
+	if errCreateIO != nil {
+		t.Fatalf("got error when create psi files: %v", errCreateIO)
+	}
+
+	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, 1)
+	assert.NotPanics(t, func() {
+		c.collectPodPSI()
+	})
+}
+
+func createTestPSIFile(filePath, contents string) error {
+	dir, _ := path.Split(filePath)
+	if err := os.MkdirAll(dir, 0777); err != nil {
+		return err
+	}
+	if _, err := os.Create(filePath); err != nil {
+		return err
+	}
+	err := os.WriteFile(filePath, []byte(contents), 0644)
+	if err != nil {
+		return err
+	}
+	return nil
 }

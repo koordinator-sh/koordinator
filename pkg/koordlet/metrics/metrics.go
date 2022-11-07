@@ -26,6 +26,8 @@ import (
 
 func init() {
 	prometheus.MustRegister(CommonCollectors...)
+	prometheus.MustRegister(CPICollectors...)
+	prometheus.MustRegister(PSICollectors...)
 }
 
 const (
@@ -39,6 +41,13 @@ const (
 
 	EvictionReasonKey = "reason"
 	BESuppressTypeKey = "type"
+
+	ContainerID   = "container_id"
+	ContainerName = "container_name"
+
+	PodUID       = "pod_uid"
+	PodName      = "pod_name"
+	PodNamespace = "pod_namespace"
 )
 
 var (

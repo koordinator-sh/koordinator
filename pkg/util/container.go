@@ -74,6 +74,19 @@ func GetContainerCgroupCPUAcctUsagePath(podParentDir string, c *corev1.Container
 	return system.GetCgroupFilePath(containerPath, system.CpuacctUsage), nil
 }
 
+func GetContainerCgroupCPUAcctPSIPath(podParentDir string, c *corev1.ContainerStatus) (PSIPath, error) {
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return PSIPath{}, err
+	}
+	// psi file saved in cpuacct for cgroup v1 file system
+	return PSIPath{
+		CPU: system.GetCgroupFilePath(containerPath, system.CpuacctCPUPressure),
+		Mem: system.GetCgroupFilePath(containerPath, system.CpuacctMemPressure),
+		IO:  system.GetCgroupFilePath(containerPath, system.CpuacctIOPressure),
+	}, nil
+}
+
 func GetContainerCgroupMemStatPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
 	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
 	if err != nil {

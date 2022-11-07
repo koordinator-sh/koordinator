@@ -16,7 +16,9 @@ limitations under the License.
 
 package metrics
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 var (
 	KoordletStartTime = prometheus.NewGaugeVec(prometheus.GaugeOpts{

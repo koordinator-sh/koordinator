@@ -42,7 +42,10 @@ const (
 	CPUSFileName      = "cpuset.cpus"
 	CPUTaskFileName   = "tasks"
 
-	CpuacctUsageFileName = "cpuacct.usage"
+	CpuacctUsageFileName       = "cpuacct.usage"
+	CpuacctCPUPressureFileName = "cpu.pressure"
+	CpuacctMemPressureFileName = "memory.pressure"
+	CpuacctIOPressureFileName  = "io.pressure"
 
 	MemWmarkRatioFileName       = "memory.wmark_ratio"
 	MemWmarkScaleFactorFileName = "memory.wmark_scale_factor"
@@ -95,7 +98,10 @@ var (
 
 	CPUSet = CgroupFile{ResourceFileName: CPUSFileName, Subfs: CgroupCPUSetDir, IsAnolisOS: false}
 
-	CpuacctUsage = CgroupFile{ResourceFileName: CpuacctUsageFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: false}
+	CpuacctUsage       = CgroupFile{ResourceFileName: CpuacctUsageFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: false}
+	CpuacctCPUPressure = CgroupFile{ResourceFileName: CpuacctCPUPressureFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: true}
+	CpuacctMemPressure = CgroupFile{ResourceFileName: CpuacctMemPressureFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: true}
+	CpuacctIOPressure  = CgroupFile{ResourceFileName: CpuacctIOPressureFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: true}
 
 	MemStat             = CgroupFile{ResourceFileName: MemStatFileName, Subfs: CgroupMemDir, IsAnolisOS: false}
 	MemorySWLimit       = CgroupFile{ResourceFileName: MemorySWLimitFileName, Subfs: CgroupMemDir, IsAnolisOS: false}
