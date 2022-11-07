@@ -44,14 +44,12 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/webhook/util/writer"
 )
 
-const (
-	mutatingWebhookConfigurationName   = "koordinator-mutating-webhook-configuration"
-	validatingWebhookConfigurationName = "koordinator-validating-webhook-configuration"
-
-	defaultResyncPeriod = time.Minute
-)
+const defaultResyncPeriod = time.Minute
 
 var (
+	mutatingWebhookConfigurationName   = webhookutil.GetMutatingWebhookName()
+	validatingWebhookConfigurationName = webhookutil.GetValidatingWebhookName()
+
 	namespace  = webhookutil.GetNamespace()
 	secretName = webhookutil.GetSecretName()
 

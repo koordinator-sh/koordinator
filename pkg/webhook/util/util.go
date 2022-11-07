@@ -23,6 +23,20 @@ import (
 	"k8s.io/klog/v2"
 )
 
+func GetMutatingWebhookName() string {
+	if name := os.Getenv("MUTATING_WEBHOOK_NAME"); len(name) > 0 {
+		return name
+	}
+	return "koordinator-mutating-webhook-configuration"
+}
+
+func GetValidatingWebhookName() string {
+	if name := os.Getenv("VALIDATING_WEBHOOK_NAME"); len(name) > 0 {
+		return name
+	}
+	return "koordinator-validating-webhook-configuration"
+}
+
 func GetHost() string {
 	return os.Getenv("WEBHOOK_HOST")
 }

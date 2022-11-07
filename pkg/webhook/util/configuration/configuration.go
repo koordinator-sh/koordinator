@@ -32,9 +32,9 @@ import (
 	webhookutil "github.com/koordinator-sh/koordinator/pkg/webhook/util"
 )
 
-const (
-	mutatingWebhookConfigurationName   = "koordinator-mutating-webhook-configuration"
-	validatingWebhookConfigurationName = "koordinator-validating-webhook-configuration"
+var (
+	mutatingWebhookConfigurationName   = webhookutil.GetMutatingWebhookName()
+	validatingWebhookConfigurationName = webhookutil.GetValidatingWebhookName()
 )
 
 func Ensure(kubeClient clientset.Interface, handlers map[string]admission.Handler, caBundle []byte) error {
