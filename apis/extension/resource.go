@@ -194,14 +194,14 @@ type ExtendedResourceContainerSpec struct {
 
 // GetExtendedResourceSpec parses ExtendedResourceSpec from annotations
 func GetExtendedResourceSpec(annotations map[string]string) (*ExtendedResourceSpec, error) {
+	spec := &ExtendedResourceSpec{}
 	if annotations == nil {
-		return nil, nil
+		return spec, nil
 	}
 	data, ok := annotations[AnnotationExtendedResourceSpec]
 	if !ok {
-		return nil, nil
+		return spec, nil
 	}
-	spec := &ExtendedResourceSpec{}
 	err := json.Unmarshal([]byte(data), spec)
 	if err != nil {
 		return nil, err

@@ -89,6 +89,7 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 	if err = h.mutatePodResourceSpec(pod); err != nil {
 		return err
 	}
+
 	return nil
 }
 

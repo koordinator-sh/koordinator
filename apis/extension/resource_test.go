@@ -48,6 +48,7 @@ func TestSetResourceStatus(t *testing.T) {
 }
 
 func TestGetGetExtendedResourceSpec(t *testing.T) {
+	testEmptySpec := &ExtendedResourceSpec{}
 	testSpec := &ExtendedResourceSpec{
 		Containers: map[string]ExtendedResourceContainerSpec{
 			"test-container-1": {
@@ -91,7 +92,7 @@ func TestGetGetExtendedResourceSpec(t *testing.T) {
 
 	got, err = GetExtendedResourceSpec(nil)
 	assert.NoError(t, err)
-	assert.Nil(t, got)
+	assert.Equal(t, testEmptySpec, got)
 
 	testInvalidAnnotations := map[string]string{
 		AnnotationExtendedResourceSpec: "invalidValue",
