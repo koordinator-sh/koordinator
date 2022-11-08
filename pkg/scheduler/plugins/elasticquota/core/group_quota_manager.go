@@ -127,24 +127,27 @@ func (gqm *GroupQuotaManager) updateGroupDeltaRequestNoLock(quotaName string, de
 
 	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
 
-	gqm.updateGroupDeltaRequestTopoRecursiveNoLock(deltaReq, curToAllParInfos)
+	gqm.recursiveUpdateGroupTreeWithDeltaRequest(deltaReq, curToAllParInfos)
 }
 
-// updateGroupDeltaRequestTopoRecursiveNoLock update the quota of a node, also need update all parentNode, the lock operation
+// recursiveUpdateGroupTreeWithDeltaRequest update the quota of a node, also need update all parentNode, the lock operation
 // of all quotaInfo is done by gqm. scopedLockForQuotaInfo, so just get treeWrappers' lock when calling treeWrappers' function
-func (gqm *GroupQuotaManager) updateGroupDeltaRequestTopoRecursiveNoLock(deltaReq v1.ResourceList, curToAllParInfos []*QuotaInfo) {
+func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaRequest(deltaReq v1.ResourceList, curToAllParInfos []*QuotaInfo) {
 	for i := 0; i < len(curToAllParInfos); i++ {
 		curQuotaInfo := curToAllParInfos[i]
+		oldSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
+		curQuotaInfo.addRequestNonNegativeNoLock(deltaReq)
+		if curQuotaInfo.Name == extension.SystemQuotaName || curQuotaInfo.Name == extension.DefaultQuotaName {
+			return
+		}
+		newSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
+		deltaReq = quotav1.Subtract(newSubLimitReq, oldSubLimitReq)
+
 		directParRuntimeCalculatorPtr := gqm.getRuntimeQuotaCalculatorByNameNoLock(curQuotaInfo.ParentName)
 		if directParRuntimeCalculatorPtr == nil {
 			klog.Errorf("treeWrapper not exist! quotaName:%v  parentName:%v", curQuotaInfo.Name, curQuotaInfo.ParentName)
 			return
 		}
-		oldSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
-		curQuotaInfo.addRequestNonNegativeNoLock(deltaReq)
-		newSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
-		deltaReq = quotav1.Subtract(newSubLimitReq, oldSubLimitReq)
-
 		if directParRuntimeCalculatorPtr.needUpdateOneGroupRequest(curQuotaInfo) {
 			directParRuntimeCalculatorPtr.updateOneGroupRequest(curQuotaInfo)
 		}
