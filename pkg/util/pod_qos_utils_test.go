@@ -20,8 +20,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func Test_IsPodCfsQuotaNeedUnset(t *testing.T) {
@@ -65,6 +68,71 @@ func Test_IsPodCfsQuotaNeedUnset(t *testing.T) {
 			got, err := IsPodCfsQuotaNeedUnset(tt.args.podAnnotations)
 			assert.Equal(t, tt.wantErr, err != nil)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_GetKubeQosClass(t *testing.T) {
+	system.SetupCgroupPathFormatter(system.Systemd)
+	assert := assert.New(t)
+
+	testCases := []struct {
+		name              string
+		pod               *corev1.Pod
+		wantPriorityClass corev1.PodQOSClass
+	}{
+		{
+			name: "Guaranteed from status",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSGuaranteed,
+				},
+			},
+			wantPriorityClass: corev1.PodQOSGuaranteed,
+		},
+		{
+			name: "Besteffort from status",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBestEffort,
+				},
+			},
+			wantPriorityClass: corev1.PodQOSBestEffort,
+		},
+		{
+			name: "Besteffort from resource",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{},
+				},
+			},
+			wantPriorityClass: corev1.PodQOSBestEffort,
+		},
+		{
+			name: "Burstable from resource",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("8"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantPriorityClass: corev1.PodQOSBurstable,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(tc.wantPriorityClass, GetKubeQosClass(tc.pod))
 		})
 	}
 }

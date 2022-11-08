@@ -18,11 +18,12 @@ package util
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 )
 
-// NOTE: functions in this file can be overwrite for extension
+// NOTE: functions in this file can be overwritten for extension
 
 // IsPodCfsQuotaNeedUnset checks if the pod-level and container-level cfs_quota should be unset to avoid unnecessary
 // throttles.
@@ -37,6 +38,14 @@ func IsPodCfsQuotaNeedUnset(annotations map[string]string) (bool, error) {
 
 // IsPodCPUBurstable checks if cpu burst is allowed for the pod.
 func IsPodCPUBurstable(pod *corev1.Pod) bool {
-	qos := apiext.GetPodQoSClass(pod)
-	return qos != apiext.QoSLSR && qos != apiext.QoSLSE && qos != apiext.QoSBE
+	qosClass := apiext.GetPodQoSClass(pod)
+	return qosClass != apiext.QoSLSR && qosClass != apiext.QoSLSE && qosClass != apiext.QoSBE
+}
+
+func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
+	qosClass := pod.Status.QOSClass
+	if len(qosClass) <= 0 {
+		qosClass = qos.GetPodQOS(pod)
+	}
+	return qosClass
 }

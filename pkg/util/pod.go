@@ -24,8 +24,6 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -94,14 +92,6 @@ func GetPodCgroupCPUStatPath(podParentDir string) string {
 	return system.GetCgroupFilePath(podPath, system.CPUStat)
 }
 
-func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
-	qosClass := pod.Status.QOSClass
-	if len(qosClass) <= 0 {
-		qosClass = qos.GetPodQOS(pod)
-	}
-	return qosClass
-}
-
 func GetKubeQoSByCgroupParent(cgroupDir string) corev1.PodQOSClass {
 	if strings.Contains(cgroupDir, "besteffort") {
 		return corev1.PodQOSBestEffort
@@ -109,88 +99,6 @@ func GetKubeQoSByCgroupParent(cgroupDir string) corev1.PodQOSClass {
 		return corev1.PodQOSBurstable
 	}
 	return corev1.PodQOSGuaranteed
-}
-
-func GetPodMilliCPULimit(pod *corev1.Pod) int64 {
-	podCPUMilliLimit := int64(0)
-	for _, container := range pod.Spec.Containers {
-		containerCPUMilliLimit := GetContainerMilliCPULimit(&container)
-		if containerCPUMilliLimit <= 0 {
-			return -1
-		}
-		podCPUMilliLimit += containerCPUMilliLimit
-	}
-	for _, container := range pod.Spec.InitContainers {
-		containerCPUMilliLimit := GetContainerMilliCPULimit(&container)
-		if containerCPUMilliLimit <= 0 {
-			return -1
-		}
-		podCPUMilliLimit = MaxInt64(podCPUMilliLimit, containerCPUMilliLimit)
-	}
-	if podCPUMilliLimit <= 0 {
-		return -1
-	}
-	return podCPUMilliLimit
-}
-
-func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
-	podCPUMilliReq := int64(0)
-	// TODO: count init containers and pod overhead
-	for _, container := range pod.Spec.Containers {
-		containerCPUMilliReq := GetContainerBatchMilliCPURequest(&container)
-		if containerCPUMilliReq <= 0 {
-			containerCPUMilliReq = 0
-		}
-		podCPUMilliReq += containerCPUMilliReq
-	}
-
-	return podCPUMilliReq
-}
-
-func GetPodBEMilliCPULimit(pod *corev1.Pod) int64 {
-	podCPUMilliLimit := int64(0)
-	// TODO: count init containers and pod overhead
-	for _, container := range pod.Spec.Containers {
-		containerCPUMilliLimit := GetContainerBatchMilliCPULimit(&container)
-		if containerCPUMilliLimit <= 0 {
-			return -1
-		}
-		podCPUMilliLimit += containerCPUMilliLimit
-	}
-	if podCPUMilliLimit <= 0 {
-		return -1
-	}
-	return podCPUMilliLimit
-}
-
-func GetPodBEMemoryByteRequestIgnoreUnlimited(pod *corev1.Pod) int64 {
-	podMemoryByteRequest := int64(0)
-	// TODO: count init containers and pod overhead
-	for _, container := range pod.Spec.Containers {
-		containerMemByteRequest := GetContainerBatchMemoryByteRequest(&container)
-		if containerMemByteRequest < 0 {
-			// consider request of unlimited container as 0
-			continue
-		}
-		podMemoryByteRequest += containerMemByteRequest
-	}
-	return podMemoryByteRequest
-}
-
-func GetPodBEMemoryByteLimit(pod *corev1.Pod) int64 {
-	podMemoryByteLimit := int64(0)
-	// TODO: count init containers and pod overhead
-	for _, container := range pod.Spec.Containers {
-		containerMemByteLimit := GetContainerBatchMemoryByteLimit(&container)
-		if containerMemByteLimit <= 0 {
-			return -1
-		}
-		podMemoryByteLimit += containerMemByteLimit
-	}
-	if podMemoryByteLimit <= 0 {
-		return -1
-	}
-	return podMemoryByteLimit
 }
 
 func GetPodCurCPUShare(podParentDir string) (int64, error) {
@@ -253,25 +161,6 @@ func GetPodKey(pod *corev1.Pod) string {
 
 func GetPodMetricKey(podMetric *slov1alpha1.PodMetricInfo) string {
 	return fmt.Sprintf("%v/%v", podMetric.Namespace, podMetric.Name)
-}
-
-func GetPodRequest(pod *corev1.Pod, resourceNames ...corev1.ResourceName) corev1.ResourceList {
-	result := corev1.ResourceList{}
-	for _, container := range pod.Spec.Containers {
-		result = quotav1.Add(result, container.Resources.Requests)
-	}
-	// take max_resource(sum_pod, any_init_container)
-	for _, container := range pod.Spec.InitContainers {
-		result = quotav1.Max(result, container.Resources.Requests)
-	}
-	// add pod overhead if it exists
-	if pod.Spec.Overhead != nil {
-		result = quotav1.Add(result, pod.Spec.Overhead)
-	}
-	if len(resourceNames) > 0 {
-		result = quotav1.Mask(result, resourceNames)
-	}
-	return result
 }
 
 func IsPodTerminated(pod *corev1.Pod) bool {
