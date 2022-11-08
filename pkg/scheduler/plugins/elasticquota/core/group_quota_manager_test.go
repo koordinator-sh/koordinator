@@ -139,6 +139,13 @@ func TestGroupQuotaManager_UpdateQuotaInternal(t *testing.T) {
 	assert.Equal(t, int64(120*GigaByte), quotaInfo.CalculateInfo.SharedWeight.Memory().Value())
 }
 
+func TestGroupQuotaManager_UpdateQuota(t *testing.T) {
+	gqm := NewGroupQuotaManager4Test()
+	quota := CreateQuota("test1", "test-parent", 64, 100*GigaByte, 50, 80*GigaByte, true, false)
+	gqm.UpdateQuota(quota, false)
+	assert.Equal(t, len(gqm.quotaInfoMap), 3)
+}
+
 func TestGroupQuotaManager_UpdateQuotaInternalAndRequest(t *testing.T) {
 	gqm := NewGroupQuotaManager4Test()
 	deltaRes := createResourceList(96, 160*GigaByte)

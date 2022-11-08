@@ -350,6 +350,12 @@ func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 			continue
 		}
 		parQuotaTopoNode := gqm.quotaTopoNodeMap[topoNode.quotaInfo.ParentName]
+		// incase load child before its parent
+		if parQuotaTopoNode == nil {
+			parQuotaTopoNode = NewQuotaTopoNode(&QuotaInfo{
+				Name: topoNode.quotaInfo.ParentName,
+			})
+		}
 		topoNode.parQuotaTopoNode = parQuotaTopoNode
 		parQuotaTopoNode.addChildGroupQuotaInfo(topoNode)
 	}
