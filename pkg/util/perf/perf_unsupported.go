@@ -19,9 +19,11 @@ limitations under the License.
 
 package perf
 
+import "os"
+
 type PerfCollector struct{}
 
-func NewPerfCollector(cgroupFd int, cpus []int) (*PerfCollector, error) {
+func NewPerfCollector(cgroupFile *os.File, cpus []int) (*PerfCollector, error) {
 	return &PerfCollector{}, nil
 }
 
@@ -29,7 +31,7 @@ func GetContainerCyclesAndInstructions(collector *PerfCollector) (uint64, uint64
 	return 0, 0, nil
 }
 
-func GetAndStartPerfCollectorOnContainer(cgroupFd int, cpus []int) (*PerfCollector, error) {
+func GetAndStartPerfCollectorOnContainer(cgroupFile *os.File, cpus []int) (*PerfCollector, error) {
 	return &PerfCollector{}, nil
 }
 
@@ -53,4 +55,8 @@ type collectResult struct{}
 
 func (c *PerfCollector) collect() (result collectResult, err error) {
 	return collectResult{}, err
+}
+
+func (c *PerfCollector) CleanUp() error {
+	return nil
 }

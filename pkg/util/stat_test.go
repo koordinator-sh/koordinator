@@ -168,7 +168,9 @@ func Test_GetRootCgroupCPUUsageNanoseconds(t *testing.T) {
 }
 
 func Test_GetContainerCyclesAndInstructions(t *testing.T) {
-	collector, _ := perf.NewPerfCollector(0, []int{})
+	tempDir := t.TempDir()
+	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
+	collector, _ := perf.NewPerfCollector(f, []int{})
 	_, _, err := GetContainerCyclesAndInstructions(collector)
 	assert.Nil(t, err)
 }

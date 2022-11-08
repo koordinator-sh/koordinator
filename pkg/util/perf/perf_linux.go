@@ -22,6 +22,7 @@ package perf
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/hodgesds/perf-utils"
 	"go.uber.org/multierr"
@@ -30,20 +31,20 @@ import (
 )
 
 type PerfCollector struct {
-	CgroupFd          int
+	cgroupFile        *os.File
 	cpus              []int
 	cpuHwProfilersMap map[int]*perf.HardwareProfiler
 	// todo: cpuSwProfilers map[int]*perf.SoftwareProfiler
 }
 
-func NewPerfCollector(cgroupFd int, cpus []int) (*PerfCollector, error) {
+func NewPerfCollector(cgroupFile *os.File, cpus []int) (*PerfCollector, error) {
 	collector := &PerfCollector{
-		CgroupFd:          cgroupFd,
+		cgroupFile:        cgroupFile,
 		cpus:              cpus,
 		cpuHwProfilersMap: map[int]*perf.HardwareProfiler{},
 	}
 	for _, cpu := range cpus {
-		cpiProfiler, err := perf.NewHardwareProfiler(cgroupFd, cpu, perf.RefCpuCyclesProfiler|perf.CpuInstrProfiler, unix.PERF_FLAG_PID_CGROUP)
+		cpiProfiler, err := perf.NewHardwareProfiler(int(cgroupFile.Fd()), cpu, perf.RefCpuCyclesProfiler|perf.CpuInstrProfiler, unix.PERF_FLAG_PID_CGROUP)
 		if err != nil && !cpiProfiler.HasProfilers() {
 			return nil, err
 		}
@@ -55,8 +56,8 @@ func NewPerfCollector(cgroupFd int, cpus []int) (*PerfCollector, error) {
 	return collector, nil
 }
 
-func GetAndStartPerfCollectorOnContainer(cgroupFd int, cpus []int) (*PerfCollector, error) {
-	collector, err := NewPerfCollector(cgroupFd, cpus)
+func GetAndStartPerfCollectorOnContainer(cgroupFile *os.File, cpus []int) (*PerfCollector, error) {
+	collector, err := NewPerfCollector(cgroupFile, cpus)
 	if err != nil {
 		return nil, err
 	}
@@ -138,14 +139,22 @@ func (c *PerfCollector) stopAndClose() (err error) {
 
 func (c *PerfCollector) stopOnSingleCPU(cpu int) error {
 	if err := (*c.cpuHwProfilersMap[cpu]).Stop(); err != nil {
-		return fmt.Errorf("stop container %v, cpu: %v fd err : %v", c.CgroupFd, cpu, err)
+		return fmt.Errorf("stop container %v, cpu: %v fd err : %v", int(c.cgroupFile.Fd()), cpu, err)
 	}
 	return nil
 }
 
 func (c *PerfCollector) closeOnSingleCPU(cpu int) error {
 	if err := (*c.cpuHwProfilersMap[cpu]).Close(); err != nil {
-		return fmt.Errorf("close container %v, cpu: %v fd err : %v", c.CgroupFd, cpu, err)
+		return fmt.Errorf("close container %v, cpu: %v fd err : %v", int(c.cgroupFile.Fd()), cpu, err)
+	}
+	return nil
+}
+
+func (c *PerfCollector) CleanUp() error {
+	err := c.cgroupFile.Close()
+	if err != nil {
+		return fmt.Errorf("close cgroupFile %v, err : %v", c.cgroupFile.Name(), err)
 	}
 	return nil
 }

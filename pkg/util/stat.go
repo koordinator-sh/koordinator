@@ -105,11 +105,11 @@ func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, n
 		cpus[i] = i
 	}
 	// get file descriptor for cgroup mode perf_event_open
-	containerCgroupFd, err := getContainerCgroupFd(podCgroupDir, c)
+	containerCgroupFile, err := getContainerCgroupFile(podCgroupDir, c)
 	if err != nil {
 		return nil, err
 	}
-	collector, err := perf.GetAndStartPerfCollectorOnContainer(containerCgroupFd, cpus)
+	collector, err := perf.GetAndStartPerfCollectorOnContainer(containerCgroupFile, cpus)
 	if err != nil {
 		return nil, err
 	}
@@ -120,14 +120,14 @@ func GetContainerCyclesAndInstructions(collector *perf.PerfCollector) (uint64, u
 	return perf.GetContainerCyclesAndInstructions(collector)
 }
 
-func getContainerCgroupFd(podCgroupDir string, c *corev1.ContainerStatus) (int, error) {
+func getContainerCgroupFile(podCgroupDir string, c *corev1.ContainerStatus) (*os.File, error) {
 	containerCgroupFilePath, err := GetContainerCgroupPerfPath(podCgroupDir, c)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	f, err := os.OpenFile(containerCgroupFilePath, os.O_RDONLY, os.ModeDir)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return int(f.Fd()), nil
+	return f, nil
 }

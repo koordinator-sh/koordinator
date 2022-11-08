@@ -18,6 +18,7 @@ package metricsadvisor
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -164,7 +165,9 @@ func Test_profilePerfOnSingleContainer(t *testing.T) {
 	containerStatus := &corev1.ContainerStatus{
 		ContainerID: "containerd://test",
 	}
-	perfCollector, _ := perf.NewPerfCollector(0, []int{})
+	tempDir := t.TempDir()
+	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
+	perfCollector, _ := perf.NewPerfCollector(f, []int{})
 
 	c := NewPerformanceCollector(nil, m, 0)
 	assert.NotPanics(t, func() {
