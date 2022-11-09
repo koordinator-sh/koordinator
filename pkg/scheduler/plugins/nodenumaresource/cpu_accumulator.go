@@ -23,24 +23,25 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 func takeCPUs(
 	topology *CPUTopology,
 	maxRefCount int,
-	availableCPUs CPUSet,
+	availableCPUs cpuset.CPUSet,
 	allocatedCPUs CPUDetails,
 	numCPUsNeeded int,
 	cpuBindPolicy schedulingconfig.CPUBindPolicy,
 	cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy,
 	numaAllocatedStrategy schedulingconfig.NUMAAllocateStrategy,
-) (CPUSet, error) {
+) (cpuset.CPUSet, error) {
 	acc := newCPUAccumulator(topology, maxRefCount, availableCPUs, allocatedCPUs, numCPUsNeeded, cpuExclusivePolicy, numaAllocatedStrategy)
 	if acc.isSatisfied() {
 		return acc.result, nil
 	}
 	if acc.isFailed() {
-		return NewCPUSet(), fmt.Errorf("not enough cpus available to satisfy request")
+		return cpuset.NewCPUSet(), fmt.Errorf("not enough cpus available to satisfy request")
 	}
 
 	fullPCPUs := cpuBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs
@@ -169,7 +170,7 @@ func takeCPUs(
 		}
 	}
 
-	return NewCPUSet(), fmt.Errorf("failed to allocate cpus")
+	return cpuset.NewCPUSet(), fmt.Errorf("failed to allocate cpus")
 }
 
 type cpuAccumulator struct {
@@ -182,13 +183,13 @@ type cpuAccumulator struct {
 	exclusiveInNUMANodes sets.Int
 	exclusivePolicy      schedulingconfig.CPUExclusivePolicy
 	numaAllocateStrategy schedulingconfig.NUMAAllocateStrategy
-	result               CPUSet
+	result               cpuset.CPUSet
 }
 
 func newCPUAccumulator(
 	topology *CPUTopology,
 	maxRefCount int,
-	availableCPUs CPUSet,
+	availableCPUs cpuset.CPUSet,
 	allocatedCPUs CPUDetails,
 	numCPUsNeeded int,
 	exclusivePolicy schedulingconfig.CPUExclusivePolicy,
@@ -224,7 +225,7 @@ func newCPUAccumulator(
 		exclusivePolicy:      exclusivePolicy,
 		numCPUsNeeded:        numCPUsNeeded,
 		numaAllocateStrategy: numaAllocateStrategy,
-		result:               NewCPUSet(),
+		result:               cpuset.NewCPUSet(),
 	}
 }
 
@@ -630,7 +631,7 @@ func (a *cpuAccumulator) freeCPUs(filterExclusive bool) []int {
 
 	socketColoScores := make(map[int]int)
 	for socketID := range socketFreeScores {
-		socketColoScore := a.topology.CPUDetails.CPUsInSockets(socketID).Intersection(a.result).Count()
+		socketColoScore := a.topology.CPUDetails.CPUsInSockets(socketID).Intersection(a.result).Size()
 		socketColoScores[socketID] = socketColoScore
 	}
 

@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 func buildCPUTopologyForTest(numSockets, nodesPerSocket, coresPerNode, cpusPerCore int) *CPUTopology {
@@ -60,95 +61,95 @@ func TestTakeFullPCPUs(t *testing.T) {
 		name          string
 		topology      *CPUTopology
 		maxRefCount   int
-		allocatedCPUs CPUSet
+		allocatedCPUs cpuset.CPUSet
 		numCPUsNeeded int
 		wantError     bool
-		wantResult    CPUSet
+		wantResult    cpuset.CPUSet
 	}{
 		{
 			name:          "allocate on non-NUMA node",
 			topology:      buildCPUTopologyForTest(1, 1, 4, 2),
 			maxRefCount:   1,
 			numCPUsNeeded: 2,
-			wantResult:    NewCPUSet(0, 1),
+			wantResult:    cpuset.NewCPUSet(0, 1),
 		},
 		{
 			name:          "with allocated cpus",
 			topology:      buildCPUTopologyForTest(1, 1, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 1),
+			allocatedCPUs: cpuset.NewCPUSet(0, 1),
 			numCPUsNeeded: 2,
-			wantResult:    NewCPUSet(2, 3),
+			wantResult:    cpuset.NewCPUSet(2, 3),
 		},
 		{
 			name:          "allocate whole socket",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
 			numCPUsNeeded: 8,
-			wantResult:    MustParse("0-7"),
+			wantResult:    cpuset.MustParse("0-7"),
 		},
 		{
 			name:          "allocate across socket",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
 			numCPUsNeeded: 12,
-			wantResult:    MustParse("0-11"),
+			wantResult:    cpuset.MustParse("0-11"),
 		},
 		{
 			name:          "allocate whole socket with partially-allocated socket",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 1),
+			allocatedCPUs: cpuset.NewCPUSet(0, 1),
 			numCPUsNeeded: 8,
-			wantResult:    MustParse("8-15"),
+			wantResult:    cpuset.MustParse("8-15"),
 		},
 		{
 			name:          "allocate in the smallest idle socket",
 			topology:      buildCPUTopologyForTest(2, 2, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: MustParse("0-5,16-23"),
+			allocatedCPUs: cpuset.MustParse("0-5,16-23"),
 			numCPUsNeeded: 6,
-			wantResult:    MustParse("24-29"),
+			wantResult:    cpuset.MustParse("24-29"),
 		},
 		{
 			name:          "allocate the most of CPUs on the same socket",
 			topology:      buildCPUTopologyForTest(2, 2, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: MustParse("0-5,16-23"),
+			allocatedCPUs: cpuset.MustParse("0-5,16-23"),
 			numCPUsNeeded: 12,
-			wantResult:    MustParse("6-15,24-25"),
+			wantResult:    cpuset.MustParse("6-15,24-25"),
 		},
 		{
 			name:          "allocate from first socket",
 			topology:      buildCPUTopologyForTest(2, 2, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: MustParse("0-3,8-11"),
+			allocatedCPUs: cpuset.MustParse("0-3,8-11"),
 			numCPUsNeeded: 4,
-			wantResult:    MustParse("4-7"),
+			wantResult:    cpuset.MustParse("4-7"),
 		},
 		{
 			name:          "allocate with less spread cpus",
 			topology:      buildCPUTopologyForTest(2, 2, 2, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 2, 4, 8, 12),
+			allocatedCPUs: cpuset.NewCPUSet(0, 2, 4, 8, 12),
 			numCPUsNeeded: 4,
-			wantResult:    NewCPUSet(10, 11, 14, 15),
+			wantResult:    cpuset.NewCPUSet(10, 11, 14, 15),
 		},
 		{
 			name:          "allocate with the most spread cpus",
 			topology:      buildCPUTopologyForTest(2, 2, 2, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 2, 4, 8, 10, 12),
+			allocatedCPUs: cpuset.NewCPUSet(0, 2, 4, 8, 10, 12),
 			numCPUsNeeded: 6,
-			wantResult:    NewCPUSet(5, 6, 7, 13, 14, 15),
+			wantResult:    cpuset.NewCPUSet(5, 6, 7, 13, 14, 15),
 		},
 		{
 			name:          "allocate with the most spread cpus on the smallest idle cpus socket",
 			topology:      buildCPUTopologyForTest(2, 2, 2, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 2, 4, 8, 9, 10, 12),
+			allocatedCPUs: cpuset.NewCPUSet(0, 2, 4, 8, 9, 10, 12),
 			numCPUsNeeded: 6,
-			wantResult:    NewCPUSet(6, 7, 11, 13, 14, 15),
+			wantResult:    cpuset.NewCPUSet(6, 7, 11, 13, 14, 15),
 		},
 	}
 
@@ -176,95 +177,95 @@ func TestTakeFullPCPUsWithNUMALeastAllocated(t *testing.T) {
 		name          string
 		topology      *CPUTopology
 		maxRefCount   int
-		allocatedCPUs CPUSet
+		allocatedCPUs cpuset.CPUSet
 		numCPUsNeeded int
 		wantError     bool
-		wantResult    CPUSet
+		wantResult    cpuset.CPUSet
 	}{
 		{
 			name:          "allocate on non-NUMA node",
 			topology:      buildCPUTopologyForTest(1, 1, 4, 2),
 			maxRefCount:   1,
 			numCPUsNeeded: 2,
-			wantResult:    NewCPUSet(0, 1),
+			wantResult:    cpuset.NewCPUSet(0, 1),
 		},
 		{
 			name:          "with allocated cpus",
 			topology:      buildCPUTopologyForTest(1, 1, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 1),
+			allocatedCPUs: cpuset.NewCPUSet(0, 1),
 			numCPUsNeeded: 2,
-			wantResult:    NewCPUSet(2, 3),
+			wantResult:    cpuset.NewCPUSet(2, 3),
 		},
 		{
 			name:          "allocate whole socket",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
 			numCPUsNeeded: 8,
-			wantResult:    MustParse("0-7"),
+			wantResult:    cpuset.MustParse("0-7"),
 		},
 		{
 			name:          "allocate across socket",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
 			numCPUsNeeded: 12,
-			wantResult:    MustParse("0-11"),
+			wantResult:    cpuset.MustParse("0-11"),
 		},
 		{
 			name:          "allocate whole socket with partially-allocated socket",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 1),
+			allocatedCPUs: cpuset.NewCPUSet(0, 1),
 			numCPUsNeeded: 8,
-			wantResult:    MustParse("8-15"),
+			wantResult:    cpuset.MustParse("8-15"),
 		},
 		{
 			name:          "allocate in the most idle socket",
 			topology:      buildCPUTopologyForTest(2, 2, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: MustParse("0-5,16-23"),
+			allocatedCPUs: cpuset.MustParse("0-5,16-23"),
 			numCPUsNeeded: 6,
-			wantResult:    MustParse("8-13"),
+			wantResult:    cpuset.MustParse("8-13"),
 		},
 		{
 			name:          "allocate the most of CPUs on the same socket",
 			topology:      buildCPUTopologyForTest(2, 2, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: MustParse("0-5,16-23"),
+			allocatedCPUs: cpuset.MustParse("0-5,16-23"),
 			numCPUsNeeded: 12,
-			wantResult:    MustParse("6-15,24-25"),
+			wantResult:    cpuset.MustParse("6-15,24-25"),
 		},
 		{
 			name:          "allocate from second socket",
 			topology:      buildCPUTopologyForTest(2, 2, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: MustParse("0-3,8-11"),
+			allocatedCPUs: cpuset.MustParse("0-3,8-11"),
 			numCPUsNeeded: 4,
-			wantResult:    MustParse("16-19"),
+			wantResult:    cpuset.MustParse("16-19"),
 		},
 		{
 			name:          "allocate with less spread cpus",
 			topology:      buildCPUTopologyForTest(2, 2, 2, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 2, 4, 8, 12),
+			allocatedCPUs: cpuset.NewCPUSet(0, 2, 4, 8, 12),
 			numCPUsNeeded: 4,
-			wantResult:    NewCPUSet(10, 11, 14, 15),
+			wantResult:    cpuset.NewCPUSet(10, 11, 14, 15),
 		},
 		{
 			name:          "allocate with the less spread cpus 2",
 			topology:      buildCPUTopologyForTest(2, 2, 2, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 2, 4, 8, 10, 12),
+			allocatedCPUs: cpuset.NewCPUSet(0, 2, 4, 8, 10, 12),
 			numCPUsNeeded: 6,
-			wantResult:    NewCPUSet(6, 7, 14, 15, 1, 3),
+			wantResult:    cpuset.NewCPUSet(6, 7, 14, 15, 1, 3),
 		},
 		{
 			name:          "allocate with the most spread cpus on the most idle cpus socket 3",
 			topology:      buildCPUTopologyForTest(2, 2, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 2, 4, 8, 9, 10, 12),
+			allocatedCPUs: cpuset.NewCPUSet(0, 2, 4, 8, 9, 10, 12),
 			numCPUsNeeded: 6,
-			wantResult:    NewCPUSet(16, 17, 18, 19, 20, 21),
+			wantResult:    cpuset.NewCPUSet(16, 17, 18, 19, 20, 21),
 		},
 	}
 
@@ -302,41 +303,41 @@ func TestTakeSpreadByPCPUs(t *testing.T) {
 		name          string
 		topology      *CPUTopology
 		maxRefCount   int
-		allocatedCPUs CPUSet
+		allocatedCPUs cpuset.CPUSet
 		numCPUsNeeded int
 		wantError     bool
-		wantResult    CPUSet
+		wantResult    cpuset.CPUSet
 	}{
 		{
 			name:          "allocate on non-NUMA node",
 			topology:      buildCPUTopologyForTest(1, 1, 4, 2),
 			maxRefCount:   1,
 			numCPUsNeeded: 4,
-			wantResult:    NewCPUSet(0, 2, 4, 6),
+			wantResult:    cpuset.NewCPUSet(0, 2, 4, 6),
 		},
 		{
 			name:          "allocate satisfied the partially-allocated socket",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 2),
+			allocatedCPUs: cpuset.NewCPUSet(0, 2),
 			numCPUsNeeded: 4,
-			wantResult:    NewCPUSet(1, 3, 4, 6),
+			wantResult:    cpuset.NewCPUSet(1, 3, 4, 6),
 		},
 		{
 			name:          "allocate cpus on full-free socket",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 1, 2, 3),
+			allocatedCPUs: cpuset.NewCPUSet(0, 1, 2, 3),
 			numCPUsNeeded: 4,
-			wantResult:    NewCPUSet(8, 10, 12, 14),
+			wantResult:    cpuset.NewCPUSet(8, 10, 12, 14),
 		},
 		{
 			name:          "allocate most of CPUs in the same socket and overlapped-cores",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 2),
+			allocatedCPUs: cpuset.NewCPUSet(0, 2),
 			numCPUsNeeded: 6,
-			wantResult:    MustParse("1,3-7"),
+			wantResult:    cpuset.MustParse("1,3-7"),
 		},
 	}
 
@@ -374,41 +375,41 @@ func TestTakeSpreadByPCPUsWithNUMALeastAllocated(t *testing.T) {
 		name          string
 		topology      *CPUTopology
 		maxRefCount   int
-		allocatedCPUs CPUSet
+		allocatedCPUs cpuset.CPUSet
 		numCPUsNeeded int
 		wantError     bool
-		wantResult    CPUSet
+		wantResult    cpuset.CPUSet
 	}{
 		{
 			name:          "allocate on non-NUMA node",
 			topology:      buildCPUTopologyForTest(1, 1, 4, 2),
 			maxRefCount:   1,
 			numCPUsNeeded: 4,
-			wantResult:    NewCPUSet(0, 2, 4, 6),
+			wantResult:    cpuset.NewCPUSet(0, 2, 4, 6),
 		},
 		{
 			name:          "allocate satisfied the partially-allocated socket",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 2),
+			allocatedCPUs: cpuset.NewCPUSet(0, 2),
 			numCPUsNeeded: 4,
-			wantResult:    NewCPUSet(8, 10, 12, 14),
+			wantResult:    cpuset.NewCPUSet(8, 10, 12, 14),
 		},
 		{
 			name:          "allocate cpus on full-free socket",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 1, 2, 3),
+			allocatedCPUs: cpuset.NewCPUSet(0, 1, 2, 3),
 			numCPUsNeeded: 4,
-			wantResult:    NewCPUSet(8, 10, 12, 14),
+			wantResult:    cpuset.NewCPUSet(8, 10, 12, 14),
 		},
 		{
 			name:          "allocate most of CPUs in the same socket and overlapped-cores",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
-			allocatedCPUs: NewCPUSet(0, 2),
+			allocatedCPUs: cpuset.NewCPUSet(0, 2),
 			numCPUsNeeded: 6,
-			wantResult:    MustParse("8,10,12,14,9,11"),
+			wantResult:    cpuset.MustParse("8,10,12,14,9,11"),
 		},
 	}
 
@@ -436,87 +437,87 @@ func TestTakeCPUsWithExclusivePolicy(t *testing.T) {
 		name                     string
 		topology                 *CPUTopology
 		maxRefCount              int
-		allocatedExclusiveCPUs   CPUSet
+		allocatedExclusiveCPUs   cpuset.CPUSet
 		allocatedExclusivePolicy schedulingconfig.CPUExclusivePolicy
 		bindPolicy               schedulingconfig.CPUBindPolicy
 		exclusivePolicy          schedulingconfig.CPUExclusivePolicy
 		numCPUsNeeded            int
 		wantError                bool
-		wantResult               CPUSet
+		wantResult               cpuset.CPUSet
 	}{
 		{
 			name:                   "allocate cpus on full-free socket with PCPULevel",
 			topology:               buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:            1,
-			allocatedExclusiveCPUs: NewCPUSet(0, 2),
+			allocatedExclusiveCPUs: cpuset.NewCPUSet(0, 2),
 			numCPUsNeeded:          4,
-			wantResult:             NewCPUSet(8, 10, 12, 14),
+			wantResult:             cpuset.NewCPUSet(8, 10, 12, 14),
 		},
 		{
 			name:          "allocate overlapped cpus with PCPULevel",
 			topology:      buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:   1,
 			numCPUsNeeded: 10,
-			wantResult:    NewCPUSet(0, 1, 2, 3, 4, 6, 8, 10, 12, 14),
+			wantResult:    cpuset.NewCPUSet(0, 1, 2, 3, 4, 6, 8, 10, 12, 14),
 		},
 		{
 			name:                   "allocate cpus on large-size partially-allocated socket with PCPULevel",
 			topology:               buildCPUTopologyForTest(2, 1, 8, 2),
 			maxRefCount:            1,
-			allocatedExclusiveCPUs: NewCPUSet(0, 2),
+			allocatedExclusiveCPUs: cpuset.NewCPUSet(0, 2),
 			numCPUsNeeded:          4,
-			wantResult:             NewCPUSet(4, 6, 8, 10),
+			wantResult:             cpuset.NewCPUSet(4, 6, 8, 10),
 		},
 		{
 			name:                   "allocate cpus with none exclusive policy",
 			topology:               buildCPUTopologyForTest(2, 1, 8, 2),
 			maxRefCount:            1,
-			allocatedExclusiveCPUs: NewCPUSet(0, 2),
+			allocatedExclusiveCPUs: cpuset.NewCPUSet(0, 2),
 			exclusivePolicy:        schedulingconfig.CPUExclusivePolicyNone,
 			numCPUsNeeded:          4,
-			wantResult:             NewCPUSet(1, 3, 4, 6),
+			wantResult:             cpuset.NewCPUSet(1, 3, 4, 6),
 		},
 		{
 			name:                     "allocate cpus on full-free socket with NUMANodeLevel",
 			topology:                 buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:              1,
-			allocatedExclusiveCPUs:   NewCPUSet(0, 2),
+			allocatedExclusiveCPUs:   cpuset.NewCPUSet(0, 2),
 			allocatedExclusivePolicy: schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
 			exclusivePolicy:          schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
 			numCPUsNeeded:            4,
-			wantResult:               NewCPUSet(8, 10, 12, 14),
+			wantResult:               cpuset.NewCPUSet(8, 10, 12, 14),
 		},
 		{
 			name:                     "allocate cpus on partially-allocated socket without NUMANodeLevel",
 			topology:                 buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:              1,
-			allocatedExclusiveCPUs:   NewCPUSet(0, 2),
+			allocatedExclusiveCPUs:   cpuset.NewCPUSet(0, 2),
 			allocatedExclusivePolicy: schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
 			exclusivePolicy:          schedulingconfig.CPUExclusivePolicyNone,
 			numCPUsNeeded:            4,
-			wantResult:               NewCPUSet(1, 3, 4, 6),
+			wantResult:               cpuset.NewCPUSet(1, 3, 4, 6),
 		},
 		{
 			name:                     "allocate cpus on full-free socket with NUMANodeLevel with PCPUs",
 			topology:                 buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:              1,
-			allocatedExclusiveCPUs:   NewCPUSet(0, 2),
+			allocatedExclusiveCPUs:   cpuset.NewCPUSet(0, 2),
 			allocatedExclusivePolicy: schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
 			exclusivePolicy:          schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
 			bindPolicy:               schedulingconfig.CPUBindPolicyFullPCPUs,
 			numCPUsNeeded:            4,
-			wantResult:               NewCPUSet(8, 9, 10, 11),
+			wantResult:               cpuset.NewCPUSet(8, 9, 10, 11),
 		},
 		{
 			name:                     "allocate cpus on partially-allocated socket without NUMANodeLevel with PCPUs",
 			topology:                 buildCPUTopologyForTest(2, 1, 4, 2),
 			maxRefCount:              1,
-			allocatedExclusiveCPUs:   NewCPUSet(0, 2),
+			allocatedExclusiveCPUs:   cpuset.NewCPUSet(0, 2),
 			allocatedExclusivePolicy: schedulingconfig.CPUExclusivePolicyNUMANodeLevel,
 			exclusivePolicy:          schedulingconfig.CPUExclusivePolicyNone,
 			bindPolicy:               schedulingconfig.CPUBindPolicyFullPCPUs,
 			numCPUsNeeded:            4,
-			wantResult:               NewCPUSet(4, 5, 6, 7),
+			wantResult:               cpuset.NewCPUSet(4, 5, 6, 7),
 		},
 	}
 
@@ -568,31 +569,31 @@ func TestTakeCPUsWithMaxRefCount(t *testing.T) {
 
 	// first pod request 4 CPUs
 	podUID := uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails := allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	availableCPUs, allocatedCPUsDetails := allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
 	result, err := takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		4, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
-	assert.True(t, result.Equals(MustParse("0-3")))
+	assert.True(t, result.Equals(cpuset.MustParse("0-3")))
 	assert.NoError(t, err)
 	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
 
 	// second pod request 5 CPUs
 	podUID = uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
 	result, err = takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		5, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
-	assert.True(t, result.Equals(MustParse("0,4-7")))
+	assert.True(t, result.Equals(cpuset.MustParse("0,4-7")))
 	assert.NoError(t, err)
 	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
 
 	// third pod request 4 cpus
 	podUID = uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
 	result, err = takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		4, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
-	assert.True(t, result.Equals(MustParse("2-5")))
+	assert.True(t, result.Equals(cpuset.MustParse("2-5")))
 	assert.NoError(t, err)
 	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
 }
@@ -609,46 +610,46 @@ func TestTakeCPUsSortByRefCount(t *testing.T) {
 
 	// first pod request 16 CPUs
 	podUID := uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails := allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	availableCPUs, allocatedCPUsDetails := allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
 	result, err := takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		16, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
-	assert.True(t, result.Equals(MustParse("0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30")))
+	assert.True(t, result.Equals(cpuset.MustParse("0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30")))
 	assert.NoError(t, err)
 	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
 
 	// second pod request 16 CPUs
 	podUID = uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
 	result, err = takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		16, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
-	assert.True(t, result.Equals(MustParse("0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15")))
+	assert.True(t, result.Equals(cpuset.MustParse("0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15")))
 	assert.NoError(t, err)
 	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
 
 	// third pod request 16 cpus
 	podUID = uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
 	result, err = takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		16, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
-	assert.True(t, result.Equals(MustParse("1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31")))
+	assert.True(t, result.Equals(cpuset.MustParse("1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31")))
 	assert.NoError(t, err)
 	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
 
 	// forth pod request 16 cpus
 	podUID = uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
 	result, err = takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		16, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
-	assert.True(t, result.Equals(MustParse("16-31")))
+	assert.True(t, result.Equals(cpuset.MustParse("16-31")))
 	assert.NoError(t, err)
 	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
 
-	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
-	assert.Equal(t, MustParse(""), availableCPUs)
+	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	assert.Equal(t, cpuset.MustParse(""), availableCPUs)
 }
 
 func BenchmarkTakeCPUsWithSameCoreFirst(b *testing.B) {

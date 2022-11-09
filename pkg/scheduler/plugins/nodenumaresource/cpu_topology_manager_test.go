@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 func TestCPUTopologyManager(t *testing.T) {
@@ -109,7 +110,7 @@ func TestCPUTopologyManager(t *testing.T) {
 
 	assert.Equal(t, 1, cpuTopologyOptions.MaxRefCount)
 
-	expectReservedCPUs := MustParse("0-3")
+	expectReservedCPUs := cpuset.MustParse("0-3")
 	assert.Equal(t, expectReservedCPUs, cpuTopologyOptions.ReservedCPUs)
 
 	delete(topology.Annotations, extension.AnnotationNodeCPUAllocs)

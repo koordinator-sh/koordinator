@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -52,7 +53,7 @@ func GetRootCgroupCurCPUSet(qosClass corev1.PodQOSClass) ([]int32, error) {
 		return nil, err
 	}
 
-	return ParseCPUSetStr(rawContent)
+	return cpuset.ParseCPUSetStr(rawContent)
 }
 
 func GetRootCgroupCurCFSQuota(qosClass corev1.PodQOSClass) (int64, error) {

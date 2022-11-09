@@ -28,6 +28,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 func TestEndpointsQueryCPUTopologyOptions(t *testing.T) {
@@ -39,7 +40,7 @@ func TestEndpointsQueryCPUTopologyOptions(t *testing.T) {
 
 	expectedCPUTopologyOptions := CPUTopologyOptions{
 		CPUTopology:  buildCPUTopologyForTest(2, 1, 4, 2),
-		ReservedCPUs: MustParse("0-1"),
+		ReservedCPUs: cpuset.MustParse("0-1"),
 		MaxRefCount:  1,
 		Policy: &extension.KubeletCPUManagerPolicy{
 			Policy: extension.KubeletCPUManagerPolicyStatic,
@@ -73,7 +74,7 @@ func TestEndpointsQueryAvailableCPUsOptions(t *testing.T) {
 
 	cpuTopologyOptions := CPUTopologyOptions{
 		CPUTopology:  buildCPUTopologyForTest(2, 1, 4, 2),
-		ReservedCPUs: MustParse("0-1"),
+		ReservedCPUs: cpuset.MustParse("0-1"),
 		MaxRefCount:  1,
 		Policy: &extension.KubeletCPUManagerPolicy{
 			Policy: extension.KubeletCPUManagerPolicyStatic,
@@ -86,7 +87,7 @@ func TestEndpointsQueryAvailableCPUsOptions(t *testing.T) {
 		*options = cpuTopologyOptions
 	})
 
-	p.cpuManager.UpdateAllocatedCPUSet("test-node-1", uuid.NewUUID(), MustParse("0,2,4,6"), schedulingconfig.CPUExclusivePolicyNone)
+	p.cpuManager.UpdateAllocatedCPUSet("test-node-1", uuid.NewUUID(), cpuset.MustParse("0,2,4,6"), schedulingconfig.CPUExclusivePolicyNone)
 
 	engine := gin.Default()
 	p.RegisterEndpoints(engine.Group("/"))
@@ -99,7 +100,7 @@ func TestEndpointsQueryAvailableCPUsOptions(t *testing.T) {
 	assert.NoError(t, err)
 
 	expectedResponse := &AvailableCPUsResponse{
-		AvailableCPUs: MustParse("3,5,7-15"),
+		AvailableCPUs: cpuset.MustParse("3,5,7-15"),
 		Allocated:     CPUDetails{},
 	}
 	for _, v := range []int{0, 2, 4, 6} {

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -266,4 +267,9 @@ func ParseContainerId(data string) (cType, cID string, err error) {
 	}
 	cType, cID = parts[0], parts[1]
 	return
+}
+
+// WriteCgroupCPUSet writes the cgroup cpuset file according to the specified cgroup dir
+func WriteCgroupCPUSet(cgroupFileDir, cpusetStr string) error {
+	return os.WriteFile(filepath.Join(cgroupFileDir, system.CPUSFileName), []byte(cpusetStr), 0644)
 }

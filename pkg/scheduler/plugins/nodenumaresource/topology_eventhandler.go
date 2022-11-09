@@ -28,6 +28,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 type nodeResourceTopologyEventHandler struct {
@@ -110,9 +111,9 @@ func (m *nodeResourceTopologyEventHandler) updateNodeResourceTopology(oldNodeRes
 	if err != nil {
 		klog.Errorf("Failed to GetKubeletCPUManagerPolicy from NodeResourceTopology %s, err: %v", newNodeResTopology.Name, err)
 	}
-	var kubeletReservedCPUs CPUSet
+	var kubeletReservedCPUs cpuset.CPUSet
 	if kubeletPolicy != nil {
-		kubeletReservedCPUs, err = Parse(kubeletPolicy.ReservedCPUs)
+		kubeletReservedCPUs, err = cpuset.Parse(kubeletPolicy.ReservedCPUs)
 		if err != nil {
 			klog.Errorf("Failed to Parse kubelet reserved CPUs %s, err: %v", kubeletPolicy.ReservedCPUs, err)
 		}
@@ -138,16 +139,16 @@ func (m *nodeResourceTopologyEventHandler) updateNodeResourceTopology(oldNodeRes
 	})
 }
 
-func (m *nodeResourceTopologyEventHandler) getPodAllocsCPUSet(podCPUAllocs extension.PodCPUAllocs) CPUSet {
+func (m *nodeResourceTopologyEventHandler) getPodAllocsCPUSet(podCPUAllocs extension.PodCPUAllocs) cpuset.CPUSet {
 	if len(podCPUAllocs) == 0 {
-		return CPUSet{}
+		return cpuset.CPUSet{}
 	}
-	builder := NewCPUSetBuilder()
+	builder := cpuset.NewCPUSetBuilder()
 	for _, v := range podCPUAllocs {
 		if !v.ManagedByKubelet || v.UID == "" || v.CPUSet == "" {
 			continue
 		}
-		cpuset, err := Parse(v.CPUSet)
+		cpuset, err := cpuset.Parse(v.CPUSet)
 		if err != nil || cpuset.IsEmpty() {
 			continue
 		}

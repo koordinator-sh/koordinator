@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 // CPUTopologyManager manages the CPU Topology and CPU assignments options.
@@ -31,7 +32,7 @@ type CPUTopologyManager interface {
 
 type CPUTopologyOptions struct {
 	CPUTopology  *CPUTopology                       `json:"cpuTopology,omitempty"`
-	ReservedCPUs CPUSet                             `json:"reservedCPUs,omitempty"`
+	ReservedCPUs cpuset.CPUSet                      `json:"reservedCPUs,omitempty"`
 	MaxRefCount  int                                `json:"maxRefCount,omitempty"`
 	Policy       *extension.KubeletCPUManagerPolicy `json:"policy,omitempty"`
 }

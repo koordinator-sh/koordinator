@@ -30,6 +30,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 const (
@@ -171,7 +172,7 @@ type preFilterState struct {
 	preferredCPUBindPolicy      schedulingconfig.CPUBindPolicy
 	preferredCPUExclusivePolicy schedulingconfig.CPUExclusivePolicy
 	numCPUsNeeded               int
-	allocatedCPUs               CPUSet
+	allocatedCPUs               cpuset.CPUSet
 }
 
 func (s *preFilterState) Clone() framework.StateData {

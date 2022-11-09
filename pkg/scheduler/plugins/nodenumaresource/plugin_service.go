@@ -22,13 +22,14 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 var _ services.APIServiceProvider = &Plugin{}
 
 type AvailableCPUsResponse struct {
-	AvailableCPUs CPUSet     `json:"availableCPUs,omitempty"`
-	Allocated     CPUDetails `json:"allocated,omitempty"`
+	AvailableCPUs cpuset.CPUSet `json:"availableCPUs,omitempty"`
+	Allocated     CPUDetails    `json:"allocated,omitempty"`
 }
 
 func (p *Plugin) RegisterEndpoints(group *gin.RouterGroup) {

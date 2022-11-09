@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 func TestNodeAllocationStateAddCPUs(t *testing.T) {
@@ -36,14 +37,14 @@ func TestNodeAllocationStateAddCPUs(t *testing.T) {
 	allocationState := newCPUAllocation("test-node-1")
 	assert.NotNil(t, allocationState)
 	podUID := uuid.NewUUID()
-	allocationState.addCPUs(cpuTopology, podUID, MustParse("1-4"), schedulingconfig.CPUExclusivePolicyPCPULevel)
+	allocationState.addCPUs(cpuTopology, podUID, cpuset.MustParse("1-4"), schedulingconfig.CPUExclusivePolicyPCPULevel)
 
-	cpuset := MustParse("1-4")
-	expectAllocatedPods := map[types.UID]CPUSet{
-		podUID: cpuset,
+	cpus := cpuset.MustParse("1-4")
+	expectAllocatedPods := map[types.UID]cpuset.CPUSet{
+		podUID: cpus,
 	}
 	expectAllocatedCPUs := CPUDetails{}
-	for _, cpuID := range cpuset.ToSliceNoSort() {
+	for _, cpuID := range cpus.ToSliceNoSort() {
 		cpuInfo := cpuTopology.CPUDetails[cpuID]
 		cpuInfo.ExclusivePolicy = schedulingconfig.CPUExclusivePolicyPCPULevel
 		cpuInfo.RefCount++
@@ -53,23 +54,23 @@ func TestNodeAllocationStateAddCPUs(t *testing.T) {
 	assert.Equal(t, expectAllocatedPods, allocationState.allocatedPods)
 	assert.Equal(t, expectAllocatedCPUs, allocationState.allocatedCPUs)
 
-	availableCPUs, _ := allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
-	expectAvailableCPUs := MustParse("0-15")
+	availableCPUs, _ := allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	expectAvailableCPUs := cpuset.MustParse("0-15")
 	assert.Equal(t, expectAvailableCPUs, availableCPUs)
 
 	// test with add already allocated Pod
-	allocationState.addCPUs(cpuTopology, podUID, MustParse("1-4"), schedulingconfig.CPUExclusivePolicyPCPULevel)
+	allocationState.addCPUs(cpuTopology, podUID, cpuset.MustParse("1-4"), schedulingconfig.CPUExclusivePolicyPCPULevel)
 	assert.Equal(t, expectAllocatedPods, allocationState.allocatedPods)
 	assert.Equal(t, expectAllocatedCPUs, allocationState.allocatedCPUs)
 
-	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
-	MustParse("0-15")
+	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	cpuset.MustParse("0-15")
 	assert.Equal(t, expectAvailableCPUs, availableCPUs)
 
 	// test with add already allocated cpu(refCount > 1 but less than maxRefCount) and another pod
 	anotherPodUID := uuid.NewUUID()
-	allocationState.addCPUs(cpuTopology, anotherPodUID, MustParse("2-5"), schedulingconfig.CPUExclusivePolicyPCPULevel)
-	anotherCPUSet := MustParse("2-5")
+	allocationState.addCPUs(cpuTopology, anotherPodUID, cpuset.MustParse("2-5"), schedulingconfig.CPUExclusivePolicyPCPULevel)
+	anotherCPUSet := cpuset.MustParse("2-5")
 	expectAllocatedPods[anotherPodUID] = anotherCPUSet
 	for _, cpuID := range anotherCPUSet.ToSliceNoSort() {
 		cpuInfo, ok := expectAllocatedCPUs[cpuID]
@@ -94,11 +95,11 @@ func TestNodeAllocationStateReleaseCPUs(t *testing.T) {
 	allocationState := newCPUAllocation("test-node-1")
 	assert.NotNil(t, allocationState)
 	podUID := uuid.NewUUID()
-	allocationState.addCPUs(cpuTopology, podUID, MustParse("1-4"), schedulingconfig.CPUExclusivePolicyPCPULevel)
+	allocationState.addCPUs(cpuTopology, podUID, cpuset.MustParse("1-4"), schedulingconfig.CPUExclusivePolicyPCPULevel)
 
 	allocationState.releaseCPUs(podUID)
 
-	expectAllocatedPods := map[types.UID]CPUSet{}
+	expectAllocatedPods := map[types.UID]cpuset.CPUSet{}
 	expectAllocatedCPUs := CPUDetails{}
 	assert.Equal(t, expectAllocatedPods, allocationState.allocatedPods)
 	assert.Equal(t, expectAllocatedCPUs, allocationState.allocatedCPUs)
@@ -117,21 +118,21 @@ func Test_cpuAllocation_getAvailableCPUs(t *testing.T) {
 	allocationState := newCPUAllocation("test-node-1")
 	assert.NotNil(t, allocationState)
 	podUID := uuid.NewUUID()
-	allocationState.addCPUs(cpuTopology, podUID, MustParse("1-4"), schedulingconfig.CPUExclusivePolicyPCPULevel)
+	allocationState.addCPUs(cpuTopology, podUID, cpuset.MustParse("1-4"), schedulingconfig.CPUExclusivePolicyPCPULevel)
 
-	availableCPUs, _ := allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
-	expectAvailableCPUs := MustParse("0-15")
+	availableCPUs, _ := allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	expectAvailableCPUs := cpuset.MustParse("0-15")
 	assert.Equal(t, expectAvailableCPUs, availableCPUs)
 
 	// test with add already allocated cpu(refCount > 1 but less than maxRefCount) and another pod
 	anotherPodUID := uuid.NewUUID()
-	allocationState.addCPUs(cpuTopology, anotherPodUID, MustParse("2-5"), schedulingconfig.CPUExclusivePolicyPCPULevel)
-	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 2, NewCPUSet())
-	expectAvailableCPUs = MustParse("0-1,5-15")
+	allocationState.addCPUs(cpuTopology, anotherPodUID, cpuset.MustParse("2-5"), schedulingconfig.CPUExclusivePolicyPCPULevel)
+	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	expectAvailableCPUs = cpuset.MustParse("0-1,5-15")
 	assert.Equal(t, expectAvailableCPUs, availableCPUs)
 
 	allocationState.releaseCPUs(podUID)
-	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 1, NewCPUSet())
-	expectAvailableCPUs = MustParse("0-1,6-15")
+	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 1, cpuset.NewCPUSet())
+	expectAvailableCPUs = cpuset.MustParse("0-1,6-15")
 	assert.Equal(t, expectAvailableCPUs, availableCPUs)
 }
