@@ -200,13 +200,6 @@ func TestNewFramework(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "many plugins",
-			profile: &deschedulerconfig.DeschedulerProfile{
-				Name: testProfileName,
-			},
-			wantErr: true,
-		},
-		{
 			name: "duplicate plugins",
 			profile: &deschedulerconfig.DeschedulerProfile{
 				Name: testProfileName,

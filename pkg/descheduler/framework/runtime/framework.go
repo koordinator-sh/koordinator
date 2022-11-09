@@ -115,6 +115,10 @@ func NewFramework(r Registry, profile *deschedulerconfig.DeschedulerProfile, opt
 		getPodsAssignedToNodeFunc: options.getPodsAssignedToNodeFunc,
 	}
 
+	if profile == nil || profile.Plugins == nil {
+		return f, nil
+	}
+
 	pluginConfig := make(map[string]runtime.Object, len(profile.PluginConfig))
 	for i := range profile.PluginConfig {
 		name := profile.PluginConfig[i].Name
