@@ -52,6 +52,11 @@ const (
 	// AnnotationResourceStatus represents resource allocation result.
 	// koord-scheduler patch Pod with the annotation before binding to node.
 	AnnotationResourceStatus = SchedulingDomainPrefix + "/resource-status"
+
+	// AnnotationExtendedResourceSpec specifies the resource requirements of extended resources for internal usage.
+	// It annotates the requests/limits of extended resources and can be used by runtime proxy and koordlet that
+	// cannot get the original pod spec in CRI requests.
+	AnnotationExtendedResourceSpec = NodeDomainPrefix + "/extended-resource-spec"
 )
 
 var (
@@ -176,4 +181,45 @@ func TranslateResourceNameByPriorityClass(priorityClass PriorityClass, defaultRe
 		return defaultResourceName
 	}
 	return ResourceNameMap[priorityClass][defaultResourceName]
+}
+
+type ExtendedResourceSpec struct {
+	Containers map[string]ExtendedResourceContainerSpec `json:"containers,omitempty"`
+}
+
+type ExtendedResourceContainerSpec struct {
+	Limits   corev1.ResourceList `json:"limits,omitempty"`
+	Requests corev1.ResourceList `json:"requests,omitempty"`
+}
+
+// GetExtendedResourceSpec parses ExtendedResourceSpec from annotations
+func GetExtendedResourceSpec(annotations map[string]string) (*ExtendedResourceSpec, error) {
+	if annotations == nil {
+		return nil, nil
+	}
+	data, ok := annotations[AnnotationExtendedResourceSpec]
+	if !ok {
+		return nil, nil
+	}
+	spec := &ExtendedResourceSpec{}
+	err := json.Unmarshal([]byte(data), spec)
+	if err != nil {
+		return nil, err
+	}
+	return spec, nil
+}
+
+func SetExtendedResourceSpec(pod *corev1.Pod, spec *ExtendedResourceSpec) error {
+	if pod == nil {
+		return nil
+	}
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	data, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	pod.Annotations[AnnotationExtendedResourceSpec] = string(data)
+	return nil
 }
