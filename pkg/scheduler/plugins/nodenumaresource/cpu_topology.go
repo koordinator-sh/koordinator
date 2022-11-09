@@ -18,6 +18,7 @@ package nodenumaresource
 
 import (
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 // CPUTopology contains details of node cpu
@@ -130,7 +131,7 @@ func (d CPUDetails) Clone() CPUDetails {
 }
 
 // KeepOnly returns a new CPUDetails object with only the supplied cpus.
-func (d CPUDetails) KeepOnly(cpus CPUSet) CPUDetails {
+func (d CPUDetails) KeepOnly(cpus cpuset.CPUSet) CPUDetails {
 	result := CPUDetails{}
 	for cpu, info := range d {
 		if cpus.Contains(cpu) {
@@ -141,8 +142,8 @@ func (d CPUDetails) KeepOnly(cpus CPUSet) CPUDetails {
 }
 
 // NUMANodes returns the NUMANode IDs associated with the CPUs in this CPUDetails.
-func (d CPUDetails) NUMANodes() CPUSet {
-	b := NewCPUSetBuilder()
+func (d CPUDetails) NUMANodes() cpuset.CPUSet {
+	b := cpuset.NewCPUSetBuilder()
 	for _, info := range d {
 		b.Add(info.NodeID)
 	}
@@ -150,8 +151,8 @@ func (d CPUDetails) NUMANodes() CPUSet {
 }
 
 // NUMANodesInSockets returns the logical NUMANode IDs associated with the given socket IDs in this CPUDetails.
-func (d CPUDetails) NUMANodesInSockets(ids ...int) CPUSet {
-	b := NewCPUSetBuilder()
+func (d CPUDetails) NUMANodesInSockets(ids ...int) cpuset.CPUSet {
+	b := cpuset.NewCPUSetBuilder()
 	for _, id := range ids {
 		for _, info := range d {
 			if info.SocketID == id {
@@ -163,8 +164,8 @@ func (d CPUDetails) NUMANodesInSockets(ids ...int) CPUSet {
 }
 
 // Sockets returns the socket IDs associated with the CPUs in this CPUDetails.
-func (d CPUDetails) Sockets() CPUSet {
-	b := NewCPUSetBuilder()
+func (d CPUDetails) Sockets() cpuset.CPUSet {
+	b := cpuset.NewCPUSetBuilder()
 	for _, info := range d {
 		b.Add(info.SocketID)
 	}
@@ -172,8 +173,8 @@ func (d CPUDetails) Sockets() CPUSet {
 }
 
 // CPUsInSockets returns logical CPU IDs associated with the given socket IDs in this CPUDetails.
-func (d CPUDetails) CPUsInSockets(ids ...int) CPUSet {
-	b := NewCPUSetBuilder()
+func (d CPUDetails) CPUsInSockets(ids ...int) cpuset.CPUSet {
+	b := cpuset.NewCPUSetBuilder()
 	for _, id := range ids {
 		for cpu, info := range d {
 			if info.SocketID == id {
@@ -185,8 +186,8 @@ func (d CPUDetails) CPUsInSockets(ids ...int) CPUSet {
 }
 
 // SocketsInNUMANodes returns the socket IDs associated with the given NUMANode IDs in this CPUDetails.
-func (d CPUDetails) SocketsInNUMANodes(ids ...int) CPUSet {
-	b := NewCPUSetBuilder()
+func (d CPUDetails) SocketsInNUMANodes(ids ...int) cpuset.CPUSet {
+	b := cpuset.NewCPUSetBuilder()
 	for _, id := range ids {
 		for _, info := range d {
 			if info.NodeID == id {
@@ -198,8 +199,8 @@ func (d CPUDetails) SocketsInNUMANodes(ids ...int) CPUSet {
 }
 
 // Cores returns the core IDs associated with the CPUs in this CPUDetails.
-func (d CPUDetails) Cores() CPUSet {
-	b := NewCPUSetBuilder()
+func (d CPUDetails) Cores() cpuset.CPUSet {
+	b := cpuset.NewCPUSetBuilder()
 	for _, info := range d {
 		b.Add(info.CoreID)
 	}
@@ -207,8 +208,8 @@ func (d CPUDetails) Cores() CPUSet {
 }
 
 // CoresInNUMANodes returns the core IDs associated with the given NUMANode IDs in this CPUDetails.
-func (d CPUDetails) CoresInNUMANodes(ids ...int) CPUSet {
-	b := NewCPUSetBuilder()
+func (d CPUDetails) CoresInNUMANodes(ids ...int) cpuset.CPUSet {
+	b := cpuset.NewCPUSetBuilder()
 	for _, id := range ids {
 		for _, info := range d {
 			if info.NodeID == id {
@@ -220,8 +221,8 @@ func (d CPUDetails) CoresInNUMANodes(ids ...int) CPUSet {
 }
 
 // CoresInSockets returns the core IDs associated with the given socket IDs in this CPUDetails.
-func (d CPUDetails) CoresInSockets(ids ...int) CPUSet {
-	b := NewCPUSetBuilder()
+func (d CPUDetails) CoresInSockets(ids ...int) cpuset.CPUSet {
+	b := cpuset.NewCPUSetBuilder()
 	for _, id := range ids {
 		for _, info := range d {
 			if info.SocketID == id {
@@ -233,8 +234,8 @@ func (d CPUDetails) CoresInSockets(ids ...int) CPUSet {
 }
 
 // CPUs returns the logical CPU IDs in this CPUDetails.
-func (d CPUDetails) CPUs() CPUSet {
-	b := NewCPUSetBuilder()
+func (d CPUDetails) CPUs() cpuset.CPUSet {
+	b := cpuset.NewCPUSetBuilder()
 	for cpuID := range d {
 		b.Add(cpuID)
 	}
@@ -242,8 +243,8 @@ func (d CPUDetails) CPUs() CPUSet {
 }
 
 // CPUsInNUMANodes returns the logical CPU IDs associated with the given NUMANode IDs in this CPUDetails.
-func (d CPUDetails) CPUsInNUMANodes(ids ...int) CPUSet {
-	b := NewCPUSetBuilder()
+func (d CPUDetails) CPUsInNUMANodes(ids ...int) cpuset.CPUSet {
+	b := cpuset.NewCPUSetBuilder()
 	for _, id := range ids {
 		for cpu, info := range d {
 			if info.NodeID == id {
@@ -255,8 +256,8 @@ func (d CPUDetails) CPUsInNUMANodes(ids ...int) CPUSet {
 }
 
 // CPUsInCores returns the logical CPU IDs associated with the given core IDs in this CPUDetails.
-func (d CPUDetails) CPUsInCores(ids ...int) CPUSet {
-	b := NewCPUSetBuilder()
+func (d CPUDetails) CPUsInCores(ids ...int) cpuset.CPUSet {
+	b := cpuset.NewCPUSetBuilder()
 	for _, id := range ids {
 		for cpu, info := range d {
 			if info.CoreID == id {

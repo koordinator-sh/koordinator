@@ -14,16 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package cpuset
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func Test_MergeCPUSet(t *testing.T) {
@@ -38,6 +34,7 @@ func Test_MergeCPUSet(t *testing.T) {
 	}{
 		{
 			name: "do not panic on empty input",
+			want: []int32{},
 		},
 		{
 			name: "merge and sort correctly for disjoint input",
@@ -45,14 +42,14 @@ func Test_MergeCPUSet(t *testing.T) {
 				old: []int32{0, 1, 2},
 				new: []int32{5, 8, 7},
 			},
-			want: []int32{8, 7, 5, 2, 1, 0},
+			want: []int32{0, 1, 2, 5, 7, 8},
 		},
 		{
 			name: "merge and sort correctly for incomplete input",
 			args: args{
 				new: []int32{1, 0, 2},
 			},
-			want: []int32{2, 1, 0},
+			want: []int32{0, 1, 2},
 		},
 		{
 			name: "merge and sort correctly for intersecting input",
@@ -60,7 +57,7 @@ func Test_MergeCPUSet(t *testing.T) {
 				old: []int32{2, 1, 0},
 				new: []int32{1, 7, 5},
 			},
-			want: []int32{7, 5, 2, 1, 0},
+			want: []int32{0, 1, 2, 5, 7},
 		},
 	}
 	for _, tt := range tests {
@@ -83,6 +80,7 @@ func Test_ParseCPUSetStr(t *testing.T) {
 	}{
 		{
 			name: "do not panic on empty input",
+			want: []int32{},
 		},
 		{
 			name:    "parse mixed cpuset correctly",
@@ -94,7 +92,7 @@ func Test_ParseCPUSetStr(t *testing.T) {
 			name:    "parse empty content",
 			args:    args{cpusetStr: "    \n"},
 			want:    nil,
-			wantErr: false,
+			wantErr: true,
 		},
 		{
 			name:    "parse and throw an error for illegal input",
@@ -138,7 +136,7 @@ func Test_GenerateCPUSetStr(t *testing.T) {
 		{
 			name: "generate for multi-element input",
 			args: args{cpuset: []int32{5, 3, 1, 0}},
-			want: "5,3,1,0",
+			want: "0-1,3,5",
 		},
 	}
 	for _, tt := range tests {
@@ -147,25 +145,4 @@ func Test_GenerateCPUSetStr(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func Test_UtilCgroupCPUSet(t *testing.T) {
-	// prepare testing files
-	dname := t.TempDir()
-
-	cpuset := []int32{5, 1, 0}
-	cpusetStr := GenerateCPUSetStr(cpuset)
-
-	err := WriteCgroupCPUSet(dname, cpusetStr)
-	assert.NoError(t, err)
-
-	rawContent, err := os.ReadFile(filepath.Join(dname, system.CPUSFileName))
-	assert.NoError(t, err)
-
-	gotCPUSetStr := string(rawContent)
-	assert.Equal(t, cpusetStr, gotCPUSetStr)
-
-	gotCPUSet, err := ParseCPUSetStr(gotCPUSetStr)
-	assert.NoError(t, err)
-	assert.Equal(t, cpuset, gotCPUSet)
 }

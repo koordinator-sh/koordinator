@@ -29,7 +29,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -40,6 +39,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -324,11 +324,11 @@ func calculateBESuppressCPUSetPolicy(cpus int32, processorInfos []util.Processor
 }
 
 // applyCPUSetWithNonePolicy applies the be suppress policy by writing best-effort cgroups
-func applyCPUSetWithNonePolicy(cpuset []int32, oldCPUSet []int32) error {
+func applyCPUSetWithNonePolicy(cpus []int32, oldCPUSet []int32) error {
 	// 1. get current be cgroups cpuset
 	// 2. temporarily write with a union of old cpuset and new cpuset from upper to lower, to avoid cgroup conflicts
 	// 3. write with the new cpuset from lower to upper to apply the real policy
-	if len(cpuset) <= 0 {
+	if len(cpus) <= 0 {
 		klog.Warningf("applyCPUSetWithNonePolicy skipped due to the empty cpuset")
 		return nil
 	}
@@ -340,23 +340,23 @@ func applyCPUSetWithNonePolicy(cpuset []int32, oldCPUSet []int32) error {
 	}
 
 	// write a loose cpuset for all be cgroups before applying the real policy
-	mergedCPUSet := util.MergeCPUSet(oldCPUSet, cpuset)
-	mergedCPUSetStr := util.GenerateCPUSetStr(mergedCPUSet)
+	mergedCPUSet := cpuset.MergeCPUSet(oldCPUSet, cpus)
+	mergedCPUSetStr := cpuset.GenerateCPUSetStr(mergedCPUSet)
 	klog.V(6).Infof("applyCPUSetWithNonePolicy temporarily writes cpuset from upper cgroup to lower, cpuset %v",
 		mergedCPUSet)
 	writeBECgroupsCPUSet(cpusetCgroupPaths, mergedCPUSetStr, false)
 
 	// apply the suppress policy from lower to upper
-	cpusetStr := util.GenerateCPUSetStr(cpuset)
+	cpusetStr := cpuset.GenerateCPUSetStr(cpus)
 	klog.V(6).Infof("applyCPUSetWithNonePolicy writes suppressed cpuset from lower cgroup to upper, cpuset %v",
-		cpuset)
+		cpus)
 	writeBECgroupsCPUSet(cpusetCgroupPaths, cpusetStr, true)
-	metrics.RecordBESuppressCores(string(slov1alpha1.CPUSetPolicy), float64(len(cpuset)))
+	metrics.RecordBESuppressCores(string(slov1alpha1.CPUSetPolicy), float64(len(cpus)))
 	return nil
 }
 
-func applyCPUSetWithStaticPolicy(cpuset []int32) error {
-	if len(cpuset) <= 0 {
+func applyCPUSetWithStaticPolicy(cpus []int32) error {
+	if len(cpus) <= 0 {
 		klog.Warningf("applyCPUSetWithStaticPolicy skipped due to the empty cpuset")
 		return nil
 	}
@@ -367,10 +367,10 @@ func applyCPUSetWithStaticPolicy(cpuset []int32) error {
 		return fmt.Errorf("apply be suppress policy failed, err: %s", err)
 	}
 
-	cpusetStr := util.GenerateCPUSetStr(cpuset)
-	klog.V(6).Infof("applyCPUSetWithStaticPolicy writes suppressed cpuset to containers, cpuset %v", cpuset)
+	cpusetStr := cpuset.GenerateCPUSetStr(cpus)
+	klog.V(6).Infof("applyCPUSetWithStaticPolicy writes suppressed cpuset to containers, cpuset %v", cpus)
 	writeBECgroupsCPUSet(containerPaths, cpusetStr, false)
-	metrics.RecordBESuppressCores(string(slov1alpha1.CPUSetPolicy), float64(len(cpuset)))
+	metrics.RecordBESuppressCores(string(slov1alpha1.CPUSetPolicy), float64(len(cpus)))
 	return nil
 
 }

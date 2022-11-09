@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 func TestPodEventHandler(t *testing.T) {
@@ -32,7 +33,7 @@ func TestPodEventHandler(t *testing.T) {
 		name    string
 		pod     *corev1.Pod
 		wantAdd bool
-		want    CPUSet
+		want    cpuset.CPUSet
 	}{
 		{
 			name: "pending pod",
@@ -95,7 +96,7 @@ func TestPodEventHandler(t *testing.T) {
 				},
 			},
 			wantAdd: true,
-			want:    MustParse("0-3"),
+			want:    cpuset.MustParse("0-3"),
 		},
 	}
 
@@ -124,7 +125,7 @@ func TestPodEventHandler(t *testing.T) {
 				t.Errorf("expect not add the Pod but found")
 			}
 
-			cpusetBuilder := NewCPUSetBuilder()
+			cpusetBuilder := cpuset.NewCPUSetBuilder()
 			for _, v := range allocation.allocatedCPUs {
 				cpusetBuilder.Add(v.CPUID)
 			}

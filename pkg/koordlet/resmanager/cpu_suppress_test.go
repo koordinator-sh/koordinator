@@ -438,7 +438,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			},
 			wantBECFSQuota:           -1,
 			wantCFSQuotaPolicyStatus: &policyRecovered,
-			wantBECPUSet:             "0,1",
+			wantBECPUSet:             "0-1",
 			wantCPUSetPolicyStatus:   &policyUsing,
 		},
 		{
@@ -1171,7 +1171,7 @@ func Test_applyCPUSetWithNonePolicy(t *testing.T) {
 	testingPrepareBECgroupData(helper, podDirs, "1,2")
 
 	cpuset := []int32{3, 2, 1}
-	wantCPUSetStr := "3,2,1"
+	wantCPUSetStr := "1-3"
 
 	oldCPUSet, err := util.GetRootCgroupCurCPUSet(corev1.PodQOSBestEffort)
 	assert.NoError(t, err)
@@ -1231,7 +1231,7 @@ func Test_adjustByCPUSet(t *testing.T) {
 				},
 				oldCPUSets: "7,6,3,2",
 			},
-			wantCPUSet: "2,3,4",
+			wantCPUSet: "2-4",
 		},
 		{
 			name: "test scale up by cpuset.",
@@ -1251,7 +1251,7 @@ func Test_adjustByCPUSet(t *testing.T) {
 				},
 				oldCPUSets: "7,6",
 			},
-			wantCPUSet: "2,3,4",
+			wantCPUSet: "2-4",
 		},
 	}
 	ctrl := gomock.NewController(t)
@@ -1544,7 +1544,7 @@ func TestCPUSuppress_applyBESuppressCPUSet(t *testing.T) {
 			wants: wants{
 				beDirCPUSet:        "0-15",
 				podDirCPUSet:       "0-15",
-				containerDirCPUSet: "0,1,2,3",
+				containerDirCPUSet: "0-3",
 			},
 		},
 	}

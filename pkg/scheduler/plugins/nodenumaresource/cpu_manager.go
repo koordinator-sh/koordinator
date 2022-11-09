@@ -29,6 +29,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 type CPUManager interface {
@@ -36,9 +37,9 @@ type CPUManager interface {
 		node *corev1.Node,
 		numCPUsNeeded int,
 		cpuBindPolicy schedulingconfig.CPUBindPolicy,
-		cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy) (CPUSet, error)
+		cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy) (cpuset.CPUSet, error)
 
-	UpdateAllocatedCPUSet(nodeName string, podUID types.UID, cpuset CPUSet, cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy)
+	UpdateAllocatedCPUSet(nodeName string, podUID types.UID, cpuset cpuset.CPUSet, cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy)
 
 	Free(nodeName string, podUID types.UID)
 
@@ -48,7 +49,7 @@ type CPUManager interface {
 		cpuBindPolicy schedulingconfig.CPUBindPolicy,
 		cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy) int64
 
-	GetAvailableCPUs(nodeName string) (availableCPUs CPUSet, allocated CPUDetails, err error)
+	GetAvailableCPUs(nodeName string) (availableCPUs cpuset.CPUSet, allocated CPUDetails, err error)
 }
 
 type cpuManagerImpl struct {
@@ -111,8 +112,8 @@ func (c *cpuManagerImpl) Allocate(
 	numCPUsNeeded int,
 	cpuBindPolicy schedulingconfig.CPUBindPolicy,
 	cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy,
-) (CPUSet, error) {
-	result := CPUSet{}
+) (cpuset.CPUSet, error) {
+	result := cpuset.CPUSet{}
 	// The Pod requires the CPU to be allocated according to CPUBindPolicy,
 	// but the current node does not have a NodeResourceTopology or a valid CPUTopology,
 	// so this error should be exposed to the user
@@ -145,7 +146,7 @@ func (c *cpuManagerImpl) Allocate(
 	return result, err
 }
 
-func (c *cpuManagerImpl) UpdateAllocatedCPUSet(nodeName string, podUID types.UID, cpuset CPUSet, cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy) {
+func (c *cpuManagerImpl) UpdateAllocatedCPUSet(nodeName string, podUID types.UID, cpuset cpuset.CPUSet, cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy) {
 	cpuTopologyOptions := c.topologyManager.GetCPUTopologyOptions(nodeName)
 	if cpuTopologyOptions.CPUTopology == nil || !cpuTopologyOptions.CPUTopology.IsValid() {
 		return
@@ -276,13 +277,13 @@ func (c *cpuManagerImpl) getNUMAAllocateStrategy(node *corev1.Node) schedulingco
 	return numaAllocateStrategy
 }
 
-func (c *cpuManagerImpl) GetAvailableCPUs(nodeName string) (availableCPUs CPUSet, allocated CPUDetails, err error) {
+func (c *cpuManagerImpl) GetAvailableCPUs(nodeName string) (availableCPUs cpuset.CPUSet, allocated CPUDetails, err error) {
 	cpuTopologyOptions := c.topologyManager.GetCPUTopologyOptions(nodeName)
 	if cpuTopologyOptions.CPUTopology == nil {
-		return NewCPUSet(), nil, errors.New(ErrNotFoundCPUTopology)
+		return cpuset.NewCPUSet(), nil, errors.New(ErrNotFoundCPUTopology)
 	}
 	if !cpuTopologyOptions.CPUTopology.IsValid() {
-		return NewCPUSet(), nil, fmt.Errorf("cpuTopology is invalid")
+		return cpuset.NewCPUSet(), nil, fmt.Errorf("cpuTopology is invalid")
 	}
 
 	allocation := c.getOrCreateAllocation(nodeName)

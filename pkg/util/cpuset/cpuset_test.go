@@ -1,5 +1,6 @@
 /*
 Copyright 2022 The Koordinator Authors.
+Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +15,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package nodenumaresource
+package cpuset
 
 import (
 	"reflect"
@@ -33,7 +34,7 @@ func TestCPUSetBuilder(t *testing.T) {
 			t.Fatalf("expected cpuset to contain element %d: [%v]", elem, result)
 		}
 	}
-	if len(elems) != result.Count() {
+	if len(elems) != result.Size() {
 		t.Fatalf("expected cpuset %s to have the same size as %v", result, elems)
 	}
 }
@@ -49,7 +50,7 @@ func TestCPUSetSize(t *testing.T) {
 	}
 
 	for _, c := range testCases {
-		actual := c.cpuset.Count()
+		actual := c.cpuset.Size()
 		if actual != c.expected {
 			t.Fatalf("expected: %d, actual: %d, cpuset: [%v]", c.expected, actual, c.cpuset)
 		}

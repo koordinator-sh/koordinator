@@ -1,5 +1,6 @@
 /*
 Copyright 2022 The Koordinator Authors.
+Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +15,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package nodenumaresource
+package cpuset
 
 import (
 	"bytes"
@@ -87,14 +88,14 @@ func (s CPUSet) Clone() CPUSet {
 	return b.Result()
 }
 
-// Count returns the number of elements in this CPUSet.
-func (s CPUSet) Count() int {
+// Size returns the number of elements in this CPUSet.
+func (s CPUSet) Size() int {
 	return len(s.elems)
 }
 
 // IsEmpty returns true if there are zero elements in this CPUSet.
 func (s CPUSet) IsEmpty() bool {
-	return s.Count() == 0
+	return s.Size() == 0
 }
 
 // Contains returns true if the supplied element is present in this CPUSet.

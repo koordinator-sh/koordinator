@@ -22,6 +22,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 type podEventHandler struct {
@@ -89,8 +90,8 @@ func (c *podEventHandler) updatePod(oldPod, pod *corev1.Pod) {
 	if err != nil {
 		return
 	}
-	cpuset, err := Parse(resourceStatus.CPUSet)
-	if err != nil || cpuset.IsEmpty() {
+	cpus, err := cpuset.Parse(resourceStatus.CPUSet)
+	if err != nil || cpus.IsEmpty() {
 		return
 	}
 
@@ -99,7 +100,7 @@ func (c *podEventHandler) updatePod(oldPod, pod *corev1.Pod) {
 		return
 	}
 
-	c.cpuManager.UpdateAllocatedCPUSet(pod.Spec.NodeName, pod.UID, cpuset, resourceSpec.PreferredCPUExclusivePolicy)
+	c.cpuManager.UpdateAllocatedCPUSet(pod.Spec.NodeName, pod.UID, cpus, resourceSpec.PreferredCPUExclusivePolicy)
 }
 
 func (c *podEventHandler) deletePod(pod *corev1.Pod) {
@@ -111,8 +112,8 @@ func (c *podEventHandler) deletePod(pod *corev1.Pod) {
 	if err != nil {
 		return
 	}
-	cpuset, err := Parse(resourceStatus.CPUSet)
-	if err != nil || cpuset.IsEmpty() {
+	cpus, err := cpuset.Parse(resourceStatus.CPUSet)
+	if err != nil || cpus.IsEmpty() {
 		return
 	}
 

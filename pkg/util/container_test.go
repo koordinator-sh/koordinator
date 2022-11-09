@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
@@ -855,4 +856,25 @@ func writeCgroupContent(filePath string, content []byte) error {
 		return err
 	}
 	return os.WriteFile(filePath, content, 0655)
+}
+
+func Test_UtilCgroupCPUSet(t *testing.T) {
+	// prepare testing files
+	dname := t.TempDir()
+
+	cpus := []int32{5, 1, 0}
+	cpusetStr := cpuset.GenerateCPUSetStr(cpus)
+
+	err := WriteCgroupCPUSet(dname, cpusetStr)
+	assert.NoError(t, err)
+
+	rawContent, err := os.ReadFile(filepath.Join(dname, system.CPUSFileName))
+	assert.NoError(t, err)
+
+	gotCPUSetStr := string(rawContent)
+	assert.Equal(t, cpusetStr, gotCPUSetStr)
+
+	gotCPUSet, err := cpuset.ParseCPUSetStr(gotCPUSetStr)
+	assert.NoError(t, err)
+	assert.Equal(t, []int32{0, 1, 5}, gotCPUSet)
 }

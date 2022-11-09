@@ -22,29 +22,30 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 type cpuAllocation struct {
 	lock          sync.Mutex
 	nodeName      string
-	allocatedPods map[types.UID]CPUSet
+	allocatedPods map[types.UID]cpuset.CPUSet
 	allocatedCPUs CPUDetails
 }
 
 func newCPUAllocation(nodeName string) *cpuAllocation {
 	return &cpuAllocation{
 		nodeName:      nodeName,
-		allocatedPods: map[types.UID]CPUSet{},
+		allocatedPods: map[types.UID]cpuset.CPUSet{},
 		allocatedCPUs: NewCPUDetails(),
 	}
 }
 
-func (n *cpuAllocation) updateAllocatedCPUSet(cpuTopology *CPUTopology, podUID types.UID, cpuset CPUSet, cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy) {
+func (n *cpuAllocation) updateAllocatedCPUSet(cpuTopology *CPUTopology, podUID types.UID, cpuset cpuset.CPUSet, cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy) {
 	n.releaseCPUs(podUID)
 	n.addCPUs(cpuTopology, podUID, cpuset, cpuExclusivePolicy)
 }
 
-func (n *cpuAllocation) addCPUs(cpuTopology *CPUTopology, podUID types.UID, cpuset CPUSet, exclusivePolicy schedulingconfig.CPUExclusivePolicy) {
+func (n *cpuAllocation) addCPUs(cpuTopology *CPUTopology, podUID types.UID, cpuset cpuset.CPUSet, exclusivePolicy schedulingconfig.CPUExclusivePolicy) {
 	if _, ok := n.allocatedPods[podUID]; ok {
 		return
 	}
@@ -82,7 +83,7 @@ func (n *cpuAllocation) releaseCPUs(podUID types.UID) {
 	}
 }
 
-func (n *cpuAllocation) getAvailableCPUs(cpuTopology *CPUTopology, maxRefCount int, reservedCPUs CPUSet) (availableCPUs CPUSet, allocateInfo CPUDetails) {
+func (n *cpuAllocation) getAvailableCPUs(cpuTopology *CPUTopology, maxRefCount int, reservedCPUs cpuset.CPUSet) (availableCPUs cpuset.CPUSet, allocateInfo CPUDetails) {
 	allocateInfo = n.allocatedCPUs.Clone()
 	allocated := allocateInfo.CPUs().Filter(func(cpuID int) bool {
 		return allocateInfo[cpuID].RefCount >= maxRefCount

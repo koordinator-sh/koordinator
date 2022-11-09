@@ -40,6 +40,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 )
@@ -807,7 +808,7 @@ func TestPlugin_Reserve(t *testing.T) {
 		allocationState *cpuAllocation
 		allocatedCPUs   []int
 		want            *framework.Status
-		wantCPUSet      CPUSet
+		wantCPUSet      cpuset.CPUSet
 	}{
 		{
 			name: "error with missing preFilterState",
@@ -854,7 +855,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			allocationState: newCPUAllocation("test-node-1"),
 			pod:             &corev1.Pod{},
 			want:            nil,
-			wantCPUSet:      NewCPUSet(0, 1, 2, 3),
+			wantCPUSet:      cpuset.NewCPUSet(0, 1, 2, 3),
 		},
 		{
 			name: "error with big request cpu",
@@ -888,7 +889,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			allocatedCPUs:   []int{0, 1, 2, 3},
 			pod:             &corev1.Pod{},
 			want:            nil,
-			wantCPUSet:      NewCPUSet(16, 17, 18, 19),
+			wantCPUSet:      cpuset.NewCPUSet(16, 17, 18, 19),
 		},
 		{
 			name: "succeed with valid cpu topology and node numa most allocate strategy",
@@ -908,7 +909,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			allocatedCPUs:   []int{0, 1, 2, 3},
 			pod:             &corev1.Pod{},
 			want:            nil,
-			wantCPUSet:      NewCPUSet(4, 5, 6, 7),
+			wantCPUSet:      cpuset.NewCPUSet(4, 5, 6, 7),
 		},
 	}
 	for _, tt := range tests {
@@ -943,7 +944,7 @@ func TestPlugin_Reserve(t *testing.T) {
 						options.CPUTopology = tt.cpuTopology
 					})
 					if len(tt.allocatedCPUs) > 0 {
-						tt.allocationState.addCPUs(tt.cpuTopology, uuid.NewUUID(), NewCPUSet(tt.allocatedCPUs...), schedulingconfig.CPUExclusivePolicyNone)
+						tt.allocationState.addCPUs(tt.cpuTopology, uuid.NewUUID(), cpuset.NewCPUSet(tt.allocatedCPUs...), schedulingconfig.CPUExclusivePolicyNone)
 					}
 				}
 
@@ -980,7 +981,7 @@ func TestPlugin_Unreserve(t *testing.T) {
 		resourceSpec: &extension.ResourceSpec{
 			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 		},
-		allocatedCPUs: NewCPUSet(0, 1, 2, 3),
+		allocatedCPUs: cpuset.NewCPUSet(0, 1, 2, 3),
 	}
 	cpuTopology := buildCPUTopologyForTest(2, 1, 4, 2)
 
@@ -1038,7 +1039,7 @@ func TestPlugin_PreBind(t *testing.T) {
 		resourceSpec: &extension.ResourceSpec{
 			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 		},
-		allocatedCPUs: NewCPUSet(0, 1, 2, 3),
+		allocatedCPUs: cpuset.NewCPUSet(0, 1, 2, 3),
 	}
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
@@ -1085,7 +1086,7 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 			PreferredCPUBindPolicy: extension.CPUBindPolicyDefault,
 		},
 		preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
-		allocatedCPUs:          NewCPUSet(0, 1, 2, 3),
+		allocatedCPUs:          cpuset.NewCPUSet(0, 1, 2, 3),
 	}
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
