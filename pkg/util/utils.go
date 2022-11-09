@@ -41,8 +41,8 @@ import (
 // MergeCfg returns a merged interface. Value in new will
 // override old's when both fields exist.
 // It will throw an error if:
-//   1. either of the inputs was nil;
-//   2. inputs were not a pointer of the same json struct.
+//  1. either of the inputs was nil;
+//  2. inputs were not a pointer of the same json struct.
 func MergeCfg(old, new interface{}) (interface{}, error) {
 	if old == nil || new == nil {
 		return nil, fmt.Errorf("invalid input, should not be empty")

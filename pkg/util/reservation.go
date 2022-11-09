@@ -216,18 +216,19 @@ func IsObjValidActiveReservation(obj interface{}) bool {
 
 // ReservationToPodEventHandlerFuncs can be used to handle reservation events with a pod event handler, which converts
 // each reservation object into the corresponding reserve pod object.
-//  e.g.
-//  func registerReservationEventHandler(handle framework.Handle, podHandler podHandler) {
-//    extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
-//    if !ok { // if not implement extendedHandle, ignore reservation events
-//      klog.V(3).Infof("registerReservationEventHandler aborted, cannot convert handle to frameworkext.ExtendedHandle, got %T", handle)
-//      return
-//    }
-//    extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Informer().AddEventHandler(&util.ReservationToPodEventHandlerFuncs{
-//      FilterFunc: util.IsObjValidActiveReservation,
-//      PodHandler: &podHandler,
-//    })
-//  }
+//
+//	e.g.
+//	func registerReservationEventHandler(handle framework.Handle, podHandler podHandler) {
+//	  extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
+//	  if !ok { // if not implement extendedHandle, ignore reservation events
+//	    klog.V(3).Infof("registerReservationEventHandler aborted, cannot convert handle to frameworkext.ExtendedHandle, got %T", handle)
+//	    return
+//	  }
+//	  extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Informer().AddEventHandler(&util.ReservationToPodEventHandlerFuncs{
+//	    FilterFunc: util.IsObjValidActiveReservation,
+//	    PodHandler: &podHandler,
+//	  })
+//	}
 type ReservationToPodEventHandlerFuncs struct {
 	FilterFunc func(obj interface{}) bool
 	PodHandler cache.ResourceEventHandler

@@ -164,7 +164,7 @@ func (qi *QuotaInfo) updateQuotaInfoFromRemote(quotaInfo *QuotaInfo) {
 // As the multi-hierarchy quota Model described in the PR, when passing a request upwards, passing a request exceeding its
 // max will result in a wrong/invalid runtime distribution. For example, parentQuotaGroup's Max is 20, childGroup's Max
 // is 10, and the childGroup's request is 30. If the child passes 30 request upwards and get a 20 runtime back
-//(limited by the parent's max is 20), the child can only use 10 (limited by its max).
+// (limited by the parent's max is 20), the child can only use 10 (limited by its max).
 func (qi *QuotaInfo) getLimitRequestNoLock() v1.ResourceList {
 	limitRequest := qi.CalculateInfo.Request.DeepCopy()
 	for resName, quantity := range limitRequest {

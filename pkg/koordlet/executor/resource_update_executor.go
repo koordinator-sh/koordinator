@@ -45,9 +45,9 @@ type ResourceUpdateExecutor struct {
 // LeveledCacheExecutor is a cacheable executor to update resources by the order of resources' level
 // For cgroup interfaces like `cpuset.cpus` and `memory.min`, reconciliation from top to bottom should keep the
 // upper value larger/broader than the lower. Thus a Leveled updater is implemented as follows:
-// 1. update batch of cgroup resources group by cgroup interface, i.e. cgroup filename.
-// 2. update each cgroup resource by the order of layers: firstly update resources from upper to lower by merging
-//    the new value with old value; then update resources from lower to upper with the new value.
+//  1. update batch of cgroup resources group by cgroup interface, i.e. cgroup filename.
+//  2. update each cgroup resource by the order of layers: firstly update resources from upper to lower by merging
+//     the new value with old value; then update resources from lower to upper with the new value.
 type LeveledCacheExecutor interface {
 	CacheExecutor
 	LeveledUpdateBatchByCache(resources [][]MergeableResourceUpdater) (updated bool)
