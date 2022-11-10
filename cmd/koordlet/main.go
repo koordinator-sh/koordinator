@@ -78,6 +78,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Init config from ConfigMap.
+	if err = cfg.InitFromConfigMap(); err != nil {
+		klog.Error("Unable to init config from ConfigMap: ", err)
+		os.Exit(1)
+	}
+
 	d, err := agent.NewDaemon(cfg)
 	if err != nil {
 		klog.Error("Unable to setup koordlet daemon: ", err)
