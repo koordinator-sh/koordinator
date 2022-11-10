@@ -70,6 +70,11 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
+	if err = h.extendedResourceSpecMutatingPod(ctx, req, obj); err != nil {
+		klog.Errorf("Failed to mutating Pod %s/%s by ExtendedResourceSpec, err: %v", obj.Namespace, obj.Name, err)
+		return admission.Errored(http.StatusInternalServerError, err)
+	}
+
 	if reflect.DeepEqual(obj, clone) {
 		return admission.Allowed("")
 	}
