@@ -17,8 +17,12 @@ limitations under the License.
 package features
 
 import (
+	"fmt"
+
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/component-base/featuregate"
+
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 const (
@@ -83,3 +87,21 @@ var (
 		PerformanceCollector:   {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
+
+// IsFeatureDisabled returns whether the featuregate is disabled by nodeSLO config
+func IsFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature) (bool, error) {
+	if nodeSLO == nil || nodeSLO.Spec == (slov1alpha1.NodeSLOSpec{}) {
+		return true, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
+	}
+
+	spec := nodeSLO.Spec
+	switch feature {
+	case BECPUSuppress, BEMemoryEvict, BECPUEvict:
+		if spec.ResourceUsedThresholdWithBE == nil || spec.ResourceUsedThresholdWithBE.Enable == nil {
+			return true, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
+		}
+		return !(*spec.ResourceUsedThresholdWithBE.Enable), nil
+	default:
+		return true, fmt.Errorf("cannot parse feature config for unsupported feature %s", feature)
+	}
+}
