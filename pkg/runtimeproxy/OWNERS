@@ -1,3 +1,6 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
+approvers:
+  - runtime-proxy-approvers
 reviewers:
-  - honpey
-  - ZYecho
+  - runtime-proxy-approvers

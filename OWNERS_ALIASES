@@ -1,0 +1,19 @@
+# See the OWNERS_ALIASES docs at https://go.k8s.io/owners
+
+aliases:
+
+  ci-approvers:
+
+  api-machinery-approvers:
+
+  scheduler-approvers:
+
+  slo-controller-approvers:
+
+  koordlet-approvers:
+
+  descheduler-approvers:
+
+  runtime-proxy-approvers:
+
+  webhook-approvers:
