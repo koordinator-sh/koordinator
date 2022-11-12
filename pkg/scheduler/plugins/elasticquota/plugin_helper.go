@@ -142,7 +142,7 @@ func (g *Plugin) snapshotPostFilterState(quotaName string, state *framework.Cycl
 		return false
 	}
 	postFilterState := &PostFilterState{
-		quotaInfo: quotaInfo.DeepCopy(),
+		quotaInfo: quotaInfo,
 	}
 	state.Write(postFilterKey, postFilterState)
 	return true
