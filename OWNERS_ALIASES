@@ -15,5 +15,6 @@ aliases:
   descheduler-approvers:
 
   runtime-proxy-approvers:
+    - honpey
 
   webhook-approvers:
