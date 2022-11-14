@@ -10,8 +10,10 @@ aliases:
   scheduler-approvers:
 
   slo-controller-approvers:
+    - zwzhang0107
 
   koordlet-approvers:
+    - zwzhang0107
 
   descheduler-approvers:
     - FillZpp
