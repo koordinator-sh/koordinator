@@ -17,6 +17,7 @@ aliases:
     - FillZpp
 
   runtime-proxy-approvers:
+    - honpey
 
   webhook-approvers:
     - FillZpp
