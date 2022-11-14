@@ -10,14 +10,17 @@ aliases:
   scheduler-approvers:
 
   slo-controller-approvers:
+    - zwzhang0107
 
   koordlet-approvers:
     - saintube
+    - zwzhang0107
 
   descheduler-approvers:
     - FillZpp
 
   runtime-proxy-approvers:
+    - honpey
 
   webhook-approvers:
     - FillZpp
