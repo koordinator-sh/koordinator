@@ -3,11 +3,13 @@
 aliases:
 
   ci-approvers:
+    - eahydra
 
   api-machinery-approvers:
     - FillZpp
 
   scheduler-approvers:
+    - eahydra
 
   slo-controller-approvers:
 
@@ -15,8 +17,10 @@ aliases:
 
   descheduler-approvers:
     - FillZpp
+    - eahydra
 
   runtime-proxy-approvers:
 
   webhook-approvers:
     - FillZpp
+    - eahydra
