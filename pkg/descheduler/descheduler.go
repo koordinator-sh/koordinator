@@ -243,6 +243,11 @@ func (d *Descheduler) Start(ctx context.Context) error {
 			cancel()
 			return
 		}
+		// Now, we only support dry run once
+		if d.dryRun {
+			cancel()
+			return
+		}
 	}, d.deschedulingInterval, ctx.Done())
 	return nil
 }

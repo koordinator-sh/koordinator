@@ -140,17 +140,17 @@ func (pe *PodEvictor) Evict(ctx context.Context, pod *corev1.Pod, opts framework
 		return false
 	}
 
+	err := EvictPod(ctx, pe.client, pod, opts.DeleteOptions)
+	if err != nil {
+		// err is used only for logging purposes
+		klog.ErrorS(err, "Error evicting pod", "pod", klog.KObj(pod), "reason", opts.Reason)
+		metrics.PodsEvicted.With(map[string]string{"result": "error", "strategy": opts.PluginName, "namespace": pod.Namespace, "node": nodeName}).Inc()
+		return false
+	}
+
 	if pe.dryRun {
 		klog.V(1).InfoS("Evicted pod in dry run mode", "pod", klog.KObj(pod), "reason", opts.Reason, "strategy", opts.PluginName, "node", nodeName)
 	} else {
-		err := EvictPod(ctx, pe.client, pod, opts.DeleteOptions)
-		if err != nil {
-			// err is used only for logging purposes
-			klog.ErrorS(err, "Error evicting pod", "pod", klog.KObj(pod), "reason", opts.Reason)
-			metrics.PodsEvicted.With(map[string]string{"result": "error", "strategy": opts.PluginName, "namespace": pod.Namespace, "node": nodeName}).Inc()
-			return false
-		}
-
 		func() {
 			pe.lock.Lock()
 			defer pe.lock.Unlock()

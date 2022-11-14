@@ -825,7 +825,7 @@ func TestPodEvictor(t *testing.T) {
 			podEvictor.dryRun = false
 		}()
 		result := podEvictor.Evict(ctx, pod, framework.EvictOptions{})
-		assert.True(t, result)
+		assert.False(t, result)
 	})
 
 	t.Run("expect evict Pod successfully", func(t *testing.T) {
