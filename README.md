@@ -50,15 +50,16 @@ nationality, personal appearance, race, religion, or sexual identity and orienta
 
 You are warmly welcome to hack on Koordinator. We have prepared a detailed guide [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Membership
+## Community
+
+The [koordinator-sh/community repository](https://github.com/koordinator-sh/community) hosts all information about
+the community, membership and how to become them, developing inspection, who to contact about what, etc.
 
 We encourage all contributors to become members. We aim to grow an active, healthy community of contributors, reviewers,
 and code owners. Learn more about requirements and responsibilities of membership in
-our [Community Membership](docs/community/community-membership.md) page.
+the [community membership](https://github.com/koordinator-sh/community/blob/main/community-membership.md) page.
 
-## Community
-
-You can reach the maintainers of this project at:
+Active communication channels:
 
 - [Slack](https://join.slack.com/t/koordinator-sh/shared_invite/zt-1756qoub4-Cn4~esfdlfAPsD7cwO2NzA)
 - DingTalk(Chinese): Search Group ID `33383887` or scan the following QR Code
