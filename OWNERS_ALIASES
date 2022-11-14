@@ -5,6 +5,7 @@ aliases:
   ci-approvers:
 
   api-machinery-approvers:
+    - FillZpp
 
   scheduler-approvers:
 
@@ -13,7 +14,9 @@ aliases:
   koordlet-approvers:
 
   descheduler-approvers:
+    - FillZpp
 
   runtime-proxy-approvers:
 
   webhook-approvers:
+    - FillZpp
