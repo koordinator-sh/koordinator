@@ -7,7 +7,7 @@ reviewers:
   - "@saintube"
   - "@buptcozy"
 creation-date: 2022-05-13
-last-updated: 2022-10-25
+last-updated: 2022-11-11
 status: provisional
 ---
 
@@ -227,7 +227,7 @@ The following are the specific scoring results:
 | 3 | default/curlimage-545745d8f8-rngp7 | cn-hangzhou.10.0.4.18 | 487 | 0 | 0 | 15 | 0 | 0 | 90 | 82 | 200 | 0 | 100 |
 
 
-#### Support Reservation Scheduling
+#### Custom Hook Extend Points to Support Reservation Scheduling
 
 If we want to schedule the Reservation CRD object in the form of Pod, we need to solve several problems:
 
@@ -236,7 +236,11 @@ If we want to schedule the Reservation CRD object in the form of Pod, we need to
 
 To solve these problems, we define the `Hook` interface. The plugin can be implemented on demand, and the Pod or NodeInfo can be modified when the PreFilter/Filter is executed. Similar to the custom implementation method `RunScorePlugins` mentioned above, we can customize the implementation methods `RunPreFilterPlugins` and `RunFilterPluginsWithNominatedPods`. Before executing the real extension point logic, first execute the `Hook` interface and modify the Pod and NodeInfo.
 
+If necessary, you can modify the Pod or Node before executing the Score Extension Point by implementing ScorePhaseHook.
+
 Considering that there may be multiple different Hooks to modify the Pod or NodeInfo requirements, when the Hook is called, the Hook will be called cyclically, and the modification result of the previous Hook and the input of the next Hook will continue to be executed.
+
+Here are some additional explanations for the scenarios in which these new extension points should be used. If you can complete the scheduling function through the extension points such as Filter/Score provided by the K8s Scheduling Framework without modifying the incoming NodeInfo/Pod and other objects, you do not need to use these new extension points.
 
 ```go
 type SchedulingPhaseHook interface {
@@ -253,6 +257,11 @@ type FilterPhaseHook interface {
 	FilterHook(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool)
 }
 
+type ScorePhaseHook interface {
+	SchedulingPhaseHook
+	ScoreHook(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool)
+}
+
 ```
 
 ## Alternatives
@@ -266,3 +275,4 @@ We can change the order of Filter plugins to support Reservation Scheduling to u
 - 2022-05-13: Initial proposal
 - 2022-10-25: Complete proposal
 - 2022-11-10: Add Overview and ControllerProvider
+- 2022-11-11: Update overview image and add comment to Hook
