@@ -12,6 +12,7 @@ aliases:
   slo-controller-approvers:
 
   koordlet-approvers:
+    - saintube
 
   descheduler-approvers:
     - FillZpp
