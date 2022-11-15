@@ -143,29 +143,32 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 		return nil, fmt.Errorf("failed to calculate cpu topology, err: %v", err)
 	}
 
-	kubeletConfiguration, err := s.kubelet.GetKubeletConfiguration()
-	if err != nil {
-		return nil, fmt.Errorf("failed to GetKubeletConfiguration, err: %v", err)
-	}
-	klog.V(5).Infof("kubelet args: %v", kubeletConfiguration)
-
-	// default policy is none
-	cpuManagerPolicy := extension.KubeletCPUManagerPolicy{
-		Policy:  kubeletConfiguration.CPUManagerPolicy,
-		Options: kubeletConfiguration.CPUManagerPolicyOptions,
-	}
-
-	if kubeletConfiguration.CPUManagerPolicy == string(cpumanager.PolicyStatic) {
-		topology := kubeletutil.NewCPUTopology((*util.LocalCPUInfo)(nodeCPUInfo))
-		reservedCPUs, err := kubeletutil.GetStaticCPUManagerPolicyReservedCPUs(topology, kubeletConfiguration)
+	var cpuManagerPolicy extension.KubeletCPUManagerPolicy
+	if s.config != nil && !s.config.DisableQueryKubeletConfig {
+		kubeletConfiguration, err := s.kubelet.GetKubeletConfiguration()
 		if err != nil {
-			klog.Errorf("Failed to GetStaticCPUManagerPolicyReservedCPUs, err: %v", err)
+			return nil, fmt.Errorf("failed to GetKubeletConfiguration, err: %v", err)
 		}
-		cpuManagerPolicy.ReservedCPUs = reservedCPUs.String()
+		klog.V(5).Infof("kubelet args: %v", kubeletConfiguration)
 
-		// NOTE: We should not remove reservedCPUs from sharedPoolCPUs to
-		//  ensure that Burstable Pods (e.g. Pods request 0C but are limited to 4C)
-		//  at least there are reservedCPUs available when nodes are allocated
+		// default policy is none
+		cpuManagerPolicy = extension.KubeletCPUManagerPolicy{
+			Policy:  kubeletConfiguration.CPUManagerPolicy,
+			Options: kubeletConfiguration.CPUManagerPolicyOptions,
+		}
+
+		if kubeletConfiguration.CPUManagerPolicy == string(cpumanager.PolicyStatic) {
+			topology := kubeletutil.NewCPUTopology((*util.LocalCPUInfo)(nodeCPUInfo))
+			reservedCPUs, err := kubeletutil.GetStaticCPUManagerPolicyReservedCPUs(topology, kubeletConfiguration)
+			if err != nil {
+				klog.Errorf("Failed to GetStaticCPUManagerPolicyReservedCPUs, err: %v", err)
+			}
+			cpuManagerPolicy.ReservedCPUs = reservedCPUs.String()
+
+			// NOTE: We should not remove reservedCPUs from sharedPoolCPUs to
+			//  ensure that Burstable Pods (e.g. Pods request 0C but are limited to 4C)
+			//  at least there are reservedCPUs available when nodes are allocated
+		}
 	}
 
 	cpuManagerPolicyJSON, err := json.Marshal(cpuManagerPolicy)

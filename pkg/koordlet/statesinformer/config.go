@@ -30,6 +30,7 @@ type Config struct {
 	InsecureKubeletTLS          bool
 	KubeletReadOnlyPort         uint
 	NodeTopologySyncInterval    time.Duration
+	DisableQueryKubeletConfig   bool
 }
 
 func NewDefaultConfig() *Config {
@@ -40,6 +41,7 @@ func NewDefaultConfig() *Config {
 		InsecureKubeletTLS:          false,
 		KubeletReadOnlyPort:         10255,
 		NodeTopologySyncInterval:    3 * time.Second,
+		DisableQueryKubeletConfig:   false,
 	}
 }
 
@@ -50,4 +52,5 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.InsecureKubeletTLS, "kubelet-insecure-tls", c.InsecureKubeletTLS, "Using read-only port to communicate with Kubelet. For testing purposes only, not recommended for production use.")
 	fs.UintVar(&c.KubeletReadOnlyPort, "kubelet-read-only-port", c.KubeletReadOnlyPort, "The read-only port for the kubelet to serve on with no authentication/authorization. Default: 10255.")
 	fs.DurationVar(&c.NodeTopologySyncInterval, "node-topology-sync-interval", c.NodeTopologySyncInterval, "The interval which Koordlet will report the node topology info, include cpu and gpu")
+	fs.BoolVar(&c.DisableQueryKubeletConfig, "disable-query-kubelet-config", c.DisableQueryKubeletConfig, "Disables querying the kubelet configuration from kubelet. Flag must be set to true if kubelet-insecure-tls=true is configured")
 }
