@@ -109,7 +109,7 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 		},
 	}
 	for name, pod := range qi.PodCache {
-		quotaInfo.PodCache[name] = pod
+		quotaInfo.PodCache[name] = pod.DeepCopy()
 	}
 	return quotaInfo
 }
@@ -383,4 +383,13 @@ func NewPodInfo(pod *v1.Pod) *PodInfo {
 		pod:      pod,
 		resource: res,
 	}
+}
+
+func (pInfo *PodInfo) DeepCopy() *PodInfo {
+	newPodInfo := &PodInfo{
+		pod:        pInfo.pod.DeepCopy(),
+		isAssigned: pInfo.isAssigned,
+		resource:   pInfo.resource.DeepCopy(),
+	}
+	return newPodInfo
 }

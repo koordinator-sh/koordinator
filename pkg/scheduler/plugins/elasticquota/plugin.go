@@ -169,6 +169,7 @@ func (g *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod
 	if quotaInfo == nil {
 		return framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))
 	}
+	g.snapshotPostFilterState(quotaName, state)
 	quotaUsed := quotaInfo.GetUsed()
 	quotaRuntime := quotaInfo.GetRuntime()
 
@@ -227,11 +228,6 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 // PostFilter modify the defaultPreemption, only allow pods in the same quota can preempt others.
 func (g *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod,
 	filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	quotaName := g.getPodAssociateQuotaName(pod)
-	if !g.snapshotPostFilterState(quotaName, state) {
-		return nil, framework.NewStatus(framework.Unschedulable)
-	}
-
 	nnn, status := g.preempt(ctx, state, pod, filteredNodeStatusMap)
 	if !status.IsSuccess() {
 		return nil, status
