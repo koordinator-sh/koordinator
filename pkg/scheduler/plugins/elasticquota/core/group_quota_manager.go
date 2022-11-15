@@ -564,8 +564,8 @@ func (gqm *GroupQuotaManager) getPodIsAssignedNoLock(quotaName string, pod *v1.P
 }
 
 func (gqm *GroupQuotaManager) MigratePod(pod *v1.Pod, out, in string) {
-	gqm.hierarchyUpdateLock.RLock()
-	defer gqm.hierarchyUpdateLock.RUnlock()
+	gqm.hierarchyUpdateLock.Lock()
+	defer gqm.hierarchyUpdateLock.Unlock()
 
 	isAssigned := gqm.getPodIsAssignedNoLock(out, pod)
 	gqm.updatePodRequestNoLock(out, pod, nil)
