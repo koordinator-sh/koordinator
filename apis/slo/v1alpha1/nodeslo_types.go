@@ -181,6 +181,9 @@ type ResourceThresholdStrategy struct {
 	CPUEvictBESatisfactionLowerPercent *int64 `json:"cpuEvictBESatisfactionLowerPercent,omitempty"`
 	// cpu evict start after continue avg(cpuusage) > CPUEvictThresholdPercent in seconds
 	CPUEvictTimeWindowSeconds *int64 `json:"cpuEvictTimeWindowSeconds,omitempty"`
+
+	// specify the cpus that can be used
+	CPUsAssigned string `json:"cpusAssigned,omitempty"`
 }
 
 // ResctrlQOSCfg stores node-level config of resctrl qos

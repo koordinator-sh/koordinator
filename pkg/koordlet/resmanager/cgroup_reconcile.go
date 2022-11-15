@@ -533,36 +533,34 @@ func getKubeQoSResourceQoSByQoSClass(qosClass corev1.PodQOSClass, strategy *slov
 	if strategy == nil {
 		return nil
 	}
-	var resourceQoS *slov1alpha1.ResourceQOS
-	switch qosClass {
-	case corev1.PodQOSGuaranteed:
-		resourceQoS = strategy.LSRClass
-	case corev1.PodQOSBurstable:
-		resourceQoS = strategy.LSClass
-	case corev1.PodQOSBestEffort:
-		resourceQoS = strategy.BEClass
+
+	qosClassMap := map[corev1.PodQOSClass]*slov1alpha1.ResourceQOS{
+		corev1.PodQOSGuaranteed: strategy.LSRClass,
+		corev1.PodQOSBurstable:  strategy.LSClass,
+		corev1.PodQOSBestEffort: strategy.BEClass,
 	}
-	return resourceQoS
+
+	return qosClassMap[qosClass]
 }
 
 func getPodResourceQoSByQoSClass(pod *corev1.Pod, strategy *slov1alpha1.ResourceQOSStrategy, config *Config) *slov1alpha1.ResourceQOS {
 	if strategy == nil {
 		return nil
 	}
-	var resourceQoS *slov1alpha1.ResourceQOS
-	podQoS := apiext.GetPodQoSClass(pod)
-	switch podQoS {
-	case apiext.QoSLSR:
-		resourceQoS = strategy.LSRClass
-	case apiext.QoSLS:
-		resourceQoS = strategy.LSClass
-	case apiext.QoSBE:
-		resourceQoS = strategy.BEClass
-	default:
-		// qos=None pods uses config mapped from kubeQoS
-		resourceQoS = getKubeQoSResourceQoSByQoSClass(util.GetKubeQosClass(pod), strategy, config)
-		klog.V(6).Infof("get pod ResourceQOS according to kubeQoS for QoS=None pods, pod %s, "+
-			"resourceQoS %v", util.GetPodKey(pod), util.DumpJSON(resourceQoS))
+
+	qosMap := map[apiext.QoSClass]*slov1alpha1.ResourceQOS{
+		apiext.QoSLSR: strategy.LSRClass,
+		apiext.QoSLS:  strategy.LSClass,
+		apiext.QoSBE:  strategy.BEClass,
 	}
+	podQoS := apiext.GetPodQoSClass(pod)
+	if qos, exist := qosMap[podQoS]; exist {
+		return qos
+	}
+
+	resourceQoS := getKubeQoSResourceQoSByQoSClass(util.GetKubeQosClass(pod), strategy, config)
+	klog.V(6).Infof("get pod ResourceQOS according to kubeQoS for QoS=None pods, pod %s, "+
+		"resourceQoS %v", util.GetPodKey(pod), util.DumpJSON(resourceQoS))
+
 	return resourceQoS
 }

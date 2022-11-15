@@ -109,17 +109,16 @@ func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) er
 			klog.Errorf("Failed to get container detail of id %s", c.ID)
 			continue
 		}
+
+		dockerWrapperObj := dockerWrapper{
+			ContainerJSON: containerJson,
+			Container:     c,
+		}
 		runtimeResourceType := GetRuntimeResourceType(c.Labels)
 		if runtimeResourceType == resource_executor.RuntimeContainerResource {
-			containers = append(containers, dockerWrapper{
-				ContainerJSON: containerJson,
-				Container:     c,
-			})
+			containers = append(containers, dockerWrapperObj)
 		} else {
-			sandboxes = append(sandboxes, dockerWrapper{
-				ContainerJSON: containerJson,
-				Container:     c,
-			})
+			sandboxes = append(sandboxes, dockerWrapperObj)
 		}
 	}
 

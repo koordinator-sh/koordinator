@@ -425,6 +425,10 @@ func (r *CPUSuppress) suppressBECPU() {
 		klog.Warningf("suppressBECPU failed to get nodeCPUInfo from metriccache, err: %s", err)
 		return
 	}
+	if nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUsAssigned != "" {
+		assignCPU(nodeCPUInfo, nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUsAssigned)
+	}
+
 	if nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy == slov1alpha1.CPUCfsQuotaPolicy {
 		adjustByCfsQuota(suppressCPUQuantity, node)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyUsing
@@ -434,6 +438,23 @@ func (r *CPUSuppress) suppressBECPU() {
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyUsing
 		r.recoverCFSQuotaIfNeed()
 	}
+}
+
+func assignCPU(nodeCPUInfo *metriccache.NodeCPUInfo, assignedCPUs string) {
+	set, err := cpuset.Parse(assignedCPUs)
+	if err != nil {
+		klog.Errorf("failed to parse cpuset info, err: %v", err)
+		return
+	}
+
+	assignedProcessCPUInfo := make([]util.ProcessorInfo, 0)
+	for _, processCPUInfo := range nodeCPUInfo.ProcessorInfos {
+		if set.Contains(int(processCPUInfo.CPUID)) {
+			assignedProcessCPUInfo = append(assignedProcessCPUInfo, processCPUInfo)
+		}
+	}
+
+	nodeCPUInfo.ProcessorInfos = assignedProcessCPUInfo
 }
 
 func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUInfo *metriccache.NodeCPUInfo) {
@@ -463,6 +484,7 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 			cpuIdToPool[int32(cpuID)] = apiext.GetPodQoSClass(podMeta.Pod)
 		}
 	}
+
 	lsrCpus := []util.ProcessorInfo{}
 	lsCpus := []util.ProcessorInfo{}
 	// FIXME: be pods might be starved since lse pods can run out of all cpus

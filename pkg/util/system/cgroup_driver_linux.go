@@ -54,7 +54,7 @@ func GuessCgroupDriverFromCgroupName() CgroupDriverType {
 // 2. If '--cgroup-driver' in args, that's it.
 //    else if '--config' not in args, is default driver('cgroupfs').
 //    else go to step-3.
-// 3. If kubelet config is relative path, join with /proc/${pidof kubelet}/cwd.
+// 3. If kubelet config is relative path, join with /proc/${pid of kubelet}/cwd.
 //    search 'cgroupDriver:' in kubelet config file, that's it.
 func GuessCgroupDriverFromKubeletPort(port int) (CgroupDriverType, error) {
 	kubeletPid, err := KubeletPortToPid(port)

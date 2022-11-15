@@ -101,13 +101,11 @@ func calculateResourceThresholdCfgMerged(oldCfg config.ResourceThresholdCfg, con
 	for index, nodeStrategy := range mergedCfg.NodeStrategies {
 		// merge with clusterStrategy
 		clusterCfgCopy := mergedCfg.ClusterStrategy.DeepCopy()
+		mergedCfg.NodeStrategies[index].ResourceThresholdStrategy = clusterCfgCopy
 		if nodeStrategy.ResourceThresholdStrategy != nil {
 			mergedNodeStrategyInterface, _ := util.MergeCfg(clusterCfgCopy, nodeStrategy.ResourceThresholdStrategy)
 			mergedCfg.NodeStrategies[index].ResourceThresholdStrategy = mergedNodeStrategyInterface.(*slov1alpha1.ResourceThresholdStrategy)
-		} else {
-			mergedCfg.NodeStrategies[index].ResourceThresholdStrategy = clusterCfgCopy
 		}
-
 	}
 
 	return mergedCfg, nil
@@ -135,16 +133,13 @@ func calculateResourceQOSCfgMerged(oldCfg config.ResourceQOSCfg, configMap *core
 
 	for index, nodeStrategy := range mergedCfg.NodeStrategies {
 		// merge with clusterStrategy
-		var mergedNodeStrategy *slov1alpha1.ResourceQOSStrategy
 		clusterCfgCopy := mergedCfg.ClusterStrategy.DeepCopy()
+		mergedNodeStrategy := clusterCfgCopy
 		if nodeStrategy.ResourceQOSStrategy != nil {
 			mergedStrategyInterface, _ := util.MergeCfg(clusterCfgCopy, nodeStrategy.ResourceQOSStrategy)
 			mergedNodeStrategy = mergedStrategyInterface.(*slov1alpha1.ResourceQOSStrategy)
-		} else {
-			mergedNodeStrategy = clusterCfgCopy
 		}
 		mergedCfg.NodeStrategies[index].ResourceQOSStrategy = mergedNodeStrategy
-
 	}
 
 	return mergedCfg, nil
@@ -173,13 +168,11 @@ func calculateCPUBurstCfgMerged(oldCfg config.CPUBurstCfg, configMap *corev1.Con
 	for index, nodeStrategy := range mergedCfg.NodeStrategies {
 		// merge with clusterStrategy
 		clusterCfgCopy := mergedCfg.ClusterStrategy.DeepCopy()
+		mergedCfg.NodeStrategies[index].CPUBurstStrategy = clusterCfgCopy
 		if nodeStrategy.CPUBurstStrategy != nil {
 			mergedStrategyInterface, _ := util.MergeCfg(clusterCfgCopy, nodeStrategy.CPUBurstStrategy)
 			mergedCfg.NodeStrategies[index].CPUBurstStrategy = mergedStrategyInterface.(*slov1alpha1.CPUBurstStrategy)
-		} else {
-			mergedCfg.NodeStrategies[index].CPUBurstStrategy = clusterCfgCopy
 		}
-
 	}
 
 	return mergedCfg, nil

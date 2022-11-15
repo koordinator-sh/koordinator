@@ -213,14 +213,14 @@ func (m *Manager) collectAllConfigs() error {
 	if err != nil {
 		return err
 	}
+
 	for _, item := range items {
 		if item.IsDir() {
 			continue
 		}
-		if err := m.updateHookConfig(filepath.Join(defaultRuntimeHookConfigPath, item.Name())); err != nil {
-			continue
-		}
+		m.updateHookConfig(filepath.Join(defaultRuntimeHookConfigPath, item.Name()))
 	}
+
 	return nil
 }
 

@@ -820,6 +820,9 @@ spec:
                     maximum: 100
                     minimum: 0
                     type: integer
+                  cpusAssigned:
+                    description: specify the cpus that can be used
+                    type: string
                   enable:
                     description: whether the strategy is enabled, default = false
                     type: boolean

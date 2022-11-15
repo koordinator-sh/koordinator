@@ -123,11 +123,10 @@ func (p *ColocationHandlerForConfigMapEvent) syncConfig(configMap *corev1.Config
 		clusteStrategyCopy := newCfg.ColocationStrategy.DeepCopy()
 		mergedNodeStrategyInterface, _ := util.MergeCfg(clusteStrategyCopy, &nodeStrategy.ColocationStrategy)
 		newNodeStrategy := *mergedNodeStrategyInterface.(*ColocationStrategy)
+		newCfg.NodeConfigs[index].ColocationStrategy = newNodeStrategy
 		if !IsColocationStrategyValid(&newNodeStrategy) {
 			klog.Errorf("syncConfig failed! invalid node config,then use clusterCfg,nodeCfg:%+v", nodeStrategy)
 			newCfg.NodeConfigs[index].ColocationStrategy = *newCfg.ColocationStrategy.DeepCopy()
-		} else {
-			newCfg.NodeConfigs[index].ColocationStrategy = newNodeStrategy
 		}
 	}
 
