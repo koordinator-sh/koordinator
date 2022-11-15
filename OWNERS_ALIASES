@@ -4,6 +4,7 @@ aliases:
 
   ci-approvers:
     - eahydra
+    - jasonliu747
 
   api-machinery-approvers:
     - FillZpp
@@ -12,9 +13,11 @@ aliases:
     - eahydra
 
   slo-controller-approvers:
+    - jasonliu747
     - zwzhang0107
 
   koordlet-approvers:
+    - jasonliu747
     - saintube
     - zwzhang0107
 
