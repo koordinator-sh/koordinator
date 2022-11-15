@@ -27,6 +27,7 @@ aliases:
 
   runtime-proxy-approvers:
     - honpey
+    - ZYecho
 
   webhook-approvers:
     - FillZpp
