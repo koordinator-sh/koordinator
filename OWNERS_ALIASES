@@ -10,6 +10,7 @@ aliases:
     - FillZpp
 
   scheduler-approvers:
+    - buptcozy
     - eahydra
 
   slo-controller-approvers:
