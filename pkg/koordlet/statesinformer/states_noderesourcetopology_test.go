@@ -22,10 +22,11 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
-	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topologyclientsetfake "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
@@ -235,87 +236,72 @@ func Test_calGuaranteedCpu(t *testing.T) {
 }
 
 func Test_reportNodeTopology(t *testing.T) {
-	t.Run("test not panic", func(t *testing.T) {
-		// prepare feature map
-		enabled := features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport)
-		testFeatureGates := map[string]bool{string(features.NodeTopologyReport): true}
-		err := features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
-		assert.NoError(t, err)
-		defer func() {
-			testFeatureGates[string(features.NodeTopologyReport)] = enabled
-			err = features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
-			assert.NoError(t, err)
-		}()
+	ctl := gomock.NewController(t)
+	defer ctl.Finish()
 
-		client := topologyclientsetfake.NewSimpleClientset()
-		testNode := &corev1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
-		}
-		topologyName := testNode.Name
-		mockTopology := v1alpha1.NodeResourceTopology{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: topologyName,
-			},
-			TopologyPolicies: []string{"None"},
-			Zones:            v1alpha1.ZoneList{v1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
-		}
-		_, err = client.TopologyV1alpha1().NodeResourceTopologies().Create(context.TODO(), &mockTopology, metav1.CreateOptions{})
-		assert.Equal(t, nil, err)
+	client := topologyclientsetfake.NewSimpleClientset()
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test",
+		},
+	}
 
-		ctl := gomock.NewController(t)
-		defer ctl.Finish()
-		mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
-		mockNodeCPUInfo := metriccache.NodeCPUInfo{
-			ProcessorInfos: []util.ProcessorInfo{
-				{CPUID: 0, CoreID: 0, NodeID: 0, SocketID: 0},
-				{CPUID: 1, CoreID: 0, NodeID: 0, SocketID: 0},
-				{CPUID: 2, CoreID: 1, NodeID: 0, SocketID: 0},
-				{CPUID: 3, CoreID: 1, NodeID: 0, SocketID: 0},
-				{CPUID: 4, CoreID: 2, NodeID: 1, SocketID: 1},
-				{CPUID: 5, CoreID: 2, NodeID: 1, SocketID: 1},
-				{CPUID: 6, CoreID: 3, NodeID: 1, SocketID: 1},
-				{CPUID: 7, CoreID: 3, NodeID: 1, SocketID: 1},
-			},
-		}
+	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
+	mockNodeCPUInfo := metriccache.NodeCPUInfo{
+		ProcessorInfos: []util.ProcessorInfo{
+			{CPUID: 0, CoreID: 0, NodeID: 0, SocketID: 0},
+			{CPUID: 1, CoreID: 0, NodeID: 0, SocketID: 0},
+			{CPUID: 2, CoreID: 1, NodeID: 0, SocketID: 0},
+			{CPUID: 3, CoreID: 1, NodeID: 0, SocketID: 0},
+			{CPUID: 4, CoreID: 2, NodeID: 1, SocketID: 1},
+			{CPUID: 5, CoreID: 2, NodeID: 1, SocketID: 1},
+			{CPUID: 6, CoreID: 3, NodeID: 1, SocketID: 1},
+			{CPUID: 7, CoreID: 3, NodeID: 1, SocketID: 1},
+		},
+	}
 
-		mockPodMeta := map[string]*PodMeta{
-			"pod1": {
-				Pod: &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "pod1",
-						Namespace: "ns1",
-						Annotations: map[string]string{
-							extension.AnnotationResourceStatus: `{"cpuset": "4-5" }`,
-						},
+	mockPodMeta := map[string]*PodMeta{
+		"pod1": {
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod1",
+					Namespace: "ns1",
+					Annotations: map[string]string{
+						extension.AnnotationResourceStatus: `{"cpuset": "4-5" }`,
 					},
 				},
 			},
-			"pod2": {
-				Pod: &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "pod2",
-						Namespace: "ns2",
-						Annotations: map[string]string{
-							extension.AnnotationResourceStatus: `{"cpuset": "3" }`,
-						},
+		},
+		"pod2": {
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod2",
+					Namespace: "ns2",
+					Annotations: map[string]string{
+						extension.AnnotationResourceStatus: `{"cpuset": "3" }`,
 					},
 				},
 			},
-		}
-		mockMetricCache.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(&mockNodeCPUInfo, nil).Times(1)
-		r := &nodeTopoInformer{
-			topologyClient: client,
-			metricCache:    mockMetricCache,
-			podsInformer: &podsInformer{
-				podMap: mockPodMeta,
-			},
-			nodeInformer: &nodeInformer{
-				node: testNode,
-			},
-			callbackRunner: NewCallbackRunner(),
-			kubelet: &testKubeletStub{
+		},
+	}
+	mockMetricCache.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(&mockNodeCPUInfo, nil).AnyTimes()
+
+	expectedCPUSharedPool := `[{"socket":0,"node":0,"cpuset":"0-2"},{"socket":1,"node":1,"cpuset":"6-7"}]`
+	expectedCPUTopology := `{"detail":[{"id":0,"core":0,"socket":0,"node":0},{"id":1,"core":0,"socket":0,"node":0},{"id":2,"core":1,"socket":0,"node":0},{"id":3,"core":1,"socket":0,"node":0},{"id":4,"core":2,"socket":1,"node":1},{"id":5,"core":2,"socket":1,"node":1},{"id":6,"core":3,"socket":1,"node":1},{"id":7,"core":3,"socket":1,"node":1}]}`
+
+	tests := []struct {
+		name                            string
+		config                          *Config
+		kubeletStub                     KubeletStub
+		disableCreateTopologyCRD        bool
+		expectedKubeletCPUManagerPolicy extension.KubeletCPUManagerPolicy
+		expectedCPUSharedPool           string
+		expectedCPUTopology             string
+	}{
+		{
+			name:   "report topology",
+			config: NewDefaultConfig(),
+			kubeletStub: &testKubeletStub{
 				config: &kubeletconfiginternal.KubeletConfiguration{
 					CPUManagerPolicy: "static",
 					KubeReserved: map[string]string{
@@ -323,33 +309,100 @@ func Test_reportNodeTopology(t *testing.T) {
 					},
 				},
 			},
-		}
+			expectedKubeletCPUManagerPolicy: extension.KubeletCPUManagerPolicy{
+				Policy:       "static",
+				ReservedCPUs: "0-1",
+			},
+			expectedCPUSharedPool: expectedCPUSharedPool,
+			expectedCPUTopology:   expectedCPUTopology,
+		},
+		{
+			name: "disable query topology",
+			config: &Config{
+				DisableQueryKubeletConfig: true,
+			},
+			kubeletStub: &testKubeletStub{
+				config: &kubeletconfiginternal.KubeletConfiguration{
+					CPUManagerPolicy: "static",
+					KubeReserved: map[string]string{
+						"cpu": "2000m",
+					},
+				},
+			},
+			expectedKubeletCPUManagerPolicy: extension.KubeletCPUManagerPolicy{
+				Policy:       "",
+				ReservedCPUs: "",
+			},
+			expectedCPUSharedPool: expectedCPUSharedPool,
+			expectedCPUTopology:   expectedCPUTopology,
+		},
+		{
+			name:                     "disable report topology",
+			disableCreateTopologyCRD: true,
+			config:                   NewDefaultConfig(),
+			kubeletStub: &testKubeletStub{
+				config: &kubeletconfiginternal.KubeletConfiguration{
+					CPUManagerPolicy: "static",
+					KubeReserved: map[string]string{
+						"cpu": "2000m",
+					},
+				},
+			},
+			expectedKubeletCPUManagerPolicy: extension.KubeletCPUManagerPolicy{
+				Policy:       "static",
+				ReservedCPUs: "0-1",
+			},
+			expectedCPUSharedPool: expectedCPUSharedPool,
+			expectedCPUTopology:   expectedCPUTopology,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// prepare feature map
+			enabled := features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport)
+			testFeatureGates := map[string]bool{string(features.NodeTopologyReport): !tt.disableCreateTopologyCRD}
+			err := features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
+			assert.NoError(t, err)
+			defer func() {
+				testFeatureGates[string(features.NodeTopologyReport)] = enabled
+				err = features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
+				assert.NoError(t, err)
+			}()
 
-		// reporting enabled
-		r.reportNodeTopology()
+			r := &nodeTopoInformer{
+				config:         tt.config,
+				kubelet:        tt.kubeletStub,
+				topologyClient: client,
+				metricCache:    mockMetricCache,
+				podsInformer: &podsInformer{
+					podMap: mockPodMeta,
+				},
+				nodeInformer: &nodeInformer{
+					node: testNode,
+				},
+				callbackRunner: NewCallbackRunner(),
+			}
 
-		topology, err := client.TopologyV1alpha1().NodeResourceTopologies().Get(context.TODO(), topologyName, metav1.GetOptions{})
-		assert.Equal(t, nil, err)
+			topologyName := testNode.Name
+			_ = client.TopologyV1alpha1().NodeResourceTopologies().Delete(context.TODO(), topologyName, metav1.DeleteOptions{})
+			r.reportNodeTopology()
 
-		expectKubeletCPUManagerPolicy := extension.KubeletCPUManagerPolicy{
-			Policy:       "static",
-			ReservedCPUs: "0-1",
-		}
-		var kubeletCPUManagerPolicy extension.KubeletCPUManagerPolicy
-		err = json.Unmarshal([]byte(topology.Annotations[extension.AnnotationKubeletCPUManagerPolicy]), &kubeletCPUManagerPolicy)
-		assert.NoError(t, err)
-		assert.Equal(t, expectKubeletCPUManagerPolicy, kubeletCPUManagerPolicy)
+			var topology *topologyv1alpha1.NodeResourceTopology
+			if tt.disableCreateTopologyCRD {
+				topology = r.GetNodeTopo()
+				_, err = client.TopologyV1alpha1().NodeResourceTopologies().Get(context.TODO(), topologyName, metav1.GetOptions{})
+				assert.True(t, errors.IsNotFound(err))
+			} else {
+				topology, err = client.TopologyV1alpha1().NodeResourceTopologies().Get(context.TODO(), topologyName, metav1.GetOptions{})
+				assert.NoError(t, err)
+			}
 
-		assert.Equal(t, `[{"socket":0,"node":0,"cpuset":"0-2"},{"socket":1,"node":1,"cpuset":"6-7"}]`, topology.Annotations[extension.AnnotationNodeCPUSharedPools])
-		assert.Equal(t, `{"detail":[{"id":0,"core":0,"socket":0,"node":0},{"id":1,"core":0,"socket":0,"node":0},{"id":2,"core":1,"socket":0,"node":0},{"id":3,"core":1,"socket":0,"node":0},{"id":4,"core":2,"socket":1,"node":1},{"id":5,"core":2,"socket":1,"node":1},{"id":6,"core":3,"socket":1,"node":1},{"id":7,"core":3,"socket":1,"node":1}]}`, topology.Annotations[extension.AnnotationNodeCPUTopology])
-
-		// reporting disabled
-		testFeatureGates[string(features.NodeTopologyReport)] = false
-		err = features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
-		assert.NoError(t, err)
-		// expect not CREATE/GET/UPDATE any more
-		r.topologyClient = nil
-		mockMetricCache.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(&mockNodeCPUInfo, nil).Times(1)
-		r.reportNodeTopology()
-	})
+			var kubeletCPUManagerPolicy extension.KubeletCPUManagerPolicy
+			err = json.Unmarshal([]byte(topology.Annotations[extension.AnnotationKubeletCPUManagerPolicy]), &kubeletCPUManagerPolicy)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedKubeletCPUManagerPolicy, kubeletCPUManagerPolicy)
+			assert.Equal(t, tt.expectedCPUSharedPool, topology.Annotations[extension.AnnotationNodeCPUSharedPools])
+			assert.Equal(t, tt.expectedCPUTopology, topology.Annotations[extension.AnnotationNodeCPUTopology])
+		})
+	}
 }
