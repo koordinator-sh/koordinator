@@ -98,7 +98,7 @@ fast-test: envtest ## Run tests fast.
 ##@ Build
 
 .PHONY: build
-build: generate fmt vet lint build-koordlet build-koord-manager build-koord-scheduler build-koord-descheduler build-koord-runtime-proxy
+build: build-koordlet build-koord-manager build-koord-scheduler build-koord-descheduler build-koord-runtime-proxy
 
 .PHONY: build-koordlet
 build-koordlet: ## Build koordlet binary.
