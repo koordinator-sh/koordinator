@@ -37,7 +37,7 @@ var (
 	ErrTooManyEvictions = errors.New("TooManyEvictions")
 )
 
-type FactoryFn func(client kubernetes.Interface) Interface
+type FactoryFn func(client kubernetes.Interface) (Interface, error)
 
 type Interface interface {
 	Evict(ctx context.Context, job *sev1alpha1.PodMigrationJob, pod *corev1.Pod) error
@@ -68,7 +68,11 @@ func NewInterpreter(client kubernetes.Interface, defaultEvictionPolicy string, e
 
 	evictions := map[string]Interface{}
 	for k, v := range registry {
-		evictions[k] = v(client)
+		evictor, err := v(client)
+		if err != nil {
+			return nil, err
+		}
+		evictions[k] = evictor
 	}
 	defaultEviction := evictions[defaultEvictionPolicy]
 	if defaultEviction == nil {

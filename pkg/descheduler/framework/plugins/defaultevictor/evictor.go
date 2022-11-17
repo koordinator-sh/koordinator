@@ -27,6 +27,7 @@ import (
 
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
+	evictutils "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions/utils"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils"
 )
@@ -63,6 +64,14 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		}
 	}
 
+	policyGroupVersion, err := evictutils.SupportEviction(handle.ClientSet())
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch eviction groupVersion: %v", err)
+	}
+	if len(policyGroupVersion) == 0 {
+		return nil, fmt.Errorf("server does not support eviction policy")
+	}
+
 	priorityClassLister := handle.SharedInformerFactory().Scheduling().V1().PriorityClasses().Lister()
 	priorityThreshold, err := utils.GetPriorityValueFromPriorityThreshold(priorityClassLister, evictorArgs.PriorityThreshold)
 	if err != nil {
@@ -84,7 +93,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	podEvictor := evictions.NewPodEvictor(
 		handle.ClientSet(),
 		handle.EventRecorder(),
-		"",
+		policyGroupVersion,
 		evictorArgs.DryRun,
 		evictorArgs.MaxNoOfPodsToEvictPerNode,
 		evictorArgs.MaxNoOfPodsToEvictPerNamespace,
