@@ -134,6 +134,9 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 
 	ctx := context.TODO()
 
+	elasticQuota.createSystemQuotaIfNotPresent()
+	elasticQuota.createDefaultQuotaIfNotPresent()
+
 	scheSharedInformerFactory.Start(ctx.Done())
 	handle.SharedInformerFactory().Start(ctx.Done())
 
@@ -141,8 +144,6 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	handle.SharedInformerFactory().WaitForCacheSync(ctx.Done())
 
 	elasticQuota.migrateDefaultQuotaGroupsPod()
-	elasticQuota.createSystemQuotaIfNotPresent()
-	elasticQuota.createDefaultQuotaIfNotPresent()
 
 	return elasticQuota, nil
 }
