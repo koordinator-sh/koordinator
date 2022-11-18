@@ -28,6 +28,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedulerv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	schedulinglisterv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
@@ -37,16 +38,7 @@ import (
 func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
 	quotaName := extension.GetQuotaName(pod)
 	if quotaName == "" {
-		list, err := g.quotaLister.ElasticQuotas(pod.Namespace).List(labels.Everything())
-		if err != nil {
-			runtime.HandleError(err)
-			return extension.DefaultQuotaName
-		}
-		if len(list) == 0 {
-			return extension.DefaultQuotaName
-		}
-		// todo when elastic quota supports multiple instances in a namespace, modify this
-		quotaName = list[0].Name
+		quotaName = GetQuotaName(g.quotaLister, pod)
 	}
 	// can't get the quotaInfo by quotaName, let the pod belongs to DefaultQuotaGroup
 	if g.groupQuotaManager.GetQuotaInfoByName(quotaName) == nil {
@@ -54,6 +46,19 @@ func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
 	}
 
 	return quotaName
+}
+
+var GetQuotaName = func(quotaLister schedulinglisterv1alpha1.ElasticQuotaLister, pod *v1.Pod) string {
+	list, err := quotaLister.ElasticQuotas(pod.Namespace).List(labels.Everything())
+	if err != nil {
+		runtime.HandleError(err)
+		return extension.DefaultQuotaName
+	}
+	if len(list) == 0 {
+		return extension.DefaultQuotaName
+	}
+	// todo when elastic quota supports multiple instances in a namespace, modify this
+	return list[0].Name
 }
 
 // migrateDefaultQuotaGroupsPod traverse all the pods in DefaultQuotaGroup, if the pod's QuotaName is not DefaultQuotaName,
