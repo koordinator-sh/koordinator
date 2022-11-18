@@ -23,7 +23,7 @@ import (
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
-	policy "k8s.io/api/policy/v1beta1"
+	policy "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -33,6 +33,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
+	evictutils "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions/utils"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/metrics"
 	nodeutil "github.com/koordinator-sh/koordinator/pkg/descheduler/node"
@@ -143,7 +144,7 @@ func (pe *PodEvictor) Evict(ctx context.Context, pod *corev1.Pod, opts framework
 	if pe.dryRun {
 		klog.V(1).InfoS("Evicted pod in dry run mode", "pod", klog.KObj(pod), "reason", opts.Reason, "strategy", opts.PluginName, "node", nodeName)
 	} else {
-		err := EvictPod(ctx, pe.client, pod, opts.DeleteOptions)
+		err := EvictPod(ctx, pe.client, pod, pe.policyGroupVersion, opts.DeleteOptions)
 		if err != nil {
 			// err is used only for logging purposes
 			klog.ErrorS(err, "Error evicting pod", "pod", klog.KObj(pod), "reason", opts.Reason)
@@ -169,15 +170,19 @@ func (pe *PodEvictor) Evict(ctx context.Context, pod *corev1.Pod, opts framework
 	return true
 }
 
-func EvictPod(ctx context.Context, client clientset.Interface, pod *corev1.Pod, deleteOptions *metav1.DeleteOptions) error {
+func EvictPod(ctx context.Context, client clientset.Interface, pod *corev1.Pod, policyGroupVersion string, deleteOptions *metav1.DeleteOptions) error {
 	eviction := &policy.Eviction{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: policyGroupVersion,
+			Kind:       evictutils.EvictionKind,
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pod.Name,
 			Namespace: pod.Namespace,
 		},
 		DeleteOptions: deleteOptions,
 	}
-	err := client.PolicyV1beta1().Evictions(eviction.Namespace).Evict(ctx, eviction)
+	err := client.PolicyV1().Evictions(eviction.Namespace).Evict(ctx, eviction)
 	if apierrors.IsTooManyRequests(err) {
 		return fmt.Errorf("error when evicting pod (ignoring) %q: %v", pod.Name, err)
 	}

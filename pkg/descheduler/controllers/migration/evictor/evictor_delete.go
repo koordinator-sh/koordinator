@@ -40,10 +40,10 @@ type DeleteEvictor struct {
 	client kubernetes.Interface
 }
 
-func NewDeleteEvictor(client kubernetes.Interface) Interface {
+func NewDeleteEvictor(client kubernetes.Interface) (Interface, error) {
 	return &DeleteEvictor{
 		client: client,
-	}
+	}, nil
 }
 
 func (e *DeleteEvictor) Evict(ctx context.Context, job *sev1alpha1.PodMigrationJob, pod *corev1.Pod) error {

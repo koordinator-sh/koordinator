@@ -70,7 +70,7 @@ func TestEvictPod(t *testing.T) {
 		fakeClient.Fake.AddReactor("list", "pods", func(action core.Action) (bool, runtime.Object, error) {
 			return true, &corev1.PodList{Items: tt.pods}, nil
 		})
-		got := EvictPod(ctx, fakeClient, tt.pod, nil)
+		got := EvictPod(ctx, fakeClient, tt.pod, "v1", nil)
 		if got != tt.want {
 			t.Errorf("Test error for Desc: %s. Expected %v pod eviction to be %v, got %v", tt.description, tt.pod.Name, tt.want, got)
 		}
