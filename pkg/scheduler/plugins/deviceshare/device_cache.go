@@ -378,9 +378,44 @@ func (n *nodeDeviceCache) createNodeDevice(nodeName string) *nodeDevice {
 }
 
 func (n *nodeDeviceCache) removeNodeDevice(nodeName string) {
+	if nodeName == "" {
+		return
+	}
 	n.lock.Lock()
 	defer n.lock.Unlock()
 	delete(n.nodeDeviceInfos, nodeName)
+}
+
+func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1alpha1.Device) {
+	if nodeName == "" || device == nil {
+		return
+	}
+
+	info := n.getNodeDevice(nodeName)
+	if info == nil {
+		info = n.createNodeDevice(nodeName)
+	}
+
+	info.lock.Lock()
+	defer info.lock.Unlock()
+
+	nodeDeviceResource := map[schedulingv1alpha1.DeviceType]deviceResources{}
+	for _, deviceInfo := range device.Spec.Devices {
+		if nodeDeviceResource[deviceInfo.Type] == nil {
+			nodeDeviceResource[deviceInfo.Type] = make(deviceResources)
+		}
+		if !deviceInfo.Health {
+			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = make(corev1.ResourceList)
+			klog.Errorf("Find device unhealthy, nodeName:%v, deviceType:%v, minor:%v",
+				nodeName, deviceInfo.Type, deviceInfo.Minor)
+		} else {
+			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = deviceInfo.Resources
+			klog.V(5).Infof("Find device resource update, nodeName:%v, deviceType:%v, minor:%v, res:%v",
+				nodeName, deviceInfo.Type, deviceInfo.Minor, deviceInfo.Resources)
+		}
+	}
+
+	info.resetDeviceTotal(nodeDeviceResource)
 }
 
 func (n *nodeDeviceCache) getNodeDeviceSummary(nodeName string) (*NodeDeviceSummary, bool) {

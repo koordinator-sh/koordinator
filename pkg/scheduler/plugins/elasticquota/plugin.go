@@ -39,6 +39,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
@@ -109,39 +110,29 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		nodeResourceMap:   make(map[string]struct{}),
 	}
 
-	nodeInformer := handle.SharedInformerFactory().Core().V1().Nodes().Informer()
-	nodeInformer.AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc:    elasticQuota.OnNodeAdd,
-			UpdateFunc: elasticQuota.OnNodeUpdate,
-			DeleteFunc: elasticQuota.OnNodeDelete,
-		})
-	podInformer := handle.SharedInformerFactory().Core().V1().Pods()
-	podInformer.Informer().AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc:    elasticQuota.OnPodAdd,
-			UpdateFunc: elasticQuota.OnPodUpdate,
-			DeleteFunc: elasticQuota.OnPodDelete,
-		},
-	)
-
-	elasticQuotaInformer.Informer().AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc:    elasticQuota.OnQuotaAdd,
-			UpdateFunc: elasticQuota.OnQuotaUpdate,
-			DeleteFunc: elasticQuota.OnQuotaDelete,
-		})
-
 	ctx := context.TODO()
 
 	elasticQuota.createSystemQuotaIfNotPresent()
 	elasticQuota.createDefaultQuotaIfNotPresent()
+	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), scheSharedInformerFactory, elasticQuotaInformer.Informer(), cache.ResourceEventHandlerFuncs{
+		AddFunc:    elasticQuota.OnQuotaAdd,
+		UpdateFunc: elasticQuota.OnQuotaUpdate,
+		DeleteFunc: elasticQuota.OnQuotaDelete,
+	})
 
-	scheSharedInformerFactory.Start(ctx.Done())
-	handle.SharedInformerFactory().Start(ctx.Done())
+	nodeInformer := handle.SharedInformerFactory().Core().V1().Nodes().Informer()
+	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), handle.SharedInformerFactory(), nodeInformer, cache.ResourceEventHandlerFuncs{
+		AddFunc:    elasticQuota.OnNodeAdd,
+		UpdateFunc: elasticQuota.OnNodeUpdate,
+		DeleteFunc: elasticQuota.OnNodeDelete,
+	})
 
-	scheSharedInformerFactory.WaitForCacheSync(ctx.Done())
-	handle.SharedInformerFactory().WaitForCacheSync(ctx.Done())
+	podInformer := handle.SharedInformerFactory().Core().V1().Pods().Informer()
+	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), handle.SharedInformerFactory(), podInformer, cache.ResourceEventHandlerFuncs{
+		AddFunc:    elasticQuota.OnPodAdd,
+		UpdateFunc: elasticQuota.OnPodUpdate,
+		DeleteFunc: elasticQuota.OnPodDelete,
+	})
 
 	elasticQuota.migrateDefaultQuotaGroupsPod()
 

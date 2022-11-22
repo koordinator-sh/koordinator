@@ -613,6 +613,11 @@ func (gqm *GroupQuotaManager) OnPodAdd(quotaName string, pod *v1.Pod) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo != nil && quotaInfo.isPodExist(pod) {
+		return
+	}
+
 	gqm.updatePodCacheNoLock(quotaName, pod, true)
 	gqm.updatePodRequestNoLock(quotaName, nil, pod)
 	// in case failOver, update pod isAssigned explicitly according to its phase and NodeName.

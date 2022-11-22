@@ -78,12 +78,8 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		pgClient = pgclientset.NewForConfigOrDie(&kubeConfig)
 	}
 	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
-	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
-	podInformer := handle.SharedInformerFactory().Core().V1().Pods()
 
-	ctx := context.TODO()
-
-	pgMgr := core.NewPodGroupManager(pgClient, pgInformer, podInformer, args)
+	pgMgr := core.NewPodGroupManager(pgClient, pgInformerFactory, handle.SharedInformerFactory(), args)
 	var controllerWorkers int
 	if args == nil {
 		controllerWorkers = 1
@@ -95,12 +91,6 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		pgMgr:            pgMgr,
 		workers:          controllerWorkers,
 	}
-
-	pgInformerFactory.Start(ctx.Done())
-	handle.SharedInformerFactory().Start(ctx.Done())
-
-	pgInformerFactory.WaitForCacheSync(ctx.Done())
-	handle.SharedInformerFactory().WaitForCacheSync(ctx.Done())
 
 	return plugin, nil
 }

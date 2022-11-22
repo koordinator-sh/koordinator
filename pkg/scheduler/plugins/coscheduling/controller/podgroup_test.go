@@ -270,13 +270,8 @@ func setUp(ctx context.Context, podNames []string, pgName string, podPhase v1.Po
 	podInformer := informerFactory.Core().V1().Pods()
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 
-	pgMgr := core.NewPodGroupManager(pgClient, pgInformer, podInformer, &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: time.Second}})
+	pgMgr := core.NewPodGroupManager(pgClient, pgInformerFactory, informerFactory, &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: time.Second}})
 	ctrl := NewPodGroupController(kubeClient, pgInformer, podInformer, pgClient, pgMgr, nil, 1)
-
-	pgInformerFactory.Start(ctx.Done())
-	informerFactory.Start(ctx.Done())
-	pgInformerFactory.WaitForCacheSync(ctx.Done())
-	informerFactory.WaitForCacheSync(ctx.Done())
 	return ctrl, kubeClient, pgClient
 }
 

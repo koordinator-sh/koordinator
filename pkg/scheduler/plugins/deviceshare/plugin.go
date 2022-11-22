@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -271,28 +270,8 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	}
 
 	deviceCache := newNodeDeviceCache()
-
-	deviceInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
-	deviceInformer := deviceInformerFactory.Scheduling().V1alpha1().Devices().Informer()
-	deviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    deviceCache.onDeviceAdd,
-		UpdateFunc: deviceCache.onDeviceUpdate,
-		DeleteFunc: deviceCache.onDeviceDelete,
-	})
-	// make sure Device resources are loaded before Pods
-	deviceInformerFactory.Start(context.TODO().Done())
-	deviceInformerFactory.WaitForCacheSync(context.TODO().Done())
-
-	podInformerFactory := extendedHandle.SharedInformerFactory()
-	podInformer := podInformerFactory.Core().V1().Pods().Informer()
-	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    deviceCache.onPodAdd,
-		UpdateFunc: deviceCache.onPodUpdate,
-		DeleteFunc: deviceCache.onPodDelete,
-	})
-	// make sure Pods are loaded before scheduler starts working
-	podInformerFactory.Start(context.TODO().Done())
-	podInformerFactory.WaitForCacheSync(context.TODO().Done())
+	registerDeviceEventHandler(deviceCache, extendedHandle.KoordinatorSharedInformerFactory())
+	registerPodEventHandler(deviceCache, handle.SharedInformerFactory())
 
 	return &Plugin{
 		handle:          handle,

@@ -17,12 +17,26 @@ limitations under the License.
 package deviceshare
 
 import (
-	v1 "k8s.io/api/core/v1"
+	"context"
+
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 )
+
+func registerDeviceEventHandler(deviceCache *nodeDeviceCache, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory) {
+	deviceInformer := koordSharedInformerFactory.Scheduling().V1alpha1().Devices().Informer()
+	eventHandler := cache.ResourceEventHandlerFuncs{
+		AddFunc:    deviceCache.onDeviceAdd,
+		UpdateFunc: deviceCache.onDeviceUpdate,
+		DeleteFunc: deviceCache.onDeviceDelete,
+	}
+	// make sure Device resources are loaded before Pods
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordSharedInformerFactory, deviceInformer, eventHandler)
+}
 
 func (n *nodeDeviceCache) onDeviceAdd(obj interface{}) {
 	device, ok := obj.(*schedulingv1alpha1.Device)
@@ -30,7 +44,7 @@ func (n *nodeDeviceCache) onDeviceAdd(obj interface{}) {
 		klog.Errorf("device cache add failed to parse, obj %T", obj)
 		return
 	}
-	n.update(device.Name, device)
+	n.updateNodeDevice(device.Name, device)
 	klog.V(4).InfoS("device cache added", "Device", klog.KObj(device))
 }
 
@@ -41,7 +55,7 @@ func (n *nodeDeviceCache) onDeviceUpdate(oldObj, newObj interface{}) {
 		klog.Errorf("device cache update failed to parse, oldObj %T, newObj %T", oldObj, newObj)
 		return
 	}
-	n.update(newD.Name, newD)
+	n.updateNodeDevice(newD.Name, newD)
 	klog.V(4).InfoS("device cache updated", "Device", klog.KObj(newD))
 }
 
@@ -59,45 +73,6 @@ func (n *nodeDeviceCache) onDeviceDelete(obj interface{}) {
 	default:
 		return
 	}
-	n.remove(device.Name)
+	n.removeNodeDevice(device.Name)
 	klog.V(4).InfoS("device cache deleted", "Device", klog.KObj(device))
-}
-
-func (n *nodeDeviceCache) remove(nodeName string) {
-	if nodeName == "" {
-		return
-	}
-	n.removeNodeDevice(nodeName)
-}
-
-func (n *nodeDeviceCache) update(nodeName string, device *schedulingv1alpha1.Device) {
-	if nodeName == "" || device == nil {
-		return
-	}
-
-	info := n.getNodeDevice(nodeName)
-	if info == nil {
-		info = n.createNodeDevice(nodeName)
-	}
-
-	info.lock.Lock()
-	defer info.lock.Unlock()
-
-	nodeDeviceResource := map[schedulingv1alpha1.DeviceType]deviceResources{}
-	for _, deviceInfo := range device.Spec.Devices {
-		if nodeDeviceResource[deviceInfo.Type] == nil {
-			nodeDeviceResource[deviceInfo.Type] = make(deviceResources)
-		}
-		if !deviceInfo.Health {
-			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = make(v1.ResourceList)
-			klog.Errorf("Find device unhealthy, nodeName:%v, deviceType:%v, minor:%v",
-				nodeName, deviceInfo.Type, deviceInfo.Minor)
-		} else {
-			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = deviceInfo.Resources
-			klog.V(5).Infof("Find device resource update, nodeName:%v, deviceType:%v, minor:%v, res:%v",
-				nodeName, deviceInfo.Type, deviceInfo.Minor, deviceInfo.Resources)
-		}
-	}
-
-	info.resetDeviceTotal(nodeDeviceResource)
 }

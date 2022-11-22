@@ -17,10 +17,13 @@ limitations under the License.
 package nodenumaresource
 
 import (
+	"context"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
@@ -30,9 +33,11 @@ type podEventHandler struct {
 }
 
 func registerPodEventHandler(handle framework.Handle, cpuManager CPUManager) {
-	handle.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(&podEventHandler{
+	podInformer := handle.SharedInformerFactory().Core().V1().Pods().Informer()
+	eventHandler := &podEventHandler{
 		cpuManager: cpuManager,
-	})
+	}
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), handle.SharedInformerFactory(), podInformer, eventHandler)
 }
 
 func (c *podEventHandler) OnAdd(obj interface{}) {
