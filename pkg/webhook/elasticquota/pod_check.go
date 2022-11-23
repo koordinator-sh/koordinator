@@ -55,23 +55,28 @@ func (qt *quotaTopology) ValidateUpdatePod(oldPod, newPod *corev1.Pod) error {
 func (qt *quotaTopology) getQuotaNameFromPodNoLock(pod *corev1.Pod) string {
 	quotaLabelName := extension.GetQuotaName(pod)
 	if quotaLabelName == "" {
-		quotaList := &v1alpha1.ElasticQuotaList{}
-		opts := &client.ListOptions{
-			Namespace: pod.Namespace,
-		}
-		err := qt.client.List(context.TODO(), quotaList, opts, utilclient.DisableDeepCopy)
-		if err != nil {
-			runtime.HandleError(err)
-			return extension.DefaultQuotaName
-		}
-		if len(quotaList.Items) == 0 {
-			return extension.DefaultQuotaName
-		}
-		quotaLabelName = quotaList.Items[0].Name
+		quotaLabelName = GetQuotaName(qt.client, pod)
 	}
 
 	if _, exist := qt.quotaInfoMap[quotaLabelName]; !exist {
 		quotaLabelName = extension.DefaultQuotaName
 	}
 	return quotaLabelName
+}
+
+var GetQuotaName = func(clientImpl client.Client, pod *corev1.Pod) string {
+	quotaList := &v1alpha1.ElasticQuotaList{}
+	opts := &client.ListOptions{
+		Namespace: pod.Namespace,
+	}
+	err := clientImpl.List(context.TODO(), quotaList, opts, utilclient.DisableDeepCopy)
+	if err != nil {
+		runtime.HandleError(err)
+		return extension.DefaultQuotaName
+	}
+	if len(quotaList.Items) == 0 {
+		return extension.DefaultQuotaName
+	}
+	// todo when elastic quota supports multiple instances in a namespace, modify this
+	return quotaList.Items[0].Name
 }
