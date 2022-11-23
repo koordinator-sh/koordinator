@@ -138,6 +138,18 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{Requeue: false}, nil
 }
 
+func Add(mgr ctrl.Manager) error {
+	reconciler := &NodeResourceReconciler{
+		Recorder:       mgr.GetEventRecorderFor("noderesource-controller"),
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		BESyncContext:  NewSyncContext(),
+		GPUSyncContext: NewSyncContext(),
+		Clock:          clock.RealClock{},
+	}
+	return reconciler.SetupWithManager(mgr)
+}
+
 func (r *NodeResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *config.NewDefaultColocationCfg(), r.Recorder)
 	r.cfgCache = handler

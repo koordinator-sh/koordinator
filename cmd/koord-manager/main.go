@@ -27,7 +27,6 @@ import (
 	"github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/clock"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
@@ -35,6 +34,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
@@ -76,6 +76,12 @@ func init() {
 
 	scheme.AddUnversionedTypes(metav1.SchemeGroupVersion, &metav1.UpdateOptions{}, &metav1.DeleteOptions{}, &metav1.CreateOptions{})
 	// +kubebuilder:scaffold:scheme
+}
+
+var controllerAddFuncs = map[string]func(manager.Manager) error{
+	"NodeMetric":   nodemetric.Add,
+	"NodeResource": noderesource.Add,
+	"NodeSLO":      nodeslo.Add,
 }
 
 func main() {
@@ -156,33 +162,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&nodemetric.NodeMetricReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("nodemetric-controller"),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "NodeMetric")
+	if err := setupControllersWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to setup controllers")
 		os.Exit(1)
 	}
-	if err = (&noderesource.NodeResourceReconciler{
-		Recorder:       mgr.GetEventRecorderFor("noderesource-controller"),
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		BESyncContext:  noderesource.NewSyncContext(),
-		GPUSyncContext: noderesource.NewSyncContext(),
-		Clock:          clock.RealClock{},
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "NodeResource")
-		os.Exit(1)
-	}
-	if err = (&nodeslo.NodeSLOReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("nodeslo-controller"),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "NodeSLO")
-		os.Exit(1)
-	}
+
 	extensions.PrepareExtensions(cfg, mgr)
 	// +kubebuilder:scaffold:builder
 
@@ -209,8 +193,6 @@ func main() {
 				setupLog.Error(err, "unable to wait webhook ready")
 				os.Exit(1)
 			}
-
-			// NOTE: Controllers can be started here if needed
 		}()
 	} else {
 		klog.V(4).Infof("webhook framework feature gate not enabled")
@@ -222,6 +204,16 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func setupControllersWithManager(m manager.Manager) error {
+	for controllerName, addFn := range controllerAddFuncs {
+		if err := addFn(m); err != nil {
+			klog.Errorf("Unable to create controller %s, err: %v", controllerName, err)
+			return err
+		}
+	}
+	return nil
 }
 
 func setRestConfig(c *rest.Config) {

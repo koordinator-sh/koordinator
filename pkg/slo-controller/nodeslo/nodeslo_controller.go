@@ -182,6 +182,15 @@ func (r *NodeSLOReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, nil
 }
 
+func Add(mgr ctrl.Manager) error {
+	reconciler := NodeSLOReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("nodeslo-controller"),
+	}
+	return reconciler.SetupWithManager(mgr)
+}
+
 func (r *NodeSLOReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	configMapCacheHandler := NewSLOCfgHandlerForConfigMapEvent(r.Client, DefaultSLOCfg(), r.Recorder)
 	r.sloCfgCache = configMapCacheHandler
