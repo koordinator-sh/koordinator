@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"k8s.io/component-base/logs"
+	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -40,28 +41,40 @@ import (
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 )
 
+var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
+	loadaware.Name:                   loadaware.New,
+	nodenumaresource.Name:            nodenumaresource.New,
+	reservation.Name:                 reservation.New,
+	batchresource.Name:               batchresource.New,
+	coscheduling.Name:                coscheduling.New,
+	deviceshare.Name:                 deviceshare.New,
+	elasticquota.Name:                elasticquota.New,
+	compatibledefaultpreemption.Name: compatibledefaultpreemption.New,
+}
+
+// Register custom scheduling hooks for pre-process scheduling context before call plugins.
+// e.g. change the nodeInfo and make a copy before calling filter plugins
+var schedulingHooks = []frameworkext.SchedulingPhaseHook{
+	reservation.NewHook(),
+}
+
+func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {
+	options := make([]app.Option, 0, len(plugins))
+	for name, factoryFn := range plugins {
+		options = append(options, app.WithPlugin(name, factoryFn))
+	}
+	return options
+}
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
-
-	// Register custom scheduling hooks for pre-process scheduling context before call plugins.
-	// e.g. change the nodeInfo and make a copy before calling filter plugins
-	schedulingHooks := []frameworkext.SchedulingPhaseHook{
-		reservation.NewHook(),
-	}
 
 	// Register custom plugins to the scheduler framework.
 	// Later they can consist of scheduler profile(s) and hence
 	// used by various kinds of workloads.
 	command := app.NewSchedulerCommand(
 		schedulingHooks,
-		app.WithPlugin(loadaware.Name, loadaware.New),
-		app.WithPlugin(nodenumaresource.Name, nodenumaresource.New),
-		app.WithPlugin(compatibledefaultpreemption.Name, compatibledefaultpreemption.New),
-		app.WithPlugin(reservation.Name, reservation.New),
-		app.WithPlugin(batchresource.Name, batchresource.New),
-		app.WithPlugin(coscheduling.Name, coscheduling.New),
-		app.WithPlugin(deviceshare.Name, deviceshare.New),
-		app.WithPlugin(elasticquota.Name, elasticquota.New),
+		flatten(koordinatorPlugins)...,
 	)
 
 	logs.InitLogs()
