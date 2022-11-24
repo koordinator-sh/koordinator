@@ -46,7 +46,7 @@ func TestCgroupResourceUpdater_MergeUpdate(t *testing.T) {
 		owner               *OwnerRef
 		value               string
 		ParentDir           string
-		file                system.CgroupFile
+		resource            system.Resource
 		lastUpdateTimestamp time.Time
 		updateFunc          UpdateFunc
 		mergeUpdateFunc     MergeUpdateFunc
@@ -73,7 +73,7 @@ func TestCgroupResourceUpdater_MergeUpdate(t *testing.T) {
 				owner:               tt.fields.owner,
 				value:               tt.fields.value,
 				ParentDir:           tt.fields.ParentDir,
-				file:                tt.fields.file,
+				resource:            tt.fields.resource,
 				lastUpdateTimestamp: tt.fields.lastUpdateTimestamp,
 				updateFunc:          tt.fields.updateFunc,
 				mergeUpdateFunc:     tt.fields.mergeUpdateFunc,
@@ -96,7 +96,7 @@ func TestCgroupResourceUpdater_Update(t *testing.T) {
 		owner               *OwnerRef
 		value               string
 		ParentDir           string
-		file                system.CgroupFile
+		resource            system.Resource
 		lastUpdateTimestamp time.Time
 		updateFunc          UpdateFunc
 		mergeUpdateFunc     MergeUpdateFunc
@@ -123,7 +123,7 @@ func TestCgroupResourceUpdater_Update(t *testing.T) {
 				owner:               tt.fields.owner,
 				value:               tt.fields.value,
 				ParentDir:           tt.fields.ParentDir,
-				file:                tt.fields.file,
+				resource:            tt.fields.resource,
 				lastUpdateTimestamp: tt.fields.lastUpdateTimestamp,
 				updateFunc:          tt.fields.updateFunc,
 				mergeUpdateFunc:     tt.fields.mergeUpdateFunc,

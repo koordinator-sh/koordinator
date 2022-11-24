@@ -111,7 +111,7 @@ func GetContainerCgroupCPUAcctUsagePath(podParentDir string, c *corev1.Container
 	if err != nil {
 		return "", err
 	}
-	return system.GetCgroupFilePath(containerPath, system.CpuacctUsage), nil
+	return system.GetCgroupFilePath(containerPath, system.CPUAcctUsage), nil
 }
 
 func GetContainerCgroupCPUAcctPSIPath(podParentDir string, c *corev1.ContainerStatus) (PSIPath, error) {
@@ -121,9 +121,9 @@ func GetContainerCgroupCPUAcctPSIPath(podParentDir string, c *corev1.ContainerSt
 	}
 	// psi file saved in cpuacct for cgroup v1 file system
 	return PSIPath{
-		CPU: system.GetCgroupFilePath(containerPath, system.CpuacctCPUPressure),
-		Mem: system.GetCgroupFilePath(containerPath, system.CpuacctMemPressure),
-		IO:  system.GetCgroupFilePath(containerPath, system.CpuacctIOPressure),
+		CPU: system.GetCgroupFilePath(containerPath, system.CPUAcctCPUPressure),
+		Mem: system.GetCgroupFilePath(containerPath, system.CPUAcctMemoryPressure),
+		IO:  system.GetCgroupFilePath(containerPath, system.CPUAcctIOPressure),
 	}, nil
 }
 
@@ -132,7 +132,7 @@ func GetContainerCgroupMemStatPath(podParentDir string, c *corev1.ContainerStatu
 	if err != nil {
 		return "", err
 	}
-	return system.GetCgroupFilePath(containerPath, system.MemStat), nil
+	return system.GetCgroupFilePath(containerPath, system.MemoryStat), nil
 }
 
 func GetContainerBaseCFSQuota(container *corev1.Container) int64 {
@@ -203,7 +203,7 @@ func GetContainerCurTasksPath(podParentDir string, c *corev1.ContainerStatus) (s
 	if err != nil {
 		return "", err
 	}
-	return system.GetCgroupFilePath(containerPath, system.CPUTask), nil
+	return system.GetCgroupFilePath(containerPath, system.CPUTasks), nil
 }
 
 func GetContainerCurCPUShare(podParentDir string, c *corev1.ContainerStatus) (int64, error) {

@@ -179,7 +179,7 @@ func Test_GetMemInfoUsageKB(t *testing.T) {
 func Test_readPodMemStat(t *testing.T) {
 	tempDir := t.TempDir()
 	tempInvalidPodCgroupDir := filepath.Join(tempDir, "no_cgroup")
-	tempPodMemStatPath := filepath.Join(tempDir, system.MemStatFileName)
+	tempPodMemStatPath := filepath.Join(tempDir, system.MemoryStatName)
 	memStatContentStr := "...\ntotal_cache 4843945984\ntotal_rss 310595584\ntotal_rss_huge 60817408\n" +
 		"total_mapped_file 243519488\ntotal_dirty 413696\ntotal_writeback 0\ntotal_swap 0\n" +
 		"total_workingset_refault 0\ntotal_workingset_activate 0total_workingset_restore 0\n" +

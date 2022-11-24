@@ -274,7 +274,7 @@ func Test_GetContainerCurTasks(t *testing.T) {
 			dname := filepath.Join(cgroupRootDir, system.CgroupCPUDir, tt.field.containerParentDir)
 			err := os.MkdirAll(dname, 0700)
 			assert.NoError(t, err)
-			fname := filepath.Join(dname, system.CPUTaskFileName)
+			fname := filepath.Join(dname, system.CPUTasksName)
 			_ = os.WriteFile(fname, []byte(tt.field.tasksFileStr), 0666)
 
 			system.Conf = &system.Config{

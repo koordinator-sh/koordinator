@@ -18,16 +18,82 @@ package system
 
 import (
 	"math"
+	"path/filepath"
+	"sync"
 
-	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 )
+
+func init() {
+	DefaultRegistry.Add(CgroupVersionV1, knownCgroupResources...)
+	DefaultRegistry.Add(CgroupVersionV2, knownCgroupV2Resources...)
+}
+
+var DefaultRegistry = NewCgroupResourceRegistry()
+
+type CgroupVersion int32
+
+const (
+	CgroupVersionV1 CgroupVersion = 1
+	CgroupVersionV2 CgroupVersion = 2
+)
+
+type CgroupResourceRegistry interface {
+	Add(v CgroupVersion, s ...Resource)
+	Get(v CgroupVersion, t ResourceType) (Resource, bool)
+}
+
+type CgroupResourceRegistryImpl struct {
+	lock sync.RWMutex
+	v1   map[ResourceType]Resource
+	v2   map[ResourceType]Resource
+}
+
+func NewCgroupResourceRegistry() CgroupResourceRegistry {
+	return &CgroupResourceRegistryImpl{
+		v1: map[ResourceType]Resource{},
+		v2: map[ResourceType]Resource{},
+	}
+}
+
+func (r *CgroupResourceRegistryImpl) Add(v CgroupVersion, s ...Resource) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	m := r.v1
+	if v == CgroupVersionV2 {
+		m = r.v2
+	}
+	for i := range s {
+		m[s[i].ResourceType()] = s[i]
+	}
+}
+
+func (r *CgroupResourceRegistryImpl) Get(v CgroupVersion, key ResourceType) (Resource, bool) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	m := r.v1
+	if v == CgroupVersionV2 {
+		m = r.v2
+	}
+	s, ok := m[key]
+	return s, ok
+}
+
+func GetCurrentCgroupVersion() CgroupVersion {
+	if Conf.UseCgroupsV2 {
+		return CgroupVersionV2
+	}
+	return CgroupVersionV1
+}
 
 const ( // subsystems
 	CgroupCPUDir     string = "cpu/"
 	CgroupCPUSetDir  string = "cpuset/"
-	CgroupCPUacctDir string = "cpuacct/"
+	CgroupCPUAcctDir string = "cpuacct/"
 	CgroupMemDir     string = "memory/"
 	CgroupBlkioDir   string = "blkio/"
+
+	CgroupV2Dir = ""
 )
 
 const (
@@ -35,115 +101,222 @@ const (
 	CFSQuotaMinValue   int64 = 1000 // min value except `-1`
 	CPUSharesMinValue  int64 = 2
 
-	CPUStatFileName   = "cpu.stat"
-	CPUSharesFileName = "cpu.shares"
-	CPUCFSQuotaName   = "cpu.cfs_quota_us"
-	CPUCFSPeriodName  = "cpu.cfs_period_us"
-	CPUBVTWarpNsName  = "cpu.bvt_warp_ns"
-	CPUBurstName      = "cpu.cfs_burst_us"
-	CPUSFileName      = "cpuset.cpus"
-	CPUTaskFileName   = "tasks"
+	CPUStatName      = "cpu.stat"
+	CPUSharesName    = "cpu.shares"
+	CPUCFSQuotaName  = "cpu.cfs_quota_us"
+	CPUCFSPeriodName = "cpu.cfs_period_us"
+	CPUBVTWarpNsName = "cpu.bvt_warp_ns"
+	CPUBurstName     = "cpu.cfs_burst_us"
+	CPUSFileName     = "cpuset.cpus"
+	CPUTasksName     = "tasks"
+	CPUProcsName     = "cgroup.procs"
+	CPUMaxName       = "cpu.max"
 
-	CpuacctUsageFileName       = "cpuacct.usage"
-	CpuacctCPUPressureFileName = "cpu.pressure"
-	CpuacctMemPressureFileName = "memory.pressure"
-	CpuacctIOPressureFileName  = "io.pressure"
+	CPUSetCPUSName = "cpuset.cpus"
 
-	MemWmarkRatioFileName       = "memory.wmark_ratio"
-	MemWmarkScaleFactorFileName = "memory.wmark_scale_factor"
-	MemPriorityFileName         = "memory.priority"
-	MemUsePriorityOomFileName   = "memory.use_priority_oom"
-	MemOomGroupFileName         = "memory.oom.group"
-	MemWmarkMinAdjFileName      = "memory.wmark_min_adj"
-	MemMinFileName              = "memory.min"
-	MemLowFileName              = "memory.low"
-	MemHighFileName             = "memory.high"
-	MemoryLimitFileName         = "memory.limit_in_bytes"
-	MemorySWLimitFileName       = "memory.memsw.limit_in_bytes"
-	MemStatFileName             = "memory.stat"
+	CPUAcctStatName           = "cpuacct.stat"
+	CPUAcctUsageName          = "cpuacct.usage"
+	CPUAcctCPUPressureName    = "cpu.pressure"
+	CPUAcctMemoryPressureName = "memory.pressure"
+	CPUAcctIOPressureName     = "io.pressure"
 
-	BlkioTRIopsFileName = "blkio.throttle.read_iops_device"
-	BlkioTRBpsFileName  = "blkio.throttle.read_bps_device"
-	BlkioTWIopsFileName = "blkio.throttle.write_iops_device"
-	BlkioTWBpsFileName  = "blkio.throttle.write_bps_device"
+	MemoryLimitName            = "memory.limit_in_bytes"
+	MemoryUsageName            = "memory.usage_in_bytes"
+	MemoryStatName             = "memory.stat"
+	MemoryWmarkRatioName       = "memory.wmark_ratio"
+	MemoryWmarkScaleFactorName = "memory.wmark_scale_factor"
+	MemoryWmarkMinAdjName      = "memory.wmark_min_adj"
+	MemoryMinName              = "memory.min"  // anolis os or cgroups-v2
+	MemoryLowName              = "memory.low"  // anolis os or cgroups-v2
+	MemoryHighName             = "memory.high" // anolis os or cgroups-v2
+	MemoryMaxName              = "memory.max"
+	MemoryCurrentName          = "memory.current"
+	MemoryPriorityName         = "memory.priority"
+	MemoryUsePriorityOomName   = "memory.use_priority_oom"
+	MemoryOomGroupName         = "memory.oom.group"
 
-	ProcsFileName = "cgroup.procs"
+	BlkioTRIopsName = "blkio.throttle.read_iops_device"
+	BlkioTRBpsName  = "blkio.throttle.read_bps_device"
+	BlkioTWIopsName = "blkio.throttle.write_iops_device"
+	BlkioTWBpsName  = "blkio.throttle.write_bps_device"
 )
 
 var (
-	CPUBurstValidator                    = &RangeValidator{name: CPUBurstName, min: 0, max: 100 * 10 * 100000}
-	CPUBvtWarpNsValidator                = &RangeValidator{name: CPUBVTWarpNsName, min: -1, max: 2}
-	MemWmarkRatioValidator               = &RangeValidator{name: MemWmarkRatioFileName, min: 0, max: 100}
-	MemPriorityValidator                 = &RangeValidator{name: MemPriorityFileName, min: 0, max: 12}
-	MemOomGroupValidator                 = &RangeValidator{name: MemOomGroupFileName, min: 0, max: 1}
-	MemUsePriorityOomValidator           = &RangeValidator{name: MemUsePriorityOomFileName, min: 0, max: 1}
-	MemWmarkMinAdjValidator              = &RangeValidator{name: MemWmarkMinAdjFileName, min: -25, max: 50}
-	MemWmarkScaleFactorFileNameValidator = &RangeValidator{name: MemWmarkScaleFactorFileName, min: 1, max: 1000}
-	MemMinValidator                      = &RangeValidator{name: MemMinFileName, min: 0, max: math.MaxInt64}
-	MemLowValidator                      = &RangeValidator{name: MemLowFileName, min: 0, max: math.MaxInt64}
-	MemHighValidator                     = &RangeValidator{name: MemHighFileName, min: 0, max: math.MaxInt64} // write value(>node.total) -> read "max"
+	NaturalInt64Validator = &RangeValidator{min: 0, max: math.MaxInt64}
 
-	BlkioReadIopsValidator  = &RangeValidator{name: BlkioTRIopsFileName, min: 0, max: math.MaxInt64}
-	BlkioReadBpsValidator   = &RangeValidator{name: BlkioTRBpsFileName, min: 0, max: math.MaxInt64}
-	BlkioWriteIopsValidator = &RangeValidator{name: BlkioTWIopsFileName, min: 0, max: math.MaxInt64}
-	BlkioWriteBpsValidator  = &RangeValidator{name: BlkioTWBpsFileName, min: 0, max: math.MaxInt64}
+	CPUBurstValidator                       = &RangeValidator{min: 0, max: 100 * 10 * 100000}
+	CPUBvtWarpNsValidator                   = &RangeValidator{min: -1, max: 2}
+	MemoryWmarkRatioValidator               = &RangeValidator{min: 0, max: 100}
+	MemoryPriorityValidator                 = &RangeValidator{min: 0, max: 12}
+	MemoryOomGroupValidator                 = &RangeValidator{min: 0, max: 1}
+	MemoryUsePriorityOomValidator           = &RangeValidator{min: 0, max: 1}
+	MemoryWmarkMinAdjValidator              = &RangeValidator{min: -25, max: 50}
+	MemoryWmarkScaleFactorFileNameValidator = &RangeValidator{min: 1, max: 1000}
 )
 
+// for cgroup resources, we use the corresponding cgroups-v1 filename as its resource type
 var (
-	CPUStat      = CgroupFile{ResourceFileName: CPUStatFileName, Subfs: CgroupCPUDir, IsAnolisOS: false}
-	CPUShares    = CgroupFile{ResourceFileName: CPUSharesFileName, Subfs: CgroupCPUDir, IsAnolisOS: false}
-	CPUCFSQuota  = CgroupFile{ResourceFileName: CPUCFSQuotaName, Subfs: CgroupCPUDir, IsAnolisOS: false}
-	CPUCFSPeriod = CgroupFile{ResourceFileName: CPUCFSPeriodName, Subfs: CgroupCPUDir, IsAnolisOS: false}
-	CPUTask      = CgroupFile{ResourceFileName: CPUTaskFileName, Subfs: CgroupCPUDir, IsAnolisOS: false}
-	CPUBurst     = CgroupFile{ResourceFileName: CPUBurstName, Subfs: CgroupCPUDir, IsAnolisOS: true, Validator: CPUBurstValidator}
-	CPUBVTWarpNs = CgroupFile{ResourceFileName: CPUBVTWarpNsName, Subfs: CgroupCPUDir, IsAnolisOS: true, Validator: CPUBvtWarpNsValidator}
+	DefaultFactory = NewCgroupResourceFactory()
 
-	CPUSet = CgroupFile{ResourceFileName: CPUSFileName, Subfs: CgroupCPUSetDir, IsAnolisOS: false}
+	CPUStat      = DefaultFactory.New(CPUStatName, CgroupCPUDir)
+	CPUShares    = DefaultFactory.New(CPUSharesName, CgroupCPUDir)
+	CPUCFSQuota  = DefaultFactory.New(CPUCFSQuotaName, CgroupCPUDir)
+	CPUCFSPeriod = DefaultFactory.New(CPUCFSPeriodName, CgroupCPUDir)
+	CPUBurst     = DefaultFactory.New(CPUBurstName, CgroupCPUDir).WithValidator(CPUBurstValidator).WithCheckSupported(SupportedIfFileExists)
+	CPUBVTWarpNs = DefaultFactory.New(CPUBVTWarpNsName, CgroupCPUDir).WithValidator(CPUBvtWarpNsValidator).WithCheckSupported(SupportedIfFileExists)
+	CPUTasks     = DefaultFactory.New(CPUTasksName, CgroupCPUDir)
+	CPUProcs     = DefaultFactory.New(CPUProcsName, CgroupCPUDir)
 
-	CpuacctUsage       = CgroupFile{ResourceFileName: CpuacctUsageFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: false}
-	CpuacctCPUPressure = CgroupFile{ResourceFileName: CpuacctCPUPressureFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: true}
-	CpuacctMemPressure = CgroupFile{ResourceFileName: CpuacctMemPressureFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: true}
-	CpuacctIOPressure  = CgroupFile{ResourceFileName: CpuacctIOPressureFileName, Subfs: CgroupCPUacctDir, IsAnolisOS: true}
+	CPUSet = DefaultFactory.New(CPUSetCPUSName, CgroupCPUSetDir)
 
-	MemStat             = CgroupFile{ResourceFileName: MemStatFileName, Subfs: CgroupMemDir, IsAnolisOS: false}
-	MemorySWLimit       = CgroupFile{ResourceFileName: MemorySWLimitFileName, Subfs: CgroupMemDir, IsAnolisOS: false}
-	MemoryLimit         = CgroupFile{ResourceFileName: MemoryLimitFileName, Subfs: CgroupMemDir, IsAnolisOS: false}
-	MemWmarkRatio       = CgroupFile{ResourceFileName: MemWmarkRatioFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemWmarkRatioValidator}
-	MemPriority         = CgroupFile{ResourceFileName: MemPriorityFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemPriorityValidator}
-	MemUsePriorityOom   = CgroupFile{ResourceFileName: MemUsePriorityOomFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemUsePriorityOomValidator}
-	MemOomGroup         = CgroupFile{ResourceFileName: MemOomGroupFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemOomGroupValidator}
-	MemWmarkMinAdj      = CgroupFile{ResourceFileName: MemWmarkMinAdjFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemWmarkMinAdjValidator}
-	MemWmarkScaleFactor = CgroupFile{ResourceFileName: MemWmarkScaleFactorFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemWmarkScaleFactorFileNameValidator}
-	MemMin              = CgroupFile{ResourceFileName: MemMinFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemMinValidator}
-	MemLow              = CgroupFile{ResourceFileName: MemLowFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemLowValidator}
-	MemHigh             = CgroupFile{ResourceFileName: MemHighFileName, Subfs: CgroupMemDir, IsAnolisOS: true, Validator: MemHighValidator}
+	CPUAcctStat           = DefaultFactory.New(CPUAcctStatName, CgroupCPUAcctDir)
+	CPUAcctUsage          = DefaultFactory.New(CPUAcctUsageName, CgroupCPUAcctDir)
+	CPUAcctCPUPressure    = DefaultFactory.New(CPUAcctCPUPressureName, CgroupCPUAcctDir)
+	CPUAcctMemoryPressure = DefaultFactory.New(CPUAcctMemoryPressureName, CgroupCPUAcctDir)
+	CPUAcctIOPressure     = DefaultFactory.New(CPUAcctIOPressureName, CgroupCPUAcctDir)
 
-	BlkioReadIops  = CgroupFile{ResourceFileName: BlkioTRIopsFileName, Subfs: CgroupBlkioDir, IsAnolisOS: false, Validator: BlkioReadIopsValidator}
-	BlkioReadBps   = CgroupFile{ResourceFileName: BlkioTRBpsFileName, Subfs: CgroupBlkioDir, IsAnolisOS: false, Validator: BlkioReadBpsValidator}
-	BlkioWriteIops = CgroupFile{ResourceFileName: BlkioTWIopsFileName, Subfs: CgroupBlkioDir, IsAnolisOS: false, Validator: BlkioWriteIopsValidator}
-	BlkioWriteBps  = CgroupFile{ResourceFileName: BlkioTWBpsFileName, Subfs: CgroupBlkioDir, IsAnolisOS: false, Validator: BlkioWriteBpsValidator}
+	MemoryLimit            = DefaultFactory.New(MemoryLimitName, CgroupMemDir)
+	MemoryUsage            = DefaultFactory.New(MemoryUsageName, CgroupMemDir)
+	MemoryStat             = DefaultFactory.New(MemoryStatName, CgroupMemDir)
+	MemoryWmarkRatio       = DefaultFactory.New(MemoryWmarkRatioName, CgroupMemDir).WithValidator(MemoryWmarkRatioValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryWmarkScaleFactor = DefaultFactory.New(MemoryWmarkScaleFactorName, CgroupMemDir).WithValidator(MemoryWmarkScaleFactorFileNameValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryWmarkMinAdj      = DefaultFactory.New(MemoryWmarkMinAdjName, CgroupMemDir).WithValidator(MemoryWmarkMinAdjValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryMin              = DefaultFactory.New(MemoryMinName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExists)
+	MemoryLow              = DefaultFactory.New(MemoryLowName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExists)
+	MemoryHigh             = DefaultFactory.New(MemoryHighName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExists)
+	MemoryPriority         = DefaultFactory.New(MemoryPriorityName, CgroupMemDir).WithValidator(MemoryPriorityValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryUsePriorityOom   = DefaultFactory.New(MemoryUsePriorityOomName, CgroupMemDir).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryOomGroup         = DefaultFactory.New(MemoryOomGroupName, CgroupMemDir).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExists)
 
-	CPUProcs = CgroupFile{ResourceFileName: ProcsFileName, Subfs: CgroupCPUDir, IsAnolisOS: false}
+	BlkioReadIops  = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
+	BlkioReadBps   = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
+	BlkioWriteIops = DefaultFactory.New(BlkioTWIopsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
+	BlkioWriteBps  = DefaultFactory.New(BlkioTWBpsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
+
+	knownCgroupResources = []Resource{
+		CPUStat,
+		CPUShares,
+		CPUCFSQuota,
+		CPUCFSPeriod,
+		CPUBurst,
+		CPUTasks,
+		CPUBVTWarpNs,
+		CPUSet,
+		CPUAcctStat,
+		CPUAcctUsage,
+		CPUAcctCPUPressure,
+		CPUAcctMemoryPressure,
+		CPUAcctIOPressure,
+		MemoryLimit,
+		MemoryUsage,
+		MemoryStat,
+		MemoryWmarkRatio,
+		MemoryWmarkScaleFactor,
+		MemoryWmarkMinAdj,
+		MemoryMin,
+		MemoryLow,
+		MemoryHigh,
+		MemoryPriority,
+		MemoryUsePriorityOom,
+		MemoryOomGroup,
+		BlkioReadIops,
+		BlkioReadBps,
+		BlkioWriteIops,
+		BlkioWriteBps,
+	}
+
+	CPUQuotaV2    = DefaultFactory.NewV2(CPUCFSQuotaName, CPUMaxName)
+	CPUPeriodV2   = DefaultFactory.NewV2(CPUCFSPeriodName, CPUMaxName)
+	CPUStatV2     = DefaultFactory.NewV2(CPUStatName, CPUStatName)
+	CPUAcctStatV2 = DefaultFactory.NewV2(CPUAcctStatName, CPUStatName)
+	MemoryLimitV2 = DefaultFactory.NewV2(MemoryLimitName, MemoryMaxName)
+	MemoryUsageV2 = DefaultFactory.NewV2(MemoryUsageName, MemoryCurrentName)
+	MemoryStatV2  = DefaultFactory.NewV2(MemoryStatName, MemoryStatName)
+	MemoryMinV2   = DefaultFactory.NewV2(MemoryMinName, MemoryMinName)
+	MemoryLowV2   = DefaultFactory.NewV2(MemoryLowName, MemoryLowName)
+	MemoryHighV2  = DefaultFactory.NewV2(MemoryHighName, MemoryHighName)
+
+	knownCgroupV2Resources = []Resource{
+		CPUQuotaV2,
+		CPUPeriodV2,
+		CPUStatV2,
+		CPUAcctStatV2,
+		MemoryLimitV2,
+		MemoryUsageV2,
+		MemoryStatV2,
+		MemoryMinV2,
+		MemoryLowV2,
+		MemoryHighV2,
+	}
 )
 
-type CgroupFile struct {
-	ResourceFileName string
-	Subfs            string
-	IsAnolisOS       bool
-	Validator        Validate
+var _ Resource = &CgroupResource{}
+
+type CgroupResource struct {
+	Type           ResourceType
+	FileName       string
+	Subfs          string
+	Supported      *bool
+	SupportMsg     string
+	CheckSupported func(r Resource, parentDir string) (*bool, string)
+	Validator      ResourceValidator
 }
 
-func ValidateCgroupValue(value *int64, parentDir string, file CgroupFile) bool {
-	if value == nil {
-		klog.V(5).Infof("validate fail, dir:%s, file:%s, value is nil!", parentDir, file.ResourceFileName)
-		return false
+func (c *CgroupResource) ResourceType() ResourceType {
+	if len(c.Type) > 0 {
+		return c.Type
 	}
-	if file.Validator != nil {
-		valid, msg := file.Validator.Validate(value)
-		if !valid {
-			klog.Warningf("validate fail! dir:%s, msg:%s", parentDir, msg)
+	return GetDefaultResourceType(c.Subfs, c.FileName)
+}
+
+func (c *CgroupResource) Path(parentDir string) string {
+	// get cgroup path
+	return filepath.Join(Conf.CgroupRootDir, c.Subfs, parentDir, c.FileName)
+}
+
+func (c *CgroupResource) IsSupported(parentDir string) (bool, string) {
+	if c.Supported == nil {
+		if c.CheckSupported == nil {
+			return false, "unknown support status"
 		}
-		return valid
+		c.Supported, c.SupportMsg = c.CheckSupported(c, parentDir)
 	}
-	return true
+	return *c.Supported, c.SupportMsg
+}
+
+func (c *CgroupResource) IsValid(v string) (bool, string) {
+	if c.Validator == nil {
+		return true, ""
+	}
+	return c.Validator.Validate(v)
+}
+
+func (c *CgroupResource) WithValidator(validator ResourceValidator) Resource {
+	c.Validator = validator
+	return c
+}
+
+func (c *CgroupResource) WithCheckSupported(checkSupportedFn func(r Resource, parentDir string) (*bool, string)) Resource {
+	c.Supported = nil
+	c.CheckSupported = checkSupportedFn
+	return c
+}
+
+type CgroupResourceFactory interface {
+	New(filename string, subfs string) Resource // cgroup-v1 filename represents the resource type
+	NewV2(t ResourceType, filename string) Resource
+}
+
+type cgroupResourceFactoryImpl struct{}
+
+func NewCgroupResourceFactory() CgroupResourceFactory {
+	return &cgroupResourceFactoryImpl{}
+}
+
+func (f *cgroupResourceFactoryImpl) New(filename string, subfs string) Resource {
+	return &CgroupResource{Type: ResourceType(filename), FileName: filename, Subfs: subfs, Supported: pointer.Bool(true)}
+}
+
+func (f *cgroupResourceFactoryImpl) NewV2(t ResourceType, filename string) Resource {
+	return &CgroupResource{Type: t, FileName: filename, Subfs: CgroupV2Dir, Supported: pointer.Bool(true)}
 }

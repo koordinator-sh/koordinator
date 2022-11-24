@@ -47,7 +47,7 @@ func isSupportBvtOrWmarRatio() bool {
 		return true
 	}
 
-	wmarkRatioPath := filepath.Join(Conf.CgroupRootDir, CgroupMemDir, "*", MemWmarkRatioFileName)
+	wmarkRatioPath := filepath.Join(Conf.CgroupRootDir, CgroupMemDir, "*", MemoryWmarkRatioName)
 	matches, err := filepath.Glob(wmarkRatioPath)
 	klog.V(2).Infof("PathExists wmark_ratio: exists: %v, error:%v", matches, err)
 	if err == nil && len(matches) > 0 {

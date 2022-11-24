@@ -82,10 +82,17 @@ func GetPodKubeRelativePath(pod *corev1.Pod) string {
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @output /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.usage
-func GetPodCgroupCPUAcctProcUsagePath(podParentDir string) string {
+// @output /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.stat
+func GetPodCgroupCPUAcctStatPath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.GetCgroupFilePath(podPath, system.CpuacctUsage)
+	return system.GetCgroupFilePath(podPath, system.CPUAcctStat)
+}
+
+// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @output /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.usage
+func GetPodCgroupCPUAcctUsagePath(podParentDir string) string {
+	podPath := GetPodCgroupDirWithKube(podParentDir)
+	return system.GetCgroupFilePath(podPath, system.CPUAcctUsage)
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
@@ -111,7 +118,7 @@ func GetPodCgroupCFSQuotaPath(podParentDir string) string {
 // @output /sys/fs/cgroup/memory/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.stat
 func GetPodCgroupMemStatPath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.GetCgroupFilePath(podPath, system.MemStat)
+	return system.GetCgroupFilePath(podPath, system.MemoryStat)
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
@@ -131,9 +138,9 @@ func GetPodCgroupCPUStatPath(podParentDir string) string {
 func GetPodCgroupCPUAcctPSIPath(podParentDir string) PSIPath {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
 	return PSIPath{
-		CPU: system.GetCgroupFilePath(podPath, system.CpuacctCPUPressure),
-		Mem: system.GetCgroupFilePath(podPath, system.CpuacctMemPressure),
-		IO:  system.GetCgroupFilePath(podPath, system.CpuacctIOPressure),
+		CPU: system.GetCgroupFilePath(podPath, system.CPUAcctCPUPressure),
+		Mem: system.GetCgroupFilePath(podPath, system.CPUAcctMemoryPressure),
+		IO:  system.GetCgroupFilePath(podPath, system.CPUAcctIOPressure),
 	}
 }
 

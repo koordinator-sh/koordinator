@@ -16,27 +16,38 @@ limitations under the License.
 
 package system
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+	"strconv"
+)
 
-type Validate interface {
-	Validate(value *int64) (isValid bool, msg string)
+// ResourceValidator validates the resource value
+type ResourceValidator interface {
+	Validate(value string) (isValid bool, msg string)
 }
 
 type RangeValidator struct {
-	name string
-	max  int64
-	min  int64
+	max int64
+	min int64
 }
 
-func (r *RangeValidator) Validate(value *int64) (isValid bool, msg string) {
-	isValid = false
-	if value == nil {
-		msg = fmt.Sprintf("Value is not valid!%s value is nil!", r.name)
-		return
+func (r *RangeValidator) Validate(value string) (bool, string) {
+	if value == "" {
+		return false, fmt.Sprintf("value is nil")
 	}
-	isValid = *value >= r.min && *value <= r.max
-	if !isValid {
-		msg = fmt.Sprintf("%s Value(%d) is not valid!min:%d,max:%d", r.name, *value, r.min, r.max)
+	var v int64
+	var err error
+	if value == CgroupMaxSymbolStr { // compatible to cgroup-v2 file valued "max"
+		v = math.MaxInt64
+	} else {
+		v, err = strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return false, fmt.Sprintf("value %v is not an integer, err: %v", value, err)
+		}
 	}
-	return
+	if v < r.min || v > r.max {
+		return false, fmt.Sprintf("value %v is not in [min:%d, max:%d]", value, r.min, r.max)
+	}
+	return true, ""
 }

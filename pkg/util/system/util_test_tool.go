@@ -117,8 +117,8 @@ func (c *FileTestUtil) ReadProcSubFileContents(relativeFilePath string) string {
 	return string(contents)
 }
 
-func (c *FileTestUtil) CreateCgroupFile(taskDir string, file CgroupFile) {
-	filePath := GetCgroupFilePath(taskDir, file)
+func (c *FileTestUtil) CreateCgroupFile(taskDir string, r Resource) {
+	filePath := GetCgroupFilePath(taskDir, r)
 	dir, _ := path.Split(filePath)
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		c.t.Fatal(err)
@@ -128,19 +128,19 @@ func (c *FileTestUtil) CreateCgroupFile(taskDir string, file CgroupFile) {
 	}
 }
 
-func (c *FileTestUtil) WriteCgroupFileContents(taskDir string, file CgroupFile, contents string) {
-	filePath := GetCgroupFilePath(taskDir, file)
+func (c *FileTestUtil) WriteCgroupFileContents(taskDir string, r Resource, contents string) {
+	filePath := GetCgroupFilePath(taskDir, r)
 	if !FileExists(filePath) {
-		c.CreateCgroupFile(taskDir, file)
+		c.CreateCgroupFile(taskDir, r)
 	}
-	err := CgroupFileWrite(taskDir, file, contents)
+	err := CgroupFileWrite(taskDir, r, contents)
 	if err != nil {
 		c.t.Fatal(err)
 	}
 }
 
-func (c *FileTestUtil) ReadCgroupFileContents(taskDir string, file CgroupFile) string {
-	contents, err := CgroupFileRead(taskDir, file)
+func (c *FileTestUtil) ReadCgroupFileContents(taskDir string, r Resource) string {
+	contents, err := CgroupFileRead(taskDir, r)
 	if err != nil {
 		c.t.Fatal(err)
 	}

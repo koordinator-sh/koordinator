@@ -512,7 +512,7 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 			continue
 		}
 
-		if system.ValidateCgroupValue(&containerCFSBurstVal, containerDir, system.CPUBurst) {
+		if system.ValidateResourceValue(&containerCFSBurstVal, containerDir, system.CPUBurst) {
 			podCFSBurstVal += containerCFSBurstVal
 			ownerRef := executor.ContainerOwnerRef(pod.Namespace, pod.Name, container.Name)
 			containerCFSBurstValStr := strconv.FormatInt(containerCFSBurstVal, 10)
@@ -533,7 +533,7 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 	} // end for containers
 
 	podDir := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
-	if system.ValidateCgroupValue(&podCFSBurstVal, podDir, system.CPUBurst) {
+	if system.ValidateResourceValue(&podCFSBurstVal, podDir, system.CPUBurst) {
 		ownerRef := executor.PodOwnerRef(pod.Namespace, pod.Name)
 		podCFSBurstValStr := strconv.FormatInt(podCFSBurstVal, 10)
 		updater := executor.NewCommonCgroupResourceUpdater(ownerRef, podDir, system.CPUBurst, podCFSBurstValStr)

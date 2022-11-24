@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path"
 	"strconv"
 	"strings"
 
@@ -46,26 +45,25 @@ type CPUStatRaw struct {
 	ThrottledNanoSeconds int64
 }
 
-func CgroupFileWriteIfDifferent(cgroupTaskDir string, file CgroupFile, value string) error {
+func CgroupFileWriteIfDifferent(cgroupTaskDir string, file Resource, value string) error {
 	currentValue, currentErr := CgroupFileRead(cgroupTaskDir, file)
 	if currentErr != nil {
 		return currentErr
 	}
 	if value == currentValue || value == CgroupMaxValueStr && currentValue == CgroupMaxSymbolStr {
 		// compatible with cgroup valued "max"
-		klog.V(6).Infof("read before write %s %s and got str value, considered as MaxInt64", cgroupTaskDir,
-			file.ResourceFileName)
+		klog.V(6).Infof("read before write %s and got str value, considered as MaxInt64", file.Path(cgroupTaskDir))
 		return nil
 	}
 	return CgroupFileWrite(cgroupTaskDir, file, value)
 }
 
-func CgroupFileReadInt(cgroupTaskDir string, file CgroupFile) (*int64, error) {
-	if file.IsAnolisOS && !HostSystemInfo.IsAnolisOS {
-		return nil, fmt.Errorf("read cgroup config : %s fail, need anolis kernel", file.ResourceFileName)
+func CgroupFileReadInt(cgroupTaskDir string, r Resource) (*int64, error) {
+	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
+		return nil, fmt.Errorf("read cgroup %s failed, msg: %s", r.ResourceType(), msg)
 	}
 
-	dataStr, err := CgroupFileRead(cgroupTaskDir, file)
+	dataStr, err := CgroupFileRead(cgroupTaskDir, r)
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +73,7 @@ func CgroupFileReadInt(cgroupTaskDir string, file CgroupFile) (*int64, error) {
 	if dataStr == CgroupMaxSymbolStr {
 		// compatible with cgroup valued "max"
 		data := int64(math.MaxInt64)
-		klog.V(6).Infof("read %s %s and got str value, considered as MaxInt64", cgroupTaskDir,
-			file.ResourceFileName)
+		klog.V(6).Infof("read %s and got str value, considered as MaxInt64", r.Path(cgroupTaskDir))
 		return &data, nil
 	}
 	data, err := strconv.ParseInt(strings.TrimSpace(dataStr), 10, 64)
@@ -86,33 +83,33 @@ func CgroupFileReadInt(cgroupTaskDir string, file CgroupFile) (*int64, error) {
 	return &data, nil
 }
 
-func CgroupFileRead(cgroupTaskDir string, file CgroupFile) (string, error) {
-	if file.IsAnolisOS && !HostSystemInfo.IsAnolisOS {
-		return "", fmt.Errorf("read cgroup config : %s fail, need anolis kernel", file.ResourceFileName)
+func CgroupFileRead(cgroupTaskDir string, r Resource) (string, error) {
+	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
+		return "", fmt.Errorf("read cgroup %s failed, msg: %s", r.ResourceType(), msg)
 	}
 
-	klog.V(5).Infof("read %s,%s", cgroupTaskDir, file.ResourceFileName)
-	filePath := GetCgroupFilePath(cgroupTaskDir, file)
+	filePath := r.Path(cgroupTaskDir)
+	klog.V(5).Infof("read %s", filePath)
 
 	data, err := os.ReadFile(filePath)
 	return strings.Trim(string(data), "\n"), err
 }
 
-func CgroupFileWrite(cgroupTaskDir string, file CgroupFile, data string) error {
-	if file.IsAnolisOS && !HostSystemInfo.IsAnolisOS {
-		return fmt.Errorf("write cgroup config : %v [%s] fail, need anolis kernel", file.ResourceFileName, data)
+func CgroupFileWrite(cgroupTaskDir string, r Resource, data string) error {
+	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
+		return fmt.Errorf("write cgroup %s failed, msg: %s", r.ResourceType(), msg)
 	}
 
-	klog.V(5).Infof("write %s,%s [%s]", cgroupTaskDir, file.ResourceFileName, data)
-	filePath := GetCgroupFilePath(cgroupTaskDir, file)
+	filePath := r.Path(cgroupTaskDir)
+	klog.V(5).Infof("write %s [%s]", filePath, data)
 
 	return os.WriteFile(filePath, []byte(data), 0644)
 }
 
 // @cgroupTaskDir kubepods.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.shares
-func GetCgroupFilePath(cgroupTaskDir string, file CgroupFile) string {
-	return path.Join(Conf.CgroupRootDir, file.Subfs, cgroupTaskDir, file.ResourceFileName)
+func GetCgroupFilePath(cgroupTaskDir string, r Resource) string {
+	return r.Path(cgroupTaskDir)
 }
 
 func GetCgroupCurTasks(cgroupPath string) ([]int, error) {

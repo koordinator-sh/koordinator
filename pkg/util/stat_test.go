@@ -98,13 +98,13 @@ func Test_GetCPUStatUsageTicks(t *testing.T) {
 func Test_readPodCPUUsage(t *testing.T) {
 	tempDir := t.TempDir()
 	tempInvalidPodCgroupDir := filepath.Join(tempDir, "no_cgroup")
-	tempPodStatPath := filepath.Join(tempDir, system.CpuacctUsageFileName)
+	tempPodStatPath := filepath.Join(tempDir, system.CPUAcctUsageName)
 	err := os.WriteFile(tempPodStatPath, []byte(getUsageContents()), 0666)
 	assert.NoError(t, err)
 	tempInvalidPodCgroupDir1 := filepath.Join(tempDir, "no_cgroup_1")
 	err = os.Mkdir(tempInvalidPodCgroupDir1, 0755)
 	assert.NoError(t, err)
-	tempPodInvalidStatPath := filepath.Join(tempInvalidPodCgroupDir1, system.CpuacctUsageFileName)
+	tempPodInvalidStatPath := filepath.Join(tempInvalidPodCgroupDir1, system.CPUAcctUsageName)
 	err = os.WriteFile(tempPodInvalidStatPath, []byte(getInvalidUsageContents()), 0666)
 	assert.NoError(t, err)
 	type args struct {
@@ -161,7 +161,7 @@ func Test_GetContainerCPUUsageNanoseconds(t *testing.T) {
 
 func Test_GetRootCgroupCPUUsageNanoseconds(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
-	helper.WriteCgroupFileContents(GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CpuacctUsage, getUsageContents())
+	helper.WriteCgroupFileContents(GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, getUsageContents())
 	got, err := GetRootCgroupCPUUsageNanoseconds(corev1.PodQOSBestEffort)
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(1356232), got)

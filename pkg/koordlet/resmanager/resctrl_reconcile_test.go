@@ -98,7 +98,7 @@ func testingPrepareContainerCgroupCPUTasks(t *testing.T, containerParentPath, ta
 	err := os.MkdirAll(containerCgroupDir, 0700)
 	assert.NoError(t, err)
 
-	containerTasksPath := filepath.Join(containerCgroupDir, system.CPUTaskFileName)
+	containerTasksPath := filepath.Join(containerCgroupDir, system.CPUTasksName)
 	err = os.WriteFile(containerTasksPath, []byte(tasksStr), 0666)
 	assert.NoError(t, err)
 }
@@ -875,7 +875,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 			assert.Equal(t, tt.wantErr, err != nil)
 
 			out, err := os.ReadFile(filepath.Join(validSysFSRootDir, system.ResctrlDir, tt.args.group,
-				system.CPUTaskFileName))
+				system.CPUTasksName))
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, string(out))
 		})
@@ -1069,7 +1069,7 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 
 		// check if the reconciliation is a success
 		out, err := os.ReadFile(filepath.Join(system.Conf.SysFSRootDir, system.ResctrlDir, BEResctrlGroup,
-			system.CPUTaskFileName))
+			system.CPUTasksName))
 		assert.NoError(t, err)
 		assert.Equal(t, wantResctrlTaskStr, string(out))
 
@@ -1082,7 +1082,7 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 
 		// check if the reconciliation is a success
 		out, err = os.ReadFile(filepath.Join(system.Conf.SysFSRootDir, system.ResctrlDir, BEResctrlGroup,
-			system.CPUTaskFileName))
+			system.CPUTasksName))
 		assert.NoError(t, err)
 		assert.Equal(t, wantResctrlTaskStr, string(out))
 	})

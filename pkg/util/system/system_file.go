@@ -28,15 +28,15 @@ import (
 )
 
 const (
-	ProcStatFileName = "stat"
-	SysctlSubDir     = "sys"
+	ProcStatName = "stat"
+	SysctlSubDir = "sys"
 
 	KernelSchedGroupIdentityEnable = "kernel/sched_group_identity_enabled"
 )
 
 type SystemFile struct {
 	File      string
-	Validator Validate
+	Validator RangeValidator
 }
 
 var (
@@ -48,7 +48,7 @@ func init() {
 }
 
 func initFilePath() {
-	ProcStatFile = SystemFile{File: filepath.Join(Conf.ProcRootDir, ProcStatFileName)}
+	ProcStatFile = SystemFile{File: filepath.Join(Conf.ProcRootDir, ProcStatName)}
 }
 
 func GetProcSysFilePath(file string) string {

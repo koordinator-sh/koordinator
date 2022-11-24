@@ -55,7 +55,7 @@ var globalCgroupReconcilers = struct {
 }
 
 type cgroupReconciler struct {
-	cgroupFile  system.CgroupFile
+	cgroupFile  system.Resource
 	description string
 	level       ReconcilerLevel
 	filter      Filter
@@ -137,33 +137,33 @@ type reconcileFunc func(protocol.HooksProtocol) error
 //   e.g. pod-level cfs_quota can be registered both by cpuset hook and batchresource hook. While cpuset hook reconciles
 //   cfs_quota for LSE and LSR pods, batchresource reconciles pods of other QoS classes.
 // TODO: support priority+qos filter.
-func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.CgroupFile, description string,
+func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.Resource, description string,
 	fn reconcileFunc, filter Filter, conditions ...string) {
 	if len(conditions) <= 0 { // default condition
 		conditions = []string{NoneFilterCondition}
 	}
 
 	for _, r := range globalCgroupReconcilers.all {
-		if level != r.level || cgroupFile.ResourceFileName != r.cgroupFile.ResourceFileName {
+		if level != r.level || cgroupFile.ResourceType() != r.cgroupFile.ResourceType() {
 			continue
 		}
 
 		// if reconciler exist
 		if r.filter.Name() != filter.Name() {
 			klog.Fatalf("%v of level %v is already registered with filter %v by %v, cannot change to %v by %v",
-				cgroupFile.ResourceFileName, level, r.filter.Name(), r.description, filter.Name(), description)
+				cgroupFile.ResourceType(), level, r.filter.Name(), r.description, filter.Name(), description)
 		}
 
 		for _, condition := range conditions {
 			if _, ok := r.fn[condition]; ok {
 				klog.Fatalf("%v of level %v is already registered with condition %v by %v, cannot change by %v",
-					cgroupFile.ResourceFileName, level, condition, r.description, description)
+					cgroupFile.ResourceType, level, condition, r.description, description)
 			}
 
 			r.fn[condition] = fn
 		}
-		klog.V(1).Infof("register reconcile function %v finished, info: level=%v, filename=%v, add conditions=%v",
-			description, level, cgroupFile.ResourceFileName, conditions)
+		klog.V(1).Infof("register reconcile function %v finished, info: level=%v, resourceType=%v, add conditions=%v",
+			description, level, cgroupFile.ResourceType(), conditions)
 		return
 	}
 
@@ -180,24 +180,24 @@ func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.CgroupFil
 	case KubeQOSLevel:
 		r.filter = NoneFilter()
 		r.fn[NoneFilterCondition] = fn
-		globalCgroupReconcilers.kubeQOSLevel[r.cgroupFile.ResourceFileName] = r
+		globalCgroupReconcilers.kubeQOSLevel[string(r.cgroupFile.ResourceType())] = r
 	case PodLevel:
 		r.filter = filter
 		for _, condition := range conditions {
 			r.fn[condition] = fn
 		}
-		globalCgroupReconcilers.podLevel[r.cgroupFile.ResourceFileName] = r
+		globalCgroupReconcilers.podLevel[string(r.cgroupFile.ResourceType())] = r
 	case ContainerLevel:
 		r.filter = filter
 		for _, condition := range conditions {
 			r.fn[condition] = fn
 		}
-		globalCgroupReconcilers.containerLevel[r.cgroupFile.ResourceFileName] = r
+		globalCgroupReconcilers.containerLevel[string(r.cgroupFile.ResourceType())] = r
 	default:
 		klog.Fatalf("cgroup level %v is not supported", level)
 	}
-	klog.V(1).Infof("register reconcile function %v finished, info: level=%v, filename=%v, filter=%v, conditions=%v",
-		description, level, cgroupFile.ResourceFileName, filter.Name(), conditions)
+	klog.V(1).Infof("register reconcile function %v finished, info: level=%v, resourceType=%v, filter=%v, conditions=%v",
+		description, level, cgroupFile.ResourceType(), filter.Name(), conditions)
 }
 
 type Reconciler interface {

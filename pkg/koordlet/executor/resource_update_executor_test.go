@@ -38,7 +38,6 @@ type reconcileInfo struct {
 }
 
 func Test_UpdateBatch(t *testing.T) {
-
 	helper := sysutil.NewFileTestUtil(t)
 
 	helper.CreateCgroupFile("/", sysutil.CPUShares)
@@ -90,11 +89,11 @@ func Test_UpdateBatchByCache(t *testing.T) {
 		{
 			name: "test_cache_equal_but_force_update",
 			initCache: []ResourceUpdater{
-				&CgroupResourceUpdater{ParentDir: "/", file: sysutil.CPUShares, value: "1024", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonCgroupUpdateFunc},
+				&CgroupResourceUpdater{ParentDir: "/", resource: sysutil.CPUShares, value: "1024", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonCgroupUpdateFunc},
 				&CommonResourceUpdater{file: absFile, value: "19", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonUpdateFunc},
 			},
 			initFiles: []ResourceUpdater{
-				&CgroupResourceUpdater{ParentDir: "/", file: sysutil.CPUShares, value: "2048", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonCgroupUpdateFunc},
+				&CgroupResourceUpdater{ParentDir: "/", resource: sysutil.CPUShares, value: "2048", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonCgroupUpdateFunc},
 				&CommonResourceUpdater{file: absFile, value: "20", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonUpdateFunc},
 			},
 			reconcileInfos: []reconcileInfo{
@@ -114,11 +113,11 @@ func Test_UpdateBatchByCache(t *testing.T) {
 		{
 			name: "test_cache_equal_and_not_forceUpdate",
 			initCache: []ResourceUpdater{
-				&CgroupResourceUpdater{ParentDir: "/", file: sysutil.CPUShares, value: "1024", lastUpdateTimestamp: time.Now(), updateFunc: CommonCgroupUpdateFunc},
+				&CgroupResourceUpdater{ParentDir: "/", resource: sysutil.CPUShares, value: "1024", lastUpdateTimestamp: time.Now(), updateFunc: CommonCgroupUpdateFunc},
 				&CommonResourceUpdater{file: absFile, value: "19", lastUpdateTimestamp: time.Now(), updateFunc: CommonUpdateFunc},
 			},
 			initFiles: []ResourceUpdater{
-				&CgroupResourceUpdater{ParentDir: "/", file: sysutil.CPUShares, value: "2048", lastUpdateTimestamp: time.Now(), updateFunc: CommonCgroupUpdateFunc},
+				&CgroupResourceUpdater{ParentDir: "/", resource: sysutil.CPUShares, value: "2048", lastUpdateTimestamp: time.Now(), updateFunc: CommonCgroupUpdateFunc},
 				&CommonResourceUpdater{file: absFile, value: "20", lastUpdateTimestamp: time.Now().Add(-5 * time.Second), updateFunc: CommonUpdateFunc},
 			},
 			reconcileInfos: []reconcileInfo{
@@ -205,8 +204,8 @@ func prepareResourceFiles(helper *sysutil.FileTestUtil, initFiles []ResourceUpda
 			helper.CreateFile(rsc.Key())
 			err = sysutil.CommonFileWrite(resource.Key(), resource.Value())
 		case *CgroupResourceUpdater:
-			helper.CreateCgroupFile(rsc.ParentDir, rsc.file)
-			err = sysutil.CgroupFileWrite(rsc.ParentDir, rsc.file, resource.Value())
+			helper.CreateCgroupFile(rsc.ParentDir, rsc.resource)
+			err = sysutil.CgroupFileWrite(rsc.ParentDir, rsc.resource, resource.Value())
 		default:
 			err = fmt.Errorf("unknown resource type %T", resource)
 		}
@@ -231,7 +230,7 @@ func getActualResources(expect []ResourceUpdater) map[string]ResourceUpdater {
 				continue
 			}
 		case *CgroupResourceUpdater:
-			value, err = sysutil.CgroupFileRead(rsc.ParentDir, rsc.file)
+			value, err = sysutil.CgroupFileRead(rsc.ParentDir, rsc.resource)
 			if err != nil { // abort set value when file read failed
 				klog.Errorf("getActualResources failed for cgroup resource %s, err: %s", resource.Key(), err)
 				continue
