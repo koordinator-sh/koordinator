@@ -40,10 +40,11 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 		pg.pluginArgs.RevokePodInterval.Duration, pg.groupQuotaManager, *pg.pluginArgs.MonitorAllQuotas)
 	quotaOverUsedRevokeController.syncQuota()
 	monitor := quotaOverUsedRevokeController.monitors["test1"]
+	var pod *corev1.Pod
 	{
 		usedQuota := createResourceList(0, 0)
 		usedQuota["extended"] = *resource.NewQuantity(10000, resource.DecimalSI)
-		pod := makePod2("pod", usedQuota)
+		pod = makePod2("pod", usedQuota)
 		gqm.OnPodAdd("test1", pod)
 
 		result := monitor.monitor()
@@ -54,8 +55,9 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 	{
 		usedQuota := createResourceList(1000, 0)
 		usedQuota["extended"] = *resource.NewQuantity(10000, resource.DecimalSI)
-		pod := makePod2("pod", usedQuota)
-		gqm.OnPodAdd("test1", pod)
+		oldPod := pod
+		pod = makePod2("pod", usedQuota)
+		gqm.OnPodUpdate("test1", "test1", pod, oldPod)
 
 		result := monitor.monitor()
 		if result {
@@ -65,8 +67,9 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 	{
 		usedQuota := createResourceList(-1000, 0)
 		usedQuota["extended"] = *resource.NewQuantity(10000, resource.DecimalSI)
-		pod := makePod2("pod", usedQuota)
-		gqm.OnPodAdd("test1", pod)
+		oldPod := pod
+		pod = makePod2("pod", usedQuota)
+		gqm.OnPodUpdate("test1", "test1", pod, oldPod)
 
 		result := monitor.monitor()
 		if result {
@@ -76,8 +79,9 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 	{
 		usedQuota := createResourceList(1000, 0)
 		usedQuota["extended"] = *resource.NewQuantity(10000, resource.DecimalSI)
-		pod := makePod2("pod", usedQuota)
-		gqm.OnPodAdd("test1", pod)
+		oldPod := pod
+		pod = makePod2("pod", usedQuota)
+		gqm.OnPodUpdate("test1", "test1", pod, oldPod)
 
 		monitor.overUsedTriggerEvictDuration = 0 * time.Second
 

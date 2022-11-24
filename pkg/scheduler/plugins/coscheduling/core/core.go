@@ -26,19 +26,20 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	informerv1 "k8s.io/client-go/informers/core/v1"
+	"k8s.io/client-go/informers"
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	pginformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
 	pglister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
@@ -88,25 +89,33 @@ type PodGroupManager struct {
 }
 
 // NewPodGroupManager creates a new operation object.
-func NewPodGroupManager(pgClient pgclientset.Interface,
-	pgInformer pginformer.PodGroupInformer, podInformer informerv1.PodInformer, args *config.CoschedulingArgs) *PodGroupManager {
+func NewPodGroupManager(
+	pgClient pgclientset.Interface,
+	pgSharedInformerFactory pgformers.SharedInformerFactory,
+	sharedInformerFactory informers.SharedInformerFactory,
+	args *config.CoschedulingArgs,
+) *PodGroupManager {
+	pgInformer := pgSharedInformerFactory.Scheduling().V1alpha1().PodGroups()
+	podInformer := sharedInformerFactory.Core().V1().Pods()
+	gangCache := NewGangCache(args, podInformer.Lister(), pgInformer.Lister(), pgClient)
 	pgMgr := &PodGroupManager{
 		pgClient:  pgClient,
 		pgLister:  pgInformer.Lister(),
 		podLister: podInformer.Lister(),
+		cache:     gangCache,
 	}
-	gangCache := NewGangCache(args, podInformer.Lister(), pgInformer.Lister(), pgMgr.pgClient)
-	pgMgr.cache = gangCache
 
-	pgInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	podGroupEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    gangCache.onPodGroupAdd,
 		DeleteFunc: gangCache.onPodGroupDelete,
-	})
-	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	}
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), pgSharedInformerFactory, pgInformer.Informer(), podGroupEventHandler)
+
+	podEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    gangCache.onPodAdd,
 		DeleteFunc: gangCache.onPodDelete,
-	})
-
+	}
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, podInformer.Informer(), podEventHandler)
 	return pgMgr
 }
 

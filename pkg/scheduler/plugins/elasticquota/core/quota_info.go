@@ -36,7 +36,7 @@ type QuotaCalculateInfo struct {
 	// equal to "min", the quota group can obtain equivalent resources to the "request"
 	Min v1.ResourceList
 	// If Child's sumMin is larger than totalResource, the value of Min should be scaled in equal proportion
-	//to ensure the correctness and fairness of min
+	// to ensure the correctness and fairness of min
 	AutoScaleMin v1.ResourceList
 	// All assigned pods used
 	Used v1.ResourceList
@@ -170,7 +170,7 @@ func (qi *QuotaInfo) getLimitRequestNoLock() v1.ResourceList {
 	for resName, quantity := range limitRequest {
 		if maxQuantity, ok := qi.CalculateInfo.Max[resName]; ok {
 			if quantity.Cmp(maxQuantity) == 1 {
-				//req > max, limitRequest = max
+				// req > max, limitRequest = max
 				limitRequest[resName] = maxQuantity.DeepCopy()
 			}
 		}
@@ -271,6 +271,13 @@ func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 		return true
 	}
 	return false
+}
+
+func (qi *QuotaInfo) isPodExist(pod *v1.Pod) bool {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	_, exist := qi.PodCache[string(pod.UID)]
+	return exist
 }
 
 func (qi *QuotaInfo) addPodIfNotPresent(pod *v1.Pod) {

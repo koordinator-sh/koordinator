@@ -45,15 +45,14 @@ type Mgr struct {
 	pgInformer pginformer.PodGroupInformer
 }
 
-func NewManager4Test() *Mgr {
+func NewManagerForTest() *Mgr {
 	pgClient := fakepgclientset.NewSimpleClientset()
 	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 
 	podClient := clientsetfake.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(podClient, 0)
-	podInformer := informerFactory.Core().V1().Pods()
-	pgManager := NewPodGroupManager(pgClient, pgInformer, podInformer, &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: 300 * time.Second}})
+	pgManager := NewPodGroupManager(pgClient, pgInformerFactory, informerFactory, &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: 300 * time.Second}})
 	return &Mgr{
 		pgMgr:      pgManager,
 		pgInformer: pgInformer,
@@ -77,7 +76,7 @@ func makePg(name, namespace string, min int32, creationTime *time.Time, minResou
 
 func TestPlugin_PreFilter(t *testing.T) {
 	gangACreatedTime := time.Now()
-	mgr := NewManager4Test().pgMgr
+	mgr := NewManagerForTest().pgMgr
 	tests := []struct {
 		name string
 		// test pod
@@ -379,7 +378,7 @@ func TestPermit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mgr := NewManager4Test().pgMgr
+			mgr := NewManagerForTest().pgMgr
 			// pg create
 			for _, pg := range tt.pgs {
 				if tt.needGangGroup {
@@ -444,7 +443,7 @@ func TestPostBind(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bigMgr := NewManager4Test()
+			bigMgr := NewManagerForTest()
 			mgr, pginforme := bigMgr.pgMgr, bigMgr.pgInformer
 			// pg create
 			if tt.annotation != nil {

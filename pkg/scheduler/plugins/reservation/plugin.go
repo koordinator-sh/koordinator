@@ -40,6 +40,7 @@ import (
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -95,7 +96,8 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, fmt.Errorf("want handle to be of type frameworkext.ExtendedHandle, got %T", handle)
 	}
 
-	reservationInterface := extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations()
+	koordSharedInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
+	reservationInterface := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations()
 	reservationInformer := reservationInterface.Informer()
 	// index reservation with status.nodeName; avoid duplicate add
 	if reservationInformer.GetIndexer().GetIndexers()[NodeNameIndex] == nil {
@@ -119,11 +121,12 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	}
 
 	// handle reservation event in cache; here only scheduled and expired reservations are considered.
-	reservationInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	reservationEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    p.handleOnAdd,
 		UpdateFunc: p.handleOnUpdate,
 		DeleteFunc: p.handleOnDelete,
-	})
+	}
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordSharedInformerFactory, reservationInformer, reservationEventHandler)
 	// handle reservations on deleted nodes
 	extendedHandle.SharedInformerFactory().Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		DeleteFunc: func(obj interface{}) {

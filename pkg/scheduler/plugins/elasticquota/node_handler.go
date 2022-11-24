@@ -39,12 +39,9 @@ func (g *Plugin) OnNodeAdd(obj interface{}) {
 	defer g.nodeResourceMapLock.Unlock()
 
 	if _, ok := g.nodeResourceMap[node.Name]; ok {
-		klog.Infof("OnNodeAddFunc skip due onAdd twice:%v", node.Name)
 		return
-	} else {
-		g.nodeResourceMap[node.Name] = struct{}{}
 	}
-
+	g.nodeResourceMap[node.Name] = struct{}{}
 	g.groupQuotaManager.UpdateClusterTotalResource(allocatable)
 	klog.V(5).Infof("OnNodeAddFunc success %v", node.Name)
 }

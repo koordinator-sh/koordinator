@@ -36,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 )
 
 const (
@@ -82,7 +83,8 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	}
 
 	assignCache := newPodAssignCache()
-	frameworkExtender.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(assignCache)
+	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods().Informer()
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer, assignCache)
 	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
 
 	return &Plugin{

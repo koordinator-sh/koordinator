@@ -17,13 +17,28 @@ limitations under the License.
 package deviceshare
 
 import (
+	"context"
+
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 )
+
+func registerPodEventHandler(deviceCache *nodeDeviceCache, sharedInformerFactory informers.SharedInformerFactory) {
+	podInformer := sharedInformerFactory.Core().V1().Pods().Informer()
+	eventHandler := cache.ResourceEventHandlerFuncs{
+		AddFunc:    deviceCache.onPodAdd,
+		UpdateFunc: deviceCache.onPodUpdate,
+		DeleteFunc: deviceCache.onPodDelete,
+	}
+	// make sure Pods are loaded before scheduler starts working
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, podInformer, eventHandler)
+}
 
 func (n *nodeDeviceCache) onPodAdd(obj interface{}) {
 	pod, ok := obj.(*corev1.Pod)

@@ -28,6 +28,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
@@ -53,9 +54,7 @@ func registerNodeResourceTopologyEventHandler(handle framework.Handle, topologyM
 	eventHandler := &nodeResourceTopologyEventHandler{
 		topologyManager: topologyManager,
 	}
-	nodeResTopologyInformer.AddEventHandler(eventHandler)
-	nodeResTopologyInformerFactory.Start(context.TODO().Done())
-	nodeResTopologyInformerFactory.WaitForCacheSync(context.TODO().Done())
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), nodeResTopologyInformerFactory, nodeResTopologyInformer, eventHandler)
 	return nil
 }
 
