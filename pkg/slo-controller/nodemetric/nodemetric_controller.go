@@ -162,6 +162,15 @@ func getDefaultSpec() *slov1alpha1.NodeMetricSpec {
 	}
 }
 
+func Add(mgr ctrl.Manager) error {
+	reconciler := &NodeMetricReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("nodemetric-controller"),
+	}
+	return reconciler.SetupWithManager(mgr)
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *config.NewDefaultColocationCfg(), r.Recorder)
