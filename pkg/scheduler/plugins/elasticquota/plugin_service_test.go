@@ -117,8 +117,8 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 		assert.Equal(t, quotaSummary.IsParent, quotaExpected.IsParent)
 		assert.Equal(t, quotaSummary.AllowLentResource, quotaExpected.AllowLentResource)
 		assert.Equal(t, len(quotaSummary.PodCache), 1)
-		assert.Equal(t, quotaSummary.PodCache["pod1"].IsAssigned, true)
-		assert.True(t, quotav1.Equals(quotaSummary.PodCache["pod1"].Resource, createResourceList(33, 33)))
+		assert.Equal(t, quotaSummary.PodCache[podToCreate.Namespace+"/"+podToCreate.Name].IsAssigned, true)
+		assert.True(t, quotav1.Equals(quotaSummary.PodCache[podToCreate.Namespace+"/"+podToCreate.Name].Resource, createResourceList(33, 33)))
 	}
 	{
 		engine := gin.Default()
@@ -145,7 +145,7 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 		assert.Equal(t, quotaSummary.IsParent, quotaExpected.IsParent)
 		assert.Equal(t, quotaSummary.AllowLentResource, quotaExpected.AllowLentResource)
 		assert.Equal(t, len(quotaSummary.PodCache), 1)
-		assert.Equal(t, quotaSummary.PodCache["pod1"].IsAssigned, true)
-		assert.True(t, quotav1.Equals(quotaSummary.PodCache["pod1"].Resource, createResourceList(33, 33)))
+		assert.Equal(t, quotaSummary.PodCache[podToCreate.Namespace+"/"+podToCreate.Name].IsAssigned, true)
+		assert.True(t, quotav1.Equals(quotaSummary.PodCache[podToCreate.Namespace+"/"+podToCreate.Name].Resource, createResourceList(33, 33)))
 	}
 }

@@ -276,7 +276,7 @@ func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 func (qi *QuotaInfo) isPodExist(pod *v1.Pod) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
-	_, exist := qi.PodCache[string(pod.UID)]
+	_, exist := qi.PodCache[generatePodCacheKey(pod)]
 	return exist
 }
 
@@ -284,35 +284,38 @@ func (qi *QuotaInfo) addPodIfNotPresent(pod *v1.Pod) {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
-	if _, exist := qi.PodCache[pod.Name]; exist {
-		klog.Errorf("pod already exist in PodCache quota:%v, podName:%v", qi.Name, pod.Name)
+	key := generatePodCacheKey(pod)
+	if _, exist := qi.PodCache[key]; exist {
+		klog.Errorf("pod already exist in PodCache quota:%v, podKey:%v", qi.Name, key)
 	}
-	qi.PodCache[pod.Name] = NewPodInfo(pod)
+	qi.PodCache[key] = NewPodInfo(pod)
 }
 
-func (qi *QuotaInfo) removePodIfPresent(podName string) {
+func (qi *QuotaInfo) removePodIfPresent(pod *v1.Pod) {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
-	if _, exist := qi.PodCache[podName]; !exist {
-		klog.Errorf("pod not exist in PodRequestMap quota:%v, podName:%v", qi.Name, podName)
+	key := generatePodCacheKey(pod)
+	if _, exist := qi.PodCache[key]; !exist {
+		klog.Errorf("pod not exist in PodRequestMap quota:%v, podName:%v", qi.Name, key)
 	}
 
-	delete(qi.PodCache, podName)
+	delete(qi.PodCache, key)
 }
 
-func (qi *QuotaInfo) UpdatePodIsAssigned(podName string, isAssigned bool) error {
+func (qi *QuotaInfo) UpdatePodIsAssigned(pod *v1.Pod, isAssigned bool) error {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
-	pod, exist := qi.PodCache[podName]
+	key := generatePodCacheKey(pod)
+	podInfo, exist := qi.PodCache[key]
 	if !exist {
-		return fmt.Errorf("pod is not in PodCache quota:%v, podName:%v", qi.Name, podName)
+		return fmt.Errorf("pod is not in PodCache quota:%v, podName:%v", qi.Name, key)
 	}
-	if pod.isAssigned == isAssigned {
-		return fmt.Errorf("pod's running phase doesn't change, quota:%v, pod:%v", qi.Name, podName)
+	if podInfo.isAssigned == isAssigned {
+		return fmt.Errorf("pod's running phase doesn't change, quota:%v, pod:%v", qi.Name, key)
 	}
-	qi.PodCache[podName].isAssigned = isAssigned
+	qi.PodCache[key].isAssigned = isAssigned
 	return nil
 }
 
@@ -335,7 +338,7 @@ func (qi *QuotaInfo) GetPodIsAssigned(pod *v1.Pod) bool {
 		return false
 	}
 
-	if podInfo, exist := qi.PodCache[pod.Name]; exist {
+	if podInfo, exist := qi.PodCache[generatePodCacheKey(pod)]; exist {
 		return podInfo.isAssigned
 	}
 	return false
@@ -399,4 +402,8 @@ func (pInfo *PodInfo) DeepCopy() *PodInfo {
 		resource:   pInfo.resource.DeepCopy(),
 	}
 	return newPodInfo
+}
+
+func generatePodCacheKey(pod *v1.Pod) string {
+	return pod.Namespace + "/" + pod.Name
 }
