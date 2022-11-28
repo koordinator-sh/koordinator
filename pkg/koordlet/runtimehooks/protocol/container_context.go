@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/klog/v2"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -39,12 +40,13 @@ func (c *ContainerMeta) FromProxy(containerMeta *runtimeapi.ContainerMetadata, p
 }
 
 type ContainerRequest struct {
-	PodMeta        PodMeta
-	ContainerMeta  ContainerMeta
-	PodLabels      map[string]string
-	PodAnnotations map[string]string
-	CgroupParent   string
-	ContainerEnvs  map[string]string
+	PodMeta           PodMeta
+	ContainerMeta     ContainerMeta
+	PodLabels         map[string]string
+	PodAnnotations    map[string]string
+	CgroupParent      string
+	ContainerEnvs     map[string]string
+	ExtendedResources *apiext.ExtendedResourceContainerSpec
 }
 
 func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookRequest) {
@@ -54,6 +56,17 @@ func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookReques
 	c.PodAnnotations = req.GetPodAnnotations()
 	c.CgroupParent, _ = util.GetContainerCgroupPathWithKubeByID(req.GetPodCgroupParent(), c.ContainerMeta.ID)
 	c.ContainerEnvs = req.GetContainerEnvs()
+	// retrieve ExtendedResources from pod annotations
+	spec, err := apiext.GetExtendedResourceSpec(req.GetPodAnnotations())
+	if err != nil {
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from proxy via annotation, container %s/%s, err: %s",
+			c.PodMeta.Namespace, c.PodMeta.Name, c.ContainerMeta.Name, err)
+	}
+	if spec != nil && spec.Containers != nil {
+		if containerSpec, ok := spec.Containers[c.ContainerMeta.Name]; ok {
+			c.ExtendedResources = &containerSpec
+		}
+	}
 }
 
 func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, containerName string) {
@@ -65,6 +78,7 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 			break
 		}
 	}
+	var specFromContainer *apiext.ExtendedResourceContainerSpec
 	for _, containerSpec := range podMeta.Pod.Spec.Containers {
 		if containerSpec.Name == containerName {
 			if c.ContainerEnvs == nil {
@@ -73,12 +87,26 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 			for _, envVar := range containerSpec.Env {
 				c.ContainerEnvs[envVar.Name] = envVar.Value
 			}
+			specFromContainer = util.GetContainerExtendedResources(&containerSpec)
 			break
 		}
 	}
 	c.PodLabels = podMeta.Pod.Labels
 	c.PodAnnotations = podMeta.Pod.Annotations
 	c.CgroupParent, _ = util.GetContainerCgroupPathWithKubeByID(podMeta.CgroupDir, c.ContainerMeta.ID)
+	// retrieve ExtendedResources from container spec and pod annotations (prefer container spec)
+	specFromAnnotations, err := apiext.GetExtendedResourceSpec(podMeta.Pod.Annotations)
+	if err != nil {
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from reconciler via annotation, container %s/%s, err: %s",
+			c.PodMeta.Namespace, c.PodMeta.Name, c.ContainerMeta.Name, err)
+	}
+	if specFromContainer != nil {
+		c.ExtendedResources = specFromContainer
+	} else if specFromAnnotations != nil && specFromAnnotations.Containers != nil { // specFromContainer == nil
+		if containerSpec, ok := specFromAnnotations.Containers[c.ContainerMeta.Name]; ok {
+			c.ExtendedResources = &containerSpec
+		}
+	}
 }
 
 type ContainerResponse struct {
@@ -99,6 +127,9 @@ func (c *ContainerResponse) ProxyDone(resp *runtimeapi.ContainerResourceHookResp
 	}
 	if c.Resources.CPUShares != nil {
 		resp.ContainerResources.CpuShares = *c.Resources.CPUShares
+	}
+	if c.Resources.MemoryLimit != nil {
+		resp.ContainerResources.MemoryLimitInBytes = *c.Resources.MemoryLimit
 	}
 	if c.AddContainerEnvs != nil {
 		if resp.ContainerEnvs == nil {
@@ -168,6 +199,18 @@ func (c *ContainerContext) injectForOrigin() {
 				*c.Response.Resources.CFSQuota, c.Request.CgroupParent)
 			audit.V(2).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 				"set container cfs quota to %v", *c.Response.Resources.CFSQuota).Do()
+		}
+	}
+	if c.Response.Resources.MemoryLimit != nil {
+		if err := injectMemoryLimit(c.Request.CgroupParent, *c.Response.Resources.MemoryLimit); err != nil {
+			klog.Infof("set container %v/%v/%v memory limit %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
+				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.MemoryLimit, c.Request.CgroupParent, err)
+		} else {
+			klog.V(5).Infof("set container %v/%v/%v memory limit %v on cgroup parent %v",
+				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
+				*c.Response.Resources.MemoryLimit, c.Request.CgroupParent)
+			audit.V(2).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
+				"set container memory limit to %v", *c.Response.Resources.MemoryLimit).Do()
 		}
 	}
 	// TODO other fields

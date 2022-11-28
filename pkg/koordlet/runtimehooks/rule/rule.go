@@ -86,7 +86,7 @@ func UpdateRules(ruleType statesinformer.RegisterType, ruleObj interface{}, pods
 		}
 		if !r.systemSupported {
 			klog.V(4).Infof("system unsupported for rule %s, do nothing during UpdateRules", r.name)
-			return
+			continue
 		}
 		if r.parseRuleFn == nil {
 			continue

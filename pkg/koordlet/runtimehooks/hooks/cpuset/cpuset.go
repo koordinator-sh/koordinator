@@ -23,6 +23,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
@@ -43,6 +44,8 @@ type cpusetPlugin struct {
 	ruleRWMutex sync.RWMutex
 }
 
+var podQOSConditions = []string{string(apiext.QoSLSE), string(apiext.QoSLSR)}
+
 func (p *cpusetPlugin) Register() {
 	klog.V(5).Infof("register hook %v", name)
 	hooks.Register(rmconfig.PreCreateContainer, name, description, p.SetContainerCPUSetAndUnsetCFS)
@@ -51,10 +54,11 @@ func (p *cpusetPlugin) Register() {
 	rule.Register(name, description,
 		rule.WithParseFunc(statesinformer.RegisterTypeNodeTopology, p.parseRule),
 		rule.WithUpdateCallback(p.ruleUpdateCb))
-	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSet, p.SetContainerCPUSetAndUnsetCFS,
-		"set container cpuset and unset container cpu quota if needed")
-	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUCFSQuota, UnsetPodCPUQuota,
-		"unset pod cpu quota if needed")
+	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSet,
+		"set container cpuset and unset container cpu quota if needed",
+		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), podQOSConditions...)
+	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUCFSQuota, "unset pod cpu quota if needed",
+		UnsetPodCPUQuota, reconciler.PodQOSFilter(), podQOSConditions...)
 }
 
 var singleton *cpusetPlugin

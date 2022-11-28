@@ -78,7 +78,7 @@ func Test_doKubeQOSCgroup(t *testing.T) {
 				tt.gots.kubeQOSVal[kubeQOS] = tt.args.targetOutput[kubeQOS]
 				return nil
 			}
-			RegisterCgroupReconciler(KubeQOSLevel, tt.args.file, reconcilerFn, tt.name)
+			RegisterCgroupReconciler(KubeQOSLevel, tt.args.file, tt.name, reconcilerFn, NoneFilter())
 			doKubeQOSCgroup()
 			assert.Equal(t, tt.wants.kubeQOSVal, tt.gots.kubeQOSVal, "kube qos map value should be equal")
 		})
@@ -118,8 +118,8 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 		tryStopFn()
 		return nil
 	}
-	RegisterCgroupReconciler(PodLevel, system.CPUBVTWarpNs, podReconcilerFn, "get pod uid")
-	RegisterCgroupReconciler(ContainerLevel, system.CPUBVTWarpNs, containerReconcilerFn, "get container uid")
+	RegisterCgroupReconciler(PodLevel, system.CPUBVTWarpNs, "get pod uid", podReconcilerFn, NoneFilter())
+	RegisterCgroupReconciler(ContainerLevel, system.CPUBVTWarpNs, "get container uid", containerReconcilerFn, NoneFilter())
 
 	type fields struct {
 		podsMeta *statesinformer.PodMeta
