@@ -2,7 +2,7 @@ vendor
 pkg/descheduler
 pkg/descheduler/controllers/migration/controllerfinder
 pkg/scheduler/plugins/coscheduling
-pkg/util/kubelet
+pkg/koordlet/util/kubelet
 pkg/util/cpuset/cpuset.go
 pkg/util/cpuset/cpuset_test.go
 test/e2e/common

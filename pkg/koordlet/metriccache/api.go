@@ -19,7 +19,7 @@ package metriccache
 import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
 type CPUMetric struct {

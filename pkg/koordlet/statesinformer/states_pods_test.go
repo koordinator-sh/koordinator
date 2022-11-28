@@ -32,7 +32,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func Test_genPodCgroupParentDirWithCgroupfsDriver(t *testing.T) {

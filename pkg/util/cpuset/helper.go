@@ -54,6 +54,12 @@ func ParseCPUSetStr(cpusetStr string) ([]int32, error) {
 	return cpus, nil
 }
 
+// ParseCPUSet parses CPUSet object into an int32 slice
+// eg. { elem: { 0:{}, 1:{}, 5:{}, 6:{}, 7:{} } } => [0,1,5,6,7]
+func ParseCPUSet(cpus *CPUSet) []int32 {
+	return intsToInt32s(cpus.ToSlice())
+}
+
 // GenerateCPUSetStr generates the cpuset string from the cpuset slice
 // eg. [3,2,1,0] => "3,2,1,0"
 func GenerateCPUSetStr(cpuset []int32) string {

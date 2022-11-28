@@ -22,8 +22,9 @@ import (
 )
 
 func TestConfiguration_InitFlags(t *testing.T) {
-	// just ensure the function does not panic
-	cfg := NewConfiguration()
-	cfg.InitFlags(flag.CommandLine)
-	flag.Parse()
+	t.Run("ensure not panic", func(t *testing.T) {
+		cfg := NewConfiguration()
+		cfg.InitFlags(flag.CommandLine)
+		flag.Parse()
+	})
 }

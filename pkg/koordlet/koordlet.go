@@ -43,7 +43,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 var (

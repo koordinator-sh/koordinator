@@ -21,7 +21,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
 type KubeQOSRequet struct {

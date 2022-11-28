@@ -28,9 +28,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
-	"github.com/koordinator-sh/koordinator/pkg/util"
-	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (

@@ -28,7 +28,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func Test_doKubeQOSCgroup(t *testing.T) {

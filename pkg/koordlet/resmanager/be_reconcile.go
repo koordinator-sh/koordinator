@@ -28,8 +28,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func (r *resmanager) reconcileBECgroup() {
@@ -60,7 +61,7 @@ func reconcileBECPULimit(podMeta *statesinformer.PodMeta) {
 			klog.Warningf("failed to apply cpu limit for pod %v/%v %v, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, err)
 		} else {
-			curCFS, err := util.GetPodCurCFSQuota(podMeta.CgroupDir)
+			curCFS, err := koordletutil.GetPodCurCFSQuota(podMeta.CgroupDir)
 			klog.Infof("apply cpu limit for pod %v/%v %v succeed, current value %d, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curCFS, err)
 		}
@@ -93,7 +94,7 @@ func reconcileBECPULimit(podMeta *statesinformer.PodMeta) {
 			klog.Warningf("failed to apply cpu limit for container %v/%v/%v, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, err)
 		} else {
-			curCFS, err := util.GetContainerCurCFSQuota(podMeta.CgroupDir, &containerStat)
+			curCFS, err := koordletutil.GetContainerCurCFSQuota(podMeta.CgroupDir, &containerStat)
 			klog.Infof("apply cpu limit for container %v/%v %v succeed, current value %v, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curCFS, err)
 		}
@@ -113,7 +114,7 @@ func reconcileBECPUShare(podMeta *statesinformer.PodMeta) {
 			klog.Warningf("failed to apply cpu request for pod %v/%v %v, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, err)
 		} else {
-			curShare, err := util.GetPodCurCPUShare(podMeta.CgroupDir)
+			curShare, err := koordletutil.GetPodCurCPUShare(podMeta.CgroupDir)
 			klog.Infof("apply cpu request for pod %v/%v %v succeed, current value %d, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curShare, err)
 		}
@@ -146,7 +147,7 @@ func reconcileBECPUShare(podMeta *statesinformer.PodMeta) {
 			klog.Warningf("failed to apply cpu request for container %v/%v/%v, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, err)
 		} else {
-			curShare, err := util.GetContainerCurCPUShare(podMeta.CgroupDir, &containerStat)
+			curShare, err := koordletutil.GetContainerCurCPUShare(podMeta.CgroupDir, &containerStat)
 			klog.Infof("apply cpu request for pod %v/%v %v succeed, current value %d, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, curShare, err)
 		}
@@ -166,7 +167,7 @@ func reconcileBEMemLimit(podMeta *statesinformer.PodMeta) {
 			klog.Warningf("failed to apply cpu memory for pod %v/%v %v, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, err)
 		} else {
-			curLimit, err := util.GetPodCurMemLimitBytes(podMeta.CgroupDir)
+			curLimit, err := koordletutil.GetPodCurMemLimitBytes(podMeta.CgroupDir)
 			klog.Infof("apply cpu memory for pod %v/%v %v succeed, current value %d, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curLimit, err)
 		}
@@ -199,7 +200,7 @@ func reconcileBEMemLimit(podMeta *statesinformer.PodMeta) {
 			klog.Warningf("failed to apply memory limit for container %v/%v/%v, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, err)
 		} else {
-			curLimit, err := util.GetContainerCurMemLimitBytes(podMeta.CgroupDir, &containerStat)
+			curLimit, err := koordletutil.GetContainerCurMemLimitBytes(podMeta.CgroupDir, &containerStat)
 			klog.Infof("apply memory limit for container %v/%v %v succeed, current value %v, error: %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, podMeta.Pod.UID, curLimit, err)
 		}
@@ -211,7 +212,7 @@ func needReconcilePodBECPULimit(podMeta *statesinformer.PodMeta) (bool, error) {
 		return false, nil
 	}
 
-	podCurCFSQuota, err := util.GetPodCurCFSQuota(podMeta.CgroupDir)
+	podCurCFSQuota, err := koordletutil.GetPodCurCFSQuota(podMeta.CgroupDir)
 	if err != nil {
 		return false, err
 	}
@@ -223,7 +224,7 @@ func needReconcileContainerBECPULimit(podMeta *statesinformer.PodMeta, container
 		return false, nil
 	}
 
-	containerCurCFSQuota, err := util.GetContainerCurCFSQuota(podMeta.CgroupDir, containerStatus)
+	containerCurCFSQuota, err := koordletutil.GetContainerCurCFSQuota(podMeta.CgroupDir, containerStatus)
 	if err != nil {
 		return false, err
 	}
@@ -235,7 +236,7 @@ func needReconcilePodBECPUShare(podMeta *statesinformer.PodMeta) (bool, error) {
 		return false, nil
 	}
 
-	podCurCPUShare, err := util.GetPodCurCPUShare(podMeta.CgroupDir)
+	podCurCPUShare, err := koordletutil.GetPodCurCPUShare(podMeta.CgroupDir)
 	if err != nil {
 		return false, err
 	}
@@ -247,7 +248,7 @@ func needReconcileContainerBECPUShare(podMeta *statesinformer.PodMeta, container
 		return false, nil
 	}
 
-	containerCurCPUShare, err := util.GetContainerCurCPUShare(podMeta.CgroupDir, containerStatus)
+	containerCurCPUShare, err := koordletutil.GetContainerCurCPUShare(podMeta.CgroupDir, containerStatus)
 	if err != nil {
 		return false, err
 	}
@@ -259,7 +260,7 @@ func needReconcilePodBEMemLimit(podMeta *statesinformer.PodMeta) (bool, error) {
 		return false, nil
 	}
 
-	podCurMemLimit, err := util.GetPodCurMemLimitBytes(podMeta.CgroupDir)
+	podCurMemLimit, err := koordletutil.GetPodCurMemLimitBytes(podMeta.CgroupDir)
 	if err != nil {
 		return false, err
 	}
@@ -272,7 +273,7 @@ func needReconcileContainerBEMemLimit(podMeta *statesinformer.PodMeta, container
 		return false, nil
 	}
 
-	containerCurCFSQuota, err := util.GetContainerCurMemLimitBytes(podMeta.CgroupDir, containerStatus)
+	containerCurCFSQuota, err := koordletutil.GetContainerCurMemLimitBytes(podMeta.CgroupDir, containerStatus)
 	if err != nil {
 		return false, err
 	}
@@ -285,12 +286,12 @@ func applyPodBECPULimitIfSpecified(podMeta *statesinformer.PodMeta) error {
 	if milliCPULimit <= 0 {
 		return nil
 	}
-	podCFSPeriod, err := util.GetPodCurCFSPeriod(podMeta.CgroupDir)
+	podCFSPeriod, err := koordletutil.GetPodCurCFSPeriod(podMeta.CgroupDir)
 	if err != nil {
 		return err
 	}
 	targetCFSQuota := int(float64(milliCPULimit*podCFSPeriod) / float64(1000))
-	podCFSQuotaPath := util.GetPodCgroupCFSQuotaPath(podMeta.CgroupDir)
+	podCFSQuotaPath := koordletutil.GetPodCgroupCFSQuotaPath(podMeta.CgroupDir)
 	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(executor.UpdateCPU).Message("set cfs_quota to %v", targetCFSQuota).Do()
 	return os.WriteFile(podCFSQuotaPath, []byte(strconv.Itoa(targetCFSQuota)), 0644)
 }
@@ -300,12 +301,12 @@ func applyContainerBECPULimitIfSpecified(podMeta *statesinformer.PodMeta, contai
 	if milliCPULimit <= 0 {
 		return nil
 	}
-	containerCFSPeriod, err := util.GetContainerCurCFSPeriod(podMeta.CgroupDir, containerStatus)
+	containerCFSPeriod, err := koordletutil.GetContainerCurCFSPeriod(podMeta.CgroupDir, containerStatus)
 	if err != nil {
 		return err
 	}
 	targetCFSQuota := int(float64(milliCPULimit*containerCFSPeriod) / float64(1000))
-	containerCFSQuotaPath, err := util.GetContainerCgroupCFSQuotaPath(podMeta.CgroupDir, containerStatus)
+	containerCFSQuotaPath, err := koordletutil.GetContainerCgroupCFSQuotaPath(podMeta.CgroupDir, containerStatus)
 	if err != nil {
 		return err
 	}
@@ -319,7 +320,7 @@ func applyPodBECPURequestIfSpecified(podMeta *statesinformer.PodMeta) error {
 		return nil
 	}
 	targetCPUShare := int(float64(milliCPURequest*system.CPUShareUnitValue) / float64(1000))
-	podDir := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+	podDir := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(executor.UpdateCPU).Message("set cfs_shares to %v", targetCPUShare).Do()
 	return system.CgroupFileWrite(podDir, system.CPUShares, strconv.Itoa(targetCPUShare))
 }
@@ -330,7 +331,7 @@ func applyContainerBECPUShareIfSpecified(podMeta *statesinformer.PodMeta, contai
 		return nil
 	}
 	targetCPUShare := int(float64(milliCPURequest*system.CPUShareUnitValue) / float64(1000))
-	containerCPUSharePath, err := util.GetContainerCgroupCPUSharePath(podMeta.CgroupDir, containerStatus)
+	containerCPUSharePath, err := koordletutil.GetContainerCgroupCPUSharePath(podMeta.CgroupDir, containerStatus)
 	if err != nil {
 		return err
 	}
@@ -343,7 +344,7 @@ func applyPodBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta) error {
 	if memoryLimit <= 0 {
 		return nil
 	}
-	podMemLimitPath := util.GetPodCgroupMemLimitPath(podMeta.CgroupDir)
+	podMemLimitPath := koordletutil.GetPodCgroupMemLimitPath(podMeta.CgroupDir)
 	_ = audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(executor.UpdateMemory).Message("set memory.limits to %v", memoryLimit).Do()
 	return os.WriteFile(podMemLimitPath, []byte(strconv.Itoa(int(memoryLimit))), 0644)
 }
@@ -353,7 +354,7 @@ func applyContainerBEMemLimitIfSpecified(podMeta *statesinformer.PodMeta, contai
 	if memoryLimit <= 0 {
 		return nil
 	}
-	containerMemLimitPath, err := util.GetContainerCgroupMemLimitPath(podMeta.CgroupDir, containerStatus)
+	containerMemLimitPath, err := koordletutil.GetContainerCgroupMemLimitPath(podMeta.CgroupDir, containerStatus)
 	if err != nil {
 		return err
 	}

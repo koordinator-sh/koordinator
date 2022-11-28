@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func Test_IsPodCfsQuotaNeedUnset(t *testing.T) {
@@ -73,7 +72,6 @@ func Test_IsPodCfsQuotaNeedUnset(t *testing.T) {
 }
 
 func Test_GetKubeQosClass(t *testing.T) {
-	system.SetupCgroupPathFormatter(system.Systemd)
 	assert := assert.New(t)
 
 	testCases := []struct {

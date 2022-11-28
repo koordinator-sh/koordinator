@@ -30,7 +30,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
 type gpuDeviceManager struct {

@@ -20,7 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
 func GetPodMetas(pods []*corev1.Pod) []*statesinformer.PodMeta {

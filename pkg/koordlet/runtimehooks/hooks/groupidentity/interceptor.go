@@ -22,7 +22,7 @@ import (
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
 func (b *bvtPlugin) SetPodBvtValue(p protocol.HooksProtocol) error {

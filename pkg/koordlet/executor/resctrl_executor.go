@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
+	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 const (

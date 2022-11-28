@@ -29,8 +29,8 @@ import (
 
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 type Options struct {

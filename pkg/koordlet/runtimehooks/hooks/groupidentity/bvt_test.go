@@ -25,8 +25,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/pointer"
 
-	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func initCPUBvt(dirWithKube string, value int64, helper *system.FileTestUtil) {

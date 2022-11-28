@@ -26,8 +26,8 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (

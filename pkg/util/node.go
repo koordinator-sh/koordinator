@@ -18,58 +18,14 @@ package util
 
 import (
 	"fmt"
-	"path"
-	"strconv"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 // GenerateNodeKey returns a generated key with given meta
 func GenerateNodeKey(node *metav1.ObjectMeta) string {
 	return fmt.Sprintf("%v/%v", node.GetNamespace(), node.GetName())
-}
-
-// @output like kubepods.slice/kubepods-besteffort.slice/
-func GetKubeQosRelativePath(qosClass corev1.PodQOSClass) string {
-	return GetPodCgroupDirWithKube(system.CgroupPathFormatter.QOSDirFn(qosClass))
-}
-
-// GetRootCgroupCPUSetDir gets the cpuset parent directory of the specified podQos' root cgroup
-// @output /sys/fs/cgroup/cpuset/kubepods.slice/kubepods-besteffort.slice
-func GetRootCgroupCPUSetDir(qosClass corev1.PodQOSClass) string {
-	rootCgroupParentDir := GetKubeQosRelativePath(qosClass)
-	return path.Join(system.Conf.CgroupRootDir, system.CgroupCPUSetDir, rootCgroupParentDir)
-}
-
-// GetRootCgroupCurCPUSet gets the current cpuset of the specified podQos' root cgroup
-func GetRootCgroupCurCPUSet(qosClass corev1.PodQOSClass) ([]int32, error) {
-	rawContent, err := system.CgroupFileRead(GetKubeQosRelativePath(qosClass), system.CPUSet)
-	if err != nil {
-		return nil, err
-	}
-
-	return cpuset.ParseCPUSetStr(rawContent)
-}
-
-func GetRootCgroupCurCFSQuota(qosClass corev1.PodQOSClass) (int64, error) {
-	rawContent, err := system.CgroupFileRead(GetKubeQosRelativePath(qosClass), system.CPUCFSQuota)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(strings.TrimSpace(rawContent), 10, 64)
-}
-
-func GetRootCgroupCurCFSPeriod(qosClass corev1.PodQOSClass) (int64, error) {
-	rawContent, err := system.CgroupFileRead(GetKubeQosRelativePath(qosClass), system.CPUCFSPeriod)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(strings.TrimSpace(rawContent), 10, 64)
 }
 
 // GetNodeAddress get node specified type address.

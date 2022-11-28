@@ -25,6 +25,7 @@ import (
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -54,7 +55,7 @@ func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookReques
 	c.ContainerMeta.FromProxy(req.ContainerMeta, req.PodAnnotations)
 	c.PodLabels = req.GetPodLabels()
 	c.PodAnnotations = req.GetPodAnnotations()
-	c.CgroupParent, _ = util.GetContainerCgroupPathWithKubeByID(req.GetPodCgroupParent(), c.ContainerMeta.ID)
+	c.CgroupParent, _ = koordletutil.GetContainerCgroupPathWithKubeByID(req.GetPodCgroupParent(), c.ContainerMeta.ID)
 	c.ContainerEnvs = req.GetContainerEnvs()
 	// retrieve ExtendedResources from pod annotations
 	spec, err := apiext.GetExtendedResourceSpec(req.GetPodAnnotations())
@@ -93,7 +94,7 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 	}
 	c.PodLabels = podMeta.Pod.Labels
 	c.PodAnnotations = podMeta.Pod.Annotations
-	c.CgroupParent, _ = util.GetContainerCgroupPathWithKubeByID(podMeta.CgroupDir, c.ContainerMeta.ID)
+	c.CgroupParent, _ = koordletutil.GetContainerCgroupPathWithKubeByID(podMeta.CgroupDir, c.ContainerMeta.ID)
 	// retrieve ExtendedResources from container spec and pod annotations (prefer container spec)
 	specFromAnnotations, err := apiext.GetExtendedResourceSpec(podMeta.Pod.Annotations)
 	if err != nil {

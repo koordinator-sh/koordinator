@@ -26,8 +26,8 @@ import (
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
-	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {

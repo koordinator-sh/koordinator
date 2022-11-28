@@ -29,8 +29,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/perf"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
 )
 
 type performanceCollector struct {

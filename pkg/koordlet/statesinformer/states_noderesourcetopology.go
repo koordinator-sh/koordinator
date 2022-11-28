@@ -40,9 +40,10 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/kubelet"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
-	kubeletutil "github.com/koordinator-sh/koordinator/pkg/util/kubelet"
 )
 
 const (
@@ -158,8 +159,8 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 		}
 
 		if kubeletConfiguration.CPUManagerPolicy == string(cpumanager.PolicyStatic) {
-			topology := kubeletutil.NewCPUTopology((*util.LocalCPUInfo)(nodeCPUInfo))
-			reservedCPUs, err := kubeletutil.GetStaticCPUManagerPolicyReservedCPUs(topology, kubeletConfiguration)
+			topology := kubelet.NewCPUTopology((*koordletutil.LocalCPUInfo)(nodeCPUInfo))
+			reservedCPUs, err := kubelet.GetStaticCPUManagerPolicyReservedCPUs(topology, kubeletConfiguration)
 			if err != nil {
 				klog.Errorf("Failed to GetStaticCPUManagerPolicyReservedCPUs, err: %v", err)
 			}
@@ -178,7 +179,7 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 
 	// Users can specify the kubelet RootDirectory on the host in the koordlet DaemonSet,
 	// but inside koordlet it is always mounted to the path /var/lib/kubelet
-	stateFilePath := kubeletutil.GetCPUManagerStateFilePath("/var/lib/kubelet")
+	stateFilePath := kubelet.GetCPUManagerStateFilePath("/var/lib/kubelet")
 	data, err := os.ReadFile(stateFilePath)
 	if err != nil {
 		if !os.IsNotExist(err) {

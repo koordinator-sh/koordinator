@@ -34,6 +34,8 @@ type CacheExecutor interface {
 	Run(stopCh <-chan struct{})
 }
 
+// ResourceUpdateExecutor is the executor for updating resources.
+// DEPRECATED: use resourceexecutor.ResourceUpdateExecutor instead.
 type ResourceUpdateExecutor struct {
 	name               string
 	resourceCache      *cache.Cache
@@ -54,6 +56,8 @@ type LeveledCacheExecutor interface {
 	LeveledUpdateBatch(resources [][]MergeableResourceUpdater) (updated bool)
 }
 
+// LeveledResourceUpdateExecutor is the leveled executor for updating resources.
+// DEPRECATED: use resourceexecutor.ResourceUpdateExecutor instead.
 type LeveledResourceUpdateExecutor struct {
 	ResourceUpdateExecutor
 }

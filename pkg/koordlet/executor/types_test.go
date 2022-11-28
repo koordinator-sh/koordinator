@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func updateValueFunc(resource ResourceUpdater) error {

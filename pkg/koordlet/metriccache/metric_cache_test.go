@@ -22,10 +22,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
 func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
@@ -841,7 +840,7 @@ func Test_metricCache_NodeCPUInfo_CRUD(t *testing.T) {
 				},
 				samples: []NodeCPUInfo{
 					{
-						ProcessorInfos: []util.ProcessorInfo{
+						ProcessorInfos: []koordletutil.ProcessorInfo{
 							{
 								CPUID:    0,
 								CoreID:   0,
@@ -857,7 +856,7 @@ func Test_metricCache_NodeCPUInfo_CRUD(t *testing.T) {
 						},
 					},
 					{
-						ProcessorInfos: []util.ProcessorInfo{
+						ProcessorInfos: []koordletutil.ProcessorInfo{
 							// HT on
 							{
 								CPUID:    0,
@@ -888,7 +887,7 @@ func Test_metricCache_NodeCPUInfo_CRUD(t *testing.T) {
 				},
 			},
 			want: &NodeCPUInfo{
-				ProcessorInfos: []util.ProcessorInfo{
+				ProcessorInfos: []koordletutil.ProcessorInfo{
 					{
 						CPUID:    0,
 						CoreID:   0,

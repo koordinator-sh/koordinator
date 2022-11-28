@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func Test_GetPodRequest(t *testing.T) {
@@ -97,7 +96,6 @@ func Test_GetPodRequest(t *testing.T) {
 }
 
 func Test_GetPodBEMilliCPURequest(t *testing.T) {
-	system.SetupCgroupPathFormatter(system.Systemd)
 	assert := assert.New(t)
 
 	testCases := []struct {
@@ -183,7 +181,6 @@ func Test_GetPodBEMilliCPURequest(t *testing.T) {
 }
 
 func Test_GetPodBEMemoryRequest(t *testing.T) {
-	system.SetupCgroupPathFormatter(system.Systemd)
 	assert := assert.New(t)
 
 	testCases := []struct {

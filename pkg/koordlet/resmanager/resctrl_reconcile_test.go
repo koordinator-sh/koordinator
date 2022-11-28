@@ -36,8 +36,9 @@ import (
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func testingPrepareResctrlL3CatPath(t *testing.T, cbmStr, rootSchemataStr string) {
@@ -936,8 +937,8 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(&metriccache.NodeCPUInfo{
-			BasicInfo: util.CPUBasicInfo{CatL3CbmMask: "7ff"},
-			TotalInfo: util.CPUTotalInfo{NumberL3s: 2},
+			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
+			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
 		}, nil).Times(3)
 		rm := &resmanager{metricCache: metricCache}
 		r := ResctrlReconcile{
@@ -973,20 +974,20 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 
 		// log error for invalid l3 number
 		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(&metriccache.NodeCPUInfo{
-			BasicInfo: util.CPUBasicInfo{CatL3CbmMask: "7ff"},
-			TotalInfo: util.CPUTotalInfo{NumberL3s: -1},
+			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
+			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: -1},
 		}, nil).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for invalid l3 cbm
 		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(&metriccache.NodeCPUInfo{
-			BasicInfo: util.CPUBasicInfo{CatL3CbmMask: "invalid"},
-			TotalInfo: util.CPUTotalInfo{NumberL3s: 2},
+			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "invalid"},
+			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
 		}, nil).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(&metriccache.NodeCPUInfo{
-			BasicInfo: util.CPUBasicInfo{CatL3CbmMask: ""},
-			TotalInfo: util.CPUTotalInfo{NumberL3s: 2},
+			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: ""},
+			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
 		}, nil).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
@@ -1152,8 +1153,8 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 		CgroupDir: "p0",
 	}
 	testingNodeCPUInfo := &metriccache.NodeCPUInfo{
-		BasicInfo: util.CPUBasicInfo{CatL3CbmMask: "7ff"},
-		TotalInfo: util.CPUTotalInfo{NumberL3s: 2},
+		BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
+		TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
 	}
 
 	t.Run("test not panic", func(t *testing.T) {
