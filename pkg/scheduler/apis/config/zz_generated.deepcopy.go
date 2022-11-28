@@ -145,6 +145,13 @@ func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 			(*out)[key] = val
 		}
 	}
+	if in.ProdUsageThresholds != nil {
+		in, out := &in.ProdUsageThresholds, &out.ProdUsageThresholds
+		*out = make(map[corev1.ResourceName]int64, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.EstimatedScalingFactors != nil {
 		in, out := &in.EstimatedScalingFactors, &out.EstimatedScalingFactors
 		*out = make(map[corev1.ResourceName]int64, len(*in))

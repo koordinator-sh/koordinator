@@ -27,15 +27,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	scheduledconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
-	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/pointer"
 
@@ -111,11 +108,6 @@ func TestNew(t *testing.T) {
 	err := v1beta2.Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta2args, &loadAwareSchedulingArgs, nil)
 	assert.NoError(t, err)
 
-	loadAwareSchedulingPluginConfig := scheduledconfig.PluginConfig{
-		Name: Name,
-		Args: &loadAwareSchedulingArgs,
-	}
-
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 	extendHandle := frameworkext.NewExtendedHandle(
@@ -124,26 +116,17 @@ func TestNew(t *testing.T) {
 	)
 	proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
 
-	registeredPlugins := []schedulertesting.RegisterPluginFunc{
-		func(reg *runtime.Registry, profile *scheduledconfig.KubeSchedulerProfile) {
-			profile.PluginConfig = []scheduledconfig.PluginConfig{
-				loadAwareSchedulingPluginConfig,
-			}
-		},
-		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		schedulertesting.RegisterFilterPlugin(Name, proxyNew),
-		schedulertesting.RegisterScorePlugin(Name, proxyNew, 1),
-		schedulertesting.RegisterReservePlugin(Name, proxyNew),
-	}
-
 	cs := kubefake.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nil)
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
 	fh, err := schedulertesting.NewFramework(registeredPlugins, "koord-scheduler",
-		runtime.WithClientSet(cs),
-		runtime.WithInformerFactory(informerFactory),
-		runtime.WithSnapshotSharedLister(snapshot),
+		frameworkruntime.WithClientSet(cs),
+		frameworkruntime.WithInformerFactory(informerFactory),
+		frameworkruntime.WithSnapshotSharedLister(snapshot),
 	)
 	assert.Nil(t, err)
 
@@ -219,11 +202,6 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 			err := v1beta2.Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta2args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
 
-			loadAwareSchedulingPluginConfig := scheduledconfig.PluginConfig{
-				Name: Name,
-				Args: &loadAwareSchedulingArgs,
-			}
-
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 			extendHandle := frameworkext.NewExtendedHandle(
@@ -231,19 +209,6 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 			)
 			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
-
-			registeredPlugins := []schedulertesting.RegisterPluginFunc{
-				func(reg *runtime.Registry, profile *scheduledconfig.KubeSchedulerProfile) {
-					profile.PluginConfig = []scheduledconfig.PluginConfig{
-						loadAwareSchedulingPluginConfig,
-					}
-				},
-				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				schedulertesting.RegisterFilterPlugin(Name, proxyNew),
-				schedulertesting.RegisterScorePlugin(Name, proxyNew, 1),
-				schedulertesting.RegisterReservePlugin(Name, proxyNew),
-			}
 
 			cs := kubefake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
@@ -257,10 +222,14 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 			}
 
 			snapshot := newTestSharedLister(nil, nodes)
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
 			fh, err := schedulertesting.NewFramework(registeredPlugins, "koord-scheduler",
-				runtime.WithClientSet(cs),
-				runtime.WithInformerFactory(informerFactory),
-				runtime.WithSnapshotSharedLister(snapshot),
+				frameworkruntime.WithClientSet(cs),
+				frameworkruntime.WithInformerFactory(informerFactory),
+				frameworkruntime.WithSnapshotSharedLister(snapshot),
 			)
 			assert.Nil(t, err)
 
@@ -288,12 +257,15 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 
 func TestFilterUsage(t *testing.T) {
 	tests := []struct {
-		name                  string
-		usageThresholds       map[corev1.ResourceName]int64
-		customUsageThresholds map[corev1.ResourceName]int64
-		nodeName              string
-		nodeMetric            *slov1alpha1.NodeMetric
-		wantStatus            *framework.Status
+		name                      string
+		usageThresholds           map[corev1.ResourceName]int64
+		prodUsageThresholds       map[corev1.ResourceName]int64
+		customUsageThresholds     map[corev1.ResourceName]int64
+		customProdUsageThresholds map[corev1.ResourceName]int64
+		nodeName                  string
+		nodeMetric                *slov1alpha1.NodeMetric
+		pods                      []*corev1.Pod
+		wantStatus                *framework.Status
 	}{
 		{
 			name:     "filter normal usage",
@@ -446,6 +418,254 @@ func TestFilterUsage(t *testing.T) {
 			},
 			wantStatus: nil,
 		},
+		{
+			name:     "prod usage filter is not enabled by default",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("63"),    // cpu usage: 65.6%
+								corev1.ResourceMemory: resource.MustParse("500Gi"), // memory usage: 97.6%
+							},
+						},
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "prod-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("30"),
+									corev1.ResourceMemory: resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Namespace: "default",
+							Name:      "prod-pod-2",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("33"),
+									corev1.ResourceMemory: resource.MustParse("300Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+			},
+			wantStatus: nil,
+		},
+		{
+			name:     "filter prod cpu usage",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    50,
+				corev1.ResourceMemory: 100,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("63"),    // cpu usage: 65.6%
+								corev1.ResourceMemory: resource.MustParse("500Gi"), // memory usage: 97.6%
+							},
+						},
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "prod-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("30"),
+									corev1.ResourceMemory: resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Namespace: "default",
+							Name:      "prod-pod-2",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("33"),
+									corev1.ResourceMemory: resource.MustParse("300Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+		},
+		{
+			name:     "filter prod memory usage",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 50,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("63"),    // cpu usage: 65.6%
+								corev1.ResourceMemory: resource.MustParse("500Gi"), // memory usage: 97.6%
+							},
+						},
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "prod-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("30"),
+									corev1.ResourceMemory: resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Namespace: "default",
+							Name:      "prod-pod-2",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("33"),
+									corev1.ResourceMemory: resource.MustParse("300Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+		},
+		{
+			name:     "filter prod memory usage with custom usage configuration",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			},
+			customProdUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 50,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("63"),    // cpu usage: 65.6%
+								corev1.ResourceMemory: resource.MustParse("500Gi"), // memory usage: 97.6%
+							},
+						},
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "prod-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("30"),
+									corev1.ResourceMemory: resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Namespace: "default",
+							Name:      "prod-pod-2",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("33"),
+									corev1.ResourceMemory: resource.MustParse("300Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -454,15 +674,13 @@ func TestFilterUsage(t *testing.T) {
 			if len(tt.usageThresholds) > 0 {
 				v1beta2args.UsageThresholds = tt.usageThresholds
 			}
+			if len(tt.prodUsageThresholds) > 0 {
+				v1beta2args.ProdUsageThresholds = tt.prodUsageThresholds
+			}
 			v1beta2.SetDefaults_LoadAwareSchedulingArgs(&v1beta2args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
 			err := v1beta2.Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta2args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
-
-			loadAwareSchedulingPluginConfig := scheduledconfig.PluginConfig{
-				Name: Name,
-				Args: &loadAwareSchedulingArgs,
-			}
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
@@ -472,21 +690,13 @@ func TestFilterUsage(t *testing.T) {
 			)
 			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
 
-			registeredPlugins := []schedulertesting.RegisterPluginFunc{
-				func(reg *runtime.Registry, profile *scheduledconfig.KubeSchedulerProfile) {
-					profile.PluginConfig = []scheduledconfig.PluginConfig{
-						loadAwareSchedulingPluginConfig,
-					}
-				},
-				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				schedulertesting.RegisterFilterPlugin(Name, proxyNew),
-				schedulertesting.RegisterScorePlugin(Name, proxyNew, 1),
-				schedulertesting.RegisterReservePlugin(Name, proxyNew),
-			}
-
 			cs := kubefake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+
+			for _, v := range tt.pods {
+				_, err = cs.CoreV1().Pods(v.Namespace).Create(context.TODO(), v, metav1.CreateOptions{})
+				assert.Nil(t, err)
+			}
 
 			nodes := []*corev1.Node{
 				{
@@ -502,8 +712,11 @@ func TestFilterUsage(t *testing.T) {
 				},
 			}
 
-			if len(tt.customUsageThresholds) > 0 {
-				data, err := json.Marshal(&extension.CustomUsageThresholds{UsageThresholds: tt.customUsageThresholds})
+			if len(tt.customUsageThresholds) > 0 || len(tt.customProdUsageThresholds) > 0 {
+				data, err := json.Marshal(&extension.CustomUsageThresholds{
+					UsageThresholds:     tt.customUsageThresholds,
+					ProdUsageThresholds: tt.customProdUsageThresholds,
+				})
 				if err != nil {
 					t.Errorf("failed to marshal, err: %v", err)
 				}
@@ -514,11 +727,16 @@ func TestFilterUsage(t *testing.T) {
 				node.Annotations[extension.AnnotationCustomUsageThresholds] = string(data)
 			}
 
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+
 			snapshot := newTestSharedLister(nil, nodes)
 			fh, err := schedulertesting.NewFramework(registeredPlugins, "koord-scheduler",
-				runtime.WithClientSet(cs),
-				runtime.WithInformerFactory(informerFactory),
-				runtime.WithSnapshotSharedLister(snapshot),
+				frameworkruntime.WithClientSet(cs),
+				frameworkruntime.WithInformerFactory(informerFactory),
+				frameworkruntime.WithSnapshotSharedLister(snapshot),
 			)
 			assert.Nil(t, err)
 
@@ -530,6 +748,9 @@ func TestFilterUsage(t *testing.T) {
 				_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
+
+			informerFactory.Start(context.TODO().Done())
+			informerFactory.WaitForCacheSync(context.TODO().Done())
 
 			koordSharedInformerFactory.Start(context.TODO().Done())
 			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
@@ -580,6 +801,10 @@ func TestScore(t *testing.T) {
 		{
 			name: "score empty node",
 			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
@@ -620,6 +845,10 @@ func TestScore(t *testing.T) {
 		{
 			name: "score node missing NodeMetrics",
 			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
@@ -645,6 +874,10 @@ func TestScore(t *testing.T) {
 		{
 			name: "score load node",
 			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
@@ -693,6 +926,10 @@ func TestScore(t *testing.T) {
 		{
 			name: "score load node with just assigned pod",
 			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
@@ -715,7 +952,12 @@ func TestScore(t *testing.T) {
 				{
 					timestamp: time.Now(),
 					pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "default",
+							Name:      "assigned-pod-1",
+						},
 						Spec: corev1.PodSpec{
+							NodeName: "test-node-1",
 							Containers: []corev1.Container{
 								{
 									Name: "test-container",
@@ -765,6 +1007,10 @@ func TestScore(t *testing.T) {
 		{
 			name: "score load node with just assigned pod where after updateTime",
 			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
@@ -787,7 +1033,12 @@ func TestScore(t *testing.T) {
 				{
 					timestamp: time.Now(),
 					pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "default",
+							Name:      "assigned-pod-1",
+						},
 						Spec: corev1.PodSpec{
+							NodeName: "test-node-1",
 							Containers: []corev1.Container{
 								{
 									Name: "test-container",
@@ -837,6 +1088,10 @@ func TestScore(t *testing.T) {
 		{
 			name: "score load node with just assigned pod where before updateTime",
 			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
@@ -859,7 +1114,12 @@ func TestScore(t *testing.T) {
 				{
 					timestamp: time.Now().Add(-10 * time.Second),
 					pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "default",
+							Name:      "assigned-pod-1",
+						},
 						Spec: corev1.PodSpec{
+							NodeName: "test-node-1",
 							Containers: []corev1.Container{
 								{
 									Name: "test-container",
@@ -909,6 +1169,10 @@ func TestScore(t *testing.T) {
 		{
 			name: "score batch Pod",
 			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
 				Spec: corev1.PodSpec{
 					Priority: pointer.Int32(extension.PriorityBatchValueMin),
 					Containers: []corev1.Container{
@@ -948,8 +1212,99 @@ func TestScore(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
+			name: "score prod Pod",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "prod-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16000"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16000"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			assignedPod: []*podAssignInfo{
+				{
+					timestamp: time.Now(),
+					pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "default",
+							Name:      "assign-prod-pod-1",
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node-1",
+							Priority: pointer.Int32(extension.PriorityProdValueMax),
+							Containers: []corev1.Container{
+								{
+									Name: "test-container",
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("16"),
+											corev1.ResourceMemory: resource.MustParse("32Gi"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("16"),
+											corev1.ResourceMemory: resource.MustParse("32Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeName: "test-node-1",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "assign-prod-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("30"),
+									corev1.ResourceMemory: resource.MustParse("100Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantScore:  38,
+			wantStatus: nil,
+		},
+		{
 			name: "score request less than limit",
 			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
@@ -990,6 +1345,10 @@ func TestScore(t *testing.T) {
 		{
 			name: "score empty pod",
 			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
@@ -1026,11 +1385,6 @@ func TestScore(t *testing.T) {
 			err := v1beta2.Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta2args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
 
-			loadAwareSchedulingPluginConfig := scheduledconfig.PluginConfig{
-				Name: Name,
-				Args: &loadAwareSchedulingArgs,
-			}
-
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 			extendHandle := frameworkext.NewExtendedHandle(
@@ -1038,19 +1392,6 @@ func TestScore(t *testing.T) {
 				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 			)
 			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
-
-			registeredPlugins := []schedulertesting.RegisterPluginFunc{
-				func(reg *runtime.Registry, profile *scheduledconfig.KubeSchedulerProfile) {
-					profile.PluginConfig = []scheduledconfig.PluginConfig{
-						loadAwareSchedulingPluginConfig,
-					}
-				},
-				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				schedulertesting.RegisterFilterPlugin(Name, proxyNew),
-				schedulertesting.RegisterScorePlugin(Name, proxyNew, 1),
-				schedulertesting.RegisterReservePlugin(Name, proxyNew),
-			}
 
 			cs := kubefake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
@@ -1070,21 +1411,39 @@ func TestScore(t *testing.T) {
 			}
 
 			snapshot := newTestSharedLister(nil, nodes)
-			fh, err := schedulertesting.NewFramework(registeredPlugins, "koord-scheduler",
-				runtime.WithClientSet(cs),
-				runtime.WithInformerFactory(informerFactory),
-				runtime.WithSnapshotSharedLister(snapshot),
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+			fh, err := schedulertesting.NewFramework(
+				registeredPlugins,
+				"koord-scheduler",
+				frameworkruntime.WithClientSet(cs),
+				frameworkruntime.WithInformerFactory(informerFactory),
+				frameworkruntime.WithSnapshotSharedLister(snapshot),
 			)
-			assert.Nil(t, err)
-
-			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
-			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
 			if tt.nodeMetric != nil {
 				_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
+
+			if tt.pod != nil {
+				_, err = cs.CoreV1().Pods(tt.pod.Namespace).Create(context.TODO(), tt.pod, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+			for _, v := range tt.assignedPod {
+				_, err = cs.CoreV1().Pods(v.pod.Namespace).Create(context.TODO(), v.pod, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
+			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
+			assert.NotNil(t, p)
+			assert.Nil(t, err)
+
+			informerFactory.Start(context.TODO().Done())
+			informerFactory.WaitForCacheSync(context.TODO().Done())
 
 			koordSharedInformerFactory.Start(context.TODO().Done())
 			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
@@ -1094,17 +1453,6 @@ func TestScore(t *testing.T) {
 			nodeInfo, err := snapshot.Get(tt.nodeName)
 			assert.NoError(t, err)
 			assert.NotNil(t, nodeInfo)
-
-			assignCache := p.(*Plugin).podAssignCache
-			for _, v := range tt.assignedPod {
-				m := assignCache.podInfoItems[tt.nodeName]
-				if m == nil {
-					m = map[types.UID]*podAssignInfo{}
-					assignCache.podInfoItems[tt.nodeName] = m
-				}
-				v.pod.UID = uuid.NewUUID()
-				m[v.pod.UID] = v
-			}
 
 			score, status := p.(*Plugin).Score(context.TODO(), cycleState, tt.pod, tt.nodeName)
 			assert.Equal(t, tt.wantScore, score)

@@ -160,6 +160,7 @@ func autoConvert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingAr
 	out.NodeMetricExpirationSeconds = (*int64)(unsafe.Pointer(in.NodeMetricExpirationSeconds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	out.UsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
+	out.ProdUsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ProdUsageThresholds))
 	out.EstimatedScalingFactors = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.EstimatedScalingFactors))
 	return nil
 }
@@ -174,6 +175,7 @@ func autoConvert_config_LoadAwareSchedulingArgs_To_v1beta2_LoadAwareSchedulingAr
 	out.NodeMetricExpirationSeconds = (*int64)(unsafe.Pointer(in.NodeMetricExpirationSeconds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	out.UsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
+	out.ProdUsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ProdUsageThresholds))
 	out.EstimatedScalingFactors = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.EstimatedScalingFactors))
 	return nil
 }
