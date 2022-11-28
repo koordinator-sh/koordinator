@@ -33,7 +33,7 @@ func (g *Plugin) OnNodeAdd(obj interface{}) {
 		return
 	}
 
-	allocatable := node.Status.Allocatable
+	allocatable := node.Status.Allocatable.DeepCopy()
 
 	g.nodeResourceMapLock.Lock()
 	defer g.nodeResourceMapLock.Unlock()
@@ -67,8 +67,8 @@ func (g *Plugin) OnNodeUpdate(oldObj, newObj interface{}) {
 		return
 	}
 
-	oldNodeAllocatable := oldNode.Status.Allocatable
-	newNodeAllocatable := newNode.Status.Allocatable
+	oldNodeAllocatable := oldNode.Status.Allocatable.DeepCopy()
+	newNodeAllocatable := newNode.Status.Allocatable.DeepCopy()
 
 	if quotav1.Equals(oldNodeAllocatable, newNodeAllocatable) {
 		return
@@ -93,7 +93,7 @@ func (g *Plugin) OnNodeDelete(obj interface{}) {
 		return
 	}
 
-	allocatable := node.Status.Allocatable
+	allocatable := node.Status.Allocatable.DeepCopy()
 	delta := quotav1.Subtract(corev1.ResourceList{}, allocatable)
 	g.groupQuotaManager.UpdateClusterTotalResource(delta)
 	delete(g.nodeResourceMap, node.Name)

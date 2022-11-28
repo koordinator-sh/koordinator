@@ -844,7 +844,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			state := framework.NewCycleState()
 			ctx := context.TODO()
 			status := *gp.PreFilter(ctx, state, tt.pod)
-			assert.Equal(t, status, tt.expectedStatus)
+			assert.Equal(t, status.Code(), tt.expectedStatus.Code())
 		})
 	}
 }
@@ -982,7 +982,7 @@ func TestPlugin_RemovePod(t *testing.T) {
 					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
 				},
 			},
-			expectedUsed: MakeResourceList().CPU(9).Mem(18).GPU(9).Obj(),
+			expectedUsed: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
 		},
 	}
 	for _, tt := range test {
@@ -998,9 +998,7 @@ func TestPlugin_RemovePod(t *testing.T) {
 			gp.snapshotPostFilterState(gp.getPodAssociateQuotaName(tt.podInfo.Pod), state)
 			gp.RemovePod(ctx, state, nil, tt.podInfo, nil)
 			data, _ := getPostFilterState(state)
-			if v1.Equals(data.quotaInfo.GetUsed(), tt.expectedUsed) {
-				assert.Errorf(t, fmt.Errorf("expected:%+v,got:%+v", tt.expectedUsed, data.quotaInfo.GetUsed()), "")
-			}
+			assert.Equal(t, data.quotaInfo.GetUsed(), tt.expectedUsed)
 		})
 	}
 }
