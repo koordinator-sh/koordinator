@@ -30,7 +30,7 @@ import (
 )
 
 var (
-	CpuacctUsageTypeStat = sets.NewString("user", "nice", "system", "irq", "softirq")
+	cpuacctUsageTypeStat = sets.NewString("user", "nice", "system", "irq", "softirq")
 )
 
 func readTotalCPUStat(statPath string) (uint64, error) {
@@ -66,6 +66,33 @@ func GetCPUStatUsageTicks() (uint64, error) {
 	return readTotalCPUStat(system.ProcStatFile.File)
 }
 
+func readCPUAcctStatUsageTicks(statPath string) (uint64, error) {
+	// format: user $user\nnice $nice\nsystem $system\nidle $idle\niowait $iowait\nirq $irq\nsoftirq $softirq
+	rawStats, err := os.ReadFile(statPath)
+	if err != nil {
+		return 0, err
+	}
+	var total uint64 = 0
+	stats := strings.Split(string(rawStats), "\n")
+	for _, stat := range stats {
+		fieldStat := strings.Fields(stat)
+		// stat usage: $user + $nice + $system + $irq + $softirq
+		if len(fieldStat) == 2 && cpuacctUsageTypeStat.Has(fieldStat[0]) {
+			v, err := strconv.ParseUint(fieldStat[1], 10, 64)
+			if err != nil {
+				return 0, fmt.Errorf("failed to parse pod stats %v, err: %s", stats, err)
+			}
+			total += v
+		}
+	}
+	return total, nil
+}
+
+func GetCPUAcctStatUsageTicks(podCgroupDir string) (uint64, error) {
+	podStatPath := GetPodCgroupCPUAcctUsagePath(podCgroupDir)
+	return readCPUAcctStatUsageTicks(podStatPath)
+}
+
 func readCPUAcctUsage(usagePath string) (uint64, error) {
 	v, err := os.ReadFile(usagePath)
 	if err != nil {
@@ -79,9 +106,9 @@ func readCPUAcctUsage(usagePath string) (uint64, error) {
 	return r, nil
 }
 
-// GetPodCPUUsage returns the pod's CPU usage in nanosecond
+// GetPodCPUUsageNanoseconds returns the pod's CPU usage in nanosecond
 func GetPodCPUUsageNanoseconds(podCgroupDir string) (uint64, error) {
-	podStatPath := GetPodCgroupCPUAcctProcUsagePath(podCgroupDir)
+	podStatPath := GetPodCgroupCPUAcctUsagePath(podCgroupDir)
 	return readCPUAcctUsage(podStatPath)
 }
 
@@ -95,7 +122,7 @@ func GetContainerCPUUsageNanoseconds(podCgroupDir string, c *corev1.ContainerSta
 
 func GetRootCgroupCPUUsageNanoseconds(qosClass corev1.PodQOSClass) (uint64, error) {
 	rootCgroupParentDir := GetKubeQosRelativePath(qosClass)
-	statPath := system.GetCgroupFilePath(rootCgroupParentDir, system.CpuacctUsage)
+	statPath := system.GetCgroupFilePath(rootCgroupParentDir, system.CPUAcctUsage)
 	return readCPUAcctUsage(statPath)
 }
 

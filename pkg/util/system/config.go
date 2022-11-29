@@ -41,6 +41,8 @@ type Config struct {
 
 	ContainerdEndPoint string
 	DockerEndPoint     string
+
+	UseCgroupsV2 bool // TODO: guess the cgroup version according to cgroup path
 }
 
 func NewHostModeConfig() *Config {
@@ -52,6 +54,7 @@ func NewHostModeConfig() *Config {
 		SysFSRootDir:          "/sys/fs/",
 		VarRunRootDir:         "/var/run/",
 		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
+		UseCgroupsV2:          false,
 	}
 }
 
@@ -65,6 +68,7 @@ func NewDsModeConfig() *Config {
 		SysFSRootDir:          "/host-sys-fs/",
 		VarRunRootDir:         "/host-var-run/",
 		RuntimeHooksConfigDir: "/host-etc-hookserver/",
+		UseCgroupsV2:          false,
 	}
 }
 
@@ -94,6 +98,8 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.NodeNameOverride, "node-name-override", c.NodeNameOverride, "If non-empty, will use this string as identification instead of the actual machine name. ")
 	fs.StringVar(&c.ContainerdEndPoint, "containerd-endpoint", c.ContainerdEndPoint, "containerd endPoint")
 	fs.StringVar(&c.DockerEndPoint, "docker-endpoint", c.DockerEndPoint, "docker endPoint")
+
+	fs.BoolVar(&c.UseCgroupsV2, "use-cgroups-v2", c.UseCgroupsV2, "whether use cgroups-v2 or not")
 
 	HostSystemInfo = collectVersionInfo()
 	initFilePath()

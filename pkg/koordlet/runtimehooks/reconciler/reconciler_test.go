@@ -33,7 +33,7 @@ import (
 
 func Test_doKubeQOSCgroup(t *testing.T) {
 	type args struct {
-		file         system.CgroupFile
+		resource     system.Resource
 		targetOutput map[corev1.PodQOSClass]string
 	}
 	type wants struct {
@@ -51,7 +51,7 @@ func Test_doKubeQOSCgroup(t *testing.T) {
 		{
 			name: "exec kube qos level function",
 			args: args{
-				file: system.CPUBVTWarpNs,
+				resource: system.CPUBVTWarpNs,
 				targetOutput: map[corev1.PodQOSClass]string{
 					corev1.PodQOSGuaranteed: "test-guaranteed",
 					corev1.PodQOSBurstable:  "test-burstable",
@@ -78,7 +78,7 @@ func Test_doKubeQOSCgroup(t *testing.T) {
 				tt.gots.kubeQOSVal[kubeQOS] = tt.args.targetOutput[kubeQOS]
 				return nil
 			}
-			RegisterCgroupReconciler(KubeQOSLevel, tt.args.file, tt.name, reconcilerFn, NoneFilter())
+			RegisterCgroupReconciler(KubeQOSLevel, tt.args.resource, tt.name, reconcilerFn, NoneFilter())
 			doKubeQOSCgroup()
 			assert.Equal(t, tt.wants.kubeQOSVal, tt.gots.kubeQOSVal, "kube qos map value should be equal")
 		})
@@ -232,5 +232,4 @@ func TestNewReconciler(t *testing.T) {
 	stopCh <- struct{}{}
 	err := r.Run(stopCh)
 	assert.NoError(t, err, "run reconciler without error")
-
 }

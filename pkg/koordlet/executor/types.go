@@ -140,7 +140,7 @@ type CgroupResourceUpdater struct {
 	owner               *OwnerRef
 	value               string
 	ParentDir           string
-	file                system.CgroupFile
+	resource            system.Resource
 	lastUpdateTimestamp time.Time
 	updateFunc          UpdateFunc
 
@@ -164,7 +164,7 @@ func (c *CgroupResourceUpdater) Owner() *OwnerRef {
 }
 
 func (c *CgroupResourceUpdater) Key() string {
-	return system.GetCgroupFilePath(c.ParentDir, c.file)
+	return system.GetCgroupFilePath(c.ParentDir, c.resource)
 }
 
 func (c *CgroupResourceUpdater) Value() string {
@@ -188,7 +188,7 @@ func (c *CgroupResourceUpdater) Update() error {
 }
 
 func (c *CgroupResourceUpdater) Clone() ResourceUpdater {
-	return &CgroupResourceUpdater{owner: c.owner, file: c.file, ParentDir: c.ParentDir, value: c.value, lastUpdateTimestamp: c.lastUpdateTimestamp, updateFunc: c.updateFunc}
+	return &CgroupResourceUpdater{owner: c.owner, resource: c.resource, ParentDir: c.ParentDir, value: c.value, lastUpdateTimestamp: c.lastUpdateTimestamp, updateFunc: c.updateFunc}
 }
 
 func (c *CgroupResourceUpdater) MergeUpdate() (MergeableResourceUpdater, error) {
@@ -204,28 +204,28 @@ func CommonCgroupUpdateFunc(resource ResourceUpdater) error {
 	if info.owner != nil {
 		switch info.owner.Type {
 		case PodType:
-			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.resource.ResourceType(), info.value).Do()
 		case ContainerType:
-			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Container(info.owner.Container).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Container(info.owner.Container).Reason(updateCgroups).Message("update %v to %v", info.resource.ResourceType(), info.value).Do()
 		case NodeType:
-			audit.V(5).Node().Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+			audit.V(5).Node().Reason(updateCgroups).Message("update %v to %v", info.resource.ResourceType(), info.value).Do()
 		case GroupType:
-			audit.V(5).Group(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+			audit.V(5).Group(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.resource.ResourceType(), info.value).Do()
 		default:
-			audit.V(5).Unknown(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+			audit.V(5).Unknown(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.resource.ResourceType(), info.value).Do()
 		}
 	}
-	return system.CgroupFileWriteIfDifferent(info.ParentDir, info.file, info.value)
+	return system.CgroupFileWriteIfDifferent(info.ParentDir, info.resource, info.value)
 }
 
-func NewCommonCgroupResourceUpdater(owner *OwnerRef, parentDir string, file system.CgroupFile, value string) *CgroupResourceUpdater {
-	return &CgroupResourceUpdater{owner: owner, file: file, ParentDir: parentDir, value: value, updateFunc: CommonCgroupUpdateFunc, needMerge: false}
+func NewCommonCgroupResourceUpdater(owner *OwnerRef, parentDir string, resource system.Resource, value string) *CgroupResourceUpdater {
+	return &CgroupResourceUpdater{owner: owner, resource: resource, ParentDir: parentDir, value: value, updateFunc: CommonCgroupUpdateFunc, needMerge: false}
 }
 
 // NewMergeableCgroupResourceUpdater returns a leveled CgroupResourceUpdater which firstly MergeUpdate from top
 // to bottom and then Update from bottom to top.
-func NewMergeableCgroupResourceUpdater(owner *OwnerRef, parentDir string, file system.CgroupFile, value string, mergeUpdateFunc MergeUpdateFunc) *CgroupResourceUpdater {
-	return &CgroupResourceUpdater{owner: owner, file: file, ParentDir: parentDir, value: value, updateFunc: CommonCgroupUpdateFunc, mergeUpdateFunc: mergeUpdateFunc, needMerge: true}
+func NewMergeableCgroupResourceUpdater(owner *OwnerRef, parentDir string, resource system.Resource, value string, mergeUpdateFunc MergeUpdateFunc) *CgroupResourceUpdater {
+	return &CgroupResourceUpdater{owner: owner, resource: resource, ParentDir: parentDir, value: value, updateFunc: CommonCgroupUpdateFunc, mergeUpdateFunc: mergeUpdateFunc, needMerge: true}
 }
 
 func GroupOwnerRef(name string) *OwnerRef {
@@ -306,12 +306,12 @@ func MergeFuncUpdateCgroupIfLarger(resource MergeableResourceUpdater) (Mergeable
 
 	cur, err := strconv.ParseInt(info.value, 10, 64)
 	if err != nil {
-		klog.V(6).Infof("failed to merge update cgroup %v, read current value err: %s", info.file, err)
+		klog.V(6).Infof("failed to merge update cgroup %v, read current value err: %s", info.resource.ResourceType(), err)
 		return resource, err
 	}
-	oldPtr, err := system.CgroupFileReadInt(info.ParentDir, info.file)
+	oldPtr, err := system.CgroupFileReadInt(info.ParentDir, info.resource)
 	if err != nil {
-		klog.V(6).Infof("failed to merge update cgroup %v, read old value err: %s", info.file, err)
+		klog.V(6).Infof("failed to merge update cgroup %v, read old value err: %s", info.resource.ResourceType(), err)
 		return resource, err
 	}
 
@@ -319,24 +319,24 @@ func MergeFuncUpdateCgroupIfLarger(resource MergeableResourceUpdater) (Mergeable
 	if cur <= *oldPtr {
 		merged := resource.Clone().(*CgroupResourceUpdater)
 		merged.value = strconv.FormatInt(*oldPtr, 10)
-		klog.V(6).Infof("skip merge update cgroup %v since current value is smaller", info.file)
+		klog.V(6).Infof("skip merge update cgroup %v since current value is smaller", info.resource.ResourceType())
 		return merged, nil
 	}
 	// otherwise, do write for the current value
 	if info.owner != nil {
 		switch info.owner.Type {
 		case PodType:
-			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.resource.ResourceType(), info.value).Do()
 		case ContainerType:
-			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Container(info.owner.Container).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+			audit.V(5).Pod(info.owner.Namespace, info.owner.Name).Container(info.owner.Container).Reason(updateCgroups).Message("update %v to %v", info.resource.ResourceType(), info.value).Do()
 		case NodeType:
-			audit.V(5).Node().Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+			audit.V(5).Node().Reason(updateCgroups).Message("update %v to %v", info.resource.ResourceType(), info.value).Do()
 		case GroupType:
-			audit.V(5).Group(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+			audit.V(5).Group(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.resource.ResourceType(), info.value).Do()
 		default:
-			audit.V(5).Unknown(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.file, info.value).Do()
+			audit.V(5).Unknown(info.owner.Name).Reason(updateCgroups).Message("update %v to %v", info.resource.ResourceType(), info.value).Do()
 		}
 	}
 	// current value must be different
-	return resource, system.CgroupFileWrite(info.ParentDir, info.file, info.value)
+	return resource, system.CgroupFileWrite(info.ParentDir, info.resource, info.value)
 }

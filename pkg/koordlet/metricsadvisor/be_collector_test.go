@@ -50,7 +50,7 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	// prepare BECPUUsageCores data,expect 4 cores usage
 	collector.context.lastBECPUStat = contextRecord{cpuUsage: 12000000000000, ts: time.Now().Add(-1 * time.Second)}
 	helper := system.NewFileTestUtil(t)
-	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CpuacctUsage, "12004000000000")
+	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, "12004000000000")
 
 	// prepare limit data,expect 8 cores limit
 	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet, "1-15")
@@ -108,7 +108,7 @@ func Test_getBECPUUsageCores(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
-			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CpuacctUsage, tt.cpuacctUsage)
+			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, tt.cpuacctUsage)
 
 			collector := collector{context: newCollectContext()}
 			if tt.lastBeCPUStat != nil {

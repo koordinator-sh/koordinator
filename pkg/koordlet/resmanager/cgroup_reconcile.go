@@ -480,45 +480,45 @@ func makeCgroupResourcesForAnolis(owner *executor.OwnerRef, parentDir string, su
 	}
 
 	//Memory
-	if v := summary.memoryMin; v != nil && system.ValidateCgroupValue(v, parentDir, system.MemMin) {
+	if v := summary.memoryMin; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryMin) {
 		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewMergeableCgroupResourceUpdater(owner, parentDir, system.MemMin,
+		resources = append(resources, executor.NewMergeableCgroupResourceUpdater(owner, parentDir, system.MemoryMin,
 			valueStr, executor.MergeFuncUpdateCgroupIfLarger))
 	}
-	if v := summary.memoryLow; v != nil && system.ValidateCgroupValue(v, parentDir, system.MemLow) {
+	if v := summary.memoryLow; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryLow) {
 		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewMergeableCgroupResourceUpdater(owner, parentDir, system.MemLow,
+		resources = append(resources, executor.NewMergeableCgroupResourceUpdater(owner, parentDir, system.MemoryLow,
 			valueStr, executor.MergeFuncUpdateCgroupIfLarger))
 	}
-	if v := summary.memoryHigh; v != nil && system.ValidateCgroupValue(v, parentDir, system.MemHigh) {
+	if v := summary.memoryHigh; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryHigh) {
 		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewMergeableCgroupResourceUpdater(owner, parentDir, system.MemHigh,
+		resources = append(resources, executor.NewMergeableCgroupResourceUpdater(owner, parentDir, system.MemoryHigh,
 			valueStr, executor.MergeFuncUpdateCgroupIfLarger))
 	}
-	if v := summary.memoryWmarkRatio; v != nil && system.ValidateCgroupValue(v, parentDir, system.MemWmarkRatio) {
+	if v := summary.memoryWmarkRatio; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryWmarkRatio) {
 		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemWmarkRatio, valueStr))
+		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryWmarkRatio, valueStr))
 	}
-	if v := summary.memoryWmarkScaleFactor; v != nil && system.ValidateCgroupValue(v, parentDir, system.MemWmarkScaleFactor) {
+	if v := summary.memoryWmarkScaleFactor; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryWmarkScaleFactor) {
 		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemWmarkScaleFactor, valueStr))
+		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryWmarkScaleFactor, valueStr))
 	}
-	if v := summary.memoryWmarkMinAdj; v != nil && system.ValidateCgroupValue(v, parentDir, system.MemWmarkMinAdj) {
+	if v := summary.memoryWmarkMinAdj; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryWmarkMinAdj) {
 		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemWmarkMinAdj, valueStr))
+		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryWmarkMinAdj, valueStr))
 	}
 	// TBD: handle memory priority and oom group
-	if v := summary.memoryPriority; v != nil && system.ValidateCgroupValue(v, parentDir, system.MemPriority) {
+	if v := summary.memoryPriority; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryPriority) {
 		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemPriority, valueStr))
+		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryPriority, valueStr))
 	}
-	if v := summary.memoryUsePriorityOom; v != nil && system.ValidateCgroupValue(v, parentDir, system.MemUsePriorityOom) {
+	if v := summary.memoryUsePriorityOom; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryUsePriorityOom) {
 		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemUsePriorityOom, valueStr))
+		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryUsePriorityOom, valueStr))
 	}
-	if v := summary.memoryOomKillGroup; v != nil && system.ValidateCgroupValue(v, parentDir, system.MemOomGroup) {
+	if v := summary.memoryOomKillGroup; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryOomGroup) {
 		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemOomGroup, valueStr))
+		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryOomGroup, valueStr))
 	}
 
 	return resources

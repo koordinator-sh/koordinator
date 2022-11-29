@@ -27,7 +27,7 @@ func TestCgroupFileWriteIfDifferent(t *testing.T) {
 	taskDir := "/"
 	type args struct {
 		cgroupTaskDir string
-		file          CgroupFile
+		resource      Resource
 		value         string
 		currentValue  string
 	}
@@ -40,7 +40,7 @@ func TestCgroupFileWriteIfDifferent(t *testing.T) {
 			name: "currentValue is the same as value",
 			args: args{
 				cgroupTaskDir: taskDir,
-				file:          CPUShares,
+				resource:      CPUShares,
 				value:         "1024",
 				currentValue:  "1024",
 			},
@@ -50,7 +50,7 @@ func TestCgroupFileWriteIfDifferent(t *testing.T) {
 			name: "currentValue is different with value",
 			args: args{
 				cgroupTaskDir: taskDir,
-				file:          CPUShares,
+				resource:      CPUShares,
 				value:         "1024",
 				currentValue:  "512",
 			},
@@ -60,12 +60,12 @@ func TestCgroupFileWriteIfDifferent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := NewFileTestUtil(t)
-			helper.CreateCgroupFile(taskDir, tt.args.file)
+			helper.CreateCgroupFile(taskDir, tt.args.resource)
 
-			err := CgroupFileWrite(taskDir, tt.args.file, tt.args.currentValue)
+			err := CgroupFileWrite(taskDir, tt.args.resource, tt.args.currentValue)
 			assert.NoError(t, err)
 
-			gotErr := CgroupFileWriteIfDifferent(taskDir, tt.args.file, tt.args.currentValue)
+			gotErr := CgroupFileWriteIfDifferent(taskDir, tt.args.resource, tt.args.currentValue)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 
 		})
@@ -77,7 +77,7 @@ func TestCgroupFileReadInt(t *testing.T) {
 	testingInt64 := int64(1024)
 	testingMaxInt64 := int64(math.MaxInt64)
 	type args struct {
-		file  CgroupFile
+		file  Resource
 		value string
 	}
 	tests := []struct {
@@ -107,7 +107,7 @@ func TestCgroupFileReadInt(t *testing.T) {
 		{
 			name: "test_read_value_for_max_str",
 			args: args{
-				file:  MemHigh,
+				file:  MemoryHigh,
 				value: CgroupMaxSymbolStr,
 			},
 			expect:    &testingMaxInt64,

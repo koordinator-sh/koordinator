@@ -32,6 +32,7 @@ func Test_NewDsModeConfig(t *testing.T) {
 		SysFSRootDir:          "/host-sys-fs/",
 		VarRunRootDir:         "/host-var-run/",
 		RuntimeHooksConfigDir: "/host-etc-hookserver/",
+		UseCgroupsV2:          false,
 	}
 	defaultConfig := NewDsModeConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -46,6 +47,7 @@ func Test_NewHostModeConfig(t *testing.T) {
 		SysFSRootDir:          "/sys/fs/",
 		VarRunRootDir:         "/var/run/",
 		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
+		UseCgroupsV2:          false,
 	}
 	defaultConfig := NewHostModeConfig()
 	assert.Equal(t, expectConfig, defaultConfig)

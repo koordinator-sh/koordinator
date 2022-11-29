@@ -39,13 +39,13 @@ func TestIsAnolisOS(t *testing.T) {
 		{
 			name:       "anolis_wmark_ratio_systemd_test",
 			fs:         CgroupMemDir,
-			cgroupFile: filepath.Join(CgroupMemDir, KubeRootNameSystemd, MemWmarkRatioFileName),
+			cgroupFile: filepath.Join(CgroupMemDir, KubeRootNameSystemd, MemoryWmarkRatioName),
 			expect:     true,
 		},
 		{
 			name:       "anolis_wmark_ratio_cgroupfs_test",
 			fs:         CgroupMemDir,
-			cgroupFile: filepath.Join(CgroupMemDir, KubeRootNameCgroupfs, MemWmarkRatioFileName),
+			cgroupFile: filepath.Join(CgroupMemDir, KubeRootNameCgroupfs, MemoryWmarkRatioName),
 			expect:     true,
 		},
 		{

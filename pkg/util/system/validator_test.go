@@ -20,48 +20,45 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"k8s.io/utils/pointer"
 )
 
 func Test_RangeValidate(t *testing.T) {
-
 	type args struct {
 		name      string
-		validator Validate
-		value     *int64
+		validator ResourceValidator
+		value     string
 		expect    bool
 	}
 
 	tests := []args{
 		{
 			name:      "test_validate_nil",
-			validator: &RangeValidator{min: 0, max: 100, name: "wmarkRatio"},
-			value:     nil,
+			validator: &RangeValidator{min: 0, max: 100},
+			value:     "",
 			expect:    false,
 		},
 		{
 			name:      "test_validate_invalid",
-			validator: &RangeValidator{min: 0, max: 100, name: "wmarkRatio"},
-			value:     pointer.Int64Ptr(120),
+			validator: &RangeValidator{min: 0, max: 100},
+			value:     "120",
 			expect:    false,
 		},
 		{
 			name:      "test_validate_valid_min",
-			validator: &RangeValidator{min: 0, max: 100, name: "wmarkRatio"},
-			value:     pointer.Int64Ptr(0),
+			validator: &RangeValidator{min: 0, max: 100},
+			value:     "0",
 			expect:    true,
 		},
 		{
 			name:      "test_validate_valid_max",
-			validator: &RangeValidator{min: 0, max: 100, name: "wmarkRatio"},
-			value:     pointer.Int64Ptr(100),
+			validator: &RangeValidator{min: 0, max: 100},
+			value:     "100",
 			expect:    true,
 		},
 		{
 			name:      "test_validate_valid",
-			validator: &RangeValidator{min: 0, max: 100, name: "wmarkRatio"},
-			value:     pointer.Int64Ptr(20),
+			validator: &RangeValidator{min: 0, max: 100},
+			value:     "20",
 			expect:    true,
 		},
 	}
