@@ -273,6 +273,7 @@ func installProfilingHandler(pathRecorderMux *mux.PathRecorderMux, enableContent
 	debugFlags := utilroutes.NewDebugFlags(pathRecorderMux)
 	debugFlags.Install("v", utilroutes.StringFlagPutHandler(logs.GlogSetter))
 	debugFlags.Install("s", utilroutes.StringFlagPutHandler(frameworkext.DebugScoresSetter))
+	debugFlags.Install("f", utilroutes.StringFlagPutHandler(frameworkext.DebugFiltersSetter))
 }
 
 // newMetricsHandler builds a metrics server from the config.

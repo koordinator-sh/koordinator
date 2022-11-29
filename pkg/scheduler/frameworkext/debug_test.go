@@ -54,6 +54,40 @@ func TestDebugScoresSetter(t *testing.T) {
 	}
 }
 
+func TestDebugFiltersSetter(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+		want    bool
+	}{
+		{
+			name:    "valid bool",
+			value:   "true",
+			wantErr: false,
+			want:    true,
+		},
+		{
+			name:    "invalid",
+			value:   "11.22",
+			wantErr: true,
+			want:    false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := DebugFiltersSetter(tt.value)
+			if tt.wantErr && err == nil {
+				t.Error("expected error but got nil")
+			} else if !tt.wantErr && err != nil {
+				t.Errorf("expected no error but got err: %v", err)
+			}
+			assert.Equal(t, tt.want, debugFilterFailure)
+			debugFilterFailure = false
+		})
+	}
+}
+
 func TestDebugScores(t *testing.T) {
 	pluginToNodeScores := map[string]framework.NodeScoreList{
 		"ImageLocality": {
