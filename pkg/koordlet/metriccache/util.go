@@ -148,3 +148,49 @@ func fieldCountOfMetricList(metricsList interface{}, aggregateParam AggregatePar
 func fieldP90OfMetricList(metricsList interface{}, aggregateParam AggregateParam) (float64, error) {
 	return fieldPercentileOfMetricList(metricsList, aggregateParam, 0.90)
 }
+
+func fieldLastOfMetricListBool(metricsList interface{}, aggregateParam AggregateParam) (bool, error) {
+	lastValue := false
+	lastTime := int64(0)
+
+	inputType := reflect.TypeOf(metricsList).Kind()
+	if inputType != reflect.Slice && inputType != reflect.Array {
+		return false, fmt.Errorf("metrics input type must be slice or array, %v is illegal", inputType.String())
+	}
+
+	metrics := reflect.ValueOf(metricsList)
+	if metrics.Len() == 0 {
+		return false, fmt.Errorf("metric input is empty")
+	}
+
+	for i := 0; i < metrics.Len(); i++ {
+		metricStruct := metrics.Index(i)
+		fieldValue := metricStruct.FieldByName(aggregateParam.ValueFieldName)
+		if !fieldValue.IsValid() {
+			return false, fmt.Errorf("fieldValue not Valid, metricStruct: %v ", metricStruct)
+		}
+		fieldType := fieldValue.Type().Kind()
+		if fieldType != reflect.Bool {
+			return false, fmt.Errorf("field type must be float32 or float64, %v is illegal", fieldType.String())
+		}
+
+		fieldTimeValue := metricStruct.FieldByName(aggregateParam.TimeFieldName)
+		if !fieldTimeValue.IsValid() {
+			return false, fmt.Errorf("fieldTimeValue not Valid, metricStruct: %v ", metricStruct)
+		}
+
+		if !fieldTimeValue.CanInterface() {
+			return false, fmt.Errorf("fieldTimeValue can not Interface, metricStruct: %v ", metricStruct)
+		}
+
+		timestamp, ok := fieldTimeValue.Interface().(time.Time)
+		if !ok {
+			return false, fmt.Errorf("timestamp field type must be *time.Time, and value must not be nil. %v is illegal! ", fieldTimeValue)
+		}
+		if timestamp.UnixNano() > lastTime {
+			lastTime = timestamp.UnixNano()
+			lastValue = fieldValue.Bool()
+		}
+	}
+	return lastValue, nil
+}

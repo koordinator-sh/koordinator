@@ -246,3 +246,121 @@ func Test_fieldLastOfMetricList(t *testing.T) {
 		})
 	}
 }
+
+func Test_fieldLastOfMetricListBool(t *testing.T) {
+	type args struct {
+		metricsList interface{}
+		param       AggregateParam
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    bool
+		wantErr bool
+	}{
+		{
+			name: "do not panic for invalide metrics",
+			args: args{
+				metricsList: 1,
+				param:       AggregateParam{ValueFieldName: "v", TimeFieldName: "T"},
+			},
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name: "do not panic for invalid ValueFieldName",
+			args: args{
+				metricsList: []struct {
+					v bool
+					T time.Time
+				}{
+					{v: true, T: time.Now().Add(-5 * time.Second)},
+					{v: false, T: time.Now()},
+				},
+				param: AggregateParam{TimeFieldName: "T"},
+			},
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name: "do not panic for invalid TimeFieldName",
+			args: args{
+				metricsList: []struct {
+					v bool
+					t time.Time
+				}{
+					{v: true, t: time.Now().Add(-5 * time.Second)},
+					{v: false, t: time.Now()},
+				},
+				param: AggregateParam{ValueFieldName: "v"},
+			},
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name: "trow error for illegal time",
+			args: args{
+				metricsList: []struct {
+					v bool
+					t time.Time
+				}{
+					{v: true, t: time.Now().Add(-5 * time.Second)},
+					{v: true, t: time.Now().Add(-3 * time.Second)},
+					{v: true, t: time.Now()},
+				},
+				param: AggregateParam{ValueFieldName: "v", TimeFieldName: "t"},
+			},
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name: "trow error for illegal list length",
+			args: args{
+				metricsList: []struct {
+					v bool
+					T time.Time
+				}{},
+				param: AggregateParam{ValueFieldName: "v", TimeFieldName: "T"},
+			},
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name: "calculate single-element list",
+			args: args{
+				metricsList: []struct {
+					v bool
+					T time.Time
+				}{
+					{v: true, T: time.Now()},
+				},
+				param: AggregateParam{ValueFieldName: "v", TimeFieldName: "T"},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "calculate multi-element list",
+			args: args{
+				metricsList: []struct {
+					v bool
+					T time.Time
+				}{
+					{v: false, T: time.Now().Add(-5 * time.Second)},
+					{v: false, T: time.Now().Add(-3 * time.Second)},
+					{v: true, T: time.Now()},
+				},
+				param: AggregateParam{ValueFieldName: "v", TimeFieldName: "T"},
+			},
+			want:    true,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := fieldLastOfMetricListBool(tt.args.metricsList, tt.args.param)
+			assert.Equal(t, true, tt.wantErr == (err != nil))
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

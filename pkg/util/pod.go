@@ -128,6 +128,15 @@ func GetPodCgroupCPUStatPath(podParentDir string) string {
 	return system.GetCgroupFilePath(podPath, system.CPUStat)
 }
 
+func GetPodCgroupCPUAcctPSIPath(podParentDir string) PSIPath {
+	podPath := GetPodCgroupDirWithKube(podParentDir)
+	return PSIPath{
+		CPU: system.GetCgroupFilePath(podPath, system.CpuacctCPUPressure),
+		Mem: system.GetCgroupFilePath(podPath, system.CpuacctMemPressure),
+		IO:  system.GetCgroupFilePath(podPath, system.CpuacctIOPressure),
+	}
+}
+
 func GetKubeQoSByCgroupParent(cgroupDir string) corev1.PodQOSClass {
 	if strings.Contains(cgroupDir, "besteffort") {
 		return corev1.PodQOSBestEffort

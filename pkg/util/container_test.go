@@ -602,6 +602,47 @@ func Test_GetContainerCgroupXXXPath(t *testing.T) {
 	}
 }
 
+func Test_GetContainerPSIPath(t *testing.T) {
+	system.SetupCgroupPathFormatter(system.Systemd)
+	defer system.SetupCgroupPathFormatter(system.Systemd)
+	type args struct {
+		name            string
+		fn              func(podParentDir string, c *corev1.ContainerStatus) (PSIPath, error)
+		containerStatus *corev1.ContainerStatus
+		podParentDir    string
+		expectPath      PSIPath
+		expectErr       bool
+	}
+
+	tests := []args{
+		{
+			name:         "test_psi_path",
+			fn:           GetContainerCgroupCPUAcctPSIPath,
+			podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+			containerStatus: &corev1.ContainerStatus{
+				ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+			},
+			expectPath: PSIPath{
+				CPU: "/host-cgroup/cpuacct/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cpu.pressure",
+				Mem: "/host-cgroup/cpuacct/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/memory.pressure",
+				IO:  "/host-cgroup/cpuacct/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/io.pressure",
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		system.Conf = system.NewDsModeConfig()
+		t.Run(tt.name, func(t *testing.T) {
+			gotPath, gotErr := tt.fn(tt.podParentDir, tt.containerStatus)
+			assert.Equal(t, tt.expectPath.CPU, gotPath.CPU, "checkPathCPU")
+			assert.Equal(t, tt.expectPath.Mem, gotPath.Mem, "checkPathMem")
+			assert.Equal(t, tt.expectPath.IO, gotPath.IO, "checkPathIO")
+			assert.Equal(t, tt.expectErr, gotErr == nil, "checkError")
+		})
+	}
+}
+
 func Test_GetContainerXXXValue(t *testing.T) {
 	type args struct {
 		name        string

@@ -269,6 +269,30 @@ func Test_GetPodCgroupStatPath(t *testing.T) {
 				return GetPodCgroupCPUStatPath(p)
 			},
 		},
+		{
+			name:         "cpupressure",
+			relativePath: "pod1",
+			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/cpu.pressure",
+			fn: func(p string) string {
+				return GetPodCgroupCPUAcctPSIPath(p).CPU
+			},
+		},
+		{
+			name:         "mempressure",
+			relativePath: "pod1",
+			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/memory.pressure",
+			fn: func(p string) string {
+				return GetPodCgroupCPUAcctPSIPath(p).Mem
+			},
+		},
+		{
+			name:         "iopressure",
+			relativePath: "pod1",
+			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/io.pressure",
+			fn: func(p string) string {
+				return GetPodCgroupCPUAcctPSIPath(p).IO
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

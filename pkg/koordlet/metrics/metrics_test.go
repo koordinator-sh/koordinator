@@ -25,6 +25,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 func TestGenNodeLabels(t *testing.T) {
@@ -61,6 +64,64 @@ func TestCommonCollectors(t *testing.T) {
 	}
 	testingErr := fmt.Errorf("test error")
 	testingNow := time.Now()
+	testingContainer := &corev1.ContainerStatus{
+		ContainerID: "containerd://1",
+		Name:        "test_container",
+	}
+	testingPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test_pod",
+			Namespace: "test_pod_namespace",
+			UID:       "test01",
+		},
+	}
+	testingPSI := &util.PSIByResource{
+		CPU: system.PSIStats{
+			Some: &system.PSILine{
+				Avg10:  1,
+				Avg60:  1,
+				Avg300: 1,
+				Total:  1,
+			},
+			Full: &system.PSILine{
+				Avg10:  1,
+				Avg60:  1,
+				Avg300: 1,
+				Total:  1,
+			},
+			FullSupported: true,
+		},
+		Mem: system.PSIStats{
+			Some: &system.PSILine{
+				Avg10:  1,
+				Avg60:  1,
+				Avg300: 1,
+				Total:  1,
+			},
+			Full: &system.PSILine{
+				Avg10:  1,
+				Avg60:  1,
+				Avg300: 1,
+				Total:  1,
+			},
+			FullSupported: true,
+		},
+		IO: system.PSIStats{
+			Some: &system.PSILine{
+				Avg10:  1,
+				Avg60:  1,
+				Avg300: 1,
+				Total:  1,
+			},
+			Full: &system.PSILine{
+				Avg10:  1,
+				Avg60:  1,
+				Avg300: 1,
+				Total:  1,
+			},
+			FullSupported: true,
+		},
+	}
 
 	t.Run("test not panic", func(t *testing.T) {
 		Register(testingNode)
@@ -71,5 +132,11 @@ func TestCommonCollectors(t *testing.T) {
 		RecordCollectNodeCPUInfoStatus(nil)
 		RecordBESuppressCores("cfsQuota", float64(1000))
 		RecordPodEviction("evictByCPU")
+		ResetContainerCPI()
+		RecordContainerCPI(testingContainer, testingPod, 1, 1)
+		ResetContainerPSI()
+		RecordContainerPSI(testingContainer, testingPod, testingPSI)
+		ResetPodPSI()
+		RecordPodPSI(testingPod, testingPSI)
 	})
 }
