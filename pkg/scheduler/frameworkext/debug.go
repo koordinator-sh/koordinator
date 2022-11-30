@@ -29,11 +29,13 @@ import (
 )
 
 var (
-	debugTopNScores = 0
+	debugTopNScores    = 0
+	debugFilterFailure = false
 )
 
 func AddFlags(fs *pflag.FlagSet) {
 	fs.IntVarP(&debugTopNScores, "debug-scores", "s", debugTopNScores, "logging topN nodes score and scores for each plugin after running the score extension, disable if set to 0")
+	fs.BoolVarP(&debugFilterFailure, "debug-filters", "f", debugFilterFailure, "logging filter failures")
 }
 
 // DebugScoresSetter updates debugTopNScores to specified value
@@ -44,6 +46,16 @@ func DebugScoresSetter(val string) (string, error) {
 	}
 	debugTopNScores = topN
 	return fmt.Sprintf("successfully set debugTopNScores to %s", val), nil
+}
+
+// DebugFiltersSetter updates debugFilterFailure to specified value
+func DebugFiltersSetter(val string) (string, error) {
+	filterFailure, err := strconv.ParseBool(val)
+	if err != nil {
+		return "", fmt.Errorf("failed set debugFilterFailure %s: %v", val, err)
+	}
+	debugFilterFailure = filterFailure
+	return fmt.Sprintf("successfully set debugFilterFailure to %s", val), nil
 }
 
 func debugScores(topN int, pod *corev1.Pod, pluginToNodeScores map[string]framework.NodeScoreList, nodes []*corev1.Node) prettytable.Writer {
