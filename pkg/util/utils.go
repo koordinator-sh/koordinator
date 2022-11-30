@@ -48,8 +48,11 @@ func MergeCfg(old, new interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("invalid input, should not be empty")
 	}
 
-	if reflect.TypeOf(old) != reflect.TypeOf(new) || reflect.TypeOf(old).Kind() != reflect.Ptr {
-		return nil, fmt.Errorf("invalud input, should be the same type")
+	if reflect.TypeOf(old).Kind() != reflect.Ptr || reflect.TypeOf(new).Kind() != reflect.Ptr {
+		return nil, fmt.Errorf("invalid input, all types must be pointers to structs")
+	}
+	if reflect.TypeOf(old) != reflect.TypeOf(new) {
+		return nil, fmt.Errorf("invalid input, should be the same type")
 	}
 
 	if data, err := json.Marshal(new); err != nil {
