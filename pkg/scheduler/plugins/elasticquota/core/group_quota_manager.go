@@ -539,7 +539,7 @@ func (gqm *GroupQuotaManager) updatePodCacheNoLock(quotaName string, pod *v1.Pod
 	if isAdd {
 		quotaInfo.addPodIfNotPresent(pod)
 	} else {
-		quotaInfo.removePodIfPresent(pod.Name)
+		quotaInfo.removePodIfPresent(pod)
 	}
 }
 
@@ -552,7 +552,7 @@ func (gqm *GroupQuotaManager) UpdatePodIsAssigned(quotaName string, pod *v1.Pod,
 
 func (gqm *GroupQuotaManager) updatePodIsAssignedNoLock(quotaName string, pod *v1.Pod, isAssigned bool) error {
 	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
-	return quotaInfo.UpdatePodIsAssigned(pod.Name, isAssigned)
+	return quotaInfo.UpdatePodIsAssigned(pod, isAssigned)
 }
 
 func (gqm *GroupQuotaManager) getPodIsAssignedNoLock(quotaName string, pod *v1.Pod) bool {

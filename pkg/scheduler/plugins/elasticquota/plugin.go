@@ -191,7 +191,7 @@ func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToS
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	quotaInfo := postFilterState.quotaInfo
-	if err = quotaInfo.UpdatePodIsAssigned(podInfoToAdd.Pod.Name, true); err != nil {
+	if err = quotaInfo.UpdatePodIsAssigned(podInfoToAdd.Pod, true); err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	podReq, _ := resource.PodRequestsAndLimits(podInfoToAdd.Pod)
@@ -209,7 +209,7 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	quotaInfo := postFilterState.quotaInfo
-	if err = quotaInfo.UpdatePodIsAssigned(podInfoToRemove.Pod.Name, false); err != nil {
+	if err = quotaInfo.UpdatePodIsAssigned(podInfoToRemove.Pod, false); err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	podReq, _ := resource.PodRequestsAndLimits(podInfoToRemove.Pod)

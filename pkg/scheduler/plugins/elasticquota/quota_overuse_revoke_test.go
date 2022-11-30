@@ -130,7 +130,7 @@ func TestQuotaOverUsedRevokeController_GetToRevokePodList(t *testing.T) {
 	if len(result) != 4 {
 		t.Errorf("error:%v", len(result))
 	}
-	err := quotaInfo.UpdatePodIsAssigned("4", false)
+	err := quotaInfo.UpdatePodIsAssigned(pod4, false)
 	pod4.Status.Phase = corev1.PodPending
 	assert.Nil(t, err)
 	result = con.monitors["test1"].getToRevokePodList("test1")
