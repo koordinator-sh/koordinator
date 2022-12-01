@@ -23,6 +23,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -35,7 +36,7 @@ import (
 const (
 	beCPUSatisfactionLowPercentMax   = 60
 	beCPUSatisfactionUpperPercentMax = 100
-	beCPUUsageHighEnough             = 0.9
+	beCPUUsageThresholdPercent       = 90
 )
 
 type CPUEvictor struct {
@@ -103,7 +104,7 @@ func (c *CPUEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 		return nil, 0
 	}
 
-	if !isBECPUUsageHighEnough(avgBECPUQueryResult.Metric) {
+	if !isBECPUUsageHighEnough(avgBECPUQueryResult.Metric, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,avg cpuUsage not Enough! metric: %+v", avgBECPUQueryResult.Metric)
 		return nil, 0
 	}
@@ -120,7 +121,7 @@ func (c *CPUEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 		return nil, 0
 	}
 
-	if !isBECPUUsageHighEnough(currentBECPUQueryResult.Metric) {
+	if !isBECPUUsageHighEnough(currentBECPUQueryResult.Metric, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,current cpuUsage not Enough! metric: %+v", currentBECPUQueryResult.Metric)
 		return nil, 0
 	}
@@ -237,7 +238,7 @@ func calculateResourceMilliToRelease(metric *metriccache.BECPUResourceMetric, th
 	return int64(milliRelease)
 }
 
-func isBECPUUsageHighEnough(metric *metriccache.BECPUResourceMetric) bool {
+func isBECPUUsageHighEnough(metric *metriccache.BECPUResourceMetric, thresholdPercent *int64) bool {
 	if metric.CPURealLimit.IsZero() {
 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! CPURealLimit is zero!")
 		return false
@@ -246,8 +247,11 @@ func isBECPUUsageHighEnough(metric *metriccache.BECPUResourceMetric) bool {
 		return true
 	}
 	cpuUsage := float64(metric.CPUUsed.MilliValue()) / float64(metric.CPURealLimit.MilliValue())
-	if cpuUsage < beCPUUsageHighEnough {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! cpuUsage(%.2f) < 0.9!", cpuUsage)
+	if thresholdPercent == nil {
+		thresholdPercent = pointer.Int64(beCPUUsageThresholdPercent)
+	}
+	if cpuUsage < float64(*thresholdPercent)/100 {
+		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! cpuUsage(%.2f) and thresholdPercent %d!", cpuUsage, *thresholdPercent)
 		return false
 	}
 	return true

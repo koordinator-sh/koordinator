@@ -795,14 +795,20 @@ spec:
                 description: BE pods will be limited if node resource usage overload
                 properties:
                   cpuEvictBESatisfactionLowerPercent:
-                    description: if be CPU (RealLimit/allocatedLimit < CPUEvictBESatisfactionLowerPercent
-                      and usage nearly 100%) continue CPUEvictTimeWindowSeconds,then
-                      start evict
+                    description: if be CPU (RealLimit/allocatedLimit < CPUEvictBESatisfactionLowerPercent/100
+                      and usage >= CPUEvictBEUsageThresholdPercent/100) continue CPUEvictTimeWindowSeconds,
+                      then start evict
                     format: int64
                     type: integer
                   cpuEvictBESatisfactionUpperPercent:
-                    description: if be CPU RealLimit/allocatedLimit > CPUEvictBESatisfactionUpperPercent,
+                    description: if be CPU RealLimit/allocatedLimit > CPUEvictBESatisfactionUpperPercent/100,
                       then stop evict BE pods
+                    format: int64
+                    type: integer
+                  cpuEvictBEUsageThresholdPercent:
+                    description: if be CPU (RealLimit/allocatedLimit < CPUEvictBESatisfactionLowerPercent/100
+                      and usage >= CPUEvictBEUsageThresholdPercent/100) continue CPUEvictTimeWindowSeconds,
+                      then start evict
                     format: int64
                     type: integer
                   cpuEvictTimeWindowSeconds:
