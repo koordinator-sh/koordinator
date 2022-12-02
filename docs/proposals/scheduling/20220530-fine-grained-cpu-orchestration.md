@@ -11,7 +11,7 @@ reviewers:
 - "@stormgbs"
 - "@zwzhang0107"
 creation-date: 2022-05-30
-last-updated: 2022-08-02
+last-updated: 2022-12-02
 status: provisional
 
 ---
@@ -34,9 +34,9 @@ status: provisional
             - [Story 6](#story-6)
     - [Design Details](#design-details)
         - [Basic CPU orchestration principles](#basic-cpu-orchestration-principles)
-            - [Koordinator QoS CPU orchestration principles](#koordinator-qos-cpu-orchestration-principles)
-            - [Compatible kubelet CPU management policies](#compatible-kubelet-cpu-management-policies)
-            - [Take over kubelet CPU management policies](#take-over-kubelet-cpu-management-policies)
+        - [Koordinator QoS CPU orchestration principles](#koordinator-qos-cpu-orchestration-principles)
+        - [Compatible kubelet CPU management policies](#compatible-kubelet-cpu-management-policies)
+        - [Take over kubelet CPU management policies](#take-over-kubelet-cpu-management-policies)
         - [CPU orchestration API](#cpu-orchestration-api)
             - [Application CPU CPU orchestration API](#application-cpu-cpu-orchestration-api)
                 - [Resource spec](#resource-spec)
@@ -135,27 +135,29 @@ As the application scaling or rolling deployment, the best-fit allocatable space
 1. Koordinator divides the CPU on the machine into `CPU Shared Pool`, `statically exclusive CPUs` and `BE CPU Shared Pool`. 
     1. The `CPU Shared Pool` is the set of CPUs on which any containers in `K8s Burstable` and `Koordinator LS` Pods run. Containers in `K8s Guaranteed` pods with `fractional CPU requests` also run on CPUs in the shared pool. The shared pool contains all unallocated CPUs in the node but excluding CPUs allocated by K8s Guaranteed, LSE and LSR Pods. If kubelet reserved CPUs, the shared pool includes the reserved CPUs. 
     1. The `statically exclusive CPUs` are the set of CPUs on which any containers in `K8s Guaranteed`, `Koordinator LSE` and `LSR` Pods that have integer CPU run. When K8s Guaranteed, LSE and LSR Pods request CPU, koord-scheduler will be allocated from the `CPU Shared Pool`.
-    1. The `BE CPU Shared pool` is the set of CPUs on which any containers in `K8s BestEffort` and `Koordinator BE` Pods run. The `BE CPU Shared Pool` contains all CPUs in the node but excluding CPUs allocated by K8s Guaranteed and Koordinator Pods.
+    1. The `BE CPU Shared pool` is the set of CPUs on which any containers in `K8s BestEffort` and `Koordinator BE` Pods run. The `BE CPU Shared Pool` contains all CPUs in the node but excluding CPUs allocated by `K8s Guaranteed` and `Koordinator LSE` Pods.
 
-#### Koordinator QoS CPU orchestration principles
+### Koordinator QoS CPU orchestration principles
 
-1. The Request and Limit of LSE/LSR Pods **MUST BE** equal and the CPU value **MUST BE** an integer multiple of 1000.
-1. The CPUs allocated by the LSE Pod are completely **exclusive** and **MUST NOT BE** shared. If the node is hyper-threading architecture, only the logical core dimension is guaranteed to be isolated, but better isolation can be obtained through the `CPUBindPolicyFullPCPUs` policy.
+1. The Request and Limit of LSE/LSR Pods **MUST** be equal and the CPU value **MUST** be an integer multiple of 1000.
+1. The CPUs allocated by the LSE Pod are completely **exclusive** and **MUST NOT** be shared. If the node is hyper-threading architecture, only the logical core dimension is guaranteed to be isolated, but better isolation can be obtained through the `CPUBindPolicyFullPCPUs` policy.
 1. The CPUs allocated by the LSR Pod only can be shared with BE Pods.
-1. LS Pods bind the CPU shared pool that is **exclusive** with LSE/LSR Pods.
-1. BE Pods bind all CPUs in the node **exclusive** with LSE Pods.
+1. LS Pods bind the CPU shared pool, **excluding** CPUs allocated by LSE/LSR Pods.
+1. BE Pods bind all CPUs in the node, **excluding** CPUs allocated by LSE Pods.
 1. The K8s Guaranteed Pods already running is equivalent to Koordinator LSR if kubelet enables the CPU manager `static` policy.
 1. The K8s Guaranteed Pods already running is equivalent to Koordinator LS if kubelet enables the CPU manager `none` policy.
 1. Newly created K8s Guaranteed Pod without Koordinator QoS specified will be treated as LS.
 
-#### Compatible kubelet CPU management policies
+![image](/docs/images/qos-cpu-orchestration.png)
+
+### Compatible kubelet CPU management policies
 
 1. If kubelet set the CPU manager policy options `full-pcpus-only=true` / `distribute-cpus-across-numa=true`, and there is no new CPU bind policy defined by Koordinator in the node, follow the semantics of these parameters defined by the kubelet.
 1. If kubelet set the Topology manager policy, and there is no new NUMA Topology Alignment policy defined by Koordinator in the node, follow the semantics of these parameters defined by the kubelet. 
 
-#### Take over kubelet CPU management policies
+### Take over kubelet CPU management policies
 
-Because the CPU reserved by kubelet mainly serves K8s BestEffort and Burstable Pods. But Koordinator will not follow the policy. The K8s Burstable Pods should use the CPU Shared Pool, and the K8s BestEffort Pods should use the `BE CPU Shared Pool`. The Koordinator LSE and LSR Pods can allocate from the CPU reserved by the kubelet.
+Because the CPU reserved by kubelet mainly serves K8s BestEffort and Burstable Pods. But Koordinator will not follow the policy. The K8s Burstable Pods should use the CPU Shared Pool, and the K8s BestEffort Pods should use the `BE CPU Shared Pool`.
 
 1. For K8s Burstable and Koordinator LS Pods:
     1. When the koordlet starts, calculates the `CPU Shared Pool` and applies the shared pool to all Burstable and LS Pods in the node, that is, updating their cgroups to set cpuset. The same logic is executed when LSE/LSR Pods are creating or destroying. 
@@ -704,3 +706,4 @@ type ScoringStrategy struct {
 - 2022-07-11: Adjust CPUBindPolicyNone to CPUBindPolicyDefault
 - 2022-08-02: Update PodCPUAllocs definition
 - 2022-09-08: Add ReservedCPUs in KubeletCPUManagerPolicy
+- 2022-12-02: Clarify the mistakes in the original text and add QoS CPU orchestration picture
