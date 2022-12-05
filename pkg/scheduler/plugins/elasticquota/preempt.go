@@ -37,6 +37,8 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
 	"k8s.io/kubernetes/pkg/scheduler/util"
+
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 func (g *Plugin) preempt(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (string, *framework.Status) {
@@ -86,8 +88,12 @@ func (g *Plugin) preempt(ctx context.Context, state *framework.CycleState, pod *
 	return bestCandidate.Name(), nil
 }
 
-func (g *Plugin) findCandidates(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (
-	[]defaultpreemption.Candidate, *framework.Status) {
+func (g *Plugin) findCandidates(
+	ctx context.Context,
+	state *framework.CycleState,
+	pod *corev1.Pod,
+	filteredNodeStatusMap framework.NodeToStatusMap,
+) ([]defaultpreemption.Candidate, *framework.Status) {
 	allNodes, err := g.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
 		return nil, framework.AsStatus(err)
@@ -270,6 +276,7 @@ func (g *Plugin) selectVictimsOnNode(
 
 	postFilterState, _ := getPostFilterState(state)
 	quotaInfo := postFilterState.quotaInfo
+	pod = core.RunDecoratePod(pod)
 	podReq, _ := resource.PodRequestsAndLimits(pod)
 
 	reprievePod := func(pi *framework.PodInfo) (bool, error) {

@@ -109,6 +109,9 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		groupQuotaManager: core.NewGroupQuotaManager(pluginArgs.SystemQuotaGroupMax, pluginArgs.DefaultQuotaGroupMax),
 		nodeResourceMap:   make(map[string]struct{}),
 	}
+	if err := core.RunDecorateInit(handle); err != nil {
+		return nil, err
+	}
 
 	ctx := context.TODO()
 
@@ -165,6 +168,7 @@ func (g *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod
 	quotaUsed := quotaInfo.GetUsed()
 	quotaRuntime := quotaInfo.GetRuntime()
 
+	pod = core.RunDecoratePod(pod)
 	podRequest, _ := resource.PodRequestsAndLimits(pod)
 	newUsed := quotav1.Add(podRequest, quotaUsed)
 
@@ -194,7 +198,8 @@ func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToS
 	if err = quotaInfo.UpdatePodIsAssigned(podInfoToAdd.Pod, true); err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
 	}
-	podReq, _ := resource.PodRequestsAndLimits(podInfoToAdd.Pod)
+	pod := core.RunDecoratePod(podInfoToAdd.Pod)
+	podReq, _ := resource.PodRequestsAndLimits(pod)
 	quotaInfo.CalculateInfo.Used = quotav1.Add(quotaInfo.CalculateInfo.Used, podReq)
 	return framework.NewStatus(framework.Success, "")
 }
@@ -212,7 +217,8 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 	if err = quotaInfo.UpdatePodIsAssigned(podInfoToRemove.Pod, false); err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
 	}
-	podReq, _ := resource.PodRequestsAndLimits(podInfoToRemove.Pod)
+	pod := core.RunDecoratePod(podInfoToRemove.Pod)
+	podReq, _ := resource.PodRequestsAndLimits(pod)
 	quotaInfo.CalculateInfo.Used = quotav1.SubtractWithNonNegativeResult(quotaInfo.CalculateInfo.Used, podReq)
 	return framework.NewStatus(framework.Success, "")
 }

@@ -41,6 +41,7 @@ func (g *Plugin) OnQuotaAdd(obj interface{}) {
 		return
 	}
 
+	quota = core.RunDecorateElasticQuota(quota)
 	g.groupQuotaManager.UpdateQuota(quota, false)
 	klog.V(5).Infof("OnQuotaAddFunc success: %v.%v", quota.Namespace, quota.Name)
 }
@@ -54,6 +55,7 @@ func (g *Plugin) OnQuotaUpdate(oldObj, newObj interface{}) {
 	}
 	klog.V(5).Infof("OnQuotaUpdateFunc update quota: %v.%v", newQuota.Namespace, newQuota.Name)
 
+	newQuota = core.RunDecorateElasticQuota(newQuota)
 	g.groupQuotaManager.UpdateQuota(newQuota, false)
 	klog.V(5).Infof("OnQuotaUpdateFunc success: %v.%v", newQuota.Namespace, newQuota.Name)
 }
@@ -70,6 +72,7 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 	klog.V(5).Infof("OnQuotaDeleteFunc delete quota:%+v", quota)
 
 	g.migratePods(quota.Name, extension.DefaultQuotaName)
+	quota = core.RunDecorateElasticQuota(quota)
 	if err := g.groupQuotaManager.UpdateQuota(quota, true); err != nil {
 		klog.Errorf("OnQuotaDeleteFunc failed: %v.%v", quota.Namespace, quota.Name)
 	}
