@@ -72,3 +72,7 @@ Koordinator 社区遵照[行为守则](CODE_OF_CONDUCT.md)。我们鼓励每个�
 ## License
 
 Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=koordinator-sh/koordinator&type=Date)](https://star-history.com/#koordinator-sh/koordinator&Date)
