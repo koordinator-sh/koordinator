@@ -75,3 +75,7 @@ Active communication channels:
 ## License
 
 Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=koordinator-sh/koordinator&type=Date)](https://star-history.com/#koordinator-sh/koordinator&Date)
