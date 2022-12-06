@@ -65,7 +65,7 @@ Active communication channels:
   - Tuesday 19:30 GMT+8 (Asia/Shanghai)
   - [Meeting Link(DingTalk)](https://meeting.dingtalk.com/j/cgTTojEI8Zy)
   - [Notes and agenda](https://shimo.im/docs/m4kMLdgO1LIma9qD)
-- [Slack](https://join.slack.com/t/koordinator-sh/shared_invite/zt-1756qoub4-Cn4~esfdlfAPsD7cwO2NzA)
+- Slack(English): [koordinator channel](https://kubernetes.slack.com/channels/koordinator) in Kubernetes workspace
 - DingTalk(Chinese): Search Group ID `33383887` or scan the following QR Code
 
 <div>
