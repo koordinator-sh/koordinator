@@ -24,11 +24,14 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
@@ -110,13 +113,41 @@ func NewPodGroupManager(
 		DeleteFunc: gangCache.onPodGroupDelete,
 	}
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), pgSharedInformerFactory, pgInformer.Informer(), podGroupEventHandler)
+	pgMgr.CleanOrphanGang()
 
 	podEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    gangCache.onPodAdd,
 		DeleteFunc: gangCache.onPodDelete,
 	}
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, podInformer.Informer(), podEventHandler)
+
 	return pgMgr
+}
+
+func (pgMgr *PodGroupManager) CleanOrphanGang() {
+	gangs, err := pgMgr.pgLister.List(labels.Everything())
+	if err != nil {
+		klog.Error(err)
+	}
+
+	for _, pg := range gangs {
+		if pg.Annotations[PodGroupFromPodAnnotation] == "true" {
+			gangId := util.GetId(pg.Namespace, pg.Name)
+			if pgMgr.cache.getGangFromCacheByGangId(gangId, false) == nil {
+				klog.V(1).Infof("didn't find gang %v from pod annotation in scheduler. try to delete it.", gangId)
+				err := retry.OnError(
+					retry.DefaultRetry,
+					errors.IsTooManyRequests,
+					func() error {
+						err := pgMgr.pgClient.SchedulingV1alpha1().PodGroups(pg.Namespace).Delete(context.TODO(), pg.Name, metav1.DeleteOptions{})
+						return err
+					})
+				if err != nil {
+					klog.Errorf("delete podGroup: %v, error: %v", gangId, err)
+				}
+			}
+		}
+	}
 }
 
 func (pgMgr *PodGroupManager) OnPodAdd(obj interface{}) {
