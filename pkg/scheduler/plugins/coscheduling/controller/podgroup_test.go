@@ -271,7 +271,7 @@ func setUp(ctx context.Context, podNames []string, pgName string, podPhase v1.Po
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 
 	pgMgr := core.NewPodGroupManager(pgClient, pgInformerFactory, informerFactory, &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: time.Second}})
-	ctrl := NewPodGroupController(kubeClient, pgInformer, podInformer, pgClient, pgMgr, nil, 1)
+	ctrl := NewPodGroupController(pgInformer, podInformer, pgClient, pgMgr, 1)
 	return ctrl, kubeClient, pgClient
 }
 

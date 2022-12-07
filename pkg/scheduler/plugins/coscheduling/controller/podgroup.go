@@ -33,10 +33,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformer "k8s.io/client-go/informers/core/v1"
-	"k8s.io/client-go/kubernetes"
 	corelister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -55,7 +53,6 @@ const (
 
 // PodGroupController  is used to control that process pod groups using provided Handler interface
 type PodGroupController struct {
-	eventRecorder   events.EventRecorder
 	pgQueue         workqueue.RateLimitingInterface
 	pgLister        schedlister.PodGroupLister
 	podLister       corelister.PodLister
@@ -67,13 +64,14 @@ type PodGroupController struct {
 }
 
 // NewPodGroupController returns a new *PodGroupController
-func NewPodGroupController(client kubernetes.Interface,
+func NewPodGroupController(
 	pgInformer schedinformer.PodGroupInformer,
 	podInformer coreinformer.PodInformer,
-	pgClient schedclientset.Interface, podGroupManager *core.PodGroupManager, recorder events.EventRecorder, workers int) *PodGroupController {
-
+	pgClient schedclientset.Interface,
+	podGroupManager *core.PodGroupManager,
+	workers int,
+) *PodGroupController {
 	ctrl := &PodGroupController{
-		eventRecorder:   recorder,
 		pgManager:       podGroupManager,
 		pgClient:        pgClient,
 		pgLister:        pgInformer.Lister(),
