@@ -98,7 +98,7 @@ func Test_fieldPercentileOfMetricList(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "calculate multi-element list",
+			name: "calculate multi-element list of p90",
 			args: args{
 				metricsList: []struct {
 					v float32
@@ -117,6 +117,28 @@ func Test_fieldPercentileOfMetricList(t *testing.T) {
 				percentile: 0.9,
 			},
 			want:    700,
+			wantErr: false,
+		},
+		{
+			name: "calculate multi-element list of p50",
+			args: args{
+				metricsList: []struct {
+					v float32
+				}{
+					{v: 800},
+					{v: 100},
+					{v: 200},
+					{v: 600},
+					{v: 700},
+					{v: 0},
+					{v: 500},
+					{v: 400},
+					{v: 300},
+				},
+				fieldName:  "v",
+				percentile: 0.5,
+			},
+			want:    300,
 			wantErr: false,
 		},
 	}

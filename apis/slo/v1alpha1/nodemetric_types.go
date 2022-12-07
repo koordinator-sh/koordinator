@@ -35,7 +35,8 @@ const (
 )
 
 type NodeMetricInfo struct {
-	NodeUsage            ResourceMap       `json:"nodeUsage,omitempty"`
+	NodeUsage ResourceMap `json:"nodeUsage,omitempty"`
+	// AggregatedNodeUsages will report only if there are enough samples
 	AggregatedNodeUsages []AggregatedUsage `json:"aggregatedNodeUsages,omitempty"`
 }
 
@@ -62,6 +63,12 @@ type NodeMetricCollectPolicy struct {
 	AggregateDurationSeconds *int64 `json:"aggregateDurationSeconds,omitempty"`
 	// ReportIntervalSeconds represents the report period in seconds
 	ReportIntervalSeconds *int64 `json:"reportIntervalSeconds,omitempty"`
+	// NodeAggregatePolicy represents the target grain of node aggregated usage
+	NodeAggregatePolicy *AggregatePolicy `json:"nodeAggregatePolicy,omitempty"`
+}
+
+type AggregatePolicy struct {
+	Durations []metav1.Duration `json:"durations,omitempty"`
 }
 
 // NodeMetricStatus defines the observed state of NodeMetric

@@ -39,6 +39,9 @@ func TestNewDefaultConfig(t *testing.T) {
 				InsecureKubeletTLS:          false,
 				KubeletReadOnlyPort:         10255,
 				NodeTopologySyncInterval:    3 * time.Second,
+				DisableQueryKubeletConfig:   false,
+				EnableNodeMetricReport:      true,
+				MetricReportInterval:        0,
 			},
 		},
 	}
@@ -60,6 +63,8 @@ func TestConfig_InitFlags(t *testing.T) {
 		"--kubelet-insecure-tls=true",
 		"--kubelet-read-only-port=10258",
 		"--node-topology-sync-interval=10s",
+		"--disable-query-kubelet-config=true",
+		"--enable-node-metric-report=false",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -70,6 +75,8 @@ func TestConfig_InitFlags(t *testing.T) {
 		InsecureKubeletTLS          bool
 		KubeletReadOnlyPort         uint
 		NodeTopologySyncInterval    time.Duration
+		DisableQueryKubeletConfig   bool
+		EnableNodeMetricReport      bool
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -88,6 +95,8 @@ func TestConfig_InitFlags(t *testing.T) {
 				InsecureKubeletTLS:          true,
 				KubeletReadOnlyPort:         10258,
 				NodeTopologySyncInterval:    10 * time.Second,
+				DisableQueryKubeletConfig:   true,
+				EnableNodeMetricReport:      false,
 			},
 			args: args{fs: fs},
 		},
@@ -102,12 +111,14 @@ func TestConfig_InitFlags(t *testing.T) {
 				InsecureKubeletTLS:          tt.fields.InsecureKubeletTLS,
 				KubeletReadOnlyPort:         tt.fields.KubeletReadOnlyPort,
 				NodeTopologySyncInterval:    tt.fields.NodeTopologySyncInterval,
+				DisableQueryKubeletConfig:   true,
+				EnableNodeMetricReport:      false,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)
 			tt.args.fs.Parse(cmdArgs[1:])
 			if !reflect.DeepEqual(raw, c) {
-				t.Fatalf("InitFlags got: %+v, want: %+v", c, raw)
+				t.Fatalf("InitFlags got: \n%+v, \nwant: \n%+v", c, raw)
 			}
 		})
 	}

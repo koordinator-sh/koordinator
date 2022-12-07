@@ -39,7 +39,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -62,7 +61,6 @@ type daemon struct {
 	collector      metricsadvisor.Collector
 	statesInformer statesinformer.StatesInformer
 	metricCache    metriccache.MetricCache
-	reporter       reporter.Reporter
 	resManager     resmanager.ResManager
 	qosManager     qosmanager.QoSManager
 	runtimeHook    runtimehooks.RuntimeHook
@@ -123,7 +121,6 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	klog.Infof("Node %s use '%s' as cgroup driver", nodeName, string(detectCgroupDriver))
 
 	collectorService := metricsadvisor.NewCollector(config.CollectorConf, statesInformer, metricCache)
-	reporterService := reporter.NewReporter(config.ReporterConf, kubeClient, crdClient, nodeName, metricCache, statesInformer)
 
 	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(config.CollectorConf.CollectResUsedIntervalSeconds))
 
@@ -138,7 +135,6 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		collector:      collectorService,
 		statesInformer: statesInformer,
 		metricCache:    metricCache,
-		reporter:       reporterService,
 		resManager:     resManagerService,
 		qosManager:     qosManager,
 		runtimeHook:    runtimeHook,
@@ -184,14 +180,6 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 		klog.Error("time out waiting for collector to sync")
 		os.Exit(1)
 	}
-
-	// start reporter
-	go func() {
-		if err := d.reporter.Run(stopCh); err != nil {
-			klog.Error("Unable to run the reporter: ", err)
-			os.Exit(1)
-		}
-	}()
 
 	// start resmanager
 	go func() {

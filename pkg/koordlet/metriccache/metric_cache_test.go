@@ -30,6 +30,9 @@ import (
 
 func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 	now := time.Now()
+	firstTime := now.Add(-time.Second * 120)
+	midTime := now.Add(-time.Second * 10)
+	lastTime := now.Add(-time.Second * 5)
 	type args struct {
 		config  *Config
 		samples map[time.Time]NodeResourceMetric
@@ -49,7 +52,7 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 					MetricExpireSeconds:     60,
 				},
 				samples: map[time.Time]NodeResourceMetric{
-					now.Add(-time.Second * 120): {
+					firstTime: {
 						CPUUsed: CPUMetric{
 							CPUUsed: *resource.NewQuantity(2, resource.DecimalSI),
 						},
@@ -73,7 +76,7 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 							},
 						},
 					},
-					now.Add(-time.Second * 10): {
+					midTime: {
 						CPUUsed: CPUMetric{
 							CPUUsed: *resource.NewQuantity(2, resource.DecimalSI),
 						},
@@ -97,7 +100,7 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 							},
 						},
 					},
-					now.Add(-time.Second * 5): {
+					lastTime: {
 						CPUUsed: CPUMetric{
 							CPUUsed: *resource.NewMilliQuantity(500, resource.DecimalSI),
 						},
@@ -148,7 +151,11 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 						},
 					},
 				},
-				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 3}},
+				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{
+					MetricStart:  &firstTime,
+					MetricEnd:    &lastTime,
+					MetricsCount: 3,
+				}},
 			},
 			wantAfterDelete: NodeResourceQueryResult{
 				Metric: &NodeResourceMetric{
@@ -175,7 +182,11 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 						},
 					},
 				},
-				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{MetricsCount: 2}},
+				QueryResult: QueryResult{AggregateInfo: &AggregateInfo{
+					MetricStart:  &midTime,
+					MetricEnd:    &lastTime,
+					MetricsCount: 2,
+				}},
 			},
 		},
 	}
@@ -205,10 +216,10 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 				t.Errorf("get node metric failed %v", got.Error)
 			}
 
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetNodeResourceMetric() got = %v, want %v", got, tt.want)
-			}
-
+			assert.Equal(t, tt.want.Metric, got.Metric, "GetNodeResourceMetric() Metric")
+			assert.True(t, tt.want.AggregateInfo.MetricStart.Equal(*got.QueryResult.AggregateInfo.MetricStart), "GetNodeResourceMetric() StartTime")
+			assert.True(t, tt.want.AggregateInfo.MetricEnd.Equal(*got.QueryResult.AggregateInfo.MetricEnd), "GetNodeResourceMetric() EndTime")
+			assert.Equal(t, tt.want.AggregateInfo.MetricsCount, got.QueryResult.AggregateInfo.MetricsCount, "GetNodeResourceMetric() Count")
 			// delete expire items
 			m.recycleDB()
 
@@ -216,9 +227,10 @@ func Test_metricCache_NodeResourceMetric_CRUD(t *testing.T) {
 			if gotAfterDel.Error != nil {
 				t.Errorf("get node metric failed %v", gotAfterDel.Error)
 			}
-			if !reflect.DeepEqual(gotAfterDel, tt.wantAfterDelete) {
-				t.Errorf("GetNodeResourceMetric() after delete, got = %+v, want %+v", gotAfterDel, tt.wantAfterDelete)
-			}
+			assert.Equal(t, tt.wantAfterDelete.Metric, gotAfterDel.Metric, "GetNodeResourceMetric() Metric after delete")
+			assert.True(t, tt.wantAfterDelete.AggregateInfo.MetricStart.Equal(*gotAfterDel.QueryResult.AggregateInfo.MetricStart), "GetNodeResourceMetric() StartTime")
+			assert.True(t, tt.wantAfterDelete.AggregateInfo.MetricEnd.Equal(*gotAfterDel.QueryResult.AggregateInfo.MetricEnd), "GetNodeResourceMetric() EndTime")
+			assert.Equal(t, tt.wantAfterDelete.AggregateInfo.MetricsCount, gotAfterDel.QueryResult.AggregateInfo.MetricsCount, "GetNodeResourceMetric() Count")
 		})
 	}
 }

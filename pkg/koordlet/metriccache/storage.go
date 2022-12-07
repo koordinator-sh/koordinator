@@ -110,7 +110,7 @@ func (s *storage) InsertPodPSIMetric(m *podPSIMetric) error {
 
 func (s *storage) GetNodeResourceMetric(start, end *time.Time) ([]nodeResourceMetric, error) {
 	var nodeMetrics []nodeResourceMetric
-	err := s.db.Where("timestamp BETWEEN ? AND ?", start, end).Find(&nodeMetrics).Error
+	err := s.db.Where("timestamp BETWEEN ? AND ? order by timestamp", start, end).Find(&nodeMetrics).Error
 	return nodeMetrics, err
 }
 

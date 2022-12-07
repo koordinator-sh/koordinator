@@ -31,6 +31,8 @@ type Config struct {
 	KubeletReadOnlyPort         uint
 	NodeTopologySyncInterval    time.Duration
 	DisableQueryKubeletConfig   bool
+	EnableNodeMetricReport      bool
+	MetricReportInterval        time.Duration // Deprecated
 }
 
 func NewDefaultConfig() *Config {
@@ -42,6 +44,7 @@ func NewDefaultConfig() *Config {
 		KubeletReadOnlyPort:         10255,
 		NodeTopologySyncInterval:    3 * time.Second,
 		DisableQueryKubeletConfig:   false,
+		EnableNodeMetricReport:      true,
 	}
 }
 
@@ -53,4 +56,6 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.UintVar(&c.KubeletReadOnlyPort, "kubelet-read-only-port", c.KubeletReadOnlyPort, "The read-only port for the kubelet to serve on with no authentication/authorization. Default: 10255.")
 	fs.DurationVar(&c.NodeTopologySyncInterval, "node-topology-sync-interval", c.NodeTopologySyncInterval, "The interval which Koordlet will report the node topology info, include cpu and gpu")
 	fs.BoolVar(&c.DisableQueryKubeletConfig, "disable-query-kubelet-config", c.DisableQueryKubeletConfig, "Disables querying the kubelet configuration from kubelet. Flag must be set to true if kubelet-insecure-tls=true is configured")
+	fs.DurationVar(&c.MetricReportInterval, "report-interval", c.MetricReportInterval, "Deprecated since v1.1, use ColocationStrategy.MetricReportIntervalSeconds in config map of slo-controller")
+	fs.BoolVar(&c.EnableNodeMetricReport, "enable-node-metric-report", c.EnableNodeMetricReport, "Enable status update of node metric crd.")
 }

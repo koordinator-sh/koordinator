@@ -35,7 +35,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	qosmanagerconfig "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/config"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/reporter"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -54,7 +53,6 @@ type Configuration struct {
 	ConfigMapNamesapce string
 	KubeRestConf       *rest.Config
 	StatesInformerConf *statesinformer.Config
-	ReporterConf       *reporter.Config
 	CollectorConf      *metricsadvisor.Config
 	MetricCacheConf    *metriccache.Config
 	ResManagerConf     *resmanager.Config
@@ -69,7 +67,6 @@ func NewConfiguration() *Configuration {
 		ConfigMapName:      DefaultKoordletConfigMapName,
 		ConfigMapNamesapce: DefaultKoordletConfigMapNamespace,
 		StatesInformerConf: statesinformer.NewDefaultConfig(),
-		ReporterConf:       reporter.NewDefaultConfig(),
 		CollectorConf:      metricsadvisor.NewDefaultConfig(),
 		MetricCacheConf:    metriccache.NewDefaultConfig(),
 		ResManagerConf:     resmanager.NewDefaultConfig(),
@@ -84,7 +81,6 @@ func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.ConfigMapNamesapce, "configmap-namespace", DefaultKoordletConfigMapNamespace, "determines the namespace of configmap uses.")
 	system.Conf.InitFlags(fs)
 	c.StatesInformerConf.InitFlags(fs)
-	c.ReporterConf.InitFlags(fs)
 	c.CollectorConf.InitFlags(fs)
 	c.MetricCacheConf.InitFlags(fs)
 	c.ResManagerConf.InitFlags(fs)

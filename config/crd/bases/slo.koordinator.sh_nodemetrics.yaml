@@ -43,6 +43,15 @@ spec:
                       period in seconds
                     format: int64
                     type: integer
+                  nodeAggregatePolicy:
+                    description: NodeAggregatePolicy represents the target grain of
+                      node aggregated usage
+                    properties:
+                      durations:
+                        items:
+                          type: string
+                        type: array
+                    type: object
                   reportIntervalSeconds:
                     description: ReportIntervalSeconds represents the report period
                       in seconds
@@ -57,6 +66,8 @@ spec:
                 description: NodeMetric contains the metrics for this node.
                 properties:
                   aggregatedNodeUsages:
+                    description: AggregatedNodeUsages will report only if there are
+                      enough samples
                     items:
                       properties:
                         duration:

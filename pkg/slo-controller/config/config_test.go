@@ -175,8 +175,9 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 			},
 			want: &ColocationStrategy{
 				Enable:                         pointer.BoolPtr(true),
-				MetricAggregateDurationSeconds: pointer.Int64Ptr(30),
+				MetricAggregateDurationSeconds: pointer.Int64Ptr(300),
 				MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
+				MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
 				CPUReclaimThresholdPercent:     pointer.Int64Ptr(60),
 				MemoryReclaimThresholdPercent:  pointer.Int64Ptr(65),
 				MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,

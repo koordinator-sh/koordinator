@@ -14,10 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package reporter
+package statesinformer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
@@ -31,12 +32,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/watch"
-	clientset "k8s.io/client-go/kubernetes"
 	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -45,64 +46,98 @@ import (
 	clientbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	listerbeta1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
+	nodeMetricInformerName pluginName = "nodeMetricInformer"
+
 	// defaultAggregateDurationSeconds is the default metric aggregate duration by seconds
-	defaultAggregateDurationSeconds = 60
+	minAggregateDurationSeconds     = 60
+	defaultAggregateDurationSeconds = 300
+
+	defaultReportIntervalSeconds = 60
+	minReportIntervalSeconds     = 30
+
+	// metric is valid only if its (lastSample.Time - firstSample.Time) > 0.5 * targetTimeRange
+	// used during checking node aggregate usage for cold start
+	validateTimeRangeRatio = 0.5
 )
 
 var (
 	scheme = runtime.NewScheme()
+
+	defaultNodeMetricSpec = slov1alpha1.NodeMetricSpec{
+		CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+			AggregateDurationSeconds: pointer.Int64(defaultAggregateDurationSeconds),
+			ReportIntervalSeconds:    pointer.Int64(defaultReportIntervalSeconds),
+			NodeAggregatePolicy: &slov1alpha1.AggregatePolicy{
+				Durations: []metav1.Duration{
+					{Duration: 5 * time.Minute},
+					{Duration: 10 * time.Minute},
+					{Duration: 30 * time.Minute},
+				},
+			},
+		},
+	}
 )
 
-type Reporter interface {
-	Run(stopCh <-chan struct{}) error
-}
-
-type reporter struct {
-	config             *Config
+type nodeMetricInformer struct {
+	reportEnabled      bool
 	nodeName           string
 	nodeMetricInformer cache.SharedIndexInformer
 	nodeMetricLister   listerbeta1.NodeMetricLister
 	eventRecorder      record.EventRecorder
 	statusUpdater      *statusUpdater
 
-	statesInformer statesinformer.StatesInformer
-	metricCache    metriccache.MetricCache
+	podsInformer *podsInformer
+	metricCache  metriccache.MetricCache
 
 	rwMutex    sync.RWMutex
 	nodeMetric *slov1alpha1.NodeMetric
 }
 
-func NewReporter(cfg *Config, kubeClient *clientset.Clientset, crdClient *clientsetbeta1.Clientset,
-	nodeName string, metricCache metriccache.MetricCache, statesInformer statesinformer.StatesInformer) Reporter {
+func NewNodeMetricInformer() *nodeMetricInformer {
+	return &nodeMetricInformer{}
+}
 
-	informer := newNodeMetricInformer(crdClient, nodeName)
+func (r *nodeMetricInformer) HasSynced() bool {
+	if !r.reportEnabled {
+		return true
+	}
+	if r.nodeMetricInformer == nil {
+		return false
+	}
+	synced := r.nodeMetricInformer.HasSynced()
+	klog.V(5).Infof("node metric informer has synced %v", synced)
+	return synced
+}
+
+func (r *nodeMetricInformer) Setup(ctx *pluginOption, state *pluginState) {
+	r.reportEnabled = ctx.config.EnableNodeMetricReport
+	r.nodeName = ctx.NodeName
+	r.nodeMetricInformer = newNodeMetricInformer(ctx.KoordClient, ctx.NodeName)
+	r.nodeMetricLister = listerbeta1.NewNodeMetricLister(r.nodeMetricInformer.GetIndexer())
 
 	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: ctx.KubeClient.CoreV1().Events("")})
+	r.eventRecorder = eventBroadcaster.NewRecorder(scheme, corev1.EventSource{Component: "koordlet-NodeMetric", Host: ctx.NodeName})
 
-	recorder := eventBroadcaster.NewRecorder(scheme, corev1.EventSource{Component: "koordlet-reporter", Host: nodeName})
+	r.statusUpdater = newStatusUpdater(ctx.KoordClient.SloV1alpha1().NodeMetrics())
 
-	r := &reporter{
-		config:             cfg,
-		nodeName:           nodeName,
-		nodeMetricInformer: informer,
-		nodeMetricLister:   listerbeta1.NewNodeMetricLister(informer.GetIndexer()),
-		eventRecorder:      recorder,
-		statusUpdater:      newStatusUpdater(crdClient.SloV1alpha1().NodeMetrics()),
-		statesInformer:     statesInformer,
-		metricCache:        metricCache,
+	r.metricCache = state.metricCache
+	podsInformerIf := state.informerPlugins[podsInformerName]
+	podsInformer, ok := podsInformerIf.(*podsInformer)
+	if !ok {
+		klog.Fatalf("pods informer format error")
 	}
+	r.podsInformer = podsInformer
 
-	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	r.nodeMetricInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			nodeMetric, ok := obj.(*slov1alpha1.NodeMetric)
 			if ok {
-				r.createNodeMetric(nodeMetric)
+				r.updateMetricSpec(nodeMetric)
 			} else {
 				klog.Errorf("node metric informer add func parse nodeMetric failed")
 			}
@@ -122,38 +157,33 @@ func NewReporter(cfg *Config, kubeClient *clientset.Clientset, crdClient *client
 			r.updateMetricSpec(newNodeMetric)
 		},
 	})
-
-	return r
 }
 
-func (r *reporter) ReportEvent(object runtime.Object, eventType, reason, message string) {
+func (r *nodeMetricInformer) ReportEvent(object runtime.Object, eventType, reason, message string) {
 	r.eventRecorder.Eventf(object, eventType, reason, message)
 }
 
-func (r *reporter) Run(stopCh <-chan struct{}) error {
+func (r *nodeMetricInformer) Start(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
-	klog.Infof("starting reporter")
+	klog.Infof("starting nodeMetricInformer")
 
-	if r.config.ReportInterval > 0 {
-		klog.Info("starting informer for NodeMetric")
-		go r.nodeMetricInformer.Run(stopCh)
-		if !cache.WaitForCacheSync(stopCh, r.nodeMetricInformer.HasSynced, r.statesInformer.HasSynced) {
-			return fmt.Errorf("timed out waiting for node metric caches to sync")
-		}
-
-		go r.syncNodeMetricWorker(stopCh)
-
-	} else {
-		klog.Infof("ReportInterval is %d, sync node metric to apiserver is disabled", r.config.ReportInterval)
+	if !r.reportEnabled {
+		klog.Infof("node metric report is disabled.")
+		return
 	}
 
-	klog.Info("start reporter successfully")
+	go r.nodeMetricInformer.Run(stopCh)
+	if !cache.WaitForCacheSync(stopCh, r.nodeMetricInformer.HasSynced, r.podsInformer.HasSynced) {
+		klog.Errorf("timed out waiting for node metric caches to sync")
+	}
+	go r.syncNodeMetricWorker(stopCh)
+
+	klog.Info("start nodeMetricInformer successfully")
 	<-stopCh
-	klog.Info("shutting down reporter daemon")
-	return nil
+	klog.Info("shutting down nodeMetricInformer daemon")
 }
 
-func (r *reporter) syncNodeMetricWorker(stopCh <-chan struct{}) {
+func (r *nodeMetricInformer) syncNodeMetricWorker(stopCh <-chan struct{}) {
 	reportInterval := r.getNodeMetricReportInterval()
 	for {
 		select {
@@ -166,21 +196,36 @@ func (r *reporter) syncNodeMetricWorker(stopCh <-chan struct{}) {
 	}
 }
 
-func (r *reporter) getNodeMetricReportInterval() time.Duration {
-	reportInterval := r.config.ReportInterval
-	nodeMetric, err := r.nodeMetricLister.Get(r.nodeName)
-	if err == nil &&
-		nodeMetric.Spec.CollectPolicy != nil &&
-		nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds != nil {
-		interval := *nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds
-		if interval > 0 {
-			reportInterval = time.Duration(interval) * time.Second
-		}
+func (r *nodeMetricInformer) getNodeMetricReportInterval() time.Duration {
+	r.rwMutex.RLock()
+	defer r.rwMutex.RUnlock()
+	if r.nodeMetric == nil || r.nodeMetric.Spec.CollectPolicy == nil || r.nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds == nil {
+		return time.Duration(defaultReportIntervalSeconds) * time.Second
 	}
-	return reportInterval
+	reportIntervalSeconds := util.MaxInt64(*r.nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds, minReportIntervalSeconds)
+	return time.Duration(reportIntervalSeconds) * time.Second
 }
 
-func (r *reporter) sync() {
+func (r *nodeMetricInformer) getNodeMetricAggregateDuration() time.Duration {
+	r.rwMutex.RLock()
+	defer r.rwMutex.RUnlock()
+	if r.nodeMetric.Spec.CollectPolicy == nil || r.nodeMetric.Spec.CollectPolicy.AggregateDurationSeconds == nil {
+		return time.Duration(defaultAggregateDurationSeconds) * time.Second
+	}
+	aggregateDurationSeconds := util.MaxInt64(*r.nodeMetric.Spec.CollectPolicy.AggregateDurationSeconds, minAggregateDurationSeconds)
+	return time.Duration(aggregateDurationSeconds) * time.Second
+}
+
+func (r *nodeMetricInformer) getNodeMetricSpec() *slov1alpha1.NodeMetricSpec {
+	r.rwMutex.RLock()
+	defer r.rwMutex.RUnlock()
+	if r.nodeMetric == nil {
+		return &defaultNodeMetricSpec
+	}
+	return r.nodeMetric.Spec.DeepCopy()
+}
+
+func (r *nodeMetricInformer) sync() {
 	if !r.isNodeMetricInited() {
 		klog.Warningf("node metric has not initialized, skip this round.")
 		return
@@ -239,69 +284,117 @@ func newNodeMetricInformer(client clientsetbeta1.Interface, nodeName string) cac
 	)
 }
 
-func (r *reporter) isNodeMetricInited() bool {
+func (r *nodeMetricInformer) isNodeMetricInited() bool {
 	r.rwMutex.RLock()
 	defer r.rwMutex.RUnlock()
 	return r.nodeMetric != nil
 }
 
-func (r *reporter) createNodeMetric(nodeMetric *slov1alpha1.NodeMetric) {
+func (r *nodeMetricInformer) updateMetricSpec(newNodeMetric *slov1alpha1.NodeMetric) {
 	r.rwMutex.Lock()
 	defer r.rwMutex.Unlock()
-	r.nodeMetric = nodeMetric
-}
-
-func (r *reporter) updateMetricSpec(nodeMetric *slov1alpha1.NodeMetric) {
-	r.rwMutex.Lock()
-	defer r.rwMutex.Unlock()
-	r.nodeMetric.Spec = nodeMetric.Spec
-}
-
-// generateQueryParams generate query params. It assumes the nodeMetric is initialized
-func (r *reporter) generateQueryParams() *metriccache.QueryParam {
-	aggregateDurationSeconds := defaultAggregateDurationSeconds
-
-	end := time.Now()
-	start := end.Add(-time.Duration(aggregateDurationSeconds) * time.Second)
-	queryParam := &metriccache.QueryParam{
-		Aggregate: metriccache.AggregationTypeAVG,
-		Start:     &start,
-		End:       &end,
+	if newNodeMetric == nil {
+		klog.Error("failed to merge with nil nodeMetric, new is nil")
+		return
 	}
-	return queryParam
+	r.nodeMetric = newNodeMetric.DeepCopy()
+	data, _ := json.Marshal(newNodeMetric.Spec)
+	r.nodeMetric.Spec = *defaultNodeMetricSpec.DeepCopy()
+	_ = json.Unmarshal(data, &r.nodeMetric.Spec)
 }
 
-func (r *reporter) collectMetric() (*slov1alpha1.NodeMetricInfo, []*slov1alpha1.PodMetricInfo) {
-	// collect node's and all pods' metrics with the same query param
-	queryParam := r.generateQueryParams()
-	nodeMetricInfo := r.collectNodeMetric(queryParam)
-	podsMeta := r.statesInformer.GetAllPods()
+// generateQueryDuration generate query params. It assumes the nodeMetric is initialized
+func (r *nodeMetricInformer) generateQueryDuration() (start time.Time, end time.Time) {
+	aggregateDuration := r.getNodeMetricAggregateDuration()
+	end = time.Now()
+	start = end.Add(-aggregateDuration * time.Second)
+	return
+}
+
+func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*slov1alpha1.PodMetricInfo) {
+	spec := r.getNodeMetricSpec()
+	endTime := time.Now()
+	startTime := endTime.Add(-time.Duration(*spec.CollectPolicy.AggregateDurationSeconds) * time.Second)
+
+	nodeMetricInfo := &slov1alpha1.NodeMetricInfo{
+		NodeUsage:            r.queryNodeMetric(startTime, endTime, metriccache.AggregationTypeAVG, false),
+		AggregatedNodeUsages: r.collectNodeAggregateMetric(endTime, spec.CollectPolicy.NodeAggregatePolicy),
+	}
+
+	podsMeta := r.podsInformer.GetAllPods()
 	podsMetricInfo := make([]*slov1alpha1.PodMetricInfo, 0, len(podsMeta))
+	podQueryParam := &metriccache.QueryParam{
+		Aggregate: metriccache.AggregationTypeAVG,
+		Start:     &startTime,
+		End:       &endTime,
+	}
 	for _, podMeta := range podsMeta {
-		podMetric := r.collectPodMetric(podMeta, queryParam)
+		podMetric := r.collectPodMetric(podMeta, podQueryParam)
 		if podMetric != nil {
 			podsMetricInfo = append(podsMetricInfo, podMetric)
 		}
 	}
+
 	return nodeMetricInfo, podsMetricInfo
 }
 
-func (r *reporter) collectNodeMetric(queryParam *metriccache.QueryParam) *slov1alpha1.NodeMetricInfo {
+func (r *nodeMetricInformer) queryNodeMetric(start time.Time, end time.Time, aggregateType metriccache.AggregationType,
+	coldStartFilter bool) slov1alpha1.ResourceMap {
+	queryParam := &metriccache.QueryParam{
+		Aggregate: aggregateType,
+		Start:     &start,
+		End:       &end,
+	}
 	queryResult := r.metricCache.GetNodeResourceMetric(queryParam)
 	if queryResult.Error != nil {
 		klog.Warningf("get node resource metric failed, error %v", queryResult.Error)
-		return nil
+		return slov1alpha1.ResourceMap{}
 	}
 	if queryResult.Metric == nil {
 		klog.Warningf("node metric not exist")
-		return nil
+		return slov1alpha1.ResourceMap{}
 	}
-	return &slov1alpha1.NodeMetricInfo{
-		NodeUsage: *convertNodeMetricToResourceMap(queryResult.Metric),
+
+	if coldStartFilter && metricsInColdStart(start, end, &queryResult.QueryResult) {
+		klog.V(4).Infof("metrics is in cold start, no need to report, current result sample duration %v",
+			queryResult.AggregateInfo.TimeRangeDuration().String())
+		return slov1alpha1.ResourceMap{}
 	}
+
+	return convertNodeMetricToResourceMap(queryResult.Metric)
 }
 
-func (r *reporter) collectPodMetric(podMeta *statesinformer.PodMeta, queryParam *metriccache.QueryParam) *slov1alpha1.PodMetricInfo {
+func metricsInColdStart(queryStart, queryEnd time.Time, queryResult *metriccache.QueryResult) bool {
+	if queryResult == nil || queryResult.AggregateInfo == nil {
+		return true
+	}
+	targetDuration := queryEnd.Sub(queryStart)
+	actualDuration := queryResult.AggregateInfo.TimeRangeDuration()
+	return actualDuration.Seconds() < targetDuration.Seconds()*validateTimeRangeRatio
+}
+
+func (r *nodeMetricInformer) collectNodeAggregateMetric(endTime time.Time, aggregatePolicy *slov1alpha1.AggregatePolicy) []slov1alpha1.AggregatedUsage {
+	aggregateUsages := []slov1alpha1.AggregatedUsage{}
+	if aggregatePolicy == nil {
+		return aggregateUsages
+	}
+	for _, d := range aggregatePolicy.Durations {
+		start := endTime.Add(-d.Duration)
+		aggregateUsage := slov1alpha1.AggregatedUsage{
+			Usage: map[slov1alpha1.AggregationType]slov1alpha1.ResourceMap{
+				slov1alpha1.P50: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP50, true),
+				slov1alpha1.P90: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP90, true),
+				slov1alpha1.P95: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP95, true),
+				slov1alpha1.P99: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP99, true),
+			},
+			Duration: d,
+		}
+		aggregateUsages = append(aggregateUsages, aggregateUsage)
+	}
+	return aggregateUsages
+}
+
+func (r *nodeMetricInformer) collectPodMetric(podMeta *PodMeta, queryParam *metriccache.QueryParam) *slov1alpha1.PodMetricInfo {
 	if podMeta == nil || podMeta.Pod == nil {
 		return nil
 	}
@@ -355,7 +448,7 @@ func (su *statusUpdater) updateStatus(nodeMetric *slov1alpha1.NodeMetric, newSta
 	return err
 }
 
-func convertNodeMetricToResourceMap(nodeMetric *metriccache.NodeResourceMetric) *slov1alpha1.ResourceMap {
+func convertNodeMetricToResourceMap(nodeMetric *metriccache.NodeResourceMetric) slov1alpha1.ResourceMap {
 	var deviceInfos []schedulingv1alpha1.DeviceInfo
 	if len(nodeMetric.GPUs) > 0 {
 		for _, gpu := range nodeMetric.GPUs {
@@ -374,7 +467,7 @@ func convertNodeMetricToResourceMap(nodeMetric *metriccache.NodeResourceMetric) 
 			deviceInfos = append(deviceInfos, gpuInfo)
 		}
 	}
-	return &slov1alpha1.ResourceMap{
+	return slov1alpha1.ResourceMap{
 		ResourceList: corev1.ResourceList{
 			corev1.ResourceCPU:    nodeMetric.CPUUsed.CPUUsed,
 			corev1.ResourceMemory: nodeMetric.MemoryUsed.MemoryWithoutCache,
