@@ -24,28 +24,28 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
 	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-
-	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
+	schedinformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/controller"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
 // Coscheduling is a plugin that schedules pods in a group.
 type Coscheduling struct {
+	args             *config.CoschedulingArgs
 	frameworkHandler framework.Handle
+	pgClient         pgclientset.Interface
+	pgInformer       schedinformers.PodGroupInformer
 	pgMgr            core.Manager
-	workers          int
 }
 
 var _ framework.QueueSortPlugin = &Coscheduling{}
@@ -78,39 +78,17 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		pgClient = pgclientset.NewForConfigOrDie(&kubeConfig)
 	}
 	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
+	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 
 	pgMgr := core.NewPodGroupManager(pgClient, pgInformerFactory, handle.SharedInformerFactory(), args)
-	var controllerWorkers int
-	if args == nil {
-		controllerWorkers = 1
-	} else {
-		controllerWorkers = int(*args.ControllerWorkers)
-	}
 	plugin := &Coscheduling{
+		args:             args,
 		frameworkHandler: handle,
+		pgClient:         pgClient,
+		pgInformer:       pgInformer,
 		pgMgr:            pgMgr,
-		workers:          controllerWorkers,
 	}
-
 	return plugin, nil
-}
-
-func (cs *Coscheduling) NewControllers() ([]frameworkext.Controller, error) {
-	handle := cs.frameworkHandler
-	pgClient, ok := handle.(pgclientset.Interface)
-	if !ok {
-		kubeConfig := *handle.KubeConfig()
-		kubeConfig.ContentType = runtime.ContentTypeJSON
-		kubeConfig.AcceptContentTypes = runtime.ContentTypeJSON
-		pgClient = pgclientset.NewForConfigOrDie(&kubeConfig)
-	}
-	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
-	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
-	podInformer := handle.SharedInformerFactory().Core().V1().Pods()
-	// start the PodGroupController
-	pgMgr := cs.pgMgr.(*core.PodGroupManager)
-	podGroupController := controller.NewPodGroupController(handle.ClientSet(), pgInformer, podInformer, pgClient, pgMgr, handle.EventRecorder(), cs.workers)
-	return []frameworkext.Controller{podGroupController}, nil
 }
 
 func (cs *Coscheduling) EventsToRegister() []framework.ClusterEvent {
