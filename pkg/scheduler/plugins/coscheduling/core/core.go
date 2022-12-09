@@ -187,14 +187,8 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 		return fmt.Errorf("can't find gang, gangName: %v, podName: %v", util.GetId(pod.Namespace, util.GetGangNameByPod(pod)),
 			util.GetId(pod.Namespace, pod.Name))
 	}
-	// first try update the global cycle of gang
-	gang.trySetScheduleCycleValid()
 
-	gangScheduleCycle := gang.getScheduleCycle()
-	defer func() {
-		gang.setChildScheduleCycle(pod, gangScheduleCycle)
-	}()
-	// check if gang is inited
+	// check if gang is initialized
 	if !gang.HasGangInit {
 		return fmt.Errorf("gang has not init, gangName: %v, podName: %v", gang.Name,
 			util.GetId(pod.Namespace, pod.Name))
@@ -203,11 +197,17 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	if gang.OnceResourceSatisfied {
 		return nil
 	}
+
 	// check minNum
 	if gang.getChildrenNum() < gang.getGangMinNum() {
 		return fmt.Errorf("gang child pod not collect enough, gangName: %v, podName: %v", gang.Name,
 			util.GetId(pod.Namespace, pod.Name))
 	}
+
+	// first try update the global cycle of gang
+	gang.trySetScheduleCycleValid()
+	gangScheduleCycle := gang.getScheduleCycle()
+	defer gang.setChildScheduleCycle(pod, gangScheduleCycle)
 
 	gangMode := gang.getGangMode()
 	if gangMode == extension.GangModeStrict {

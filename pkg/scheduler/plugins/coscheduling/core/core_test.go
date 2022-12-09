@@ -116,11 +116,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 			expectedScheduleCycle:      1,
 		},
 		{
-			name: "gang ResourceSatisfied",
-			pod:  st.MakePod().Name("podq").UID("podq").Namespace("gangq_ns").Label(v1alpha1.PodGroupLabel, "gangq").Obj(),
-			expectedChildCycleMap: map[string]int{
-				"gangq_ns/podq": 1,
-			},
+			name:                       "gang ResourceSatisfied",
+			pod:                        st.MakePod().Name("podq").UID("podq").Namespace("gangq_ns").Label(v1alpha1.PodGroupLabel, "gangq").Obj(),
+			expectedChildCycleMap:      map[string]int{},
 			pgs:                        makePg("gangq", "gangq_ns", 4, &gangACreatedTime, nil),
 			expectedScheduleCycleValid: true,
 			expectedScheduleCycle:      1,
@@ -132,13 +130,10 @@ func TestPlugin_PreFilter(t *testing.T) {
 			pods: []*corev1.Pod{
 				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
 			},
-			pgs:                   makePg("ganga", "ganga_ns", 4, &gangACreatedTime, nil),
-			expectedErrorMessage:  "gang child pod not collect enough, gangName: ganga_ns/ganga, podName: ganga_ns/pod3",
-			expectedScheduleCycle: 1,
-			expectedChildCycleMap: map[string]int{
-				"ganga_ns/pod3":   1,
-				"ganga_ns/pod3-1": 1,
-			},
+			pgs:                        makePg("ganga", "ganga_ns", 4, &gangACreatedTime, nil),
+			expectedErrorMessage:       "gang child pod not collect enough, gangName: ganga_ns/ganga, podName: ganga_ns/pod3",
+			expectedScheduleCycle:      1,
+			expectedChildCycleMap:      map[string]int{},
 			expectedScheduleCycleValid: true,
 		},
 		{
@@ -166,10 +161,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			totalNum:                      5,
 			expectedScheduleCycle:         1,
 			expectedChildCycleMap: map[string]int{
-				"ganga_ns/pod6":   1,
-				"ganga_ns/pod6-1": 1,
-				"ganga_ns/pod6-2": 1,
-				"ganga_ns/pod6-3": 1,
+				"ganga_ns/pod6": 1,
 			},
 			expectedErrorMessage:       "pod's schedule cycle too large, gangName: ganga_ns/gangc, podName: ganga_ns/pod6, podCycle: 1, gangCycle: 1",
 			expectedScheduleCycleValid: true,
@@ -185,10 +177,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			pgs:                   makePg("gangd", "ganga_ns", 4, &gangACreatedTime, nil),
 			expectedScheduleCycle: 1,
 			expectedChildCycleMap: map[string]int{
-				"ganga_ns/pod7":   1,
-				"ganga_ns/pod7-1": 1,
-				"ganga_ns/pod7-2": 1,
-				"ganga_ns/pod7-3": 1,
+				"ganga_ns/pod7": 1,
 			},
 			expectedScheduleCycleValid: false,
 			expectedErrorMessage:       "gang scheduleCycle not valid, gangName: ganga_ns/gangd, podName: ganga_ns/pod7",
@@ -206,10 +195,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			totalNum:              5,
 			expectedScheduleCycle: 1,
 			expectedChildCycleMap: map[string]int{
-				"ganga_ns/pod8":   1,
-				"ganga_ns/pod8-1": 1,
-				"ganga_ns/pod8-2": 1,
-				"ganga_ns/pod8-3": 1,
+				"ganga_ns/pod8": 1,
 			},
 			expectedScheduleCycleValid: true,
 			expectedErrorMessage:       "",
