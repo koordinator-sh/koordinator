@@ -24,6 +24,7 @@ import (
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -73,7 +74,7 @@ func (p *PodRequest) FromReconciler(podMeta *statesinformer.PodMeta) {
 	p.PodMeta.FromReconciler(podMeta.Pod.ObjectMeta)
 	p.Labels = podMeta.Pod.Labels
 	p.Annotations = podMeta.Pod.Annotations
-	p.CgroupParent = util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+	p.CgroupParent = koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 	// retrieve ExtendedResources from pod spec and pod annotations (prefer pod spec)
 	specFromAnnotations, err := apiext.GetExtendedResourceSpec(podMeta.Pod.Annotations)
 	if err != nil {

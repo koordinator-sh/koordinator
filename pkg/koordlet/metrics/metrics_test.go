@@ -26,8 +26,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func TestGenNodeLabels(t *testing.T) {
@@ -75,7 +75,7 @@ func TestCommonCollectors(t *testing.T) {
 			UID:       "test01",
 		},
 	}
-	testingPSI := &util.PSIByResource{
+	testingPSI := &koordletutil.PSIByResource{
 		CPU: system.PSIStats{
 			Some: &system.PSILine{
 				Avg10:  1,

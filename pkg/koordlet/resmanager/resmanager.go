@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	runtime "github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime"
+
 	corev1 "k8s.io/api/core/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -44,7 +46,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	expireCache "github.com/koordinator-sh/koordinator/pkg/tools/cache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/runtime"
 )
 
 const (

@@ -29,8 +29,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (
@@ -221,5 +222,5 @@ func newKubeletStubFromConfig(node *corev1.Node, cfg *Config) (KubeletStub, erro
 func genPodCgroupParentDir(pod *corev1.Pod) string {
 	// todo use cri interface to get pod cgroup dir
 	// e.g. kubepods-burstable.slice/kubepods-burstable-pod9dba1d9e_67ba_4db6_8a73_fb3ea297c363.slice/
-	return util.GetPodKubeRelativePath(pod)
+	return koordletutil.GetPodKubeRelativePath(pod)
 }

@@ -25,7 +25,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 var _ ResourceUpdater = &CommonResourceUpdater{}
@@ -38,6 +38,8 @@ type UpdateFunc func(resource ResourceUpdater) error
 
 type MergeUpdateFunc func(resource MergeableResourceUpdater) (MergeableResourceUpdater, error)
 
+// ResourceUpdater is the resource updater.
+// DEPRECATED: use resourceexecutor.ResourceUpdater instead.
 type ResourceUpdater interface {
 	// RefObject reference to the object
 	Owner() *OwnerRef
@@ -50,6 +52,8 @@ type ResourceUpdater interface {
 	Update() error
 }
 
+// MergeableResourceUpdater is the resource updater with merge update function.
+// DEPRECATED: use resourceexecutor.ResourceUpdater instead.
 type MergeableResourceUpdater interface {
 	ResourceUpdater
 	MergeUpdate() (MergeableResourceUpdater, error)

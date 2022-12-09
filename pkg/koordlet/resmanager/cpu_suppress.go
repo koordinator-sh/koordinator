@@ -38,9 +38,11 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (
@@ -66,84 +68,48 @@ var (
 
 type CPUSuppress struct {
 	resmanager             *resmanager
+	executor               resourceexecutor.ResourceUpdateExecutor
 	suppressPolicyStatuses map[string]suppressPolicyStatus
 }
 
 func NewCPUSuppress(resmanager *resmanager) *CPUSuppress {
-	return &CPUSuppress{resmanager: resmanager, suppressPolicyStatuses: map[string]suppressPolicyStatus{}}
-}
-
-// getPodMetricCPUUsage gets pod usage cpu from the PodResourceMetric
-func getPodMetricCPUUsage(info *metriccache.PodResourceMetric) *resource.Quantity {
-	cpuQuant := info.CPUUsed.CPUUsed
-	return resource.NewMilliQuantity(cpuQuant.MilliValue(), cpuQuant.Format)
-}
-
-// getBECPUSetPathsByMaxDepth gets all the be cpuset groups' paths recusively from upper to lower
-func getBECPUSetPathsByMaxDepth(relativeDepth int) ([]string, error) {
-	// walk from root path to lower nodes
-	rootCgroupPath := util.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
-	_, err := os.Stat(rootCgroupPath)
-	if err != nil {
-		// make sure the rootCgroupPath is available
-		return nil, err
+	return &CPUSuppress{
+		resmanager:             resmanager,
+		executor:               resourceexecutor.NewResourceUpdateExecutor(),
+		suppressPolicyStatuses: map[string]suppressPolicyStatus{},
 	}
-	klog.V(6).Infof("get be rootCgroupPath: %v", rootCgroupPath)
-
-	absDepth := strings.Count(rootCgroupPath, string(os.PathSeparator)) + relativeDepth
-	var paths []string
-	err = filepath.Walk(rootCgroupPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() && strings.Count(path, string(os.PathSeparator)) <= absDepth {
-			paths = append(paths, path)
-		}
-		return nil
-	})
-	return paths, err
 }
 
-func getBECPUSetPathsByTargetDepth(relativeDepth int) ([]string, error) {
-	rootCgroupPath := util.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
-	_, err := os.Stat(rootCgroupPath)
-	if err != nil {
-		// make sure the rootCgroupPath is available
-		return nil, err
-	}
-	klog.V(6).Infof("get be rootCgroupPath: %v", rootCgroupPath)
-
-	absDepth := strings.Count(rootCgroupPath, string(os.PathSeparator)) + relativeDepth
-	var containerPaths []string
-	err = filepath.WalkDir(rootCgroupPath, func(path string, info os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() && strings.Count(path, string(os.PathSeparator)) == absDepth {
-			containerPaths = append(containerPaths, path)
-		}
-		return nil
-	})
-	return containerPaths, err
+func (r *CPUSuppress) RunInit(stopCh <-chan struct{}) error {
+	r.executor.Run(stopCh)
+	return nil
 }
 
 // writeBECgroupsCPUSet writes the be cgroups cpuset by order
-func writeBECgroupsCPUSet(paths []string, cpusetStr string, isReversed bool) {
+func (r *CPUSuppress) writeBECgroupsCPUSet(paths []string, cpusetStr string, isReversed bool) {
+	var updaters []resourceexecutor.ResourceUpdater
 	if isReversed {
 		for i := len(paths) - 1; i >= 0; i-- {
-			err := util.WriteCgroupCPUSet(paths[i], cpusetStr)
+			u, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUSetCPUSName, paths[i], cpusetStr)
 			if err != nil {
-				klog.Warningf("failed to write be cgroup cpuset: path %s, err %s", paths[i], err)
+				klog.V(4).Infof("failed to get cpuset updater: path %s, err %s", paths[i], err)
+				continue
 			}
+
+			updaters = append(updaters, u)
 		}
-		return
-	}
-	for i := range paths {
-		err := util.WriteCgroupCPUSet(paths[i], cpusetStr)
-		if err != nil {
-			klog.Warningf("failed to write be cgroup cpuset: path %s, err %s", paths[i], err)
+	} else {
+		for i := range paths {
+			u, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUSetCPUSName, paths[i], cpusetStr)
+			if err != nil {
+				klog.V(4).Infof("failed to get cpuset updater: path %s, err %s", paths[i], err)
+				continue
+			}
+
+			updaters = append(updaters, u)
 		}
 	}
+	r.executor.UpdateBatch(true, updaters...)
 }
 
 // calculateBESuppressCPU calculates the quantity of cpuset cpus for suppressing be pods
@@ -204,9 +170,9 @@ func (r *CPUSuppress) applyBESuppressCPUSet(beCPUSet []int32, oldCPUSet []int32)
 	}
 	if kubeletPolicy.Policy == apiext.KubeletCPUManagerPolicyStatic {
 		r.recoverCPUSetIfNeed(podCgroupPathRelativeDepth)
-		err = applyCPUSetWithStaticPolicy(beCPUSet)
+		err = r.applyCPUSetWithStaticPolicy(beCPUSet)
 	} else {
-		err = applyCPUSetWithNonePolicy(beCPUSet, oldCPUSet)
+		err = r.applyCPUSetWithNonePolicy(beCPUSet, oldCPUSet)
 	}
 	if err != nil {
 		return fmt.Errorf("failed with kubelet policy %v, %w", kubeletPolicy.Policy, err)
@@ -214,117 +180,8 @@ func (r *CPUSuppress) applyBESuppressCPUSet(beCPUSet []int32, oldCPUSet []int32)
 	return nil
 }
 
-// calculateBESuppressPolicy calculates the be cpu suppress policy with cpuset cpus number and node cpu info
-func calculateBESuppressCPUSetPolicy(cpus int32, processorInfos []util.ProcessorInfo) []int32 {
-	var CPUSets []int32
-	numProcessors := int32(len(processorInfos))
-	if numProcessors < cpus {
-		klog.Warningf("failed to calculate a proper suppress policy, available cpus is not enough, "+
-			"please check the related resource metrics: want cpus %v but got %v", cpus, numProcessors)
-		return CPUSets
-	}
-
-	// getNodeIndex is a function to calculate an index for every numa node or socket
-	getNodeIndex := func(info util.ProcessorInfo) int32 {
-		// (nodeId, socketId) => nodeIndex
-		return (info.NodeID + numProcessors) * (info.SocketID + 1)
-	}
-	cpuBucketOfNode := map[int32][]util.ProcessorInfo{}
-	for _, p := range processorInfos {
-		nodeIndex := getNodeIndex(p)
-		cpuBucketOfNode[nodeIndex] = append(cpuBucketOfNode[nodeIndex], p)
-	}
-
-	// change cpuBucket map to array
-	cpuBucket := [][]util.ProcessorInfo{}
-	for _, processorInfos := range cpuBucketOfNode {
-		cpuBucket = append(cpuBucket, processorInfos)
-	}
-
-	for index := range cpuBucket {
-		sort.Slice(cpuBucket[index], func(i, j int) bool {
-			if cpuBucket[index][i].CoreID == cpuBucket[index][j].CoreID {
-				return cpuBucket[index][i].CPUID < cpuBucket[index][j].CPUID
-			}
-			return cpuBucket[index][i].CoreID < cpuBucket[index][j].CoreID
-		})
-	}
-
-	sort.Slice(cpuBucket, func(i, j int) bool {
-		if len(cpuBucket[i]) == len(cpuBucket[j]) {
-			return cpuBucket[i][0].CPUID < cpuBucket[j][0].CPUID
-		}
-		return len(cpuBucket[i]) > len(cpuBucket[j])
-	})
-
-	needCPUs := cpus
-	usedCpu := map[int32]bool{}
-	// select same core cpu id
-	preNeedCpus := int32(-1)
-	i := 0
-	for ; i < len(cpuBucket); i = (i + 1) % len(cpuBucket) {
-		if needCPUs <= 1 {
-			break
-		}
-		if i == 0 {
-			// if we don't pick any cpu, we need break this cycle
-			if preNeedCpus == needCPUs {
-				break
-			}
-			preNeedCpus = needCPUs
-		}
-		selectdIndex := -1
-		for j := 0; j < len(cpuBucket[i])-1; j++ {
-			if usedCpu[cpuBucket[i][j].CPUID] {
-				continue
-			}
-			if cpuBucket[i][j].CoreID == cpuBucket[i][j+1].CoreID {
-				selectdIndex = j
-				break
-			}
-		}
-		if selectdIndex != -1 {
-			CPUSets = append(CPUSets, cpuBucket[i][selectdIndex].CPUID, cpuBucket[i][selectdIndex+1].CPUID)
-			usedCpu[cpuBucket[i][selectdIndex].CPUID] = true
-			usedCpu[cpuBucket[i][selectdIndex+1].CPUID] = true
-			needCPUs = needCPUs - 2
-		}
-	}
-
-	// select single cpu id
-	preNeedCpus = int32(-1)
-	startIndex := i
-	for ; i < len(cpuBucket); i = (i + 1) % len(cpuBucket) {
-		if needCPUs <= 0 {
-			break
-		}
-		if i == startIndex {
-			// if we don't pick any cpu, we need break this cycle
-			if preNeedCpus == needCPUs {
-				break
-			}
-			preNeedCpus = needCPUs
-		}
-		selectdIndex := -1
-		for j := 0; j < len(cpuBucket[i]); j++ {
-			if usedCpu[cpuBucket[i][j].CPUID] {
-				continue
-			}
-			selectdIndex = j
-			break
-		}
-		if selectdIndex != -1 {
-			CPUSets = append(CPUSets, cpuBucket[i][selectdIndex].CPUID)
-			usedCpu[cpuBucket[i][selectdIndex].CPUID] = true
-			needCPUs--
-		}
-	}
-	klog.Infof("calculated BE suppress policy: cpuset %v", CPUSets)
-	return CPUSets
-}
-
 // applyCPUSetWithNonePolicy applies the be suppress policy by writing best-effort cgroups
-func applyCPUSetWithNonePolicy(cpus []int32, oldCPUSet []int32) error {
+func (r *CPUSuppress) applyCPUSetWithNonePolicy(cpus []int32, oldCPUSet []int32) error {
 	// 1. get current be cgroups cpuset
 	// 2. temporarily write with a union of old cpuset and new cpuset from upper to lower, to avoid cgroup conflicts
 	// 3. write with the new cpuset from lower to upper to apply the real policy
@@ -344,18 +201,18 @@ func applyCPUSetWithNonePolicy(cpus []int32, oldCPUSet []int32) error {
 	mergedCPUSetStr := cpuset.GenerateCPUSetStr(mergedCPUSet)
 	klog.V(6).Infof("applyCPUSetWithNonePolicy temporarily writes cpuset from upper cgroup to lower, cpuset %v",
 		mergedCPUSet)
-	writeBECgroupsCPUSet(cpusetCgroupPaths, mergedCPUSetStr, false)
+	r.writeBECgroupsCPUSet(cpusetCgroupPaths, mergedCPUSetStr, false)
 
 	// apply the suppress policy from lower to upper
 	cpusetStr := cpuset.GenerateCPUSetStr(cpus)
 	klog.V(6).Infof("applyCPUSetWithNonePolicy writes suppressed cpuset from lower cgroup to upper, cpuset %v",
 		cpus)
-	writeBECgroupsCPUSet(cpusetCgroupPaths, cpusetStr, true)
+	r.writeBECgroupsCPUSet(cpusetCgroupPaths, cpusetStr, true)
 	metrics.RecordBESuppressCores(string(slov1alpha1.CPUSetPolicy), float64(len(cpus)))
 	return nil
 }
 
-func applyCPUSetWithStaticPolicy(cpus []int32) error {
+func (r *CPUSuppress) applyCPUSetWithStaticPolicy(cpus []int32) error {
 	if len(cpus) <= 0 {
 		klog.Warningf("applyCPUSetWithStaticPolicy skipped due to the empty cpuset")
 		return nil
@@ -369,7 +226,7 @@ func applyCPUSetWithStaticPolicy(cpus []int32) error {
 
 	cpusetStr := cpuset.GenerateCPUSetStr(cpus)
 	klog.V(6).Infof("applyCPUSetWithStaticPolicy writes suppressed cpuset to containers, cpuset %v", cpus)
-	writeBECgroupsCPUSet(containerPaths, cpusetStr, false)
+	r.writeBECgroupsCPUSet(containerPaths, cpusetStr, false)
 	metrics.RecordBESuppressCores(string(slov1alpha1.CPUSetPolicy), float64(len(cpus)))
 	return nil
 
@@ -426,7 +283,7 @@ func (r *CPUSuppress) suppressBECPU() {
 		return
 	}
 	if nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy == slov1alpha1.CPUCfsQuotaPolicy {
-		adjustByCfsQuota(suppressCPUQuantity, node)
+		r.adjustByCfsQuota(suppressCPUQuantity, node)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyUsing
 		r.recoverCPUSetIfNeed(containerCgroupPathRelativeDepth)
 	} else {
@@ -437,7 +294,7 @@ func (r *CPUSuppress) suppressBECPU() {
 }
 
 func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUInfo *metriccache.NodeCPUInfo) {
-	oldCPUSet, err := util.GetRootCgroupCurCPUSet(corev1.PodQOSBestEffort)
+	oldCPUSet, err := koordletutil.GetRootCgroupCurCPUSet(corev1.PodQOSBestEffort)
 	if err != nil {
 		klog.Warningf("applyBESuppressPolicy failed to get current best-effort cgroup cpuset, err: %s", err)
 		return
@@ -463,8 +320,8 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 			cpuIdToPool[int32(cpuID)] = apiext.GetPodQoSClass(podMeta.Pod)
 		}
 	}
-	lsrCpus := []util.ProcessorInfo{}
-	lsCpus := []util.ProcessorInfo{}
+	var lsrCpus []koordletutil.ProcessorInfo
+	var lsCpus []koordletutil.ProcessorInfo
 	// FIXME: be pods might be starved since lse pods can run out of all cpus
 	for _, processor := range nodeCPUInfo.ProcessorInfos {
 		if cpuIdToPool[processor.CPUID] == apiext.QoSLSR {
@@ -552,15 +409,15 @@ func (r *CPUSuppress) recoverCPUSetIfNeed(maxDepth int) {
 
 	cpusetStr := beCPUSet.String()
 	klog.V(6).Infof("recover bestEffort cpuset, cpuset %v", cpusetStr)
-	writeBECgroupsCPUSet(cpusetCgroupPaths, cpusetStr, false)
+	r.writeBECgroupsCPUSet(cpusetCgroupPaths, cpusetStr, false)
 	r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyRecovered
 }
 
-func adjustByCfsQuota(cpuQuantity *resource.Quantity, node *corev1.Node) {
+func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *corev1.Node) {
 	newBeQuota := cpuQuantity.MilliValue() * cfsPeriod / 1000
 	newBeQuota = int64(math.Max(float64(newBeQuota), float64(beMinQuota)))
 
-	beCgroupPath := util.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
+	beCgroupPath := koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
 	// read current offline quota
 	currentBeQuota, err := system.CgroupFileReadInt(beCgroupPath, system.CPUCFSQuota)
 	if err != nil {
@@ -581,13 +438,19 @@ func adjustByCfsQuota(cpuQuantity *resource.Quantity, node *corev1.Node) {
 		newBeQuota = *currentBeQuota + int64(beMaxIncreaseCPUQuota)
 	}
 
-	if err := system.CgroupFileWrite(beCgroupPath, system.CPUCFSQuota, strconv.FormatInt(newBeQuota, 10)); err != nil {
-		klog.Errorf("suppressBECPU: failed to write cfs_quota_us for offline pods, error: %v", err)
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, beCgroupPath, strconv.FormatInt(newBeQuota, 10))
+	if err != nil {
+		klog.V(4).Infof("failed to get be cfs quota updater, err: %v", err)
+		return
+	}
+	isUpdated, err := r.executor.Update(true, updater)
+	if err != nil {
+		klog.Errorf("suppressBECPU: failed to write cfs_quota_us for be pods, error: %v", err)
 		return
 	}
 	metrics.RecordBESuppressCores(string(slov1alpha1.CPUCfsQuotaPolicy), float64(newBeQuota)/float64(cfsPeriod))
 	audit.V(1).Node().Reason(executor.AdjustBEByNodeCPUUsage).Message("update BE group to cfs_quota: %v", newBeQuota).Do()
-	klog.Infof("suppressBECPU: succeeded to write cfs_quota_us for offline pods, new value: %d", newBeQuota)
+	klog.Infof("suppressBECPU: succeeded to write cfs_quota_us for offline pods, isUpdated %v, new value: %d", isUpdated, newBeQuota)
 }
 
 func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
@@ -596,11 +459,18 @@ func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
 		return
 	}
 
-	beCgroupPath := util.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
-	if err := system.CgroupFileWrite(beCgroupPath, system.CPUCFSQuota, "-1"); err != nil {
-		klog.Errorf("recover bestEffort cfsQuota error: %v", err)
+	beCgroupPath := koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, beCgroupPath, "-1")
+	if err != nil {
+		klog.V(4).Infof("failed to get be cfs quota updater, err: %v", err)
 		return
 	}
+	isUpdated, err := r.executor.Update(true, updater)
+	if err != nil {
+		klog.Errorf("recover bestEffort cfsQuota err: %v", err)
+		return
+	}
+	klog.V(5).Infof("successfully recover bestEffort cfsQuota, isUpdated %v", isUpdated)
 	r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyRecovered
 }
 
@@ -612,4 +482,179 @@ func getCPUSuppressPolicy(nodeSLO *slov1alpha1.NodeSLO) (bool, slov1alpha1.CPUSu
 	}
 	return *nodeSLO.Spec.ResourceUsedThresholdWithBE.Enable,
 		nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy
+}
+
+// getPodMetricCPUUsage gets pod usage cpu from the PodResourceMetric
+func getPodMetricCPUUsage(info *metriccache.PodResourceMetric) *resource.Quantity {
+	cpuQuant := info.CPUUsed.CPUUsed
+	return resource.NewMilliQuantity(cpuQuant.MilliValue(), cpuQuant.Format)
+}
+
+// getBECPUSetPathsByMaxDepth gets all the be cpuset groups' paths recursively from upper to lower
+func getBECPUSetPathsByMaxDepth(relativeDepth int) ([]string, error) {
+	// walk from root path to lower nodes
+	rootCgroupPath := koordletutil.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
+	rootCPUSetSubfsPath := koordletutil.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
+	_, err := os.Stat(rootCgroupPath)
+	if err != nil {
+		// make sure the rootCgroupPath is available
+		return nil, err
+	}
+	klog.V(6).Infof("get be rootCgroupPath: %v", rootCgroupPath)
+
+	absDepth := strings.Count(rootCgroupPath, string(os.PathSeparator)) + relativeDepth
+	var paths []string
+	err = filepath.Walk(rootCgroupPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() && strings.Count(path, string(os.PathSeparator)) <= absDepth {
+			// get the path of parentDir
+			parentDir, err1 := filepath.Rel(rootCPUSetSubfsPath, path)
+			if err1 != nil {
+				return err1
+			}
+			paths = append(paths, parentDir)
+		}
+		return nil
+	})
+	return paths, err
+}
+
+func getBECPUSetPathsByTargetDepth(relativeDepth int) ([]string, error) {
+	rootCgroupPath := koordletutil.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
+	rootCPUSetSubfsPath := koordletutil.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
+	_, err := os.Stat(rootCgroupPath)
+	if err != nil {
+		// make sure the rootCgroupPath is available
+		return nil, err
+	}
+	klog.V(6).Infof("get be rootCgroupPath: %v", rootCgroupPath)
+
+	absDepth := strings.Count(rootCgroupPath, string(os.PathSeparator)) + relativeDepth
+	var containerPaths []string
+	err = filepath.WalkDir(rootCgroupPath, func(path string, info os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() && strings.Count(path, string(os.PathSeparator)) == absDepth {
+			// get the path of parentDir
+			parentDir, err1 := filepath.Rel(rootCPUSetSubfsPath, path)
+			if err1 != nil {
+				return err1
+			}
+			containerPaths = append(containerPaths, parentDir)
+		}
+		return nil
+	})
+	return containerPaths, err
+}
+
+// calculateBESuppressPolicy calculates the be cpu suppress policy with cpuset cpus number and node cpu info
+func calculateBESuppressCPUSetPolicy(cpus int32, processorInfos []koordletutil.ProcessorInfo) []int32 {
+	var CPUSets []int32
+	numProcessors := int32(len(processorInfos))
+	if numProcessors < cpus {
+		klog.Warningf("failed to calculate a proper suppress policy, available cpus is not enough, "+
+			"please check the related resource metrics: want cpus %v but got %v", cpus, numProcessors)
+		return CPUSets
+	}
+
+	// getNodeIndex is a function to calculate an index for every numa node or socket
+	getNodeIndex := func(info koordletutil.ProcessorInfo) int32 {
+		// (nodeId, socketId) => nodeIndex
+		return (info.NodeID + numProcessors) * (info.SocketID + 1)
+	}
+	cpuBucketOfNode := map[int32][]koordletutil.ProcessorInfo{}
+	for _, p := range processorInfos {
+		nodeIndex := getNodeIndex(p)
+		cpuBucketOfNode[nodeIndex] = append(cpuBucketOfNode[nodeIndex], p)
+	}
+
+	// change cpuBucket map to array
+	var cpuBucket [][]koordletutil.ProcessorInfo
+	for _, processorInfos := range cpuBucketOfNode {
+		cpuBucket = append(cpuBucket, processorInfos)
+	}
+
+	for index := range cpuBucket {
+		sort.Slice(cpuBucket[index], func(i, j int) bool {
+			if cpuBucket[index][i].CoreID == cpuBucket[index][j].CoreID {
+				return cpuBucket[index][i].CPUID < cpuBucket[index][j].CPUID
+			}
+			return cpuBucket[index][i].CoreID < cpuBucket[index][j].CoreID
+		})
+	}
+
+	sort.Slice(cpuBucket, func(i, j int) bool {
+		if len(cpuBucket[i]) == len(cpuBucket[j]) {
+			return cpuBucket[i][0].CPUID < cpuBucket[j][0].CPUID
+		}
+		return len(cpuBucket[i]) > len(cpuBucket[j])
+	})
+
+	needCPUs := cpus
+	usedCpu := map[int32]bool{}
+	// select same core cpu id
+	preNeedCpus := int32(-1)
+	i := 0
+	for ; i < len(cpuBucket); i = (i + 1) % len(cpuBucket) {
+		if needCPUs <= 1 {
+			break
+		}
+		if i == 0 {
+			// if we don't pick any cpu, we need break this cycle
+			if preNeedCpus == needCPUs {
+				break
+			}
+			preNeedCpus = needCPUs
+		}
+		selectdIndex := -1
+		for j := 0; j < len(cpuBucket[i])-1; j++ {
+			if usedCpu[cpuBucket[i][j].CPUID] {
+				continue
+			}
+			if cpuBucket[i][j].CoreID == cpuBucket[i][j+1].CoreID {
+				selectdIndex = j
+				break
+			}
+		}
+		if selectdIndex != -1 {
+			CPUSets = append(CPUSets, cpuBucket[i][selectdIndex].CPUID, cpuBucket[i][selectdIndex+1].CPUID)
+			usedCpu[cpuBucket[i][selectdIndex].CPUID] = true
+			usedCpu[cpuBucket[i][selectdIndex+1].CPUID] = true
+			needCPUs = needCPUs - 2
+		}
+	}
+
+	// select single cpu id
+	preNeedCpus = int32(-1)
+	startIndex := i
+	for ; i < len(cpuBucket); i = (i + 1) % len(cpuBucket) {
+		if needCPUs <= 0 {
+			break
+		}
+		if i == startIndex {
+			// if we don't pick any cpu, we need break this cycle
+			if preNeedCpus == needCPUs {
+				break
+			}
+			preNeedCpus = needCPUs
+		}
+		selectdIndex := -1
+		for j := 0; j < len(cpuBucket[i]); j++ {
+			if usedCpu[cpuBucket[i][j].CPUID] {
+				continue
+			}
+			selectdIndex = j
+			break
+		}
+		if selectdIndex != -1 {
+			CPUSets = append(CPUSets, cpuBucket[i][selectdIndex].CPUID)
+			usedCpu[cpuBucket[i][selectdIndex].CPUID] = true
+			needCPUs--
+		}
+	}
+	klog.Infof("calculated BE suppress policy: cpuset %v", CPUSets)
+	return CPUSets
 }

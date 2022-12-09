@@ -29,8 +29,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (
@@ -168,7 +169,7 @@ func (m *CgroupResourcesReconcile) calculateQoSResources(summary *cgroupResource
 		return nil
 	}
 
-	qosDir := util.GetKubeQosRelativePath(qos)
+	qosDir := koordletutil.GetKubeQosRelativePath(qos)
 
 	// Mem QoS
 	if qosCfg.MemoryQOS != nil {
@@ -183,7 +184,7 @@ func (m *CgroupResourcesReconcile) calculateQoSResources(summary *cgroupResource
 func (m *CgroupResourcesReconcile) calculatePodAndContainerResources(podMeta *statesinformer.PodMeta, node *corev1.Node,
 	podCfg *slov1alpha1.ResourceQOS) (podResources, containerResources []executor.MergeableResourceUpdater) {
 	pod := podMeta.Pod
-	podDir := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+	podDir := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 
 	podResources = m.calculatePodResources(pod, podDir, podCfg)
 
@@ -194,7 +195,7 @@ func (m *CgroupResourcesReconcile) calculatePodAndContainerResources(podMeta *st
 				util.GetPodKey(pod), container.Name, err)
 			continue
 		}
-		containerDir, err := util.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStatus)
+		containerDir, err := koordletutil.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStatus)
 		if err != nil {
 			klog.Warningf("parse containerDir error! msg: %v", err)
 			continue

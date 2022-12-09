@@ -36,8 +36,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mockstatesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 var (
@@ -439,9 +440,9 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 
 func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 	testingPodLS := createPod(corev1.PodQOSBurstable, apiext.QoSLS)
-	podParentDirLS := util.GetPodCgroupDirWithKube(testingPodLS.CgroupDir)
-	containerDirLS, _ := util.GetContainerCgroupPathWithKube(testingPodLS.CgroupDir, &testingPodLS.Pod.Status.ContainerStatuses[0])
-	containerDirLS1, _ := util.GetContainerCgroupPathWithKube(testingPodLS.CgroupDir, &testingPodLS.Pod.Status.ContainerStatuses[1])
+	podParentDirLS := koordletutil.GetPodCgroupDirWithKube(testingPodLS.CgroupDir)
+	containerDirLS, _ := koordletutil.GetContainerCgroupPathWithKube(testingPodLS.CgroupDir, &testingPodLS.Pod.Status.ContainerStatuses[0])
+	containerDirLS1, _ := koordletutil.GetContainerCgroupPathWithKube(testingPodLS.CgroupDir, &testingPodLS.Pod.Status.ContainerStatuses[1])
 	testingPodBEWithMemQOS := createPodWithMemoryQOS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQOSConfig{
 		Policy: slov1alpha1.PodMemoryQOSPolicyAuto,
 		MemoryQOS: slov1alpha1.MemoryQOS{
@@ -464,9 +465,9 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			WmarkMinAdj:       pointer.Int64Ptr(50),
 		},
 	})
-	podParentDirBE := util.GetPodCgroupDirWithKube(testingPodBEWithMemQOS.CgroupDir)
-	containerDirBE, _ := util.GetContainerCgroupPathWithKube(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[0])
-	containerDirBE1, _ := util.GetContainerCgroupPathWithKube(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[1])
+	podParentDirBE := koordletutil.GetPodCgroupDirWithKube(testingPodBEWithMemQOS.CgroupDir)
+	containerDirBE, _ := koordletutil.GetContainerCgroupPathWithKube(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[0])
+	containerDirBE1, _ := koordletutil.GetContainerCgroupPathWithKube(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[1])
 	type fields struct {
 		resmanager *resmanager
 	}
@@ -536,19 +537,19 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				},
 			},
 			want: []executor.MergeableResourceUpdater{
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryPriority, "0"),
-				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryUsePriorityOom, "0"),
-				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryOomGroup, "0"),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryPriority, "0"),
-				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryUsePriorityOom, "0"),
-				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryOomGroup, "0"),
-				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryPriority, "0"),
-				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryUsePriorityOom, "0"),
-				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryOomGroup, "0"),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryOomGroup, "0"),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryOomGroup, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryPriority, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryUsePriorityOom, "0"),
+				executor.NewCommonCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryOomGroup, "0"),
 			},
 			want1: []executor.MergeableResourceUpdater{
 				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemoryMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
@@ -606,10 +607,10 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				},
 			},
 			want: []executor.MergeableResourceUpdater{
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
 			},
 			want1: []executor.MergeableResourceUpdater{
 				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
@@ -680,12 +681,12 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				},
 			},
 			want: []executor.MergeableResourceUpdater{
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), util.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBurstable)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
 			},
 			want1: []executor.MergeableResourceUpdater{
 				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodLS.Pod.Namespace, testingPodLS.Pod.Name), podParentDirLS, system.MemoryMin, "0", executor.MergeFuncUpdateCgroupIfLarger),
@@ -760,10 +761,10 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				},
 			},
 			want: []executor.MergeableResourceUpdater{
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
-				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSGuaranteed)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
+				executor.NewMergeableCgroupResourceUpdater(executor.GroupOwnerRef(string(corev1.PodQOSBestEffort)), koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.MemoryLow, "0", executor.MergeFuncUpdateCgroupIfLarger),
 			},
 			want1: []executor.MergeableResourceUpdater{
 				executor.NewMergeableCgroupResourceUpdater(executor.PodOwnerRef(testingPodBEWithMemQOS.Pod.Namespace, testingPodBEWithMemQOS.Pod.Name), podParentDirBE, system.MemoryMin, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), executor.MergeFuncUpdateCgroupIfLarger),
@@ -1307,7 +1308,7 @@ func createPod(kubeQosClass corev1.PodQOSClass, qosClass apiext.QoSClass) *state
 	}
 
 	return &statesinformer.PodMeta{
-		CgroupDir: util.GetPodKubeRelativePath(pod),
+		CgroupDir: koordletutil.GetPodKubeRelativePath(pod),
 		Pod:       pod,
 	}
 }
@@ -1352,16 +1353,16 @@ func assertCgroupResourceEqual(t *testing.T, expect, got []executor.MergeableRes
 
 func gotQOSStrategyFromFile() *slov1alpha1.ResourceQOSStrategy {
 	strategy := &slov1alpha1.ResourceQOSStrategy{}
-	strategy.LSRClass = readMemFromCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed))
-	strategy.LSClass = readMemFromCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBurstable))
-	strategy.BEClass = readMemFromCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort))
+	strategy.LSRClass = readMemFromCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed))
+	strategy.LSClass = readMemFromCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable))
+	strategy.BEClass = readMemFromCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort))
 	return strategy
 }
 
 func initQOSCgroupFile(qos *slov1alpha1.ResourceQOSStrategy, helper *system.FileTestUtil) {
-	writeMemToCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), qos.LSRClass, helper)
-	writeMemToCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBurstable), qos.LSClass, helper)
-	writeMemToCgroupFile(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), qos.BEClass, helper)
+	writeMemToCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), qos.LSRClass, helper)
+	writeMemToCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), qos.LSClass, helper)
+	writeMemToCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), qos.BEClass, helper)
 }
 
 func readMemFromCgroupFile(parentDir string) *slov1alpha1.ResourceQOS {

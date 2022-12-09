@@ -32,8 +32,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (
@@ -308,11 +309,11 @@ func (b *CPUBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 			continue
 		}
 
-		containerBaseCFS := util.GetContainerBaseCFSQuota(container)
+		containerBaseCFS := koordletutil.GetContainerBaseCFSQuota(container)
 		if containerBaseCFS <= 0 {
 			continue
 		}
-		containerCurCFS, err := util.GetContainerCurCFSQuota(podMeta.CgroupDir, containerStat)
+		containerCurCFS, err := koordletutil.GetContainerCurCFSQuota(podMeta.CgroupDir, containerStat)
 		if err != nil {
 			klog.Infof("get container %s/%s/%s current cfs quota failed, maybe not exist, skip this round, reason %v",
 				pod.Namespace, pod.Name, containerStat.Name, err)
@@ -432,13 +433,13 @@ func (b *CPUBurst) genOperationByContainer(burstCfg *slov1alpha1.CPUBurstConfig,
 
 func (b *CPUBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, containerStat *corev1.ContainerStatus,
 	curContaienrCFS, deltaContainerCFS int64) error {
-	curPodCFS, podPathErr := util.GetPodCurCFSQuota(podMeta.CgroupDir)
+	curPodCFS, podPathErr := koordletutil.GetPodCurCFSQuota(podMeta.CgroupDir)
 	if podPathErr != nil {
 		return fmt.Errorf("get pod %v/%v current cfs quota failed, error: %v",
 			podMeta.Pod.Namespace, podMeta.Pod.Name, podPathErr)
 	}
-	podDir := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
-	containerDir, containerPathErr := util.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStat)
+	podDir := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+	containerDir, containerPathErr := koordletutil.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStat)
 	if containerPathErr != nil {
 		return fmt.Errorf("get container %v/%v/%v cgroup path failed, error: %v",
 			podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, containerPathErr)
@@ -505,7 +506,7 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 		}
 
 		containerCFSBurstVal := calcStaticCPUBurstVal(container, burstCfg)
-		containerDir, burstPathErr := util.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStat)
+		containerDir, burstPathErr := koordletutil.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStat)
 		if burstPathErr != nil {
 			klog.Warningf("get container dir %s/%s/%s failed, dir %v, error %v",
 				pod.Namespace, pod.Name, containerStat.Name, containerDir, burstPathErr)
@@ -532,7 +533,7 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 		}
 	} // end for containers
 
-	podDir := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+	podDir := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 	if system.ValidateResourceValue(&podCFSBurstVal, podDir, system.CPUBurst) {
 		ownerRef := executor.PodOwnerRef(pod.Namespace, pod.Name)
 		podCFSBurstValStr := strconv.FormatInt(podCFSBurstVal, 10)

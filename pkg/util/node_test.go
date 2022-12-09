@@ -17,37 +17,10 @@ limitations under the License.
 package util
 
 import (
-	"path"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	corev1 "k8s.io/api/core/v1"
-
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
-
-func Test_GetKubeQosRelativePath(t *testing.T) {
-
-	guaranteedPathSystemd := GetKubeQosRelativePath(corev1.PodQOSGuaranteed)
-	assert.Equal(t, path.Clean(system.KubeRootNameSystemd), guaranteedPathSystemd)
-
-	burstablePathSystemd := GetKubeQosRelativePath(corev1.PodQOSBurstable)
-	assert.Equal(t, path.Join(system.KubeRootNameSystemd, system.KubeBurstableNameSystemd), burstablePathSystemd)
-
-	besteffortPathSystemd := GetKubeQosRelativePath(corev1.PodQOSBestEffort)
-	assert.Equal(t, path.Join(system.KubeRootNameSystemd, system.KubeBesteffortNameSystemd), besteffortPathSystemd)
-
-	system.SetupCgroupPathFormatter(system.Cgroupfs)
-	guaranteedPathCgroupfs := GetKubeQosRelativePath(corev1.PodQOSGuaranteed)
-	assert.Equal(t, path.Clean(system.KubeRootNameCgroupfs), guaranteedPathCgroupfs)
-
-	burstablePathCgroupfs := GetKubeQosRelativePath(corev1.PodQOSBurstable)
-	assert.Equal(t, path.Join(system.KubeRootNameCgroupfs, system.KubeBurstableNameCgroupfs), burstablePathCgroupfs)
-
-	besteffortPathCgroupfs := GetKubeQosRelativePath(corev1.PodQOSBestEffort)
-	assert.Equal(t, path.Join(system.KubeRootNameCgroupfs, system.KubeBesteffortNameCgroupfs), besteffortPathCgroupfs)
-}
 
 func TestGetNodeAddress(t *testing.T) {
 	type args struct {

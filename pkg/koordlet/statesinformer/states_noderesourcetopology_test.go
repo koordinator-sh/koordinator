@@ -35,7 +35,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
 func Test_syncNodeResourceTopology(t *testing.T) {
@@ -248,7 +248,7 @@ func Test_reportNodeTopology(t *testing.T) {
 
 	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
 	mockNodeCPUInfo := metriccache.NodeCPUInfo{
-		ProcessorInfos: []util.ProcessorInfo{
+		ProcessorInfos: []koordletutil.ProcessorInfo{
 			{CPUID: 0, CoreID: 0, NodeID: 0, SocketID: 0},
 			{CPUID: 1, CoreID: 0, NodeID: 0, SocketID: 0},
 			{CPUID: 2, CoreID: 1, NodeID: 0, SocketID: 0},

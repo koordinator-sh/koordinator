@@ -17,11 +17,7 @@ limitations under the License.
 package metricsadvisor
 
 import (
-	"bytes"
 	"os"
-	"os/exec"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -37,8 +33,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (
@@ -47,9 +44,7 @@ const (
 )
 
 var (
-	// jiffies is the duration unit of CPU stats
-	jiffies            = float64(10 * time.Millisecond)
-	localCPUInfoGetter = util.GetLocalCPUInfo
+	localCPUInfoGetter = koordletutil.GetLocalCPUInfo
 )
 
 type Collector interface {
@@ -124,12 +119,6 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 		return nil
 	}
 
-	// $ getconf CLK_TCK > jiffies
-	if err := initJiffies(); err != nil {
-		klog.Errorf("failed to get CLK_TCK, err: %s", err)
-		return err
-	}
-
 	go wait.Until(func() {
 		c.collectGPUUsage()
 		c.collectNodeResUsed()
@@ -184,32 +173,11 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
-// initJiffies use command "getconf CLK_TCK" to fetch the clock tick on current host,
-// if the command doesn't exist, uses the default value 10ms for jiffies
-func initJiffies() error {
-	getconf, err := exec.LookPath("getconf")
-	if err != nil {
-		return nil
-	}
-	cmd := exec.Command(getconf, "CLK_TCK")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	ticks, err := strconv.ParseFloat(strings.TrimSpace(out.String()), 64)
-	if err != nil {
-		return err
-	}
-	jiffies = float64(time.Second / time.Duration(ticks))
-	return nil
-}
-
 func (c *collector) collectNodeResUsed() {
 	klog.V(6).Info("collectNodeResUsed start")
 	collectTime := time.Now()
-	currentCPUTick, err0 := util.GetCPUStatUsageTicks()
-	memUsageValue, err1 := util.GetMemInfoUsageKB()
+	currentCPUTick, err0 := koordletutil.GetCPUStatUsageTicks()
+	memUsageValue, err1 := koordletutil.GetMemInfoUsageKB()
 	if err0 != nil || err1 != nil {
 		klog.Warningf("failed to collect node usage, CPU err: %s, Memory err: %s", err0, err1)
 		return
@@ -225,7 +193,7 @@ func (c *collector) collectNodeResUsed() {
 	}
 	// 1 jiffies could be 10ms
 	// NOTICE: do subtraction and division first to avoid overflow
-	cpuUsageValue := float64(currentCPUTick-lastCPUStat.cpuTick) / float64(collectTime.Sub(lastCPUStat.ts)) * jiffies
+	cpuUsageValue := float64(currentCPUTick-lastCPUStat.cpuTick) / system.GetPeriodTicks(lastCPUStat.ts, collectTime)
 
 	nodeMetric := metriccache.NodeResourceMetric{
 		CPUUsed: metriccache.CPUMetric{
@@ -257,8 +225,8 @@ func (c *collector) collectPodResUsed() {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
 		collectTime := time.Now()
-		currentCPUUsage, err0 := util.GetPodCPUUsageNanoseconds(meta.CgroupDir)
-		memUsageValue, err1 := util.GetPodMemStatUsageBytes(meta.CgroupDir)
+		currentCPUUsage, err0 := koordletutil.GetPodCPUUsageNanoseconds(meta.CgroupDir)
+		memUsageValue, err1 := koordletutil.GetPodMemStatUsageBytes(meta.CgroupDir)
 
 		if err0 != nil || err1 != nil {
 			// higher verbosity for probably non-running pods
@@ -322,8 +290,8 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 	for i := range pod.Status.ContainerStatuses {
 		containerStat := &pod.Status.ContainerStatuses[i]
 		collectTime := time.Now()
-		currentCPUUsage, err0 := util.GetContainerCPUUsageNanoseconds(meta.CgroupDir, containerStat)
-		memUsageValue, err1 := util.GetContainerMemStatUsageBytes(meta.CgroupDir, containerStat)
+		currentCPUUsage, err0 := koordletutil.GetContainerCPUUsageNanoseconds(meta.CgroupDir, containerStat)
+		memUsageValue, err1 := koordletutil.GetContainerMemStatUsageBytes(meta.CgroupDir, containerStat)
 
 		if err0 != nil || err1 != nil {
 			// higher verbosity for probably non-running pods
@@ -411,8 +379,7 @@ func (c *collector) collectPodThrottledInfo() {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
 		collectTime := time.Now()
-		cgroupStatPath := util.GetPodCgroupCPUStatPath(meta.CgroupDir)
-		currentCPUStat, err := system.GetCPUStatRaw(cgroupStatPath)
+		currentCPUStat, err := koordletutil.GetPodCPUStatRaw(meta.CgroupDir)
 		if err != nil || currentCPUStat == nil {
 			if pod.Status.Phase == corev1.PodRunning {
 				// print running pod collection error
@@ -460,13 +427,7 @@ func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMet
 				pod.Namespace, pod.Name, containerStat.Name)
 			continue
 		}
-		containerCgroupPath, err := util.GetContainerCgroupCPUStatPath(podMeta.CgroupDir, containerStat)
-		if err != nil {
-			klog.Warningf("generate container %s/%s/%s cgroup path failed, err %v",
-				pod.Namespace, pod.Name, containerStat.Name, err)
-			continue
-		}
-		currentCPUStat, err := system.GetCPUStatRaw(containerCgroupPath)
+		currentCPUStat, err := koordletutil.GetContainerCPUStatRaw(podMeta.CgroupDir, containerStat)
 		if err != nil {
 			klog.V(4).Infof("collect container %s/%s/%s cpu throttled failed, err %v, metric %v",
 				pod.Namespace, pod.Name, containerStat.Name, err, currentCPUStat)

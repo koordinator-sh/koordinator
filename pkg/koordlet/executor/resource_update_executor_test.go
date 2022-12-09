@@ -25,8 +25,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/klog/v2"
 
+	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/tools/cache"
-	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 var commonTestFile = "test_common_file"

@@ -27,8 +27,9 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	sysutil "github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 type bvtRule struct {
@@ -130,7 +131,7 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 	for _, kubeQOS := range []corev1.PodQOSClass{
 		corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
 		bvtValue := r.getKubeQOSDirBvtValue(kubeQOS)
-		kubeQOSCgroupPath := util.GetKubeQosRelativePath(kubeQOS)
+		kubeQOSCgroupPath := koordletutil.GetKubeQosRelativePath(kubeQOS)
 		if err := sysutil.CgroupFileWrite(kubeQOSCgroupPath, sysutil.CPUBVTWarpNs, strconv.FormatInt(bvtValue, 10)); err != nil {
 			klog.Infof("update kube qos %v cpu bvt failed, dir %v, error %v", kubeQOS, kubeQOSCgroupPath, err)
 		} else {
@@ -141,7 +142,7 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		podQOS := ext.GetPodQoSClass(podMeta.Pod)
 		podKubeQOS := podMeta.Pod.Status.QOSClass
 		podBvt := r.getPodBvtValue(podQOS, podKubeQOS)
-		podCgroupPath := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+		podCgroupPath := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 		if err := sysutil.CgroupFileWrite(podCgroupPath, sysutil.CPUBVTWarpNs, strconv.FormatInt(podBvt, 10)); err != nil {
 			klog.Infof("update pod %s cpu bvt failed, dir %v, error %v",
 				util.GetPodKey(podMeta.Pod), podCgroupPath, err)

@@ -24,8 +24,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 const (
@@ -144,7 +144,7 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 	for _, qosClass := range qosClasses {
 		// here we choose cpu subsystem as ground truth,
 		// since we only need to watch one of all subsystems, and cpu subsystem always and must exist
-		cgroupPath := path.Join(p.cgroupRootPath, system.CgroupCPUDir, util.GetPodQoSRelativePath(qosClass))
+		cgroupPath := path.Join(p.cgroupRootPath, system.CgroupCPUDir, koordletutil.GetPodQoSRelativePath(qosClass))
 		err := p.podWatcher.AddWatch(cgroupPath)
 		if err != nil {
 			klog.Errorf("failed to watch path %v err %v", cgroupPath, err)
@@ -161,7 +161,7 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 			switch TypeOf(evt) {
 			case DirCreated:
 				basename := path.Base(evt.Name)
-				podID, err := util.ParsePodID(basename)
+				podID, err := koordletutil.ParsePodID(basename)
 				if err != nil {
 					klog.Infof("skip %v added event which is not a pod", evt.Name)
 					continue
@@ -172,7 +172,7 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 				p.containerWatcher.AddWatch(evt.Name)
 			case DirRemoved:
 				basename := path.Base(evt.Name)
-				podID, err := util.ParsePodID(basename)
+				podID, err := koordletutil.ParsePodID(basename)
 				if err != nil {
 					klog.Infof("skip %v removed event which is not a pod", evt.Name)
 					continue
@@ -190,9 +190,9 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 			switch TypeOf(evt) {
 			case DirCreated:
 				containerBasename := path.Base(evt.Name)
-				containerID, containerErr := util.ParseContainerID(containerBasename)
+				containerID, containerErr := koordletutil.ParseContainerID(containerBasename)
 				podBasename := path.Base(path.Dir(evt.Name))
-				podID, podErr := util.ParsePodID(podBasename)
+				podID, podErr := koordletutil.ParsePodID(podBasename)
 				if podErr != nil || containerErr != nil {
 					klog.Infof("skip %v added event which is not a container", evt.Name)
 					continue
@@ -201,9 +201,9 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 				p.events <- newContainerEvent(podID, containerID, containerAdded)
 			case DirRemoved:
 				containerBasename := path.Base(evt.Name)
-				containerID, containerErr := util.ParseContainerID(containerBasename)
+				containerID, containerErr := koordletutil.ParseContainerID(containerBasename)
 				podBasename := path.Base(path.Dir(evt.Name))
-				podID, podErr := util.ParsePodID(podBasename)
+				podID, podErr := koordletutil.ParsePodID(podBasename)
 				if podErr != nil || containerErr != nil {
 					klog.Infof("skip %v removed event which is not a container", evt.Name)
 					continue

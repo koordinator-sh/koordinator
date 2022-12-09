@@ -29,8 +29,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/system"
 )
 
 const (
@@ -169,7 +170,7 @@ func getPodCgroupNewTaskIds(podMeta *statesinformer.PodMeta, tasksMap map[int]st
 			continue
 		}
 
-		ids, err := util.GetContainerCurTasks(podMeta.CgroupDir, &containerStat)
+		ids, err := koordletutil.GetContainerCurTasks(podMeta.CgroupDir, &containerStat)
 		if err != nil {
 			klog.Warningf("failed to get pod container cgroup task ids for container %s/%s/%s, err: %s",
 				pod.Namespace, pod.Name, container.Name, err)
