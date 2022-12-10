@@ -60,7 +60,9 @@ func (h *forceSyncEventHandler) OnAdd(obj interface{}) {
 			delete(h.objects, objectUID)
 		}
 	}
-	h.handler.OnAdd(obj)
+	if h.handler != nil {
+		h.handler.OnAdd(obj)
+	}
 }
 
 func (h *forceSyncEventHandler) OnUpdate(oldObj, newObj interface{}) {
@@ -69,7 +71,9 @@ func (h *forceSyncEventHandler) OnUpdate(oldObj, newObj interface{}) {
 		// Release objects map to reduce memory usage and reduce GC pressure
 		h.objects = nil
 	}
-	h.handler.OnUpdate(oldObj, newObj)
+	if h.handler != nil {
+		h.handler.OnUpdate(oldObj, newObj)
+	}
 }
 
 func (h *forceSyncEventHandler) OnDelete(obj interface{}) {
@@ -78,10 +82,15 @@ func (h *forceSyncEventHandler) OnDelete(obj interface{}) {
 		// Release objects map to reduce memory usage and reduce GC pressure
 		h.objects = nil
 	}
-	h.handler.OnDelete(obj)
+	if h.handler != nil {
+		h.handler.OnDelete(obj)
+	}
 }
 
 func (h *forceSyncEventHandler) addDirectly(obj interface{}) {
+	if h.handler == nil {
+		return
+	}
 	h.handler.OnAdd(obj)
 	if metaAccessor, ok := obj.(metav1.ObjectMetaAccessor); ok {
 		objectMeta := metaAccessor.GetObjectMeta()
@@ -102,8 +111,10 @@ type CacheSyncer interface {
 func ForceSyncFromInformer(stopCh <-chan struct{}, cacheSyncer CacheSyncer, informer cache.SharedInformer, handler cache.ResourceEventHandler) {
 	syncEventHandler := newForceSyncEventHandler(handler)
 	informer.AddEventHandler(syncEventHandler)
-	cacheSyncer.Start(stopCh)
-	cacheSyncer.WaitForCacheSync(stopCh)
+	if cacheSyncer != nil {
+		cacheSyncer.Start(stopCh)
+		cacheSyncer.WaitForCacheSync(stopCh)
+	}
 	allObjects := informer.GetStore().List()
 	for _, obj := range allObjects {
 		syncEventHandler.addDirectly(obj)
