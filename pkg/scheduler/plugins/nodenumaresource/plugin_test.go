@@ -578,14 +578,13 @@ func TestPlugin_Filter(t *testing.T) {
 
 func TestPlugin_Score(t *testing.T) {
 	tests := []struct {
-		name            string
-		nodeLabels      map[string]string
-		state           *preFilterState
-		pod             *corev1.Pod
-		cpuTopology     *CPUTopology
-		allocationState *cpuAllocation
-		want            *framework.Status
-		wantScore       int64
+		name        string
+		nodeLabels  map[string]string
+		state       *preFilterState
+		pod         *corev1.Pod
+		cpuTopology *CPUTopology
+		want        *framework.Status
+		wantScore   int64
 	}{
 		{
 			name: "error with missing preFilterState",
@@ -606,11 +605,10 @@ func TestPlugin_Score(t *testing.T) {
 			state: &preFilterState{
 				skip: false,
 			},
-			cpuTopology:     &CPUTopology{},
-			allocationState: newCPUAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
-			want:            nil,
-			wantScore:       0,
+			cpuTopology: &CPUTopology{},
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   0,
 		},
 		{
 			name: "succeed with skip",
@@ -631,11 +629,10 @@ func TestPlugin_Score(t *testing.T) {
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
 			},
-			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
-			want:            nil,
-			wantScore:       50,
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   50,
 		},
 		{
 			name: "score with satisfied node FullPCPUs",
@@ -647,11 +644,10 @@ func TestPlugin_Score(t *testing.T) {
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          8,
 			},
-			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
-			want:            nil,
-			wantScore:       100,
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   100,
 		},
 		{
 			name: "score with full empty node SpreadByPCPUs",
@@ -663,11 +659,10 @@ func TestPlugin_Score(t *testing.T) {
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
-			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
-			want:            nil,
-			wantScore:       100,
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   100,
 		},
 		{
 			name: "score with exceed socket FullPCPUs",
@@ -679,11 +674,10 @@ func TestPlugin_Score(t *testing.T) {
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          16,
 			},
-			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
-			want:            nil,
-			wantScore:       0,
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   0,
 		},
 		{
 			name: "score with satisfied socket FullPCPUs",
@@ -695,11 +689,10 @@ func TestPlugin_Score(t *testing.T) {
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          16,
 			},
-			cpuTopology:     buildCPUTopologyForTest(2, 2, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
-			want:            nil,
-			wantScore:       33,
+			cpuTopology: buildCPUTopologyForTest(2, 2, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   33,
 		},
 		{
 			name: "score with full empty socket SpreadByPCPUs",
@@ -711,11 +704,10 @@ func TestPlugin_Score(t *testing.T) {
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
-			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
-			want:            nil,
-			wantScore:       100,
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   100,
 		},
 		{
 			name: "score with Node NUMA Allocate Strategy",
@@ -730,11 +722,28 @@ func TestPlugin_Score(t *testing.T) {
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          2,
 			},
-			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
-			want:            nil,
-			wantScore:       50,
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   50,
+		},
+		{
+			name: "score with Node CPU Bind Policy",
+			nodeLabels: map[string]string{
+				extension.LabelNodeCPUBindPolicy: extension.NodeCPUBindPolicyFullPCPUsOnly,
+			},
+			state: &preFilterState{
+				skip: false,
+				resourceSpec: &extension.ResourceSpec{
+					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
+				},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				numCPUsNeeded:          8,
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   100,
 		},
 	}
 	for _, tt := range tests {
@@ -764,16 +773,15 @@ func TestPlugin_Score(t *testing.T) {
 			assert.Nil(t, err)
 
 			plg := p.(*Plugin)
-			if tt.allocationState != nil {
-				if tt.cpuTopology != nil {
-					plg.topologyManager.UpdateCPUTopologyOptions(tt.allocationState.nodeName, func(options *CPUTopologyOptions) {
-						options.CPUTopology = tt.cpuTopology
-					})
-				}
-
-				cpuManager := plg.cpuManager.(*cpuManagerImpl)
-				cpuManager.allocationStates[tt.allocationState.nodeName] = tt.allocationState
+			allocateState := newCPUAllocation("test-node-1")
+			if tt.cpuTopology != nil {
+				plg.topologyManager.UpdateCPUTopologyOptions(allocateState.nodeName, func(options *CPUTopologyOptions) {
+					options.CPUTopology = tt.cpuTopology
+				})
 			}
+
+			cpuManager := plg.cpuManager.(*cpuManagerImpl)
+			cpuManager.allocationStates[allocateState.nodeName] = allocateState
 
 			suit.start()
 
@@ -800,15 +808,15 @@ func TestPlugin_Score(t *testing.T) {
 
 func TestPlugin_Reserve(t *testing.T) {
 	tests := []struct {
-		name            string
-		nodeLabels      map[string]string
-		state           *preFilterState
-		pod             *corev1.Pod
-		cpuTopology     *CPUTopology
-		allocationState *cpuAllocation
-		allocatedCPUs   []int
-		want            *framework.Status
-		wantCPUSet      cpuset.CPUSet
+		name          string
+		nodeLabels    map[string]string
+		state         *preFilterState
+		pod           *corev1.Pod
+		cpuTopology   *CPUTopology
+		allocatedCPUs []int
+		want          *framework.Status
+		wantCPUSet    cpuset.CPUSet
+		wantState     *preFilterState
 	}{
 		{
 			name: "error with missing preFilterState",
@@ -828,10 +836,9 @@ func TestPlugin_Reserve(t *testing.T) {
 			state: &preFilterState{
 				skip: false,
 			},
-			cpuTopology:     &CPUTopology{},
-			allocationState: newCPUAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
-			want:            framework.NewStatus(framework.Error, ErrInvalidCPUTopology),
+			cpuTopology: &CPUTopology{},
+			pod:         &corev1.Pod{},
+			want:        framework.NewStatus(framework.Error, ErrInvalidCPUTopology),
 		},
 		{
 			name: "succeed with skip",
@@ -851,11 +858,36 @@ func TestPlugin_Reserve(t *testing.T) {
 				},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
-			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
-			want:            nil,
-			wantCPUSet:      cpuset.NewCPUSet(0, 1, 2, 3),
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantCPUSet:  cpuset.NewCPUSet(0, 1, 2, 3),
+		},
+		{
+			name: "allocated by node cpu bind policy",
+			nodeLabels: map[string]string{
+				extension.LabelNodeCPUBindPolicy: extension.NodeCPUBindPolicySpreadByPCPUs,
+			},
+			state: &preFilterState{
+				skip:          false,
+				numCPUsNeeded: 4,
+				resourceSpec: &extension.ResourceSpec{
+					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantCPUSet:  cpuset.NewCPUSet(0, 2, 4, 6),
+			wantState: &preFilterState{
+				skip:          false,
+				numCPUsNeeded: 4,
+				resourceSpec: &extension.ResourceSpec{
+					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+			},
 		},
 		{
 			name: "error with big request cpu",
@@ -866,10 +898,9 @@ func TestPlugin_Reserve(t *testing.T) {
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
 			},
-			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
-			want:            framework.NewStatus(framework.Error, "not enough cpus available to satisfy request"),
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        framework.NewStatus(framework.Error, "not enough cpus available to satisfy request"),
 		},
 		{
 			name: "succeed with valid cpu topology and node numa least allocate strategy",
@@ -884,12 +915,11 @@ func TestPlugin_Reserve(t *testing.T) {
 				},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
-			cpuTopology:     buildCPUTopologyForTest(2, 1, 8, 2),
-			allocationState: newCPUAllocation("test-node-1"),
-			allocatedCPUs:   []int{0, 1, 2, 3},
-			pod:             &corev1.Pod{},
-			want:            nil,
-			wantCPUSet:      cpuset.NewCPUSet(16, 17, 18, 19),
+			cpuTopology:   buildCPUTopologyForTest(2, 1, 8, 2),
+			allocatedCPUs: []int{0, 1, 2, 3},
+			pod:           &corev1.Pod{},
+			want:          nil,
+			wantCPUSet:    cpuset.NewCPUSet(16, 17, 18, 19),
 		},
 		{
 			name: "succeed with valid cpu topology and node numa most allocate strategy",
@@ -904,12 +934,11 @@ func TestPlugin_Reserve(t *testing.T) {
 				},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
-			cpuTopology:     buildCPUTopologyForTest(2, 1, 8, 2),
-			allocationState: newCPUAllocation("test-node-1"),
-			allocatedCPUs:   []int{0, 1, 2, 3},
-			pod:             &corev1.Pod{},
-			want:            nil,
-			wantCPUSet:      cpuset.NewCPUSet(4, 5, 6, 7),
+			cpuTopology:   buildCPUTopologyForTest(2, 1, 8, 2),
+			allocatedCPUs: []int{0, 1, 2, 3},
+			pod:           &corev1.Pod{},
+			want:          nil,
+			wantCPUSet:    cpuset.NewCPUSet(4, 5, 6, 7),
 		},
 	}
 	for _, tt := range tests {
@@ -938,19 +967,18 @@ func TestPlugin_Reserve(t *testing.T) {
 			assert.Nil(t, err)
 
 			plg := p.(*Plugin)
-			if tt.allocationState != nil {
-				if tt.cpuTopology != nil {
-					plg.topologyManager.UpdateCPUTopologyOptions(tt.allocationState.nodeName, func(options *CPUTopologyOptions) {
-						options.CPUTopology = tt.cpuTopology
-					})
-					if len(tt.allocatedCPUs) > 0 {
-						tt.allocationState.addCPUs(tt.cpuTopology, uuid.NewUUID(), cpuset.NewCPUSet(tt.allocatedCPUs...), schedulingconfig.CPUExclusivePolicyNone)
-					}
+			allocationState := newCPUAllocation("test-node-1")
+			if tt.cpuTopology != nil {
+				plg.topologyManager.UpdateCPUTopologyOptions(allocationState.nodeName, func(options *CPUTopologyOptions) {
+					options.CPUTopology = tt.cpuTopology
+				})
+				if len(tt.allocatedCPUs) > 0 {
+					allocationState.addCPUs(tt.cpuTopology, uuid.NewUUID(), cpuset.NewCPUSet(tt.allocatedCPUs...), schedulingconfig.CPUExclusivePolicyNone)
 				}
-
-				cpuManager := plg.cpuManager.(*cpuManagerImpl)
-				cpuManager.allocationStates[tt.allocationState.nodeName] = tt.allocationState
 			}
+
+			cpuManager := plg.cpuManager.(*cpuManagerImpl)
+			cpuManager.allocationStates[allocationState.nodeName] = allocationState
 
 			suit.start()
 

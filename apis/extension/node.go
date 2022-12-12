@@ -38,9 +38,13 @@ const (
 )
 
 const (
+	// NodeCPUBindPolicyNone does not perform any bind policy
+	NodeCPUBindPolicyNone = "None"
 	// NodeCPUBindPolicyFullPCPUsOnly requires that the scheduler must allocate full physical cores.
 	// Equivalent to kubelet CPU manager policy option full-pcpus-only=true.
 	NodeCPUBindPolicyFullPCPUsOnly = "FullPCPUsOnly"
+	// NodeCPUBindPolicySpreadByPCPUs requires that the scheduler must evenly allocate logical cpus across physical cores
+	NodeCPUBindPolicySpreadByPCPUs = "SpreadByPCPUs"
 )
 
 const (
@@ -135,4 +139,17 @@ func GetKubeletCPUManagerPolicy(annotations map[string]string) (*KubeletCPUManag
 		return nil, err
 	}
 	return cpuManagerPolicy, nil
+}
+
+func GetNodeCPUBindPolicy(nodeLabels map[string]string, kubeletCPUPolicy *KubeletCPUManagerPolicy) string {
+	nodeCPUBindPolicy := nodeLabels[LabelNodeCPUBindPolicy]
+	if nodeCPUBindPolicy == NodeCPUBindPolicyFullPCPUsOnly ||
+		(kubeletCPUPolicy != nil && kubeletCPUPolicy.Policy == KubeletCPUManagerPolicyStatic &&
+			kubeletCPUPolicy.Options[KubeletCPUManagerPolicyFullPCPUsOnlyOption] == "true") {
+		return NodeCPUBindPolicyFullPCPUsOnly
+	}
+	if nodeCPUBindPolicy == NodeCPUBindPolicySpreadByPCPUs {
+		return nodeCPUBindPolicy
+	}
+	return NodeCPUBindPolicyNone
 }

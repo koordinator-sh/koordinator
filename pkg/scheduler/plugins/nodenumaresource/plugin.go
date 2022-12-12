@@ -19,6 +19,7 @@ package nodenumaresource
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -259,9 +260,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	}
 
 	kubeletCPUPolicy := cpuTopologyOptions.Policy
-	if node.Labels[extension.LabelNodeCPUBindPolicy] == extension.NodeCPUBindPolicyFullPCPUsOnly ||
-		(kubeletCPUPolicy != nil && kubeletCPUPolicy.Policy == extension.KubeletCPUManagerPolicyStatic &&
-			kubeletCPUPolicy.Options[extension.KubeletCPUManagerPolicyFullPCPUsOnlyOption] == "true") {
+	if extension.GetNodeCPUBindPolicy(node.Labels, kubeletCPUPolicy) == extension.NodeCPUBindPolicyFullPCPUsOnly {
 		if state.numCPUsNeeded%cpuTopologyOptions.CPUTopology.CPUsPerCore() != 0 {
 			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError)
 		}
@@ -291,7 +290,12 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, framework.NewStatus(framework.Error, "node not found")
 	}
 
-	score := p.cpuManager.Score(node, state.numCPUsNeeded, state.preferredCPUBindPolicy, state.preferredCPUExclusivePolicy)
+	preferredCPUBindPolicy, err := p.getPreferredCPUBindPolicy(node, state.preferredCPUBindPolicy)
+	if err != nil {
+		return 0, nil
+	}
+
+	score := p.cpuManager.Score(node, state.numCPUsNeeded, preferredCPUBindPolicy, state.preferredCPUExclusivePolicy)
 	return score, nil
 }
 
@@ -317,12 +321,17 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return framework.NewStatus(framework.Error, "node not found")
 	}
 
-	result, err := p.cpuManager.Allocate(node, state.numCPUsNeeded, state.preferredCPUBindPolicy, state.preferredCPUExclusivePolicy)
+	preferredCPUBindPolicy, err := p.getPreferredCPUBindPolicy(node, state.preferredCPUBindPolicy)
+	if err != nil {
+		return framework.AsStatus(err)
+	}
+	result, err := p.cpuManager.Allocate(node, state.numCPUsNeeded, preferredCPUBindPolicy, state.preferredCPUExclusivePolicy)
 	if err != nil {
 		return framework.AsStatus(err)
 	}
 	p.cpuManager.UpdateAllocatedCPUSet(nodeName, pod.UID, result, state.preferredCPUExclusivePolicy)
 	state.allocatedCPUs = result
+	state.preferredCPUBindPolicy = preferredCPUBindPolicy
 	return nil
 }
 
@@ -355,9 +364,10 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 
 	// Write back ResourceSpec annotation if LSR Pod hasn't specified CPUBindPolicy
 	if state.resourceSpec.PreferredCPUBindPolicy == "" ||
-		state.resourceSpec.PreferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault {
+		state.resourceSpec.PreferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault ||
+		state.resourceSpec.PreferredCPUBindPolicy != state.preferredCPUBindPolicy {
 		resourceSpec := &extension.ResourceSpec{
-			PreferredCPUBindPolicy: p.pluginArgs.DefaultCPUBindPolicy,
+			PreferredCPUBindPolicy: state.preferredCPUBindPolicy,
 		}
 		resourceSpecData, err := json.Marshal(resourceSpec)
 		if err != nil {
@@ -388,4 +398,26 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 
 	klog.V(4).Infof("Successfully preBind Pod %s/%s with CPUSet %s", pod.Namespace, pod.Name, state.allocatedCPUs)
 	return nil
+}
+
+func (p *Plugin) getPreferredCPUBindPolicy(node *corev1.Node, preferredCPUBindPolicy schedulingconfig.CPUBindPolicy) (schedulingconfig.CPUBindPolicy, error) {
+	cpuTopologyOptions := p.topologyManager.GetCPUTopologyOptions(node.Name)
+	if cpuTopologyOptions.CPUTopology == nil {
+		return preferredCPUBindPolicy, errors.New(ErrNotFoundCPUTopology)
+	}
+	if !cpuTopologyOptions.CPUTopology.IsValid() {
+		return preferredCPUBindPolicy, errors.New(ErrInvalidCPUTopology)
+	}
+
+	kubeletCPUPolicy := cpuTopologyOptions.Policy
+	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, kubeletCPUPolicy)
+	switch nodeCPUBindPolicy {
+	default:
+	case extension.NodeCPUBindPolicyNone:
+	case extension.NodeCPUBindPolicySpreadByPCPUs:
+		preferredCPUBindPolicy = schedulingconfig.CPUBindPolicySpreadByPCPUs
+	case extension.NodeCPUBindPolicyFullPCPUsOnly:
+		preferredCPUBindPolicy = schedulingconfig.CPUBindPolicyFullPCPUs
+	}
+	return preferredCPUBindPolicy, nil
 }
