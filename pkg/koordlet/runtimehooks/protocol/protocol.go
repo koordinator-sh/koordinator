@@ -21,6 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -70,39 +71,44 @@ func (r *Resources) IsOriginResSet() bool {
 
 func injectCPUShares(cgroupParent string, cpuShares int64) error {
 	cpuShareStr := strconv.FormatInt(cpuShares, 10)
-	if err := sysutil.CgroupFileWriteIfDifferent(cgroupParent, sysutil.CPUShares, cpuShareStr); err != nil {
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUSharesName, cgroupParent, cpuShareStr)
+	if err != nil {
 		return err
 	}
-	return nil
+	return updater.Update()
 }
 
 func injectCPUSet(cgroupParent string, cpuset string) error {
-	if err := sysutil.CgroupFileWriteIfDifferent(cgroupParent, sysutil.CPUSet, cpuset); err != nil {
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUSetCPUSName, cgroupParent, cpuset)
+	if err != nil {
 		return err
 	}
-	return nil
+	return updater.Update()
 }
 
 func injectCPUQuota(cgroupParent string, cpuQuota int64) error {
 	cpuQuotaStr := strconv.FormatInt(cpuQuota, 10)
-	if err := sysutil.CgroupFileWriteIfDifferent(cgroupParent, sysutil.CPUCFSQuota, cpuQuotaStr); err != nil {
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, cgroupParent, cpuQuotaStr)
+	if err != nil {
 		return err
 	}
-	return nil
+	return updater.Update()
 }
 
 func injectMemoryLimit(cgroupParent string, memoryLimit int64) error {
 	memoryLimitStr := strconv.FormatInt(memoryLimit, 10)
-	if err := sysutil.CgroupFileWriteIfDifferent(cgroupParent, sysutil.MemoryLimit, memoryLimitStr); err != nil {
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, cgroupParent, memoryLimitStr)
+	if err != nil {
 		return err
 	}
-	return nil
+	return updater.Update()
 }
 
 func injectCPUBvt(cgroupParent string, bvtValue int64) error {
 	bvtValueStr := strconv.FormatInt(bvtValue, 10)
-	if err := sysutil.CgroupFileWriteIfDifferent(cgroupParent, sysutil.CPUBVTWarpNs, bvtValueStr); err != nil {
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUBVTWarpNsName, cgroupParent, bvtValueStr)
+	if err != nil {
 		return err
 	}
-	return nil
+	return updater.Update()
 }

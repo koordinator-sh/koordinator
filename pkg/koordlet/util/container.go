@@ -19,7 +19,6 @@ package util
 import (
 	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -206,12 +205,6 @@ func GetContainerBaseCFSQuota(container *corev1.Container) int64 {
 	} else {
 		return cpuMilliLimit * system.CFSBasePeriodValue / 1000
 	}
-}
-
-// WriteCgroupCPUSet writes the cgroup cpuset file according to the specified cgroup dir
-// DEPRECATED: write cgroup via resourceexecutor.ResourceUpdater instead.
-func WriteCgroupCPUSet(cgroupFileDir, cpusetStr string) error {
-	return os.WriteFile(filepath.Join(cgroupFileDir, system.CPUSetCPUSName), []byte(cpusetStr), 0644)
 }
 
 func GetPIDsInPod(podParentDir string, cs []corev1.ContainerStatus) ([]uint32, error) {

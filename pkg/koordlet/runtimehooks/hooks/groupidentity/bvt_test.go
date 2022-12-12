@@ -48,6 +48,7 @@ func getPodCPUBvt(podDirWithKube string, helper *system.FileTestUtil) int64 {
 func Test_bvtPlugin_systemSupported(t *testing.T) {
 	kubeRootDir := util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed)
 	type fields struct {
+		UseCgroupsV2            bool
 		initPath                *string
 		initKernelGroupIdentity bool
 	}
@@ -75,16 +76,25 @@ func Test_bvtPlugin_systemSupported(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "system not support since bvt not file exist (cgroups-v2)",
+			fields: fields{
+				UseCgroupsV2: true,
+			},
+			want: false,
+		},
 	}
 	for _, tt := range tests {
-		testHelper := system.NewFileTestUtil(t)
-		if tt.fields.initPath != nil {
-			initCPUBvt(*tt.fields.initPath, 0, testHelper)
-		}
-		if tt.fields.initKernelGroupIdentity {
-			initKernelGroupIdentity(0, testHelper)
-		}
 		t.Run(tt.name, func(t *testing.T) {
+			testHelper := system.NewFileTestUtil(t)
+			defer testHelper.Cleanup()
+			testHelper.SetCgroupsV2(tt.fields.UseCgroupsV2)
+			if tt.fields.initPath != nil {
+				initCPUBvt(*tt.fields.initPath, 0, testHelper)
+			}
+			if tt.fields.initKernelGroupIdentity {
+				initKernelGroupIdentity(0, testHelper)
+			}
 			b := &bvtPlugin{}
 			if got := b.SystemSupported(); got != tt.want {
 				t.Errorf("SystemSupported() = %v, want %v", got, tt.want)

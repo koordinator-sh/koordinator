@@ -25,8 +25,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -43,7 +43,7 @@ func readTotalCPUStat(statPath string) (uint64, error) {
 	stats := strings.Split(string(rawStats), "\n")
 	for _, stat := range stats {
 		fieldStat := strings.Fields(stat)
-		if fieldStat[0] == "cpu" {
+		if len(fieldStat) > 0 && fieldStat[0] == "cpu" {
 			if len(fieldStat) <= 7 {
 				return 0, fmt.Errorf("%s is illegally formatted", statPath)
 			}
@@ -64,7 +64,8 @@ func readTotalCPUStat(statPath string) (uint64, error) {
 
 // GetCPUStatUsageTicks returns the node's CPU usage ticks
 func GetCPUStatUsageTicks() (uint64, error) {
-	return readTotalCPUStat(system.ProcStatFile.File)
+	statPath := system.GetProcFilePath(system.ProcStatName)
+	return readTotalCPUStat(statPath)
 }
 
 func readCPUAcctStatUsageTicks(statPath string) (uint64, error) {

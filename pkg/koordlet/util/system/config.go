@@ -45,6 +45,23 @@ type Config struct {
 	DockerEndPoint     string
 }
 
+func init() {
+	agentMode := os.Getenv("agent_mode")
+	if agentMode == HOST_MODE {
+		Conf = NewHostModeConfig()
+		AgentMode = agentMode
+	}
+
+	initSupportConfigs()
+}
+
+func initSupportConfigs() {
+	HostSystemInfo = collectVersionInfo()
+	initFilePath()
+	initCgroupsVersion()
+	_, _ = IsSupportResctrl()
+}
+
 func NewHostModeConfig() *Config {
 	return &Config{
 		CgroupKubePath:        "kubepods/",
@@ -70,20 +87,8 @@ func NewDsModeConfig() *Config {
 	}
 }
 
-func init() {
-	agentMode := os.Getenv("agent_mode")
-	if agentMode == HOST_MODE {
-		Conf = NewHostModeConfig()
-		AgentMode = agentMode
-	}
-	initFilePath()
-	initCgroupsVersion()
-}
-
 func SetConf(config Config) {
 	Conf = &config
-	HostSystemInfo = collectVersionInfo()
-	initFilePath()
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
@@ -98,7 +103,5 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.ContainerdEndPoint, "containerd-endpoint", c.ContainerdEndPoint, "containerd endPoint")
 	fs.StringVar(&c.DockerEndPoint, "docker-endpoint", c.DockerEndPoint, "docker endPoint")
 
-	HostSystemInfo = collectVersionInfo()
-	initFilePath()
-	initCgroupsVersion()
+	initSupportConfigs()
 }

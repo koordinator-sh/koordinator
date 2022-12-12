@@ -35,14 +35,22 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
+
+func newTestExecutor() resourceexecutor.ResourceUpdateExecutor {
+	return &resourceexecutor.ResourceUpdateExecutorImpl{
+		Config:        resourceexecutor.NewDefaultConfig(),
+		ResourceCache: cache.NewCacheDefault(),
+	}
+}
 
 type FakeRecorder struct {
 	eventReason string
@@ -693,7 +701,7 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
 
 			b := &CPUBurst{
-				executor: executor.NewResourceUpdateExecutor("CPUBurstTestExecutor", 60),
+				executor: newTestExecutor(),
 			}
 
 			stop := make(chan struct{})
@@ -1220,7 +1228,8 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			}
 			b := &CPUBurst{
 				resmanager:       resmanager,
-				executor:         executor.NewResourceUpdateExecutor("CPUBurstTestExecutor", 60),
+				executor:         newTestExecutor(),
+				cgroupReader:     resourceexecutor.NewCgroupReader(),
 				containerLimiter: make(map[string]*burstLimiter),
 			}
 			_ = b.init(stop)
@@ -1557,7 +1566,7 @@ func TestCPUBurst_start(t *testing.T) {
 
 			fakeRecorder := &FakeRecorder{}
 			client := clientsetfake.NewSimpleClientset()
-			resmanager := &resmanager{
+			r := &resmanager{
 				config:         NewDefaultConfig(),
 				statesInformer: mockStatesInformer,
 				metricCache:    mockMetricCache,
@@ -1567,7 +1576,7 @@ func TestCPUBurst_start(t *testing.T) {
 
 			testHelper := system.NewFileTestUtil(t)
 
-			b := NewCPUBurst(resmanager)
+			b := NewCPUBurst(r)
 			stop := make(chan struct{})
 			b.init(stop)
 			defer func() { stop <- struct{}{} }()

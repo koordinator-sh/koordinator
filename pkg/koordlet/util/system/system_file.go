@@ -31,8 +31,9 @@ import (
 )
 
 const (
-	ProcStatName = "stat"
-	SysctlSubDir = "sys"
+	ProcStatName    = "stat"
+	ProcMemInfoName = "meminfo"
+	SysctlSubDir    = "sys"
 
 	KernelSchedGroupIdentityEnable = "kernel/sched_group_identity_enabled"
 )
@@ -60,7 +61,7 @@ func init() {
 }
 
 func initFilePath() {
-	ProcStatFile = SystemFile{File: filepath.Join(Conf.ProcRootDir, ProcStatName)}
+	ProcStatFile = SystemFile{File: GetProcFilePath(ProcStatName)}
 }
 
 // initJiffies use command "getconf CLK_TCK" to fetch the clock tick on current host,
@@ -85,7 +86,11 @@ func initJiffies() error {
 }
 
 func GetPeriodTicks(start, end time.Time) float64 {
-	return float64(end.Sub(start)) * Jiffies
+	return float64(end.Sub(start)) / Jiffies
+}
+
+func GetProcFilePath(file string) string {
+	return filepath.Join(Conf.ProcRootDir, file)
 }
 
 func GetProcSysFilePath(file string) string {

@@ -427,6 +427,7 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 			defer func() { stop <- struct{}{} }()
 
 			helper := system.NewFileTestUtil(t)
+			helper.SetAnolisOSResourcesSupported(true)
 
 			initQOSStrategy := defaultQOSStrategy()
 			initQOSCgroupFile(initQOSStrategy, helper)

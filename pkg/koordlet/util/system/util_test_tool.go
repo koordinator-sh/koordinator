@@ -24,6 +24,26 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	msgResourceSupportedForTesting = "resource is set supported for testing"
+)
+
+var (
+	defaultAnolisOSResourcesForTesting = []Resource{
+		CPUBurst,
+		CPUBVTWarpNs,
+		MemoryWmarkRatio,
+		MemoryWmarkScaleFactor,
+		MemoryWmarkMinAdj,
+		MemoryMin,
+		MemoryLow,
+		MemoryHigh,
+		MemoryPriority,
+		MemoryUsePriorityOom,
+		MemoryOomGroup,
+	}
+)
+
 type FileTestUtil struct {
 	// Temporary directory to store mock cgroup filesystem.
 	TempDir string
@@ -31,7 +51,8 @@ type FileTestUtil struct {
 	t *testing.T
 }
 
-// NewFileTestUtil creates a new test util for the specified subsystem
+// NewFileTestUtil creates a new test util for the specified subsystem.
+// NOTE: this function should be called only for testing purposes.
 func NewFileTestUtil(t *testing.T) *FileTestUtil {
 	// NOTE: When $TMPDIR is not set, `t.TempDir()` can use different base directory on Mac OS X and Linux, which may
 	// generates too long paths to test unix socket.
@@ -53,6 +74,16 @@ func (c *FileTestUtil) Cleanup() {
 		assert.NoError(c.t, err)
 	}
 	initCgroupsVersion()
+}
+
+func (c *FileTestUtil) SetResourcesSupported(supported bool, resources ...Resource) {
+	for _, r := range resources {
+		r.WithSupported(supported, msgResourceSupportedForTesting)
+	}
+}
+
+func (c *FileTestUtil) SetAnolisOSResourcesSupported(supported bool) {
+	c.SetResourcesSupported(supported, defaultAnolisOSResourcesForTesting...)
 }
 
 func (c *FileTestUtil) SetCgroupsV2(useCgroupsV2 bool) {

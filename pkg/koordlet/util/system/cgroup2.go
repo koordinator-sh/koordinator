@@ -274,3 +274,18 @@ func ConvertCPUWeightToShares(v int64) (int64, error) {
 	}
 	return s, nil
 }
+
+func ConvertCPUSharesToWeight(s string) (int64, error) {
+	isValid, msg := CPUSharesValidator.Validate(s)
+	if !isValid {
+		return -1, fmt.Errorf("invalid cpu.weight value, err: %s", msg)
+	}
+	v, _ := strconv.ParseInt(s, 10, 64) // the valid value must be an integer
+	w := v * 100 / 1024                 // assert no overflow since in k8s v is no more than 1024*num_cpus << math.MaxInt64
+	if w < CPUWeightMinValue {
+		w = CPUWeightMinValue
+	} else if w > CPUWeightMaxValue {
+		w = CPUWeightMaxValue
+	}
+	return w, nil
+}

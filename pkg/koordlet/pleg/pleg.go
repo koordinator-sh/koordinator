@@ -18,7 +18,7 @@ package pleg
 
 import (
 	"errors"
-	"path"
+	"path/filepath"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -144,13 +144,18 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 	for _, qosClass := range qosClasses {
 		// here we choose cpu subsystem as ground truth,
 		// since we only need to watch one of all subsystems, and cpu subsystem always and must exist
-		cgroupPath := path.Join(p.cgroupRootPath, system.CgroupCPUDir, koordletutil.GetPodQoSRelativePath(qosClass))
+		cgroupPath := getWatchCgroupPath(p.cgroupRootPath, qosClass)
 		err := p.podWatcher.AddWatch(cgroupPath)
 		if err != nil {
-			klog.Errorf("failed to watch path %v err %v", cgroupPath, err)
+			klog.Errorf("failed to watch path %v, err %v", cgroupPath, err)
 			return err
 		}
-		defer p.podWatcher.RemoveWatch(cgroupPath)
+		defer func() {
+			err1 := p.podWatcher.RemoveWatch(cgroupPath)
+			if err1 != nil {
+				klog.Errorf("failed to remove watch path %v, err %v", cgroupPath, err1)
+			}
+		}()
 	}
 
 	go p.runEventHandler(stopCh)
@@ -160,7 +165,7 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 		case evt := <-p.podWatcher.Event():
 			switch TypeOf(evt) {
 			case DirCreated:
-				basename := path.Base(evt.Name)
+				basename := filepath.Base(evt.Name)
 				podID, err := koordletutil.ParsePodID(basename)
 				if err != nil {
 					klog.Infof("skip %v added event which is not a pod", evt.Name)
@@ -171,7 +176,7 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 				// register watcher for containers
 				p.containerWatcher.AddWatch(evt.Name)
 			case DirRemoved:
-				basename := path.Base(evt.Name)
+				basename := filepath.Base(evt.Name)
 				podID, err := koordletutil.ParsePodID(basename)
 				if err != nil {
 					klog.Infof("skip %v removed event which is not a pod", evt.Name)
@@ -189,9 +194,9 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 		case evt := <-p.containerWatcher.Event():
 			switch TypeOf(evt) {
 			case DirCreated:
-				containerBasename := path.Base(evt.Name)
+				containerBasename := filepath.Base(evt.Name)
 				containerID, containerErr := koordletutil.ParseContainerID(containerBasename)
-				podBasename := path.Base(path.Dir(evt.Name))
+				podBasename := filepath.Base(filepath.Dir(evt.Name))
 				podID, podErr := koordletutil.ParsePodID(podBasename)
 				if podErr != nil || containerErr != nil {
 					klog.Infof("skip %v added event which is not a container", evt.Name)
@@ -200,9 +205,9 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 				// handle Container event
 				p.events <- newContainerEvent(podID, containerID, containerAdded)
 			case DirRemoved:
-				containerBasename := path.Base(evt.Name)
+				containerBasename := filepath.Base(evt.Name)
 				containerID, containerErr := koordletutil.ParseContainerID(containerBasename)
-				podBasename := path.Base(path.Dir(evt.Name))
+				podBasename := filepath.Base(filepath.Dir(evt.Name))
 				podID, podErr := koordletutil.ParsePodID(podBasename)
 				if podErr != nil || containerErr != nil {
 					klog.Infof("skip %v removed event which is not a container", evt.Name)
@@ -273,4 +278,16 @@ func newPodEvent(podID string, eventType internalEventType) *event {
 
 func newContainerEvent(podID, containerID string, eventType internalEventType) *event {
 	return &event{eventType: eventType, podID: podID, containerID: containerID}
+}
+
+// getWatchCgroupPath gets the directory path to watch for the given qos class, compatible to cgroups-v2.
+func getWatchCgroupPath(cgroupRootDir string, qosClass corev1.PodQOSClass) string {
+	qosParentDir := koordletutil.GetPodQoSRelativePath(qosClass)
+	if system.GetCurrentCgroupVersion() == system.CgroupVersionV2 { // cgroups-v2
+		return filepath.Join(cgroupRootDir, qosParentDir)
+	}
+	// cgroups-v1
+	// here we choose cpu subsystem as ground truth,
+	// since we only need to watch one of all subsystems, and cpu subsystem always and must exist
+	return filepath.Join(cgroupRootDir, system.CgroupCPUDir, qosParentDir)
 }

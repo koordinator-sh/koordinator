@@ -32,6 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -85,6 +86,7 @@ type collector struct {
 	config         *Config
 	statesInformer statesinformer.StatesInformer
 	metricCache    metriccache.MetricCache
+	cgroupReader   resourceexecutor.CgroupReader
 	context        *collectContext
 	state          *collectState
 }
@@ -94,6 +96,7 @@ func NewCollector(cfg *Config, statesInformer statesinformer.StatesInformer, met
 		config:         cfg,
 		statesInformer: statesInformer,
 		metricCache:    metricCache,
+		cgroupReader:   resourceexecutor.NewCgroupReader(),
 		context:        newCollectContext(),
 		state:          newCollectState(),
 	}
@@ -225,9 +228,10 @@ func (c *collector) collectPodResUsed() {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
 		collectTime := time.Now()
-		currentCPUUsage, err0 := koordletutil.GetPodCPUUsageNanoseconds(meta.CgroupDir)
-		memUsageValue, err1 := koordletutil.GetPodMemStatUsageBytes(meta.CgroupDir)
+		podCgroupDir := koordletutil.GetPodCgroupDirWithKube(meta.CgroupDir)
 
+		currentCPUUsage, err0 := c.cgroupReader.ReadCPUAcctUsage(podCgroupDir)
+		memStat, err1 := c.cgroupReader.ReadMemoryStat(podCgroupDir)
 		if err0 != nil || err1 != nil {
 			// higher verbosity for probably non-running pods
 			if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
@@ -239,6 +243,7 @@ func (c *collector) collectPodResUsed() {
 			}
 			continue
 		}
+
 		lastCPUStatValue, ok := c.context.lastPodCPUStat.Load(uid)
 		c.context.lastPodCPUStat.Store(uid, contextRecord{
 			cpuUsage: currentCPUUsage,
@@ -248,10 +253,12 @@ func (c *collector) collectPodResUsed() {
 			klog.Infof("ignore the first cpu stat collection for pod %s/%s", pod.Namespace, pod.Name)
 			continue
 		}
-
 		lastCPUStat := lastCPUStatValue.(contextRecord)
-		// NOTICE: do subtraction and division first to avoid overflow
+		// do subtraction and division first to avoid overflow
 		cpuUsageValue := float64(currentCPUUsage-lastCPUStat.cpuUsage) / float64(collectTime.Sub(lastCPUStat.ts))
+
+		memUsageValue := memStat.Usage()
+
 		podMetric := metriccache.PodResourceMetric{
 			PodUID: uid,
 			CPUUsed: metriccache.CPUMetric{
@@ -290,18 +297,26 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 	for i := range pod.Status.ContainerStatuses {
 		containerStat := &pod.Status.ContainerStatuses[i]
 		collectTime := time.Now()
-		currentCPUUsage, err0 := koordletutil.GetContainerCPUUsageNanoseconds(meta.CgroupDir, containerStat)
-		memUsageValue, err1 := koordletutil.GetContainerMemStatUsageBytes(meta.CgroupDir, containerStat)
 
-		if err0 != nil || err1 != nil {
+		containerCgroupDir, err := koordletutil.GetContainerCgroupPathWithKube(meta.CgroupDir, containerStat)
+		if err != nil {
 			// higher verbosity for probably non-running pods
 			if containerStat.State.Running == nil {
-				klog.V(6).Infof("failed to collect non-running container usage for %s/%s/%s, "+
-					"CPU err: %s, Memory err: %s", pod.Namespace, pod.Name, containerStat.Name, err0, err1)
+				klog.V(6).Infof("failed to collect non-running container usage for %s/%s/%s, err: %s",
+					pod.Namespace, pod.Name, containerStat.Name, err)
 			} else {
-				klog.V(4).Infof("failed to collect container usage for %s/%s/%s, CPU err: %s, Memory err: %s",
-					pod.Namespace, pod.Name, containerStat.Name, err0, err1)
+				klog.V(4).Infof("failed to collect container usage for %s/%s/%s, err: %s",
+					pod.Namespace, pod.Name, containerStat.Name, err)
 			}
+			continue
+		}
+
+		currentCPUUsage, err0 := c.cgroupReader.ReadCPUAcctUsage(containerCgroupDir)
+		memStat, err1 := c.cgroupReader.ReadMemoryStat(containerCgroupDir)
+
+		if err0 != nil || err1 != nil {
+			klog.V(4).Infof("failed to collect container usage for %s/%s/%s, CPU err: %s, Memory err: %s",
+				pod.Namespace, pod.Name, containerStat.Name, err0, err1)
 			continue
 		}
 
@@ -316,8 +331,11 @@ func (c *collector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 			continue
 		}
 		lastCPUStat := lastCPUStatValue.(contextRecord)
-		// NOTICE: do subtraction and division first to avoid overflow
+		// do subtraction and division first to avoid overflow
 		cpuUsageValue := float64(currentCPUUsage-lastCPUStat.cpuUsage) / float64(collectTime.Sub(lastCPUStat.ts))
+
+		memUsageValue := memStat.Usage()
+
 		containerMetric := metriccache.ContainerResourceMetric{
 			ContainerID: containerStat.ContainerID,
 			CPUUsed: metriccache.CPUMetric{
@@ -379,7 +397,8 @@ func (c *collector) collectPodThrottledInfo() {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
 		collectTime := time.Now()
-		currentCPUStat, err := koordletutil.GetPodCPUStatRaw(meta.CgroupDir)
+		podCgroupDir := koordletutil.GetPodCgroupDirWithKube(meta.CgroupDir)
+		currentCPUStat, err := c.cgroupReader.ReadCPUStat(podCgroupDir)
 		if err != nil || currentCPUStat == nil {
 			if pod.Status.Phase == corev1.PodRunning {
 				// print running pod collection error
@@ -427,7 +446,21 @@ func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMet
 				pod.Namespace, pod.Name, containerStat.Name)
 			continue
 		}
-		currentCPUStat, err := koordletutil.GetContainerCPUStatRaw(podMeta.CgroupDir, containerStat)
+
+		containerCgroupDir, err := koordletutil.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStat)
+		if err != nil {
+			// higher verbosity for probably non-running pods
+			if containerStat.State.Running == nil {
+				klog.V(6).Infof("collect non-running container %s/%s/%s cpu throttled failed, err: %s",
+					pod.Namespace, pod.Name, containerStat.Name, err)
+			} else {
+				klog.V(4).Infof("collect container %s/%s/%s cpu throttled failed, err: %s",
+					pod.Namespace, pod.Name, containerStat.Name, err)
+			}
+			continue
+		}
+
+		currentCPUStat, err := c.cgroupReader.ReadCPUStat(containerCgroupDir)
 		if err != nil {
 			klog.V(4).Infof("collect container %s/%s/%s cpu throttled failed, err %v, metric %v",
 				pod.Namespace, pod.Name, containerStat.Name, err, currentCPUStat)
