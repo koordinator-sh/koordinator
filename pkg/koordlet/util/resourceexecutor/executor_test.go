@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	"github.com/koordinator-sh/koordinator/pkg/tools/cache"
+	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
 
 func TestNewResourceUpdateExecutor(t *testing.T) {

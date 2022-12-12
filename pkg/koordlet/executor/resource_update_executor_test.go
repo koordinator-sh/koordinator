@@ -26,7 +26,7 @@ import (
 	"k8s.io/klog/v2"
 
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	"github.com/koordinator-sh/koordinator/pkg/tools/cache"
+	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
 
 var commonTestFile = "test_common_file"

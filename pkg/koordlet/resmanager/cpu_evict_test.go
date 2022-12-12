@@ -22,9 +22,6 @@ import (
 	"testing"
 	"time"
 
-	runtime "github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler"
-
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -41,8 +38,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/tools/cache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
 
 // TODO: unit test for cpuEvict() to improve coverage

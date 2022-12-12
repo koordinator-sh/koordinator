@@ -40,7 +40,7 @@ import (
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/tools/cache"
+	expireCache "github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
 
 var podsResource = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
@@ -149,29 +149,28 @@ func Test_EvictPodsIfNotEvicted(t *testing.T) {
 
 	fakeRecorder := &FakeRecorder{}
 	client := clientsetfake.NewSimpleClientset()
-	resmanager := &resmanager{eventRecorder: fakeRecorder, kubeClient: client, podsEvicted: cache.NewCacheDefault()}
+	r := &resmanager{eventRecorder: fakeRecorder, kubeClient: client, podsEvicted: expireCache.NewCacheDefault()}
 	stop := make(chan struct{})
-	resmanager.podsEvicted.Run(stop)
+	r.podsEvicted.Run(stop)
 	defer func() { stop <- struct{}{} }()
 
 	// create pod
 	client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 
 	// evict success
-	resmanager.evictPodsIfNotEvicted([]*corev1.Pod{pod}, node, "evict pod first", "")
+	r.evictPodsIfNotEvicted([]*corev1.Pod{pod}, node, "evict pod first", "")
 	getEvictObject, err := client.Tracker().Get(podsResource, pod.Namespace, pod.Name)
 	assert.NoError(t, err)
 	assert.NotNil(t, getEvictObject, "evictPod Fail", err)
 	assert.Equal(t, evictPodSuccess, fakeRecorder.eventReason, "expect evict success event! but got %s", fakeRecorder.eventReason)
 
-	_, found := resmanager.podsEvicted.Get(string(pod.UID))
+	_, found := r.podsEvicted.Get(string(pod.UID))
 	assert.True(t, found, "check PodEvicted cached")
 
 	// evict duplication
 	fakeRecorder.eventReason = ""
-	resmanager.evictPodsIfNotEvicted([]*corev1.Pod{pod}, node, "evict pod duplication", "")
+	r.evictPodsIfNotEvicted([]*corev1.Pod{pod}, node, "evict pod duplication", "")
 	assert.Equal(t, "", fakeRecorder.eventReason, "check evict duplication, no event send!")
-
 }
 
 func Test_evictPod(t *testing.T) {
@@ -203,7 +202,6 @@ func Test_evictPod(t *testing.T) {
 	assert.NotNil(t, getEvictObject, "evictPod Fail", err)
 
 	assert.Equal(t, evictPodSuccess, fakeRecorder.eventReason, "expect evict success event! but got %s", fakeRecorder.eventReason)
-
 }
 
 func createTestPod(qosClass apiext.QoSClass, name string) *corev1.Pod {
