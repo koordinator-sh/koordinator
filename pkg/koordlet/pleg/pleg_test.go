@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/inotify"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -81,7 +82,6 @@ func (h *testHandler) OnContainerDeleted(podID, containerID string) {
 }
 
 func TestPlegHandlePodEvents(t *testing.T) {
-	system.SetupCgroupPathFormatter(system.Cgroupfs)
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
@@ -105,13 +105,13 @@ func TestPlegHandlePodEvents(t *testing.T) {
 	}{
 		{
 			name:      "create pod",
-			mockEvent: &inotify.Event{Mask: IN_CREATE | IN_ISDIR, Name: "./test/pod12345"},
+			mockEvent: &inotify.Event{Mask: IN_CREATE | IN_ISDIR, Name: "./test/kubepods-pod12345.slice"},
 			want:      true,
 			wantEvent: newPodEvent("12345", podAdded),
 		},
 		{
 			name:      "remove pod",
-			mockEvent: &inotify.Event{Mask: IN_DELETE | IN_ISDIR, Name: "./test/pod12345"},
+			mockEvent: &inotify.Event{Mask: IN_DELETE | IN_ISDIR, Name: "./test/kubepods-pod12345.slice"},
 			want:      true,
 			wantEvent: newPodEvent("12345", podDeleted),
 		},
@@ -122,7 +122,7 @@ func TestPlegHandlePodEvents(t *testing.T) {
 		},
 		{
 			name:      "burstable pod",
-			mockEvent: &inotify.Event{Mask: IN_CREATE | IN_ISDIR, Name: "./test/burstable/pod12345"},
+			mockEvent: &inotify.Event{Mask: IN_CREATE | IN_ISDIR, Name: "./test/kubepods-burstable.slice/kubepods-burstable-pod12345.slice"},
 			want:      true,
 			wantEvent: newPodEvent("12345", podAdded),
 		},
@@ -136,7 +136,7 @@ func TestPlegHandlePodEvents(t *testing.T) {
 			if tc.want {
 				select {
 				case evt := <-handler.events:
-					assert.Equal(t, tc.wantEvent, evt, "unexpected event received")
+					assert.Equal(t, tc.wantEvent, evt, "unexpected event received "+evt.podID)
 				case <-timer.C:
 					t.Errorf("read event timeout")
 				}
@@ -152,7 +152,6 @@ func TestPlegHandlePodEvents(t *testing.T) {
 }
 
 func TestPlegHandleContainerEvents(t *testing.T) {
-	system.SetupCgroupPathFormatter(system.Cgroupfs)
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
@@ -176,19 +175,19 @@ func TestPlegHandleContainerEvents(t *testing.T) {
 	}{
 		{
 			name:      "create container",
-			mockEvent: &inotify.Event{Mask: IN_CREATE | IN_ISDIR, Name: "./test/pod12345/container1"},
+			mockEvent: &inotify.Event{Mask: IN_CREATE | IN_ISDIR, Name: "./test/kubepods-pod12345.slice/cri-containerd-container1.scope"},
 			want:      true,
 			wantEvent: newContainerEvent("12345", "container1", containerAdded),
 		},
 		{
 			name:      "remove container",
-			mockEvent: &inotify.Event{Mask: IN_DELETE | IN_ISDIR, Name: "./test/pod12345/container1"},
+			mockEvent: &inotify.Event{Mask: IN_DELETE | IN_ISDIR, Name: "./test/kubepods-pod12345.slice/cri-containerd-container1.scope"},
 			want:      true,
 			wantEvent: newContainerEvent("12345", "container1", containerDeleted),
 		},
 		{
 			name:      "create container with invalid pod prefix",
-			mockEvent: &inotify.Event{Mask: IN_CREATE | IN_ISDIR, Name: "./test/burstable/12345/container1"},
+			mockEvent: &inotify.Event{Mask: IN_CREATE | IN_ISDIR, Name: "./test/kubepods-burstable.slice/12345/cri-containerd-container1.scope"},
 			want:      false,
 		},
 	}
@@ -212,6 +211,73 @@ func TestPlegHandleContainerEvents(t *testing.T) {
 				case <-timer.C:
 				}
 			}
+		})
+	}
+}
+
+func Test_getWatchCgroupPath(t *testing.T) {
+	type args struct {
+		cgroupRootDir string
+		qosClass      corev1.PodQOSClass
+	}
+	type fields struct {
+		UseCgroupsV2 bool
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   string
+	}{
+		{
+			name: "guaranteed qos",
+			args: args{
+				cgroupRootDir: "/host-cgroup",
+				qosClass:      corev1.PodQOSGuaranteed,
+			},
+			want: "/host-cgroup/cpu/kubepods.slice",
+		},
+		{
+			name: "besteffort qos",
+			args: args{
+				cgroupRootDir: "/test",
+				qosClass:      corev1.PodQOSBestEffort,
+			},
+			want: "/test/cpu/kubepods.slice/kubepods-besteffort.slice",
+		},
+		{
+			name: "guaranteed qos (v2)",
+			fields: fields{
+				UseCgroupsV2: true,
+			},
+			args: args{
+				cgroupRootDir: "/host-cgroup",
+				qosClass:      corev1.PodQOSGuaranteed,
+			},
+			want: "/host-cgroup/kubepods.slice",
+		},
+		{
+			name: "burstable qos (v2)",
+			fields: fields{
+				UseCgroupsV2: true,
+			},
+			args: args{
+				cgroupRootDir: "/test",
+				qosClass:      corev1.PodQOSBurstable,
+			},
+			want: "/test/kubepods.slice/kubepods-burstable.slice",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldUseCgroupV2 := system.UseCgroupsV2
+			system.UseCgroupsV2 = tt.fields.UseCgroupsV2
+			defer func() {
+				system.UseCgroupsV2 = oldUseCgroupV2
+			}()
+
+			got := getWatchCgroupPath(tt.args.cgroupRootDir, tt.args.qosClass)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

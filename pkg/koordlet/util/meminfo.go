@@ -25,12 +25,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-)
-
-const (
-	ProcMemInfoPath = "/proc/meminfo"
 )
 
 type MemInfo struct {
@@ -124,7 +120,8 @@ func readMemInfo(path string) (*MemInfo, error) {
 
 // GetMemInfoUsageKB returns the node's memory usage quantity (kB)
 func GetMemInfoUsageKB() (int64, error) {
-	memInfo, err := readMemInfo(ProcMemInfoPath)
+	meminfoPath := system.GetProcFilePath(system.ProcMemInfoName)
+	memInfo, err := readMemInfo(meminfoPath)
 	if err != nil {
 		return 0, err
 	}
@@ -171,7 +168,7 @@ func GetPodMemStatUsageBytes(podCgroupDir string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return system.CalcMemoryUsageFromStat(memStat), nil
+	return memStat.Usage(), nil
 }
 
 // GetContainerMemStatUsageBytes returns the container's memory usage quantity (Byte)
@@ -185,5 +182,5 @@ func GetContainerMemStatUsageBytes(podCgroupDir string, c *corev1.ContainerStatu
 	if err != nil {
 		return 0, err
 	}
-	return system.CalcMemoryUsageFromStat(memStat), nil
+	return memStat.Usage(), nil
 }

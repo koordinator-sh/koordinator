@@ -60,6 +60,11 @@ type MemoryStatRaw struct {
 	// add more fields
 }
 
+func (m *MemoryStatRaw) Usage() int64 {
+	// memory.stat usage: total_inactive_anon + total_active_anon + total_unevictable
+	return m.InactiveAnon + m.ActiveAnon + m.Unevictable
+}
+
 func CgroupFileWriteIfDifferent(cgroupTaskDir string, r Resource, value string) error {
 	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
 		return fmt.Errorf("write cgroup %s failed, resource not supported, msg: %s", r.ResourceType(), msg)
@@ -336,9 +341,4 @@ func CalcCPUThrottledRatio(curPoint, prePoint *CPUStatRaw) float64 {
 		throttledRatio = float64(deltaThrottled) / float64(deltaPeriod)
 	}
 	return throttledRatio
-}
-
-func CalcMemoryUsageFromStat(memStat *MemoryStatRaw) int64 {
-	// memory.stat usage: total_inactive_anon + total_active_anon + total_unevictable
-	return memStat.InactiveAnon + memStat.ActiveAnon + memStat.Unevictable
 }

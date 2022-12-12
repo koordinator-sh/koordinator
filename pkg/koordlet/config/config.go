@@ -36,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	qosmanagerconfig "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/config"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -86,6 +87,7 @@ func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 	c.ResManagerConf.InitFlags(fs)
 	c.RuntimeHookConf.InitFlags(fs)
 	c.AuditConf.InitFlags(fs)
+	resourceexecutor.Conf.InitFlags(fs)
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "feature-gates", "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 		"Options are:\n"+strings.Join(features.DefaultKoordletFeatureGate.KnownFeatures(), "\n"))
 }

@@ -16,8 +16,6 @@ limitations under the License.
 
 package resourceexecutor
 
-// TODO: move to pkg/koordlet/resourceexecutor.
-
 import (
 	"sync"
 	"time"
@@ -43,9 +41,9 @@ type ResourceUpdateExecutor interface {
 }
 
 type ResourceUpdateExecutorImpl struct {
-	leveledUpdateLock  sync.Mutex
-	resourceCache      *cache.Cache
-	forceUpdateSeconds int
+	leveledUpdateLock sync.Mutex
+	resourceCache     *cache.Cache
+	config            *Config
 }
 
 var (
@@ -53,6 +51,7 @@ var (
 
 	singleton = &ResourceUpdateExecutorImpl{
 		resourceCache: cache.NewCacheDefault(),
+		config:        Conf,
 	}
 )
 
@@ -179,9 +178,9 @@ func (e *ResourceUpdateExecutorImpl) needUpdate(updater ResourceUpdater) bool {
 			updater.Path(), updater.Value(), preResourceUpdater.Value())
 		return true
 	}
-	if time.Since(preResourceUpdater.GetLastUpdateTimestamp()) > time.Duration(e.forceUpdateSeconds)*time.Second {
+	if time.Since(preResourceUpdater.GetLastUpdateTimestamp()) > time.Duration(e.config.ResourceForceUpdateSeconds)*time.Second {
 		klog.V(5).Infof("check for resource %s: last update time(%v) is earlier than (%v)s ago, need update",
-			preResourceUpdater.Path(), preResourceUpdater.GetLastUpdateTimestamp(), e.forceUpdateSeconds)
+			preResourceUpdater.Path(), preResourceUpdater.GetLastUpdateTimestamp(), e.config.ResourceForceUpdateSeconds)
 		return true
 	}
 	return false

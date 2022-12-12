@@ -37,9 +37,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
@@ -443,7 +443,7 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 		klog.V(4).Infof("failed to get be cfs quota updater, err: %v", err)
 		return
 	}
-	isUpdated, err := r.executor.Update(true, updater)
+	isUpdated, err := r.executor.Update(false, updater)
 	if err != nil {
 		klog.Errorf("suppressBECPU: failed to write cfs_quota_us for be pods, error: %v", err)
 		return
@@ -465,7 +465,7 @@ func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
 		klog.V(4).Infof("failed to get be cfs quota updater, err: %v", err)
 		return
 	}
-	isUpdated, err := r.executor.Update(true, updater)
+	isUpdated, err := r.executor.Update(false, updater)
 	if err != nil {
 		klog.Errorf("recover bestEffort cfsQuota err: %v", err)
 		return
@@ -494,6 +494,7 @@ func getPodMetricCPUUsage(info *metriccache.PodResourceMetric) *resource.Quantit
 func getBECPUSetPathsByMaxDepth(relativeDepth int) ([]string, error) {
 	// walk from root path to lower nodes
 	rootCgroupPath := koordletutil.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
+	// TODO: for cgroups-v2 system, check each cgroup node if cpuset-controller is enabled
 	rootCPUSetSubfsPath := koordletutil.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
 	_, err := os.Stat(rootCgroupPath)
 	if err != nil {

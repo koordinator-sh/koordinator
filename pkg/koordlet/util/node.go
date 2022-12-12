@@ -21,7 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )

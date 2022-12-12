@@ -36,6 +36,7 @@ func TestNewResourceUpdateExecutor_Run(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		e := &ResourceUpdateExecutorImpl{
 			resourceCache: cache.NewCacheDefault(),
+			config:        NewDefaultConfig(),
 		}
 		stop := make(chan struct{})
 		defer func() {
@@ -92,6 +93,7 @@ func TestResourceUpdateExecutor_UpdateBatch(t *testing.T) {
 			defer helper.Cleanup()
 			e := &ResourceUpdateExecutorImpl{
 				resourceCache: cache.NewCacheDefault(),
+				config:        NewDefaultConfig(),
 			}
 			stop := make(chan struct{})
 			defer func() {
