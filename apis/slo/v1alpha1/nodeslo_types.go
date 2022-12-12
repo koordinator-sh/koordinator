@@ -175,10 +175,12 @@ type ResourceThresholdStrategy struct {
 	// +kubebuilder:validation:Minimum=0
 	MemoryEvictLowerPercent *int64 `json:"memoryEvictLowerPercent,omitempty"`
 
-	// if be CPU RealLimit/allocatedLimit > CPUEvictBESatisfactionUpperPercent, then stop evict BE pods
+	// if be CPU RealLimit/allocatedLimit > CPUEvictBESatisfactionUpperPercent/100, then stop evict BE pods
 	CPUEvictBESatisfactionUpperPercent *int64 `json:"cpuEvictBESatisfactionUpperPercent,omitempty"`
-	// if be CPU (RealLimit/allocatedLimit < CPUEvictBESatisfactionLowerPercent and usage nearly 100%) continue CPUEvictTimeWindowSeconds,then start evict
+	// if be CPU (RealLimit/allocatedLimit < CPUEvictBESatisfactionLowerPercent/100 and usage >= CPUEvictBEUsageThresholdPercent/100) continue CPUEvictTimeWindowSeconds, then start evict
 	CPUEvictBESatisfactionLowerPercent *int64 `json:"cpuEvictBESatisfactionLowerPercent,omitempty"`
+	// if be CPU (RealLimit/allocatedLimit < CPUEvictBESatisfactionLowerPercent/100 and usage >= CPUEvictBEUsageThresholdPercent/100) continue CPUEvictTimeWindowSeconds, then start evict
+	CPUEvictBEUsageThresholdPercent *int64 `json:"cpuEvictBEUsageThresholdPercent,omitempty"`
 	// cpu evict start after continue avg(cpuusage) > CPUEvictThresholdPercent in seconds
 	CPUEvictTimeWindowSeconds *int64 `json:"cpuEvictTimeWindowSeconds,omitempty"`
 }
