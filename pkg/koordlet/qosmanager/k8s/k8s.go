@@ -32,7 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/common/reason"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
-	expireCache "github.com/koordinator-sh/koordinator/pkg/tools/cache"
+	expireCache "github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
 
 type K8sClient interface {
