@@ -39,9 +39,12 @@ type LoadAwareSchedulingArgs struct {
 	// ResourceWeights indicates the weights of resources.
 	// The weights of CPU and Memory are both 1 by default.
 	ResourceWeights map[corev1.ResourceName]int64 `json:"resourceWeights,omitempty"`
-	// UsageThresholds indicates the resource utilization threshold.
+	// UsageThresholds indicates the resource utilization threshold of the whole machine.
 	// The default for CPU is 65%, and the default for memory is 95%.
 	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
+	// ProdUsageThresholds indicates the resource utilization threshold of Prod Pods compared to the whole machine.
+	// Not enabled by default
+	ProdUsageThresholds map[corev1.ResourceName]int64 `json:"prodUsageThresholds,omitempty"`
 	// EstimatedScalingFactors indicates the factor when estimating resource usage.
 	// The default value of CPU is 85%, and the default value of Memory is 70%.
 	EstimatedScalingFactors map[corev1.ResourceName]int64 `json:"estimatedScalingFactors,omitempty"`

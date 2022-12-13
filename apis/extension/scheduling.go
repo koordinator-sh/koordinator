@@ -78,7 +78,10 @@ const (
 
 // CustomUsageThresholds supports user-defined node resource utilization thresholds.
 type CustomUsageThresholds struct {
+	// UsageThresholds indicates the resource utilization threshold of the whole machine.
 	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
+	// ProdUsageThresholds indicates the resource utilization threshold of Prod Pods compared to the whole machine
+	ProdUsageThresholds map[corev1.ResourceName]int64 `json:"prodUsageThresholds,omitempty"`
 }
 
 func GetCustomUsageThresholds(node *corev1.Node) (*CustomUsageThresholds, error) {

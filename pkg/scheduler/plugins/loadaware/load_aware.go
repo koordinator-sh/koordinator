@@ -26,6 +26,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -63,6 +65,7 @@ var (
 type Plugin struct {
 	handle           framework.Handle
 	args             *config.LoadAwareSchedulingArgs
+	podLister        corev1listers.PodLister
 	nodeMetricLister slolisters.NodeMetricLister
 	podAssignCache   *podAssignCache
 }
@@ -83,13 +86,15 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	}
 
 	assignCache := newPodAssignCache()
-	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods().Informer()
-	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer, assignCache)
+	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods()
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer.Informer(), assignCache)
+	podLister := podInformer.Lister()
 	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
 
 	return &Plugin{
 		handle:           handle,
 		args:             pluginArgs,
+		podLister:        podLister,
 		nodeMetricLister: nodeMetricLister,
 		podAssignCache:   assignCache,
 	}, nil
@@ -120,7 +125,7 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		}
 	}
 
-	usageThresholds := p.args.UsageThresholds
+	usageThresholds, prodUsageThresholds := p.args.UsageThresholds, p.args.ProdUsageThresholds
 	customUsageThresholds, err := extension.GetCustomUsageThresholds(node)
 	if err != nil {
 		klog.V(5).ErrorS(err, "failed to GetCustomUsageThresholds from", "node", node.Name)
@@ -128,28 +133,72 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		if len(customUsageThresholds.UsageThresholds) > 0 {
 			usageThresholds = customUsageThresholds.UsageThresholds
 		}
+		if len(customUsageThresholds.ProdUsageThresholds) > 0 {
+			prodUsageThresholds = customUsageThresholds.ProdUsageThresholds
+		}
 	}
 
 	if len(usageThresholds) > 0 {
-		if nodeMetric.Status.NodeMetric == nil {
-			return nil
-		}
-		for resourceName, threshold := range usageThresholds {
-			if threshold == 0 {
-				continue
-			}
-			total := node.Status.Allocatable[resourceName]
-			if total.IsZero() {
-				continue
-			}
-			used := nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[resourceName]
-			usage := int64(math.Round(float64(used.MilliValue()) / float64(total.MilliValue()) * 100))
-			if usage >= threshold {
-				return framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, resourceName))
-			}
+		status := p.filterNodeUsage(node, nodeMetric, usageThresholds)
+		if !status.IsSuccess() {
+			return status
 		}
 	}
 
+	if len(prodUsageThresholds) > 0 {
+		status := p.filterProdUsage(node, nodeMetric, prodUsageThresholds)
+		if !status.IsSuccess() {
+			return status
+		}
+	}
+
+	return nil
+}
+
+func (p *Plugin) filterNodeUsage(node *corev1.Node, nodeMetric *slov1alpha1.NodeMetric, usageThresholds map[corev1.ResourceName]int64) *framework.Status {
+	if nodeMetric.Status.NodeMetric == nil {
+		return nil
+	}
+	for resourceName, threshold := range usageThresholds {
+		if threshold == 0 {
+			continue
+		}
+		total := node.Status.Allocatable[resourceName]
+		if total.IsZero() {
+			continue
+		}
+		// TODO(joseph): maybe we should estimate the Pod that just be scheduled that have not reported
+		used := nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[resourceName]
+		usage := int64(math.Round(float64(used.MilliValue()) / float64(total.MilliValue()) * 100))
+		if usage >= threshold {
+			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, resourceName))
+		}
+	}
+	return nil
+}
+
+func (p *Plugin) filterProdUsage(node *corev1.Node, nodeMetric *slov1alpha1.NodeMetric, prodUsageThresholds map[corev1.ResourceName]int64) *framework.Status {
+	if len(nodeMetric.Status.PodsMetric) == 0 {
+		return nil
+	}
+
+	// TODO(joseph): maybe we should estimate the Pod that just be scheduled that have not reported
+	podMetrics := buildPodMetricMap(p.podLister, nodeMetric, true)
+	prodPodUsages, _ := sumPodUsages(podMetrics, nil)
+	for resourceName, threshold := range prodUsageThresholds {
+		if threshold == 0 {
+			continue
+		}
+		total := node.Status.Allocatable[resourceName]
+		if total.IsZero() {
+			continue
+		}
+		used := prodPodUsages[resourceName]
+		usage := int64(math.Round(float64(used.MilliValue()) / float64(total.MilliValue()) * 100))
+		if usage >= threshold {
+			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, resourceName))
+		}
+	}
 	return nil
 }
 
@@ -188,64 +237,68 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 		return 0, nil
 	}
 
+	prodPod := extension.GetPriorityClass(pod) == extension.PriorityProd
+	podMetrics := buildPodMetricMap(p.podLister, nodeMetric, prodPod)
+
 	estimatedUsed := estimatedPodUsed(pod, p.args.ResourceWeights, p.args.EstimatedScalingFactors)
-	estimatedAssignedPodUsage := p.estimatedAssignedPodUsage(nodeName, nodeMetric)
-	for resourceName, value := range estimatedAssignedPodUsage {
+	assignedPodEstimatedUsed, estimatedPods := p.estimatedAssignedPodUsed(nodeName, nodeMetric, podMetrics, prodPod)
+	for resourceName, value := range assignedPodEstimatedUsed {
 		estimatedUsed[resourceName] += value
 	}
-
-	allocatable := make(map[corev1.ResourceName]int64)
-	for resourceName := range p.args.ResourceWeights {
-		quantity := node.Status.Allocatable[resourceName]
-		if resourceName == corev1.ResourceCPU {
-			allocatable[resourceName] = quantity.MilliValue()
-		} else {
-			allocatable[resourceName] = quantity.Value()
+	podActualUsages, estimatedPodActualUsages := sumPodUsages(podMetrics, estimatedPods)
+	if prodPod {
+		for resourceName, quantity := range podActualUsages {
+			estimatedUsed[resourceName] += getResourceValue(resourceName, quantity)
 		}
+	} else {
 		if nodeMetric.Status.NodeMetric != nil {
-			quantity = nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[resourceName]
-			if resourceName == corev1.ResourceCPU {
-				estimatedUsed[resourceName] += quantity.MilliValue()
-			} else {
-				estimatedUsed[resourceName] += quantity.Value()
+			for resourceName, quantity := range nodeMetric.Status.NodeMetric.NodeUsage.ResourceList {
+				if q := estimatedPodActualUsages[resourceName]; !q.IsZero() {
+					quantity = quantity.DeepCopy()
+					if quantity.Cmp(q) >= 0 {
+						quantity.Sub(q)
+					}
+				}
+				estimatedUsed[resourceName] += getResourceValue(resourceName, quantity)
 			}
 		}
 	}
 
-	score := loadAwareSchedulingScorer(p.args.ResourceWeights, estimatedUsed, allocatable)
+	score := loadAwareSchedulingScorer(p.args.ResourceWeights, estimatedUsed, node.Status.Allocatable)
 	return score, nil
 }
 
-func isNodeMetricExpired(nodeMetric *slov1alpha1.NodeMetric, nodeMetricExpirationSeconds int64) bool {
-	return nodeMetric == nil ||
-		nodeMetric.Status.UpdateTime == nil ||
-		nodeMetricExpirationSeconds > 0 &&
-			time.Since(nodeMetric.Status.UpdateTime.Time) >= time.Duration(nodeMetricExpirationSeconds)*time.Second
-}
-
-func (p *Plugin) estimatedAssignedPodUsage(nodeName string, nodeMetric *slov1alpha1.NodeMetric) map[corev1.ResourceName]int64 {
+func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alpha1.NodeMetric, podMetrics map[string]corev1.ResourceList, filterProdPod bool) (map[corev1.ResourceName]int64, sets.String) {
 	estimatedUsed := make(map[corev1.ResourceName]int64)
+	estimatedPods := sets.NewString()
 	nodeMetricReportInterval := getNodeMetricReportInterval(nodeMetric)
+
 	p.podAssignCache.lock.RLock()
 	defer p.podAssignCache.lock.RUnlock()
 	for _, assignInfo := range p.podAssignCache.podInfoItems[nodeName] {
-		if assignInfo.timestamp.After(nodeMetric.Status.UpdateTime.Time) ||
-			assignInfo.timestamp.Before(nodeMetric.Status.UpdateTime.Time) &&
-				nodeMetric.Status.UpdateTime.Sub(assignInfo.timestamp) < nodeMetricReportInterval {
+		if filterProdPod && extension.GetPriorityClass(assignInfo.pod) != extension.PriorityProd {
+			continue
+		}
+		podName := getPodNamespacedName(assignInfo.pod.Namespace, assignInfo.pod.Name)
+		podUsage := podMetrics[podName]
+		if len(podUsage) == 0 ||
+			(assignInfo.timestamp.After(nodeMetric.Status.UpdateTime.Time) ||
+				assignInfo.timestamp.Before(nodeMetric.Status.UpdateTime.Time) &&
+					nodeMetric.Status.UpdateTime.Sub(assignInfo.timestamp) < nodeMetricReportInterval) {
 			estimated := estimatedPodUsed(assignInfo.pod, p.args.ResourceWeights, p.args.EstimatedScalingFactors)
 			for resourceName, value := range estimated {
+				if quantity, ok := podUsage[resourceName]; ok {
+					usage := getResourceValue(resourceName, quantity)
+					if usage > value {
+						value = usage
+					}
+				}
 				estimatedUsed[resourceName] += value
 			}
+			estimatedPods.Insert(podName)
 		}
 	}
-	return estimatedUsed
-}
-
-func getNodeMetricReportInterval(nodeMetric *slov1alpha1.NodeMetric) time.Duration {
-	if nodeMetric.Spec.CollectPolicy == nil || nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds == nil {
-		return DefaultNodeMetricReportInterval
-	}
-	return time.Duration(*nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds) * time.Second
+	return estimatedUsed, estimatedPods
 }
 
 func estimatedPodUsed(pod *corev1.Pod, resourceWeights map[corev1.ResourceName]int64, scalingFactors map[corev1.ResourceName]int64) map[corev1.ResourceName]int64 {
@@ -259,6 +312,7 @@ func estimatedPodUsed(pod *corev1.Pod, resourceWeights map[corev1.ResourceName]i
 	return estimatedUsed
 }
 
+// TODO(joseph): Do we need to differentiate scalingFactor according to Koordinator Priority type?
 func estimatedUsedByResource(requests, limits corev1.ResourceList, resourceName corev1.ResourceName, scalingFactor int64) int64 {
 	limitQuantity := limits[resourceName]
 	requestQuantity := requests[resourceName]
@@ -296,10 +350,10 @@ func estimatedUsedByResource(requests, limits corev1.ResourceList, resourceName 
 	return estimatedUsed
 }
 
-func loadAwareSchedulingScorer(resToWeightMap map[corev1.ResourceName]int64, used, allocatable map[corev1.ResourceName]int64) int64 {
+func loadAwareSchedulingScorer(resToWeightMap, used map[corev1.ResourceName]int64, allocatable corev1.ResourceList) int64 {
 	var nodeScore, weightSum int64
 	for resourceName, weight := range resToWeightMap {
-		resourceScore := leastRequestedScore(used[resourceName], allocatable[resourceName])
+		resourceScore := leastRequestedScore(used[resourceName], getResourceValue(resourceName, allocatable[resourceName]))
 		nodeScore += resourceScore * weight
 		weightSum += weight
 	}
