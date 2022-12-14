@@ -48,6 +48,8 @@ type LoadAwareSchedulingArgs struct {
 	// EstimatedScalingFactors indicates the factor when estimating resource usage.
 	// The default value of CPU is 85%, and the default value of Memory is 70%.
 	EstimatedScalingFactors map[corev1.ResourceName]int64 `json:"estimatedScalingFactors,omitempty"`
+	// ScoreAccordingProdUsage controls whether to score according to the utilization rate of Prod Pod
+	ScoreAccordingProdUsage *bool `json:"scoreAccordingProdUsage,omitempty"`
 }
 
 // ScoringStrategyType is a "string" type.

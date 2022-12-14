@@ -159,6 +159,11 @@ func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 			(*out)[key] = val
 		}
 	}
+	if in.ScoreAccordingProdUsage != nil {
+		in, out := &in.ScoreAccordingProdUsage, &out.ScoreAccordingProdUsage
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 

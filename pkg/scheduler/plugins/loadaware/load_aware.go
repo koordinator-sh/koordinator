@@ -237,7 +237,7 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 		return 0, nil
 	}
 
-	prodPod := extension.GetPriorityClass(pod) == extension.PriorityProd
+	prodPod := extension.GetPriorityClass(pod) == extension.PriorityProd && p.args.ScoreAccordingProdUsage
 	podMetrics := buildPodMetricMap(p.podLister, nodeMetric, prodPod)
 
 	estimatedUsed := estimatedPodUsed(pod, p.args.ResourceWeights, p.args.EstimatedScalingFactors)
