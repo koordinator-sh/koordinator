@@ -14,14 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1beta1 contains API Schema definitions for the scheduling v1alpha1 API group
+// Package v1alpha1 contains API Schema definitions for the scheduling v1alpha1 API group
 // +kubebuilder:object:generate=true
 // +groupName=scheduling.koordinator.sh
 package v1alpha1
 
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/scheme"
+
+	"github.com/koordinator-sh/koordinator/apis/scheme"
 )
 
 var (
