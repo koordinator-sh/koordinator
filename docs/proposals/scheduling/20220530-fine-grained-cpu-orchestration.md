@@ -11,7 +11,7 @@ reviewers:
 - "@stormgbs"
 - "@zwzhang0107"
 creation-date: 2022-05-30
-last-updated: 2022-12-02
+last-updated: 2022-12-13
 status: provisional
 
 ---
@@ -278,6 +278,7 @@ The label `node.koordinator.sh/cpu-bind-policy` constrains how to bind CPU logic
 The following is the specific value definition:
 - `None` or empty value does not perform any policy.
 - `FullPCPUsOnly` requires that the scheduler must allocate full physical cores. Equivalent to kubelet CPU manager policy option `full-pcpus-only=true`. 
+- `SpreadByPCPUs` requires that the schedler must evenly allocate logical CPUs across physical cores. 
 
 If there is no `node.koordinator.sh/cpu-bind-policy` in the node's label, it will be executed according to the policy configured by the Pod or koord-scheduler.
 
@@ -707,3 +708,4 @@ type ScoringStrategy struct {
 - 2022-08-02: Update PodCPUAllocs definition
 - 2022-09-08: Add ReservedCPUs in KubeletCPUManagerPolicy
 - 2022-12-02: Clarify the mistakes in the original text and add QoS CPU orchestration picture
+- 2022-12-12: NodeCPUBindPolicy support SpreadByPCPUs
