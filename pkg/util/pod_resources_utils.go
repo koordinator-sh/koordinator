@@ -130,3 +130,15 @@ func GetPodBEMemoryByteLimit(pod *corev1.Pod) int64 {
 	}
 	return podMemoryByteLimit
 }
+
+// AddResourceList adds the resources in newList to list.
+func AddResourceList(list, newList corev1.ResourceList) {
+	for name, quantity := range newList {
+		if value, ok := list[name]; !ok {
+			list[name] = quantity.DeepCopy()
+		} else {
+			value.Add(quantity)
+			list[name] = value
+		}
+	}
+}

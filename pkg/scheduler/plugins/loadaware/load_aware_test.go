@@ -27,6 +27,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -260,11 +262,14 @@ func TestFilterUsage(t *testing.T) {
 		name                      string
 		usageThresholds           map[corev1.ResourceName]int64
 		prodUsageThresholds       map[corev1.ResourceName]int64
+		aggregated                *v1beta2.LoadAwareSchedulingAggregatedArgs
 		customUsageThresholds     map[corev1.ResourceName]int64
 		customProdUsageThresholds map[corev1.ResourceName]int64
+		customAggregatedUsage     *extension.CustomAggregatedUsage
 		nodeName                  string
 		nodeMetric                *slov1alpha1.NodeMetric
 		pods                      []*corev1.Pod
+		testPod                   *corev1.Pod
 		wantStatus                *framework.Status
 	}{
 		{
@@ -329,6 +334,54 @@ func TestFilterUsage(t *testing.T) {
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
 		},
 		{
+			name:     "filter exceed p95 cpu usage",
+			nodeName: "test-node-1",
+			aggregated: &v1beta2.LoadAwareSchedulingAggregatedArgs{
+				UsageThresholds: map[corev1.ResourceName]int64{
+					corev1.ResourceCPU: 60,
+				},
+				UsageAggregationType:    slov1alpha1.P95,
+				UsageAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("30"),
+								corev1.ResourceMemory: resource.MustParse("100Gi"),
+							},
+						},
+						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
+							{
+								Duration: metav1.Duration{Duration: 5 * time.Minute},
+								Usage: map[slov1alpha1.AggregationType]slov1alpha1.ResourceMap{
+									slov1alpha1.P95: {
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("70"),
+											corev1.ResourceMemory: resource.MustParse("256Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonAggregatedUsageExceedThreshold, corev1.ResourceCPU)),
+		},
+		{
 			name:     "filter exceed memory usage",
 			nodeName: "test-node-1",
 			nodeMetric: &slov1alpha1.NodeMetric{
@@ -386,6 +439,54 @@ func TestFilterUsage(t *testing.T) {
 				},
 			},
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+		},
+		{
+			name:     "filter exceed p95 cpu usage by custom usage",
+			nodeName: "test-node-1",
+			customAggregatedUsage: &extension.CustomAggregatedUsage{
+				UsageThresholds: map[corev1.ResourceName]int64{
+					corev1.ResourceCPU: 60,
+				},
+				UsageAggregationType:    slov1alpha1.P95,
+				UsageAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("30"),
+								corev1.ResourceMemory: resource.MustParse("100Gi"),
+							},
+						},
+						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
+							{
+								Duration: metav1.Duration{Duration: 5 * time.Minute},
+								Usage: map[slov1alpha1.AggregationType]slov1alpha1.ResourceMap{
+									slov1alpha1.P95: {
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("70"),
+											corev1.ResourceMemory: resource.MustParse("256Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonAggregatedUsageExceedThreshold, corev1.ResourceCPU)),
 		},
 		{
 			name: "disable filter exceed memory usage",
@@ -536,6 +637,7 @@ func TestFilterUsage(t *testing.T) {
 				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
 				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
 			},
+			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Priority(extension.PriorityProdValueMax).Obj(),
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
 		},
 		{
@@ -598,6 +700,7 @@ func TestFilterUsage(t *testing.T) {
 				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
 				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
 			},
+			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Priority(extension.PriorityProdValueMax).Obj(),
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
 		},
 		{
@@ -664,6 +767,7 @@ func TestFilterUsage(t *testing.T) {
 				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
 				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
 			},
+			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Priority(extension.PriorityProdValueMax).Obj(),
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
 		},
 	}
@@ -676,6 +780,9 @@ func TestFilterUsage(t *testing.T) {
 			}
 			if len(tt.prodUsageThresholds) > 0 {
 				v1beta2args.ProdUsageThresholds = tt.prodUsageThresholds
+			}
+			if tt.aggregated != nil {
+				v1beta2args.Aggregated = tt.aggregated
 			}
 			v1beta2.SetDefaults_LoadAwareSchedulingArgs(&v1beta2args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
@@ -712,10 +819,11 @@ func TestFilterUsage(t *testing.T) {
 				},
 			}
 
-			if len(tt.customUsageThresholds) > 0 || len(tt.customProdUsageThresholds) > 0 {
+			if len(tt.customUsageThresholds) > 0 || len(tt.customProdUsageThresholds) > 0 || tt.customAggregatedUsage != nil {
 				data, err := json.Marshal(&extension.CustomUsageThresholds{
 					UsageThresholds:     tt.customUsageThresholds,
 					ProdUsageThresholds: tt.customProdUsageThresholds,
+					AggregatedUsage:     tt.customAggregatedUsage,
 				})
 				if err != nil {
 					t.Errorf("failed to marshal, err: %v", err)
@@ -761,7 +869,12 @@ func TestFilterUsage(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotNil(t, nodeInfo)
 
-			status := p.(*Plugin).Filter(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo)
+			testPod := tt.testPod
+			if testPod == nil {
+				testPod = &corev1.Pod{}
+			}
+
+			status := p.(*Plugin).Filter(context.TODO(), cycleState, testPod, nodeInfo)
 			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
 		})
 	}
@@ -775,6 +888,7 @@ func TestScore(t *testing.T) {
 		nodeName                string
 		nodeMetric              *slov1alpha1.NodeMetric
 		scoreAccordingProdUsage bool
+		aggregatedArgs          *v1beta2.LoadAwareSchedulingAggregatedArgs
 		wantScore               int64
 		wantStatus              *framework.Status
 	}{
@@ -922,6 +1036,234 @@ func TestScore(t *testing.T) {
 				},
 			},
 			wantScore:  72,
+			wantStatus: nil,
+		},
+		{
+			name: "score load node with p95",
+			aggregatedArgs: &v1beta2.LoadAwareSchedulingAggregatedArgs{
+				ScoreAggregationType:    slov1alpha1.P95,
+				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeName: "test-node-1",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("0"),
+								corev1.ResourceMemory: resource.MustParse("0Gi"),
+							},
+						},
+						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
+							{
+								Duration: metav1.Duration{Duration: 5 * time.Minute},
+								Usage: map[slov1alpha1.AggregationType]slov1alpha1.ResourceMap{
+									slov1alpha1.P95: {
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("32"),
+											corev1.ResourceMemory: resource.MustParse("10Gi"),
+										},
+									},
+									slov1alpha1.P99: {
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("50"),
+											corev1.ResourceMemory: resource.MustParse("70Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantScore:  72,
+			wantStatus: nil,
+		},
+		{
+			name: "score load node with p95 but have not reported usage",
+			aggregatedArgs: &v1beta2.LoadAwareSchedulingAggregatedArgs{
+				ScoreAggregationType:    slov1alpha1.P95,
+				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeName: "test-node-1",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("0"),
+								corev1.ResourceMemory: resource.MustParse("0Gi"),
+							},
+						},
+					},
+				},
+			},
+			wantScore:  90,
+			wantStatus: nil,
+		},
+		{
+			name: "score load node with p95 but have not reported usage and have assigned pods",
+			aggregatedArgs: &v1beta2.LoadAwareSchedulingAggregatedArgs{
+				ScoreAggregationType:    slov1alpha1.P95,
+				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			assignedPod: []*podAssignInfo{
+				{
+					timestamp: time.Now().Add(-10 * time.Minute),
+					pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "default",
+							Name:      "assigned-pod-1",
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node-1",
+							Containers: []corev1.Container{
+								{
+									Name: "test-container",
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("16"),
+											corev1.ResourceMemory: resource.MustParse("32Gi"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("16"),
+											corev1.ResourceMemory: resource.MustParse("32Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeName: "test-node-1",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "assigned-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("0"),
+								corev1.ResourceMemory: resource.MustParse("0Gi"),
+							},
+						},
+					},
+				},
+			},
+			wantScore:  81,
 			wantStatus: nil,
 		},
 		{
@@ -1383,6 +1725,9 @@ func TestScore(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var v1beta2args v1beta2.LoadAwareSchedulingArgs
 			v1beta2args.ScoreAccordingProdUsage = &tt.scoreAccordingProdUsage
+			if tt.aggregatedArgs != nil {
+				v1beta2args.Aggregated = tt.aggregatedArgs
+			}
 			v1beta2.SetDefaults_LoadAwareSchedulingArgs(&v1beta2args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
 			err := v1beta2.Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta2args, &loadAwareSchedulingArgs, nil)
@@ -1437,6 +1782,8 @@ func TestScore(t *testing.T) {
 				assert.NoError(t, err)
 			}
 			for _, v := range tt.assignedPod {
+				v.pod.UID = uuid.NewUUID()
+				v.pod.ResourceVersion = "111"
 				_, err = cs.CoreV1().Pods(v.pod.Namespace).Create(context.TODO(), v.pod, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
@@ -1450,6 +1797,16 @@ func TestScore(t *testing.T) {
 
 			koordSharedInformerFactory.Start(context.TODO().Done())
 			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
+
+			assignCache := p.(*Plugin).podAssignCache
+			for _, v := range tt.assignedPod {
+				m := assignCache.podInfoItems[tt.nodeName]
+				if m == nil {
+					m = map[types.UID]*podAssignInfo{}
+					assignCache.podInfoItems[tt.nodeName] = m
+				}
+				m[v.pod.UID] = v
+			}
 
 			cycleState := framework.NewCycleState()
 
