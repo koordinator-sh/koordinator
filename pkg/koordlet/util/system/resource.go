@@ -22,7 +22,6 @@ import (
 	"strconv"
 
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
 )
 
 type ResourceType string
@@ -38,7 +37,7 @@ type Resource interface {
 	// IsValid checks whether the given value is valid for the system resource's content
 	IsValid(v string) (bool, string)
 	WithValidator(validator ResourceValidator) Resource
-	WithCheckSupported(checkSupportedFn func(r Resource, parentDir string) (*bool, string)) Resource
+	WithCheckSupported(checkSupportedFn func(r Resource, parentDir string) (newSupported *bool, isSupported bool, msg string)) Resource
 }
 
 func GetDefaultResourceType(subfs string, filename string) ResourceType {
@@ -57,15 +56,15 @@ func ValidateResourceValue(value *int64, parentDir string, r Resource) bool {
 	return true
 }
 
-func SupportedIfFileExists(r Resource, parentDir string) (*bool, string) {
+func SupportedIfFileExists(r Resource, parentDir string) (*bool, bool, string) {
 	exists, err := PathExists(r.Path(parentDir))
 	if err != nil {
-		return pointer.Bool(false), fmt.Sprintf("cannot check if %s exists, err: %v", r.ResourceType(), err)
+		return nil, false, fmt.Sprintf("cannot check if %s exists, err: %v", r.ResourceType(), err)
 	}
 	if !exists {
-		return pointer.Bool(false), "file not exist"
+		return nil, false, "file not exist"
 	}
-	return pointer.Bool(true), ""
+	return nil, true, ""
 }
 
 func CheckIfAllSupported(checkSupportedFns ...func() (bool, string)) func() (bool, string) {

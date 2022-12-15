@@ -41,19 +41,17 @@ type ResourceUpdateExecutor interface {
 }
 
 type ResourceUpdateExecutorImpl struct {
-	leveledUpdateLock sync.Mutex
-	resourceCache     *cache.Cache
-	config            *Config
+	LeveledUpdateLock sync.Mutex
+	ResourceCache     *cache.Cache
+	Config            *Config
+
+	onceRun sync.Once
 }
 
-var (
-	onceRun sync.Once
-
-	singleton = &ResourceUpdateExecutorImpl{
-		resourceCache: cache.NewCacheDefault(),
-		config:        Conf,
-	}
-)
+var singleton = &ResourceUpdateExecutorImpl{
+	ResourceCache: cache.NewCacheDefault(),
+	Config:        Conf,
+}
 
 func NewResourceUpdateExecutor() ResourceUpdateExecutor {
 	return singleton
@@ -97,8 +95,8 @@ func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...Res
 }
 
 func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(cacheable bool, updaters [][]ResourceUpdater) {
-	e.leveledUpdateLock.Lock()
-	defer e.leveledUpdateLock.Unlock()
+	e.LeveledUpdateLock.Lock()
+	defer e.LeveledUpdateLock.Unlock()
 	var err error
 	skipMerge := map[string]bool{}
 	for i := 0; i < len(updaters); i++ {
@@ -121,7 +119,7 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(cacheable bool, updaters
 			}
 
 			updater.UpdateLastUpdateTimestamp(time.Now())
-			err = e.resourceCache.SetDefault(updater.Path(), updater)
+			err = e.ResourceCache.SetDefault(updater.Path(), updater)
 			if err != nil {
 				klog.V(4).Infof("failed to SetDefault in resourceCache for resource %s, err: %v",
 					updater.Path(), err)
@@ -148,7 +146,7 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(cacheable bool, updaters
 			klog.V(6).Infof("successfully update resource %s to %v", updater.Path(), updater.Value())
 
 			updater.UpdateLastUpdateTimestamp(time.Now())
-			err = e.resourceCache.SetDefault(updater.Path(), updater)
+			err = e.ResourceCache.SetDefault(updater.Path(), updater)
 			if err != nil {
 				klog.V(4).Infof("failed to SetDefault in resourceCache for resource %s, err: %v",
 					updater.Path(), err)
@@ -160,14 +158,14 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(cacheable bool, updaters
 // Run runs the ResourceUpdateExecutor.
 // TODO: run single executor when the qos manager starts.
 func (e *ResourceUpdateExecutorImpl) Run(stopCh <-chan struct{}) {
-	onceRun.Do(func() {
-		_ = e.resourceCache.Run(stopCh)
+	e.onceRun.Do(func() {
+		_ = e.ResourceCache.Run(stopCh)
 		klog.V(4).Info("starting ResourceUpdateExecutor successfully")
 	})
 }
 
 func (e *ResourceUpdateExecutorImpl) needUpdate(updater ResourceUpdater) bool {
-	preResource, _ := e.resourceCache.Get(updater.Path())
+	preResource, _ := e.ResourceCache.Get(updater.Path())
 	if preResource == nil {
 		klog.V(5).Infof("check for resource %s: pre is nil, need update", updater.Path())
 		return true
@@ -178,9 +176,9 @@ func (e *ResourceUpdateExecutorImpl) needUpdate(updater ResourceUpdater) bool {
 			updater.Path(), updater.Value(), preResourceUpdater.Value())
 		return true
 	}
-	if time.Since(preResourceUpdater.GetLastUpdateTimestamp()) > time.Duration(e.config.ResourceForceUpdateSeconds)*time.Second {
+	if time.Since(preResourceUpdater.GetLastUpdateTimestamp()) > time.Duration(e.Config.ResourceForceUpdateSeconds)*time.Second {
 		klog.V(5).Infof("check for resource %s: last update time(%v) is earlier than (%v)s ago, need update",
-			preResourceUpdater.Path(), preResourceUpdater.GetLastUpdateTimestamp(), e.config.ResourceForceUpdateSeconds)
+			preResourceUpdater.Path(), preResourceUpdater.GetLastUpdateTimestamp(), e.Config.ResourceForceUpdateSeconds)
 		return true
 	}
 	return false
@@ -204,7 +202,7 @@ func (e *ResourceUpdateExecutorImpl) updateByCache(updater ResourceUpdater) (boo
 			return false, err
 		}
 		updater.UpdateLastUpdateTimestamp(time.Now())
-		err = e.resourceCache.SetDefault(updater.Path(), updater)
+		err = e.ResourceCache.SetDefault(updater.Path(), updater)
 		if err != nil {
 			klog.V(5).Infof("failed to SetDefault in resourceCache for resource %s, err: %v", updater.Path(), err)
 			return true, err

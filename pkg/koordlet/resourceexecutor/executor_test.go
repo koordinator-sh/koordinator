@@ -35,8 +35,8 @@ func TestNewResourceUpdateExecutor(t *testing.T) {
 func TestNewResourceUpdateExecutor_Run(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		e := &ResourceUpdateExecutorImpl{
-			resourceCache: cache.NewCacheDefault(),
-			config:        NewDefaultConfig(),
+			ResourceCache: cache.NewCacheDefault(),
+			Config:        NewDefaultConfig(),
 		}
 		stop := make(chan struct{})
 		defer func() {
@@ -92,8 +92,8 @@ func TestResourceUpdateExecutor_UpdateBatch(t *testing.T) {
 			helper := sysutil.NewFileTestUtil(t)
 			defer helper.Cleanup()
 			e := &ResourceUpdateExecutorImpl{
-				resourceCache: cache.NewCacheDefault(),
-				config:        NewDefaultConfig(),
+				ResourceCache: cache.NewCacheDefault(),
+				Config:        NewDefaultConfig(),
 			}
 			stop := make(chan struct{})
 			defer func() {

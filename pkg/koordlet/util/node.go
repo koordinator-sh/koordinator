@@ -39,7 +39,8 @@ func GetKubeQosRelativePath(qosClass corev1.PodQOSClass) string {
 // @output /sys/fs/cgroup/cpuset/kubepods.slice/kubepods-besteffort.slice
 func GetRootCgroupCPUSetDir(qosClass corev1.PodQOSClass) string {
 	rootCgroupParentDir := GetKubeQosRelativePath(qosClass)
-	return filepath.Dir(system.CPUSet.Path(rootCgroupParentDir))
+	cpuSet, _ := system.GetCgroupResource(system.CPUSetCPUSName)
+	return filepath.Dir(cpuSet.Path(rootCgroupParentDir))
 }
 
 // GetRootCgroupCurCPUSet gets the current cpuset of the specified podQOS' root cgroup

@@ -17,6 +17,7 @@ limitations under the License.
 package system
 
 import (
+	"fmt"
 	"math"
 	"path/filepath"
 	"sync"
@@ -86,6 +87,14 @@ func GetCurrentCgroupVersion() CgroupVersion {
 	return CgroupVersionV1
 }
 
+func GetCgroupResource(resourceType ResourceType) (Resource, error) {
+	r, ok := DefaultRegistry.Get(GetCurrentCgroupVersion(), resourceType)
+	if !ok {
+		return nil, fmt.Errorf("%s not found in cgroup registry", resourceType)
+	}
+	return r, nil
+}
+
 const ( // subsystems
 	CgroupCPUDir     string = "cpu/"
 	CgroupCPUSetDir  string = "cpuset/"
@@ -100,6 +109,8 @@ const (
 	CFSBasePeriodValue int64 = 100000
 	CFSQuotaMinValue   int64 = 1000 // min value except `-1`
 	CPUSharesMinValue  int64 = 2
+	CPUWeightMinValue  int64 = 1
+	CPUWeightMaxValue  int64 = 10000
 
 	CPUStatName      = "cpu.stat"
 	CPUSharesName    = "cpu.shares"
@@ -148,7 +159,7 @@ var (
 	CPUSharesValidator                      = &RangeValidator{min: CPUSharesMinValue, max: math.MaxInt64}
 	CPUBurstValidator                       = &RangeValidator{min: 0, max: 100 * 10 * 100000}
 	CPUBvtWarpNsValidator                   = &RangeValidator{min: -1, max: 2}
-	CPUWeightValidator                      = &RangeValidator{min: 1, max: 10000}
+	CPUWeightValidator                      = &RangeValidator{min: CPUWeightMinValue, max: CPUWeightMaxValue}
 	MemoryWmarkRatioValidator               = &RangeValidator{min: 0, max: 100}
 	MemoryPriorityValidator                 = &RangeValidator{min: 0, max: 12}
 	MemoryOomGroupValidator                 = &RangeValidator{min: 0, max: 1}
@@ -271,7 +282,7 @@ type CgroupResource struct {
 	Subfs          string
 	Supported      *bool
 	SupportMsg     string
-	CheckSupported func(r Resource, parentDir string) (*bool, string)
+	CheckSupported func(r Resource, parentDir string) (newSupported *bool, isSupported bool, msg string)
 	Validator      ResourceValidator
 }
 
@@ -288,16 +299,24 @@ func (c *CgroupResource) Path(parentDir string) string {
 }
 
 func (c *CgroupResource) IsSupported(parentDir string) (bool, string) {
+	if c == nil {
+		return false, "resource not found"
+	}
 	if c.Supported == nil {
 		if c.CheckSupported == nil {
 			return false, "unknown support status"
 		}
-		c.Supported, c.SupportMsg = c.CheckSupported(c, parentDir)
+		newSupported, isSupported, msg := c.CheckSupported(c, parentDir)
+		c.Supported, c.SupportMsg = newSupported, msg // if needed to store the Supported result
+		return isSupported, msg
 	}
 	return *c.Supported, c.SupportMsg
 }
 
 func (c *CgroupResource) IsValid(v string) (bool, string) {
+	if c == nil {
+		return false, "resource not found"
+	}
 	if c.Validator == nil {
 		return true, ""
 	}
@@ -309,7 +328,7 @@ func (c *CgroupResource) WithValidator(validator ResourceValidator) Resource {
 	return c
 }
 
-func (c *CgroupResource) WithCheckSupported(checkSupportedFn func(r Resource, parentDir string) (*bool, string)) Resource {
+func (c *CgroupResource) WithCheckSupported(checkSupportedFn func(r Resource, parentDir string) (newSupported *bool, isSupported bool, msg string)) Resource {
 	c.Supported = nil
 	c.CheckSupported = checkSupportedFn
 	return c

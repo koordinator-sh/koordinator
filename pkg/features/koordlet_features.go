@@ -33,6 +33,7 @@ const (
 	AuditEventsHTTPHandler featuregate.Feature = "AuditEventsHTTPHandler"
 
 	// BECgroupReconcile sets cpu memory limit for best-effort pod
+	// Deprecated: This feature gate will be removed in v1.1. Please use the runtimehook feature BatchResource instead.
 	BECgroupReconcile featuregate.Feature = "BECgroupReconcile"
 
 	// BECPUSuppress suppresses for best-effort pod

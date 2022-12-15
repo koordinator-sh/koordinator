@@ -18,6 +18,15 @@ package resourceexecutor
 
 import "flag"
 
+const (
+	ReasonUpdateCgroups      = "UpdateCgroups"
+	ReasonUpdateSystemConfig = "UpdateSystemConfig"
+
+	EvictPodByNodeMemoryUsage = "EvictPodByNodeMemoryUsage"
+
+	AdjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
+)
+
 var Conf = NewDefaultConfig()
 
 type Config struct {

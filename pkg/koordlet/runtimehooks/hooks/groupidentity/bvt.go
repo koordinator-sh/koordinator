@@ -61,11 +61,12 @@ func (b *bvtPlugin) Register() {
 
 func (b *bvtPlugin) SystemSupported() bool {
 	if b.sysSupported == nil {
-		bvtFilePath := sysutil.GetCgroupFilePath(
-			util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), sysutil.CPUBVTWarpNs)
+		bvtResource, _ := sysutil.GetCgroupResource(sysutil.CPUBVTWarpNsName)
+		isBVTSupported, msg := bvtResource.IsSupported(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed))
 		bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
-		b.sysSupported = pointer.BoolPtr(sysutil.FileExists(bvtFilePath) || sysutil.FileExists(bvtConfigPath))
-		klog.Infof("update system supported info to %v for plugin %v", *b.sysSupported, name)
+		b.sysSupported = pointer.BoolPtr(isBVTSupported || sysutil.FileExists(bvtConfigPath))
+		klog.Infof("update system supported info to %v for plugin %v, supported msg %s",
+			*b.sysSupported, name, msg)
 	}
 	return *b.sysSupported
 }
