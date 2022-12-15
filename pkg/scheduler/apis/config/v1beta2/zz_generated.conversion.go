@@ -162,6 +162,9 @@ func autoConvert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingAr
 	out.UsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
 	out.ProdUsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ProdUsageThresholds))
 	out.EstimatedScalingFactors = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.EstimatedScalingFactors))
+	if err := v1.Convert_Pointer_bool_To_bool(&in.ScoreAccordingProdUsage, &out.ScoreAccordingProdUsage, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -177,6 +180,9 @@ func autoConvert_config_LoadAwareSchedulingArgs_To_v1beta2_LoadAwareSchedulingAr
 	out.UsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
 	out.ProdUsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ProdUsageThresholds))
 	out.EstimatedScalingFactors = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.EstimatedScalingFactors))
+	if err := v1.Convert_bool_To_Pointer_bool(&in.ScoreAccordingProdUsage, &out.ScoreAccordingProdUsage, s); err != nil {
+		return err
+	}
 	return nil
 }
 

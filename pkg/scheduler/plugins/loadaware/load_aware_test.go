@@ -769,13 +769,14 @@ func TestFilterUsage(t *testing.T) {
 
 func TestScore(t *testing.T) {
 	tests := []struct {
-		name        string
-		pod         *corev1.Pod
-		assignedPod []*podAssignInfo
-		nodeName    string
-		nodeMetric  *slov1alpha1.NodeMetric
-		wantScore   int64
-		wantStatus  *framework.Status
+		name                    string
+		pod                     *corev1.Pod
+		assignedPod             []*podAssignInfo
+		nodeName                string
+		nodeMetric              *slov1alpha1.NodeMetric
+		scoreAccordingProdUsage bool
+		wantScore               int64
+		wantStatus              *framework.Status
 	}{
 		{
 			name:     "score node with expired nodeMetric",
@@ -1212,7 +1213,8 @@ func TestScore(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
-			name: "score prod Pod",
+			name:                    "score prod Pod",
+			scoreAccordingProdUsage: true,
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -1380,6 +1382,7 @@ func TestScore(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var v1beta2args v1beta2.LoadAwareSchedulingArgs
+			v1beta2args.ScoreAccordingProdUsage = &tt.scoreAccordingProdUsage
 			v1beta2.SetDefaults_LoadAwareSchedulingArgs(&v1beta2args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
 			err := v1beta2.Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta2args, &loadAwareSchedulingArgs, nil)
