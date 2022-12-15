@@ -276,6 +276,7 @@ func Test_statesInformer_Run(t *testing.T) {
 			// pods informer needs a fake kubelet stub
 			delete(s.states.informerPlugins, podsInformerName)
 			delete(s.states.informerPlugins, nodeTopoInformerName)
+			delete(s.states.informerPlugins, nodeMetricInformerName)
 			stopChannel := make(chan struct{}, 1)
 			go wait.Until(func() {
 				if s.started.Load() {

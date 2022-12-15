@@ -94,6 +94,11 @@ func (in *ColocationStrategy) DeepCopyInto(out *ColocationStrategy) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.MetricAggregatePolicy != nil {
+		in, out := &in.MetricAggregatePolicy, &out.MetricAggregatePolicy
+		*out = new(v1alpha1.AggregatePolicy)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.CPUReclaimThresholdPercent != nil {
 		in, out := &in.CPUReclaimThresholdPercent, &out.CPUReclaimThresholdPercent
 		*out = new(int64)

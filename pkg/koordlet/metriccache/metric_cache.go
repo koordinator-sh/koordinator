@@ -32,8 +32,11 @@ type AggregationType string
 type AggregationFunc func(interface{}, AggregateParam) (float64, error)
 
 const (
-	AggregationTypeAVG   AggregationType = "AVG"
+	AggregationTypeAVG   AggregationType = "avg"
+	AggregationTypeP99   AggregationType = "p99"
+	AggregationTypeP95   AggregationType = "P95"
 	AggregationTypeP90   AggregationType = "P90"
+	AggregationTypeP50   AggregationType = "p50"
 	AggregationTypeLast  AggregationType = "last"
 	AggregationTypeCount AggregationType = "count"
 )
@@ -60,7 +63,19 @@ type AggregateParam struct {
 }
 
 type AggregateInfo struct {
+	// TODO only support node resource metric now
+	MetricStart *time.Time
+	MetricEnd   *time.Time
+
 	MetricsCount int64
+}
+
+func (a *AggregateInfo) TimeRangeDuration() time.Duration {
+	if a == nil || a.MetricStart == nil || a.MetricEnd == nil {
+		return time.Duration(0)
+	}
+	return a.MetricEnd.Sub(*a.MetricStart)
+
 }
 
 type QueryResult struct {
@@ -167,13 +182,12 @@ func (m *metricCache) GetNodeResourceMetric(param *QueryParam) NodeResourceQuery
 		}
 	}
 
-	count, err := count(metrics)
+	result.AggregateInfo, err = generateMetricAggregateInfo(metrics)
 	if err != nil {
-		result.Error = fmt.Errorf("get node aggregate count failed, metrics %v, error %v", metrics, err)
+		result.Error = err
 		return result
 	}
 
-	result.AggregateInfo = &AggregateInfo{MetricsCount: int64(count)}
 	result.Metric = &NodeResourceMetric{
 		CPUUsed: CPUMetric{
 			CPUUsed: *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI),
@@ -850,8 +864,14 @@ func getAggregateFunc(aggregationType AggregationType) AggregationFunc {
 	switch aggregationType {
 	case AggregationTypeAVG:
 		return fieldAvgOfMetricList
+	case AggregationTypeP99:
+		return percentileFuncOfMetricList(0.99)
+	case AggregationTypeP95:
+		return percentileFuncOfMetricList(0.95)
 	case AggregationTypeP90:
-		return fieldP90OfMetricList
+		return percentileFuncOfMetricList(0.9)
+	case AggregationTypeP50:
+		return percentileFuncOfMetricList(0.5)
 	case AggregationTypeLast:
 		return fieldLastOfMetricList
 	case AggregationTypeCount:

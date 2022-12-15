@@ -135,7 +135,6 @@ func fieldLastOfMetricList(metricsList interface{}, aggregateParam AggregatePara
 }
 
 func fieldCountOfMetricList(metricsList interface{}, aggregateParam AggregateParam) (float64, error) {
-
 	inputType := reflect.TypeOf(metricsList).Kind()
 	if inputType != reflect.Slice && inputType != reflect.Array {
 		return 0, fmt.Errorf("metrics input type must be slice or array, %v is illegal", inputType.String())
@@ -145,8 +144,10 @@ func fieldCountOfMetricList(metricsList interface{}, aggregateParam AggregatePar
 	return float64(metrics.Len()), nil
 }
 
-func fieldP90OfMetricList(metricsList interface{}, aggregateParam AggregateParam) (float64, error) {
-	return fieldPercentileOfMetricList(metricsList, aggregateParam, 0.90)
+func percentileFuncOfMetricList(percentile float32) AggregationFunc {
+	return func(metricsList interface{}, param AggregateParam) (float64, error) {
+		return fieldPercentileOfMetricList(metricsList, param, percentile)
+	}
 }
 
 func fieldLastOfMetricListBool(metricsList interface{}, aggregateParam AggregateParam) (bool, error) {
@@ -193,4 +194,51 @@ func fieldLastOfMetricListBool(metricsList interface{}, aggregateParam Aggregate
 		}
 	}
 	return lastValue, nil
+}
+
+// metricsListSortedByTime is a list of metrics sort by timestamp from old to new
+func generateMetricAggregateInfo(metricsListSortedByTime interface{}) (*AggregateInfo, error) {
+	inputType := reflect.TypeOf(metricsListSortedByTime).Kind()
+	if inputType != reflect.Slice && inputType != reflect.Array {
+		return nil, fmt.Errorf("metrics input type must be slice or array, %v is illegal", inputType.String())
+	}
+
+	aggregateInfo := &AggregateInfo{}
+	metrics := reflect.ValueOf(metricsListSortedByTime)
+	length := metrics.Len()
+	if length == 0 {
+		return aggregateInfo, nil
+	}
+	aggregateInfo.MetricsCount = int64(length)
+
+	firstMetric := metrics.Index(0)
+	firstTimeValue := firstMetric.FieldByName("Timestamp")
+	if firstTime, err := reflectValueToTime(&firstTimeValue); err == nil {
+		aggregateInfo.MetricStart = firstTime
+	} else {
+		return aggregateInfo, err
+	}
+
+	lastMetric := metrics.Index(length - 1)
+	lastTimeValue := lastMetric.FieldByName("Timestamp")
+	if lastTime, err := reflectValueToTime(&lastTimeValue); err == nil {
+		aggregateInfo.MetricEnd = lastTime
+	} else {
+		return aggregateInfo, err
+	}
+	return aggregateInfo, nil
+}
+
+func reflectValueToTime(v *reflect.Value) (*time.Time, error) {
+	if v == nil {
+		return nil, fmt.Errorf("input value is nil")
+	}
+	if !v.IsValid() {
+		return nil, fmt.Errorf("fieldTimeValue not Valid, metricStruct: %v ", v)
+	}
+	timeStruct, ok := v.Interface().(time.Time)
+	if !ok {
+		return nil, fmt.Errorf("time struct interface convert failed")
+	}
+	return &timeStruct, nil
 }

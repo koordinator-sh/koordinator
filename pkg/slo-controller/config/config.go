@@ -19,6 +19,7 @@ package config
 import (
 	"flag"
 	"reflect"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -101,16 +102,22 @@ const (
 
 // +k8s:deepcopy-gen=true
 type ColocationStrategy struct {
-	Enable                         *bool            `json:"enable,omitempty"`
-	MetricAggregateDurationSeconds *int64           `json:"metricAggregateDurationSeconds,omitempty"`
-	MetricReportIntervalSeconds    *int64           `json:"metricReportIntervalSeconds,omitempty"`
-	CPUReclaimThresholdPercent     *int64           `json:"cpuReclaimThresholdPercent,omitempty"`
-	MemoryReclaimThresholdPercent  *int64           `json:"memoryReclaimThresholdPercent,omitempty"`
-	MemoryCalculatePolicy          *CalculatePolicy `json:"memoryCalculatePolicy,omitempty"`
-	DegradeTimeMinutes             *int64           `json:"degradeTimeMinutes,omitempty"`
-	UpdateTimeThresholdSeconds     *int64           `json:"updateTimeThresholdSeconds,omitempty"`
-	ResourceDiffThreshold          *float64         `json:"resourceDiffThreshold,omitempty"`
-	ColocationStrategyExtender     `json:",inline"` // for third-party extension
+	Enable                         *bool                        `json:"enable,omitempty"`
+	MetricAggregateDurationSeconds *int64                       `json:"metricAggregateDurationSeconds,omitempty"`
+	MetricReportIntervalSeconds    *int64                       `json:"metricReportIntervalSeconds,omitempty"`
+	MetricAggregatePolicy          *slov1alpha1.AggregatePolicy `json:"metricAggregatePolicy,omitempty"`
+	CPUReclaimThresholdPercent     *int64                       `json:"cpuReclaimThresholdPercent,omitempty"`
+	MemoryReclaimThresholdPercent  *int64                       `json:"memoryReclaimThresholdPercent,omitempty"`
+	MemoryCalculatePolicy          *CalculatePolicy             `json:"memoryCalculatePolicy,omitempty"`
+	DegradeTimeMinutes             *int64                       `json:"degradeTimeMinutes,omitempty"`
+	UpdateTimeThresholdSeconds     *int64                       `json:"updateTimeThresholdSeconds,omitempty"`
+	ResourceDiffThreshold          *float64                     `json:"resourceDiffThreshold,omitempty"`
+	ColocationStrategyExtender     `json:",inline"`             // for third-party extension
+}
+
+type AggregatePolicy struct {
+	Durations      []time.Duration               `json:"durations,omitempty"`
+	StatisticTypes []slov1alpha1.AggregationType `json:"statisticTypes,omitempty"`
 }
 
 func NewDefaultColocationCfg() *ColocationCfg {
@@ -128,14 +135,21 @@ func DefaultColocationStrategy() ColocationStrategy {
 	calculatePolicy := CalculateByPodUsage
 	cfg := ColocationStrategy{
 		Enable:                         pointer.Bool(false),
-		MetricAggregateDurationSeconds: pointer.Int64(30),
+		MetricAggregateDurationSeconds: pointer.Int64(300),
 		MetricReportIntervalSeconds:    pointer.Int64(60),
-		CPUReclaimThresholdPercent:     pointer.Int64(60),
-		MemoryReclaimThresholdPercent:  pointer.Int64(65),
-		MemoryCalculatePolicy:          &calculatePolicy,
-		DegradeTimeMinutes:             pointer.Int64(15),
-		UpdateTimeThresholdSeconds:     pointer.Int64(300),
-		ResourceDiffThreshold:          pointer.Float64(0.1),
+		MetricAggregatePolicy: &slov1alpha1.AggregatePolicy{
+			Durations: []metav1.Duration{
+				{Duration: 5 * time.Minute},
+				{Duration: 10 * time.Minute},
+				{Duration: 30 * time.Minute},
+			},
+		},
+		CPUReclaimThresholdPercent:    pointer.Int64(60),
+		MemoryReclaimThresholdPercent: pointer.Int64(65),
+		MemoryCalculatePolicy:         &calculatePolicy,
+		DegradeTimeMinutes:            pointer.Int64(15),
+		UpdateTimeThresholdSeconds:    pointer.Int64(300),
+		ResourceDiffThreshold:         pointer.Float64(0.1),
 	}
 	cfg.ColocationStrategyExtender = defaultColocationStrategyExtender
 	return cfg
