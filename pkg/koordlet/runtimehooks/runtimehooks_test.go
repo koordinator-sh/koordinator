@@ -23,6 +23,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	mockstatesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 )
 
@@ -30,6 +31,7 @@ func Test_runtimeHook_Run(t *testing.T) {
 	tmpDir := t.TempDir()
 	type fields struct {
 		config *Config
+		fg     map[string]bool
 	}
 	tests := []struct {
 		name    string
@@ -47,6 +49,12 @@ func Test_runtimeHook_Run(t *testing.T) {
 					RuntimeHookDisableStages:  []string{"PreRunPodSandbox"},
 					RuntimeHookConfigFilePath: tmpDir,
 				},
+				fg: map[string]bool{
+					string(GroupIdentity):   false,
+					string(CPUSetAllocator): false,
+					string(GPUEnvInject):    false,
+					string(BatchResource):   false,
+				},
 			},
 			wantErr: false,
 		},
@@ -61,6 +69,12 @@ func Test_runtimeHook_Run(t *testing.T) {
 					RuntimeHookDisableStages:  []string{"PreRunPodSandbox"},
 					RuntimeHookConfigFilePath: tmpDir,
 				},
+				fg: map[string]bool{
+					string(GroupIdentity):   false,
+					string(CPUSetAllocator): false,
+					string(GPUEnvInject):    false,
+					string(BatchResource):   false,
+				},
 			},
 			wantErr: false,
 		},
@@ -74,12 +88,12 @@ func Test_runtimeHook_Run(t *testing.T) {
 					RuntimeHooksFailurePolicy: "Fail",
 					RuntimeHookDisableStages:  []string{"PreRunPodSandbox"},
 					RuntimeHookConfigFilePath: tmpDir,
-					FeatureGates: map[string]bool{
-						string(GroupIdentity):   true,
-						string(CPUSetAllocator): true,
-						string(GPUEnvInject):    true,
-						string(BatchResource):   true,
-					},
+				},
+				fg: map[string]bool{
+					string(GroupIdentity):   true,
+					string(CPUSetAllocator): true,
+					string(GPUEnvInject):    true,
+					string(BatchResource):   true,
 				},
 			},
 			wantErr: false,
@@ -87,6 +101,7 @@ func Test_runtimeHook_Run(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			features.DefaultMutableKoordletFeatureGate.SetFromMap(tt.fields.fg)
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			si := mockstatesinformer.NewMockStatesInformer(ctrl)

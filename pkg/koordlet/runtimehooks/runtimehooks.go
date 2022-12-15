@@ -19,6 +19,7 @@ package runtimehooks
 import (
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/proxyserver"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
@@ -96,7 +97,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 func registerPlugins() {
 	klog.V(5).Infof("start register plugins for runtime hook")
 	for hookFeature, hookPlugin := range runtimeHookPlugins {
-		enabled := DefaultRuntimeHooksFG.Enabled(hookFeature)
+		enabled := features.DefaultKoordletFeatureGate.Enabled(hookFeature)
 		if enabled {
 			hookPlugin.Register()
 		}

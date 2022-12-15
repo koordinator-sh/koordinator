@@ -18,12 +18,12 @@ package runtimehooks
 
 import (
 	"flag"
-	"strings"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/featuregate"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/batchresource"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/gpu"
@@ -32,21 +32,40 @@ import (
 )
 
 const (
-	GroupIdentity   featuregate.Feature = "GroupIdentity"
+	// owner: @zwzhang0107 @sanitube
+	// alpha: v0.3
+	// beta: v1.1
+	//
+	// GroupIdentity set pod cpu group identity(bvt) according to QoS.
+	GroupIdentity featuregate.Feature = "GroupIdentity"
+
+	// owner: @sanitube @zwzhang0107
+	// alpha: v0.3
+	// beta: v1.1
+	//
+	// CPUSetAllocator set container cpuset according to allocate result from koord-scheduler for LSR/LS pods.
 	CPUSetAllocator featuregate.Feature = "CPUSetAllocator"
-	GPUEnvInject    featuregate.Feature = "GPUEnvInject"
-	BatchResource   featuregate.Feature = "BatchResource"
+
+	// owner: @ZYecho @jasonliu747
+	// alpha: v0.3
+	// beta: v1.1
+	//
+	// GPUEnvInject injects gpu allocated env info according to allocate result from koord-scheduler.
+	GPUEnvInject featuregate.Feature = "GPUEnvInject"
+
+	// owner: @sanitube @zwzhang0107
+	// alpha: v1.1
+	//
+	// BatchResource set request and limits of cpu and memory on cgroup file.
+	BatchResource featuregate.Feature = "BatchResource"
 )
 
 var (
-	DefaultMutableRuntimeHooksFG featuregate.MutableFeatureGate = featuregate.NewFeatureGate()
-	DefaultRuntimeHooksFG        featuregate.FeatureGate        = DefaultMutableRuntimeHooksFG
-
 	defaultRuntimeHooksFG = map[featuregate.Feature]featuregate.FeatureSpec{
-		GroupIdentity:   {Default: false, PreRelease: featuregate.Alpha},
-		CPUSetAllocator: {Default: false, PreRelease: featuregate.Alpha},
+		GroupIdentity:   {Default: true, PreRelease: featuregate.Beta},
+		CPUSetAllocator: {Default: true, PreRelease: featuregate.Beta},
 		GPUEnvInject:    {Default: false, PreRelease: featuregate.Alpha},
-		BatchResource:   {Default: false, PreRelease: featuregate.Alpha},
+		BatchResource:   {Default: true, PreRelease: featuregate.Beta},
 	}
 
 	runtimeHookPlugins = map[featuregate.Feature]HookPlugin{
@@ -64,7 +83,7 @@ type Config struct {
 	RuntimeHookConfigFilePath string
 	RuntimeHookHostEndpoint   string
 	RuntimeHookDisableStages  []string
-	FeatureGates              map[string]bool
+	FeatureGates              map[string]bool // Deprecated
 }
 
 func NewDefaultConfig() *Config {
@@ -86,11 +105,9 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.RuntimeHookConfigFilePath, "runtime-hooks-config-path", c.RuntimeHookConfigFilePath, "config file path for runtime hooks")
 	fs.StringVar(&c.RuntimeHookHostEndpoint, "runtime-hooks-host-endpoint", c.RuntimeHookHostEndpoint, "host endpoint of runtime proxy")
 	fs.Var(cliflag.NewStringSlice(&c.RuntimeHookDisableStages), "runtime-hooks-disable-stages", "disable stages for runtime hooks")
-	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "runtime-hooks",
-		"A set of key=value pairs that describe feature gates for runtime hooks alpha/experimental features. "+
-			"Options are:\n"+strings.Join(DefaultRuntimeHooksFG.KnownFeatures(), "\n"))
+	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "runtime-hooks", "Deprecated because all settings have been moved to --feature-gates parameters")
 }
 
 func init() {
-	runtime.Must(DefaultMutableRuntimeHooksFG.Add(defaultRuntimeHooksFG))
+	runtime.Must(features.DefaultMutableKoordletFeatureGate.Add(defaultRuntimeHooksFG))
 }

@@ -33,6 +33,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	fakeschedv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1/fake"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 )
 
@@ -269,6 +270,10 @@ func Test_statesInformer_Run(t *testing.T) {
 			topoClient := faketopologyclientset.NewSimpleClientset()
 			ctrl := gomock.NewController(t)
 			metricCache := mock_metriccache.NewMockMetricCache(ctrl)
+			metricCache.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(metriccache.NodeResourceQueryResult{
+				QueryResult: metriccache.QueryResult{},
+				Metric:      &metriccache.NodeResourceMetric{},
+			}).AnyTimes()
 			nodeName := tt.fields.node.Name
 			schedClient := &fakeschedv1alpha1.FakeSchedulingV1alpha1{}
 			si := NewStatesInformer(tt.fields.config, kubeClient, koordClient, topoClient, metricCache, nodeName, schedClient)
