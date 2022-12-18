@@ -79,6 +79,7 @@ func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...Res
 				failures++
 				klog.V(4).Infof("failed to cacheable update resource %s to %v, isUpdated %v, err: %v",
 					updater.Path(), updater.Value(), isUpdated, err)
+				continue
 			}
 			klog.V(5).Infof("successfully cacheable update resource %s to %v, isUpdated %v",
 				updater.Path(), updater.Value(), isUpdated)
@@ -89,6 +90,7 @@ func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...Res
 			if err != nil {
 				failures++
 				klog.V(4).Infof("failed to update resource %s to %v, err: %v", updater.Path(), updater.Value(), err)
+				continue
 			}
 			klog.V(5).Infof("successfully update resource %s to %v", updater.Path(), updater.Value())
 		}

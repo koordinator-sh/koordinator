@@ -28,7 +28,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-// @kubeRelativeDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @podKubeRelativeDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 func GetPodCgroupDirWithKube(podKubeRelativeDir string) string {
 	return filepath.Join(system.CgroupPathFormatter.ParentDir, podKubeRelativeDir)
@@ -44,52 +44,60 @@ func GetPodKubeRelativePath(pod *corev1.Pod) string {
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @output /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.usage
+// @return /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.usage
 func GetPodCgroupCPUAcctUsagePath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
 	return system.GetCgroupFilePath(podPath, system.CPUAcctUsage)
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @output /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.shares
+// @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.shares
 func GetPodCgroupCPUSharePath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
 	return system.GetCgroupFilePath(podPath, system.CPUShares)
 }
 
+// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.cfs_period_us
 func GetPodCgroupCFSPeriodPath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
 	return system.GetCgroupFilePath(podPath, system.CPUCFSPeriod)
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @output /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.cfs_quota_us
+// @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.cfs_quota_us
 func GetPodCgroupCFSQuotaPath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
 	return system.GetCgroupFilePath(podPath, system.CPUCFSQuota)
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @output /sys/fs/cgroup/memory/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.stat
+// @return /sys/fs/cgroup/memory/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.stat
 func GetPodCgroupMemStatPath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
 	return system.GetCgroupFilePath(podPath, system.MemoryStat)
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @output /sys/fs/cgroup/memory/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.limit_in_bytes
+// @return /sys/fs/cgroup/memory/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.limit_in_bytes
 func GetPodCgroupMemLimitPath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
 	return system.GetCgroupFilePath(podPath, system.MemoryLimit)
 }
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @output /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.stat
+// @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.stat
 func GetPodCgroupCPUStatPath(podParentDir string) string {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
 	return system.GetCgroupFilePath(podPath, system.CPUStat)
 }
 
+// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @return {
+//    CPU: /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.pressure
+//    Mem: /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.pressure
+//    IO:  /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/io.pressure
+//  }
 func GetPodCgroupCPUAcctPSIPath(podParentDir string) PSIPath {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
 	return PSIPath{

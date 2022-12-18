@@ -459,7 +459,7 @@ func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
 		return
 	}
 
-	beCgroupPath := koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
+	beCgroupPath := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
 	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, beCgroupPath, "-1")
 	if err != nil {
 		klog.V(4).Infof("failed to get be cfs quota updater, err: %v", err)
