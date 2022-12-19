@@ -68,3 +68,22 @@ func IsResourceDiff(old, new corev1.ResourceList, resourceName corev1.ResourceNa
 
 	return newQuant >= oldQuant*(1+diffThreshold) || newQuant <= oldQuant*(1-diffThreshold)
 }
+
+// IsequalTopo returns whether the new topology has difference with the old one or not
+func IsequalTopo(oldtopo map[string]string, newtopo map[string]string) bool {
+	keySlice := make([]string, 0)
+	var dataSlice1 string
+	var dataSlice2 string
+	for key, value := range oldtopo {
+		keySlice = append(keySlice, key)
+		dataSlice1 += value
+	}
+	for _, key := range keySlice {
+		if data, ok := newtopo[key]; ok {
+			dataSlice2 += data
+		} else {
+			return false
+		}
+	}
+	return dataSlice1 == dataSlice2
+}

@@ -327,16 +327,20 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		for k, v := range nodeTopoAnnotations {
 			nodeResourceTopology.Annotations[k] = v
 		}
-		// TODO only update if necessary
-		s.updateNodeTopo(nodeResourceTopology)
 
-		// do UPDATE
-		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
-			_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
-			if err != nil {
-				klog.Errorf("failed to update cpu info of node %s, err: %v", node.Name, err)
-				return err
+		if s.isSyncNeeded(nodeResourceTopology.Annotations) {
+			// TODO only update if necessary
+			s.updateNodeTopo(nodeResourceTopology)
+
+			// do UPDATE
+			if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+				_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
+				if err != nil {
+					klog.Errorf("failed to update cpu info of node %s, err: %v", node.Name, err)
+					return err
+				}
 			}
+			return nil
 		}
 		return nil
 	})
@@ -344,7 +348,20 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		klog.Errorf("failed to update NodeResourceTopology, err: %v", err)
 	}
 }
-
+func (s *nodeTopoInformer) isSyncNeeded(newAnnotations map[string]string) bool {
+	nodename := s.nodeInformer.GetNode().Name
+	if s.nodeTopology == nil {
+		return true
+	}
+	if util.IsequalTopo(s.nodeTopology.Annotations, newAnnotations) {
+		// do nothing
+		klog.Info("all good, no need to report nodetopo  %v", nodename)
+		return false
+	}
+	//not equal
+	klog.Warningf("node %v topology is changed, need sync", nodename)
+	return true
+}
 func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.CPUInfo) []extension.CPUSharedPool {
 	podMetas := s.podsInformer.GetAllPods()
 	for _, podMeta := range podMetas {
