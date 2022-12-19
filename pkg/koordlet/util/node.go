@@ -31,6 +31,7 @@ func GetRootCgroupSubfsDir(subfs string) string {
 }
 
 // @output like kubepods.slice/kubepods-besteffort.slice/
+// DEPRECATED: use GetPodQoSRelativePath instread.
 func GetKubeQosRelativePath(qosClass corev1.PodQOSClass) string {
 	return GetPodCgroupDirWithKube(system.CgroupPathFormatter.QOSDirFn(qosClass))
 }
