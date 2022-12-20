@@ -131,8 +131,9 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 	creationTime1 := cs.pgMgr.GetCreatTime(podInfo1)
 	creationTime2 := cs.pgMgr.GetCreatTime(podInfo2)
 	if creationTime1.Equal(creationTime2) {
-		return util.GetId(podInfo1.Pod.Namespace, podInfo1.Pod.Name) < util.GetId(podInfo2.Pod.Namespace, podInfo2.Pod.Name)
+		return cs.pgMgr.GetID(podInfo1) < cs.pgMgr.GetID(podInfo2)
 	}
+
 	return creationTime1.Before(creationTime2)
 }
 

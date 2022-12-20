@@ -31,10 +31,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
+	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 	pglister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -68,6 +67,7 @@ type Manager interface {
 	Unreserve(context.Context, *framework.CycleState, *corev1.Pod, string, framework.Handle, string)
 	GetGangSummary(gangId string) (*GangSummary, bool)
 	GetGangSummaries() map[string]*GangSummary
+	GetID(*framework.QueuedPodInfo) types.UID
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -390,6 +390,23 @@ func (pgMgr *PodGroupManager) GetCreatTime(podInfo *framework.QueuedPodInfo) tim
 	klog.Errorf("getCreatTime didn't find gang: %v in gangCache, pod name: %v",
 		util.GetId(podInfo.Pod.Namespace, util.GetGangNameByPod(podInfo.Pod)), podInfo.Pod.Name)
 	return time.Now()
+}
+
+func (pgMgr *PodGroupManager) GetID(podInfo *framework.QueuedPodInfo) types.UID {
+	// first check if the pod belongs to the Gang
+	// it doesn't belong to the gang,we get the creation time of the pod
+	if !util.IsPodNeedGang(podInfo.Pod) {
+		return ""
+	}
+	gang := pgMgr.GetGangByPod(podInfo.Pod)
+	// it belongs to a gang,we get the creation time of the Gang
+	if gang != nil {
+		return gang.ID
+	}
+	klog.Errorf("getID didn't find gang: %v in gangCache, pod name: %v",
+		util.GetId(podInfo.Pod.Namespace, util.GetGangNameByPod(podInfo.Pod)), podInfo.Pod.Name)
+
+	return ""
 }
 
 // PatchPodGroup patches a podGroup.

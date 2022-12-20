@@ -386,7 +386,7 @@ func TestLess(t *testing.T) {
 				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
 				InitialAttemptTimestamp: earltTime,
 			},
-			expected: true, // p1 should be ahead of p2 in the queue
+			expected: false, // p1 should be ahead of p2 in the queue
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

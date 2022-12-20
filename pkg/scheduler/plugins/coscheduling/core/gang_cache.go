@@ -132,7 +132,11 @@ func (gangCache *GangCache) onPodAdd(obj interface{}) {
 				retry.DefaultRetry,
 				errors.IsTooManyRequests,
 				func() error {
-					_, err := gangCache.pgClient.SchedulingV1alpha1().PodGroups(pod.Namespace).Create(context.TODO(), pgFromAnnotation, metav1.CreateOptions{})
+					pg, err := gangCache.pgClient.SchedulingV1alpha1().PodGroups(pod.Namespace).Create(context.TODO(), pgFromAnnotation, metav1.CreateOptions{})
+					if err == nil && pg != nil {
+						gang.ID = pg.UID
+					}
+
 					return err
 				})
 			if err != nil {

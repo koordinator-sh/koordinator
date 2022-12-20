@@ -22,6 +22,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
@@ -42,6 +43,7 @@ const (
 
 // Gang  basic podGroup info recorded in gangCache:
 type Gang struct {
+	ID         types.UID
 	Name       string
 	WaitTime   time.Duration
 	CreateTime time.Time
@@ -170,6 +172,7 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 	}
 	minRequiredNumber := pg.Spec.MinMember
 	gang.MinRequiredNumber = int(minRequiredNumber)
+	gang.ID = pg.UID
 
 	totalChildrenNum, err := strconv.ParseInt(pg.Annotations[extension.AnnotationGangTotalNum], 10, 32)
 	if err != nil {
