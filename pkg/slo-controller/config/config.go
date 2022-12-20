@@ -190,19 +190,18 @@ func GetNodeColocationStrategy(cfg *ColocationCfg, node *corev1.Node) *Colocatio
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeCfg := range cfg.NodeConfigs {
 		selector, err := metav1.LabelSelectorAsSelector(nodeCfg.NodeSelector)
+		if err != nil || !selector.Matches(nodeLabels) {
+			continue
+		}
+
+		merged, err := util.MergeCfg(strategy, &nodeCfg.ColocationStrategy)
 		if err != nil {
 			continue
 		}
-		if selector.Matches(nodeLabels) {
-			if nodeCfg.NodeSelector != nil {
-				if merged, err := util.MergeCfg(strategy, &nodeCfg.ColocationStrategy); err != nil {
-					continue
-				} else {
-					strategy, _ = merged.(*ColocationStrategy)
-				}
-			}
-			break
-		}
+
+		strategy, _ = merged.(*ColocationStrategy)
+		break
 	}
+
 	return strategy
 }
