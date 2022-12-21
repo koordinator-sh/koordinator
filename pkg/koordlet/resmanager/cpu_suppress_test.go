@@ -50,6 +50,7 @@ func newTestCPUSuppress(r *resmanager) *CPUSuppress {
 			Config:        resourceexecutor.NewDefaultConfig(),
 			ResourceCache: cache.NewCacheDefault(),
 		},
+		cgroupReader:           resourceexecutor.NewCgroupReader(),
 		suppressPolicyStatuses: map[string]suppressPolicyStatus{},
 	}
 }

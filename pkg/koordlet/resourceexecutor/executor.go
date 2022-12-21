@@ -22,6 +22,7 @@ import (
 
 	"k8s.io/klog/v2"
 
+	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
 
@@ -68,32 +69,42 @@ func (e *ResourceUpdateExecutorImpl) Update(cacheable bool, resource ResourceUpd
 // UpdateBatch updates a batch of resources with the given cacheable attribute.
 // TODO: merge and resolve conflicts of batch updates from multiple callers.
 func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...ResourceUpdater) {
-	failures := 0
+	failures, unsupported := 0, 0
 	if cacheable {
 		for _, updater := range updaters {
 			isUpdated, err := e.updateByCache(updater)
-			if err != nil {
+			if err != nil && sysutil.IsResourceUnsupportedErr(err) {
+				unsupported++
+				klog.V(5).Infof("failed to cacheable update unsupported resource %s to %v, isUpdated %v, err: %v",
+					updater.Key(), updater.Value(), isUpdated, err)
+				continue
+			} else if err != nil {
 				failures++
 				klog.V(4).Infof("failed to cacheable update resource %s to %v, isUpdated %v, err: %v",
-					updater.Path(), updater.Value(), isUpdated, err)
+					updater.Key(), updater.Value(), isUpdated, err)
 				continue
 			}
 			klog.V(5).Infof("successfully cacheable update resource %s to %v, isUpdated %v",
-				updater.Path(), updater.Value(), isUpdated)
+				updater.Key(), updater.Value(), isUpdated)
 		}
 	} else {
 		for _, updater := range updaters {
 			err := e.update(updater)
-			if err != nil {
+			if err != nil && sysutil.IsResourceUnsupportedErr(err) {
+				unsupported++
+				klog.V(5).Infof("failed to update unsupported resource %s to %v, err: %v",
+					updater.Key(), updater.Value(), err)
+				continue
+			} else if err != nil {
 				failures++
-				klog.V(4).Infof("failed to update resource %s to %v, err: %v", updater.Path(), updater.Value(), err)
+				klog.V(4).Infof("failed to update resource %s to %v, err: %v", updater.Key(), updater.Value(), err)
 				continue
 			}
-			klog.V(5).Infof("successfully update resource %s to %v", updater.Path(), updater.Value())
+			klog.V(5).Infof("successfully update resource %s to %v", updater.Key(), updater.Value())
 		}
 	}
-	klog.V(6).Infof("finished batch updating resources, isCacheable %v, total %v, failures %v",
-		cacheable, len(updaters), failures)
+	klog.V(6).Infof("finished batch updating resources, isCacheable %v, total %v, failures %v, unsupported %v",
+		cacheable, len(updaters), failures, unsupported)
 }
 
 func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(cacheable bool, updaters [][]ResourceUpdater) {
@@ -108,23 +119,26 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(cacheable bool, updaters
 			}
 
 			mergedUpdater, err := updater.MergeUpdate()
-			if err != nil {
-				klog.V(4).Infof("failed merge update resource %s, err: %v", updater.Path(), err)
+			if err != nil && sysutil.IsResourceUnsupportedErr(err) {
+				klog.V(5).Infof("failed merge update unsupported resource %s, err: %v", updater.Key(), err)
+				continue
+			} else if err != nil {
+				klog.V(4).Infof("failed merge update resource %s, err: %v", updater.Key(), err)
 				continue
 			}
-			klog.V(6).Infof("successfully merge update resource %s to %v", updater.Path(), updater.Value())
+			klog.V(6).Infof("successfully merge update resource %s to %v", updater.Key(), updater.Value())
 
 			if mergedUpdater == nil {
-				skipMerge[updater.Path()] = true
+				skipMerge[updater.Key()] = true
 			} else {
 				updater = mergedUpdater
 			}
 
 			updater.UpdateLastUpdateTimestamp(time.Now())
-			err = e.ResourceCache.SetDefault(updater.Path(), updater)
+			err = e.ResourceCache.SetDefault(updater.Key(), updater)
 			if err != nil {
 				klog.V(4).Infof("failed to SetDefault in resourceCache for resource %s, err: %v",
-					updater.Path(), err)
+					updater.Key(), err)
 			}
 		}
 	}
@@ -136,22 +150,25 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(cacheable bool, updaters
 			}
 
 			// skip update twice for resources specified no merge
-			if skipMerge[updater.Path()] {
-				klog.V(6).Infof("skip update resource %s since it should skip the merge", updater.Path())
+			if skipMerge[updater.Key()] {
+				klog.V(6).Infof("skip update resource %s since it should skip the merge", updater.Key())
 				continue
 			}
 			err = updater.Update()
-			if err != nil {
-				klog.V(4).Infof("failed update resource %s, err: %v", updater.Path(), err)
+			if err != nil && sysutil.IsResourceUnsupportedErr(err) {
+				klog.V(5).Infof("failed update unsupported resource %s, err: %v", updater.Key(), err)
+				continue
+			} else if err != nil {
+				klog.V(4).Infof("failed update resource %s, err: %v", updater.Key(), err)
 				continue
 			}
-			klog.V(6).Infof("successfully update resource %s to %v", updater.Path(), updater.Value())
+			klog.V(6).Infof("successfully update resource %s to %v", updater.Key(), updater.Value())
 
 			updater.UpdateLastUpdateTimestamp(time.Now())
-			err = e.ResourceCache.SetDefault(updater.Path(), updater)
+			err = e.ResourceCache.SetDefault(updater.Key(), updater)
 			if err != nil {
 				klog.V(4).Infof("failed to SetDefault in resourceCache for resource %s, err: %v",
-					updater.Path(), err)
+					updater.Key(), err)
 			}
 		}
 	}
@@ -167,20 +184,20 @@ func (e *ResourceUpdateExecutorImpl) Run(stopCh <-chan struct{}) {
 }
 
 func (e *ResourceUpdateExecutorImpl) needUpdate(updater ResourceUpdater) bool {
-	preResource, _ := e.ResourceCache.Get(updater.Path())
+	preResource, _ := e.ResourceCache.Get(updater.Key())
 	if preResource == nil {
-		klog.V(5).Infof("check for resource %s: pre is nil, need update", updater.Path())
+		klog.V(5).Infof("check for resource %s: pre is nil, need update", updater.Key())
 		return true
 	}
 	preResourceUpdater := preResource.(ResourceUpdater)
 	if updater.Value() != preResourceUpdater.Value() {
 		klog.V(5).Infof("check for resource %s: current %v, pre %v, need update",
-			updater.Path(), updater.Value(), preResourceUpdater.Value())
+			updater.Key(), updater.Value(), preResourceUpdater.Value())
 		return true
 	}
 	if time.Since(preResourceUpdater.GetLastUpdateTimestamp()) > time.Duration(e.Config.ResourceForceUpdateSeconds)*time.Second {
 		klog.V(5).Infof("check for resource %s: last update time(%v) is earlier than (%v)s ago, need update",
-			preResourceUpdater.Path(), preResourceUpdater.GetLastUpdateTimestamp(), e.Config.ResourceForceUpdateSeconds)
+			preResourceUpdater.Key(), preResourceUpdater.GetLastUpdateTimestamp(), e.Config.ResourceForceUpdateSeconds)
 		return true
 	}
 	return false
@@ -189,10 +206,10 @@ func (e *ResourceUpdateExecutorImpl) needUpdate(updater ResourceUpdater) bool {
 func (e *ResourceUpdateExecutorImpl) update(updater ResourceUpdater) error {
 	err := updater.Update()
 	if err != nil {
-		klog.V(4).Infof("failed to update resource %s to %v, err: %v", updater.Path(), updater.Value(), err)
+		klog.V(4).Infof("failed to update resource %s to %v, err: %v", updater.Key(), updater.Value(), err)
 		return err
 	}
-	klog.V(6).Infof("successfully update resource %s to %v", updater.Path(), updater.Value())
+	klog.V(6).Infof("successfully update resource %s to %v", updater.Key(), updater.Value())
 	return nil
 }
 
@@ -200,16 +217,16 @@ func (e *ResourceUpdateExecutorImpl) updateByCache(updater ResourceUpdater) (boo
 	if e.needUpdate(updater) {
 		err := updater.Update()
 		if err != nil {
-			klog.V(5).Infof("failed to cacheable update resource %s to %v, err: %v", updater.Path(), updater.Value(), err)
+			klog.V(5).Infof("failed to cacheable update resource %s to %v, err: %v", updater.Key(), updater.Value(), err)
 			return false, err
 		}
 		updater.UpdateLastUpdateTimestamp(time.Now())
-		err = e.ResourceCache.SetDefault(updater.Path(), updater)
+		err = e.ResourceCache.SetDefault(updater.Key(), updater)
 		if err != nil {
-			klog.V(5).Infof("failed to SetDefault in resourceCache for resource %s, err: %v", updater.Path(), err)
+			klog.V(5).Infof("failed to SetDefault in resourceCache for resource %s, err: %v", updater.Key(), err)
 			return true, err
 		}
-		klog.V(6).Infof("successfully cacheable update resource %s to %v", updater.Path(), updater.Value())
+		klog.V(6).Infof("successfully cacheable update resource %s to %v", updater.Key(), updater.Value())
 		return true, nil
 	}
 	return false, nil

@@ -26,8 +26,8 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -35,8 +35,6 @@ import (
 )
 
 const (
-	// RootResctrlGroup is the name of the root resctrl group
-	RootResctrlGroup = ""
 	// LSRResctrlGroup is the name of LSR resctrl group
 	LSRResctrlGroup = "LSR"
 	// LSResctrlGroup is the name of LS resctrl group
@@ -53,15 +51,17 @@ var (
 )
 
 type ResctrlReconcile struct {
-	resManager *resmanager
-	executor   *executor.ResourceUpdateExecutor
+	resManager   *resmanager
+	executor     resourceexecutor.ResourceUpdateExecutor
+	cgroupReader resourceexecutor.CgroupReader
 }
 
 func NewResctrlReconcile(resManager *resmanager) *ResctrlReconcile {
-	executor := executor.NewResourceUpdateExecutor("ResctrlExecutor", resManager.config.ReconcileIntervalSeconds*60)
+	e := resourceexecutor.NewResourceUpdateExecutor()
 	return &ResctrlReconcile{
-		resManager: resManager,
-		executor:   executor,
+		resManager:   resManager,
+		executor:     e,
+		cgroupReader: resManager.cgroupReader,
 	}
 }
 
@@ -152,8 +152,8 @@ func calculateMbaPercentForGroup(group string, mbaPercentConfig *int64) string {
 	return strconv.FormatInt(*mbaPercentConfig, 10)
 }
 
-func getPodCgroupNewTaskIds(podMeta *statesinformer.PodMeta, tasksMap map[int]struct{}) []int {
-	var taskIds []int
+func (r *ResctrlReconcile) getPodCgroupNewTaskIds(podMeta *statesinformer.PodMeta, tasksMap map[int32]struct{}) []int32 {
+	var taskIds []int32
 
 	pod := podMeta.Pod
 	containerMap := make(map[string]*corev1.Container, len(pod.Spec.Containers))
@@ -170,7 +170,13 @@ func getPodCgroupNewTaskIds(podMeta *statesinformer.PodMeta, tasksMap map[int]st
 			continue
 		}
 
-		ids, err := koordletutil.GetContainerCurTasks(podMeta.CgroupDir, &containerStat)
+		containerDir, err := koordletutil.GetContainerCgroupPathWithKube(podMeta.CgroupDir, &containerStat)
+		if err != nil {
+			klog.V(4).Infof("failed to get pod container cgroup path for container %s/%s/%s, err: %s",
+				pod.Namespace, pod.Name, container.Name, err)
+			continue
+		}
+		ids, err := r.cgroupReader.ReadCPUTasks(containerDir)
 		if err != nil {
 			klog.Warningf("failed to get pod container cgroup task ids for container %s/%s/%s, err: %s",
 				pod.Namespace, pod.Name, container.Name, err)
@@ -210,10 +216,10 @@ func (r *ResctrlReconcile) calculateAndApplyCatL3PolicyForGroup(group string, cb
 	}
 
 	// calculate updating resource
-	resource := executor.CalculateL3SchemataResource(group, l3MaskValue, l3Num)
+	resource := resourceexecutor.NewResctrlL3SchemataResource(group, l3MaskValue, l3Num)
 
 	// write policy into resctrl files if need update
-	isUpdated, err := r.executor.UpdateByCache(resource)
+	isUpdated, err := r.executor.Update(true, resource)
 	if err != nil {
 		klog.Warningf("failed to write l3 cat policy on schemata for group %s, err: %s", group, err)
 		return err
@@ -236,31 +242,40 @@ func (r *ResctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3
 		return nil
 	}
 	// calculate updating resource
-	resource := executor.CalculateMbSchemataResource(group, memBwPercent, l3Num)
+	resource := resourceexecutor.NewResctrlMbSchemataResource(group, memBwPercent, l3Num)
 
 	// write policy into resctrl files if need update
-	isUpdated, err := r.executor.UpdateByCache(resource)
+	isUpdated, err := r.executor.Update(true, resource)
 	if err != nil {
-		klog.Warningf("failed to write mb cat policy on schemata for group %s, err: %s", group, err)
+		klog.Warningf("failed to write mba policy on schemata for group %s, err: %s", group, err)
 		return err
 	}
-	klog.V(5).Infof("apply mb cat policy for group %s finished, schemata %v, l3 number %v, isUpdated %v",
+	klog.V(5).Infof("apply mba policy for group %s finished, schemata %v, l3 number %v, isUpdated %v",
 		group, memBwPercent, l3Num, isUpdated)
 	return nil
 }
 
-func (r *ResctrlReconcile) calculateAndApplyCatL3GroupTasks(group string, taskIds []int) error {
-	resource := executor.CalculateL3TasksResource(group, taskIds)
+func (r *ResctrlReconcile) calculateAndApplyCatL3GroupTasks(group string, taskIds []int32) error {
+	if len(taskIds) <= 0 {
+		klog.V(6).Infof("apply l3 cat tasks for group %s skipped, no new task id", group)
+		return nil
+	}
+
+	resource, err := resourceexecutor.CalculateResctrlL3TasksResource(group, taskIds)
+	if err != nil {
+		klog.V(4).Infof("failed to get l3 tasks resource for group %s, err: %s", group, err)
+		return err
+	}
 
 	// write policy into resctrl files
 	// NOTE: the operation should not be cacheable, since old tid has chance to be reused by a new task and here the
 	// tasks ids are the realtime diff between cgroup and resctrl
-	err := r.executor.Update(resource)
+	updated, err := r.executor.Update(false, resource)
 	if err != nil {
-		klog.Warningf("failed to write l3 cat policy on tasks for group %s, err: %s", group, err)
+		klog.Warningf("failed to write l3 cat policy on tasks for group %s, updated %v, err: %s", group, updated, err)
 		return err
 	}
-	klog.V(5).Infof("apply l3 cat tasks for group %s finished, len(taskIds) %v", group, len(taskIds))
+	klog.V(5).Infof("apply l3 cat tasks for group %s finished, updated %v, len(taskIds) %v", group, updated, len(taskIds))
 
 	return nil
 }
@@ -323,7 +338,7 @@ func (r *ResctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.Resou
 	// here we only append the task ids which only appear in cgroup but not in resctrl to reduce resctrl writes
 	var err error
 
-	curTaskMaps := map[string]map[int]struct{}{}
+	curTaskMaps := map[string]map[int32]struct{}{}
 	for _, group := range resctrlGroupList {
 		curTaskMaps[group], err = system.ReadResctrlTasksMap(group)
 		if err != nil {
@@ -331,7 +346,7 @@ func (r *ResctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.Resou
 		}
 	}
 
-	taskIds := map[string][]int{}
+	taskIds := map[string][]int32{}
 	podsMeta := r.resManager.statesInformer.GetAllPods()
 	for _, podMeta := range podsMeta {
 		pod := podMeta.Pod
@@ -349,7 +364,7 @@ func (r *ResctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.Resou
 
 		// TODO https://github.com/koordinator-sh/koordinator/pull/94#discussion_r858779795
 		if group := getPodResctrlGroup(pod); group != UnknownResctrlGroup {
-			ids := getPodCgroupNewTaskIds(podMeta, curTaskMaps[group])
+			ids := r.getPodCgroupNewTaskIds(podMeta, curTaskMaps[group])
 			taskIds[group] = append(taskIds[group], ids...)
 		}
 	}

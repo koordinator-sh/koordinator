@@ -68,13 +68,15 @@ var (
 type CPUSuppress struct {
 	resmanager             *resmanager
 	executor               resourceexecutor.ResourceUpdateExecutor
+	cgroupReader           resourceexecutor.CgroupReader
 	suppressPolicyStatuses map[string]suppressPolicyStatus
 }
 
-func NewCPUSuppress(resmanager *resmanager) *CPUSuppress {
+func NewCPUSuppress(r *resmanager) *CPUSuppress {
 	return &CPUSuppress{
-		resmanager:             resmanager,
+		resmanager:             r,
 		executor:               resourceexecutor.NewResourceUpdateExecutor(),
+		cgroupReader:           r.cgroupReader,
 		suppressPolicyStatuses: map[string]suppressPolicyStatus{},
 	}
 }
@@ -293,11 +295,13 @@ func (r *CPUSuppress) suppressBECPU() {
 }
 
 func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUInfo *metriccache.NodeCPUInfo) {
-	oldCPUSet, err := koordletutil.GetRootCgroupCurCPUSet(corev1.PodQOSBestEffort)
+	rootCgroupParentDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	oldCPUS, err := r.cgroupReader.ReadCPUSet(rootCgroupParentDir)
 	if err != nil {
 		klog.Warningf("applyBESuppressPolicy failed to get current best-effort cgroup cpuset, err: %s", err)
 		return
 	}
+	oldCPUSet := oldCPUS.ToInt32Slice()
 
 	podMetas := r.resmanager.statesInformer.GetAllPods()
 	// value: 0 -> lse, 1 -> lsr, not exists -> others
@@ -359,12 +363,12 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 		klog.Warningf("suppressBECPU failed to apply be cpu suppress policy, err: %s", err)
 		return
 	}
-	audit.V(1).Node().Reason(resourceexecutor.AdjustBEByNodeCPUUsage).Message("update BE group to cpuset: %v", beCPUSet).Do()
+	_ = audit.V(1).Node().Reason(resourceexecutor.AdjustBEByNodeCPUUsage).Message("update BE group to cpuset: %v", beCPUSet).Do()
 	klog.Infof("suppressBECPU finished, suppress be cpu successfully: current cpuset %v", beCPUSet)
 }
 
 func (r *CPUSuppress) recoverCPUSetIfNeed(maxDepth int) {
-	cpus := []int{}
+	var cpus []int
 	nodeInfo, err := r.resmanager.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
 	if err != nil {
 		return
@@ -448,7 +452,7 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 		return
 	}
 	metrics.RecordBESuppressCores(string(slov1alpha1.CPUCfsQuotaPolicy), float64(newBeQuota)/float64(cfsPeriod))
-	audit.V(1).Node().Reason(resourceexecutor.AdjustBEByNodeCPUUsage).Message("update BE group to cfs_quota: %v", newBeQuota).Do()
+	_ = audit.V(1).Node().Reason(resourceexecutor.AdjustBEByNodeCPUUsage).Message("update BE group to cfs_quota: %v", newBeQuota).Do()
 	klog.Infof("suppressBECPU: succeeded to write cfs_quota_us for offline pods, isUpdated %v, new value: %d", isUpdated, newBeQuota)
 }
 
@@ -483,7 +487,6 @@ func getPodMetricCPUUsage(info *metriccache.PodResourceMetric) *resource.Quantit
 func getBECPUSetPathsByMaxDepth(relativeDepth int) ([]string, error) {
 	// walk from root path to lower nodes
 	rootCgroupPath := koordletutil.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
-	// TODO: for cgroups-v2 system, check each cgroup node if cpuset-controller is enabled
 	rootCPUSetSubfsPath := koordletutil.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
 	_, err := os.Stat(rootCgroupPath)
 	if err != nil {

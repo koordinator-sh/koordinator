@@ -41,6 +41,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/plugins"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -63,6 +64,7 @@ type resmanager struct {
 	schema                        *apiruntime.Scheme
 	statesInformer                statesinformer.StatesInformer
 	metricCache                   metriccache.MetricCache
+	cgroupReader                  resourceexecutor.CgroupReader
 	podsEvicted                   *expireCache.Cache
 	kubeClient                    clientset.Interface
 	eventRecorder                 record.EventRecorder
@@ -78,6 +80,7 @@ func NewResManager(cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	recorder := eventBroadcaster.NewRecorder(schema, corev1.EventSource{Component: "koordlet-resmanager", Host: nodeName})
+	cgroupReader := resourceexecutor.NewCgroupReader()
 
 	r := &resmanager{
 		config:                        cfg,
@@ -85,6 +88,7 @@ func NewResManager(cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.
 		schema:                        schema,
 		statesInformer:                statesInformer,
 		metricCache:                   metricCache,
+		cgroupReader:                  cgroupReader,
 		podsEvicted:                   expireCache.NewCacheDefault(),
 		kubeClient:                    kubeClient,
 		eventRecorder:                 recorder,
@@ -115,7 +119,7 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
 	klog.Info("Starting resmanager")
 
-	r.podsEvicted.Run(stopCh)
+	_ = r.podsEvicted.Run(stopCh)
 
 	go configextensions.RunQOSGreyCtrlPlugins(r.kubeClient, stopCh)
 

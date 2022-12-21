@@ -190,6 +190,8 @@ func GetContainerCurMemLimitBytes(podParentDir string, c *corev1.ContainerStatus
 	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
 }
 
+// GetContainerCurTasks gets the TIDs of the given container's cgroup.
+// DEPRECATED: use resourceexecutor.CgroupReader instead.
 func GetContainerCurTasks(podParentDir string, c *corev1.ContainerStatus) ([]int, error) {
 	cgroupPath, err := GetContainerCurTasksPath(podParentDir, c)
 	if err != nil {

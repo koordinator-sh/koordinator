@@ -20,10 +20,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 )
+
+const ErrResourceUnsupportedPrefix = "resource is unsupported"
 
 type ResourceType string
 
@@ -59,6 +62,14 @@ func ValidateResourceValue(value *int64, parentDir string, r Resource) bool {
 		return false
 	}
 	return true
+}
+
+func ResourceUnsupportedErr(msg string) error {
+	return fmt.Errorf("%s, reason: %s", ErrResourceUnsupportedPrefix, msg)
+}
+
+func IsResourceUnsupportedErr(err error) bool {
+	return strings.HasPrefix(err.Error(), ErrResourceUnsupportedPrefix)
 }
 
 func SupportedIfFileExists(r Resource, parentDir string) (bool, string) {
