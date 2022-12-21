@@ -26,8 +26,8 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 )
 
 const (
@@ -146,7 +146,7 @@ func (m *MemoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics []*metr
 		}
 	}
 
-	m.resManager.evictPodsIfNotEvicted(killedPods, node, executor.EvictPodByNodeMemoryUsage, message)
+	m.resManager.evictPodsIfNotEvicted(killedPods, node, resourceexecutor.EvictPodByNodeMemoryUsage, message)
 
 	m.lastEvictTime = time.Now()
 	klog.Infof("killAndEvictBEPods completed, memoryNeedRelease(%v) memoryReleased(%v)", memoryNeedRelease, memoryReleased)

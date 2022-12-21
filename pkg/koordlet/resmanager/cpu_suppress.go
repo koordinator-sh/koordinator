@@ -34,12 +34,11 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
@@ -360,7 +359,7 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 		klog.Warningf("suppressBECPU failed to apply be cpu suppress policy, err: %s", err)
 		return
 	}
-	audit.V(1).Node().Reason(executor.AdjustBEByNodeCPUUsage).Message("update BE group to cpuset: %v", beCPUSet).Do()
+	audit.V(1).Node().Reason(resourceexecutor.AdjustBEByNodeCPUUsage).Message("update BE group to cpuset: %v", beCPUSet).Do()
 	klog.Infof("suppressBECPU finished, suppress be cpu successfully: current cpuset %v", beCPUSet)
 }
 
@@ -443,13 +442,13 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 		klog.V(4).Infof("failed to get be cfs quota updater, err: %v", err)
 		return
 	}
-	isUpdated, err := r.executor.Update(true, updater)
+	isUpdated, err := r.executor.Update(false, updater)
 	if err != nil {
 		klog.Errorf("suppressBECPU: failed to write cfs_quota_us for be pods, error: %v", err)
 		return
 	}
 	metrics.RecordBESuppressCores(string(slov1alpha1.CPUCfsQuotaPolicy), float64(newBeQuota)/float64(cfsPeriod))
-	audit.V(1).Node().Reason(executor.AdjustBEByNodeCPUUsage).Message("update BE group to cfs_quota: %v", newBeQuota).Do()
+	audit.V(1).Node().Reason(resourceexecutor.AdjustBEByNodeCPUUsage).Message("update BE group to cfs_quota: %v", newBeQuota).Do()
 	klog.Infof("suppressBECPU: succeeded to write cfs_quota_us for offline pods, isUpdated %v, new value: %d", isUpdated, newBeQuota)
 }
 
@@ -465,7 +464,7 @@ func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
 		klog.V(4).Infof("failed to get be cfs quota updater, err: %v", err)
 		return
 	}
-	isUpdated, err := r.executor.Update(true, updater)
+	isUpdated, err := r.executor.Update(false, updater)
 	if err != nil {
 		klog.Errorf("recover bestEffort cfsQuota err: %v", err)
 		return
@@ -494,6 +493,7 @@ func getPodMetricCPUUsage(info *metriccache.PodResourceMetric) *resource.Quantit
 func getBECPUSetPathsByMaxDepth(relativeDepth int) ([]string, error) {
 	// walk from root path to lower nodes
 	rootCgroupPath := koordletutil.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
+	// TODO: for cgroups-v2 system, check each cgroup node if cpuset-controller is enabled
 	rootCPUSetSubfsPath := koordletutil.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
 	_, err := os.Stat(rootCgroupPath)
 	if err != nil {

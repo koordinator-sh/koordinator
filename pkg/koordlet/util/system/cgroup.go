@@ -35,7 +35,7 @@ const (
 	// https://github.com/torvalds/linux/blob/ea4424be16887a37735d6550cfd0611528dbe5d9/mm/memcontrol.c#L5337
 	MemoryLimitUnlimitedValue int64 = 0x7FFFFFFFFFFFF000 // 9223372036854771712 < math.MaxInt64
 
-	// CgroupMaxSymbolStr only appears in `memory.high`, we consider the value as MaxInt64
+	// CgroupMaxSymbolStr only appears in cgroups-v2 files, we consider the value as MaxInt64
 	CgroupMaxSymbolStr string = "max"
 	// CgroupMaxValueStr math.MaxInt64; writing `memory.high` with this do the same as set as "max"
 	CgroupMaxValueStr string = "9223372036854775807"
@@ -60,6 +60,13 @@ type MemoryStatRaw struct {
 	// add more fields
 }
 
+func (m *MemoryStatRaw) Usage() int64 {
+	// memory.stat usage: total_inactive_anon + total_active_anon + total_unevictable
+	return m.InactiveAnon + m.ActiveAnon + m.Unevictable
+}
+
+// CgroupFileWriteIfDifferent writes the cgroup file if current value is different from the given value.
+// TODO: moved into resourceexecutor package and marked as private.
 func CgroupFileWriteIfDifferent(cgroupTaskDir string, r Resource, value string) error {
 	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
 		return fmt.Errorf("write cgroup %s failed, resource not supported, msg: %s", r.ResourceType(), msg)
@@ -80,6 +87,24 @@ func CgroupFileWriteIfDifferent(cgroupTaskDir string, r Resource, value string) 
 	return CgroupFileWrite(cgroupTaskDir, r, value)
 }
 
+// CgroupFileWrite writes the cgroup file with the given value.
+// TODO: moved into resourceexecutor package and marked as private.
+func CgroupFileWrite(cgroupTaskDir string, r Resource, value string) error {
+	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
+		return fmt.Errorf("write cgroup %s failed, resource not supported, msg: %s", r.ResourceType(), msg)
+	}
+	if valid, msg := r.IsValid(value); !valid {
+		return fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), value, msg)
+	}
+
+	filePath := r.Path(cgroupTaskDir)
+	klog.V(5).Infof("write %s [%s]", filePath, value)
+
+	return os.WriteFile(filePath, []byte(value), 0644)
+}
+
+// CgroupFileReadInt reads the cgroup file and returns an int64 value.
+// TODO: moved into resourceexecutor package and marked as private.
 func CgroupFileReadInt(cgroupTaskDir string, r Resource) (*int64, error) {
 	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
 		return nil, fmt.Errorf("read cgroup %s failed, resource not supported, msg: %s", r.ResourceType(), msg)
@@ -105,6 +130,8 @@ func CgroupFileReadInt(cgroupTaskDir string, r Resource) (*int64, error) {
 	return &data, nil
 }
 
+// CgroupFileRead reads the cgroup file.
+// TODO: moved into resourceexecutor package and marked as private.
 func CgroupFileRead(cgroupTaskDir string, r Resource) (string, error) {
 	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
 		return "", fmt.Errorf("read cgroup %s failed, resource not supported, msg: %s", r.ResourceType(), msg)
@@ -115,20 +142,6 @@ func CgroupFileRead(cgroupTaskDir string, r Resource) (string, error) {
 
 	data, err := os.ReadFile(filePath)
 	return strings.Trim(string(data), "\n"), err
-}
-
-func CgroupFileWrite(cgroupTaskDir string, r Resource, value string) error {
-	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
-		return fmt.Errorf("write cgroup %s failed, resource not supported, msg: %s", r.ResourceType(), msg)
-	}
-	if valid, msg := r.IsValid(value); !valid {
-		return fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), value, msg)
-	}
-
-	filePath := r.Path(cgroupTaskDir)
-	klog.V(5).Infof("write %s [%s]", filePath, value)
-
-	return os.WriteFile(filePath, []byte(value), 0644)
 }
 
 // @cgroupTaskDir kubepods.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
@@ -336,9 +349,4 @@ func CalcCPUThrottledRatio(curPoint, prePoint *CPUStatRaw) float64 {
 		throttledRatio = float64(deltaThrottled) / float64(deltaPeriod)
 	}
 	return throttledRatio
-}
-
-func CalcMemoryUsageFromStat(memStat *MemoryStatRaw) int64 {
-	// memory.stat usage: total_inactive_anon + total_active_anon + total_unevictable
-	return memStat.InactiveAnon + memStat.ActiveAnon + memStat.Unevictable
 }

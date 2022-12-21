@@ -30,26 +30,21 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
-const (
-	ReasonUpdateCgroups      = "UpdateCgroups"
-	ReasonUpdateSystemConfig = "UpdateSystemConfig"
-)
-
 var DefaultCgroupUpdaterFactory = NewCgroupUpdaterFactory()
 
 func init() {
 	// register the update logic for system resources
 	// NOTE: should exclude the read-only resources, e.g. `cpu.stat`.
 	// common
-	DefaultCgroupUpdaterFactory.Register(NewCommonCgroupUpdater,
-		sysutil.CPUSharesName,
+	DefaultCgroupUpdaterFactory.Register(NewUnlimitedCgroupUpdater,
 		sysutil.CPUCFSQuotaName,
 		sysutil.CPUCFSPeriodName,
+		sysutil.MemoryLimitName,
+	)
+	DefaultCgroupUpdaterFactory.Register(NewCommonCgroupUpdater,
 		sysutil.CPUBurstName,
 		sysutil.CPUTasksName,
 		sysutil.CPUBVTWarpNsName,
-		sysutil.MemoryLimitName,
-		sysutil.MemoryUsageName,
 		sysutil.MemoryWmarkRatioName,
 		sysutil.MemoryWmarkScaleFactorName,
 		sysutil.MemoryWmarkMinAdjName,
@@ -62,6 +57,7 @@ func init() {
 		sysutil.BlkioTWBpsName,
 	)
 	// special cases
+	DefaultCgroupUpdaterFactory.Register(NewCPUSharesCgroupUpdater, sysutil.CPUSharesName)
 	DefaultCgroupUpdaterFactory.Register(NewMergeableCgroupUpdaterIfValueLarger,
 		sysutil.MemoryMinName,
 		sysutil.MemoryLowName,
@@ -213,24 +209,36 @@ type ResourceUpdaterFactory interface {
 	New(resourceType sysutil.ResourceType, parentDir string, value string) (ResourceUpdater, error)
 }
 
-// NewCommonCgroupUpdater returns a CgroupResourceUpdater for updating known cgroup resources.
-func NewCommonCgroupUpdater(resourceType sysutil.ResourceType, parentDir string, value string) (ResourceUpdater, error) {
-	r, ok := sysutil.DefaultRegistry.Get(sysutil.GetCurrentCgroupVersion(), resourceType)
-	if !ok {
-		return nil, fmt.Errorf("%s not found in cgroup registry", resourceType)
+func NewCgroupUpdater(resourceType sysutil.ResourceType, parentDir string, value string, updateFunc UpdateFunc) (ResourceUpdater, error) {
+	r, err := sysutil.GetCgroupResource(resourceType)
+	if err != nil {
+		return nil, err
 	}
 	return &CgroupResourceUpdater{
 		file:       r,
 		parentDir:  parentDir,
 		value:      value,
-		updateFunc: CommonCgroupUpdateFunc,
+		updateFunc: updateFunc,
 	}, nil
 }
 
+// NewCommonCgroupUpdater returns a CgroupResourceUpdater for updating known cgroup resources.
+func NewCommonCgroupUpdater(resourceType sysutil.ResourceType, parentDir string, value string) (ResourceUpdater, error) {
+	return NewCgroupUpdater(resourceType, parentDir, value, CommonCgroupUpdateFunc)
+}
+
+func NewUnlimitedCgroupUpdater(resourceType sysutil.ResourceType, parentDir string, value string) (ResourceUpdater, error) {
+	return NewCgroupUpdater(resourceType, parentDir, value, CgroupUpdateWithUnlimitedFunc)
+}
+
+func NewCPUSharesCgroupUpdater(resourceType sysutil.ResourceType, parentDir string, value string) (ResourceUpdater, error) {
+	return NewCgroupUpdater(resourceType, parentDir, value, CgroupUpdateCPUSharesFunc)
+}
+
 func NewMergeableCgroupUpdaterWithCondition(resourceType sysutil.ResourceType, parentDir string, value string, mergeCondition MergeConditionFunc) (ResourceUpdater, error) {
-	r, ok := sysutil.DefaultRegistry.Get(sysutil.GetCurrentCgroupVersion(), resourceType)
-	if !ok {
-		return nil, fmt.Errorf("%s not found in cgroup registry", resourceType)
+	r, err := sysutil.GetCgroupResource(resourceType)
+	if err != nil {
+		return nil, err
 	}
 	return &CgroupResourceUpdater{
 		file:       r,
@@ -268,7 +276,7 @@ func (f *CgroupUpdaterFactoryImpl) Register(g NewResourceUpdaterFunc, resourceTy
 	for _, t := range resourceTypes {
 		_, ok := f.registry[t]
 		if ok {
-			klog.V(4).InfoS("resource type %s already registered, ignored", t)
+			klog.Warningf("resource type %s already registered, ignored", t)
 			continue
 		}
 		f.registry[t] = g
@@ -295,6 +303,31 @@ func CommonDefaultUpdateFunc(resource ResourceUpdater) error {
 	c := resource.(*DefaultResourceUpdater)
 	_ = audit.V(5).Reason(ReasonUpdateSystemConfig).Message("update %v to %v", resource.Path(), resource.Value()).Do()
 	return sysutil.CommonFileWriteIfDifferent(c.Path(), c.value)
+}
+
+func CgroupUpdateWithUnlimitedFunc(resource ResourceUpdater) error {
+	c := resource.(*CgroupResourceUpdater)
+	// NOTE: convert "-1" to "max", since some cgroups-v2 files only accept "max" to unlimit resource instead of "-1".
+	//       DO NOT use it on the cgroups which has a valid value of "-1".
+	if c.value == "-1" && sysutil.GetCurrentCgroupVersion() == sysutil.CgroupVersionV2 {
+		c.value = "max"
+	}
+	_ = audit.V(5).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
+	return sysutil.CgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+}
+
+func CgroupUpdateCPUSharesFunc(resource ResourceUpdater) error {
+	c := resource.(*CgroupResourceUpdater)
+	// convert values in `cpu.shares` (v1) into values in `cpu.weight` (v2)
+	if sysutil.GetCurrentCgroupVersion() == sysutil.CgroupVersionV2 {
+		v, err := sysutil.ConvertCPUSharesToWeight(c.value)
+		if err != nil {
+			return err
+		}
+		c.value = strconv.FormatInt(v, 10)
+	}
+	_ = audit.V(5).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
+	return sysutil.CgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
 }
 
 type MergeConditionFunc func(oldValue, newValue string) (mergedValue string, needMerge bool, err error)

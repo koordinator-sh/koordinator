@@ -21,12 +21,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 func GetRootCgroupSubfsDir(subfs string) string {
+	if system.GetCurrentCgroupVersion() == system.CgroupVersionV2 {
+		return filepath.Join(system.Conf.CgroupRootDir)
+	}
 	return filepath.Join(system.Conf.CgroupRootDir, subfs)
 }
 
@@ -40,7 +43,8 @@ func GetKubeQosRelativePath(qosClass corev1.PodQOSClass) string {
 // @output /sys/fs/cgroup/cpuset/kubepods.slice/kubepods-besteffort.slice
 func GetRootCgroupCPUSetDir(qosClass corev1.PodQOSClass) string {
 	rootCgroupParentDir := GetKubeQosRelativePath(qosClass)
-	return filepath.Dir(system.CPUSet.Path(rootCgroupParentDir))
+	cpuSet, _ := system.GetCgroupResource(system.CPUSetCPUSName)
+	return filepath.Dir(cpuSet.Path(rootCgroupParentDir))
 }
 
 // GetRootCgroupCurCPUSet gets the current cpuset of the specified podQOS' root cgroup

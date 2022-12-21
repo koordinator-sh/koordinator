@@ -21,8 +21,8 @@ import (
 	"path/filepath"
 	"strconv"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
 )
 
 type ResourceType string
@@ -37,8 +37,12 @@ type Resource interface {
 	IsSupported(parentDir string) (bool, string)
 	// IsValid checks whether the given value is valid for the system resource's content
 	IsValid(v string) (bool, string)
+	// WithValidator sets the ResourceValidator for the resource
 	WithValidator(validator ResourceValidator) Resource
-	WithCheckSupported(checkSupportedFn func(r Resource, parentDir string) (*bool, string)) Resource
+	// WithSupported sets the Supported status of the resource when it is initialized.
+	WithSupported(supported bool, msg string) Resource
+	// WithCheckSupported sets the check function for the Supported status of given resource and parent directory.
+	WithCheckSupported(checkSupportedFn func(r Resource, parentDir string) (isSupported bool, msg string)) Resource
 }
 
 func GetDefaultResourceType(subfs string, filename string) ResourceType {
@@ -57,15 +61,26 @@ func ValidateResourceValue(value *int64, parentDir string, r Resource) bool {
 	return true
 }
 
-func SupportedIfFileExists(r Resource, parentDir string) (*bool, string) {
+func SupportedIfFileExists(r Resource, parentDir string) (bool, string) {
 	exists, err := PathExists(r.Path(parentDir))
 	if err != nil {
-		return pointer.Bool(false), fmt.Sprintf("cannot check if %s exists, err: %v", r.ResourceType(), err)
+		return false, fmt.Sprintf("cannot check if %s exists, err: %v", r.ResourceType(), err)
 	}
 	if !exists {
-		return pointer.Bool(false), "file not exist"
+		return false, "file not exist"
 	}
-	return pointer.Bool(true), ""
+	return true, ""
+}
+
+func SupportedIfFileExistsInKubepods(filename string, subfs string) (bool, string) {
+	exists, err := PathExists(filepath.Join(Conf.CgroupRootDir, subfs, CgroupPathFormatter.ParentDir, CgroupPathFormatter.QOSDirFn(corev1.PodQOSGuaranteed), filename))
+	if err != nil {
+		return false, fmt.Sprintf("cannot check if %s exists in kubepods cgroup, err: %v", filename, err)
+	}
+	if !exists {
+		return false, "file not exist in kubepods cgroup"
+	}
+	return true, ""
 }
 
 func CheckIfAllSupported(checkSupportedFns ...func() (bool, string)) func() (bool, string) {

@@ -34,13 +34,25 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mockmetriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mockstatesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
+
+func newTestCPUSuppress(r *resmanager) *CPUSuppress {
+	return &CPUSuppress{
+		resmanager: r,
+		executor: &resourceexecutor.ResourceUpdateExecutorImpl{
+			Config:        resourceexecutor.NewDefaultConfig(),
+			ResourceCache: cache.NewCacheDefault(),
+		},
+		suppressPolicyStatuses: map[string]suppressPolicyStatus{},
+	}
+}
 
 func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 	nodeCPUInfo := &metriccache.NodeCPUInfo{
@@ -611,7 +623,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				config:                        NewDefaultConfig(),
 				collectResUsedIntervalSeconds: 1,
 			}
-			cpuSuppress := NewCPUSuppress(r)
+			cpuSuppress := newTestCPUSuppress(r)
 			stop := make(chan struct{})
 			err := cpuSuppress.RunInit(stop)
 			assert.NoError(t, err)
@@ -870,7 +882,7 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := resmanager{}
-			cpuSuppress := NewCPUSuppress(&r)
+			cpuSuppress := newTestCPUSuppress(&r)
 			got := cpuSuppress.calculateBESuppressCPU(tt.args.node, tt.args.nodeMetric, tt.args.podMetrics, tt.args.podMetas,
 				tt.args.beCPUUsedThreshold)
 			assert.Equal(t, tt.want.MilliValue(), got.MilliValue())
@@ -953,7 +965,7 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 				statesInformer: mockStatesInformer,
 				metricCache:    mockMetricCache,
 			}
-			cpuSuppress := NewCPUSuppress(r)
+			cpuSuppress := newTestCPUSuppress(r)
 			if tt.args.currentPolicyStatus != nil {
 				cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = *tt.args.currentPolicyStatus
 			}
@@ -1009,7 +1021,7 @@ func Test_cpuSuppress_recoverCFSQuotaIfNeed(t *testing.T) {
 			helper.WriteCgroupFileContents(beQosDir, system.CPUCFSQuota, strconv.FormatInt(tt.preBECfsQuota, 10))
 
 			r := resmanager{}
-			cpuSuppress := NewCPUSuppress(&r)
+			cpuSuppress := newTestCPUSuppress(&r)
 			stop := make(chan struct{})
 			err := cpuSuppress.RunInit(stop)
 			assert.NoError(t, err)
@@ -1187,7 +1199,7 @@ func Test_cpuSuppress_applyCPUSetWithNonePolicy(t *testing.T) {
 	oldCPUSet, err := koordletutil.GetRootCgroupCurCPUSet(corev1.PodQOSBestEffort)
 	assert.NoError(t, err)
 
-	r := NewCPUSuppress(nil)
+	r := newTestCPUSuppress(nil)
 	stop := make(chan struct{})
 	err = r.RunInit(stop)
 	assert.NoError(t, err)
@@ -1279,7 +1291,7 @@ func Test_cpuSuppress_adjustByCPUSet(t *testing.T) {
 	r := &resmanager{
 		statesInformer: mockStatesInformer,
 	}
-	cpuSuppress := NewCPUSuppress(r)
+	cpuSuppress := newTestCPUSuppress(r)
 	stop := make(chan struct{})
 	err := cpuSuppress.RunInit(stop)
 	assert.NoError(t, err)
@@ -1358,7 +1370,7 @@ func Test_cpuSuppress_adjustByCfsQuota(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			helper.WriteCgroupFileContents(beQosDir, system.CPUCFSQuota, strconv.FormatInt(tt.preBECfsQuota, 10))
-			r := NewCPUSuppress(nil)
+			r := newTestCPUSuppress(nil)
 			stop := make(chan struct{})
 			err := r.RunInit(stop)
 			assert.NoError(t, err)
@@ -1385,7 +1397,7 @@ func Test_cpuSuppress_writeBECgroupsCPUSet(t *testing.T) {
 		dirPaths = append(dirPaths, filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), podDir))
 	}
 
-	r := NewCPUSuppress(nil)
+	r := newTestCPUSuppress(nil)
 	stop := make(chan struct{})
 	err := r.RunInit(stop)
 	assert.NoError(t, err)

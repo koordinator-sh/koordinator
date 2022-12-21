@@ -28,9 +28,9 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -156,16 +156,18 @@ func (l *burstLimiter) Expire() bool {
 
 type CPUBurst struct {
 	resmanager           *resmanager
-	executor             *executor.ResourceUpdateExecutor
+	executor             resourceexecutor.ResourceUpdateExecutor
+	cgroupReader         resourceexecutor.CgroupReader
 	nodeCPUBurstStrategy *slov1alpha1.CPUBurstStrategy
 	containerLimiter     map[string]*burstLimiter
 }
 
 func NewCPUBurst(resmanager *resmanager) *CPUBurst {
-	executor := executor.NewResourceUpdateExecutor("CPUBurstExecutor", resmanager.config.ReconcileIntervalSeconds*60)
+	executor := resourceexecutor.NewResourceUpdateExecutor()
 	return &CPUBurst{
 		resmanager:       resmanager,
 		executor:         executor,
+		cgroupReader:     resourceexecutor.NewCgroupReader(),
 		containerLimiter: make(map[string]*burstLimiter),
 	}
 }
@@ -313,7 +315,13 @@ func (b *CPUBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 		if containerBaseCFS <= 0 {
 			continue
 		}
-		containerCurCFS, err := koordletutil.GetContainerCurCFSQuota(podMeta.CgroupDir, containerStat)
+		containerPath, err := koordletutil.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStat)
+		if err != nil {
+			klog.Infof("get container %s/%s/%s cgroup path failed, err %v",
+				pod.Namespace, pod.Name, containerStat.Name, err)
+			continue
+		}
+		containerCurCFS, err := b.cgroupReader.ReadCPUQuota(containerPath)
 		if err != nil {
 			klog.Infof("get container %s/%s/%s current cfs quota failed, maybe not exist, skip this round, reason %v",
 				pod.Namespace, pod.Name, containerStat.Name, err)
@@ -433,12 +441,12 @@ func (b *CPUBurst) genOperationByContainer(burstCfg *slov1alpha1.CPUBurstConfig,
 
 func (b *CPUBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, containerStat *corev1.ContainerStatus,
 	curContaienrCFS, deltaContainerCFS int64) error {
-	curPodCFS, podPathErr := koordletutil.GetPodCurCFSQuota(podMeta.CgroupDir)
+	podDir := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+	curPodCFS, podPathErr := b.cgroupReader.ReadCPUQuota(podDir)
 	if podPathErr != nil {
 		return fmt.Errorf("get pod %v/%v current cfs quota failed, error: %v",
 			podMeta.Pod.Namespace, podMeta.Pod.Name, podPathErr)
 	}
-	podDir := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 	containerDir, containerPathErr := koordletutil.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStat)
 	if containerPathErr != nil {
 		return fmt.Errorf("get container %v/%v/%v cgroup path failed, error: %v",
@@ -450,36 +458,32 @@ func (b *CPUBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 		if curPodCFS > 0 {
 			// no need to adjust pod cpu.cfs_quota if it is already -1
 			targetPodCFS := curPodCFS + deltaContainerCFS
-			ownerRef := executor.PodOwnerRef(podMeta.Pod.Namespace, podMeta.Pod.Name)
 			podCFSValStr := strconv.FormatInt(targetPodCFS, 10)
-			updater := executor.NewCommonCgroupResourceUpdater(ownerRef, podDir, system.CPUCFSQuota, podCFSValStr)
-			if err := b.executor.Update(updater); err != nil {
+			updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, podDir, podCFSValStr)
+			if _, err := b.executor.Update(true, updater); err != nil {
 				return fmt.Errorf("update pod cgroup %v failed, error %v", podMeta.CgroupDir, err)
 			}
 		}
 		targetContainerCFS := curContaienrCFS + deltaContainerCFS
-		ownerRef := executor.ContainerOwnerRef(podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name)
 		containerCFSValStr := strconv.FormatInt(targetContainerCFS, 10)
-		updater := executor.NewCommonCgroupResourceUpdater(ownerRef, containerDir, system.CPUCFSQuota, containerCFSValStr)
-		if err := b.executor.Update(updater); err != nil {
+		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, containerDir, containerCFSValStr)
+		if _, err := b.executor.Update(true, updater); err != nil {
 			return fmt.Errorf("update container cgroup %v failed, reason %v", containerDir, err)
 		}
 	} else {
 		// cfs scale down, order: container->pod
 		targetContainerCFS := curContaienrCFS + deltaContainerCFS
-		ownerRef := executor.ContainerOwnerRef(podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name)
 		containerCFSValStr := strconv.FormatInt(targetContainerCFS, 10)
-		updater := executor.NewCommonCgroupResourceUpdater(ownerRef, containerDir, system.CPUCFSQuota, containerCFSValStr)
-		if err := b.executor.Update(updater); err != nil {
+		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, containerDir, containerCFSValStr)
+		if _, err := b.executor.Update(true, updater); err != nil {
 			return fmt.Errorf("update container cgroup %v failed, reason %v", containerDir, err)
 		}
 		if curPodCFS > 0 {
 			// no need to adjust pod cpu.cfs_quota if it is already -1
 			targetPodCFS := curPodCFS + deltaContainerCFS
-			ownerRef := executor.PodOwnerRef(podMeta.Pod.Namespace, podMeta.Pod.Name)
 			podCFSValStr := strconv.FormatInt(targetPodCFS, 10)
-			updater := executor.NewCommonCgroupResourceUpdater(ownerRef, podDir, system.CPUCFSQuota, podCFSValStr)
-			if err := b.executor.Update(updater); err != nil {
+			updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, podDir, podCFSValStr)
+			if _, err := b.executor.Update(true, updater); err != nil {
 				return fmt.Errorf("update pod cgroup %v failed, reason %v", podMeta.CgroupDir, err)
 			}
 		}
@@ -513,43 +517,39 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 			continue
 		}
 
-		if system.ValidateResourceValue(&containerCFSBurstVal, containerDir, system.CPUBurst) {
-			podCFSBurstVal += containerCFSBurstVal
-			ownerRef := executor.ContainerOwnerRef(pod.Namespace, pod.Name, container.Name)
-			containerCFSBurstValStr := strconv.FormatInt(containerCFSBurstVal, 10)
-			updater := executor.NewCommonCgroupResourceUpdater(ownerRef, containerDir, system.CPUBurst, containerCFSBurstValStr)
-			updated, err := b.executor.UpdateByCache(updater)
-			if err == nil {
-				klog.V(5).Infof("apply container %v/%v/%v cpu burst value success, dir %v, value %v",
-					pod.Namespace, pod.Name, containerStat.Name, containerDir, containerCFSBurstVal)
-			} else if system.HostSystemInfo.IsAnolisOS {
-				// cgroup `cpu.burst_us` is expected available on anolis os, and it may not exist in other kernels.
-				klog.Infof("update container %v/%v/%v cpu burst failed, dir %v, updated %v, error %v",
-					pod.Namespace, pod.Name, containerStat.Name, containerDir, updated, err)
-			} else {
-				klog.V(4).Infof("update container %v/%v/%v cpu burst ignored on non Anolis OS, dir %v, "+
-					"updated %v, info %v", pod.Namespace, pod.Name, containerStat.Name, containerDir, updated, err)
-			}
+		podCFSBurstVal += containerCFSBurstVal
+		containerCFSBurstValStr := strconv.FormatInt(containerCFSBurstVal, 10)
+		updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUBurstName, containerDir, containerCFSBurstValStr)
+		if err != nil { // normally cpu burst resource not supported on current system
+			klog.V(5).Infof("get cpu burst updater for container %s/%s/%s failed, maybe system unsupported, err: %v",
+				pod.Namespace, pod.Name, containerStat.Name, err)
+			continue
+		}
+		updated, err := b.executor.Update(true, updater)
+		if err == nil {
+			klog.V(5).Infof("apply container %v/%v/%v cpu burst value successfully, dir %v, value %v",
+				pod.Namespace, pod.Name, containerStat.Name, containerDir, containerCFSBurstVal)
+		} else {
+			klog.V(4).Infof("update container %v/%v/%v cpu burst failed, dir %v, updated %v, info %v",
+				pod.Namespace, pod.Name, containerStat.Name, containerDir, updated, err)
 		}
 	} // end for containers
 
 	podDir := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
-	if system.ValidateResourceValue(&podCFSBurstVal, podDir, system.CPUBurst) {
-		ownerRef := executor.PodOwnerRef(pod.Namespace, pod.Name)
-		podCFSBurstValStr := strconv.FormatInt(podCFSBurstVal, 10)
-		updater := executor.NewCommonCgroupResourceUpdater(ownerRef, podDir, system.CPUBurst, podCFSBurstValStr)
-		updated, err := b.executor.UpdateByCache(updater)
-		if err == nil {
-			klog.V(5).Infof("apply pod %v/%v cpu burst value success, dir %v, value %v",
-				pod.Namespace, pod.Name, podDir, podCFSBurstValStr)
-		} else if system.HostSystemInfo.IsAnolisOS {
-			// cgroup `cpu.burst_us` is expected available on anolis os, and it may not exist in other kernels.
-			klog.Infof("update pod %v/%v cpu burst failed, dir %v, updated %v, error %v",
-				pod.Namespace, pod.Name, podDir, updated, err)
-		} else {
-			klog.V(4).Infof("update pod %v/%v cpu burst ignored on non Anolis OS, dir %v, updated %v, "+
-				"info %v", pod.Namespace, pod.Name, podDir, updated, err)
-		}
+	podCFSBurstValStr := strconv.FormatInt(podCFSBurstVal, 10)
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUBurstName, podDir, podCFSBurstValStr)
+	if err != nil { // normally cpu burst resource not supported on current system
+		klog.V(5).Infof("get cpu burst updater for pod %s/%s failed, maybe system unsupported, err: %v",
+			pod.Namespace, pod.Name, err)
+		return
+	}
+	updated, err := b.executor.Update(true, updater)
+	if err == nil {
+		klog.V(5).Infof("apply pod %v/%v cpu burst value successfully, dir %v, value %v",
+			pod.Namespace, pod.Name, podDir, podCFSBurstValStr)
+	} else {
+		klog.V(4).Infof("update pod %v/%v cpu burst failed, dir %v, updated %v, err %v",
+			pod.Namespace, pod.Name, podDir, updated, err)
 	}
 }
 

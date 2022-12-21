@@ -41,7 +41,7 @@ func TestCgroupResourceRegistry(t *testing.T) {
 func TestCgroupResource(t *testing.T) {
 	type fields struct {
 		isV2             bool
-		checkSupportedFn func(r Resource, parentDir string) (*bool, string)
+		checkSupportedFn func(r Resource, parentDir string) (bool, string)
 		filename         string
 		subfs            string
 		resourceType     ResourceType
@@ -55,9 +55,9 @@ func TestCgroupResource(t *testing.T) {
 			name: "resource must be supported",
 			fields: fields{
 				isV2:         false,
-				filename:     CPUCFSQuotaName,
+				filename:     "cpu.my_test_cgroup",
 				subfs:        CgroupCPUDir,
-				resourceType: ResourceType(CPUCFSQuotaName),
+				resourceType: ResourceType("cpu.my_test_cgroup"),
 			},
 			wantSupported: true,
 		},
@@ -65,9 +65,9 @@ func TestCgroupResource(t *testing.T) {
 			name: "v2 resource must be supported",
 			fields: fields{
 				isV2:         true,
-				filename:     CPUMaxName,
+				filename:     "cpu.my_test_cgroup",
 				subfs:        CgroupV2Dir,
-				resourceType: ResourceType(CPUCFSQuotaName),
+				resourceType: ResourceType("cpu.my_test_cgroup"),
 			},
 			wantSupported: true,
 		},
@@ -76,9 +76,9 @@ func TestCgroupResource(t *testing.T) {
 			fields: fields{
 				isV2:             false,
 				checkSupportedFn: SupportedIfFileExists,
-				filename:         MemoryWmarkRatioName,
+				filename:         "memory.my_test_cgroup",
 				subfs:            CgroupMemDir,
-				resourceType:     ResourceType(MemoryWmarkRatioName),
+				resourceType:     ResourceType("memory.my_test_cgroup"),
 			},
 			wantSupported: false,
 		},

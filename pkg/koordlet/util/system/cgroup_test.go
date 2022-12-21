@@ -67,7 +67,6 @@ func TestCgroupFileWriteIfDifferent(t *testing.T) {
 
 			gotErr := CgroupFileWriteIfDifferent(taskDir, tt.args.resource, tt.args.currentValue)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
-
 		})
 	}
 }
@@ -77,8 +76,9 @@ func TestCgroupFileReadInt(t *testing.T) {
 	testingInt64 := int64(1024)
 	testingMaxInt64 := int64(math.MaxInt64)
 	type args struct {
-		file  Resource
-		value string
+		file      Resource
+		value     string
+		supported bool
 	}
 	tests := []struct {
 		name      string
@@ -89,8 +89,9 @@ func TestCgroupFileReadInt(t *testing.T) {
 		{
 			name: "test_read_success",
 			args: args{
-				file:  CPUShares,
-				value: "1024",
+				file:      CPUShares,
+				value:     "1024",
+				supported: true,
 			},
 			expect:    &testingInt64,
 			expectErr: false,
@@ -98,8 +99,9 @@ func TestCgroupFileReadInt(t *testing.T) {
 		{
 			name: "test_read_error",
 			args: args{
-				file:  CPUShares,
-				value: "unknown",
+				file:      CPUShares,
+				value:     "unknown",
+				supported: true,
 			},
 			expect:    nil,
 			expectErr: true,
@@ -107,29 +109,40 @@ func TestCgroupFileReadInt(t *testing.T) {
 		{
 			name: "test_read_value_for_max_str",
 			args: args{
-				file:  MemoryHigh,
-				value: CgroupMaxSymbolStr,
+				file:      MemoryHigh,
+				value:     CgroupMaxSymbolStr,
+				supported: true,
 			},
 			expect:    &testingMaxInt64,
 			expectErr: false,
 		},
+		{
+			name: "test_read_value_for_resource_unsupported",
+			args: args{
+				file:      MemoryWmarkRatio,
+				value:     "0",
+				supported: false,
+			},
+			expect:    nil,
+			expectErr: true,
+		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := NewFileTestUtil(t)
+			helper.SetResourcesSupported(true, tt.args.file) // set supported for initialization
 			helper.CreateCgroupFile(taskDir, tt.args.file)
 
 			err := CommonFileWrite(tt.args.file.Path(taskDir), tt.args.value)
 			assert.NoError(t, err)
 
+			helper.SetResourcesSupported(tt.args.supported, tt.args.file)
 			got, gotErr := CgroupFileReadInt(taskDir, tt.args.file)
 
 			assert.Equal(t, tt.expect, got)
 			assert.Equal(t, tt.expectErr, gotErr != nil)
 		})
 	}
-
 }
 
 func genCPUStatContent() string {
