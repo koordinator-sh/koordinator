@@ -34,7 +34,7 @@ func TestNewDefaultConfig(t *testing.T) {
 			name: "config",
 			want: &Config{
 				KubeletPreferredAddressType: string(corev1.NodeInternalIP),
-				KubeletSyncInterval:         30 * time.Second,
+				KubeletSyncInterval:         10 * time.Second,
 				KubeletSyncTimeout:          3 * time.Second,
 				InsecureKubeletTLS:          false,
 				KubeletReadOnlyPort:         10255,

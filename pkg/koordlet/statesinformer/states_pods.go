@@ -66,6 +66,7 @@ func NewPodsInformer() *podsInformer {
 		podMap:       map[string]*PodMeta{},
 		podHasSynced: atomic.NewBool(false),
 		pleg:         p,
+		podCreated:   make(chan string, 1),
 	}
 	return podsInformer
 }
@@ -101,6 +102,10 @@ func (s *podsInformer) Start(stopCh <-chan struct{}) {
 			// There is no need to notify to update the data when the channel is not empty
 			if len(s.podCreated) == 0 {
 				s.podCreated <- podID
+				klog.V(5).Infof("new pod %v created, send event to sync pods", podID)
+			} else {
+				klog.V(5).Infof("new pod %v created, last event has not been consumed, no need to send event",
+					podID)
 			}
 		},
 	})
@@ -113,6 +118,7 @@ func (s *podsInformer) Start(stopCh <-chan struct{}) {
 		}
 	}()
 	klog.V(2).Infof("pod informer started")
+	<-stopCh
 }
 
 func (s *podsInformer) HasSynced() bool {
@@ -165,12 +171,15 @@ func (s *podsInformer) syncKubeletLoop(duration time.Duration, stopCh <-chan str
 		case <-s.podCreated:
 			if rateLimiter.Allow() {
 				// sync kubelet triggered immediately when the Pod is created
+				klog.V(4).Infof("new pod created, sync from kubelet immediately")
 				s.syncPods()
 				// reset timer to
 				if !timer.Stop() {
 					<-timer.C
 				}
 				timer.Reset(duration)
+			} else {
+				klog.V(4).Infof("new pod created, but sync rate limiter is not allowed")
 			}
 		case <-timer.C:
 			timer.Reset(duration)
