@@ -453,41 +453,46 @@ func (b *CPUBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 			podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, containerPathErr)
 	}
 
+	updatePodCFSQuota := func() error {
+		// no need to adjust pod cpu.cfs_quota if it is already -1
+		if curPodCFS <= 0 {
+			return nil
+		}
+
+		targetPodCFS := curPodCFS + deltaContainerCFS
+		podCFSValStr := strconv.FormatInt(targetPodCFS, 10)
+		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, podDir, podCFSValStr)
+		if _, err := b.executor.Update(true, updater); err != nil {
+			return fmt.Errorf("update pod cgroup %v failed, error %v", podMeta.CgroupDir, err)
+		}
+
+		return nil
+	}
+
+	updateContainerCFSQuota := func() error {
+		targetContainerCFS := curContaienrCFS + deltaContainerCFS
+		containerCFSValStr := strconv.FormatInt(targetContainerCFS, 10)
+		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, containerDir, containerCFSValStr)
+		if _, err := b.executor.Update(true, updater); err != nil {
+			return fmt.Errorf("update container cgroup %v failed, reason %v", containerDir, err)
+		}
+
+		return nil
+	}
+
+	// cfs scale down, order: container->pod
+	sortOfUpdateQuota := []func() error{updateContainerCFSQuota, updatePodCFSQuota}
 	if deltaContainerCFS > 0 {
 		// cfs scale up, order: pod->container
-		if curPodCFS > 0 {
-			// no need to adjust pod cpu.cfs_quota if it is already -1
-			targetPodCFS := curPodCFS + deltaContainerCFS
-			podCFSValStr := strconv.FormatInt(targetPodCFS, 10)
-			updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, podDir, podCFSValStr)
-			if _, err := b.executor.Update(true, updater); err != nil {
-				return fmt.Errorf("update pod cgroup %v failed, error %v", podMeta.CgroupDir, err)
-			}
-		}
-		targetContainerCFS := curContaienrCFS + deltaContainerCFS
-		containerCFSValStr := strconv.FormatInt(targetContainerCFS, 10)
-		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, containerDir, containerCFSValStr)
-		if _, err := b.executor.Update(true, updater); err != nil {
-			return fmt.Errorf("update container cgroup %v failed, reason %v", containerDir, err)
-		}
-	} else {
-		// cfs scale down, order: container->pod
-		targetContainerCFS := curContaienrCFS + deltaContainerCFS
-		containerCFSValStr := strconv.FormatInt(targetContainerCFS, 10)
-		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, containerDir, containerCFSValStr)
-		if _, err := b.executor.Update(true, updater); err != nil {
-			return fmt.Errorf("update container cgroup %v failed, reason %v", containerDir, err)
-		}
-		if curPodCFS > 0 {
-			// no need to adjust pod cpu.cfs_quota if it is already -1
-			targetPodCFS := curPodCFS + deltaContainerCFS
-			podCFSValStr := strconv.FormatInt(targetPodCFS, 10)
-			updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, podDir, podCFSValStr)
-			if _, err := b.executor.Update(true, updater); err != nil {
-				return fmt.Errorf("update pod cgroup %v failed, reason %v", podMeta.CgroupDir, err)
-			}
+		sortOfUpdateQuota = []func() error{updatePodCFSQuota, updateContainerCFSQuota}
+	}
+
+	for _, update := range sortOfUpdateQuota {
+		if err := update(); err != nil {
+			return err
 		}
 	}
+
 	return nil
 }
 
