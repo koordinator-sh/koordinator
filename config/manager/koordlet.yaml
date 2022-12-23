@@ -23,8 +23,7 @@ spec:
       containers:
         - args:
             - -cgroup-root-dir=/host-cgroup/
-            - -feature-gates=AllAlpha=true
-            - -runtime-hooks=AllAlpha=true
+            - -feature-gates=AllAlpha=true,AllBeta=true
             - -runtime-hooks-network=unix
             - -runtime-hooks-addr=/host-var-run-koordlet/koordlet.sock
             - -runtime-hooks-host-endpoint=/var/run/koordlet//koordlet.sock

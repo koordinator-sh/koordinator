@@ -34,7 +34,6 @@ import (
 	agent "github.com/koordinator-sh/koordinator/pkg/koordlet"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/config"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 )
 
 func init() {}
@@ -58,9 +57,6 @@ func main() {
 
 	if err := features.DefaultMutableKoordletFeatureGate.SetFromMap(cfg.FeatureGates); err != nil {
 		klog.Fatalf("Unable to setup feature-gates: %v", err)
-	}
-	if err := runtimehooks.DefaultMutableRuntimeHooksFG.SetFromMap(cfg.RuntimeHookConf.FeatureGates); err != nil {
-		klog.Fatalf("Unable to setup runtime-hooks: %v", err)
 	}
 
 	stopCtx := signals.SetupSignalHandler()

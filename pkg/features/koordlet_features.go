@@ -26,49 +26,96 @@ import (
 )
 
 const (
-	// AuditEvents is used to audit recent events
+	// owner: @zwzhang0107
+	// alpha: v0.1
+	//
+	// AuditEvents is used to audit recent events.
 	AuditEvents featuregate.Feature = "AuditEvents"
 
-	// AuditEventsHTTPHandler is used to get recent events from koordlet port
+	// owner: @zwzhang0107
+	// alpha: v0.1
+	//
+	// AuditEventsHTTPHandler is used to get recent events from koordlet port.
 	AuditEventsHTTPHandler featuregate.Feature = "AuditEventsHTTPHandler"
 
-	// BECgroupReconcile sets cpu memory limit for best-effort pod
+	// owner: @sanitube
+	// alpha: v0.1
+	//
+	// BECgroupReconcile sets cpu memory cgroup by request/limit for best-effort pod.
+	// This will be abandoned after https://github.com/koordinator-sh/koordinator/issues/836.
+	//
 	BECgroupReconcile featuregate.Feature = "BECgroupReconcile"
 
-	// BECPUSuppress suppresses for best-effort pod
+	// owner: @zwzhang0107 @sanitube
+	// alpha: v0.1
+	// beta: v1.1
+	//
+	// BECPUSuppress suppresses cpuset for best-effort pod according to node cpu usage.
 	BECPUSuppress featuregate.Feature = "BECPUSuppress"
 
-	// BECPUEvict for best-effort pod
+	// owner: @zwzhang0107 @sanitube
+	// alpha: v0.4
+	//
+	// BECPUEvict evicts best-effort pod when they lack of resource.
 	BECPUEvict featuregate.Feature = "BECPUEvict"
 
-	// BEMemoryEvict evict best-effort pod based on Memory
+	// owner: @zwzhang0107 @sanitube
+	// alpha: v0.4
+	//
+	// BEMemoryEvict evict best-effort pod based on node memory usage.
 	BEMemoryEvict featuregate.Feature = "BEMemoryEvict"
 
+	// owner: @sanitube @zwzhang0107
+	// alpha: v0.2
+	// beta: v1.1
+	//
 	// CPUBurst set cpu.cfs_burst_us; scale up cpu.cfs_quota_us if pod cpu throttled
 	CPUBurst featuregate.Feature = "CPUBurst"
 
+	// owner: @sanitube @zwzhang0107
+	// alpha: v0.3
+	// beta: v1.1
+	//
 	// RdtResctrl sets intel rdt resctrl for processes belonging to ls or be pods
 	RdtResctrl featuregate.Feature = "RdtResctrl"
 
+	// owner: @sanitube @zwzhang0107
+	// alpha: v0.3
+	//
 	// CgroupReconcile reconciles qos config for resources like cpu, memory, disk, etc.
+	// This will be divided into several independent features according to
+	// https://github.com/koordinator-sh/koordinator/issues/174
 	CgroupReconcile featuregate.Feature = "CgroupReconcile"
 
-	// CgroupReconcile report node topology info to api-server through crd.
+	// owner: @Joseph @zwzhang0107
+	// alpha: v0.5
+	// beta: v1.1
+	//
+	// NodeTopologyReport report node topology info to api-server through crd.
 	NodeTopologyReport featuregate.Feature = "NodeTopologyReport"
 
-	// Accelerators enables GPU related feature in koordlet.
-	// Only Nvidia GPUs are supported as of v0.6.
+	// owner: @jasonliu747 @Joseph
+	// alpha: v0.6
+	//
+	// Accelerators enables GPU related feature in koordlet. Only Nvidia GPUs supported.
 	Accelerators featuregate.Feature = "Accelerators"
 
+	// owner: @songtao98 @zwzhang0107
 	// nolint:staticcheck // SA1019 this deprecated field still needs to be used for now.
 	// Deprecated: This feature gate will be removed in v1.1,
 	// please use CPICollector instead ASAP.
 	// PerformanceCollector enables cpi collector feature of koordlet.
 	PerformanceCollector featuregate.Feature = "PerformanceCollector"
 
+	// owner: @songtao98 @zwzhang0107
+	// alpha: v1.0
+	//
 	// CPICollector enables cpi collector feature of koordlet.
 	CPICollector featuregate.Feature = "CPICollector"
 
+	// owner: @songtao98 @zwzhang0107
+	// alpha: v1.0
+	//
 	// PSICollector enables psi collector feature of koordlet.
 	PSICollector featuregate.Feature = "PSICollector"
 )
@@ -85,13 +132,13 @@ var (
 		AuditEvents:            {Default: false, PreRelease: featuregate.Alpha},
 		AuditEventsHTTPHandler: {Default: false, PreRelease: featuregate.Alpha},
 		BECgroupReconcile:      {Default: false, PreRelease: featuregate.Alpha},
-		BECPUSuppress:          {Default: false, PreRelease: featuregate.Alpha},
+		BECPUSuppress:          {Default: true, PreRelease: featuregate.Beta},
 		BECPUEvict:             {Default: false, PreRelease: featuregate.Alpha},
 		BEMemoryEvict:          {Default: false, PreRelease: featuregate.Alpha},
-		CPUBurst:               {Default: false, PreRelease: featuregate.Alpha},
-		RdtResctrl:             {Default: false, PreRelease: featuregate.Alpha},
+		CPUBurst:               {Default: true, PreRelease: featuregate.Beta},
+		RdtResctrl:             {Default: true, PreRelease: featuregate.Beta},
 		CgroupReconcile:        {Default: false, PreRelease: featuregate.Alpha},
-		NodeTopologyReport:     {Default: false, PreRelease: featuregate.Alpha},
+		NodeTopologyReport:     {Default: true, PreRelease: featuregate.Beta},
 		Accelerators:           {Default: false, PreRelease: featuregate.Alpha},
 		PerformanceCollector:   {Default: false, PreRelease: featuregate.Alpha},
 		CPICollector:           {Default: false, PreRelease: featuregate.Alpha},
