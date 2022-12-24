@@ -38,18 +38,11 @@ var (
 		Help:      "Number of eviction launched by koordlet",
 	}, []string{NodeKey, EvictionReasonKey})
 
-	BESuppressCPU = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "be_suppress_cpu_cores",
-		Help:      "Number of cores suppress by koordlet",
-	}, []string{NodeKey, BESuppressTypeKey})
-
-	CommonCollectors = []prometheus.Collector{
+	CommonCollectors = append([]prometheus.Collector{
 		KoordletStartTime,
 		CollectNodeCPUInfoStatus,
 		PodEviction,
-		BESuppressCPU,
-	}
+	}, CPUSuppressCollector...)
 )
 
 func RecordKoordletStartTime(nodeName string, value float64) {
@@ -78,13 +71,4 @@ func RecordPodEviction(reasonType string) {
 	}
 	labels[EvictionReasonKey] = reasonType
 	PodEviction.With(labels).Inc()
-}
-
-func RecordBESuppressCores(suppressType string, value float64) {
-	labels := genNodeLabels()
-	if labels == nil {
-		return
-	}
-	labels[BESuppressTypeKey] = suppressType
-	BESuppressCPU.With(labels).Set(value)
 }

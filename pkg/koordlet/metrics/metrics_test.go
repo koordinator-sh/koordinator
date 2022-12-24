@@ -131,6 +131,8 @@ func TestCommonCollectors(t *testing.T) {
 		RecordCollectNodeCPUInfoStatus(testingErr)
 		RecordCollectNodeCPUInfoStatus(nil)
 		RecordBESuppressCores("cfsQuota", float64(1000))
+		RecordNonBEUsedCPU(1000)
+		RecordNodeUsedCPU(2000)
 		RecordPodEviction("evictByCPU")
 		ResetContainerCPI()
 		RecordContainerCPI(testingContainer, testingPod, 1, 1)
