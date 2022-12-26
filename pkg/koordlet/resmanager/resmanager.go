@@ -123,8 +123,6 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 		return fmt.Errorf("time out waiting for kubelet meta service caches to sync")
 	}
 
-	util.RunFeature(r.reconcileBECgroup, []featuregate.Feature{features.BECgroupReconcile}, r.config.ReconcileIntervalSeconds, stopCh)
-
 	cgroupResourceReconcile := NewCgroupResourcesReconcile(r)
 	util.RunFeatureWithInit(func() error { return cgroupResourceReconcile.RunInit(stopCh) }, cgroupResourceReconcile.reconcile,
 		[]featuregate.Feature{features.CgroupReconcile}, r.config.ReconcileIntervalSeconds, stopCh)

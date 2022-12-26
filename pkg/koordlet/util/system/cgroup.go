@@ -27,6 +27,7 @@ import (
 )
 
 const (
+	DefaultCPUCFSPeriod    int64 = 100000
 	CPUShareKubeBEValue    int64 = 2
 	CPUShareUnitValue      int64 = 1024
 	CFSQuotaUnlimitedValue int64 = -1

@@ -38,48 +38,40 @@ const (
 	// AuditEventsHTTPHandler is used to get recent events from koordlet port.
 	AuditEventsHTTPHandler featuregate.Feature = "AuditEventsHTTPHandler"
 
-	// owner: @sanitube
-	// alpha: v0.1
-	//
-	// BECgroupReconcile sets cpu memory cgroup by request/limit for best-effort pod.
-	// This will be abandoned after https://github.com/koordinator-sh/koordinator/issues/836.
-	//
-	BECgroupReconcile featuregate.Feature = "BECgroupReconcile"
-
-	// owner: @zwzhang0107 @sanitube
+	// owner: @zwzhang0107 @saintube
 	// alpha: v0.1
 	// beta: v1.1
 	//
 	// BECPUSuppress suppresses cpuset for best-effort pod according to node cpu usage.
 	BECPUSuppress featuregate.Feature = "BECPUSuppress"
 
-	// owner: @zwzhang0107 @sanitube
+	// owner: @zwzhang0107 @saintube
 	// alpha: v0.4
 	//
 	// BECPUEvict evicts best-effort pod when they lack of resource.
 	BECPUEvict featuregate.Feature = "BECPUEvict"
 
-	// owner: @zwzhang0107 @sanitube
+	// owner: @zwzhang0107 @saintube
 	// alpha: v0.4
 	//
 	// BEMemoryEvict evict best-effort pod based on node memory usage.
 	BEMemoryEvict featuregate.Feature = "BEMemoryEvict"
 
-	// owner: @sanitube @zwzhang0107
+	// owner: @saintube @zwzhang0107
 	// alpha: v0.2
 	// beta: v1.1
 	//
 	// CPUBurst set cpu.cfs_burst_us; scale up cpu.cfs_quota_us if pod cpu throttled
 	CPUBurst featuregate.Feature = "CPUBurst"
 
-	// owner: @sanitube @zwzhang0107
+	// owner: @saintube @zwzhang0107
 	// alpha: v0.3
 	// beta: v1.1
 	//
 	// RdtResctrl sets intel rdt resctrl for processes belonging to ls or be pods
 	RdtResctrl featuregate.Feature = "RdtResctrl"
 
-	// owner: @sanitube @zwzhang0107
+	// owner: @saintube @zwzhang0107
 	// alpha: v0.3
 	//
 	// CgroupReconcile reconciles qos config for resources like cpu, memory, disk, etc.
@@ -131,7 +123,6 @@ var (
 	defaultKoordletFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 		AuditEvents:            {Default: false, PreRelease: featuregate.Alpha},
 		AuditEventsHTTPHandler: {Default: false, PreRelease: featuregate.Alpha},
-		BECgroupReconcile:      {Default: false, PreRelease: featuregate.Alpha},
 		BECPUSuppress:          {Default: true, PreRelease: featuregate.Beta},
 		BECPUEvict:             {Default: false, PreRelease: featuregate.Alpha},
 		BEMemoryEvict:          {Default: false, PreRelease: featuregate.Alpha},
