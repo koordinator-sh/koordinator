@@ -31,6 +31,7 @@ import (
 func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&DefaultEvictorArgs{}, func(obj interface{}) { SetObjectDefaults_DefaultEvictorArgs(obj.(*DefaultEvictorArgs)) })
 	scheme.AddTypeDefaultingFunc(&DeschedulerConfiguration{}, func(obj interface{}) { SetObjectDefaults_DeschedulerConfiguration(obj.(*DeschedulerConfiguration)) })
+	scheme.AddTypeDefaultingFunc(&LowNodeLoadArgs{}, func(obj interface{}) { SetObjectDefaults_LowNodeLoadArgs(obj.(*LowNodeLoadArgs)) })
 	scheme.AddTypeDefaultingFunc(&MigrationControllerArgs{}, func(obj interface{}) { SetObjectDefaults_MigrationControllerArgs(obj.(*MigrationControllerArgs)) })
 	scheme.AddTypeDefaultingFunc(&RemovePodsViolatingNodeAffinityArgs{}, func(obj interface{}) {
 		SetObjectDefaults_RemovePodsViolatingNodeAffinityArgs(obj.(*RemovePodsViolatingNodeAffinityArgs))
@@ -44,6 +45,10 @@ func SetObjectDefaults_DefaultEvictorArgs(in *DefaultEvictorArgs) {
 
 func SetObjectDefaults_DeschedulerConfiguration(in *DeschedulerConfiguration) {
 	SetDefaults_DeschedulerConfiguration(in)
+}
+
+func SetObjectDefaults_LowNodeLoadArgs(in *LowNodeLoadArgs) {
+	SetDefaults_LowNodeLoadArgs(in)
 }
 
 func SetObjectDefaults_MigrationControllerArgs(in *MigrationControllerArgs) {

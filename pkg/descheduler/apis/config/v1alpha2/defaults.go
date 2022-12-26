@@ -216,3 +216,9 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 		obj.EvictionPolicy = defaultMigrationJobEvictionPolicy
 	}
 }
+
+func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
+	if obj.NodeFit == nil {
+		obj.NodeFit = pointer.Bool(true)
+	}
+}

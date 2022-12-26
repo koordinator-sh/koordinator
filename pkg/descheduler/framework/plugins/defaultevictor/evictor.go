@@ -117,3 +117,7 @@ func (d *DefaultEvictor) Filter(pod *corev1.Pod) bool {
 func (d *DefaultEvictor) Evict(ctx context.Context, pod *corev1.Pod, evictOptions framework.EvictOptions) bool {
 	return d.evictor.Evict(ctx, pod, evictOptions)
 }
+
+func (d *DefaultEvictor) PodEvictor() *evictions.PodEvictor {
+	return d.evictor
+}

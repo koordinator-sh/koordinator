@@ -49,6 +49,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&DefaultEvictorArgs{},
 		&RemovePodsViolatingNodeAffinityArgs{},
 		&MigrationControllerArgs{},
+		&LowNodeLoadArgs{},
 	)
 	return nil
 }

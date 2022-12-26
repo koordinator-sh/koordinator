@@ -18,6 +18,7 @@ package plugins
 
 import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/defaultevictor"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/loadaware"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/removepodsviolatingnodeaffinity"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
 )
@@ -26,5 +27,6 @@ func NewInTreeRegistry() runtime.Registry {
 	return runtime.Registry{
 		removepodsviolatingnodeaffinity.PluginName: removepodsviolatingnodeaffinity.New,
 		defaultevictor.PluginName:                  defaultevictor.New,
+		loadaware.LowLoadUtilizationName:           loadaware.NewLowNodeLoad,
 	}
 }

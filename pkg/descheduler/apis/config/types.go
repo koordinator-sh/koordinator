@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/component-base/config"
@@ -89,3 +90,8 @@ type PluginConfig struct {
 	Name string
 	Args runtime.Object
 }
+
+type (
+	Percentage         float64
+	ResourceThresholds map[corev1.ResourceName]Percentage
+)
