@@ -33,16 +33,9 @@ var (
 		Help:      "Number of cpu cores used by non-BE",
 	}, []string{NodeKey})
 
-	NodeUsedCPU = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "node_used_cpu_cores",
-		Help:      "Number of cpu cores used by node",
-	}, []string{NodeKey})
-
 	CPUSuppressCollector = []prometheus.Collector{
 		BESuppressCPU,
 		NonBEUsedCPU,
-		NodeUsedCPU,
 	}
 )
 
@@ -61,12 +54,4 @@ func RecordNonBEUsedCPU(value float64) {
 		return
 	}
 	NonBEUsedCPU.With(labels).Set(value)
-}
-
-func RecordNodeUsedCPU(value float64) {
-	labels := genNodeLabels()
-	if labels == nil {
-		return
-	}
-	NodeUsedCPU.With(labels).Set(value)
 }

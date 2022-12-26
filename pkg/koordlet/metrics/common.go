@@ -38,11 +38,18 @@ var (
 		Help:      "Number of eviction launched by koordlet",
 	}, []string{NodeKey, EvictionReasonKey})
 
-	CommonCollectors = append([]prometheus.Collector{
+	NodeUsedCPU = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "node_used_cpu_cores",
+		Help:      "Number of cpu cores used by node",
+	}, []string{NodeKey})
+
+	CommonCollectors = []prometheus.Collector{
 		KoordletStartTime,
 		CollectNodeCPUInfoStatus,
 		PodEviction,
-	}, CPUSuppressCollector...)
+		NodeUsedCPU,
+	}
 )
 
 func RecordKoordletStartTime(nodeName string, value float64) {
@@ -71,4 +78,12 @@ func RecordPodEviction(reasonType string) {
 	}
 	labels[EvictionReasonKey] = reasonType
 	PodEviction.With(labels).Inc()
+}
+
+func RecordNodeUsedCPU(value float64) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	NodeUsedCPU.With(labels).Set(value)
 }
