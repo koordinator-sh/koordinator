@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"sort"
 	"sync"
 
@@ -327,22 +328,79 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		for k, v := range nodeTopoAnnotations {
 			nodeResourceTopology.Annotations[k] = v
 		}
-		// TODO only update if necessary
-		s.updateNodeTopo(nodeResourceTopology)
 
-		// do UPDATE
-		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
-			_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
-			if err != nil {
-				klog.Errorf("failed to update cpu info of node %s, err: %v", node.Name, err)
-				return err
+		if isSyncNeeded(s.nodeTopology, nodeResourceTopology, node.Name) {
+			// TODO only update if necessary
+			s.updateNodeTopo(nodeResourceTopology)
+
+			// do UPDATE
+			if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+				_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
+				if err != nil {
+					klog.Errorf("failed to update cpu info of node %s, err: %v", node.Name, err)
+					return err
+				}
 			}
+			return nil
 		}
 		return nil
 	})
 	if err != nil {
 		klog.Errorf("failed to update NodeResourceTopology, err: %v", err)
 	}
+}
+
+func isSyncNeeded(oldNRT, newNRT *v1alpha1.NodeResourceTopology, nodename string) bool {
+	if oldNRT == nil {
+		return true
+	}
+	if isEqualTopo(oldNRT.Annotations, newNRT.Annotations) {
+		// do nothing
+		klog.Info("all good, no need to report nodetopo  %v", nodename)
+		return false
+	}
+	//not equal
+	klog.Warningf("node %v topology is changed, need sync", nodename)
+	return true
+}
+
+// IsequalTopo returns whether the new topology has difference with the old one or not
+func isEqualTopo(oldtopo map[string]string, newtopo map[string]string) bool {
+	keySlice := make([]string, 0)
+	for key, _ := range oldtopo {
+		keySlice = append(keySlice, key)
+	}
+	for _, key := range keySlice {
+		if _, ok := newtopo[key]; ok {
+			var (
+				old_data interface{}
+				new_data interface{}
+			)
+			if key == extension.AnnotationNodeCPUSharedPools {
+				old_data = make([]map[string]interface{}, 0)
+				new_data = make([]map[string]interface{}, 0)
+			} else {
+				old_data = make(map[string]interface{})
+				new_data = make(map[string]interface{})
+			}
+			err := json.Unmarshal([]byte(oldtopo[key]), &old_data)
+			if err != nil {
+				klog.Errorf("failed to unmarshal, err: %v,and key: %v", err, key)
+			}
+			err1 := json.Unmarshal([]byte(newtopo[key]), &new_data)
+			if err != nil {
+				klog.Errorf("failed to unmarshal, err: %v,and key: %v", err1, key)
+			}
+			if reflect.DeepEqual(old_data, new_data) {
+				continue
+			} else {
+				return false
+			}
+		} else {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.CPUInfo) []extension.CPUSharedPool {

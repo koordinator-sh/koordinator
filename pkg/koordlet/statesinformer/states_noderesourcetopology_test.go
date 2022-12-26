@@ -406,3 +406,53 @@ func Test_reportNodeTopology(t *testing.T) {
 		})
 	}
 }
+
+func Test_isEqualTopo(t *testing.T) {
+	type args struct {
+		oldtopo map[string]string
+		newtopo map[string]string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{name: "same json",
+			args: args{
+				oldtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					"test-json":                                 "{\"id\":1,\"name\":\"testjson01\", \"isadmin\":true}",
+				},
+				newtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					"test-json":                                 "{\"name\":\"testjson01\", \"isadmin\":true,\"id\":1}",
+				},
+			},
+			want: true,
+		},
+		{name: "diff json",
+			args: args{
+				oldtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+				},
+				newtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"},{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":1,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0}]}",
+				},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, isEqualTopo(tt.args.oldtopo, tt.args.newtopo), "isEqualTopo(%v, %v)", tt.args.oldtopo, tt.args.newtopo)
+		})
+	}
+}

@@ -125,7 +125,7 @@ docker-build: test docker-build-koordlet docker-build-koord-manager docker-build
 
 .PHONY: docker-build-koordlet
 docker-build-koordlet: ## Build docker image with the koordlet.
-	docker build --pull -t ${KOORDLET_IMG} -f docker/koordlet.dockerfile .
+	docker buildx build --platform linux/amd64 --pull -t ${KOORDLET_IMG} -f docker/koordlet.dockerfile .
 
 .PHONY: docker-build-koord-manager
 docker-build-koord-manager: ## Build docker image with the koord-manager.
