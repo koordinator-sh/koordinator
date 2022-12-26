@@ -93,13 +93,6 @@ const (
 	Accelerators featuregate.Feature = "Accelerators"
 
 	// owner: @songtao98 @zwzhang0107
-	// nolint:staticcheck // SA1019 this deprecated field still needs to be used for now.
-	// Deprecated: This feature gate will be removed in v1.1,
-	// please use CPICollector instead ASAP.
-	// PerformanceCollector enables cpi collector feature of koordlet.
-	PerformanceCollector featuregate.Feature = "PerformanceCollector"
-
-	// owner: @songtao98 @zwzhang0107
 	// alpha: v1.0
 	//
 	// CPICollector enables cpi collector feature of koordlet.
@@ -131,7 +124,6 @@ var (
 		CgroupReconcile:        {Default: false, PreRelease: featuregate.Alpha},
 		NodeTopologyReport:     {Default: true, PreRelease: featuregate.Beta},
 		Accelerators:           {Default: false, PreRelease: featuregate.Alpha},
-		PerformanceCollector:   {Default: false, PreRelease: featuregate.Alpha},
 		CPICollector:           {Default: false, PreRelease: featuregate.Alpha},
 		PSICollector:           {Default: false, PreRelease: featuregate.Alpha},
 	}
