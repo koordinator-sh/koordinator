@@ -70,7 +70,7 @@ func (m *MemoryStatRaw) Usage() int64 {
 // TODO: moved into resourceexecutor package and marked as private.
 func CgroupFileWriteIfDifferent(cgroupTaskDir string, r Resource, value string) error {
 	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
-		return fmt.Errorf("write cgroup %s failed, resource not supported, msg: %s", r.ResourceType(), msg)
+		return ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
 	}
 	if valid, msg := r.IsValid(value); !valid {
 		return fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), value, msg)
@@ -92,7 +92,7 @@ func CgroupFileWriteIfDifferent(cgroupTaskDir string, r Resource, value string) 
 // TODO: moved into resourceexecutor package and marked as private.
 func CgroupFileWrite(cgroupTaskDir string, r Resource, value string) error {
 	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
-		return fmt.Errorf("write cgroup %s failed, resource not supported, msg: %s", r.ResourceType(), msg)
+		return ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
 	}
 	if valid, msg := r.IsValid(value); !valid {
 		return fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), value, msg)
@@ -108,7 +108,7 @@ func CgroupFileWrite(cgroupTaskDir string, r Resource, value string) error {
 // TODO: moved into resourceexecutor package and marked as private.
 func CgroupFileReadInt(cgroupTaskDir string, r Resource) (*int64, error) {
 	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
-		return nil, fmt.Errorf("read cgroup %s failed, resource not supported, msg: %s", r.ResourceType(), msg)
+		return nil, ResourceUnsupportedErr(fmt.Sprintf("read cgroup %s failed, msg: %s", r.ResourceType(), msg))
 	}
 
 	dataStr, err := CgroupFileRead(cgroupTaskDir, r)
@@ -135,7 +135,7 @@ func CgroupFileReadInt(cgroupTaskDir string, r Resource) (*int64, error) {
 // TODO: moved into resourceexecutor package and marked as private.
 func CgroupFileRead(cgroupTaskDir string, r Resource) (string, error) {
 	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
-		return "", fmt.Errorf("read cgroup %s failed, resource not supported, msg: %s", r.ResourceType(), msg)
+		return "", ResourceUnsupportedErr(fmt.Sprintf("read cgroup %s failed, msg: %s", r.ResourceType(), msg))
 	}
 
 	filePath := r.Path(cgroupTaskDir)
@@ -206,6 +206,31 @@ func ReadCgroupAndParseUint64(parentDir string, r Resource) (uint64, error) {
 		return 0, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
 	}
 	return v, nil
+}
+
+// ReadCgroupAndParseInt32Slice reads the given cgroup content and parses it into an int32 slice.
+// e.g. content: "1\n23\n0\n4\n56789" -> []int32{ 1, 23, 0, 4, 56789 }
+func ReadCgroupAndParseInt32Slice(parentDir string, r Resource) ([]int32, error) {
+	s, err := CgroupFileRead(parentDir, r)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+	}
+
+	// content: "%d\n%d\n%d\n..."
+	var values []int32
+	lines := strings.Split(s, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if len(line) <= 0 {
+			continue
+		}
+		v, err := strconv.ParseInt(line, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse cgroup value of line %s, err: %v", line, err)
+		}
+		values = append(values, int32(v))
+	}
+	return values, nil
 }
 
 func ParseCPUStatRaw(content string) (*CPUStatRaw, error) {

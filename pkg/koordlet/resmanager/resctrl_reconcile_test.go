@@ -19,7 +19,6 @@ package resmanager
 import (
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"testing"
 
@@ -31,15 +30,27 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
+
+func newTestResctrlReconcile(r *resmanager) *ResctrlReconcile {
+	return &ResctrlReconcile{
+		resManager: r,
+		executor: &resourceexecutor.ResourceUpdateExecutorImpl{
+			Config:        resourceexecutor.NewDefaultConfig(),
+			ResourceCache: cache.NewCacheDefault(),
+		},
+		cgroupReader: resourceexecutor.NewCgroupReader(),
+	}
+}
 
 func testingPrepareResctrlL3CatPath(t *testing.T, cbmStr, rootSchemataStr string) {
 	resctrlDir := filepath.Join(system.Conf.SysFSRootDir, system.ResctrlDir)
@@ -47,61 +58,67 @@ func testingPrepareResctrlL3CatPath(t *testing.T, cbmStr, rootSchemataStr string
 	err := os.MkdirAll(l3CatDir, 0700)
 	assert.NoError(t, err)
 
-	cbmPath := filepath.Join(l3CatDir, system.CbmMaskFileName)
+	cbmPath := filepath.Join(l3CatDir, system.ResctrlCbmMaskName)
 	err = os.WriteFile(cbmPath, []byte(cbmStr), 0666)
 	assert.NoError(t, err)
 
-	schemataPath := filepath.Join(resctrlDir, system.SchemataFileName)
+	schemataPath := filepath.Join(resctrlDir, system.ResctrlSchemataName)
 	err = os.WriteFile(schemataPath, []byte(rootSchemataStr), 0666)
 	assert.NoError(t, err)
 }
 
-func testingPrepareResctrlL3CatGroups(t *testing.T, cbmStr, rootSchemataStr string) {
+// @schemataData: schemata for BE, LS, LSR
+func testingPrepareResctrlL3CatGroups(t *testing.T, cbmStr, rootSchemataStr string, schemataData ...string) {
 	testingPrepareResctrlL3CatPath(t, cbmStr, rootSchemataStr)
 	resctrlDir := filepath.Join(system.Conf.SysFSRootDir, system.ResctrlDir)
 
 	beSchemataData := []byte("    L3:0=f;1=f\n    MB:0=100;1=100")
+	if len(schemataData) >= 1 {
+		beSchemataData = []byte(schemataData[0])
+	}
 	beSchemataDir := filepath.Join(resctrlDir, BEResctrlGroup)
 	err := os.MkdirAll(beSchemataDir, 0700)
 	assert.NoError(t, err)
-	beSchemataPath := filepath.Join(beSchemataDir, system.SchemataFileName)
+	beSchemataPath := filepath.Join(beSchemataDir, system.ResctrlSchemataName)
 	err = os.WriteFile(beSchemataPath, beSchemataData, 0666)
 	assert.NoError(t, err)
-	beTasksPath := filepath.Join(beSchemataDir, system.ResctrlTaskFileName)
+	beTasksPath := filepath.Join(beSchemataDir, system.ResctrlTasksName)
 	err = os.WriteFile(beTasksPath, []byte{}, 0666)
 	assert.NoError(t, err)
 
 	lsSchemataData := []byte("    L3:0=ff;1=ff\n    MB:0=100;1=100")
+	if len(schemataData) >= 2 {
+		lsSchemataData = []byte(schemataData[1])
+	}
 	lsSchemataDir := filepath.Join(resctrlDir, LSResctrlGroup)
 	err = os.MkdirAll(lsSchemataDir, 0700)
 	assert.NoError(t, err)
-	lsSchemataPath := filepath.Join(lsSchemataDir, system.SchemataFileName)
+	lsSchemataPath := filepath.Join(lsSchemataDir, system.ResctrlSchemataName)
 	err = os.WriteFile(lsSchemataPath, lsSchemataData, 0666)
 	assert.NoError(t, err)
-	lsTasksPath := filepath.Join(lsSchemataDir, system.ResctrlTaskFileName)
+	lsTasksPath := filepath.Join(lsSchemataDir, system.ResctrlTasksName)
 	err = os.WriteFile(lsTasksPath, []byte{}, 0666)
 	assert.NoError(t, err)
 
 	lsrSchemataData := []byte("    L3:0=ff;1=ff\n    MB:0=100;1=100")
+	if len(schemataData) >= 3 {
+		lsrSchemataData = []byte(schemataData[2])
+	}
 	lsrSchemataDir := filepath.Join(resctrlDir, LSRResctrlGroup)
 	err = os.MkdirAll(lsrSchemataDir, 0700)
 	assert.NoError(t, err)
-	lsrSchemataPath := filepath.Join(lsrSchemataDir, system.SchemataFileName)
+	lsrSchemataPath := filepath.Join(lsrSchemataDir, system.ResctrlSchemataName)
 	err = os.WriteFile(lsrSchemataPath, lsrSchemataData, 0666)
 	assert.NoError(t, err)
-	lsrTasksPath := filepath.Join(lsrSchemataDir, system.ResctrlTaskFileName)
+	lsrTasksPath := filepath.Join(lsrSchemataDir, system.ResctrlTasksName)
 	err = os.WriteFile(lsrTasksPath, []byte{}, 0666)
 	assert.NoError(t, err)
 }
 
-func testingPrepareContainerCgroupCPUTasks(t *testing.T, containerParentPath, tasksStr string) {
-	containerCgroupDir := filepath.Join(system.Conf.CgroupRootDir, system.CgroupCPUDir, containerParentPath)
-	err := os.MkdirAll(containerCgroupDir, 0700)
+func testingPrepareContainerCgroupCPUTasks(t *testing.T, helper *system.FileTestUtil, containerParentPath, tasksStr string) {
+	tasks, err := system.GetCgroupResource(system.CPUTasksName)
 	assert.NoError(t, err)
-
-	containerTasksPath := filepath.Join(containerCgroupDir, system.CPUTasksName)
-	err = os.WriteFile(containerTasksPath, []byte(tasksStr), 0666)
-	assert.NoError(t, err)
+	helper.WriteCgroupFileContents(containerParentPath, tasks, tasksStr)
 }
 
 func Test_calculateCatL3Schemata(t *testing.T) {
@@ -228,7 +245,7 @@ func Test_initCatResctrl(t *testing.T) {
 		sysFSRootDirName := "initCatResctrl"
 		helper.MkDirAll(sysFSRootDirName)
 
-		system.Conf.SysFSRootDir = path.Join(helper.TempDir, sysFSRootDirName)
+		system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
 
 		testingPrepareResctrlL3CatGroups(t, "ff", "L3:0=ff")
 
@@ -268,18 +285,19 @@ func Test_initCatResctrl(t *testing.T) {
 func Test_getPodCgroupNewTaskIds(t *testing.T) {
 	type args struct {
 		podMeta  *statesinformer.PodMeta
-		tasksMap map[int]struct{}
+		tasksMap map[int32]struct{}
 	}
 	type fields struct {
 		containerParentDir string
 		containerTasksStr  string
 		invalidPath        bool
+		useCgroupsV2       bool
 	}
 	tests := []struct {
 		name   string
 		args   args
 		fields fields
-		want   []int
+		want   []int32
 	}{
 		{
 			name: "do nothing for empty pod",
@@ -319,11 +337,11 @@ func Test_getPodCgroupNewTaskIds(t *testing.T) {
 					},
 					CgroupDir: "p0",
 				},
-				tasksMap: map[int]struct{}{
+				tasksMap: map[int32]struct{}{
 					122450: {},
 				},
 			},
-			want: []int{122454, 123111, 128912},
+			want: []int32{122454, 123111, 128912},
 		},
 		{
 			name: "return empty for invalid path",
@@ -357,7 +375,7 @@ func Test_getPodCgroupNewTaskIds(t *testing.T) {
 					},
 					CgroupDir: "p0",
 				},
-				tasksMap: map[int]struct{}{
+				tasksMap: map[int32]struct{}{
 					122450: {},
 				},
 			},
@@ -391,26 +409,67 @@ func Test_getPodCgroupNewTaskIds(t *testing.T) {
 					},
 					CgroupDir: "p0",
 				},
-				tasksMap: map[int]struct{}{
+				tasksMap: map[int32]struct{}{
 					122450: {},
 				},
 			},
 			want: nil,
 		},
+		{
+			name: "successfully get task ids on cgroups v2",
+			fields: fields{
+				containerParentDir: "kubepods.slice/p0/cri-containerd-c0.scope",
+				containerTasksStr:  "122450\n122454\n123111\n128912",
+				useCgroupsV2:       true,
+			},
+			args: args{
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "pod0",
+							UID:  "p0",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "container0",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "container0",
+									ContainerID: "containerd://c0",
+								},
+							},
+						},
+					},
+					CgroupDir: "p0",
+				},
+				tasksMap: map[int32]struct{}{
+					122450: {},
+				},
+			},
+			want: []int32{122454, 123111, 128912},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			system.NewFileTestUtil(t)
+			helper := system.NewFileTestUtil(t)
+			helper.SetCgroupsV2(tt.fields.useCgroupsV2)
+			defer helper.Cleanup()
 
-			testingPrepareContainerCgroupCPUTasks(t,
-				tt.fields.containerParentDir, tt.fields.containerTasksStr)
+			testingPrepareContainerCgroupCPUTasks(t, helper, tt.fields.containerParentDir, tt.fields.containerTasksStr)
 
 			system.CommonRootDir = ""
 			if tt.fields.invalidPath {
 				system.Conf.CgroupRootDir = "invalidPath"
 			}
 
-			got := getPodCgroupNewTaskIds(tt.args.podMeta, tt.args.tasksMap)
+			r := newTestResctrlReconcile(&resmanager{})
+
+			got := r.getPodCgroupNewTaskIds(tt.args.podMeta, tt.args.tasksMap)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -424,8 +483,10 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 		qosStrategy *slov1alpha1.ResourceQOSStrategy
 	}
 	type field struct {
-		invalidPath bool
-		noUpdate    bool
+		invalidPath  bool
+		noUpdate     bool
+		cachedMask   string
+		schemataData []string
 	}
 	tests := []struct {
 		name    string
@@ -525,7 +586,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 			args: args{
 				group: LSResctrlGroup,
 				cbm:   0x7ff,
-				l3Num: 1,
+				l3Num: 2,
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
@@ -545,7 +606,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					},
 				},
 			},
-			want:    "L3:0=3c;\n",
+			want:    "L3:0=3c;1=3c;\n",
 			wantErr: false,
 		},
 		{
@@ -553,12 +614,12 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 			args: args{
 				group: LSRResctrlGroup,
 				cbm:   0x7ff,
-				l3Num: 1,
+				l3Num: 2,
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					LSRClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(10),
+								CATRangeStartPercent: pointer.Int64Ptr(0),
 								CATRangeEndPercent:   pointer.Int64Ptr(50),
 							},
 						},
@@ -573,7 +634,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					},
 				},
 			},
-			want:    "L3:0=3c;\n",
+			want:    "L3:0=3f;1=3f;\n",
 			wantErr: false,
 		},
 		{
@@ -601,7 +662,11 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					},
 				},
 			},
-			field:   field{noUpdate: true},
+			field: field{
+				noUpdate:     true,
+				cachedMask:   "3c",
+				schemataData: []string{"L3:0=f\nMB:0=100"},
+			},
 			want:    "L3:0=3c;\n",
 			wantErr: false,
 		},
@@ -609,44 +674,39 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
-
 			sysFSRootDirName := "calculateAndApplyCatL3PolicyForGroup"
 			helper.MkDirAll(sysFSRootDirName)
-
-			system.Conf.SysFSRootDir = path.Join(helper.TempDir, sysFSRootDirName)
+			system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
 			validSysFSRootDir := system.Conf.SysFSRootDir
 			system.CommonRootDir = ""
+			testingPrepareResctrlL3CatGroups(t, "ff", "", tt.field.schemataData...)
 
-			testingPrepareResctrlL3CatGroups(t, "ff", "")
-
-			r := ResctrlReconcile{
-				executor: executor.NewResourceUpdateExecutor("ResctrlExecutor", 60),
-			}
+			r := newTestResctrlReconcile(&resmanager{})
 			stop := make(chan struct{})
-			r.RunInit(stop)
+			err := r.RunInit(stop)
+			assert.NoError(t, err)
 			defer func() { stop <- struct{}{} }()
 
 			if tt.field.invalidPath {
 				system.Conf.SysFSRootDir = "invalidPath"
 			}
-			if tt.field.noUpdate {
-				// prepare fake record
-				schemataFilePath := system.GetResctrlSchemataFilePath(tt.args.group)
-				updaterKey := schemataFilePath + ":" + executor.L3SchemataPrefix
-				fakeResource := executor.NewDetailCommonResourceUpdater(updaterKey, schemataFilePath,
-					tt.want, executor.GroupOwnerRef(tt.args.group), executor.UpdateResctrlSchemataFunc)
-				isUpdate := r.executor.UpdateBatchByCache(fakeResource)
-				assert.True(t, isUpdate)
-			}
 
 			// execute function
-			err := r.calculateAndApplyCatL3PolicyForGroup(tt.args.group, tt.args.cbm, tt.args.l3Num,
+			err = r.calculateAndApplyCatL3PolicyForGroup(tt.args.group, tt.args.cbm, tt.args.l3Num,
 				getResourceQOSForResctrlGroup(tt.args.qosStrategy, tt.args.group))
-			assert.Equal(t, tt.wantErr, err != nil)
+			assert.Equal(t, tt.wantErr, err != nil, err)
 
-			schemataPath := filepath.Join(validSysFSRootDir, system.ResctrlDir, tt.args.group, system.SchemataFileName)
+			schemataPath := filepath.Join(validSysFSRootDir, system.ResctrlDir, tt.args.group, system.ResctrlSchemataName)
 			got, _ := os.ReadFile(schemataPath)
 			assert.Equal(t, tt.want, string(got))
+
+			if tt.field.noUpdate {
+				// prepare fake record in cache
+				fakeResource := resourceexecutor.NewResctrlL3SchemataResource(tt.args.group, tt.field.cachedMask, tt.args.l3Num)
+				isUpdate, err := r.executor.Update(true, fakeResource)
+				assert.False(t, isUpdate)
+				assert.NoError(t, err)
+			}
 		})
 	}
 }
@@ -658,8 +718,10 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 		qosStrategy *slov1alpha1.ResourceQOSStrategy
 	}
 	type field struct {
-		invalidPath bool
-		noUpdate    bool
+		invalidPath   bool
+		noUpdate      bool
+		cachedPercent string
+		schemataData  []string
 	}
 	tests := []struct {
 		name    string
@@ -750,52 +812,80 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 					},
 				},
 			},
-			field:   field{noUpdate: true},
+			field: field{
+				noUpdate:      true,
+				cachedPercent: "90",
+			},
 			want:    "MB:0=90;1=90;\n",
+			wantErr: false,
+		},
+		{
+			name: "calculate the policy but no need to update 1",
+			args: args{
+				group: BEResctrlGroup,
+				l3Num: 1,
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					LSClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
+								MBAPercent: pointer.Int64Ptr(90),
+							},
+						},
+					},
+					BEClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
+								MBAPercent: pointer.Int64Ptr(80),
+							},
+						},
+					},
+				},
+			},
+			field: field{
+				noUpdate:      true,
+				cachedPercent: "80",
+				schemataData:  []string{"L3:0=f\nMB:0=100"},
+			},
+			want:    "MB:0=80;\n",
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			helper := system.NewFileTestUtil(t)
-
 			sysFSRootDirName := "calculateAndApplyCatMbPolicyForGroup"
 			helper.MkDirAll(sysFSRootDirName)
-
-			system.Conf.SysFSRootDir = path.Join(helper.TempDir, sysFSRootDirName)
+			system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
 			validSysFSRootDir := system.Conf.SysFSRootDir
 			system.CommonRootDir = ""
+			testingPrepareResctrlL3CatGroups(t, "ff", "", tt.field.schemataData...)
 
-			testingPrepareResctrlL3CatGroups(t, "ff", "")
-			r := ResctrlReconcile{
-				executor: executor.NewResourceUpdateExecutor("ResctrlExecutor", 60),
-			}
+			r := newTestResctrlReconcile(&resmanager{})
 			stop := make(chan struct{})
-			r.RunInit(stop)
+			err := r.RunInit(stop)
+			assert.NoError(t, err)
 			defer func() { stop <- struct{}{} }()
 
 			if tt.field.invalidPath {
 				system.Conf.SysFSRootDir = "invalidPath"
 			}
-			if tt.field.noUpdate {
-				// prepare fake record
-				schemataFilePath := system.GetResctrlSchemataFilePath(tt.args.group)
-				updaterKey := schemataFilePath + ":" + executor.MbSchemataPrefix
-				fakeResource := executor.NewDetailCommonResourceUpdater(updaterKey, schemataFilePath,
-					tt.want, executor.GroupOwnerRef(tt.args.group), executor.UpdateResctrlSchemataFunc)
-				isUpdate := r.executor.UpdateBatchByCache(fakeResource)
-				assert.True(t, isUpdate)
-			}
 
 			// execute function
-			err := r.calculateAndApplyCatMbPolicyForGroup(tt.args.group, tt.args.l3Num,
+			err = r.calculateAndApplyCatMbPolicyForGroup(tt.args.group, tt.args.l3Num,
 				getResourceQOSForResctrlGroup(tt.args.qosStrategy, tt.args.group))
 			assert.Equal(t, tt.wantErr, err != nil)
 
-			schemataPath := filepath.Join(validSysFSRootDir, system.ResctrlDir, tt.args.group, system.SchemataFileName)
+			schemataPath := filepath.Join(validSysFSRootDir, system.ResctrlDir, tt.args.group, system.ResctrlSchemataName)
 			got, _ := os.ReadFile(schemataPath)
 			assert.Equal(t, tt.want, string(got))
+
+			if tt.field.noUpdate {
+				// prepare fake record in cache
+				fakeResource := resourceexecutor.NewResctrlMbSchemataResource(tt.args.group, tt.field.cachedPercent, tt.args.l3Num)
+				isUpdate, err := r.executor.Update(true, fakeResource)
+				assert.False(t, isUpdate)
+				assert.NoError(t, err)
+			}
 		})
 	}
 }
@@ -803,7 +893,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 	type args struct {
 		group   string
-		taskIds []int
+		taskIds []int32
 	}
 	type fields struct {
 		invalidPath bool
@@ -823,7 +913,10 @@ func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 		},
 		{
 			name: "abort writing for invalid path",
-			args: args{group: LSResctrlGroup},
+			args: args{
+				group:   LSResctrlGroup,
+				taskIds: []int32{0, 1, 2, 5, 7, 9},
+			},
 			fields: fields{
 				invalidPath: true,
 			},
@@ -834,7 +927,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 			name: "write successfully",
 			args: args{
 				group:   BEResctrlGroup,
-				taskIds: []int{0, 1, 2, 5, 7, 9},
+				taskIds: []int32{0, 1, 2, 5, 7, 9},
 			},
 			want:    "012579", // the real content of resctrl tasks file would be "0\n\1\n2\n..."
 			wantErr: false,
@@ -843,7 +936,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 			name: "write successfully 1",
 			args: args{
 				group:   BEResctrlGroup,
-				taskIds: []int{0, 1, 2, 4, 5, 6},
+				taskIds: []int32{0, 1, 2, 4, 5, 6},
 			},
 			want:    "012456", // the real content of resctrl tasks file would be "0\n\1\n2\n..."
 			wantErr: false,
@@ -851,13 +944,12 @@ func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			helper := system.NewFileTestUtil(t)
 
 			sysFSRootDirName := "writeCatL3GroupTasks"
 			helper.MkDirAll(sysFSRootDirName)
 
-			system.Conf.SysFSRootDir = path.Join(helper.TempDir, sysFSRootDirName)
+			system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
 			validSysFSRootDir := system.Conf.SysFSRootDir
 
 			testingPrepareResctrlL3CatGroups(t, "", "")
@@ -865,15 +957,13 @@ func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 			if tt.fields.invalidPath {
 				system.Conf.SysFSRootDir = "invalidPath"
 			}
-			r := ResctrlReconcile{
-				executor: executor.NewResourceUpdateExecutor("ResctrlExecutor", 60),
-			}
+			r := newTestResctrlReconcile(&resmanager{})
 			stop := make(chan struct{})
 			r.RunInit(stop)
 			defer func() { stop <- struct{}{} }()
 
 			err := r.calculateAndApplyCatL3GroupTasks(tt.args.group, tt.args.taskIds)
-			assert.Equal(t, tt.wantErr, err != nil)
+			assert.Equal(t, tt.wantErr, err != nil, err)
 
 			out, err := os.ReadFile(filepath.Join(validSysFSRootDir, system.ResctrlDir, tt.args.group,
 				system.CPUTasksName))
@@ -890,7 +980,7 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 		sysFSRootDirName := "reconcileCatResctrlPolicy"
 		helper.MkDirAll(sysFSRootDirName)
 
-		system.Conf.SysFSRootDir = path.Join(helper.TempDir, sysFSRootDirName)
+		system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
 		validSysFSRootDir := system.Conf.SysFSRootDir
 		system.CommonRootDir = ""
 
@@ -924,7 +1014,7 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
 								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(30),
+								CATRangeEndPercent:   pointer.Int64Ptr(50),
 							},
 						},
 					},
@@ -940,11 +1030,10 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
 			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
 		}, nil).Times(3)
-		rm := &resmanager{metricCache: metricCache}
-		r := ResctrlReconcile{
-			resManager: rm,
-			executor:   executor.NewResourceUpdateExecutor("ResctrlReconcile", 60),
+		rm := &resmanager{
+			metricCache: metricCache,
 		}
+		r := newTestResctrlReconcile(rm)
 		stop := make(chan struct{})
 		r.RunInit(stop)
 		defer func() { stop <- struct{}{} }()
@@ -952,12 +1041,12 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 		// reconcile and check if the result is correct
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
-		beSchemataPath := filepath.Join(resctrlDirPath, BEResctrlGroup, system.SchemataFileName)
-		expectBESchemataStr := "L3:0=f;1=f;\n"
+		beSchemataPath := filepath.Join(resctrlDirPath, BEResctrlGroup, system.ResctrlSchemataName)
+		expectBESchemataStr := "L3:0=3f;1=3f;\n"
 		got, _ := os.ReadFile(beSchemataPath)
 		assert.Equal(t, expectBESchemataStr, string(got))
 
-		lsSchemataPath := filepath.Join(resctrlDirPath, LSResctrlGroup, system.SchemataFileName)
+		lsSchemataPath := filepath.Join(resctrlDirPath, LSResctrlGroup, system.ResctrlSchemataName)
 		expectLSSchemataStr := "MB:0=90;1=90;\n"
 		got, _ = os.ReadFile(lsSchemataPath)
 		assert.Equal(t, expectLSSchemataStr, string(got))
@@ -1044,11 +1133,10 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		defer ctrl.Finish()
 
 		statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
-		rm := &resmanager{statesInformer: statesInformer}
-		r := ResctrlReconcile{
-			resManager: rm,
-			executor:   executor.NewResourceUpdateExecutor("ResctrlReconcile", 30),
+		rm := &resmanager{
+			statesInformer: statesInformer,
 		}
+		r := newTestResctrlReconcile(rm)
 		stop := make(chan struct{})
 		r.RunInit(stop)
 		defer func() { stop <- struct{}{} }()
@@ -1060,10 +1148,10 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		sysFSRootDirName := "reconcileResctrlGroups"
 		helper.MkDirAll(sysFSRootDirName)
 
-		system.Conf.SysFSRootDir = path.Join(helper.TempDir, sysFSRootDirName)
+		system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
 
 		testingPrepareResctrlL3CatGroups(t, "", "")
-		testingPrepareContainerCgroupCPUTasks(t, testingContainerParentDir, testingContainerTasksStr)
+		testingPrepareContainerCgroupCPUTasks(t, helper, testingContainerParentDir, testingContainerTasksStr)
 
 		// run reconcileResctrlGroups for BE tasks not exist
 		r.reconcileResctrlGroups(testQOSStrategy)
@@ -1074,7 +1162,7 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, wantResctrlTaskStr, string(out))
 
-		beTasksPath := filepath.Join(system.Conf.SysFSRootDir, system.ResctrlDir, BEResctrlGroup, system.ResctrlTaskFileName)
+		beTasksPath := filepath.Join(system.Conf.SysFSRootDir, system.ResctrlDir, BEResctrlGroup, system.ResctrlTasksName)
 		err = os.WriteFile(beTasksPath, []byte(testingBEResctrlTasksStr), 0666)
 		assert.NoError(t, err)
 
@@ -1158,7 +1246,6 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 	}
 
 	t.Run("test not panic", func(t *testing.T) {
-
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
@@ -1174,14 +1261,15 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 		}
 
 		helper := system.NewFileTestUtil(t)
+		defer helper.Cleanup()
 
 		sysFSRootDirName := "ResctrlReconcile"
 		helper.MkDirAll(sysFSRootDirName)
-		system.Conf.SysFSRootDir = path.Join(helper.TempDir, sysFSRootDirName)
+		system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
 		validSysFSRootDir := system.Conf.SysFSRootDir
 		system.CommonRootDir = ""
 
-		testingPrepareContainerCgroupCPUTasks(t, testingContainerParentDir, testingContainerTasksStr)
+		testingPrepareContainerCgroupCPUTasks(t, helper, testingContainerParentDir, testingContainerTasksStr)
 		testingPrepareResctrlL3CatGroups(t, "", "")
 
 		r := NewResctrlReconcile(rm)
@@ -1215,7 +1303,6 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 }
 
 func Test_calculateMbaPercentForGroup(t *testing.T) {
-
 	type args struct {
 		group     string
 		mbPercent *int64
@@ -1271,34 +1358,4 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func Test_calculateL3SchemataResource(t *testing.T) {
-	t.Run("test", func(t *testing.T) {
-		helper := system.NewFileTestUtil(t)
-
-		sysFSRootDirName := "reconcileCatResctrlPolicy"
-		helper.MkDirAll(sysFSRootDirName)
-		system.Conf.SysFSRootDir = path.Join(helper.TempDir, sysFSRootDirName)
-
-		testingPrepareResctrlL3CatGroups(t, "7ff", "    L3:0=ff;1=ff\n    MB:0=100;1=100")
-		updater := executor.CalculateL3SchemataResource(BEResctrlGroup, "3c", 2)
-		assert.Equal(t, updater.Value(), "L3:0=3c;1=3c;\n")
-
-	})
-}
-
-func Test_calculateMbSchemataResource(t *testing.T) {
-	t.Run("test", func(t *testing.T) {
-		helper := system.NewFileTestUtil(t)
-
-		sysFSRootDirName := "reconcileCatResctrlPolicy"
-		helper.MkDirAll(sysFSRootDirName)
-		system.Conf.SysFSRootDir = path.Join(helper.TempDir, sysFSRootDirName)
-
-		testingPrepareResctrlL3CatGroups(t, "7ff", "    L3:0=ff;1=ff\n    MB:0=100;1=100")
-		updater := executor.CalculateMbSchemataResource(BEResctrlGroup, "90", 2)
-		assert.Equal(t, updater.Value(), "MB:0=90;1=90;\n")
-
-	})
 }

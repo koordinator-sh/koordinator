@@ -26,21 +26,17 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/executor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-const (
-	CgroupResourcesReconcileForceUpdateSeconds int = 60
-)
-
 type CgroupResourcesReconcile struct {
 	resmanager *resmanager
-	executor   *executor.LeveledResourceUpdateExecutor
+	executor   resourceexecutor.ResourceUpdateExecutor
 }
 
 // cgroupResourceSummary summarizes values of cgroup resources to update; nil value means not to update
@@ -57,11 +53,17 @@ type cgroupResourceSummary struct {
 	memoryOomKillGroup     *int64
 }
 
+type cgroupResourceUpdaterMeta struct {
+	resourceType system.ResourceType
+	value        *int64
+	isMergeable  bool
+}
+
 func NewCgroupResourcesReconcile(resmanager *resmanager) *CgroupResourcesReconcile {
-	executor := executor.NewLeveledResourceUpdateExecutor("CgroupResourcesExecutor", CgroupResourcesReconcileForceUpdateSeconds)
+	e := resourceexecutor.NewResourceUpdateExecutor()
 	return &CgroupResourcesReconcile{
 		resmanager: resmanager,
-		executor:   executor,
+		executor:   e,
 	}
 }
 
@@ -107,13 +109,13 @@ func (m *CgroupResourcesReconcile) calculateAndUpdateResources(nodeSLO *slov1alp
 	// to make sure the hierarchical cgroup resources are correctly updated, we simply update the resources by
 	// cgroup-level order.
 	// e.g. /kubepods.slice/memory.min, /kubepods.slice-podxxx/memory.min, /kubepods.slice-podxxx/docker-yyy/memory.min
-	leveledResources := [][]executor.MergeableResourceUpdater{qosResources, podResources, containerResources}
-	m.executor.LeveledUpdateBatchByCache(leveledResources)
+	leveledResources := [][]resourceexecutor.ResourceUpdater{qosResources, podResources, containerResources}
+	m.executor.LeveledUpdateBatch(true, leveledResources)
 }
 
 // calculateResources calculates qos-level, pod-level and container-level resources with nodeCfg and podMetas
 func (m *CgroupResourcesReconcile) calculateResources(nodeCfg *slov1alpha1.ResourceQOSStrategy, node *corev1.Node,
-	podMetas []*statesinformer.PodMeta) (qosLevelResources, podLevelResources, containerLevelResources []executor.MergeableResourceUpdater) {
+	podMetas []*statesinformer.PodMeta) (qosLevelResources, podLevelResources, containerLevelResources []resourceexecutor.ResourceUpdater) {
 	// TODO: check anolis os version
 	qosSummary := map[corev1.PodQOSClass]*cgroupResourceSummary{
 		corev1.PodQOSGuaranteed: {},
@@ -162,7 +164,7 @@ func (m *CgroupResourcesReconcile) calculateResources(nodeCfg *slov1alpha1.Resou
 }
 
 func (m *CgroupResourcesReconcile) calculateQoSResources(summary *cgroupResourceSummary, qos corev1.PodQOSClass,
-	qosCfg *slov1alpha1.ResourceQOS) []executor.MergeableResourceUpdater {
+	qosCfg *slov1alpha1.ResourceQOS) []resourceexecutor.ResourceUpdater {
 	// double-check qosCfg is not nil
 	if qosCfg == nil {
 		klog.Warningf("calculateQoSResources aborts since qos config is %v", qosCfg)
@@ -178,11 +180,11 @@ func (m *CgroupResourcesReconcile) calculateQoSResources(summary *cgroupResource
 		summary.memoryOomKillGroup = qosCfg.MemoryQOS.OomKillGroup
 	}
 
-	return makeCgroupResources(executor.GroupOwnerRef(string(qos)), qosDir, summary)
+	return makeCgroupResources(qosDir, summary)
 }
 
 func (m *CgroupResourcesReconcile) calculatePodAndContainerResources(podMeta *statesinformer.PodMeta, node *corev1.Node,
-	podCfg *slov1alpha1.ResourceQOS) (podResources, containerResources []executor.MergeableResourceUpdater) {
+	podCfg *slov1alpha1.ResourceQOS) (podResources, containerResources []resourceexecutor.ResourceUpdater) {
 	pod := podMeta.Pod
 	podDir := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 
@@ -208,7 +210,7 @@ func (m *CgroupResourcesReconcile) calculatePodAndContainerResources(podMeta *st
 	return
 }
 
-func (m *CgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parentDir string, podCfg *slov1alpha1.ResourceQOS) []executor.MergeableResourceUpdater {
+func (m *CgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parentDir string, podCfg *slov1alpha1.ResourceQOS) []resourceexecutor.ResourceUpdater {
 	// double-check qos config is not nil
 	if podCfg == nil {
 		klog.V(5).Infof("calculatePodResources aborts since pod-level config is empty, cfg: %v", podCfg)
@@ -251,11 +253,11 @@ func (m *CgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 		}
 	}
 
-	return makeCgroupResources(executor.PodOwnerRef(pod.Namespace, pod.Name), parentDir, summary)
+	return makeCgroupResources(parentDir, summary)
 }
 
 func (m *CgroupResourcesReconcile) calculateContainerResources(container *corev1.Container, pod *corev1.Pod,
-	node *corev1.Node, parentDir string, podCfg *slov1alpha1.ResourceQOS) []executor.MergeableResourceUpdater {
+	node *corev1.Node, parentDir string, podCfg *slov1alpha1.ResourceQOS) []resourceexecutor.ResourceUpdater {
 	// double-check qos config is not nil
 	if podCfg == nil {
 		klog.V(5).Infof("calculateContainerResources aborts since pod-level config is empty, cfg: %v", podCfg)
@@ -321,7 +323,7 @@ func (m *CgroupResourcesReconcile) calculateContainerResources(container *corev1
 		}
 	}
 
-	return makeCgroupResources(executor.ContainerOwnerRef(pod.Namespace, pod.Name, container.Name), parentDir, summary)
+	return makeCgroupResources(parentDir, summary)
 }
 
 // getMergedPodResourceQoS returns a merged ResourceQOS for the pod (i.e. a pod-level qos config).
@@ -460,66 +462,72 @@ func completeCgroupSummaryForQoS(qosSummary map[corev1.PodQOSClass]*cgroupResour
 	}
 }
 
-func makeCgroupResources(owner *executor.OwnerRef, parentDir string, summary *cgroupResourceSummary) []executor.MergeableResourceUpdater {
-	var resources []executor.MergeableResourceUpdater
-
-	anolisResources := makeCgroupResourcesForAnolis(owner, parentDir, summary)
-	if len(anolisResources) > 0 {
-		resources = append(resources, anolisResources...)
-	}
-
-	return resources
-}
-
-func makeCgroupResourcesForAnolis(owner *executor.OwnerRef, parentDir string, summary *cgroupResourceSummary) []executor.MergeableResourceUpdater {
-	var resources []executor.MergeableResourceUpdater
-
-	if !system.HostSystemInfo.IsAnolisOS {
-		klog.V(5).Infof("ignored cgroup resources which required non Anolis OS, owner: %v, parentDir: %v",
-			owner, parentDir)
-		return nil
-	}
+func makeCgroupResources(parentDir string, summary *cgroupResourceSummary) []resourceexecutor.ResourceUpdater {
+	var resources []resourceexecutor.ResourceUpdater
 
 	//Memory
-	if v := summary.memoryMin; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryMin) {
-		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewMergeableCgroupResourceUpdater(owner, parentDir, system.MemoryMin,
-			valueStr, executor.MergeFuncUpdateCgroupIfLarger))
-	}
-	if v := summary.memoryLow; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryLow) {
-		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewMergeableCgroupResourceUpdater(owner, parentDir, system.MemoryLow,
-			valueStr, executor.MergeFuncUpdateCgroupIfLarger))
-	}
-	if v := summary.memoryHigh; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryHigh) {
-		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewMergeableCgroupResourceUpdater(owner, parentDir, system.MemoryHigh,
-			valueStr, executor.MergeFuncUpdateCgroupIfLarger))
-	}
-	if v := summary.memoryWmarkRatio; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryWmarkRatio) {
-		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryWmarkRatio, valueStr))
-	}
-	if v := summary.memoryWmarkScaleFactor; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryWmarkScaleFactor) {
-		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryWmarkScaleFactor, valueStr))
-	}
-	if v := summary.memoryWmarkMinAdj; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryWmarkMinAdj) {
-		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryWmarkMinAdj, valueStr))
-	}
-	// TBD: handle memory priority and oom group
-	if v := summary.memoryPriority; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryPriority) {
-		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryPriority, valueStr))
-	}
-	if v := summary.memoryUsePriorityOom; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryUsePriorityOom) {
-		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryUsePriorityOom, valueStr))
-	}
-	if v := summary.memoryOomKillGroup; v != nil && system.ValidateResourceValue(v, parentDir, system.MemoryOomGroup) {
-		valueStr := strconv.FormatInt(*v, 10)
-		resources = append(resources, executor.NewCommonCgroupResourceUpdater(owner, parentDir, system.MemoryOomGroup, valueStr))
+	// mergeable resources: memory.min, memory.low, memory.high
+	for _, t := range []cgroupResourceUpdaterMeta{
+		{
+			resourceType: system.MemoryMinName,
+			value:        summary.memoryMin,
+			isMergeable:  true,
+		},
+		{
+			resourceType: system.MemoryLowName,
+			value:        summary.memoryLow,
+			isMergeable:  true,
+		},
+		{
+			resourceType: system.MemoryHighName,
+			value:        summary.memoryHigh,
+			isMergeable:  true,
+		},
+		{
+			resourceType: system.MemoryWmarkRatioName,
+			value:        summary.memoryWmarkRatio,
+		},
+		{
+			resourceType: system.MemoryWmarkScaleFactorName,
+			value:        summary.memoryWmarkScaleFactor,
+		},
+		{
+			resourceType: system.MemoryWmarkMinAdjName,
+			value:        summary.memoryWmarkMinAdj,
+		},
+		// TBD: handle memory priority and oom group
+		{
+			resourceType: system.MemoryPriorityName,
+			value:        summary.memoryPriority,
+		},
+		{
+			resourceType: system.MemoryUsePriorityOomName,
+			value:        summary.memoryUsePriorityOom,
+		},
+		{
+			resourceType: system.MemoryOomGroupName,
+			value:        summary.memoryOomKillGroup,
+		},
+	} {
+		if t.value == nil {
+			continue
+		}
+		valueStr := strconv.FormatInt(*t.value, 10)
+
+		var r resourceexecutor.ResourceUpdater
+		var err error
+		if t.isMergeable {
+			r, err = resourceexecutor.NewMergeableCgroupUpdaterIfValueLarger(t.resourceType, parentDir, valueStr)
+		} else {
+			r, err = resourceexecutor.NewCommonCgroupUpdater(t.resourceType, parentDir, valueStr)
+		}
+
+		if err != nil {
+			klog.V(5).Infof("skip cgroup resources that may be unsupported, resource %s [parentDir %s, value %v], err: %v",
+				t.resourceType, parentDir, *t.value, err)
+			continue
+		}
+		resources = append(resources, r)
 	}
 
 	return resources

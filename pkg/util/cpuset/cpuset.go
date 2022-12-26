@@ -232,6 +232,21 @@ func (s CPUSet) ToSliceNoSort() []int {
 	return result
 }
 
+// ToInt32Slice returns a slice of int32 values that contains all elements from this CPUSet.
+func (s CPUSet) ToInt32Slice() []int32 {
+	if len(s.elems) == 0 {
+		return nil
+	}
+	result := make([]int32, 0, len(s.elems))
+	for cpu := range s.elems {
+		result = append(result, int32(cpu)) // assert cpu id is in int32 range
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i] < result[j]
+	})
+	return result
+}
+
 func (s CPUSet) MarshalText() ([]byte, error) {
 	return []byte(s.String()), nil
 }
@@ -320,18 +335,18 @@ func Parse(s string) (CPUSet, error) {
 		boundaries := strings.Split(r, "-")
 		if len(boundaries) == 1 {
 			// Handle ranges that consist of only one element like "34".
-			elem, err := strconv.Atoi(boundaries[0])
+			elem, err := strconv.ParseInt(boundaries[0], 10, 32) // assert cpu id is in range of int32
 			if err != nil {
 				return NewCPUSet(), err
 			}
-			b.Add(elem)
+			b.Add(int(elem))
 		} else if len(boundaries) == 2 {
 			// Handle multi-element ranges like "0-5".
-			start, err := strconv.Atoi(boundaries[0])
+			start, err := strconv.ParseInt(boundaries[0], 10, 32) // assert cpu id is in range of int32
 			if err != nil {
 				return NewCPUSet(), err
 			}
-			end, err := strconv.Atoi(boundaries[1])
+			end, err := strconv.ParseInt(boundaries[1], 10, 32)
 			if err != nil {
 				return NewCPUSet(), err
 			}
@@ -341,7 +356,7 @@ func Parse(s string) (CPUSet, error) {
 			// Add all elements to the result.
 			// e.g. "0-5", "46-48" => [0, 1, 2, 3, 4, 5, 46, 47, 48].
 			for e := start; e <= end; e++ {
-				b.Add(e)
+				b.Add(int(e))
 			}
 		} else {
 			return NewCPUSet(), fmt.Errorf("invalid format: %s", r)

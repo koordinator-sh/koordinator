@@ -18,7 +18,7 @@ package resourceexecutor
 
 import (
 	"fmt"
-	"path/filepath"
+	"math"
 	"strconv"
 	"sync"
 	"time"
@@ -43,8 +43,9 @@ func init() {
 	)
 	DefaultCgroupUpdaterFactory.Register(NewCommonCgroupUpdater,
 		sysutil.CPUBurstName,
-		sysutil.CPUTasksName,
 		sysutil.CPUBVTWarpNsName,
+		sysutil.CPUTasksName,
+		sysutil.CPUProcsName,
 		sysutil.MemoryWmarkRatioName,
 		sysutil.MemoryWmarkScaleFactorName,
 		sysutil.MemoryWmarkMinAdjName,
@@ -74,6 +75,7 @@ type MergeUpdateFunc func(resource ResourceUpdater) (ResourceUpdater, error)
 
 type ResourceUpdater interface {
 	ResourceType() sysutil.ResourceType
+	Key() string
 	Path() string
 	Value() string
 	Update() error
@@ -101,6 +103,10 @@ type CgroupResourceUpdater struct {
 
 func (u *CgroupResourceUpdater) ResourceType() sysutil.ResourceType {
 	return u.file.ResourceType()
+}
+
+func (u *CgroupResourceUpdater) Key() string {
+	return u.file.Path(u.parentDir)
 }
 
 func (u *CgroupResourceUpdater) Path() string {
@@ -141,10 +147,15 @@ func (u *CgroupResourceUpdater) UpdateLastUpdateTimestamp(time time.Time) {
 	u.lastUpdateTimestamp = time
 }
 
+func (u *CgroupResourceUpdater) SetUpdateFunc(updateFunc UpdateFunc, mergeUpdateFunc MergeUpdateFunc) {
+	u.updateFunc = updateFunc
+	u.mergeUpdateFunc = mergeUpdateFunc
+}
+
 type DefaultResourceUpdater struct {
+	key                 string // the cache key to identify the updater (can be the filepath or other custom key)
 	value               string
-	dir                 string
-	file                string
+	file                string // the real filepath
 	lastUpdateTimestamp time.Time
 	updateFunc          UpdateFunc
 }
@@ -153,8 +164,12 @@ func (u *DefaultResourceUpdater) ResourceType() sysutil.ResourceType {
 	return sysutil.ResourceType(u.file)
 }
 
+func (u *DefaultResourceUpdater) Key() string {
+	return u.key
+}
+
 func (u *DefaultResourceUpdater) Path() string {
-	return filepath.Join(u.dir, u.file) // no additional parent dir here
+	return u.file // no additional parent dir here
 }
 
 func (u *DefaultResourceUpdater) Value() string {
@@ -171,8 +186,8 @@ func (u *DefaultResourceUpdater) MergeUpdate() (ResourceUpdater, error) {
 
 func (u *DefaultResourceUpdater) Clone() ResourceUpdater {
 	return &DefaultResourceUpdater{
+		key:                 u.key,
 		file:                u.file,
-		dir:                 u.dir,
 		value:               u.value,
 		lastUpdateTimestamp: u.lastUpdateTimestamp,
 		updateFunc:          u.updateFunc,
@@ -188,12 +203,17 @@ func (u *DefaultResourceUpdater) UpdateLastUpdateTimestamp(time time.Time) {
 }
 
 // NewCommonDefaultUpdater returns a DefaultResourceUpdater for update general files.
-func NewCommonDefaultUpdater(file string, dir string, value string) (ResourceUpdater, error) {
+func NewCommonDefaultUpdater(key string, file string, value string) (ResourceUpdater, error) {
+	return NewCommonDefaultUpdaterWithUpdateFunc(key, file, value, CommonDefaultUpdateFunc)
+}
+
+// NewCommonDefaultUpdaterWithUpdateFunc returns a DefaultResourceUpdater for update general files with the given update function.
+func NewCommonDefaultUpdaterWithUpdateFunc(key string, file string, value string, updateFunc UpdateFunc) (ResourceUpdater, error) {
 	return &DefaultResourceUpdater{
+		key:        key,
 		file:       file,
-		dir:        dir,
 		value:      value,
-		updateFunc: CommonDefaultUpdateFunc,
+		updateFunc: updateFunc,
 	}, nil
 }
 
@@ -257,6 +277,18 @@ func NewMergeableCgroupUpdaterIfValueLarger(resourceType sysutil.ResourceType, p
 
 func NewMergeableCgroupUpdaterIfCPUSetLooser(resourceType sysutil.ResourceType, parentDir string, value string) (ResourceUpdater, error) {
 	return NewMergeableCgroupUpdaterWithCondition(resourceType, parentDir, value, MergeConditionIfCPUSetIsLooser)
+}
+
+// NewDetailCgroupUpdater returns a new *CgroupResourceUpdater according to the given Resource, which is generally used
+// for backwards compatibility. It it not guaranteed for updating successfully since it does not retrieve from the
+// known cgroup resources.
+func NewDetailCgroupUpdater(resource sysutil.Resource, parentDir string, value string, updateFunc UpdateFunc) (ResourceUpdater, error) {
+	return &CgroupResourceUpdater{
+		file:       resource,
+		parentDir:  parentDir,
+		value:      value,
+		updateFunc: updateFunc,
+	}, nil
 }
 
 type CgroupUpdaterFactoryImpl struct {
@@ -371,15 +403,25 @@ func MergeFuncUpdateCgroup(resource ResourceUpdater, mergeCondition MergeConditi
 
 // MergeConditionIfValueIsLarger returns a merge condition where only do update when the new value is larger.
 func MergeConditionIfValueIsLarger(oldValue, newValue string) (string, bool, error) {
-	v, err := strconv.ParseInt(newValue, 10, 64)
-	if err != nil {
-		return newValue, false, fmt.Errorf("new value is not int64, err: %v", err)
+	var newV, oldV int64
+	var err error
+	if newValue == sysutil.CgroupMaxSymbolStr {
+		newV = int64(math.MaxInt64)
+	} else {
+		newV, err = strconv.ParseInt(newValue, 10, 64)
+		if err != nil {
+			return newValue, false, fmt.Errorf("new value is not int64, err: %v", err)
+		}
 	}
-	old, err := strconv.ParseInt(oldValue, 10, 64)
-	if err != nil {
-		return newValue, false, fmt.Errorf("old value is not int64, err: %v", err)
+	if oldValue == sysutil.CgroupMaxSymbolStr { // compatible with cgroup valued "max"
+		oldV = int64(math.MaxInt64)
+	} else {
+		oldV, err = strconv.ParseInt(oldValue, 10, 64)
+		if err != nil {
+			return newValue, false, fmt.Errorf("old value is not int64, err: %v", err)
+		}
 	}
-	return newValue, v > old, nil
+	return newValue, newV > oldV, nil
 }
 
 // MergeConditionIfCPUSetIsLooser returns a merge condition where only do update when the new cpuset value is looser.

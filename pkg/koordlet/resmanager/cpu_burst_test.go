@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,6 +50,15 @@ func newTestExecutor() resourceexecutor.ResourceUpdateExecutor {
 	return &resourceexecutor.ResourceUpdateExecutorImpl{
 		Config:        resourceexecutor.NewDefaultConfig(),
 		ResourceCache: cache.NewCacheDefault(),
+	}
+}
+
+func newTestCPUBurst(r *resmanager) *CPUBurst {
+	return &CPUBurst{
+		resmanager:       r,
+		executor:         newTestExecutor(),
+		cgroupReader:     resourceexecutor.NewCgroupReader(),
+		containerLimiter: make(map[string]*burstLimiter),
 	}
 }
 
@@ -264,6 +274,15 @@ func createPodMetaByResource(podName string, containersRes map[string]corev1.Res
 	}
 }
 
+func TestNewCPUBurst(t *testing.T) {
+	assert.NotPanics(t, func() {
+		b := NewCPUBurst(&resmanager{
+			cgroupReader: resourceexecutor.NewCgroupReader(),
+		})
+		assert.NotNil(t, b)
+	})
+}
+
 func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 	type fields struct {
 		nodeMetric  metriccache.NodeResourceQueryResult
@@ -418,14 +437,14 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 
 			fakeRecorder := &FakeRecorder{}
 			client := clientsetfake.NewSimpleClientset()
-			resmanager := &resmanager{
+			r := &resmanager{
 				statesInformer: mockstatesinformer,
 				metricCache:    mockMetricCache,
 				eventRecorder:  fakeRecorder,
 				kubeClient:     client,
 				config:         NewDefaultConfig(),
 			}
-			b := NewCPUBurst(resmanager)
+			b := newTestCPUBurst(r)
 			if got := b.getNodeStateForBurst(tt.args.sharePoolThresholdPercent, podMetas); got != tt.want {
 				t.Errorf("getNodeStateForBurst() = %v, want %v", got, tt.want)
 			}
@@ -1220,14 +1239,14 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			initPodCFSQuota(podMeta, tt.fields.podCurCFSQuota, testHelper)
 			initContainerCFSQuota(podMeta, tt.fields.containerCurCFSQuota, testHelper)
 
-			resmanager := &resmanager{
+			r := &resmanager{
 				statesInformer: mockStatesInformer,
 				metricCache:    mockMetricCache,
 				eventRecorder:  fakeRecorder,
 				kubeClient:     client,
 			}
 			b := &CPUBurst{
-				resmanager:       resmanager,
+				resmanager:       r,
 				executor:         newTestExecutor(),
 				cgroupReader:     resourceexecutor.NewCgroupReader(),
 				containerLimiter: make(map[string]*burstLimiter),
@@ -1576,7 +1595,7 @@ func TestCPUBurst_start(t *testing.T) {
 
 			testHelper := system.NewFileTestUtil(t)
 
-			b := NewCPUBurst(r)
+			b := newTestCPUBurst(r)
 			stop := make(chan struct{})
 			b.init(stop)
 			defer func() { stop <- struct{}{} }()

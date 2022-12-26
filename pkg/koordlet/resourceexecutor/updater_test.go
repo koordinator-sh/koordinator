@@ -236,9 +236,9 @@ func TestDefaultResourceUpdater_Update(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := sysutil.NewFileTestUtil(t)
 			defer helper.Cleanup()
-			dir := filepath.Join(helper.TempDir, tt.args.subDir)
 
-			u, gotErr := NewCommonDefaultUpdater(tt.args.file, dir, tt.args.value)
+			file := filepath.Join(helper.TempDir, tt.args.subDir, tt.args.file)
+			u, gotErr := NewCommonDefaultUpdater(file, file, tt.args.value)
 			assert.NoError(t, gotErr)
 			_, ok := u.(*DefaultResourceUpdater)
 			assert.True(t, ok)

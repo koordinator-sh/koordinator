@@ -162,12 +162,12 @@ type CPUBurst struct {
 	containerLimiter     map[string]*burstLimiter
 }
 
-func NewCPUBurst(resmanager *resmanager) *CPUBurst {
+func NewCPUBurst(r *resmanager) *CPUBurst {
 	executor := resourceexecutor.NewResourceUpdateExecutor()
 	return &CPUBurst{
-		resmanager:       resmanager,
+		resmanager:       r,
 		executor:         executor,
-		cgroupReader:     resourceexecutor.NewCgroupReader(),
+		cgroupReader:     r.cgroupReader,
 		containerLimiter: make(map[string]*burstLimiter),
 	}
 }
@@ -420,13 +420,13 @@ func (b *CPUBurst) genOperationByContainer(burstCfg *slov1alpha1.CPUBurstConfig,
 
 	containerThrottled := b.resmanager.collectContainerThrottledMetricLast(&containerStat.ContainerID)
 	if containerThrottled.Error != nil {
-		klog.Infof("failed to get container %s/%s/%s throttled metric, maybe not exist, skip this round, reason %v",
+		klog.V(4).Infof("failed to get container %s/%s/%s throttled metric, maybe not exist, skip this round, reason %v",
 			pod.Namespace, pod.Name, containerStat.Name, containerThrottled.Error)
 		return cfsRemain
 	}
 	if containerThrottled.Metric == nil || containerThrottled.AggregateInfo == nil ||
 		containerThrottled.Metric.CPUThrottledMetric == nil {
-		klog.Warningf("container %s/%s/%s throttled metric is nil, skip this round, detail %v",
+		klog.V(4).Infof("container %s/%s/%s throttled metric is nil, skip this round, detail %v",
 			pod.Namespace, pod.Name, containerStat.Name, containerThrottled)
 		return cfsRemain
 	}
@@ -526,12 +526,15 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 			continue
 		}
 		updated, err := b.executor.Update(true, updater)
-		if err == nil {
+		if err != nil && system.IsResourceUnsupportedErr(err) {
+			klog.V(5).Infof("update container %v/%v/%v cpu burst failed, cfs burst not supported, dir %v, info %v",
+				pod.Namespace, pod.Name, containerStat.Name, containerDir, err)
+		} else if err != nil {
+			klog.V(4).Infof("update container %v/%v/%v cpu burst failed, dir %v, updated %v, err %v",
+				pod.Namespace, pod.Name, containerStat.Name, containerDir, updated, err)
+		} else {
 			klog.V(5).Infof("apply container %v/%v/%v cpu burst value successfully, dir %v, value %v",
 				pod.Namespace, pod.Name, containerStat.Name, containerDir, containerCFSBurstVal)
-		} else {
-			klog.V(4).Infof("update container %v/%v/%v cpu burst failed, dir %v, updated %v, info %v",
-				pod.Namespace, pod.Name, containerStat.Name, containerDir, updated, err)
 		}
 	} // end for containers
 
@@ -544,12 +547,15 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 		return
 	}
 	updated, err := b.executor.Update(true, updater)
-	if err == nil {
-		klog.V(5).Infof("apply pod %v/%v cpu burst value successfully, dir %v, value %v",
-			pod.Namespace, pod.Name, podDir, podCFSBurstValStr)
-	} else {
+	if err != nil && system.IsResourceUnsupportedErr(err) {
+		klog.V(5).Infof("update pod %v/%v cpu burst failed, cfs burst not supported, dir %v, info %v",
+			pod.Namespace, pod.Name, podDir, err)
+	} else if err != nil {
 		klog.V(4).Infof("update pod %v/%v cpu burst failed, dir %v, updated %v, err %v",
 			pod.Namespace, pod.Name, podDir, updated, err)
+	} else {
+		klog.V(5).Infof("apply pod %v/%v cpu burst value successfully, dir %v, value %v",
+			pod.Namespace, pod.Name, podDir, podCFSBurstValStr)
 	}
 }
 
