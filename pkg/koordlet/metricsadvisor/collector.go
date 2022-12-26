@@ -150,7 +150,7 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 			return
 		}
 		ic.collectContainerCPI()
-	}, []featuregate.Feature{features.PerformanceCollector, features.CPICollector}, c.config.CPICollectorIntervalSeconds, stopCh)
+	}, []featuregate.Feature{features.CPICollector}, c.config.CPICollectorIntervalSeconds, stopCh)
 
 	util.RunFeature(func() {
 		// psi collector support only on anolis os currently
