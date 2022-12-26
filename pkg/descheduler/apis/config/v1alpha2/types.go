@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/component-base/config/v1alpha1"
@@ -118,6 +119,11 @@ type PluginConfig struct {
 	Name string               `json:"name"`
 	Args runtime.RawExtension `json:"args,omitempty"`
 }
+
+type (
+	Percentage         float64
+	ResourceThresholds map[corev1.ResourceName]Percentage
+)
 
 func (c *PluginConfig) decodeNestedObjects(d runtime.Decoder) error {
 	gvk := SchemeGroupVersion.WithKind(c.Name + "Args")

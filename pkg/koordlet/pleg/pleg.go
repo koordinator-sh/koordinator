@@ -150,6 +150,7 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 			klog.Errorf("failed to watch path %v, err %v", cgroupPath, err)
 			return err
 		}
+		klog.V(5).Infof("add cgroup watch path %v in pleg", cgroupPath)
 		defer func() {
 			err1 := p.podWatcher.RemoveWatch(cgroupPath)
 			if err1 != nil {
@@ -175,6 +176,8 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 				p.events <- newPodEvent(podID, podAdded)
 				// register watcher for containers
 				p.containerWatcher.AddWatch(evt.Name)
+				klog.V(5).Infof("pod dir %v created, send pod %v add event to sync pods",
+					basename, podID)
 			case DirRemoved:
 				basename := filepath.Base(evt.Name)
 				podID, err := koordletutil.ParsePodID(basename)
@@ -186,6 +189,8 @@ func (p *pleg) Run(stopCh <-chan struct{}) error {
 				p.events <- newPodEvent(podID, podDeleted)
 				// remove watcher for containers
 				p.containerWatcher.RemoveWatch(evt.Name)
+				klog.V(5).Infof("pod dir %v removed, send pod %v removed event to sync pods",
+					basename, podID)
 			default:
 				klog.V(5).Infof("skip %v unknown event", evt.Name)
 			}
@@ -230,6 +235,7 @@ func (p *pleg) runEventHandler(stopCh <-chan struct{}) {
 	for {
 		select {
 		case evt := <-p.events:
+			klog.V(5).Infof("receive pleg event %v", evt)
 			p.handleEvent(evt)
 		case <-stopCh:
 			return
@@ -243,7 +249,9 @@ func (p *pleg) handleEvent(event *event) {
 	}
 	p.handlerMutex.Lock()
 	defer p.handlerMutex.Unlock()
+	klog.V(5).Infof("ready to run %v pleg handlers", len(p.handlers))
 	for _, hdl := range p.handlers {
+		klog.V(5).Infof("run pleg handler with event %v", event)
 		switch event.eventType {
 		case podAdded:
 			hdl.OnPodAdded(event.podID)

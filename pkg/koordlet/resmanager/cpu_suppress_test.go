@@ -50,6 +50,7 @@ func newTestCPUSuppress(r *resmanager) *CPUSuppress {
 			Config:        resourceexecutor.NewDefaultConfig(),
 			ResourceCache: cache.NewCacheDefault(),
 		},
+		cgroupReader:           resourceexecutor.NewCgroupReader(),
 		suppressPolicyStatuses: map[string]suppressPolicyStatus{},
 	}
 }
@@ -102,14 +103,14 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				podMetas:      []*statesinformer.PodMeta{},
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "0-9",
-				preBECFSQuota: 16 * defaultCFSPeriod,
+				preBECFSQuota: 16 * system.DefaultCPUCFSPeriod,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      pointer.BoolPtr(true),
 					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
 					CPUSuppressThresholdPercent: pointer.Int64Ptr(70),
 				},
 			},
-			wantBECFSQuota:           16 * defaultCFSPeriod,
+			wantBECFSQuota:           16 * system.DefaultCPUCFSPeriod,
 			wantCFSQuotaPolicyStatus: nil,
 			wantBECPUSet:             "0-9",
 			wantCPUSetPolicyStatus:   nil,
@@ -195,14 +196,14 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				},
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "0-9",
-				preBECFSQuota: 10 * defaultCFSPeriod,
+				preBECFSQuota: 10 * system.DefaultCPUCFSPeriod,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      pointer.BoolPtr(true),
 					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
 					CPUSuppressThresholdPercent: pointer.Int64Ptr(70),
 				},
 			},
-			wantBECFSQuota:           3.2 * defaultCFSPeriod,
+			wantBECFSQuota:           int64(3.2 * float64(system.DefaultCPUCFSPeriod)),
 			wantCFSQuotaPolicyStatus: &policyUsing,
 			wantBECPUSet:             "0-15",
 			wantCPUSetPolicyStatus:   &policyRecovered,
@@ -319,14 +320,14 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				},
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "0-9",
-				preBECFSQuota: 15 * defaultCFSPeriod,
+				preBECFSQuota: 15 * system.DefaultCPUCFSPeriod,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      pointer.BoolPtr(true),
 					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
 					CPUSuppressThresholdPercent: pointer.Int64Ptr(70),
 				},
 			},
-			wantBECFSQuota:           1.2 * defaultCFSPeriod,
+			wantBECFSQuota:           int64(1.2 * float64(system.DefaultCPUCFSPeriod)),
 			wantCFSQuotaPolicyStatus: &policyUsing,
 			wantBECPUSet:             "0-15",
 			wantCPUSetPolicyStatus:   &policyRecovered,
@@ -443,7 +444,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				},
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "0-9",
-				preBECFSQuota: 8 * defaultCFSPeriod,
+				preBECFSQuota: 8 * system.DefaultCPUCFSPeriod,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      pointer.BoolPtr(true),
 					CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
@@ -567,7 +568,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				},
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "0-9",
-				preBECFSQuota: 8 * defaultCFSPeriod,
+				preBECFSQuota: 8 * system.DefaultCPUCFSPeriod,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      pointer.BoolPtr(false),
 					CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
@@ -611,7 +612,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.CPUSet, tt.args.nodeCPUSet)
 			helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet, tt.args.preBECPUSet)
 			helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, strconv.FormatInt(tt.args.preBECFSQuota, 10))
-			helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, strconv.FormatInt(defaultCFSPeriod, 10))
+			helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, strconv.FormatInt(system.DefaultCPUCFSPeriod, 10))
 			for _, podMeta := range tt.args.podMetas {
 				podMeta.CgroupDir = koordletutil.GetPodKubeRelativePath(podMeta.Pod)
 				helper.WriteCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), podMeta.CgroupDir), system.CPUSet, tt.args.preBECPUSet)

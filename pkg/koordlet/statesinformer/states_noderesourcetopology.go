@@ -400,7 +400,7 @@ func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.
 func (s *nodeTopoInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extension.CPUTopology, map[int32]*extension.CPUInfo, error) {
 	nodeCPUInfo, err := s.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
 	if err != nil {
-		klog.Errorf("failed to get node cpu info")
+		klog.V(4).Infof("failed to get node cpu info")
 		return nil, nil, nil, err
 	}
 

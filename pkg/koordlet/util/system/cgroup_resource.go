@@ -120,6 +120,7 @@ const (
 	CPUBurstName     = "cpu.cfs_burst_us"
 	CPUTasksName     = "tasks"
 	CPUProcsName     = "cgroup.procs"
+	CPUThreadsName   = "cgroup.threads"
 	CPUMaxName       = "cpu.max"
 	CPUWeightName    = "cpu.weight"
 
@@ -241,20 +242,28 @@ var (
 		BlkioWriteBps,
 	}
 
-	CPUCFSQuotaV2     = DefaultFactory.NewV2(CPUCFSQuotaName, CPUMaxName)
-	CPUCFSPeriodV2    = DefaultFactory.NewV2(CPUCFSPeriodName, CPUMaxName)
-	CPUSharesV2       = DefaultFactory.NewV2(CPUSharesName, CPUWeightName).WithValidator(CPUWeightValidator)
-	CPUStatV2         = DefaultFactory.NewV2(CPUStatName, CPUStatName)
-	CPUAcctStatV2     = DefaultFactory.NewV2(CPUAcctStatName, CPUStatName)
-	CPUAcctUsageV2    = DefaultFactory.NewV2(CPUAcctUsageName, CPUStatName)
-	CPUSetV2          = DefaultFactory.NewV2(CPUSetCPUSName, CPUSetCPUSName).WithValidator(CPUSetCPUSValidator)
-	CPUSetEffectiveV2 = DefaultFactory.NewV2(CPUSetCPUSEffectiveName, CPUSetCPUSEffectiveName) // TODO: unify the R/W
-	MemoryLimitV2     = DefaultFactory.NewV2(MemoryLimitName, MemoryMaxName)
-	MemoryUsageV2     = DefaultFactory.NewV2(MemoryUsageName, MemoryCurrentName)
-	MemoryStatV2      = DefaultFactory.NewV2(MemoryStatName, MemoryStatName)
-	MemoryMinV2       = DefaultFactory.NewV2(MemoryMinName, MemoryMinName)
-	MemoryLowV2       = DefaultFactory.NewV2(MemoryLowName, MemoryLowName)
-	MemoryHighV2      = DefaultFactory.NewV2(MemoryHighName, MemoryHighName)
+	CPUCFSQuotaV2            = DefaultFactory.NewV2(CPUCFSQuotaName, CPUMaxName)
+	CPUCFSPeriodV2           = DefaultFactory.NewV2(CPUCFSPeriodName, CPUMaxName)
+	CPUSharesV2              = DefaultFactory.NewV2(CPUSharesName, CPUWeightName).WithValidator(CPUWeightValidator)
+	CPUStatV2                = DefaultFactory.NewV2(CPUStatName, CPUStatName)
+	CPUAcctStatV2            = DefaultFactory.NewV2(CPUAcctStatName, CPUStatName)
+	CPUAcctUsageV2           = DefaultFactory.NewV2(CPUAcctUsageName, CPUStatName)
+	CPUSetV2                 = DefaultFactory.NewV2(CPUSetCPUSName, CPUSetCPUSName).WithValidator(CPUSetCPUSValidator)
+	CPUSetEffectiveV2        = DefaultFactory.NewV2(CPUSetCPUSEffectiveName, CPUSetCPUSEffectiveName) // TODO: unify the R/W
+	CPUTasksV2               = DefaultFactory.NewV2(CPUTasksName, CPUThreadsName)
+	CPUProcsV2               = DefaultFactory.NewV2(CPUProcsName, CPUProcsName)
+	MemoryLimitV2            = DefaultFactory.NewV2(MemoryLimitName, MemoryMaxName)
+	MemoryUsageV2            = DefaultFactory.NewV2(MemoryUsageName, MemoryCurrentName)
+	MemoryStatV2             = DefaultFactory.NewV2(MemoryStatName, MemoryStatName)
+	MemoryMinV2              = DefaultFactory.NewV2(MemoryMinName, MemoryMinName)
+	MemoryLowV2              = DefaultFactory.NewV2(MemoryLowName, MemoryLowName)
+	MemoryHighV2             = DefaultFactory.NewV2(MemoryHighName, MemoryHighName)
+	MemoryWmarkRatioV2       = DefaultFactory.NewV2(MemoryWmarkRatioName, MemoryWmarkRatioName).WithValidator(MemoryWmarkRatioValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryWmarkScaleFactorV2 = DefaultFactory.NewV2(MemoryWmarkScaleFactorName, MemoryWmarkScaleFactorName).WithValidator(MemoryWmarkScaleFactorFileNameValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryWmarkMinAdjV2      = DefaultFactory.NewV2(MemoryWmarkMinAdjName, MemoryWmarkMinAdjName).WithValidator(MemoryWmarkMinAdjValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryPriorityV2         = DefaultFactory.NewV2(MemoryPriorityName, MemoryPriorityName).WithValidator(MemoryPriorityValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryUsePriorityOomV2   = DefaultFactory.NewV2(MemoryUsePriorityOomName, MemoryUsePriorityOomName).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryOomGroupV2         = DefaultFactory.NewV2(MemoryOomGroupName, MemoryOomGroupName).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExists)
 
 	knownCgroupV2Resources = []Resource{
 		CPUCFSQuotaV2,
@@ -265,12 +274,20 @@ var (
 		CPUAcctUsageV2,
 		CPUSetV2,
 		CPUSetEffectiveV2,
+		CPUTasksV2,
+		CPUProcsV2,
 		MemoryLimitV2,
 		MemoryUsageV2,
 		MemoryStatV2,
 		MemoryMinV2,
 		MemoryLowV2,
 		MemoryHighV2,
+		MemoryWmarkRatioV2,
+		MemoryWmarkScaleFactorV2,
+		MemoryWmarkMinAdjV2,
+		MemoryPriorityV2,
+		MemoryUsePriorityOomV2,
+		MemoryOomGroupV2,
 	}
 )
 
@@ -332,6 +349,10 @@ func (c *CgroupResource) WithCheckSupported(checkSupportedFn func(r Resource, pa
 	return c
 }
 
+func NewCommonCgroupResource(resourceType ResourceType, filename string, subfs string) Resource {
+	return &CgroupResource{Type: resourceType, FileName: filename, Subfs: subfs, Supported: pointer.Bool(true)}
+}
+
 type CgroupResourceFactory interface {
 	New(filename string, subfs string) Resource // cgroup-v1 filename represents the resource type
 	NewV2(t ResourceType, filename string) Resource
@@ -344,9 +365,9 @@ func NewCgroupResourceFactory() CgroupResourceFactory {
 }
 
 func (f *cgroupResourceFactoryImpl) New(filename string, subfs string) Resource {
-	return &CgroupResource{Type: ResourceType(filename), FileName: filename, Subfs: subfs, Supported: pointer.Bool(true)}
+	return NewCommonCgroupResource(ResourceType(filename), filename, subfs)
 }
 
 func (f *cgroupResourceFactoryImpl) NewV2(t ResourceType, filename string) Resource {
-	return &CgroupResource{Type: t, FileName: filename, Subfs: CgroupV2Dir, Supported: pointer.Bool(true)}
+	return NewCommonCgroupResource(t, filename, CgroupV2Dir)
 }

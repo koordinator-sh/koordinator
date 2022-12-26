@@ -32,14 +32,14 @@ import (
 )
 
 const (
-	// owner: @zwzhang0107 @sanitube
+	// owner: @zwzhang0107 @saintube
 	// alpha: v0.3
 	// beta: v1.1
 	//
 	// GroupIdentity set pod cpu group identity(bvt) according to QoS.
 	GroupIdentity featuregate.Feature = "GroupIdentity"
 
-	// owner: @sanitube @zwzhang0107
+	// owner: @saintube @zwzhang0107
 	// alpha: v0.3
 	// beta: v1.1
 	//
@@ -53,7 +53,7 @@ const (
 	// GPUEnvInject injects gpu allocated env info according to allocate result from koord-scheduler.
 	GPUEnvInject featuregate.Feature = "GPUEnvInject"
 
-	// owner: @sanitube @zwzhang0107
+	// owner: @saintube @zwzhang0107
 	// alpha: v1.1
 	//
 	// BatchResource set request and limits of cpu and memory on cgroup file.

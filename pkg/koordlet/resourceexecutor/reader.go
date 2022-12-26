@@ -35,6 +35,7 @@ type CgroupReader interface {
 	ReadCPUStat(parentDir string) (*sysutil.CPUStatRaw, error)
 	ReadMemoryLimit(parentDir string) (int64, error)
 	ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRaw, error)
+	ReadCPUTasks(parentDir string) ([]int32, error)
 }
 
 var _ CgroupReader = &CgroupV1Reader{}
@@ -140,6 +141,15 @@ func (r *CgroupV1Reader) ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRa
 		return nil, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
 	}
 	return v, nil
+}
+
+func (r *CgroupV1Reader) ReadCPUTasks(parentDir string) ([]int32, error) {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.CPUTasksName)
+	if !ok {
+		return nil, ErrResourceNotRegistered
+	}
+	// content: `7742\n10971\n11049\n11051...`
+	return sysutil.ReadCgroupAndParseInt32Slice(parentDir, resource)
 }
 
 var _ CgroupReader = &CgroupV2Reader{}
@@ -272,6 +282,15 @@ func (r *CgroupV2Reader) ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRa
 		return nil, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
 	}
 	return v, nil
+}
+
+func (r *CgroupV2Reader) ReadCPUTasks(parentDir string) ([]int32, error) {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.CPUTasksName)
+	if !ok {
+		return nil, ErrResourceNotRegistered
+	}
+	// content: `7742\n10971\n11049\n11051...`
+	return sysutil.ReadCgroupAndParseInt32Slice(parentDir, resource)
 }
 
 func NewCgroupReader() CgroupReader {

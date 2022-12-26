@@ -74,11 +74,11 @@ func (r *resmanager) collectPodMetric(podMeta *statesinformer.PodMeta, queryPara
 	podUID := string(podMeta.Pod.UID)
 	queryResult := r.metricCache.GetPodResourceMetric(&podUID, queryParam)
 	if queryResult.Error != nil {
-		klog.Warningf("get pod %v resource metric failed, error %v", podUID, queryResult.Error)
+		klog.V(5).Infof("get pod %v resource metric failed, error %v", podUID, queryResult.Error)
 		return queryResult
 	}
 	if queryResult.Metric == nil {
-		klog.Warningf("pod %v metric not exist", podUID)
+		klog.V(5).Infof("pod %v metric not exist", podUID)
 		return queryResult
 	}
 	return queryResult
@@ -109,14 +109,14 @@ func (r *resmanager) collectContainerThrottledMetricLast(containerID *string) me
 			QueryResult: metriccache.QueryResult{Error: fmt.Errorf("container is nil")},
 		}
 	}
-	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
+	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 5)
 	queryResult := r.metricCache.GetContainerThrottledMetric(containerID, queryParam)
 	if queryResult.Error != nil {
-		klog.Warningf("get container %v throttled metric failed, error %v", containerID, queryResult.Error)
+		klog.V(5).Infof("get container %v throttled metric failed, error %v", *containerID, queryResult.Error)
 		return queryResult
 	}
 	if queryResult.Metric == nil {
-		klog.Warningf("container %v metric not exist", containerID)
+		klog.V(5).Infof("container %v metric not exist", *containerID)
 		return queryResult
 	}
 	return queryResult
