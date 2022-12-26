@@ -367,7 +367,7 @@ func isSyncNeeded(oldNRT, newNRT *v1alpha1.NodeResourceTopology, nodename string
 // IsequalTopo returns whether the new topology has difference with the old one or not
 func isEqualTopo(oldtopo map[string]string, newtopo map[string]string) bool {
 	keySlice := make([]string, 0)
-	for key, _ := range oldtopo {
+	for key := range oldtopo {
 		keySlice = append(keySlice, key)
 	}
 	for _, key := range keySlice {
