@@ -22,6 +22,7 @@ import (
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -45,11 +46,31 @@ type LoadAwareSchedulingArgs struct {
 	// ProdUsageThresholds indicates the resource utilization threshold of Prod Pods compared to the whole machine.
 	// Not enabled by default
 	ProdUsageThresholds map[corev1.ResourceName]int64 `json:"prodUsageThresholds,omitempty"`
+	// ScoreAccordingProdUsage controls whether to score according to the utilization of Prod Pod
+	ScoreAccordingProdUsage bool `json:"scoreAccordingProdUsage,omitempty"`
 	// EstimatedScalingFactors indicates the factor when estimating resource usage.
 	// The default value of CPU is 85%, and the default value of Memory is 70%.
 	EstimatedScalingFactors map[corev1.ResourceName]int64 `json:"estimatedScalingFactors,omitempty"`
-	// ScoreAccordingProdUsage controls whether to score according to the utilization rate of Prod Pod
-	ScoreAccordingProdUsage bool `json:"scoreAccordingProdUsage,omitempty"`
+	// Aggregated supports resource utilization filtering and scoring based on percentile statistics
+	Aggregated *LoadAwareSchedulingAggregatedArgs `json:"aggregated,omitempty"`
+}
+
+type LoadAwareSchedulingAggregatedArgs struct {
+	// UsageThresholds indicates the resource utilization threshold of the machine based on percentile statistics
+	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
+	// UsageAggregationType indicates the percentile type of the machine's utilization when filtering
+	// If enabled, only one of the slov1alpha1.AggregationType definitions can be used.
+	UsageAggregationType slov1alpha1.AggregationType `json:"usageAggregationType,omitempty"`
+	// UsageAggregatedDuration indicates the statistical period of the percentile of the machine's utilization when filtering
+	// If no specific period is set, the maximum period recorded by NodeMetrics will be used by default.
+	UsageAggregatedDuration metav1.Duration `json:"usageAggregatedDuration,omitempty"`
+
+	// ScoreAggregationType indicates the percentile type of the machine's utilization when scoring
+	// If enabled, only one of the slov1alpha1.AggregationType definitions can be used.
+	ScoreAggregationType slov1alpha1.AggregationType `json:"scoreAggregationType,omitempty"`
+	// ScoreAggregatedDuration indicates the statistical period of the percentile of Prod Pod's utilization when scoring
+	// If no specific period is set, the maximum period recorded by NodeMetrics will be used by default.
+	ScoreAggregatedDuration metav1.Duration `json:"scoreAggregatedDuration,omitempty"`
 }
 
 // ScoringStrategyType is a "string" type.

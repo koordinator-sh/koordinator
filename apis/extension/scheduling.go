@@ -21,9 +21,11 @@ import (
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 const (
@@ -82,6 +84,17 @@ type CustomUsageThresholds struct {
 	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
 	// ProdUsageThresholds indicates the resource utilization threshold of Prod Pods compared to the whole machine
 	ProdUsageThresholds map[corev1.ResourceName]int64 `json:"prodUsageThresholds,omitempty"`
+	// AggregatedUsage supports resource utilization filtering and scoring based on percentile statistics
+	AggregatedUsage *CustomAggregatedUsage `json:"aggregatedUsage,omitempty"`
+}
+
+type CustomAggregatedUsage struct {
+	// UsageThresholds indicates the resource utilization threshold of the machine based on percentile statistics
+	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
+	// UsageAggregationType indicates the percentile type of the machine's utilization when filtering
+	UsageAggregationType slov1alpha1.AggregationType `json:"usageAggregationType,omitempty"`
+	// UsageAggregatedDuration indicates the statistical period of the percentile of the machine's utilization when filtering
+	UsageAggregatedDuration *metav1.Duration `json:"usageAggregatedDuration,omitempty"`
 }
 
 func GetCustomUsageThresholds(node *corev1.Node) (*CustomUsageThresholds, error) {
