@@ -228,6 +228,12 @@ type reservationCache struct {
 	assumed  map[string]*assumedInfo                    // reservation key -> assumed (pod allocated) reservation meta
 }
 
+var rCache *reservationCache = newReservationCache()
+
+func getReservationCache() *reservationCache {
+	return rCache
+}
+
 func newReservationCache() *reservationCache {
 	return &reservationCache{
 		inactive: map[string]*schedulingv1alpha1.Reservation{},
