@@ -421,15 +421,13 @@ func Test_isEqualTopo(t *testing.T) {
 			args: args{
 				oldtopo: map[string]string{
 					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"cpuset\":\"0-25,52-77\",\"socket\":0,\"node\":0},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
 					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
-					"test-json":                                 "{\"id\":1,\"name\":\"testjson01\", \"isadmin\":true}",
 				},
 				newtopo: map[string]string{
 					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
 					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
 					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
-					"test-json":                                 "{\"name\":\"testjson01\", \"isadmin\":true,\"id\":1}",
 				},
 			},
 			want: true,

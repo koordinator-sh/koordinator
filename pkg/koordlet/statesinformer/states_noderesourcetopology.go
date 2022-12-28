@@ -330,7 +330,7 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		}
 
 		if isSyncNeeded(s.nodeTopology, nodeResourceTopology, node.Name) {
-			// TODO only update if necessary
+			// TODO: use a NodeResourceTopology informer
 			s.updateNodeTopo(nodeResourceTopology)
 
 			// do UPDATE
@@ -356,7 +356,7 @@ func isSyncNeeded(oldNRT, newNRT *v1alpha1.NodeResourceTopology, nodename string
 	}
 	if isEqualTopo(oldNRT.Annotations, newNRT.Annotations) {
 		// do nothing
-		klog.Info("all good, no need to report nodetopo  %v", nodename)
+		klog.V(4).Info("all good, no need to report nodetopo  %v", nodename)
 		return false
 	}
 	//not equal
@@ -366,37 +366,25 @@ func isSyncNeeded(oldNRT, newNRT *v1alpha1.NodeResourceTopology, nodename string
 
 // IsequalTopo returns whether the new topology has difference with the old one or not
 func isEqualTopo(oldtopo map[string]string, newtopo map[string]string) bool {
-	keySlice := make([]string, 0)
-	for key := range oldtopo {
-		keySlice = append(keySlice, key)
+	if len(oldtopo) != len(newtopo) {
+		return false
 	}
-	for _, key := range keySlice {
-		if _, ok := newtopo[key]; ok {
-			var (
-				old_data interface{}
-				new_data interface{}
-			)
-			if key == extension.AnnotationNodeCPUSharedPools {
-				old_data = make([]map[string]interface{}, 0)
-				new_data = make([]map[string]interface{}, 0)
-			} else {
-				old_data = make(map[string]interface{})
-				new_data = make(map[string]interface{})
-			}
-			err := json.Unmarshal([]byte(oldtopo[key]), &old_data)
-			if err != nil {
-				klog.Errorf("failed to unmarshal, err: %v,and key: %v", err, key)
-			}
-			err1 := json.Unmarshal([]byte(newtopo[key]), &new_data)
-			if err != nil {
-				klog.Errorf("failed to unmarshal, err: %v,and key: %v", err1, key)
-			}
-			if reflect.DeepEqual(old_data, new_data) {
-				continue
-			} else {
-				return false
-			}
-		} else {
+	var (
+		old_data interface{}
+		new_data interface{}
+	)
+	keyslice := []string{extension.AnnotationKubeletCPUManagerPolicy, extension.AnnotationNodeCPUSharedPools,
+		extension.AnnotationNodeCPUTopology, extension.AnnotationNodeCPUAllocs}
+	for _, key := range keyslice {
+		err := json.Unmarshal([]byte(oldtopo[key]), &old_data)
+		if err != nil {
+			klog.Errorf("failed to unmarshal, err: %v,and key: %v", err, key)
+		}
+		err1 := json.Unmarshal([]byte(newtopo[key]), &new_data)
+		if err != nil {
+			klog.Errorf("failed to unmarshal, err: %v,and key: %v", err1, key)
+		}
+		if !reflect.DeepEqual(old_data, new_data) {
 			return false
 		}
 	}
