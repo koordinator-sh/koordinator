@@ -351,40 +351,37 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 }
 
 func isSyncNeeded(oldNRT, newNRT *v1alpha1.NodeResourceTopology, nodename string) bool {
-	if oldNRT == nil {
+	if oldNRT == nil || oldNRT.Annotations == nil || newNRT.Annotations == nil {
 		return true
 	}
 	if isEqualTopo(oldNRT.Annotations, newNRT.Annotations) {
 		// do nothing
-		klog.V(4).Info("all good, no need to report nodetopo  %v", nodename)
+		klog.V(4).Info("all good, no need to report nodetopo  %s", nodename)
 		return false
 	}
 	//not equal
-	klog.Warningf("node %v topology is changed, need sync", nodename)
+	klog.V(4).Info("node %s topology is changed, need sync", nodename)
 	return true
 }
 
 // IsequalTopo returns whether the new topology has difference with the old one or not
-func isEqualTopo(oldtopo map[string]string, newtopo map[string]string) bool {
-	if len(oldtopo) != len(newtopo) {
-		return false
-	}
+func isEqualTopo(OldTopo map[string]string, NewTopo map[string]string) bool {
 	var (
-		old_data interface{}
-		new_data interface{}
+		OldData interface{}
+		NewData interface{}
 	)
 	keyslice := []string{extension.AnnotationKubeletCPUManagerPolicy, extension.AnnotationNodeCPUSharedPools,
 		extension.AnnotationNodeCPUTopology, extension.AnnotationNodeCPUAllocs}
 	for _, key := range keyslice {
-		err := json.Unmarshal([]byte(oldtopo[key]), &old_data)
+		err := json.Unmarshal([]byte(OldTopo[key]), &OldData)
 		if err != nil {
 			klog.Errorf("failed to unmarshal, err: %v,and key: %v", err, key)
 		}
-		err1 := json.Unmarshal([]byte(newtopo[key]), &new_data)
-		if err != nil {
+		err1 := json.Unmarshal([]byte(NewTopo[key]), &NewData)
+		if err1 != nil {
 			klog.Errorf("failed to unmarshal, err: %v,and key: %v", err1, key)
 		}
-		if !reflect.DeepEqual(old_data, new_data) {
+		if !reflect.DeepEqual(OldData, NewData) {
 			return false
 		}
 	}

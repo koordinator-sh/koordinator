@@ -441,8 +441,9 @@ func Test_isEqualTopo(t *testing.T) {
 				},
 				newtopo: map[string]string{
 					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"},{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":1,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0}]}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
 				},
 			},
 			want: false,
