@@ -356,11 +356,11 @@ func isSyncNeeded(oldNRT, newNRT *v1alpha1.NodeResourceTopology, nodename string
 	}
 	if isEqualTopo(oldNRT.Annotations, newNRT.Annotations) {
 		// do nothing
-		klog.V(4).Info("all good, no need to report nodetopo  %s", nodename)
+		klog.V(4).Infof("all good, no need to report nodetopo  %s", nodename)
 		return false
 	}
 	//not equal
-	klog.V(4).Info("node %s topology is changed, need sync", nodename)
+	klog.V(4).Infof("node %s topology is changed, need sync", nodename)
 	return true
 }
 
