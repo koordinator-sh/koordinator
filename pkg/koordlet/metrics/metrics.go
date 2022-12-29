@@ -26,6 +26,7 @@ import (
 
 func init() {
 	prometheus.MustRegister(CommonCollectors...)
+	prometheus.MustRegister(ResourceSummaryCollectors...)
 	prometheus.MustRegister(CPICollectors...)
 	prometheus.MustRegister(PSICollectors...)
 	prometheus.MustRegister(CPUSuppressCollector...)
@@ -38,7 +39,7 @@ const (
 	NodeKey = "node"
 
 	StatusKey     = "status"
-	StatusSucceed = "succeed"
+	StatusSucceed = "succeeded"
 	StatusFailed  = "failed"
 
 	EvictionReasonKey = "reason"
@@ -50,6 +51,8 @@ const (
 	PodUID       = "pod_uid"
 	PodName      = "pod_name"
 	PodNamespace = "pod_namespace"
+
+	ResourceKey = "resource"
 )
 
 var (
