@@ -117,7 +117,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		podLister:        extendedHandle.SharedInformerFactory().Core().V1().Pods().Lister(),
 		client:           extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
 		parallelizeUntil: defaultParallelizeUntil(handle),
-		reservationCache: newReservationCache(),
+		reservationCache: getReservationCache(),
 	}
 
 	// handle reservation event in cache; here only scheduled and expired reservations are considered.

@@ -153,6 +153,7 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 		klog.V(6).InfoS("PreFilterHook indexer list reservation on node",
 			"node", node.Name, "count", len(rOnNode))
 		count := 0
+		rCache := getReservationCache()
 		for _, obj := range rOnNode {
 			r, ok := obj.(*schedulingv1alpha1.Reservation)
 			if !ok {
@@ -163,7 +164,12 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 			if !util.IsReservationAvailable(r) {
 				continue
 			}
-			if matchReservation(pod, newReservationInfo(r)) {
+
+			rInfo := rCache.GetInCache(r)
+			if rInfo == nil {
+				rInfo = newReservationInfo(r)
+			}
+			if matchReservation(pod, rInfo) {
 				matchedCache.Add(r)
 				count++
 			} else {
