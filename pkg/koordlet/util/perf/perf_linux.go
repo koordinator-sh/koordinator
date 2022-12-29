@@ -87,7 +87,7 @@ func GetContainerCyclesAndInstructions(collector *PerfCollector) (uint64, uint64
 	if err != nil {
 		return 0, 0, err
 	}
-	return result.instructions, result.cycles, nil
+	return result.cycles, result.instructions, nil
 }
 
 type collectResult struct {
