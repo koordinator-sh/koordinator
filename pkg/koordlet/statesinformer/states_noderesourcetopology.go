@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"sort"
 	"sync"
 
@@ -327,22 +328,64 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		for k, v := range nodeTopoAnnotations {
 			nodeResourceTopology.Annotations[k] = v
 		}
-		// TODO only update if necessary
-		s.updateNodeTopo(nodeResourceTopology)
 
-		// do UPDATE
-		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
-			_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
-			if err != nil {
-				klog.Errorf("failed to update cpu info of node %s, err: %v", node.Name, err)
-				return err
+		if isSyncNeeded(s.nodeTopology, nodeResourceTopology, node.Name) {
+			// TODO: use a NodeResourceTopology informer
+			s.updateNodeTopo(nodeResourceTopology)
+
+			// do UPDATE
+			if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+				_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
+				if err != nil {
+					klog.Errorf("failed to update cpu info of node %s, err: %v", node.Name, err)
+					return err
+				}
 			}
+			return nil
 		}
 		return nil
 	})
 	if err != nil {
 		klog.Errorf("failed to update NodeResourceTopology, err: %v", err)
 	}
+}
+
+func isSyncNeeded(oldNRT, newNRT *v1alpha1.NodeResourceTopology, nodename string) bool {
+	if oldNRT == nil || oldNRT.Annotations == nil || newNRT.Annotations == nil {
+		return true
+	}
+	if isEqualTopo(oldNRT.Annotations, newNRT.Annotations) {
+		// do nothing
+		klog.V(4).Infof("all good, no need to report nodetopo  %s", nodename)
+		return false
+	}
+	//not equal
+	klog.V(4).Infof("node %s topology is changed, need sync", nodename)
+	return true
+}
+
+// IsequalTopo returns whether the new topology has difference with the old one or not
+func isEqualTopo(OldTopo map[string]string, NewTopo map[string]string) bool {
+	var (
+		OldData interface{}
+		NewData interface{}
+	)
+	keyslice := []string{extension.AnnotationKubeletCPUManagerPolicy, extension.AnnotationNodeCPUSharedPools,
+		extension.AnnotationNodeCPUTopology, extension.AnnotationNodeCPUAllocs}
+	for _, key := range keyslice {
+		err := json.Unmarshal([]byte(OldTopo[key]), &OldData)
+		if err != nil {
+			klog.Errorf("failed to unmarshal, err: %v,and key: %v", err, key)
+		}
+		err1 := json.Unmarshal([]byte(NewTopo[key]), &NewData)
+		if err1 != nil {
+			klog.Errorf("failed to unmarshal, err: %v,and key: %v", err1, key)
+		}
+		if !reflect.DeepEqual(OldData, NewData) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.CPUInfo) []extension.CPUSharedPool {
