@@ -250,7 +250,18 @@ func getReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceLi
 }
 
 func matchReservation(pod *corev1.Pod, rMeta *reservationInfo) bool {
-	return matchReservationOwners(pod, rMeta.Reservation) && matchReservationResources(pod, rMeta.Reservation, rMeta.Resources)
+	return matchReservationOwners(pod, rMeta.Reservation) && matchReservationResources(pod, rMeta.Reservation, rMeta.Resources) && matchReservationPort(pod, rMeta)
+}
+
+func matchReservationPort(pod *corev1.Pod, rMeta *reservationInfo) bool {
+	for _, container := range pod.Spec.Containers {
+		for _, podPort := range container.Ports {
+			if !rMeta.Port.CheckConflict(podPort.HostIP, string(podPort.Protocol), podPort.HostPort) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func matchReservationResources(pod *corev1.Pod, r *schedulingv1alpha1.Reservation, reservedResources corev1.ResourceList) bool {
@@ -323,6 +334,9 @@ func dumpMatchReservationReason(pod *corev1.Pod, rMeta *reservationInfo) string 
 	}
 	if !matchReservationResources(pod, rMeta.Reservation, rMeta.Resources) {
 		msg.WriteString("resources not matched;")
+	}
+	if !matchReservationPort(pod, rMeta) {
+		msg.WriteString("port not matched;")
 	}
 	return msg.String()
 }
