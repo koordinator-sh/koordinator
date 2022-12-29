@@ -29,6 +29,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -179,6 +180,8 @@ func (b *CPUBurst) init(stopCh <-chan struct{}) error {
 
 func (b *CPUBurst) start() {
 	klog.V(5).Infof("start cpu burst strategy")
+	// at the beginning of appling cpu burst strategy, we should reset all metrics belongs to pods and containers
+	metrics.ResetCPUBurstCollector()
 	// sync config from node slo
 	nodeSLO := b.resmanager.getNodeSLOCopy()
 	if nodeSLO == nil || nodeSLO.Spec.CPUBurstStrategy == nil {
@@ -217,7 +220,7 @@ func (b *CPUBurst) start() {
 			continue
 		}
 		klog.V(5).Infof("get pod %v/%v cpu burst config: %v", podMeta.Pod.Namespace, podMeta.Pod.Name, cpuBurstCfg)
-		// set cpu.cfs_burst_us for containers
+		// set cpu.cfs_burst_us for pod and containers
 		b.applyCPUBurst(cpuBurstCfg, podMeta)
 		// scale cpu.cfs_quota_us for pod and containers
 		b.applyCFSQuotaBurst(cpuBurstCfg, podMeta, nodeState)
@@ -367,6 +370,7 @@ func (b *CPUBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 				pod.Namespace, pod.Name, containerStat.Name, finalOperation, deltaContainerCFS, err)
 			continue
 		}
+		metrics.RecordContainerScaledCFSQuotaUS(pod.Namespace, pod.Name, containerStat.ContainerID, containerStat.Name, float64(containerTargetCFS))
 		klog.Infof("scale container %v/%v/%v cfs quota success, operation %v, current cfs %v, target cfs %v",
 			pod.Namespace, pod.Name, containerStat.Name, finalOperation, containerCurCFS, containerTargetCFS)
 	} // end for containers
@@ -538,6 +542,7 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 			klog.V(4).Infof("update container %v/%v/%v cpu burst failed, dir %v, updated %v, err %v",
 				pod.Namespace, pod.Name, containerStat.Name, containerDir, updated, err)
 		} else {
+			metrics.RecordContainerScaledCFSBurstUS(pod.Namespace, pod.Name, containerStat.ContainerID, containerStat.Name, float64(containerCFSBurstVal))
 			klog.V(5).Infof("apply container %v/%v/%v cpu burst value successfully, dir %v, value %v",
 				pod.Namespace, pod.Name, containerStat.Name, containerDir, containerCFSBurstVal)
 		}

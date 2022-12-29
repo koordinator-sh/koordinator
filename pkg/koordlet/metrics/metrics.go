@@ -28,6 +28,8 @@ func init() {
 	prometheus.MustRegister(CommonCollectors...)
 	prometheus.MustRegister(CPICollectors...)
 	prometheus.MustRegister(PSICollectors...)
+	prometheus.MustRegister(CPUSuppressCollector...)
+	prometheus.MustRegister(CPUBurstCollector...)
 }
 
 const (
