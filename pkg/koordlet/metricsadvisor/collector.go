@@ -217,6 +217,7 @@ func (c *collector) collectNodeResUsed() {
 
 	// update collect time
 	c.state.RefreshTime(nodeResUsedUpdateTime)
+	metrics.RecordNodeUsedCPU(cpuUsageValue * 1000)
 
 	klog.Infof("collectNodeResUsed finished %+v", nodeMetric)
 }
