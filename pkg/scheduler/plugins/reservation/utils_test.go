@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/pointer"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -55,6 +56,193 @@ func TestStatusNodeNameIndexFunc(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, []string{"test-node-0"}, got)
 	})
+}
+
+func Test_matchReservationPorts(t *testing.T) {
+	type args struct {
+		pod *corev1.Pod
+		r   *reservationInfo
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "no port to match",
+			args: args{
+				pod: &corev1.Pod{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Ports: []corev1.ContainerPort{
+									{
+										HostPort: 60000,
+									},
+								},
+							},
+						},
+					},
+				},
+				r: &reservationInfo{
+					Port: framework.HostPortInfo{},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "match port",
+			args: args{
+				pod: &corev1.Pod{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Ports: []corev1.ContainerPort{
+									{
+										HostPort: 60000,
+									},
+								},
+							},
+						},
+					},
+				},
+				r: &reservationInfo{
+					Port: framework.HostPortInfo{
+						"0.0.0.0": map[framework.ProtocolPort]struct{}{
+							{
+								Protocol: "TCP",
+								Port:     60000,
+							}: {},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "mismatch protocol",
+			args: args{
+				pod: &corev1.Pod{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Ports: []corev1.ContainerPort{
+									{
+										HostPort: 60000,
+									},
+								},
+							},
+						},
+					},
+				},
+				r: &reservationInfo{
+					Port: framework.HostPortInfo{
+						"0.0.0.0": map[framework.ProtocolPort]struct{}{
+							{
+								Protocol: "UDP",
+								Port:     60000,
+							}: {},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "mismatch port",
+			args: args{
+				pod: &corev1.Pod{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Ports: []corev1.ContainerPort{
+									{
+										HostPort: 60000,
+									},
+								},
+							},
+						},
+					},
+				},
+				r: &reservationInfo{
+					Port: framework.HostPortInfo{
+						"0.0.0.0": map[framework.ProtocolPort]struct{}{
+							{
+								Protocol: "TCP",
+								Port:     60001,
+							}: {},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "dismatch ip",
+			args: args{
+				pod: &corev1.Pod{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Ports: []corev1.ContainerPort{
+									{
+										HostIP:   "192.168.0.2",
+										HostPort: 60000,
+									},
+								},
+							},
+						},
+					},
+				},
+				r: &reservationInfo{
+					Port: framework.HostPortInfo{
+						"192.168.0.1": map[framework.ProtocolPort]struct{}{
+							{
+								Protocol: "TCP",
+								Port:     60000,
+							}: {},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "match by default",
+			args: args{
+				pod: &corev1.Pod{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Ports: []corev1.ContainerPort{
+									{
+										HostPort: 60000,
+									},
+								},
+							},
+						},
+					},
+				},
+				r: &reservationInfo{
+					Port: framework.HostPortInfo{
+						"192.168.0.1": map[framework.ProtocolPort]struct{}{
+							{
+								Protocol: "TCP",
+								Port:     60000,
+							}: {},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchReservationPort(tt.args.pod, tt.args.r)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func Test_matchReservationOwners(t *testing.T) {
