@@ -20,11 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -42,11 +39,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
-)
-
-const (
-	podCgroupPathRelativeDepth       = 1
-	containerCgroupPathRelativeDepth = 2
 )
 
 var (
@@ -171,7 +163,7 @@ func (r *CPUSuppress) applyBESuppressCPUSet(beCPUSet []int32, oldCPUSet []int32)
 		klog.Warningf("failed to get kubelet cpu manager policy, error %v", err)
 	}
 	if kubeletPolicy.Policy == apiext.KubeletCPUManagerPolicyStatic {
-		r.recoverCPUSetIfNeed(podCgroupPathRelativeDepth)
+		r.recoverCPUSetIfNeed(koordletutil.PodCgroupPathRelativeDepth)
 		err = r.applyCPUSetWithStaticPolicy(beCPUSet)
 	} else {
 		err = r.applyCPUSetWithNonePolicy(beCPUSet, oldCPUSet)
@@ -192,7 +184,7 @@ func (r *CPUSuppress) applyCPUSetWithNonePolicy(cpus []int32, oldCPUSet []int32)
 		return nil
 	}
 
-	cpusetCgroupPaths, err := getBECPUSetPathsByMaxDepth(containerCgroupPathRelativeDepth)
+	cpusetCgroupPaths, err := koordletutil.GetBECPUSetPathsByMaxDepth(koordletutil.ContainerCgroupPathRelativeDepth)
 	if err != nil {
 		klog.Warningf("applyCPUSetWithNonePolicy failed to get be cgroup cpuset paths, err: %s", err)
 		return fmt.Errorf("apply be suppress policy failed, err: %s", err)
@@ -220,7 +212,7 @@ func (r *CPUSuppress) applyCPUSetWithStaticPolicy(cpus []int32) error {
 		return nil
 	}
 
-	containerPaths, err := getBECPUSetPathsByTargetDepth(containerCgroupPathRelativeDepth)
+	containerPaths, err := koordletutil.GetBECPUSetPathsByTargetDepth(koordletutil.ContainerCgroupPathRelativeDepth)
 	if err != nil {
 		klog.Warningf("applyCPUSetWithStaticPolicy failed to get be cgroup cpuset paths, err: %s", err)
 		return fmt.Errorf("apply be suppress policy failed, err: %s", err)
@@ -251,7 +243,7 @@ func (r *CPUSuppress) suppressBECPU() {
 		return
 	} else if disabled {
 		r.recoverCFSQuotaIfNeed()
-		r.recoverCPUSetIfNeed(containerCgroupPathRelativeDepth)
+		r.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
 		klog.V(5).Infof("suppressBECPU skipped, nodeSLO disable the featuregate")
 		return
 	}
@@ -287,7 +279,7 @@ func (r *CPUSuppress) suppressBECPU() {
 	if nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy == slov1alpha1.CPUCfsQuotaPolicy {
 		r.adjustByCfsQuota(suppressCPUQuantity, node)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyUsing
-		r.recoverCPUSetIfNeed(containerCgroupPathRelativeDepth)
+		r.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
 	} else {
 		r.adjustByCPUSet(suppressCPUQuantity, nodeCPUInfo)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyUsing
@@ -405,7 +397,7 @@ func (r *CPUSuppress) recoverCPUSetIfNeed(maxDepth int) {
 		return !lseCPUID[ID]
 	})
 
-	cpusetCgroupPaths, err := getBECPUSetPathsByMaxDepth(maxDepth)
+	cpusetCgroupPaths, err := koordletutil.GetBECPUSetPathsByMaxDepth(maxDepth)
 	if err != nil {
 		klog.Warningf("recover bestEffort cpuset failed, get be cgroup cpuset paths  err: %s", err)
 		return
@@ -482,66 +474,6 @@ func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
 func getPodMetricCPUUsage(info *metriccache.PodResourceMetric) *resource.Quantity {
 	cpuQuant := info.CPUUsed.CPUUsed
 	return resource.NewMilliQuantity(cpuQuant.MilliValue(), cpuQuant.Format)
-}
-
-// getBECPUSetPathsByMaxDepth gets all the be cpuset groups' paths recursively from upper to lower
-func getBECPUSetPathsByMaxDepth(relativeDepth int) ([]string, error) {
-	// walk from root path to lower nodes
-	rootCgroupPath := koordletutil.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
-	rootCPUSetSubfsPath := koordletutil.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
-	_, err := os.Stat(rootCgroupPath)
-	if err != nil {
-		// make sure the rootCgroupPath is available
-		return nil, err
-	}
-	klog.V(6).Infof("get be rootCgroupPath: %v", rootCgroupPath)
-
-	absDepth := strings.Count(rootCgroupPath, string(os.PathSeparator)) + relativeDepth
-	var paths []string
-	err = filepath.Walk(rootCgroupPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() && strings.Count(path, string(os.PathSeparator)) <= absDepth {
-			// get the path of parentDir
-			parentDir, err1 := filepath.Rel(rootCPUSetSubfsPath, path)
-			if err1 != nil {
-				return err1
-			}
-			paths = append(paths, parentDir)
-		}
-		return nil
-	})
-	return paths, err
-}
-
-func getBECPUSetPathsByTargetDepth(relativeDepth int) ([]string, error) {
-	rootCgroupPath := koordletutil.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
-	rootCPUSetSubfsPath := koordletutil.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
-	_, err := os.Stat(rootCgroupPath)
-	if err != nil {
-		// make sure the rootCgroupPath is available
-		return nil, err
-	}
-	klog.V(6).Infof("get be rootCgroupPath: %v", rootCgroupPath)
-
-	absDepth := strings.Count(rootCgroupPath, string(os.PathSeparator)) + relativeDepth
-	var containerPaths []string
-	err = filepath.WalkDir(rootCgroupPath, func(path string, info os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() && strings.Count(path, string(os.PathSeparator)) == absDepth {
-			// get the path of parentDir
-			parentDir, err1 := filepath.Rel(rootCPUSetSubfsPath, path)
-			if err1 != nil {
-				return err1
-			}
-			containerPaths = append(containerPaths, parentDir)
-		}
-		return nil
-	})
-	return containerPaths, err
 }
 
 // calculateBESuppressPolicy calculates the be cpu suppress policy with cpuset cpus number and node cpu info
