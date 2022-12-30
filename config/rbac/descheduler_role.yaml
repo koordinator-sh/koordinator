@@ -67,6 +67,14 @@ rules:
   - update
   - watch
 - apiGroups:
+    - apps
+  resources:
+    - '*'
+  verbs:
+    - get
+    - list
+    - watch
+- apiGroups:
   - apps.kruise.io
   resources:
   - "*"
