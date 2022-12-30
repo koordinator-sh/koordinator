@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -29,7 +30,8 @@ import (
 )
 
 const (
-	MaxFileSize = 1 << 21 // 2MB
+	MaxFileSize                   = 1 << 21 // 2MB
+	DefaultLogDirMode fs.FileMode = 0755
 )
 
 // NewEventLogger create an EventWriter, it won't open the underly file until do a log call.
@@ -38,6 +40,19 @@ func NewEventLogger(dir string, sizeMB int, verbose int) EventWriter {
 	if sizeMB <= 0 {
 		klog.Fatalf("sizeMB [%d] should be larger than 0", sizeMB)
 	}
+
+	// we should ensure the log directory exist and have write to permission
+	if _, err := os.Stat(dir); err != nil && !os.IsNotExist(err) {
+		klog.Fatalf("failed to get log directory [%s] fileInfo: %v", dir, err)
+	} else if err != nil {
+		if err := os.MkdirAll(dir, DefaultLogDirMode); err != nil && !os.IsExist(err) {
+			klog.Fatalf("failed to create log directory [%s]: %v", dir, err)
+		}
+	}
+	if err := os.Chmod(dir, DefaultLogDirMode); err != nil {
+		klog.Fatalf("failed to chmod log directory [%s]: %v", dir, err)
+	}
+
 	return &eventWriter{
 		dir:         dir,
 		maxFileSize: MaxFileSize,
@@ -120,6 +135,8 @@ func (e *eventWriter) openNewLogWriter() error {
 		err = os.Rename(oldFile, newFile)
 		if err != nil {
 			klog.Errorf("failed to rename %s to %s", oldFile, newFile)
+			// if rename failed, return error
+			return err
 		}
 
 		// remove the old files
@@ -135,8 +152,6 @@ func (e *eventWriter) openNewLogWriter() error {
 				}
 			}
 		}
-
-		return nil
 	}
 
 	newLogWriter, err := OpenLogWriter(e.dir + "/audit.log")
@@ -212,6 +227,10 @@ func listAuditfiles(dir string) ([]string, error) {
 	pattern := fmt.Sprintf("%s/audit-*.log", dir)
 	files, err := filepath.Glob(pattern)
 	if err == nil {
+		// reverse files
+		for i, j := 0, len(files)-1; i < j; i, j = i+1, j-1 {
+			files[i], files[j] = files[j], files[i]
+		}
 		auditFiles = append(auditFiles, files...)
 	}
 	return auditFiles, nil

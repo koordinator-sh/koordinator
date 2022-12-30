@@ -49,4 +49,6 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.LogDir, "audit-log-dir", c.LogDir, "The dir of audit log")
 	fs.IntVar(&c.Verbose, "audit-verbose", c.Verbose, "The verbose of the audit log")
 	fs.IntVar(&c.MaxDiskSpaceMB, "audit-max-disk-space-mb", c.MaxDiskSpaceMB, "Max disk space occupied of audit log")
+	fs.IntVar(&c.MaxConcurrentReaders, "audit-max-concurrent-readers", c.MaxConcurrentReaders, "Max concurrent readers of the audit log")
+	fs.IntVar(&c.MaxEventsLimit, "audit-max-events-limit", c.MaxEventsLimit, "Max events limit in one request of the audit log")
 }
