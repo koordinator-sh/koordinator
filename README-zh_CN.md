@@ -47,7 +47,7 @@ Koordinator 社区遵照[行为守则](CODE_OF_CONDUCT.md)。我们鼓励每个�
 
 ## 成员
 
-我们鼓励所有贡献者成为成员。我们的目标是发展一个由贡献者、审阅者和代码所有者组成的活跃、健康的社区。在我们的[社区成员](docs/community/community-membership.md)页面，详细了解我们的成员要求和责任。
+我们鼓励所有贡献者成为成员。我们的目标是发展一个由贡献者、审阅者和代码所有者组成的活跃、健康的社区。在我们的[社区成员](https://github.com/koordinator-sh/community/blob/main/community-membership.md)页面，详细了解我们的成员要求和责任。
 
 ## 社区
 
