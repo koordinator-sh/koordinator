@@ -236,6 +236,30 @@ func Test_matchReservationPorts(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "match host port 0",
+			args: args{
+				pod: &corev1.Pod{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Ports: []corev1.ContainerPort{
+									{
+										HostIP: "0.0.0.0",
+									},
+								},
+							},
+						},
+					},
+				},
+				r: &reservationInfo{
+					Port: framework.HostPortInfo{
+						"192.168.0.1": map[framework.ProtocolPort]struct{}{},
+					},
+				},
+			},
+			want: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
