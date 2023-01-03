@@ -125,6 +125,9 @@ func validateResources(pod *corev1.Pod) field.ErrorList {
 	resourceValidator := NewRequestLimitValidator(pod)
 	switch qos {
 	case extension.QoSLSR:
+		// FIXME
+		// 1. CPU should be integer
+		// 2. Consider whether to cannel the restriction that memory must be equal
 		resourceValidator = resourceValidator.
 			ExpectRequestLimitMustEqual(corev1.ResourceCPU).
 			ExpectRequestLimitMustEqual(corev1.ResourceMemory).
@@ -133,18 +136,19 @@ func validateResources(pod *corev1.Pod) field.ErrorList {
 		switch extension.GetPriorityClass(pod) {
 		case extension.PriorityProd:
 			resourceValidator = resourceValidator.
-				ExpectRequestLessThanLimit(corev1.ResourceCPU, true, true, false).
-				ExpectRequestLimitShouldEqual(corev1.ResourceMemory).
+				ExpectRequestNoMoreThanLimit(corev1.ResourceCPU).
+				ExpectRequestNoMoreThanLimit(corev1.ResourceMemory).
 				ExpectPositive()
 		case extension.PriorityBatch:
 			resourceValidator = resourceValidator.
-				ExpectRequestLessThanLimit(extension.BatchMemory, true, true, false).
+				ExpectRequestNoMoreThanLimit(extension.BatchCPU).
+				ExpectRequestNoMoreThanLimit(extension.BatchMemory).
 				ExpectPositive()
 		}
 	case extension.QoSBE:
 		resourceValidator = resourceValidator.
-			ExpectRequestLessThanLimit(extension.BatchCPU, true, true, true).
-			ExpectRequestLessThanLimit(extension.BatchMemory, true, true, true).
+			ExpectRequestNoMoreThanLimit(extension.BatchCPU).
+			ExpectRequestNoMoreThanLimit(extension.BatchMemory).
 			ExpectPositive()
 	}
 	return resourceValidator.Validate()

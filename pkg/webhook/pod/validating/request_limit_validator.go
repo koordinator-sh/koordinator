@@ -89,35 +89,14 @@ func (v *requestLimitValidator) ExpectRequestLimitMustEqual(resourceName corev1.
 	return v
 }
 
-func (v *requestLimitValidator) ExpectRequestLessThanLimit(resourceName corev1.ResourceName, canEqual bool, requestRequired bool, limitRequired bool) *requestLimitValidator {
+func (v *requestLimitValidator) ExpectRequestNoMoreThanLimit(resourceName corev1.ResourceName) *requestLimitValidator {
 	v.predicates = append(v.predicates, func(container *corev1.Container) field.ErrorList {
 		allErrs := field.ErrorList{}
 		fieldPath := field.NewPath("pod.spec.containers", container.Name, "resources")
-		requestQuantity, ok := container.Resources.Requests[resourceName]
-		if !ok {
-			if requestRequired {
-				errDetail := fmt.Sprintf("request of container %s does not have resource %s", container.Name, resourceName)
-				allErrs = append(allErrs, field.Required(fieldPath.Child("requests", string(resourceName)), errDetail))
-			}
-		}
+		requestQuantity, _ := container.Resources.Requests[resourceName]
 		limitQuantity, ok := container.Resources.Limits[resourceName]
-		if !ok {
-			if limitRequired {
-				errDetail := fmt.Sprintf("limit of container %s does not have resource %s", container.Name, resourceName)
-				allErrs = append(allErrs, field.Required(fieldPath.Child("limits", string(resourceName)), errDetail))
-			}
-		}
-		var valid bool
-		if cmp := requestQuantity.Cmp(limitQuantity); canEqual {
-			valid = cmp <= 0
-		} else {
-			valid = cmp < 0
-		}
-		if !valid {
-			op := "<"
-			if canEqual {
-				op = "<="
-			}
+		if cmp := requestQuantity.Cmp(limitQuantity); ok && cmp > 0 {
+			op := "<="
 			errDetail := fmt.Sprintf("container %s: resource %s quantity should satisify request %s limit",
 				container.Name, resourceName, op)
 			allErrs = append(allErrs, field.Forbidden(fieldPath, errDetail))
