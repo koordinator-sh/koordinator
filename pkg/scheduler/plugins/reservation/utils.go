@@ -256,7 +256,7 @@ func matchReservation(pod *corev1.Pod, rMeta *reservationInfo) bool {
 func matchReservationPort(pod *corev1.Pod, rMeta *reservationInfo) bool {
 	for _, container := range pod.Spec.Containers {
 		for _, podPort := range container.Ports {
-			if !rMeta.Port.CheckConflict(podPort.HostIP, string(podPort.Protocol), podPort.HostPort) {
+			if podPort.HostPort > 0 && !rMeta.Port.CheckConflict(podPort.HostIP, string(podPort.Protocol), podPort.HostPort) {
 				return false
 			}
 		}
