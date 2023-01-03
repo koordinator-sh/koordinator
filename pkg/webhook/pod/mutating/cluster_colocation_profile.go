@@ -203,8 +203,8 @@ func (h *PodMutatingHandler) mutatePodResourceSpec(pod *corev1.Pod) error {
 			replaceAndEraseResource(priorityClass, container.Resources.Limits, corev1.ResourceCPU)
 			replaceAndEraseResource(priorityClass, container.Resources.Limits, corev1.ResourceMemory)
 
-			restrictResourceRequestAndLimit(priorityClass, container.Resources.Requests, container.Resources.Limits, corev1.ResourceCPU)
-			restrictResourceRequestAndLimit(priorityClass, container.Resources.Requests, container.Resources.Limits, corev1.ResourceMemory)
+			restrictResourceRequestAndLimit(priorityClass, &container.Resources, corev1.ResourceCPU)
+			restrictResourceRequestAndLimit(priorityClass, &container.Resources, corev1.ResourceMemory)
 		}
 	}
 
@@ -230,17 +230,18 @@ func replaceAndEraseResource(priorityClass extension.PriorityClass, resourceList
 	}
 }
 
-func restrictResourceRequestAndLimit(priorityClass extension.PriorityClass, requests, limits corev1.ResourceList, resourceName corev1.ResourceName) {
+// TODO move the hook to pod mutating for all Pods
+func restrictResourceRequestAndLimit(priorityClass extension.PriorityClass, requirements *corev1.ResourceRequirements, resourceName corev1.ResourceName) {
 	extendResourceName := extension.ResourceNameMap[priorityClass][resourceName]
 	if extendResourceName == "" {
 		return
 	}
-	requestQuantity, requestOK := requests[extendResourceName]
-	limitQuantity, limitOK := limits[extendResourceName]
-	if requestOK && !limitOK {
-		// missing limits
-		limits[extendResourceName] = requestQuantity
-	} else if !requestOK && limitOK {
-		requests[extendResourceName] = limitQuantity
+	_, requestOK := requirements.Requests[extendResourceName]
+	limitQuantity, limitOK := requirements.Limits[extendResourceName]
+	if !requestOK && limitOK {
+		if requirements.Requests == nil {
+			requirements.Requests = corev1.ResourceList{}
+		}
+		requirements.Requests[extendResourceName] = limitQuantity
 	}
 }
