@@ -385,7 +385,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			newPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
+						extension.LabelPodQoS: string(extension.QoSLSR),
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -399,7 +399,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 									corev1.ResourceMemory: resource.MustParse("8Gi"),
 								},
 								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceCPU:    resource.MustParse("2"),
 									corev1.ResourceMemory: resource.MustParse("4Gi"),
 								},
 							},
@@ -408,7 +408,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  `pod.spec.containers.test-container-a.resources: Forbidden: resource memory of container test-container-a: quantity of request and limit should be equal`,
+			wantReason:  `pod.spec.containers.test-container-a.resources: Forbidden: resource memory of container test-container-a: quantity of request and limit must be equal`,
 		},
 		{
 			name:      "forbidden resources - LSR And Prod: missing CPU/Memory",
@@ -559,7 +559,8 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive]`,
 		},
 		{
-			name:      "forbidden resources - LS And Prod: requests has cpu/memory and missing limits",
+			//name:      "allow resources - LS And Prod: requests has cpu/memory and missing limits",
+			name:      "mark",
 			operation: admissionv1.Create,
 			newPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -583,11 +584,10 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 			},
-			wantAllowed: false,
-			wantReason:  `pod.spec.containers.test-container-a.resources: Forbidden: container test-container-a: resource cpu quantity should satisify request <= limit`,
+			wantAllowed: true,
 		},
 		{
-			name:      "forbidden resources - LS And Prod: forbidden missing requests but has limits",
+			name:      "allow resources - LS And Prod: missing requests but has limits",
 			operation: admissionv1.Create,
 			newPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -611,11 +611,10 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 			},
-			wantAllowed: false,
-			wantReason:  `pod.spec.containers.test-container-a.resources.requests.cpu: Required value: request of container test-container-a does not have resource cpu`,
+			wantAllowed: true,
 		},
 		{
-			name:      "forbidden resources - LS And Batch: forbidden missing requests but has limits",
+			name:      "allow resources - LS And Batch: missing requests but has limits",
 			operation: admissionv1.Create,
 			newPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -639,8 +638,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 			},
-			wantAllowed: false,
-			wantReason:  `pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Required value: request of container test-container-a does not have resource kubernetes.io/batch-memory`,
+			wantAllowed: true,
 		},
 		{
 			name:      "forbidden resources - BE And Batch: negative resource requirements",
@@ -674,7 +672,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive]`,
 		},
 		{
-			name:      "forbidden resources - BE And Batch: requests has cpu/memory and missing limits",
+			name:      "allow resources - BE And Batch: requests has cpu/memory and missing limits",
 			operation: admissionv1.Create,
 			newPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -698,11 +696,10 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 			},
-			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-cpu: Required value: limit of container test-container-a does not have resource kubernetes.io/batch-cpu, pod.spec.containers.test-container-a.resources: Forbidden: container test-container-a: resource kubernetes.io/batch-cpu quantity should satisify request <= limit, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-memory: Required value: limit of container test-container-a does not have resource kubernetes.io/batch-memory, pod.spec.containers.test-container-a.resources: Forbidden: container test-container-a: resource kubernetes.io/batch-memory quantity should satisify request <= limit]`,
+			wantAllowed: true,
 		},
 		{
-			name:      "forbidden resources - BE And Batch: limits has cpu/memory and missing requests",
+			name:      "allow resources - BE And Batch: limits has cpu/memory and missing requests",
 			operation: admissionv1.Create,
 			newPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -726,8 +723,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 			},
-			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-cpu: Required value: request of container test-container-a does not have resource kubernetes.io/batch-cpu, pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Required value: request of container test-container-a does not have resource kubernetes.io/batch-memory]`,
+			wantAllowed: true,
 		},
 		{
 			name:      "validate resources - BE And Batch: request memory must equal limits and cpu less than limits",
@@ -835,6 +831,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				t.Errorf("clusterColocationProfileValidatingPod():\n"+
 					"gotReason = %v,\n"+
 					"want = %v", gotReason, tt.wantReason)
+				t.Errorf("got=%v, want=%v", len(gotReason), len(tt.wantReason))
 			}
 		})
 	}
