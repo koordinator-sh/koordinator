@@ -218,6 +218,7 @@ func (c *collector) collectNodeResUsed() {
 	// update collect time
 	c.state.RefreshTime(nodeResUsedUpdateTime)
 	metrics.RecordNodeUsedCPU(cpuUsageValue * 1000)
+	metrics.RecordNodeUsedMemory(float64(memUsageValue * 1024))
 
 	klog.Infof("collectNodeResUsed finished %+v", nodeMetric)
 }
@@ -399,6 +400,7 @@ func (c *collector) collectNodeCPUInfo() {
 func (c *collector) collectPodThrottledInfo() {
 	klog.V(6).Info("start collectPodThrottledInfo")
 	podMetas := c.statesInformer.GetAllPods()
+	resetPodMetrics()
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
@@ -431,6 +433,7 @@ func (c *collector) collectPodThrottledInfo() {
 				ThrottledRatio: cpuThrottledRatio,
 			},
 		}
+		metrics.RecordPodCPUThrottledRatio(meta.Pod.Namespace, meta.Pod.Name, cpuThrottledRatio)
 		err = c.metricCache.InsertPodThrottledMetrics(collectTime, podMetric)
 		if err != nil {
 			klog.Infof("insert pod %s/%s, uid %s cpu throttled metric failed, metric %v, err %v",
@@ -488,6 +491,7 @@ func (c *collector) collectContainerThrottledInfo(podMeta *statesinformer.PodMet
 				ThrottledRatio: cpuThrottledRatio,
 			},
 		}
+		metrics.RecordContainerCPUThrottledRatio(pod.Namespace, pod.Name, containerStat.ContainerID, containerStat.Name, cpuThrottledRatio)
 		err = c.metricCache.InsertContainerThrottledMetrics(collectTime, containerMetric)
 		if err != nil {
 			klog.Warningf("insert container throttled metrics failed, err %v", err)
@@ -527,4 +531,9 @@ func (c *collector) cleanupContext() {
 	klog.V(4).Infof("clear outdated last stat, remaining size: lastPodCPUStat=%v, lastContainerCPUStat=%v, "+
 		"lastPodCPUThrottled=%v, lastContainerCPUThrottled=%v", lastPodCPUStatSize, lastContainerCPUStatSize,
 		lastPodCPUThrottledSize, lastContainerCPUThrottledSize)
+}
+
+func resetPodMetrics() {
+	metrics.ResetPodCPUThrottledRatio()
+	metrics.ResetContainerCPUThrottledRatio()
 }

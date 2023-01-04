@@ -44,11 +44,18 @@ var (
 		Help:      "Number of cpu cores used by node in realtime",
 	}, []string{NodeKey})
 
+	NodeUsedMemory = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "node_used_memory_bytes",
+		Help:      "Number of memory bytes used by node in realtime",
+	}, []string{NodeKey})
+
 	CommonCollectors = []prometheus.Collector{
 		KoordletStartTime,
 		CollectNodeCPUInfoStatus,
 		PodEviction,
 		NodeUsedCPU,
+		NodeUsedMemory,
 	}
 )
 
@@ -86,4 +93,12 @@ func RecordNodeUsedCPU(value float64) {
 		return
 	}
 	NodeUsedCPU.With(labels).Set(value)
+}
+
+func RecordNodeUsedMemory(value float64) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	NodeUsedMemory.With(labels).Set(value)
 }
