@@ -23,7 +23,8 @@ const (
 	ReasonUpdateSystemConfig = "UpdateSystemConfig"
 	ReasonUpdateResctrl      = "UpdateResctrl" // update resctrl tasks, schemata
 
-	EvictPodByNodeMemoryUsage = "EvictPodByNodeMemoryUsage"
+	EvictPodByNodeMemoryUsage   = "EvictPodByNodeMemoryUsage"
+	EvictPodByBECPUSatisfaction = "EvictPodByBECPUSatisfaction"
 
 	AdjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
 )

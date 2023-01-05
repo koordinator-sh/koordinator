@@ -25,6 +25,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -75,7 +76,8 @@ func getBECPURealMilliLimit() (int, error) {
 	}
 	limit = len(cpuSet) * 1000
 
-	cfsQuota, err := koordletutil.GetRootCgroupCurCFSQuota(corev1.PodQOSBestEffort)
+	BECgroupParentDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	cfsQuota, err := resourceexecutor.NewCgroupReader().ReadCPUQuota(BECgroupParentDir)
 	if err != nil {
 		return 0, err
 	}
@@ -85,7 +87,7 @@ func getBECPURealMilliLimit() (int, error) {
 		return limit, nil
 	}
 
-	cfsPeriod, err := koordletutil.GetRootCgroupCurCFSPeriod(corev1.PodQOSBestEffort)
+	cfsPeriod, err := resourceexecutor.NewCgroupReader().ReadCPUPeriod(BECgroupParentDir)
 	if err != nil {
 		return 0, err
 	}
@@ -117,8 +119,8 @@ func (c *collector) getBECPUUsageCores() (*resource.Quantity, error) {
 	klog.V(6).Info("getBECPUUsageCores start")
 
 	collectTime := time.Now()
-
-	currentCPUUsage, err := koordletutil.GetRootCgroupCPUUsageNanoseconds(corev1.PodQOSBestEffort)
+	BECgroupParentDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	currentCPUUsage, err := c.cgroupReader.ReadCPUAcctUsage(BECgroupParentDir)
 	if err != nil {
 		klog.Warningf("failed to collect be cgroup usage, error: %v", err)
 		return nil, err

@@ -375,11 +375,11 @@ func isEqualTopo(OldTopo map[string]string, NewTopo map[string]string) bool {
 	for _, key := range keyslice {
 		err := json.Unmarshal([]byte(OldTopo[key]), &OldData)
 		if err != nil {
-			klog.Errorf("failed to unmarshal, err: %v,and key: %v", err, key)
+			klog.V(5).Infof("failed to unmarshal, err: %v,and key: %v", err, key)
 		}
 		err1 := json.Unmarshal([]byte(NewTopo[key]), &NewData)
 		if err1 != nil {
-			klog.Errorf("failed to unmarshal, err: %v,and key: %v", err1, key)
+			klog.V(5).Infof("failed to unmarshal, err: %v,and key: %v", err1, key)
 		}
 		if !reflect.DeepEqual(OldData, NewData) {
 			return false
