@@ -970,7 +970,7 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 			if tt.args.currentPolicyStatus != nil {
 				cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = *tt.args.currentPolicyStatus
 			}
-			cpuSuppress.recoverCPUSetIfNeed(containerCgroupPathRelativeDepth)
+			cpuSuppress.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
 			gotPolicyStatus := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)]
 			assert.Equal(t, *tt.wantPolicyStatus, gotPolicyStatus, "checkStatus")
 			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
@@ -1197,7 +1197,7 @@ func Test_cpuSuppress_applyCPUSetWithNonePolicy(t *testing.T) {
 	cpuset := []int32{3, 2, 1}
 	wantCPUSetStr := "1-3"
 
-	oldCPUSet, err := koordletutil.GetRootCgroupCurCPUSet(corev1.PodQOSBestEffort)
+	oldCPUSet, err := koordletutil.GetBECgroupCurCPUSet()
 	assert.NoError(t, err)
 
 	r := newTestCPUSuppress(nil)
@@ -1226,7 +1226,7 @@ func Test_getBECgroupCPUSetPathsRecursive(t *testing.T) {
 		wantPaths = append(wantPaths, filepath.Join(koordletutil.GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort), podDir))
 	}
 
-	paths, err := getBECPUSetPathsByMaxDepth(containerCgroupPathRelativeDepth)
+	paths, err := koordletutil.GetBECPUSetPathsByMaxDepth(koordletutil.ContainerCgroupPathRelativeDepth)
 	assert.NoError(t, err)
 	assert.Equal(t, len(wantPaths), len(paths))
 }
