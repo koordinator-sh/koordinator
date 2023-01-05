@@ -125,11 +125,11 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 	go wait.Until(func() {
 		c.collectGPUUsage()
 		c.collectNodeResUsed()
-		// add sync metaService cache check before collect pod information
+		// add sync statesInformer cache check before collect pod information
 		// because collect function will get all pods.
 		if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
-			klog.Errorf("timed out waiting for meta service caches to sync")
-			// Koordlet exit because of metaService sync failed.
+			klog.Errorf("timed out waiting for states informer caches to sync")
+			// Koordlet exit because of statesInformer sync failed.
 			os.Exit(1)
 			return
 		}
@@ -142,11 +142,11 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 
 	ic := NewPerformanceCollector(c.statesInformer, c.metricCache, c.config.CPICollectorTimeWindowSeconds)
 	util.RunFeature(func() {
-		// add sync metaService cache check before collect pod information
+		// add sync statesInformer cache check before collect pod information
 		// because collect function will get all pods.
 		if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
-			// Koordlet exit because of metaService sync failed.
-			klog.Fatalf("timed out waiting for meta service caches to sync")
+			// Koordlet exit because of statesInformer sync failed.
+			klog.Fatalf("timed out waiting for states informer caches to sync")
 			return
 		}
 		ic.collectContainerCPI()
@@ -158,11 +158,11 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 			klog.Fatalf("collect psi fail, need anolis os")
 			return
 		}
-		// add sync metaService cache check before collect pod information
+		// add sync statesInformer cache check before collect pod information
 		// because collect function will get all pods.
 		if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
-			// Koordlet exit because of metaService sync failed.
-			klog.Fatalf("timed out waiting for meta service caches to sync")
+			// Koordlet exit because of statesInformer sync failed.
+			klog.Fatalf("timed out waiting for states informer caches to sync")
 			return
 		}
 		ic.collectContainerPSI()
@@ -217,7 +217,7 @@ func (c *collector) collectNodeResUsed() {
 
 	// update collect time
 	c.state.RefreshTime(nodeResUsedUpdateTime)
-	metrics.RecordNodeUsedCPU(cpuUsageValue * 1000)
+	metrics.RecordNodeUsedCPU(cpuUsageValue) // in cpu cores
 
 	klog.Infof("collectNodeResUsed finished %+v", nodeMetric)
 }
