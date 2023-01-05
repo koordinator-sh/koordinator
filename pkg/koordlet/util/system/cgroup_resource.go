@@ -205,10 +205,10 @@ var (
 	MemoryUsePriorityOom   = DefaultFactory.New(MemoryUsePriorityOomName, CgroupMemDir).WithValidator(MemoryUsePriorityOomValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryUsePriorityOomName, CgroupMemDir))
 	MemoryOomGroup         = DefaultFactory.New(MemoryOomGroupName, CgroupMemDir).WithValidator(MemoryOomGroupValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryOomGroupName, CgroupMemDir))
 
-	BlkioReadIops  = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
-	BlkioReadBps   = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
-	BlkioWriteIops = DefaultFactory.New(BlkioTWIopsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
-	BlkioWriteBps  = DefaultFactory.New(BlkioTWBpsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
+	BlkioReadIops  = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir) // TODO: add validator for blkio.throttle
+	BlkioReadBps   = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir)
+	BlkioWriteIops = DefaultFactory.New(BlkioTWIopsName, CgroupBlkioDir)
+	BlkioWriteBps  = DefaultFactory.New(BlkioTWBpsName, CgroupBlkioDir)
 
 	knownCgroupResources = []Resource{
 		CPUStat,
@@ -255,9 +255,9 @@ var (
 	MemoryLimitV2            = DefaultFactory.NewV2(MemoryLimitName, MemoryMaxName)
 	MemoryUsageV2            = DefaultFactory.NewV2(MemoryUsageName, MemoryCurrentName)
 	MemoryStatV2             = DefaultFactory.NewV2(MemoryStatName, MemoryStatName)
-	MemoryMinV2              = DefaultFactory.NewV2(MemoryMinName, MemoryMinName)
-	MemoryLowV2              = DefaultFactory.NewV2(MemoryLowName, MemoryLowName)
-	MemoryHighV2             = DefaultFactory.NewV2(MemoryHighName, MemoryHighName)
+	MemoryMinV2              = DefaultFactory.NewV2(MemoryMinName, MemoryMinName).WithValidator(NaturalInt64Validator)
+	MemoryLowV2              = DefaultFactory.NewV2(MemoryLowName, MemoryLowName).WithValidator(NaturalInt64Validator)
+	MemoryHighV2             = DefaultFactory.NewV2(MemoryHighName, MemoryHighName).WithValidator(NaturalInt64Validator)
 	MemoryWmarkRatioV2       = DefaultFactory.NewV2(MemoryWmarkRatioName, MemoryWmarkRatioName).WithValidator(MemoryWmarkRatioValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryWmarkScaleFactorV2 = DefaultFactory.NewV2(MemoryWmarkScaleFactorName, MemoryWmarkScaleFactorName).WithValidator(MemoryWmarkScaleFactorFileNameValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryWmarkMinAdjV2      = DefaultFactory.NewV2(MemoryWmarkMinAdjName, MemoryWmarkMinAdjName).WithValidator(MemoryWmarkMinAdjValidator).WithCheckSupported(SupportedIfFileExists)
