@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
@@ -91,6 +92,16 @@ func (f fakeReservationInterpreter) DeleteReservation(ctx context.Context, reser
 	return f.deleteErr
 }
 
+type fakeControllerFinder struct {
+	pods     []*corev1.Pod
+	replicas int32
+	err      error
+}
+
+func (f *fakeControllerFinder) GetPodsForRef(apiVersion, kind, name, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, int32, error) {
+	return f.pods, f.replicas, f.err
+}
+
 func newTestReconciler() *Reconciler {
 	scheme := runtime.NewScheme()
 	_ = sev1alpha1.AddToScheme(scheme)
@@ -106,13 +117,13 @@ func newTestReconciler() *Reconciler {
 		panic(err)
 	}
 
-	runtimeclient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	runtimeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	eventBroadcaster := record.NewBroadcaster()
 	recorder := eventBroadcaster.NewRecorder(scheme, corev1.EventSource{Component: Name})
 
 	nodesGetter := func() ([]*corev1.Node, error) {
 		var nodeList corev1.NodeList
-		err := runtimeclient.List(context.TODO(), &nodeList)
+		err := runtimeClient.List(context.TODO(), &nodeList)
 		if err != nil {
 			return nil, err
 		}
@@ -138,9 +149,9 @@ func newTestReconciler() *Reconciler {
 		panic(err)
 	}
 
-	controllerFinder := &controllerfinder.ControllerFinder{Client: runtimeclient}
+	controllerFinder := &controllerfinder.ControllerFinder{Client: runtimeClient}
 	r := &Reconciler{
-		Client:                 runtimeclient,
+		Client:                 runtimeClient,
 		args:                   &args,
 		eventRecorder:          record.NewEventRecorderAdapter(recorder),
 		reservationInterpreter: nil,
@@ -1548,4 +1559,760 @@ func TestAbortJobIfUnretriablePodFilterFailed(t *testing.T) {
 	assert.NoError(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
 	assert.Equal(t, sev1alpha1.PodMigrationJobFailed, job.Status.Phase)
 	assert.Equal(t, sev1alpha1.PodMigrationJobReasonForbiddenMigratePod, job.Status.Reason)
+}
+
+func TestFilterExistingMigrationJob(t *testing.T) {
+	reconciler := newTestReconciler()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod",
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node",
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
+
+	job := &sev1alpha1.PodMigrationJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test",
+			CreationTimestamp: metav1.Time{Time: time.Now()},
+		},
+		Spec: sev1alpha1.PodMigrationJobSpec{
+			PodRef: &corev1.ObjectReference{
+				Namespace: "default",
+				Name:      "test-pod",
+				UID:       pod.UID,
+			},
+		},
+	}
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
+
+	assert.False(t, reconciler.filterExistingPodMigrationJob(pod))
+}
+
+func TestFilterMaxMigratingPerNode(t *testing.T) {
+	tests := []struct {
+		name             string
+		numMigratingPods int
+		samePod          bool
+		sameNode         bool
+		maxMigrating     int32
+		want             bool
+	}{
+		{
+			name: "maxMigrating=0",
+			want: true,
+		},
+		{
+			name:         "maxMigrating=1 no migrating Pods",
+			maxMigrating: 1,
+			want:         true,
+		},
+		{
+			name:             "maxMigrating=1 one migrating Pod with same Pod and Node",
+			numMigratingPods: 1,
+			samePod:          true,
+			sameNode:         true,
+			maxMigrating:     1,
+			want:             true,
+		},
+		{
+			name:             "maxMigrating=1 one migrating Pod with diff Pod and same Node",
+			numMigratingPods: 1,
+			samePod:          false,
+			sameNode:         true,
+			maxMigrating:     1,
+			want:             false,
+		},
+		{
+			name:             "maxMigrating=1 one migrating Pod with diff Pod and Node",
+			numMigratingPods: 1,
+			samePod:          false,
+			sameNode:         false,
+			maxMigrating:     1,
+			want:             true,
+		},
+		{
+			name:             "maxMigrating=2 two migrating Pod with same Pod and Node",
+			numMigratingPods: 2,
+			samePod:          true,
+			sameNode:         true,
+			maxMigrating:     2,
+			want:             true,
+		},
+		{
+			name:             "maxMigrating=2 two migrating Pod with diff Pod and Node",
+			numMigratingPods: 2,
+			samePod:          false,
+			sameNode:         false,
+			maxMigrating:     2,
+			want:             true,
+		},
+		{
+			name:             "maxMigrating=2 two migrating Pod with diff Pod and same Node",
+			numMigratingPods: 2,
+			samePod:          false,
+			sameNode:         true,
+			maxMigrating:     2,
+			want:             false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reconciler := newTestReconciler()
+			reconciler.args.MaxMigratingPerNode = pointer.Int32(tt.maxMigrating)
+
+			var migratingPods []*corev1.Pod
+			for i := 0; i < tt.numMigratingPods; i++ {
+				pod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      fmt.Sprintf("test-migrating-pod-%d", i),
+						UID:       uuid.NewUUID(),
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "test-node",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				}
+				migratingPods = append(migratingPods, pod)
+
+				assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
+
+				job := &sev1alpha1.PodMigrationJob{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              fmt.Sprintf("test-%d", i),
+						CreationTimestamp: metav1.Time{Time: time.Now()},
+					},
+					Spec: sev1alpha1.PodMigrationJobSpec{
+						PodRef: &corev1.ObjectReference{
+							Namespace: pod.Namespace,
+							Name:      pod.Name,
+							UID:       pod.UID,
+						},
+					},
+				}
+				assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
+			}
+
+			var filterPod *corev1.Pod
+			if tt.samePod && len(migratingPods) > 0 {
+				filterPod = migratingPods[0]
+			}
+			if filterPod == nil {
+				filterPod = &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      fmt.Sprintf("test-pod-%s", uuid.NewUUID()),
+						UID:       uuid.NewUUID(),
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				}
+			}
+			if tt.sameNode {
+				filterPod.Spec.NodeName = "test-node"
+			} else {
+				filterPod.Spec.NodeName = "test-other-node"
+			}
+
+			got := reconciler.filterMaxMigratingPerNode(filterPod)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFilterMaxMigratingPerNamespace(t *testing.T) {
+	tests := []struct {
+		name             string
+		numMigratingPods int
+		samePod          bool
+		sameNamespace    bool
+		maxMigrating     int32
+		want             bool
+	}{
+		{
+			name: "maxMigrating=0",
+			want: true,
+		},
+		{
+			name:         "maxMigrating=1 no migrating Pods",
+			maxMigrating: 1,
+			want:         true,
+		},
+		{
+			name:             "maxMigrating=1 one migrating Pod with same Pod and Namespace",
+			numMigratingPods: 1,
+			samePod:          true,
+			sameNamespace:    true,
+			maxMigrating:     1,
+			want:             true,
+		},
+		{
+			name:             "maxMigrating=1 one migrating Pod with diff Pod and same Namespace",
+			numMigratingPods: 1,
+			samePod:          false,
+			sameNamespace:    true,
+			maxMigrating:     1,
+			want:             false,
+		},
+		{
+			name:             "maxMigrating=1 one migrating Pod with diff Pod and Namespace",
+			numMigratingPods: 1,
+			samePod:          false,
+			sameNamespace:    false,
+			maxMigrating:     1,
+			want:             true,
+		},
+		{
+			name:             "maxMigrating=2 two migrating Pod with same Pod and Namespace",
+			numMigratingPods: 2,
+			samePod:          true,
+			sameNamespace:    true,
+			maxMigrating:     2,
+			want:             true,
+		},
+		{
+			name:             "maxMigrating=2 two migrating Pod with diff Pod and Namespace",
+			numMigratingPods: 2,
+			samePod:          false,
+			sameNamespace:    false,
+			maxMigrating:     2,
+			want:             true,
+		},
+		{
+			name:             "maxMigrating=2 two migrating Pod with diff Pod and same Namespace",
+			numMigratingPods: 2,
+			samePod:          false,
+			sameNamespace:    true,
+			maxMigrating:     2,
+			want:             false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reconciler := newTestReconciler()
+			reconciler.args.MaxMigratingPerNamespace = pointer.Int32(tt.maxMigrating)
+
+			var migratingPods []*corev1.Pod
+			for i := 0; i < tt.numMigratingPods; i++ {
+				pod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      fmt.Sprintf("test-migrating-pod-%d", i),
+						UID:       uuid.NewUUID(),
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "test-node",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				}
+				migratingPods = append(migratingPods, pod)
+
+				assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
+
+				job := &sev1alpha1.PodMigrationJob{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              fmt.Sprintf("test-%d", i),
+						CreationTimestamp: metav1.Time{Time: time.Now()},
+					},
+					Spec: sev1alpha1.PodMigrationJobSpec{
+						PodRef: &corev1.ObjectReference{
+							Namespace: pod.Namespace,
+							Name:      pod.Name,
+							UID:       pod.UID,
+						},
+					},
+				}
+				assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
+			}
+
+			var filterPod *corev1.Pod
+			if tt.samePod && len(migratingPods) > 0 {
+				filterPod = migratingPods[0]
+			}
+			if filterPod == nil {
+				filterPod = &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      fmt.Sprintf("test-pod-%s", uuid.NewUUID()),
+						UID:       uuid.NewUUID(),
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "test-node",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				}
+			}
+			if !tt.sameNamespace {
+				filterPod.Namespace = "other-namespace"
+			}
+
+			got := reconciler.filterMaxMigratingPerNamespace(filterPod)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFilterMaxMigratingPerWorkload(t *testing.T) {
+	ownerReferences1 := []metav1.OwnerReference{
+		{
+			APIVersion: "apps/v1",
+			Controller: pointer.Bool(true),
+			Kind:       "StatefulSet",
+			Name:       "test-1",
+			UID:        uuid.NewUUID(),
+		},
+	}
+
+	ownerReferences2 := []metav1.OwnerReference{
+		{
+			APIVersion: "apps/v1",
+			Controller: pointer.Bool(true),
+			Kind:       "StatefulSet",
+			Name:       "test-2",
+			UID:        uuid.NewUUID(),
+		},
+	}
+	tests := []struct {
+		name             string
+		totalReplicas    int32
+		numMigratingPods int
+		samePod          bool
+		sameWorkload     bool
+		maxMigrating     int
+		want             bool
+	}{
+		{
+			name:             "totalReplicas=1 and maxMigrating=1",
+			totalReplicas:    1,
+			numMigratingPods: 0,
+			maxMigrating:     1,
+			samePod:          true,
+			sameWorkload:     true,
+			want:             false,
+		},
+		{
+			name:             "totalReplicas=100 and maxMigrating=100",
+			totalReplicas:    100,
+			numMigratingPods: 0,
+			maxMigrating:     100,
+			samePod:          true,
+			sameWorkload:     true,
+			want:             false,
+		},
+		{
+			name:             "totalReplicas=10 and maxMigrating=1 no migrating Pod",
+			totalReplicas:    10,
+			numMigratingPods: 0,
+			maxMigrating:     1,
+			samePod:          false,
+			sameWorkload:     false,
+			want:             true,
+		},
+		{
+			name:             "totalReplicas=10 and maxMigrating=1 one migrating Pod with same Pod and Workload",
+			totalReplicas:    10,
+			numMigratingPods: 1,
+			maxMigrating:     1,
+			samePod:          true,
+			sameWorkload:     true,
+			want:             true,
+		},
+		{
+			name:             "totalReplicas=10 and maxMigrating=1 one migrating Pod with diff Pod and same Workload",
+			totalReplicas:    10,
+			numMigratingPods: 1,
+			maxMigrating:     1,
+			samePod:          false,
+			sameWorkload:     true,
+			want:             false,
+		},
+		{
+			name:             "totalReplicas=10 and maxMigrating=1 one migrating Pod with diff Pod and diff Workload",
+			totalReplicas:    10,
+			numMigratingPods: 1,
+			maxMigrating:     1,
+			samePod:          false,
+			sameWorkload:     false,
+			want:             true,
+		},
+		{
+			name:             "totalReplicas=10 and maxMigrating=2 two migrating Pod with same Pod and Workload",
+			totalReplicas:    10,
+			numMigratingPods: 2,
+			maxMigrating:     2,
+			samePod:          true,
+			sameWorkload:     true,
+			want:             true,
+		},
+		{
+			name:             "totalReplicas=10 and maxMigrating=2 two migrating Pod with diff Pod and same Workload",
+			totalReplicas:    10,
+			numMigratingPods: 2,
+			maxMigrating:     2,
+			samePod:          false,
+			sameWorkload:     true,
+			want:             false,
+		},
+		{
+			name:             "totalReplicas=10 and maxMigrating=2 two migrating Pod with diff Pod and diff Workload",
+			totalReplicas:    10,
+			numMigratingPods: 2,
+			maxMigrating:     2,
+			samePod:          false,
+			sameWorkload:     false,
+			want:             true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reconciler := newTestReconciler()
+			intOrString := intstr.FromInt(tt.maxMigrating)
+			reconciler.args.MaxMigratingPerWorkload = &intOrString
+			maxUnavailable := intstr.FromInt(int(tt.totalReplicas - 1))
+			reconciler.args.MaxUnavailablePerWorkload = &maxUnavailable
+
+			var migratingPods []*corev1.Pod
+			for i := 0; i < tt.numMigratingPods; i++ {
+				pod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:       "default",
+						Name:            fmt.Sprintf("test-migrating-pod-%d", i),
+						UID:             uuid.NewUUID(),
+						OwnerReferences: ownerReferences1,
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "test-node",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+						Conditions: []corev1.PodCondition{
+							{
+								Type:   corev1.PodReady,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				}
+				migratingPods = append(migratingPods, pod)
+
+				assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
+
+				job := &sev1alpha1.PodMigrationJob{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              fmt.Sprintf("test-%d", i),
+						CreationTimestamp: metav1.Time{Time: time.Now()},
+					},
+					Spec: sev1alpha1.PodMigrationJobSpec{
+						PodRef: &corev1.ObjectReference{
+							Namespace: pod.Namespace,
+							Name:      pod.Name,
+							UID:       pod.UID,
+						},
+					},
+				}
+				assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
+			}
+
+			var filterPod *corev1.Pod
+			if tt.samePod && len(migratingPods) > 0 {
+				filterPod = migratingPods[0]
+			}
+			if filterPod == nil {
+				filterPod = &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:       "default",
+						Name:            fmt.Sprintf("test-pod-%s", uuid.NewUUID()),
+						UID:             uuid.NewUUID(),
+						OwnerReferences: ownerReferences1,
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "test-node",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				}
+			}
+			if !tt.sameWorkload {
+				filterPod.OwnerReferences = ownerReferences2
+			}
+
+			reconciler.controllerFinder = &fakeControllerFinder{
+				replicas: tt.totalReplicas,
+			}
+
+			got := reconciler.filterMaxMigratingOrUnavailablePerWorkload(filterPod)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
+	ownerReferences1 := []metav1.OwnerReference{
+		{
+			APIVersion: "apps/v1",
+			Controller: pointer.Bool(true),
+			Kind:       "StatefulSet",
+			Name:       "test-1",
+			UID:        uuid.NewUUID(),
+		},
+	}
+
+	ownerReferences2 := []metav1.OwnerReference{
+		{
+			APIVersion: "apps/v1",
+			Controller: pointer.Bool(true),
+			Kind:       "StatefulSet",
+			Name:       "test-2",
+			UID:        uuid.NewUUID(),
+		},
+	}
+	tests := []struct {
+		name               string
+		totalReplicas      int32
+		numUnavailablePods int
+		numMigratingPods   int
+		maxUnavailable     int
+		sameWorkload       bool
+		want               bool
+	}{
+		{
+			name:               "totalReplicas=1 and maxUnavailable=1",
+			totalReplicas:      1,
+			numUnavailablePods: 0,
+			maxUnavailable:     1,
+			sameWorkload:       true,
+			want:               false,
+		},
+		{
+			name:               "totalReplicas=100 and maxUnavailable=100",
+			totalReplicas:      100,
+			numUnavailablePods: 0,
+			maxUnavailable:     100,
+			sameWorkload:       true,
+			want:               false,
+		},
+		{
+			name:               "totalReplicas=10 and maxUnavailable=1 no migrating Pod and no unavailable Pod",
+			totalReplicas:      10,
+			numUnavailablePods: 0,
+			numMigratingPods:   0,
+			maxUnavailable:     1,
+			sameWorkload:       true,
+			want:               true,
+		},
+		{
+			name:               "totalReplicas=10 and maxUnavailable=1 one unavailable Pod with same Workload",
+			totalReplicas:      10,
+			numUnavailablePods: 1,
+			numMigratingPods:   0,
+			maxUnavailable:     1,
+			sameWorkload:       true,
+			want:               false,
+		},
+		{
+			name:               "totalReplicas=10 and maxUnavailable=1 one migrating Pod with same Workload",
+			totalReplicas:      10,
+			numUnavailablePods: 0,
+			numMigratingPods:   1,
+			maxUnavailable:     1,
+			sameWorkload:       true,
+			want:               false,
+		},
+		{
+			name:               "totalReplicas=10 and maxUnavailable=1 one unavailable Pod and one migrating Pod with same Workload",
+			totalReplicas:      10,
+			numUnavailablePods: 1,
+			maxUnavailable:     1,
+			sameWorkload:       true,
+			want:               false,
+		},
+
+		{
+			name:               "totalReplicas=10 and maxUnavailable=2 no migrating Pod and no unavailable Pod",
+			totalReplicas:      10,
+			numUnavailablePods: 0,
+			numMigratingPods:   0,
+			maxUnavailable:     2,
+			sameWorkload:       true,
+			want:               true,
+		},
+		{
+			name:               "totalReplicas=10 and maxUnavailable=2 one unavailable Pod with same Workload",
+			totalReplicas:      10,
+			numUnavailablePods: 1,
+			numMigratingPods:   0,
+			maxUnavailable:     2,
+			sameWorkload:       true,
+			want:               true,
+		},
+		{
+			name:               "totalReplicas=10 and maxUnavailable=2 one migrating Pod with same Workload",
+			totalReplicas:      10,
+			numUnavailablePods: 0,
+			numMigratingPods:   1,
+			maxUnavailable:     2,
+			sameWorkload:       true,
+			want:               true,
+		},
+		{
+			name:               "totalReplicas=10 and maxUnavailable=2 one unavailable Pod and one migrating Pod with same Workload",
+			totalReplicas:      10,
+			numUnavailablePods: 1,
+			numMigratingPods:   1,
+			maxUnavailable:     2,
+			sameWorkload:       true,
+			want:               false,
+		},
+		{
+			name:               "totalReplicas=10 and maxUnavailable=2 one unavailable Pod and one migrating Pod with diff Workload",
+			totalReplicas:      10,
+			numUnavailablePods: 1,
+			numMigratingPods:   1,
+			maxUnavailable:     2,
+			sameWorkload:       false,
+			want:               true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reconciler := newTestReconciler()
+			intOrString := intstr.FromInt(int(tt.totalReplicas - 1))
+			reconciler.args.MaxMigratingPerWorkload = &intOrString
+			maxUnavailable := intstr.FromInt(tt.maxUnavailable)
+			reconciler.args.MaxUnavailablePerWorkload = &maxUnavailable
+
+			var totalPods []*corev1.Pod
+			for i := 0; i < tt.numUnavailablePods; i++ {
+				pod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:       "default",
+						Name:            fmt.Sprintf("test-unavailable-pod-%d", i),
+						UID:             uuid.NewUUID(),
+						OwnerReferences: ownerReferences1,
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "test-node",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodPending,
+					},
+				}
+				totalPods = append(totalPods, pod)
+
+				assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
+			}
+
+			for i := 0; i < tt.numMigratingPods; i++ {
+				pod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:       "default",
+						Name:            fmt.Sprintf("test-migrating-pod-%d", i),
+						UID:             uuid.NewUUID(),
+						OwnerReferences: ownerReferences1,
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "test-node",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+						Conditions: []corev1.PodCondition{
+							{
+								Type:   corev1.PodReady,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				}
+				totalPods = append(totalPods, pod)
+
+				assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
+
+				job := &sev1alpha1.PodMigrationJob{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              fmt.Sprintf("test-%d", i),
+						CreationTimestamp: metav1.Time{Time: time.Now()},
+					},
+					Spec: sev1alpha1.PodMigrationJobSpec{
+						PodRef: &corev1.ObjectReference{
+							Namespace: pod.Namespace,
+							Name:      pod.Name,
+							UID:       pod.UID,
+						},
+					},
+				}
+				assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
+			}
+
+			for i := 0; i < int(tt.totalReplicas)-len(totalPods); i++ {
+				pod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:       "default",
+						Name:            fmt.Sprintf("test-available-pod-%d", i),
+						UID:             uuid.NewUUID(),
+						OwnerReferences: ownerReferences1,
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "test-node",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+						Conditions: []corev1.PodCondition{
+							{
+								Type:   corev1.PodReady,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				}
+				totalPods = append(totalPods, pod)
+			}
+
+			filterPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:       "default",
+					Name:            fmt.Sprintf("test-pod-%s", uuid.NewUUID()),
+					UID:             uuid.NewUUID(),
+					OwnerReferences: ownerReferences1,
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+				},
+			}
+			if !tt.sameWorkload {
+				filterPod.OwnerReferences = ownerReferences2
+			}
+
+			reconciler.controllerFinder = &fakeControllerFinder{
+				pods:     totalPods,
+				replicas: tt.totalReplicas,
+			}
+
+			got := reconciler.filterMaxMigratingOrUnavailablePerWorkload(filterPod)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
