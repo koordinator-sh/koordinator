@@ -37,10 +37,10 @@ import (
 
 func TestNewPerformanceCollector(t *testing.T) {
 	type args struct {
-		cfg         *Config
-		metaService statesinformer.StatesInformer
-		metricCache metriccache.MetricCache
-		timeWindow  int
+		cfg            *Config
+		statesInformer statesinformer.StatesInformer
+		metricCache    metriccache.MetricCache
+		timeWindow     int
 	}
 	tests := []struct {
 		name string
@@ -49,16 +49,16 @@ func TestNewPerformanceCollector(t *testing.T) {
 		{
 			name: "new-performance-collector",
 			args: args{
-				cfg:         &Config{},
-				metaService: nil,
-				metricCache: nil,
-				timeWindow:  10,
+				cfg:            &Config{},
+				statesInformer: nil,
+				metricCache:    nil,
+				timeWindow:     10,
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := NewPerformanceCollector(tt.args.metaService, tt.args.metricCache, tt.args.timeWindow); got == nil {
+			if got := NewPerformanceCollector(tt.args.statesInformer, tt.args.metricCache, tt.args.timeWindow); got == nil {
 				t.Errorf("NewPerformanceCollector() = %v", got)
 			}
 		})

@@ -18,10 +18,10 @@ package statesinformer
 
 import (
 	"flag"
-	"reflect"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -47,9 +47,8 @@ func TestNewDefaultConfig(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := NewDefaultConfig(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewDefaultConfig() = %v, want %v", got, tt.want)
-			}
+			got := NewDefaultConfig()
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -103,7 +102,6 @@ func TestConfig_InitFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			raw := &Config{
 				KubeletPreferredAddressType: tt.fields.KubeletPreferredAddressType,
 				KubeletSyncInterval:         tt.fields.KubeletSyncInterval,
@@ -111,15 +109,14 @@ func TestConfig_InitFlags(t *testing.T) {
 				InsecureKubeletTLS:          tt.fields.InsecureKubeletTLS,
 				KubeletReadOnlyPort:         tt.fields.KubeletReadOnlyPort,
 				NodeTopologySyncInterval:    tt.fields.NodeTopologySyncInterval,
-				DisableQueryKubeletConfig:   true,
-				EnableNodeMetricReport:      false,
+				DisableQueryKubeletConfig:   tt.fields.DisableQueryKubeletConfig,
+				EnableNodeMetricReport:      tt.fields.EnableNodeMetricReport,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)
-			tt.args.fs.Parse(cmdArgs[1:])
-			if !reflect.DeepEqual(raw, c) {
-				t.Fatalf("InitFlags got: \n%+v, \nwant: \n%+v", c, raw)
-			}
+			err := tt.args.fs.Parse(cmdArgs[1:])
+			assert.NoError(t, err)
+			assert.Equal(t, raw, c)
 		})
 	}
 }
