@@ -117,16 +117,7 @@ func (pe *PodEvictor) NamespaceLimitExceeded(namespace string) bool {
 }
 
 func (pe *PodEvictor) Evict(ctx context.Context, pod *corev1.Pod, opts framework.EvictOptions) bool {
-	if opts.PluginName == "" {
-		if ctx.Value("pluginName") != nil {
-			opts.PluginName = ctx.Value("pluginName").(string)
-		}
-	}
-	if opts.Reason == "" {
-		if ctx.Value("evictionReason") != nil {
-			opts.Reason = ctx.Value("evictionReason").(string)
-		}
-	}
+	framework.FillEvictOptionsFromContext(ctx, &opts)
 
 	nodeName := pod.Spec.NodeName
 	if pe.NodeLimitExceeded(nodeName) {

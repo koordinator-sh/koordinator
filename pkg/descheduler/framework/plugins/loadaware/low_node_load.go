@@ -19,6 +19,7 @@ package loadaware
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -163,7 +164,7 @@ func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framew
 	}
 
 	continueEvictionCond := func(nodeInfo NodeInfo, totalAvailableUsages map[corev1.ResourceName]*resource.Quantity) bool {
-		if !isNodeOverutilized(nodeInfo.NodeUsage.usage, nodeInfo.thresholds.highResourceThreshold) {
+		if _, overutilized := isNodeOverutilized(nodeInfo.NodeUsage.usage, nodeInfo.thresholds.highResourceThreshold); !overutilized {
 			return false
 		}
 		for _, resourceName := range resourceNames {
@@ -187,7 +188,9 @@ func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framew
 		l.podFilter,
 		l.handle.GetPodsAssignedToNodeFunc(),
 		resourceNames,
-		continueEvictionCond)
+		continueEvictionCond,
+		overUtilizedEvictionReason(highThresholds),
+	)
 
 	return nil
 }
@@ -232,7 +235,8 @@ func lowThresholdFilter(usage *NodeUsage, threshold NodeThresholds) bool {
 }
 
 func highThresholdFilter(usage *NodeUsage, threshold NodeThresholds) bool {
-	return isNodeOverutilized(usage.usage, threshold.highResourceThreshold)
+	_, overutilized := isNodeOverutilized(usage.usage, threshold.highResourceThreshold)
+	return overutilized
 }
 
 func filterNodes(nodeSelector *metav1.LabelSelector, nodes []*corev1.Node) ([]*corev1.Node, error) {
@@ -285,4 +289,19 @@ func logUtilizationCriteria(message string, thresholds deschedulerconfig.Resourc
 		utilizationCriteria = append(utilizationCriteria, string(name), int64(thresholds[name]))
 	}
 	klog.InfoS(message, utilizationCriteria...)
+}
+
+func overUtilizedEvictionReason(highThresholds deschedulerconfig.ResourceThresholds) evictionReasonGeneratorFn {
+	resourceNames := getResourceNames(highThresholds)
+	return func(nodeInfo NodeInfo) string {
+		overutilizedResources, _ := isNodeOverutilized(nodeInfo.usage, nodeInfo.thresholds.highResourceThreshold)
+		usagePercentages := resourceUsagePercentages(nodeInfo.NodeUsage)
+		var infos []string
+		for _, resourceName := range resourceNames {
+			if _, ok := overutilizedResources[resourceName]; ok {
+				infos = append(infos, fmt.Sprintf("%s usage(%.2f%%)>threshold(%.2f%%)", resourceName, usagePercentages[resourceName], highThresholds[resourceName]))
+			}
+		}
+		return fmt.Sprintf("node is overutilized, %s", strings.Join(infos, ", "))
+	}
 }
