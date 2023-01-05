@@ -69,7 +69,7 @@ func (c *collector) collectBECPUResourceMetric() {
 func getBECPURealMilliLimit() (int, error) {
 	limit := 0
 
-	cpuSet, err := koordletutil.GetRootCgroupCurCPUSet(corev1.PodQOSBestEffort)
+	cpuSet, err := koordletutil.GetBECgroupCurCPUSet()
 	if err != nil {
 		return 0, err
 	}
