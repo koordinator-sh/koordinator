@@ -5,7 +5,7 @@
 
 [![License](https://img.shields.io/github/license/koordinator-sh/koordinator.svg?color=4EB1BA&style=flat-square)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub release](https://img.shields.io/github/v/release/koordinator-sh/koordinator.svg?style=flat-square)](https://github.com/koordinator-sh/koordinator/releases/latest)
-[![CI](https://img.shields.io/github/workflow/status/koordinator-sh/koordinator/CI?label=CI&logo=github&style=flat-square)](https://github.com/koordinator-sh/koordinator/actions/workflows/ci.yaml)
+[![CI](https://img.shields.io/github/actions/workflow/status/koordinator-sh/koordinator/ci.yaml?label=CI&logo=github&style=flat-square&branch=main)](https://github.com/koordinator-sh/koordinator/actions/workflows/ci.yaml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/koordinator-sh/koordinator?style=flat-square)](https://goreportcard.com/report/github.com/koordinator-sh/koordinator)
 [![codecov](https://img.shields.io/codecov/c/github/koordinator-sh/koordinator?logo=codecov&style=flat-square)](https://codecov.io/github/koordinator-sh/koordinator)
 [![PRs Welcome](https://badgen.net/badge/PRs/welcome/green?icon=https://api.iconify.design/octicon:git-pull-request.svg?color=white&style=flat-square)](CONTRIBUTING.md)
