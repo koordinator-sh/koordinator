@@ -306,7 +306,7 @@ func (r *NodeResourceReconciler) isBEResourceSyncNeeded(old, new *corev1.Node) b
 	}
 
 	// scenario 3: all good, do nothing
-	klog.Info("all good, no need to sync for node %v", new.Name)
+	klog.Infof("all good, no need to sync for node %v", new.Name)
 	return false
 }
 
