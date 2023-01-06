@@ -93,13 +93,13 @@ func sortPods(pods []*corev1.Pod, podMetrics map[types.NamespacedName]*slov1alph
 
 		iKoordQoSOrder := koordQoSOrder[extension.GetPodQoSClass(iPod)]
 		jKoordQosOrder := koordQoSOrder[extension.GetPodQoSClass(jPod)]
-		if iKoordQoSOrder != jKoordQosOrder {
+		if iKoordQoSOrder != 0 && jKoordQosOrder != 0 && iKoordQoSOrder != jKoordQosOrder {
 			return iKoordQoSOrder > jKoordQosOrder
 		}
 
 		iK8sQoSOrder := k8sQoSOrder[util.GetKubeQosClass(iPod)]
 		jK8sQoSOrder := k8sQoSOrder[util.GetKubeQosClass(jPod)]
-		if iK8sQoSOrder != jK8sQoSOrder {
+		if iK8sQoSOrder != 0 && jKoordQosOrder != 0 && iK8sQoSOrder != jK8sQoSOrder {
 			return iK8sQoSOrder > jK8sQoSOrder
 		}
 

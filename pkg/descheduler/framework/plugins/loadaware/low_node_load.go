@@ -69,13 +69,16 @@ func NewLowNodeLoad(args runtime.Object, handle framework.Handle) (framework.Plu
 	}
 
 	var excludedNamespaces sets.String
+	var includedNamespaces sets.String
 	if loadLoadUtilizationArgs.EvictableNamespaces != nil {
 		excludedNamespaces = sets.NewString(loadLoadUtilizationArgs.EvictableNamespaces.Exclude...)
+		includedNamespaces = sets.NewString(loadLoadUtilizationArgs.EvictableNamespaces.Include...)
 	}
 
 	podFilter, err := podutil.NewOptions().
 		WithFilter(podutil.WrapFilterFuncs(handle.Evictor().Filter, podSelectorFn)).
 		WithoutNamespaces(excludedNamespaces).
+		WithNamespaces(includedNamespaces).
 		BuildFilterFunc()
 	if err != nil {
 		return nil, fmt.Errorf("error initializing pod filter function: %v", err)
@@ -121,6 +124,11 @@ func (l *LowNodeLoad) Name() string {
 
 // Balance extension point implementation for the plugin
 func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framework.Status {
+	if l.args.Paused {
+		klog.Infof("LowNodeLoad is paused and will do nothing.")
+		return nil
+	}
+
 	nodes, err := filterNodes(l.args.NodeSelector, nodes)
 	if err != nil {
 		return &framework.Status{Err: err}
@@ -173,6 +181,7 @@ func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framew
 		ctx,
 		sourceNodes,
 		lowNodes,
+		l.args.DryRun,
 		l.args.NodeFit,
 		l.handle.Evictor(),
 		l.podFilter,

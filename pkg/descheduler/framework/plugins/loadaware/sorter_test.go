@@ -93,7 +93,7 @@ func TestSortPods(t *testing.T) {
 	}
 
 	sortPods(pods, podMetrics, []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory})
-	expectedPodsOrder := []string{"test-18", "test-17", "test-16", "test-15", "test-9", "test-8", "test-2", "test-3", "test-7", "test-4", "test-6", "test-5", "test-1", "test-12", "test-11", "test-14", "test-10", "test-13"}
+	expectedPodsOrder := []string{"test-18", "test-17", "test-16", "test-15", "test-9", "test-8", "test-2", "test-3", "test-7", "test-4", "test-6", "test-5", "test-1", "test-11", "test-10", "test-12", "test-13", "test-14"}
 	var podsOrder []string
 	for _, v := range pods {
 		podsOrder = append(podsOrder, v.Name)

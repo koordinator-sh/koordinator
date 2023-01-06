@@ -217,6 +217,7 @@ func resourceUsagePercentages(nodeUsage *NodeUsage) map[corev1.ResourceName]floa
 func evictPodsFromSourceNodes(
 	ctx context.Context,
 	sourceNodes, destinationNodes []NodeInfo,
+	dryRun bool,
 	nodeFit bool,
 	podEvictor framework.Evictor,
 	podFilter framework.FilterFunc,
@@ -273,12 +274,13 @@ func evictPodsFromSourceNodes(
 		}
 
 		sortPods(removablePods, srcNode.podMetrics, resourceNames)
-		evictPods(ctx, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction)
+		evictPods(ctx, dryRun, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction)
 	}
 }
 
 func evictPods(
 	ctx context.Context,
+	dryRun bool,
 	inputPods []*corev1.Pod,
 	nodeInfo NodeInfo,
 	totalAvailableUsages map[corev1.ResourceName]*resource.Quantity,
@@ -292,18 +294,22 @@ func evictPods(
 		}
 
 		if !podFilter(pod) {
-			klog.V(4).Infof("Pod aborted eviction because it was filtered by filters", "pod", klog.KObj(pod))
+			klog.V(4).InfoS("Pod aborted eviction because it was filtered by filters", "pod", klog.KObj(pod))
 			continue
 		}
 		evictOptions := framework.EvictOptions{
 			PluginName: LowLoadUtilizationName,
 			Reason:     "node is overutilized",
 		}
-		if !podEvictor.Evict(ctx, pod, evictOptions) {
-			klog.InfoS("Failed to Evict Pod", "pod", klog.KObj(pod))
-			continue
+		if dryRun {
+			klog.InfoS("Evicted pod in dry run mode", "pod", klog.KObj(pod), "reason", evictOptions.Reason, "plugin", LowLoadUtilizationName)
+		} else {
+			if !podEvictor.Evict(ctx, pod, evictOptions) {
+				klog.InfoS("Failed to Evict Pod", "pod", klog.KObj(pod))
+				continue
+			}
+			klog.InfoS("Evicted Pod", "pod", klog.KObj(pod))
 		}
-		klog.InfoS("Evicted Pod", "pod", klog.KObj(pod))
 
 		podMetric := nodeInfo.podMetrics[types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}]
 		if podMetric == nil {
