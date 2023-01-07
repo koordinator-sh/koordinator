@@ -1107,7 +1107,7 @@ func TestOverUtilizedEvictionReason(t *testing.T) {
 			}
 
 			resourceNames := getResourceNames(tt.targetThresholds)
-			nodeThresholds := getNodeThresholds([]*NodeUsage{nodeUsage}, nil, tt.targetThresholds, resourceNames, false)
+			nodeThresholds := getNodeThresholds(map[string]*NodeUsage{"test-node": nodeUsage}, nil, tt.targetThresholds, resourceNames, false)
 
 			evictionReasonGenerator := overUtilizedEvictionReason(tt.targetThresholds)
 			got := evictionReasonGenerator(NodeInfo{

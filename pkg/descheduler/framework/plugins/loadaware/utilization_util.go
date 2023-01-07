@@ -19,6 +19,7 @@ package loadaware
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -31,6 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	nodeutil "github.com/koordinator-sh/koordinator/pkg/descheduler/node"
 	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
 type Percentage = deschedulerconfig.Percentage
@@ -38,6 +40,7 @@ type ResourceThresholds = deschedulerconfig.ResourceThresholds
 
 type NodeUsage struct {
 	node       *corev1.Node
+	nodeMetric *slov1alpha1.NodeMetric
 	usage      map[corev1.ResourceName]*resource.Quantity
 	allPods    []*corev1.Pod
 	podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap
@@ -73,7 +76,7 @@ func normalizePercentage(percent Percentage) Percentage {
 }
 
 func getNodeThresholds(
-	nodeUsages []*NodeUsage,
+	nodeUsages map[string]*NodeUsage,
 	lowThreshold, highThreshold ResourceThresholds,
 	resourceNames []corev1.ResourceName,
 	useDeviationThresholds bool,
@@ -125,8 +128,8 @@ func resourceThreshold(nodeCapacity corev1.ResourceList, resourceName corev1.Res
 	return resource.NewQuantity(resourceCapacityFraction(resourceCapacityQuantity.Value()), resourceCapacityQuantity.Format)
 }
 
-func getNodeUsage(nodes []*corev1.Node, resourceNames []corev1.ResourceName, nodeMetricLister slolisters.NodeMetricLister, getPodsAssignedToNode podutil.GetPodsAssignedToNodeFunc) []*NodeUsage {
-	var nodeUsages []*NodeUsage
+func getNodeUsage(nodes []*corev1.Node, resourceNames []corev1.ResourceName, nodeMetricLister slolisters.NodeMetricLister, getPodsAssignedToNode podutil.GetPodsAssignedToNodeFunc) map[string]*NodeUsage {
+	nodeUsages := map[string]*NodeUsage{}
 	for _, v := range nodes {
 		pods, err := podutil.ListPodsOnANode(v.Name, getPodsAssignedToNode, nil)
 		if err != nil {
@@ -166,12 +169,13 @@ func getNodeUsage(nodes []*corev1.Node, resourceNames []corev1.ResourceName, nod
 			podMetrics[types.NamespacedName{Namespace: podMetric.Namespace, Name: podMetric.Name}] = podMetric.PodUsage.DeepCopy()
 		}
 
-		nodeUsages = append(nodeUsages, &NodeUsage{
+		nodeUsages[v.Name] = &NodeUsage{
 			node:       v,
+			nodeMetric: nodeMetric,
 			usage:      usage,
 			allPods:    pods,
 			podMetrics: podMetrics,
-		})
+		}
 	}
 
 	return nodeUsages
@@ -180,7 +184,7 @@ func getNodeUsage(nodes []*corev1.Node, resourceNames []corev1.ResourceName, nod
 // classifyNodes classifies the nodes into low-utilization or high-utilization nodes.
 // If a node lies between low and high thresholds, it is simply ignored.
 func classifyNodes(
-	nodeUsages []*NodeUsage,
+	nodeUsages map[string]*NodeUsage,
 	nodeThresholds map[string]NodeThresholds,
 	lowThresholdFilter, highThresholdFilter func(usage *NodeUsage, threshold NodeThresholds) bool,
 ) (lowNodes []NodeInfo, highNodes []NodeInfo) {
@@ -276,7 +280,12 @@ func evictPodsFromSourceNodes(
 			continue
 		}
 
-		sortPods(removablePods, srcNode.podMetrics, resourceNames)
+		sorter.SortPodsByUsage(
+			removablePods,
+			srcNode.podMetrics,
+			map[string]corev1.ResourceList{srcNode.node.Name: srcNode.node.Status.Allocatable},
+			sorter.GenDefaultResourceToWeightMap(resourceNames),
+		)
 		evictPods(ctx, dryRun, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction, evictionReasonGenerator)
 	}
 }
@@ -316,7 +325,7 @@ func evictPods(
 
 		podMetric := nodeInfo.podMetrics[types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}]
 		if podMetric == nil {
-			klog.V(4).Infof("Failed to find PodMetric: %s/%s", pod.Namespace, pod.Name)
+			klog.V(4).InfoS("Failed to find PodMetric", "pod", klog.KObj(pod))
 			continue
 		}
 		for resourceName, availableUsage := range totalAvailableUsages {
@@ -344,6 +353,27 @@ func evictPods(
 
 		klog.V(4).InfoS("Updated node usage", keysAndValues...)
 	}
+}
+
+// sortNodesByUsage sorts nodes based on usage.
+func sortNodesByUsage(nodes []NodeInfo, resourceToWeightMap sorter.ResourceToWeightMap, ascending bool) {
+	scorer := sorter.ResourceUsageScorer(resourceToWeightMap)
+	sort.Slice(nodes, func(i, j int) bool {
+		var iNodeUsage, jNodeUsage corev1.ResourceList
+		if nodeMetric := nodes[i].nodeMetric.Status.NodeMetric; nodeMetric != nil {
+			iNodeUsage = nodeMetric.NodeUsage.ResourceList
+		}
+		if nodeMetric := nodes[j].nodeMetric.Status.NodeMetric; nodeMetric != nil {
+			jNodeUsage = nodeMetric.NodeUsage.ResourceList
+		}
+
+		iScore := scorer(iNodeUsage, nodes[i].node.Status.Allocatable)
+		jScore := scorer(jNodeUsage, nodes[j].node.Status.Allocatable)
+		if ascending {
+			return iScore < jScore
+		}
+		return iScore > jScore
+	})
 }
 
 func isNodeOverutilized(usage, thresholds map[corev1.ResourceName]*resource.Quantity) (corev1.ResourceList, bool) {
@@ -393,7 +423,7 @@ func classifyPods(pods []*corev1.Pod, filter func(pod *corev1.Pod) bool) ([]*cor
 	return nonRemovablePods, removablePods
 }
 
-func calcAverageResourceUsagePercent(nodeUsages []*NodeUsage) ResourceThresholds {
+func calcAverageResourceUsagePercent(nodeUsages map[string]*NodeUsage) ResourceThresholds {
 	allUsedPercentages := ResourceThresholds{}
 	for _, nodeUsage := range nodeUsages {
 		usage := nodeUsage.usage
