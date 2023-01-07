@@ -99,12 +99,7 @@ func (monitor *QuotaOverUsedGroupMonitor) getToRevokePodList(quotaName string) [
 	oriUsed := used.DeepCopy()
 
 	// order pod from low priority -> high priority
-	priPodCache := make([]*v1.Pod, 0)
-	for _, pod := range quotaInfo.GetPodCache() {
-		if quotaInfo.GetPodIsAssigned(pod) {
-			priPodCache = append(priPodCache, pod)
-		}
-	}
+	priPodCache := quotaInfo.GetPodThatIsAssigned()
 
 	sort.Slice(priPodCache, func(i, j int) bool { return !util.MoreImportantPod(priPodCache[i], priPodCache[j]) })
 

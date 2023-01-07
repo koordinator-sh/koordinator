@@ -344,6 +344,19 @@ func (qi *QuotaInfo) GetPodIsAssigned(pod *v1.Pod) bool {
 	return false
 }
 
+func (qi *QuotaInfo) GetPodThatIsAssigned() []*v1.Pod {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	pods := make([]*v1.Pod, 0)
+	for _, podInfo := range qi.PodCache {
+		if podInfo.isAssigned {
+			pods = append(pods, podInfo.pod)
+		}
+	}
+	return pods
+}
+
 func (qi *QuotaInfo) Lock() {
 	qi.lock.Lock()
 }
