@@ -17,9 +17,13 @@ limitations under the License.
 package util
 
 import (
+	"math"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/reservation"
 )
@@ -91,4 +95,10 @@ func GetMaxUnavailable(replicas int, intOrPercent *intstr.IntOrString) (int, err
 
 func GetMaxMigrating(replicas int, intOrPercent *intstr.IntOrString) (int, error) {
 	return GetMaxUnavailable(replicas, intOrPercent)
+}
+
+// FilterPodWithMaxEvictionCost rejects if pod's eviction cost is math.MaxInt32
+func FilterPodWithMaxEvictionCost(pod *corev1.Pod) bool {
+	cost, _ := extension.GetEvictionCost(pod.Annotations)
+	return !(cost == math.MaxInt32)
 }

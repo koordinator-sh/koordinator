@@ -17,6 +17,7 @@ limitations under the License.
 package sorter
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -31,6 +32,12 @@ import (
 )
 
 type podDecoratorFn func(pod *corev1.Pod)
+
+func withCost(costType string, cost int32) podDecoratorFn {
+	return func(pod *corev1.Pod) {
+		pod.Annotations[costType] = strconv.Itoa(int(cost))
+	}
+}
 
 func makePod(name string, priority int32, koordQoS extension.QoSClass, k8sQoS corev1.PodQOSClass, creationTime time.Time, decoratorFns ...podDecoratorFn) *corev1.Pod {
 	pod := &corev1.Pod{
@@ -77,6 +84,10 @@ func TestSortPods(t *testing.T) {
 		makePod("test-17", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
 		makePod("test-18", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime.Add(1*time.Minute)),
 		makePod("test-19", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
+		makePod("test-20", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime, withCost(corev1.PodDeletionCost, 200)),
+		makePod("test-21", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime, withCost(corev1.PodDeletionCost, 100)),
+		makePod("test-22", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime, withCost(corev1.PodDeletionCost, 200), withCost(extension.AnnotationEvictionCost, 200)),
+		makePod("test-23", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime, withCost(corev1.PodDeletionCost, 200), withCost(extension.AnnotationEvictionCost, 100)),
 		makePod("test-4", extension.PriorityProdValueMax-80, extension.QoSLSR, corev1.PodQOSGuaranteed, creationTime),
 		makePod("test-7", extension.PriorityProdValueMax-100, extension.QoSLS, corev1.PodQOSGuaranteed, creationTime),
 	}
@@ -115,7 +126,7 @@ func TestSortPods(t *testing.T) {
 	}
 	resourceToWeightMap := GenDefaultResourceToWeightMap([]corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory})
 	SortPodsByUsage(pods, podMetrics, nodeAllocatableMap, resourceToWeightMap)
-	expectedPodsOrder := []string{"test-18", "test-19", "test-17", "test-16", "test-15", "test-9", "test-8", "test-2", "test-3", "test-7", "test-4", "test-6", "test-5", "test-1", "test-11", "test-10", "test-12", "test-13", "test-14"}
+	expectedPodsOrder := []string{"test-18", "test-19", "test-17", "test-16", "test-15", "test-21", "test-20", "test-23", "test-22", "test-9", "test-8", "test-2", "test-3", "test-7", "test-4", "test-6", "test-5", "test-1", "test-11", "test-10", "test-12", "test-13", "test-14"}
 	var podsOrder []string
 	for _, v := range pods {
 		podsOrder = append(podsOrder, v.Name)
