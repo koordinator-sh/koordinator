@@ -36,7 +36,7 @@ var (
 )
 
 func NewAuditor(c *Config) Auditor {
-	logWriter := NewFluentEventLogger(c.LogDir, c.MaxDiskSpaceMB, c.Verbose)
+	logWriter := NewFluentEventLogger(c.LogDir, c.MaxDiskSpaceMB, c.Verbose, c.EventCacheExpired)
 	logReader := NewEventReader(c.LogDir)
 	return &auditor{
 		config:        c,
@@ -228,6 +228,9 @@ func (a *auditor) HttpHandler() func(http.ResponseWriter, *http.Request) {
 }
 
 func (a *auditor) Run(stopCh <-chan struct{}) error {
+	// start the logWriter cache
+	a.logWriter.RunInit(stopCh)
+
 	timer := time.NewTicker(a.config.TickerDuration)
 	defer timer.Stop()
 	for {
@@ -275,6 +278,8 @@ func (e *emptyEventFluentWriter) Close() error {
 	return nil
 }
 
+func (e *emptyEventFluentWriter) RunInit(<-chan struct{}) {}
+
 type emptyEventWriter struct {
 }
 
@@ -289,6 +294,8 @@ func (e *emptyEventWriter) Flush() error {
 func (e *emptyEventWriter) Close() error {
 	return nil
 }
+
+func (e *emptyEventWriter) RunInit(<-chan struct{}) {}
 
 // SetupDefaultAuditor initialize the `Default` auditor.
 func SetupDefaultAuditor(c *Config, stopCh <-chan struct{}) {

@@ -34,6 +34,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		DefaultEventsLimit:   256,
 		MaxEventsLimit:       2048,
 		TickerDuration:       time.Minute,
+		EventCacheExpired:    time.Minute * 2,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -45,6 +46,7 @@ func Test_InitFlags(t *testing.T) {
 		"--audit-log-dir=/tmp/log/koordlet",
 		"--audit-verbose=4",
 		"--audit-max-disk-space-mb=32",
+		"--audit-event-cache-expired=1m",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -82,6 +84,7 @@ func Test_InitFlags(t *testing.T) {
 				DefaultEventsLimit:   256,
 				MaxEventsLimit:       2048,
 				TickerDuration:       time.Minute,
+				EventCacheExpired:    time.Minute * 1,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

@@ -63,6 +63,9 @@ type EventWriter interface {
 
 	// Close close the writer
 	Close() error
+
+	// RunInit to initialize the event writer
+	RunInit(<-chan struct{})
 }
 
 // Fluent APIs to support log in one line: logger.V(1).WithNode().WithReason().Do()
@@ -75,6 +78,9 @@ type EventFluentWriter interface {
 
 	// Close close the underly writer
 	Close() error
+
+	// RunInit to initialize the event fluent writer
+	RunInit(<-chan struct{})
 }
 
 // EventInterator is an interator to tail the event log

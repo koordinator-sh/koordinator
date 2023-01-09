@@ -30,6 +30,7 @@ type Config struct {
 	DefaultEventsLimit   int
 	MaxEventsLimit       int
 	TickerDuration       time.Duration
+	EventCacheExpired    time.Duration
 }
 
 func NewDefaultConfig() *Config {
@@ -42,6 +43,7 @@ func NewDefaultConfig() *Config {
 		DefaultEventsLimit:   256,
 		MaxEventsLimit:       2048,
 		TickerDuration:       time.Minute,
+		EventCacheExpired:    time.Minute * 2,
 	}
 }
 
@@ -51,4 +53,5 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.MaxDiskSpaceMB, "audit-max-disk-space-mb", c.MaxDiskSpaceMB, "Max disk space occupied of audit log")
 	fs.IntVar(&c.MaxConcurrentReaders, "audit-max-concurrent-readers", c.MaxConcurrentReaders, "Max concurrent readers of the audit log")
 	fs.IntVar(&c.MaxEventsLimit, "audit-max-events-limit", c.MaxEventsLimit, "Max events limit in one request of the audit log")
+	fs.DurationVar(&c.EventCacheExpired, "audit-event-cache-expired", c.EventCacheExpired, "The expired time of the event cache")
 }

@@ -23,10 +23,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
 
 const (
@@ -36,7 +39,7 @@ const (
 
 // NewEventLogger create an EventWriter, it won't open the underly file until do a log call.
 // verbose=0 means no restrictions on verbose
-func NewEventLogger(dir string, sizeMB int, verbose int) EventWriter {
+func NewEventLogger(dir string, sizeMB int, verbose int, cacheExpired time.Duration) EventWriter {
 	if sizeMB <= 0 {
 		klog.Fatalf("sizeMB [%d] should be larger than 0", sizeMB)
 	}
@@ -54,16 +57,18 @@ func NewEventLogger(dir string, sizeMB int, verbose int) EventWriter {
 	}
 
 	return &eventWriter{
-		dir:         dir,
-		maxFileSize: MaxFileSize,
-		maxFileNum:  sizeMB * (1 << 20) / MaxFileSize,
-		verbose:     verbose,
+		dir:          dir,
+		maxFileSize:  MaxFileSize,
+		maxFileNum:   sizeMB * (1 << 20) / MaxFileSize,
+		verbose:      verbose,
+		eventCache:   cache.NewCacheDefault(),
+		cacheExpired: cacheExpired,
 	}
 }
 
 // NewFluentEventLogger create an EventFluentWriter to simplify the audit.
-func NewFluentEventLogger(dir string, sizeMB int, verbose int) EventFluentWriter {
-	writer := NewEventLogger(dir, sizeMB, verbose)
+func NewFluentEventLogger(dir string, sizeMB int, verbose int, cacheExpired time.Duration) EventFluentWriter {
+	writer := NewEventLogger(dir, sizeMB, verbose, cacheExpired)
 	return &eventFluentWriter{writer: writer}
 }
 
@@ -79,6 +84,10 @@ type eventWriter struct {
 	maxFileNum  int
 
 	logWriter LogWriter
+
+	eventCache   *cache.Cache
+	cacheExpired time.Duration
+	onceRun      sync.Once
 }
 
 // Log write an event to the underly storage
@@ -88,6 +97,29 @@ func (e *eventWriter) Log(verbose int, event *Event) error {
 	}
 	if event == nil {
 		return nil
+	}
+
+	eventKey := ""
+	if len(event.Reason) != 0 {
+		// we may allow the event.Type is an empty string to compatible with the runtime-hook
+		if event.Reason == "runtime-hooks" && len(event.Container) != 0 {
+			containerInfo := strings.Split(event.Container, "://")
+			if len(containerInfo) > 1 {
+				eventKey = strings.Join([]string{event.Type, containerInfo[1]}, "/")
+			} else {
+				eventKey = strings.Join([]string{event.Type, event.Container}, "/")
+			}
+		} else {
+			eventKey = strings.Join([]string{event.Type, event.Reason}, "/")
+		}
+
+		if cachedEvent, exist := e.eventCache.Get(eventKey); !exist {
+			e.eventCache.Set(eventKey, event, e.cacheExpired)
+		} else if cachedEvent.(*Event).Message == event.Message {
+			return nil
+		} else {
+			e.eventCache.Set(eventKey, event, e.cacheExpired)
+		}
 	}
 
 	bs, err := json.Marshal(event)
@@ -184,6 +216,13 @@ func (e *eventWriter) Close() error {
 	return nil
 }
 
+func (e *eventWriter) RunInit(stopCh <-chan struct{}) {
+	e.onceRun.Do(func() {
+		_ = e.eventCache.Run(stopCh)
+		klog.V(4).Infof("starting EventWriter successfully")
+	})
+}
+
 type eventFluentWriter struct {
 	writer EventWriter
 }
@@ -204,6 +243,10 @@ func (e *eventFluentWriter) Flush() error {
 // Close close the underly writer
 func (e *eventFluentWriter) Close() error {
 	return e.writer.Close()
+}
+
+func (e *eventFluentWriter) RunInit(stopCh <-chan struct{}) {
+	e.writer.RunInit(stopCh)
 }
 
 type eventReader struct {

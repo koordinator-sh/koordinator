@@ -22,12 +22,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestEventLogger(t *testing.T) {
 	tempDir := t.TempDir()
 
-	logger := NewEventLogger(tempDir, 10, 0)
+	logger := NewEventLogger(tempDir, 10, 0, time.Minute*1)
 	logger.Log(0, &Event{Reason: "hello"})
 	logger.Log(0, &Event{Reason: "world"})
 	logger.Close()
@@ -45,7 +46,7 @@ func TestEventLogger(t *testing.T) {
 func TestFluentEventLogger(t *testing.T) {
 	tempDir := t.TempDir()
 
-	logger := NewFluentEventLogger(tempDir, 10, 0)
+	logger := NewFluentEventLogger(tempDir, 10, 0, time.Minute*1)
 	defer logger.Close()
 
 	block1KB := makeBlock(1023, 'a')
@@ -74,7 +75,7 @@ func makeBlock(n int, b byte) []byte {
 func TestReverseEventReaderSingleFile(t *testing.T) {
 	tempDir := t.TempDir()
 
-	logger := NewFluentEventLogger(tempDir, 10, 0)
+	logger := NewFluentEventLogger(tempDir, 10, 0, time.Minute*1)
 
 	blocks := make([][]byte, 26)
 	for i := 0; i < 26; i++ {
@@ -100,7 +101,7 @@ func TestReverseEventReaderSingleFile(t *testing.T) {
 func TestReverseEventReaderMultiFile(t *testing.T) {
 	tempDir := t.TempDir()
 
-	logger := NewFluentEventLogger(tempDir, 10, 0)
+	logger := NewFluentEventLogger(tempDir, 10, 0, time.Minute*1)
 
 	block1KB := makeBlock(1023, 'a')
 	for i := 0; i < 1024*12; i++ {
