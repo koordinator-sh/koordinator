@@ -128,6 +128,7 @@ func Test_getBECPUUsageCores(t *testing.T) {
 }
 
 func Test_getBECPURealMilliLimit(t *testing.T) {
+	c := collector{context: newCollectContext(), cgroupReader: resourceexecutor.NewCgroupReader()}
 
 	tests := []struct {
 		name     string
@@ -157,7 +158,7 @@ func Test_getBECPURealMilliLimit(t *testing.T) {
 			helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, tt.cfsQuota)
 			helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, "100000")
 
-			milliLimit, err := getBECPURealMilliLimit()
+			milliLimit, err := c.getBECPURealMilliLimit()
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expect, milliLimit)
 		})

@@ -25,7 +25,6 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -33,7 +32,7 @@ import (
 func (c *collector) collectBECPUResourceMetric() {
 	klog.V(6).Info("collectBECPUResourceMetric start")
 
-	realMilliLimit, err := getBECPURealMilliLimit()
+	realMilliLimit, err := c.getBECPURealMilliLimit()
 	if err != nil {
 		klog.Errorf("getBECPURealMilliLimit failed, error: %v", err)
 		return
@@ -67,7 +66,7 @@ func (c *collector) collectBECPUResourceMetric() {
 	klog.V(6).Info("collectBECPUResourceMetric finished")
 }
 
-func getBECPURealMilliLimit() (int, error) {
+func (c *collector) getBECPURealMilliLimit() (int, error) {
 	limit := 0
 
 	cpuSet, err := koordletutil.GetBECgroupCurCPUSet()
@@ -77,7 +76,7 @@ func getBECPURealMilliLimit() (int, error) {
 	limit = len(cpuSet) * 1000
 
 	BECgroupParentDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
-	cfsQuota, err := resourceexecutor.NewCgroupReader().ReadCPUQuota(BECgroupParentDir)
+	cfsQuota, err := c.cgroupReader.ReadCPUQuota(BECgroupParentDir)
 	if err != nil {
 		return 0, err
 	}
@@ -87,7 +86,7 @@ func getBECPURealMilliLimit() (int, error) {
 		return limit, nil
 	}
 
-	cfsPeriod, err := resourceexecutor.NewCgroupReader().ReadCPUPeriod(BECgroupParentDir)
+	cfsPeriod, err := c.cgroupReader.ReadCPUPeriod(BECgroupParentDir)
 	if err != nil {
 		return 0, err
 	}
