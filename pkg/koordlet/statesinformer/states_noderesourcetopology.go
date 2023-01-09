@@ -20,14 +20,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
 	"os"
 	"reflect"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
+	listerbeta2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -60,6 +65,9 @@ type nodeTopoInformer struct {
 	metricCache    metriccache.MetricCache
 	callbackRunner *callbackRunner
 
+	NodeResourceTopologyInformer cache.SharedIndexInformer
+	NodeResourceTopologyLister   listerbeta2.NodeResourceTopologyLister
+
 	kubelet      KubeletStub
 	nodeInformer *nodeInformer
 	podsInformer *podsInformer
@@ -81,6 +89,9 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 	s.metricCache = state.metricCache
 	s.callbackRunner = state.callbackRunner
 
+	s.NodeResourceTopologyInformer = newNodeResourceTopologyInformer(ctx.TopoClient, ctx.NodeName)
+	s.NodeResourceTopologyLister = listerbeta2.NewNodeResourceTopologyLister(s.NodeResourceTopologyInformer.GetIndexer())
+
 	nodeInformerIf := state.informerPlugins[nodeInformerName]
 	nodeInformer, ok := nodeInformerIf.(*nodeInformer)
 	if !ok {
@@ -94,34 +105,89 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 		klog.Fatalf("pods informer format error")
 	}
 	s.podsInformer = podsInformer
+
+	s.NodeResourceTopologyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			nodeResourceTopology, ok := obj.(*topov1alpha1.NodeResourceTopology)
+			if ok {
+				s.updateNodeTopo(nodeResourceTopology)
+			} else {
+				klog.Errorf("node topology informer add func parse failed")
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldNodeResourceTopology, oldOK := oldObj.(*topov1alpha1.NodeResourceTopology)
+			newNodeResourceTopology, newOK := newObj.(*topov1alpha1.NodeResourceTopology)
+			if !oldOK || !newOK {
+				klog.Errorf("unable to convert object to NodeResourceTopology, old %T, new %T", oldObj, newObj)
+				return
+			}
+			if !isSyncNeeded(oldNodeResourceTopology, newNodeResourceTopology, ctx.NodeName) {
+				klog.V(5).Infof("find NodeResourceTopology %s has not changed.", newNodeResourceTopology.Name)
+				return
+			}
+			klog.Infof("update node metric spec %s", newNodeResourceTopology.Name)
+			s.updateNodeTopo(newNodeResourceTopology)
+		},
+	})
 }
 
 func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 	klog.V(2).Infof("starting node topo informer")
-	if !cache.WaitForCacheSync(stopCh, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
+	go s.NodeResourceTopologyInformer.Run(stopCh)
+	if !cache.WaitForCacheSync(stopCh, s.NodeResourceTopologyInformer.HasSynced, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
 		klog.Fatalf("timed out waiting for pod caches to sync")
 	}
 	if s.config.NodeTopologySyncInterval <= 0 {
 		return
 	}
+
 	stub, err := newKubeletStubFromConfig(s.nodeInformer.GetNode(), s.config)
 	if err != nil {
 		klog.Fatalf("create kubelet stub, %v", err)
 	}
 	s.kubelet = stub
+
 	go wait.Until(s.reportNodeTopology, s.config.NodeTopologySyncInterval, stopCh)
 	klog.V(2).Infof("node topo informer started")
 }
 
 func (s *nodeTopoInformer) HasSynced() bool {
-	return true
+	if s.NodeResourceTopologyInformer == nil {
+		return false
+	}
+	synced := s.NodeResourceTopologyInformer.HasSynced()
+	klog.V(5).Infof("node Topo informer has synced %v", synced)
+	return synced
 }
 
+func newNodeResourceTopologyInformer(client topologyclientset.Interface, nodeName string) cache.SharedIndexInformer {
+	tweakListOptionsFunc := func(opt *metav1.ListOptions) {
+		opt.FieldSelector = "metadata.name=" + nodeName
+	}
+
+	return cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				tweakListOptionsFunc(&options)
+				return client.TopologyV1alpha1().NodeResourceTopologies().List(context.TODO(), options)
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				tweakListOptionsFunc(&options)
+				return client.TopologyV1alpha1().NodeResourceTopologies().Watch(context.TODO(), options)
+			},
+		},
+		&topov1alpha1.NodeResourceTopology{},
+		time.Hour*12,
+		cache.Indexers{},
+	)
+}
 func (s *nodeTopoInformer) createNodeTopoIfNotExist() {
 	node := s.nodeInformer.GetNode()
 	topologyName := node.Name
 	ctx := context.TODO()
-	_, err := s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, topologyName, metav1.GetOptions{ResourceVersion: "0"})
+
+	_, err := s.NodeResourceTopologyLister.Get(topologyName)
 	if err == nil {
 		return
 	}
@@ -307,12 +373,12 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		return
 	}
 
-	ctx := context.TODO()
+	//	ctx := context.TODO()
 	node := s.nodeInformer.GetNode()
 	err = util.RetryOnConflictOrTooManyRequests(func() error {
 		var nodeResourceTopology *v1alpha1.NodeResourceTopology
 		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
-			nodeResourceTopology, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, node.Name, metav1.GetOptions{ResourceVersion: "0"})
+			nodeResourceTopology, err = s.NodeResourceTopologyLister.Get(node.Name)
 			if err != nil {
 				klog.Errorf("failed to get node resource topology %s, err: %v", node.Name, err)
 				return err
@@ -330,18 +396,14 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		}
 
 		if isSyncNeeded(s.nodeTopology, nodeResourceTopology, node.Name) {
-			// TODO: use a NodeResourceTopology informer
-			s.updateNodeTopo(nodeResourceTopology)
-
 			// do UPDATE
 			if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 				_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
 				if err != nil {
-					klog.Errorf("failed to update cpu info of node %s, err: %v", node.Name, err)
+					klog.Errorf("failed to report topology of node %s, err: %v", node.Name, err)
 					return err
 				}
 			}
-			return nil
 		}
 		return nil
 	})
