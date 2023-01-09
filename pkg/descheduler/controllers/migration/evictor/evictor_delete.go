@@ -21,9 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog/v2"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
@@ -47,21 +45,9 @@ func NewDeleteEvictor(client kubernetes.Interface) (Interface, error) {
 }
 
 func (e *DeleteEvictor) Evict(ctx context.Context, job *sev1alpha1.PodMigrationJob, pod *corev1.Pod) error {
-	namespacedName := types.NamespacedName{
-		Namespace: pod.Namespace,
-		Name:      pod.Name,
-	}
-
 	var deleteOptions metav1.DeleteOptions
 	if job.Spec.DeleteOptions != nil {
 		deleteOptions = *job.Spec.DeleteOptions
 	}
-	klog.Infof("Try to delete Pod %q with MigrationJob %s", namespacedName, job.Name)
-	err := e.client.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, deleteOptions)
-	if err != nil {
-		klog.Errorf("Failed to delete Pod %q, err: %v", namespacedName, err)
-	} else {
-		klog.Infof("Delete Pod %q successfully", namespacedName)
-	}
-	return err
+	return e.client.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, deleteOptions)
 }

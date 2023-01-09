@@ -307,7 +307,8 @@ func (f *frameworkImpl) SharedInformerFactory() informers.SharedInformerFactory 
 func (f *frameworkImpl) RunDeschedulePlugins(ctx context.Context, nodes []*corev1.Node) *framework.Status {
 	var errs []error
 	for _, pl := range f.deschedulePlugins {
-		status := pl.Deschedule(ctx, nodes)
+		childCtx := framework.PluginNameWithContext(ctx, pl.Name())
+		status := pl.Deschedule(childCtx, nodes)
 		if status != nil && status.Err != nil {
 			errs = append(errs, status.Err)
 		}
@@ -326,7 +327,8 @@ func (f *frameworkImpl) RunDeschedulePlugins(ctx context.Context, nodes []*corev
 func (f *frameworkImpl) RunBalancePlugins(ctx context.Context, nodes []*corev1.Node) *framework.Status {
 	var errs []error
 	for _, pl := range f.balancePlugins {
-		status := pl.Balance(ctx, nodes)
+		childCtx := framework.PluginNameWithContext(ctx, pl.Name())
+		status := pl.Balance(childCtx, nodes)
 		if status != nil && status.Err != nil {
 			errs = append(errs, status.Err)
 		}
