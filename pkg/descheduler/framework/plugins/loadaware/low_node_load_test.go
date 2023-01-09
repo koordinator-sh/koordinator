@@ -1042,3 +1042,79 @@ func TestLowNodeUtilization(t *testing.T) {
 		})
 	}
 }
+
+func TestOverUtilizedEvictionReason(t *testing.T) {
+	tests := []struct {
+		name             string
+		targetThresholds ResourceThresholds
+		node             *corev1.Node
+		usage            map[corev1.ResourceName]*resource.Quantity
+		want             string
+	}{
+		{
+			name: "cpu overutilized",
+			targetThresholds: deschedulerconfig.ResourceThresholds{
+				corev1.ResourceCPU:    50,
+				corev1.ResourceMemory: 50,
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("96"),
+						corev1.ResourceMemory: resource.MustParse("512Gi"),
+					},
+				},
+			},
+			usage: map[corev1.ResourceName]*resource.Quantity{
+				corev1.ResourceCPU:    resource.NewMilliQuantity(64*1000, resource.DecimalSI),
+				corev1.ResourceMemory: resource.NewQuantity(32*1024*1024*1024, resource.BinarySI),
+			},
+			want: "node is overutilized, cpu usage(66.67%)>threshold(50.00%)",
+		},
+		{
+			name: "both cpu and memory overutilized",
+			targetThresholds: deschedulerconfig.ResourceThresholds{
+				corev1.ResourceCPU:    50,
+				corev1.ResourceMemory: 50,
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("96"),
+						corev1.ResourceMemory: resource.MustParse("512Gi"),
+					},
+				},
+			},
+			usage: map[corev1.ResourceName]*resource.Quantity{
+				corev1.ResourceCPU:    resource.NewMilliQuantity(64*1000, resource.DecimalSI),
+				corev1.ResourceMemory: resource.NewQuantity(400*1024*1024*1024, resource.BinarySI),
+			},
+			want: "node is overutilized, cpu usage(66.67%)>threshold(50.00%), memory usage(78.12%)>threshold(50.00%)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeUsage := &NodeUsage{
+				node:  tt.node,
+				usage: tt.usage,
+			}
+
+			resourceNames := getResourceNames(tt.targetThresholds)
+			nodeThresholds := getNodeThresholds([]*NodeUsage{nodeUsage}, nil, tt.targetThresholds, resourceNames, false)
+
+			evictionReasonGenerator := overUtilizedEvictionReason(tt.targetThresholds)
+			got := evictionReasonGenerator(NodeInfo{
+				NodeUsage:  nodeUsage,
+				thresholds: nodeThresholds["test-node"],
+			})
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

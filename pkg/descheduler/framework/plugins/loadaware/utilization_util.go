@@ -55,6 +55,8 @@ type NodeInfo struct {
 
 type continueEvictionCond func(nodeInfo NodeInfo, totalAvailableUsages map[corev1.ResourceName]*resource.Quantity) bool
 
+type evictionReasonGeneratorFn func(nodeInfo NodeInfo) string
+
 const (
 	MinResourcePercentage = 0
 	MaxResourcePercentage = 100
@@ -224,6 +226,7 @@ func evictPodsFromSourceNodes(
 	nodeIndexer podutil.GetPodsAssignedToNodeFunc,
 	resourceNames []corev1.ResourceName,
 	continueEviction continueEvictionCond,
+	evictionReasonGenerator evictionReasonGeneratorFn,
 ) {
 	var targetNodes []*corev1.Node
 	totalAvailableUsages := map[corev1.ResourceName]*resource.Quantity{}
@@ -274,7 +277,7 @@ func evictPodsFromSourceNodes(
 		}
 
 		sortPods(removablePods, srcNode.podMetrics, resourceNames)
-		evictPods(ctx, dryRun, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction)
+		evictPods(ctx, dryRun, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction, evictionReasonGenerator)
 	}
 }
 
@@ -287,6 +290,7 @@ func evictPods(
 	podEvictor framework.Evictor,
 	podFilter framework.FilterFunc,
 	continueEviction continueEvictionCond,
+	evictionReasonGenerator evictionReasonGeneratorFn,
 ) {
 	for _, pod := range inputPods {
 		if !continueEviction(nodeInfo, totalAvailableUsages) {
@@ -297,14 +301,13 @@ func evictPods(
 			klog.V(4).InfoS("Pod aborted eviction because it was filtered by filters", "pod", klog.KObj(pod))
 			continue
 		}
-		evictOptions := framework.EvictOptions{
-			PluginName: LowLoadUtilizationName,
-			Reason:     "node is overutilized",
-		}
 		if dryRun {
-			klog.InfoS("Evicted pod in dry run mode", "pod", klog.KObj(pod), "reason", evictOptions.Reason, "plugin", LowLoadUtilizationName)
+			klog.InfoS("Evict pod in dry run mode", "pod", klog.KObj(pod))
 		} else {
-			if !podEvictor.Evict(ctx, pod, evictOptions) {
+			evictionOptions := framework.EvictOptions{
+				Reason: evictionReasonGenerator(nodeInfo),
+			}
+			if !podEvictor.Evict(ctx, pod, evictionOptions) {
 				klog.InfoS("Failed to Evict Pod", "pod", klog.KObj(pod))
 				continue
 			}
@@ -343,16 +346,17 @@ func evictPods(
 	}
 }
 
-func isNodeOverutilized(usage, thresholds map[corev1.ResourceName]*resource.Quantity) bool {
+func isNodeOverutilized(usage, thresholds map[corev1.ResourceName]*resource.Quantity) (corev1.ResourceList, bool) {
 	// At least one resource has to be above the threshold
+	overutilizedResources := corev1.ResourceList{}
 	for resourceName, threshold := range thresholds {
 		if used := usage[resourceName]; used != nil {
 			if used.Cmp(*threshold) > 0 {
-				return true
+				overutilizedResources[resourceName] = *used
 			}
 		}
 	}
-	return false
+	return overutilizedResources, len(overutilizedResources) > 0
 }
 
 func isNodeUnderutilized(usage, thresholds map[corev1.ResourceName]*resource.Quantity) bool {
