@@ -359,7 +359,6 @@ func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 				Name: topoNode.quotaInfo.ParentName,
 			})
 		}
-		topoNode.parQuotaTopoNode = parQuotaTopoNode
 		parQuotaTopoNode.addChildGroupQuotaInfo(topoNode)
 	}
 }

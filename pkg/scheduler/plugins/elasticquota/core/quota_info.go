@@ -383,6 +383,7 @@ func NewQuotaTopoNode(quotaInfo *QuotaInfo) *QuotaTopoNode {
 }
 
 func (qtn *QuotaTopoNode) addChildGroupQuotaInfo(childNode *QuotaTopoNode) {
+	childNode.parQuotaTopoNode = qtn
 	qtn.childGroupQuotaInfos[childNode.name] = childNode
 }
 
