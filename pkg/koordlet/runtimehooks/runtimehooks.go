@@ -63,13 +63,18 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	if err != nil {
 		return nil, err
 	}
+	pluginFailurePolicy, err := config.GetFailurePolicyType(cfg.RuntimeHooksPluginFailurePolicy)
+	if err != nil {
+		return nil, err
+	}
 	newServerOptions := proxyserver.Options{
-		Network:        cfg.RuntimeHooksNetwork,
-		Address:        cfg.RuntimeHooksAddr,
-		HostEndpoint:   cfg.RuntimeHookHostEndpoint,
-		FailurePolicy:  failurePolicy,
-		ConfigFilePath: cfg.RuntimeHookConfigFilePath,
-		DisableStages:  getDisableStagesMap(cfg.RuntimeHookDisableStages),
+		Network:             cfg.RuntimeHooksNetwork,
+		Address:             cfg.RuntimeHooksAddr,
+		HostEndpoint:        cfg.RuntimeHookHostEndpoint,
+		FailurePolicy:       failurePolicy,
+		PluginFailurePolicy: pluginFailurePolicy,
+		ConfigFilePath:      cfg.RuntimeHookConfigFilePath,
+		DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 	}
 	s, err := proxyserver.NewServer(newServerOptions)
 	if err != nil {

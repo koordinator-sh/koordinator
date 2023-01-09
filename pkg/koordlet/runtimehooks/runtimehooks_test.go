@@ -43,11 +43,12 @@ func Test_runtimeHook_Run(t *testing.T) {
 			name: "run as tcp server",
 			fields: fields{
 				config: &Config{
-					RuntimeHooksNetwork:       "tcp",
-					RuntimeHooksAddr:          ":0",
-					RuntimeHooksFailurePolicy: "Fail",
-					RuntimeHookDisableStages:  []string{"PreRunPodSandbox"},
-					RuntimeHookConfigFilePath: tmpDir,
+					RuntimeHooksNetwork:             "tcp",
+					RuntimeHooksAddr:                ":0",
+					RuntimeHooksFailurePolicy:       "Fail",
+					RuntimeHooksPluginFailurePolicy: "Ignore",
+					RuntimeHookDisableStages:        []string{"PreRunPodSandbox"},
+					RuntimeHookConfigFilePath:       tmpDir,
 				},
 				fg: map[string]bool{
 					string(GroupIdentity):   false,
@@ -63,11 +64,12 @@ func Test_runtimeHook_Run(t *testing.T) {
 			name: "run as unix socket",
 			fields: fields{
 				config: &Config{
-					RuntimeHooksNetwork:       "unix",
-					RuntimeHooksAddr:          path.Join(tmpDir, "kooordlet.sock"),
-					RuntimeHooksFailurePolicy: "Fail",
-					RuntimeHookDisableStages:  []string{"PreRunPodSandbox"},
-					RuntimeHookConfigFilePath: tmpDir,
+					RuntimeHooksNetwork:             "unix",
+					RuntimeHooksAddr:                path.Join(tmpDir, "kooordlet.sock"),
+					RuntimeHooksFailurePolicy:       "Fail",
+					RuntimeHooksPluginFailurePolicy: "Ignore",
+					RuntimeHookDisableStages:        []string{"PreRunPodSandbox"},
+					RuntimeHookConfigFilePath:       tmpDir,
 				},
 				fg: map[string]bool{
 					string(GroupIdentity):   false,
@@ -83,11 +85,12 @@ func Test_runtimeHook_Run(t *testing.T) {
 			name: "run all feature-gates",
 			fields: fields{
 				config: &Config{
-					RuntimeHooksNetwork:       "unix",
-					RuntimeHooksAddr:          path.Join(tmpDir, "kooordlet.sock"),
-					RuntimeHooksFailurePolicy: "Fail",
-					RuntimeHookDisableStages:  []string{"PreRunPodSandbox"},
-					RuntimeHookConfigFilePath: tmpDir,
+					RuntimeHooksNetwork:             "unix",
+					RuntimeHooksAddr:                path.Join(tmpDir, "kooordlet.sock"),
+					RuntimeHooksFailurePolicy:       "Fail",
+					RuntimeHooksPluginFailurePolicy: "Ignore",
+					RuntimeHookDisableStages:        []string{"PreRunPodSandbox"},
+					RuntimeHookConfigFilePath:       tmpDir,
 				},
 				fg: map[string]bool{
 					string(GroupIdentity):   true,
