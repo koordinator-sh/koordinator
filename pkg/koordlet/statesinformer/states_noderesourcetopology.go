@@ -20,9 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/watch"
 	"os"
 	"reflect"
 	"sort"
@@ -32,12 +29,14 @@ import (
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
-	listerbeta2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
+	topologylister "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
@@ -66,7 +65,7 @@ type nodeTopoInformer struct {
 	callbackRunner *callbackRunner
 
 	NodeResourceTopologyInformer cache.SharedIndexInformer
-	NodeResourceTopologyLister   listerbeta2.NodeResourceTopologyLister
+	NodeResourceTopologyLister   topologylister.NodeResourceTopologyLister
 
 	kubelet      KubeletStub
 	nodeInformer *nodeInformer
@@ -90,7 +89,7 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 	s.callbackRunner = state.callbackRunner
 
 	s.NodeResourceTopologyInformer = newNodeResourceTopologyInformer(ctx.TopoClient, ctx.NodeName)
-	s.NodeResourceTopologyLister = listerbeta2.NewNodeResourceTopologyLister(s.NodeResourceTopologyInformer.GetIndexer())
+	s.NodeResourceTopologyLister = topologylister.NewNodeResourceTopologyLister(s.NodeResourceTopologyInformer.GetIndexer())
 
 	nodeInformerIf := state.informerPlugins[nodeInformerName]
 	nodeInformer, ok := nodeInformerIf.(*nodeInformer)
@@ -126,15 +125,18 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 				klog.V(5).Infof("find NodeResourceTopology %s has not changed.", newNodeResourceTopology.Name)
 				return
 			}
-			klog.Infof("update node metric spec %s", newNodeResourceTopology.Name)
+			klog.Infof("update node Resource Topology %s", newNodeResourceTopology.Name)
 			s.updateNodeTopo(newNodeResourceTopology)
 		},
 	})
+
 }
 
 func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 	klog.V(2).Infof("starting node topo informer")
-	go s.NodeResourceTopologyInformer.Run(stopCh)
+	if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+		go s.NodeResourceTopologyInformer.Run(stopCh)
+	}
 	if !cache.WaitForCacheSync(stopCh, s.NodeResourceTopologyInformer.HasSynced, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
 		klog.Fatalf("timed out waiting for pod caches to sync")
 	}
@@ -373,14 +375,16 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		return
 	}
 
-	//	ctx := context.TODO()
 	node := s.nodeInformer.GetNode()
 	err = util.RetryOnConflictOrTooManyRequests(func() error {
 		var nodeResourceTopology *v1alpha1.NodeResourceTopology
 		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 			nodeResourceTopology, err = s.NodeResourceTopologyLister.Get(node.Name)
-			if err != nil {
-				klog.Errorf("failed to get node resource topology %s, err: %v", node.Name, err)
+			if errors.IsNotFound(err) {
+				klog.Warningf("nodeTopo %v not found, skip", node.Name)
+				return nil
+			} else if err != nil {
+				klog.Warningf("failed to get %s nodeTopo: %v", node.Name, err)
 				return err
 			}
 		} else {
@@ -403,6 +407,8 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 					klog.Errorf("failed to report topology of node %s, err: %v", node.Name, err)
 					return err
 				}
+			} else {
+				s.nodeTopology = nodeResourceTopology
 			}
 		}
 		return nil
