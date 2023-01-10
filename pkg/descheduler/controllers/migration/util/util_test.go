@@ -17,12 +17,16 @@ limitations under the License.
 package util
 
 import (
+	"math"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/reservation"
 )
@@ -193,4 +197,45 @@ func TestIsMigratePendingPod(t *testing.T) {
 		},
 	})
 	assert.True(t, IsMigratePendingPod(reservationObj))
+}
+
+func TestFilterPodWithMaxEvictionCost(t *testing.T) {
+	tests := []struct {
+		name string
+		cost int32
+		want bool
+	}{
+		{
+			name: "empty cost",
+			cost: 0,
+			want: true,
+		},
+		{
+			name: "negative cost",
+			cost: -100,
+			want: true,
+		},
+		{
+			name: "higher cost",
+			cost: 100,
+			want: true,
+		},
+		{
+			name: "max cost",
+			cost: math.MaxInt32,
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FilterPodWithMaxEvictionCost(&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						extension.AnnotationEvictionCost: strconv.Itoa(int(tt.cost)),
+					},
+				},
+			})
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

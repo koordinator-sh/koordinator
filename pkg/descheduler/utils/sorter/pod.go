@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	schedulingcorev1helper "k8s.io/component-helpers/scheduling/corev1"
+	apiscorehelper "k8s.io/kubernetes/pkg/apis/core/helper"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -133,12 +134,38 @@ func PodCreationTimestamp(p1, p2 *corev1.Pod) int {
 	return -1
 }
 
+func PodDeletionCost(p1, p2 *corev1.Pod) int {
+	p1DeletionCost, _ := apiscorehelper.GetDeletionCostFromPodAnnotations(p1.Annotations)
+	p2DeletionCost, _ := apiscorehelper.GetDeletionCostFromPodAnnotations(p2.Annotations)
+	if p1DeletionCost == p2DeletionCost {
+		return 0
+	}
+	if p1DeletionCost > p2DeletionCost {
+		return 1
+	}
+	return -1
+}
+
+func EvictionCost(p1, p2 *corev1.Pod) int {
+	p1EvictionCost, _ := extension.GetEvictionCost(p1.Annotations)
+	p2EvictionCost, _ := extension.GetEvictionCost(p2.Annotations)
+	if p1EvictionCost == p2EvictionCost {
+		return 0
+	}
+	if p1EvictionCost > p2EvictionCost {
+		return 1
+	}
+	return -1
+}
+
 func PodSorter(cmp ...CompareFn) *MultiSorter {
 	comparators := []CompareFn{
 		KoordinatorPriorityClass,
 		Priority,
 		KubernetesQoSClass,
 		KoordinatorQoSClass,
+		PodDeletionCost,
+		EvictionCost,
 	}
 	comparators = append(comparators, cmp...)
 	comparators = append(comparators, PodCreationTimestamp)
