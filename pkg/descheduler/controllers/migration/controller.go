@@ -157,8 +157,9 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 		excludedNamespaces = sets.NewString(args.Namespaces.Exclude...)
 	}
 
+	wrapFilterFuncs := podutil.WrapFilterFuncs(util.FilterPodWithMaxEvictionCost, evictorFilter.Filter)
 	podFilter, err := podutil.NewOptions().
-		WithFilter(evictorFilter.Filter).
+		WithFilter(wrapFilterFuncs).
 		WithNamespaces(includedNamespaces).
 		WithoutNamespaces(excludedNamespaces).
 		BuildFilterFunc()
