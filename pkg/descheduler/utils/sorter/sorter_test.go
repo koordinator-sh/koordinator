@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package loadaware
+package sorter
 
 import (
 	"testing"
@@ -30,23 +30,31 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
-func makePod(name string, priority int32, koordQoS extension.QoSClass, k8sQoS corev1.PodQOSClass, creationTime time.Time) *corev1.Pod {
-	return &corev1.Pod{
+type podDecoratorFn func(pod *corev1.Pod)
+
+func makePod(name string, priority int32, koordQoS extension.QoSClass, k8sQoS corev1.PodQOSClass, creationTime time.Time, decoratorFns ...podDecoratorFn) *corev1.Pod {
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "default",
 			Labels: map[string]string{
 				extension.LabelPodQoS: string(koordQoS),
 			},
+			Annotations:       map[string]string{},
 			CreationTimestamp: metav1.Time{Time: creationTime},
 		},
 		Spec: corev1.PodSpec{
+			NodeName: "test-node",
 			Priority: &priority,
 		},
 		Status: corev1.PodStatus{
 			QOSClass: k8sQoS,
 		},
 	}
+	for _, decorator := range decoratorFns {
+		decorator(pod)
+	}
+	return pod
 }
 
 func TestSortPods(t *testing.T) {
@@ -65,9 +73,10 @@ func TestSortPods(t *testing.T) {
 		makePod("test-2", extension.PriorityProdValueMin, extension.QoSLS, corev1.PodQOSBurstable, creationTime),
 		makePod("test-8", extension.PriorityBatchValueMax, extension.QoSBE, corev1.PodQOSBurstable, creationTime),
 		makePod("test-15", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
-		makePod("test-16", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, time.Now().Add(1*time.Minute)),
-		makePod("test-17", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, time.Now()),
-		makePod("test-18", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, time.Now().Add(1*time.Minute)),
+		makePod("test-16", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime.Add(1*time.Minute)),
+		makePod("test-17", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
+		makePod("test-18", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime.Add(1*time.Minute)),
+		makePod("test-19", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
 		makePod("test-4", extension.PriorityProdValueMax-80, extension.QoSLSR, corev1.PodQOSGuaranteed, creationTime),
 		makePod("test-7", extension.PriorityProdValueMax-100, extension.QoSLS, corev1.PodQOSGuaranteed, creationTime),
 	}
@@ -90,10 +99,23 @@ func TestSortPods(t *testing.T) {
 				corev1.ResourceMemory: resource.MustParse("5Gi"),
 			},
 		},
+		{Namespace: "default", Name: "test-19"}: {
+			ResourceList: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("3"),
+				corev1.ResourceMemory: resource.MustParse("5Gi"),
+			},
+		},
 	}
 
-	sortPods(pods, podMetrics, []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory})
-	expectedPodsOrder := []string{"test-18", "test-17", "test-16", "test-15", "test-9", "test-8", "test-2", "test-3", "test-7", "test-4", "test-6", "test-5", "test-1", "test-11", "test-10", "test-12", "test-13", "test-14"}
+	nodeAllocatableMap := map[string]corev1.ResourceList{
+		"test-node": {
+			corev1.ResourceCPU:    resource.MustParse("96"),
+			corev1.ResourceMemory: resource.MustParse("512Gi"),
+		},
+	}
+	resourceToWeightMap := GenDefaultResourceToWeightMap([]corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory})
+	SortPodsByUsage(pods, podMetrics, nodeAllocatableMap, resourceToWeightMap)
+	expectedPodsOrder := []string{"test-18", "test-19", "test-17", "test-16", "test-15", "test-9", "test-8", "test-2", "test-3", "test-7", "test-4", "test-6", "test-5", "test-1", "test-11", "test-10", "test-12", "test-13", "test-14"}
 	var podsOrder []string
 	for _, v := range pods {
 		podsOrder = append(podsOrder, v.Name)

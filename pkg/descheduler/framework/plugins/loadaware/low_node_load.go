@@ -19,6 +19,7 @@ package loadaware
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +38,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	nodeutil "github.com/koordinator-sh/koordinator/pkg/descheduler/node"
 	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
 const (
@@ -177,7 +179,9 @@ func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framew
 		return true
 	}
 
-	sortNodes(sourceNodes, false)
+	resourceToWeightMap := sorter.GenDefaultResourceToWeightMap(resourceNames)
+	sortNodesByUsage(sourceNodes, resourceToWeightMap, false)
+
 	evictPodsFromSourceNodes(
 		ctx,
 		sourceNodes,
@@ -293,6 +297,9 @@ func logUtilizationCriteria(message string, thresholds deschedulerconfig.Resourc
 
 func overUtilizedEvictionReason(highThresholds deschedulerconfig.ResourceThresholds) evictionReasonGeneratorFn {
 	resourceNames := getResourceNames(highThresholds)
+	sort.Slice(resourceNames, func(i, j int) bool {
+		return resourceNames[i] < resourceNames[j]
+	})
 	return func(nodeInfo NodeInfo) string {
 		overutilizedResources, _ := isNodeOverutilized(nodeInfo.usage, nodeInfo.thresholds.highResourceThreshold)
 		usagePercentages := resourceUsagePercentages(nodeInfo.NodeUsage)
