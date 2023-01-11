@@ -75,7 +75,7 @@ type Reconciler struct {
 	eventRecorder          events.EventRecorder
 	reservationInterpreter reservation.Interpreter
 	evictorInterpreter     evictor.Interpreter
-	controllerFinder       *controllerfinder.ControllerFinder
+	controllerFinder       controllerfinder.Interface
 	unretriablePodFilter   framework.FilterFunc
 	retriablePodFilter     framework.FilterFunc
 	assumedCache           *assumedCache
@@ -184,11 +184,14 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 		clock:                  clock.RealClock{},
 	}
 
-	r.retriablePodFilter = podutil.WrapFilterFuncs(
+	retriablePodFilters := podutil.WrapFilterFuncs(
 		r.filterMaxMigratingPerNode,
 		r.filterMaxMigratingPerNamespace,
 		r.filterMaxMigratingOrUnavailablePerWorkload,
 	)
+	r.retriablePodFilter = func(pod *corev1.Pod) bool {
+		return retriablePodFilters(pod) || evictionsutil.HaveEvictAnnotation(pod)
+	}
 
 	err = manager.Add(r)
 	if err != nil {

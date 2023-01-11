@@ -90,7 +90,14 @@ func GetMaxUnavailable(replicas int, intOrPercent *intstr.IntOrString) (int, err
 			intOrPercent = &s
 		}
 	}
-	return intstr.GetScaledValueFromIntOrPercent(intOrPercent, replicas, true)
+	maxUnavailable, err := intstr.GetScaledValueFromIntOrPercent(intOrPercent, replicas, false)
+	if err != nil {
+		return 0, err
+	}
+	if maxUnavailable > replicas {
+		maxUnavailable = replicas
+	}
+	return maxUnavailable, nil
 }
 
 func GetMaxMigrating(replicas int, intOrPercent *intstr.IntOrString) (int, error) {

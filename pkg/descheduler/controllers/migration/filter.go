@@ -24,8 +24,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/klog/v2"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	kubecontroller "k8s.io/kubernetes/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -63,14 +63,18 @@ func (r *Reconciler) existingPodMigrationJob(pod *corev1.Pod) bool {
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodUID, string(pod.UID))}
 	existing := false
 	r.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
-		existing = true
-		return false
+		if podRef := job.Spec.PodRef; podRef != nil && podRef.UID == pod.UID {
+			existing = true
+		}
+		return !existing
 	})
 	if !existing {
 		opts = &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobPodNamespacedName, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))}
 		r.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
-			existing = true
-			return false
+			if podRef := job.Spec.PodRef; podRef != nil && podRef.Namespace == pod.Namespace && podRef.Name == pod.Name {
+				existing = true
+			}
+			return !existing
 		})
 	}
 	return existing
@@ -93,12 +97,21 @@ func (r *Reconciler) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 
 	count := 0
 	for i := range podList.Items {
-		pod := &podList.Items[i]
-		if r.existingPodMigrationJob(pod) {
-			count++
+		v := &podList.Items[i]
+		if v.UID != pod.UID && v.Spec.NodeName == pod.Spec.NodeName {
+			if r.existingPodMigrationJob(v) {
+				count++
+			}
 		}
 	}
-	return count < int(*r.args.MaxMigratingPerNode)
+
+	maxMigratingPerNode := int(*r.args.MaxMigratingPerNode)
+	exceeded := count >= maxMigratingPerNode
+	if exceeded {
+		klog.V(4).Infof("Pod %q fails to check maxMigratingPerNode because the Node %q has %d migrating Pods, exceeding the maxMigratingPerNode(%d)",
+			klog.KObj(pod), pod.Spec.NodeName, count, maxMigratingPerNode)
+	}
+	return !exceeded
 }
 
 func (r *Reconciler) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
@@ -109,17 +122,22 @@ func (r *Reconciler) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodNamespace, pod.Namespace)}
 	count := 0
 	r.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
-		count++
+		if podRef := job.Spec.PodRef; podRef != nil && podRef.UID != pod.UID && podRef.Namespace == pod.Namespace {
+			count++
+		}
 		return true
 	})
-	return count < int(*r.args.MaxMigratingPerNamespace)
+
+	maxMigratingPerNamespace := int(*r.args.MaxMigratingPerNamespace)
+	exceeded := count >= maxMigratingPerNamespace
+	if exceeded {
+		klog.V(4).Infof("Pod %q fails to check maxMigratingPerNamespace because the Namespace %q has %d migrating Pods, exceeding the maxMigratingPerNamespace(%d)",
+			klog.KObj(pod), pod.Namespace, count, maxMigratingPerNamespace)
+	}
+	return !exceeded
 }
 
 func (r *Reconciler) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) bool {
-	if r.existingPodMigrationJob(pod) {
-		return true
-	}
-
 	ownerRef := metav1.GetControllerOf(pod)
 	if ownerRef == nil {
 		return true
@@ -129,87 +147,71 @@ func (r *Reconciler) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod)
 		return false
 	}
 
+	maxMigrating, err := util.GetMaxMigrating(int(expectedReplicas), r.args.MaxMigratingPerWorkload)
+	if err != nil {
+		return false
+	}
+	maxUnavailable, err := util.GetMaxUnavailable(int(expectedReplicas), r.args.MaxUnavailablePerWorkload)
+	if err != nil {
+		return false
+	}
+
+	// TODO(joseph): There are a few special scenarios where should we allow eviction?
+	if expectedReplicas == 1 || int(expectedReplicas) == maxMigrating || int(expectedReplicas) == maxUnavailable {
+		klog.Warningf("maxMigrating(%d) or maxUnavailable(%d) equals to the replicas(%d) of the workload %s/%s/%s(%s) of Pod %q, or the replicas equals to 1, please increase the replicas or update the defense configurations",
+			maxMigrating, maxUnavailable, expectedReplicas, ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID, klog.KObj(pod))
+		return false
+	}
+
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodNamespace, pod.Namespace)}
 	migratingPods := map[types.NamespacedName]struct{}{}
 	r.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
-		podNamespacedName := types.NamespacedName{
-			Namespace: job.Spec.PodRef.Namespace,
-			Name:      job.Spec.PodRef.Name,
+		podRef := job.Spec.PodRef
+		if podRef == nil || podRef.UID == pod.UID {
+			return true
 		}
-		pod := &corev1.Pod{}
-		err := r.Client.Get(context.TODO(), podNamespacedName, pod)
+
+		podNamespacedName := types.NamespacedName{
+			Namespace: podRef.Namespace,
+			Name:      podRef.Name,
+		}
+		p := &corev1.Pod{}
+		err := r.Client.Get(context.TODO(), podNamespacedName, p)
 		if err != nil {
 			klog.Errorf("Failed to get Pod %q, err: %v", podNamespacedName, err)
 		} else {
-			innerPodOwnerRef := metav1.GetControllerOf(pod)
+			innerPodOwnerRef := metav1.GetControllerOf(p)
 			if innerPodOwnerRef != nil && innerPodOwnerRef.UID == ownerRef.UID {
 				migratingPods[podNamespacedName] = struct{}{}
 			}
 		}
 		return true
 	})
-	if len(migratingPods) == 0 {
-		return true
-	}
-	exceed, maxMigrating, err := r.exceedMaxMigratingReplicas(int(expectedReplicas), len(migratingPods), r.args.MaxMigratingPerWorkload)
-	if err != nil {
-		return false
-	}
-	podNamespacedName := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
-	if exceed {
-		klog.V(4).Infof("The workload %s(%s) of Pod %q has %d migration jobs that exceed MaxMigratingPerWorkload %d",
-			ownerRef.Name, ownerRef.UID, podNamespacedName, len(migratingPods), maxMigrating)
-		return false
+
+	if len(migratingPods) > 0 {
+		exceeded := len(migratingPods) >= maxMigrating
+		if exceeded {
+			klog.V(4).Infof("The workload %s/%s/%s(%s) of Pod %q has %d migration jobs that exceed MaxMigratingPerWorkload %d",
+				ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID, klog.KObj(pod), len(migratingPods), maxMigrating)
+			return false
+		}
 	}
 
 	unavailablePods := r.getUnavailablePods(pods)
 	mergeUnavailableAndMigratingPods(unavailablePods, migratingPods)
-	exceed, maxUnavailable, err := r.exceedMaxUnavailableReplicas(int(expectedReplicas), len(unavailablePods), r.args.MaxUnavailablePerWorkload)
-	if err != nil {
-		return false
-	}
-	if exceed {
-		klog.V(4).Infof("The workload %s(%s) of Pod %q has %d unavailable Pods that exceed MaxUnavailablePerWorkload %d",
-			ownerRef.Name, ownerRef.UID, podNamespacedName, len(migratingPods), maxUnavailable)
+	exceeded := len(unavailablePods) >= maxUnavailable
+	if exceeded {
+		klog.V(4).Infof("The workload %s/%s/%s(%s) of Pod %q has %d unavailable Pods that exceed MaxUnavailablePerWorkload %d",
+			ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID, klog.KObj(pod), len(unavailablePods), maxUnavailable)
 		return false
 	}
 	return true
 }
 
-func (r *Reconciler) exceedMaxMigratingReplicas(totalReplicas int, migratingReplicas int, maxMigrating *intstr.IntOrString) (bool, int, error) {
-	maxMigratingCount, err := util.GetMaxMigrating(totalReplicas, maxMigrating)
-	if err != nil {
-		return false, 0, err
-	}
-	if maxMigratingCount <= 0 {
-		return true, 0, nil // don't allow unset maxMigrating
-	}
-	exceeded := false
-	if migratingReplicas >= maxMigratingCount {
-		exceeded = true
-	}
-	return exceeded, maxMigratingCount, nil
-}
-
-func (r *Reconciler) exceedMaxUnavailableReplicas(totalReplicas, unavailableReplicas int, maxUnavailable *intstr.IntOrString) (bool, int, error) {
-	maxUnavailableCount, err := util.GetMaxUnavailable(totalReplicas, maxUnavailable)
-	if err != nil {
-		return false, 0, err
-	}
-	if maxUnavailableCount <= 0 {
-		return true, 0, nil // don't allow unset maxUnavailable
-	}
-	exceeded := false
-	if unavailableReplicas >= maxUnavailableCount {
-		exceeded = true
-	}
-	return exceeded, maxUnavailableCount, nil
-}
-
 func (r *Reconciler) getUnavailablePods(pods []*corev1.Pod) map[types.NamespacedName]struct{} {
 	unavailablePods := make(map[types.NamespacedName]struct{})
 	for _, pod := range pods {
-		if kubecontroller.IsPodActive(pod) {
+		if kubecontroller.IsPodActive(pod) && podutil.IsPodReady(pod) {
 			continue
 		}
 		k := types.NamespacedName{
