@@ -68,6 +68,10 @@ type ControllerReference struct {
 // controllers and their scale.
 type PodControllerFinder func(ref ControllerReference, namespace string) (*ScaleAndSelector, error)
 
+type Interface interface {
+	GetPodsForRef(apiVersion, kind, name, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, int32, error)
+}
+
 type ControllerFinder struct {
 	client.Client
 
