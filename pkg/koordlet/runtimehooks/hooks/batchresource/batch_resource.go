@@ -32,6 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -126,11 +127,11 @@ func (p *plugin) SetPodCPUShares(proto protocol.HooksProtocol) error {
 		if c.Requests == nil {
 			continue
 		}
-		q, ok := c.Requests[apiext.BatchCPU]
-		if !ok {
+		containerRequest := util.GetBatchMilliCPUFromResourceList(c.Requests)
+		if containerRequest <= 0 {
 			continue
 		}
-		milliCPURequest += q.Value()
+		milliCPURequest += containerRequest
 	}
 	cpuShares := milliCPURequest * sysutil.CPUShareUnitValue / 1000
 	if cpuShares < sysutil.CPUSharesMinValue {
@@ -170,12 +171,12 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 		if c.Limits == nil {
 			continue
 		}
-		q, ok := c.Limits[apiext.BatchCPU]
-		if !ok || q.Value() <= 0 { // pod unlimited once a container is unlimited
+		containerLimit := util.GetBatchMilliCPUFromResourceList(c.Limits)
+		if containerLimit <= 0 { // pod unlimited once a container is unlimited
 			milliCPULimit = -1
 			break
 		}
-		milliCPULimit += q.Value()
+		milliCPULimit += containerLimit
 	}
 
 	cfsQuota := milliCPULimit * sysutil.CFSBasePeriodValue / 1000 // TBD: assert base cfs period not changed
@@ -212,12 +213,12 @@ func (p *plugin) SetPodMemoryLimit(proto protocol.HooksProtocol) error {
 		if c.Limits == nil {
 			continue
 		}
-		q, ok := c.Limits[apiext.BatchMemory]
-		if !ok || q.Value() <= 0 { // pod unlimited once a container is unlimited
+		containerLimit := util.GetBatchMemoryFromResourceList(c.Limits)
+		if containerLimit <= 0 { // pod unlimited once a container is unlimited
 			memoryLimit = -1
 			break
 		}
-		memoryLimit += q.Value()
+		memoryLimit += containerLimit
 	}
 
 	podCtx.Response.Resources.MemoryLimit = pointer.Int64Ptr(memoryLimit)
@@ -272,9 +273,9 @@ func (p *plugin) SetContainerCPUShares(proto protocol.HooksProtocol) error {
 
 	milliCPURequest := int64(0)
 	if containerSpec.Requests != nil {
-		q, ok := containerSpec.Requests[apiext.BatchCPU]
-		if ok {
-			milliCPURequest = q.Value()
+		containerRequest := util.GetBatchMilliCPUFromResourceList(containerSpec.Requests)
+		if containerRequest > 0 {
+			milliCPURequest = containerRequest
 		}
 	}
 	cpuShares := milliCPURequest * sysutil.CPUShareUnitValue / 1000
@@ -311,9 +312,9 @@ func (p *plugin) SetContainerCFSQuota(proto protocol.HooksProtocol) error {
 
 	milliCPULimit := int64(0)
 	if containerSpec.Limits != nil {
-		q, ok := containerSpec.Limits[apiext.BatchCPU]
-		if ok {
-			milliCPULimit = q.Value()
+		containerLimit := util.GetBatchMilliCPUFromResourceList(containerSpec.Limits)
+		if containerLimit > 0 {
+			milliCPULimit = containerLimit
 		}
 	}
 	cfsQuota := milliCPULimit * sysutil.CFSBasePeriodValue / 1000
@@ -345,9 +346,9 @@ func (p *plugin) SetContainerMemoryLimit(proto protocol.HooksProtocol) error {
 
 	memoryLimit := int64(0)
 	if containerSpec.Limits != nil {
-		q, ok := containerSpec.Limits[apiext.BatchMemory]
-		if ok {
-			memoryLimit = q.Value()
+		containerLimit := util.GetBatchMemoryFromResourceList(containerSpec.Limits)
+		if containerLimit > 0 {
+			memoryLimit = containerLimit
 		}
 	}
 	if memoryLimit <= 0 {
