@@ -128,6 +128,18 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 		return subPrio1 > subPrio2
 	}
 
+	group1, _ := cs.pgMgr.GetGroupId(podInfo1.Pod)
+	group2, _ := cs.pgMgr.GetGroupId(podInfo2.Pod)
+	if group1 != group2 {
+		return group1 < group2
+	}
+
+	isgang1satisfied := cs.pgMgr.IsGangMinSatisfied(podInfo1.Pod)
+	isgang2satisfied := cs.pgMgr.IsGangMinSatisfied(podInfo2.Pod)
+	if isgang1satisfied != isgang2satisfied {
+		return !isgang1satisfied
+	}
+
 	creationTime1 := cs.pgMgr.GetCreatTime(podInfo1)
 	creationTime2 := cs.pgMgr.GetCreatTime(podInfo2)
 	if creationTime1.Equal(creationTime2) {

@@ -201,6 +201,7 @@ func TestLess(t *testing.T) {
 	// koordinator priority announced in pod's Labels
 	var lowSubPriority, highSubPriority = "111", "222"
 	var gangA_ns, gangB_ns = "namespace1", "namespace2"
+	gangC_ns := "namespace3"
 	now := time.Now()
 	earltTime := now.Add(1 * time.Second)
 	lateTime := now.Add(3 * time.Second)
@@ -220,9 +221,23 @@ func TestLess(t *testing.T) {
 			},
 		},
 	}
+	podToSatisfyGangC := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: gangC_ns,
+			Name:      "podC",
+			Labels: map[string]string{
+				"pod-group.scheduling.sigs.k8s.io/name": "gangC",
+			},
+		},
+	}
 	// GangB by PodGroup
 	gangBCreatTime := now.Add(5 * time.Second)
 	pg := makePg("gangB", gangB_ns, 2, &gangBCreatTime, nil)
+	// GangC by PodGroup
+	gangCCreatTime := now.Add(5 * time.Second)
+	pg2 := makePg("gangC", gangC_ns, 1, &gangCCreatTime, nil)
+	// GangD by PodGroup
+	pg3 := makePg("gangD", gangC_ns, 1, &gangCCreatTime, nil)
 	suit.start()
 	// create gangA and gangB
 
@@ -247,6 +262,39 @@ func TestLess(t *testing.T) {
 		})
 	if err != nil {
 		t.Errorf("retry pgClient create pg err: %v", err)
+	}
+	err = retry.OnError(
+		retry.DefaultRetry,
+		errors.IsTooManyRequests,
+		func() error {
+			var err error
+			_, err = pgClientSet.SchedulingV1alpha1().PodGroups(gangC_ns).Create(context.TODO(), pg2, metav1.CreateOptions{})
+			return err
+		})
+	if err != nil {
+		t.Errorf("retry pgClient create pg err: %v", err)
+	}
+	err = retry.OnError(
+		retry.DefaultRetry,
+		errors.IsTooManyRequests,
+		func() error {
+			var err error
+			_, err = pgClientSet.SchedulingV1alpha1().PodGroups(gangC_ns).Create(context.TODO(), pg3, metav1.CreateOptions{})
+			return err
+		})
+	if err != nil {
+		t.Errorf("retry pgClient create pg err: %v", err)
+	}
+	err = retry.OnError(
+		retry.DefaultRetry,
+		errors.IsTooManyRequests,
+		func() error {
+			var err error
+			_, err = suit.Handle.ClientSet().CoreV1().Pods(gangC_ns).Create(context.TODO(), podToSatisfyGangC, metav1.CreateOptions{})
+			return err
+		})
+	if err != nil {
+		t.Errorf("retry podClient create pod err: %v", err)
 	}
 	time.Sleep(100 * time.Millisecond)
 	for _, tt := range []struct {
@@ -384,6 +432,18 @@ func TestLess(t *testing.T) {
 			},
 			p2: &framework.QueuedPodInfo{
 				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
+				InitialAttemptTimestamp: earltTime,
+			},
+			expected: true, // p1 should be ahead of p2 in the queue
+		},
+		{
+			name: "equal priority and creation time, p1 belongs to gangA that has been satisfied",
+			p1: &framework.QueuedPodInfo{
+				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangD").Obj()),
+				InitialAttemptTimestamp: lateTime,
+			},
+			p2: &framework.QueuedPodInfo{
+				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangC_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangC").Obj()),
 				InitialAttemptTimestamp: earltTime,
 			},
 			expected: true, // p1 should be ahead of p2 in the queue
