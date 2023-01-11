@@ -128,66 +128,59 @@ func Test_getBECPUUsageCores(t *testing.T) {
 }
 
 func Test_getBECPURealMilliLimit(t *testing.T) {
-	c := collector{context: newCollectContext(), cgroupReader: resourceexecutor.NewCgroupReader()}
-	type fields struct {
-		UseCgroupV2 bool
-	}
 	tests := []struct {
-		name     string
-		cpuset   string
-		cfsQuota string
-		cpuMax   string
-		expect   int
-		fields   fields
+		name        string
+		cpuset      string
+		cfsQuota    string
+		expect      int
+		UseCgroupV2 bool
 	}{
 		{
-			name:     "test_suppress_by_cpuset",
-			cpuset:   "1-2",
-			cfsQuota: "-1",
-			cpuMax:   "-1",
-			expect:   2000,
-			fields: fields{
-				UseCgroupV2: false,
-			},
+			name:        "test_suppress_by_cpuset",
+			cpuset:      "1-2",
+			cfsQuota:    "-1",
+			expect:      2000,
+			UseCgroupV2: false,
 		},
 		{
-			name:     "test_suppress_by_cfsquota",
-			cpuset:   "1-15",
-			cfsQuota: "800000",
-			cpuMax:   "0",
-			expect:   8000,
-			fields: fields{
-				UseCgroupV2: false,
-			},
+			name:        "test_suppress_by_cfsquota",
+			cpuset:      "1-15",
+			cfsQuota:    "800000",
+			expect:      8000,
+			UseCgroupV2: false,
 		},
 		{
-			name:     "test_suppress_by_cfsquota-1",
-			cpuset:   "1-15",
-			cfsQuota: "800000",
-			cpuMax:   "800000",
-			expect:   8000,
-			fields: fields{
-				UseCgroupV2: true,
-			},
+			name:        "test_suppress_by_cfsquota-v2",
+			cpuset:      "1-15",
+			cfsQuota:    "800000",
+			expect:      8000,
+			UseCgroupV2: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			system.UseCgroupsV2 = tt.UseCgroupV2
+			c := collector{context: newCollectContext(), cgroupReader: resourceexecutor.NewCgroupReader()}
 			helper := system.NewFileTestUtil(t)
-			if tt.fields.UseCgroupV2 {
-				helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuotaV2, tt.cpuMax)
-				helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSetV2, tt.cpuset)
-				helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriodV2, "100000")
+			defer helper.Cleanup()
+
+			BECgroupParentDir := util.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+			if tt.UseCgroupV2 {
+				helper.SetCgroupsV2(true)
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUCFSQuotaV2, "800000 100000")
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUSetEffectiveV2, tt.cpuset)
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUCFSPeriodV2, "800000 100000")
 			} else {
-				helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, tt.cfsQuota)
-				helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet, tt.cpuset)
-				helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, "100000")
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUCFSQuota, tt.cfsQuota)
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUSet, tt.cpuset)
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUCFSPeriod, "100000")
 			}
 
 			milliLimit, err := c.getBECPURealMilliLimit()
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expect, milliLimit)
+
 		})
 	}
 }
