@@ -175,6 +175,9 @@ type ElasticQuotaArgs struct {
 
 	// MonitorAllQuotas monitor the quotaGroups' used and runtime Quota to revoke pods
 	MonitorAllQuotas *bool `json:"monitorAllQuotas,omitempty"`
+
+	// EnableCheckParentQuota check parentQuotaGroups' used and runtime Quota in PreFilter
+	EnableCheckParentQuota *bool `json:"enableCheckParentQuota,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
