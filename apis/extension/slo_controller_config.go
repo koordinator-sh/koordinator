@@ -14,7 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package config
+package extension
+
+import (
+	"time"
+
+	"github.com/mohae/deepcopy"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+)
 
 const (
 	// keys in the configmap
@@ -24,10 +33,115 @@ const (
 	CPUBurstConfigKey          = "cpu-burst-config"
 )
 
+// +k8s:deepcopy-gen=true
+type ColocationCfg struct {
+	ColocationStrategy `json:",inline"`
+	NodeConfigs        []NodeColocationCfg `json:"nodeConfigs,omitempty"`
+}
+
+// +k8s:deepcopy-gen=true
+type NodeColocationCfg struct {
+	NodeSelector *metav1.LabelSelector
+	ColocationStrategy
+}
+
+// +k8s:deepcopy-gen=true
+type ResourceThresholdCfg struct {
+	ClusterStrategy *slov1alpha1.ResourceThresholdStrategy `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeResourceThresholdStrategy        `json:"nodeStrategies,omitempty"`
+}
+
+// +k8s:deepcopy-gen=true
+type NodeResourceThresholdStrategy struct {
+	// an empty label selector matches all objects while a nil label selector matches no objects
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	*slov1alpha1.ResourceThresholdStrategy
+}
+
+// +k8s:deepcopy-gen=true
+type NodeCPUBurstCfg struct {
+	// an empty label selector matches all objects while a nil label selector matches no objects
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	*slov1alpha1.CPUBurstStrategy
+}
+
+// +k8s:deepcopy-gen=true
+type CPUBurstCfg struct {
+	ClusterStrategy *slov1alpha1.CPUBurstStrategy `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeCPUBurstCfg             `json:"nodeStrategies,omitempty"`
+}
+
+// +k8s:deepcopy-gen=true
+type ResourceQOSCfg struct {
+	ClusterStrategy *slov1alpha1.ResourceQOSStrategy `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeResourceQOSStrategy        `json:"nodeStrategies,omitempty"`
+}
+
+// +k8s:deepcopy-gen=true
+type NodeResourceQOSStrategy struct {
+	// an empty label selector matches all objects while a nil label selector matches no objects
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	*slov1alpha1.ResourceQOSStrategy
+}
+
+type CalculatePolicy string
+
+const (
+	CalculateByPodUsage   CalculatePolicy = "usage"
+	CalculateByPodRequest CalculatePolicy = "request"
+)
+
+// +k8s:deepcopy-gen=true
+type ColocationStrategyExtender struct {
+	Extensions ExtraFields `json:"extensions,omitempty"`
+}
+
+// +k8s:deepcopy-gen=false
+type ExtraFields map[string]interface{}
+
+func (in *ExtraFields) DeepCopyInto(out *ExtraFields) {
+	if in == nil {
+		return
+	} else {
+		outIf := deepcopy.Copy(*in)
+		*out = outIf.(ExtraFields)
+	}
+}
+
+func (in *ExtraFields) DeepCopy() *ExtraFields {
+	if in == nil {
+		return nil
+	}
+	out := new(ExtraFields)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// +k8s:deepcopy-gen=true
+type AggregatePolicy struct {
+	Durations      []time.Duration               `json:"durations,omitempty"`
+	StatisticTypes []slov1alpha1.AggregationType `json:"statisticTypes,omitempty"`
+}
+
+// +k8s:deepcopy-gen=true
+type ColocationStrategy struct {
+	Enable                         *bool                        `json:"enable,omitempty"`
+	MetricAggregateDurationSeconds *int64                       `json:"metricAggregateDurationSeconds,omitempty"`
+	MetricReportIntervalSeconds    *int64                       `json:"metricReportIntervalSeconds,omitempty"`
+	MetricAggregatePolicy          *slov1alpha1.AggregatePolicy `json:"metricAggregatePolicy,omitempty"`
+	CPUReclaimThresholdPercent     *int64                       `json:"cpuReclaimThresholdPercent,omitempty"`
+	MemoryReclaimThresholdPercent  *int64                       `json:"memoryReclaimThresholdPercent,omitempty"`
+	MemoryCalculatePolicy          *CalculatePolicy             `json:"memoryCalculatePolicy,omitempty"`
+	DegradeTimeMinutes             *int64                       `json:"degradeTimeMinutes,omitempty"`
+	UpdateTimeThresholdSeconds     *int64                       `json:"updateTimeThresholdSeconds,omitempty"`
+	ResourceDiffThreshold          *float64                     `json:"resourceDiffThreshold,omitempty"`
+	ColocationStrategyExtender     `json:",inline"`             // for third-party extension
+}
+
 /*
 Koordinator uses configmap to manage the configuration of SLO, the configmap is stored in
  <ConfigNameSpace>/<SLOCtrlConfigMap>, with the following keys respectively:
-   - <ColocationConfigKey>
+   - <extension.ColocationConfigKey>
    - <ResourceThresholdConfigKey>
    - <ResourceQOSConfigKey>
    - <CPUBurstConfigKey>
