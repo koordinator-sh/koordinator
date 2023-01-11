@@ -83,6 +83,8 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					Name:               "default/test",
 					CreateTime:         fakeTimeNowFn(),
 					WaitTime:           0,
+					GangGroupId:        "default/test",
+					GangGroup:          []string{"default/test"},
 					Mode:               extension.GangModeStrict,
 					ScheduleCycleValid: true,
 					ScheduleCycle:      1,
@@ -278,7 +280,8 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					Mode:              extension.GangModeStrict,
 					MinRequiredNumber: 2,
 					TotalChildrenNum:  2,
-					GangGroup:         []string{},
+					GangGroup:         []string{"default/gangb"},
+					GangGroupId:       "default/gangb",
 					HasGangInit:       true,
 					GangFrom:          GangFromPodAnnotation,
 					Children: map[string]*corev1.Pod{
@@ -367,9 +370,10 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					WaitTime:          0,
 					CreateTime:        fakeTimeNowFn(),
 					Mode:              extension.GangModeStrict,
+					GangGroupId:       "default/gangc",
 					MinRequiredNumber: 0,
 					TotalChildrenNum:  0,
-					GangGroup:         []string{},
+					GangGroup:         []string{"default/gangc"},
 					HasGangInit:       true,
 					GangFrom:          GangFromPodAnnotation,
 					Children: map[string]*corev1.Pod{
@@ -397,9 +401,10 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					WaitTime:          0,
 					CreateTime:        fakeTimeNowFn(),
 					Mode:              extension.GangModeStrict,
+					GangGroupId:       "default/gangd",
 					MinRequiredNumber: 0,
 					TotalChildrenNum:  0,
-					GangGroup:         []string{},
+					GangGroup:         []string{"default/gangd"},
 					HasGangInit:       true,
 					GangFrom:          GangFromPodAnnotation,
 					Children: map[string]*corev1.Pod{
@@ -483,6 +488,12 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 			}
 			for _, pod := range tt.pods {
 				gangCache.onPodAdd(pod)
+			}
+			for k, v := range tt.wantCache {
+				if !v.HasGangInit {
+					continue
+				}
+				tt.wantCache[k].GangGroupId = util.GetGangGroupId(v.GangGroup)
 			}
 			assert.Equal(t, tt.wantCache, gangCache.gangItems)
 			for pgKey, targetPg := range tt.wantedPodGroupMap {
@@ -610,7 +621,8 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 					Mode:                     extension.GangModeStrict,
 					MinRequiredNumber:        4,
 					TotalChildrenNum:         4,
-					GangGroup:                []string{},
+					GangGroup:                []string{"default/gangB"},
+					GangGroupId:              "default/gangB",
 					HasGangInit:              true,
 					GangFrom:                 GangFromPodGroupCrd,
 					Children:                 map[string]*corev1.Pod{},
@@ -668,6 +680,12 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 			// start deleting pods
 			for _, pod := range tt.pods {
 				gangCache.onPodDelete(pod)
+			}
+			for k, v := range tt.wantCache {
+				if !v.HasGangInit {
+					continue
+				}
+				tt.wantCache[k].GangGroupId = util.GetGangGroupId(v.GangGroup)
 			}
 			assert.Equal(t, tt.wantCache, gangCache.gangItems)
 
@@ -789,7 +807,8 @@ func TestGangCache_OnPodGroupAdd(t *testing.T) {
 					Mode:                     extension.GangModeStrict,
 					MinRequiredNumber:        4,
 					TotalChildrenNum:         4,
-					GangGroup:                []string{},
+					GangGroup:                []string{"default/gangA"},
+					GangGroupId:              "default/gangA",
 					HasGangInit:              true,
 					GangFrom:                 GangFromPodGroupCrd,
 					Children:                 map[string]*corev1.Pod{},
@@ -814,6 +833,12 @@ func TestGangCache_OnPodGroupAdd(t *testing.T) {
 			gangCache := NewGangCache(&config.CoschedulingArgs{}, nil, nil, pgClient)
 			for _, pg := range tt.pgs {
 				gangCache.onPodGroupAdd(pg)
+			}
+			for k, v := range tt.wantCache {
+				if !v.HasGangInit {
+					continue
+				}
+				tt.wantCache[k].GangGroupId = util.GetGangGroupId(v.GangGroup)
 			}
 			assert.Equal(t, tt.wantCache, gangCache.gangItems)
 		})
@@ -931,6 +956,7 @@ func TestGangCache_OnGangDelete(t *testing.T) {
 		ChildrenScheduleRoundMap: map[string]int{},
 	}
 	cacheGang := cache.getGangFromCacheByGangId("default/gangb", false)
+	wantedGang.GangGroupId = util.GetGangGroupId(wantedGang.GangGroup)
 	assert.Equal(t, wantedGang, cacheGang)
 
 }
