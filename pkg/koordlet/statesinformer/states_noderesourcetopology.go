@@ -64,8 +64,8 @@ type nodeTopoInformer struct {
 	metricCache    metriccache.MetricCache
 	callbackRunner *callbackRunner
 
-	NodeResourceTopologyInformer cache.SharedIndexInformer
-	NodeResourceTopologyLister   topologylister.NodeResourceTopologyLister
+	nodeResourceTopologyInformer cache.SharedIndexInformer
+	nodeResourceTopologyLister   topologylister.NodeResourceTopologyLister
 
 	kubelet      KubeletStub
 	nodeInformer *nodeInformer
@@ -88,8 +88,8 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 	s.metricCache = state.metricCache
 	s.callbackRunner = state.callbackRunner
 
-	s.NodeResourceTopologyInformer = newNodeResourceTopologyInformer(ctx.TopoClient, ctx.NodeName)
-	s.NodeResourceTopologyLister = topologylister.NewNodeResourceTopologyLister(s.NodeResourceTopologyInformer.GetIndexer())
+	s.nodeResourceTopologyInformer = newNodeResourceTopologyInformer(ctx.TopoClient, ctx.NodeName)
+	s.nodeResourceTopologyLister = topologylister.NewNodeResourceTopologyLister(s.nodeResourceTopologyInformer.GetIndexer())
 
 	nodeInformerIf := state.informerPlugins[nodeInformerName]
 	nodeInformer, ok := nodeInformerIf.(*nodeInformer)
@@ -105,7 +105,7 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 	}
 	s.podsInformer = podsInformer
 
-	s.NodeResourceTopologyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	s.nodeResourceTopologyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			nodeResourceTopology, ok := obj.(*topov1alpha1.NodeResourceTopology)
 			if ok {
@@ -129,15 +129,14 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 			s.updateNodeTopo(newNodeResourceTopology)
 		},
 	})
-
 }
 
 func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 	klog.V(2).Infof("starting node topo informer")
 	if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
-		go s.NodeResourceTopologyInformer.Run(stopCh)
+		go s.nodeResourceTopologyInformer.Run(stopCh)
 	}
-	if !cache.WaitForCacheSync(stopCh, s.NodeResourceTopologyInformer.HasSynced, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
+	if !cache.WaitForCacheSync(stopCh, s.nodeResourceTopologyInformer.HasSynced, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
 		klog.Fatalf("timed out waiting for pod caches to sync")
 	}
 	if s.config.NodeTopologySyncInterval <= 0 {
@@ -155,10 +154,13 @@ func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 }
 
 func (s *nodeTopoInformer) HasSynced() bool {
-	if s.NodeResourceTopologyInformer == nil {
+	if !features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+		return true
+	}
+	if s.nodeResourceTopologyInformer == nil {
 		return false
 	}
-	synced := s.NodeResourceTopologyInformer.HasSynced()
+	synced := s.nodeResourceTopologyInformer.HasSynced()
 	klog.V(5).Infof("node Topo informer has synced %v", synced)
 	return synced
 }
@@ -189,7 +191,7 @@ func (s *nodeTopoInformer) createNodeTopoIfNotExist() {
 	topologyName := node.Name
 	ctx := context.TODO()
 
-	_, err := s.NodeResourceTopologyLister.Get(topologyName)
+	_, err := s.nodeResourceTopologyLister.Get(topologyName)
 	if err == nil {
 		return
 	}
@@ -379,7 +381,7 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 	err = util.RetryOnConflictOrTooManyRequests(func() error {
 		var nodeResourceTopology *v1alpha1.NodeResourceTopology
 		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
-			nodeResourceTopology, err = s.NodeResourceTopologyLister.Get(node.Name)
+			nodeResourceTopology, err = s.nodeResourceTopologyLister.Get(node.Name)
 			if errors.IsNotFound(err) {
 				klog.Warningf("nodeTopo %v not found, skip", node.Name)
 				return nil
@@ -401,14 +403,13 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 
 		if isSyncNeeded(s.nodeTopology, nodeResourceTopology, node.Name) {
 			// do UPDATE
+			s.setNodeTopo(nodeResourceTopology)
 			if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 				_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
 				if err != nil {
 					klog.Errorf("failed to report topology of node %s, err: %v", node.Name, err)
 					return err
 				}
-			} else {
-				s.nodeTopology = nodeResourceTopology
 			}
 		}
 		return nil

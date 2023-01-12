@@ -67,7 +67,7 @@ func Test_syncNodeResourceTopology(t *testing.T) {
 	}
 	r := &nodeTopoInformer{
 		topologyClient: client,
-		NodeResourceTopologyLister: &fakeNodeResourceTopologyLister{
+		nodeResourceTopologyLister: &fakeNodeResourceTopologyLister{
 			nodeResourceTopologys: &topologyv1alpha1.NodeResourceTopology{
 				ObjectMeta: metav1.ObjectMeta{},
 			},
@@ -439,7 +439,7 @@ func Test_reportNodeTopology(t *testing.T) {
 				kubelet:        tt.kubeletStub,
 				topologyClient: client,
 				metricCache:    mockMetricCache,
-				NodeResourceTopologyLister: &fakeNodeResourceTopologyLister{
+				nodeResourceTopologyLister: &fakeNodeResourceTopologyLister{
 					nodeResourceTopologys: &topologyv1alpha1.NodeResourceTopology{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "test",
