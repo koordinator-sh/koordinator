@@ -360,8 +360,5 @@ func (p *plugin) SetContainerMemoryLimit(proto protocol.HooksProtocol) error {
 }
 
 func isPodQoSBEByAttr(labels map[string]string, annotations map[string]string) bool {
-	if labels == nil || annotations == nil {
-		return false
-	}
 	return apiext.GetQoSClassByAttrs(labels, annotations) == apiext.QoSBE
 }
