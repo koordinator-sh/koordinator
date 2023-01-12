@@ -27,6 +27,7 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 )
@@ -43,8 +44,8 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 			Namespace: config.ConfigNameSpace,
 		},
 		Data: map[string]string{
-			config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
-			config.ResourceQOSConfigKey: `
+			extension.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
+			extension.ResourceQOSConfigKey: `
 {
   "clusterStrategy": {
     "beClass": {
@@ -55,7 +56,7 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
   }
 }
 `,
-			config.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
+			extension.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
 		},
 	}
 
@@ -131,9 +132,9 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ResourceThresholdConfigKey: "invalid_content",
-					config.ResourceQOSConfigKey:       "invalid_content",
-					config.CPUBurstConfigKey:          "invalid_content",
+					extension.ResourceThresholdConfigKey: "invalid_content",
+					extension.ResourceQOSConfigKey:       "invalid_content",
+					extension.CPUBurstConfigKey:          "invalid_content",
 				},
 			}},
 			wantChanged: false,

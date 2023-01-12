@@ -152,7 +152,7 @@ func (r *NodeResourceReconciler) calculateBEResourceByPolicy(node *corev1.Node,
 		systemUsed.Cpu().MilliValue(), podLSUsed.Cpu().MilliValue())
 
 	var memMsg string
-	if strategy != nil && strategy.MemoryCalculatePolicy != nil && *strategy.MemoryCalculatePolicy == config.CalculateByPodRequest {
+	if strategy != nil && strategy.MemoryCalculatePolicy != nil && *strategy.MemoryCalculatePolicy == extension.CalculateByPodRequest {
 		beAllocatable[corev1.ResourceMemory] = *beAllocatableByRequest.Memory()
 		memMsg = fmt.Sprintf("nodeAllocatableBE[Mem(GB)]:%v = nodeAllocatable:%v - nodeReservation:%v - podLSRequest:%v",
 			beAllocatable.Memory().ScaledValue(resource.Giga), nodeAllocatable.Memory().ScaledValue(resource.Giga),

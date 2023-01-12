@@ -22,6 +22,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"k8s.io/utils/pointer"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 type testExtensionsStruct struct {
@@ -79,17 +81,17 @@ func TestExtraFields_DeepCopy(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		in   ExtraFields
-		want *ExtraFields
+		in   extension.ExtraFields
+		want *extension.ExtraFields
 	}{
 		{
 			name: "deep copy struct",
-			in: ExtraFields{
+			in: extension.ExtraFields{
 				"test-ext-key": &testExtStruct{
 					TestBoolVal: pointer.BoolPtr(true),
 				},
 			},
-			want: &ExtraFields{
+			want: &extension.ExtraFields{
 				"test-ext-key": &testExtStruct{
 					TestBoolVal: pointer.BoolPtr(true),
 				},

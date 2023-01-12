@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 const (
@@ -33,7 +33,7 @@ const (
 
 type SetNodeAnnotation struct{}
 
-func (s *SetNodeAnnotation) Execute(strategy *config.ColocationStrategy, node *corev1.Node) error {
+func (s *SetNodeAnnotation) Execute(strategy *extension.ColocationStrategy, node *corev1.Node) error {
 	node.Annotations[testNodeAnnoKey] = testNodeAnnoVal
 	return nil
 }
