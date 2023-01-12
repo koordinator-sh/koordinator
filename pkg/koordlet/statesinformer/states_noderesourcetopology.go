@@ -64,6 +64,7 @@ type nodeTopoInformer struct {
 	metricCache    metriccache.MetricCache
 	callbackRunner *callbackRunner
 
+	initialTopology              bool
 	nodeResourceTopologyInformer cache.SharedIndexInformer
 	nodeResourceTopologyLister   topologylister.NodeResourceTopologyLister
 
@@ -104,44 +105,18 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 		klog.Fatalf("pods informer format error")
 	}
 	s.podsInformer = podsInformer
-
-	s.nodeResourceTopologyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			nodeResourceTopology, ok := obj.(*topov1alpha1.NodeResourceTopology)
-			if ok {
-				s.updateNodeTopo(nodeResourceTopology)
-			} else {
-				klog.Errorf("node topology informer add func parse failed")
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			oldNodeResourceTopology, oldOK := oldObj.(*topov1alpha1.NodeResourceTopology)
-			newNodeResourceTopology, newOK := newObj.(*topov1alpha1.NodeResourceTopology)
-			if !oldOK || !newOK {
-				klog.Errorf("unable to convert object to NodeResourceTopology, old %T, new %T", oldObj, newObj)
-				return
-			}
-			if !isSyncNeeded(oldNodeResourceTopology, newNodeResourceTopology, ctx.NodeName) {
-				klog.V(5).Infof("find NodeResourceTopology %s has not changed.", newNodeResourceTopology.Name)
-				return
-			}
-			klog.Infof("update node Resource Topology %s", newNodeResourceTopology.Name)
-			s.updateNodeTopo(newNodeResourceTopology)
-		},
-	})
 }
 
 func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 	klog.V(2).Infof("starting node topo informer")
 
+	if !cache.WaitForCacheSync(stopCh, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
+		klog.Fatalf("timed out waiting for caches to sync")
+	}
 	if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 		go s.nodeResourceTopologyInformer.Run(stopCh)
-		if !cache.WaitForCacheSync(stopCh, s.nodeResourceTopologyInformer.HasSynced, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
-			klog.Fatalf("timed out waiting for caches to sync")
-		}
-	} else {
-		if !cache.WaitForCacheSync(stopCh, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
-			klog.Fatalf("timed out waiting for caches to sync")
+		if !cache.WaitForCacheSync(stopCh, s.nodeResourceTopologyInformer.HasSynced) {
+			klog.Fatalf("timed out waiting for Topology cache to sync")
 		}
 	}
 
@@ -160,6 +135,9 @@ func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 }
 
 func (s *nodeTopoInformer) HasSynced() bool {
+	if !s.initialTopology {
+		return false
+	}
 	if !features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 		return true
 	}
@@ -409,7 +387,8 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 
 		if isSyncNeeded(s.nodeTopology, nodeResourceTopology, node.Name) {
 			// do UPDATE
-			s.setNodeTopo(nodeResourceTopology)
+			s.updateNodeTopo(nodeResourceTopology)
+
 			if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 				_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
 				if err != nil {
@@ -417,6 +396,10 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 					return err
 				}
 			}
+			if s.initialTopology == false {
+				klog.V(4).Infof("ndoe %s topology is initialed", node.Name)
+			}
+			s.initialTopology = true
 		}
 		return nil
 	})
