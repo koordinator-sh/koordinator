@@ -160,14 +160,13 @@ func Test_getBECPURealMilliLimit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			system.UseCgroupsV2 = tt.UseCgroupV2
-			c := collector{context: newCollectContext(), cgroupReader: resourceexecutor.NewCgroupReader()}
 			helper := system.NewFileTestUtil(t)
+			helper.SetCgroupsV2(tt.UseCgroupV2)
 			defer helper.Cleanup()
+			c := collector{context: newCollectContext(), cgroupReader: resourceexecutor.NewCgroupReader()}
 
 			BECgroupParentDir := util.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
 			if tt.UseCgroupV2 {
-				helper.SetCgroupsV2(true)
 				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUCFSQuotaV2, "800000 100000")
 				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUSetEffectiveV2, tt.cpuset)
 				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUCFSPeriodV2, "800000 100000")
@@ -180,7 +179,6 @@ func Test_getBECPURealMilliLimit(t *testing.T) {
 			milliLimit, err := c.getBECPURealMilliLimit()
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expect, milliLimit)
-
 		})
 	}
 }
