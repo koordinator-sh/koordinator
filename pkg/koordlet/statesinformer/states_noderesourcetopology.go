@@ -133,12 +133,18 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 
 func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 	klog.V(2).Infof("starting node topo informer")
+
 	if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 		go s.nodeResourceTopologyInformer.Run(stopCh)
+		if !cache.WaitForCacheSync(stopCh, s.nodeResourceTopologyInformer.HasSynced, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
+			klog.Fatalf("timed out waiting for caches to sync")
+		}
+	} else {
+		if !cache.WaitForCacheSync(stopCh, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
+			klog.Fatalf("timed out waiting for caches to sync")
+		}
 	}
-	if !cache.WaitForCacheSync(stopCh, s.nodeResourceTopologyInformer.HasSynced, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
-		klog.Fatalf("timed out waiting for pod caches to sync")
-	}
+
 	if s.config.NodeTopologySyncInterval <= 0 {
 		return
 	}
