@@ -367,7 +367,7 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 			nodeResourceTopology, err = s.nodeResourceTopologyLister.Get(node.Name)
 			if errors.IsNotFound(err) {
-				klog.Warningf("nodeTopo %v not found, skip", node.Name)
+				klog.Warningf("nodeTopo %s not found, skip", node.Name)
 				return nil
 			} else if err != nil {
 				klog.Warningf("failed to get %s nodeTopo: %v", node.Name, err)
@@ -396,10 +396,10 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 					return err
 				}
 			}
-			if s.initialTopology == false {
-				klog.V(4).Infof("ndoe %s topology is initialed", node.Name)
-			}
+		}
+		if !s.initialTopology {
 			s.initialTopology = true
+			klog.V(4).Infof("node topology informer of node %s is initialized", node.Name)
 		}
 		return nil
 	})
