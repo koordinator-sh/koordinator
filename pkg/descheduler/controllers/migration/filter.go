@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	gocache "github.com/patrickmn/go-cache"
+	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -30,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/util"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
@@ -227,4 +230,70 @@ func mergeUnavailableAndMigratingPods(unavailablePods, migratingPods map[types.N
 	for k, v := range migratingPods {
 		unavailablePods[k] = v
 	}
+}
+
+func (r *Reconciler) trackEvictedPod(pod *corev1.Pod) {
+	if r.objectLimiters == nil || r.limiterCache == nil {
+		return
+	}
+	ownerRef := metav1.GetControllerOf(pod)
+	if ownerRef == nil {
+		return
+	}
+
+	objectLimiterArgs, ok := r.args.ObjectLimiters[deschedulerconfig.MigrationLimitObjectWorkload]
+	if !ok || objectLimiterArgs.Duration.Seconds() == 0 {
+		return
+	}
+
+	var maxMigratingReplicas int
+	if expectedReplicas, err := r.controllerFinder.GetExpectedScaleForPods([]*corev1.Pod{pod}); err == nil {
+		maxMigrating := objectLimiterArgs.MaxMigrating
+		if maxMigrating == nil {
+			maxMigrating = r.args.MaxMigratingPerWorkload
+		}
+		maxMigratingReplicas, _ = util.GetMaxMigrating(int(expectedReplicas), maxMigrating)
+	}
+	if maxMigratingReplicas == 0 {
+		return
+	}
+
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	uid := ownerRef.UID
+	limit := rate.Limit(maxMigratingReplicas) / rate.Limit(objectLimiterArgs.Duration.Seconds())
+	limiter := r.objectLimiters[uid]
+	if limiter == nil {
+		limiter = rate.NewLimiter(limit, 1)
+		r.objectLimiters[uid] = limiter
+	} else if limiter.Limit() != limit {
+		limiter.SetLimit(limit)
+	}
+
+	if !limiter.AllowN(r.clock.Now(), 1) {
+		klog.Infof("The workload %s/%s/%s has been frequently descheduled recently and needs to be limited for a period of time", ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion)
+	}
+	r.limiterCache.Set(string(uid), 0, gocache.DefaultExpiration)
+}
+
+func (r *Reconciler) filterLimitedObject(pod *corev1.Pod) bool {
+	if r.objectLimiters == nil || r.limiterCache == nil {
+		return true
+	}
+	objectLimiterArgs, ok := r.args.ObjectLimiters[deschedulerconfig.MigrationLimitObjectWorkload]
+	if !ok || objectLimiterArgs.Duration.Duration == 0 {
+		return true
+	}
+	if ownerRef := metav1.GetControllerOf(pod); ownerRef != nil {
+		r.lock.Lock()
+		defer r.lock.Unlock()
+		if limiter := r.objectLimiters[ownerRef.UID]; limiter != nil {
+			if remainTokens := limiter.Tokens() - float64(1); remainTokens < 0 {
+				klog.Infof("Pod %q is filtered by workload %s/%s/%s is limited", klog.KObj(pod), ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion)
+				return false
+			}
+		}
+	}
+	return true
 }

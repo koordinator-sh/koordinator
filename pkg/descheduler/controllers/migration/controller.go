@@ -20,8 +20,11 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
+	gocache "github.com/patrickmn/go-cache"
+	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,6 +83,10 @@ type Reconciler struct {
 	retriablePodFilter     framework.FilterFunc
 	assumedCache           *assumedCache
 	clock                  clock.Clock
+
+	lock           sync.Mutex
+	objectLimiters map[types.UID]*rate.Limiter
+	limiterCache   *gocache.Cache
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -183,8 +190,10 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 		assumedCache:           newAssumedCache(),
 		clock:                  clock.RealClock{},
 	}
+	r.initObjectLimiters()
 
 	retriablePodFilters := podutil.WrapFilterFuncs(
+		r.filterLimitedObject,
 		r.filterMaxMigratingPerNode,
 		r.filterMaxMigratingPerNamespace,
 		r.filterMaxMigratingOrUnavailablePerWorkload,
@@ -198,6 +207,25 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 		return nil, err
 	}
 	return r, nil
+}
+
+func (r *Reconciler) initObjectLimiters() {
+	var trackExpiration time.Duration
+	for _, v := range r.args.ObjectLimiters {
+		if v.Duration.Duration > trackExpiration {
+			trackExpiration = v.Duration.Duration
+		}
+	}
+	if trackExpiration > 0 {
+		r.objectLimiters = make(map[types.UID]*rate.Limiter)
+		limiterExpiration := trackExpiration + trackExpiration/2
+		r.limiterCache = gocache.New(limiterExpiration, limiterExpiration)
+		r.limiterCache.OnEvicted(func(s string, _ interface{}) {
+			r.lock.Lock()
+			defer r.lock.Unlock()
+			delete(r.objectLimiters, types.UID(s))
+		})
+	}
 }
 
 func (r *Reconciler) Name() string {
@@ -825,6 +853,7 @@ func (r *Reconciler) evictPod(ctx context.Context, job *sev1alpha1.PodMigrationJ
 		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonEvicting, "Migrating", "Failed evict Pod %q caused by %v", podNamespacedName, err)
 		return false, reconcile.Result{}, err
 	}
+	r.trackEvictedPod(pod)
 
 	_, reason := evictor.GetEvictionTriggerAndReason(job.Annotations)
 	cond = &sev1alpha1.PodMigrationJobCondition{
