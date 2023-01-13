@@ -235,7 +235,7 @@ func generateExpectedCgroupParent(cgroupDriver, cgroupParent string) string {
 func splitDockerEnv(dockerEnvs []string) map[string]string {
 	res := make(map[string]string)
 	for _, str := range dockerEnvs {
-		tokens := strings.Split(str, "=")
+		tokens := strings.SplitN(str, "=", 2)
 		if len(tokens) != 2 {
 			continue
 		}
