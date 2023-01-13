@@ -102,6 +102,10 @@ func (f *fakeControllerFinder) GetPodsForRef(apiVersion, kind, name, ns string, 
 	return f.pods, f.replicas, f.err
 }
 
+func (f *fakeControllerFinder) GetExpectedScaleForPods(pods []*corev1.Pod) (int32, error) {
+	return f.replicas, f.err
+}
+
 func newTestReconciler() *Reconciler {
 	scheme := runtime.NewScheme()
 	_ = sev1alpha1.AddToScheme(scheme)
@@ -2312,6 +2316,141 @@ func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
 			}
 
 			got := reconciler.filterMaxMigratingOrUnavailablePerWorkload(filterPod)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFilterObjectLimiter(t *testing.T) {
+	ownerReferences1 := []metav1.OwnerReference{
+		{
+			APIVersion: "apps/v1",
+			Controller: pointer.Bool(true),
+			Kind:       "StatefulSet",
+			Name:       "test-1",
+			UID:        uuid.NewUUID(),
+		},
+	}
+	otherOwnerReferences := metav1.OwnerReference{
+		APIVersion: "apps/v1",
+		Controller: pointer.Bool(true),
+		Kind:       "StatefulSet",
+		Name:       "test-2",
+		UID:        uuid.NewUUID(),
+	}
+	testObjectLimiters := deschedulerconfig.ObjectLimiterMap{
+		deschedulerconfig.MigrationLimitObjectWorkload: {
+			Duration:     metav1.Duration{Duration: 1 * time.Second},
+			MaxMigrating: &intstr.IntOrString{Type: intstr.Int, IntVal: 10},
+		},
+	}
+
+	tests := []struct {
+		name             string
+		objectLimiters   deschedulerconfig.ObjectLimiterMap
+		totalReplicas    int32
+		sleepDuration    time.Duration
+		pod              *corev1.Pod
+		evictedPodsCount int
+		evictedWorkload  *metav1.OwnerReference
+		want             bool
+	}{
+		{
+			name:           "less than default maxMigrating",
+			totalReplicas:  100,
+			objectLimiters: testObjectLimiters,
+			sleepDuration:  100 * time.Millisecond,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences1,
+				},
+			},
+			evictedPodsCount: 6,
+			want:             true,
+		},
+		{
+			name:           "exceeded default maxMigrating",
+			totalReplicas:  100,
+			objectLimiters: testObjectLimiters,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences1,
+				},
+			},
+			evictedPodsCount: 11,
+			want:             false,
+		},
+		{
+			name:           "other than workload",
+			totalReplicas:  100,
+			objectLimiters: testObjectLimiters,
+			sleepDuration:  100 * time.Millisecond,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences1,
+				},
+			},
+			evictedPodsCount: 11,
+			evictedWorkload:  &otherOwnerReferences,
+			want:             true,
+		},
+		{
+			name:          "disable objectLimiters",
+			totalReplicas: 100,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences1,
+				},
+			},
+			evictedPodsCount: 11,
+			objectLimiters: deschedulerconfig.ObjectLimiterMap{
+				deschedulerconfig.MigrationLimitObjectWorkload: deschedulerconfig.MigrationObjectLimiter{
+					Duration: metav1.Duration{Duration: 0},
+				},
+			},
+			want: true,
+		},
+		{
+			name:          "default limiter",
+			totalReplicas: 100,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences1,
+				},
+			},
+			evictedPodsCount: 1,
+			want:             false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reconciler := newTestReconciler()
+			controllerFinder := &fakeControllerFinder{}
+			if tt.objectLimiters != nil {
+				reconciler.args.ObjectLimiters = tt.objectLimiters
+			}
+
+			reconciler.initObjectLimiters()
+			if tt.totalReplicas > 0 {
+				controllerFinder.replicas = tt.totalReplicas
+			}
+			reconciler.controllerFinder = controllerFinder
+			if tt.evictedPodsCount > 0 {
+				for i := 0; i < tt.evictedPodsCount; i++ {
+					pod := tt.pod.DeepCopy()
+					if tt.evictedWorkload != nil {
+						pod.OwnerReferences = []metav1.OwnerReference{
+							*tt.evictedWorkload,
+						}
+					}
+					reconciler.trackEvictedPod(pod)
+					if tt.sleepDuration > 0 {
+						time.Sleep(tt.sleepDuration)
+					}
+				}
+			}
+			got := reconciler.filterLimitedObject(tt.pod)
 			assert.Equal(t, tt.want, got)
 		})
 	}

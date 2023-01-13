@@ -40,6 +40,14 @@ const (
 	defaultMigrationJobEvictionPolicy = migrationevictor.NativeEvictorName
 )
 
+var (
+	defaultObjectLimiters = map[MigrationLimitObjectType]MigrationObjectLimiter{
+		MigrationLimitObjectWorkload: {
+			Duration: metav1.Duration{Duration: 5 * time.Minute},
+		},
+	}
+)
+
 func addDefaultingFuncs(scheme *runtime.Scheme) error {
 	return RegisterDefaults(scheme)
 }
@@ -214,6 +222,10 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 	}
 	if obj.EvictionPolicy == "" {
 		obj.EvictionPolicy = defaultMigrationJobEvictionPolicy
+	}
+
+	if len(obj.ObjectLimiters) == 0 {
+		obj.ObjectLimiters = defaultObjectLimiters
 	}
 }
 

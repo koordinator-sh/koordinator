@@ -91,6 +91,9 @@ type MigrationControllerArgs struct {
 	// Default is false
 	DryRun bool
 
+	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run. Defaults to 1.
+	MaxConcurrentReconciles int32
+
 	// EvictFailedBarePods allows pods without ownerReferences and in failed phase to be evicted.
 	EvictFailedBarePods bool
 
@@ -125,8 +128,11 @@ type MigrationControllerArgs struct {
 	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
 	MaxUnavailablePerWorkload *intstr.IntOrString
 
-	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run. Defaults to 1.
-	MaxConcurrentReconciles int32
+	// ObjectLimiters control the frequency of migration/eviction to make it smoother,
+	// and also protect Pods of the same class from being evicted frequently.
+	// e.g. limiting the frequency of Pods of the same workload being evicted.
+	// The default is to set the MigrationLimitObjectWorkload limiter.
+	ObjectLimiters ObjectLimiterMap
 
 	// DefaultJobMode represents the default operating mode of the PodMigrationJob
 	// Default is PodMigrationJobModeReservationFirst
@@ -144,4 +150,22 @@ type MigrationControllerArgs struct {
 	EvictionPolicy string
 	// DefaultDeleteOptions defines options when deleting migrated pods and preempted pods through the method specified by EvictionPolicy
 	DefaultDeleteOptions *metav1.DeleteOptions
+}
+
+type MigrationLimitObjectType string
+
+const (
+	MigrationLimitObjectWorkload MigrationLimitObjectType = "workload"
+)
+
+type ObjectLimiterMap map[MigrationLimitObjectType]MigrationObjectLimiter
+
+// MigrationObjectLimiter means that if the specified dimension has multiple migrations within the configured time period
+// and exceeds the configured threshold, it will be limited.
+type MigrationObjectLimiter struct {
+	// Duration indicates the time window of the desired limit.
+	Duration metav1.Duration
+	// MaxMigrating indicates the maximum number of migrations/evictions allowed within the window time.
+	// If configured as nil or 0, the maximum number will be calculated according to MaxMigratingPerWorkload.
+	MaxMigrating *intstr.IntOrString
 }
