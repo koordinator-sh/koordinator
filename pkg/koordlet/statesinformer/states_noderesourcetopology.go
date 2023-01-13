@@ -366,11 +366,8 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		var nodeResourceTopology *v1alpha1.NodeResourceTopology
 		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 			nodeResourceTopology, err = s.nodeResourceTopologyLister.Get(node.Name)
-			if errors.IsNotFound(err) {
-				klog.Warningf("nodeTopo %s not found, skip", node.Name)
-				return nil
-			} else if err != nil {
-				klog.Warningf("failed to get %s nodeTopo: %v", node.Name, err)
+			if err != nil {
+				klog.Errorf("failed to get %s nodeTopo: %v", node.Name, err)
 				return err
 			}
 		} else {
