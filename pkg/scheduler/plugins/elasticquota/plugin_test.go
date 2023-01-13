@@ -995,9 +995,9 @@ func TestPlugin_Unreserve(t *testing.T) {
 			ctx := context.TODO()
 			gp.OnPodAdd(tt.pod)
 			gp.Reserve(ctx, framework.NewCycleState(), tt.pod, "")
-			assert.True(t, gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name).GetPodIsAssigned(tt.pod))
+			assert.True(t, gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name).CheckPodIsAssigned(tt.pod))
 			gp.Unreserve(ctx, framework.NewCycleState(), tt.pod, "")
-			assert.False(t, gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name).GetPodIsAssigned(tt.pod))
+			assert.False(t, gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name).CheckPodIsAssigned(tt.pod))
 		})
 	}
 }

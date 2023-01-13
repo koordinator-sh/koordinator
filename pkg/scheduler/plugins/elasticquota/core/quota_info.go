@@ -332,7 +332,7 @@ func (qi *QuotaInfo) GetPodCache() map[string]*v1.Pod {
 	return pods
 }
 
-func (qi *QuotaInfo) GetPodIsAssigned(pod *v1.Pod) bool {
+func (qi *QuotaInfo) CheckPodIsAssigned(pod *v1.Pod) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
