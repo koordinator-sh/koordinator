@@ -32,8 +32,9 @@ import (
 )
 
 var (
-	// SLO configmap name
-	ConfigNameSpace  = "koordinator-system"
+	// ConfigNameSpace is the namespace of the slo-controller configmap.
+	ConfigNameSpace = "koordinator-system"
+	// SLOCtrlConfigMap is the name of the slo-controller configmap.
 	SLOCtrlConfigMap = "slo-controller-config"
 )
 

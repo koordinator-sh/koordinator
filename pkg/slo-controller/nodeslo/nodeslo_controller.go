@@ -48,8 +48,7 @@ func (r *NodeSLOReconciler) initNodeSLO(node *corev1.Node, nodeSLO *slov1alpha1.
 	// get spec from a configmap
 	spec, err := r.getNodeSLOSpec(node, nil)
 	if err != nil {
-		klog.Errorf("initNodeSLO failed to get NodeSLO %s/%s spec, error: %v",
-			node.GetNamespace(), node.GetName(), err)
+		klog.V(5).Infof("initNodeSLO failed to get NodeSLO %s spec, error: %v", node.GetName(), err)
 		return err
 	}
 
@@ -72,13 +71,13 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 	var err error
 	nodeSLOSpec.ResourceUsedThresholdWithBE, err = getResourceThresholdSpec(node, &sloCfg.ThresholdCfgMerged)
 	if err != nil {
-		klog.Warningf("getNodeSLOSpec(): failed to get resourceTheshold spec for node %s,error: %v", node.Name, err)
+		klog.Warningf("getNodeSLOSpec(): failed to get resourceThreshold spec for node %s,error: %v", node.Name, err)
 	}
 
 	// resourceQOS spec
 	nodeSLOSpec.ResourceQOSStrategy, err = getResourceQOSSpec(node, &sloCfg.ResourceQOSCfgMerged)
 	if err != nil {
-		klog.Warningf("getNodeSLOSpec(): failed to get resourceQoS spec for node %s,error: %v", node.Name, err)
+		klog.Warningf("getNodeSLOSpec(): failed to get resourceQOS spec for node %s,error: %v", node.Name, err)
 	}
 
 	nodeSLOSpec.CPUBurstStrategy, err = getCPUBurstConfigSpec(node, &sloCfg.CPUBurstCfgMerged)
@@ -105,7 +104,7 @@ func (r *NodeSLOReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		// all nodes would be enqueued once the config is available, so here we just drop the req
 		klog.Warningf("slo config is not available, drop the req %v until a valid config is set",
 			req.NamespacedName)
-		return reconcile.Result{Requeue: false}, nil
+		return ctrl.Result{}, nil
 	}
 
 	// get the node
@@ -115,8 +114,8 @@ func (r *NodeSLOReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	err := r.Client.Get(context.TODO(), req.NamespacedName, node)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			klog.Errorf("syncNodeSLO failed to find node %v, error: %v", nodeName, err)
-			return reconcile.Result{Requeue: true}, err
+			klog.Errorf("failed to find node %v, error: %v", nodeName, err)
+			return ctrl.Result{Requeue: true}, err
 		}
 		nodeExist = false
 	}
@@ -128,8 +127,8 @@ func (r *NodeSLOReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	err = r.Client.Get(context.TODO(), req.NamespacedName, nodeSLO)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			klog.Errorf("syncNodeSLO failed to find nodeSLO %v, error: %v", nodeName, err)
-			return reconcile.Result{Requeue: true}, err
+			klog.Errorf("failed to find nodeSLO %v, error: %v", nodeName, err)
+			return ctrl.Result{Requeue: true}, err
 		}
 		nodeSLOExist = false
 	}
@@ -143,42 +142,42 @@ func (r *NodeSLOReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		err = r.Client.Delete(context.TODO(), nodeSLO)
 		if err != nil {
 			if errors.IsNotFound(err) {
-				klog.Errorf("syncNodeSLO failed to delete nodeSLO %v because error: %v", nodeSLOName, err)
-				return reconcile.Result{Requeue: false}, err
+				klog.V(4).Infof("failed to delete nodeSLO %v because error: %v", nodeSLOName, err)
+				return ctrl.Result{}, nil
 			}
-			klog.Errorf("syncNodeSLO failed to delete nodeSLO: %v error: %v", nodeSLOName, err)
+			klog.Errorf("failed to delete nodeSLO %v, error: %v", nodeSLOName, err)
 			return reconcile.Result{Requeue: true}, err
 		}
 		return ctrl.Result{}, nil
 	} else if !nodeSLOExist {
 		// create and initialize CR if only the node exists
 		if err = r.initNodeSLO(node, nodeSLO); err != nil {
-			klog.Errorf("syncNodeSLO failed to init nodeSLO instance: %v", err)
-			return reconcile.Result{Requeue: true}, err
+			klog.Errorf("failed to init nodeSLO instance %v: %v", nodeSLOName, err)
+			return ctrl.Result{Requeue: true}, err
 		}
 		err = r.Client.Create(context.TODO(), nodeSLO)
 		if err != nil {
-			klog.Errorf("syncNodeSLO failed to create nodeSLO instance: %v", err)
-			return reconcile.Result{Requeue: true}, err
+			klog.Errorf("failed to create nodeSLO instance %v: %v", nodeSLOName, err)
+			return ctrl.Result{Requeue: true}, err
 		}
 	} else {
 		// update nodeSLO spec if both exists
 		nodeSLOSpec, err := r.getNodeSLOSpec(node, &nodeSLO.Spec)
 		if err != nil {
-			klog.Errorf("syncNodeSLO failed to get nodeSLO spec: %v", err)
-			return reconcile.Result{Requeue: true}, err
+			klog.Errorf("failed to get nodeSLO %v, spec: %v", nodeSLOName, err)
+			return ctrl.Result{Requeue: true}, err
 		}
 		if !reflect.DeepEqual(nodeSLOSpec, &nodeSLO.Spec) {
 			nodeSLO.Spec = *nodeSLOSpec
 			err = r.Client.Update(context.TODO(), nodeSLO)
 			if err != nil {
-				klog.Errorf("syncNodeSLO failed to update nodeSLO %v, error: %v", nodeSLOName, err)
-				return reconcile.Result{Requeue: true}, err
+				klog.Errorf("failed to update nodeSLO %v, error: %v", nodeSLOName, err)
+				return ctrl.Result{Requeue: true}, err
 			}
 		}
 	}
 
-	klog.V(6).Infof("syncNodeSLO succeed to update nodeSLO %v", nodeSLOName)
+	klog.V(6).Infof("nodeslo-controller succeeded to update nodeSLO %v", nodeSLOName)
 	return ctrl.Result{}, nil
 }
 
@@ -200,5 +199,6 @@ func (r *NodeSLOReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			Client: r.Client,
 		}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, configMapCacheHandler).
+		Named("nodeslo").
 		Complete(r)
 }

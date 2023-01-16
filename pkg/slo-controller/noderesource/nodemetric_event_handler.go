@@ -56,16 +56,16 @@ func (n *EnqueueRequestForNodeMetric) Update(e event.UpdateEvent, q workqueue.Ra
 }
 
 func (n *EnqueueRequestForNodeMetric) Delete(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
-	nodeMetirc, ok := e.Object.(*slov1alpha1.NodeMetric)
+	nodeMetric, ok := e.Object.(*slov1alpha1.NodeMetric)
 	if !ok {
 		return
 	}
-	if err := n.cleanSyncContext(nodeMetirc); err != nil {
-		klog.Errorf("%v for NodeMetric %v/%v", err, nodeMetirc.Namespace, nodeMetirc.Name)
+	if err := n.cleanSyncContext(nodeMetric); err != nil {
+		klog.Errorf("%v for NodeMetric %v", err, nodeMetric.Name)
 	}
 	q.Add(reconcile.Request{
 		NamespacedName: types.NamespacedName{
-			Name: nodeMetirc.Name,
+			Name: nodeMetric.Name,
 		},
 	})
 }
