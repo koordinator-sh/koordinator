@@ -22,14 +22,14 @@ import (
 
 	"k8s.io/utils/pointer"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 )
 
 func Test_getNodeMetricCollectPolicy(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  *config.ColocationStrategy
+		config  *extension.ColocationStrategy
 		want    *slov1alpha1.NodeMetricCollectPolicy
 		wantErr bool
 	}{
@@ -40,7 +40,7 @@ func Test_getNodeMetricCollectPolicy(t *testing.T) {
 		},
 		{
 			name: "config disabled",
-			config: &config.ColocationStrategy{
+			config: &extension.ColocationStrategy{
 				Enable: pointer.Bool(false),
 			},
 			want:    nil,
@@ -48,7 +48,7 @@ func Test_getNodeMetricCollectPolicy(t *testing.T) {
 		},
 		{
 			name: "config enabled",
-			config: &config.ColocationStrategy{
+			config: &extension.ColocationStrategy{
 				Enable:                         pointer.Bool(true),
 				MetricAggregateDurationSeconds: pointer.Int64(60),
 				MetricReportIntervalSeconds:    pointer.Int64(180),

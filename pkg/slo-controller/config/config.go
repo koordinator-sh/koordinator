@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/pointer"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -41,99 +42,20 @@ func InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&ConfigNameSpace, "config-namespace", ConfigNameSpace, "determines the namespace of configmap uses.")
 }
 
-// TODO move under apis in the next PR
-// +k8s:deepcopy-gen=true
-type ColocationCfg struct {
-	ColocationStrategy `json:",inline"`
-	NodeConfigs        []NodeColocationCfg `json:"nodeConfigs,omitempty"`
-}
-
-// +k8s:deepcopy-gen=true
-type NodeColocationCfg struct {
-	NodeSelector *metav1.LabelSelector
-	ColocationStrategy
-}
-
-// +k8s:deepcopy-gen=true
-type ResourceThresholdCfg struct {
-	ClusterStrategy *slov1alpha1.ResourceThresholdStrategy `json:"clusterStrategy,omitempty"`
-	NodeStrategies  []NodeResourceThresholdStrategy        `json:"nodeStrategies,omitempty"`
-}
-
-// +k8s:deepcopy-gen=true
-type NodeResourceThresholdStrategy struct {
-	// an empty label selector matches all objects while a nil label selector matches no objects
-	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
-	*slov1alpha1.ResourceThresholdStrategy
-}
-
-// +k8s:deepcopy-gen=true
-type NodeCPUBurstCfg struct {
-	// an empty label selector matches all objects while a nil label selector matches no objects
-	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
-	*slov1alpha1.CPUBurstStrategy
-}
-
-// +k8s:deepcopy-gen=true
-type CPUBurstCfg struct {
-	ClusterStrategy *slov1alpha1.CPUBurstStrategy `json:"clusterStrategy,omitempty"`
-	NodeStrategies  []NodeCPUBurstCfg             `json:"nodeStrategies,omitempty"`
-}
-
-// +k8s:deepcopy-gen=true
-type ResourceQOSCfg struct {
-	ClusterStrategy *slov1alpha1.ResourceQOSStrategy `json:"clusterStrategy,omitempty"`
-	NodeStrategies  []NodeResourceQOSStrategy        `json:"nodeStrategies,omitempty"`
-}
-
-// +k8s:deepcopy-gen=true
-type NodeResourceQOSStrategy struct {
-	// an empty label selector matches all objects while a nil label selector matches no objects
-	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
-	*slov1alpha1.ResourceQOSStrategy
-}
-
-type CalculatePolicy string
-
-const (
-	CalculateByPodUsage   CalculatePolicy = "usage"
-	CalculateByPodRequest CalculatePolicy = "request"
-)
-
-// +k8s:deepcopy-gen=true
-type ColocationStrategy struct {
-	Enable                         *bool                        `json:"enable,omitempty"`
-	MetricAggregateDurationSeconds *int64                       `json:"metricAggregateDurationSeconds,omitempty"`
-	MetricReportIntervalSeconds    *int64                       `json:"metricReportIntervalSeconds,omitempty"`
-	MetricAggregatePolicy          *slov1alpha1.AggregatePolicy `json:"metricAggregatePolicy,omitempty"`
-	CPUReclaimThresholdPercent     *int64                       `json:"cpuReclaimThresholdPercent,omitempty"`
-	MemoryReclaimThresholdPercent  *int64                       `json:"memoryReclaimThresholdPercent,omitempty"`
-	MemoryCalculatePolicy          *CalculatePolicy             `json:"memoryCalculatePolicy,omitempty"`
-	DegradeTimeMinutes             *int64                       `json:"degradeTimeMinutes,omitempty"`
-	UpdateTimeThresholdSeconds     *int64                       `json:"updateTimeThresholdSeconds,omitempty"`
-	ResourceDiffThreshold          *float64                     `json:"resourceDiffThreshold,omitempty"`
-	ColocationStrategyExtender     `json:",inline"`             // for third-party extension
-}
-
-type AggregatePolicy struct {
-	Durations      []time.Duration               `json:"durations,omitempty"`
-	StatisticTypes []slov1alpha1.AggregationType `json:"statisticTypes,omitempty"`
-}
-
-func NewDefaultColocationCfg() *ColocationCfg {
+func NewDefaultColocationCfg() *extension.ColocationCfg {
 	defaultCfg := DefaultColocationCfg()
 	return &defaultCfg
 }
 
-func DefaultColocationCfg() ColocationCfg {
-	return ColocationCfg{
+func DefaultColocationCfg() extension.ColocationCfg {
+	return extension.ColocationCfg{
 		ColocationStrategy: DefaultColocationStrategy(),
 	}
 }
 
-func DefaultColocationStrategy() ColocationStrategy {
-	calculatePolicy := CalculateByPodUsage
-	cfg := ColocationStrategy{
+func DefaultColocationStrategy() extension.ColocationStrategy {
+	calculatePolicy := extension.CalculateByPodUsage
+	cfg := extension.ColocationStrategy{
 		Enable:                         pointer.Bool(false),
 		MetricAggregateDurationSeconds: pointer.Int64(300),
 		MetricReportIntervalSeconds:    pointer.Int64(60),
@@ -155,7 +77,7 @@ func DefaultColocationStrategy() ColocationStrategy {
 	return cfg
 }
 
-func IsColocationStrategyValid(strategy *ColocationStrategy) bool {
+func IsColocationStrategyValid(strategy *extension.ColocationStrategy) bool {
 	return strategy != nil &&
 		(strategy.MetricAggregateDurationSeconds == nil || *strategy.MetricAggregateDurationSeconds > 0) &&
 		(strategy.MetricReportIntervalSeconds == nil || *strategy.MetricReportIntervalSeconds > 0) &&
@@ -166,7 +88,7 @@ func IsColocationStrategyValid(strategy *ColocationStrategy) bool {
 		(strategy.ResourceDiffThreshold == nil || *strategy.ResourceDiffThreshold > 0)
 }
 
-func IsNodeColocationCfgValid(nodeCfg *NodeColocationCfg) bool {
+func IsNodeColocationCfgValid(nodeCfg *extension.NodeColocationCfg) bool {
 	if nodeCfg == nil {
 		return false
 	}
@@ -177,10 +99,10 @@ func IsNodeColocationCfgValid(nodeCfg *NodeColocationCfg) bool {
 		return false
 	}
 	// node colocation should not be empty
-	return !reflect.DeepEqual(&nodeCfg.ColocationStrategy, &ColocationStrategy{})
+	return !reflect.DeepEqual(&nodeCfg.ColocationStrategy, &extension.ColocationStrategy{})
 }
 
-func GetNodeColocationStrategy(cfg *ColocationCfg, node *corev1.Node) *ColocationStrategy {
+func GetNodeColocationStrategy(cfg *extension.ColocationCfg, node *corev1.Node) *extension.ColocationStrategy {
 	if cfg == nil || node == nil {
 		return nil
 	}
@@ -199,7 +121,7 @@ func GetNodeColocationStrategy(cfg *ColocationCfg, node *corev1.Node) *Colocatio
 			continue
 		}
 
-		strategy, _ = merged.(*ColocationStrategy)
+		strategy, _ = merged.(*extension.ColocationStrategy)
 		break
 	}
 

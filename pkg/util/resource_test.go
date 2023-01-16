@@ -19,6 +19,7 @@ package util
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -89,6 +90,42 @@ func TestIsResourceDiff(t *testing.T) {
 			if got := IsResourceDiff(tt.args.old, tt.args.new, tt.args.resourceName, tt.args.diffThreshold); got != tt.want {
 				t.Errorf("IsResourceDiff() = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestQuantityPtr(t *testing.T) {
+	testQuantity := resource.MustParse("1000")
+	testQuantityPtr := &testQuantity
+	testQuantity1 := resource.MustParse("20Gi")
+	testQuantityPtr1 := &testQuantity1
+	testQuantityPtr2 := resource.NewQuantity(1000, resource.DecimalSI)
+	testQuantity2 := *testQuantityPtr2
+	tests := []struct {
+		name string
+		arg  resource.Quantity
+		want *resource.Quantity
+	}{
+		{
+			name: "quantity 0",
+			arg:  testQuantity,
+			want: testQuantityPtr,
+		},
+		{
+			name: "quantity 1",
+			arg:  testQuantity1,
+			want: testQuantityPtr1,
+		},
+		{
+			name: "quantity 2",
+			arg:  testQuantity2,
+			want: testQuantityPtr2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := QuantityPtr(tt.arg)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

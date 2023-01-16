@@ -19,6 +19,7 @@ package reservation
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
@@ -108,20 +109,24 @@ func (h *Hook) FilterHook(handle frameworkext.ExtendedHandle, cycleState *framew
 
 	// only continue if matchedCache is prepared in PreFilterHook (i.e. find any reservation matched)
 	state := getPreFilterState(cycleState)
-	if state == nil || state.skip {
+	if state == nil {
 		return nil, nil, false
 	}
 
+	allocatedResource, ok := state.allocatedResources[node.Name]
 	// skip hook when no reservation matched on this node
 	rOnNode := state.matchedCache.GetOnNode(node.Name)
-	if len(rOnNode) <= 0 {
+	if len(rOnNode) <= 0 && !ok {
 		return nil, nil, false
+	}
+	if !ok {
+		allocatedResource = util.NewZeroResourceList()
 	}
 
 	klog.V(5).InfoS("FilterHook get reservation matched on node",
 		"pod", klog.KObj(pod), "node", node.Name, "count", len(rOnNode))
 	// fix-up reserved resources and ports
-	return pod, prepareFilterNodeInfo(pod, nodeInfo, rOnNode), true
+	return pod, prepareFilterNodeInfo(pod, nodeInfo, rOnNode, allocatedResource), true
 }
 
 func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, pod *corev1.Pod) (*stateData, error) {
@@ -134,7 +139,10 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 	matchedCache := newAvailableCache()
 	// parallelize in nodes count
 	parallelizeUntil := h.parallelizeUntil(handle)
+	var lock sync.Mutex
+	allocatedResource := map[string]corev1.ResourceList{}
 	processNode := func(i int) {
+		resourceNeedUnreserve := util.NewZeroResourceList()
 		nodeInfo := allNodes[i]
 		node := nodeInfo.Node()
 		if node == nil {
@@ -154,29 +162,39 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 			"node", node.Name, "count", len(rOnNode))
 		count := 0
 		rCache := getReservationCache()
+		hasAllocatedResource := false
 		for _, obj := range rOnNode {
 			r, ok := obj.(*schedulingv1alpha1.Reservation)
 			if !ok {
 				klog.V(5).Infof("unable to convert to *schedulingv1alpha1.Reservation, obj %T", obj)
 				continue
 			}
-			// only count available reservations, ignore succeeded ones
-			if !util.IsReservationAvailable(r) {
-				continue
-			}
-
 			rInfo := rCache.GetInCache(r)
 			if rInfo == nil {
 				rInfo = newReservationInfo(r)
 			}
+			// only count available reservations, ignore succeeded ones
+			if !util.IsReservationAvailable(rInfo.Reservation) {
+				continue
+			}
+
 			if matchReservation(pod, rInfo) {
 				matchedCache.Add(r)
 				count++
 			} else {
+				if len(rInfo.Reservation.Status.CurrentOwners) > 0 {
+					hasAllocatedResource = true
+					resourceNeedUnreserve = quotav1.Add(resourceNeedUnreserve, rInfo.Reservation.Status.Allocated)
+				}
 				klog.V(6).InfoS("got reservation on node does not match the pod",
 					"reservation", klog.KObj(r), "pod", klog.KObj(pod), "reason",
 					dumpMatchReservationReason(pod, newReservationInfo(r)))
 			}
+		}
+		if hasAllocatedResource {
+			lock.Lock()
+			allocatedResource[node.Name] = resourceNeedUnreserve
+			lock.Unlock()
 		}
 		if count <= 0 { // no reservation matched on this node
 			return
@@ -191,8 +209,9 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 	parallelizeUntil(context.TODO(), len(allNodes), processNode)
 
 	state := &stateData{
-		skip:         matchedCache.Len() <= 0, // skip if no reservation matched
-		matchedCache: matchedCache,
+		skip:               matchedCache.Len() <= 0, // skip if no reservation matched
+		matchedCache:       matchedCache,
+		allocatedResources: allocatedResource,
 	}
 
 	return state, nil
@@ -235,12 +254,13 @@ func preparePreFilterPod(pod *corev1.Pod) *corev1.Pod {
 	return rPod
 }
 
-func prepareFilterNodeInfo(pod *corev1.Pod, nodeInfo *framework.NodeInfo, rOnNode []*reservationInfo) *framework.NodeInfo {
+func prepareFilterNodeInfo(pod *corev1.Pod, nodeInfo *framework.NodeInfo, rOnNode []*reservationInfo, allocatedResources corev1.ResourceList) *framework.NodeInfo {
 	newNodeInfo := nodeInfo.Clone()
 	// 1. ignore current pod requests by reducing node requests
 	//    newNode.requests = node.requests - pod.requests
 	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
 	newNodeInfo.Requested.Add(quotav1.Subtract(util.NewZeroResourceList(), podRequests))
+	newNodeInfo.Requested.Add(quotav1.Subtract(util.NewZeroResourceList(), allocatedResources))
 
 	// 2. ignore reserved node ports on the reserved node, only non-reserved ports are counted
 	portReserved := framework.HostPortInfo{}

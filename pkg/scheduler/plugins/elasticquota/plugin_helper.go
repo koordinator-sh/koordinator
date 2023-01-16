@@ -20,11 +20,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedulerv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -164,4 +167,33 @@ func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, err
 		return nil, fmt.Errorf("%+v convert to ElasticQuota.postFilterState error", c)
 	}
 	return s, nil
+}
+
+func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string, podRequest v1.ResourceList) *framework.Status {
+	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(curQuotaName)
+	quotaUsed := quotaInfo.GetUsed()
+	quotaRuntime := quotaInfo.GetRuntime()
+	newUsed := quotav1.Add(podRequest, quotaUsed)
+	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(newUsed, quotaRuntime); !isLessEqual {
+		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
+			"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v", quotaNameTopo,
+			printResourceList(quotaRuntime), printResourceList(quotaUsed), printResourceList(podRequest), exceedDimensions))
+	}
+	if quotaInfo.ParentName != extension.RootQuotaName {
+		quotaNameTopo = append([]string{quotaInfo.ParentName}, quotaNameTopo...)
+		return g.checkQuotaRecursive(quotaInfo.ParentName, quotaNameTopo, podRequest)
+	}
+	return framework.NewStatus(framework.Success, "")
+}
+
+func printResourceList(rl v1.ResourceList) string {
+	res := make([]string, 0)
+	for k, v := range rl {
+		tmp := string(k) + ":" + v.String()
+		res = append(res, tmp)
+	}
+	sort.Slice(res, func(i, j int) bool {
+		return res[i] < res[j]
+	})
+	return strings.Join(res, ",")
 }

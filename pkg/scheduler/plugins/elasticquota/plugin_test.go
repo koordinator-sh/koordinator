@@ -787,6 +787,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 		pod            *corev1.Pod
 		quotaInfo      *core.QuotaInfo
 		expectedStatus framework.Status
+		checkParent    bool
 	}{
 		{
 			name: "default",
@@ -799,9 +800,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			expectedStatus: *framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
-				"quotaName: %v, runtime: %v, used: %v, pod's request: %v",
-				"default", MakeResourceList().CPU(0).Mem(20).GPU(10).Obj(),
-				corev1.ResourceList{}, MakeResourceList().CPU(1).Mem(2).GPU(1).Obj())),
+				"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [cpu]",
+				"default", printResourceList(MakeResourceList().CPU(0).Mem(20).GPU(10).Obj()),
+				printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()))),
 		},
 		{
 			name: "used dimension larger than runtime, but value is enough",
@@ -827,9 +828,21 @@ func TestPlugin_PreFilter(t *testing.T) {
 			},
 			expectedStatus: *framework.NewStatus(framework.Unschedulable,
 				fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
-					"quotaName: %v, runtime: %v, used: %v, pod's request: %v",
-					"default", MakeResourceList().CPU(1).Mem(2).Obj(),
-					corev1.ResourceList{}, MakeResourceList().CPU(1).Mem(3).GPU(1).Obj())),
+					"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [memory]",
+					"default", printResourceList(MakeResourceList().CPU(1).Mem(2).Obj()),
+					printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(3).GPU(1).Obj()))),
+		},
+		{
+			name: "used dimension larger than runtime, but value is enough",
+			pod: MakePod("t1-ns1", "pod1").Container(
+				MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()).Obj(),
+			quotaInfo: &core.QuotaInfo{
+				Name: extension.DefaultQuotaName,
+				CalculateInfo: core.QuotaCalculateInfo{
+					Runtime: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
+				},
+			},
+			expectedStatus: *framework.NewStatus(framework.Success, ""),
 		},
 	}
 	for _, tt := range test {
@@ -845,6 +858,75 @@ func TestPlugin_PreFilter(t *testing.T) {
 			ctx := context.TODO()
 			status := *gp.PreFilter(ctx, state, tt.pod)
 			assert.Equal(t, status, tt.expectedStatus)
+		})
+	}
+}
+
+func TestPlugin_PreFilter_CheckParent(t *testing.T) {
+	test := []struct {
+		name           string
+		pod            *corev1.Pod
+		quotaInfo      *v1alpha1.ElasticQuota
+		childRuntime   corev1.ResourceList
+		parQuotaInfo   *v1alpha1.ElasticQuota
+		parentRuntime  corev1.ResourceList
+		expectedStatus framework.Status
+	}{
+		{
+			name: "parent reject",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test-child").Container(
+				MakeResourceList().CPU(1).Mem(3).GPU(1).Obj()).Obj(),
+			quotaInfo: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-child",
+					Labels: map[string]string{
+						extension.LabelQuotaParent: "test",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).GPU(10).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).GPU(0).Obj(),
+				},
+			},
+			childRuntime:  MakeResourceList().CPU(1).Mem(3).GPU(1).Obj(),
+			parentRuntime: MakeResourceList().CPU(1).Mem(2).GPU(1).Obj(),
+			parQuotaInfo: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).GPU(10).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).GPU(0).Obj(),
+				},
+			},
+			expectedStatus: *framework.NewStatus(framework.Unschedulable,
+				fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
+					"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [memory]",
+					[]string{"test", "test-child"}, printResourceList(MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()),
+					printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(3).GPU(1).Obj()))),
+		},
+	}
+	for _, tt := range test {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t, nil)
+			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			gp := p.(*Plugin)
+			gp.pluginArgs.EnableCheckParentQuota = pointer.Bool(true)
+			gp.OnQuotaAdd(tt.parQuotaInfo)
+			gp.OnQuotaAdd(tt.quotaInfo)
+			qi := gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name)
+			qi.Lock()
+			qi.CalculateInfo.Runtime = tt.childRuntime.DeepCopy()
+			qi.UnLock()
+			qi1 := gp.groupQuotaManager.GetQuotaInfoByName(tt.parQuotaInfo.Name)
+			qi1.Lock()
+			qi1.CalculateInfo.Runtime = tt.parentRuntime.DeepCopy()
+			qi1.UnLock()
+			state := framework.NewCycleState()
+			ctx := context.TODO()
+			status := *gp.PreFilter(ctx, state, tt.pod)
+			assert.Equal(t, status, tt.expectedStatus)
+			klog.Infof("%v", tt.expectedStatus)
 		})
 	}
 }

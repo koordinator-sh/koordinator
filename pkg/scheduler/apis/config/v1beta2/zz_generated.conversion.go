@@ -143,6 +143,7 @@ func autoConvert_v1beta2_ElasticQuotaArgs_To_config_ElasticQuotaArgs(in *Elastic
 	out.SystemQuotaGroupMax = *(*corev1.ResourceList)(unsafe.Pointer(&in.SystemQuotaGroupMax))
 	out.QuotaGroupNamespace = in.QuotaGroupNamespace
 	out.MonitorAllQuotas = (*bool)(unsafe.Pointer(in.MonitorAllQuotas))
+	out.EnableCheckParentQuota = (*bool)(unsafe.Pointer(in.EnableCheckParentQuota))
 	return nil
 }
 
@@ -158,6 +159,7 @@ func autoConvert_config_ElasticQuotaArgs_To_v1beta2_ElasticQuotaArgs(in *config.
 	out.SystemQuotaGroupMax = *(*corev1.ResourceList)(unsafe.Pointer(&in.SystemQuotaGroupMax))
 	out.QuotaGroupNamespace = in.QuotaGroupNamespace
 	out.MonitorAllQuotas = (*bool)(unsafe.Pointer(in.MonitorAllQuotas))
+	out.EnableCheckParentQuota = (*bool)(unsafe.Pointer(in.EnableCheckParentQuota))
 	return nil
 }
 

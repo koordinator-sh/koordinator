@@ -25,18 +25,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 )
 
 type FakeCfgCache struct {
-	cfg         config.ColocationCfg
+	cfg         extension.ColocationCfg
 	available   bool
 	errorStatus bool
 }
 
-func (f *FakeCfgCache) GetCfgCopy() *config.ColocationCfg {
+func (f *FakeCfgCache) GetCfgCopy() *extension.ColocationCfg {
 	return &f.cfg
 }
 
@@ -84,7 +83,7 @@ func Test_calculateBEResource(t *testing.T) {
 								Name:      "podA",
 								Namespace: "test",
 								Labels: map[string]string{
-									apiext.LabelPodQoS: string(apiext.QoSLS),
+									extension.LabelPodQoS: string(extension.QoSLS),
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -150,7 +149,7 @@ func Test_calculateBEResource(t *testing.T) {
 								Name:      "podA",
 								Namespace: "test",
 								Labels: map[string]string{
-									apiext.LabelPodQoS: string(apiext.QoSLS),
+									extension.LabelPodQoS: string(extension.QoSLS),
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -179,7 +178,7 @@ func Test_calculateBEResource(t *testing.T) {
 								Name:      "podB",
 								Namespace: "test",
 								Labels: map[string]string{
-									apiext.LabelPodQoS: string(apiext.QoSBE),
+									extension.LabelPodQoS: string(extension.QoSBE),
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -232,7 +231,7 @@ func Test_calculateBEResource(t *testing.T) {
 								Name:      "podD",
 								Namespace: "test",
 								Labels: map[string]string{
-									apiext.LabelPodQoS: string(apiext.QoSBE),
+									extension.LabelPodQoS: string(extension.QoSBE),
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -338,7 +337,7 @@ func Test_calculateBEResource(t *testing.T) {
 								Name:      "podA",
 								Namespace: "test",
 								Labels: map[string]string{
-									apiext.LabelPodQoS: string(apiext.QoSLS),
+									extension.LabelPodQoS: string(extension.QoSLS),
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -367,7 +366,7 @@ func Test_calculateBEResource(t *testing.T) {
 								Name:      "podB",
 								Namespace: "test",
 								Labels: map[string]string{
-									apiext.LabelPodQoS: string(apiext.QoSBE),
+									extension.LabelPodQoS: string(extension.QoSBE),
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -420,7 +419,7 @@ func Test_calculateBEResource(t *testing.T) {
 								Name:      "podD",
 								Namespace: "test",
 								Labels: map[string]string{
-									apiext.LabelPodQoS: string(apiext.QoSBE),
+									extension.LabelPodQoS: string(extension.QoSBE),
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -526,7 +525,7 @@ func Test_calculateBEResource(t *testing.T) {
 								Name:      "podA",
 								Namespace: "test",
 								Labels: map[string]string{
-									apiext.LabelPodQoS: string(apiext.QoSLS),
+									extension.LabelPodQoS: string(extension.QoSLS),
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -555,7 +554,7 @@ func Test_calculateBEResource(t *testing.T) {
 								Name:      "podB",
 								Namespace: "test",
 								Labels: map[string]string{
-									apiext.LabelPodQoS: string(apiext.QoSBE),
+									extension.LabelPodQoS: string(extension.QoSBE),
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -608,7 +607,7 @@ func Test_calculateBEResource(t *testing.T) {
 								Name:      "podD",
 								Namespace: "test",
 								Labels: map[string]string{
-									apiext.LabelPodQoS: string(apiext.QoSBE),
+									extension.LabelPodQoS: string(extension.QoSBE),
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -689,10 +688,10 @@ func Test_calculateBEResource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			memoryCalculateByReq := config.CalculateByPodRequest
+			memoryCalculateByReq := extension.CalculateByPodRequest
 			r := NodeResourceReconciler{cfgCache: &FakeCfgCache{
-				cfg: config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
+				cfg: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                        pointer.BoolPtr(true),
 						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
@@ -700,14 +699,14 @@ func Test_calculateBEResource(t *testing.T) {
 						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
 						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 					},
-					NodeConfigs: []config.NodeColocationCfg{
+					NodeConfigs: []extension.NodeColocationCfg{
 						{
 							NodeSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
 									"xxx": "yyy",
 								},
 							},
-							ColocationStrategy: config.ColocationStrategy{
+							ColocationStrategy: extension.ColocationStrategy{
 								CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
 								MemoryReclaimThresholdPercent: pointer.Int64Ptr(70),
 							},
@@ -718,7 +717,7 @@ func Test_calculateBEResource(t *testing.T) {
 									"memory-calculate-by-request": "true",
 								},
 							},
-							ColocationStrategy: config.ColocationStrategy{
+							ColocationStrategy: extension.ColocationStrategy{
 								CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
 								MemoryReclaimThresholdPercent: pointer.Int64Ptr(80),
 								MemoryCalculatePolicy:         &memoryCalculateByReq,
@@ -730,7 +729,7 @@ func Test_calculateBEResource(t *testing.T) {
 									"abc": "def",
 								},
 							},
-							ColocationStrategy: config.ColocationStrategy{
+							ColocationStrategy: extension.ColocationStrategy{
 								CPUReclaimThresholdPercent:    pointer.Int64Ptr(60),
 								MemoryReclaimThresholdPercent: pointer.Int64Ptr(60),
 							},
@@ -863,8 +862,8 @@ func Test_getNodeReservation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := NodeResourceReconciler{cfgCache: &FakeCfgCache{
-				cfg: config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
+				cfg: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                        pointer.BoolPtr(true),
 						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),

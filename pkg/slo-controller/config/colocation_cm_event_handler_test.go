@@ -26,14 +26,16 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 func Test_syncColocationConfigIfChanged(t *testing.T) {
 	clearDefaultColocationExtension()
 	oldCfg := *NewDefaultColocationCfg()
 	oldCfg.MemoryReclaimThresholdPercent = pointer.Int64Ptr(40)
-	memoryCalcPolicyByUsage := CalculateByPodUsage
-	memoryCalcPolicyByRequest := CalculateByPodRequest
+	memoryCalcPolicyByUsage := extension.CalculateByPodUsage
+	memoryCalcPolicyByRequest := extension.CalculateByPodRequest
 
 	type fields struct {
 		config *colocationCfgCache
@@ -133,7 +135,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					Namespace: ConfigNameSpace,
 				},
 				Data: map[string]string{
-					ColocationConfigKey: "{\"metricAggregateDurationSeconds\":10, \"invalidKey\":\"invalidValue\",}",
+					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":10, \"invalidKey\":\"invalidValue\",}",
 				},
 			}},
 			wantChanged: false,
@@ -155,7 +157,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					Namespace: ConfigNameSpace,
 				},
 				Data: map[string]string{
-					ColocationConfigKey: "{\"metricAggregateDurationSeconds\":10, \"invalidKey\":\"invalidValue\",}",
+					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":10, \"invalidKey\":\"invalidValue\",}",
 				},
 			}},
 			wantChanged: false,
@@ -181,14 +183,14 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					Namespace: ConfigNameSpace,
 				},
 				Data: map[string]string{
-					ColocationConfigKey: "{\"metricAggregateDurationSeconds\":60,\"cpuReclaimThresholdPercent\":70," +
+					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":60,\"cpuReclaimThresholdPercent\":70," +
 						"\"memoryReclaimThresholdPercent\":70,\"updateTimeThresholdSeconds\":100,\"metricReportIntervalSeconds\":20}",
 				},
 			}},
 			wantChanged: true,
 			wantField: &colocationCfgCache{
-				colocationCfg: ColocationCfg{
-					ColocationStrategy: ColocationStrategy{
+				colocationCfg: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                         pointer.BoolPtr(false),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
@@ -218,7 +220,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					Namespace: ConfigNameSpace,
 				},
 				Data: map[string]string{
-					ColocationConfigKey: "{\"metricAggregateDurationSeconds\":60,\"cpuReclaimThresholdPercent\":70," +
+					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":60,\"cpuReclaimThresholdPercent\":70," +
 						"\"memoryReclaimThresholdPercent\":70,\"updateTimeThresholdSeconds\":-1,\"metricReportIntervalSeconds\":20}",
 				},
 			}},
@@ -241,7 +243,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					Namespace: ConfigNameSpace,
 				},
 				Data: map[string]string{
-					ColocationConfigKey: "{\"metricAggregateDurationSeconds\":60,\"cpuReclaimThresholdPercent\":70," +
+					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":60,\"cpuReclaimThresholdPercent\":70," +
 						"\"memoryReclaimThresholdPercent\":70,\"updateTimeThresholdSeconds\":-1,\"metricReportIntervalSeconds\":20}",
 				},
 			}},
@@ -268,7 +270,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					Namespace: ConfigNameSpace,
 				},
 				Data: map[string]string{
-					ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30,\"metricReportIntervalSeconds\":20," +
+					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30,\"metricReportIntervalSeconds\":20," +
 						"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 						"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"nodeConfigs\":[{\"nodeSelector\":" +
 						"{\"matchLabels\":{\"xxx\":\"yyy\"}},\"metricAggregateDurationSeconds\":-1}]}",
@@ -276,8 +278,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 			}},
 			wantChanged: true,
 			wantField: &colocationCfgCache{
-				colocationCfg: ColocationCfg{
-					ColocationStrategy: ColocationStrategy{
+				colocationCfg: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(30),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
@@ -289,14 +291,14 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
 					},
-					NodeConfigs: []NodeColocationCfg{
+					NodeConfigs: []extension.NodeColocationCfg{
 						{
 							NodeSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
 									"xxx": "yyy",
 								},
 							},
-							ColocationStrategy: ColocationStrategy{
+							ColocationStrategy: extension.ColocationStrategy{
 								Enable:                         pointer.BoolPtr(true),
 								MetricAggregateDurationSeconds: pointer.Int64Ptr(30),
 								MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
@@ -331,15 +333,15 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					Namespace: ConfigNameSpace,
 				},
 				Data: map[string]string{
-					ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60,\"metricReportIntervalSeconds\":20," +
+					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60,\"metricReportIntervalSeconds\":20," +
 						"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 						"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"metricReportIntervalSeconds\":20}",
 				},
 			}},
 			wantChanged: true,
 			wantField: &colocationCfgCache{
-				colocationCfg: ColocationCfg{
-					ColocationStrategy: ColocationStrategy{
+				colocationCfg: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
@@ -359,8 +361,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 		{
 			name: "only cluster config with no change",
 			fields: fields{config: &colocationCfgCache{
-				colocationCfg: ColocationCfg{
-					ColocationStrategy: ColocationStrategy{
+				colocationCfg: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
@@ -385,15 +387,15 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					Namespace: ConfigNameSpace,
 				},
 				Data: map[string]string{
-					ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60,\"metricAggregateDurationSeconds\":60," +
+					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60,\"metricAggregateDurationSeconds\":60," +
 						"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 						"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1}",
 				},
 			}},
 			wantChanged: false,
 			wantField: &colocationCfgCache{
-				colocationCfg: ColocationCfg{
-					ColocationStrategy: ColocationStrategy{
+				colocationCfg: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
@@ -413,8 +415,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 		{
 			name: "full config change successfully",
 			fields: fields{config: &colocationCfgCache{
-				colocationCfg: ColocationCfg{
-					ColocationStrategy: ColocationStrategy{
+				colocationCfg: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
@@ -425,14 +427,14 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
 					},
-					NodeConfigs: []NodeColocationCfg{
+					NodeConfigs: []extension.NodeColocationCfg{
 						{
 							NodeSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
 									"xxx": "yyy",
 								},
 							},
-							ColocationStrategy: ColocationStrategy{
+							ColocationStrategy: extension.ColocationStrategy{
 								Enable:                         pointer.BoolPtr(true),
 								MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 								MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
@@ -459,7 +461,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					Namespace: ConfigNameSpace,
 				},
 				Data: map[string]string{
-					ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60,\"metricReportIntervalSeconds\":20," +
+					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60,\"metricReportIntervalSeconds\":20," +
 						"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 						"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"nodeConfigs\":[{\"nodeSelector\":" +
 						"{\"matchLabels\":{\"xxx\":\"yyy\"}},\"enable\":true}]}",
@@ -467,8 +469,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 			}},
 			wantChanged: true,
 			wantField: &colocationCfgCache{
-				colocationCfg: ColocationCfg{
-					ColocationStrategy: ColocationStrategy{
+				colocationCfg: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
@@ -480,14 +482,14 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
 					},
-					NodeConfigs: []NodeColocationCfg{
+					NodeConfigs: []extension.NodeColocationCfg{
 						{
 							NodeSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
 									"xxx": "yyy",
 								},
 							},
-							ColocationStrategy: ColocationStrategy{
+							ColocationStrategy: extension.ColocationStrategy{
 								Enable:                         pointer.BoolPtr(true),
 								MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 								MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
@@ -509,8 +511,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 		{
 			name: "node config with change",
 			fields: fields{config: &colocationCfgCache{
-				colocationCfg: ColocationCfg{
-					ColocationStrategy: ColocationStrategy{
+				colocationCfg: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
@@ -522,14 +524,14 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
 					},
-					NodeConfigs: []NodeColocationCfg{
+					NodeConfigs: []extension.NodeColocationCfg{
 						{
 							NodeSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
 									"aaa": "bbbb",
 								},
 							},
-							ColocationStrategy: ColocationStrategy{
+							ColocationStrategy: extension.ColocationStrategy{
 								Enable: pointer.BoolPtr(true),
 							},
 						},
@@ -547,7 +549,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					Namespace: ConfigNameSpace,
 				},
 				Data: map[string]string{
-					ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30,\"metricReportIntervalSeconds\":20," +
+					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30,\"metricReportIntervalSeconds\":20," +
 						"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"memoryCalculatePolicy\":\"request\"," +
 						"\"updateTimeThresholdSeconds\":300," +
 						"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"nodeConfigs\":[{\"nodeSelector\":" +
@@ -556,8 +558,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 			}},
 			wantChanged: true,
 			wantField: &colocationCfgCache{
-				colocationCfg: ColocationCfg{
-					ColocationStrategy: ColocationStrategy{
+				colocationCfg: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(30),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
@@ -569,14 +571,14 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
 						ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
 					},
-					NodeConfigs: []NodeColocationCfg{
+					NodeConfigs: []extension.NodeColocationCfg{
 						{
 							NodeSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
 									"xxx": "yyy",
 								},
 							},
-							ColocationStrategy: ColocationStrategy{
+							ColocationStrategy: extension.ColocationStrategy{
 								Enable:                         pointer.BoolPtr(true),
 								MetricAggregateDurationSeconds: pointer.Int64Ptr(30),
 								MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
@@ -613,7 +615,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 
 func Test_IsCfgAvailable(t *testing.T) {
 	defaultConfig := DefaultColocationCfg()
-	memoryCalcPolicyByUsage := CalculateByPodUsage
+	memoryCalcPolicyByUsage := extension.CalculateByPodUsage
 	type fields struct {
 		config    *colocationCfgCache
 		configMap *corev1.ConfigMap
@@ -622,7 +624,7 @@ func Test_IsCfgAvailable(t *testing.T) {
 		name      string
 		fields    fields
 		want      bool
-		wantField *ColocationCfg
+		wantField *extension.ColocationCfg
 	}{
 		{
 			name: "directly return available",
@@ -632,14 +634,14 @@ func Test_IsCfgAvailable(t *testing.T) {
 				},
 			},
 			want:      true,
-			wantField: &ColocationCfg{},
+			wantField: &extension.ColocationCfg{},
 		},
 		{
 			name: "set default when config is not found",
 			fields: fields{
 				config: &colocationCfgCache{
-					colocationCfg: ColocationCfg{
-						ColocationStrategy: ColocationStrategy{
+					colocationCfg: extension.ColocationCfg{
+						ColocationStrategy: extension.ColocationStrategy{
 							MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						},
 					},
@@ -653,8 +655,8 @@ func Test_IsCfgAvailable(t *testing.T) {
 			name: "use cluster config",
 			fields: fields{
 				config: &colocationCfgCache{
-					colocationCfg: ColocationCfg{
-						ColocationStrategy: ColocationStrategy{
+					colocationCfg: extension.ColocationCfg{
+						ColocationStrategy: extension.ColocationStrategy{
 							MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						},
 					},
@@ -670,15 +672,15 @@ func Test_IsCfgAvailable(t *testing.T) {
 						Namespace: ConfigNameSpace,
 					},
 					Data: map[string]string{
-						ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
+						extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
 							"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 							"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1}",
 					},
 				},
 			},
 			want: true,
-			wantField: &ColocationCfg{
-				ColocationStrategy: ColocationStrategy{
+			wantField: &extension.ColocationCfg{
+				ColocationStrategy: extension.ColocationStrategy{
 					Enable:                         pointer.BoolPtr(true),
 					MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 					MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,

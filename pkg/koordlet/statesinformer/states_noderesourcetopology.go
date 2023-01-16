@@ -373,11 +373,20 @@ func isEqualTopo(OldTopo map[string]string, NewTopo map[string]string) bool {
 	keyslice := []string{extension.AnnotationKubeletCPUManagerPolicy, extension.AnnotationNodeCPUSharedPools,
 		extension.AnnotationNodeCPUTopology, extension.AnnotationNodeCPUAllocs}
 	for _, key := range keyslice {
-		err := json.Unmarshal([]byte(OldTopo[key]), &OldData)
+		oldValue, oldExist := OldTopo[key]
+		newValue, newExist := NewTopo[key]
+		if !oldExist && !newExist {
+			// both not exist, no need to compare this key
+			continue
+		} else if oldExist != newExist {
+			// (oldExist = true, newExist = false) OR (oldExist = false, newExist = true), node topo not equal
+			return false
+		} // else both exist in new and old, compare value
+		err := json.Unmarshal([]byte(oldValue), &OldData)
 		if err != nil {
 			klog.V(5).Infof("failed to unmarshal, err: %v,and key: %v", err, key)
 		}
-		err1 := json.Unmarshal([]byte(NewTopo[key]), &NewData)
+		err1 := json.Unmarshal([]byte(newValue), &NewData)
 		if err1 != nil {
 			klog.V(5).Infof("failed to unmarshal, err: %v,and key: %v", err1, key)
 		}

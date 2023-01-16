@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -202,6 +203,11 @@ func TestFilterHook(t *testing.T) {
 	}
 	testNodeInfo := framework.NewNodeInfo()
 	testNodeInfo.SetNode(testNode)
+	testNodeInfo1 := framework.NewNodeInfo()
+	testNodeInfo1.SetNode(testNode)
+	testNodeInfo1.Requested = framework.NewResource(corev1.ResourceList{
+		corev1.ResourceCPU: *resource.NewQuantity(1, resource.DecimalSI),
+	})
 	rScheduled := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-1",
@@ -228,7 +234,18 @@ func TestFilterHook(t *testing.T) {
 	}
 	stateNoMatched := framework.NewCycleState()
 	stateNoMatched.Write(preFilterStateKey, &stateData{
+		skip:         true,
 		matchedCache: newAvailableCache(),
+	})
+	stateNoMatchedButHasAllocated := framework.NewCycleState()
+	stateNoMatchedButHasAllocated.Write(preFilterStateKey, &stateData{
+		skip:         false,
+		matchedCache: newAvailableCache(),
+		allocatedResources: map[string]corev1.ResourceList{
+			testNodeName: {
+				corev1.ResourceCPU: *resource.NewQuantity(1, resource.DecimalSI),
+			},
+		},
 	})
 	stateMatched := framework.NewCycleState()
 	stateMatched.Write(preFilterStateKey, &stateData{
@@ -243,12 +260,14 @@ func TestFilterHook(t *testing.T) {
 		nodeInfo   *framework.NodeInfo
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   *corev1.Pod
-		want1  bool
-		want2  bool
+		name             string
+		fields           fields
+		args             args
+		want             *corev1.Pod
+		want1            bool
+		want2            bool
+		needCheckRequest bool
+		expectCPU        int64
 	}{
 		{
 			name: "skip for plugin disabled",
@@ -311,6 +330,22 @@ func TestFilterHook(t *testing.T) {
 			want2: false,
 		},
 		{
+			name: "no reservation matched on the node, but there are allocated reservation",
+			fields: fields{
+				pluginEnabled: true,
+			},
+			args: args{
+				cycleState: stateNoMatchedButHasAllocated,
+				pod:        normalPod,
+				nodeInfo:   testNodeInfo1,
+			},
+			want:             normalPod,
+			want1:            true,
+			want2:            true,
+			needCheckRequest: true,
+			expectCPU:        0,
+		},
+		{
 			name: "reservation matched",
 			fields: fields{
 				pluginEnabled: true,
@@ -338,6 +373,9 @@ func TestFilterHook(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1 != nil)
 			assert.Equal(t, tt.want2, got2)
+			if tt.needCheckRequest {
+				assert.Equal(t, tt.expectCPU, got1.Requested.MilliCPU)
+			}
 		})
 	}
 }

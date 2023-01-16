@@ -24,13 +24,20 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/flowcontrol"
+	"k8s.io/klog/v2"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/metrics"
 )
 
 const (
-	LabelEvictPolicy string = "koordinator.sh/evict-policy"
+	LabelEvictPolicy = "koordinator.sh/evict-policy"
+
+	AnnotationEvictReason  = "koordinator.sh/evict-reason"
+	AnnotationEvictTrigger = "koordinator.sh/evict-trigger"
 )
 
 var (
@@ -54,34 +61,36 @@ type Interpreter interface {
 }
 
 type interpreterImpl struct {
-	evictions       map[string]Interface
-	defaultEviction Interface
-	rateLimiter     flowcontrol.RateLimiter
+	evictors       map[string]Interface
+	defaultEvictor Interface
+	rateLimiter    flowcontrol.RateLimiter
+	eventRecorder  events.EventRecorder
 }
 
-func NewInterpreter(client kubernetes.Interface, defaultEvictionPolicy string, evictQPS string, evictBurst int) (Interpreter, error) {
+func NewInterpreter(handle framework.Handle, defaultEvictionPolicy string, evictQPS string, evictBurst int) (Interpreter, error) {
 	var qps float32
 	if val, err := strconv.ParseFloat(evictQPS, 64); err == nil && val > 0 {
 		qps = float32(val)
 	}
 	rateLimiter := flowcontrol.NewTokenBucketRateLimiter(qps, evictBurst)
 
-	evictions := map[string]Interface{}
+	evictors := map[string]Interface{}
 	for k, v := range registry {
-		evictor, err := v(client)
+		evictor, err := v(handle.ClientSet())
 		if err != nil {
 			return nil, err
 		}
-		evictions[k] = evictor
+		evictors[k] = evictor
 	}
-	defaultEviction := evictions[defaultEvictionPolicy]
-	if defaultEviction == nil {
-		return nil, fmt.Errorf("unsupport Evicition policy")
+	defaultEvictor := evictors[defaultEvictionPolicy]
+	if defaultEvictor == nil {
+		return nil, fmt.Errorf("unsupported evicition policy")
 	}
 	return &interpreterImpl{
-		evictions:       evictions,
-		defaultEviction: defaultEviction,
-		rateLimiter:     rateLimiter,
+		evictors:       evictors,
+		defaultEvictor: defaultEvictor,
+		rateLimiter:    rateLimiter,
+		eventRecorder:  handle.EventRecorder(),
 	}, nil
 }
 
@@ -91,17 +100,31 @@ func (p *interpreterImpl) Evict(ctx context.Context, job *sev1alpha1.PodMigratio
 			return ErrTooManyEvictions
 		}
 	}
-	action := getCustomEvictionPolicy(pod.Labels)
-	if action == "" {
-		action = getCustomEvictionPolicy(job.Labels)
+	evictionPolicy := getCustomEvictionPolicy(pod.Labels)
+	if evictionPolicy == "" {
+		evictionPolicy = getCustomEvictionPolicy(job.Labels)
 	}
-	if action != "" {
-		evictor := p.evictions[action]
-		if evictor != nil {
-			return evictor.Evict(ctx, job, pod)
-		}
+
+	var evictor Interface
+	if evictionPolicy != "" {
+		evictor = p.evictors[evictionPolicy]
 	}
-	return p.defaultEviction.Evict(ctx, job, pod)
+	if evictor == nil {
+		evictor = p.defaultEvictor
+	}
+
+	trigger, reason := GetEvictionTriggerAndReason(job.Annotations)
+	err := evictor.Evict(ctx, job, pod)
+	if err != nil {
+		metrics.PodsEvicted.With(map[string]string{"result": "error", "strategy": trigger, "namespace": pod.Namespace, "node": pod.Spec.NodeName}).Inc()
+		return err
+	}
+
+	metrics.PodsEvicted.With(map[string]string{"result": "success", "strategy": trigger, "namespace": pod.Namespace, "node": pod.Spec.NodeName}).Inc()
+
+	klog.V(1).InfoS("Evicted pod", "pod", klog.KObj(pod), "reason", reason, "trigger", trigger, "node", pod.Spec.NodeName)
+	p.eventRecorder.Eventf(pod, nil, corev1.EventTypeNormal, "Descheduled", "Migrating", "Pod evicted from node %q by the reason %q", pod.Spec.NodeName, reason)
+	return nil
 }
 
 func getCustomEvictionPolicy(labels map[string]string) string {
@@ -110,4 +133,16 @@ func getCustomEvictionPolicy(labels map[string]string) string {
 		return value
 	}
 	return ""
+}
+
+func GetEvictionTriggerAndReason(annotations map[string]string) (string, string) {
+	reason := annotations[AnnotationEvictReason]
+	trigger := annotations[AnnotationEvictTrigger]
+	if len(reason) == 0 {
+		reason = trigger
+		if len(reason) == 0 {
+			reason = "NotSet"
+		}
+	}
+	return trigger, reason
 }

@@ -96,6 +96,11 @@ func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.EnableCheckParentQuota != nil {
+		in, out := &in.EnableCheckParentQuota, &out.EnableCheckParentQuota
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 

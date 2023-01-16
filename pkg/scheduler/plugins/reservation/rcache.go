@@ -365,11 +365,12 @@ func (c *reservationCache) IsInactive(r *schedulingv1alpha1.Reservation) bool {
 var _ framework.StateData = &stateData{}
 
 type stateData struct {
-	skip              bool            // set true if pod does not allocate reserved resources
-	preBind           bool            // set true if pod succeeds the reservation pre-bind
-	matchedCache      *AvailableCache // matched reservations for the scheduling pod
-	mostPreferredNode string
-	assumed           *schedulingv1alpha1.Reservation // assumed reservation to be allocated by the pod
+	skip               bool            // set true if pod does not allocate reserved resources
+	preBind            bool            // set true if pod succeeds the reservation pre-bind
+	matchedCache       *AvailableCache // matched reservations for the scheduling pod
+	mostPreferredNode  string
+	assumed            *schedulingv1alpha1.Reservation // assumed reservation to be allocated by the pod
+	allocatedResources map[string]corev1.ResourceList
 }
 
 func (d *stateData) Clone() framework.StateData {
@@ -385,9 +386,10 @@ func (d *stateData) Clone() framework.StateData {
 		}
 	}
 	return &stateData{
-		skip:         d.skip,
-		preBind:      d.preBind,
-		matchedCache: cacheCopy,
-		assumed:      d.assumed,
+		skip:               d.skip,
+		preBind:            d.preBind,
+		matchedCache:       cacheCopy,
+		assumed:            d.assumed,
+		allocatedResources: d.allocatedResources,
 	}
 }

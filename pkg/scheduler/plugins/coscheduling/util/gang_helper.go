@@ -18,6 +18,8 @@ package util
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -28,6 +30,11 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
+
+func GetGangGroupId(s []string) string {
+	sort.Strings(s)
+	return strings.Join(s, ",")
+}
 
 func GetId(namespace, name string) string {
 	return namespace + "/" + name

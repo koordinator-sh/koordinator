@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"testing"
 	"time"
@@ -618,19 +619,19 @@ func TestFilter(t *testing.T) {
 }
 
 func TestPostFilter(t *testing.T) {
+	highPriority := int32(math.MaxInt32)
 	reservePod := testGetReservePod(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
+			UID:  "reserve-pod-0",
 			Name: "reserve-pod-0",
 		},
-	})
-	reservePodNoName := testGetReservePod(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "reserve-pod-no-name",
+		Spec: corev1.PodSpec{
+			NodeName: "node1",
 		},
 	})
-	delete(reservePodNoName.Annotations, util.AnnotationReservationName)
 	r := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
+			UID:  "reserve-pod-0",
 			Name: "reserve-pod-0",
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
@@ -659,11 +660,12 @@ func TestPostFilter(t *testing.T) {
 		client *fakeReservationClient
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   *framework.PostFilterResult
-		want1  *framework.Status
+		name           string
+		fields         fields
+		args           args
+		want           *framework.PostFilterResult
+		want1          *framework.Status
+		changePriority bool
 	}{
 		{
 			name: "not reserve pod",
@@ -697,12 +699,53 @@ func TestPostFilter(t *testing.T) {
 			want:  nil,
 			want1: framework.NewStatus(framework.Error),
 		},
+		{
+			name: "not reserve pod, and its priority is higher than the reserve",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "not-reserve",
+					},
+					Spec: corev1.PodSpec{
+						Priority: &highPriority,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{},
+			},
+			fields: fields{
+				lister: &fakeReservationLister{
+					reservations: map[string]*schedulingv1alpha1.Reservation{
+						r.Name: r,
+					},
+				},
+				client: &fakeReservationClient{},
+			},
+			want:           nil,
+			want1:          framework.NewStatus(framework.Unschedulable),
+			changePriority: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			handle := &fakeExtendedHandle{
+				sharedLister: newFakeSharedLister([]*corev1.Pod{reservePod}, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}}, false),
+			}
 			p := &Plugin{
-				rLister: tt.fields.lister,
-				client:  tt.fields.client,
+				rLister:          tt.fields.lister,
+				client:           tt.fields.client,
+				handle:           handle,
+				parallelizeUntil: fakeParallelizeUntil(handle),
+				reservationCache: newReservationCache(),
+			}
+			var rrs []*schedulingv1alpha1.Reservation
+			if tt.fields.lister != nil {
+				rrs, _ = tt.fields.lister.List(labels.Everything())
+			}
+			n, _ := handle.sharedLister.NodeInfos().Get("node1")
+			for _, rr := range rrs {
+				rr.Status.NodeName = "node1"
+				p.reservationCache.AddToActive(rr)
+				p.reservationCache.Assume(rr)
 			}
 			if tt.fields.lister != nil && tt.fields.client != nil {
 				tt.fields.client.lister = tt.fields.lister
@@ -710,6 +753,13 @@ func TestPostFilter(t *testing.T) {
 			got, got1 := p.PostFilter(context.TODO(), nil, tt.args.pod, tt.args.filteredNodeStatusMap)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1)
+			if tt.changePriority {
+				for _, p := range n.Pods {
+					if util.IsReservePod(p.Pod) {
+						assert.Equal(t, int32(math.MaxInt32), *p.Pod.Spec.Priority)
+					}
+				}
+			}
 		})
 	}
 }

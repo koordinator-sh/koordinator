@@ -124,7 +124,7 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	go configextensions.RunQOSGreyCtrlPlugins(r.kubeClient, stopCh)
 
 	if !cache.WaitForCacheSync(stopCh, r.statesInformer.HasSynced) {
-		return fmt.Errorf("time out waiting for kubelet meta service caches to sync")
+		return fmt.Errorf("time out waiting for states informer caches to sync")
 	}
 
 	cgroupResourceReconcile := NewCgroupResourcesReconcile(r)

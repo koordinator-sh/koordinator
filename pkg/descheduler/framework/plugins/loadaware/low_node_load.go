@@ -19,6 +19,8 @@ package loadaware
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -36,6 +38,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	nodeutil "github.com/koordinator-sh/koordinator/pkg/descheduler/node"
 	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
 const (
@@ -69,13 +72,16 @@ func NewLowNodeLoad(args runtime.Object, handle framework.Handle) (framework.Plu
 	}
 
 	var excludedNamespaces sets.String
+	var includedNamespaces sets.String
 	if loadLoadUtilizationArgs.EvictableNamespaces != nil {
 		excludedNamespaces = sets.NewString(loadLoadUtilizationArgs.EvictableNamespaces.Exclude...)
+		includedNamespaces = sets.NewString(loadLoadUtilizationArgs.EvictableNamespaces.Include...)
 	}
 
 	podFilter, err := podutil.NewOptions().
 		WithFilter(podutil.WrapFilterFuncs(handle.Evictor().Filter, podSelectorFn)).
 		WithoutNamespaces(excludedNamespaces).
+		WithNamespaces(includedNamespaces).
 		BuildFilterFunc()
 	if err != nil {
 		return nil, fmt.Errorf("error initializing pod filter function: %v", err)
@@ -121,6 +127,11 @@ func (l *LowNodeLoad) Name() string {
 
 // Balance extension point implementation for the plugin
 func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framework.Status {
+	if l.args.Paused {
+		klog.Infof("LowNodeLoad is paused and will do nothing.")
+		return nil
+	}
+
 	nodes, err := filterNodes(l.args.NodeSelector, nodes)
 	if err != nil {
 		return &framework.Status{Err: err}
@@ -155,7 +166,7 @@ func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framew
 	}
 
 	continueEvictionCond := func(nodeInfo NodeInfo, totalAvailableUsages map[corev1.ResourceName]*resource.Quantity) bool {
-		if !isNodeOverutilized(nodeInfo.NodeUsage.usage, nodeInfo.thresholds.highResourceThreshold) {
+		if _, overutilized := isNodeOverutilized(nodeInfo.NodeUsage.usage, nodeInfo.thresholds.highResourceThreshold); !overutilized {
 			return false
 		}
 		for _, resourceName := range resourceNames {
@@ -168,17 +179,22 @@ func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framew
 		return true
 	}
 
-	sortNodes(sourceNodes, false)
+	resourceToWeightMap := sorter.GenDefaultResourceToWeightMap(resourceNames)
+	sortNodesByUsage(sourceNodes, resourceToWeightMap, false)
+
 	evictPodsFromSourceNodes(
 		ctx,
 		sourceNodes,
 		lowNodes,
+		l.args.DryRun,
 		l.args.NodeFit,
 		l.handle.Evictor(),
 		l.podFilter,
 		l.handle.GetPodsAssignedToNodeFunc(),
 		resourceNames,
-		continueEvictionCond)
+		continueEvictionCond,
+		overUtilizedEvictionReason(highThresholds),
+	)
 
 	return nil
 }
@@ -223,7 +239,8 @@ func lowThresholdFilter(usage *NodeUsage, threshold NodeThresholds) bool {
 }
 
 func highThresholdFilter(usage *NodeUsage, threshold NodeThresholds) bool {
-	return isNodeOverutilized(usage.usage, threshold.highResourceThreshold)
+	_, overutilized := isNodeOverutilized(usage.usage, threshold.highResourceThreshold)
+	return overutilized
 }
 
 func filterNodes(nodeSelector *metav1.LabelSelector, nodes []*corev1.Node) ([]*corev1.Node, error) {
@@ -276,4 +293,22 @@ func logUtilizationCriteria(message string, thresholds deschedulerconfig.Resourc
 		utilizationCriteria = append(utilizationCriteria, string(name), int64(thresholds[name]))
 	}
 	klog.InfoS(message, utilizationCriteria...)
+}
+
+func overUtilizedEvictionReason(highThresholds deschedulerconfig.ResourceThresholds) evictionReasonGeneratorFn {
+	resourceNames := getResourceNames(highThresholds)
+	sort.Slice(resourceNames, func(i, j int) bool {
+		return resourceNames[i] < resourceNames[j]
+	})
+	return func(nodeInfo NodeInfo) string {
+		overutilizedResources, _ := isNodeOverutilized(nodeInfo.usage, nodeInfo.thresholds.highResourceThreshold)
+		usagePercentages := resourceUsagePercentages(nodeInfo.NodeUsage)
+		var infos []string
+		for _, resourceName := range resourceNames {
+			if _, ok := overutilizedResources[resourceName]; ok {
+				infos = append(infos, fmt.Sprintf("%s usage(%.2f%%)>threshold(%.2f%%)", resourceName, usagePercentages[resourceName], highThresholds[resourceName]))
+			}
+		}
+		return fmt.Sprintf("node is overutilized, %s", strings.Join(infos, ", "))
+	}
 }

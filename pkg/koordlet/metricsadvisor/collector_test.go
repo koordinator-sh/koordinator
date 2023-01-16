@@ -35,9 +35,9 @@ import (
 
 func TestNewCollector(t *testing.T) {
 	type args struct {
-		cfg         *Config
-		metaService statesinformer.StatesInformer
-		metricCache metriccache.MetricCache
+		cfg            *Config
+		statesInformer statesinformer.StatesInformer
+		metricCache    metriccache.MetricCache
 	}
 	tests := []struct {
 		name string
@@ -46,15 +46,15 @@ func TestNewCollector(t *testing.T) {
 		{
 			name: "new-collector",
 			args: args{
-				cfg:         &Config{},
-				metaService: nil,
-				metricCache: nil,
+				cfg:            &Config{},
+				statesInformer: nil,
+				metricCache:    nil,
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := NewCollector(tt.args.cfg, tt.args.metaService, tt.args.metricCache); got == nil {
+			if got := NewCollector(tt.args.cfg, tt.args.statesInformer, tt.args.metricCache); got == nil {
 				t.Errorf("NewCollector() = %v", got)
 			}
 		})
