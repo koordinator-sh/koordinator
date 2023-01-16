@@ -493,7 +493,8 @@ func Test_isEqualTopo(t *testing.T) {
 		args args
 		want bool
 	}{
-		{name: "same json",
+		{
+			name: "same json with different map order in cpu share pool",
 			args: args{
 				oldtopo: map[string]string{
 					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
@@ -508,7 +509,42 @@ func Test_isEqualTopo(t *testing.T) {
 			},
 			want: true,
 		},
-		{name: "diff json",
+		{
+			name: "diff json on pod-cpu-allocs",
+			args: args{
+				oldtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				},
+				newtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default1\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "some are both not exist in old and new",
+			args: args{
+				oldtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+				},
+				newtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "part are not exist in old",
 			args: args{
 				oldtopo: map[string]string{
 					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
@@ -520,6 +556,23 @@ func Test_isEqualTopo(t *testing.T) {
 					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
 					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
 					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "part are not exist in new",
+			args: args{
+				oldtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				},
+				newtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
 				},
 			},
 			want: false,

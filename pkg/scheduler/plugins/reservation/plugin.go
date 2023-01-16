@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	listercorev1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	pluginhelper "k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
@@ -236,6 +237,30 @@ func (p *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 		// return err to stop default preemption
 		return nil, framework.NewStatus(framework.Error)
 	}
+
+	if p.reservationCache == nil || p.reservationCache.active == nil {
+		return nil, framework.NewStatus(framework.Unschedulable)
+	}
+	allNodes := []string{}
+	for nodeName := range p.reservationCache.active.nodeToR {
+		allNodes = append(allNodes, nodeName)
+	}
+	p.parallelizeUntil(ctx, len(allNodes), func(piece int) {
+		nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(allNodes[piece])
+		if err != nil {
+			return
+		}
+		rinfos := p.reservationCache.active.GetOnNode(allNodes[piece])
+		for _, r := range rinfos {
+			newReservePod := util.NewReservePod(r.Reservation)
+			if corev1helpers.PodPriority(newReservePod) < corev1helpers.PodPriority(pod) {
+				maxPri := int32(math.MaxInt32)
+				nodeInfo.RemovePod(newReservePod)
+				newReservePod.Spec.Priority = &maxPri
+				nodeInfo.AddPod(newReservePod)
+			}
+		}
+	})
 	return nil, framework.NewStatus(framework.Unschedulable)
 }
 

@@ -50,6 +50,7 @@ type Gang struct {
 	Mode              string
 	MinRequiredNumber int
 	TotalChildrenNum  int
+	GangGroupId       string
 	GangGroup         []string
 	Children          map[string]*v1.Pod
 	// pods that have already assumed(waiting in Permit stage)
@@ -83,6 +84,8 @@ func NewGang(gangName string) *Gang {
 		Name:                     gangName,
 		CreateTime:               timeNowFn(),
 		WaitTime:                 0,
+		GangGroupId:              gangName,
+		GangGroup:                []string{gangName},
 		Mode:                     extension.GangModeStrict,
 		Children:                 make(map[string]*v1.Pod),
 		WaitingForBindChildren:   make(map[string]*v1.Pod),
@@ -150,8 +153,11 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 		klog.Errorf("pod's annotation GangGroupsAnnotation illegal, gangName: %v, value: %v",
 			gang.Name, pod.Annotations[extension.AnnotationGangGroups])
 	}
+	if len(groupSlice) == 0 {
+		groupSlice = append(groupSlice, gang.Name)
+	}
 	gang.GangGroup = groupSlice
-
+	gang.GangGroupId = util.GetGangGroupId(groupSlice)
 	gang.GangFrom = GangFromPodAnnotation
 
 	gang.HasGangInit = true
@@ -212,7 +218,11 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 		klog.Errorf("podGroup's annotation GangGroupsAnnotation illegal, gangName: %v, value: %v",
 			gang.Name, pg.Annotations[extension.AnnotationGangGroups])
 	}
+	if len(groupSlice) == 0 {
+		groupSlice = append(groupSlice, gang.Name)
+	}
 	gang.GangGroup = groupSlice
+	gang.GangGroupId = util.GetGangGroupId(groupSlice)
 
 	gang.GangFrom = GangFromPodGroupCrd
 

@@ -26,6 +26,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/pointer"
 )
 
 type Handle interface {
@@ -67,6 +68,11 @@ type Plugin interface {
 	Name() string
 }
 
+var (
+	EvictionPluginNameContextKey = pointer.String("pluginName")
+	EvictionReasonContextKey     = pointer.String("evictionReason")
+)
+
 // EvictOptions provides a handle for passing additional info to EvictPod
 type EvictOptions struct {
 	// PluginName represents the initiator of the eviction operation
@@ -93,4 +99,25 @@ type DeschedulePlugin interface {
 type BalancePlugin interface {
 	Plugin
 	Balance(ctx context.Context, nodes []*corev1.Node) *Status
+}
+
+func FillEvictOptionsFromContext(ctx context.Context, options *EvictOptions) {
+	if options.PluginName == "" {
+		if val := ctx.Value(EvictionPluginNameContextKey); val != nil {
+			options.PluginName = val.(string)
+		}
+	}
+	if options.Reason == "" {
+		if val := ctx.Value(EvictionReasonContextKey); val != nil {
+			options.Reason = val.(string)
+		}
+	}
+}
+
+func PluginNameWithContext(ctx context.Context, pluginName string) context.Context {
+	return context.WithValue(ctx, EvictionPluginNameContextKey, pluginName)
+}
+
+func EvictionReasonWithContext(ctx context.Context, reason string) context.Context {
+	return context.WithValue(ctx, EvictionReasonContextKey, reason)
 }

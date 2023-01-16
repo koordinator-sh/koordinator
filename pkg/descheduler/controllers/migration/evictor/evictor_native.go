@@ -21,9 +21,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog/v2"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
@@ -46,10 +44,10 @@ type NativeEvictor struct {
 func NewNativeEvictor(client kubernetes.Interface) (Interface, error) {
 	policyGroupVersion, err := evictutils.SupportEviction(client)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to fetch eviction groupVersion: %v", err)
+		return nil, fmt.Errorf("failed to fetch eviction groupVersion: %v", err)
 	}
 	if len(policyGroupVersion) == 0 {
-		return nil, fmt.Errorf("Server does not support eviction policy")
+		return nil, fmt.Errorf("server does not support eviction policy")
 	}
 
 	return &NativeEvictor{
@@ -59,16 +57,5 @@ func NewNativeEvictor(client kubernetes.Interface) (Interface, error) {
 }
 
 func (e *NativeEvictor) Evict(ctx context.Context, job *sev1alpha1.PodMigrationJob, pod *corev1.Pod) error {
-	namespacedName := types.NamespacedName{
-		Namespace: pod.Namespace,
-		Name:      pod.Name,
-	}
-	klog.Infof("Try to evict Pod %q with MigrationJob %s", namespacedName, job.Name)
-	err := evictions.EvictPod(ctx, e.client, pod, e.policyGroupVersion, job.Spec.DeleteOptions)
-	if err != nil {
-		klog.Errorf("Failed to evict Pod %q, err: %v", namespacedName, err)
-	} else {
-		klog.Infof("Evict Pod %q successfully", namespacedName)
-	}
-	return err
+	return evictions.EvictPod(ctx, e.client, pod, e.policyGroupVersion, job.Spec.DeleteOptions)
 }

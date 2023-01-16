@@ -49,6 +49,8 @@ type PodMetricInfo struct {
 	Name      string      `json:"name,omitempty"`
 	Namespace string      `json:"namespace,omitempty"`
 	PodUsage  ResourceMap `json:"podUsage,omitempty"`
+	// Third party extensions for PodMetric
+	Extensions *ExtensionsMap `json:"extensions,omitempty"`
 }
 
 // NodeMetricSpec defines the desired state of NodeMetric

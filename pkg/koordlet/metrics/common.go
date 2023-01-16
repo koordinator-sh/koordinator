@@ -26,6 +26,7 @@ var (
 		Name:      "start_time",
 		Help:      "the start time of koordlet",
 	}, []string{NodeKey})
+
 	CollectNodeCPUInfoStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "collect_node_cpu_info_status",

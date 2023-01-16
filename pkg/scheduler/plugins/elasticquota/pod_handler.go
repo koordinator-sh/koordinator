@@ -60,6 +60,7 @@ func (g *Plugin) OnPodDelete(obj interface{}) {
 		return
 	}
 
+	pod = core.RunDecoratePod(pod)
 	quotaName := g.getPodAssociateQuotaName(pod)
 	g.groupQuotaManager.OnPodDelete(quotaName, pod)
 	klog.V(5).Infof("OnPodDeleteFunc %v.%v delete success", pod.Namespace, pod.Name)

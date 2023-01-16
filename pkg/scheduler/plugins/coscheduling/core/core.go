@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -62,12 +63,14 @@ type Manager interface {
 	PostBind(context.Context, *corev1.Pod, string)
 	PostFilter(context.Context, *corev1.Pod, framework.Handle, string) (*framework.PostFilterResult, *framework.Status)
 	GetCreatTime(*framework.QueuedPodInfo) time.Time
+	GetGroupId(*corev1.Pod) (string, error)
 	GetAllPodsFromGang(string) []*corev1.Pod
 	ActivateSiblings(*corev1.Pod, *framework.CycleState)
 	AllowGangGroup(*corev1.Pod, framework.Handle, string)
 	Unreserve(context.Context, *framework.CycleState, *corev1.Pod, string, framework.Handle, string)
 	GetGangSummary(gangId string) (*GangSummary, bool)
 	GetGangSummaries() map[string]*GangSummary
+	IsGangMinSatisfied(*corev1.Pod) bool
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -135,6 +138,28 @@ func (pgMgr *PodGroupManager) OnPodGroupDelete(obj interface{}) {
 	pgMgr.cache.onPodGroupDelete(obj)
 }
 
+func (pgMgr *PodGroupManager) GetGroupId(pod *corev1.Pod) (string, error) {
+	gang := pgMgr.GetGangByPod(pod)
+	if gang == nil {
+		return "", fmt.Errorf("gang doesn't exist in cache")
+	}
+
+	return gang.GangGroupId, nil
+}
+
+func (pgMgr *PodGroupManager) IsGangMinSatisfied(pod *corev1.Pod) bool {
+	gang := pgMgr.GetGangByPod(pod)
+	if gang == nil {
+		return false
+	}
+
+	if gang.isGangOnceResourceSatisfied() {
+		return true
+	}
+
+	return gang.MinRequiredNumber <= gang.getGangAssumedPods()
+}
+
 // ActivateSiblings stashes the pods belonging to the same PodGroup of the given pod
 // in the given state, with a reserved key "kubernetes.io/pods-to-activate".
 func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework.CycleState) {
@@ -144,10 +169,6 @@ func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework
 	}
 	// iterate over each gangGroup, get all the pods
 	gangGroup := gang.getGangGroup()
-	// gang itself
-	if len(gangGroup) == 0 {
-		gangGroup = append(gangGroup, gang.Name)
-	}
 	toActivePods := make([]*corev1.Pod, 0)
 	for _, groupGangId := range gangGroup {
 		groupGang := pgMgr.cache.getGangFromCacheByGangId(groupGangId, false)
@@ -241,15 +262,7 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, pod *corev1.Pod, h
 	}
 
 	if gang.getGangMode() == extension.GangModeStrict {
-		handle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-			waitingGangId := util.GetId(waitingPod.GetPod().Namespace,
-				util.GetGangNameByPod(waitingPod.GetPod()))
-			if waitingGangId == gang.Name {
-				klog.InfoS("postFilter rejects the pod", "gang", gang.Name, "pod", klog.KObj(waitingPod.GetPod()))
-				waitingPod.Reject(pluginName, "gang rejection in PostFilter")
-			}
-		})
-		gang.setScheduleCycleValid(false)
+		pgMgr.rejectGangGroupById(pluginName, gang.Name, handle)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
 			fmt.Sprintf("Gang: %v gets rejected this cycle due to Pod: %v is unschedulable even after "+
 				"PostFilter in StrictMode", gang.Name, pod.Name))
@@ -276,17 +289,12 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) (time
 
 	gangGroup := gang.getGangGroup()
 	allGangGroupAssumed := true
-	// only the gang itself
-	if len(gangGroup) == 0 {
-		allGangGroupAssumed = gang.isGangValidForPermit()
-	} else {
-		// check each gang group
-		for _, groupName := range gangGroup {
-			gangTmp := pgMgr.cache.getGangFromCacheByGangId(groupName, false)
-			if gangTmp == nil || !gangTmp.isGangValidForPermit() {
-				allGangGroupAssumed = false
-				break
-			}
+	// check each gang group
+	for _, groupName := range gangGroup {
+		gangTmp := pgMgr.cache.getGangFromCacheByGangId(groupName, false)
+		if gangTmp == nil || !gangTmp.isGangValidForPermit() {
+			allGangGroupAssumed = false
+			break
 		}
 	}
 	if !allGangGroupAssumed {
@@ -311,16 +319,36 @@ func (pgMgr *PodGroupManager) Unreserve(ctx context.Context, state *framework.Cy
 	gang.delAssumedPod(pod)
 
 	if !gang.isGangOnceResourceSatisfied() && gang.getGangMode() == extension.GangModeStrict {
-		// release resource of all assumed children of the gang
+		pgMgr.rejectGangGroupById(pluginName, gang.Name, handle)
+	}
+}
+
+func (pgMgr *PodGroupManager) rejectGangGroupById(pluginName, gangId string, handle framework.Handle) {
+	gang := pgMgr.cache.getGangFromCacheByGangId(gangId, false)
+	if gang == nil {
+		return
+	}
+
+	// iterate over each gangGroup, get all the pods
+	gangGroup := gang.getGangGroup()
+	gangSet := sets.NewString(gangGroup...)
+
+	if handle != nil {
 		handle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-			if util.GetId(waitingPod.GetPod().Namespace,
-				util.GetGangNameByPod(waitingPod.GetPod())) == gang.Name {
-				klog.InfoS("unReserve rejects the pod from Gang", "gang", gang.Name, "pod", klog.KObj(pod))
-				waitingPod.Reject(pluginName, "rejection in Unreserve")
+			waitingGangId := util.GetId(waitingPod.GetPod().Namespace,
+				util.GetGangNameByPod(waitingPod.GetPod()))
+			if gangSet.Has(waitingGangId) {
+				klog.V(1).InfoS("ganggroup rejects the pod", "gang", waitingGangId, "pod", klog.KObj(waitingPod.GetPod()))
+				waitingPod.Reject(pluginName, "gang rejection by another ganggroup")
 			}
 		})
 	}
-
+	for gang := range gangSet {
+		gangIns := pgMgr.cache.getGangFromCacheByGangId(gang, false)
+		if gangIns != nil {
+			gangIns.setScheduleCycleValid(false)
+		}
+	}
 }
 
 // PostBind updates a PodGroup's status.
@@ -422,13 +450,7 @@ func (pgMgr *PodGroupManager) AllowGangGroup(pod *corev1.Pod, handle framework.H
 		return
 	}
 
-	gangSlices := make([]string, 0)
-	// allow only the gang itself
-	if len(gang.getGangGroup()) == 0 {
-		gangSlices = append(gangSlices, gang.Name)
-	} else {
-		gangSlices = gang.getGangGroup()
-	}
+	gangSlices := gang.getGangGroup()
 
 	handle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		podGangId := util.GetId(waitingPod.GetPod().Namespace,

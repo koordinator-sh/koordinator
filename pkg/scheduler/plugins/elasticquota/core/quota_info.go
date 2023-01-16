@@ -287,6 +287,7 @@ func (qi *QuotaInfo) addPodIfNotPresent(pod *v1.Pod) {
 	key := generatePodCacheKey(pod)
 	if _, exist := qi.PodCache[key]; exist {
 		klog.Errorf("pod already exist in PodCache quota:%v, podKey:%v", qi.Name, key)
+		return
 	}
 	qi.PodCache[key] = NewPodInfo(pod)
 }
@@ -298,6 +299,7 @@ func (qi *QuotaInfo) removePodIfPresent(pod *v1.Pod) {
 	key := generatePodCacheKey(pod)
 	if _, exist := qi.PodCache[key]; !exist {
 		klog.Errorf("pod not exist in PodRequestMap quota:%v, podName:%v", qi.Name, key)
+		return
 	}
 
 	delete(qi.PodCache, key)
@@ -342,6 +344,19 @@ func (qi *QuotaInfo) GetPodIsAssigned(pod *v1.Pod) bool {
 		return podInfo.isAssigned
 	}
 	return false
+}
+
+func (qi *QuotaInfo) GetPodThatIsAssigned() []*v1.Pod {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	pods := make([]*v1.Pod, 0)
+	for _, podInfo := range qi.PodCache {
+		if podInfo.isAssigned {
+			pods = append(pods, podInfo.pod)
+		}
+	}
+	return pods
 }
 
 func (qi *QuotaInfo) Lock() {

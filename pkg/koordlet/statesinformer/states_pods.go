@@ -28,6 +28,8 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -117,6 +119,7 @@ func (s *podsInformer) Start(stopCh <-chan struct{}) {
 			klog.Fatalf("Unable to run the pleg: ", err)
 		}
 	}()
+
 	klog.V(2).Infof("pod informer started")
 	<-stopCh
 }
@@ -146,16 +149,21 @@ func (s *podsInformer) syncPods() error {
 		return err
 	}
 	newPodMap := make(map[string]*PodMeta, len(podList.Items))
+	// reset pod container metrics
+	resetPodMetrics()
 	for _, pod := range podList.Items {
-		newPodMap[string(pod.UID)] = &PodMeta{
+		podMeta := &PodMeta{
 			Pod:       pod.DeepCopy(),
 			CgroupDir: genPodCgroupParentDir(&pod),
 		}
+		newPodMap[string(pod.UID)] = podMeta
+		// record pod container metrics
+		recordPodResourceMetrics(podMeta)
 	}
 	s.podMap = newPodMap
 	s.podHasSynced.Store(true)
 	s.podUpdatedTime = time.Now()
-	klog.Infof("get pods success, len %d", len(s.podMap))
+	klog.Infof("get pods success, len %d, time %s", len(s.podMap), s.podUpdatedTime.String())
 	s.callbackRunner.SendCallback(RegisterTypeAllPods)
 	return nil
 }
@@ -232,4 +240,52 @@ func genPodCgroupParentDir(pod *corev1.Pod) string {
 	// todo use cri interface to get pod cgroup dir
 	// e.g. kubepods-burstable.slice/kubepods-burstable-pod9dba1d9e_67ba_4db6_8a73_fb3ea297c363.slice/
 	return koordletutil.GetPodKubeRelativePath(pod)
+}
+
+func resetPodMetrics() {
+	metrics.ResetContainerResourceRequests()
+	metrics.ResetContainerResourceLimits()
+}
+
+func recordPodResourceMetrics(podMeta *PodMeta) {
+	if podMeta == nil || podMeta.Pod == nil {
+		klog.V(5).Infof("failed to record pod resources metric, pod is invalid: %v", podMeta)
+		return
+	}
+	pod := podMeta.Pod
+
+	// record (regular) container metrics
+	containerStatusMap := map[string]*corev1.ContainerStatus{}
+	for i := range pod.Status.ContainerStatuses {
+		containerStatus := &pod.Status.ContainerStatuses[i]
+		containerStatusMap[containerStatus.Name] = containerStatus
+	}
+	for i := range pod.Spec.Containers {
+		c := &pod.Spec.Containers[i]
+		containerStatus, ok := containerStatusMap[c.Name]
+		if !ok {
+			klog.V(6).Infof("skip record container resources metric, container %s/%s/%s status not exist",
+				pod.Namespace, pod.Name, c.Name)
+			continue
+		}
+		recordContainerResourceMetrics(c, containerStatus, pod)
+	}
+
+	klog.V(6).Infof("record pod prometheus metrics successfully, pod %s", pod.Namespace, pod.Name)
+}
+
+func recordContainerResourceMetrics(container *corev1.Container, containerStatus *corev1.ContainerStatus, pod *corev1.Pod) {
+	// record pod requests/limits of BatchCPU & BatchMemory
+	if q, ok := container.Resources.Requests[apiext.BatchCPU]; ok {
+		metrics.RecordContainerResourceRequests(string(apiext.BatchCPU), containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+	}
+	if q, ok := container.Resources.Requests[apiext.BatchMemory]; ok {
+		metrics.RecordContainerResourceRequests(string(apiext.BatchMemory), containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+	}
+	if q, ok := container.Resources.Limits[apiext.BatchCPU]; ok {
+		metrics.RecordContainerResourceLimits(string(apiext.BatchCPU), containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+	}
+	if q, ok := container.Resources.Limits[apiext.BatchMemory]; ok {
+		metrics.RecordContainerResourceLimits(string(apiext.BatchMemory), containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+	}
 }

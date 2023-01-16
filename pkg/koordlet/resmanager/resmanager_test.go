@@ -54,10 +54,11 @@ func TestNewResManager(t *testing.T) {
 		kubeClient := &kubernetes.Clientset{}
 		crdClient := &clientsetalpha1.Clientset{}
 		nodeName := "test-node"
-		metaService := mock_statesinformer.NewMockStatesInformer(ctrl)
+		statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 
-		_ = NewResManager(NewDefaultConfig(), scheme, kubeClient, crdClient, nodeName, metaService, metricCache, int64(metricsadvisor.NewDefaultConfig().CollectResUsedIntervalSeconds))
+		r := NewResManager(NewDefaultConfig(), scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(metricsadvisor.NewDefaultConfig().CollectResUsedIntervalSeconds))
+		assert.NotNil(t, r)
 	})
 }
 
@@ -151,11 +152,13 @@ func Test_EvictPodsIfNotEvicted(t *testing.T) {
 	client := clientsetfake.NewSimpleClientset()
 	r := &resmanager{eventRecorder: fakeRecorder, kubeClient: client, podsEvicted: expireCache.NewCacheDefault()}
 	stop := make(chan struct{})
-	r.podsEvicted.Run(stop)
+	err := r.podsEvicted.Run(stop)
+	assert.NoError(t, err)
 	defer func() { stop <- struct{}{} }()
 
 	// create pod
-	client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	_, err = client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	assert.NoError(t, err)
 
 	// evict success
 	r.evictPodsIfNotEvicted([]*corev1.Pod{pod}, node, "evict pod first", "")
@@ -187,16 +190,17 @@ func Test_evictPod(t *testing.T) {
 
 	fakeRecorder := &FakeRecorder{}
 	client := clientsetfake.NewSimpleClientset()
-	resmanager := &resmanager{statesInformer: mockStatesInformer, eventRecorder: fakeRecorder, kubeClient: client}
+	r := &resmanager{statesInformer: mockStatesInformer, eventRecorder: fakeRecorder, kubeClient: client}
 
 	// create pod
-	client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	_, err := client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	assert.NoError(t, err)
 	// check pod
 	existPod, err := client.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
 	assert.NotNil(t, existPod, "pod exist in k8s!", err)
 
 	// evict success
-	resmanager.evictPod(pod, node, "evict pod first", "")
+	r.evictPod(pod, node, "evict pod first", "")
 	getEvictObject, err := client.Tracker().Get(podsResource, pod.Namespace, pod.Name)
 	assert.NoError(t, err)
 	assert.NotNil(t, getEvictObject, "evictPod Fail", err)
