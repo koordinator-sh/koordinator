@@ -194,6 +194,7 @@ func (p *ColocationHandlerForConfigMapEvent) IsCfgAvailable() bool {
 	klog.V(5).Infof("sync colocation cache from configmap %s/%s, available %v", ConfigNameSpace, SLOCtrlConfigMap, p.cfgCache.available)
 	return p.cfgCache.available
 }
+
 func GetConfigMapForCache(client client.Client) (*corev1.ConfigMap, error) {
 	// try to get the configmap from informer cache;
 	// if not found, set configmap to nil and ignore error

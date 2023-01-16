@@ -937,6 +937,7 @@ func Test_updateNodeBEResource(t *testing.T) {
 				BESyncContext: SyncContext{contextMap: tt.fields.SyncContext.contextMap},
 				Clock:         clock.RealClock{},
 			}
+			oldNodeCopy := tt.args.oldNode.DeepCopy()
 			got := r.updateNodeBEResource(tt.args.oldNode, tt.args.beResource)
 			assert.Equal(t, tt.wantErr, got != nil, got)
 			if !tt.wantErr {
@@ -951,6 +952,7 @@ func Test_updateNodeBEResource(t *testing.T) {
 				gotMem := gotNode.Status.Allocatable[extension.BatchMemory]
 				assert.Equal(t, wantMem.Value(), gotMem.Value())
 			}
+			assert.Equal(t, oldNodeCopy, tt.args.oldNode) // must not change the node object in cache
 		})
 	}
 }
