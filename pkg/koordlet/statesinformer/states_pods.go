@@ -271,7 +271,7 @@ func recordPodResourceMetrics(podMeta *PodMeta) {
 		recordContainerResourceMetrics(c, containerStatus, pod)
 	}
 
-	klog.V(6).Infof("record pod prometheus metrics successfully, pod %s", pod.Namespace, pod.Name)
+	klog.V(6).Infof("record pod prometheus metrics successfully, pod %s/%s", pod.Namespace, pod.Name)
 }
 
 func recordContainerResourceMetrics(container *corev1.Container, containerStatus *corev1.ContainerStatus, pod *corev1.Pod) {
