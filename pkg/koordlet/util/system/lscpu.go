@@ -38,11 +38,15 @@ func GetCacheInfo(str string) (string, int32, error) {
 	//  2    0      0    1 1:1:1:0          yes
 	//  3    0      0    1 1:1:1:0          yes
 	infos := strings.Split(strings.TrimSpace(str), ":")
-	// assert l1, l2 are private cache, so they has the same id with the core
-	if len(infos) != 4 {
+	// assert l1, l2 are private cache, so they have the same id with the core
+	// L3 cache maybe not available, when the host is qemu-kvm. detail: https://bugzilla.redhat.com/show_bug.cgi?id=1434537
+	if len(infos) < 3 {
 		return "", 0, fmt.Errorf("invalid cache info %s", str)
 	}
 	l1l2 := infos[0]
+	if len(infos) == 3 {
+		return l1l2, 0, nil
+	}
 	l3, err := strconv.ParseInt(infos[3], 10, 32)
 	if err != nil {
 		return "", 0, err
