@@ -23,14 +23,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
@@ -41,16 +42,22 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
 type fakeExtendedHandle struct {
 	frameworkext.ExtendedHandle
-	cs *kubefake.Clientset
+	cs                    *kubefake.Clientset
+	sharedInformerFactory informers.SharedInformerFactory
 }
 
 func (f *fakeExtendedHandle) ClientSet() clientset.Interface {
 	return f.cs
+}
+
+func (f *fakeExtendedHandle) SharedInformerFactory() informers.SharedInformerFactory {
+	return f.sharedInformerFactory
 }
 
 var _ framework.SharedLister = &testSharedLister{}
@@ -109,6 +116,71 @@ func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }
 
+type pluginTestSuit struct {
+	framework.Handle
+	framework.Framework
+	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	sharedInformerFactory            informers.SharedInformerFactory
+	proxyNew                         runtime.PluginFactory
+	plugin                           framework.Plugin
+}
+
+func proxyPluginFactory(extendHandle *fakeExtendedHandle, factory runtime.PluginFactory) runtime.PluginFactory {
+	return func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
+		extendHandle.sharedInformerFactory = f.SharedInformerFactory()
+		return factory(configuration, extendHandle)
+	}
+}
+
+func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extendHandle := frameworkext.NewExtendedHandle(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	fakeHandle := &fakeExtendedHandle{
+		ExtendedHandle: extendHandle,
+		cs:             kubefake.NewSimpleClientset(),
+	}
+
+	proxyNew := proxyPluginFactory(fakeHandle, New)
+
+	deviceSharePluginConfig := schedulerconfig.PluginConfig{
+		Name: Name,
+		Args: &config.DeviceShareArgs{},
+	}
+
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		func(reg *runtime.Registry, profile *schedulerconfig.KubeSchedulerProfile) {
+			profile.PluginConfig = []schedulerconfig.PluginConfig{
+				deviceSharePluginConfig,
+			}
+		},
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		schedulertesting.RegisterPreFilterPlugin(Name, proxyNew),
+	}
+
+	cs := kubefake.NewSimpleClientset()
+	informerFactory := informers.NewSharedInformerFactory(cs, 0)
+	snapshot := newTestSharedLister(nil, nodes)
+
+	fh, err := schedulertesting.NewFramework(
+		registeredPlugins,
+		"koord-scheduler",
+		runtime.WithClientSet(cs),
+		runtime.WithInformerFactory(informerFactory),
+		runtime.WithSnapshotSharedLister(snapshot),
+	)
+	assert.Nil(t, err)
+	return &pluginTestSuit{
+		Handle:                           fh,
+		koordinatorSharedInformerFactory: koordSharedInformerFactory,
+		proxyNew:                         proxyNew,
+	}
+}
+
 func Test_New(t *testing.T) {
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
@@ -116,9 +188,23 @@ func Test_New(t *testing.T) {
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 	)
-	proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
+	fakeHandle := &fakeExtendedHandle{
+		ExtendedHandle: extendHandle,
+		cs:             kubefake.NewSimpleClientset(),
+	}
+	proxyNew := proxyPluginFactory(fakeHandle, New)
+
+	deviceSharePluginConfig := schedulerconfig.PluginConfig{
+		Name: Name,
+		Args: &config.DeviceShareArgs{},
+	}
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		func(reg *runtime.Registry, profile *schedulerconfig.KubeSchedulerProfile) {
+			profile.PluginConfig = []schedulerconfig.PluginConfig{
+				deviceSharePluginConfig,
+			}
+		},
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 		schedulertesting.RegisterPreFilterPlugin(Name, proxyNew),
@@ -138,7 +224,7 @@ func Test_New(t *testing.T) {
 		runtime.WithSnapshotSharedLister(snapshot),
 	)
 	assert.Nil(t, err)
-	p, err := proxyNew(nil, fh)
+	p, err := proxyNew(&config.DeviceShareArgs{}, fh)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 	assert.Equal(t, Name, p.Name())
@@ -728,7 +814,7 @@ func Test_Plugin_Filter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Plugin{nodeDeviceCache: tt.nodeDeviceCache}
+			p := &Plugin{nodeDeviceCache: tt.nodeDeviceCache, allocator: &defaultAllocator{}}
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
 				cycleState.Write(stateKey, tt.state)
@@ -1409,7 +1495,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Plugin{nodeDeviceCache: tt.args.nodeDeviceCache}
+			p := &Plugin{nodeDeviceCache: tt.args.nodeDeviceCache, allocator: &defaultAllocator{}}
 			cycleState := framework.NewCycleState()
 			if tt.args.state != nil {
 				cycleState.Write(stateKey, tt.args.state)
@@ -1776,7 +1862,7 @@ func Test_Plugin_Unreserve(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Plugin{nodeDeviceCache: tt.args.nodeDeviceCache}
+			p := &Plugin{nodeDeviceCache: tt.args.nodeDeviceCache, allocator: &defaultAllocator{}}
 			cycleState := framework.NewCycleState()
 			if tt.args.state != nil {
 				cycleState.Write(stateKey, tt.args.state)
@@ -1875,7 +1961,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Plugin{nodeDeviceCache: newNodeDeviceCache(), handle: tt.handle}
+			p := &Plugin{nodeDeviceCache: newNodeDeviceCache(), handle: tt.handle, allocator: &defaultAllocator{}}
 			cycleState := framework.NewCycleState()
 			if tt.args.state != nil {
 				cycleState.Write(stateKey, tt.args.state)
@@ -1884,4 +1970,66 @@ func Test_Plugin_PreBind(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, status)
 		})
 	}
+}
+
+type fakeAllocator struct {
+}
+
+func (f *fakeAllocator) Name() string {
+	return "fake"
+}
+
+func (f *fakeAllocator) Allocate(nodeName string, pod *corev1.Pod, podRequest corev1.ResourceList, nodeDevice *nodeDevice) (apiext.DeviceAllocations, error) {
+	return nil, nil
+}
+
+func (f *fakeAllocator) Reserve(pod *corev1.Pod, nodeDevice *nodeDevice, allocations apiext.DeviceAllocations) {
+
+}
+
+func (f *fakeAllocator) Unreserve(pod *corev1.Pod, nodeDevice *nodeDevice, allocations apiext.DeviceAllocations) {
+
+}
+
+func TestAllocator(t *testing.T) {
+	allocator := &fakeAllocator{}
+	allocatorFactories[allocator.Name()] = func(options AllocatorOptions) Allocator {
+		return allocator
+	}
+
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extendHandle := frameworkext.NewExtendedHandle(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	fakeHandle := &fakeExtendedHandle{
+		ExtendedHandle: extendHandle,
+		cs:             kubefake.NewSimpleClientset(),
+	}
+	proxyNew := proxyPluginFactory(fakeHandle, New)
+
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+
+	cs := kubefake.NewSimpleClientset()
+	informerFactory := informers.NewSharedInformerFactory(cs, 0)
+	snapshot := newTestSharedLister(nil, nil)
+	fh, err := schedulertesting.NewFramework(
+		registeredPlugins,
+		"koord-scheduler",
+		runtime.WithClientSet(cs),
+		runtime.WithInformerFactory(informerFactory),
+		runtime.WithSnapshotSharedLister(snapshot),
+	)
+	assert.Nil(t, err)
+	args := &config.DeviceShareArgs{
+		Allocator: allocator.Name(),
+	}
+	p, err := proxyNew(args, fh)
+	assert.NotNil(t, p)
+	assert.Nil(t, err)
+	assert.Equal(t, allocator.Name(), p.(*Plugin).allocator.Name())
 }

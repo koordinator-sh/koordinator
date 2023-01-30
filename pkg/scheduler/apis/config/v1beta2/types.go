@@ -189,3 +189,13 @@ type CoschedulingArgs struct {
 	// default is 1
 	ControllerWorkers *int64 `json:"controllerWorkers,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// DeviceShareArgs defines the parameters for DeviceShare plugin.
+type DeviceShareArgs struct {
+	metav1.TypeMeta
+
+	// Allocator indicates the expected allocator to use
+	Allocator string `json:"allocator,omitempty"`
+}
