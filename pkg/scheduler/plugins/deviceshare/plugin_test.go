@@ -22,8 +22,9 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/assert"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1734,36 +1735,7 @@ func Test_Plugin_Unreserve(t *testing.T) {
 								},
 							},
 						},
-						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
-							schedulingv1alpha1.RDMA: {
-								0: corev1.ResourceList{
-									apiext.KoordRDMA: resource.MustParse("0"),
-								},
-								1: corev1.ResourceList{
-									apiext.KoordRDMA: resource.MustParse("0"),
-								},
-							},
-							schedulingv1alpha1.FPGA: {
-								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("0"),
-								},
-								1: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("0"),
-								},
-							},
-							schedulingv1alpha1.GPU: {
-								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("0"),
-									apiext.GPUMemoryRatio: resource.MustParse("0"),
-									apiext.GPUMemory:      resource.MustParse("0"),
-								},
-								1: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("0"),
-									apiext.GPUMemoryRatio: resource.MustParse("0"),
-									apiext.GPUMemory:      resource.MustParse("0"),
-								},
-							},
-						},
+						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{},
 						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{
 							schedulingv1alpha1.GPU:  {},
 							schedulingv1alpha1.FPGA: {},
@@ -1784,7 +1756,15 @@ func Test_Plugin_Unreserve(t *testing.T) {
 			p.Unreserve(context.TODO(), cycleState, tt.args.pod, "test-node")
 			if tt.changed {
 				assert.Empty(t, tt.args.state.allocationResult)
-				assert.Equal(t, tt.wantCache, tt.args.nodeDeviceCache)
+				stateCmpOpts := []cmp.Option{
+					cmp.AllowUnexported(nodeDevice{}),
+					cmp.AllowUnexported(nodeDeviceCache{}),
+					cmpopts.IgnoreFields(nodeDevice{}, "lock"),
+					cmpopts.IgnoreFields(nodeDeviceCache{}, "lock"),
+				}
+				if diff := cmp.Diff(tt.wantCache, tt.args.nodeDeviceCache, stateCmpOpts...); diff != "" {
+					t.Errorf("nodeDeviceCache does not match (-want,+got):\n%s", diff)
+				}
 			}
 		})
 	}
