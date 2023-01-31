@@ -157,7 +157,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	allocateResult, err := g.allocator.Allocate(nodeInfo.Node().Name, pod, podRequest, nodeDeviceInfo)
+	allocateResult, err := p.allocator.Allocate(nodeInfo.Node().Name, pod, podRequest, nodeDeviceInfo)
 	if len(allocateResult) != 0 && err == nil {
 		return nil
 	}
@@ -184,11 +184,11 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 
-	allocateResult, err := g.allocator.Allocate(nodeName, pod, podRequest, nodeDeviceInfo)
+	allocateResult, err := p.allocator.Allocate(nodeName, pod, podRequest, nodeDeviceInfo)
 	if err != nil || len(allocateResult) == 0 {
 		return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
 	}
-	g.allocator.Reserve(pod, nodeDeviceInfo, allocateResult)
+	p.allocator.Reserve(pod, nodeDeviceInfo, allocateResult)
 
 	state.allocationResult = allocateResult
 	return nil
@@ -211,7 +211,7 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 
-	g.allocator.Unreserve(pod, nodeDeviceInfo, state.allocationResult)
+	p.allocator.Unreserve(pod, nodeDeviceInfo, state.allocationResult)
 	state.allocationResult = nil
 }
 
