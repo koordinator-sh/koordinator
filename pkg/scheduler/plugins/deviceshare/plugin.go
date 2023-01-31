@@ -31,6 +31,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -52,6 +53,7 @@ const (
 type Plugin struct {
 	handle          framework.Handle
 	nodeDeviceCache *nodeDeviceCache
+	allocator       Allocator
 }
 
 var (
@@ -155,7 +157,7 @@ func (g *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	allocateResult, err := nodeDeviceInfo.tryAllocateDevice(podRequest)
+	allocateResult, err := g.allocator.Allocate(nodeInfo.Node().Name, pod, podRequest, nodeDeviceInfo)
 	if len(allocateResult) != 0 && err == nil {
 		return nil
 	}
@@ -182,12 +184,11 @@ func (g *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 
-	allocateResult, err := nodeDeviceInfo.tryAllocateDevice(podRequest)
+	allocateResult, err := g.allocator.Allocate(nodeName, pod, podRequest, nodeDeviceInfo)
 	if err != nil || len(allocateResult) == 0 {
 		return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
 	}
-
-	nodeDeviceInfo.updateCacheUsed(allocateResult, pod, true)
+	g.allocator.Reserve(pod, nodeDeviceInfo, allocateResult)
 
 	state.allocationResult = allocateResult
 	return nil
@@ -210,8 +211,7 @@ func (g *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 
-	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
-
+	g.allocator.Unreserve(pod, nodeDeviceInfo, state.allocationResult)
 	state.allocationResult = nil
 }
 
@@ -263,7 +263,12 @@ func (g *Plugin) getAllNodeDeviceSummary() map[string]*NodeDeviceSummary {
 	return g.nodeDeviceCache.getAllNodeDeviceSummary()
 }
 
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+	args, ok := obj.(*config.DeviceShareArgs)
+	if !ok {
+		return nil, fmt.Errorf("want args to be of type DeviceShareArgs, got %T", obj)
+	}
+
 	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
 	if !ok {
 		return nil, fmt.Errorf("expect handle to be type frameworkext.ExtendedHandle, got %T", handle)
@@ -273,8 +278,15 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	registerDeviceEventHandler(deviceCache, extendedHandle.KoordinatorSharedInformerFactory())
 	registerPodEventHandler(deviceCache, handle.SharedInformerFactory())
 
+	allocatorOpts := AllocatorOptions{
+		SharedInformerFactory:      extendedHandle.SharedInformerFactory(),
+		KoordSharedInformerFactory: extendedHandle.KoordinatorSharedInformerFactory(),
+	}
+	allocator := NewAllocator(args.Allocator, allocatorOpts)
+
 	return &Plugin{
 		handle:          handle,
 		nodeDeviceCache: deviceCache,
+		allocator:       allocator,
 	}, nil
 }
