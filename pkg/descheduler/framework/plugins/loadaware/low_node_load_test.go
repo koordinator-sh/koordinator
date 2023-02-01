@@ -1118,3 +1118,92 @@ func TestOverUtilizedEvictionReason(t *testing.T) {
 		})
 	}
 }
+
+func Test_filterNodes(t *testing.T) {
+	tests := []struct {
+		name         string
+		nodeSelector *metav1.LabelSelector
+		nodes        []*corev1.Node
+		want         []*corev1.Node
+		wantErr      bool
+	}{
+		{
+			name: "empty selector",
+			nodes: []*corev1.Node{
+				test.BuildTestNode("test-node-1", 4000, 3000, 9, nil),
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, nil),
+			},
+			want: []*corev1.Node{
+				test.BuildTestNode("test-node-1", 4000, 3000, 9, nil),
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, nil),
+			},
+			wantErr: false,
+		},
+		{
+			name: "matched selector",
+			nodeSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test": "true",
+				},
+			},
+			nodes: []*corev1.Node{
+				test.BuildTestNode("test-node-1", 4000, 3000, 9, nil),
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, func(node *corev1.Node) {
+					if node.Labels == nil {
+						node.Labels = map[string]string{}
+					}
+					node.Labels["test"] = "true"
+				}),
+			},
+			want: []*corev1.Node{
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, func(node *corev1.Node) {
+					if node.Labels == nil {
+						node.Labels = map[string]string{}
+					}
+					node.Labels["test"] = "true"
+				}),
+			},
+			wantErr: false,
+		},
+		{
+			name: "unmatched selector",
+			nodeSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test": "true",
+				},
+			},
+			nodes: []*corev1.Node{
+				test.BuildTestNode("test-node-1", 4000, 3000, 9, nil),
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, nil),
+			},
+			want:    []*corev1.Node{},
+			wantErr: false,
+		},
+		{
+			name: "invalid selector",
+			nodeSelector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "test",
+						Operator: metav1.LabelSelectorOperator("non-exist-operator"),
+					},
+				},
+			},
+			nodes: []*corev1.Node{
+				test.BuildTestNode("test-node-1", 4000, 3000, 9, nil),
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, nil),
+			},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := filterNodes(tt.nodeSelector, tt.nodes)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("expect wantErr=%v, but got=%v", tt.wantErr, err)
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
