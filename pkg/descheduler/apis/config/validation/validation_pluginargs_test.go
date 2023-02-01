@@ -94,15 +94,21 @@ func TestValidateMigrationControllerArgs(t *testing.T) {
 		{
 			name: "invalid evictQPS",
 			args: &v1alpha2.MigrationControllerArgs{
-				EvictQPS: "xxx",
+				EvictQPS: &deschedulerconfig.Float64OrString{
+					Type:   deschedulerconfig.String,
+					StrVal: "xxxx",
+				},
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid evictBurst",
 			args: &v1alpha2.MigrationControllerArgs{
-				EvictQPS:   "1",
-				EvictBurst: 0,
+				EvictQPS: &deschedulerconfig.Float64OrString{
+					Type:     deschedulerconfig.Float,
+					FloatVal: 11,
+				},
+				EvictBurst: pointer.Int32(0),
 			},
 			wantErr: true,
 		},

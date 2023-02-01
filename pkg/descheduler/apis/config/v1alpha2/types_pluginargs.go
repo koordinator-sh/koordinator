@@ -19,6 +19,8 @@ package v1alpha2
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -143,9 +145,9 @@ type MigrationControllerArgs struct {
 	DefaultJobTTL *metav1.Duration `json:"defaultJobTTL,omitempty"`
 
 	// EvictQPS controls the number of evict per second
-	EvictQPS string `json:"evictQPS,omitempty"`
+	EvictQPS *config.Float64OrString `json:"evictQPS,omitempty"`
 	// EvictBurst is the maximum number of tokens
-	EvictBurst int32 `json:"evictBurst,omitempty"`
+	EvictBurst *int32 `json:"evictBurst,omitempty"`
 	// EvictionPolicy represents how to delete Pod, support "Delete" and "Eviction", default value is "Eviction"
 	EvictionPolicy string `json:"evictionPolicy,omitempty"`
 	// DefaultDeleteOptions defines options when deleting migrated pods and preempted pods through the method specified by EvictionPolicy

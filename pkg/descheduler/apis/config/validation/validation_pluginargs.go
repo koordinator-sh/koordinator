@@ -18,7 +18,6 @@ package validation
 
 import (
 	"fmt"
-	"strconv"
 
 	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -68,13 +67,12 @@ func ValidateMigrationControllerArgs(path *field.Path, args *deschedulerconfig.M
 		}
 	}
 
-	if args.EvictQPS != "" {
-		evictQPS, err := strconv.ParseFloat(args.EvictQPS, 64)
-		if err != nil {
-			allErrs = append(allErrs, field.Invalid(path.Child("evictQPS"), args.EvictQPS, "evictQPS should be float number"))
-		} else if evictQPS > 0 && args.EvictBurst <= 0 {
-			allErrs = append(allErrs, field.Invalid(path.Child("evictBurst"), args.EvictBurst, "evictBurst is required to be greater than 0 when set evictQPS"))
-		}
+	if args.EvictQPS.FloatValue() <= 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("evictQPS"), args.EvictQPS, "evictQPS must be greater than 0"))
+	}
+
+	if args.EvictBurst <= 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("evictBurst"), args.EvictBurst, "evictBurst must be greater than 0"))
 	}
 
 	if args.LabelSelector != nil {

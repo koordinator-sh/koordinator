@@ -22,6 +22,7 @@ limitations under the License.
 package v1alpha2
 
 import (
+	config "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
@@ -307,6 +308,16 @@ func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 	if in.DefaultJobTTL != nil {
 		in, out := &in.DefaultJobTTL, &out.DefaultJobTTL
 		*out = new(v1.Duration)
+		**out = **in
+	}
+	if in.EvictQPS != nil {
+		in, out := &in.EvictQPS, &out.EvictQPS
+		*out = new(config.Float64OrString)
+		**out = **in
+	}
+	if in.EvictBurst != nil {
+		in, out := &in.EvictBurst, &out.EvictBurst
+		*out = new(int32)
 		**out = **in
 	}
 	if in.DefaultDeleteOptions != nil {
