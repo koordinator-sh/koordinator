@@ -64,7 +64,6 @@ type nodeTopoInformer struct {
 	metricCache    metriccache.MetricCache
 	callbackRunner *callbackRunner
 
-	initialTopology              bool
 	nodeResourceTopologyInformer cache.SharedIndexInformer
 	nodeResourceTopologyLister   topologylister.NodeResourceTopologyLister
 
@@ -135,11 +134,7 @@ func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 }
 
 func (s *nodeTopoInformer) HasSynced() bool {
-	_, err := s.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
-	if !s.initialTopology && err == nil {
-		klog.V(4).Infof("nodeTopoInformer failed to start")
-		return false
-	}
+	klog.V(4).Infof("nodeTopoInformer need collector to start")
 	if !features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 		return true
 	}
@@ -395,10 +390,6 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 					return err
 				}
 			}
-		}
-		if !s.initialTopology {
-			s.initialTopology = true
-			klog.V(4).Infof("node topology informer of node %s is initialized", node.Name)
 		}
 		return nil
 	})
