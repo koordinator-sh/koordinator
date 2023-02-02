@@ -242,6 +242,7 @@ func (f *fakeKoordinatorSharedInformerFactory) Informer() cache.SharedIndexInfor
 type fakeExtendedHandle struct {
 	frameworkext.ExtendedHandle
 
+	informerFactory            informers.SharedInformerFactory
 	cs                         *kubefake.Clientset
 	sharedLister               *fakeSharedLister
 	koordSharedInformerFactory *fakeKoordinatorSharedInformerFactory
@@ -250,6 +251,10 @@ type fakeExtendedHandle struct {
 
 func (f *fakeExtendedHandle) ClientSet() clientset.Interface {
 	return f.cs
+}
+
+func (f *fakeExtendedHandle) SharedInformerFactory() informers.SharedInformerFactory {
+	return f.informerFactory
 }
 
 func (f *fakeExtendedHandle) SnapshotSharedLister() framework.SharedLister {
