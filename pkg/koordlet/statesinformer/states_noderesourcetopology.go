@@ -135,7 +135,8 @@ func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 }
 
 func (s *nodeTopoInformer) HasSynced() bool {
-	if !s.initialTopology {
+	_, err := s.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
+	if !s.initialTopology && err != nil {
 		return false
 	}
 	if !features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
