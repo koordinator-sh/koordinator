@@ -136,7 +136,7 @@ func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 
 func (s *nodeTopoInformer) HasSynced() bool {
 	_, err := s.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
-	if !s.initialTopology && err != nil {
+	if !s.initialTopology && err == nil {
 		klog.V(4).Infof("nodeTopoInformer failed to start")
 		return false
 	}
