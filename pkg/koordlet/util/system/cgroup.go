@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -43,6 +44,7 @@ const (
 )
 
 const EmptyValueError string = "EmptyValueError"
+const ErrCgroupDir = "cgroup path or file not exist"
 
 type CPUStatRaw struct {
 	NrPeriods            int64
@@ -75,6 +77,9 @@ func CgroupFileWriteIfDifferent(cgroupTaskDir string, r Resource, value string) 
 	if valid, msg := r.IsValid(value); !valid {
 		return fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), value, msg)
 	}
+	if exist, msg := IsCgroupPathExist(cgroupTaskDir, r); !exist {
+		return ResourceCgroupDirErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
+	}
 
 	currentValue, currentErr := CgroupFileRead(cgroupTaskDir, r)
 	if currentErr != nil {
@@ -88,6 +93,29 @@ func CgroupFileWriteIfDifferent(cgroupTaskDir string, r Resource, value string) 
 	return CgroupFileWrite(cgroupTaskDir, r, value)
 }
 
+func IsCgroupPathExist(parentDir string, r Resource) (bool, string) {
+	filePath := r.Path(parentDir)
+	cgroupPath := filepath.Dir(filePath)
+	pathexists, _ := PathExists(cgroupPath)
+	if !pathexists {
+		klog.V(5).Infof("cgroup directory not exist, path: %v", cgroupPath)
+		return false, "cgroup path err"
+	}
+	fileexists, _ := PathExists(filePath)
+	if !fileexists && pathexists {
+		return false, "cgroup file err"
+	}
+	return true, ""
+}
+
+func ResourceCgroupDirErr(msg string) error {
+	return fmt.Errorf("%s, reason: %s", ErrCgroupDir, msg)
+}
+
+func IsCgroupDirErr(err error) bool {
+	return strings.HasPrefix(err.Error(), ErrCgroupDir)
+}
+
 // CgroupFileWrite writes the cgroup file with the given value.
 // TODO: moved into resourceexecutor package and marked as private.
 func CgroupFileWrite(cgroupTaskDir string, r Resource, value string) error {
@@ -96,6 +124,9 @@ func CgroupFileWrite(cgroupTaskDir string, r Resource, value string) error {
 	}
 	if valid, msg := r.IsValid(value); !valid {
 		return fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), value, msg)
+	}
+	if exist, msg := IsCgroupPathExist(cgroupTaskDir, r); !exist {
+		return ResourceCgroupDirErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
 	}
 
 	filePath := r.Path(cgroupTaskDir)
@@ -136,6 +167,9 @@ func CgroupFileReadInt(cgroupTaskDir string, r Resource) (*int64, error) {
 func CgroupFileRead(cgroupTaskDir string, r Resource) (string, error) {
 	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
 		return "", ResourceUnsupportedErr(fmt.Sprintf("read cgroup %s failed, msg: %s", r.ResourceType(), msg))
+	}
+	if exist, msg := IsCgroupPathExist(cgroupTaskDir, r); !exist {
+		return "", ResourceCgroupDirErr(fmt.Sprintf("read cgroup %s failed, msg: %s", r.ResourceType(), msg))
 	}
 
 	filePath := r.Path(cgroupTaskDir)

@@ -36,6 +36,7 @@ type CgroupReader interface {
 	ReadMemoryLimit(parentDir string) (int64, error)
 	ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRaw, error)
 	ReadCPUTasks(parentDir string) ([]int32, error)
+	ReadPSI(parentDir string) (*sysutil.PSIByResource, error)
 }
 
 var _ CgroupReader = &CgroupV1Reader{}
@@ -64,6 +65,32 @@ func (r *CgroupV1Reader) ReadCPUShares(parentDir string) (int64, error) {
 		return -1, ErrResourceNotRegistered
 	}
 	return sysutil.ReadCgroupAndParseInt64(parentDir, resource)
+}
+
+func (r *CgroupV1Reader) ReadPSI(parentDir string) (*sysutil.PSIByResource, error) {
+	cpuPressureResource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.CPUAcctCPUPressureName)
+	if !ok {
+		return nil, ErrResourceNotRegistered
+	}
+	memPressureResource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.CPUAcctMemoryPressureName)
+	if !ok {
+		return nil, ErrResourceNotRegistered
+	}
+	ioPressureResource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.CPUAcctIOPressureName)
+	if !ok {
+		return nil, ErrResourceNotRegistered
+	}
+
+	paths := sysutil.PSIPath{
+		CPU: cpuPressureResource.Path(parentDir),
+		Mem: memPressureResource.Path(parentDir),
+		IO:  ioPressureResource.Path(parentDir),
+	}
+	psi, err := sysutil.GetPSIByResource(paths)
+	if err != nil {
+		return nil, err
+	}
+	return psi, nil
 }
 
 func (r *CgroupV1Reader) ReadCPUSet(parentDir string) (*cpuset.CPUSet, error) {
@@ -291,6 +318,32 @@ func (r *CgroupV2Reader) ReadCPUTasks(parentDir string) ([]int32, error) {
 	}
 	// content: `7742\n10971\n11049\n11051...`
 	return sysutil.ReadCgroupAndParseInt32Slice(parentDir, resource)
+}
+
+func (r *CgroupV2Reader) ReadPSI(parentDir string) (*sysutil.PSIByResource, error) {
+	cpuPressureResource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.CPUAcctCPUPressureName)
+	if !ok {
+		return nil, ErrResourceNotRegistered
+	}
+	memPressureResource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.CPUAcctMemoryPressureName)
+	if !ok {
+		return nil, ErrResourceNotRegistered
+	}
+	ioPressureResource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.CPUAcctIOPressureName)
+	if !ok {
+		return nil, ErrResourceNotRegistered
+	}
+
+	paths := sysutil.PSIPath{
+		CPU: cpuPressureResource.Path(parentDir),
+		Mem: memPressureResource.Path(parentDir),
+		IO:  ioPressureResource.Path(parentDir),
+	}
+	psi, err := sysutil.GetPSIByResource(paths)
+	if err != nil {
+		return nil, err
+	}
+	return psi, nil
 }
 
 func NewCgroupReader() CgroupReader {

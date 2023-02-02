@@ -14,15 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package system
 
 import (
 	"path"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 const (
@@ -45,7 +43,7 @@ func TestGetPSIByResource_CPUErr(t *testing.T) {
 }
 
 func TestGetPSIByResource_MemErr(t *testing.T) {
-	helper := system.NewFileTestUtil(t)
+	helper := NewFileTestUtil(t)
 	helper.CreateFile("cpu.pressure")
 	helper.WriteFileContents("cpu.pressure", FullCorrectPSIContents)
 	psiPath := PSIPath{
@@ -62,7 +60,7 @@ func TestGetPSIByResource_MemErr(t *testing.T) {
 }
 
 func TestGetPSIByResource_IOErr(t *testing.T) {
-	helper := system.NewFileTestUtil(t)
+	helper := NewFileTestUtil(t)
 	helper.CreateFile("cpu.pressure")
 	helper.WriteFileContents("cpu.pressure", FullCorrectPSIContents)
 	helper.CreateFile("memory.pressure")
@@ -81,7 +79,7 @@ func TestGetPSIByResource_IOErr(t *testing.T) {
 }
 
 func TestGetPSIByResource(t *testing.T) {
-	helper := system.NewFileTestUtil(t)
+	helper := NewFileTestUtil(t)
 	helper.CreateFile("cpu.pressure")
 	helper.WriteFileContents("cpu.pressure", FullCorrectPSIContents)
 	helper.CreateFile("memory.pressure")

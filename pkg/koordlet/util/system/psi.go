@@ -14,11 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
-
-import (
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-)
+package system
 
 type PSIPath struct {
 	CPU string
@@ -27,21 +23,21 @@ type PSIPath struct {
 }
 
 type PSIByResource struct {
-	CPU system.PSIStats
-	Mem system.PSIStats
-	IO  system.PSIStats
+	CPU PSIStats
+	Mem PSIStats
+	IO  PSIStats
 }
 
 func GetPSIByResource(paths PSIPath) (*PSIByResource, error) {
-	cpuStats, err := system.ReadPSI(paths.CPU)
+	cpuStats, err := ReadPSI(paths.CPU)
 	if err != nil {
 		return nil, err
 	}
-	memStats, err := system.ReadPSI(paths.Mem)
+	memStats, err := ReadPSI(paths.Mem)
 	if err != nil {
 		return nil, err
 	}
-	ioStats, err := system.ReadPSI(paths.IO)
+	ioStats, err := ReadPSI(paths.IO)
 	if err != nil {
 		return nil, err
 	}
