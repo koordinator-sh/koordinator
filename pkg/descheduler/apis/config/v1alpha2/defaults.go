@@ -164,7 +164,7 @@ func SetDefaults_DeschedulerConfiguration(obj *DeschedulerConfiguration) {
 		obj.EnableContentionProfiling = &enableContentionProfiling
 	}
 
-	defaultBindAddress := net.JoinHostPort("0.0.0.0", strconv.Itoa(config.DefaultDeschedulerPort))
+	defaultBindAddress := net.JoinHostPort("0.0.0.0", strconv.Itoa(config.DefaultInsecureDeschedulerPort))
 	if obj.HealthzBindAddress == nil {
 		obj.HealthzBindAddress = &defaultBindAddress
 	} else {
@@ -176,7 +176,7 @@ func SetDefaults_DeschedulerConfiguration(obj *DeschedulerConfiguration) {
 			obj.HealthzBindAddress = &hostPort
 		} else {
 			if host := net.ParseIP(*obj.HealthzBindAddress); host != nil {
-				hostPort := net.JoinHostPort(*obj.HealthzBindAddress, strconv.Itoa(config.DefaultDeschedulerPort))
+				hostPort := net.JoinHostPort(*obj.HealthzBindAddress, strconv.Itoa(config.DefaultInsecureDeschedulerPort))
 				obj.HealthzBindAddress = &hostPort
 			}
 		}
@@ -193,7 +193,7 @@ func SetDefaults_DeschedulerConfiguration(obj *DeschedulerConfiguration) {
 			obj.MetricsBindAddress = &hostPort
 		} else {
 			if host := net.ParseIP(*obj.MetricsBindAddress); host != nil {
-				hostPort := net.JoinHostPort(*obj.MetricsBindAddress, strconv.Itoa(config.DefaultDeschedulerPort))
+				hostPort := net.JoinHostPort(*obj.MetricsBindAddress, strconv.Itoa(config.DefaultInsecureDeschedulerPort))
 				obj.MetricsBindAddress = &hostPort
 			}
 		}
