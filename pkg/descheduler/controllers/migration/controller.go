@@ -130,7 +130,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) (*Reconciler, error) {
 	manager := options.Manager
 	reservationInterpreter := reservation.NewInterpreter(manager)
-	evictorInterpreter, err := evictor.NewInterpreter(handle, args.EvictionPolicy, args.EvictQPS, int(args.EvictBurst))
+	evictorInterpreter, err := evictor.NewInterpreter(handle, args.EvictionPolicy, float32(args.EvictQPS.FloatValue()), int(args.EvictBurst))
 	if err != nil {
 		return nil, err
 	}

@@ -143,7 +143,7 @@ type MigrationControllerArgs struct {
 	DefaultJobTTL metav1.Duration
 
 	// EvictQPS controls the number of evict per second
-	EvictQPS string
+	EvictQPS *Float64OrString
 	// EvictBurst is the maximum number of tokens
 	EvictBurst int32
 	// EvictionPolicy represents how to delete Pod, support "Delete" and "Eviction", default value is "Eviction"

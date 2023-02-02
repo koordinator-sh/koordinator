@@ -35,9 +35,12 @@ import (
 const (
 	defaultMigrationControllerMaxConcurrentReconciles = 1
 
+	defaultMaxMigratingPerNode        = 2
 	defaultMigrationJobMode           = sev1alpha1.PodMigrationJobModeReservationFirst
 	defaultMigrationJobTTL            = 5 * time.Minute
 	defaultMigrationJobEvictionPolicy = migrationevictor.NativeEvictorName
+	defaultMigrationEvictQPS          = 10
+	defaultMigrationEvictBurst        = 1
 )
 
 var (
@@ -214,6 +217,9 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 	if obj.MaxConcurrentReconciles == nil {
 		obj.MaxConcurrentReconciles = pointer.Int32(defaultMigrationControllerMaxConcurrentReconciles)
 	}
+	if obj.MaxMigratingPerNode == nil {
+		obj.MaxMigratingPerNode = pointer.Int32(defaultMaxMigratingPerNode)
+	}
 	if obj.DefaultJobMode == "" {
 		obj.DefaultJobMode = string(defaultMigrationJobMode)
 	}
@@ -223,7 +229,15 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 	if obj.EvictionPolicy == "" {
 		obj.EvictionPolicy = defaultMigrationJobEvictionPolicy
 	}
-
+	if obj.EvictQPS == nil {
+		obj.EvictQPS = &config.Float64OrString{
+			Type:     config.Float,
+			FloatVal: defaultMigrationEvictQPS,
+		}
+	}
+	if obj.EvictBurst == nil {
+		obj.EvictBurst = pointer.Int32(defaultMigrationEvictBurst)
+	}
 	if len(obj.ObjectLimiters) == 0 {
 		obj.ObjectLimiters = defaultObjectLimiters
 	}
