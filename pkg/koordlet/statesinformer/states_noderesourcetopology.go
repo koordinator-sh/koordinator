@@ -134,7 +134,8 @@ func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 }
 
 func (s *nodeTopoInformer) HasSynced() bool {
-	klog.V(4).Infof("nodeTopoInformer need collector to start")
+	// TODO only node cpu info collector relies on node topo informer
+	klog.V(5).Infof("nodeTopoInformer ready to start")
 	if !features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 		return true
 	}
