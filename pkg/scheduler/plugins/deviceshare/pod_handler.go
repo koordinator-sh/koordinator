@@ -23,7 +23,6 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
@@ -47,30 +46,19 @@ func (n *nodeDeviceCache) onPodAdd(obj interface{}) {
 		return
 	}
 
-	podRequest, _ := resource.PodRequestsAndLimits(pod)
-
-	deviceExist := false
-	for deviceType := range DeviceResourceNames {
-		if hasDeviceResource(podRequest, deviceType) {
-			deviceExist = true
-		}
-	}
-
-	if !deviceExist {
-		klog.V(5).Infof("pod cache add skip non Device pod, podName: %v", pod.Name)
-		return
-	}
-
 	devicesAllocation, err := apiext.GetDeviceAllocations(pod.Annotations)
 	if err != nil {
-		klog.Errorf("failed to get device allocation, pod: %v, err: %v", pod.Name, err)
+		klog.Errorf("failed to get device allocation from pod %v, err: %v", klog.KObj(pod), err)
+		return
+	}
+	if len(devicesAllocation) == 0 {
 		return
 	}
 
 	info := n.getNodeDevice(pod.Spec.NodeName)
 	if info == nil {
 		info = n.createNodeDevice(pod.Spec.NodeName)
-		klog.V(5).Infof("node device cache not found, nodeName: %v, pod:%v, createNodeDevice", pod.Spec.NodeName, pod.Name)
+		klog.V(5).Infof("node device cache not found, nodeName: %v, pod: %v, createNodeDevice", pod.Spec.NodeName, klog.KObj(pod))
 	}
 
 	info.lock.Lock()
@@ -100,29 +88,18 @@ func (n *nodeDeviceCache) onPodDelete(obj interface{}) {
 		return
 	}
 
-	info := n.getNodeDevice(pod.Spec.NodeName)
-	if info == nil {
-		klog.Errorf("node device cache not found, nodeName: %v", pod.Spec.NodeName)
-		return
-	}
-
-	podRequest, _ := resource.PodRequestsAndLimits(pod)
-
-	deviceExist := false
-	for deviceType := range DeviceResourceNames {
-		if hasDeviceResource(podRequest, deviceType) {
-			deviceExist = true
-		}
-	}
-
-	if !deviceExist {
-		klog.V(5).Infof("pod cache remove skip non Device pod, podName: %v", pod.Name)
-		return
-	}
-
 	devicesAllocation, err := apiext.GetDeviceAllocations(pod.Annotations)
 	if err != nil {
-		klog.Errorf("failed to get %v device allocation, err: %v", pod.Name, err)
+		klog.Errorf("failed to get device allocation from pod %v, err: %v", klog.KObj(pod), err)
+		return
+	}
+	if len(devicesAllocation) == 0 {
+		return
+	}
+
+	info := n.getNodeDevice(pod.Spec.NodeName)
+	if info == nil {
+		klog.Errorf("node device cache not found, nodeName: %v, pod: %v", pod.Spec.NodeName, klog.KObj(pod))
 		return
 	}
 

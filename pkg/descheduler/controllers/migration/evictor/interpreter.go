@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -67,12 +66,8 @@ type interpreterImpl struct {
 	eventRecorder  events.EventRecorder
 }
 
-func NewInterpreter(handle framework.Handle, defaultEvictionPolicy string, evictQPS string, evictBurst int) (Interpreter, error) {
-	var qps float32
-	if val, err := strconv.ParseFloat(evictQPS, 64); err == nil && val > 0 {
-		qps = float32(val)
-	}
-	rateLimiter := flowcontrol.NewTokenBucketRateLimiter(qps, evictBurst)
+func NewInterpreter(handle framework.Handle, defaultEvictionPolicy string, evictQPS float32, evictBurst int) (Interpreter, error) {
+	rateLimiter := flowcontrol.NewTokenBucketRateLimiter(evictQPS, evictBurst)
 
 	evictors := map[string]Interface{}
 	for k, v := range registry {

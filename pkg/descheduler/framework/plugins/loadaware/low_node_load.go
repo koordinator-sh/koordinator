@@ -136,6 +136,11 @@ func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framew
 	if err != nil {
 		return &framework.Status{Err: err}
 	}
+	if len(nodes) == 0 {
+		klog.Infof("No nodes to process LowNodeLoad")
+		return nil
+	}
+
 	lowThresholds, highThresholds := newThresholds(l.args)
 	resourceNames := getResourceNames(lowThresholds)
 	nodeUsages := getNodeUsage(nodes, resourceNames, l.nodeMetricLister, l.handle.GetPodsAssignedToNodeFunc())
@@ -248,7 +253,7 @@ func filterNodes(nodeSelector *metav1.LabelSelector, nodes []*corev1.Node) ([]*c
 		return nodes, nil
 	}
 	selector, err := metav1.LabelSelectorAsSelector(nodeSelector)
-	if err == nil {
+	if err != nil {
 		return nil, err
 	}
 	r := make([]*corev1.Node, 0, len(nodes))

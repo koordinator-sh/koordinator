@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
+	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -202,7 +203,7 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 
 		// NOTE: when the pod can allocate any reservation on the node, we should alter the nodeInfo snapshot to skip
 		//  the affinity/anti-affinity/topo constrains filtering in InterPodAffinity and PodTopologySpread plugins.
-		preparePreFilterNodeInfo(nodeInfo, pod, matchedCache)
+		preparePreFilterNodeInfo(handle, nodeInfo, pod, matchedCache)
 		klog.V(4).InfoS("PreFilterHook get matched reservations", "pod", klog.KObj(pod),
 			"node", node.Name, "count", count)
 	}
@@ -217,7 +218,11 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 	return state, nil
 }
 
-func preparePreFilterNodeInfo(nodeInfo *framework.NodeInfo, pod *corev1.Pod, matchedCache *AvailableCache) {
+func GenPVCRefKey(pvc *corev1.PersistentVolumeClaim) string {
+	return pvc.Namespace + "/" + pvc.Name
+}
+
+func preparePreFilterNodeInfo(handle frameworkext.ExtendedHandle, nodeInfo *framework.NodeInfo, pod *corev1.Pod, matchedCache *AvailableCache) {
 	// alter the nodeInfo to skip the ExistingAntiAffinity check of reservations
 	// only consider required anti-affinities
 	for _, podInfo := range nodeInfo.PodsWithRequiredAntiAffinity {
@@ -230,6 +235,32 @@ func preparePreFilterNodeInfo(nodeInfo *framework.NodeInfo, pod *corev1.Pod, mat
 			newPodInfo := podInfo.DeepCopy()
 			newPodInfo.RequiredAntiAffinityTerms = nil
 			*podInfo = *newPodInfo
+		}
+	}
+
+	// Volumerestrictions plugin will check PVCRefCounts in nodeinfo in prefilter.
+	// If the scheduling pod declare a PVC with ReadWriteOncePod access mode and the
+	// PVC has been used by other scheduled pod, the scheduling pod will be marked
+	// as UnschedulableAndUnresolvable.
+	// So we need to modify PVCRefCounts that are added by matched reservePod in nodeInfo
+	// to schedule the real pod.
+	pvcLister := handle.SharedInformerFactory().Core().V1().PersistentVolumeClaims().Lister()
+	for _, rr := range matchedCache.nodeToR[nodeInfo.Node().Name] {
+		podSpecTemplate := rr.Reservation.Spec.Template
+		for _, volume := range podSpecTemplate.Spec.Volumes {
+			if volume.PersistentVolumeClaim == nil {
+				continue
+			}
+			pvc, err := pvcLister.PersistentVolumeClaims(pod.Namespace).Get(volume.PersistentVolumeClaim.ClaimName)
+			if err != nil {
+				continue
+			}
+
+			if !v1helper.ContainsAccessMode(pvc.Spec.AccessModes, corev1.ReadWriteOncePod) {
+				continue
+			}
+
+			nodeInfo.PVCRefCounts[GenPVCRefKey(pvc)] -= 1
 		}
 	}
 }
