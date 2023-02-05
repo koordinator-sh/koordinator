@@ -49,6 +49,11 @@ var (
 			Duration: metav1.Duration{Duration: 5 * time.Minute},
 		},
 	}
+
+	defaultLoadAnomalyCondition = &LoadAnomalyCondition{
+		Timeout:                  &metav1.Duration{Duration: 1 * time.Minute},
+		ConsecutiveAbnormalities: 5,
+	}
 )
 
 func addDefaultingFuncs(scheme *runtime.Scheme) error {
@@ -246,5 +251,8 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
 	if obj.NodeFit == nil {
 		obj.NodeFit = pointer.Bool(true)
+	}
+	if obj.AnomalyCondition == nil || obj.AnomalyCondition.ConsecutiveAbnormalities == 0 {
+		obj.AnomalyCondition = defaultLoadAnomalyCondition
 	}
 }

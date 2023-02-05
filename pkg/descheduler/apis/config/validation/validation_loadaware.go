@@ -62,6 +62,11 @@ func ValidateLowLoadUtilizationArgs(path *field.Path, args *deschedulerconfig.Lo
 		}
 	}
 
+	if args.AnomalyCondition.ConsecutiveAbnormalities <= 0 {
+		fieldPath := path.Child("anomalyDetectionThresholds").Child("consecutiveAbnormalities")
+		allErrs = append(allErrs, field.Invalid(fieldPath, args.AnomalyCondition.ConsecutiveAbnormalities, "consecutiveAbnormalities must be greater than 0"))
+	}
+
 	if len(allErrs) == 0 {
 		return nil
 	}
