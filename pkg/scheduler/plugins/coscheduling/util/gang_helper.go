@@ -17,13 +17,13 @@ limitations under the License.
 package util
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"encoding/json"
@@ -56,11 +56,19 @@ func IsPodNeedGang(pod *v1.Pod) bool {
 	return GetGangNameByPod(pod) != ""
 }
 
-func ParsePgTimeoutSeconds(timeoutSeconds int32) (time.Duration, error) {
-	if timeoutSeconds <= 0 {
-		return 0, fmt.Errorf("podGroup timeout value is illegal,timeout Value:%v", timeoutSeconds)
+// GetWaitTimeDuration returns a wait timeout based on the following precedences:
+// 1. spec.scheduleTimeoutSeconds of the given pg, if specified
+// 2. fall back to defaultTimeout
+func GetWaitTimeDuration(pg *v1alpha1.PodGroup, defaultTimeout time.Duration) time.Duration {
+	if pg != nil && pg.Spec.ScheduleTimeoutSeconds != nil {
+		if *pg.Spec.ScheduleTimeoutSeconds >= 0 {
+			return time.Duration(*pg.Spec.ScheduleTimeoutSeconds) * time.Second
+		} else {
+			klog.Errorf("podGroup's ScheduleTimeoutSeconds illegal, podGroupName: %s", klog.KObj(pg))
+		}
 	}
-	return time.Duration(timeoutSeconds) * time.Second, nil
+
+	return defaultTimeout
 }
 
 // StringToGangGroupSlice

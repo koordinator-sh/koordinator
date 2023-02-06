@@ -200,17 +200,7 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 	// here we assume that Coscheduling's CreateTime equal with the podGroup CRD CreateTime
 	gang.CreateTime = pg.CreationTimestamp.Time
 
-	waitTime, err := util.ParsePgTimeoutSeconds(*pg.Spec.ScheduleTimeoutSeconds)
-	if err != nil {
-		klog.Errorf("podGroup's ScheduleTimeoutSeconds illegal, gangName: %v, value: %v",
-			gang.Name, pg.Spec.ScheduleTimeoutSeconds)
-		if args.DefaultTimeout != nil {
-			waitTime = args.DefaultTimeout.Duration
-		} else {
-			klog.Errorf("gangArgs DefaultTimeoutSeconds is nil")
-			waitTime = 0
-		}
-	}
+	waitTime := util.GetWaitTimeDuration(pg, args.DefaultTimeout.Duration)
 	gang.WaitTime = waitTime
 
 	groupSlice, err := util.StringToGangGroupSlice(pg.Annotations[extension.AnnotationGangGroups])
