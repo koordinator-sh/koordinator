@@ -121,8 +121,12 @@ func TestRuntimeHookDispatcher_Dispatch(t *testing.T) {
 			hookManager: configManager,
 			cm:          clientManager,
 		}
-		_, err, operation := runtimeHookDispatcher.Dispatch(context.TODO(), tt.requestPath, config.PreHook, tt.request)
+		rsp, err, operation := runtimeHookDispatcher.Dispatch(context.TODO(), tt.requestPath, config.PreHook, tt.request)
 		assert.Equal(t, operation, tt.expectedOperation, tt.name)
 		assert.Equal(t, err != nil, tt.expectReturnErr)
+		//if err != nil, the rsp need to be nil
+		if err != nil {
+			assert.Equal(t, rsp == nil, true)
+		}
 	}
 }
