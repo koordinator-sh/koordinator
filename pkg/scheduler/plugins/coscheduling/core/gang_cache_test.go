@@ -658,7 +658,7 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 			pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 			pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 			pglister := pgInformer.Lister()
-			gangCache := NewGangCache(&config.CoschedulingArgs{}, nil, pglister, pgClient)
+			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: time.Second}}, nil, pglister, pgClient)
 			for _, pg := range tt.podGroups {
 				err := retry.OnError(
 					retry.DefaultRetry,
@@ -830,7 +830,7 @@ func TestGangCache_OnPodGroupAdd(t *testing.T) {
 			}()
 			timeNowFn = fakeTimeNowFn
 			pgClient := fakepgclientset.NewSimpleClientset()
-			gangCache := NewGangCache(&config.CoschedulingArgs{}, nil, nil, pgClient)
+			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: time.Second}}, nil, nil, pgClient)
 			for _, pg := range tt.pgs {
 				gangCache.onPodGroupAdd(pg)
 			}
