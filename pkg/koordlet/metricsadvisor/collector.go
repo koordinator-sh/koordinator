@@ -227,6 +227,11 @@ func (c *collector) collectPodResUsed() {
 	podMetas := c.statesInformer.GetAllPods()
 	for _, meta := range podMetas {
 		pod := meta.Pod
+		// TODO: currently koordlet only supports collecting metrics from Pod launched by runc.
+		// Other runtimes collector plugins are currently under development for better compatibility.
+		if ignoreNonRuncPod(pod) {
+			continue
+		}
 		uid := string(pod.UID) // types.UID
 		collectTime := time.Now()
 		podCgroupDir := koordletutil.GetPodCgroupDirWithKube(meta.CgroupDir)
