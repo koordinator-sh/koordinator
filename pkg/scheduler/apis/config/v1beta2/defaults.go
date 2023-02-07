@@ -18,7 +18,6 @@ package v1beta2
 
 import (
 	"math"
-
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -94,8 +93,14 @@ func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 	if len(obj.UsageThresholds) == 0 {
 		obj.UsageThresholds = defaultUsageThresholds
 	}
-	if len(obj.EstimatedScalingFactors) == 0 {
+	if obj.EstimatedScalingFactors == nil {
 		obj.EstimatedScalingFactors = defaultEstimatedScalingFactors
+	} else {
+		for k, v := range defaultEstimatedScalingFactors {
+			if _, ok := obj.EstimatedScalingFactors[k]; !ok {
+				obj.EstimatedScalingFactors[k] = v
+			}
+		}
 	}
 }
 
