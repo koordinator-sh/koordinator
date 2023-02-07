@@ -19,7 +19,9 @@ package loadaware
 import (
 	"context"
 	"testing"
+	"time"
 
+	gocache "github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	policy "k8s.io/api/policy/v1beta1"
@@ -27,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	coretesting "k8s.io/client-go/testing"
@@ -1020,6 +1023,9 @@ func TestLowNodeUtilization(t *testing.T) {
 				HighThresholds:         tt.targetThresholds,
 				UseDeviationThresholds: tt.useDeviationThresholds,
 				EvictableNamespaces:    tt.evictableNamespaces,
+				AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+					ConsecutiveAbnormalities: 1,
+				},
 			}
 
 			koordClientSet := koordfake.NewSimpleClientset()
@@ -1204,6 +1210,109 @@ func Test_filterNodes(t *testing.T) {
 				t.Errorf("expect wantErr=%v, but got=%v", tt.wantErr, err)
 			}
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_markNormalNodes(t *testing.T) {
+	node := NodeInfo{
+		NodeUsage: &NodeUsage{
+			node: test.BuildTestNode("test-node-", 4000, 3000, 10, nil),
+		},
+	}
+	sourceNodes := []NodeInfo{node}
+
+	condition := &deschedulerconfig.LoadAnomalyCondition{
+		ConsecutiveAbnormalities: 2,
+	}
+	nodeAnomalyDetectors := gocache.New(5*time.Minute, 5*time.Minute)
+	for i := 0; i < int(condition.ConsecutiveAbnormalities); i++ {
+		filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, condition)
+	}
+	abnormalNodes := filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, condition)
+	assert.Equal(t, sourceNodes, abnormalNodes)
+
+	markNormalNodes(sourceNodes, nodeAnomalyDetectors)
+	abnormalNodes = filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, condition)
+	assert.Equal(t, []NodeInfo(nil), abnormalNodes)
+}
+
+func Test_filterRealAbnormalNodes(t *testing.T) {
+	tests := []struct {
+		name             string
+		sourceNodes      []string
+		abnormalNodes    []string
+		anomalyCondition *deschedulerconfig.LoadAnomalyCondition
+		detectCounts     int
+		want             []string
+	}{
+		{
+			name:        "ConsecutiveAbnormalities 1 times and detected abnormality",
+			sourceNodes: []string{"test-node-1", "test-node-2"},
+			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+				ConsecutiveAbnormalities: 1,
+			},
+			want: []string{"test-node-1", "test-node-2"},
+		},
+		{
+			name:        "ConsecutiveAbnormalities 2 times and did not detect abnormality",
+			sourceNodes: []string{"test-node-1", "test-node-2"},
+			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+				ConsecutiveAbnormalities: 2,
+			},
+			want: nil,
+		},
+		{
+			name:        "ConsecutiveAbnormalities 2 times and detect 2 times",
+			sourceNodes: []string{"test-node-1", "test-node-2"},
+			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+				ConsecutiveAbnormalities: 2,
+			},
+			detectCounts: 2,
+			want:         []string{"test-node-1", "test-node-2"},
+		},
+		{
+			name:          "mix abnormal nodes and normal nodes",
+			sourceNodes:   []string{"test-node-1", "test-node-2"},
+			abnormalNodes: []string{"test-node-2"},
+			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+				ConsecutiveAbnormalities: 2,
+			},
+			want: []string{"test-node-2"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			abnormalNodes := sets.NewString(tt.abnormalNodes...)
+			var sourceNodes []NodeInfo
+			var alreadyAbnormalNodes []NodeInfo
+			for _, v := range tt.sourceNodes {
+				node := NodeInfo{
+					NodeUsage: &NodeUsage{
+						node: test.BuildTestNode(v, 4000, 3000, 10, nil),
+					},
+				}
+				sourceNodes = append(sourceNodes, node)
+				if abnormalNodes.Has(v) {
+					alreadyAbnormalNodes = append(alreadyAbnormalNodes, node)
+				}
+			}
+			nodeAnomalyDetectors := gocache.New(5*time.Minute, 5*time.Minute)
+
+			for i := 0; i < int(tt.anomalyCondition.ConsecutiveAbnormalities); i++ {
+				filterRealAbnormalNodes(alreadyAbnormalNodes, nodeAnomalyDetectors, tt.anomalyCondition)
+			}
+
+			for i := 0; i < tt.detectCounts; i++ {
+				filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, tt.anomalyCondition)
+			}
+
+			got := filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, tt.anomalyCondition)
+			var gotNodes []string
+			for _, v := range got {
+				gotNodes = append(gotNodes, v.node.Name)
+			}
+			assert.Equal(t, tt.want, gotNodes)
 		})
 	}
 }
