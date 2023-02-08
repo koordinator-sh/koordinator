@@ -92,7 +92,7 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 				&TestHook{index: 1},
 				&TestHook{index: 2},
 			}
-			extendedHandle := NewExtendedHandle()
+			extendedHandle, _ := NewExtendedHandle()
 			extendedFrameworkFactory := NewFrameworkExtenderFactory(extendedHandle, schedulingHooks...)
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
@@ -141,7 +141,7 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedPods(t *testing.T) 
 				&TestHook{index: 1},
 				&TestHook{index: 2},
 			}
-			extendedHandle := NewExtendedHandle()
+			extendedHandle, _ := NewExtendedHandle()
 			extendedFrameworkFactory := NewFrameworkExtenderFactory(extendedHandle, schedulingHooks...)
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
@@ -200,7 +200,7 @@ func Test_frameworkExtenderImpl_RunScorePlugins(t *testing.T) {
 				&TestHook{index: 1},
 				&TestHook{index: 2},
 			}
-			extendedHandle := NewExtendedHandle()
+			extendedHandle, _ := NewExtendedHandle()
 			extendedFrameworkFactory := NewFrameworkExtenderFactory(extendedHandle, schedulingHooks...)
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),

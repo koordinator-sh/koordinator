@@ -338,11 +338,14 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 
 	// NOTE(joseph): K8s scheduling framework does not provide extension point for initialization.
 	// Currently, only by copying the initialization code and implementing custom initialization.
-	extendedHandle := frameworkext.NewExtendedHandle(
+	extendedHandle, err := frameworkext.NewExtendedHandle(
 		frameworkext.WithServicesEngine(cc.ServicesEngine),
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
 	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	outOfTreeRegistry := make(runtime.Registry)
 	for _, option := range outOfTreeRegistryOptions {
