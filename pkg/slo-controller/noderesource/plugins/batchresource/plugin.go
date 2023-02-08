@@ -133,6 +133,10 @@ func (p *Plugin) Calculate(strategy *extension.ColocationStrategy, node *corev1.
 	nodeUsage := getNodeMetricUsage(nodeMetric.Status.NodeMetric)
 	systemUsed := quotav1.Max(quotav1.Subtract(nodeUsage, podAllUsed), util.NewZeroResourceList())
 
+	// System.Used = max(System.Used, Node.Anno.Reserved)
+	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
+	systemUsed = quotav1.Max(systemUsed, nodeAnnoReserved)
+
 	batchAllocatable, cpuMsg, memMsg := calculateBatchResourceByPolicy(strategy, node, nodeAllocatable,
 		nodeReservation, systemUsed,
 		podLSRequest, podLSUsed)
