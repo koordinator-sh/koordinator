@@ -16,7 +16,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/hodgesds/perf-utils v0.5.1
 	github.com/jedib0t/go-pretty/v6 v6.4.0
-	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.0.12
+	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.0
 	github.com/mohae/deepcopy v0.0.0-20170603005431-491d3605edfb
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.15.0
