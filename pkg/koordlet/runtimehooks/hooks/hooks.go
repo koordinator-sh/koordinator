@@ -72,15 +72,19 @@ func getHooksByStage(stage rmconfig.RuntimeHookType) []*Hook {
 	}
 }
 
-func RunHooks(stage rmconfig.RuntimeHookType, protocol protocol.HooksProtocol) {
+func RunHooks(failPolicy rmconfig.FailurePolicyType, stage rmconfig.RuntimeHookType, protocol protocol.HooksProtocol) error {
 	hooks := getHooksByStage(stage)
 	klog.V(5).Infof("start run %v hooks at %s", len(hooks), stage)
 	for _, hook := range hooks {
 		klog.V(5).Infof("call hook %v", hook.name)
 		if err := hook.fn(protocol); err != nil {
-			klog.Warningf("failed to run hook %s in stage %s, reason: %v", hook.name, stage, err)
+			klog.Errorf("failed to run hook %s in stage %s, reason: %v", hook.name, stage, err)
+			if failPolicy == rmconfig.PolicyFail {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 func init() {
