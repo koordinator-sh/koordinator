@@ -26,7 +26,6 @@ import (
 
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -44,7 +43,6 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	clientsetbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	clientbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
-	listerbeta1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -86,7 +84,6 @@ type nodeMetricInformer struct {
 	reportEnabled      bool
 	nodeName           string
 	nodeMetricInformer cache.SharedIndexInformer
-	nodeMetricLister   listerbeta1.NodeMetricLister
 	eventRecorder      record.EventRecorder
 	statusUpdater      *statusUpdater
 
@@ -117,7 +114,6 @@ func (r *nodeMetricInformer) Setup(ctx *pluginOption, state *pluginState) {
 	r.reportEnabled = ctx.config.EnableNodeMetricReport
 	r.nodeName = ctx.NodeName
 	r.nodeMetricInformer = newNodeMetricInformer(ctx.KoordClient, ctx.NodeName)
-	r.nodeMetricLister = listerbeta1.NewNodeMetricLister(r.nodeMetricInformer.GetIndexer())
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: ctx.KubeClient.CoreV1().Events("")})
@@ -149,11 +145,11 @@ func (r *nodeMetricInformer) Setup(ctx *pluginOption, state *pluginState) {
 				klog.Errorf("unable to convert object to *slov1alpha1.NodeMetric, old %T, new %T", oldObj, newObj)
 				return
 			}
-			if reflect.DeepEqual(oldNodeMetric.Spec, newNodeMetric.Spec) {
-				klog.V(5).Infof("find nodeMetric spec %s has not changed.", newNodeMetric.Name)
+			if reflect.DeepEqual(oldNodeMetric, newNodeMetric) {
+				klog.V(5).Infof("update skipped, since nodeMetric %s has not changed.", newNodeMetric.Name)
 				return
 			}
-			klog.Infof("update node metric spec %v", newNodeMetric.Spec)
+			klog.Infof("update node metric %v", newNodeMetric)
 			r.updateMetricSpec(newNodeMetric)
 		},
 	})
@@ -243,16 +239,12 @@ func (r *nodeMetricInformer) sync() {
 		PodsMetric: podMetricInfo,
 	}
 	retErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		nodeMetric, err := r.nodeMetricLister.Get(r.nodeName)
-		if errors.IsNotFound(err) {
+		nodeMetric := r.nodeMetric
+		if nodeMetric == nil {
 			klog.Warningf("nodeMetric %v not found, skip", r.nodeName)
 			return nil
-		} else if err != nil {
-			klog.Warningf("failed to get %s nodeMetric: %v", r.nodeName, err)
-			return err
 		}
-		err = r.statusUpdater.updateStatus(nodeMetric, newStatus)
-		return err
+		return r.statusUpdater.updateStatus(nodeMetric, newStatus)
 	})
 
 	if retErr != nil {
@@ -375,7 +367,7 @@ func metricsInColdStart(queryStart, queryEnd time.Time, queryResult *metriccache
 }
 
 func (r *nodeMetricInformer) collectNodeAggregateMetric(endTime time.Time, aggregatePolicy *slov1alpha1.AggregatePolicy) []slov1alpha1.AggregatedUsage {
-	aggregateUsages := []slov1alpha1.AggregatedUsage{}
+	var aggregateUsages []slov1alpha1.AggregatedUsage
 	if aggregatePolicy == nil {
 		return aggregateUsages
 	}

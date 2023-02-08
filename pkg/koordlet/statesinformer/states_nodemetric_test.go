@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/pointer"
@@ -38,25 +37,9 @@ import (
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	clientbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	fakeclientslov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1/fake"
-	listerbeta1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 )
-
-var _ listerbeta1.NodeMetricLister = &fakeNodeMetricLister{}
-
-type fakeNodeMetricLister struct {
-	nodeMetrics *slov1alpha1.NodeMetric
-	getErr      error
-}
-
-func (f *fakeNodeMetricLister) List(selector labels.Selector) (ret []*slov1alpha1.NodeMetric, err error) {
-	return []*slov1alpha1.NodeMetric{f.nodeMetrics}, nil
-}
-
-func (f *fakeNodeMetricLister) Get(name string) (*slov1alpha1.NodeMetric, error) {
-	return f.nodeMetrics, f.getErr
-}
 
 func Test_reporter_isNodeMetricInited(t *testing.T) {
 	type fields struct {
@@ -159,7 +142,6 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 		nodeMetric       *slov1alpha1.NodeMetric
 		metricCache      func(ctrl *gomock.Controller) metriccache.MetricCache
 		podsInformer     *podsInformer
-		nodeMetricLister listerbeta1.NodeMetricLister
 		nodeMetricClient clientbeta1.NodeMetricInterface
 	}
 	tests := []struct {
@@ -179,7 +161,6 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					return nil
 				},
 				podsInformer:     NewPodsInformer(),
-				nodeMetricLister: nil,
 				nodeMetricClient: &fakeNodeMetricClient{},
 			},
 			wantNilStatus:    true,
@@ -278,13 +259,6 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 						},
 					},
 				},
-				nodeMetricLister: &fakeNodeMetricLister{
-					nodeMetrics: &slov1alpha1.NodeMetric{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: "test",
-						},
-					},
-				},
 				nodeMetricClient: &fakeNodeMetricClient{
 					nodeMetrics: map[string]*slov1alpha1.NodeMetric{
 						"test": {
@@ -353,66 +327,17 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 			},
 			wantErr: false,
 		},
-		{
-			name: "skip for nodeMetric not found",
-			fields: fields{
-				nodeName: "test",
-				nodeMetric: &slov1alpha1.NodeMetric{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test",
-					},
-					Spec: defaultNodeMetricSpec,
-				},
-				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
-					c := mock_metriccache.NewMockMetricCache(ctrl)
-					c.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(metriccache.NodeResourceQueryResult{
-						Metric: &metriccache.NodeResourceMetric{
-							CPUUsed: metriccache.CPUMetric{
-								CPUUsed: resource.MustParse("1000"),
-							},
-							MemoryUsed: metriccache.MemoryMetric{
-								MemoryWithoutCache: resource.MustParse("1Gi"),
-							},
-						},
-					}).AnyTimes()
-					return c
-				},
-				podsInformer: NewPodsInformer(),
-				nodeMetricLister: &fakeNodeMetricLister{
-					nodeMetrics: &slov1alpha1.NodeMetric{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: "test",
-						},
-					},
-					getErr: errors.NewNotFound(schema.GroupResource{Group: "slo.koordinator.sh", Resource: "nodemetrics"}, "test"),
-				},
-				nodeMetricClient: &fakeNodeMetricClient{
-					nodeMetrics: map[string]*slov1alpha1.NodeMetric{
-						"test": {
-							ObjectMeta: metav1.ObjectMeta{
-								Name: "test",
-							},
-						},
-					},
-				},
-			},
-			wantNilStatus:    true,
-			wantPodsMetric:   nil,
-			wantNodeResource: slov1alpha1.ResourceMap{},
-			wantErr:          false,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			r := &nodeMetricInformer{
-				nodeName:         tt.fields.nodeName,
-				nodeMetric:       tt.fields.nodeMetric,
-				metricCache:      tt.fields.metricCache(ctrl),
-				podsInformer:     tt.fields.podsInformer,
-				nodeMetricLister: tt.fields.nodeMetricLister,
-				statusUpdater:    newStatusUpdater(tt.fields.nodeMetricClient),
+				nodeName:      tt.fields.nodeName,
+				nodeMetric:    tt.fields.nodeMetric,
+				metricCache:   tt.fields.metricCache(ctrl),
+				podsInformer:  tt.fields.podsInformer,
+				statusUpdater: newStatusUpdater(tt.fields.nodeMetricClient),
 			}
 
 			r.sync()
