@@ -31,6 +31,7 @@ import (
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	index "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -153,10 +154,10 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 		}
 
 		// list reservations on the current node
-		rOnNode, err := indexer.ByIndex(NodeNameIndex, node.Name)
+		rOnNode, err := indexer.ByIndex(index.ReservationStatusNodeNameIndex, node.Name)
 		if err != nil {
 			klog.V(3).InfoS("PreFilterHook failed to list reservations",
-				"node", node.Name, "index", NodeNameIndex, "err", err)
+				"node", node.Name, "index", index.ReservationStatusNodeNameIndex, "err", err)
 			return
 		}
 		klog.V(6).InfoS("PreFilterHook indexer list reservation on node",

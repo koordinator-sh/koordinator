@@ -83,7 +83,7 @@ func TestAddReservationErrorHandler(t *testing.T) {
 		internalHandler := &fakeSchedulerInternalHandler{}
 		koordClientSet := koordfake.NewSimpleClientset(testR)
 		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-		extendHandle := frameworkext.NewExtendedHandle(
+		extendHandle, _ := frameworkext.NewExtendedHandle(
 			frameworkext.WithKoordinatorClientSet(koordClientSet),
 			frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 		)
@@ -127,7 +127,7 @@ func TestAddScheduleEventHandler(t *testing.T) {
 		internalHandler := &fakeSchedulerInternalHandler{}
 		koordClientSet := koordfake.NewSimpleClientset()
 		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-		extendHandle := frameworkext.NewExtendedHandle(
+		extendHandle, _ := frameworkext.NewExtendedHandle(
 			frameworkext.WithKoordinatorClientSet(koordClientSet),
 			frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 		)

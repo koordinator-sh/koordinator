@@ -100,15 +100,6 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	koordSharedInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
 	reservationInterface := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations()
 	reservationInformer := reservationInterface.Informer()
-	// index reservation with status.nodeName; avoid duplicate add
-	if reservationInformer.GetIndexer().GetIndexers()[NodeNameIndex] == nil {
-		err := reservationInformer.AddIndexers(cache.Indexers{NodeNameIndex: StatusNodeNameIndexFunc})
-		if err != nil {
-			return nil, fmt.Errorf("failed to add indexer, err: %s", err)
-		}
-	} else {
-		klog.V(3).InfoS("indexer has been added", "index", NodeNameIndex)
-	}
 
 	p := &Plugin{
 		handle:           extendedHandle,

@@ -297,7 +297,7 @@ func TestNew(t *testing.T) {
 
 		koordClientSet := koordfake.NewSimpleClientset()
 		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-		extendHandle := frameworkext.NewExtendedHandle(
+		extendHandle, _ := frameworkext.NewExtendedHandle(
 			frameworkext.WithKoordinatorClientSet(koordClientSet),
 			frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 		)
