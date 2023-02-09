@@ -425,37 +425,26 @@ func updateCgroupSummaryForQoS(summary *cgroupResourceSummary, pod *corev1.Pod, 
 func completeCgroupSummaryForQoS(qosSummary map[corev1.PodQOSClass]*cgroupResourceSummary) {
 	// memory qos
 	// Guaranteed cgroup is the ancestor node of Burstable and Besteffort, so the `min` and `low` derive from the sum
+	qosOrder := []corev1.PodQOSClass{corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort}
 	var memMinGuaranteed int64
 	var isMemMinGuaranteedEnabled bool
-	if qosSummary[corev1.PodQOSGuaranteed].memoryMin != nil {
-		memMinGuaranteed += *qosSummary[corev1.PodQOSGuaranteed].memoryMin
-		isMemMinGuaranteedEnabled = true
-	}
-	if qosSummary[corev1.PodQOSBurstable].memoryMin != nil {
-		memMinGuaranteed += *qosSummary[corev1.PodQOSBurstable].memoryMin
-		isMemMinGuaranteedEnabled = true
-	}
-	if qosSummary[corev1.PodQOSBestEffort].memoryMin != nil {
-		memMinGuaranteed += *qosSummary[corev1.PodQOSBestEffort].memoryMin
-		isMemMinGuaranteedEnabled = true
-	}
-	if isMemMinGuaranteedEnabled {
-		qosSummary[corev1.PodQOSGuaranteed].memoryMin = pointer.Int64Ptr(memMinGuaranteed)
-	}
-
 	var memLowGuaranteed int64
 	var isMemLowGuaranteedEnabled bool
-	if qosSummary[corev1.PodQOSGuaranteed].memoryLow != nil {
-		memLowGuaranteed += *qosSummary[corev1.PodQOSGuaranteed].memoryLow
-		isMemLowGuaranteedEnabled = true
+
+	for _, qos := range qosOrder {
+		if qosSummary[qos].memoryMin != nil {
+			memMinGuaranteed += *qosSummary[qos].memoryMin
+			isMemMinGuaranteedEnabled = true
+		}
+
+		if qosSummary[qos].memoryLow != nil {
+			memLowGuaranteed += *qosSummary[qos].memoryLow
+			isMemLowGuaranteedEnabled = true
+		}
 	}
-	if qosSummary[corev1.PodQOSBurstable].memoryLow != nil {
-		memLowGuaranteed += *qosSummary[corev1.PodQOSBurstable].memoryLow
-		isMemLowGuaranteedEnabled = true
-	}
-	if qosSummary[corev1.PodQOSBestEffort].memoryLow != nil {
-		memLowGuaranteed += *qosSummary[corev1.PodQOSBestEffort].memoryLow
-		isMemLowGuaranteedEnabled = true
+
+	if isMemMinGuaranteedEnabled {
+		qosSummary[corev1.PodQOSGuaranteed].memoryMin = pointer.Int64Ptr(memMinGuaranteed)
 	}
 	if isMemLowGuaranteedEnabled {
 		qosSummary[corev1.PodQOSGuaranteed].memoryLow = pointer.Int64Ptr(memLowGuaranteed)
