@@ -47,6 +47,7 @@ func GetGangNameByPod(pod *v1.Pod) string {
 	}
 	var gangName string
 	if gangName = pod.Labels[v1alpha1.PodGroupLabel]; gangName == "" {
+		// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
 		if gangName = pod.Labels[extension.LabelLightweightCoschedulingPodGroupName]; gangName == "" {
 			gangName = extension.GetGangName(pod)
 		}
@@ -55,6 +56,7 @@ func GetGangNameByPod(pod *v1.Pod) string {
 }
 
 func GetGangMinNumFromPod(pod *v1.Pod) (minNum int, err error) {
+	// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable is deprecated
 	if s := pod.Labels[extension.LabelLightweightCoschedulingPodGroupMinAvailable]; s != "" {
 		val, err := strconv.ParseInt(pod.Labels[extension.LabelLightweightCoschedulingPodGroupMinAvailable], 10, 32)
 		return int(val), err
@@ -66,6 +68,7 @@ func GetGangMinNumFromPod(pod *v1.Pod) (minNum int, err error) {
 }
 
 func ShouldCreatePodGroup(pod *v1.Pod) bool {
+	// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
 	return pod.Labels[v1alpha1.PodGroupLabel] == "" &&
 		pod.Labels[extension.LabelLightweightCoschedulingPodGroupName] == "" &&
 		pod.Annotations[extension.AnnotationGangName] != ""

@@ -260,7 +260,9 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 						Namespace: "default",
 						Name:      "pod1",
 						Labels: map[string]string{
-							extension.LabelLightweightCoschedulingPodGroupName:         "ganga",
+							// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+							extension.LabelLightweightCoschedulingPodGroupName: "ganga",
+							// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable is deprecated
 							extension.LabelLightweightCoschedulingPodGroupMinAvailable: "2",
 						},
 					},
@@ -275,7 +277,9 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 						Namespace: "default",
 						Name:      "pod2",
 						Labels: map[string]string{
-							extension.LabelLightweightCoschedulingPodGroupName:         "ganga",
+							// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+							extension.LabelLightweightCoschedulingPodGroupName: "ganga",
+							// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable is deprecated
 							extension.LabelLightweightCoschedulingPodGroupMinAvailable: "2",
 						},
 					},
@@ -298,7 +302,9 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 								Namespace: "default",
 								Name:      "pod1",
 								Labels: map[string]string{
-									extension.LabelLightweightCoschedulingPodGroupName:         "ganga",
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+									extension.LabelLightweightCoschedulingPodGroupName: "ganga",
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable is deprecated
 									extension.LabelLightweightCoschedulingPodGroupMinAvailable: "2",
 								},
 							},
@@ -311,7 +317,9 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 								Namespace: "default",
 								Name:      "pod2",
 								Labels: map[string]string{
-									extension.LabelLightweightCoschedulingPodGroupName:         "ganga",
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+									extension.LabelLightweightCoschedulingPodGroupName: "ganga",
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable is deprecated
 									extension.LabelLightweightCoschedulingPodGroupMinAvailable: "2",
 								},
 							},
@@ -324,7 +332,9 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 								Namespace: "default",
 								Name:      "pod1",
 								Labels: map[string]string{
-									extension.LabelLightweightCoschedulingPodGroupName:         "ganga",
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+									extension.LabelLightweightCoschedulingPodGroupName: "ganga",
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable
 									extension.LabelLightweightCoschedulingPodGroupMinAvailable: "2",
 								},
 							},
