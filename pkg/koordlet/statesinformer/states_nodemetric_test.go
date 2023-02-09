@@ -36,14 +36,14 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
-	clientbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
+	clientsetv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	fakeclientslov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1/fake"
-	listerbeta1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
+	listerv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	mockmetriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 )
 
-var _ listerbeta1.NodeMetricLister = &fakeNodeMetricLister{}
+var _ listerv1alpha1.NodeMetricLister = &fakeNodeMetricLister{}
 
 type fakeNodeMetricLister struct {
 	nodeMetrics *slov1alpha1.NodeMetric
@@ -159,8 +159,8 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 		nodeMetric       *slov1alpha1.NodeMetric
 		metricCache      func(ctrl *gomock.Controller) metriccache.MetricCache
 		podsInformer     *podsInformer
-		nodeMetricLister listerbeta1.NodeMetricLister
-		nodeMetricClient clientbeta1.NodeMetricInterface
+		nodeMetricLister listerv1alpha1.NodeMetricLister
+		nodeMetricClient clientsetv1alpha1.NodeMetricInterface
 	}
 	tests := []struct {
 		name             string
@@ -209,7 +209,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					},
 				},
 				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
-					c := mock_metriccache.NewMockMetricCache(ctrl)
+					c := mockmetriccache.NewMockMetricCache(ctrl)
 					c.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(metriccache.NodeResourceQueryResult{
 						Metric: &metriccache.NodeResourceMetric{
 							CPUUsed: metriccache.CPUMetric{
@@ -364,7 +364,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					Spec: defaultNodeMetricSpec,
 				},
 				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
-					c := mock_metriccache.NewMockMetricCache(ctrl)
+					c := mockmetriccache.NewMockMetricCache(ctrl)
 					c.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(metriccache.NodeResourceQueryResult{
 						Metric: &metriccache.NodeResourceMetric{
 							CPUUsed: metriccache.CPUMetric{
@@ -474,7 +474,7 @@ func Test_nodeMetricInformer_queryNodeMetric(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
-			c := mock_metriccache.NewMockMetricCache(ctrl)
+			c := mockmetriccache.NewMockMetricCache(ctrl)
 			end := time.Now()
 			start := end.Add(-defaultAggregateDurationSeconds * time.Second)
 			queryParam := &metriccache.QueryParam{
@@ -608,7 +608,7 @@ func Test_nodeMetricInformer_collectNodeMetric(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
-			c := mock_metriccache.NewMockMetricCache(ctrl)
+			c := mockmetriccache.NewMockMetricCache(ctrl)
 			c.EXPECT().GetNodeResourceMetric(&metriccache.QueryParam{
 				Aggregate: metriccache.AggregationTypeP50,
 				Start:     &start,
@@ -767,7 +767,7 @@ func Test_nodeMetricInformer_NewAndSetup(t *testing.T) {
 					NodeName:    "test-node",
 				},
 				state: &pluginState{
-					metricCache: mock_metriccache.NewMockMetricCache(ctrl),
+					metricCache: mockmetriccache.NewMockMetricCache(ctrl),
 					informerPlugins: map[pluginName]informerPlugin{
 						podsInformerName: NewPodsInformer(),
 					},
