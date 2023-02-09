@@ -330,8 +330,8 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 	}
 	for _, podMeta := range podsMeta {
 		podMetric := r.collectPodMetric(podMeta, podQueryParam)
-		r.fillExtensionMap(podMetric, podMeta.Pod)
 		if podMetric != nil {
+			r.fillExtensionMap(podMetric, podMeta.Pod)
 			podsMetricInfo = append(podsMetricInfo, podMetric)
 		}
 	}
