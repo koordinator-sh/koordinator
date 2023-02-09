@@ -42,9 +42,9 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	clientsetbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
-	clientbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
-	listerbeta1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
+	clientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	clientsetv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
+	listerv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -86,7 +86,7 @@ type nodeMetricInformer struct {
 	reportEnabled      bool
 	nodeName           string
 	nodeMetricInformer cache.SharedIndexInformer
-	nodeMetricLister   listerbeta1.NodeMetricLister
+	nodeMetricLister   listerv1alpha1.NodeMetricLister
 	eventRecorder      record.EventRecorder
 	statusUpdater      *statusUpdater
 
@@ -117,7 +117,7 @@ func (r *nodeMetricInformer) Setup(ctx *pluginOption, state *pluginState) {
 	r.reportEnabled = ctx.config.EnableNodeMetricReport
 	r.nodeName = ctx.NodeName
 	r.nodeMetricInformer = newNodeMetricInformer(ctx.KoordClient, ctx.NodeName)
-	r.nodeMetricLister = listerbeta1.NewNodeMetricLister(r.nodeMetricInformer.GetIndexer())
+	r.nodeMetricLister = listerv1alpha1.NewNodeMetricLister(r.nodeMetricInformer.GetIndexer())
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: ctx.KubeClient.CoreV1().Events("")})
@@ -262,7 +262,7 @@ func (r *nodeMetricInformer) sync() {
 	}
 }
 
-func newNodeMetricInformer(client clientsetbeta1.Interface, nodeName string) cache.SharedIndexInformer {
+func newNodeMetricInformer(client clientset.Interface, nodeName string) cache.SharedIndexInformer {
 	tweakListOptionsFunc := func(opt *metav1.ListOptions) {
 		opt.FieldSelector = "metadata.name=" + nodeName
 	}
@@ -422,12 +422,12 @@ const (
 )
 
 type statusUpdater struct {
-	nodeMetricClient  clientbeta1.NodeMetricInterface
+	nodeMetricClient  clientsetv1alpha1.NodeMetricInterface
 	previousTimestamp time.Time
 	rateLimiter       *rate.Limiter
 }
 
-func newStatusUpdater(nodeMetricClient clientbeta1.NodeMetricInterface) *statusUpdater {
+func newStatusUpdater(nodeMetricClient clientsetv1alpha1.NodeMetricInterface) *statusUpdater {
 	return &statusUpdater{
 		nodeMetricClient:  nodeMetricClient,
 		previousTimestamp: time.Now().Add(-time.Hour * 24),
