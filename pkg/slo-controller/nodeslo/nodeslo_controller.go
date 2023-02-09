@@ -85,6 +85,11 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 		klog.Warningf("getNodeSLOSpec(): failed to get cpuBurstConfig spec for node %s,error: %v", node.Name, err)
 	}
 
+	nodeSLOSpec.SystemStrategy, err = getSystemConfigSpec(node, &sloCfg.SystemCfgMerged)
+	if err != nil {
+		klog.Warningf("getNodeSLOSpec(): failed to get systemConfig spec for node %s,error: %v", node.Name, err)
+	}
+
 	return nodeSLOSpec, nil
 }
 

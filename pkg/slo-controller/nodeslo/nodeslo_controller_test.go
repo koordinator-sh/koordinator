@@ -88,6 +88,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				SystemStrategy:              util.DefaultSystemStrategy(),
 			},
 			wantErr: false,
 		},
@@ -115,6 +116,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				SystemStrategy:              util.DefaultSystemStrategy(),
 			},
 			wantErr: false,
 		},
@@ -141,6 +143,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				SystemStrategy:              util.DefaultSystemStrategy(),
 			},
 			wantErr: false,
 		},
@@ -178,6 +181,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 				ResourceQOSStrategy:         testingResourceQOSStrategy,
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				SystemStrategy:              util.DefaultSystemStrategy(),
 			},
 			wantErr: false,
 		},
@@ -215,6 +219,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 				ResourceQOSStrategy:         testingResourceQOSStrategyOld,
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				SystemStrategy:              util.DefaultSystemStrategy(),
 			},
 			wantErr: false,
 		},
@@ -280,6 +285,7 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 }
 `,
 			extension.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
+			extension.SystemConfigKey:   "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150,\"watermarkScaleFactor\":150}}",
 		},
 	}
 	testingResourceThresholdStrategy := util.DefaultResourceThresholdStrategy()
@@ -298,10 +304,14 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 	testingCPUBurstStrategy := util.DefaultCPUBurstStrategy()
 	testingCPUBurstStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64Ptr(60)
 
+	testingSystemStrategy := util.DefaultSystemStrategy()
+	testingSystemStrategy.MinFreeKbytesFactor = pointer.Int64Ptr(150)
+
 	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{
 		ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 		ResourceQOSStrategy:         testingResourceQOSStrategy,
 		CPUBurstStrategy:            testingCPUBurstStrategy,
+		SystemStrategy:              testingSystemStrategy,
 	}
 	nodeReq := ctrl.Request{NamespacedName: types.NamespacedName{Name: testingNode.Name}}
 	// the NodeSLO does not exists before getting created

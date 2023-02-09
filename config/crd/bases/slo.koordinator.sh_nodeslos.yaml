@@ -844,6 +844,19 @@ spec:
                     minimum: 0
                     type: integer
                 type: object
+              systemStrategy:
+                description: node global system config
+                properties:
+                  minFreeKbytesFactor:
+                    description: for /proc/sys/vm/min_free_kbytes, min_free_kbytes
+                      = minFreeKbytesFactor * nodeTotalMemory /10000
+                    format: int64
+                    type: integer
+                  watermarkScaleFactor:
+                    description: /proc/sys/vm/watermark_scale_factor
+                    format: int64
+                    type: integer
+                type: object
             type: object
           status:
             description: NodeSLOStatus defines the observed state of NodeSLO

@@ -34,7 +34,7 @@ func getResourceThresholdSpec(node *corev1.Node, cfg *extension.ResourceThreshol
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
 		if err != nil {
-			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
+			klog.Errorf("failed to parse node selector %v for threshold, err: %v", nodeStrategy.NodeSelector, err)
 			continue
 		}
 		if selector.Matches(nodeLabels) {
@@ -50,7 +50,7 @@ func getResourceQOSSpec(node *corev1.Node, cfg *extension.ResourceQOSCfg) (*slov
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
 		if err != nil {
-			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
+			klog.Errorf("failed to parse node selector %v for ResourceQOS, err: %v", nodeStrategy.NodeSelector, err)
 			continue
 		}
 		if selector.Matches(nodeLabels) {
@@ -67,11 +67,27 @@ func getCPUBurstConfigSpec(node *corev1.Node, cfg *extension.CPUBurstCfg) (*slov
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
 		if err != nil {
-			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
+			klog.Errorf("failed to parse node selector %v for CPUBurst, err: %v", nodeStrategy.NodeSelector, err)
 			continue
 		}
 		if selector.Matches(nodeLabels) {
 			return nodeStrategy.CPUBurstStrategy.DeepCopy(), nil
+		}
+
+	}
+	return cfg.ClusterStrategy.DeepCopy(), nil
+}
+
+func getSystemConfigSpec(node *corev1.Node, cfg *extension.SystemCfg) (*slov1alpha1.SystemStrategy, error) {
+	nodeLabels := labels.Set(node.Labels)
+	for _, nodeStrategy := range cfg.NodeStrategies {
+		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
+		if err != nil {
+			klog.Errorf("failed to parse node selector %v for SystemCfg, err: %v", nodeStrategy.NodeSelector, err)
+			continue
+		}
+		if selector.Matches(nodeLabels) {
+			return nodeStrategy.SystemStrategy.DeepCopy(), nil
 		}
 
 	}
@@ -178,6 +194,41 @@ func calculateCPUBurstCfgMerged(oldCfg extension.CPUBurstCfg, configMap *corev1.
 			mergedCfg.NodeStrategies[index].CPUBurstStrategy = mergedStrategyInterface.(*slov1alpha1.CPUBurstStrategy)
 		} else {
 			mergedCfg.NodeStrategies[index].CPUBurstStrategy = clusterCfgCopy
+		}
+
+	}
+
+	return mergedCfg, nil
+}
+
+func calculateSystemConfigMerged(oldCfg extension.SystemCfg, configMap *corev1.ConfigMap) (extension.SystemCfg, error) {
+	cfgStr, ok := configMap.Data[extension.SystemConfigKey]
+	if !ok {
+		return DefaultSLOCfg().SystemCfgMerged, nil
+	}
+
+	mergedCfg := extension.SystemCfg{}
+	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
+		klog.Warningf("failed to unmarshal config %s, err: %s", extension.SystemConfigKey, err)
+		return oldCfg, err
+	}
+
+	// merge ClusterStrategy
+	clusterMerged := DefaultSLOCfg().SystemCfgMerged.ClusterStrategy.DeepCopy()
+	if mergedCfg.ClusterStrategy != nil {
+		mergedStrategyInterface, _ := util.MergeCfg(clusterMerged, mergedCfg.ClusterStrategy)
+		clusterMerged = mergedStrategyInterface.(*slov1alpha1.SystemStrategy)
+	}
+	mergedCfg.ClusterStrategy = clusterMerged
+
+	for index, nodeStrategy := range mergedCfg.NodeStrategies {
+		// merge with clusterStrategy
+		clusterCfgCopy := mergedCfg.ClusterStrategy.DeepCopy()
+		if nodeStrategy.SystemStrategy != nil {
+			mergedStrategyInterface, _ := util.MergeCfg(clusterCfgCopy, nodeStrategy.SystemStrategy)
+			mergedCfg.NodeStrategies[index].SystemStrategy = mergedStrategyInterface.(*slov1alpha1.SystemStrategy)
+		} else {
+			mergedCfg.NodeStrategies[index].SystemStrategy = clusterCfgCopy
 		}
 
 	}

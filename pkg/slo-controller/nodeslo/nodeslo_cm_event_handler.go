@@ -48,6 +48,7 @@ type SLOCfg struct {
 	ThresholdCfgMerged   extension.ResourceThresholdCfg `json:"thresholdCfgMerged,omitempty"`
 	ResourceQOSCfgMerged extension.ResourceQOSCfg       `json:"resourceQOSCfgMerged,omitempty"`
 	CPUBurstCfgMerged    extension.CPUBurstCfg          `json:"cpuBurstCfgMerged,omitempty"`
+	SystemCfgMerged      extension.SystemCfg            `json:"systemCfgMerged,omitempty"`
 }
 
 func (in *SLOCfg) DeepCopy() *SLOCfg {
@@ -55,6 +56,7 @@ func (in *SLOCfg) DeepCopy() *SLOCfg {
 	out.ThresholdCfgMerged = *in.ThresholdCfgMerged.DeepCopy()
 	out.CPUBurstCfgMerged = *in.CPUBurstCfgMerged.DeepCopy()
 	out.ResourceQOSCfgMerged = *in.ResourceQOSCfgMerged.DeepCopy()
+	out.SystemCfgMerged = *in.SystemCfgMerged.DeepCopy()
 	return out
 }
 
@@ -70,6 +72,7 @@ func DefaultSLOCfg() SLOCfg {
 		ThresholdCfgMerged:   extension.ResourceThresholdCfg{ClusterStrategy: util.DefaultResourceThresholdStrategy()},
 		ResourceQOSCfgMerged: extension.ResourceQOSCfg{ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{}},
 		CPUBurstCfgMerged:    extension.CPUBurstCfg{ClusterStrategy: util.DefaultCPUBurstStrategy()},
+		SystemCfgMerged:      extension.SystemCfg{ClusterStrategy: util.DefaultSystemStrategy()},
 	}
 }
 
@@ -131,6 +134,12 @@ func (p *SLOCfgHandlerForConfigMapEvent) syncConfig(configMap *corev1.ConfigMap)
 	if err != nil {
 		klog.V(5).Infof("failed to get CPUBurstCfg, err: %s", err)
 		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal CPUBurstCfg, err: %s", err)
+	}
+
+	newSLOCfg.SystemCfgMerged, err = calculateSystemConfigMerged(oldSLOCfgCopy.SystemCfgMerged, configMap)
+	if err != nil {
+		klog.V(5).Infof("failed to get SystemCfg, err: %s", err)
+		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal SystemCfg, err: %s", err)
 	}
 
 	return p.updateCacheIfChanged(newSLOCfg)

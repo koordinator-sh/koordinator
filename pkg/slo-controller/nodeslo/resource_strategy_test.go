@@ -765,3 +765,253 @@ func Test_calculateCPUBurstCfgMerged(t *testing.T) {
 		})
 	}
 }
+
+func Test_getSystemConfigSpec(t *testing.T) {
+	defaultConfig := DefaultSLOCfg()
+	testingSystemConfig := &extension.SystemCfg{
+		ClusterStrategy: &slov1alpha1.SystemStrategy{
+			MinFreeKbytesFactor: pointer.Int64Ptr(150),
+		},
+	}
+	testingSystemConfig1 := &extension.SystemCfg{
+		ClusterStrategy: &slov1alpha1.SystemStrategy{
+			MinFreeKbytesFactor: pointer.Int64Ptr(150),
+		},
+		NodeStrategies: []extension.NodeSystemStrategy{
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"xxx": "yyy",
+					},
+				},
+				SystemStrategy: &slov1alpha1.SystemStrategy{
+					MinFreeKbytesFactor: pointer.Int64Ptr(120),
+				},
+			},
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"zzz": "zzz",
+					},
+				},
+				SystemStrategy: &slov1alpha1.SystemStrategy{
+					MinFreeKbytesFactor: pointer.Int64Ptr(130),
+				},
+			},
+		},
+	}
+	type args struct {
+		node *corev1.Node
+		cfg  *extension.SystemCfg
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *slov1alpha1.SystemStrategy
+		wantErr bool
+	}{
+		{
+			name: "node invalid, use cluster config",
+			args: args{
+				node: &corev1.Node{},
+				cfg:  &defaultConfig.SystemCfgMerged,
+			},
+			want:    util.DefaultSystemStrategy(),
+			wantErr: false,
+		},
+		{
+			name: "get cluster config correctly",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+				},
+				cfg: testingSystemConfig,
+			},
+			want: testingSystemConfig.ClusterStrategy,
+		},
+		{
+			name: "get node config correctly",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							"zzz": "zzz",
+						},
+					},
+				},
+				cfg: testingSystemConfig1,
+			},
+			want: testingSystemConfig1.NodeStrategies[1].SystemStrategy,
+		},
+		{
+			name: "get firstly-matched node config",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							"xxx": "yyy",
+						},
+					},
+				},
+				cfg: testingSystemConfig1,
+			},
+			want: testingSystemConfig1.NodeStrategies[0].SystemStrategy,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := getSystemConfigSpec(tt.args.node, tt.args.cfg)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_calculateSystemConfigMerged(t *testing.T) {
+
+	defaultSLOCfg := DefaultSLOCfg()
+
+	oldSLOCfg := DefaultSLOCfg()
+	oldSLOCfg.SystemCfgMerged.ClusterStrategy.WatermarkScaleFactor = pointer.Int64Ptr(99)
+
+	testingCfgOnliCluster := &extension.SystemCfg{
+		ClusterStrategy: &slov1alpha1.SystemStrategy{
+			WatermarkScaleFactor: pointer.Int64Ptr(151),
+		},
+	}
+	testingCfgOnliClusterStr, _ := json.Marshal(testingCfgOnliCluster)
+	expectTestingCfgOnliCluster := defaultSLOCfg.SystemCfgMerged.DeepCopy()
+	expectTestingCfgOnliCluster.ClusterStrategy.WatermarkScaleFactor = testingCfgOnliCluster.ClusterStrategy.WatermarkScaleFactor
+
+	testingSystemConfig1 := &extension.SystemCfg{
+		ClusterStrategy: &slov1alpha1.SystemStrategy{
+			WatermarkScaleFactor: pointer.Int64Ptr(151),
+		},
+		NodeStrategies: []extension.NodeSystemStrategy{
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"xxx": "yyy",
+					},
+				},
+				SystemStrategy: &slov1alpha1.SystemStrategy{
+					MinFreeKbytesFactor: pointer.Int64Ptr(130),
+				},
+			},
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"zzz": "zzz",
+					},
+				},
+				SystemStrategy: &slov1alpha1.SystemStrategy{
+					MinFreeKbytesFactor: pointer.Int64Ptr(140),
+				},
+			},
+		},
+	}
+	testingSystemConfig1Str, _ := json.Marshal(testingSystemConfig1)
+	expectTestingSystemConfig1 := &extension.SystemCfg{
+		ClusterStrategy: &slov1alpha1.SystemStrategy{
+			MinFreeKbytesFactor:  oldSLOCfg.SystemCfgMerged.ClusterStrategy.MinFreeKbytesFactor,
+			WatermarkScaleFactor: pointer.Int64Ptr(151),
+		},
+		NodeStrategies: []extension.NodeSystemStrategy{
+			{
+
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"xxx": "yyy",
+					},
+				},
+				SystemStrategy: &slov1alpha1.SystemStrategy{
+					MinFreeKbytesFactor:  pointer.Int64Ptr(130),
+					WatermarkScaleFactor: pointer.Int64Ptr(151),
+				},
+			},
+			{
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"zzz": "zzz",
+					},
+				},
+				SystemStrategy: &slov1alpha1.SystemStrategy{
+					MinFreeKbytesFactor:  pointer.Int64Ptr(140),
+					WatermarkScaleFactor: pointer.Int64Ptr(151),
+				},
+			},
+		},
+	}
+
+	type args struct {
+		configMap *corev1.ConfigMap
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *extension.SystemCfg
+		wantErr bool
+	}{
+		{
+			name: "config is null! use oldConfig",
+			args: args{
+				configMap: &corev1.ConfigMap{},
+			},
+			want:    &defaultSLOCfg.SystemCfgMerged,
+			wantErr: false,
+		},
+		{
+			name: "throw error for configmap unmarshal failed",
+			args: args{
+				configMap: &corev1.ConfigMap{
+					Data: map[string]string{
+						extension.SystemConfigKey: "invalid_content",
+					},
+				},
+			},
+			want:    &oldSLOCfg.SystemCfgMerged,
+			wantErr: true,
+		},
+		{
+			name: "cluster config only",
+			args: args{
+				configMap: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      config.SLOCtrlConfigMap,
+						Namespace: config.ConfigNameSpace,
+					},
+					Data: map[string]string{
+						extension.SystemConfigKey: string(testingCfgOnliClusterStr),
+					},
+				},
+			},
+			want: expectTestingCfgOnliCluster,
+		},
+		{
+			name: "node config merged",
+			args: args{
+				configMap: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      config.SLOCtrlConfigMap,
+						Namespace: config.ConfigNameSpace,
+					},
+					Data: map[string]string{
+						extension.SystemConfigKey: string(testingSystemConfig1Str),
+					},
+				},
+			},
+			want: expectTestingSystemConfig1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := calculateSystemConfigMerged(oldSLOCfg.SystemCfgMerged, tt.args.configMap)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, &got)
+		})
+	}
+}
