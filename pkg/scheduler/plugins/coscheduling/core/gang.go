@@ -104,7 +104,7 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 	if gang.HasGangInit {
 		return false
 	}
-	minRequiredNumber, err := extension.GetMinNum(pod)
+	minRequiredNumber, err := util.GetGangMinNumFromPod(pod)
 	if err != nil {
 		klog.Errorf("pod's annotation MinRequiredNumber illegal, gangName: %v, value: %v",
 			gang.Name, pod.Annotations[extension.AnnotationGangMinNum])
