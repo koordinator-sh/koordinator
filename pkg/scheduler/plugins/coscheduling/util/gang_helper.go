@@ -17,7 +17,10 @@ limitations under the License.
 package util
 
 import (
+	"encoding/json"
+	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,8 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-
-	"encoding/json"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
@@ -45,11 +46,36 @@ func GetGangNameByPod(pod *v1.Pod) string {
 		return ""
 	}
 	var gangName string
-	gangName = pod.Labels[v1alpha1.PodGroupLabel]
-	if gangName == "" {
-		gangName = extension.GetGangName(pod)
+	if gangName = pod.Labels[v1alpha1.PodGroupLabel]; gangName == "" {
+		// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+		if gangName = pod.Labels[extension.LabelLightweightCoschedulingPodGroupName]; gangName == "" {
+			gangName = extension.GetGangName(pod)
+		}
 	}
 	return gangName
+}
+
+func GetGangMinNumFromPod(pod *v1.Pod) (minNum int, err error) {
+	// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable is deprecated
+	if s := pod.Labels[extension.LabelLightweightCoschedulingPodGroupMinAvailable]; s != "" {
+		val, err := strconv.ParseInt(pod.Labels[extension.LabelLightweightCoschedulingPodGroupMinAvailable], 10, 32)
+		return int(val), err
+	}
+	if _, ok := pod.Annotations[extension.AnnotationGangMinNum]; ok {
+		return extension.GetMinNum(pod)
+	}
+	return 0, errors.New("missing min available")
+}
+
+func ShouldCreatePodGroup(pod *v1.Pod) bool {
+	// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+	return pod.Labels[v1alpha1.PodGroupLabel] == "" &&
+		pod.Labels[extension.LabelLightweightCoschedulingPodGroupName] == "" &&
+		pod.Annotations[extension.AnnotationGangName] != ""
+}
+
+func ShouldDeletePodGroup(pod *v1.Pod) bool {
+	return ShouldCreatePodGroup(pod)
 }
 
 func IsPodNeedGang(pod *v1.Pod) bool {

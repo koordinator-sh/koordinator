@@ -78,6 +78,13 @@ const (
 	GangModeNonStrict = "NonStrict"
 )
 
+const (
+	// Deprecated: kubernetes-sigs/scheduler-plugins/lightweight-coscheduling
+	LabelLightweightCoschedulingPodGroupName = "pod-group.scheduling.sigs.k8s.io/name"
+	// Deprecated: kubernetes-sigs/scheduler-plugins/lightweight-coscheduling
+	LabelLightweightCoschedulingPodGroupMinAvailable = "pod-group.scheduling.sigs.k8s.io/min-available"
+)
+
 // CustomUsageThresholds supports user-defined node resource utilization thresholds.
 type CustomUsageThresholds struct {
 	// UsageThresholds indicates the resource utilization threshold of the whole machine.
