@@ -425,7 +425,7 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 	//  delta is large enough
 	if math.Abs(float64(newBeQuota)-float64(*currentBeQuota)) < minQuotaDelta && newBeQuota != beMinQuota {
 		klog.Infof("suppressBECPU: quota delta is too small, bypass suppress.reason: current quota: %d, target quota: %d, min quota delta: %f",
-			currentBeQuota, newBeQuota, minQuotaDelta)
+			*currentBeQuota, newBeQuota, minQuotaDelta)
 		return
 	}
 
