@@ -5,7 +5,7 @@ go 1.17
 require (
 	github.com/NVIDIA/go-nvml v0.11.6-0.0.20220823120812-7e2082095e82
 	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5
-	github.com/docker/docker v20.10.21+incompatible
+	github.com/docker/docker v23.0.1+incompatible
 	github.com/evanphx/json-patch v5.6.0+incompatible
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/gin-gonic/gin v1.8.1
