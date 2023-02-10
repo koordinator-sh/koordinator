@@ -14,19 +14,16 @@
 English | [简体中文](./README-zh_CN.md)
 ## Introduction
 
-Koordinator is a QoS based scheduling system for hybrid orchestration workloads on Kubernetes. It aims to improve the
+Koordinator is a QoS based scheduling system for hybrid orchestration workloads on Kubernetes. Its goal is to improve the
 runtime efficiency and reliability of both latency sensitive workloads and batch jobs, simplify the complexity of
 resource-related configuration tuning, and increase pod deployment density to improve resource utilization.
 
 Koordinator enhances the kubernetes user experiences in the workload management by providing the following:
 
-- Well-designed priority and QoS mechanism to co-locate different types of workloads in a cluster, a node.
-- Allowing for resource overcommitments to achieve high resource utilization but still satisfying the QoS guarantees by
-  leveraging an application profiling mechanism.
-- Fine-grained resource orchestration and isolation mechanism to improve the efficiency of latency-sensitive workloads
-  and batch jobs.
-- Flexible job scheduling mechanism to support workloads in specific areas, e.g., big data, AI, audio and video.
-- A set of tools for monitoring, troubleshooting and operations.
+- Improved Resource Utilization: Koordinator is designed to optimize the utilization of cluster resources, ensuring that all nodes are used effectively and efficiently.
+- Enhanced Performance: By using advanced algorithms and techniques, Koordinator aims to improve the performance of Kubernetes clusters, reducing interference between containers and increasing the overall speed of the system.
+- Flexible Scheduling Policies: Koordinator provides a range of options for customizing scheduling policies, allowing administrators to fine-tune the behavior of the system to suit their specific needs.
+- Easy Integration: Koordinator is designed to be easy to integrate into existing Kubernetes clusters, allowing users to start using it quickly and with minimal hassle.
 
 ## Quick Start
 
