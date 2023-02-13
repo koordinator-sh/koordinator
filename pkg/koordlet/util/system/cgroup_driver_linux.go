@@ -27,6 +27,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+
+	"golang.org/x/sys/unix"
+
+	"github.com/opencontainers/runc/libcontainer/userns"
 
 	"github.com/spf13/pflag"
 	"k8s.io/klog/v2"
@@ -34,6 +39,11 @@ import (
 
 const (
 	kubeletConfigCgroupDriverKey = "cgroupDriver"
+)
+
+var (
+	isUnifiedOnce sync.Once
+	isUnified     bool
 )
 
 func GuessCgroupDriverFromCgroupName() CgroupDriverType {
@@ -121,4 +131,26 @@ func GuessCgroupDriverFromKubeletPort(port int) (CgroupDriverType, error) {
 	}
 	klog.Infof("Cgroup driver is not specify in kubelet config file, use default: '%s'", kubeletDefaultCgroupDriver)
 	return kubeletDefaultCgroupDriver, nil
+}
+
+// modify base: github.com/opencontainers/runc/libcontainer/cgroups/utils.go IsCgroup2UnifiedMode
+func IsUsingCgroupsV2() bool {
+
+	unifiedMountpoint := strings.TrimSuffix(Conf.CgroupRootDir, "/")
+
+	isUnifiedOnce.Do(func() {
+		var st unix.Statfs_t
+		err := unix.Statfs(unifiedMountpoint, &st)
+		if err != nil {
+			if os.IsNotExist(err) && userns.RunningInUserNS() {
+				// ignore the "not found" error if running in userns
+				klog.ErrorS(err, "%s missing, assuming cgroup v1", unifiedMountpoint)
+				isUnified = false
+				return
+			}
+			panic(fmt.Sprintf("cannot statfs cgroup root: %s", err))
+		}
+		isUnified = st.Type == unix.CGROUP2_SUPER_MAGIC
+	})
+	return isUnified
 }

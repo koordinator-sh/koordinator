@@ -38,6 +38,7 @@ import (
 )
 
 func Test_collectBECPUResourceMetric(t *testing.T) {
+	system.UseCgroupsV2 = false
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 

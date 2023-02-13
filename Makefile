@@ -17,6 +17,7 @@ KOORD_DESCHEDULER_IMG ?= "${REG}/${REG_NS}/koord-descheduler:${GIT_BRANCH}-${GIT
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.22
 
+AGENT_MODE ?= hostMode
 # Set license header files.
 LICENSE_HEADER_GO ?= hack/boilerplate/boilerplate.go.txt
 
@@ -89,11 +90,11 @@ lint-license:
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test $(PACKAGES) -race -covermode atomic -coverprofile cover.out
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" agent_mode=$(AGENT_MODE) go test $(PACKAGES) -race -covermode atomic -coverprofile cover.out
 
 .PHONY: fast-test
 fast-test: envtest ## Run tests fast.
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test $(PACKAGES) -race -covermode atomic -coverprofile cover.out
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" agent_mode=$(AGENT_MODE) go test $(PACKAGES) -race -covermode atomic -coverprofile cover.out
 
 ##@ Build
 
