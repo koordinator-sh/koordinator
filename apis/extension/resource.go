@@ -23,26 +23,21 @@ import (
 )
 
 const (
-	// Deprecated: because of the limitation of extended resource naming
-	KoordBatchCPU corev1.ResourceName = DomainPrefix + "batch-cpu"
-	// Deprecated: because of the limitation of extended resource naming
-	KoordBatchMemory corev1.ResourceName = DomainPrefix + "batch-memory"
-
 	BatchCPU    corev1.ResourceName = ResourceDomainPrefix + "batch-cpu"
 	BatchMemory corev1.ResourceName = ResourceDomainPrefix + "batch-memory"
 
-	KoordRDMA corev1.ResourceName = ResourceDomainPrefix + "rdma"
-	KoordFPGA corev1.ResourceName = ResourceDomainPrefix + "fpga"
+	ResourceNvidiaGPU      corev1.ResourceName = "nvidia.com/gpu"
+	ResourceRDMA           corev1.ResourceName = DomainPrefix + "rdma"
+	ResourceFPGA           corev1.ResourceName = DomainPrefix + "fpga"
+	ResourceGPU            corev1.ResourceName = DomainPrefix + "gpu"
+	ResourceGPUCore        corev1.ResourceName = DomainPrefix + "gpu-core"
+	ResourceGPUMemory      corev1.ResourceName = DomainPrefix + "gpu-memory"
+	ResourceGPUMemoryRatio corev1.ResourceName = DomainPrefix + "gpu-memory-ratio"
+)
 
-	KoordGPU  corev1.ResourceName = ResourceDomainPrefix + "gpu"
-	NvidiaGPU corev1.ResourceName = "nvidia.com/gpu"
-
-	GPUCore        corev1.ResourceName = ResourceDomainPrefix + "gpu-core"
-	GPUMemory      corev1.ResourceName = ResourceDomainPrefix + "gpu-memory"
-	GPUMemoryRatio corev1.ResourceName = ResourceDomainPrefix + "gpu-memory-ratio"
-
-	GPUDriver string = ResourceDomainPrefix + "gpu-driver"
-	GPUModel  string = ResourceDomainPrefix + "gpu-model"
+const (
+	LabelGPUModel         string = NodeDomainPrefix + "gpu-model"
+	LabelGPUDriverVersion string = NodeDomainPrefix + "gpu-driver-version"
 )
 
 const (

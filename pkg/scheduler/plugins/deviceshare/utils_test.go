@@ -61,9 +61,9 @@ func Test_hasDeviceResource(t *testing.T) {
 			name: "no match device resource",
 			args: args{
 				podRequest: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("10"),
-					corev1.ResourceMemory: resource.MustParse("200"),
-					apiext.GPUCore:        resource.MustParse("50"),
+					corev1.ResourceCPU:     resource.MustParse("10"),
+					corev1.ResourceMemory:  resource.MustParse("200"),
+					apiext.ResourceGPUCore: resource.MustParse("50"),
 				},
 				deviceType: schedulingv1alpha1.FPGA,
 			},
@@ -75,7 +75,7 @@ func Test_hasDeviceResource(t *testing.T) {
 				podRequest: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("10"),
 					corev1.ResourceMemory: resource.MustParse("200"),
-					apiext.KoordRDMA:      resource.MustParse("50"),
+					apiext.ResourceRDMA:   resource.MustParse("50"),
 				},
 				deviceType: schedulingv1alpha1.RDMA,
 			},
@@ -112,7 +112,7 @@ func Test_validateCommonDeviceRequest(t *testing.T) {
 			name: "invalid fpga request",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.KoordFPGA: resource.MustParse("201"),
+					apiext.ResourceFPGA: resource.MustParse("201"),
 				},
 				deviceType: schedulingv1alpha1.FPGA,
 			},
@@ -122,7 +122,7 @@ func Test_validateCommonDeviceRequest(t *testing.T) {
 			name: "valid fpga request",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.KoordFPGA: resource.MustParse("50"),
+					apiext.ResourceFPGA: resource.MustParse("50"),
 				},
 				deviceType: schedulingv1alpha1.FPGA,
 			},
@@ -132,7 +132,7 @@ func Test_validateCommonDeviceRequest(t *testing.T) {
 			name: "invalid rdma request",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.KoordRDMA: resource.MustParse("201"),
+					apiext.ResourceRDMA: resource.MustParse("201"),
 				},
 				deviceType: schedulingv1alpha1.RDMA,
 			},
@@ -142,7 +142,7 @@ func Test_validateCommonDeviceRequest(t *testing.T) {
 			name: "valid rdma request",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.KoordRDMA: resource.MustParse("50"),
+					apiext.ResourceRDMA: resource.MustParse("50"),
 				},
 				deviceType: schedulingv1alpha1.RDMA,
 			},
@@ -152,7 +152,7 @@ func Test_validateCommonDeviceRequest(t *testing.T) {
 			name: "not common device type",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.NvidiaGPU: resource.MustParse("2"),
+					apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 				},
 				deviceType: schedulingv1alpha1.GPU,
 			},
@@ -183,7 +183,7 @@ func Test_validateGPURequest(t *testing.T) {
 		{
 			name: "invalid gpu request 1",
 			podRequest: corev1.ResourceList{
-				apiext.GPUCore: resource.MustParse("101"),
+				apiext.ResourceGPUCore: resource.MustParse("101"),
 			},
 			want:    0,
 			wantErr: true,
@@ -191,11 +191,11 @@ func Test_validateGPURequest(t *testing.T) {
 		{
 			name: "invalid gpu request 2",
 			podRequest: corev1.ResourceList{
-				apiext.NvidiaGPU:      resource.MustParse("2"),
-				apiext.KoordGPU:       resource.MustParse("200"),
-				apiext.GPUCore:        resource.MustParse("200"),
-				apiext.GPUMemory:      resource.MustParse("32Gi"),
-				apiext.GPUMemoryRatio: resource.MustParse("200"),
+				apiext.ResourceNvidiaGPU:      resource.MustParse("2"),
+				apiext.ResourceGPU:            resource.MustParse("200"),
+				apiext.ResourceGPUCore:        resource.MustParse("200"),
+				apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
 			},
 			want:    0,
 			wantErr: true,
@@ -203,7 +203,7 @@ func Test_validateGPURequest(t *testing.T) {
 		{
 			name: "invalid gpu request 3",
 			podRequest: corev1.ResourceList{
-				apiext.KoordGPU: resource.MustParse("101"),
+				apiext.ResourceGPU: resource.MustParse("101"),
 			},
 			want:    0,
 			wantErr: true,
@@ -211,8 +211,8 @@ func Test_validateGPURequest(t *testing.T) {
 		{
 			name: "invalid gpu request 4",
 			podRequest: corev1.ResourceList{
-				apiext.GPUCore:        resource.MustParse("100"),
-				apiext.GPUMemoryRatio: resource.MustParse("101"),
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("101"),
 			},
 			want:    0,
 			wantErr: true,
@@ -220,7 +220,7 @@ func Test_validateGPURequest(t *testing.T) {
 		{
 			name: "valid gpu request 1",
 			podRequest: corev1.ResourceList{
-				apiext.NvidiaGPU: resource.MustParse("2"),
+				apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 			},
 			want:    NvidiaGPUExist,
 			wantErr: false,
@@ -228,7 +228,7 @@ func Test_validateGPURequest(t *testing.T) {
 		{
 			name: "valid gpu request 2",
 			podRequest: corev1.ResourceList{
-				apiext.KoordGPU: resource.MustParse("200"),
+				apiext.ResourceGPU: resource.MustParse("200"),
 			},
 			want:    KoordGPUExist,
 			wantErr: false,
@@ -236,8 +236,8 @@ func Test_validateGPURequest(t *testing.T) {
 		{
 			name: "valid gpu request 3",
 			podRequest: corev1.ResourceList{
-				apiext.GPUCore:   resource.MustParse("200"),
-				apiext.GPUMemory: resource.MustParse("64Gi"),
+				apiext.ResourceGPUCore:   resource.MustParse("200"),
+				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
 			},
 			want:    GPUCoreExist | GPUMemoryExist,
 			wantErr: false,
@@ -245,8 +245,8 @@ func Test_validateGPURequest(t *testing.T) {
 		{
 			name: "valid gpu request 4",
 			podRequest: corev1.ResourceList{
-				apiext.GPUCore:        resource.MustParse("200"),
-				apiext.GPUMemoryRatio: resource.MustParse("200"),
+				apiext.ResourceGPUCore:        resource.MustParse("200"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
 			},
 			want:    GPUCoreExist | GPUMemoryRatioExist,
 			wantErr: false,
@@ -285,7 +285,7 @@ func Test_convertCommonDeviceResource(t *testing.T) {
 			name: "non common device",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.NvidiaGPU: resource.MustParse("2"),
+					apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 				},
 				deviceType: schedulingv1alpha1.GPU,
 			},
@@ -295,24 +295,24 @@ func Test_convertCommonDeviceResource(t *testing.T) {
 			name: "rdma",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.KoordRDMA: resource.MustParse("80"),
+					apiext.ResourceRDMA: resource.MustParse("80"),
 				},
 				deviceType: schedulingv1alpha1.RDMA,
 			},
 			want: corev1.ResourceList{
-				apiext.KoordRDMA: resource.MustParse("80"),
+				apiext.ResourceRDMA: resource.MustParse("80"),
 			},
 		},
 		{
 			name: "fpga",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.KoordFPGA: resource.MustParse("80"),
+					apiext.ResourceFPGA: resource.MustParse("80"),
 				},
 				deviceType: schedulingv1alpha1.FPGA,
 			},
 			want: corev1.ResourceList{
-				apiext.KoordFPGA: resource.MustParse("80"),
+				apiext.ResourceFPGA: resource.MustParse("80"),
 			},
 		},
 	}
@@ -346,7 +346,7 @@ func Test_convertGPUResource(t *testing.T) {
 			name: "invalid combination",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.NvidiaGPU: resource.MustParse("2"),
+					apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 				},
 				gpuCombination: GPUCoreExist | GPUMemoryExist | GPUMemoryRatioExist,
 			},
@@ -356,54 +356,54 @@ func Test_convertGPUResource(t *testing.T) {
 			name: "nvidiaGpuExist",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.NvidiaGPU: resource.MustParse("2"),
+					apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 				},
 				gpuCombination: NvidiaGPUExist,
 			},
 			want: corev1.ResourceList{
-				apiext.GPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
-				apiext.GPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
 			},
 		},
 		{
 			name: "koordGpuExist",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.KoordGPU: resource.MustParse("50"),
+					apiext.ResourceGPU: resource.MustParse("50"),
 				},
 				gpuCombination: KoordGPUExist,
 			},
 			want: corev1.ResourceList{
-				apiext.GPUCore:        resource.MustParse("50"),
-				apiext.GPUMemoryRatio: resource.MustParse("50"),
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
 			},
 		},
 		{
 			name: "gpuCoreExist | gpuMemoryRatioExist",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.GPUCore:        resource.MustParse("50"),
-					apiext.GPUMemoryRatio: resource.MustParse("50"),
+					apiext.ResourceGPUCore:        resource.MustParse("50"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
 				},
 				gpuCombination: GPUCoreExist | GPUMemoryRatioExist,
 			},
 			want: corev1.ResourceList{
-				apiext.GPUCore:        resource.MustParse("50"),
-				apiext.GPUMemoryRatio: resource.MustParse("50"),
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
 			},
 		},
 		{
 			name: "gpuCoreExist | gpuMemoryExist",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.GPUCore:   resource.MustParse("50"),
-					apiext.GPUMemory: resource.MustParse("32Gi"),
+					apiext.ResourceGPUCore:   resource.MustParse("50"),
+					apiext.ResourceGPUMemory: resource.MustParse("32Gi"),
 				},
 				gpuCombination: GPUCoreExist | GPUMemoryExist,
 			},
 			want: corev1.ResourceList{
-				apiext.GPUCore:   resource.MustParse("50"),
-				apiext.GPUMemory: resource.MustParse("32Gi"),
+				apiext.ResourceGPUCore:   resource.MustParse("50"),
+				apiext.ResourceGPUMemory: resource.MustParse("32Gi"),
 			},
 		},
 	}
@@ -437,7 +437,7 @@ func Test_isMultipleCommonDevicePod(t *testing.T) {
 			name: "non common device",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.GPUCore: resource.MustParse("100"),
+					apiext.ResourceGPUCore: resource.MustParse("100"),
 				},
 				deviceType: schedulingv1alpha1.GPU,
 			},
@@ -447,7 +447,7 @@ func Test_isMultipleCommonDevicePod(t *testing.T) {
 			name: "multiple fpga",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.KoordFPGA: resource.MustParse("300"),
+					apiext.ResourceFPGA: resource.MustParse("300"),
 				},
 				deviceType: schedulingv1alpha1.FPGA,
 			},
@@ -457,7 +457,7 @@ func Test_isMultipleCommonDevicePod(t *testing.T) {
 			name: "single fpga",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.KoordFPGA: resource.MustParse("30"),
+					apiext.ResourceFPGA: resource.MustParse("30"),
 				},
 				deviceType: schedulingv1alpha1.FPGA,
 			},
@@ -467,7 +467,7 @@ func Test_isMultipleCommonDevicePod(t *testing.T) {
 			name: "multiple rdma",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.KoordRDMA: resource.MustParse("300"),
+					apiext.ResourceRDMA: resource.MustParse("300"),
 				},
 				deviceType: schedulingv1alpha1.RDMA,
 			},
@@ -477,7 +477,7 @@ func Test_isMultipleCommonDevicePod(t *testing.T) {
 			name: "single rdma",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.KoordRDMA: resource.MustParse("30"),
+					apiext.ResourceRDMA: resource.MustParse("30"),
 				},
 				deviceType: schedulingv1alpha1.RDMA,
 			},
@@ -506,14 +506,14 @@ func Test_isMultipleGPUPod(t *testing.T) {
 		{
 			name: "single gpu",
 			podRequest: corev1.ResourceList{
-				apiext.GPUCore: resource.MustParse("80"),
+				apiext.ResourceGPUCore: resource.MustParse("80"),
 			},
 			want: false,
 		},
 		{
 			name: "multiple gpu",
 			podRequest: corev1.ResourceList{
-				apiext.GPUCore: resource.MustParse("200"),
+				apiext.ResourceGPUCore: resource.MustParse("200"),
 			},
 			want: true,
 		},
@@ -564,7 +564,7 @@ func Test_patchContainerGPUResource(t *testing.T) {
 							Name: "test-container-a",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									apiext.NvidiaGPU: resource.MustParse("2"),
+									apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 								},
 							},
 						},
@@ -576,10 +576,10 @@ func Test_patchContainerGPUResource(t *testing.T) {
 			},
 			gpuContainerNum: 0,
 			podRequest: corev1.ResourceList{
-				apiext.NvidiaGPU:      resource.MustParse("2"),
-				apiext.GPUCore:        resource.MustParse("200"),
-				apiext.GPUMemoryRatio: resource.MustParse("200"),
-				apiext.GPUMemory:      resource.MustParse("64Gi"),
+				apiext.ResourceNvidiaGPU:      resource.MustParse("2"),
+				apiext.ResourceGPUCore:        resource.MustParse("200"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+				apiext.ResourceGPUMemory:      resource.MustParse("64Gi"),
 			},
 		},
 		{
@@ -600,7 +600,7 @@ func Test_patchContainerGPUResource(t *testing.T) {
 							Name: "test-container-b",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									apiext.NvidiaGPU: resource.MustParse("2"),
+									apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 								},
 							},
 						},
@@ -612,10 +612,10 @@ func Test_patchContainerGPUResource(t *testing.T) {
 			},
 			gpuContainerNum: 1,
 			podRequest: corev1.ResourceList{
-				apiext.NvidiaGPU:      resource.MustParse("2"),
-				apiext.GPUCore:        resource.MustParse("200"),
-				apiext.GPUMemoryRatio: resource.MustParse("200"),
-				apiext.GPUMemory:      resource.MustParse("64Gi"),
+				apiext.ResourceNvidiaGPU:      resource.MustParse("2"),
+				apiext.ResourceGPUCore:        resource.MustParse("200"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+				apiext.ResourceGPUMemory:      resource.MustParse("64Gi"),
 			},
 		},
 		{
@@ -633,7 +633,7 @@ func Test_patchContainerGPUResource(t *testing.T) {
 							Name: "test-container-a",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									apiext.NvidiaGPU: resource.MustParse("2"),
+									apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 								},
 							},
 						},
@@ -648,10 +648,10 @@ func Test_patchContainerGPUResource(t *testing.T) {
 			},
 			gpuContainerNum: 0,
 			podRequest: corev1.ResourceList{
-				apiext.NvidiaGPU:      resource.MustParse("2"),
-				apiext.GPUCore:        resource.MustParse("200"),
-				apiext.GPUMemoryRatio: resource.MustParse("200"),
-				apiext.GPUMemory:      resource.MustParse("64Gi"),
+				apiext.ResourceNvidiaGPU:      resource.MustParse("2"),
+				apiext.ResourceGPUCore:        resource.MustParse("200"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+				apiext.ResourceGPUMemory:      resource.MustParse("64Gi"),
 			},
 		},
 	}
@@ -681,21 +681,21 @@ func Test_fillGPUTotalMem(t *testing.T) {
 			args: args{
 				gpuTotal: deviceResources{
 					0: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("100"),
-						apiext.GPUMemoryRatio: resource.MustParse("100"),
-						apiext.GPUMemory:      resource.MustParse("32Gi"),
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+						apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
 					},
 				},
 				podRequest: corev1.ResourceList{
-					apiext.GPUCore:        resource.MustParse("50"),
-					apiext.GPUMemoryRatio: resource.MustParse("50"),
+					apiext.ResourceGPUCore:        resource.MustParse("50"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
 				},
 			},
 			wants: wants{
 				podRequest: corev1.ResourceList{
-					apiext.GPUCore:        resource.MustParse("50"),
-					apiext.GPUMemoryRatio: resource.MustParse("50"),
-					apiext.GPUMemory:      resource.MustParse("16Gi"),
+					apiext.ResourceGPUCore:        resource.MustParse("50"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+					apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 				},
 			},
 		},
@@ -704,21 +704,21 @@ func Test_fillGPUTotalMem(t *testing.T) {
 			args: args{
 				gpuTotal: deviceResources{
 					0: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("100"),
-						apiext.GPUMemoryRatio: resource.MustParse("100"),
-						apiext.GPUMemory:      resource.MustParse("32Gi"),
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+						apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
 					},
 				},
 				podRequest: corev1.ResourceList{
-					apiext.GPUCore:   resource.MustParse("50"),
-					apiext.GPUMemory: resource.MustParse("16Gi"),
+					apiext.ResourceGPUCore:   resource.MustParse("50"),
+					apiext.ResourceGPUMemory: resource.MustParse("16Gi"),
 				},
 			},
 			wants: wants{
 				podRequest: corev1.ResourceList{
-					apiext.GPUCore:        resource.MustParse("50"),
-					apiext.GPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
-					apiext.GPUMemory:      resource.MustParse("16Gi"),
+					apiext.ResourceGPUCore:        resource.MustParse("50"),
+					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+					apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 				},
 			},
 		},

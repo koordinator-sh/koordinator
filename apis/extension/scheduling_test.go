@@ -66,7 +66,7 @@ func Test_GetDeviceAllocations(t *testing.T) {
 					Namespace: "default",
 					Name:      "test",
 					Annotations: map[string]string{
-						AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"kubernetes.io/gpu-core":"100","kubernetes.io/gpu-memory":"16Gi","kubernetes.io/gpu-memory-ratio":"100"}}]}`,
+						AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"16Gi","koordinator.sh/gpu-memory-ratio":"100"}}]}`,
 					},
 				},
 			},
@@ -75,9 +75,9 @@ func Test_GetDeviceAllocations(t *testing.T) {
 					{
 						Minor: 1,
 						Resources: corev1.ResourceList{
-							GPUCore:        resource.MustParse("100"),
-							GPUMemoryRatio: resource.MustParse("100"),
-							GPUMemory:      resource.MustParse("16Gi"),
+							ResourceGPUCore:        resource.MustParse("100"),
+							ResourceGPUMemoryRatio: resource.MustParse("100"),
+							ResourceGPUMemory:      resource.MustParse("16Gi"),
 						},
 					},
 				},
@@ -118,14 +118,14 @@ func Test_SetDeviceAllocations(t *testing.T) {
 					{
 						Minor: 1,
 						Resources: corev1.ResourceList{
-							GPUCore:        resource.MustParse("100"),
-							GPUMemoryRatio: resource.MustParse("100"),
-							GPUMemory:      resource.MustParse("16Gi"),
+							ResourceGPUCore:        resource.MustParse("100"),
+							ResourceGPUMemoryRatio: resource.MustParse("100"),
+							ResourceGPUMemory:      resource.MustParse("16Gi"),
 						},
 					},
 				},
 			},
-			wantAnnotation: `{"gpu":[{"minor":1,"resources":{"kubernetes.io/gpu-core":"100","kubernetes.io/gpu-memory":"16Gi","kubernetes.io/gpu-memory-ratio":"100"}}]}`,
+			wantAnnotation: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"16Gi","koordinator.sh/gpu-memory-ratio":"100"}}]}`,
 		},
 	}
 	for _, tt := range tests {

@@ -84,6 +84,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	podRequest, _ := resource.PodRequestsAndLimits(pod)
+	podRequest = apiext.TransformDeprecatedDeviceResources(podRequest)
 
 	for deviceType := range DeviceResourceNames {
 		switch deviceType {
