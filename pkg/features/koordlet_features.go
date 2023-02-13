@@ -64,6 +64,11 @@ const (
 	// CPUBurst set cpu.cfs_burst_us; scale up cpu.cfs_quota_us if pod cpu throttled
 	CPUBurst featuregate.Feature = "CPUBurst"
 
+	// owner: @chzhj @saintube @zwzhang0107
+	// alpha: v1.2
+	// SystemConfig set /proc/sys/vm/min_free_kbytes; /proc/sys/vm/watermark_scale_factor
+	SystemConfig featuregate.Feature = "SystemConfig"
+
 	// owner: @saintube @zwzhang0107
 	// alpha: v0.3
 	// beta: v1.1
@@ -120,6 +125,7 @@ var (
 		BECPUEvict:             {Default: false, PreRelease: featuregate.Alpha},
 		BEMemoryEvict:          {Default: false, PreRelease: featuregate.Alpha},
 		CPUBurst:               {Default: true, PreRelease: featuregate.Beta},
+		SystemConfig:           {Default: false, PreRelease: featuregate.Alpha},
 		RdtResctrl:             {Default: true, PreRelease: featuregate.Beta},
 		CgroupReconcile:        {Default: false, PreRelease: featuregate.Alpha},
 		NodeTopologyReport:     {Default: true, PreRelease: featuregate.Beta},

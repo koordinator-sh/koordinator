@@ -31,6 +31,7 @@ const (
 	ResourceThresholdConfigKey = "resource-threshold-config"
 	ResourceQOSConfigKey       = "resource-qos-config"
 	CPUBurstConfigKey          = "cpu-burst-config"
+	SystemConfigKey            = "system-config"
 )
 
 // +k8s:deepcopy-gen=true
@@ -69,6 +70,19 @@ type NodeCPUBurstCfg struct {
 type CPUBurstCfg struct {
 	ClusterStrategy *slov1alpha1.CPUBurstStrategy `json:"clusterStrategy,omitempty"`
 	NodeStrategies  []NodeCPUBurstCfg             `json:"nodeStrategies,omitempty"`
+}
+
+// +k8s:deepcopy-gen=true
+type NodeSystemStrategy struct {
+	// an empty label selector matches all objects while a nil label selector matches no objects
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	*slov1alpha1.SystemStrategy
+}
+
+// +k8s:deepcopy-gen=true
+type SystemCfg struct {
+	ClusterStrategy *slov1alpha1.SystemStrategy `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeSystemStrategy        `json:"nodeStrategies,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true
@@ -209,6 +223,13 @@ data:
           "cfsQuotaBurstPercent": 400
         }
       ]
+    }
+  system-config: |-
+    {
+      "clusterStrategy": {
+        "minFreeKbytesFactor": 100,
+        "watermarkScaleFactor": 150
+      }
     }
   resource-qos-config: |
     {
