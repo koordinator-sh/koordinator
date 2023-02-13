@@ -190,9 +190,10 @@ type DeviceAllocations map[schedulingv1alpha1.DeviceType][]*DeviceAllocation
 type DeviceAllocation struct {
 	Minor     int32               `json:"minor"`
 	Resources corev1.ResourceList `json:"resources"`
+	Extension json.RawMessage     `json:"extension,omitempty"`
 }
 
-func GetDeviceAllocations(podAnnotations map[string]string) (DeviceAllocations, error) {
+var GetDeviceAllocations = func(podAnnotations map[string]string) (DeviceAllocations, error) {
 	deviceAllocations := DeviceAllocations{}
 	data, ok := podAnnotations[AnnotationDeviceAllocated]
 	if !ok {
