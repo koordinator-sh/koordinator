@@ -28,6 +28,8 @@ import (
 	"strconv"
 	"strings"
 
+	libcontainercgroups "github.com/opencontainers/runc/libcontainer/cgroups"
+
 	"github.com/spf13/pflag"
 	"k8s.io/klog/v2"
 )
@@ -121,4 +123,8 @@ func GuessCgroupDriverFromKubeletPort(port int) (CgroupDriverType, error) {
 	}
 	klog.Infof("Cgroup driver is not specify in kubelet config file, use default: '%s'", kubeletDefaultCgroupDriver)
 	return kubeletDefaultCgroupDriver, nil
+}
+
+func IsUsingCgroupsV2() bool {
+	return libcontainercgroups.IsCgroup2UnifiedMode()
 }
