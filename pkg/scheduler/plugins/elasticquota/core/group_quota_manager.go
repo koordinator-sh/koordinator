@@ -425,7 +425,7 @@ func (gqm *GroupQuotaManager) updateOneGroupMaxQuotaNoLock(quotaInfo *QuotaInfo)
 func (gqm *GroupQuotaManager) updateMinQuotaNoLock(quotaInfo *QuotaInfo) {
 	gqm.updateOneGroupOriginalMinQuotaNoLock(quotaInfo)
 	gqm.scaleMinQuotaManager.update(quotaInfo.ParentName, quotaInfo.Name,
-		quotaInfo.CalculateInfo.Min, gqm.scaleMinQuotaEnabled)
+		quotaInfo.CalculateInfo.Min.DeepCopy(), gqm.scaleMinQuotaEnabled)
 }
 
 // updateOneGroupOriginalMinQuotaNoLock no need to lock gqm.lock
