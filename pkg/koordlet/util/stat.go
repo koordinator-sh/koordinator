@@ -182,24 +182,3 @@ func getContainerCgroupFile(podCgroupDir string, c *corev1.ContainerStatus) (*os
 	}
 	return f, nil
 }
-
-func GetPodPSI(podCgroupDir string) (*PSIByResource, error) {
-	paths := GetPodCgroupCPUAcctPSIPath(podCgroupDir)
-	psi, err := GetPSIByResource(paths)
-	if err != nil {
-		return nil, err
-	}
-	return psi, nil
-}
-
-func GetContainerPSI(podCgroupDir string, c *corev1.ContainerStatus) (*PSIByResource, error) {
-	paths, err := GetContainerCgroupCPUAcctPSIPath(podCgroupDir, c)
-	if err != nil {
-		return nil, err
-	}
-	psi, err := GetPSIByResource(paths)
-	if err != nil {
-		return nil, err
-	}
-	return psi, nil
-}

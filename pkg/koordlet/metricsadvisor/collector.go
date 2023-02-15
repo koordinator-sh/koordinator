@@ -140,7 +140,7 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 
 	go wait.Until(c.collectNodeCPUInfo, time.Duration(c.config.CollectNodeCPUInfoIntervalSeconds)*time.Second, stopCh)
 
-	ic := NewPerformanceCollector(c.statesInformer, c.metricCache, c.config.CPICollectorTimeWindowSeconds)
+	ic := NewPerformanceCollector(c.statesInformer, c.metricCache, c.cgroupReader, c.config.CPICollectorTimeWindowSeconds)
 	util.RunFeature(func() {
 		// add sync statesInformer cache check before collect pod information
 		// because collect function will get all pods.
@@ -153,10 +153,15 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 	}, []featuregate.Feature{features.CPICollector}, c.config.CPICollectorIntervalSeconds, stopCh)
 
 	util.RunFeature(func() {
-		// psi collector support only on anolis os currently
-		if !system.HostSystemInfo.IsAnolisOS {
-			klog.Fatalf("collect psi fail, need anolis os")
-			return
+		// CgroupV1 psi collector support only on anolis os currently
+		if system.GetCurrentCgroupVersion() == system.CgroupVersionV1 {
+			cpuPressureCheck, _ := system.CPUAcctCPUPressure.IsSupported("")
+			memPressureCheck, _ := system.CPUAcctMemoryPressure.IsSupported("")
+			ioPressureCheck, _ := system.CPUAcctIOPressure.IsSupported("")
+			if !(cpuPressureCheck && memPressureCheck && ioPressureCheck) {
+				klog.V(5).Infof("system now not support psi feature in CgroupV1, please check pressure file exist and readable in cpuacct directory.")
+				return
+			}
 		}
 		// add sync statesInformer cache check before collect pod information
 		// because collect function will get all pods.

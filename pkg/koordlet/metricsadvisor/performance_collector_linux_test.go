@@ -29,6 +29,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mockmetriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mockstatesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
@@ -40,6 +41,7 @@ func TestNewPerformanceCollector(t *testing.T) {
 		cfg            *Config
 		statesInformer statesinformer.StatesInformer
 		metricCache    metriccache.MetricCache
+		cgroupReader   resourceexecutor.CgroupReader
 		timeWindow     int
 	}
 	tests := []struct {
@@ -52,13 +54,14 @@ func TestNewPerformanceCollector(t *testing.T) {
 				cfg:            &Config{},
 				statesInformer: nil,
 				metricCache:    nil,
+				cgroupReader:   nil,
 				timeWindow:     10,
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := NewPerformanceCollector(tt.args.statesInformer, tt.args.metricCache, tt.args.timeWindow); got == nil {
+			if got := NewPerformanceCollector(tt.args.statesInformer, tt.args.metricCache, nil, tt.args.timeWindow); got == nil {
 				t.Errorf("NewPerformanceCollector() = %v", got)
 			}
 		})
@@ -75,7 +78,7 @@ func Test_collectContainerCPI(t *testing.T) {
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
 	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, nil).AnyTimes()
 
-	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, 1)
+	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, nil, 1)
 	assert.NotPanics(t, func() {
 		c.collectContainerCPI()
 	})
@@ -91,7 +94,7 @@ func Test_collectContainerCPI_cpuInfoErr(t *testing.T) {
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
 	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, fmt.Errorf("cpu_error")).AnyTimes()
 
-	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, 1)
+	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, nil, 1)
 	assert.NotPanics(t, func() {
 		c.collectContainerCPI()
 	})
@@ -109,7 +112,7 @@ func Test_collectContainerCPI_mockPod(t *testing.T) {
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{pod}).AnyTimes()
 	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, nil).AnyTimes()
 
-	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, 1)
+	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, nil, 1)
 	assert.NotPanics(t, func() {
 		c.collectContainerCPI()
 	})
@@ -146,7 +149,7 @@ func Test_getAndStartCollectorOnSingleContainer(t *testing.T) {
 	containerStatus := &corev1.ContainerStatus{
 		ContainerID: "containerd://test",
 	}
-	c := NewPerformanceCollector(nil, nil, 0)
+	c := NewPerformanceCollector(nil, nil, nil, 0)
 	assert.NotPanics(t, func() {
 		_, err := c.getAndStartCollectorOnSingleContainer(tempDir, containerStatus, 0)
 		if err != nil {
@@ -169,7 +172,7 @@ func Test_profilePerfOnSingleContainer(t *testing.T) {
 	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
 	perfCollector, _ := perf.NewPerfCollector(f, []int{})
 
-	c := NewPerformanceCollector(nil, m, 0)
+	c := NewPerformanceCollector(nil, m, nil, 0)
 	testingPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test_pod",
@@ -225,7 +228,7 @@ func Test_collectContainerPSI(t *testing.T) {
 		t.Fatalf("got error when create psi files: %v", errCreateIO)
 	}
 
-	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, 1)
+	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, resourceexecutor.NewCgroupReader(), 1)
 	assert.NotPanics(t, func() {
 		c.collectContainerPSI()
 	})
@@ -255,7 +258,7 @@ func Test_collectPodPSI(t *testing.T) {
 		t.Fatalf("got error when create psi files: %v", errCreateIO)
 	}
 
-	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, 1)
+	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, resourceexecutor.NewCgroupReader(), 1)
 	assert.NotPanics(t, func() {
 		c.collectPodPSI()
 	})

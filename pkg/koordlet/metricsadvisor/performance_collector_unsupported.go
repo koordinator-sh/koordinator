@@ -21,12 +21,13 @@ package metricsadvisor
 
 import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
 type performanceCollector struct{}
 
-func NewPerformanceCollector(statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache, collectTimeWindow int) *performanceCollector {
+func NewPerformanceCollector(statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache, cgroupReader resourceexecutor.CgroupReader, collectTimeWindow int) *performanceCollector {
 	return &performanceCollector{}
 }
 
