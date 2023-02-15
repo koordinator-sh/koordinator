@@ -208,7 +208,9 @@ func GetCgroupCurTasks(cgroupPath string) ([]int, error) {
 
 func ReadCgroupAndParseInt64(parentDir string, r Resource) (int64, error) {
 	s, err := CgroupFileRead(parentDir, r)
-	if err != nil {
+	if err != nil && IsCgroupDirErr(err) {
+		return -1, err
+	} else if err != nil {
 		return -1, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
 

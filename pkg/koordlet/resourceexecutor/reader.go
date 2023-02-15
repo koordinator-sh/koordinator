@@ -189,7 +189,9 @@ func (r *CgroupV2Reader) ReadCPUQuota(parentDir string) (int64, error) {
 		return -1, ErrResourceNotRegistered
 	}
 	s, err := sysutil.CgroupFileRead(parentDir, resource)
-	if err != nil {
+	if err != nil && sysutil.IsCgroupDirErr(err) {
+		return -1, err
+	} else if err != nil {
 		return -1, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
 
