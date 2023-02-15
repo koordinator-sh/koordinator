@@ -1181,6 +1181,9 @@ func TestCgroupReader_ReadPSI(t *testing.T) {
 				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUAcctIOPressure, tt.fields.IoPreV1Value)
 			}
 			if tt.fields.CpuPreV2Value != "" {
+				sysutil.CPUAcctCPUPressureV2.WithSupported(true, "")
+				sysutil.CPUAcctMemoryPressureV2.WithSupported(true, "")
+				sysutil.CPUAcctIOPressureV2.WithSupported(true, "")
 				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUAcctCPUPressureV2, tt.fields.CpuPreV2Value)
 				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUAcctMemoryPressureV2, tt.fields.MemPreV2Value)
 				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUAcctIOPressureV2, tt.fields.IoPreV2Value)

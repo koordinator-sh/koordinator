@@ -249,9 +249,9 @@ var (
 	CPUAcctStatV2  = DefaultFactory.NewV2(CPUAcctStatName, CPUStatName)
 	CPUAcctUsageV2 = DefaultFactory.NewV2(CPUAcctUsageName, CPUStatName)
 
-	CPUAcctCPUPressureV2    = DefaultFactory.NewV2(CPUAcctCPUPressureName, CPUAcctCPUPressureName).WithCheckSupported(SupportedIfFileExists)
-	CPUAcctMemoryPressureV2 = DefaultFactory.NewV2(CPUAcctMemoryPressureName, CPUAcctMemoryPressureName).WithCheckSupported(SupportedIfFileExists)
-	CPUAcctIOPressureV2     = DefaultFactory.NewV2(CPUAcctIOPressureName, CPUAcctIOPressureName).WithCheckSupported(SupportedIfFileExists)
+	CPUAcctCPUPressureV2    = DefaultFactory.NewV2(CPUAcctCPUPressureName, CPUAcctCPUPressureName).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctCPUPressureName, ""))
+	CPUAcctMemoryPressureV2 = DefaultFactory.NewV2(CPUAcctMemoryPressureName, CPUAcctMemoryPressureName).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctMemoryPressureName, ""))
+	CPUAcctIOPressureV2     = DefaultFactory.NewV2(CPUAcctIOPressureName, CPUAcctIOPressureName).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctIOPressureName, ""))
 
 	CPUSetV2                 = DefaultFactory.NewV2(CPUSetCPUSName, CPUSetCPUSName).WithValidator(CPUSetCPUSValidator)
 	CPUSetEffectiveV2        = DefaultFactory.NewV2(CPUSetCPUSEffectiveName, CPUSetCPUSEffectiveName) // TODO: unify the R/W
