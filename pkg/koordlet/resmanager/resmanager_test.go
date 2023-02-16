@@ -38,7 +38,7 @@ import (
 	clientsetalpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	expireCache "github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
@@ -57,7 +57,7 @@ func TestNewResManager(t *testing.T) {
 		statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 
-		r := NewResManager(NewDefaultConfig(), scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(metricsadvisor.NewDefaultConfig().CollectResUsedIntervalSeconds))
+		r := NewResManager(NewDefaultConfig(), scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(framework.NewDefaultConfig().CollectResUsedIntervalSeconds))
 		assert.NotNil(t, r)
 	})
 }

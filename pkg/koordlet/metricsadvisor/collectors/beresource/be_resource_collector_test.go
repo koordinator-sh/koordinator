@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metricsadvisor
+package beresource
 
 import (
 	"testing"
@@ -22,12 +22,14 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
@@ -41,15 +43,23 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 
 	metricCache, _ := metriccache.NewMetricCache(metriccache.NewDefaultConfig())
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
-	collector := collector{context: newCollectContext(), metricCache: metricCache, statesInformer: mockStatesInformer, cgroupReader: resourceexecutor.NewCgroupReader()}
+	collector := beResourceCollector{
+		collectInterval: 0,
+		started:         atomic.NewBool(true),
+		metricDB:        metricCache,
+		statesInformer:  mockStatesInformer,
+		cgroupReader:    resourceexecutor.NewCgroupReader(),
+		lastBECPUStat:   &framework.CPUStat{},
+	}
 
 	// prepare be request, expect 1500 milliCores
 	bePod := mockBEPod()
 	lsPod := mockLSPod()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{Pod: bePod}, {Pod: lsPod}}).AnyTimes()
+	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 
 	// prepare BECPUUsageCores data,expect 4 cores usage
-	collector.context.lastBECPUStat = contextRecord{cpuUsage: 12000000000000, ts: time.Now().Add(-1 * time.Second)}
+	collector.lastBECPUStat = &framework.CPUStat{CPUUsage: 12000000000000, Timestamp: time.Now().Add(-1 * time.Second)}
 	helper := system.NewFileTestUtil(t)
 	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, "12004000000000")
 
@@ -68,7 +78,7 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 		End:       &now,
 	}
 
-	got := collector.metricCache.GetBECPUResourceMetric(params)
+	got := collector.metricDB.GetBECPUResourceMetric(params)
 	gotMetric := got.Metric
 
 	assert.Equal(t, int64(1500), gotMetric.CPURequest.MilliValue(), "checkRequest")
@@ -80,7 +90,7 @@ func Test_getBECPUUsageCores(t *testing.T) {
 	tests := []struct {
 		name                  string
 		cpuacctUsage          string
-		lastBeCPUStat         *contextRecord
+		lastBeCPUStat         *framework.CPUStat
 		expectCPUUsedCores    *resource.Quantity
 		expectCurrentCPUUsage uint64
 		expectNil             bool
@@ -98,7 +108,7 @@ func Test_getBECPUUsageCores(t *testing.T) {
 		{
 			name:                  "test_get_correct",
 			cpuacctUsage:          "12004000000000\n",
-			lastBeCPUStat:         &contextRecord{cpuUsage: 12000000000000},
+			lastBeCPUStat:         &framework.CPUStat{CPUUsage: 12000000000000},
 			expectCPUUsedCores:    resource.NewQuantity(4, resource.DecimalSI),
 			expectCurrentCPUUsage: 12004000000000,
 			expectNil:             false,
@@ -111,10 +121,15 @@ func Test_getBECPUUsageCores(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
 			helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, tt.cpuacctUsage)
 
-			collector := collector{context: newCollectContext(), cgroupReader: resourceexecutor.NewCgroupReader()}
+			collector := beResourceCollector{
+				collectInterval: 0,
+				started:         atomic.NewBool(true),
+				cgroupReader:    resourceexecutor.NewCgroupReader(),
+				lastBECPUStat:   &framework.CPUStat{},
+			}
 			if tt.lastBeCPUStat != nil {
-				collector.context.lastBECPUStat = *tt.lastBeCPUStat
-				collector.context.lastBECPUStat.ts = time.Now().Add(-1 * time.Second)
+				collector.lastBECPUStat = tt.lastBeCPUStat
+				collector.lastBECPUStat.Timestamp = time.Now().Add(-1 * time.Second)
 			}
 
 			gotCPUUsedCores, gotErr := collector.getBECPUUsageCores()
@@ -122,7 +137,7 @@ func Test_getBECPUUsageCores(t *testing.T) {
 			if !tt.expectNil {
 				assert.Equal(t, tt.expectCPUUsedCores.Value(), gotCPUUsedCores.Value(), "checkCPU")
 			}
-			assert.Equal(t, tt.expectCurrentCPUUsage, collector.context.lastBECPUStat.cpuUsage, "checkCPUUsage")
+			assert.Equal(t, tt.expectCurrentCPUUsage, collector.lastBECPUStat.CPUUsage, "checkCPUUsage")
 		})
 	}
 }
@@ -163,7 +178,12 @@ func Test_getBECPURealMilliLimit(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
 			helper.SetCgroupsV2(tt.UseCgroupV2)
 			defer helper.Cleanup()
-			c := collector{context: newCollectContext(), cgroupReader: resourceexecutor.NewCgroupReader()}
+			c := beResourceCollector{
+				collectInterval: 0,
+				started:         atomic.NewBool(true),
+				cgroupReader:    resourceexecutor.NewCgroupReader(),
+				lastBECPUStat:   &framework.CPUStat{},
+			}
 
 			BECgroupParentDir := util.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
 			if tt.UseCgroupV2 {
@@ -191,8 +211,13 @@ func Test_getBECPURequestSum(t *testing.T) {
 	bePod := mockBEPod()
 	lsPod := mockLSPod()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{Pod: bePod}, {Pod: lsPod}}).AnyTimes()
+	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 
-	c := &collector{statesInformer: mockStatesInformer}
+	c := beResourceCollector{
+		collectInterval: 0,
+		started:         atomic.NewBool(true),
+		statesInformer:  mockStatesInformer,
+	}
 	beRequest := c.getBECPURequestSum()
 	assert.Equal(t, int64(1500), beRequest.MilliValue())
 }
@@ -273,4 +298,29 @@ func mockLSPod() *corev1.Pod {
 			},
 		},
 	}
+}
+
+func Test_beResourceColelctor_Run(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	metricCache, _ := metriccache.NewMetricCache(metriccache.NewDefaultConfig())
+	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
+	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
+	c := New(&framework.Options{
+		Config:         framework.NewDefaultConfig(),
+		StatesInformer: mockStatesInformer,
+		MetricCache:    metricCache,
+		CgroupReader:   resourceexecutor.NewCgroupReader(),
+	})
+	collector := c.(*beResourceCollector)
+	collector.started = atomic.NewBool(true)
+	collector.Setup(&framework.Context{})
+	assert.True(t, collector.Enabled())
+	assert.True(t, collector.Started())
+	assert.NotPanics(t, func() {
+		stopCh := make(chan struct{}, 1)
+		collector.Run(stopCh)
+		stopCh <- struct{}{}
+	})
 }

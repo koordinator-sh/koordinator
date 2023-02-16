@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metricsadvisor
+package gpu
 
 import (
 	"errors"
@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
@@ -38,6 +39,7 @@ type gpuDeviceManager struct {
 	deviceCount      int
 	devices          []*device
 	collectTime      time.Time
+	start            *atomic.Bool
 	processesMetrics map[uint32][]*rawGPUMetric
 }
 
@@ -66,7 +68,7 @@ func initGPUDeviceManager() GPUDeviceManager {
 		klog.Warningf("nvml init failed, return %s", nvml.ErrorString(ret))
 		return &dummyDeviceManager{}
 	}
-	manager := &gpuDeviceManager{}
+	manager := &gpuDeviceManager{start: atomic.NewBool(false)}
 	if err := manager.initGPUData(); err != nil {
 		klog.Warningf("nvml init gpu data, error %s", err)
 		manager.shutdown()
@@ -261,5 +263,10 @@ func (g *gpuDeviceManager) collectGPUUsage() {
 	g.Lock()
 	g.processesMetrics = processesGPUUsages
 	g.collectTime = time.Now()
+	g.start.Store(true)
 	g.Unlock()
+}
+
+func (g *gpuDeviceManager) started() bool {
+	return g.start.Load()
 }

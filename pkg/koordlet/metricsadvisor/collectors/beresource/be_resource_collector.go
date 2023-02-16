@@ -14,33 +14,83 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metricsadvisor
+package beresource
 
 import (
 	"time"
 
+	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-func (c *collector) collectBECPUResourceMetric() {
+const (
+	CollectorName = "BEResourceCollector"
+)
+
+type beResourceCollector struct {
+	collectInterval time.Duration
+	started         *atomic.Bool
+	metricDB        metriccache.MetricCache
+	statesInformer  statesinformer.StatesInformer
+	cgroupReader    resourceexecutor.CgroupReader
+
+	lastBECPUStat *framework.CPUStat
+}
+
+func New(opt *framework.Options) framework.Collector {
+	return &beResourceCollector{
+		collectInterval: time.Duration(opt.Config.CollectResUsedIntervalSeconds) * time.Second,
+		started:         atomic.NewBool(false),
+		metricDB:        opt.MetricCache,
+		statesInformer:  opt.StatesInformer,
+		cgroupReader:    opt.CgroupReader,
+	}
+}
+
+func (b *beResourceCollector) Enabled() bool {
+	return true
+}
+
+func (b *beResourceCollector) Setup(s *framework.Context) {
+	return
+}
+
+func (b *beResourceCollector) Run(stopCh <-chan struct{}) {
+	if !cache.WaitForCacheSync(stopCh, b.statesInformer.HasSynced) {
+		// Koordlet exit because of statesInformer sync failed.
+		klog.Fatalf("timed out waiting for states informer caches to sync")
+	}
+	go wait.Until(b.collectBECPUResourceMetric, b.collectInterval, stopCh)
+}
+
+func (b *beResourceCollector) Started() bool {
+	return b.started.Load()
+}
+
+func (b *beResourceCollector) collectBECPUResourceMetric() {
 	klog.V(6).Info("collectBECPUResourceMetric start")
 
-	realMilliLimit, err := c.getBECPURealMilliLimit()
+	realMilliLimit, err := b.getBECPURealMilliLimit()
 	if err != nil {
 		klog.Errorf("getBECPURealMilliLimit failed, error: %v", err)
 		return
 	}
 
-	beCPURequest := c.getBECPURequestSum()
+	beCPURequest := b.getBECPURequestSum()
 
-	beCPUUsageCores, err := c.getBECPUUsageCores()
+	beCPUUsageCores, err := b.getBECPUUsageCores()
 	if err != nil {
 		klog.Errorf("getBECPUUsageCores failed, error: %v", err)
 		return
@@ -58,15 +108,16 @@ func (c *collector) collectBECPUResourceMetric() {
 	}
 
 	collectTime := time.Now()
-	err = c.metricCache.InsertBECPUResourceMetric(collectTime, &beCPUMetric)
+	err = b.metricDB.InsertBECPUResourceMetric(collectTime, &beCPUMetric)
 	if err != nil {
 		klog.Errorf("InsertBECPUResourceMetric failed, error: %v", err)
 		return
 	}
+	b.started.Store(true)
 	klog.V(6).Info("collectBECPUResourceMetric finished")
 }
 
-func (c *collector) getBECPURealMilliLimit() (int, error) {
+func (b *beResourceCollector) getBECPURealMilliLimit() (int, error) {
 	limit := 0
 
 	cpuSet, err := koordletutil.GetBECgroupCurCPUSet()
@@ -76,7 +127,7 @@ func (c *collector) getBECPURealMilliLimit() (int, error) {
 	limit = len(cpuSet) * 1000
 
 	BECgroupParentDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
-	cfsQuota, err := c.cgroupReader.ReadCPUQuota(BECgroupParentDir)
+	cfsQuota, err := b.cgroupReader.ReadCPUQuota(BECgroupParentDir)
 	if err != nil {
 		return 0, err
 	}
@@ -86,7 +137,7 @@ func (c *collector) getBECPURealMilliLimit() (int, error) {
 		return limit, nil
 	}
 
-	cfsPeriod, err := c.cgroupReader.ReadCPUPeriod(BECgroupParentDir)
+	cfsPeriod, err := b.cgroupReader.ReadCPUPeriod(BECgroupParentDir)
 	if err != nil {
 		return 0, err
 	}
@@ -100,9 +151,9 @@ func (c *collector) getBECPURealMilliLimit() (int, error) {
 	return limit, nil
 }
 
-func (c *collector) getBECPURequestSum() resource.Quantity {
+func (b *beResourceCollector) getBECPURequestSum() resource.Quantity {
 	requestSum := int64(0)
-	for _, podMeta := range c.statesInformer.GetAllPods() {
+	for _, podMeta := range b.statesInformer.GetAllPods() {
 		pod := podMeta.Pod
 		if apiext.GetPodQoSClass(pod) == apiext.QoSBE {
 			podCPUReq := util.GetPodBEMilliCPURequest(pod)
@@ -114,30 +165,30 @@ func (c *collector) getBECPURequestSum() resource.Quantity {
 	return *resource.NewMilliQuantity(requestSum, resource.DecimalSI)
 }
 
-func (c *collector) getBECPUUsageCores() (*resource.Quantity, error) {
+func (b *beResourceCollector) getBECPUUsageCores() (*resource.Quantity, error) {
 	klog.V(6).Info("getBECPUUsageCores start")
 
 	collectTime := time.Now()
 	BECgroupParentDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
-	currentCPUUsage, err := c.cgroupReader.ReadCPUAcctUsage(BECgroupParentDir)
+	currentCPUUsage, err := b.cgroupReader.ReadCPUAcctUsage(BECgroupParentDir)
 	if err != nil {
 		klog.Warningf("failed to collect be cgroup usage, error: %v", err)
 		return nil, err
 	}
 
-	lastCPUStat := c.context.lastBECPUStat
-	c.context.lastBECPUStat = contextRecord{
-		cpuUsage: currentCPUUsage,
-		ts:       collectTime,
+	lastCPUStat := b.lastBECPUStat
+	b.lastBECPUStat = &framework.CPUStat{
+		CPUUsage:  currentCPUUsage,
+		Timestamp: collectTime,
 	}
 
-	if lastCPUStat.cpuUsage <= 0 {
+	if lastCPUStat == nil {
 		klog.V(6).Infof("ignore the first cpu stat collection")
 		return nil, nil
 	}
 
 	// NOTICE: do subtraction and division first to avoid overflow
-	cpuUsageValue := float64(currentCPUUsage-lastCPUStat.cpuUsage) / float64(collectTime.Sub(lastCPUStat.ts))
+	cpuUsageValue := float64(currentCPUUsage-lastCPUStat.CPUUsage) / float64(collectTime.Sub(lastCPUStat.Timestamp))
 	// 1.0 CPU = 1000 Milli-CPU
 	cpuUsageCores := resource.NewMilliQuantity(int64(cpuUsageValue*1000), resource.DecimalSI)
 	klog.V(6).Infof("collectBECPUUsageCores finished %.2f", cpuUsageValue)
