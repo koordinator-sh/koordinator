@@ -35,6 +35,14 @@ const (
 )
 
 // +k8s:deepcopy-gen=true
+type NodeCfgProfile struct {
+	// like ID for different nodeSelector; it's useful for console so that we can modify nodeCfg or nodeSelector by name
+	Name string `json:"name,omitempty"`
+	// an empty label selector matches all objects while a nil label selector matches no objects
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+}
+
+// +k8s:deepcopy-gen=true
 type ColocationCfg struct {
 	ColocationStrategy `json:",inline"`
 	NodeConfigs        []NodeColocationCfg `json:"nodeConfigs,omitempty"`
@@ -42,7 +50,7 @@ type ColocationCfg struct {
 
 // +k8s:deepcopy-gen=true
 type NodeColocationCfg struct {
-	NodeSelector *metav1.LabelSelector
+	NodeCfgProfile `json:",inline"`
 	ColocationStrategy
 }
 
@@ -54,15 +62,13 @@ type ResourceThresholdCfg struct {
 
 // +k8s:deepcopy-gen=true
 type NodeResourceThresholdStrategy struct {
-	// an empty label selector matches all objects while a nil label selector matches no objects
-	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	NodeCfgProfile `json:",inline"`
 	*slov1alpha1.ResourceThresholdStrategy
 }
 
 // +k8s:deepcopy-gen=true
 type NodeCPUBurstCfg struct {
-	// an empty label selector matches all objects while a nil label selector matches no objects
-	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	NodeCfgProfile `json:",inline"`
 	*slov1alpha1.CPUBurstStrategy
 }
 
@@ -74,8 +80,7 @@ type CPUBurstCfg struct {
 
 // +k8s:deepcopy-gen=true
 type NodeSystemStrategy struct {
-	// an empty label selector matches all objects while a nil label selector matches no objects
-	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	NodeCfgProfile `json:",inline"`
 	*slov1alpha1.SystemStrategy
 }
 
@@ -93,8 +98,7 @@ type ResourceQOSCfg struct {
 
 // +k8s:deepcopy-gen=true
 type NodeResourceQOSStrategy struct {
-	// an empty label selector matches all objects while a nil label selector matches no objects
-	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	NodeCfgProfile `json:",inline"`
 	*slov1alpha1.ResourceQOSStrategy
 }
 
@@ -193,6 +197,7 @@ data:
       "resourceDiffThreshold": 0.1,
       "nodeConfigs": [
         {
+          "name": "alios",
           "nodeSelector": {
             "matchLabels": {
               "kubernetes.io/kernel": "alios"
@@ -214,6 +219,7 @@ data:
       },
       "nodeStrategies": [
         {
+          "name": "alios",
           "nodeSelector": {
             "matchLabels": {
               "kubernetes.io/kernel": "alios"
@@ -230,6 +236,18 @@ data:
         "minFreeKbytesFactor": 100,
         "watermarkScaleFactor": 150
       }
+      "nodeStrategies": [
+        {
+          "name": "alios",
+          "nodeSelector": {
+            "matchLabels": {
+              "kubernetes.io/kernel": "alios"
+            }
+          },
+          "minFreeKbytesFactor": 100,
+          "watermarkScaleFactor": 150
+        }
+      ]
     }
   resource-qos-config: |
     {
@@ -309,6 +327,7 @@ data:
       },
       "nodeStrategies": [
         {
+          "name": "alios",
           "nodeSelector": {
             "matchLabels": {
               "kubernetes.io/kernel": "alios"
@@ -332,6 +351,7 @@ data:
       },
       "nodeStrategies": [
         {
+          "name": "alios",
           "nodeSelector": {
             "matchLabels": {
               "kubernetes.io/kernel": "alios"
