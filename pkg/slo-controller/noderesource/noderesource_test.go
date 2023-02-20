@@ -87,9 +87,11 @@ func Test_isColocationCfgDisabled(t *testing.T) {
 					},
 					NodeConfigs: []extension.NodeColocationCfg{
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"xxx": "yyy",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"xxx": "yyy",
+									},
 								},
 							},
 							ColocationStrategy: extension.ColocationStrategy{
@@ -178,9 +180,11 @@ func Test_isDegradeNeeded(t *testing.T) {
 						},
 						NodeConfigs: []extension.NodeColocationCfg{
 							{
-								NodeSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{
-										"xxx": "yyy",
+								NodeCfgProfile: extension.NodeCfgProfile{
+									NodeSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"xxx": "yyy",
+										},
 									},
 								},
 								ColocationStrategy: extension.ColocationStrategy{
@@ -767,9 +771,11 @@ func Test_updateNodeBEResource(t *testing.T) {
 					ColocationStrategy: enabledCfg.ColocationStrategy,
 					NodeConfigs: []extension.NodeColocationCfg{
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"xxx": "yyy",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"xxx": "yyy",
+									},
 								},
 							},
 							ColocationStrategy: extension.ColocationStrategy{
@@ -779,9 +785,11 @@ func Test_updateNodeBEResource(t *testing.T) {
 							},
 						},
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"abc": "def",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"abc": "def",
+									},
 								},
 							},
 							ColocationStrategy: extension.ColocationStrategy{

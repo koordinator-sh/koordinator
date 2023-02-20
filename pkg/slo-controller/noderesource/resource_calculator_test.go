@@ -701,10 +701,13 @@ func Test_calculateBEResource(t *testing.T) {
 					},
 					NodeConfigs: []extension.NodeColocationCfg{
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"xxx": "yyy",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"xxx": "yyy",
+									},
 								},
+								Name: "xxx-yyy",
 							},
 							ColocationStrategy: extension.ColocationStrategy{
 								CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
@@ -712,10 +715,13 @@ func Test_calculateBEResource(t *testing.T) {
 							},
 						},
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"memory-calculate-by-request": "true",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"memory-calculate-by-request": "true",
+									},
 								},
+								Name: "memory-calculate-by-request-true",
 							},
 							ColocationStrategy: extension.ColocationStrategy{
 								CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
@@ -724,10 +730,13 @@ func Test_calculateBEResource(t *testing.T) {
 							},
 						},
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"abc": "def",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"abc": "def",
+									},
 								},
+								Name: "abc-def",
 							},
 							ColocationStrategy: extension.ColocationStrategy{
 								CPUReclaimThresholdPercent:    pointer.Int64Ptr(60),

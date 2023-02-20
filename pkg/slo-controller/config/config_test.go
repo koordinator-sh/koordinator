@@ -108,9 +108,11 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 					},
 					NodeConfigs: []extension.NodeColocationCfg{
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"xxx": "yyy",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"xxx": "yyy",
+									},
 								},
 							},
 							ColocationStrategy: extension.ColocationStrategy{
@@ -145,9 +147,11 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 					ColocationStrategy: defaultCfg.ColocationStrategy,
 					NodeConfigs: []extension.NodeColocationCfg{
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"xxx": "yyy",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"xxx": "yyy",
+									},
 								},
 							},
 							ColocationStrategy: extension.ColocationStrategy{
@@ -155,9 +159,11 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 							},
 						},
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"xxx": "zzz",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"xxx": "zzz",
+									},
 								},
 							},
 							ColocationStrategy: extension.ColocationStrategy{
@@ -202,24 +208,30 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 					},
 					NodeConfigs: []extension.NodeColocationCfg{
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchExpressions: []metav1.LabelSelectorRequirement{
-									{
-										Key:      "xxx",
-										Operator: "out",
-										Values:   []string{"yyy"},
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchExpressions: []metav1.LabelSelectorRequirement{
+										{
+											Key:      "xxx",
+											Operator: "out",
+											Values:   []string{"yyy"},
+										},
 									},
 								},
+								Name: "xxx-out-yyy",
 							},
 							ColocationStrategy: extension.ColocationStrategy{
 								Enable: pointer.BoolPtr(false),
 							},
 						},
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"xxx": "yyy",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"xxx": "yyy",
+									},
 								},
+								Name: "xxx-yyy",
 							},
 							ColocationStrategy: extension.ColocationStrategy{
 								Enable: pointer.BoolPtr(true),
@@ -356,14 +368,17 @@ func Test_IsNodeColocationCfgValid(t *testing.T) {
 			name: "node selector is valid",
 			args: args{
 				nodeCfg: &extension.NodeColocationCfg{
-					NodeSelector: &metav1.LabelSelector{
-						MatchExpressions: []metav1.LabelSelectorRequirement{
-							{
-								Key:      "xxx",
-								Operator: "Out",
-								Values:   []string{"yyy"},
+					NodeCfgProfile: extension.NodeCfgProfile{
+						NodeSelector: &metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      "xxx",
+									Operator: "out",
+									Values:   []string{"yyy"},
+								},
 							},
 						},
+						Name: "xxx-out-yyy",
 					},
 					ColocationStrategy: extension.ColocationStrategy{
 						Enable: pointer.BoolPtr(false),
@@ -376,14 +391,17 @@ func Test_IsNodeColocationCfgValid(t *testing.T) {
 			name: "label selector should not be nil",
 			args: args{
 				nodeCfg: &extension.NodeColocationCfg{
-					NodeSelector: &metav1.LabelSelector{
-						MatchExpressions: []metav1.LabelSelectorRequirement{
-							{
-								Key:      "xxx",
-								Operator: "In",
-								Values:   []string{"yyy"},
+					NodeCfgProfile: extension.NodeCfgProfile{
+						NodeSelector: &metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      "xxx",
+									Operator: "In",
+									Values:   []string{"yyy"},
+								},
 							},
 						},
+						Name: "xxx-in-yyy",
 					},
 					ColocationStrategy: extension.ColocationStrategy{
 						Enable: pointer.BoolPtr(false),
@@ -396,10 +414,13 @@ func Test_IsNodeColocationCfgValid(t *testing.T) {
 			name: "label selector should not be nil",
 			args: args{
 				nodeCfg: &extension.NodeColocationCfg{
-					NodeSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"aaa": "bbb",
+					NodeCfgProfile: extension.NodeCfgProfile{
+						NodeSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"aaa": "bbb",
+							},
 						},
+						Name: "aaa-bbb",
 					},
 					ColocationStrategy: extension.ColocationStrategy{},
 				},
@@ -410,10 +431,13 @@ func Test_IsNodeColocationCfgValid(t *testing.T) {
 			name: "a valid node config has a valid label selector and non-empty strategy",
 			args: args{
 				nodeCfg: &extension.NodeColocationCfg{
-					NodeSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"xxx": "yyy",
+					NodeCfgProfile: extension.NodeCfgProfile{
+						NodeSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"xxx": "yyy",
+							},
 						},
+						Name: "xxx-yyy",
 					},
 					ColocationStrategy: extension.ColocationStrategy{
 						Enable: pointer.BoolPtr(false),
