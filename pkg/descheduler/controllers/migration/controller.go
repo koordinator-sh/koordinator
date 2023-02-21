@@ -489,6 +489,21 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 
 	boundPod := reservationObj.GetBoundPod()
 	podNamespacedName := types.NamespacedName{Namespace: boundPod.Namespace, Name: boundPod.Name}
+
+	pod := &corev1.Pod{}
+	err = r.Client.Get(ctx, podNamespacedName, pod)
+	if err != nil {
+		klog.Errorf("Failed to get Pod %q, err: %v", podNamespacedName, err)
+		return reconcile.Result{RequeueAfter: defaultRequeueAfter}, fmt.Errorf("failed to get pod %q", podNamespacedName)
+	}
+
+	podReady, result, err := r.waitForBoundPodReady(ctx, job, pod)
+	if err != nil {
+		return result, err
+	} else if !podReady {
+		return result, nil
+	}
+
 	job.Status.PodRef = boundPod
 	job.Status.Phase = sev1alpha1.PodMigrationJobSucceeded
 	job.Status.Status = "Complete"
@@ -761,6 +776,27 @@ func (r *Reconciler) syncReservationScheduleFailed(ctx context.Context, job *sev
 		}
 	}
 	return nil
+}
+
+func (r *Reconciler) waitForBoundPodReady(ctx context.Context, job *sev1alpha1.PodMigrationJob, pod *corev1.Pod) (bool, reconcile.Result, error) {
+	klog.V(4).Infof("MigrationJob %s checks whether boundPod %s is ready", job.Name, pod.Name)
+	_, cond := util.GetCondition(&job.Status, sev1alpha1.PodMigrationJobConditionBoundPodReady)
+	if cond != nil && cond.Status == sev1alpha1.PodMigrationJobConditionStatusTrue {
+		return true, reconcile.Result{}, nil
+	}
+	if isReady := k8spodutil.IsPodReady(pod); !isReady {
+		cond := &sev1alpha1.PodMigrationJobCondition{
+			Type:   sev1alpha1.PodMigrationJobConditionBoundPodReady,
+			Status: sev1alpha1.PodMigrationJobConditionStatusFalse,
+			Reason: sev1alpha1.PodMigrationJobReasonWaitForBoundPodReady,
+		}
+		err := r.updateCondition(ctx, job, cond)
+		if err == nil {
+			r.eventRecorder.Eventf(job, nil, corev1.EventTypeNormal, sev1alpha1.PodMigrationJobReasonWaitForBoundPodReady, "Migrating", "Waiting for Bound Pod Ready")
+		}
+		return false, reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
+	}
+	return true, reconcile.Result{}, nil
 }
 
 func (r *Reconciler) waitForPodBindReservation(ctx context.Context, job *sev1alpha1.PodMigrationJob, reservationObj reservation.Object) (bool, reconcile.Result, error) {
