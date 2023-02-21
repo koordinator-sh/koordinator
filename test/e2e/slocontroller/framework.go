@@ -14,11 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package scheduling
+package slocontroller
 
 import "github.com/onsi/ginkgo"
 
 // SIGDescribe describes SIG information
 func SIGDescribe(text string, body func()) bool {
-	return ginkgo.Describe("[scheduling] "+text, body)
+	return ginkgo.Describe("[slo-controller] "+text, body)
 }
