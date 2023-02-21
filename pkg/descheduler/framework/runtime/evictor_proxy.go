@@ -39,11 +39,7 @@ var _ framework.Evictor = &evictorProxy{}
 type evictorProxy struct {
 	dryRun          bool
 	evictionLimiter EvictionLimiter
-	evictor         framework.Evictor
-}
-
-func (e *evictorProxy) Name() string {
-	return e.evictor.Name()
+	handle          *frameworkImpl
 }
 
 func (e *evictorProxy) Reset() {
@@ -81,18 +77,35 @@ func (e *evictorProxy) TotalEvicted() uint {
 
 // Filter checks if a pod can be evicted
 func (e *evictorProxy) Filter(pod *corev1.Pod) bool {
-	return e.evictor.Filter(pod)
+	for _, v := range e.handle.filterPlugins {
+		if !v.Filter(pod) {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *evictorProxy) PreEvictionFilter(pod *corev1.Pod) bool {
+	for _, v := range e.handle.filterPlugins {
+		if !v.PreEvictionFilter(pod) {
+			return false
+		}
+	}
+	return true
 }
 
 // Evict evicts a pod (no pre-check performed)
 func (e *evictorProxy) Evict(ctx context.Context, pod *corev1.Pod, opts framework.EvictOptions) bool {
+	if len(e.handle.evictPlugins) == 0 {
+		panic("No Evictor plugin is registered in the frameworkImpl.")
+	}
 	if !e.AllowEvict(pod) {
 		return false
 	}
 	if e.dryRun {
 		klog.V(1).InfoS("Evicted pod in dry run mode", "pod", klog.KObj(pod), "reason", opts.Reason, "strategy", opts.PluginName, "node", pod.Spec.NodeName)
 	} else {
-		succeeded := e.evictor.Evict(ctx, pod, opts)
+		succeeded := e.handle.evictPlugins[0].Evict(ctx, pod, opts)
 		if !succeeded {
 			return false
 		}

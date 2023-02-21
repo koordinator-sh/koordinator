@@ -67,7 +67,8 @@ func pluginsNames(p *Plugins) []string {
 	extensions := []PluginSet{
 		p.Deschedule,
 		p.Balance,
-		p.Evictor,
+		p.Evict,
+		p.Filter,
 	}
 	n := sets.NewString()
 	for _, e := range extensions {

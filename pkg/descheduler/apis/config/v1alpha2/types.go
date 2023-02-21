@@ -108,7 +108,8 @@ type DeschedulerProfile struct {
 type Plugins struct {
 	Deschedule PluginSet `json:"deschedule,omitempty"`
 	Balance    PluginSet `json:"balance,omitempty"`
-	Evictor    PluginSet `json:"evict,omitempty"`
+	Evict      PluginSet `json:"evict,omitempty"`
+	Filter     PluginSet `json:"filter,omitempty"`
 }
 
 type PluginSet struct {

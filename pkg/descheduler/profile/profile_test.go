@@ -50,7 +50,7 @@ func TestNewMap(t *testing.T) {
 						Deschedule: deschedulerconfig.PluginSet{
 							Enabled: []deschedulerconfig.Plugin{},
 						},
-						Evictor: deschedulerconfig.PluginSet{
+						Evict: deschedulerconfig.PluginSet{
 							Enabled: []deschedulerconfig.Plugin{
 								{Name: names.MigrationController},
 							},
@@ -78,7 +78,7 @@ func TestNewMap(t *testing.T) {
 						Deschedule: deschedulerconfig.PluginSet{
 							Enabled: []deschedulerconfig.Plugin{},
 						},
-						Evictor: deschedulerconfig.PluginSet{
+						Evict: deschedulerconfig.PluginSet{
 							Enabled: []deschedulerconfig.Plugin{
 								{Name: names.MigrationController},
 							},
@@ -90,7 +90,7 @@ func TestNewMap(t *testing.T) {
 						Deschedule: deschedulerconfig.PluginSet{
 							Enabled: []deschedulerconfig.Plugin{},
 						},
-						Evictor: deschedulerconfig.PluginSet{
+						Evict: deschedulerconfig.PluginSet{
 							Enabled: []deschedulerconfig.Plugin{
 								{Name: names.MigrationController},
 							},
@@ -109,7 +109,7 @@ func TestNewMap(t *testing.T) {
 						Deschedule: deschedulerconfig.PluginSet{
 							Enabled: []deschedulerconfig.Plugin{},
 						},
-						Evictor: deschedulerconfig.PluginSet{
+						Evict: deschedulerconfig.PluginSet{
 							Enabled: []deschedulerconfig.Plugin{
 								{Name: names.MigrationController},
 							},
@@ -158,11 +158,15 @@ func (p *fakePlugin) Name() string {
 	return p.name
 }
 
+func (p *fakePlugin) Evict(_ context.Context, _ *corev1.Pod, _ framework.EvictOptions) bool {
+	return false
+}
+
 func (p *fakePlugin) Filter(_ *corev1.Pod) bool {
 	return false
 }
 
-func (p *fakePlugin) Evict(_ context.Context, _ *corev1.Pod, _ framework.EvictOptions) bool {
+func (p *fakePlugin) PreEvictionFilter(_ *corev1.Pod) bool {
 	return false
 }
 

@@ -48,7 +48,8 @@ type injectedResult struct {
 
 type evictFilterFn func(pod *corev1.Pod) bool
 
-var _ framework.Evictor = &TestEvictorPlugin{}
+var _ framework.EvictPlugin = &TestEvictorPlugin{}
+var _ framework.FilterPlugin = &TestEvictorPlugin{}
 var _ framework.DeschedulePlugin = &TestEvictorPlugin{}
 
 type TestEvictorPlugin struct {
@@ -76,6 +77,10 @@ func (pl *TestEvictorPlugin) Filter(pod *corev1.Pod) bool {
 		}
 	}
 	return true
+}
+
+func (pl *TestEvictorPlugin) PreEvictionFilter(pod *corev1.Pod) bool {
+	return pl.Filter(pod)
 }
 
 func (pl *TestEvictorPlugin) Evict(ctx context.Context, pod *corev1.Pod, evictOptions framework.EvictOptions) bool {
@@ -156,7 +161,12 @@ func TestNewFramework(t *testing.T) {
 			profile: &deschedulerconfig.DeschedulerProfile{
 				Name: testProfileName,
 				Plugins: &deschedulerconfig.Plugins{
-					Evictor: deschedulerconfig.PluginSet{
+					Evict: deschedulerconfig.PluginSet{
+						Enabled: []deschedulerconfig.Plugin{
+							{Name: evictorPluginName},
+						},
+					},
+					Filter: deschedulerconfig.PluginSet{
 						Enabled: []deschedulerconfig.Plugin{
 							{Name: evictorPluginName},
 						},
@@ -190,7 +200,7 @@ func TestNewFramework(t *testing.T) {
 			profile: &deschedulerconfig.DeschedulerProfile{
 				Name: testProfileName,
 				Plugins: &deschedulerconfig.Plugins{
-					Evictor: deschedulerconfig.PluginSet{
+					Evict: deschedulerconfig.PluginSet{
 						Enabled: []deschedulerconfig.Plugin{
 							{Name: evictorPluginName},
 							{Name: evictorPluginName1},
@@ -205,7 +215,7 @@ func TestNewFramework(t *testing.T) {
 			profile: &deschedulerconfig.DeschedulerProfile{
 				Name: testProfileName,
 				Plugins: &deschedulerconfig.Plugins{
-					Evictor: deschedulerconfig.PluginSet{
+					Evict: deschedulerconfig.PluginSet{
 						Enabled: []deschedulerconfig.Plugin{
 							{Name: evictorPluginName},
 						},
@@ -310,7 +320,7 @@ func TestRunDeschedulePlugins(t *testing.T) {
 					},
 				},
 				Plugins: &deschedulerconfig.Plugins{
-					Evictor: deschedulerconfig.PluginSet{
+					Evict: deschedulerconfig.PluginSet{
 						Enabled: []deschedulerconfig.Plugin{
 							{Name: evictorPluginName},
 						},
@@ -350,7 +360,7 @@ func TestRunDeschedulePlugins(t *testing.T) {
 					},
 				},
 				Plugins: &deschedulerconfig.Plugins{
-					Evictor: deschedulerconfig.PluginSet{
+					Evict: deschedulerconfig.PluginSet{
 						Enabled: []deschedulerconfig.Plugin{
 							{Name: evictorPluginName},
 						},
@@ -370,7 +380,7 @@ func TestRunDeschedulePlugins(t *testing.T) {
 			profile: &deschedulerconfig.DeschedulerProfile{
 				Name: testProfileName,
 				Plugins: &deschedulerconfig.Plugins{
-					Evictor: deschedulerconfig.PluginSet{
+					Evict: deschedulerconfig.PluginSet{
 						Enabled: []deschedulerconfig.Plugin{
 							{Name: evictorPluginName},
 						},
@@ -438,7 +448,7 @@ func TestRunBalancePlugins(t *testing.T) {
 					},
 				},
 				Plugins: &deschedulerconfig.Plugins{
-					Evictor: deschedulerconfig.PluginSet{
+					Evict: deschedulerconfig.PluginSet{
 						Enabled: []deschedulerconfig.Plugin{
 							{Name: evictorPluginName},
 						},
@@ -478,7 +488,7 @@ func TestRunBalancePlugins(t *testing.T) {
 					},
 				},
 				Plugins: &deschedulerconfig.Plugins{
-					Evictor: deschedulerconfig.PluginSet{
+					Evict: deschedulerconfig.PluginSet{
 						Enabled: []deschedulerconfig.Plugin{
 							{Name: evictorPluginName},
 						},
@@ -498,7 +508,7 @@ func TestRunBalancePlugins(t *testing.T) {
 			profile: &deschedulerconfig.DeschedulerProfile{
 				Name: testProfileName,
 				Plugins: &deschedulerconfig.Plugins{
-					Evictor: deschedulerconfig.PluginSet{
+					Evict: deschedulerconfig.PluginSet{
 						Enabled: []deschedulerconfig.Plugin{
 							{Name: evictorPluginName},
 						},

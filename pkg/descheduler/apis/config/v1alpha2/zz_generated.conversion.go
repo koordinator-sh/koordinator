@@ -419,8 +419,11 @@ func autoConvert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerA
 	out.EvictLocalStoragePods = in.EvictLocalStoragePods
 	out.EvictSystemCriticalPods = in.EvictSystemCriticalPods
 	out.IgnorePvcPods = in.IgnorePvcPods
+	out.PriorityThreshold = (*config.PriorityThreshold)(unsafe.Pointer(in.PriorityThreshold))
 	out.LabelSelector = (*v1.LabelSelector)(unsafe.Pointer(in.LabelSelector))
 	out.Namespaces = (*config.Namespaces)(unsafe.Pointer(in.Namespaces))
+	out.NodeFit = in.NodeFit
+	out.NodeSelector = in.NodeSelector
 	out.MaxMigratingPerNode = (*int32)(unsafe.Pointer(in.MaxMigratingPerNode))
 	out.MaxMigratingPerNamespace = (*int32)(unsafe.Pointer(in.MaxMigratingPerNamespace))
 	out.MaxMigratingPerWorkload = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigratingPerWorkload))
@@ -453,8 +456,11 @@ func autoConvert_config_MigrationControllerArgs_To_v1alpha2_MigrationControllerA
 	out.EvictLocalStoragePods = in.EvictLocalStoragePods
 	out.EvictSystemCriticalPods = in.EvictSystemCriticalPods
 	out.IgnorePvcPods = in.IgnorePvcPods
+	out.PriorityThreshold = (*PriorityThreshold)(unsafe.Pointer(in.PriorityThreshold))
 	out.LabelSelector = (*v1.LabelSelector)(unsafe.Pointer(in.LabelSelector))
 	out.Namespaces = (*Namespaces)(unsafe.Pointer(in.Namespaces))
+	out.NodeFit = in.NodeFit
+	out.NodeSelector = in.NodeSelector
 	out.MaxMigratingPerNode = (*int32)(unsafe.Pointer(in.MaxMigratingPerNode))
 	out.MaxMigratingPerNamespace = (*int32)(unsafe.Pointer(in.MaxMigratingPerNamespace))
 	out.MaxMigratingPerWorkload = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigratingPerWorkload))
@@ -597,7 +603,10 @@ func autoConvert_v1alpha2_Plugins_To_config_Plugins(in *Plugins, out *config.Plu
 	if err := Convert_v1alpha2_PluginSet_To_config_PluginSet(&in.Balance, &out.Balance, s); err != nil {
 		return err
 	}
-	if err := Convert_v1alpha2_PluginSet_To_config_PluginSet(&in.Evictor, &out.Evictor, s); err != nil {
+	if err := Convert_v1alpha2_PluginSet_To_config_PluginSet(&in.Evict, &out.Evict, s); err != nil {
+		return err
+	}
+	if err := Convert_v1alpha2_PluginSet_To_config_PluginSet(&in.Filter, &out.Filter, s); err != nil {
 		return err
 	}
 	return nil
@@ -615,7 +624,10 @@ func autoConvert_config_Plugins_To_v1alpha2_Plugins(in *config.Plugins, out *Plu
 	if err := Convert_config_PluginSet_To_v1alpha2_PluginSet(&in.Balance, &out.Balance, s); err != nil {
 		return err
 	}
-	if err := Convert_config_PluginSet_To_v1alpha2_PluginSet(&in.Evictor, &out.Evictor, s); err != nil {
+	if err := Convert_config_PluginSet_To_v1alpha2_PluginSet(&in.Evict, &out.Evict, s); err != nil {
+		return err
+	}
+	if err := Convert_config_PluginSet_To_v1alpha2_PluginSet(&in.Filter, &out.Filter, s); err != nil {
 		return err
 	}
 	return nil

@@ -51,8 +51,12 @@ func RegisterBalancePlugin(pluginName string, pluginNewFunc runtime.PluginFactor
 	return RegisterPluginAsExtensions(pluginName, pluginNewFunc, "Balance")
 }
 
-func RegisterEvictorPlugin(pluginName string, pluginNewFunc runtime.PluginFactory) RegisterPluginFunc {
-	return RegisterPluginAsExtensions(pluginName, pluginNewFunc, "Evictor")
+func RegisterEvictPlugin(pluginName string, pluginNewFunc runtime.PluginFactory) RegisterPluginFunc {
+	return RegisterPluginAsExtensions(pluginName, pluginNewFunc, "Evict")
+}
+
+func RegisterFilterPlugin(pluginName string, pluginNewFunc runtime.PluginFactory) RegisterPluginFunc {
+	return RegisterPluginAsExtensions(pluginName, pluginNewFunc, "Filter")
 }
 
 // RegisterPluginAsExtensions returns a function to register a Plugin as given extensionPoints to a given registry.
@@ -89,8 +93,10 @@ func getPluginSetByExtension(plugins *deschedulerconfig.Plugins, extension strin
 		return &plugins.Deschedule
 	case "Balance":
 		return &plugins.Balance
-	case "Evictor":
-		return &plugins.Evictor
+	case "Evict":
+		return &plugins.Evict
+	case "Filter":
+		return &plugins.Filter
 	default:
 		return nil
 	}

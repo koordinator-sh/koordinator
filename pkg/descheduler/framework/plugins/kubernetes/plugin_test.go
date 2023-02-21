@@ -100,7 +100,8 @@ func (pl *TestPlugin) Balance(ctx context.Context, nodes []*corev1.Node) *k8sdes
 	return &k8sdeschedulerframework.Status{Err: errors.New(pl.args.Err)}
 }
 
-var _ framework.Evictor = &TestEvictorPlugin{}
+var _ framework.EvictPlugin = &TestEvictorPlugin{}
+var _ framework.FilterPlugin = &TestEvictorPlugin{}
 
 type TestEvictorPlugin struct {
 	handle framework.Handle
@@ -117,6 +118,10 @@ func (pl *TestEvictorPlugin) Name() string {
 }
 
 func (pl *TestEvictorPlugin) Filter(pod *corev1.Pod) bool {
+	return true
+}
+
+func (pl *TestEvictorPlugin) PreEvictionFilter(pod *corev1.Pod) bool {
 	return true
 }
 
@@ -164,7 +169,8 @@ func TestPluginDescriptor(t *testing.T) {
 		[]frameworktesting.RegisterPluginFunc{
 			func(reg *frameworkruntime.Registry, profile *deschedulerconfig.DeschedulerProfile) {
 				reg.Register(testEvictorPluginName, newTestEvictorPlugin)
-				profile.Plugins.Evictor.Enabled = append(profile.Plugins.Evictor.Enabled, deschedulerconfig.Plugin{Name: testEvictorPluginName})
+				profile.Plugins.Evict.Enabled = append(profile.Plugins.Evict.Enabled, deschedulerconfig.Plugin{Name: testEvictorPluginName})
+				profile.Plugins.Filter.Enabled = append(profile.Plugins.Filter.Enabled, deschedulerconfig.Plugin{Name: testEvictorPluginName})
 			},
 			func(reg *frameworkruntime.Registry, profile *deschedulerconfig.DeschedulerProfile) {
 				reg.Register(testPluginName, descriptor.New)

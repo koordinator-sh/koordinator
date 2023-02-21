@@ -27,12 +27,10 @@ import (
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
@@ -57,7 +55,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/options"
 	evictionsutil "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
-	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
@@ -70,7 +67,8 @@ var (
 	UUIDGenerateFn = uuid.NewUUID
 )
 
-var _ framework.Evictor = &Reconciler{}
+var _ framework.EvictPlugin = &Reconciler{}
+var _ framework.FilterPlugin = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
@@ -81,6 +79,7 @@ type Reconciler struct {
 	controllerFinder       controllerfinder.Interface
 	unretriablePodFilter   framework.FilterFunc
 	retriablePodFilter     framework.FilterFunc
+	defaultFilterPlugin    framework.FilterPlugin
 	assumedCache           *assumedCache
 	clock                  clock.Clock
 
@@ -135,45 +134,6 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 		return nil, err
 	}
 
-	nodesGetter := func() ([]*corev1.Node, error) {
-		nodesLister := handle.SharedInformerFactory().Core().V1().Nodes().Lister()
-		return nodesLister.List(labels.Everything())
-	}
-
-	var selector labels.Selector
-	if args.LabelSelector != nil {
-		selector, err = metav1.LabelSelectorAsSelector(args.LabelSelector)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get label selectors: %v", err)
-		}
-	}
-
-	evictorFilter := evictionsutil.NewEvictorFilter(
-		nodesGetter,
-		handle.GetPodsAssignedToNodeFunc(),
-		args.EvictLocalStoragePods,
-		args.EvictSystemCriticalPods,
-		args.IgnorePvcPods,
-		args.EvictFailedBarePods,
-		evictionsutil.WithLabelSelector(selector),
-	)
-
-	var includedNamespaces, excludedNamespaces sets.String
-	if args.Namespaces != nil {
-		includedNamespaces = sets.NewString(args.Namespaces.Include...)
-		excludedNamespaces = sets.NewString(args.Namespaces.Exclude...)
-	}
-
-	wrapFilterFuncs := podutil.WrapFilterFuncs(util.FilterPodWithMaxEvictionCost, evictorFilter.Filter)
-	podFilter, err := podutil.NewOptions().
-		WithFilter(wrapFilterFuncs).
-		WithNamespaces(includedNamespaces).
-		WithoutNamespaces(excludedNamespaces).
-		BuildFilterFunc()
-	if err != nil {
-		return nil, err
-	}
-
 	controllerFinder, err := controllerfinder.New(manager)
 	if err != nil {
 		return nil, err
@@ -186,24 +146,15 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 		reservationInterpreter: reservationInterpreter,
 		evictorInterpreter:     evictorInterpreter,
 		controllerFinder:       controllerFinder,
-		unretriablePodFilter:   podFilter,
 		assumedCache:           newAssumedCache(),
 		clock:                  clock.RealClock{},
 	}
+	if err := r.initFilters(args, handle); err != nil {
+		return nil, err
+	}
 	r.initObjectLimiters()
 
-	retriablePodFilters := podutil.WrapFilterFuncs(
-		r.filterLimitedObject,
-		r.filterMaxMigratingPerNode,
-		r.filterMaxMigratingPerNamespace,
-		r.filterMaxMigratingOrUnavailablePerWorkload,
-	)
-	r.retriablePodFilter = func(pod *corev1.Pod) bool {
-		return retriablePodFilters(pod) || evictionsutil.HaveEvictAnnotation(pod)
-	}
-
-	err = manager.Add(r)
-	if err != nil {
+	if err := manager.Add(r); err != nil {
 		return nil, err
 	}
 	return r, nil
@@ -230,79 +181,6 @@ func (r *Reconciler) initObjectLimiters() {
 
 func (r *Reconciler) Name() string {
 	return Name
-}
-
-// Filter checks if a pod can be evicted
-func (r *Reconciler) Filter(pod *corev1.Pod) bool {
-	if !r.filterExistingPodMigrationJob(pod) {
-		return false
-	}
-	if r.unretriablePodFilter != nil && !r.unretriablePodFilter(pod) {
-		return false
-	}
-	if r.retriablePodFilter != nil && !r.retriablePodFilter(pod) {
-		return false
-	}
-	return true
-}
-
-// Evict evicts a pod
-func (r *Reconciler) Evict(ctx context.Context, pod *corev1.Pod, evictOptions framework.EvictOptions) bool {
-	framework.FillEvictOptionsFromContext(ctx, &evictOptions)
-
-	if r.args.DryRun {
-		klog.Infof("%s tries to evict Pod %q via dryRun mode since %s", evictOptions.PluginName, klog.KObj(pod), evictOptions.Reason)
-		return true
-	}
-
-	if !r.Filter(pod) {
-		klog.Errorf("Pod %q cannot be evicted since failed to filter", klog.KObj(pod))
-		return false
-	}
-
-	err := CreatePodMigrationJob(ctx, pod, evictOptions, r.Client, r.args)
-	return err == nil
-}
-
-func CreatePodMigrationJob(ctx context.Context, pod *corev1.Pod, evictOptions framework.EvictOptions, client client.Client, args *deschedulerconfig.MigrationControllerArgs) error {
-	if evictOptions.DeleteOptions == nil {
-		evictOptions.DeleteOptions = args.DefaultDeleteOptions
-	}
-	job := &sev1alpha1.PodMigrationJob{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: string(UUIDGenerateFn()),
-			Annotations: map[string]string{
-				evictor.AnnotationEvictReason:  evictOptions.Reason,
-				evictor.AnnotationEvictTrigger: evictOptions.PluginName,
-			},
-		},
-		Spec: sev1alpha1.PodMigrationJobSpec{
-			PodRef: &corev1.ObjectReference{
-				Namespace: pod.Namespace,
-				Name:      pod.Name,
-				UID:       pod.UID,
-			},
-			Mode:          sev1alpha1.PodMigrationJobMode(args.DefaultJobMode),
-			TTL:           args.DefaultJobTTL.DeepCopy(),
-			DeleteOptions: evictOptions.DeleteOptions,
-		},
-		Status: sev1alpha1.PodMigrationJobStatus{
-			Phase: sev1alpha1.PodMigrationJobPending,
-		},
-	}
-
-	jobCtx := FromContext(ctx)
-	if err := jobCtx.ApplyTo(job); err != nil {
-		klog.Errorf("Failed to apply JobContext to PodMigrationJob for Pod %s/%s, err: %v", pod.Namespace, pod.Name, err)
-		return err
-	}
-
-	err := client.Create(ctx, job)
-	if err != nil {
-		klog.Errorf("Failed to create PodMigrationJob for Pod %s/s, err: %v", pod.Namespace, pod.Name, err)
-		return err
-	}
-	return nil
 }
 
 func (r *Reconciler) Start(ctx context.Context) error {

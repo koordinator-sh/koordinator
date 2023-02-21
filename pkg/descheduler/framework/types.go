@@ -52,6 +52,15 @@ type PluginsRunner interface {
 	RunBalancePlugins(ctx context.Context, nodes []*corev1.Node) *Status
 }
 
+type Evictor interface {
+	// Filter checks if a pod can be evicted
+	Filter(pod *corev1.Pod) bool
+	// PreEvictionFilter checks if pod can be evicted right before eviction
+	PreEvictionFilter(pod *corev1.Pod) bool
+	// Evict evicts a pod (no pre-check performed)
+	Evict(ctx context.Context, pod *corev1.Pod, evictOptions EvictOptions) bool
+}
+
 type Status struct {
 	Err error
 }
@@ -68,6 +77,30 @@ type Plugin interface {
 	Name() string
 }
 
+type DeschedulePlugin interface {
+	Plugin
+	Deschedule(ctx context.Context, nodes []*corev1.Node) *Status
+}
+
+type BalancePlugin interface {
+	Plugin
+	Balance(ctx context.Context, nodes []*corev1.Node) *Status
+}
+
+type EvictPlugin interface {
+	Plugin
+	// Evict evicts a pod (no pre-check performed)
+	Evict(ctx context.Context, pod *corev1.Pod, evictOptions EvictOptions) bool
+}
+
+type FilterPlugin interface {
+	Plugin
+	// Filter checks if a pod can be evicted
+	Filter(pod *corev1.Pod) bool
+	// PreEvictionFilter checks if pod can be evicted right before eviction
+	PreEvictionFilter(pod *corev1.Pod) bool
+}
+
 var (
 	EvictionPluginNameContextKey = pointer.String("pluginName")
 	EvictionReasonContextKey     = pointer.String("evictionReason")
@@ -81,27 +114,6 @@ type EvictOptions struct {
 	Reason string
 	// DeleteOptions holds the arguments used to delete
 	DeleteOptions *metav1.DeleteOptions
-}
-
-// TODO(joseph): The existing Evictor interface needs to be split.
-//  There can only be one Evictor.Evict globally, but there can be multiple Evictor.Filter and Evictor.PreEvictionFilter
-
-type Evictor interface {
-	Plugin
-	// Filter checks if a pod can be evicted
-	Filter(pod *corev1.Pod) bool
-	// Evict evicts a pod (no pre-check performed)
-	Evict(ctx context.Context, pod *corev1.Pod, evictOptions EvictOptions) bool
-}
-
-type DeschedulePlugin interface {
-	Plugin
-	Deschedule(ctx context.Context, nodes []*corev1.Node) *Status
-}
-
-type BalancePlugin interface {
-	Plugin
-	Balance(ctx context.Context, nodes []*corev1.Node) *Status
 }
 
 func FillEvictOptionsFromContext(ctx context.Context, options *EvictOptions) {
