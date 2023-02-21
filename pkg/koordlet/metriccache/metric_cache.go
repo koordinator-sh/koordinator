@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	"gorm.io/gorm"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -147,7 +149,7 @@ func (m *metricCache) GetNodeResourceMetric(param *QueryParam) NodeResourceQuery
 		return result
 	}
 	if len(metrics) == 0 {
-		result.Error = fmt.Errorf("get node resource metric not exist, query params %v", param)
+		result.Metric = &NodeResourceMetric{}
 		return result
 	}
 
@@ -395,15 +397,20 @@ func (m *metricCache) GetNodeCPUInfo(param *QueryParam) (*NodeCPUInfo, error) {
 	if param == nil {
 		return nil, fmt.Errorf("node cpu info query parameters are illegal %v", param)
 	}
+
+	info := &NodeCPUInfo{}
 	record, err := m.db.GetRawRecord(NodeCPUInfoRecordType)
 	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return info, nil
+		}
 		return nil, fmt.Errorf("get node cpu info failed, query params %v, err %v", param, err)
 	}
 
-	info := &NodeCPUInfo{}
 	if err := json.Unmarshal([]byte(record.RecordStr), info); err != nil {
 		return nil, fmt.Errorf("get node cpu info failed, parse recordStr %v, err %v", record.RecordStr, err)
 	}
+
 	return info, nil
 }
 
