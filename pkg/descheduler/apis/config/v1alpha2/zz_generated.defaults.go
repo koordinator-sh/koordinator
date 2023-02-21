@@ -33,9 +33,6 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&DeschedulerConfiguration{}, func(obj interface{}) { SetObjectDefaults_DeschedulerConfiguration(obj.(*DeschedulerConfiguration)) })
 	scheme.AddTypeDefaultingFunc(&LowNodeLoadArgs{}, func(obj interface{}) { SetObjectDefaults_LowNodeLoadArgs(obj.(*LowNodeLoadArgs)) })
 	scheme.AddTypeDefaultingFunc(&MigrationControllerArgs{}, func(obj interface{}) { SetObjectDefaults_MigrationControllerArgs(obj.(*MigrationControllerArgs)) })
-	scheme.AddTypeDefaultingFunc(&RemovePodsViolatingNodeAffinityArgs{}, func(obj interface{}) {
-		SetObjectDefaults_RemovePodsViolatingNodeAffinityArgs(obj.(*RemovePodsViolatingNodeAffinityArgs))
-	})
 	return nil
 }
 
@@ -53,8 +50,4 @@ func SetObjectDefaults_LowNodeLoadArgs(in *LowNodeLoadArgs) {
 
 func SetObjectDefaults_MigrationControllerArgs(in *MigrationControllerArgs) {
 	SetDefaults_MigrationControllerArgs(in)
-}
-
-func SetObjectDefaults_RemovePodsViolatingNodeAffinityArgs(in *RemovePodsViolatingNodeAffinityArgs) {
-	SetDefaults_RemovePodsViolatingNodeAffinityArgs(in)
 }

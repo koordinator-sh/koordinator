@@ -212,12 +212,6 @@ func SetDefaults_DefaultEvictorArgs(obj *DefaultEvictorArgs) {
 	}
 }
 
-func SetDefaults_RemovePodsViolatingNodeAffinityArgs(obj *RemovePodsViolatingNodeAffinityArgs) {
-	if len(obj.NodeAffinityType) == 0 {
-		obj.NodeAffinityType = append(obj.NodeAffinityType, "requiredDuringSchedulingIgnoredDuringExecution")
-	}
-}
-
 func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 	if obj.MaxConcurrentReconciles == nil {
 		obj.MaxConcurrentReconciles = pointer.Int32(defaultMigrationControllerMaxConcurrentReconciles)

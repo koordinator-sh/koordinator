@@ -67,3 +67,9 @@ linters:
     - vet
     - unconvert
     - staticcheck
+
+issues:
+  exclude-rules:
+    - linters:
+        - staticcheck
+      text: "SA1019:"

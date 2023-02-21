@@ -117,7 +117,3 @@ func FillEvictOptionsFromContext(ctx context.Context, options *EvictOptions) {
 func PluginNameWithContext(ctx context.Context, pluginName string) context.Context {
 	return context.WithValue(ctx, EvictionPluginNameContextKey, pluginName)
 }
-
-func EvictionReasonWithContext(ctx context.Context, reason string) context.Context {
-	return context.WithValue(ctx, EvictionReasonContextKey, reason)
-}

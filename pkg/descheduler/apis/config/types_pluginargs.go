@@ -63,17 +63,6 @@ type PriorityThreshold struct {
 	Name  string
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// RemovePodsViolatingNodeAffinityArgs holds arguments used to configure the RemovePodsViolatingNodeAffinity plugin.
-type RemovePodsViolatingNodeAffinityArgs struct {
-	metav1.TypeMeta
-
-	Namespaces       *Namespaces
-	LabelSelector    *metav1.LabelSelector
-	NodeAffinityType []string
-}
-
 // Namespaces carries a list of included/excluded namespaces
 // for which a given strategy is applicable
 type Namespaces struct {

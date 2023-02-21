@@ -65,17 +65,6 @@ type PriorityThreshold struct {
 	Name  string `json:"name,omitempty"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// RemovePodsViolatingNodeAffinityArgs holds arguments used to configure the RemovePodsViolatingNodeAffinity plugin.
-type RemovePodsViolatingNodeAffinityArgs struct {
-	metav1.TypeMeta
-
-	Namespaces       *Namespaces           `json:"namespaces,omitempty"`
-	LabelSelector    *metav1.LabelSelector `json:"labelSelector,omitempty"`
-	NodeAffinityType []string              `json:"nodeAffinityType,omitempty"`
-}
-
 // Namespaces carries a list of included/excluded namespaces
 // for which a given strategy is applicable
 type Namespaces struct {
