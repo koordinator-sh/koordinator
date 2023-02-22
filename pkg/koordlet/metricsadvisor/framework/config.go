@@ -14,9 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metricsadvisor
+package framework
 
-import "flag"
+import (
+	"flag"
+	"time"
+)
+
+const (
+	CleanupInterval     = 600 * time.Second
+	ContextExpiredRatio = 20
+)
 
 type Config struct {
 	CollectResUsedIntervalSeconds     int

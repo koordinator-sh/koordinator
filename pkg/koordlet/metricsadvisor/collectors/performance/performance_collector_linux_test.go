@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metricsadvisor
+package performance
 
 import (
 	"fmt"
@@ -25,20 +25,24 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mockmetriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mockstatesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func TestNewPerformanceCollector(t *testing.T) {
 	type args struct {
-		cfg            *Config
+		cfg            *framework.Config
 		statesInformer statesinformer.StatesInformer
 		metricCache    metriccache.MetricCache
 		cgroupReader   resourceexecutor.CgroupReader
@@ -51,7 +55,7 @@ func TestNewPerformanceCollector(t *testing.T) {
 		{
 			name: "new-performance-collector",
 			args: args{
-				cfg:            &Config{},
+				cfg:            &framework.Config{},
 				statesInformer: nil,
 				metricCache:    nil,
 				cgroupReader:   nil,
@@ -61,7 +65,13 @@ func TestNewPerformanceCollector(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := NewPerformanceCollector(tt.args.statesInformer, tt.args.metricCache, nil, tt.args.timeWindow); got == nil {
+			opt := &framework.Options{
+				Config:         framework.NewDefaultConfig(),
+				StatesInformer: tt.args.statesInformer,
+				MetricCache:    tt.args.metricCache,
+				CgroupReader:   resourceexecutor.NewCgroupReader(),
+			}
+			if got := New(opt); got == nil {
 				t.Errorf("NewPerformanceCollector() = %v", got)
 			}
 		})
@@ -76,9 +86,16 @@ func Test_collectContainerCPI(t *testing.T) {
 	mockMetricCache := mockmetriccache.NewMockMetricCache(ctrl)
 	cpuInfo := mockNodeCPUInfo()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
+	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, nil).AnyTimes()
 
-	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, nil, 1)
+	collector := New(&framework.Options{
+		Config:         framework.NewDefaultConfig(),
+		StatesInformer: mockStatesInformer,
+		MetricCache:    mockMetricCache,
+		CgroupReader:   resourceexecutor.NewCgroupReader(),
+	})
+	c := collector.(*performanceCollector)
 	assert.NotPanics(t, func() {
 		c.collectContainerCPI()
 	})
@@ -92,9 +109,16 @@ func Test_collectContainerCPI_cpuInfoErr(t *testing.T) {
 	mockMetricCache := mockmetriccache.NewMockMetricCache(ctrl)
 	cpuInfo := mockNodeCPUInfo()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
+	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, fmt.Errorf("cpu_error")).AnyTimes()
 
-	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, nil, 1)
+	collector := New(&framework.Options{
+		Config:         framework.NewDefaultConfig(),
+		StatesInformer: mockStatesInformer,
+		MetricCache:    mockMetricCache,
+		CgroupReader:   resourceexecutor.NewCgroupReader(),
+	})
+	c := collector.(*performanceCollector)
 	assert.NotPanics(t, func() {
 		c.collectContainerCPI()
 	})
@@ -110,9 +134,16 @@ func Test_collectContainerCPI_mockPod(t *testing.T) {
 	pod := mockPodMeta()
 	mockLSPod()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{pod}).AnyTimes()
+	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
 	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, nil).AnyTimes()
 
-	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, nil, 1)
+	collector := New(&framework.Options{
+		Config:         framework.NewDefaultConfig(),
+		StatesInformer: mockStatesInformer,
+		MetricCache:    mockMetricCache,
+		CgroupReader:   resourceexecutor.NewCgroupReader(),
+	})
+	c := collector.(*performanceCollector)
 	assert.NotPanics(t, func() {
 		c.collectContainerCPI()
 	})
@@ -149,7 +180,13 @@ func Test_getAndStartCollectorOnSingleContainer(t *testing.T) {
 	containerStatus := &corev1.ContainerStatus{
 		ContainerID: "containerd://test",
 	}
-	c := NewPerformanceCollector(nil, nil, nil, 0)
+	collector := New(&framework.Options{
+		Config:         framework.NewDefaultConfig(),
+		StatesInformer: nil,
+		MetricCache:    nil,
+		CgroupReader:   resourceexecutor.NewCgroupReader(),
+	})
+	c := collector.(*performanceCollector)
 	assert.NotPanics(t, func() {
 		_, err := c.getAndStartCollectorOnSingleContainer(tempDir, containerStatus, 0)
 		if err != nil {
@@ -172,7 +209,13 @@ func Test_profilePerfOnSingleContainer(t *testing.T) {
 	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
 	perfCollector, _ := perf.NewPerfCollector(f, []int{})
 
-	c := NewPerformanceCollector(nil, m, nil, 0)
+	collector := New(&framework.Options{
+		Config:         framework.NewDefaultConfig(),
+		StatesInformer: nil,
+		MetricCache:    m,
+		CgroupReader:   resourceexecutor.NewCgroupReader(),
+	})
+	c := collector.(*performanceCollector)
 	testingPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test_pod",
@@ -207,6 +250,8 @@ const (
 func Test_collectContainerPSI(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
+	dir := t.TempDir()
+	system.Conf.CgroupRootDir = dir
 
 	cgroupDir := t.TempDir()
 	mockStatesInformer := mockstatesinformer.NewMockStatesInformer(ctrl)
@@ -228,7 +273,13 @@ func Test_collectContainerPSI(t *testing.T) {
 		t.Fatalf("got error when create psi files: %v", errCreateIO)
 	}
 
-	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, resourceexecutor.NewCgroupReader(), 1)
+	collector := New(&framework.Options{
+		Config:         framework.NewDefaultConfig(),
+		StatesInformer: mockStatesInformer,
+		MetricCache:    mockMetricCache,
+		CgroupReader:   resourceexecutor.NewCgroupReader(),
+	})
+	c := collector.(*performanceCollector)
 	assert.NotPanics(t, func() {
 		c.collectContainerPSI()
 	})
@@ -237,6 +288,8 @@ func Test_collectContainerPSI(t *testing.T) {
 func Test_collectPodPSI(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
+	dir := t.TempDir()
+	system.Conf.CgroupRootDir = dir
 
 	cgroupDir := t.TempDir()
 	mockStatesInformer := mockstatesinformer.NewMockStatesInformer(ctrl)
@@ -258,7 +311,13 @@ func Test_collectPodPSI(t *testing.T) {
 		t.Fatalf("got error when create psi files: %v", errCreateIO)
 	}
 
-	c := NewPerformanceCollector(mockStatesInformer, mockMetricCache, resourceexecutor.NewCgroupReader(), 1)
+	collector := New(&framework.Options{
+		Config:         framework.NewDefaultConfig(),
+		StatesInformer: mockStatesInformer,
+		MetricCache:    mockMetricCache,
+		CgroupReader:   resourceexecutor.NewCgroupReader(),
+	})
+	c := collector.(*performanceCollector)
 	assert.NotPanics(t, func() {
 		c.collectPodPSI()
 	})
@@ -277,4 +336,43 @@ func createTestPSIFile(filePath, contents string) error {
 		return err
 	}
 	return nil
+}
+
+func mockLSPod() *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test-ns",
+			Name:      "test-name-ls",
+			UID:       "test-pod-uid-ls",
+			Labels: map[string]string{
+				apiext.LabelPodQoS: string(apiext.QoSLS),
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "test-container-1",
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+					},
+				},
+				{
+					Name: "test-container-2",
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI),
+						},
+					},
+				},
+			},
+		},
+	}
 }

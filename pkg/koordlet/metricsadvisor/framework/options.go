@@ -1,6 +1,3 @@
-//go:build !linux
-// +build !linux
-
 /*
 Copyright 2022 The Koordinator Authors.
 
@@ -17,9 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metricsadvisor
+package framework
 
-// initGPUDeviceManager will not retry if init fails,
-func initGPUDeviceManager() GPUDeviceManager {
-	return &dummyDeviceManager{}
+import (
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+)
+
+type Options struct {
+	Config         *Config
+	StatesInformer statesinformer.StatesInformer
+	MetricCache    metriccache.MetricCache
+	CgroupReader   resourceexecutor.CgroupReader
 }

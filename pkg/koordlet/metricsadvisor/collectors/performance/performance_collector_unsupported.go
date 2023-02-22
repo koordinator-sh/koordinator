@@ -17,22 +17,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metricsadvisor
+package performance
 
 import (
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 )
 
 type performanceCollector struct{}
 
-func NewPerformanceCollector(statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache, cgroupReader resourceexecutor.CgroupReader, collectTimeWindow int) *performanceCollector {
+func New(opt *framework.Options) framework.Collector {
 	return &performanceCollector{}
 }
 
-func (p *performanceCollector) collectContainerCPI() {}
+func (p *performanceCollector) Enabled() bool {
+	return false
+}
 
-func (c *performanceCollector) collectContainerPSI() {}
+func (p *performanceCollector) Setup(c *framework.Context) {}
 
-func (c *performanceCollector) collectPodPSI() {}
+func (p *performanceCollector) Run(stopCh <-chan struct{}) {}
+
+func (p *performanceCollector) Started() bool {
+	return false
+}
