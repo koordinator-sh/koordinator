@@ -489,6 +489,19 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 
 	boundPod := reservationObj.GetBoundPod()
 	podNamespacedName := types.NamespacedName{Namespace: boundPod.Namespace, Name: boundPod.Name}
+	podReady, result, err := r.waitForPodReady(ctx, job, podNamespacedName)
+	if err != nil {
+		return result, err
+	} else if !podReady {
+		return result, nil
+	}
+
+	msg := fmt.Sprintf("Bind pod %q is ready", podNamespacedName)
+	r.eventRecorder.Eventf(job, nil, corev1.EventTypeNormal, "BoundPodReady", "Migrating", msg)
+	if err := r.handleBoundPodReadySuccess(ctx, job); err != nil {
+		return reconcile.Result{}, err
+	}
+
 	job.Status.PodRef = boundPod
 	job.Status.Phase = sev1alpha1.PodMigrationJobSucceeded
 	job.Status.Status = "Complete"
@@ -787,6 +800,38 @@ func (r *Reconciler) waitForPodBindReservation(ctx context.Context, job *sev1alp
 	return true, reconcile.Result{}, nil
 }
 
+func (r *Reconciler) waitForPodReady(ctx context.Context, job *sev1alpha1.PodMigrationJob, podNamespacedName types.NamespacedName) (bool, reconcile.Result, error) {
+	klog.V(4).Infof("MigrationJob %s checks whether boundpod %q is ready", job.Name, podNamespacedName)
+	_, cond := util.GetCondition(&job.Status, sev1alpha1.PodMigrationJobConditionBoundPodReady)
+	if cond != nil && cond.Status == sev1alpha1.PodMigrationJobConditionStatusTrue {
+		return true, reconcile.Result{}, nil
+	}
+
+	podObj := &corev1.Pod{}
+	if err := r.Client.Get(ctx, podNamespacedName, podObj); err != nil {
+		if errors.IsNotFound(err) {
+			return true, reconcile.Result{}, nil
+		}
+		return false, reconcile.Result{RequeueAfter: defaultRequeueAfter}, fmt.Errorf("failed to get pod %q", podNamespacedName)
+	}
+
+	if isReady := k8spodutil.IsPodReady(podObj); !isReady {
+		cond = &sev1alpha1.PodMigrationJobCondition{
+			Type:   sev1alpha1.PodMigrationJobConditionBoundPodReady,
+			Status: sev1alpha1.PodMigrationJobConditionStatusFalse,
+			Reason: sev1alpha1.PodMigrationJobReasonWaitForBoundPodReady,
+		}
+		err := r.updateCondition(ctx, job, cond)
+		if err == nil {
+			msg := fmt.Sprintf("Waiting for Bound Pod %s/%s Ready", podObj.Namespace, podObj.Name)
+			r.eventRecorder.Eventf(job, nil, corev1.EventTypeNormal, sev1alpha1.PodMigrationJobReasonWaitForBoundPodReady, "Migrating", msg)
+		}
+		return false, reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
+	}
+
+	return true, reconcile.Result{}, nil
+}
+
 func (r *Reconciler) evictPodDirectly(ctx context.Context, job *sev1alpha1.PodMigrationJob) (reconcile.Result, error) {
 	podNamespacedName := types.NamespacedName{Namespace: job.Spec.PodRef.Namespace, Name: job.Spec.PodRef.Name}
 	klog.V(4).Infof("MigrationJob %s try to evict Pod %q directly", job.Name, podNamespacedName)
@@ -973,6 +1018,14 @@ func (r *Reconciler) setReservationOrder(ctx context.Context, job *sev1alpha1.Po
 func (r *Reconciler) handleReservationCreateSuccess(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
 	cond := &sev1alpha1.PodMigrationJobCondition{
 		Type:   sev1alpha1.PodMigrationJobConditionReservationCreated,
+		Status: sev1alpha1.PodMigrationJobConditionStatusTrue,
+	}
+	return r.updateCondition(ctx, job, cond)
+}
+
+func (r *Reconciler) handleBoundPodReadySuccess(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
+	cond := &sev1alpha1.PodMigrationJobCondition{
+		Type:   sev1alpha1.PodMigrationJobConditionBoundPodReady,
 		Status: sev1alpha1.PodMigrationJobConditionStatusTrue,
 	}
 	return r.updateCondition(ctx, job, cond)
