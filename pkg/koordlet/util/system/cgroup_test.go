@@ -18,6 +18,7 @@ package system
 
 import (
 	"math"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -233,6 +234,76 @@ func TestCalcCPUThrottledRatio(t *testing.T) {
 			if got := CalcCPUThrottledRatio(tt.args.curPoint, tt.args.prePoint); got != tt.want {
 				t.Errorf("CalcCPUThrottledRatio() = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestCgroupPathExist(t *testing.T) {
+	type fields struct {
+		isV2         bool
+		creatfile    bool
+		filename     string
+		subfs        string
+		resourceType ResourceType
+	}
+	tests := []struct {
+		name      string
+		fields    fields
+		wantExist bool
+	}{
+		{
+			name: "V1 Cgroup path exist",
+			fields: fields{
+				isV2:         false,
+				creatfile:    true,
+				filename:     "cpu.my_test_cgroup",
+				subfs:        CgroupCPUDir,
+				resourceType: ResourceType("cpu.my_test_cgroup"),
+			},
+			wantExist: true,
+		},
+		{
+			name: "v2 Cgroup path exist",
+			fields: fields{
+				isV2:         true,
+				creatfile:    true,
+				filename:     "cpu.my_test_cgroup",
+				subfs:        CgroupV2Dir,
+				resourceType: ResourceType("cpu.my_test_cgroup"),
+			},
+			wantExist: true,
+		},
+		{
+			name: "Cgroup file no exist",
+			fields: fields{
+				isV2:         false,
+				creatfile:    false,
+				filename:     "memory.my_test_cgroup",
+				subfs:        CgroupMemDir,
+				resourceType: ResourceType("memory.my_test_cgroup"),
+			},
+			wantExist: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testHelper := NewFileTestUtil(t)
+			defer testHelper.Cleanup()
+
+			var r Resource
+			if tt.fields.isV2 {
+				r = DefaultFactory.NewV2(tt.fields.resourceType, tt.fields.filename)
+			} else {
+				r = DefaultFactory.New(tt.fields.filename, tt.fields.subfs)
+			}
+			if tt.fields.creatfile {
+				testHelper.CreateCgroupFile("", r)
+			} else {
+				testHelper.MkDirAll(filepath.Dir(r.Path("")))
+			}
+
+			isExist, _ := IsCgroupPathExist("", r)
+			assert.Equal(t, tt.wantExist, isExist)
 		})
 	}
 }

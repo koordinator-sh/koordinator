@@ -28,6 +28,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
@@ -36,13 +37,15 @@ import (
 type performanceCollector struct {
 	statesInformer    statesinformer.StatesInformer
 	metricCache       metriccache.MetricCache
+	cgroupReader      resourceexecutor.CgroupReader
 	collectTimeWindow int
 }
 
-func NewPerformanceCollector(statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache, collectTimeWindow int) *performanceCollector {
+func NewPerformanceCollector(statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache, cgroupReader resourceexecutor.CgroupReader, collectTimeWindow int) *performanceCollector {
 	return &performanceCollector{
 		statesInformer:    statesInformer,
 		metricCache:       metricCache,
+		cgroupReader:      cgroupReader,
 		collectTimeWindow: collectTimeWindow,
 	}
 }
@@ -175,7 +178,12 @@ func (c *performanceCollector) collectContainerPSI() {
 
 func (c *performanceCollector) collectSingleContainerPSI(podParentCgroupDir string, containerStatus *corev1.ContainerStatus, pod *corev1.Pod) {
 	collectTime := time.Now()
-	containerPSI, err := util.GetContainerPSI(podParentCgroupDir, containerStatus)
+	containerPath, err := util.GetContainerCgroupPathWithKube(podParentCgroupDir, containerStatus)
+	if err != nil {
+		klog.Errorf("failed to get container path for container %v/%v/%v cgroup path failed, error: %v", pod.Namespace, pod.Name, containerStatus.Name, err)
+		return
+	}
+	containerPSI, err := c.cgroupReader.ReadPSI(containerPath)
 	if err != nil {
 		klog.Errorf("collect container %s psi err: %v", containerStatus.Name, err)
 		return
@@ -223,9 +231,10 @@ func (c *performanceCollector) collectPodPSI() {
 
 func (c *performanceCollector) collectSinglePodPSI(pod *corev1.Pod, podCgroupDir string) {
 	collectTime := time.Now()
-	podPSI, err := util.GetPodPSI(podCgroupDir)
+	paths := util.GetPodCgroupDirWithKube(podCgroupDir)
+	podPSI, err := c.cgroupReader.ReadPSI(paths)
 	if err != nil {
-		klog.Errorf("collect pod %s psi err: %v", pod.Name, err)
+		klog.Errorf("collect pod %v/%v psi err: %v", pod.Namespace, pod.Name, err)
 		return
 	}
 	podPsiMetric := &metriccache.PodInterferenceMetric{

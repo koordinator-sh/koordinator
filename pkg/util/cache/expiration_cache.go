@@ -80,14 +80,11 @@ func (c *Cache) gcExpiredCache() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	gcTime := time.Now()
-	var gcKeys []string
+
 	for key, item := range c.items {
 		if gcTime.After(item.expirationTime) {
-			gcKeys = append(gcKeys, key)
+			delete(c.items, key)
 		}
-	}
-	for _, key := range gcKeys {
-		delete(c.items, key)
 	}
 	klog.V(4).Infof("gc resource update executor, current size %v", len(c.items))
 }

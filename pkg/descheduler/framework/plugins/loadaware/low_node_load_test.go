@@ -19,7 +19,9 @@ package loadaware
 import (
 	"context"
 	"testing"
+	"time"
 
+	gocache "github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	policy "k8s.io/api/policy/v1beta1"
@@ -27,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	coretesting "k8s.io/client-go/testing"
@@ -1020,6 +1023,9 @@ func TestLowNodeUtilization(t *testing.T) {
 				HighThresholds:         tt.targetThresholds,
 				UseDeviationThresholds: tt.useDeviationThresholds,
 				EvictableNamespaces:    tt.evictableNamespaces,
+				AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+					ConsecutiveAbnormalities: 1,
+				},
 			}
 
 			koordClientSet := koordfake.NewSimpleClientset()
@@ -1039,6 +1045,274 @@ func TestLowNodeUtilization(t *testing.T) {
 			if tt.expectedPodsEvicted != podsEvicted {
 				t.Errorf("Expected %v pods to be evicted but %v got evicted", tt.expectedPodsEvicted, podsEvicted)
 			}
+		})
+	}
+}
+
+func TestOverUtilizedEvictionReason(t *testing.T) {
+	tests := []struct {
+		name             string
+		targetThresholds ResourceThresholds
+		node             *corev1.Node
+		usage            map[corev1.ResourceName]*resource.Quantity
+		want             string
+	}{
+		{
+			name: "cpu overutilized",
+			targetThresholds: deschedulerconfig.ResourceThresholds{
+				corev1.ResourceCPU:    50,
+				corev1.ResourceMemory: 50,
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("96"),
+						corev1.ResourceMemory: resource.MustParse("512Gi"),
+					},
+				},
+			},
+			usage: map[corev1.ResourceName]*resource.Quantity{
+				corev1.ResourceCPU:    resource.NewMilliQuantity(64*1000, resource.DecimalSI),
+				corev1.ResourceMemory: resource.NewQuantity(32*1024*1024*1024, resource.BinarySI),
+			},
+			want: "node is overutilized, cpu usage(66.67%)>threshold(50.00%)",
+		},
+		{
+			name: "both cpu and memory overutilized",
+			targetThresholds: deschedulerconfig.ResourceThresholds{
+				corev1.ResourceCPU:    50,
+				corev1.ResourceMemory: 50,
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("96"),
+						corev1.ResourceMemory: resource.MustParse("512Gi"),
+					},
+				},
+			},
+			usage: map[corev1.ResourceName]*resource.Quantity{
+				corev1.ResourceCPU:    resource.NewMilliQuantity(64*1000, resource.DecimalSI),
+				corev1.ResourceMemory: resource.NewQuantity(400*1024*1024*1024, resource.BinarySI),
+			},
+			want: "node is overutilized, cpu usage(66.67%)>threshold(50.00%), memory usage(78.12%)>threshold(50.00%)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeUsage := &NodeUsage{
+				node:  tt.node,
+				usage: tt.usage,
+			}
+
+			resourceNames := getResourceNames(tt.targetThresholds)
+			nodeThresholds := getNodeThresholds(map[string]*NodeUsage{"test-node": nodeUsage}, nil, tt.targetThresholds, resourceNames, false)
+
+			evictionReasonGenerator := overUtilizedEvictionReason(tt.targetThresholds)
+			got := evictionReasonGenerator(NodeInfo{
+				NodeUsage:  nodeUsage,
+				thresholds: nodeThresholds["test-node"],
+			})
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_filterNodes(t *testing.T) {
+	tests := []struct {
+		name         string
+		nodeSelector *metav1.LabelSelector
+		nodes        []*corev1.Node
+		want         []*corev1.Node
+		wantErr      bool
+	}{
+		{
+			name: "empty selector",
+			nodes: []*corev1.Node{
+				test.BuildTestNode("test-node-1", 4000, 3000, 9, nil),
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, nil),
+			},
+			want: []*corev1.Node{
+				test.BuildTestNode("test-node-1", 4000, 3000, 9, nil),
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, nil),
+			},
+			wantErr: false,
+		},
+		{
+			name: "matched selector",
+			nodeSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test": "true",
+				},
+			},
+			nodes: []*corev1.Node{
+				test.BuildTestNode("test-node-1", 4000, 3000, 9, nil),
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, func(node *corev1.Node) {
+					if node.Labels == nil {
+						node.Labels = map[string]string{}
+					}
+					node.Labels["test"] = "true"
+				}),
+			},
+			want: []*corev1.Node{
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, func(node *corev1.Node) {
+					if node.Labels == nil {
+						node.Labels = map[string]string{}
+					}
+					node.Labels["test"] = "true"
+				}),
+			},
+			wantErr: false,
+		},
+		{
+			name: "unmatched selector",
+			nodeSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test": "true",
+				},
+			},
+			nodes: []*corev1.Node{
+				test.BuildTestNode("test-node-1", 4000, 3000, 9, nil),
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, nil),
+			},
+			want:    []*corev1.Node{},
+			wantErr: false,
+		},
+		{
+			name: "invalid selector",
+			nodeSelector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "test",
+						Operator: metav1.LabelSelectorOperator("non-exist-operator"),
+					},
+				},
+			},
+			nodes: []*corev1.Node{
+				test.BuildTestNode("test-node-1", 4000, 3000, 9, nil),
+				test.BuildTestNode("test-node-2", 4000, 3000, 10, nil),
+			},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := filterNodes(tt.nodeSelector, tt.nodes)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("expect wantErr=%v, but got=%v", tt.wantErr, err)
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_markNormalNodes(t *testing.T) {
+	node := NodeInfo{
+		NodeUsage: &NodeUsage{
+			node: test.BuildTestNode("test-node-", 4000, 3000, 10, nil),
+		},
+	}
+	sourceNodes := []NodeInfo{node}
+
+	condition := &deschedulerconfig.LoadAnomalyCondition{
+		ConsecutiveAbnormalities: 2,
+	}
+	nodeAnomalyDetectors := gocache.New(5*time.Minute, 5*time.Minute)
+	for i := 0; i < int(condition.ConsecutiveAbnormalities); i++ {
+		filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, condition)
+	}
+	abnormalNodes := filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, condition)
+	assert.Equal(t, sourceNodes, abnormalNodes)
+
+	markNormalNodes(sourceNodes, nodeAnomalyDetectors)
+	abnormalNodes = filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, condition)
+	assert.Equal(t, []NodeInfo(nil), abnormalNodes)
+}
+
+func Test_filterRealAbnormalNodes(t *testing.T) {
+	tests := []struct {
+		name             string
+		sourceNodes      []string
+		abnormalNodes    []string
+		anomalyCondition *deschedulerconfig.LoadAnomalyCondition
+		detectCounts     int
+		want             []string
+	}{
+		{
+			name:        "ConsecutiveAbnormalities 1 times and detected abnormality",
+			sourceNodes: []string{"test-node-1", "test-node-2"},
+			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+				ConsecutiveAbnormalities: 1,
+			},
+			want: []string{"test-node-1", "test-node-2"},
+		},
+		{
+			name:        "ConsecutiveAbnormalities 2 times and did not detect abnormality",
+			sourceNodes: []string{"test-node-1", "test-node-2"},
+			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+				ConsecutiveAbnormalities: 2,
+			},
+			want: nil,
+		},
+		{
+			name:        "ConsecutiveAbnormalities 2 times and detect 2 times",
+			sourceNodes: []string{"test-node-1", "test-node-2"},
+			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+				ConsecutiveAbnormalities: 2,
+			},
+			detectCounts: 2,
+			want:         []string{"test-node-1", "test-node-2"},
+		},
+		{
+			name:          "mix abnormal nodes and normal nodes",
+			sourceNodes:   []string{"test-node-1", "test-node-2"},
+			abnormalNodes: []string{"test-node-2"},
+			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+				ConsecutiveAbnormalities: 2,
+			},
+			want: []string{"test-node-2"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			abnormalNodes := sets.NewString(tt.abnormalNodes...)
+			var sourceNodes []NodeInfo
+			var alreadyAbnormalNodes []NodeInfo
+			for _, v := range tt.sourceNodes {
+				node := NodeInfo{
+					NodeUsage: &NodeUsage{
+						node: test.BuildTestNode(v, 4000, 3000, 10, nil),
+					},
+				}
+				sourceNodes = append(sourceNodes, node)
+				if abnormalNodes.Has(v) {
+					alreadyAbnormalNodes = append(alreadyAbnormalNodes, node)
+				}
+			}
+			nodeAnomalyDetectors := gocache.New(5*time.Minute, 5*time.Minute)
+
+			for i := 0; i < int(tt.anomalyCondition.ConsecutiveAbnormalities); i++ {
+				filterRealAbnormalNodes(alreadyAbnormalNodes, nodeAnomalyDetectors, tt.anomalyCondition)
+			}
+
+			for i := 0; i < tt.detectCounts; i++ {
+				filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, tt.anomalyCondition)
+			}
+
+			got := filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, tt.anomalyCondition)
+			var gotNodes []string
+			for _, v := range got {
+				gotNodes = append(gotNodes, v.node.Name)
+			}
+			assert.Equal(t, tt.want, gotNodes)
 		})
 	}
 }

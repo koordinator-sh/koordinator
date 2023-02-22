@@ -24,15 +24,19 @@ import (
 	"reflect"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
+	topologylister "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
@@ -60,6 +64,9 @@ type nodeTopoInformer struct {
 	metricCache    metriccache.MetricCache
 	callbackRunner *callbackRunner
 
+	nodeResourceTopologyInformer cache.SharedIndexInformer
+	nodeResourceTopologyLister   topologylister.NodeResourceTopologyLister
+
 	kubelet      KubeletStub
 	nodeInformer *nodeInformer
 	podsInformer *podsInformer
@@ -81,6 +88,9 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 	s.metricCache = state.metricCache
 	s.callbackRunner = state.callbackRunner
 
+	s.nodeResourceTopologyInformer = newNodeResourceTopologyInformer(ctx.TopoClient, ctx.NodeName)
+	s.nodeResourceTopologyLister = topologylister.NewNodeResourceTopologyLister(s.nodeResourceTopologyInformer.GetIndexer())
+
 	nodeInformerIf := state.informerPlugins[nodeInformerName]
 	nodeInformer, ok := nodeInformerIf.(*nodeInformer)
 	if !ok {
@@ -98,30 +108,72 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 
 func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 	klog.V(2).Infof("starting node topo informer")
+
 	if !cache.WaitForCacheSync(stopCh, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
-		klog.Fatalf("timed out waiting for pod caches to sync")
+		klog.Fatalf("timed out waiting for caches to sync")
 	}
+	if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+		go s.nodeResourceTopologyInformer.Run(stopCh)
+		if !cache.WaitForCacheSync(stopCh, s.nodeResourceTopologyInformer.HasSynced) {
+			klog.Fatalf("timed out waiting for Topology cache to sync")
+		}
+	}
+
 	if s.config.NodeTopologySyncInterval <= 0 {
 		return
 	}
+
 	stub, err := newKubeletStubFromConfig(s.nodeInformer.GetNode(), s.config)
 	if err != nil {
 		klog.Fatalf("create kubelet stub, %v", err)
 	}
 	s.kubelet = stub
+
 	go wait.Until(s.reportNodeTopology, s.config.NodeTopologySyncInterval, stopCh)
 	klog.V(2).Infof("node topo informer started")
 }
 
 func (s *nodeTopoInformer) HasSynced() bool {
-	return true
+	// TODO only node cpu info collector relies on node topo informer
+	klog.V(5).Infof("nodeTopoInformer ready to start")
+	if !features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+		return true
+	}
+	if s.nodeResourceTopologyInformer == nil {
+		return false
+	}
+	synced := s.nodeResourceTopologyInformer.HasSynced()
+	klog.V(5).Infof("node Topo informer has synced %v", synced)
+	return synced
 }
 
+func newNodeResourceTopologyInformer(client topologyclientset.Interface, nodeName string) cache.SharedIndexInformer {
+	tweakListOptionsFunc := func(opt *metav1.ListOptions) {
+		opt.FieldSelector = "metadata.name=" + nodeName
+	}
+
+	return cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				tweakListOptionsFunc(&options)
+				return client.TopologyV1alpha1().NodeResourceTopologies().List(context.TODO(), options)
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				tweakListOptionsFunc(&options)
+				return client.TopologyV1alpha1().NodeResourceTopologies().Watch(context.TODO(), options)
+			},
+		},
+		&topov1alpha1.NodeResourceTopology{},
+		time.Hour*12,
+		cache.Indexers{},
+	)
+}
 func (s *nodeTopoInformer) createNodeTopoIfNotExist() {
 	node := s.nodeInformer.GetNode()
 	topologyName := node.Name
 	ctx := context.TODO()
-	_, err := s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, topologyName, metav1.GetOptions{ResourceVersion: "0"})
+
+	_, err := s.nodeResourceTopologyLister.Get(topologyName)
 	if err == nil {
 		return
 	}
@@ -307,14 +359,13 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		return
 	}
 
-	ctx := context.TODO()
 	node := s.nodeInformer.GetNode()
 	err = util.RetryOnConflictOrTooManyRequests(func() error {
 		var nodeResourceTopology *v1alpha1.NodeResourceTopology
 		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
-			nodeResourceTopology, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, node.Name, metav1.GetOptions{ResourceVersion: "0"})
+			nodeResourceTopology, err = s.nodeResourceTopologyLister.Get(node.Name)
 			if err != nil {
-				klog.Errorf("failed to get node resource topology %s, err: %v", node.Name, err)
+				klog.Errorf("failed to get %s nodeTopo: %v", node.Name, err)
 				return err
 			}
 		} else {
@@ -330,18 +381,16 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		}
 
 		if isSyncNeeded(s.nodeTopology, nodeResourceTopology, node.Name) {
-			// TODO: use a NodeResourceTopology informer
+			// do UPDATE
 			s.updateNodeTopo(nodeResourceTopology)
 
-			// do UPDATE
 			if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 				_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
 				if err != nil {
-					klog.Errorf("failed to update cpu info of node %s, err: %v", node.Name, err)
+					klog.Errorf("failed to report topology of node %s, err: %v", node.Name, err)
 					return err
 				}
 			}
-			return nil
 		}
 		return nil
 	})
@@ -373,13 +422,22 @@ func isEqualTopo(OldTopo map[string]string, NewTopo map[string]string) bool {
 	keyslice := []string{extension.AnnotationKubeletCPUManagerPolicy, extension.AnnotationNodeCPUSharedPools,
 		extension.AnnotationNodeCPUTopology, extension.AnnotationNodeCPUAllocs}
 	for _, key := range keyslice {
-		err := json.Unmarshal([]byte(OldTopo[key]), &OldData)
+		oldValue, oldExist := OldTopo[key]
+		newValue, newExist := NewTopo[key]
+		if !oldExist && !newExist {
+			// both not exist, no need to compare this key
+			continue
+		} else if oldExist != newExist {
+			// (oldExist = true, newExist = false) OR (oldExist = false, newExist = true), node topo not equal
+			return false
+		} // else both exist in new and old, compare value
+		err := json.Unmarshal([]byte(oldValue), &OldData)
 		if err != nil {
-			klog.Errorf("failed to unmarshal, err: %v,and key: %v", err, key)
+			klog.V(5).Infof("failed to unmarshal, err: %v,and key: %v", err, key)
 		}
-		err1 := json.Unmarshal([]byte(NewTopo[key]), &NewData)
+		err1 := json.Unmarshal([]byte(newValue), &NewData)
 		if err1 != nil {
-			klog.Errorf("failed to unmarshal, err: %v,and key: %v", err1, key)
+			klog.V(5).Infof("failed to unmarshal, err: %v,and key: %v", err1, key)
 		}
 		if !reflect.DeepEqual(OldData, NewData) {
 			return false

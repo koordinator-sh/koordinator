@@ -19,7 +19,11 @@ package loadaware
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
+	"time"
 
+	gocache "github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,6 +40,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	nodeutil "github.com/koordinator-sh/koordinator/pkg/descheduler/node"
 	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/anomaly"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
 const (
@@ -47,10 +53,11 @@ var _ framework.BalancePlugin = &LowNodeLoad{}
 // LowNodeLoad evicts pods from overutilized nodes to underutilized nodes.
 // Note that the plugin refers to the actual usage of the node.
 type LowNodeLoad struct {
-	handle           framework.Handle
-	podFilter        framework.FilterFunc
-	nodeMetricLister koordslolisters.NodeMetricLister
-	args             *deschedulerconfig.LowNodeLoadArgs
+	handle               framework.Handle
+	podFilter            framework.FilterFunc
+	nodeMetricLister     koordslolisters.NodeMetricLister
+	args                 *deschedulerconfig.LowNodeLoadArgs
+	nodeAnomalyDetectors *gocache.Cache
 }
 
 // NewLowNodeLoad builds plugin from its arguments while passing a handle
@@ -69,13 +76,16 @@ func NewLowNodeLoad(args runtime.Object, handle framework.Handle) (framework.Plu
 	}
 
 	var excludedNamespaces sets.String
+	var includedNamespaces sets.String
 	if loadLoadUtilizationArgs.EvictableNamespaces != nil {
 		excludedNamespaces = sets.NewString(loadLoadUtilizationArgs.EvictableNamespaces.Exclude...)
+		includedNamespaces = sets.NewString(loadLoadUtilizationArgs.EvictableNamespaces.Include...)
 	}
 
 	podFilter, err := podutil.NewOptions().
 		WithFilter(podutil.WrapFilterFuncs(handle.Evictor().Filter, podSelectorFn)).
 		WithoutNamespaces(excludedNamespaces).
+		WithNamespaces(includedNamespaces).
 		BuildFilterFunc()
 	if err != nil {
 		return nil, fmt.Errorf("error initializing pod filter function: %v", err)
@@ -98,16 +108,19 @@ func NewLowNodeLoad(args runtime.Object, handle framework.Handle) (framework.Plu
 	koordSharedInformerFactory.Start(context.TODO().Done())
 	koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
 
+	nodeAnomalyDetectors := gocache.New(5*time.Minute, 5*time.Minute)
+
 	return &LowNodeLoad{
-		handle:           handle,
-		nodeMetricLister: nodeMetricInformer.Lister(),
-		args:             loadLoadUtilizationArgs,
-		podFilter:        podFilter,
+		handle:               handle,
+		nodeMetricLister:     nodeMetricInformer.Lister(),
+		args:                 loadLoadUtilizationArgs,
+		podFilter:            podFilter,
+		nodeAnomalyDetectors: nodeAnomalyDetectors,
 	}, nil
 }
 
 // Name retrieves the plugin name
-func (l *LowNodeLoad) Name() string {
+func (pl *LowNodeLoad) Name() string {
 	return LowLoadUtilizationName
 }
 
@@ -120,15 +133,25 @@ func (l *LowNodeLoad) Name() string {
 //  it is possible that the utilization rate of the filtered Pods is higher than that of the candidate Pods to be descheduled.
 
 // Balance extension point implementation for the plugin
-func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framework.Status {
-	nodes, err := filterNodes(l.args.NodeSelector, nodes)
+func (pl *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framework.Status {
+	if pl.args.Paused {
+		klog.Infof("LowNodeLoad is paused and will do nothing.")
+		return nil
+	}
+
+	nodes, err := filterNodes(pl.args.NodeSelector, nodes)
 	if err != nil {
 		return &framework.Status{Err: err}
 	}
-	lowThresholds, highThresholds := newThresholds(l.args)
+	if len(nodes) == 0 {
+		klog.Infof("No nodes to process LowNodeLoad")
+		return nil
+	}
+
+	lowThresholds, highThresholds := newThresholds(pl.args)
 	resourceNames := getResourceNames(lowThresholds)
-	nodeUsages := getNodeUsage(nodes, resourceNames, l.nodeMetricLister, l.handle.GetPodsAssignedToNodeFunc())
-	nodeThresholds := getNodeThresholds(nodeUsages, lowThresholds, highThresholds, resourceNames, l.args.UseDeviationThresholds)
+	nodeUsages := getNodeUsage(nodes, resourceNames, pl.nodeMetricLister, pl.handle.GetPodsAssignedToNodeFunc())
+	nodeThresholds := getNodeThresholds(nodeUsages, lowThresholds, highThresholds, resourceNames, pl.args.UseDeviationThresholds)
 	lowNodes, sourceNodes := classifyNodes(nodeUsages, nodeThresholds, lowThresholdFilter, highThresholdFilter)
 
 	logUtilizationCriteria("Criteria for a node under low thresholds", lowThresholds, len(lowNodes))
@@ -139,8 +162,10 @@ func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framew
 		return nil
 	}
 
-	if len(lowNodes) <= int(l.args.NumberOfNodes) {
-		klog.V(4).InfoS("Number of nodes underutilized is less or equal than NumberOfNodes, nothing to do here", "underutilizedNodes", len(lowNodes), "numberOfNodes", l.args.NumberOfNodes)
+	markNormalNodes(lowNodes, pl.nodeAnomalyDetectors)
+
+	if len(lowNodes) <= int(pl.args.NumberOfNodes) {
+		klog.V(4).InfoS("Number of nodes underutilized is less or equal than NumberOfNodes, nothing to do here", "underutilizedNodes", len(lowNodes), "numberOfNodes", pl.args.NumberOfNodes)
 		return nil
 	}
 
@@ -154,8 +179,15 @@ func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framew
 		return nil
 	}
 
+	abnormalNodes := filterRealAbnormalNodes(sourceNodes, pl.nodeAnomalyDetectors, pl.args.AnomalyCondition)
+	if len(abnormalNodes) == 0 {
+		klog.V(4).InfoS("None of the nodes were detected as anomalous, nothing to do here")
+		return nil
+	}
+
 	continueEvictionCond := func(nodeInfo NodeInfo, totalAvailableUsages map[corev1.ResourceName]*resource.Quantity) bool {
-		if !isNodeOverutilized(nodeInfo.NodeUsage.usage, nodeInfo.thresholds.highResourceThreshold) {
+		if _, overutilized := isNodeOverutilized(nodeInfo.NodeUsage.usage, nodeInfo.thresholds.highResourceThreshold); !overutilized {
+			markNormalNodes([]NodeInfo{nodeInfo}, pl.nodeAnomalyDetectors)
 			return false
 		}
 		for _, resourceName := range resourceNames {
@@ -168,19 +200,58 @@ func (l *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *framew
 		return true
 	}
 
-	sortNodes(sourceNodes, false)
+	resourceToWeightMap := sorter.GenDefaultResourceToWeightMap(resourceNames)
+	sortNodesByUsage(abnormalNodes, resourceToWeightMap, false)
+
 	evictPodsFromSourceNodes(
 		ctx,
-		sourceNodes,
+		abnormalNodes,
 		lowNodes,
-		l.args.NodeFit,
-		l.handle.Evictor(),
-		l.podFilter,
-		l.handle.GetPodsAssignedToNodeFunc(),
+		pl.args.DryRun,
+		pl.args.NodeFit,
+		pl.handle.Evictor(),
+		pl.podFilter,
+		pl.handle.GetPodsAssignedToNodeFunc(),
 		resourceNames,
-		continueEvictionCond)
+		continueEvictionCond,
+		overUtilizedEvictionReason(highThresholds),
+	)
 
 	return nil
+}
+
+func markNormalNodes(lowNodes []NodeInfo, nodeAnomalyDetectors *gocache.Cache) {
+	for _, v := range lowNodes {
+		if obj, ok := nodeAnomalyDetectors.Get(v.node.Name); ok {
+			anomalyDetector := obj.(anomaly.Detector)
+			anomalyDetector.Mark(true)
+		}
+	}
+}
+
+func filterRealAbnormalNodes(sourceNodes []NodeInfo, nodeAnomalyDetectors *gocache.Cache, anomalyCondition *deschedulerconfig.LoadAnomalyCondition) []NodeInfo {
+	if anomalyCondition == nil || anomalyCondition.ConsecutiveAbnormalities == 1 {
+		return sourceNodes
+	}
+	var abnormalNodes []NodeInfo
+	for _, v := range sourceNodes {
+		obj, ok := nodeAnomalyDetectors.Get(v.node.Name)
+		if !ok {
+			opts := anomaly.Options{
+				Timeout: anomalyCondition.Timeout.Duration,
+				AnomalyConditionFn: func(counter anomaly.Counter) bool {
+					return counter.ConsecutiveAbnormalities > anomalyCondition.ConsecutiveAbnormalities
+				},
+			}
+			obj = anomaly.NewBasicDetector(v.node.Name, opts)
+		}
+		anomalyDetector := obj.(anomaly.Detector)
+		if state, _ := anomalyDetector.Mark(false); state == anomaly.StateAnomaly {
+			abnormalNodes = append(abnormalNodes, v)
+		}
+		nodeAnomalyDetectors.Set(v.node.Name, anomalyDetector, gocache.DefaultExpiration)
+	}
+	return abnormalNodes
 }
 
 func newThresholds(args *deschedulerconfig.LowNodeLoadArgs) (thresholds, highThresholds deschedulerconfig.ResourceThresholds) {
@@ -223,7 +294,8 @@ func lowThresholdFilter(usage *NodeUsage, threshold NodeThresholds) bool {
 }
 
 func highThresholdFilter(usage *NodeUsage, threshold NodeThresholds) bool {
-	return isNodeOverutilized(usage.usage, threshold.highResourceThreshold)
+	_, overutilized := isNodeOverutilized(usage.usage, threshold.highResourceThreshold)
+	return overutilized
 }
 
 func filterNodes(nodeSelector *metav1.LabelSelector, nodes []*corev1.Node) ([]*corev1.Node, error) {
@@ -231,7 +303,7 @@ func filterNodes(nodeSelector *metav1.LabelSelector, nodes []*corev1.Node) ([]*c
 		return nodes, nil
 	}
 	selector, err := metav1.LabelSelectorAsSelector(nodeSelector)
-	if err == nil {
+	if err != nil {
 		return nil, err
 	}
 	r := make([]*corev1.Node, 0, len(nodes))
@@ -276,4 +348,22 @@ func logUtilizationCriteria(message string, thresholds deschedulerconfig.Resourc
 		utilizationCriteria = append(utilizationCriteria, string(name), int64(thresholds[name]))
 	}
 	klog.InfoS(message, utilizationCriteria...)
+}
+
+func overUtilizedEvictionReason(highThresholds deschedulerconfig.ResourceThresholds) evictionReasonGeneratorFn {
+	resourceNames := getResourceNames(highThresholds)
+	sort.Slice(resourceNames, func(i, j int) bool {
+		return resourceNames[i] < resourceNames[j]
+	})
+	return func(nodeInfo NodeInfo) string {
+		overutilizedResources, _ := isNodeOverutilized(nodeInfo.usage, nodeInfo.thresholds.highResourceThreshold)
+		usagePercentages := resourceUsagePercentages(nodeInfo.NodeUsage)
+		var infos []string
+		for _, resourceName := range resourceNames {
+			if _, ok := overutilizedResources[resourceName]; ok {
+				infos = append(infos, fmt.Sprintf("%s usage(%.2f%%)>threshold(%.2f%%)", resourceName, usagePercentages[resourceName], highThresholds[resourceName]))
+			}
+		}
+		return fmt.Sprintf("node is overutilized, %s", strings.Join(infos, ", "))
+	}
 }

@@ -19,6 +19,8 @@ package deviceshare
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -475,15 +477,7 @@ func Test_nodeDeviceCache_onPodDelete(t *testing.T) {
 							},
 						},
 					},
-					deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
-						schedulingv1alpha1.GPU: {
-							1: corev1.ResourceList{
-								apiext.GPUCore:        resource.MustParse("0"),
-								apiext.GPUMemoryRatio: resource.MustParse("0"),
-								apiext.GPUMemory:      resource.MustParse("0"),
-							},
-						},
-					},
+					deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{},
 					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{
 						schedulingv1alpha1.GPU: {},
 					},
@@ -498,7 +492,13 @@ func Test_nodeDeviceCache_onPodDelete(t *testing.T) {
 				deviceCache = newNodeDeviceCache()
 			}
 			deviceCache.onPodDelete(tt.pod)
-			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
+			stateCmpOpts := []cmp.Option{
+				cmp.AllowUnexported(nodeDevice{}),
+				cmpopts.IgnoreFields(nodeDevice{}, "lock"),
+			}
+			if diff := cmp.Diff(tt.wantCache, deviceCache.nodeDeviceInfos, stateCmpOpts...); diff != "" {
+				t.Errorf("nodeDeviceCache does not match (-want,+got):\n%s", diff)
+			}
 		})
 	}
 }

@@ -124,7 +124,7 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	go configextensions.RunQOSGreyCtrlPlugins(r.kubeClient, stopCh)
 
 	if !cache.WaitForCacheSync(stopCh, r.statesInformer.HasSynced) {
-		return fmt.Errorf("time out waiting for kubelet meta service caches to sync")
+		return fmt.Errorf("time out waiting for states informer caches to sync")
 	}
 
 	cgroupResourceReconcile := NewCgroupResourcesReconcile(r)
@@ -137,6 +137,10 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	cpuBurst := NewCPUBurst(r)
 	util.RunFeatureWithInit(func() error { return cpuBurst.init(stopCh) }, cpuBurst.start,
 		[]featuregate.Feature{features.CPUBurst}, r.config.ReconcileIntervalSeconds, stopCh)
+
+	systemConfigReconcile := NewSystemConfig(r)
+	util.RunFeatureWithInit(func() error { return systemConfigReconcile.RunInit(stopCh) }, systemConfigReconcile.reconcile,
+		[]featuregate.Feature{features.SystemConfig}, r.config.ReconcileIntervalSeconds, stopCh)
 
 	cpuEvictor := NewCPUEvictor(r)
 	util.RunFeature(cpuEvictor.cpuEvict, []featuregate.Feature{features.BECPUEvict}, r.config.CPUEvictIntervalSeconds, stopCh)

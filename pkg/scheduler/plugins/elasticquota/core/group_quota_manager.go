@@ -425,7 +425,7 @@ func (gqm *GroupQuotaManager) updateOneGroupMaxQuotaNoLock(quotaInfo *QuotaInfo)
 func (gqm *GroupQuotaManager) updateMinQuotaNoLock(quotaInfo *QuotaInfo) {
 	gqm.updateOneGroupOriginalMinQuotaNoLock(quotaInfo)
 	gqm.scaleMinQuotaManager.update(quotaInfo.ParentName, quotaInfo.Name,
-		quotaInfo.CalculateInfo.Min, gqm.scaleMinQuotaEnabled)
+		quotaInfo.CalculateInfo.Min.DeepCopy(), gqm.scaleMinQuotaEnabled)
 }
 
 // updateOneGroupOriginalMinQuotaNoLock no need to lock gqm.lock
@@ -502,7 +502,7 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 	if quotaInfo == nil {
 		return
 	}
-	if !quotaInfo.GetPodIsAssigned(newPod) && !quotaInfo.GetPodIsAssigned(oldPod) {
+	if !quotaInfo.CheckPodIsAssigned(newPod) && !quotaInfo.CheckPodIsAssigned(oldPod) {
 		klog.V(5).Infof("updatePodUsed, isAssigned is false, quotaName:%v, podName:%v",
 			quotaName, getPodName(oldPod, newPod))
 		return
@@ -560,7 +560,7 @@ func (gqm *GroupQuotaManager) getPodIsAssignedNoLock(quotaName string, pod *v1.P
 	if quotaInfo == nil {
 		return false
 	}
-	return quotaInfo.GetPodIsAssigned(pod)
+	return quotaInfo.CheckPodIsAssigned(pod)
 }
 
 func (gqm *GroupQuotaManager) MigratePod(pod *v1.Pod, out, in string) {

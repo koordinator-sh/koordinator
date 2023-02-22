@@ -18,7 +18,6 @@ package v1beta2
 
 import (
 	"math"
-
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -73,7 +72,8 @@ var (
 
 	defaultQuotaGroupNamespace = "koordinator-system"
 
-	defaultMonitorAllQuotas = pointer.Bool(false)
+	defaultMonitorAllQuotas       = pointer.Bool(false)
+	defaultEnableCheckParentQuota = pointer.Bool(false)
 
 	defaultTimeout           = 600 * time.Second
 	defaultControllerWorkers = 1
@@ -93,8 +93,14 @@ func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 	if len(obj.UsageThresholds) == 0 {
 		obj.UsageThresholds = defaultUsageThresholds
 	}
-	if len(obj.EstimatedScalingFactors) == 0 {
+	if obj.EstimatedScalingFactors == nil {
 		obj.EstimatedScalingFactors = defaultEstimatedScalingFactors
+	} else {
+		for k, v := range defaultEstimatedScalingFactors {
+			if _, ok := obj.EstimatedScalingFactors[k]; !ok {
+				obj.EstimatedScalingFactors[k] = v
+			}
+		}
 	}
 }
 
@@ -136,6 +142,9 @@ func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
 	}
 	if obj.MonitorAllQuotas == nil {
 		obj.MonitorAllQuotas = defaultMonitorAllQuotas
+	}
+	if obj.EnableCheckParentQuota == nil {
+		obj.EnableCheckParentQuota = defaultEnableCheckParentQuota
 	}
 }
 

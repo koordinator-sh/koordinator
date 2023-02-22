@@ -28,6 +28,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
@@ -40,7 +41,7 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 
 	metricCache, _ := metriccache.NewMetricCache(metriccache.NewDefaultConfig())
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
-	collector := collector{context: newCollectContext(), metricCache: metricCache, statesInformer: mockStatesInformer}
+	collector := collector{context: newCollectContext(), metricCache: metricCache, statesInformer: mockStatesInformer, cgroupReader: resourceexecutor.NewCgroupReader()}
 
 	// prepare be request, expect 1500 milliCores
 	bePod := mockBEPod()
@@ -50,12 +51,12 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	// prepare BECPUUsageCores data,expect 4 cores usage
 	collector.context.lastBECPUStat = contextRecord{cpuUsage: 12000000000000, ts: time.Now().Add(-1 * time.Second)}
 	helper := system.NewFileTestUtil(t)
-	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, "12004000000000")
+	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, "12004000000000")
 
 	// prepare limit data,expect 8 cores limit
-	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet, "1-15")
-	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, "800000")
-	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, "100000")
+	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet, "1-15")
+	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, "800000")
+	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, "100000")
 
 	collector.collectBECPUResourceMetric()
 
@@ -108,9 +109,9 @@ func Test_getBECPUUsageCores(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
-			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, tt.cpuacctUsage)
+			helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, tt.cpuacctUsage)
 
-			collector := collector{context: newCollectContext()}
+			collector := collector{context: newCollectContext(), cgroupReader: resourceexecutor.NewCgroupReader()}
 			if tt.lastBeCPUStat != nil {
 				collector.context.lastBECPUStat = *tt.lastBeCPUStat
 				collector.context.lastBECPUStat.ts = time.Now().Add(-1 * time.Second)
@@ -127,36 +128,55 @@ func Test_getBECPUUsageCores(t *testing.T) {
 }
 
 func Test_getBECPURealMilliLimit(t *testing.T) {
-
 	tests := []struct {
-		name     string
-		cpuset   string
-		cfsQuota string
-		expect   int
+		name        string
+		cpuset      string
+		cfsQuota    string
+		expect      int
+		UseCgroupV2 bool
 	}{
 		{
-			name:     "test_suppress_by_cpuset",
-			cpuset:   "1-2",
-			cfsQuota: "-1",
-			expect:   2000,
+			name:        "test_suppress_by_cpuset",
+			cpuset:      "1-2",
+			cfsQuota:    "-1",
+			expect:      2000,
+			UseCgroupV2: false,
 		},
 		{
-			name:     "test_suppress_by_cfsquota",
-			cpuset:   "1-15",
-			cfsQuota: "800000",
-			expect:   8000,
+			name:        "test_suppress_by_cfsquota",
+			cpuset:      "1-15",
+			cfsQuota:    "800000",
+			expect:      8000,
+			UseCgroupV2: false,
+		},
+		{
+			name:        "test_suppress_by_cfsquota-v2",
+			cpuset:      "1-15",
+			cfsQuota:    "800000",
+			expect:      8000,
+			UseCgroupV2: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
+			helper.SetCgroupsV2(tt.UseCgroupV2)
+			defer helper.Cleanup()
+			c := collector{context: newCollectContext(), cgroupReader: resourceexecutor.NewCgroupReader()}
 
-			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet, tt.cpuset)
-			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, tt.cfsQuota)
-			helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, "100000")
+			BECgroupParentDir := util.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+			if tt.UseCgroupV2 {
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUCFSQuotaV2, "800000 100000")
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUSetEffectiveV2, tt.cpuset)
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUCFSPeriodV2, "800000 100000")
+			} else {
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUCFSQuota, tt.cfsQuota)
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUSet, tt.cpuset)
+				helper.WriteCgroupFileContents(BECgroupParentDir, system.CPUCFSPeriod, "100000")
+			}
 
-			milliLimit, err := getBECPURealMilliLimit()
+			milliLimit, err := c.getBECPURealMilliLimit()
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expect, milliLimit)
 		})

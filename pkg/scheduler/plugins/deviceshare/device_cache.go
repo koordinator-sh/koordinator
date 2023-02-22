@@ -18,6 +18,7 @@ package deviceshare
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -45,6 +46,25 @@ func (in deviceResources) DeepCopy() deviceResources {
 		out[k] = v.DeepCopy()
 	}
 	return out
+}
+
+type deviceResourceMinorPair struct {
+	minor     int
+	resources corev1.ResourceList
+}
+
+func sortDeviceResourcesByMinor(resources deviceResources) []deviceResourceMinorPair {
+	r := make([]deviceResourceMinorPair, 0, len(resources))
+	for k, v := range resources {
+		r = append(r, deviceResourceMinorPair{
+			minor:     k,
+			resources: v,
+		})
+	}
+	sort.Slice(r, func(i, j int) bool {
+		return r[i].minor < r[j].minor
+	})
+	return r
 }
 
 type nodeDevice struct {
@@ -154,22 +174,28 @@ func (n *nodeDevice) resetDeviceFree(deviceType schedulingv1alpha1.DeviceType) {
 }
 
 func (n *nodeDevice) updateDeviceUsed(deviceType schedulingv1alpha1.DeviceType, allocations []*apiext.DeviceAllocation, add bool) {
-	if n.deviceUsed[deviceType] == nil {
-		n.deviceUsed[deviceType] = make(deviceResources)
+	deviceUsed := n.deviceUsed[deviceType]
+	if deviceUsed == nil {
+		deviceUsed = make(deviceResources)
+		n.deviceUsed[deviceType] = deviceUsed
 	}
 	for _, allocation := range allocations {
-		if n.deviceUsed[deviceType][int(allocation.Minor)] == nil {
-			n.deviceUsed[deviceType][int(allocation.Minor)] = make(corev1.ResourceList)
+		if deviceUsed[int(allocation.Minor)] == nil {
+			deviceUsed[int(allocation.Minor)] = make(corev1.ResourceList)
 		}
 		if add {
-			n.deviceUsed[deviceType][int(allocation.Minor)] = quotav1.Add(
-				n.deviceUsed[deviceType][int(allocation.Minor)],
-				allocation.Resources)
+			deviceUsed[int(allocation.Minor)] = quotav1.Add(deviceUsed[int(allocation.Minor)], allocation.Resources)
 		} else {
-			n.deviceUsed[deviceType][int(allocation.Minor)] = quotav1.SubtractWithNonNegativeResult(
-				n.deviceUsed[deviceType][int(allocation.Minor)],
-				allocation.Resources)
+			used := quotav1.SubtractWithNonNegativeResult(deviceUsed[int(allocation.Minor)], allocation.Resources)
+			if quotav1.IsZero(used) {
+				delete(deviceUsed, int(allocation.Minor))
+			} else {
+				deviceUsed[int(allocation.Minor)] = used
+			}
 		}
+	}
+	if !add && len(deviceUsed) == 0 {
+		delete(n.deviceUsed, deviceType)
 	}
 }
 
@@ -269,11 +295,12 @@ func (n *nodeDevice) tryAllocateCommonDevice(podRequest corev1.ResourceList, dev
 			}
 		}
 		satisfiedDeviceCount := 0
-		for minor, resources := range n.deviceFree[deviceType] {
-			if satisfied, _ := quotav1.LessThanOrEqual(podRequestPerCard, resources); satisfied {
+		orderedDeviceResources := sortDeviceResourcesByMinor(n.deviceFree[deviceType])
+		for _, deviceResource := range orderedDeviceResources {
+			if satisfied, _ := quotav1.LessThanOrEqual(podRequestPerCard, deviceResource.resources); satisfied {
 				satisfiedDeviceCount++
 				deviceAllocations = append(deviceAllocations, &apiext.DeviceAllocation{
-					Minor:     int32(minor),
+					Minor:     int32(deviceResource.minor),
 					Resources: podRequestPerCard,
 				})
 			}
@@ -286,10 +313,11 @@ func (n *nodeDevice) tryAllocateCommonDevice(podRequest corev1.ResourceList, dev
 		return fmt.Errorf("node does not have enough %v", deviceType)
 	}
 
-	for minor, resources := range n.deviceFree[deviceType] {
-		if satisfied, _ := quotav1.LessThanOrEqual(podRequest, resources); satisfied {
+	orderedDeviceResources := sortDeviceResourcesByMinor(n.deviceFree[deviceType])
+	for _, deviceResource := range orderedDeviceResources {
+		if satisfied, _ := quotav1.LessThanOrEqual(podRequest, deviceResource.resources); satisfied {
 			deviceAllocations = append(deviceAllocations, &apiext.DeviceAllocation{
-				Minor:     int32(minor),
+				Minor:     int32(deviceResource.minor),
 				Resources: podRequest,
 			})
 			allocateResult[deviceType] = deviceAllocations
@@ -319,11 +347,12 @@ func (n *nodeDevice) tryAllocateGPU(podRequest corev1.ResourceList, allocateResu
 			apiext.GPUMemoryRatio: *resource.NewQuantity(gpuMemRatio.Value()/gpuWanted, resource.DecimalSI),
 		}
 		satisfiedDeviceCount := 0
-		for minor, resources := range n.deviceFree[schedulingv1alpha1.GPU] {
-			if satisfied, _ := quotav1.LessThanOrEqual(podRequestPerCard, resources); satisfied {
+		orderedDeviceResources := sortDeviceResourcesByMinor(n.deviceFree[schedulingv1alpha1.GPU])
+		for _, deviceResource := range orderedDeviceResources {
+			if satisfied, _ := quotav1.LessThanOrEqual(podRequestPerCard, deviceResource.resources); satisfied {
 				satisfiedDeviceCount++
 				deviceAllocations = append(deviceAllocations, &apiext.DeviceAllocation{
-					Minor:     int32(minor),
+					Minor:     int32(deviceResource.minor),
 					Resources: podRequestPerCard,
 				})
 			}
@@ -335,13 +364,15 @@ func (n *nodeDevice) tryAllocateGPU(podRequest corev1.ResourceList, allocateResu
 		klog.V(5).Infof("node GPU resource does not satisfy pod's multiple GPU request, expect %v, got %v", gpuWanted, satisfiedDeviceCount)
 		return fmt.Errorf("node does not have enough GPU")
 	}
-	for minor, resources := range n.deviceFree[schedulingv1alpha1.GPU] {
-		if satisfied, _ := quotav1.LessThanOrEqual(podRequest, resources); !satisfied {
+
+	orderedDeviceResources := sortDeviceResourcesByMinor(n.deviceFree[schedulingv1alpha1.GPU])
+	for _, deviceResource := range orderedDeviceResources {
+		if satisfied, _ := quotav1.LessThanOrEqual(podRequest, deviceResource.resources); !satisfied {
 			continue
 		}
 
 		deviceAllocations = append(deviceAllocations, &apiext.DeviceAllocation{
-			Minor:     int32(minor),
+			Minor:     int32(deviceResource.minor),
 			Resources: podRequest,
 		})
 		allocateResult[schedulingv1alpha1.GPU] = deviceAllocations

@@ -145,7 +145,7 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric *metr
 		node.Status.Allocatable.Cpu().Format)
 	nodeBESuppressCPU.Sub(podLSUsedCPU)
 	nodeBESuppressCPU.Sub(systemUsedCPU)
-	metrics.RecordBESuppressLSUsedCPU(float64(podLSUsedCPU.Value()))
+	metrics.RecordBESuppressLSUsedCPU(float64(podLSUsedCPU.MilliValue()) / 1000)
 	klog.Infof("nodeSuppressBE[CPU(Core)]:%v = node.Total:%v * SLOPercent:%v%% - systemUsage:%v - podLSUsed:%v\n",
 		nodeBESuppressCPU.Value(), node.Status.Allocatable.Cpu().Value(), beCPUUsedThreshold, systemUsedCPU.Value(),
 		podLSUsedCPU.Value())
@@ -425,7 +425,7 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 	//  delta is large enough
 	if math.Abs(float64(newBeQuota)-float64(*currentBeQuota)) < minQuotaDelta && newBeQuota != beMinQuota {
 		klog.Infof("suppressBECPU: quota delta is too small, bypass suppress.reason: current quota: %d, target quota: %d, min quota delta: %f",
-			currentBeQuota, newBeQuota, minQuotaDelta)
+			*currentBeQuota, newBeQuota, minQuotaDelta)
 		return
 	}
 

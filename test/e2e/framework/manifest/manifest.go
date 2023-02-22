@@ -139,3 +139,21 @@ func DaemonSetFromData(data []byte) (*appsv1.DaemonSet, error) {
 	}
 	return &ds, nil
 }
+
+// ConfigMapFromManifest reads a .json/yaml file and returns the pod in it.
+func ConfigMapFromManifest(filename string) (*v1.ConfigMap, error) {
+	var configMap v1.ConfigMap
+	data, err := e2etestfiles.Read(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	json, err := utilyaml.ToJSON(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := runtime.DecodeInto(scheme.Codecs.UniversalDecoder(), json, &configMap); err != nil {
+		return nil, err
+	}
+	return &configMap, nil
+}

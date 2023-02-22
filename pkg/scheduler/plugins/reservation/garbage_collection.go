@@ -29,6 +29,7 @@ import (
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -76,7 +77,7 @@ func (p *Plugin) gcReservations() {
 
 func (p *Plugin) expireReservationOnNode(node *corev1.Node) {
 	// assert node != nil
-	rOnNode, err := p.informer.GetIndexer().ByIndex(NodeNameIndex, node.Name)
+	rOnNode, err := p.informer.GetIndexer().ByIndex(indexer.ReservationStatusNodeNameIndex, node.Name)
 	if err != nil {
 		klog.V(4).InfoS("failed to list reservations for node deletion from indexer",
 			"node", node.Name, "err", err)

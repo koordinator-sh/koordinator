@@ -23,7 +23,7 @@ import (
 	e2etestfiles "github.com/koordinator-sh/koordinator/test/e2e/framework/testfiles"
 )
 
-//go:embed sample-device-plugin.yaml scheduling statefulset
+//go:embed sample-device-plugin.yaml scheduling statefulset slocontroller
 var e2eTestingManifestsFS embed.FS
 
 func GetE2ETestingManifestsFS() e2etestfiles.EmbeddedFileSource {

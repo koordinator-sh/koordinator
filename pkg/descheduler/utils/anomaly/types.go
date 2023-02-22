@@ -14,18 +14,35 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package executor
+package anomaly
 
-const (
-	UpdateCPU             = "UpdateCPU"
-	UpdateMemory          = "UpdateMemory"
-	updateCgroups         = "UpdateCgroups" // update cgroups excluding the options already stated above
-	updateSystemConfig    = "UpdateSystemConfig"
-	updateResctrlSchemata = "UpdateResctrlSchemata" // update resctrl l3 cat schemata
-	updateResctrlTasks    = "UpdateResctrlTasks"    // update resctrl tasks
-
-	EvictPodByNodeMemoryUsage   = "EvictPodByNodeMemoryUsage"
-	EvictPodByBECPUSatisfaction = "EvictPodByBECPUSatisfaction"
-
-	AdjustBEByNodeCPUUsage = "AdjustBEByNodeCPUUsage"
+import (
+	"fmt"
 )
+
+// State is a type that represents a state of Detector.
+type State int
+
+// These constants are states of Detector.
+const (
+	StateOK State = iota
+	StateAnomaly
+)
+
+// String implements stringer interface.
+func (s State) String() string {
+	switch s {
+	case StateOK:
+		return "ok"
+	case StateAnomaly:
+		return "anomaly"
+	default:
+		return fmt.Sprintf("unknown state: %d", s)
+	}
+}
+
+type Detector interface {
+	Name() string
+	Mark(normality bool) (State, error)
+	State() State
+}

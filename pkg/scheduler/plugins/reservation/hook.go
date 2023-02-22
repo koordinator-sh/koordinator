@@ -19,16 +19,19 @@ package reservation
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
+	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	index "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -108,20 +111,24 @@ func (h *Hook) FilterHook(handle frameworkext.ExtendedHandle, cycleState *framew
 
 	// only continue if matchedCache is prepared in PreFilterHook (i.e. find any reservation matched)
 	state := getPreFilterState(cycleState)
-	if state == nil || state.skip {
+	if state == nil {
 		return nil, nil, false
 	}
 
+	allocatedResource, ok := state.allocatedResources[node.Name]
 	// skip hook when no reservation matched on this node
 	rOnNode := state.matchedCache.GetOnNode(node.Name)
-	if len(rOnNode) <= 0 {
+	if len(rOnNode) <= 0 && !ok {
 		return nil, nil, false
+	}
+	if !ok {
+		allocatedResource = util.NewZeroResourceList()
 	}
 
 	klog.V(5).InfoS("FilterHook get reservation matched on node",
 		"pod", klog.KObj(pod), "node", node.Name, "count", len(rOnNode))
 	// fix-up reserved resources and ports
-	return pod, prepareFilterNodeInfo(pod, nodeInfo, rOnNode), true
+	return pod, prepareFilterNodeInfo(pod, nodeInfo, rOnNode, allocatedResource), true
 }
 
 func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, pod *corev1.Pod) (*stateData, error) {
@@ -134,7 +141,10 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 	matchedCache := newAvailableCache()
 	// parallelize in nodes count
 	parallelizeUntil := h.parallelizeUntil(handle)
+	var lock sync.Mutex
+	allocatedResource := map[string]corev1.ResourceList{}
 	processNode := func(i int) {
+		resourceNeedUnreserve := util.NewZeroResourceList()
 		nodeInfo := allNodes[i]
 		node := nodeInfo.Node()
 		if node == nil {
@@ -144,39 +154,49 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 		}
 
 		// list reservations on the current node
-		rOnNode, err := indexer.ByIndex(NodeNameIndex, node.Name)
+		rOnNode, err := indexer.ByIndex(index.ReservationStatusNodeNameIndex, node.Name)
 		if err != nil {
 			klog.V(3).InfoS("PreFilterHook failed to list reservations",
-				"node", node.Name, "index", NodeNameIndex, "err", err)
+				"node", node.Name, "index", index.ReservationStatusNodeNameIndex, "err", err)
 			return
 		}
 		klog.V(6).InfoS("PreFilterHook indexer list reservation on node",
 			"node", node.Name, "count", len(rOnNode))
 		count := 0
 		rCache := getReservationCache()
+		hasAllocatedResource := false
 		for _, obj := range rOnNode {
 			r, ok := obj.(*schedulingv1alpha1.Reservation)
 			if !ok {
 				klog.V(5).Infof("unable to convert to *schedulingv1alpha1.Reservation, obj %T", obj)
 				continue
 			}
-			// only count available reservations, ignore succeeded ones
-			if !util.IsReservationAvailable(r) {
-				continue
-			}
-
 			rInfo := rCache.GetInCache(r)
 			if rInfo == nil {
 				rInfo = newReservationInfo(r)
 			}
+			// only count available reservations, ignore succeeded ones
+			if !util.IsReservationAvailable(rInfo.Reservation) {
+				continue
+			}
+
 			if matchReservation(pod, rInfo) {
 				matchedCache.Add(r)
 				count++
 			} else {
+				if len(rInfo.Reservation.Status.CurrentOwners) > 0 {
+					hasAllocatedResource = true
+					resourceNeedUnreserve = quotav1.Add(resourceNeedUnreserve, rInfo.Reservation.Status.Allocated)
+				}
 				klog.V(6).InfoS("got reservation on node does not match the pod",
 					"reservation", klog.KObj(r), "pod", klog.KObj(pod), "reason",
 					dumpMatchReservationReason(pod, newReservationInfo(r)))
 			}
+		}
+		if hasAllocatedResource {
+			lock.Lock()
+			allocatedResource[node.Name] = resourceNeedUnreserve
+			lock.Unlock()
 		}
 		if count <= 0 { // no reservation matched on this node
 			return
@@ -184,21 +204,26 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 
 		// NOTE: when the pod can allocate any reservation on the node, we should alter the nodeInfo snapshot to skip
 		//  the affinity/anti-affinity/topo constrains filtering in InterPodAffinity and PodTopologySpread plugins.
-		preparePreFilterNodeInfo(nodeInfo, pod, matchedCache)
+		preparePreFilterNodeInfo(handle, nodeInfo, pod, matchedCache)
 		klog.V(4).InfoS("PreFilterHook get matched reservations", "pod", klog.KObj(pod),
 			"node", node.Name, "count", count)
 	}
 	parallelizeUntil(context.TODO(), len(allNodes), processNode)
 
 	state := &stateData{
-		skip:         matchedCache.Len() <= 0, // skip if no reservation matched
-		matchedCache: matchedCache,
+		skip:               matchedCache.Len() <= 0, // skip if no reservation matched
+		matchedCache:       matchedCache,
+		allocatedResources: allocatedResource,
 	}
 
 	return state, nil
 }
 
-func preparePreFilterNodeInfo(nodeInfo *framework.NodeInfo, pod *corev1.Pod, matchedCache *AvailableCache) {
+func GenPVCRefKey(pvc *corev1.PersistentVolumeClaim) string {
+	return pvc.Namespace + "/" + pvc.Name
+}
+
+func preparePreFilterNodeInfo(handle frameworkext.ExtendedHandle, nodeInfo *framework.NodeInfo, pod *corev1.Pod, matchedCache *AvailableCache) {
 	// alter the nodeInfo to skip the ExistingAntiAffinity check of reservations
 	// only consider required anti-affinities
 	for _, podInfo := range nodeInfo.PodsWithRequiredAntiAffinity {
@@ -211,6 +236,32 @@ func preparePreFilterNodeInfo(nodeInfo *framework.NodeInfo, pod *corev1.Pod, mat
 			newPodInfo := podInfo.DeepCopy()
 			newPodInfo.RequiredAntiAffinityTerms = nil
 			*podInfo = *newPodInfo
+		}
+	}
+
+	// Volumerestrictions plugin will check PVCRefCounts in nodeinfo in prefilter.
+	// If the scheduling pod declare a PVC with ReadWriteOncePod access mode and the
+	// PVC has been used by other scheduled pod, the scheduling pod will be marked
+	// as UnschedulableAndUnresolvable.
+	// So we need to modify PVCRefCounts that are added by matched reservePod in nodeInfo
+	// to schedule the real pod.
+	pvcLister := handle.SharedInformerFactory().Core().V1().PersistentVolumeClaims().Lister()
+	for _, rr := range matchedCache.nodeToR[nodeInfo.Node().Name] {
+		podSpecTemplate := rr.Reservation.Spec.Template
+		for _, volume := range podSpecTemplate.Spec.Volumes {
+			if volume.PersistentVolumeClaim == nil {
+				continue
+			}
+			pvc, err := pvcLister.PersistentVolumeClaims(pod.Namespace).Get(volume.PersistentVolumeClaim.ClaimName)
+			if err != nil {
+				continue
+			}
+
+			if !v1helper.ContainsAccessMode(pvc.Spec.AccessModes, corev1.ReadWriteOncePod) {
+				continue
+			}
+
+			nodeInfo.PVCRefCounts[GenPVCRefKey(pvc)] -= 1
 		}
 	}
 }
@@ -235,12 +286,13 @@ func preparePreFilterPod(pod *corev1.Pod) *corev1.Pod {
 	return rPod
 }
 
-func prepareFilterNodeInfo(pod *corev1.Pod, nodeInfo *framework.NodeInfo, rOnNode []*reservationInfo) *framework.NodeInfo {
+func prepareFilterNodeInfo(pod *corev1.Pod, nodeInfo *framework.NodeInfo, rOnNode []*reservationInfo, allocatedResources corev1.ResourceList) *framework.NodeInfo {
 	newNodeInfo := nodeInfo.Clone()
 	// 1. ignore current pod requests by reducing node requests
 	//    newNode.requests = node.requests - pod.requests
 	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
 	newNodeInfo.Requested.Add(quotav1.Subtract(util.NewZeroResourceList(), podRequests))
+	newNodeInfo.Requested.Add(quotav1.Subtract(util.NewZeroResourceList(), allocatedResources))
 
 	// 2. ignore reserved node ports on the reserved node, only non-reserved ports are counted
 	portReserved := framework.HostPortInfo{}

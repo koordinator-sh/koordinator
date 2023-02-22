@@ -25,13 +25,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -138,17 +142,16 @@ func Test_statesInformer_syncPods(t *testing.T) {
 		callbackRunner: NewCallbackRunner(),
 	}
 
-	m.syncPods()
+	err := m.syncPods()
+	assert.NoError(t, err)
 	if len(m.GetAllPods()) != 1 {
 		t.Fatal("failed to update pods")
 	}
 
 	m.kubelet = &testErrorKubeletStub{}
 
-	err := m.syncPods()
-	if err == nil {
-		t.Fatalf("need not nil error, but get error %+v", err)
-	}
+	err = m.syncPods()
+	assert.Error(t, err)
 }
 
 func Test_newKubeletStub(t *testing.T) {
@@ -250,7 +253,8 @@ func Test_newKubeletStub(t *testing.T) {
 func setConfigs(t *testing.T, dir string) {
 	// Set KUBECONFIG env value
 	kubeconfigEnvPath := filepath.Join(dir, "kubeconfig-text-context")
-	os.WriteFile(kubeconfigEnvPath, []byte(genKubeconfig("from-env")), 0644)
+	err := os.WriteFile(kubeconfigEnvPath, []byte(genKubeconfig("from-env")), 0644)
+	assert.NoError(t, err)
 	t.Setenv(clientcmd.RecommendedConfigPathEnvVar, kubeconfigEnvPath)
 }
 
@@ -294,4 +298,153 @@ func Test_statesInformer_syncKubeletLoop(t *testing.T) {
 	go m.syncKubeletLoop(c.KubeletSyncInterval, stopCh)
 	time.Sleep(5 * time.Second)
 	close(stopCh)
+}
+
+func Test_resetPodMetrics(t *testing.T) {
+	testingNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test-node",
+			Labels: map[string]string{},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+		},
+	}
+	assert.NotPanics(t, func() {
+		metrics.Register(testingNode)
+		defer metrics.Register(nil)
+
+		resetPodMetrics()
+	})
+}
+
+func Test_recordPodResourceMetrics(t *testing.T) {
+	testingNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test-node",
+			Labels: map[string]string{},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+		},
+	}
+	testingPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test_pod",
+			Namespace: "test_pod_namespace",
+			UID:       "test01",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "test_container",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("2"),
+							corev1.ResourceMemory: resource.MustParse("4Gi"),
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:        "test_container",
+					ContainerID: "containerd://testxxx",
+				},
+			},
+		},
+	}
+	testingBatchPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test_batch_pod",
+			Namespace: "test_batch_pod_namespace",
+			UID:       "batch01",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "test_batch_container",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							apiext.BatchCPU:    resource.MustParse("1000"),
+							apiext.BatchMemory: resource.MustParse("2Gi"),
+						},
+						Limits: corev1.ResourceList{
+							apiext.BatchCPU:    resource.MustParse("1000"),
+							apiext.BatchMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:        "test_batch_container",
+					ContainerID: "containerd://batchxxx",
+				},
+			},
+		},
+	}
+	tests := []struct {
+		name string
+		arg  *PodMeta
+	}{
+		{
+			name: "pod meta is invalid",
+			arg:  nil,
+		},
+		{
+			name: "pod meta is invalid 1",
+			arg:  &PodMeta{},
+		},
+		{
+			name: "record a normally pod",
+			arg: &PodMeta{
+				Pod: testingPod,
+			},
+		},
+		{
+			name: "record a batch pod",
+			arg: &PodMeta{
+				Pod: testingBatchPod,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metrics.Register(testingNode)
+			defer metrics.Register(nil)
+
+			recordPodResourceMetrics(tt.arg)
+		})
+	}
 }

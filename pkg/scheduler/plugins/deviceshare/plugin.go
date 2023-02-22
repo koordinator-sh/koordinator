@@ -31,6 +31,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -52,6 +53,7 @@ const (
 type Plugin struct {
 	handle          framework.Handle
 	nodeDeviceCache *nodeDeviceCache
+	allocator       Allocator
 }
 
 var (
@@ -71,11 +73,11 @@ func (s *preFilterState) Clone() framework.StateData {
 	return s
 }
 
-func (g *Plugin) Name() string {
+func (p *Plugin) Name() string {
 	return Name
 }
 
-func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
 	state := &preFilterState{
 		skip:                    true,
 		convertedDeviceResource: make(corev1.ResourceList),
@@ -111,7 +113,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 			)
 			state.skip = false
 		default:
-			klog.Warningf("device type %v is not supported yet", deviceType)
+			klog.Warningf("device type %v is not supported yet, pod: %v", deviceType, klog.KObj(pod))
 		}
 	}
 
@@ -119,7 +121,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	return nil
 }
 
-func (g *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
+func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 	return nil
 }
 
@@ -132,7 +134,7 @@ func getPreFilterState(cycleState *framework.CycleState) (*preFilterState, *fram
 	return state, nil
 }
 
-func (g *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -145,7 +147,7 @@ func (g *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return framework.NewStatus(framework.Error, "node not found")
 	}
 
-	nodeDeviceInfo := g.nodeDeviceCache.getNodeDevice(nodeInfo.Node().Name)
+	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeInfo.Node().Name)
 	if nodeDeviceInfo == nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
 	}
@@ -155,7 +157,7 @@ func (g *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	allocateResult, err := nodeDeviceInfo.tryAllocateDevice(podRequest)
+	allocateResult, err := p.allocator.Allocate(nodeInfo.Node().Name, pod, podRequest, nodeDeviceInfo)
 	if len(allocateResult) != 0 && err == nil {
 		return nil
 	}
@@ -163,7 +165,7 @@ func (g *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
 }
 
-func (g *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -172,7 +174,7 @@ func (g *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
-	nodeDeviceInfo := g.nodeDeviceCache.getNodeDevice(nodeName)
+	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName)
 	if nodeDeviceInfo == nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
 	}
@@ -182,18 +184,17 @@ func (g *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 
-	allocateResult, err := nodeDeviceInfo.tryAllocateDevice(podRequest)
+	allocateResult, err := p.allocator.Allocate(nodeName, pod, podRequest, nodeDeviceInfo)
 	if err != nil || len(allocateResult) == 0 {
 		return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
 	}
-
-	nodeDeviceInfo.updateCacheUsed(allocateResult, pod, true)
+	p.allocator.Reserve(pod, nodeDeviceInfo, allocateResult)
 
 	state.allocationResult = allocateResult
 	return nil
 }
 
-func (g *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
+func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return
@@ -202,7 +203,7 @@ func (g *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 		return
 	}
 
-	nodeDeviceInfo := g.nodeDeviceCache.getNodeDevice(nodeName)
+	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName)
 	if nodeDeviceInfo == nil {
 		return
 	}
@@ -210,12 +211,11 @@ func (g *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 
-	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
-
+	p.allocator.Unreserve(pod, nodeDeviceInfo, state.allocationResult)
 	state.allocationResult = nil
 }
 
-func (g *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -244,7 +244,7 @@ func (g *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	err = util.RetryOnConflictOrTooManyRequests(func() error {
-		_, podErr := g.handle.ClientSet().CoreV1().Pods(pod.Namespace).
+		_, podErr := p.handle.ClientSet().CoreV1().Pods(pod.Namespace).
 			Patch(ctx, pod.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return podErr
 	})
@@ -255,15 +255,20 @@ func (g *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 	return nil
 }
 
-func (g *Plugin) getNodeDeviceSummary(nodeName string) (*NodeDeviceSummary, bool) {
-	return g.nodeDeviceCache.getNodeDeviceSummary(nodeName)
+func (p *Plugin) getNodeDeviceSummary(nodeName string) (*NodeDeviceSummary, bool) {
+	return p.nodeDeviceCache.getNodeDeviceSummary(nodeName)
 }
 
-func (g *Plugin) getAllNodeDeviceSummary() map[string]*NodeDeviceSummary {
-	return g.nodeDeviceCache.getAllNodeDeviceSummary()
+func (p *Plugin) getAllNodeDeviceSummary() map[string]*NodeDeviceSummary {
+	return p.nodeDeviceCache.getAllNodeDeviceSummary()
 }
 
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+	args, ok := obj.(*config.DeviceShareArgs)
+	if !ok {
+		return nil, fmt.Errorf("want args to be of type DeviceShareArgs, got %T", obj)
+	}
+
 	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
 	if !ok {
 		return nil, fmt.Errorf("expect handle to be type frameworkext.ExtendedHandle, got %T", handle)
@@ -273,8 +278,15 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	registerDeviceEventHandler(deviceCache, extendedHandle.KoordinatorSharedInformerFactory())
 	registerPodEventHandler(deviceCache, handle.SharedInformerFactory())
 
+	allocatorOpts := AllocatorOptions{
+		SharedInformerFactory:      extendedHandle.SharedInformerFactory(),
+		KoordSharedInformerFactory: extendedHandle.KoordinatorSharedInformerFactory(),
+	}
+	allocator := NewAllocator(args.Allocator, allocatorOpts)
+
 	return &Plugin{
 		handle:          handle,
 		nodeDeviceCache: deviceCache,
+		allocator:       allocator,
 	}, nil
 }

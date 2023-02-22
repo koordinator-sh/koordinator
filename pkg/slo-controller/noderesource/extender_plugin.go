@@ -22,7 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 var (
@@ -37,7 +37,7 @@ func RegisterNodePrepareExtender(name string, extender NodePreparePlugin) error 
 	return nil
 }
 
-func runNodePrepareExtenders(strategy *config.ColocationStrategy, node *corev1.Node) {
+func runNodePrepareExtenders(strategy *extension.ColocationStrategy, node *corev1.Node) {
 	for name, extender := range globalNodePrepareExtender {
 		if err := extender.Execute(strategy, node); err != nil {
 			klog.Warningf("run node prepare extender %v failed, error %v", name, err)
@@ -52,5 +52,5 @@ func UnregisterNodePrepareExtender(name string) {
 }
 
 type NodePreparePlugin interface {
-	Execute(strategy *config.ColocationStrategy, node *corev1.Node) error
+	Execute(strategy *extension.ColocationStrategy, node *corev1.Node) error
 }

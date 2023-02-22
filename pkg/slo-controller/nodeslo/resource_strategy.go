@@ -24,17 +24,17 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-func getResourceThresholdSpec(node *corev1.Node, cfg *config.ResourceThresholdCfg) (*slov1alpha1.ResourceThresholdStrategy, error) {
+func getResourceThresholdSpec(node *corev1.Node, cfg *extension.ResourceThresholdCfg) (*slov1alpha1.ResourceThresholdStrategy, error) {
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
 		if err != nil {
-			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
+			klog.Errorf("failed to parse node selector %v for threshold, err: %v", nodeStrategy.NodeSelector, err)
 			continue
 		}
 		if selector.Matches(nodeLabels) {
@@ -45,12 +45,12 @@ func getResourceThresholdSpec(node *corev1.Node, cfg *config.ResourceThresholdCf
 	return cfg.ClusterStrategy.DeepCopy(), nil
 }
 
-func getResourceQOSSpec(node *corev1.Node, cfg *config.ResourceQOSCfg) (*slov1alpha1.ResourceQOSStrategy, error) {
+func getResourceQOSSpec(node *corev1.Node, cfg *extension.ResourceQOSCfg) (*slov1alpha1.ResourceQOSStrategy, error) {
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
 		if err != nil {
-			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
+			klog.Errorf("failed to parse node selector %v for ResourceQOS, err: %v", nodeStrategy.NodeSelector, err)
 			continue
 		}
 		if selector.Matches(nodeLabels) {
@@ -61,13 +61,13 @@ func getResourceQOSSpec(node *corev1.Node, cfg *config.ResourceQOSCfg) (*slov1al
 	return cfg.ClusterStrategy.DeepCopy(), nil
 }
 
-func getCPUBurstConfigSpec(node *corev1.Node, cfg *config.CPUBurstCfg) (*slov1alpha1.CPUBurstStrategy, error) {
+func getCPUBurstConfigSpec(node *corev1.Node, cfg *extension.CPUBurstCfg) (*slov1alpha1.CPUBurstStrategy, error) {
 
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
 		if err != nil {
-			klog.Errorf("failed to parse node selector %v, err: %v", nodeStrategy.NodeSelector, err)
+			klog.Errorf("failed to parse node selector %v for CPUBurst, err: %v", nodeStrategy.NodeSelector, err)
 			continue
 		}
 		if selector.Matches(nodeLabels) {
@@ -78,15 +78,31 @@ func getCPUBurstConfigSpec(node *corev1.Node, cfg *config.CPUBurstCfg) (*slov1al
 	return cfg.ClusterStrategy.DeepCopy(), nil
 }
 
-func calculateResourceThresholdCfgMerged(oldCfg config.ResourceThresholdCfg, configMap *corev1.ConfigMap) (config.ResourceThresholdCfg, error) {
-	cfgStr, ok := configMap.Data[config.ResourceThresholdConfigKey]
+func getSystemConfigSpec(node *corev1.Node, cfg *extension.SystemCfg) (*slov1alpha1.SystemStrategy, error) {
+	nodeLabels := labels.Set(node.Labels)
+	for _, nodeStrategy := range cfg.NodeStrategies {
+		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
+		if err != nil {
+			klog.Errorf("failed to parse node selector %v for SystemCfg, err: %v", nodeStrategy.NodeSelector, err)
+			continue
+		}
+		if selector.Matches(nodeLabels) {
+			return nodeStrategy.SystemStrategy.DeepCopy(), nil
+		}
+
+	}
+	return cfg.ClusterStrategy.DeepCopy(), nil
+}
+
+func calculateResourceThresholdCfgMerged(oldCfg extension.ResourceThresholdCfg, configMap *corev1.ConfigMap) (extension.ResourceThresholdCfg, error) {
+	cfgStr, ok := configMap.Data[extension.ResourceThresholdConfigKey]
 	if !ok {
 		return DefaultSLOCfg().ThresholdCfgMerged, nil
 	}
 
-	mergedCfg := config.ResourceThresholdCfg{}
+	mergedCfg := extension.ResourceThresholdCfg{}
 	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
-		klog.Errorf("failed to unmarshal config %s, err: %s", config.ResourceThresholdConfigKey, err)
+		klog.Errorf("failed to unmarshal config %s, err: %s", extension.ResourceThresholdConfigKey, err)
 		return oldCfg, err
 	}
 
@@ -113,15 +129,15 @@ func calculateResourceThresholdCfgMerged(oldCfg config.ResourceThresholdCfg, con
 	return mergedCfg, nil
 }
 
-func calculateResourceQOSCfgMerged(oldCfg config.ResourceQOSCfg, configMap *corev1.ConfigMap) (config.ResourceQOSCfg, error) {
-	cfgStr, ok := configMap.Data[config.ResourceQOSConfigKey]
+func calculateResourceQOSCfgMerged(oldCfg extension.ResourceQOSCfg, configMap *corev1.ConfigMap) (extension.ResourceQOSCfg, error) {
+	cfgStr, ok := configMap.Data[extension.ResourceQOSConfigKey]
 	if !ok {
 		return DefaultSLOCfg().ResourceQOSCfgMerged, nil
 	}
 
 	mergedCfg := DefaultSLOCfg().ResourceQOSCfgMerged
 	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
-		klog.Errorf("failed to unmarshal config %s, err: %s", config.ResourceQOSConfigKey, err)
+		klog.Errorf("failed to unmarshal config %s, err: %s", extension.ResourceQOSConfigKey, err)
 		return oldCfg, err
 	}
 
@@ -150,15 +166,15 @@ func calculateResourceQOSCfgMerged(oldCfg config.ResourceQOSCfg, configMap *core
 	return mergedCfg, nil
 }
 
-func calculateCPUBurstCfgMerged(oldCfg config.CPUBurstCfg, configMap *corev1.ConfigMap) (config.CPUBurstCfg, error) {
-	cfgStr, ok := configMap.Data[config.CPUBurstConfigKey]
+func calculateCPUBurstCfgMerged(oldCfg extension.CPUBurstCfg, configMap *corev1.ConfigMap) (extension.CPUBurstCfg, error) {
+	cfgStr, ok := configMap.Data[extension.CPUBurstConfigKey]
 	if !ok {
 		return DefaultSLOCfg().CPUBurstCfgMerged, nil
 	}
 
-	mergedCfg := config.CPUBurstCfg{}
+	mergedCfg := extension.CPUBurstCfg{}
 	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
-		klog.Errorf("failed to unmarshal config %s, err: %s", config.CPUBurstConfigKey, err)
+		klog.Errorf("failed to unmarshal config %s, err: %s", extension.CPUBurstConfigKey, err)
 		return oldCfg, err
 	}
 
@@ -178,6 +194,41 @@ func calculateCPUBurstCfgMerged(oldCfg config.CPUBurstCfg, configMap *corev1.Con
 			mergedCfg.NodeStrategies[index].CPUBurstStrategy = mergedStrategyInterface.(*slov1alpha1.CPUBurstStrategy)
 		} else {
 			mergedCfg.NodeStrategies[index].CPUBurstStrategy = clusterCfgCopy
+		}
+
+	}
+
+	return mergedCfg, nil
+}
+
+func calculateSystemConfigMerged(oldCfg extension.SystemCfg, configMap *corev1.ConfigMap) (extension.SystemCfg, error) {
+	cfgStr, ok := configMap.Data[extension.SystemConfigKey]
+	if !ok {
+		return DefaultSLOCfg().SystemCfgMerged, nil
+	}
+
+	mergedCfg := extension.SystemCfg{}
+	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
+		klog.Warningf("failed to unmarshal config %s, err: %s", extension.SystemConfigKey, err)
+		return oldCfg, err
+	}
+
+	// merge ClusterStrategy
+	clusterMerged := DefaultSLOCfg().SystemCfgMerged.ClusterStrategy.DeepCopy()
+	if mergedCfg.ClusterStrategy != nil {
+		mergedStrategyInterface, _ := util.MergeCfg(clusterMerged, mergedCfg.ClusterStrategy)
+		clusterMerged = mergedStrategyInterface.(*slov1alpha1.SystemStrategy)
+	}
+	mergedCfg.ClusterStrategy = clusterMerged
+
+	for index, nodeStrategy := range mergedCfg.NodeStrategies {
+		// merge with clusterStrategy
+		clusterCfgCopy := mergedCfg.ClusterStrategy.DeepCopy()
+		if nodeStrategy.SystemStrategy != nil {
+			mergedStrategyInterface, _ := util.MergeCfg(clusterCfgCopy, nodeStrategy.SystemStrategy)
+			mergedCfg.NodeStrategies[index].SystemStrategy = mergedStrategyInterface.(*slov1alpha1.SystemStrategy)
+		} else {
+			mergedCfg.NodeStrategies[index].SystemStrategy = clusterCfgCopy
 		}
 
 	}

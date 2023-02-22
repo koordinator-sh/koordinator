@@ -22,7 +22,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/informers"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -72,13 +75,15 @@ func TestPreFilterHook(t *testing.T) {
 		},
 	}
 	testHandle := &fakeExtendedHandle{
-		sharedLister: newFakeSharedLister(nil, nil, false),
+		informerFactory: informers.NewSharedInformerFactory(kubefake.NewSimpleClientset(), 0),
+		sharedLister:    newFakeSharedLister(nil, nil, false),
 		koordSharedInformerFactory: &fakeKoordinatorSharedInformerFactory{
 			informer: &fakeIndexedInformer{},
 		},
 	}
 	testHandle1 := &fakeExtendedHandle{
-		sharedLister: newFakeSharedLister([]*corev1.Pod{util.NewReservePod(rScheduled)}, []*corev1.Node{testNode}, false),
+		informerFactory: informers.NewSharedInformerFactory(kubefake.NewSimpleClientset(), 0),
+		sharedLister:    newFakeSharedLister([]*corev1.Pod{util.NewReservePod(rScheduled)}, []*corev1.Node{testNode}, false),
 		koordSharedInformerFactory: &fakeKoordinatorSharedInformerFactory{
 			informer: &fakeIndexedInformer{
 				rOnNode: map[string][]*schedulingv1alpha1.Reservation{
@@ -202,6 +207,11 @@ func TestFilterHook(t *testing.T) {
 	}
 	testNodeInfo := framework.NewNodeInfo()
 	testNodeInfo.SetNode(testNode)
+	testNodeInfo1 := framework.NewNodeInfo()
+	testNodeInfo1.SetNode(testNode)
+	testNodeInfo1.Requested = framework.NewResource(corev1.ResourceList{
+		corev1.ResourceCPU: *resource.NewQuantity(1, resource.DecimalSI),
+	})
 	rScheduled := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-1",
@@ -228,7 +238,18 @@ func TestFilterHook(t *testing.T) {
 	}
 	stateNoMatched := framework.NewCycleState()
 	stateNoMatched.Write(preFilterStateKey, &stateData{
+		skip:         true,
 		matchedCache: newAvailableCache(),
+	})
+	stateNoMatchedButHasAllocated := framework.NewCycleState()
+	stateNoMatchedButHasAllocated.Write(preFilterStateKey, &stateData{
+		skip:         false,
+		matchedCache: newAvailableCache(),
+		allocatedResources: map[string]corev1.ResourceList{
+			testNodeName: {
+				corev1.ResourceCPU: *resource.NewQuantity(1, resource.DecimalSI),
+			},
+		},
 	})
 	stateMatched := framework.NewCycleState()
 	stateMatched.Write(preFilterStateKey, &stateData{
@@ -243,12 +264,14 @@ func TestFilterHook(t *testing.T) {
 		nodeInfo   *framework.NodeInfo
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   *corev1.Pod
-		want1  bool
-		want2  bool
+		name             string
+		fields           fields
+		args             args
+		want             *corev1.Pod
+		want1            bool
+		want2            bool
+		needCheckRequest bool
+		expectCPU        int64
 	}{
 		{
 			name: "skip for plugin disabled",
@@ -311,6 +334,22 @@ func TestFilterHook(t *testing.T) {
 			want2: false,
 		},
 		{
+			name: "no reservation matched on the node, but there are allocated reservation",
+			fields: fields{
+				pluginEnabled: true,
+			},
+			args: args{
+				cycleState: stateNoMatchedButHasAllocated,
+				pod:        normalPod,
+				nodeInfo:   testNodeInfo1,
+			},
+			want:             normalPod,
+			want1:            true,
+			want2:            true,
+			needCheckRequest: true,
+			expectCPU:        0,
+		},
+		{
 			name: "reservation matched",
 			fields: fields{
 				pluginEnabled: true,
@@ -338,6 +377,9 @@ func TestFilterHook(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1 != nil)
 			assert.Equal(t, tt.want2, got2)
+			if tt.needCheckRequest {
+				assert.Equal(t, tt.expectCPU, got1.Requested.MilliCPU)
+			}
 		})
 	}
 }
@@ -345,7 +387,8 @@ func TestFilterHook(t *testing.T) {
 func Test_preparePreFilterNodeInfo(t *testing.T) {
 	normalPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-pod-1",
+			Namespace: "default",
+			Name:      "test-pod-1",
 		},
 		Spec: corev1.PodSpec{
 			Affinity: &corev1.Affinity{
@@ -355,6 +398,24 @@ func Test_preparePreFilterNodeInfo(t *testing.T) {
 					},
 				},
 			},
+			Volumes: []corev1.Volume{
+				{
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "claim-with-rwop",
+						},
+					},
+				},
+			},
+		},
+	}
+	readWriteOncePodPVC := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "claim-with-rwop",
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOncePod},
 		},
 	}
 	testNodeName := "test-node-0"
@@ -368,6 +429,7 @@ func Test_preparePreFilterNodeInfo(t *testing.T) {
 	testNodeInfo.PodsWithRequiredAntiAffinity = []*framework.PodInfo{
 		framework.NewPodInfo(normalPod),
 	}
+	testNodeInfo.PVCRefCounts["default/claim-with-rwop"] = 1
 	rScheduled := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-1",
@@ -376,6 +438,17 @@ func Test_preparePreFilterNodeInfo(t *testing.T) {
 			Template: &corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "reserve-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Volumes: []corev1.Volume{
+						{
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "claim-with-rwop",
+								},
+							},
+						},
+					},
 				},
 			},
 			Owners: []schedulingv1alpha1.ReservationOwner{
@@ -393,11 +466,20 @@ func Test_preparePreFilterNodeInfo(t *testing.T) {
 		},
 	}
 	matchedCache := newAvailableCache(rScheduled)
+
+	fh := &fakeExtendedHandle{
+		informerFactory: informers.NewSharedInformerFactory(
+			kubefake.NewSimpleClientset(
+				readWriteOncePodPVC),
+			0),
+	}
+	fh.informerFactory.Core().V1().PersistentVolumeClaims().Informer().GetIndexer().Add(readWriteOncePodPVC)
 	t.Run("test not panic", func(t *testing.T) {
-		preparePreFilterNodeInfo(testNodeInfo, normalPod, matchedCache)
+		preparePreFilterNodeInfo(fh, testNodeInfo, normalPod, matchedCache)
 		for _, podInfo := range testNodeInfo.PodsWithRequiredAntiAffinity {
 			assert.Nil(t, podInfo.RequiredAntiAffinityTerms)
 		}
+		assert.Zero(t, testNodeInfo.PVCRefCounts["default/claim-with-rwop"])
 	})
 }
 

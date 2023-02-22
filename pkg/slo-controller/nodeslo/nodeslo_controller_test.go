@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -87,6 +88,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				SystemStrategy:              util.DefaultSystemStrategy(),
 			},
 			wantErr: false,
 		},
@@ -106,14 +108,15 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"invalidField\",\"cpuSuppressThresholdPercent\":60}}",
-					config.ResourceQOSConfigKey:       "{\"clusterStrategy\":{\"invalidField\"}}",
+					extension.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"invalidField\",\"cpuSuppressThresholdPercent\":60}}",
+					extension.ResourceQOSConfigKey:       "{\"clusterStrategy\":{\"invalidField\"}}",
 				},
 			}},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: util.DefaultResourceThresholdStrategy(),
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				SystemStrategy:              util.DefaultSystemStrategy(),
 			},
 			wantErr: false,
 		},
@@ -133,13 +136,14 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
+					extension.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
 				},
 			}},
 			want: &slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				SystemStrategy:              util.DefaultSystemStrategy(),
 			},
 			wantErr: false,
 		},
@@ -159,8 +163,8 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
-					config.ResourceQOSConfigKey: `
+					extension.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
+					extension.ResourceQOSConfigKey: `
 {
   "clusterStrategy": {
     "beClass": {
@@ -177,6 +181,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 				ResourceQOSStrategy:         testingResourceQOSStrategy,
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				SystemStrategy:              util.DefaultSystemStrategy(),
 			},
 			wantErr: false,
 		},
@@ -196,8 +201,8 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
-					config.ResourceQOSConfigKey: `
+					extension.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":false,\"cpuSuppressThresholdPercent\":60}}",
+					extension.ResourceQOSConfigKey: `
 {
   "clusterStrategy": {
     "beClass": {
@@ -214,6 +219,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 				ResourceQOSStrategy:         testingResourceQOSStrategyOld,
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
+				SystemStrategy:              util.DefaultSystemStrategy(),
 			},
 			wantErr: false,
 		},
@@ -266,8 +272,8 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 			Namespace: config.ConfigNameSpace,
 		},
 		Data: map[string]string{
-			config.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
-			config.ResourceQOSConfigKey: `
+			extension.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
+			extension.ResourceQOSConfigKey: `
 {
   "clusterStrategy": {
     "beClass": {
@@ -278,7 +284,8 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
   }
 }
 `,
-			config.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
+			extension.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
+			extension.SystemConfigKey:   "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150,\"watermarkScaleFactor\":150}}",
 		},
 	}
 	testingResourceThresholdStrategy := util.DefaultResourceThresholdStrategy()
@@ -297,10 +304,14 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 	testingCPUBurstStrategy := util.DefaultCPUBurstStrategy()
 	testingCPUBurstStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64Ptr(60)
 
+	testingSystemStrategy := util.DefaultSystemStrategy()
+	testingSystemStrategy.MinFreeKbytesFactor = pointer.Int64Ptr(150)
+
 	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{
 		ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 		ResourceQOSStrategy:         testingResourceQOSStrategy,
 		CPUBurstStrategy:            testingCPUBurstStrategy,
+		SystemStrategy:              testingSystemStrategy,
 	}
 	nodeReq := ctrl.Request{NamespacedName: types.NamespacedName{Name: testingNode.Name}}
 	// the NodeSLO does not exists before getting created

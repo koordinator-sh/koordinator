@@ -63,6 +63,11 @@ type LowNodeLoadArgs struct {
 
 	// LowThresholds defines the low usage threshold of resources
 	LowThresholds ResourceThresholds `json:"lowThresholds,omitempty"`
+
+	// AnomalyCondition indicates the node load anomaly thresholds,
+	// the default is 5 consecutive times exceeding HighThresholds,
+	// it is determined that the node is abnormal, and the Pods need to be migrated to reduce the load.
+	AnomalyCondition *LoadAnomalyCondition `json:"anomalyCondition,omitempty"`
 }
 
 type LowNodeLoadPodSelector struct {
@@ -70,4 +75,11 @@ type LowNodeLoadPodSelector struct {
 
 	// Selector label query over pods for migrated
 	Selector *metav1.LabelSelector `json:"selector,omitempty"`
+}
+
+type LoadAnomalyCondition struct {
+	// Timeout indicates the expiration time of the abnormal state, the default is 1 minute
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
+	// ConsecutiveAbnormalities indicates the number of consecutive abnormalities
+	ConsecutiveAbnormalities uint32 `json:"consecutiveAbnormalities,omitempty"`
 }

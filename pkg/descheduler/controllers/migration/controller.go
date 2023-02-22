@@ -20,8 +20,11 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
+	gocache "github.com/patrickmn/go-cache"
+	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,11 +78,15 @@ type Reconciler struct {
 	eventRecorder          events.EventRecorder
 	reservationInterpreter reservation.Interpreter
 	evictorInterpreter     evictor.Interpreter
-	controllerFinder       *controllerfinder.ControllerFinder
+	controllerFinder       controllerfinder.Interface
 	unretriablePodFilter   framework.FilterFunc
 	retriablePodFilter     framework.FilterFunc
 	assumedCache           *assumedCache
 	clock                  clock.Clock
+
+	lock           sync.Mutex
+	objectLimiters map[types.UID]*rate.Limiter
+	limiterCache   *gocache.Cache
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -123,7 +130,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) (*Reconciler, error) {
 	manager := options.Manager
 	reservationInterpreter := reservation.NewInterpreter(manager)
-	evictorInterpreter, err := evictor.NewInterpreter(handle.ClientSet(), args.EvictionPolicy, args.EvictQPS, int(args.EvictBurst))
+	evictorInterpreter, err := evictor.NewInterpreter(handle, args.EvictionPolicy, float32(args.EvictQPS.FloatValue()), int(args.EvictBurst))
 	if err != nil {
 		return nil, err
 	}
@@ -157,8 +164,9 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 		excludedNamespaces = sets.NewString(args.Namespaces.Exclude...)
 	}
 
+	wrapFilterFuncs := podutil.WrapFilterFuncs(util.FilterPodWithMaxEvictionCost, evictorFilter.Filter)
 	podFilter, err := podutil.NewOptions().
-		WithFilter(evictorFilter.Filter).
+		WithFilter(wrapFilterFuncs).
 		WithNamespaces(includedNamespaces).
 		WithoutNamespaces(excludedNamespaces).
 		BuildFilterFunc()
@@ -182,18 +190,42 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 		assumedCache:           newAssumedCache(),
 		clock:                  clock.RealClock{},
 	}
+	r.initObjectLimiters()
 
-	r.retriablePodFilter = podutil.WrapFilterFuncs(
+	retriablePodFilters := podutil.WrapFilterFuncs(
+		r.filterLimitedObject,
 		r.filterMaxMigratingPerNode,
 		r.filterMaxMigratingPerNamespace,
 		r.filterMaxMigratingOrUnavailablePerWorkload,
 	)
+	r.retriablePodFilter = func(pod *corev1.Pod) bool {
+		return retriablePodFilters(pod) || evictionsutil.HaveEvictAnnotation(pod)
+	}
 
 	err = manager.Add(r)
 	if err != nil {
 		return nil, err
 	}
 	return r, nil
+}
+
+func (r *Reconciler) initObjectLimiters() {
+	var trackExpiration time.Duration
+	for _, v := range r.args.ObjectLimiters {
+		if v.Duration.Duration > trackExpiration {
+			trackExpiration = v.Duration.Duration
+		}
+	}
+	if trackExpiration > 0 {
+		r.objectLimiters = make(map[types.UID]*rate.Limiter)
+		limiterExpiration := trackExpiration + trackExpiration/2
+		r.limiterCache = gocache.New(limiterExpiration, limiterExpiration)
+		r.limiterCache.OnEvicted(func(s string, _ interface{}) {
+			r.lock.Lock()
+			defer r.lock.Unlock()
+			delete(r.objectLimiters, types.UID(s))
+		})
+	}
 }
 
 func (r *Reconciler) Name() string {
@@ -216,13 +248,15 @@ func (r *Reconciler) Filter(pod *corev1.Pod) bool {
 
 // Evict evicts a pod
 func (r *Reconciler) Evict(ctx context.Context, pod *corev1.Pod, evictOptions framework.EvictOptions) bool {
+	framework.FillEvictOptionsFromContext(ctx, &evictOptions)
+
 	if r.args.DryRun {
-		klog.Infof("%s Try to evict pod %s/%s by dryRun mode caused by %s", evictOptions.PluginName, pod.Namespace, pod.Name, evictOptions.Reason)
+		klog.Infof("%s tries to evict Pod %q via dryRun mode since %s", evictOptions.PluginName, klog.KObj(pod), evictOptions.Reason)
 		return true
 	}
 
 	if !r.Filter(pod) {
-		klog.Errorf("Pod %s/%s can not be evicted", pod.Namespace, pod.Name)
+		klog.Errorf("Pod %q cannot be evicted since failed to filter", klog.KObj(pod))
 		return false
 	}
 
@@ -237,6 +271,10 @@ func CreatePodMigrationJob(ctx context.Context, pod *corev1.Pod, evictOptions fr
 	job := &sev1alpha1.PodMigrationJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: string(UUIDGenerateFn()),
+			Annotations: map[string]string{
+				evictor.AnnotationEvictReason:  evictOptions.Reason,
+				evictor.AnnotationEvictTrigger: evictOptions.PluginName,
+			},
 		},
 		Spec: sev1alpha1.PodMigrationJobSpec{
 			PodRef: &corev1.ObjectReference{
@@ -815,16 +853,18 @@ func (r *Reconciler) evictPod(ctx context.Context, job *sev1alpha1.PodMigrationJ
 		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonEvicting, "Migrating", "Failed evict Pod %q caused by %v", podNamespacedName, err)
 		return false, reconcile.Result{}, err
 	}
+	r.trackEvictedPod(pod)
 
+	_, reason := evictor.GetEvictionTriggerAndReason(job.Annotations)
 	cond = &sev1alpha1.PodMigrationJobCondition{
 		Type:    sev1alpha1.PodMigrationJobConditionEviction,
 		Status:  sev1alpha1.PodMigrationJobConditionStatusFalse,
 		Reason:  sev1alpha1.PodMigrationJobReasonEvicting,
-		Message: fmt.Sprintf("Try to evict Pod %q", podNamespacedName),
+		Message: fmt.Sprintf("Pod %q evicted from node %q by the reason %q", podNamespacedName, pod.Spec.NodeName, reason),
 	}
 	err = r.updateCondition(ctx, job, cond)
 	if err == nil {
-		r.eventRecorder.Eventf(job, nil, corev1.EventTypeNormal, sev1alpha1.PodMigrationJobReasonEvicting, "Migrating", cond.Message)
+		r.eventRecorder.Eventf(job, nil, corev1.EventTypeNormal, sev1alpha1.PodMigrationJobReasonEvicting, "Migrating", "%s", cond.Message)
 	}
 	return false, reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
 }

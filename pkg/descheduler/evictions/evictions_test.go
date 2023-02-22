@@ -799,10 +799,8 @@ func TestPodEvictor(t *testing.T) {
 	fakeClient := fake.NewSimpleClientset()
 	podEvictor := NewPodEvictor(fakeClient, eventRecorder, "", false, pointer.Int(1), pointer.Int(1))
 
-	// nolint:staticcheck // SA1029: should not use built-in type string as key for value; define your own type to avoid collisions
-	ctx := context.WithValue(context.TODO(), "pluginName", "test")
-	// nolint:staticcheck // SA1029: should not use built-in type string as key for value; define your own type to avoid collisions
-	ctx = context.WithValue(ctx, "evictionReason", "just for test")
+	ctx := context.WithValue(context.TODO(), framework.EvictionPluginNameContextKey, "test")
+	ctx = context.WithValue(ctx, framework.EvictionReasonContextKey, "just for test")
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

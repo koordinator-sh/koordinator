@@ -55,10 +55,6 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, err
 	}
 
-	if len(nodeAffinityArgs.NodeAffinityType) == 0 {
-		return nil, fmt.Errorf("NodeAffinityType is empty")
-	}
-
 	var includedNamespaces, excludedNamespaces sets.String
 	if nodeAffinityArgs.Namespaces != nil {
 		includedNamespaces = sets.NewString(nodeAffinityArgs.Namespaces.Include...)

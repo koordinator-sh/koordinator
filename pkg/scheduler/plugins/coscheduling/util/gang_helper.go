@@ -17,17 +17,25 @@ limitations under the License.
 package util
 
 import (
-	"fmt"
+	"encoding/json"
+	"errors"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-
-	"encoding/json"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
+
+func GetGangGroupId(s []string) string {
+	sort.Strings(s)
+	return strings.Join(s, ",")
+}
 
 func GetId(namespace, name string) string {
 	return namespace + "/" + name
@@ -38,22 +46,55 @@ func GetGangNameByPod(pod *v1.Pod) string {
 		return ""
 	}
 	var gangName string
-	gangName = pod.Labels[v1alpha1.PodGroupLabel]
-	if gangName == "" {
-		gangName = extension.GetGangName(pod)
+	if gangName = pod.Labels[v1alpha1.PodGroupLabel]; gangName == "" {
+		// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+		if gangName = pod.Labels[extension.LabelLightweightCoschedulingPodGroupName]; gangName == "" {
+			gangName = extension.GetGangName(pod)
+		}
 	}
 	return gangName
+}
+
+func GetGangMinNumFromPod(pod *v1.Pod) (minNum int, err error) {
+	// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable is deprecated
+	if s := pod.Labels[extension.LabelLightweightCoschedulingPodGroupMinAvailable]; s != "" {
+		val, err := strconv.ParseInt(pod.Labels[extension.LabelLightweightCoschedulingPodGroupMinAvailable], 10, 32)
+		return int(val), err
+	}
+	if _, ok := pod.Annotations[extension.AnnotationGangMinNum]; ok {
+		return extension.GetMinNum(pod)
+	}
+	return 0, errors.New("missing min available")
+}
+
+func ShouldCreatePodGroup(pod *v1.Pod) bool {
+	// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+	return pod.Labels[v1alpha1.PodGroupLabel] == "" &&
+		pod.Labels[extension.LabelLightweightCoschedulingPodGroupName] == "" &&
+		pod.Annotations[extension.AnnotationGangName] != ""
+}
+
+func ShouldDeletePodGroup(pod *v1.Pod) bool {
+	return ShouldCreatePodGroup(pod)
 }
 
 func IsPodNeedGang(pod *v1.Pod) bool {
 	return GetGangNameByPod(pod) != ""
 }
 
-func ParsePgTimeoutSeconds(timeoutSeconds int32) (time.Duration, error) {
-	if timeoutSeconds <= 0 {
-		return 0, fmt.Errorf("podGroup timeout value is illegal,timeout Value:%v", timeoutSeconds)
+// GetWaitTimeDuration returns a wait timeout based on the following precedences:
+// 1. spec.scheduleTimeoutSeconds of the given pg, if specified
+// 2. fall back to defaultTimeout
+func GetWaitTimeDuration(pg *v1alpha1.PodGroup, defaultTimeout time.Duration) time.Duration {
+	if pg != nil && pg.Spec.ScheduleTimeoutSeconds != nil {
+		if *pg.Spec.ScheduleTimeoutSeconds >= 0 {
+			return time.Duration(*pg.Spec.ScheduleTimeoutSeconds) * time.Second
+		} else {
+			klog.Errorf("podGroup's ScheduleTimeoutSeconds illegal, podGroupName: %s", klog.KObj(pg))
+		}
 	}
-	return time.Duration(timeoutSeconds) * time.Second, nil
+
+	return defaultTimeout
 }
 
 // StringToGangGroupSlice

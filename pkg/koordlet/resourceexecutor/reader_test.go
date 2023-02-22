@@ -1075,3 +1075,136 @@ pagetables 1048576`,
 		})
 	}
 }
+
+func TestCgroupReader_ReadPSI(t *testing.T) {
+	type fields struct {
+		UseCgroupsV2  bool
+		CpuPreV1Value string
+		IoPreV1Value  string
+		MemPreV1Value string
+		CpuPreV2Value string
+		IoPreV2Value  string
+		MemPreV2Value string
+	}
+	type PSI struct {
+		SomeCPUAvg10     float64
+		SomeMemAvg10     float64
+		SomeIOAvg10      float64
+		FullCPUAvg10     float64
+		FullMemAvg10     float64
+		FullIOAvg10      float64
+		CPUFullSupported bool
+	}
+	type args struct {
+		parentDir string
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *PSI
+		wantErr bool
+	}{
+		{
+			name:   "v1 path not exist",
+			fields: fields{},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "parse v1 value successfully",
+			fields: fields{
+				CpuPreV1Value: "some avg10=0.00 avg60=0.00 avg300=0.00 total=169260",
+				IoPreV1Value:  "some avg10=0.00 avg60=0.00 avg300=0.00 total=32905\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=32905",
+				MemPreV1Value: "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    &PSI{SomeCPUAvg10: 0, SomeMemAvg10: 0, SomeIOAvg10: 0, FullCPUAvg10: 0, FullMemAvg10: 0, FullIOAvg10: 0, CPUFullSupported: false},
+			wantErr: false,
+		},
+		{
+			name: "v2 path not exist",
+			fields: fields{
+				UseCgroupsV2: true,
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "parse v2 value successfully",
+			fields: fields{
+				UseCgroupsV2:  true,
+				CpuPreV2Value: "some avg10=5.00 avg60=5.00 avg300=5.00 total=20",
+				IoPreV2Value:  "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=5.00 avg60=0.00 avg300=0.00 total=0",
+				MemPreV2Value: "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=5.00 avg60=0.00 avg300=0.00 total=0",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    &PSI{SomeCPUAvg10: 5, SomeMemAvg10: 0, SomeIOAvg10: 0, FullCPUAvg10: 0, FullMemAvg10: 5, FullIOAvg10: 5, CPUFullSupported: false},
+			wantErr: false,
+		},
+		{
+			name: "parse v2 value failed",
+			fields: fields{
+				UseCgroupsV2:  true,
+				CpuPreV2Value: "wrong content",
+				IoPreV2Value:  "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+				MemPreV2Value: "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := sysutil.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.SetCgroupsV2(tt.fields.UseCgroupsV2)
+			if tt.fields.CpuPreV1Value != "" {
+				sysutil.CPUAcctCPUPressure.WithSupported(true, "")
+				sysutil.CPUAcctMemoryPressure.WithSupported(true, "")
+				sysutil.CPUAcctIOPressure.WithSupported(true, "")
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUAcctCPUPressure, tt.fields.CpuPreV1Value)
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUAcctMemoryPressure, tt.fields.MemPreV1Value)
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUAcctIOPressure, tt.fields.IoPreV1Value)
+			}
+			if tt.fields.CpuPreV2Value != "" {
+				sysutil.CPUAcctCPUPressureV2.WithSupported(true, "")
+				sysutil.CPUAcctMemoryPressureV2.WithSupported(true, "")
+				sysutil.CPUAcctIOPressureV2.WithSupported(true, "")
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUAcctCPUPressureV2, tt.fields.CpuPreV2Value)
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUAcctMemoryPressureV2, tt.fields.MemPreV2Value)
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUAcctIOPressureV2, tt.fields.IoPreV2Value)
+			}
+
+			mockPSI, gotErr := NewCgroupReader().ReadPSI(tt.args.parentDir)
+			got := (*PSI)(nil)
+			if gotErr == nil {
+				got = &PSI{
+					SomeCPUAvg10:     mockPSI.CPU.Some.Avg10,
+					SomeMemAvg10:     mockPSI.Mem.Some.Avg10,
+					SomeIOAvg10:      mockPSI.IO.Some.Avg10,
+					FullCPUAvg10:     mockPSI.CPU.Full.Avg10,
+					FullMemAvg10:     mockPSI.Mem.Full.Avg10,
+					FullIOAvg10:      mockPSI.IO.Full.Avg10,
+					CPUFullSupported: mockPSI.CPU.FullSupported,
+				}
+			}
+
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
