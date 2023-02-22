@@ -30,6 +30,7 @@ func DefaultNodeSLOSpecConfig() slov1alpha1.NodeSLOSpec {
 		ResourceUsedThresholdWithBE: DefaultResourceThresholdStrategy(),
 		ResourceQOSStrategy:         DefaultResourceQOSStrategy(),
 		CPUBurstStrategy:            DefaultCPUBurstStrategy(),
+		SystemStrategy:              DefaultSystemStrategy(),
 	}
 }
 
@@ -261,5 +262,12 @@ func DefaultCPUBurstConfig() slov1alpha1.CPUBurstConfig {
 		CPUBurstPercent:            pointer.Int64Ptr(1000),
 		CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
 		CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(-1),
+	}
+}
+
+func DefaultSystemStrategy() *slov1alpha1.SystemStrategy {
+	return &slov1alpha1.SystemStrategy{
+		MinFreeKbytesFactor:  pointer.Int64Ptr(100), // 1 means 1/10000
+		WatermarkScaleFactor: pointer.Int64Ptr(150), // 1 means 1/10000
 	}
 }

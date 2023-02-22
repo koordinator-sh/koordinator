@@ -86,6 +86,9 @@ func (rd *RuntimeHookDispatcher) Dispatch(ctx context.Context, runtimeRequestPat
 			// currently, only one hook be called during one runtime
 			// TODO: multi hook server to merge response
 			rsp, err := rd.dispatchInternal(ctx, hookType, client, request)
+			if err != nil {
+				return nil, err, hookServer.FailurePolicy
+			}
 			return rsp, err, hookServer.FailurePolicy
 		}
 	}

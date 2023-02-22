@@ -19,6 +19,7 @@ package system
 import (
 	"os"
 	"path"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -90,15 +91,23 @@ func (c *FileTestUtil) SetCgroupsV2(useCgroupsV2 bool) {
 	UseCgroupsV2 = useCgroupsV2
 }
 
-func (c *FileTestUtil) MkDirAll(dirRelativePath string) {
-	dir := path.Join(c.TempDir, dirRelativePath)
+//if dir contain TempDir, mkdir direct, else join with TempDir and mkdir
+func (c *FileTestUtil) MkDirAll(testDir string) {
+	dir := testDir
+	if !strings.Contains(dir, c.TempDir) {
+		dir = path.Join(c.TempDir, testDir)
+	}
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		c.t.Fatal(err)
 	}
 }
 
-func (c *FileTestUtil) CreateFile(fileRelativePath string) {
-	filePath := path.Join(c.TempDir, fileRelativePath)
+//if filePath contain TempDir, createFile direct, else join with TempDir and create
+func (c *FileTestUtil) CreateFile(testFilePath string) {
+	filePath := testFilePath
+	if !strings.Contains(filePath, c.TempDir) {
+		filePath = path.Join(c.TempDir, testFilePath)
+	}
 	dir, _ := path.Split(filePath)
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		c.t.Fatal(err)
@@ -108,10 +117,14 @@ func (c *FileTestUtil) CreateFile(fileRelativePath string) {
 	}
 }
 
-func (c *FileTestUtil) WriteFileContents(fileRelativePath, contents string) {
-	filePath := path.Join(c.TempDir, fileRelativePath)
+//if filePath contain TempDir, write direct, else join with TempDir and write
+func (c *FileTestUtil) WriteFileContents(testFilePath, contents string) {
+	filePath := testFilePath
+	if !strings.Contains(filePath, c.TempDir) {
+		filePath = path.Join(c.TempDir, testFilePath)
+	}
 	if !FileExists(filePath) {
-		c.CreateFile(fileRelativePath)
+		c.CreateFile(testFilePath)
 	}
 	err := os.WriteFile(filePath, []byte(contents), 0644)
 	if err != nil {
@@ -119,8 +132,12 @@ func (c *FileTestUtil) WriteFileContents(fileRelativePath, contents string) {
 	}
 }
 
-func (c *FileTestUtil) ReadFileContents(fileRelativePath string) string {
-	filePath := path.Join(c.TempDir, fileRelativePath)
+//if filePath contain TempDir, read direct, else join with TempDir and read
+func (c *FileTestUtil) ReadFileContents(testFilePath string) string {
+	filePath := testFilePath
+	if !strings.Contains(filePath, c.TempDir) {
+		filePath = path.Join(c.TempDir, testFilePath)
+	}
 	contents, err := os.ReadFile(filePath)
 	if err != nil {
 		c.t.Fatal(err)
@@ -187,4 +204,12 @@ func (c *FileTestUtil) ReadCgroupFileContents(taskDir string, r Resource) string
 		c.t.Fatal(err)
 	}
 	return contents
+}
+
+func (c *FileTestUtil) stripPrefix(path string) string {
+	stripped := strings.TrimPrefix(path, c.TempDir)
+	if stripped == "" {
+		return "/"
+	}
+	return stripped
 }

@@ -351,6 +351,32 @@ CPU NODE SOCKET CORE L1d:L1i:L2:L3 ONLINE
 			},
 			wantErr: false,
 		},
+		{
+			name: "read lsCPUStr successfully without l3 cache",
+			args: args{
+				lsCPUStr: `
+CPU NODE SOCKET CORE L1d:L1i:L2:L3 ONLINE
+0   0    0      0    0:0:0         yes
+1   0    0      1    1:1:1         yes
+2   0    0      2    2:2:2         yes
+3   0    0      3    3:3:3         yes
+4   0    0      4    4:4:4         yes
+5   0    0      5    5:5:5         yes
+6   0    0      6    6:6:6         yes
+7   0    0      7    7:7:7        yes
+`},
+			want: []ProcessorInfo{
+				{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0, L1dl1il2: "0", L3: 0, Online: "yes"},
+				{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0, L1dl1il2: "1", L3: 0, Online: "yes"},
+				{CPUID: 2, CoreID: 2, SocketID: 0, NodeID: 0, L1dl1il2: "2", L3: 0, Online: "yes"},
+				{CPUID: 3, CoreID: 3, SocketID: 0, NodeID: 0, L1dl1il2: "3", L3: 0, Online: "yes"},
+				{CPUID: 4, CoreID: 4, SocketID: 0, NodeID: 0, L1dl1il2: "4", L3: 0, Online: "yes"},
+				{CPUID: 5, CoreID: 5, SocketID: 0, NodeID: 0, L1dl1il2: "5", L3: 0, Online: "yes"},
+				{CPUID: 6, CoreID: 6, SocketID: 0, NodeID: 0, L1dl1il2: "6", L3: 0, Online: "yes"},
+				{CPUID: 7, CoreID: 7, SocketID: 0, NodeID: 0, L1dl1il2: "7", L3: 0, Online: "yes"},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

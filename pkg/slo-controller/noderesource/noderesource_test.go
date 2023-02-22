@@ -32,16 +32,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	schedulingfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 )
 
 func Test_isColocationCfgDisabled(t *testing.T) {
 	type fields struct {
-		config config.ColocationCfg
+		config extension.ColocationCfg
 	}
 	type args struct {
 		node *corev1.Node
@@ -54,7 +53,7 @@ func Test_isColocationCfgDisabled(t *testing.T) {
 	}{
 		{
 			name:   "set as disabled when no config",
-			fields: fields{config: config.ColocationCfg{}},
+			fields: fields{config: extension.ColocationCfg{}},
 			args: args{
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -62,12 +61,12 @@ func Test_isColocationCfgDisabled(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -77,8 +76,8 @@ func Test_isColocationCfgDisabled(t *testing.T) {
 		{
 			name: "use cluster config when nil node",
 			fields: fields{
-				config: config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
+				config: extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                        pointer.BoolPtr(false),
 						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
@@ -86,14 +85,16 @@ func Test_isColocationCfgDisabled(t *testing.T) {
 						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
 						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 					},
-					NodeConfigs: []config.NodeColocationCfg{
+					NodeConfigs: []extension.NodeColocationCfg{
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"xxx": "yyy",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"xxx": "yyy",
+									},
 								},
 							},
-							ColocationStrategy: config.ColocationStrategy{
+							ColocationStrategy: extension.ColocationStrategy{
 								Enable: pointer.BoolPtr(true),
 							},
 						},
@@ -173,18 +174,20 @@ func Test_isDegradeNeeded(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := NodeResourceReconciler{
 				cfgCache: &FakeCfgCache{
-					cfg: config.ColocationCfg{
-						ColocationStrategy: config.ColocationStrategy{
+					cfg: extension.ColocationCfg{
+						ColocationStrategy: extension.ColocationStrategy{
 							Enable: pointer.BoolPtr(true),
 						},
-						NodeConfigs: []config.NodeColocationCfg{
+						NodeConfigs: []extension.NodeColocationCfg{
 							{
-								NodeSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{
-										"xxx": "yyy",
+								NodeCfgProfile: extension.NodeCfgProfile{
+									NodeSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"xxx": "yyy",
+										},
 									},
 								},
-								ColocationStrategy: config.ColocationStrategy{
+								ColocationStrategy: extension.ColocationStrategy{
 									DegradeTimeMinutes: pointer.Int64Ptr(degradeTimeoutMinutes),
 								},
 							},
@@ -206,12 +209,12 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 		},
 		Status: corev1.NodeStatus{
 			Allocatable: corev1.ResourceList{
-				apiext.BatchCPU:    resource.MustParse("20"),
-				apiext.BatchMemory: resource.MustParse("40G"),
+				extension.BatchCPU:    resource.MustParse("20"),
+				extension.BatchMemory: resource.MustParse("40G"),
 			},
 			Capacity: corev1.ResourceList{
-				apiext.BatchCPU:    resource.MustParse("20"),
-				apiext.BatchMemory: resource.MustParse("40G"),
+				extension.BatchCPU:    resource.MustParse("20"),
+				extension.BatchMemory: resource.MustParse("40G"),
 			},
 		},
 	}
@@ -224,8 +227,8 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 		GPUSyncContext: NewSyncContext(),
 		Clock:          clock.RealClock{},
 		cfgCache: &FakeCfgCache{
-			cfg: config.ColocationCfg{
-				ColocationStrategy: config.ColocationStrategy{
+			cfg: extension.ColocationCfg{
+				ColocationStrategy: extension.ColocationStrategy{
 					Enable:                        pointer.BoolPtr(true),
 					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
@@ -240,8 +243,8 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNode.Name,
 			Labels: map[string]string{
-				apiext.GPUModel:  "A100",
-				apiext.GPUDriver: "480",
+				extension.GPUModel:  "A100",
+				extension.GPUDriver: "480",
 			},
 		},
 		Spec: schedulingv1alpha1.DeviceSpec{
@@ -252,9 +255,9 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
-						apiext.GPUCore:        *resource.NewQuantity(100, resource.BinarySI),
-						apiext.GPUMemory:      *resource.NewQuantity(8000, resource.BinarySI),
-						apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.BinarySI),
+						extension.GPUCore:        *resource.NewQuantity(100, resource.BinarySI),
+						extension.GPUMemory:      *resource.NewQuantity(8000, resource.BinarySI),
+						extension.GPUMemoryRatio: *resource.NewQuantity(100, resource.BinarySI),
 					},
 				},
 				{
@@ -263,9 +266,9 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
-						apiext.GPUCore:        *resource.NewQuantity(100, resource.BinarySI),
-						apiext.GPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
-						apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.BinarySI),
+						extension.GPUCore:        *resource.NewQuantity(100, resource.BinarySI),
+						extension.GPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
+						extension.GPUMemoryRatio: *resource.NewQuantity(100, resource.BinarySI),
 					},
 				},
 			},
@@ -275,9 +278,9 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 	r.updateGPUNodeResource(testNode, fakeDevice)
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: testNode.Name}, testNode)
 	assert.Equal(t, nil, err)
-	actualMemoryRatio := testNode.Status.Allocatable[apiext.GPUMemoryRatio]
-	actualMemory := testNode.Status.Allocatable[apiext.GPUMemory]
-	actualCore := testNode.Status.Allocatable[apiext.GPUCore]
+	actualMemoryRatio := testNode.Status.Allocatable[extension.GPUMemoryRatio]
+	actualMemory := testNode.Status.Allocatable[extension.GPUMemory]
+	actualCore := testNode.Status.Allocatable[extension.GPUCore]
 	assert.Equal(t, actualMemoryRatio.Value(), resource.NewQuantity(200, resource.DecimalSI).Value())
 	assert.Equal(t, actualMemory.Value(), resource.NewQuantity(18000, resource.BinarySI).Value())
 	assert.Equal(t, actualCore.Value(), resource.NewQuantity(200, resource.BinarySI).Value())
@@ -285,8 +288,8 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 	r.updateGPUDriverAndModel(testNode, fakeDevice)
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: testNode.Name}, testNode)
 	assert.Equal(t, nil, err)
-	assert.Equal(t, testNode.Labels[apiext.GPUModel], "A100")
-	assert.Equal(t, testNode.Labels[apiext.GPUDriver], "480")
+	assert.Equal(t, testNode.Labels[extension.GPUModel], "A100")
+	assert.Equal(t, testNode.Labels[extension.GPUDriver], "480")
 }
 
 func Test_isGPUResourceNeedSync(t *testing.T) {
@@ -303,9 +306,9 @@ func Test_isGPUResourceNeedSync(t *testing.T) {
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("20"),
-						apiext.GPUMemory:      resource.MustParse("40G"),
-						apiext.GPUMemoryRatio: resource.MustParse("20"),
+						extension.GPUCore:        resource.MustParse("20"),
+						extension.GPUMemory:      resource.MustParse("40G"),
+						extension.GPUMemoryRatio: resource.MustParse("20"),
 					},
 				},
 			},
@@ -315,39 +318,9 @@ func Test_isGPUResourceNeedSync(t *testing.T) {
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("20"),
-						apiext.GPUMemory:      resource.MustParse("40G"),
-						apiext.GPUMemoryRatio: resource.MustParse("20"),
-					},
-				},
-			},
-			&SyncContext{
-				contextMap: map[string]time.Time{"/test-node0": time.Now()},
-			},
-			false,
-		},
-		{
-			&corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node0",
-				},
-				Status: corev1.NodeStatus{
-					Allocatable: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("20"),
-						apiext.GPUMemory:      resource.MustParse("40G"),
-						apiext.GPUMemoryRatio: resource.MustParse("21"),
-					},
-				},
-			},
-			&corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node0",
-				},
-				Status: corev1.NodeStatus{
-					Allocatable: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("21"),
-						apiext.GPUMemory:      resource.MustParse("40G"),
-						apiext.GPUMemoryRatio: resource.MustParse("20"),
+						extension.GPUCore:        resource.MustParse("20"),
+						extension.GPUMemory:      resource.MustParse("40G"),
+						extension.GPUMemoryRatio: resource.MustParse("20"),
 					},
 				},
 			},
@@ -363,9 +336,9 @@ func Test_isGPUResourceNeedSync(t *testing.T) {
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("20"),
-						apiext.GPUMemory:      resource.MustParse("40G"),
-						apiext.GPUMemoryRatio: resource.MustParse("20"),
+						extension.GPUCore:        resource.MustParse("20"),
+						extension.GPUMemory:      resource.MustParse("40G"),
+						extension.GPUMemoryRatio: resource.MustParse("21"),
 					},
 				},
 			},
@@ -375,9 +348,39 @@ func Test_isGPUResourceNeedSync(t *testing.T) {
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("20"),
-						apiext.GPUMemory:      resource.MustParse("40G"),
-						apiext.GPUMemoryRatio: resource.MustParse("20"),
+						extension.GPUCore:        resource.MustParse("21"),
+						extension.GPUMemory:      resource.MustParse("40G"),
+						extension.GPUMemoryRatio: resource.MustParse("20"),
+					},
+				},
+			},
+			&SyncContext{
+				contextMap: map[string]time.Time{"/test-node0": time.Now()},
+			},
+			false,
+		},
+		{
+			&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node0",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						extension.GPUCore:        resource.MustParse("20"),
+						extension.GPUMemory:      resource.MustParse("40G"),
+						extension.GPUMemoryRatio: resource.MustParse("20"),
+					},
+				},
+			},
+			&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node0",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						extension.GPUCore:        resource.MustParse("20"),
+						extension.GPUMemory:      resource.MustParse("40G"),
+						extension.GPUMemoryRatio: resource.MustParse("20"),
 					},
 				},
 			},
@@ -387,8 +390,8 @@ func Test_isGPUResourceNeedSync(t *testing.T) {
 			true,
 		},
 	}
-	configf := &config.ColocationCfg{
-		ColocationStrategy: config.ColocationStrategy{
+	configf := &extension.ColocationCfg{
+		ColocationStrategy: extension.ColocationStrategy{
 			Enable:                        pointer.BoolPtr(true),
 			CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 			MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
@@ -419,8 +422,8 @@ func Test_isGPULabelNeedSync(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node0",
 					Labels: map[string]string{
-						apiext.GPUModel:  "A100",
-						apiext.GPUDriver: "480",
+						extension.GPUModel:  "A100",
+						extension.GPUDriver: "480",
 					},
 				},
 			},
@@ -428,8 +431,8 @@ func Test_isGPULabelNeedSync(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node0",
 					Labels: map[string]string{
-						apiext.GPUModel:  "A100",
-						apiext.GPUDriver: "480",
+						extension.GPUModel:  "A100",
+						extension.GPUDriver: "480",
 					},
 				},
 			},
@@ -440,8 +443,8 @@ func Test_isGPULabelNeedSync(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node0",
 					Labels: map[string]string{
-						apiext.GPUModel:  "P40",
-						apiext.GPUDriver: "480",
+						extension.GPUModel:  "P40",
+						extension.GPUDriver: "480",
 					},
 				},
 			},
@@ -449,8 +452,8 @@ func Test_isGPULabelNeedSync(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node0",
 					Labels: map[string]string{
-						apiext.GPUModel:  "A100",
-						apiext.GPUDriver: "480",
+						extension.GPUModel:  "A100",
+						extension.GPUDriver: "480",
 					},
 				},
 			},
@@ -461,8 +464,8 @@ func Test_isGPULabelNeedSync(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node0",
 					Labels: map[string]string{
-						apiext.GPUModel:  "A100",
-						apiext.GPUDriver: "470",
+						extension.GPUModel:  "A100",
+						extension.GPUDriver: "470",
 					},
 				},
 			},
@@ -470,8 +473,8 @@ func Test_isGPULabelNeedSync(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node0",
 					Labels: map[string]string{
-						apiext.GPUModel:  "A100",
-						apiext.GPUDriver: "480",
+						extension.GPUModel:  "A100",
+						extension.GPUDriver: "480",
 					},
 				},
 			},
@@ -486,8 +489,8 @@ func Test_isGPULabelNeedSync(t *testing.T) {
 }
 
 func Test_updateNodeBEResource(t *testing.T) {
-	enabledCfg := &config.ColocationCfg{
-		ColocationStrategy: config.ColocationStrategy{
+	enabledCfg := &extension.ColocationCfg{
+		ColocationStrategy: extension.ColocationStrategy{
 			Enable:                        pointer.BoolPtr(true),
 			CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 			MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
@@ -496,8 +499,8 @@ func Test_updateNodeBEResource(t *testing.T) {
 			ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
 		},
 	}
-	disableCfg := &config.ColocationCfg{
-		ColocationStrategy: config.ColocationStrategy{
+	disableCfg := &extension.ColocationCfg{
+		ColocationStrategy: extension.ColocationStrategy{
 			Enable:                        pointer.BoolPtr(false),
 			CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 			MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
@@ -508,7 +511,7 @@ func Test_updateNodeBEResource(t *testing.T) {
 	}
 	type fields struct {
 		Client      client.Client
-		config      *config.ColocationCfg
+		config      *extension.ColocationCfg
 		SyncContext *SyncContext
 	}
 	type args struct {
@@ -531,12 +534,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				}).Build(),
@@ -552,12 +555,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -572,12 +575,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
-						apiext.BatchCPU:    resource.MustParse("20"),
-						apiext.BatchMemory: resource.MustParse("40G"),
+						extension.BatchCPU:    resource.MustParse("20"),
+						extension.BatchMemory: resource.MustParse("40G"),
 					},
 					Capacity: corev1.ResourceList{
-						apiext.BatchCPU:    resource.MustParse("20"),
-						apiext.BatchMemory: resource.MustParse("40G"),
+						extension.BatchCPU:    resource.MustParse("20"),
+						extension.BatchMemory: resource.MustParse("40G"),
 					},
 				},
 			},
@@ -592,12 +595,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				}).Build(),
@@ -613,12 +616,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -633,12 +636,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
-						apiext.BatchCPU:    *resource.NewQuantity(30, resource.DecimalSI),
-						apiext.BatchMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+						extension.BatchCPU:    *resource.NewQuantity(30, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
 					},
 					Capacity: corev1.ResourceList{
-						apiext.BatchCPU:    *resource.NewQuantity(30, resource.DecimalSI),
-						apiext.BatchMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+						extension.BatchCPU:    *resource.NewQuantity(30, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
 					},
 				},
 			},
@@ -660,12 +663,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -691,12 +694,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				}).Build(),
@@ -712,12 +715,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -732,12 +735,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
-						apiext.BatchCPU:    resource.MustParse("23"),
-						apiext.BatchMemory: resource.MustParse("42950637650"),
+						extension.BatchCPU:    resource.MustParse("23"),
+						extension.BatchMemory: resource.MustParse("42950637650"),
 					},
 					Capacity: corev1.ResourceList{
-						apiext.BatchCPU:    resource.MustParse("23"),
-						apiext.BatchMemory: resource.MustParse("42950637650"),
+						extension.BatchCPU:    resource.MustParse("23"),
+						extension.BatchMemory: resource.MustParse("42950637650"),
 					},
 				},
 			},
@@ -755,37 +758,41 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				}).Build(),
-				config: &config.ColocationCfg{
+				config: &extension.ColocationCfg{
 					ColocationStrategy: enabledCfg.ColocationStrategy,
-					NodeConfigs: []config.NodeColocationCfg{
+					NodeConfigs: []extension.NodeColocationCfg{
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"xxx": "yyy",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"xxx": "yyy",
+									},
 								},
 							},
-							ColocationStrategy: config.ColocationStrategy{
+							ColocationStrategy: extension.ColocationStrategy{
 								CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 								MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
 								ResourceDiffThreshold:         pointer.Float64Ptr(0.6),
 							},
 						},
 						{
-							NodeSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"abc": "def",
+							NodeCfgProfile: extension.NodeCfgProfile{
+								NodeSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"abc": "def",
+									},
 								},
 							},
-							ColocationStrategy: config.ColocationStrategy{
+							ColocationStrategy: extension.ColocationStrategy{
 								CPUReclaimThresholdPercent:    pointer.Int64Ptr(60),
 								MemoryReclaimThresholdPercent: pointer.Int64Ptr(60),
 							},
@@ -806,12 +813,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -829,12 +836,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
-						apiext.BatchCPU:    resource.MustParse("20"),
-						apiext.BatchMemory: resource.MustParse("40G"),
+						extension.BatchCPU:    resource.MustParse("20"),
+						extension.BatchMemory: resource.MustParse("40G"),
 					},
 					Capacity: corev1.ResourceList{
-						apiext.BatchCPU:    resource.MustParse("20"),
-						apiext.BatchMemory: resource.MustParse("40G"),
+						extension.BatchCPU:    resource.MustParse("20"),
+						extension.BatchMemory: resource.MustParse("40G"),
 					},
 				},
 			},
@@ -849,12 +856,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				}).Build(),
@@ -870,12 +877,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -911,12 +918,12 @@ func Test_updateNodeBEResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -938,27 +945,29 @@ func Test_updateNodeBEResource(t *testing.T) {
 				BESyncContext: SyncContext{contextMap: tt.fields.SyncContext.contextMap},
 				Clock:         clock.RealClock{},
 			}
+			oldNodeCopy := tt.args.oldNode.DeepCopy()
 			got := r.updateNodeBEResource(tt.args.oldNode, tt.args.beResource)
 			assert.Equal(t, tt.wantErr, got != nil, got)
 			if !tt.wantErr {
 				gotNode := &corev1.Node{}
 				_ = r.Client.Get(context.TODO(), types.NamespacedName{Name: tt.args.oldNode.Name}, gotNode)
 
-				wantCPU := tt.want.Status.Allocatable[apiext.BatchCPU]
-				gotCPU := gotNode.Status.Allocatable[apiext.BatchCPU]
+				wantCPU := tt.want.Status.Allocatable[extension.BatchCPU]
+				gotCPU := gotNode.Status.Allocatable[extension.BatchCPU]
 				assert.Equal(t, wantCPU.Value(), gotCPU.Value())
 
-				wantMem := tt.want.Status.Allocatable[apiext.BatchMemory]
-				gotMem := gotNode.Status.Allocatable[apiext.BatchMemory]
+				wantMem := tt.want.Status.Allocatable[extension.BatchMemory]
+				gotMem := gotNode.Status.Allocatable[extension.BatchMemory]
 				assert.Equal(t, wantMem.Value(), gotMem.Value())
 			}
+			assert.Equal(t, oldNodeCopy, tt.args.oldNode) // must not change the node object in cache
 		})
 	}
 }
 
 func Test_isBEResourceSyncNeeded(t *testing.T) {
 	type fields struct {
-		config      *config.ColocationCfg
+		config      *extension.ColocationCfg
 		SyncContext *SyncContext
 	}
 	type args struct {
@@ -974,15 +983,15 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 	}{
 		{
 			name:   "cannot update an invalid new node",
-			fields: fields{config: &config.ColocationCfg{}, SyncContext: &SyncContext{}},
+			fields: fields{config: &extension.ColocationCfg{}, SyncContext: &SyncContext{}},
 			args:   args{},
 			want:   false,
 		},
 		{
 			name: "needSync for expired node resource",
 			fields: fields{
-				config: &config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
+				config: &extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                        pointer.BoolPtr(true),
 						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
@@ -1002,12 +1011,12 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -1017,12 +1026,12 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -1032,8 +1041,8 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 		{
 			name: "needSync for cpu diff larger than 0.1",
 			fields: fields{
-				config: &config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
+				config: &extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                        pointer.BoolPtr(true),
 						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
@@ -1053,12 +1062,12 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -1068,12 +1077,12 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("15"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("15"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("15"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("15"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -1083,8 +1092,8 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 		{
 			name: "needSync for cpu diff larger than 0.1",
 			fields: fields{
-				config: &config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
+				config: &extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                        pointer.BoolPtr(true),
 						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
@@ -1104,12 +1113,12 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -1119,12 +1128,12 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("70G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("70G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("70G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("70G"),
 						},
 					},
 				},
@@ -1134,8 +1143,8 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 		{
 			name: "no need to sync, everything's ok.",
 			fields: fields{
-				config: &config.ColocationCfg{
-					ColocationStrategy: config.ColocationStrategy{
+				config: &extension.ColocationCfg{
+					ColocationStrategy: extension.ColocationStrategy{
 						Enable:                        pointer.BoolPtr(true),
 						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
@@ -1155,12 +1164,12 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -1171,12 +1180,12 @@ func Test_isBEResourceSyncNeeded(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							apiext.BatchCPU:    resource.MustParse("20"),
-							apiext.BatchMemory: resource.MustParse("40G"),
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
 						},
 					},
 				},

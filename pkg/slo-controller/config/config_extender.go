@@ -19,38 +19,12 @@ package config
 import (
 	"fmt"
 
-	"github.com/mohae/deepcopy"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 var (
-	defaultColocationStrategyExtender = ColocationStrategyExtender{}
+	defaultColocationStrategyExtender = extension.ColocationStrategyExtender{}
 )
-
-// +k8s:deepcopy-gen=true
-type ColocationStrategyExtender struct {
-	Extensions ExtraFields `json:"extensions,omitempty"`
-}
-
-// +k8s:deepcopy-gen=false
-type ExtraFields map[string]interface{}
-
-func (in *ExtraFields) DeepCopyInto(out *ExtraFields) {
-	if in == nil {
-		return
-	} else {
-		outIf := deepcopy.Copy(*in)
-		*out = outIf.(ExtraFields)
-	}
-}
-
-func (in *ExtraFields) DeepCopy() *ExtraFields {
-	if in == nil {
-		return nil
-	}
-	out := new(ExtraFields)
-	in.DeepCopyInto(out)
-	return out
-}
 
 func RegisterDefaultColocationExtension(key string, extension interface{}) error {
 	if defaultColocationStrategyExtender.Extensions == nil {

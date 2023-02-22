@@ -57,13 +57,11 @@ type NodeResourceReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups=scheduling.koordinator.sh,resources=devices,verbs=get;list;watch
 // +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodemetrics,verbs=get;list;watch
-// +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodeslos,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=slo.koordinator.sh,resources=nodeslos/status,verbs=get;update;patch
 
 func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	if !r.cfgCache.IsCfgAvailable() {
 		klog.Warningf("colocation config is not available")
-		return ctrl.Result{Requeue: false}, nil
+		return ctrl.Result{}, nil
 	}
 
 	node := &corev1.Node{}
@@ -71,7 +69,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if errors.IsNotFound(err) {
 			// skip non-existing node and return no error to forget the request
 			klog.V(3).Infof("skip for node %v not found", req.Name)
-			return ctrl.Result{Requeue: false}, nil
+			return ctrl.Result{}, nil
 		}
 		klog.Errorf("failed to get node %v, error: %v", req.Name, err)
 		return ctrl.Result{Requeue: true}, err
@@ -82,7 +80,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if err := r.resetNodeBEResource(node, disableInConfig, "node colocation is disabled in Config"); err != nil {
 			return ctrl.Result{Requeue: true}, err
 		}
-		return ctrl.Result{Requeue: false}, nil
+		return ctrl.Result{}, nil
 	}
 
 	nodeMetric := &slov1alpha1.NodeMetric{}
@@ -90,7 +88,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if errors.IsNotFound(err) {
 			// skip non-existing node metric and return no error to forget the request
 			klog.V(3).Infof("skip for nodemetric %v not found", req.Name)
-			return ctrl.Result{Requeue: false}, nil
+			return ctrl.Result{}, nil
 		}
 		klog.Errorf("failed to get nodemetric %v, error: %v", req.Name, err)
 		return ctrl.Result{Requeue: true}, err
@@ -101,7 +99,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if err := r.resetNodeBEResource(node, degradeByKoordController, "degrade node resource because of abnormal NodeMetric"); err != nil {
 			return ctrl.Result{Requeue: true}, err
 		}
-		return ctrl.Result{Requeue: false}, nil
+		return ctrl.Result{}, nil
 	}
 
 	podList := &corev1.PodList{}
@@ -111,12 +109,15 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{Requeue: true}, err
 	}
 
+	// update BE resources
 	beResource := r.calculateBEResource(node, podList, nodeMetric)
 
 	if err := r.updateNodeBEResource(node, beResource); err != nil {
 		klog.Errorf("failed to update node %v BE resource, error: %v", node.Name, err)
 		return ctrl.Result{Requeue: true}, err
 	}
+
+	// update device resources
 	device := &schedulingv1alpha1.Device{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: node.Name, Namespace: node.Namespace}, device)
 	if err != nil {
@@ -124,7 +125,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			klog.Errorf("failed to get device %s, err: %v", node.Name, err)
 			return ctrl.Result{Requeue: true}, err
 		}
-		return ctrl.Result{Requeue: false}, nil
+		return ctrl.Result{}, nil
 	}
 	if err := r.updateGPUNodeResource(node, device); err != nil {
 		klog.Errorf("failed to update node %v gpu resource and label, error: %v", node.Name, err)
@@ -135,7 +136,8 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{Requeue: true}, err
 	}
 
-	return ctrl.Result{Requeue: false}, nil
+	klog.V(6).Infof("noderesource-controller succeeded to update node resources of %v", node.Name)
+	return ctrl.Result{}, nil
 }
 
 func Add(mgr ctrl.Manager) error {
@@ -158,5 +160,6 @@ func (r *NodeResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &slov1alpha1.NodeMetric{}}, &EnqueueRequestForNodeMetric{syncContext: &r.BESyncContext}).
 		Watches(&source.Kind{Type: &schedulingv1alpha1.Device{}}, &EnqueueRequestForDevice{syncContext: &r.GPUSyncContext}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler).
+		Named("noderesource"). // avoid conflict with others reconciling `Node`
 		Complete(r)
 }

@@ -35,9 +35,25 @@ import (
 const (
 	defaultMigrationControllerMaxConcurrentReconciles = 1
 
+	defaultMaxMigratingPerNode        = 2
 	defaultMigrationJobMode           = sev1alpha1.PodMigrationJobModeReservationFirst
 	defaultMigrationJobTTL            = 5 * time.Minute
 	defaultMigrationJobEvictionPolicy = migrationevictor.NativeEvictorName
+	defaultMigrationEvictQPS          = 10
+	defaultMigrationEvictBurst        = 1
+)
+
+var (
+	defaultObjectLimiters = map[MigrationLimitObjectType]MigrationObjectLimiter{
+		MigrationLimitObjectWorkload: {
+			Duration: metav1.Duration{Duration: 5 * time.Minute},
+		},
+	}
+
+	defaultLoadAnomalyCondition = &LoadAnomalyCondition{
+		Timeout:                  &metav1.Duration{Duration: 1 * time.Minute},
+		ConsecutiveAbnormalities: 5,
+	}
 )
 
 func addDefaultingFuncs(scheme *runtime.Scheme) error {
@@ -153,7 +169,7 @@ func SetDefaults_DeschedulerConfiguration(obj *DeschedulerConfiguration) {
 		obj.EnableContentionProfiling = &enableContentionProfiling
 	}
 
-	defaultBindAddress := net.JoinHostPort("0.0.0.0", strconv.Itoa(config.DefaultDeschedulerPort))
+	defaultBindAddress := net.JoinHostPort("0.0.0.0", strconv.Itoa(config.DefaultInsecureDeschedulerPort))
 	if obj.HealthzBindAddress == nil {
 		obj.HealthzBindAddress = &defaultBindAddress
 	} else {
@@ -165,7 +181,7 @@ func SetDefaults_DeschedulerConfiguration(obj *DeschedulerConfiguration) {
 			obj.HealthzBindAddress = &hostPort
 		} else {
 			if host := net.ParseIP(*obj.HealthzBindAddress); host != nil {
-				hostPort := net.JoinHostPort(*obj.HealthzBindAddress, strconv.Itoa(config.DefaultDeschedulerPort))
+				hostPort := net.JoinHostPort(*obj.HealthzBindAddress, strconv.Itoa(config.DefaultInsecureDeschedulerPort))
 				obj.HealthzBindAddress = &hostPort
 			}
 		}
@@ -182,7 +198,7 @@ func SetDefaults_DeschedulerConfiguration(obj *DeschedulerConfiguration) {
 			obj.MetricsBindAddress = &hostPort
 		} else {
 			if host := net.ParseIP(*obj.MetricsBindAddress); host != nil {
-				hostPort := net.JoinHostPort(*obj.MetricsBindAddress, strconv.Itoa(config.DefaultDeschedulerPort))
+				hostPort := net.JoinHostPort(*obj.MetricsBindAddress, strconv.Itoa(config.DefaultInsecureDeschedulerPort))
 				obj.MetricsBindAddress = &hostPort
 			}
 		}
@@ -206,6 +222,9 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 	if obj.MaxConcurrentReconciles == nil {
 		obj.MaxConcurrentReconciles = pointer.Int32(defaultMigrationControllerMaxConcurrentReconciles)
 	}
+	if obj.MaxMigratingPerNode == nil {
+		obj.MaxMigratingPerNode = pointer.Int32(defaultMaxMigratingPerNode)
+	}
 	if obj.DefaultJobMode == "" {
 		obj.DefaultJobMode = string(defaultMigrationJobMode)
 	}
@@ -215,10 +234,25 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 	if obj.EvictionPolicy == "" {
 		obj.EvictionPolicy = defaultMigrationJobEvictionPolicy
 	}
+	if obj.EvictQPS == nil {
+		obj.EvictQPS = &config.Float64OrString{
+			Type:     config.Float,
+			FloatVal: defaultMigrationEvictQPS,
+		}
+	}
+	if obj.EvictBurst == nil {
+		obj.EvictBurst = pointer.Int32(defaultMigrationEvictBurst)
+	}
+	if len(obj.ObjectLimiters) == 0 {
+		obj.ObjectLimiters = defaultObjectLimiters
+	}
 }
 
 func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
 	if obj.NodeFit == nil {
 		obj.NodeFit = pointer.Bool(true)
+	}
+	if obj.AnomalyCondition == nil || obj.AnomalyCondition.ConsecutiveAbnormalities == 0 {
+		obj.AnomalyCondition = defaultLoadAnomalyCondition
 	}
 }

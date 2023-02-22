@@ -114,8 +114,10 @@ func (gangCache *GangCache) onPodAdd(obj interface{}) {
 
 	// the gang is created in Annotation way
 	shouldCreatePg := false
-	if _, exist := pod.Labels[v1alpha1.PodGroupLabel]; !exist {
-		shouldCreatePg = gang.tryInitByPodConfig(pod, gangCache.pluginArgs)
+	if pod.Labels[v1alpha1.PodGroupLabel] == "" {
+		if gang.tryInitByPodConfig(pod, gangCache.pluginArgs) {
+			shouldCreatePg = util.ShouldCreatePodGroup(pod)
+		}
 	}
 	gang.setChild(pod)
 	if pod.Spec.NodeName != "" {
@@ -167,6 +169,9 @@ func (gangCache *GangCache) onPodDelete(obj interface{}) {
 	shouldDeleteGang := gang.deletePod(pod)
 	if shouldDeleteGang {
 		gangCache.deleteGangFromCacheByGangId(gangId)
+		if !util.ShouldDeletePodGroup(pod) {
+			return
+		}
 		// delete podGroup
 		err := retry.OnError(
 			retry.DefaultRetry,

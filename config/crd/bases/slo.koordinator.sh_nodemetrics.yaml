@@ -168,6 +168,10 @@ spec:
                   node.
                 items:
                   properties:
+                    extensions:
+                      description: Third party extensions for PodMetric
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
                     name:
                       type: string
                     namespace:

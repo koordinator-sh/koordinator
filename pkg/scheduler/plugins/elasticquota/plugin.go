@@ -172,10 +172,14 @@ func (g *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod
 	podRequest, _ := resource.PodRequestsAndLimits(pod)
 	newUsed := quotav1.Add(podRequest, quotaUsed)
 
-	if isLessEqual, _ := quotav1.LessThanOrEqual(newUsed, quotaRuntime); !isLessEqual {
+	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(newUsed, quotaRuntime); !isLessEqual {
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
-			"quotaName: %v, runtime: %v, used: %v, pod's request: %v",
-			quotaName, quotaRuntime, quotaUsed, podRequest))
+			"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v",
+			quotaName, printResourceList(quotaRuntime), printResourceList(quotaUsed), printResourceList(podRequest), exceedDimensions))
+	}
+
+	if *g.pluginArgs.EnableCheckParentQuota {
+		return g.checkQuotaRecursive(quotaName, []string{quotaName}, podRequest)
 	}
 
 	return framework.NewStatus(framework.Success, "")

@@ -32,7 +32,7 @@ import (
 func (c *collector) collectBECPUResourceMetric() {
 	klog.V(6).Info("collectBECPUResourceMetric start")
 
-	realMilliLimit, err := getBECPURealMilliLimit()
+	realMilliLimit, err := c.getBECPURealMilliLimit()
 	if err != nil {
 		klog.Errorf("getBECPURealMilliLimit failed, error: %v", err)
 		return
@@ -66,7 +66,7 @@ func (c *collector) collectBECPUResourceMetric() {
 	klog.V(6).Info("collectBECPUResourceMetric finished")
 }
 
-func getBECPURealMilliLimit() (int, error) {
+func (c *collector) getBECPURealMilliLimit() (int, error) {
 	limit := 0
 
 	cpuSet, err := koordletutil.GetBECgroupCurCPUSet()
@@ -75,7 +75,8 @@ func getBECPURealMilliLimit() (int, error) {
 	}
 	limit = len(cpuSet) * 1000
 
-	cfsQuota, err := koordletutil.GetRootCgroupCurCFSQuota(corev1.PodQOSBestEffort)
+	BECgroupParentDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	cfsQuota, err := c.cgroupReader.ReadCPUQuota(BECgroupParentDir)
 	if err != nil {
 		return 0, err
 	}
@@ -85,7 +86,7 @@ func getBECPURealMilliLimit() (int, error) {
 		return limit, nil
 	}
 
-	cfsPeriod, err := koordletutil.GetRootCgroupCurCFSPeriod(corev1.PodQOSBestEffort)
+	cfsPeriod, err := c.cgroupReader.ReadCPUPeriod(BECgroupParentDir)
 	if err != nil {
 		return 0, err
 	}
@@ -117,8 +118,8 @@ func (c *collector) getBECPUUsageCores() (*resource.Quantity, error) {
 	klog.V(6).Info("getBECPUUsageCores start")
 
 	collectTime := time.Now()
-
-	currentCPUUsage, err := koordletutil.GetRootCgroupCPUUsageNanoseconds(corev1.PodQOSBestEffort)
+	BECgroupParentDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	currentCPUUsage, err := c.cgroupReader.ReadCPUAcctUsage(BECgroupParentDir)
 	if err != nil {
 		klog.Warningf("failed to collect be cgroup usage, error: %v", err)
 		return nil, err

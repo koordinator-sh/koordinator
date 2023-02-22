@@ -33,23 +33,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-const (
-	// NodeNameIndex is the lookup name for the index function, which is to index by the status.nodeName field.
-	NodeNameIndex string = "status.nodeName"
-)
-
-// StatusNodeNameIndexFunc is an index function that indexes based on a reservation's status.nodeName
-func StatusNodeNameIndexFunc(obj interface{}) ([]string, error) {
-	r, ok := obj.(*schedulingv1alpha1.Reservation)
-	if !ok {
-		return []string{}, nil
-	}
-	if len(r.Status.NodeName) <= 0 {
-		return []string{}, nil
-	}
-	return []string{r.Status.NodeName}, nil
-}
-
 func isReservationNeedExpiration(r *schedulingv1alpha1.Reservation) bool {
 	// 1. failed or succeeded reservations does not need to expire
 	if r.Status.Phase == schedulingv1alpha1.ReservationFailed || r.Status.Phase == schedulingv1alpha1.ReservationSucceeded {

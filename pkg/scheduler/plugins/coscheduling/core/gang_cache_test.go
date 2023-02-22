@@ -33,6 +33,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
@@ -42,7 +43,17 @@ var fakeTimeNowFn = func() time.Time {
 	return t
 }
 
+func getTestDefaultCoschedulingArgs(t *testing.T) *config.CoschedulingArgs {
+	var v1beta2args v1beta2.CoschedulingArgs
+	v1beta2.SetDefaults_CoschedulingArgs(&v1beta2args)
+	var args config.CoschedulingArgs
+	err := v1beta2.Convert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(&v1beta2args, &args, nil)
+	assert.NoError(t, err)
+	return &args
+}
+
 func TestGangCache_OnPodAdd(t *testing.T) {
+	defaultArgs := getTestDefaultCoschedulingArgs(t)
 	tests := []struct {
 		name              string
 		pods              []*corev1.Pod
@@ -83,6 +94,8 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					Name:               "default/test",
 					CreateTime:         fakeTimeNowFn(),
 					WaitTime:           0,
+					GangGroupId:        "default/test",
+					GangGroup:          []string{"default/test"},
 					Mode:               extension.GangModeStrict,
 					ScheduleCycleValid: true,
 					ScheduleCycle:      1,
@@ -239,6 +252,105 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 			},
 		},
 		{
+			name: "add pod announcing Gang in lightweight-coscheduling way",
+			pods: []*corev1.Pod{
+				// pod1 announce GangA
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "pod1",
+						Labels: map[string]string{
+							// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+							extension.LabelLightweightCoschedulingPodGroupName: "ganga",
+							// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable is deprecated
+							extension.LabelLightweightCoschedulingPodGroupMinAvailable: "2",
+						},
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "nba",
+					},
+				},
+				// pod2 also announce GangA but with different annotations after pod1's announcing
+				// so gangA in cache should only be created with pod1's Annotations
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "pod2",
+						Labels: map[string]string{
+							// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+							extension.LabelLightweightCoschedulingPodGroupName: "ganga",
+							// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable is deprecated
+							extension.LabelLightweightCoschedulingPodGroupMinAvailable: "2",
+						},
+					},
+				},
+			},
+			wantCache: map[string]*Gang{
+				"default/ganga": {
+					Name:              "default/ganga",
+					WaitTime:          defaultArgs.DefaultTimeout.Duration,
+					CreateTime:        fakeTimeNowFn(),
+					Mode:              extension.GangModeStrict,
+					MinRequiredNumber: 2,
+					TotalChildrenNum:  2,
+					GangGroup:         []string{"default/ganga"},
+					HasGangInit:       true,
+					GangFrom:          GangFromPodAnnotation,
+					Children: map[string]*corev1.Pod{
+						"default/pod1": {
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: "default",
+								Name:      "pod1",
+								Labels: map[string]string{
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+									extension.LabelLightweightCoschedulingPodGroupName: "ganga",
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable is deprecated
+									extension.LabelLightweightCoschedulingPodGroupMinAvailable: "2",
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "nba",
+							},
+						},
+						"default/pod2": {
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: "default",
+								Name:      "pod2",
+								Labels: map[string]string{
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+									extension.LabelLightweightCoschedulingPodGroupName: "ganga",
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable is deprecated
+									extension.LabelLightweightCoschedulingPodGroupMinAvailable: "2",
+								},
+							},
+						},
+					},
+					WaitingForBindChildren: map[string]*corev1.Pod{},
+					BoundChildren: map[string]*corev1.Pod{
+						"default/pod1": {
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: "default",
+								Name:      "pod1",
+								Labels: map[string]string{
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+									extension.LabelLightweightCoschedulingPodGroupName: "ganga",
+									// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupMinAvailable
+									extension.LabelLightweightCoschedulingPodGroupMinAvailable: "2",
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "nba",
+							},
+						},
+					},
+					ScheduleCycleValid:       true,
+					ScheduleCycle:            1,
+					OnceResourceSatisfied:    true,
+					ChildrenScheduleRoundMap: map[string]int{},
+				},
+			},
+		},
+		{
 			name: "add pods announcing Gang in Annotation way,but with illegal args",
 			pods: []*corev1.Pod{
 				// pod3 announce GangB with illegal minNum,
@@ -273,12 +385,13 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 			wantCache: map[string]*Gang{
 				"default/gangb": {
 					Name:              "default/gangb",
-					WaitTime:          0,
+					WaitTime:          defaultArgs.DefaultTimeout.Duration,
 					CreateTime:        fakeTimeNowFn(),
 					Mode:              extension.GangModeStrict,
 					MinRequiredNumber: 2,
 					TotalChildrenNum:  2,
-					GangGroup:         []string{},
+					GangGroup:         []string{"default/gangb"},
+					GangGroupId:       "default/gangb",
 					HasGangInit:       true,
 					GangFrom:          GangFromPodAnnotation,
 					Children: map[string]*corev1.Pod{
@@ -325,7 +438,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 						},
 					},
 					Spec: v1alpha1.PodGroupSpec{
-						ScheduleTimeoutSeconds: pointer.Int32(0),
+						ScheduleTimeoutSeconds: pointer.Int32(int32(defaultArgs.DefaultTimeout.Duration.Seconds())),
 						MinMember:              int32(2),
 					},
 				},
@@ -364,12 +477,13 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 			wantCache: map[string]*Gang{
 				"default/gangc": {
 					Name:              "default/gangc",
-					WaitTime:          0,
+					WaitTime:          defaultArgs.DefaultTimeout.Duration,
 					CreateTime:        fakeTimeNowFn(),
 					Mode:              extension.GangModeStrict,
+					GangGroupId:       "default/gangc",
 					MinRequiredNumber: 0,
 					TotalChildrenNum:  0,
-					GangGroup:         []string{},
+					GangGroup:         []string{"default/gangc"},
 					HasGangInit:       true,
 					GangFrom:          GangFromPodAnnotation,
 					Children: map[string]*corev1.Pod{
@@ -394,12 +508,13 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 				},
 				"default/gangd": {
 					Name:              "default/gangd",
-					WaitTime:          0,
+					WaitTime:          defaultArgs.DefaultTimeout.Duration,
 					CreateTime:        fakeTimeNowFn(),
 					Mode:              extension.GangModeStrict,
+					GangGroupId:       "default/gangd",
 					MinRequiredNumber: 0,
 					TotalChildrenNum:  0,
-					GangGroup:         []string{},
+					GangGroup:         []string{"default/gangd"},
 					HasGangInit:       true,
 					GangFrom:          GangFromPodAnnotation,
 					Children: map[string]*corev1.Pod{
@@ -434,7 +549,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 						},
 					},
 					Spec: v1alpha1.PodGroupSpec{
-						ScheduleTimeoutSeconds: pointer.Int32(0),
+						ScheduleTimeoutSeconds: pointer.Int32(int32(defaultArgs.DefaultTimeout.Duration.Seconds())),
 						MinMember:              int32(0),
 					},
 				},
@@ -448,7 +563,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 						},
 					},
 					Spec: v1alpha1.PodGroupSpec{
-						ScheduleTimeoutSeconds: pointer.Int32(0),
+						ScheduleTimeoutSeconds: pointer.Int32(int32(defaultArgs.DefaultTimeout.Duration.Seconds())),
 						MinMember:              int32(0),
 					},
 				},
@@ -467,7 +582,8 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 			pgInformerFactory := pgformers.NewSharedInformerFactory(pgClientSet, 0)
 			pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 			pglister := pgInformer.Lister()
-			gangCache := NewGangCache(&config.CoschedulingArgs{}, nil, pglister, pgClientSet)
+
+			gangCache := NewGangCache(defaultArgs, nil, pglister, pgClientSet)
 			for _, pg := range tt.podGroups {
 				err := retry.OnError(
 					retry.DefaultRetry,
@@ -484,7 +600,18 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 			for _, pod := range tt.pods {
 				gangCache.onPodAdd(pod)
 			}
+			for k, v := range tt.wantCache {
+				if !v.HasGangInit {
+					continue
+				}
+				tt.wantCache[k].GangGroupId = util.GetGangGroupId(v.GangGroup)
+			}
 			assert.Equal(t, tt.wantCache, gangCache.gangItems)
+			if len(tt.wantedPodGroupMap) == 0 {
+				podGroupList, err := pgClientSet.SchedulingV1alpha1().PodGroups("default").List(context.TODO(), metav1.ListOptions{})
+				assert.NoError(t, err)
+				assert.Empty(t, podGroupList.Items)
+			}
 			for pgKey, targetPg := range tt.wantedPodGroupMap {
 				var pg *v1alpha1.PodGroup
 				err := retry.OnError(
@@ -610,7 +737,8 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 					Mode:                     extension.GangModeStrict,
 					MinRequiredNumber:        4,
 					TotalChildrenNum:         4,
-					GangGroup:                []string{},
+					GangGroup:                []string{"default/gangB"},
+					GangGroupId:              "default/gangB",
 					HasGangInit:              true,
 					GangFrom:                 GangFromPodGroupCrd,
 					Children:                 map[string]*corev1.Pod{},
@@ -646,7 +774,7 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 			pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 			pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 			pglister := pgInformer.Lister()
-			gangCache := NewGangCache(&config.CoschedulingArgs{}, nil, pglister, pgClient)
+			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: time.Second}}, nil, pglister, pgClient)
 			for _, pg := range tt.podGroups {
 				err := retry.OnError(
 					retry.DefaultRetry,
@@ -668,6 +796,12 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 			// start deleting pods
 			for _, pod := range tt.pods {
 				gangCache.onPodDelete(pod)
+			}
+			for k, v := range tt.wantCache {
+				if !v.HasGangInit {
+					continue
+				}
+				tt.wantCache[k].GangGroupId = util.GetGangGroupId(v.GangGroup)
 			}
 			assert.Equal(t, tt.wantCache, gangCache.gangItems)
 
@@ -789,7 +923,8 @@ func TestGangCache_OnPodGroupAdd(t *testing.T) {
 					Mode:                     extension.GangModeStrict,
 					MinRequiredNumber:        4,
 					TotalChildrenNum:         4,
-					GangGroup:                []string{},
+					GangGroup:                []string{"default/gangA"},
+					GangGroupId:              "default/gangA",
 					HasGangInit:              true,
 					GangFrom:                 GangFromPodGroupCrd,
 					Children:                 map[string]*corev1.Pod{},
@@ -811,9 +946,15 @@ func TestGangCache_OnPodGroupAdd(t *testing.T) {
 			}()
 			timeNowFn = fakeTimeNowFn
 			pgClient := fakepgclientset.NewSimpleClientset()
-			gangCache := NewGangCache(&config.CoschedulingArgs{}, nil, nil, pgClient)
+			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: time.Second}}, nil, nil, pgClient)
 			for _, pg := range tt.pgs {
 				gangCache.onPodGroupAdd(pg)
+			}
+			for k, v := range tt.wantCache {
+				if !v.HasGangInit {
+					continue
+				}
+				tt.wantCache[k].GangGroupId = util.GetGangGroupId(v.GangGroup)
 			}
 			assert.Equal(t, tt.wantCache, gangCache.gangItems)
 		})
@@ -931,6 +1072,7 @@ func TestGangCache_OnGangDelete(t *testing.T) {
 		ChildrenScheduleRoundMap: map[string]int{},
 	}
 	cacheGang := cache.getGangFromCacheByGangId("default/gangb", false)
+	wantedGang.GangGroupId = util.GetGangGroupId(wantedGang.GangGroup)
 	assert.Equal(t, wantedGang, cacheGang)
 
 }

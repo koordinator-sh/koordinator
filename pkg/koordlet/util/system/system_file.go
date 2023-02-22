@@ -43,25 +43,11 @@ var (
 	Jiffies = float64(10 * time.Millisecond)
 )
 
-type SystemFile struct {
-	File      string
-	Validator RangeValidator
-}
-
-var (
-	ProcStatFile SystemFile
-)
-
 func init() {
-	initFilePath()
 	// $ getconf CLK_TCK > jiffies
 	if err := initJiffies(); err != nil {
 		klog.Warningf("failed to get Jiffies, use the default %v, err: %v", Jiffies, err)
 	}
-}
-
-func initFilePath() {
-	ProcStatFile = SystemFile{File: GetProcFilePath(ProcStatName)}
 }
 
 // initJiffies use command "getconf CLK_TCK" to fetch the clock tick on current host,
@@ -89,8 +75,12 @@ func GetPeriodTicks(start, end time.Time) float64 {
 	return float64(end.Sub(start)) / Jiffies
 }
 
-func GetProcFilePath(file string) string {
-	return filepath.Join(Conf.ProcRootDir, file)
+func GetProcFilePath(procRelativePath string) string {
+	return filepath.Join(Conf.ProcRootDir, procRelativePath)
+}
+
+func GetProcRootDir() string {
+	return Conf.ProcRootDir
 }
 
 func GetProcSysFilePath(file string) string {

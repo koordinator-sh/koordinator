@@ -125,11 +125,11 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 	go wait.Until(func() {
 		c.collectGPUUsage()
 		c.collectNodeResUsed()
-		// add sync metaService cache check before collect pod information
+		// add sync statesInformer cache check before collect pod information
 		// because collect function will get all pods.
 		if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
-			klog.Errorf("timed out waiting for meta service caches to sync")
-			// Koordlet exit because of metaService sync failed.
+			klog.Errorf("timed out waiting for states informer caches to sync")
+			// Koordlet exit because of statesInformer sync failed.
 			os.Exit(1)
 			return
 		}
@@ -140,29 +140,34 @@ func (c *collector) Run(stopCh <-chan struct{}) error {
 
 	go wait.Until(c.collectNodeCPUInfo, time.Duration(c.config.CollectNodeCPUInfoIntervalSeconds)*time.Second, stopCh)
 
-	ic := NewPerformanceCollector(c.statesInformer, c.metricCache, c.config.CPICollectorTimeWindowSeconds)
+	ic := NewPerformanceCollector(c.statesInformer, c.metricCache, c.cgroupReader, c.config.CPICollectorTimeWindowSeconds)
 	util.RunFeature(func() {
-		// add sync metaService cache check before collect pod information
+		// add sync statesInformer cache check before collect pod information
 		// because collect function will get all pods.
 		if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
-			// Koordlet exit because of metaService sync failed.
-			klog.Fatalf("timed out waiting for meta service caches to sync")
+			// Koordlet exit because of statesInformer sync failed.
+			klog.Fatalf("timed out waiting for states informer caches to sync")
 			return
 		}
 		ic.collectContainerCPI()
 	}, []featuregate.Feature{features.CPICollector}, c.config.CPICollectorIntervalSeconds, stopCh)
 
 	util.RunFeature(func() {
-		// psi collector support only on anolis os currently
-		if !system.HostSystemInfo.IsAnolisOS {
-			klog.Fatalf("collect psi fail, need anolis os")
-			return
+		// CgroupV1 psi collector support only on anolis os currently
+		if system.GetCurrentCgroupVersion() == system.CgroupVersionV1 {
+			cpuPressureCheck, _ := system.CPUAcctCPUPressure.IsSupported("")
+			memPressureCheck, _ := system.CPUAcctMemoryPressure.IsSupported("")
+			ioPressureCheck, _ := system.CPUAcctIOPressure.IsSupported("")
+			if !(cpuPressureCheck && memPressureCheck && ioPressureCheck) {
+				klog.V(5).Infof("system now not support psi feature in CgroupV1, please check pressure file exist and readable in cpuacct directory.")
+				return
+			}
 		}
-		// add sync metaService cache check before collect pod information
+		// add sync statesInformer cache check before collect pod information
 		// because collect function will get all pods.
 		if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
-			// Koordlet exit because of metaService sync failed.
-			klog.Fatalf("timed out waiting for meta service caches to sync")
+			// Koordlet exit because of statesInformer sync failed.
+			klog.Fatalf("timed out waiting for states informer caches to sync")
 			return
 		}
 		ic.collectContainerPSI()
@@ -217,7 +222,7 @@ func (c *collector) collectNodeResUsed() {
 
 	// update collect time
 	c.state.RefreshTime(nodeResUsedUpdateTime)
-	metrics.RecordNodeUsedCPU(cpuUsageValue * 1000)
+	metrics.RecordNodeUsedCPU(cpuUsageValue) // in cpu cores
 
 	klog.Infof("collectNodeResUsed finished %+v", nodeMetric)
 }

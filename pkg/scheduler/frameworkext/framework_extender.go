@@ -28,6 +28,7 @@ import (
 
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 )
 
@@ -86,10 +87,14 @@ type frameworkExtendedHandleImpl struct {
 	controllerMaps                   *ControllersMap
 }
 
-func NewExtendedHandle(options ...Option) ExtendedHandle {
+func NewExtendedHandle(options ...Option) (ExtendedHandle, error) {
 	handleOptions := &extendedHandleOptions{}
 	for _, opt := range options {
 		opt(handleOptions)
+	}
+
+	if err := indexer.AddIndexers(handleOptions.koordinatorSharedInformerFactory); err != nil {
+		return nil, err
 	}
 
 	return &frameworkExtendedHandleImpl{
@@ -98,7 +103,7 @@ func NewExtendedHandle(options ...Option) ExtendedHandle {
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
 		sharedListerAdapter:              handleOptions.sharedListerAdapter,
 		controllerMaps:                   NewControllersMap(),
-	}
+	}, nil
 }
 
 func (ext *frameworkExtendedHandleImpl) Run() {

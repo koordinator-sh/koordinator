@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 )
@@ -100,7 +101,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ColocationConfigKey: "invalid contents",
+					extension.ColocationConfigKey: "invalid contents",
 				},
 			}},
 			args: args{
@@ -122,7 +123,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ColocationConfigKey: "{\"enable\":true}",
+					extension.ColocationConfigKey: "{\"enable\":true}",
 				},
 			}},
 			args: args{
@@ -144,7 +145,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":10,\"metricReportIntervalSeconds\":30}",
+					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":10,\"metricReportIntervalSeconds\":30}",
 				},
 			}},
 			args: args{node: &corev1.Node{
@@ -174,7 +175,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":-10}",
+					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":-10}",
 				},
 			}},
 			args:    args{node: &corev1.Node{}},
@@ -193,7 +194,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30," +
+					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30," +
 						"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 						"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"nodeConfigs\":[{\"nodeSelector\":" +
 						"{\"matchLabels\":{\"xxx\":\"yyy\"}},\"metricAggregateDurationSeconds\":20}]}",
@@ -226,7 +227,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30," +
+					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30," +
 						"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 						"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"nodeConfigs\":[{\"nodeSelector\":" +
 						"{\"matchLabels\":{\"xxx\":\"yyy\"}},\"metricAggregateDurationSeconds\":-1}]}",
@@ -259,7 +260,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30,\"metricReportIntervalSeconds\":50," +
+					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30,\"metricReportIntervalSeconds\":50," +
 						"\"nodeConfigs\":[{\"nodeSelector\":{\"matchLabels\":{\"xxx\":\"yyy\"}}," +
 						"\"name\":\"xxx-yyy\"," +
 						"\"metricAggregateDurationSeconds\":10},{\"nodeSelector\":" +
@@ -337,7 +338,7 @@ func TestNodeMetricReconciler_initNodeMetric(t *testing.T) {
 					Namespace: config.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					config.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":10,\"metricReportIntervalSeconds\":20}",
+					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":10,\"metricReportIntervalSeconds\":20}",
 				},
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
@@ -546,9 +547,9 @@ func createTestReconciler() (*NodeMetricReconciler, *config.ColocationHandlerFor
 	return reconciler, handler
 }
 
-func createValidColocationConfigMap(t *testing.T) (*config.ColocationCfg, *corev1.ConfigMap) {
-	policyConfig := &config.ColocationCfg{
-		ColocationStrategy: config.ColocationStrategy{
+func createValidColocationConfigMap(t *testing.T) (*extension.ColocationCfg, *corev1.ConfigMap) {
+	policyConfig := &extension.ColocationCfg{
+		ColocationStrategy: extension.ColocationStrategy{
 			Enable:                         pointer.Bool(true),
 			MetricAggregateDurationSeconds: pointer.Int64(60),
 			MetricReportIntervalSeconds:    pointer.Int64(180),
@@ -564,7 +565,7 @@ func createValidColocationConfigMap(t *testing.T) (*config.ColocationCfg, *corev
 			Name:      config.SLOCtrlConfigMap,
 		},
 		Data: map[string]string{
-			config.ColocationConfigKey: string(data),
+			extension.ColocationConfigKey: string(data),
 		},
 	}
 	return policyConfig, configMap
@@ -577,7 +578,7 @@ func createConfigMapUnmashalError() *corev1.ConfigMap {
 			Name:      config.SLOCtrlConfigMap,
 		},
 		Data: map[string]string{
-			config.ColocationConfigKey: "invalid contents",
+			extension.ColocationConfigKey: "invalid contents",
 		},
 	}
 	return configMap

@@ -23,23 +23,43 @@ import (
 
 	"github.com/golang/mock/gomock"
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	topologyclientsetfake "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
+	faketopologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
+	topologylister "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	fakeclientset "k8s.io/client-go/kubernetes/fake"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
+var _ topologylister.NodeResourceTopologyLister = &fakeNodeResourceTopologyLister{}
+
+type fakeNodeResourceTopologyLister struct {
+	nodeResourceTopologys *topologyv1alpha1.NodeResourceTopology
+	getErr                error
+}
+
+func (f fakeNodeResourceTopologyLister) List(selector labels.Selector) (ret []*topologyv1alpha1.NodeResourceTopology, err error) {
+	return []*topologyv1alpha1.NodeResourceTopology{f.nodeResourceTopologys}, nil
+}
+
+func (f fakeNodeResourceTopologyLister) Get(name string) (*topologyv1alpha1.NodeResourceTopology, error) {
+	return f.nodeResourceTopologys, f.getErr
+}
+
 func Test_syncNodeResourceTopology(t *testing.T) {
-	client := topologyclientsetfake.NewSimpleClientset()
+	client := faketopologyclientset.NewSimpleClientset()
 	testNode := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test",
@@ -47,6 +67,12 @@ func Test_syncNodeResourceTopology(t *testing.T) {
 	}
 	r := &nodeTopoInformer{
 		topologyClient: client,
+		nodeResourceTopologyLister: &fakeNodeResourceTopologyLister{
+			nodeResourceTopologys: &topologyv1alpha1.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{},
+			},
+			getErr: errors.NewNotFound(schema.GroupResource{}, "test"),
+		},
 		nodeInformer: &nodeInformer{
 			node: testNode,
 		},
@@ -60,6 +86,45 @@ func Test_syncNodeResourceTopology(t *testing.T) {
 	assert.Equal(t, nil, err)
 	assert.Equal(t, topologyName, topology.Name)
 	assert.Equal(t, "Koordinator", topology.Labels[extension.LabelManagedBy])
+}
+
+func Test_nodeResourceTopology_NewAndSetup(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	type args struct {
+		ctx   *pluginOption
+		state *pluginState
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "new and setup node topo",
+			args: args{
+				ctx: &pluginOption{
+					config:      NewDefaultConfig(),
+					KubeClient:  fakeclientset.NewSimpleClientset(),
+					KoordClient: fakekoordclientset.NewSimpleClientset(),
+					TopoClient:  faketopologyclientset.NewSimpleClientset(),
+					NodeName:    "test-node",
+				},
+				state: &pluginState{
+					metricCache: mock_metriccache.NewMockMetricCache(ctrl),
+					informerPlugins: map[pluginName]informerPlugin{
+						podsInformerName: NewPodsInformer(),
+						nodeInformerName: NewNodeInformer(),
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := NewNodeTopoInformer()
+			r.Setup(tt.args.ctx, tt.args.state)
+		})
+	}
 }
 
 func Test_calGuaranteedCpu(t *testing.T) {
@@ -239,7 +304,7 @@ func Test_reportNodeTopology(t *testing.T) {
 	ctl := gomock.NewController(t)
 	defer ctl.Finish()
 
-	client := topologyclientsetfake.NewSimpleClientset()
+	client := faketopologyclientset.NewSimpleClientset()
 	testNode := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test",
@@ -374,6 +439,13 @@ func Test_reportNodeTopology(t *testing.T) {
 				kubelet:        tt.kubeletStub,
 				topologyClient: client,
 				metricCache:    mockMetricCache,
+				nodeResourceTopologyLister: &fakeNodeResourceTopologyLister{
+					nodeResourceTopologys: &topologyv1alpha1.NodeResourceTopology{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test",
+						},
+					},
+				},
 				podsInformer: &podsInformer{
 					podMap: mockPodMeta,
 				},
@@ -385,6 +457,10 @@ func Test_reportNodeTopology(t *testing.T) {
 
 			topologyName := testNode.Name
 			_ = client.TopologyV1alpha1().NodeResourceTopologies().Delete(context.TODO(), topologyName, metav1.DeleteOptions{})
+			if !tt.disableCreateTopologyCRD {
+				topologyTest := newNodeTopo(testNode)
+				_, err = client.TopologyV1alpha1().NodeResourceTopologies().Create(context.TODO(), topologyTest, metav1.CreateOptions{})
+			}
 			r.reportNodeTopology()
 
 			var topology *topologyv1alpha1.NodeResourceTopology
@@ -417,7 +493,8 @@ func Test_isEqualTopo(t *testing.T) {
 		args args
 		want bool
 	}{
-		{name: "same json",
+		{
+			name: "same json with different map order in cpu share pool",
 			args: args{
 				oldtopo: map[string]string{
 					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
@@ -432,7 +509,42 @@ func Test_isEqualTopo(t *testing.T) {
 			},
 			want: true,
 		},
-		{name: "diff json",
+		{
+			name: "diff json on pod-cpu-allocs",
+			args: args{
+				oldtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				},
+				newtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default1\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "some are both not exist in old and new",
+			args: args{
+				oldtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+				},
+				newtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "part are not exist in old",
 			args: args{
 				oldtopo: map[string]string{
 					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
@@ -444,6 +556,23 @@ func Test_isEqualTopo(t *testing.T) {
 					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
 					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
 					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "part are not exist in new",
+			args: args{
+				oldtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				},
+				newtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
 				},
 			},
 			want: false,

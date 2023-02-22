@@ -85,6 +85,7 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 		Name:                     "ganga_ns/ganga",
 		WaitTime:                 time.Second * 600,
 		CreateTime:               podToCreateGangA.CreationTimestamp.Time,
+		GangGroup:                []string{"ganga_ns/ganga"},
 		Mode:                     extension.GangModeStrict,
 		MinRequiredNumber:        2,
 		TotalChildrenNum:         2,

@@ -7,7 +7,7 @@ require (
 	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5
 	github.com/docker/docker v20.10.21+incompatible
 	github.com/evanphx/json-patch v5.6.0+incompatible
-	github.com/fsnotify/fsnotify v1.5.4
+	github.com/fsnotify/fsnotify v1.6.0
 	github.com/gin-gonic/gin v1.8.1
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/golang/mock v1.6.0
@@ -21,8 +21,9 @@ require (
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.15.0
 	github.com/openkruise/kruise-api v1.3.0
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prashantv/gostub v1.1.0
-	github.com/prometheus/client_golang v1.13.0
+	github.com/prometheus/client_golang v1.14.0
 	github.com/spf13/cobra v1.6.1
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.1
@@ -30,7 +31,7 @@ require (
 	go.uber.org/multierr v1.6.0
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f
-	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a
+	golang.org/x/sys v0.0.0-20220908164124-27713097b956
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 	google.golang.org/grpc v1.38.0
 	google.golang.org/protobuf v1.28.1
@@ -161,7 +162,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.0.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_model v0.2.0 // indirect
+	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.37.0 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/quobyte/api v0.1.8 // indirect
@@ -223,6 +224,7 @@ require (
 
 replace (
 	github.com/google/cadvisor => github.com/koordinator-sh/cadvisor v0.0.0-20220919031936-833eb74e858e
+	golang.org/x/time => golang.org/x/time v0.3.0
 	k8s.io/api => k8s.io/api v0.22.6
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.22.6
 	k8s.io/apimachinery => k8s.io/apimachinery v0.22.6

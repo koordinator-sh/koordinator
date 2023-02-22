@@ -112,7 +112,7 @@ func TestNew(t *testing.T) {
 
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-	extendHandle := frameworkext.NewExtendedHandle(
+	extendHandle, _ := frameworkext.NewExtendedHandle(
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 	)
@@ -206,7 +206,7 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle := frameworkext.NewExtendedHandle(
+			extendHandle, _ := frameworkext.NewExtendedHandle(
 				frameworkext.WithKoordinatorClientSet(koordClientSet),
 				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 			)
@@ -791,7 +791,7 @@ func TestFilterUsage(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle := frameworkext.NewExtendedHandle(
+			extendHandle, _ := frameworkext.NewExtendedHandle(
 				frameworkext.WithKoordinatorClientSet(koordClientSet),
 				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 			)
@@ -1735,7 +1735,7 @@ func TestScore(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle := frameworkext.NewExtendedHandle(
+			extendHandle, _ := frameworkext.NewExtendedHandle(
 				frameworkext.WithKoordinatorClientSet(koordClientSet),
 				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 			)

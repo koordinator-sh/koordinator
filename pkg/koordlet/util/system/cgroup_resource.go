@@ -188,9 +188,9 @@ var (
 
 	CPUAcctStat           = DefaultFactory.New(CPUAcctStatName, CgroupCPUAcctDir)
 	CPUAcctUsage          = DefaultFactory.New(CPUAcctUsageName, CgroupCPUAcctDir)
-	CPUAcctCPUPressure    = DefaultFactory.New(CPUAcctCPUPressureName, CgroupCPUAcctDir).WithCheckSupported(SupportedIfFileExists)
-	CPUAcctMemoryPressure = DefaultFactory.New(CPUAcctMemoryPressureName, CgroupCPUAcctDir).WithCheckSupported(SupportedIfFileExists)
-	CPUAcctIOPressure     = DefaultFactory.New(CPUAcctIOPressureName, CgroupCPUAcctDir).WithCheckSupported(SupportedIfFileExists)
+	CPUAcctCPUPressure    = DefaultFactory.New(CPUAcctCPUPressureName, CgroupCPUAcctDir).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctCPUPressureName, CgroupCPUAcctDir))
+	CPUAcctMemoryPressure = DefaultFactory.New(CPUAcctMemoryPressureName, CgroupCPUAcctDir).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctMemoryPressureName, CgroupCPUAcctDir))
+	CPUAcctIOPressure     = DefaultFactory.New(CPUAcctIOPressureName, CgroupCPUAcctDir).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctIOPressureName, CgroupCPUAcctDir))
 
 	MemoryLimit            = DefaultFactory.New(MemoryLimitName, CgroupMemDir)
 	MemoryUsage            = DefaultFactory.New(MemoryUsageName, CgroupMemDir)
@@ -205,10 +205,10 @@ var (
 	MemoryUsePriorityOom   = DefaultFactory.New(MemoryUsePriorityOomName, CgroupMemDir).WithValidator(MemoryUsePriorityOomValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryUsePriorityOomName, CgroupMemDir))
 	MemoryOomGroup         = DefaultFactory.New(MemoryOomGroupName, CgroupMemDir).WithValidator(MemoryOomGroupValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryOomGroupName, CgroupMemDir))
 
-	BlkioReadIops  = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
-	BlkioReadBps   = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
-	BlkioWriteIops = DefaultFactory.New(BlkioTWIopsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
-	BlkioWriteBps  = DefaultFactory.New(BlkioTWBpsName, CgroupBlkioDir).WithValidator(NaturalInt64Validator)
+	BlkioReadIops  = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir) // TODO: add validator for blkio.throttle
+	BlkioReadBps   = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir)
+	BlkioWriteIops = DefaultFactory.New(BlkioTWIopsName, CgroupBlkioDir)
+	BlkioWriteBps  = DefaultFactory.New(BlkioTWBpsName, CgroupBlkioDir)
 
 	knownCgroupResources = []Resource{
 		CPUStat,
@@ -242,12 +242,17 @@ var (
 		BlkioWriteBps,
 	}
 
-	CPUCFSQuotaV2            = DefaultFactory.NewV2(CPUCFSQuotaName, CPUMaxName)
-	CPUCFSPeriodV2           = DefaultFactory.NewV2(CPUCFSPeriodName, CPUMaxName)
-	CPUSharesV2              = DefaultFactory.NewV2(CPUSharesName, CPUWeightName).WithValidator(CPUWeightValidator)
-	CPUStatV2                = DefaultFactory.NewV2(CPUStatName, CPUStatName)
-	CPUAcctStatV2            = DefaultFactory.NewV2(CPUAcctStatName, CPUStatName)
-	CPUAcctUsageV2           = DefaultFactory.NewV2(CPUAcctUsageName, CPUStatName)
+	CPUCFSQuotaV2  = DefaultFactory.NewV2(CPUCFSQuotaName, CPUMaxName)
+	CPUCFSPeriodV2 = DefaultFactory.NewV2(CPUCFSPeriodName, CPUMaxName)
+	CPUSharesV2    = DefaultFactory.NewV2(CPUSharesName, CPUWeightName).WithValidator(CPUWeightValidator)
+	CPUStatV2      = DefaultFactory.NewV2(CPUStatName, CPUStatName)
+	CPUAcctStatV2  = DefaultFactory.NewV2(CPUAcctStatName, CPUStatName)
+	CPUAcctUsageV2 = DefaultFactory.NewV2(CPUAcctUsageName, CPUStatName)
+
+	CPUAcctCPUPressureV2    = DefaultFactory.NewV2(CPUAcctCPUPressureName, CPUAcctCPUPressureName).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctCPUPressureName, ""))
+	CPUAcctMemoryPressureV2 = DefaultFactory.NewV2(CPUAcctMemoryPressureName, CPUAcctMemoryPressureName).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctMemoryPressureName, ""))
+	CPUAcctIOPressureV2     = DefaultFactory.NewV2(CPUAcctIOPressureName, CPUAcctIOPressureName).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctIOPressureName, ""))
+
 	CPUSetV2                 = DefaultFactory.NewV2(CPUSetCPUSName, CPUSetCPUSName).WithValidator(CPUSetCPUSValidator)
 	CPUSetEffectiveV2        = DefaultFactory.NewV2(CPUSetCPUSEffectiveName, CPUSetCPUSEffectiveName) // TODO: unify the R/W
 	CPUTasksV2               = DefaultFactory.NewV2(CPUTasksName, CPUThreadsName)
@@ -255,9 +260,9 @@ var (
 	MemoryLimitV2            = DefaultFactory.NewV2(MemoryLimitName, MemoryMaxName)
 	MemoryUsageV2            = DefaultFactory.NewV2(MemoryUsageName, MemoryCurrentName)
 	MemoryStatV2             = DefaultFactory.NewV2(MemoryStatName, MemoryStatName)
-	MemoryMinV2              = DefaultFactory.NewV2(MemoryMinName, MemoryMinName)
-	MemoryLowV2              = DefaultFactory.NewV2(MemoryLowName, MemoryLowName)
-	MemoryHighV2             = DefaultFactory.NewV2(MemoryHighName, MemoryHighName)
+	MemoryMinV2              = DefaultFactory.NewV2(MemoryMinName, MemoryMinName).WithValidator(NaturalInt64Validator)
+	MemoryLowV2              = DefaultFactory.NewV2(MemoryLowName, MemoryLowName).WithValidator(NaturalInt64Validator)
+	MemoryHighV2             = DefaultFactory.NewV2(MemoryHighName, MemoryHighName).WithValidator(NaturalInt64Validator)
 	MemoryWmarkRatioV2       = DefaultFactory.NewV2(MemoryWmarkRatioName, MemoryWmarkRatioName).WithValidator(MemoryWmarkRatioValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryWmarkScaleFactorV2 = DefaultFactory.NewV2(MemoryWmarkScaleFactorName, MemoryWmarkScaleFactorName).WithValidator(MemoryWmarkScaleFactorFileNameValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryWmarkMinAdjV2      = DefaultFactory.NewV2(MemoryWmarkMinAdjName, MemoryWmarkMinAdjName).WithValidator(MemoryWmarkMinAdjValidator).WithCheckSupported(SupportedIfFileExists)
@@ -272,6 +277,9 @@ var (
 		CPUStatV2,
 		CPUAcctStatV2,
 		CPUAcctUsageV2,
+		CPUAcctCPUPressureV2,
+		CPUAcctMemoryPressureV2,
+		CPUAcctIOPressureV2,
 		CPUSetV2,
 		CPUSetEffectiveV2,
 		CPUTasksV2,

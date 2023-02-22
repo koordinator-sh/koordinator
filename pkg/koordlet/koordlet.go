@@ -199,7 +199,7 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 
 	go func() {
 		if err := d.runtimeHook.Run(stopCh); err != nil {
-			klog.Errorf("Unable to run the runtimeHook: ", err)
+			klog.Error("Unable to run the runtimeHook: ", err)
 			os.Exit(1)
 		}
 	}()

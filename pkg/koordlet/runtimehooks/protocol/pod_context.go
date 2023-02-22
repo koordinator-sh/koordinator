@@ -158,7 +158,7 @@ func (p *PodContext) injectForExt() {
 			klog.Infof("set pod %v/%v cpu shares %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.CPUShares, p.Request.CgroupParent, err)
 		} else {
-			klog.V(5).Infof("set pod %v/%v/%v cpu shares %v on cgroup parent %v",
+			klog.V(5).Infof("set pod %v/%v cpu shares %v on cgroup parent %v",
 				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.CPUShares, p.Request.CgroupParent)
 			audit.V(2).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
 				"set pod cpu shares to %v", *p.Response.Resources.CPUShares).Do()
@@ -169,7 +169,7 @@ func (p *PodContext) injectForExt() {
 			klog.Infof("set pod %v/%v cfs quota %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.CFSQuota, p.Request.CgroupParent, err)
 		} else {
-			klog.V(5).Infof("set pod %v/%v/%v cfs quota %v on cgroup parent %v",
+			klog.V(5).Infof("set pod %v/%v cfs quota %v on cgroup parent %v",
 				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.CFSQuota, p.Request.CgroupParent)
 			audit.V(2).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
 				"set pod cfs quota to %v", *p.Response.Resources.CFSQuota).Do()
@@ -180,7 +180,7 @@ func (p *PodContext) injectForExt() {
 			klog.Infof("set pod %v/%v memory limit %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.MemoryLimit, p.Request.CgroupParent, err)
 		} else {
-			klog.V(5).Infof("set pod %v/%v/%v memory limit %v on cgroup parent %v",
+			klog.V(5).Infof("set pod %v/%v memory limit %v on cgroup parent %v",
 				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.MemoryLimit, p.Request.CgroupParent)
 			audit.V(2).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
 				"set pod memory limit to %v", *p.Response.Resources.MemoryLimit).Do()

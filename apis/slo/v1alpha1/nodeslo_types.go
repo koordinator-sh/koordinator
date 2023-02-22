@@ -238,6 +238,13 @@ type CPUBurstStrategy struct {
 	SharePoolThresholdPercent *int64 `json:"sharePoolThresholdPercent,omitempty"`
 }
 
+type SystemStrategy struct {
+	// for /proc/sys/vm/min_free_kbytes, min_free_kbytes = minFreeKbytesFactor * nodeTotalMemory /10000
+	MinFreeKbytesFactor *int64 `json:"minFreeKbytesFactor,omitempty"`
+	// /proc/sys/vm/watermark_scale_factor
+	WatermarkScaleFactor *int64 `json:"watermarkScaleFactor,omitempty"`
+}
+
 // NodeSLOSpec defines the desired state of NodeSLO
 type NodeSLOSpec struct {
 	// BE pods will be limited if node resource usage overload
@@ -246,6 +253,8 @@ type NodeSLOSpec struct {
 	ResourceQOSStrategy *ResourceQOSStrategy `json:"resourceQOSStrategy,omitempty"`
 	// CPU Burst Strategy
 	CPUBurstStrategy *CPUBurstStrategy `json:"cpuBurstStrategy,omitempty"`
+	//node global system config
+	SystemStrategy *SystemStrategy `json:"systemStrategy,omitempty"`
 	// Third party extensions for NodeSLO
 	Extensions *ExtensionsMap `json:"extensions,omitempty"`
 }

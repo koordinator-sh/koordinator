@@ -37,7 +37,6 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 )
 
 func Test_NodeResourceController_ConfigNotAvaliable(t *testing.T) {
@@ -95,8 +94,8 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 		Client: client,
 		cfgCache: &FakeCfgCache{
 			available: true,
-			cfg: config.ColocationCfg{
-				ColocationStrategy: config.ColocationStrategy{
+			cfg: extension.ColocationCfg{
+				ColocationStrategy: extension.ColocationStrategy{
 					Enable:                        pointer.BoolPtr(true),
 					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
@@ -137,8 +136,8 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 		Client: client,
 		cfgCache: &FakeCfgCache{
 			available: true,
-			cfg: config.ColocationCfg{
-				ColocationStrategy: config.ColocationStrategy{
+			cfg: extension.ColocationCfg{
+				ColocationStrategy: extension.ColocationStrategy{
 					Enable:                        pointer.BoolPtr(true),
 					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
 					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),

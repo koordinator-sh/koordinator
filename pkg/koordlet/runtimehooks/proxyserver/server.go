@@ -34,12 +34,14 @@ import (
 )
 
 type Options struct {
-	Network        string
-	Address        string
-	HostEndpoint   string
-	FailurePolicy  config.FailurePolicyType
-	ConfigFilePath string
-	DisableStages  map[string]struct{}
+	Network       string
+	Address       string
+	HostEndpoint  string
+	FailurePolicy config.FailurePolicyType
+	// support stop running other hooks once someone failed
+	PluginFailurePolicy config.FailurePolicyType
+	ConfigFilePath      string
+	DisableStages       map[string]struct{}
 }
 
 type Server interface {

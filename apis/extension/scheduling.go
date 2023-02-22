@@ -78,6 +78,13 @@ const (
 	GangModeNonStrict = "NonStrict"
 )
 
+const (
+	// Deprecated: kubernetes-sigs/scheduler-plugins/lightweight-coscheduling
+	LabelLightweightCoschedulingPodGroupName = "pod-group.scheduling.sigs.k8s.io/name"
+	// Deprecated: kubernetes-sigs/scheduler-plugins/lightweight-coscheduling
+	LabelLightweightCoschedulingPodGroupMinAvailable = "pod-group.scheduling.sigs.k8s.io/min-available"
+)
+
 // CustomUsageThresholds supports user-defined node resource utilization thresholds.
 type CustomUsageThresholds struct {
 	// UsageThresholds indicates the resource utilization threshold of the whole machine.
@@ -183,9 +190,10 @@ type DeviceAllocations map[schedulingv1alpha1.DeviceType][]*DeviceAllocation
 type DeviceAllocation struct {
 	Minor     int32               `json:"minor"`
 	Resources corev1.ResourceList `json:"resources"`
+	Extension json.RawMessage     `json:"extension,omitempty"`
 }
 
-func GetDeviceAllocations(podAnnotations map[string]string) (DeviceAllocations, error) {
+var GetDeviceAllocations = func(podAnnotations map[string]string) (DeviceAllocations, error) {
 	deviceAllocations := DeviceAllocations{}
 	data, ok := podAnnotations[AnnotationDeviceAllocated]
 	if !ok {

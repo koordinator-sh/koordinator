@@ -48,6 +48,8 @@ type LoadAwareSchedulingArgs struct {
 	ProdUsageThresholds map[corev1.ResourceName]int64 `json:"prodUsageThresholds,omitempty"`
 	// ScoreAccordingProdUsage controls whether to score according to the utilization of Prod Pod
 	ScoreAccordingProdUsage bool `json:"scoreAccordingProdUsage,omitempty"`
+	// Estimator indicates the expected Estimator to use
+	Estimator string `json:"estimator,omitempty"`
 	// EstimatedScalingFactors indicates the factor when estimating resource usage.
 	// The default value of CPU is 85%, and the default value of Memory is 70%.
 	EstimatedScalingFactors map[corev1.ResourceName]int64 `json:"estimatedScalingFactors,omitempty"`
@@ -175,6 +177,9 @@ type ElasticQuotaArgs struct {
 
 	// MonitorAllQuotas monitor the quotaGroups' used and runtime Quota to revoke pods
 	MonitorAllQuotas *bool `json:"monitorAllQuotas,omitempty"`
+
+	// EnableCheckParentQuota check parentQuotaGroups' used and runtime Quota in PreFilter
+	EnableCheckParentQuota *bool `json:"enableCheckParentQuota,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -189,4 +194,14 @@ type CoschedulingArgs struct {
 	// Workers number of controller
 	// default is 1
 	ControllerWorkers *int64 `json:"controllerWorkers,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// DeviceShareArgs defines the parameters for DeviceShare plugin.
+type DeviceShareArgs struct {
+	metav1.TypeMeta
+
+	// Allocator indicates the expected allocator to use
+	Allocator string `json:"allocator,omitempty"`
 }

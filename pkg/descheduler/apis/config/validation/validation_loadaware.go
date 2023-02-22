@@ -26,8 +26,12 @@ import (
 func ValidateLowLoadUtilizationArgs(path *field.Path, args *deschedulerconfig.LowNodeLoadArgs) error {
 	var allErrs field.ErrorList
 
+	if args.NumberOfNodes < 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("numberOfNodes"), args.NumberOfNodes, "must be greater than or equal to 0"))
+	}
+
 	if args.EvictableNamespaces != nil && len(args.EvictableNamespaces.Include) > 0 && len(args.EvictableNamespaces.Exclude) > 0 {
-		allErrs = append(allErrs, field.Invalid(path.Child("namespaces"), args.EvictableNamespaces, "only one of Include/Exclude namespaces can be set"))
+		allErrs = append(allErrs, field.Invalid(path.Child("evictableNamespaces"), args.EvictableNamespaces, "only one of Include/Exclude namespaces can be set"))
 	}
 
 	if args.NodeSelector != nil {
@@ -56,6 +60,11 @@ func ValidateLowLoadUtilizationArgs(path *field.Path, args *deschedulerconfig.Lo
 		if highPercentage, ok := args.HighThresholds[resourceName]; ok && percentage > highPercentage {
 			allErrs = append(allErrs, field.Invalid(path.Child("lowThresholds").Key(string(resourceName)), percentage, "low percentage must be less than or equal to highThresholds"))
 		}
+	}
+
+	if args.AnomalyCondition.ConsecutiveAbnormalities <= 0 {
+		fieldPath := path.Child("anomalyDetectionThresholds").Child("consecutiveAbnormalities")
+		allErrs = append(allErrs, field.Invalid(fieldPath, args.AnomalyCondition.ConsecutiveAbnormalities, "consecutiveAbnormalities must be greater than 0"))
 	}
 
 	if len(allErrs) == 0 {

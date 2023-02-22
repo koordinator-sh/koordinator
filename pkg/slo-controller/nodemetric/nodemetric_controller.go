@@ -29,7 +29,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -59,7 +58,7 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		// all nodes would be enqueued once the config is available, so here we just drop the req
 		klog.Warningf("colocation config is not available, drop the req %v until a valid config is set",
 			req.NamespacedName)
-		return reconcile.Result{Requeue: false}, nil
+		return ctrl.Result{}, nil
 	}
 
 	node, nodeMetric := &corev1.Node{}, &slov1alpha1.NodeMetric{}
@@ -90,7 +89,7 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if err := r.Client.Delete(context.TODO(), nodeMetric); err != nil {
 			klog.Errorf("failed to delete nodeMetric %v, error: %v", nodeMetricName, err)
 			if errors.IsNotFound(err) {
-				return ctrl.Result{Requeue: false}, err
+				return ctrl.Result{}, nil
 			}
 			return ctrl.Result{Requeue: true}, err
 		}
@@ -109,24 +108,24 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		// update nodeMetric spec if both exists
 		nodeMetricSpec, err := r.getNodeMetricSpec(node, &nodeMetric.Spec)
 		if err != nil {
-			klog.Errorf("syncNodeMetric failed to get nodeMetric spec: %v", err)
-			return reconcile.Result{Requeue: true}, err
+			klog.Errorf("failed to get nodeMetric spec of %v: %v", nodeMetricName, err)
+			return ctrl.Result{Requeue: true}, err
 		}
 		if !reflect.DeepEqual(nodeMetricSpec, &nodeMetric.Spec) {
 			nodeMetric.Spec = *nodeMetricSpec
 			err = r.Client.Update(context.TODO(), nodeMetric)
 			if err != nil {
-				klog.Errorf("syncNodeMetric failed to update nodeMetric %v, error: %v", nodeMetricName, err)
-				return reconcile.Result{Requeue: true}, err
+				klog.Errorf("failed to update nodeMetric %v, error: %v", nodeMetricName, err)
+				return ctrl.Result{Requeue: true}, err
 			}
 		}
 	}
 
+	klog.V(6).Infof("nodemetric-controller succeeded to update nodeMetric %v", nodeMetricName)
 	return ctrl.Result{}, nil
 }
 
 func (r *NodeMetricReconciler) getNodeMetricSpec(node *corev1.Node, oldSpec *slov1alpha1.NodeMetricSpec) (*slov1alpha1.NodeMetricSpec, error) {
-
 	if node == nil {
 		klog.Errorf("getNodeMetricSpec failed to get spec for nil node")
 		return nil, fmt.Errorf("invalid node input")
@@ -179,5 +178,6 @@ func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&slov1alpha1.NodeMetric{}).
 		Watches(&source.Kind{Type: &corev1.Node{}}, &EnqueueRequestForNode{}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler).
+		Named("nodemetric").
 		Complete(r)
 }

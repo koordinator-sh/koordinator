@@ -28,36 +28,6 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
-func TestStatusNodeNameIndexFunc(t *testing.T) {
-	t.Run("test not panic", func(t *testing.T) {
-		pod := &corev1.Pod{}
-		got, err := StatusNodeNameIndexFunc(pod)
-		assert.NoError(t, err)
-		assert.Equal(t, []string{}, got)
-
-		rPending := &schedulingv1alpha1.Reservation{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "reserve-pod-0",
-			},
-			Spec: schedulingv1alpha1.ReservationSpec{
-				Template: &corev1.PodTemplateSpec{},
-			},
-		}
-		got, err = StatusNodeNameIndexFunc(rPending)
-		assert.NoError(t, err)
-		assert.Equal(t, []string{}, got)
-
-		rActive := rPending.DeepCopy()
-		rActive.Status = schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReservationAvailable,
-			NodeName: "test-node-0",
-		}
-		got, err = StatusNodeNameIndexFunc(rActive)
-		assert.NoError(t, err)
-		assert.Equal(t, []string{"test-node-0"}, got)
-	})
-}
-
 func Test_matchReservationPorts(t *testing.T) {
 	type args struct {
 		pod *corev1.Pod

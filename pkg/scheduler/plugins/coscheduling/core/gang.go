@@ -50,6 +50,7 @@ type Gang struct {
 	Mode              string
 	MinRequiredNumber int
 	TotalChildrenNum  int
+	GangGroupId       string
 	GangGroup         []string
 	Children          map[string]*v1.Pod
 	// pods that have already assumed(waiting in Permit stage)
@@ -83,6 +84,8 @@ func NewGang(gangName string) *Gang {
 		Name:                     gangName,
 		CreateTime:               timeNowFn(),
 		WaitTime:                 0,
+		GangGroupId:              gangName,
+		GangGroup:                []string{gangName},
 		Mode:                     extension.GangModeStrict,
 		Children:                 make(map[string]*v1.Pod),
 		WaitingForBindChildren:   make(map[string]*v1.Pod),
@@ -101,7 +104,7 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 	if gang.HasGangInit {
 		return false
 	}
-	minRequiredNumber, err := extension.GetMinNum(pod)
+	minRequiredNumber, err := util.GetGangMinNumFromPod(pod)
 	if err != nil {
 		klog.Errorf("pod's annotation MinRequiredNumber illegal, gangName: %v, value: %v",
 			gang.Name, pod.Annotations[extension.AnnotationGangMinNum])
@@ -150,8 +153,11 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 		klog.Errorf("pod's annotation GangGroupsAnnotation illegal, gangName: %v, value: %v",
 			gang.Name, pod.Annotations[extension.AnnotationGangGroups])
 	}
+	if len(groupSlice) == 0 {
+		groupSlice = append(groupSlice, gang.Name)
+	}
 	gang.GangGroup = groupSlice
-
+	gang.GangGroupId = util.GetGangGroupId(groupSlice)
 	gang.GangFrom = GangFromPodAnnotation
 
 	gang.HasGangInit = true
@@ -194,17 +200,7 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 	// here we assume that Coscheduling's CreateTime equal with the podGroup CRD CreateTime
 	gang.CreateTime = pg.CreationTimestamp.Time
 
-	waitTime, err := util.ParsePgTimeoutSeconds(*pg.Spec.ScheduleTimeoutSeconds)
-	if err != nil {
-		klog.Errorf("podGroup's ScheduleTimeoutSeconds illegal, gangName: %v, value: %v",
-			gang.Name, pg.Spec.ScheduleTimeoutSeconds)
-		if args.DefaultTimeout != nil {
-			waitTime = args.DefaultTimeout.Duration
-		} else {
-			klog.Errorf("gangArgs DefaultTimeoutSeconds is nil")
-			waitTime = 0
-		}
-	}
+	waitTime := util.GetWaitTimeDuration(pg, args.DefaultTimeout.Duration)
 	gang.WaitTime = waitTime
 
 	groupSlice, err := util.StringToGangGroupSlice(pg.Annotations[extension.AnnotationGangGroups])
@@ -212,7 +208,11 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 		klog.Errorf("podGroup's annotation GangGroupsAnnotation illegal, gangName: %v, value: %v",
 			gang.Name, pg.Annotations[extension.AnnotationGangGroups])
 	}
+	if len(groupSlice) == 0 {
+		groupSlice = append(groupSlice, gang.Name)
+	}
 	gang.GangGroup = groupSlice
+	gang.GangGroupId = util.GetGangGroupId(groupSlice)
 
 	gang.GangFrom = GangFromPodGroupCrd
 

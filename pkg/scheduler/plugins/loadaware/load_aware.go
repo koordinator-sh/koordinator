@@ -24,11 +24,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	corev1listers "k8s.io/client-go/listers/core/v1"
-	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -38,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 )
 
 const (
@@ -67,6 +66,7 @@ type Plugin struct {
 	args             *config.LoadAwareSchedulingArgs
 	podLister        corev1listers.PodLister
 	nodeMetricLister slolisters.NodeMetricLister
+	estimator        estimator.Estimator
 	podAssignCache   *podAssignCache
 }
 
@@ -91,11 +91,17 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	podLister := podInformer.Lister()
 	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
 
+	estimator, err := estimator.NewEstimator(pluginArgs, handle)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Plugin{
 		handle:           handle,
 		args:             pluginArgs,
 		podLister:        podLister,
 		nodeMetricLister: nodeMetricLister,
+		estimator:        estimator,
 		podAssignCache:   assignCache,
 	}, nil
 }
@@ -260,7 +266,10 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 	prodPod := extension.GetPriorityClass(pod) == extension.PriorityProd && p.args.ScoreAccordingProdUsage
 	podMetrics := buildPodMetricMap(p.podLister, nodeMetric, prodPod)
 
-	estimatedUsed := estimatedPodUsed(pod, p.args.ResourceWeights, p.args.EstimatedScalingFactors)
+	estimatedUsed, err := p.estimator.Estimate(pod)
+	if err != nil {
+		return 0, nil
+	}
 	assignedPodEstimatedUsed, estimatedPods := p.estimatedAssignedPodUsed(nodeName, nodeMetric, podMetrics, prodPod)
 	for resourceName, value := range assignedPodEstimatedUsed {
 		estimatedUsed[resourceName] += value
@@ -318,7 +327,10 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 			stillInTheReportInterval(assignInfo.timestamp, nodeMetricUpdateTime, nodeMetricReportInterval) ||
 			(scoreWithAggregation(p.args.Aggregated) &&
 				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) {
-			estimated := estimatedPodUsed(assignInfo.pod, p.args.ResourceWeights, p.args.EstimatedScalingFactors)
+			estimated, err := p.estimator.Estimate(assignInfo.pod)
+			if err != nil {
+				continue
+			}
 			for resourceName, value := range estimated {
 				if quantity, ok := podUsage[resourceName]; ok {
 					usage := getResourceValue(resourceName, quantity)
@@ -332,55 +344,6 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 		}
 	}
 	return estimatedUsed, estimatedPods
-}
-
-func estimatedPodUsed(pod *corev1.Pod, resourceWeights map[corev1.ResourceName]int64, scalingFactors map[corev1.ResourceName]int64) map[corev1.ResourceName]int64 {
-	requests, limits := resourceapi.PodRequestsAndLimits(pod)
-	estimatedUsed := make(map[corev1.ResourceName]int64)
-	priorityClass := extension.GetPriorityClass(pod)
-	for resourceName := range resourceWeights {
-		realResourceName := extension.TranslateResourceNameByPriorityClass(priorityClass, resourceName)
-		estimatedUsed[resourceName] = estimatedUsedByResource(requests, limits, realResourceName, scalingFactors[resourceName])
-	}
-	return estimatedUsed
-}
-
-// TODO(joseph): Do we need to differentiate scalingFactor according to Koordinator Priority type?
-func estimatedUsedByResource(requests, limits corev1.ResourceList, resourceName corev1.ResourceName, scalingFactor int64) int64 {
-	limitQuantity := limits[resourceName]
-	requestQuantity := requests[resourceName]
-	var quantity resource.Quantity
-	if limitQuantity.Cmp(requestQuantity) > 0 {
-		scalingFactor = 100
-		quantity = limitQuantity
-	} else {
-		quantity = requestQuantity
-	}
-
-	if quantity.IsZero() {
-		switch resourceName {
-		case corev1.ResourceCPU, extension.BatchCPU:
-			return DefaultMilliCPURequest
-		case corev1.ResourceMemory, extension.BatchMemory:
-			return DefaultMemoryRequest
-		}
-		return 0
-	}
-
-	var estimatedUsed int64
-	switch resourceName {
-	case corev1.ResourceCPU:
-		estimatedUsed = int64(math.Round(float64(quantity.MilliValue()) * float64(scalingFactor) / 100))
-		if estimatedUsed > limitQuantity.MilliValue() {
-			estimatedUsed = limitQuantity.MilliValue()
-		}
-	default:
-		estimatedUsed = int64(math.Round(float64(quantity.Value()) * float64(scalingFactor) / 100))
-		if estimatedUsed > limitQuantity.Value() {
-			estimatedUsed = limitQuantity.Value()
-		}
-	}
-	return estimatedUsed
 }
 
 func loadAwareSchedulingScorer(resToWeightMap, used map[corev1.ResourceName]int64, allocatable corev1.ResourceList) int64 {

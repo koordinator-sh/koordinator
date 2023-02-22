@@ -416,6 +416,12 @@ func Test_splitDockerEnv(t *testing.T) {
 			},
 		},
 		{
+			dockerEnvs: []string{"a=b=c"},
+			expectedHookEnvs: map[string]string{
+				"a": "b=c",
+			},
+		},
+		{
 			dockerEnvs: []string{"a=", "b"},
 			expectedHookEnvs: map[string]string{
 				"a": "",

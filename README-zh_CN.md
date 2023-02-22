@@ -18,15 +18,15 @@
 
 ## 介绍
 
-Koordinator 基于 QoS 机制，支持 Kubernetes 上多种工作负载的混部调度。它旨在提高工作负载的运行时效率和可靠性（包括延迟敏感型负载和批处理任务），简化资源相关的配置调优，增加 Pod 部署密度以提高资源利用率。
+Koordinator 基于 QoS 调度系统，支持 Kubernetes 上多种工作负载的混部调度。它的目标是提高工作负载的运行时效率和可靠性（包括延迟敏感型负载和批处理任务），简化资源相关配置调优的复杂性，并增加 Pod 部署密度以提高资源利用率。
 
 Koordinator 通过提供如下功能来增强用户在 Kubernetes 上管理工作负载的体验：
 
-- 精心设计的 Priority 和 QoS 机制，支持在一个集群或者一个节点上混部不同的工作负载。
-- 采用应用画像机制（application profiling mechanism），支持超卖资源，以实现在满足 QoS 保障的前提下实现高资源利用率。
-- 细粒度的资源编排和隔离机制以提高工作负载（包括延迟敏感型负载和批处理任务）的效率。
-- 灵活的任务调度机制以支持特定领域（如大数据、AI、音频和视频）的工作负载。
-- 一套支持监控、故障排除、运维的工具集。
+- 提高资源利用率：Koordinator 旨在优化集群资源的利用率，确保所有节点都被有效和高效地使用。
+- 提高性能：通过使用先进的算法和技术，Koordinator 帮助用户提高 Kubernetes 集群的性能，减少容器间的干扰，提高整体系统的速度。
+- 灵活的调度策略：Koordinator 提供了多种自定义调度策略的选项，允许管理员微调系统的行为以适应其特定需求。
+- 简易集成：Koordinator 被设计为易于集成到现有的 Kubernetes 集群中，允许用户快速且无麻烦地开始使用它。
+
 
 ## 快速开始
 
@@ -72,7 +72,9 @@ Koordinator 社区遵照[行为守则](CODE_OF_CONDUCT.md)。我们鼓励每个�
 ## License
 
 Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
+<!--
 
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=koordinator-sh/koordinator&type=Date)](https://star-history.com/#koordinator-sh/koordinator&Date)
+-->

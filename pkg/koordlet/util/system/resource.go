@@ -35,9 +35,9 @@ type Resource interface {
 	ResourceType() ResourceType
 	// Path is the generated system file path according to the given parent directory.
 	// e.g. "/host-cgroup/kubepods/kubepods-podxxx/cpu.shares"
-	Path(parentDir string) string
+	Path(dynamicPath string) string
 	// IsSupported checks whether the system resource is supported in current platform
-	IsSupported(parentDir string) (bool, string)
+	IsSupported(dynamicPath string) (bool, string)
 	// IsValid checks whether the given value is valid for the system resource's content
 	IsValid(v string) (bool, string)
 	// WithValidator sets the ResourceValidator for the resource
@@ -45,20 +45,20 @@ type Resource interface {
 	// WithSupported sets the Supported status of the resource when it is initialized.
 	WithSupported(supported bool, msg string) Resource
 	// WithCheckSupported sets the check function for the Supported status of given resource and parent directory.
-	WithCheckSupported(checkSupportedFn func(r Resource, parentDir string) (isSupported bool, msg string)) Resource
+	WithCheckSupported(checkSupportedFn func(r Resource, dynamicPath string) (isSupported bool, msg string)) Resource
 }
 
 func GetDefaultResourceType(subfs string, filename string) ResourceType {
 	return ResourceType(filepath.Join(subfs, filename))
 }
 
-func ValidateResourceValue(value *int64, parentDir string, r Resource) bool {
+func ValidateResourceValue(value *int64, dynamicPath string, r Resource) bool {
 	if value == nil {
-		klog.V(5).Infof("failed to validate cgroup value, path:%s, value is nil", r.Path(parentDir))
+		klog.V(5).Infof("failed to validate value, path:%s, value is nil", r.Path(dynamicPath))
 		return false
 	}
 	if valid, msg := r.IsValid(strconv.FormatInt(*value, 10)); !valid {
-		klog.V(4).Infof("failed to validate cgroup value, path:%s, msg:%s", r.Path(parentDir), msg)
+		klog.V(4).Infof("failed to validate value, path:%s, msg:%s", r.Path(dynamicPath), msg)
 		return false
 	}
 	return true
@@ -72,8 +72,8 @@ func IsResourceUnsupportedErr(err error) bool {
 	return strings.HasPrefix(err.Error(), ErrResourceUnsupportedPrefix)
 }
 
-func SupportedIfFileExists(r Resource, parentDir string) (bool, string) {
-	exists, err := PathExists(r.Path(parentDir))
+func SupportedIfFileExists(r Resource, dynamicPath string) (bool, string) {
+	exists, err := PathExists(r.Path(dynamicPath))
 	if err != nil {
 		return false, fmt.Sprintf("cannot check if %s exists, err: %v", r.ResourceType(), err)
 	}
