@@ -282,16 +282,16 @@ func (n *nodeDevice) tryAllocateCommonDevice(podRequest corev1.ResourceList, dev
 		var podRequestPerCard corev1.ResourceList
 		switch deviceType {
 		case schedulingv1alpha1.RDMA:
-			commonDevice := podRequest[apiext.KoordRDMA]
+			commonDevice := podRequest[apiext.ResourceRDMA]
 			commonDeviceWanted = commonDevice.Value() / 100
 			podRequestPerCard = corev1.ResourceList{
-				apiext.KoordRDMA: *resource.NewQuantity(commonDevice.Value()/commonDeviceWanted, resource.DecimalSI),
+				apiext.ResourceRDMA: *resource.NewQuantity(commonDevice.Value()/commonDeviceWanted, resource.DecimalSI),
 			}
 		case schedulingv1alpha1.FPGA:
-			commonDevice := podRequest[apiext.KoordFPGA]
+			commonDevice := podRequest[apiext.ResourceFPGA]
 			commonDeviceWanted = commonDevice.Value() / 100
 			podRequestPerCard = corev1.ResourceList{
-				apiext.KoordFPGA: *resource.NewQuantity(commonDevice.Value()/commonDeviceWanted, resource.DecimalSI),
+				apiext.ResourceFPGA: *resource.NewQuantity(commonDevice.Value()/commonDeviceWanted, resource.DecimalSI),
 			}
 		}
 		satisfiedDeviceCount := 0
@@ -339,12 +339,12 @@ func (n *nodeDevice) tryAllocateGPU(podRequest corev1.ResourceList, allocateResu
 
 	var deviceAllocations []*apiext.DeviceAllocation
 	if isMultipleGPUPod(podRequest) {
-		gpuCore, gpuMem, gpuMemRatio := podRequest[apiext.GPUCore], podRequest[apiext.GPUMemory], podRequest[apiext.GPUMemoryRatio]
+		gpuCore, gpuMem, gpuMemRatio := podRequest[apiext.ResourceGPUCore], podRequest[apiext.ResourceGPUMemory], podRequest[apiext.ResourceGPUMemoryRatio]
 		gpuWanted := gpuCore.Value() / 100
 		podRequestPerCard := corev1.ResourceList{
-			apiext.GPUCore:        *resource.NewQuantity(gpuCore.Value()/gpuWanted, resource.DecimalSI),
-			apiext.GPUMemory:      *resource.NewQuantity(gpuMem.Value()/gpuWanted, resource.BinarySI),
-			apiext.GPUMemoryRatio: *resource.NewQuantity(gpuMemRatio.Value()/gpuWanted, resource.DecimalSI),
+			apiext.ResourceGPUCore:        *resource.NewQuantity(gpuCore.Value()/gpuWanted, resource.DecimalSI),
+			apiext.ResourceGPUMemory:      *resource.NewQuantity(gpuMem.Value()/gpuWanted, resource.BinarySI),
+			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(gpuMemRatio.Value()/gpuWanted, resource.DecimalSI),
 		}
 		satisfiedDeviceCount := 0
 		orderedDeviceResources := sortDeviceResourcesByMinor(n.deviceFree[schedulingv1alpha1.GPU])
@@ -440,9 +440,10 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 			klog.Errorf("Find device unhealthy, nodeName:%v, deviceType:%v, minor:%v",
 				nodeName, deviceInfo.Type, deviceInfo.Minor)
 		} else {
-			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = deviceInfo.Resources
+			resources := apiext.TransformDeprecatedDeviceResources(deviceInfo.Resources)
+			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = resources
 			klog.V(5).Infof("Find device resource update, nodeName:%v, deviceType:%v, minor:%v, res:%v",
-				nodeName, deviceInfo.Type, deviceInfo.Minor, deviceInfo.Resources)
+				nodeName, deviceInfo.Type, deviceInfo.Minor, resources)
 		}
 	}
 

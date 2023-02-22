@@ -106,10 +106,10 @@ func (s *statesInformer) fillGPUDevice(device *schedulingv1alpha1.Device,
 		device.Labels = make(map[string]string)
 	}
 	if gpuModel != "" {
-		device.Labels[extension.GPUModel] = gpuModel
+		device.Labels[extension.LabelGPUModel] = gpuModel
 	}
 	if gpuDriverVer != "" {
-		device.Labels[extension.GPUDriver] = gpuDriverVer
+		device.Labels[extension.LabelGPUDriverVersion] = gpuDriverVer
 	}
 }
 
@@ -170,9 +170,9 @@ func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
 			Type:   schedulingv1alpha1.GPU,
 			Health: health,
 			Resources: map[corev1.ResourceName]resource.Quantity{
-				extension.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-				extension.GPUMemory:      gpu.MemoryTotal,
-				extension.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceGPUMemory:      gpu.MemoryTotal,
+				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 			},
 		})
 	}

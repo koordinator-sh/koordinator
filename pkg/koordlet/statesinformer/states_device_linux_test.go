@@ -86,9 +86,9 @@ func Test_reportGPUDevice(t *testing.T) {
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
-				extension.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-				extension.GPUMemory:      *resource.NewQuantity(8000, resource.BinarySI),
-				extension.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceGPUMemory:      *resource.NewQuantity(8000, resource.BinarySI),
+				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 			},
 		},
 		{
@@ -97,9 +97,9 @@ func Test_reportGPUDevice(t *testing.T) {
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
-				extension.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-				extension.GPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
-				extension.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceGPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
+				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 			},
 		},
 	}
@@ -123,14 +123,14 @@ func Test_reportGPUDevice(t *testing.T) {
 		Type:   schedulingv1alpha1.GPU,
 		Health: true,
 		Resources: map[corev1.ResourceName]resource.Quantity{
-			extension.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-			extension.GPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
-			extension.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+			extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+			extension.ResourceGPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
+			extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 		},
 	})
 	device, err = fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
 	assert.Equal(t, nil, err)
 	assert.Equal(t, device.Spec.Devices, expectedDevices)
-	assert.Equal(t, device.Labels[extension.GPUModel], "A100")
-	assert.Equal(t, device.Labels[extension.GPUDriver], "470")
+	assert.Equal(t, device.Labels[extension.LabelGPUModel], "A100")
+	assert.Equal(t, device.Labels[extension.LabelGPUDriverVersion], "470")
 }

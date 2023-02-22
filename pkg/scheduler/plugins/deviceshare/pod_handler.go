@@ -54,6 +54,7 @@ func (n *nodeDeviceCache) onPodAdd(obj interface{}) {
 	if len(devicesAllocation) == 0 {
 		return
 	}
+	transformDeviceAllocations(devicesAllocation)
 
 	info := n.getNodeDevice(pod.Spec.NodeName)
 	if info == nil {
@@ -96,6 +97,7 @@ func (n *nodeDeviceCache) onPodDelete(obj interface{}) {
 	if len(devicesAllocation) == 0 {
 		return
 	}
+	transformDeviceAllocations(devicesAllocation)
 
 	info := n.getNodeDevice(pod.Spec.NodeName)
 	if info == nil {
@@ -108,4 +110,12 @@ func (n *nodeDeviceCache) onPodDelete(obj interface{}) {
 
 	info.updateCacheUsed(devicesAllocation, pod, false)
 	klog.V(5).InfoS("pod cache deleted", "pod", klog.KObj(pod))
+}
+
+func transformDeviceAllocations(deviceAllocations apiext.DeviceAllocations) {
+	for _, allocations := range deviceAllocations {
+		for _, v := range allocations {
+			v.Resources = apiext.TransformDeprecatedDeviceResources(v.Resources)
+		}
+	}
 }

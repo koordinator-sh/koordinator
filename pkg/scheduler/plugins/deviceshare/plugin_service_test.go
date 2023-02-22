@@ -54,23 +54,23 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 	deviceInfo0.Health = true
 	deviceInfo0.Type = schedulingv1alpha1.GPU
 	deviceInfo0.Resources = corev1.ResourceList{
-		apiext.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-		apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+		apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+		apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 	}
 	deviceInfo1 := schedulingv1alpha1.DeviceInfo{}
 	deviceInfo1.Minor = pointer.Int32Ptr(1)
 	deviceInfo1.Health = true
 	deviceInfo1.Type = schedulingv1alpha1.GPU
 	deviceInfo1.Resources = corev1.ResourceList{
-		apiext.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-		apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+		apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+		apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 	}
 	deviceInfo2 := schedulingv1alpha1.DeviceInfo{}
 	deviceInfo2.Minor = pointer.Int32Ptr(2)
 	deviceInfo2.Health = true
 	deviceInfo2.Type = schedulingv1alpha1.FPGA
 	deviceInfo2.Resources = corev1.ResourceList{
-		apiext.KoordFPGA: *resource.NewQuantity(100, resource.DecimalSI),
+		apiext.ResourceFPGA: *resource.NewQuantity(100, resource.DecimalSI),
 	}
 	device.Spec.Devices = append(device.Spec.Devices, deviceInfo0)
 	device.Spec.Devices = append(device.Spec.Devices, deviceInfo1)
@@ -87,7 +87,7 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 				{
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
-							apiext.NvidiaGPU: *resource.NewQuantity(1, resource.DecimalSI),
+							apiext.ResourceNvidiaGPU: *resource.NewQuantity(1, resource.DecimalSI),
 						},
 					},
 				},
@@ -99,23 +99,23 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 	deviceAllocation := &extension.DeviceAllocation{
 		Minor: 0,
 		Resources: corev1.ResourceList{
-			apiext.GPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
-			apiext.GPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
+			apiext.ResourceGPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
+			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
 		},
 	}
 	allocResult[schedulingv1alpha1.GPU] = append(allocResult[schedulingv1alpha1.GPU], deviceAllocation)
 	deviceAllocation = &extension.DeviceAllocation{
 		Minor: 1,
 		Resources: corev1.ResourceList{
-			apiext.GPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
-			apiext.GPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
+			apiext.ResourceGPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
+			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
 		},
 	}
 	allocResult[schedulingv1alpha1.GPU] = append(allocResult[schedulingv1alpha1.GPU], deviceAllocation)
 	deviceAllocation = &extension.DeviceAllocation{
 		Minor: 2,
 		Resources: corev1.ResourceList{
-			apiext.KoordFPGA: *resource.NewQuantity(51, resource.DecimalSI),
+			apiext.ResourceFPGA: *resource.NewQuantity(51, resource.DecimalSI),
 		},
 	}
 	allocResult[schedulingv1alpha1.FPGA] = append(allocResult[schedulingv1alpha1.FPGA], deviceAllocation)
@@ -135,40 +135,40 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 	nodeDeviceSummaryExpect := make(map[string]*NodeDeviceSummary)
 	nodeDeviceSummaryExpect["node1"] = NewNodeDeviceSummary()
 	nodeDeviceSummaryExpect["node1"].DeviceTotal = map[corev1.ResourceName]*resource.Quantity{
-		apiext.GPUCore:        resource.NewQuantity(200, resource.DecimalSI),
-		apiext.GPUMemoryRatio: resource.NewQuantity(200, resource.DecimalSI),
-		apiext.KoordFPGA:      resource.NewQuantity(100, resource.DecimalSI),
+		apiext.ResourceGPUCore:        resource.NewQuantity(200, resource.DecimalSI),
+		apiext.ResourceGPUMemoryRatio: resource.NewQuantity(200, resource.DecimalSI),
+		apiext.ResourceFPGA:           resource.NewQuantity(100, resource.DecimalSI),
 	}
 	assert.True(t, apiequality.Semantic.DeepEqual(nodeDeviceSummary["node1"].DeviceTotal, nodeDeviceSummaryExpect["node1"].DeviceTotal))
 
 	nodeDeviceSummaryExpect["node1"].DeviceFree = map[corev1.ResourceName]*resource.Quantity{
-		apiext.GPUCore:        resource.NewQuantity(102, resource.DecimalSI),
-		apiext.GPUMemoryRatio: resource.NewQuantity(102, resource.DecimalSI),
-		apiext.KoordFPGA:      resource.NewQuantity(49, resource.DecimalSI),
+		apiext.ResourceGPUCore:        resource.NewQuantity(102, resource.DecimalSI),
+		apiext.ResourceGPUMemoryRatio: resource.NewQuantity(102, resource.DecimalSI),
+		apiext.ResourceFPGA:           resource.NewQuantity(49, resource.DecimalSI),
 	}
 	assert.True(t, apiequality.Semantic.DeepEqual(nodeDeviceSummary["node1"].DeviceFree, nodeDeviceSummaryExpect["node1"].DeviceFree))
 
 	nodeDeviceSummaryExpect["node1"].DeviceUsed = map[corev1.ResourceName]*resource.Quantity{
-		apiext.GPUCore:        resource.NewQuantity(98, resource.DecimalSI),
-		apiext.GPUMemoryRatio: resource.NewQuantity(98, resource.DecimalSI),
-		apiext.KoordFPGA:      resource.NewQuantity(51, resource.DecimalSI),
+		apiext.ResourceGPUCore:        resource.NewQuantity(98, resource.DecimalSI),
+		apiext.ResourceGPUMemoryRatio: resource.NewQuantity(98, resource.DecimalSI),
+		apiext.ResourceFPGA:           resource.NewQuantity(51, resource.DecimalSI),
 	}
 	assert.True(t, apiequality.Semantic.DeepEqual(nodeDeviceSummary["node1"].DeviceUsed, nodeDeviceSummaryExpect["node1"].DeviceUsed))
 
 	nodeDeviceSummaryExpect["node1"].DeviceTotalDetail = map[schedulingv1alpha1.DeviceType]deviceResources{
 		schedulingv1alpha1.GPU: map[int]corev1.ResourceList{
 			0: {
-				apiext.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-				apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 			},
 			1: {
-				apiext.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-				apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 			},
 		},
 		schedulingv1alpha1.FPGA: map[int]corev1.ResourceList{
 			2: {
-				apiext.KoordFPGA: *resource.NewQuantity(100, resource.DecimalSI),
+				apiext.ResourceFPGA: *resource.NewQuantity(100, resource.DecimalSI),
 			},
 		},
 	}
@@ -177,17 +177,17 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 	nodeDeviceSummaryExpect["node1"].DeviceFreeDetail = map[schedulingv1alpha1.DeviceType]deviceResources{
 		schedulingv1alpha1.GPU: map[int]corev1.ResourceList{
 			0: {
-				apiext.GPUCore:        *resource.NewQuantity(51, resource.DecimalSI),
-				apiext.GPUMemoryRatio: *resource.NewQuantity(51, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(51, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(51, resource.DecimalSI),
 			},
 			1: {
-				apiext.GPUCore:        *resource.NewQuantity(51, resource.DecimalSI),
-				apiext.GPUMemoryRatio: *resource.NewQuantity(51, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(51, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(51, resource.DecimalSI),
 			},
 		},
 		schedulingv1alpha1.FPGA: map[int]corev1.ResourceList{
 			2: {
-				apiext.KoordFPGA: *resource.NewQuantity(49, resource.DecimalSI),
+				apiext.ResourceFPGA: *resource.NewQuantity(49, resource.DecimalSI),
 			},
 		},
 	}
@@ -196,17 +196,17 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 	nodeDeviceSummaryExpect["node1"].DeviceUsedDetail = map[schedulingv1alpha1.DeviceType]deviceResources{
 		schedulingv1alpha1.GPU: map[int]corev1.ResourceList{
 			0: {
-				apiext.GPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
-				apiext.GPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
 			},
 			1: {
-				apiext.GPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
-				apiext.GPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
 			},
 		},
 		schedulingv1alpha1.FPGA: map[int]corev1.ResourceList{
 			2: {
-				apiext.KoordFPGA: *resource.NewQuantity(51, resource.DecimalSI),
+				apiext.ResourceFPGA: *resource.NewQuantity(51, resource.DecimalSI),
 			},
 		},
 	}
@@ -216,19 +216,19 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 		schedulingv1alpha1.GPU: {
 			"ns/pod1": {
 				0: {
-					apiext.GPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
-					apiext.GPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
+					apiext.ResourceGPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
+					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
 				},
 				1: {
-					apiext.GPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
-					apiext.GPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
+					apiext.ResourceGPUCore:        *resource.NewQuantity(49, resource.DecimalSI),
+					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(49, resource.DecimalSI),
 				},
 			},
 		},
 		schedulingv1alpha1.FPGA: {
 			"ns/pod1": {
 				2: {
-					apiext.KoordFPGA: *resource.NewQuantity(51, resource.DecimalSI),
+					apiext.ResourceFPGA: *resource.NewQuantity(51, resource.DecimalSI),
 				},
 			},
 		},

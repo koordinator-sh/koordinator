@@ -460,9 +460,9 @@ func convertNodeMetricToResourceMap(nodeMetric *metriccache.NodeResourceMetric) 
 				Type:  schedulingv1alpha1.GPU,
 				// TODO: how to check the health status of GPU
 				Resources: map[corev1.ResourceName]resource.Quantity{
-					apiext.GPUCore:        *resource.NewQuantity(int64(gpu.SMUtil), resource.BinarySI),
-					apiext.GPUMemory:      gpu.MemoryUsed,
-					apiext.GPUMemoryRatio: *resource.NewQuantity(int64(memoryRatioRaw), resource.BinarySI),
+					apiext.ResourceGPUCore:        *resource.NewQuantity(int64(gpu.SMUtil), resource.BinarySI),
+					apiext.ResourceGPUMemory:      gpu.MemoryUsed,
+					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(int64(memoryRatioRaw), resource.BinarySI),
 				},
 			}
 			deviceInfos = append(deviceInfos, gpuInfo)
@@ -488,9 +488,9 @@ func convertPodMetricToResourceMap(podMetric *metriccache.PodResourceMetric) *sl
 				Type:  schedulingv1alpha1.GPU,
 				// TODO: how to check the health status of GPU
 				Resources: map[corev1.ResourceName]resource.Quantity{
-					apiext.GPUCore:        *resource.NewQuantity(int64(gpu.SMUtil), resource.DecimalSI),
-					apiext.GPUMemory:      gpu.MemoryUsed,
-					apiext.GPUMemoryRatio: *resource.NewQuantity(int64(memoryRatioRaw), resource.DecimalSI),
+					apiext.ResourceGPUCore:        *resource.NewQuantity(int64(gpu.SMUtil), resource.DecimalSI),
+					apiext.ResourceGPUMemory:      gpu.MemoryUsed,
+					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(int64(memoryRatioRaw), resource.DecimalSI),
 				},
 			}
 			deviceInfos = append(deviceInfos, gpuInfo)

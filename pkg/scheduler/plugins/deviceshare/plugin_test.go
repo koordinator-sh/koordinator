@@ -269,14 +269,14 @@ func Test_Plugin_PreFilter(t *testing.T) {
 							Name: "test-container-a",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									apiext.KoordGPU: resource.MustParse("101"),
+									apiext.ResourceGPU: resource.MustParse("101"),
 								},
 							},
 						},
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("failed to validate %v: 101", apiext.KoordGPU)),
+			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("failed to validate %v: 101", apiext.ResourceGPU)),
 		},
 		{
 			name: "pod has invalid fpga request",
@@ -293,14 +293,14 @@ func Test_Plugin_PreFilter(t *testing.T) {
 							Name: "test-container-a",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("101"),
+									apiext.ResourceFPGA: resource.MustParse("101"),
 								},
 							},
 						},
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("failed to validate %v: 101", apiext.KoordFPGA)),
+			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("failed to validate %v: 101", apiext.ResourceFPGA)),
 		},
 		{
 			name: "pod has valid gpu request",
@@ -317,7 +317,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 							Name: "test-container-a",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									apiext.KoordGPU: resource.MustParse("100"),
+									apiext.ResourceGPU: resource.MustParse("100"),
 								},
 							},
 						},
@@ -327,8 +327,8 @@ func Test_Plugin_PreFilter(t *testing.T) {
 			wantState: &preFilterState{
 				skip: false,
 				convertedDeviceResource: corev1.ResourceList{
-					apiext.GPUCore:        resource.MustParse("100"),
-					apiext.GPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
 			},
 		},
@@ -347,7 +347,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 							Name: "test-container-a",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 							},
 						},
@@ -357,7 +357,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 			wantState: &preFilterState{
 				skip: false,
 				convertedDeviceResource: corev1.ResourceList{
-					apiext.KoordFPGA: resource.MustParse("100"),
+					apiext.ResourceFPGA: resource.MustParse("100"),
 				},
 			},
 		},
@@ -376,8 +376,8 @@ func Test_Plugin_PreFilter(t *testing.T) {
 							Name: "test-container-a",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									apiext.KoordGPU:  resource.MustParse("100"),
-									apiext.KoordRDMA: resource.MustParse("100"),
+									apiext.ResourceGPU:  resource.MustParse("100"),
+									apiext.ResourceRDMA: resource.MustParse("100"),
 								},
 							},
 						},
@@ -387,9 +387,9 @@ func Test_Plugin_PreFilter(t *testing.T) {
 			wantState: &preFilterState{
 				skip: false,
 				convertedDeviceResource: corev1.ResourceList{
-					apiext.GPUCore:        resource.MustParse("100"),
-					apiext.GPUMemoryRatio: resource.MustParse("100"),
-					apiext.KoordRDMA:      resource.MustParse("100"),
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceRDMA:           resource.MustParse("100"),
 				},
 			},
 		},
@@ -453,8 +453,8 @@ func Test_Plugin_Filter(t *testing.T) {
 			state: &preFilterState{
 				skip: false,
 				convertedDeviceResource: corev1.ResourceList{
-					apiext.GPUCore:        resource.MustParse("100"),
-					apiext.GPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
 			},
 			pod: &corev1.Pod{},
@@ -471,8 +471,8 @@ func Test_Plugin_Filter(t *testing.T) {
 			state: &preFilterState{
 				skip: false,
 				convertedDeviceResource: corev1.ResourceList{
-					apiext.GPUCore:        resource.MustParse("100"),
-					apiext.GPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
 			},
 			pod: &corev1.Pod{},
@@ -482,27 +482,27 @@ func Test_Plugin_Filter(t *testing.T) {
 						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("75"),
-									apiext.GPUMemoryRatio: resource.MustParse("75"),
-									apiext.GPUMemory:      resource.MustParse("12Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("75"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
 								},
 							},
 						},
 						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 						},
 						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("25"),
-									apiext.GPUMemoryRatio: resource.MustParse("25"),
-									apiext.GPUMemory:      resource.MustParse("4Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("25"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
 								},
 							},
 						},
@@ -517,9 +517,9 @@ func Test_Plugin_Filter(t *testing.T) {
 			state: &preFilterState{
 				skip: false,
 				convertedDeviceResource: corev1.ResourceList{
-					apiext.KoordFPGA:      resource.MustParse("100"),
-					apiext.GPUCore:        resource.MustParse("100"),
-					apiext.GPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceFPGA:           resource.MustParse("100"),
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
 			},
 			pod: &corev1.Pod{},
@@ -529,37 +529,37 @@ func Test_Plugin_Filter(t *testing.T) {
 						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("75"),
-									apiext.GPUMemoryRatio: resource.MustParse("75"),
-									apiext.GPUMemory:      resource.MustParse("12Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("75"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
 								},
 							},
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 							},
 						},
 						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 							},
 						},
 						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("25"),
-									apiext.GPUMemoryRatio: resource.MustParse("25"),
-									apiext.GPUMemory:      resource.MustParse("4Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("25"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
 								},
 							},
 						},
@@ -574,9 +574,9 @@ func Test_Plugin_Filter(t *testing.T) {
 			state: &preFilterState{
 				skip: false,
 				convertedDeviceResource: corev1.ResourceList{
-					apiext.KoordFPGA:      resource.MustParse("100"),
-					apiext.GPUCore:        resource.MustParse("100"),
-					apiext.GPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceFPGA:           resource.MustParse("100"),
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
 			},
 			pod: &corev1.Pod{},
@@ -586,42 +586,42 @@ func Test_Plugin_Filter(t *testing.T) {
 						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("75"),
-									apiext.GPUMemoryRatio: resource.MustParse("75"),
-									apiext.GPUMemory:      resource.MustParse("12Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("75"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
 								},
 							},
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("50"),
+									apiext.ResourceFPGA: resource.MustParse("50"),
 								},
 							},
 						},
 						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 							},
 						},
 						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("25"),
-									apiext.GPUMemoryRatio: resource.MustParse("25"),
-									apiext.GPUMemory:      resource.MustParse("4Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("25"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
 								},
 							},
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("50"),
+									apiext.ResourceFPGA: resource.MustParse("50"),
 								},
 							},
 						},
@@ -636,7 +636,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			state: &preFilterState{
 				skip: false,
 				convertedDeviceResource: corev1.ResourceList{
-					apiext.KoordFPGA: resource.MustParse("100"),
+					apiext.ResourceFPGA: resource.MustParse("100"),
 				},
 			},
 			pod: &corev1.Pod{},
@@ -646,14 +646,14 @@ func Test_Plugin_Filter(t *testing.T) {
 						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 							},
 						},
 						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 							},
 						},
@@ -669,7 +669,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			state: &preFilterState{
 				skip: false,
 				convertedDeviceResource: corev1.ResourceList{
-					apiext.KoordFPGA: resource.MustParse("100"),
+					apiext.ResourceFPGA: resource.MustParse("100"),
 				},
 			},
 			pod: &corev1.Pod{},
@@ -679,27 +679,27 @@ func Test_Plugin_Filter(t *testing.T) {
 						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("75"),
+									apiext.ResourceFPGA: resource.MustParse("75"),
 								},
 								1: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 							},
 						},
 						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 								1: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 							},
 						},
 						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("25"),
+									apiext.ResourceFPGA: resource.MustParse("25"),
 								},
 							},
 						},
@@ -714,8 +714,8 @@ func Test_Plugin_Filter(t *testing.T) {
 			state: &preFilterState{
 				skip: false,
 				convertedDeviceResource: corev1.ResourceList{
-					apiext.GPUCore:        resource.MustParse("100"),
-					apiext.GPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
 			},
 			pod: &corev1.Pod{},
@@ -725,28 +725,28 @@ func Test_Plugin_Filter(t *testing.T) {
 						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 							},
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 						},
 						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 							},
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 						},
@@ -762,8 +762,8 @@ func Test_Plugin_Filter(t *testing.T) {
 			state: &preFilterState{
 				skip: false,
 				convertedDeviceResource: corev1.ResourceList{
-					apiext.GPUCore:        resource.MustParse("100"),
-					apiext.GPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
 			},
 			pod: &corev1.Pod{},
@@ -773,37 +773,37 @@ func Test_Plugin_Filter(t *testing.T) {
 						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("25"),
-									apiext.GPUMemoryRatio: resource.MustParse("25"),
-									apiext.GPUMemory:      resource.MustParse("4Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("25"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
 								},
 								1: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 						},
 						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 								1: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 						},
 						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("75"),
-									apiext.GPUMemoryRatio: resource.MustParse("75"),
-									apiext.GPUMemory:      resource.MustParse("12Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("75"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
 								},
 							},
 						},
@@ -885,27 +885,27 @@ func Test_Plugin_Reserve(t *testing.T) {
 							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("25"),
-										apiext.GPUMemoryRatio: resource.MustParse("25"),
-										apiext.GPUMemory:      resource.MustParse("4Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("25"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+										apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
 									},
 								},
 							},
 							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
 							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("75"),
-										apiext.GPUMemoryRatio: resource.MustParse("75"),
-										apiext.GPUMemory:      resource.MustParse("12Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("75"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+										apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
 									},
 								},
 							},
@@ -916,8 +916,8 @@ func Test_Plugin_Reserve(t *testing.T) {
 				state: &preFilterState{
 					skip: false,
 					convertedDeviceResource: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("100"),
-						apiext.GPUMemoryRatio: resource.MustParse("100"),
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
 				},
 				nodeName: "test-node",
@@ -935,27 +935,27 @@ func Test_Plugin_Reserve(t *testing.T) {
 							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("25"),
-										apiext.GPUMemoryRatio: resource.MustParse("25"),
-										apiext.GPUMemory:      resource.MustParse("4Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("25"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+										apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
 									},
 								},
 							},
 							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
 							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("75"),
-										apiext.GPUMemoryRatio: resource.MustParse("75"),
-										apiext.GPUMemory:      resource.MustParse("12Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("75"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+										apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
 									},
 								},
 							},
@@ -966,8 +966,8 @@ func Test_Plugin_Reserve(t *testing.T) {
 				state: &preFilterState{
 					skip: false,
 					convertedDeviceResource: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("200"),
-						apiext.GPUMemoryRatio: resource.MustParse("200"),
+						apiext.ResourceGPUCore:        resource.MustParse("200"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
 					},
 				},
 				nodeName: "test-node",
@@ -985,18 +985,18 @@ func Test_Plugin_Reserve(t *testing.T) {
 							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
 							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
@@ -1008,8 +1008,8 @@ func Test_Plugin_Reserve(t *testing.T) {
 				state: &preFilterState{
 					skip: false,
 					convertedDeviceResource: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("200"),
-						apiext.GPUMemoryRatio: resource.MustParse("200"),
+						apiext.ResourceGPUCore:        resource.MustParse("200"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
 					},
 				},
 				nodeName: "test-node",
@@ -1027,21 +1027,21 @@ func Test_Plugin_Reserve(t *testing.T) {
 							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("50"),
+										apiext.ResourceRDMA: resource.MustParse("50"),
 									},
 								},
 							},
 							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 							},
 							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("50"),
+										apiext.ResourceRDMA: resource.MustParse("50"),
 									},
 								},
 							},
@@ -1052,7 +1052,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				state: &preFilterState{
 					skip: false,
 					convertedDeviceResource: corev1.ResourceList{
-						apiext.KoordRDMA: resource.MustParse("100"),
+						apiext.ResourceRDMA: resource.MustParse("100"),
 					},
 				},
 				nodeName: "test-node",
@@ -1070,24 +1070,24 @@ func Test_Plugin_Reserve(t *testing.T) {
 							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 							},
 							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 							},
@@ -1099,8 +1099,8 @@ func Test_Plugin_Reserve(t *testing.T) {
 				state: &preFilterState{
 					skip: false,
 					convertedDeviceResource: corev1.ResourceList{
-						apiext.KoordRDMA: resource.MustParse("200"),
-						apiext.KoordFPGA: resource.MustParse("200"),
+						apiext.ResourceRDMA: resource.MustParse("200"),
+						apiext.ResourceFPGA: resource.MustParse("200"),
 					},
 				},
 				nodeName: "test-node",
@@ -1118,38 +1118,38 @@ func Test_Plugin_Reserve(t *testing.T) {
 							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
 							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
@@ -1162,10 +1162,10 @@ func Test_Plugin_Reserve(t *testing.T) {
 				state: &preFilterState{
 					skip: false,
 					convertedDeviceResource: corev1.ResourceList{
-						apiext.KoordRDMA:      resource.MustParse("100"),
-						apiext.KoordFPGA:      resource.MustParse("100"),
-						apiext.GPUCore:        resource.MustParse("100"),
-						apiext.GPUMemoryRatio: resource.MustParse("100"),
+						apiext.ResourceRDMA:           resource.MustParse("100"),
+						apiext.ResourceFPGA:           resource.MustParse("100"),
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
 				},
 				nodeName: "test-node",
@@ -1177,57 +1177,57 @@ func Test_Plugin_Reserve(t *testing.T) {
 							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("0"),
+										apiext.ResourceRDMA: resource.MustParse("0"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("0"),
+										apiext.ResourceFPGA: resource.MustParse("0"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("0"),
-										apiext.GPUMemoryRatio: resource.MustParse("0"),
-										apiext.GPUMemory:      resource.MustParse("0"),
+										apiext.ResourceGPUCore:        resource.MustParse("0"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("0"),
+										apiext.ResourceGPUMemory:      resource.MustParse("0"),
 									},
 								},
 							},
 							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
 							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
@@ -1239,9 +1239,9 @@ func Test_Plugin_Reserve(t *testing.T) {
 						{
 							Minor: 0,
 							Resources: corev1.ResourceList{
-								apiext.GPUCore:        resource.MustParse("100"),
-								apiext.GPUMemoryRatio: resource.MustParse("100"),
-								apiext.GPUMemory:      resource.MustParse("16Gi"),
+								apiext.ResourceGPUCore:        resource.MustParse("100"),
+								apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+								apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 							},
 						},
 					},
@@ -1249,7 +1249,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 						{
 							Minor: 0,
 							Resources: corev1.ResourceList{
-								apiext.KoordFPGA: resource.MustParse("100"),
+								apiext.ResourceFPGA: resource.MustParse("100"),
 							},
 						},
 					},
@@ -1257,7 +1257,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 						{
 							Minor: 0,
 							Resources: corev1.ResourceList{
-								apiext.KoordRDMA: resource.MustParse("100"),
+								apiext.ResourceRDMA: resource.MustParse("100"),
 							},
 						},
 					},
@@ -1273,60 +1273,60 @@ func Test_Plugin_Reserve(t *testing.T) {
 							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 									1: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
 							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 									1: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
@@ -1339,10 +1339,10 @@ func Test_Plugin_Reserve(t *testing.T) {
 				state: &preFilterState{
 					skip: false,
 					convertedDeviceResource: corev1.ResourceList{
-						apiext.KoordRDMA:      resource.MustParse("200"),
-						apiext.KoordFPGA:      resource.MustParse("200"),
-						apiext.GPUCore:        resource.MustParse("200"),
-						apiext.GPUMemoryRatio: resource.MustParse("200"),
+						apiext.ResourceRDMA:           resource.MustParse("200"),
+						apiext.ResourceFPGA:           resource.MustParse("200"),
+						apiext.ResourceGPUCore:        resource.MustParse("200"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
 					},
 				},
 				nodeName: "test-node",
@@ -1354,90 +1354,90 @@ func Test_Plugin_Reserve(t *testing.T) {
 							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("0"),
+										apiext.ResourceRDMA: resource.MustParse("0"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("0"),
+										apiext.ResourceRDMA: resource.MustParse("0"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("0"),
+										apiext.ResourceFPGA: resource.MustParse("0"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("0"),
+										apiext.ResourceFPGA: resource.MustParse("0"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("0"),
-										apiext.GPUMemoryRatio: resource.MustParse("0"),
-										apiext.GPUMemory:      resource.MustParse("0"),
+										apiext.ResourceGPUCore:        resource.MustParse("0"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("0"),
+										apiext.ResourceGPUMemory:      resource.MustParse("0"),
 									},
 									1: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("0"),
-										apiext.GPUMemoryRatio: resource.MustParse("0"),
-										apiext.GPUMemory:      resource.MustParse("0"),
+										apiext.ResourceGPUCore:        resource.MustParse("0"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("0"),
+										apiext.ResourceGPUMemory:      resource.MustParse("0"),
 									},
 								},
 							},
 							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 									1: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
 							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 									1: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
@@ -1449,17 +1449,17 @@ func Test_Plugin_Reserve(t *testing.T) {
 						{
 							Minor: 0,
 							Resources: corev1.ResourceList{
-								apiext.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-								apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
-								apiext.GPUMemory:      resource.MustParse("16Gi"),
+								apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+								apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+								apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 							},
 						},
 						{
 							Minor: 1,
 							Resources: corev1.ResourceList{
-								apiext.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-								apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
-								apiext.GPUMemory:      resource.MustParse("16Gi"),
+								apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+								apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+								apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 							},
 						},
 					},
@@ -1467,13 +1467,13 @@ func Test_Plugin_Reserve(t *testing.T) {
 						{
 							Minor: 0,
 							Resources: corev1.ResourceList{
-								apiext.KoordFPGA: *resource.NewQuantity(100, resource.DecimalSI),
+								apiext.ResourceFPGA: *resource.NewQuantity(100, resource.DecimalSI),
 							},
 						},
 						{
 							Minor: 1,
 							Resources: corev1.ResourceList{
-								apiext.KoordFPGA: *resource.NewQuantity(100, resource.DecimalSI),
+								apiext.ResourceFPGA: *resource.NewQuantity(100, resource.DecimalSI),
 							},
 						},
 					},
@@ -1481,13 +1481,13 @@ func Test_Plugin_Reserve(t *testing.T) {
 						{
 							Minor: 0,
 							Resources: corev1.ResourceList{
-								apiext.KoordRDMA: *resource.NewQuantity(100, resource.DecimalSI),
+								apiext.ResourceRDMA: *resource.NewQuantity(100, resource.DecimalSI),
 							},
 						},
 						{
 							Minor: 1,
 							Resources: corev1.ResourceList{
-								apiext.KoordRDMA: *resource.NewQuantity(100, resource.DecimalSI),
+								apiext.ResourceRDMA: *resource.NewQuantity(100, resource.DecimalSI),
 							},
 						},
 					},
@@ -1580,17 +1580,17 @@ func Test_Plugin_Unreserve(t *testing.T) {
 							{
 								Minor: 0,
 								Resources: corev1.ResourceList{
-									apiext.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-									apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 							{
 								Minor: 1,
 								Resources: corev1.ResourceList{
-									apiext.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-									apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 						},
@@ -1598,13 +1598,13 @@ func Test_Plugin_Unreserve(t *testing.T) {
 							{
 								Minor: 0,
 								Resources: corev1.ResourceList{
-									apiext.KoordFPGA: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceFPGA: *resource.NewQuantity(100, resource.DecimalSI),
 								},
 							},
 							{
 								Minor: 1,
 								Resources: corev1.ResourceList{
-									apiext.KoordFPGA: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceFPGA: *resource.NewQuantity(100, resource.DecimalSI),
 								},
 							},
 						},
@@ -1612,13 +1612,13 @@ func Test_Plugin_Unreserve(t *testing.T) {
 							{
 								Minor: 0,
 								Resources: corev1.ResourceList{
-									apiext.KoordRDMA: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceRDMA: *resource.NewQuantity(100, resource.DecimalSI),
 								},
 							},
 							{
 								Minor: 1,
 								Resources: corev1.ResourceList{
-									apiext.KoordRDMA: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceRDMA: *resource.NewQuantity(100, resource.DecimalSI),
 								},
 							},
 						},
@@ -1630,90 +1630,90 @@ func Test_Plugin_Unreserve(t *testing.T) {
 							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("0"),
+										apiext.ResourceRDMA: resource.MustParse("0"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("0"),
+										apiext.ResourceRDMA: resource.MustParse("0"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("0"),
+										apiext.ResourceFPGA: resource.MustParse("0"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("0"),
+										apiext.ResourceFPGA: resource.MustParse("0"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("0"),
-										apiext.GPUMemoryRatio: resource.MustParse("0"),
-										apiext.GPUMemory:      resource.MustParse("0"),
+										apiext.ResourceGPUCore:        resource.MustParse("0"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("0"),
+										apiext.ResourceGPUMemory:      resource.MustParse("0"),
 									},
 									1: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("0"),
-										apiext.GPUMemoryRatio: resource.MustParse("0"),
-										apiext.GPUMemory:      resource.MustParse("0"),
+										apiext.ResourceGPUCore:        resource.MustParse("0"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("0"),
+										apiext.ResourceGPUMemory:      resource.MustParse("0"),
 									},
 								},
 							},
 							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 									1: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
 							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
 								schedulingv1alpha1.RDMA: {
 									0: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordRDMA: resource.MustParse("100"),
+										apiext.ResourceRDMA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									0: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 									1: corev1.ResourceList{
-										apiext.KoordFPGA: resource.MustParse("100"),
+										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
 								},
 								schedulingv1alpha1.GPU: {
 									0: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 									1: corev1.ResourceList{
-										apiext.GPUCore:        resource.MustParse("100"),
-										apiext.GPUMemoryRatio: resource.MustParse("100"),
-										apiext.GPUMemory:      resource.MustParse("16Gi"),
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 									},
 								},
 							},
@@ -1721,34 +1721,34 @@ func Test_Plugin_Unreserve(t *testing.T) {
 								schedulingv1alpha1.GPU: {
 									namespacedName: {
 										0: corev1.ResourceList{
-											apiext.GPUCore:        resource.MustParse("100"),
-											apiext.GPUMemoryRatio: resource.MustParse("100"),
-											apiext.GPUMemory:      resource.MustParse("16Gi"),
+											apiext.ResourceGPUCore:        resource.MustParse("100"),
+											apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+											apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 										},
 										1: corev1.ResourceList{
-											apiext.GPUCore:        resource.MustParse("100"),
-											apiext.GPUMemoryRatio: resource.MustParse("100"),
-											apiext.GPUMemory:      resource.MustParse("16Gi"),
+											apiext.ResourceGPUCore:        resource.MustParse("100"),
+											apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+											apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 										},
 									},
 								},
 								schedulingv1alpha1.FPGA: {
 									namespacedName: {
 										0: corev1.ResourceList{
-											apiext.KoordFPGA: resource.MustParse("100"),
+											apiext.ResourceFPGA: resource.MustParse("100"),
 										},
 										1: corev1.ResourceList{
-											apiext.KoordFPGA: resource.MustParse("100"),
+											apiext.ResourceFPGA: resource.MustParse("100"),
 										},
 									},
 								},
 								schedulingv1alpha1.RDMA: {
 									namespacedName: {
 										0: corev1.ResourceList{
-											apiext.KoordRDMA: resource.MustParse("100"),
+											apiext.ResourceRDMA: resource.MustParse("100"),
 										},
 										1: corev1.ResourceList{
-											apiext.KoordRDMA: resource.MustParse("100"),
+											apiext.ResourceRDMA: resource.MustParse("100"),
 										},
 									},
 								},
@@ -1765,60 +1765,60 @@ func Test_Plugin_Unreserve(t *testing.T) {
 						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.RDMA: {
 								0: corev1.ResourceList{
-									apiext.KoordRDMA: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceRDMA: *resource.NewQuantity(100, resource.DecimalSI),
 								},
 								1: corev1.ResourceList{
-									apiext.KoordRDMA: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceRDMA: *resource.NewQuantity(100, resource.DecimalSI),
 								},
 							},
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceFPGA: *resource.NewQuantity(100, resource.DecimalSI),
 								},
 								1: corev1.ResourceList{
-									apiext.KoordFPGA: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceFPGA: *resource.NewQuantity(100, resource.DecimalSI),
 								},
 							},
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-									apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 								1: corev1.ResourceList{
-									apiext.GPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-									apiext.GPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 						},
 						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
 							schedulingv1alpha1.RDMA: {
 								0: corev1.ResourceList{
-									apiext.KoordRDMA: resource.MustParse("100"),
+									apiext.ResourceRDMA: resource.MustParse("100"),
 								},
 								1: corev1.ResourceList{
-									apiext.KoordRDMA: resource.MustParse("100"),
+									apiext.ResourceRDMA: resource.MustParse("100"),
 								},
 							},
 							schedulingv1alpha1.FPGA: {
 								0: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 								1: corev1.ResourceList{
-									apiext.KoordFPGA: resource.MustParse("100"),
+									apiext.ResourceFPGA: resource.MustParse("100"),
 								},
 							},
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 								1: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 						},
@@ -1871,7 +1871,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 					Name: "test-container-a",
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
-							apiext.KoordGPU: resource.MustParse("2"),
+							apiext.ResourceGPU: resource.MustParse("2"),
 						},
 					},
 				},
@@ -1915,25 +1915,25 @@ func Test_Plugin_PreBind(t *testing.T) {
 							{
 								Minor: 0,
 								Resources: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 							{
 								Minor: 1,
 								Resources: corev1.ResourceList{
-									apiext.GPUCore:        resource.MustParse("100"),
-									apiext.GPUMemoryRatio: resource.MustParse("100"),
-									apiext.GPUMemory:      resource.MustParse("16Gi"),
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 								},
 							},
 						},
 					},
 					convertedDeviceResource: corev1.ResourceList{
-						apiext.GPUCore:        resource.MustParse("200"),
-						apiext.GPUMemoryRatio: resource.MustParse("200"),
-						apiext.GPUMemory:      resource.MustParse("32Gi"),
+						apiext.ResourceGPUCore:        resource.MustParse("200"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+						apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
 					},
 				},
 			},
