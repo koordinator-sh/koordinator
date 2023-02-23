@@ -797,7 +797,7 @@ func TestPodEvictor(t *testing.T) {
 	fakeRecorder := record.NewFakeRecorder(1024)
 	eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
 	fakeClient := fake.NewSimpleClientset()
-	podEvictor := NewPodEvictor(fakeClient, eventRecorder, "", false, pointer.Int(1), pointer.Int(1))
+	podEvictor := NewPodEvictor(fakeClient, eventRecorder, "", false, pointer.Uint(1), pointer.Uint(1))
 
 	ctx := context.WithValue(context.TODO(), framework.EvictionPluginNameContextKey, "test")
 	ctx = context.WithValue(ctx, framework.EvictionReasonContextKey, "just for test")
@@ -831,8 +831,8 @@ func TestPodEvictor(t *testing.T) {
 		assert.NoError(t, err)
 		result := podEvictor.Evict(ctx, pod, framework.EvictOptions{})
 		assert.True(t, result)
-		assert.Equal(t, 1, podEvictor.NodeEvicted(pod.Spec.NodeName))
-		assert.Equal(t, 1, podEvictor.NamespaceEvicted(pod.Namespace))
+		assert.Equal(t, uint(1), podEvictor.NodeEvicted(pod.Spec.NodeName))
+		assert.Equal(t, uint(1), podEvictor.NamespaceEvicted(pod.Namespace))
 		assert.True(t, podEvictor.NodeLimitExceeded(pod.Spec.NodeName))
 		assert.True(t, podEvictor.NamespaceLimitExceeded(pod.Namespace))
 	})
@@ -855,7 +855,7 @@ func TestPodEvictor(t *testing.T) {
 	})
 
 	t.Run("test Namespace evict limit", func(t *testing.T) {
-		podEvictor.maxPodsToEvictPerNode = pointer.Int(2)
+		podEvictor.maxPodsToEvictPerNode = pointer.Uint(2)
 		pod = &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "default",

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package adaptor
+package kubernetes
 
 import (
 	"context"
@@ -38,7 +38,9 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/v1alpha2"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
-	descheduleruntime "github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/kubernetes/adaptor"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/kubernetes/defaultevictor"
+	frameworkruntime "github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
 )
 
 type (
@@ -129,11 +131,12 @@ var Plugins = []PluginDescriptor{
 	},
 }
 
-func SetupK8sDeschedulePlugins(registry descheduleruntime.Registry) {
+func SetupK8sDeschedulerPlugins(registry frameworkruntime.Registry) {
 	for i := range Plugins {
 		descriptor := Plugins[i]
 		registry[descriptor.Name] = descriptor.New
 	}
+	registry[defaultevictor.PluginName] = defaultevictor.New
 }
 
 func (d *PluginDescriptor) New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -145,7 +148,7 @@ func (d *PluginDescriptor) New(args runtime.Object, handle framework.Handle) (fr
 	} else {
 		unknownObj, ok := args.(*runtime.Unknown)
 		if !ok {
-			return nil, fmt.Errorf("got args of type %T, want *%sArgs", d.Name, args)
+			return nil, fmt.Errorf("got args of type %T, want *%sArgs", args, d.Name)
 		}
 
 		decoder := scheme.Codecs.UniversalDecoder()
@@ -160,7 +163,7 @@ func (d *PluginDescriptor) New(args runtime.Object, handle framework.Handle) (fr
 	if err := d.ArgsValidator(args); err != nil {
 		return nil, err
 	}
-	pl, err := d.Factory(args, NewFrameworkHandleAdaptor(handle))
+	pl, err := d.Factory(args, adaptor.NewFrameworkHandleAdaptor(handle))
 	if err != nil {
 		return nil, err
 	}

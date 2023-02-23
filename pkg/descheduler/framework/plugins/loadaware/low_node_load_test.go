@@ -39,9 +39,10 @@ import (
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
 	evictutils "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions/utils"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/defaultevictor"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/kubernetes/defaultevictor"
 	frameworkruntime "github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
 	frameworktesting "github.com/koordinator-sh/koordinator/pkg/descheduler/framework/testing"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/test"
@@ -160,7 +161,7 @@ func setupNodeMetrics(t *testing.T, koordClientSet koordinatorclientset.Interfac
 	}
 }
 
-func TestLowNodeUtilization(t *testing.T) {
+func TestLowNodeLoad(t *testing.T) {
 	n1NodeName := "n1"
 	n2NodeName := "n2"
 	n3NodeName := "n3"
@@ -176,7 +177,7 @@ func TestLowNodeUtilization(t *testing.T) {
 		nodes                        []*corev1.Node
 		pods                         []*corev1.Pod
 		podMetrics                   map[types.NamespacedName]*slov1alpha1.ResourceMap
-		expectedPodsEvicted          int
+		expectedPodsEvicted          uint
 		evictedPods                  []string
 		evictableNamespaces          *deschedulerconfig.Namespaces
 	}{
@@ -991,6 +992,10 @@ func TestLowNodeUtilization(t *testing.T) {
 			sharedInformerFactory.WaitForCacheSync(ctx.Done())
 
 			eventRecorder := &events.FakeRecorder{}
+			evictionLimiter := evictions.NewEvictionLimiter(nil, nil)
+
+			koordClientSet := koordfake.NewSimpleClientset()
+			setupNodeMetrics(t, koordClientSet, tt.nodes, tt.pods, tt.podMetrics)
 
 			fh, err := frameworktesting.NewFramework(
 				[]frameworktesting.RegisterPluginFunc{
@@ -999,49 +1004,44 @@ func TestLowNodeUtilization(t *testing.T) {
 						profile.Plugins.Evictor.Enabled = append(profile.Plugins.Evictor.Enabled, deschedulerconfig.Plugin{Name: defaultevictor.PluginName})
 						profile.PluginConfig = append(profile.PluginConfig, deschedulerconfig.PluginConfig{
 							Name: defaultevictor.PluginName,
-							Args: &deschedulerconfig.DefaultEvictorArgs{
-								DryRun:                  false,
-								EvictLocalStoragePods:   false,
-								EvictSystemCriticalPods: false,
-								IgnorePvcPods:           false,
-								EvictFailedBarePods:     false,
-								NodeFit:                 true,
+							Args: &defaultevictor.DefaultEvictorArgs{},
+						})
+					},
+					func(reg *frameworkruntime.Registry, profile *deschedulerconfig.DeschedulerProfile) {
+						reg.Register(LowNodeLoadName, func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+							return NewLowNodeLoad(args, &fakeFrameworkHandle{
+								Handle:    handle,
+								Interface: koordClientSet,
+							})
+						})
+						profile.Plugins.Balance.Enabled = append(profile.Plugins.Balance.Enabled, deschedulerconfig.Plugin{Name: LowNodeLoadName})
+						profile.PluginConfig = append(profile.PluginConfig, deschedulerconfig.PluginConfig{
+							Name: LowNodeLoadName,
+							Args: &deschedulerconfig.LowNodeLoadArgs{
+								NodeFit:                true,
+								LowThresholds:          tt.thresholds,
+								HighThresholds:         tt.targetThresholds,
+								UseDeviationThresholds: tt.useDeviationThresholds,
+								EvictableNamespaces:    tt.evictableNamespaces,
+								AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+									ConsecutiveAbnormalities: 1,
+								},
 							},
 						})
 					},
 				},
 				"test",
 				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithEvictionLimiter(evictionLimiter),
 				frameworkruntime.WithEventRecorder(eventRecorder),
 				frameworkruntime.WithSharedInformerFactory(sharedInformerFactory),
 				frameworkruntime.WithGetPodsAssignedToNodeFunc(getPodsAssignedToNode),
 			)
 			assert.NoError(t, err)
 
-			args := &deschedulerconfig.LowNodeLoadArgs{
-				LowThresholds:          tt.thresholds,
-				HighThresholds:         tt.targetThresholds,
-				UseDeviationThresholds: tt.useDeviationThresholds,
-				EvictableNamespaces:    tt.evictableNamespaces,
-				AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
-					ConsecutiveAbnormalities: 1,
-				},
-			}
+			fh.RunBalancePlugins(ctx, tt.nodes)
 
-			koordClientSet := koordfake.NewSimpleClientset()
-			setupNodeMetrics(t, koordClientSet, tt.nodes, tt.pods, tt.podMetrics)
-
-			plugin, err := NewLowNodeLoad(args, &fakeFrameworkHandle{
-				Handle:    fh,
-				Interface: koordClientSet,
-			})
-			if err != nil {
-				t.Fatalf("Unable to initialize the plugin: %v", err)
-			}
-			plugin.(framework.BalancePlugin).Balance(ctx, tt.nodes)
-
-			defaultEvictor := fh.Evictor().(*defaultevictor.DefaultEvictor)
-			podsEvicted := defaultEvictor.PodEvictor().TotalEvicted()
+			podsEvicted := evictionLimiter.TotalEvicted()
 			if tt.expectedPodsEvicted != podsEvicted {
 				t.Errorf("Expected %v pods to be evicted but %v got evicted", tt.expectedPodsEvicted, podsEvicted)
 			}

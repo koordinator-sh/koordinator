@@ -62,6 +62,12 @@ type DeschedulerConfiguration struct {
 
 	// NodeSelector for a set of nodes to operate over
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+
+	// MaxNoOfPodsToEvictPerNode restricts maximum of pods to be evicted per node.
+	MaxNoOfPodsToEvictPerNode *uint `json:"maxNoOfPodsToEvictPerNode,omitempty"`
+
+	// MaxNoOfPodsToEvictPerNamespace restricts maximum of pods to be evicted per namespace.
+	MaxNoOfPodsToEvictPerNamespace *uint `json:"maxNoOfPodsToEvictPerNamespace,omitempty"`
 }
 
 // DecodeNestedObjects decodes plugin args for known types.
@@ -118,6 +124,18 @@ type Plugin struct {
 type PluginConfig struct {
 	Name string               `json:"name"`
 	Args runtime.RawExtension `json:"args,omitempty"`
+}
+
+type PriorityThreshold struct {
+	Value *int32 `json:"value,omitempty"`
+	Name  string `json:"name,omitempty"`
+}
+
+// Namespaces carries a list of included/excluded namespaces
+// for which a given strategy is applicable
+type Namespaces struct {
+	Include []string `json:"include,omitempty"`
+	Exclude []string `json:"exclude,omitempty"`
 }
 
 type (

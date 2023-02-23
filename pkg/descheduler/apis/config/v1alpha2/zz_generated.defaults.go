@@ -29,15 +29,10 @@ import (
 // Public to allow building arbitrary schemes.
 // All generated defaulters are covering - they call all nested defaulters.
 func RegisterDefaults(scheme *runtime.Scheme) error {
-	scheme.AddTypeDefaultingFunc(&DefaultEvictorArgs{}, func(obj interface{}) { SetObjectDefaults_DefaultEvictorArgs(obj.(*DefaultEvictorArgs)) })
 	scheme.AddTypeDefaultingFunc(&DeschedulerConfiguration{}, func(obj interface{}) { SetObjectDefaults_DeschedulerConfiguration(obj.(*DeschedulerConfiguration)) })
 	scheme.AddTypeDefaultingFunc(&LowNodeLoadArgs{}, func(obj interface{}) { SetObjectDefaults_LowNodeLoadArgs(obj.(*LowNodeLoadArgs)) })
 	scheme.AddTypeDefaultingFunc(&MigrationControllerArgs{}, func(obj interface{}) { SetObjectDefaults_MigrationControllerArgs(obj.(*MigrationControllerArgs)) })
 	return nil
-}
-
-func SetObjectDefaults_DefaultEvictorArgs(in *DefaultEvictorArgs) {
-	SetDefaults_DefaultEvictorArgs(in)
 }
 
 func SetObjectDefaults_DeschedulerConfiguration(in *DeschedulerConfiguration) {

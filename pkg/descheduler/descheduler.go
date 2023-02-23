@@ -53,9 +53,9 @@ type Descheduler struct {
 	clientSet    clientset.Interface
 	nodeInformer corev1informers.NodeInformer
 
-	dryRun               bool
 	deschedulingInterval time.Duration
 	nodeSelector         string
+	evictionLimiter      frameworkruntime.EvictionLimiter
 }
 
 type deschedulerOptions struct {
@@ -69,6 +69,7 @@ type deschedulerOptions struct {
 	dryRun                 bool
 	deschedulingInterval   time.Duration
 	nodeSelector           *metav1.LabelSelector
+	evictionLimiter        frameworkruntime.EvictionLimiter
 }
 
 // Option configures a Scheduler
@@ -141,6 +142,12 @@ func WithPodAssignedToNodeFn(fn PodAssignedToNodeFn) Option {
 	}
 }
 
+func WithEvictionLimiter(limiter frameworkruntime.EvictionLimiter) Option {
+	return func(options *deschedulerOptions) {
+		options.evictionLimiter = limiter
+	}
+}
+
 var defaultDeschedulerOptions = deschedulerOptions{
 	applyDefaultProfile: true,
 }
@@ -203,9 +210,11 @@ func New(client clientset.Interface,
 		options.profiles,
 		registry,
 		recorderFactory,
+		frameworkruntime.WithDryRun(options.dryRun),
 		frameworkruntime.WithClientSet(client),
 		frameworkruntime.WithKubeConfig(options.kubeConfig),
 		frameworkruntime.WithSharedInformerFactory(informerFactory),
+		frameworkruntime.WithEvictionLimiter(options.evictionLimiter),
 		frameworkruntime.WithGetPodsAssignedToNodeFunc(podAssignedToNodeAdaptor(options.podAssignedToNodeFn)),
 		frameworkruntime.WithCaptureProfile(frameworkruntime.CaptureProfile(options.frameworkCapturer)),
 	)
@@ -222,9 +231,9 @@ func New(client clientset.Interface,
 		StopEverything:       stopEverything,
 		clientSet:            client,
 		nodeInformer:         nodeInformer,
-		dryRun:               options.dryRun,
 		deschedulingInterval: options.deschedulingInterval,
 		nodeSelector:         nodeSelector,
+		evictionLimiter:      options.evictionLimiter,
 	}
 	return descheduler, nil
 }
@@ -256,6 +265,8 @@ func (d *Descheduler) deschedulerOnce(ctx context.Context) error {
 	if len(nodes) <= 1 {
 		return fmt.Errorf("the cluster size is 0 or 1 meaning eviction causes service disruption or degradation")
 	}
+
+	d.evictionLimiter.Reset()
 
 	for _, p := range d.Profiles {
 		status := p.RunDeschedulePlugins(ctx, nodes)

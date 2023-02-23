@@ -24,6 +24,7 @@ import (
 	k8sdeschedulerframework "sigs.k8s.io/descheduler/pkg/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
+	frameworkruntime "github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
 )
 
 var _ k8sdeschedulerframework.Evictor = &evictorAdaptor{}
@@ -39,6 +40,9 @@ func (a *evictorAdaptor) Filter(pod *corev1.Pod) bool {
 
 // PreEvictionFilter checks if pod can be evicted right before eviction
 func (a *evictorAdaptor) PreEvictionFilter(pod *corev1.Pod) bool {
+	if evictorPlugin, ok := a.evictor.(k8sdeschedulerframework.EvictorPlugin); ok {
+		return evictorPlugin.PreEvictionFilter(pod)
+	}
 	return a.evictor.Filter(pod)
 }
 
@@ -53,5 +57,9 @@ func (a *evictorAdaptor) Evict(ctx context.Context, pod *corev1.Pod, evictOption
 
 // NodeLimitExceeded checks if the number of evictions for a node was exceeded
 func (a *evictorAdaptor) NodeLimitExceeded(node *corev1.Node) bool {
-	return false
+	evictionLimiter, ok := a.evictor.(frameworkruntime.EvictionLimiter)
+	if !ok {
+		return false
+	}
+	return evictionLimiter.NodeLimitExceeded(node)
 }

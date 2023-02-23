@@ -83,6 +83,9 @@ type EvictOptions struct {
 	DeleteOptions *metav1.DeleteOptions
 }
 
+// TODO(joseph): The existing Evictor interface needs to be split.
+//  There can only be one Evictor.Evict globally, but there can be multiple Evictor.Filter and Evictor.PreEvictionFilter
+
 type Evictor interface {
 	Plugin
 	// Filter checks if a pod can be evicted

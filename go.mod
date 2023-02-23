@@ -19,8 +19,8 @@ require (
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.0.12
 	github.com/mohae/deepcopy v0.0.0-20170603005431-491d3605edfb
 	github.com/onsi/ginkgo v1.16.4
-	github.com/opencontainers/runc v1.0.2
 	github.com/onsi/gomega v1.19.0
+	github.com/opencontainers/runc v1.0.2
 	github.com/openkruise/kruise-api v1.3.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prashantv/gostub v1.1.0
