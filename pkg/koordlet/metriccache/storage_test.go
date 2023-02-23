@@ -740,6 +740,7 @@ func Test_storage_ContainerCPIMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			for _, sample := range tt.args.samples {
 				err := s.InsertContainerCPIMetric(&sample)
 				if err != nil {
@@ -758,6 +759,14 @@ func Test_storage_ContainerCPIMetric_CRUD(t *testing.T) {
 				if !EqualContainerCPIMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetContainerCPIMetric() = %v, want %v", got[i], tt.want[i])
 				}
+			}
+
+			gotNum, err := s.CountContainerCPIMetric()
+			if err != nil {
+				t.Errorf("CountContainerCPIMetric got error %v", err)
+			}
+			if gotNum != int64(len(tt.want)) {
+				t.Errorf("CountContainerCPIMetric() = %v, want %v", gotNum, len(tt.want))
 			}
 
 			err = s.DeleteContainerCPIMetric(&tt.args.start, &tt.args.end)
@@ -828,6 +837,7 @@ func Test_storage_ContainerPSIMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			for _, sample := range tt.args.samples {
 				err := s.InsertContainerPSIMetric(&sample)
 				if err != nil {
@@ -846,6 +856,14 @@ func Test_storage_ContainerPSIMetric_CRUD(t *testing.T) {
 				if !EqualContainerPSIMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetContainerPSIMetric() = %v, want %v", got[i], tt.want[i])
 				}
+			}
+
+			gotNum, err := s.CountContainerPSIMetric()
+			if err != nil {
+				t.Errorf("CountContainerPSIMetric got error %v", err)
+			}
+			if gotNum != int64(len(tt.want)) {
+				t.Errorf("CountContainerPSIMetric() = %v, want %v", gotNum, len(tt.want))
 			}
 
 			err = s.DeleteContainerPSIMetric(&tt.args.start, &tt.args.end)
@@ -916,6 +934,7 @@ func Test_storage_PodPSIMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			for _, sample := range tt.args.samples {
 				err := s.InsertPodPSIMetric(&sample)
 				if err != nil {
@@ -934,6 +953,14 @@ func Test_storage_PodPSIMetric_CRUD(t *testing.T) {
 				if !EqualPodCPIMetric(&got[i], &tt.want[i]) {
 					t.Errorf("GetPodPSIMetric() = %v, want %v", got[i], tt.want[i])
 				}
+			}
+
+			gotNum, err := s.CountPodPSIMetric()
+			if err != nil {
+				t.Errorf("CountPodPSIMetric got error %v", err)
+			}
+			if gotNum != int64(len(tt.want)) {
+				t.Errorf("CountPodPSIMetric() = %v, want %v", gotNum, len(tt.want))
 			}
 
 			err = s.DeletePodPSIMetric(&tt.args.start, &tt.args.end)

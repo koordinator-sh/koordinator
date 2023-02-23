@@ -854,10 +854,14 @@ func (m *metricCache) recycleDB() {
 	beCPUResCount, _ := m.db.CountBECPUResourceMetric()
 	podThrottledResCount, _ := m.db.CountPodThrottledMetric()
 	containerThrottledResCount, _ := m.db.CountContainerThrottledMetric()
+	containerCPIResCount, _ := m.db.CountContainerCPIMetric()
+	containerPSIResCount, _ := m.db.CountContainerPSIMetric()
+	podPSIResCount, _ := m.db.CountPodPSIMetric()
 	klog.V(4).Infof("expired metric data before %v has been recycled, remaining in db size: "+
 		"nodeResCount=%v, podResCount=%v, containerResCount=%v, beCPUResCount=%v, podThrottledResCount=%v, "+
-		"containerThrottledResCount=%v", expiredTime, nodeResCount, podResCount, containerResCount, beCPUResCount,
-		podThrottledResCount, containerThrottledResCount)
+		"containerThrottledResCount=%v, containerCPIResCount=%v, containerPSIResCount=%v, podPSIResCount=%v",
+		expiredTime, nodeResCount, podResCount, containerResCount, beCPUResCount, podThrottledResCount,
+		containerThrottledResCount, containerCPIResCount, containerPSIResCount, podPSIResCount)
 }
 
 func getAggregateFunc(aggregationType AggregationType) AggregationFunc {
