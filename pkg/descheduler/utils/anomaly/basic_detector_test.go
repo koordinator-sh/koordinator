@@ -30,6 +30,9 @@ func TestBasicDetector(t *testing.T) {
 		AnomalyConditionFn: func(counter Counter) bool {
 			return counter.ConsecutiveAbnormalities >= 2
 		},
+		NormalConditionFn: func(counter Counter) bool {
+			return counter.ConsecutiveNormalities >= 1
+		},
 		OnStateChange: func(name string, from State, to State) {
 			callStateChangeTimes++
 		},
@@ -72,4 +75,57 @@ func TestBasicDetector(t *testing.T) {
 
 	assert.NotZero(t, callStateChangeTimes)
 	assert.Equal(t, Counter{}, detector.Counter())
+}
+
+func TestBasicDetectorWithCustomNormalCondition(t *testing.T) {
+	callStateChangeTimes := 0
+	opts := Options{
+		Timeout: 3 * time.Second,
+		AnomalyConditionFn: func(counter Counter) bool {
+			return counter.ConsecutiveAbnormalities >= 2
+		},
+		NormalConditionFn: func(counter Counter) bool {
+			return counter.ConsecutiveNormalities > 2
+		},
+		OnStateChange: func(name string, from State, to State) {
+			callStateChangeTimes++
+		},
+	}
+	detector := NewBasicDetector("test", opts)
+
+	state, _ := detector.Mark(false)
+	assert.Equal(t, StateOK, state)
+
+	state, _ = detector.Mark(false)
+	assert.Equal(t, StateAnomaly, state)
+
+	state, _ = detector.Mark(true)
+	assert.Equal(t, StateAnomaly, state)
+
+	state, _ = detector.Mark(true)
+	assert.Equal(t, StateAnomaly, state)
+
+	state, _ = detector.Mark(true)
+	assert.Equal(t, StateOK, state)
+
+	state, _ = detector.Mark(false)
+	assert.Equal(t, StateOK, state)
+
+	state, _ = detector.Mark(false)
+	assert.Equal(t, StateAnomaly, state)
+
+	state, _ = detector.Mark(true)
+	assert.Equal(t, StateAnomaly, state)
+
+	state, _ = detector.Mark(false)
+	assert.Equal(t, StateAnomaly, state)
+
+	state, _ = detector.Mark(true)
+	assert.Equal(t, StateAnomaly, state)
+
+	state, _ = detector.Mark(true)
+	assert.Equal(t, StateAnomaly, state)
+
+	state, _ = detector.Mark(true)
+	assert.Equal(t, StateOK, state)
 }

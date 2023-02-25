@@ -82,4 +82,6 @@ type LoadAnomalyCondition struct {
 	Timeout *metav1.Duration `json:"timeout,omitempty"`
 	// ConsecutiveAbnormalities indicates the number of consecutive abnormalities
 	ConsecutiveAbnormalities uint32 `json:"consecutiveAbnormalities,omitempty"`
+	// ConsecutiveNormalities indicates the number of consecutive normalities
+	ConsecutiveNormalities uint32 `json:"consecutiveNormalities,omitempty"`
 }

@@ -53,6 +53,7 @@ var (
 	defaultLoadAnomalyCondition = &LoadAnomalyCondition{
 		Timeout:                  &metav1.Duration{Duration: 1 * time.Minute},
 		ConsecutiveAbnormalities: 5,
+		ConsecutiveNormalities:   3,
 	}
 )
 
@@ -239,7 +240,9 @@ func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
 	if obj.NodeFit == nil {
 		obj.NodeFit = pointer.Bool(true)
 	}
-	if obj.AnomalyCondition == nil || obj.AnomalyCondition.ConsecutiveAbnormalities == 0 {
+	if obj.AnomalyCondition == nil {
 		obj.AnomalyCondition = defaultLoadAnomalyCondition
+	} else if obj.AnomalyCondition.ConsecutiveAbnormalities == 0 {
+		obj.AnomalyCondition.ConsecutiveAbnormalities = defaultLoadAnomalyCondition.ConsecutiveAbnormalities
 	}
 }

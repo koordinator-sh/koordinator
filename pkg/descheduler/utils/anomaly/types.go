@@ -45,4 +45,5 @@ type Detector interface {
 	Name() string
 	Mark(normality bool) (State, error)
 	State() State
+	Reset()
 }

@@ -291,6 +291,7 @@ func autoConvert_v1alpha2_LoadAnomalyCondition_To_config_LoadAnomalyCondition(in
 		return err
 	}
 	out.ConsecutiveAbnormalities = in.ConsecutiveAbnormalities
+	out.ConsecutiveNormalities = in.ConsecutiveNormalities
 	return nil
 }
 
@@ -304,6 +305,7 @@ func autoConvert_config_LoadAnomalyCondition_To_v1alpha2_LoadAnomalyCondition(in
 		return err
 	}
 	out.ConsecutiveAbnormalities = in.ConsecutiveAbnormalities
+	out.ConsecutiveNormalities = in.ConsecutiveNormalities
 	return nil
 }
 
