@@ -247,3 +247,21 @@ func (s *storage) CountContainerThrottledMetric() (int64, error) {
 	err := s.db.Model(&containerThrottledMetric{}).Count(&count).Error
 	return count, err
 }
+
+func (s *storage) CountContainerCPIMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&containerCPIMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountContainerPSIMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&containerPSIMetric{}).Count(&count).Error
+	return count, err
+}
+
+func (s *storage) CountPodPSIMetric() (int64, error) {
+	count := int64(0)
+	err := s.db.Model(&podPSIMetric{}).Count(&count).Error
+	return count, err
+}

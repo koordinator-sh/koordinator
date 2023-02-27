@@ -232,6 +232,7 @@ func Test_podResourceCollector_Run(t *testing.T) {
 	metricCache, _ := metriccache.NewMetricCache(metriccache.NewDefaultConfig())
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
+	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
 	c := New(&framework.Options{
 		Config:         framework.NewDefaultConfig(),
 		StatesInformer: mockStatesInformer,

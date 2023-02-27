@@ -1761,6 +1761,7 @@ func Test_metricCache_ContainerInterferenceMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -1970,6 +1971,7 @@ func Test_metricCache_PodCPIMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -2055,6 +2057,7 @@ func Test_convertAndGetPodInterferenceMetric_zeroResult(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -2111,6 +2114,7 @@ func Test_GetContainerInterferenceMetric_errWrongMetricName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -2160,6 +2164,7 @@ func Test_GetContainerInterferenceMetric_errNilParam(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -2204,6 +2209,7 @@ func Test_GetPodInterferenceMetric_errWrongMetricName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -2252,6 +2258,7 @@ func Test_GetPodInterferenceMetric_errNilParam(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
@@ -2379,6 +2386,7 @@ func Test_metricCache_PodPSIMetric_CRUD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := NewStorage()
+			defer s.Close()
 			m := &metricCache{
 				config: tt.args.config,
 				db:     s,
