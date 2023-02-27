@@ -172,19 +172,20 @@ func (c *ContainerContext) ReconcilerDone(executor resourceexecutor.ResourceUpda
 
 func (c *ContainerContext) injectForOrigin() {
 	if c.Response.Resources.CPUShares != nil {
-		if err := injectCPUShares(c.Request.CgroupParent, *c.Response.Resources.CPUShares, c.executor); err != nil {
+		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
+			"set container cpu share to %v", *c.Response.Resources.CPUShares)
+		if err := injectCPUShares(c.Request.CgroupParent, *c.Response.Resources.CPUShares, eventHelper, c.executor); err != nil {
 			klog.Infof("set container %v/%v/%v cpu share %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CPUShares, c.Request.CgroupParent, err)
 		} else {
 			klog.V(5).Infof("set container %v/%v/%v cpu share %v on cgroup parent %v",
 				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
 				*c.Response.Resources.CPUShares, c.Request.CgroupParent)
-			audit.V(2).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
-				"set container cpu share to %v", *c.Response.Resources.CPUShares).Do()
 		}
 	}
 	if c.Response.Resources.CPUSet != nil {
-		err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet, c.executor)
+		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message("set container cpuset to %v", *c.Response.Resources.CPUSet)
+		err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet, eventHelper, c.executor)
 		if err != nil && resourceexecutor.IsCgroupDirErr(err) {
 			klog.V(5).Infof("set container %v/%v/%v cpuset %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CPUSet, c.Request.CgroupParent, err)
@@ -195,32 +196,30 @@ func (c *ContainerContext) injectForOrigin() {
 			klog.V(5).Infof("set container %v/%v/%v cpuset %v on cgroup parent %v",
 				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
 				*c.Response.Resources.CPUSet, c.Request.CgroupParent)
-			audit.V(2).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
-				"set container cpuset to %v", *c.Response.Resources.CPUSet).Do()
 		}
 	}
 	if c.Response.Resources.CFSQuota != nil {
-		if err := injectCPUQuota(c.Request.CgroupParent, *c.Response.Resources.CFSQuota, c.executor); err != nil {
+		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
+			"set container cfs quota to %v", *c.Response.Resources.CFSQuota)
+		if err := injectCPUQuota(c.Request.CgroupParent, *c.Response.Resources.CFSQuota, eventHelper, c.executor); err != nil {
 			klog.Infof("set container %v/%v/%v cfs quota %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CFSQuota, c.Request.CgroupParent, err)
 		} else {
 			klog.V(5).Infof("set container %v/%v/%v cfs quota %v on cgroup parent %v",
 				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
 				*c.Response.Resources.CFSQuota, c.Request.CgroupParent)
-			audit.V(2).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
-				"set container cfs quota to %v", *c.Response.Resources.CFSQuota).Do()
 		}
 	}
 	if c.Response.Resources.MemoryLimit != nil {
-		if err := injectMemoryLimit(c.Request.CgroupParent, *c.Response.Resources.MemoryLimit, c.executor); err != nil {
+		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
+			"set container memory limit to %v", *c.Response.Resources.MemoryLimit)
+		if err := injectMemoryLimit(c.Request.CgroupParent, *c.Response.Resources.MemoryLimit, eventHelper, c.executor); err != nil {
 			klog.Infof("set container %v/%v/%v memory limit %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.MemoryLimit, c.Request.CgroupParent, err)
 		} else {
 			klog.V(5).Infof("set container %v/%v/%v memory limit %v on cgroup parent %v",
 				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
 				*c.Response.Resources.MemoryLimit, c.Request.CgroupParent)
-			audit.V(2).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
-				"set container memory limit to %v", *c.Response.Resources.MemoryLimit).Do()
 		}
 	}
 	// TODO other fields

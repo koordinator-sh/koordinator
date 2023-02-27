@@ -86,9 +86,10 @@ type ResourceUpdater interface {
 }
 
 type CgroupResourceUpdater struct {
-	file      sysutil.Resource
-	parentDir string
-	value     string
+	file        sysutil.Resource
+	parentDir   string
+	value       string
+	eventHelper *audit.EventHelper
 
 	lastUpdateTimestamp time.Time
 	updateFunc          UpdateFunc
@@ -133,6 +134,7 @@ func (u *CgroupResourceUpdater) Clone() ResourceUpdater {
 		file:                u.file,
 		parentDir:           u.parentDir,
 		value:               u.value,
+		eventHelper:         u.eventHelper,
 		lastUpdateTimestamp: u.lastUpdateTimestamp,
 		updateFunc:          u.updateFunc,
 		mergeUpdateFunc:     u.mergeUpdateFunc,
@@ -226,7 +228,7 @@ type NewResourceUpdaterFunc func(resourceType sysutil.ResourceType, parentDir st
 
 type ResourceUpdaterFactory interface {
 	Register(g NewResourceUpdaterFunc, resourceTypes ...sysutil.ResourceType)
-	New(resourceType sysutil.ResourceType, parentDir string, value string) (ResourceUpdater, error)
+	New(resourceType sysutil.ResourceType, parentDir string, value string, e *audit.EventHelper) (ResourceUpdater, error)
 }
 
 func NewCgroupUpdater(resourceType sysutil.ResourceType, parentDir string, value string, updateFunc UpdateFunc) (ResourceUpdater, error) {
@@ -235,10 +237,11 @@ func NewCgroupUpdater(resourceType sysutil.ResourceType, parentDir string, value
 		return nil, err
 	}
 	return &CgroupResourceUpdater{
-		file:       r,
-		parentDir:  parentDir,
-		value:      value,
-		updateFunc: updateFunc,
+		file:        r,
+		parentDir:   parentDir,
+		value:       value,
+		updateFunc:  updateFunc,
+		eventHelper: &audit.EventHelper{},
 	}, nil
 }
 
@@ -261,10 +264,11 @@ func NewMergeableCgroupUpdaterWithCondition(resourceType sysutil.ResourceType, p
 		return nil, err
 	}
 	return &CgroupResourceUpdater{
-		file:       r,
-		parentDir:  parentDir,
-		value:      value,
-		updateFunc: CommonCgroupUpdateFunc,
+		file:        r,
+		parentDir:   parentDir,
+		value:       value,
+		eventHelper: &audit.EventHelper{},
+		updateFunc:  CommonCgroupUpdateFunc,
 		mergeUpdateFunc: func(resource ResourceUpdater) (ResourceUpdater, error) {
 			return MergeFuncUpdateCgroup(resource, mergeCondition)
 		},
@@ -284,10 +288,11 @@ func NewMergeableCgroupUpdaterIfCPUSetLooser(resourceType sysutil.ResourceType, 
 // known cgroup resources.
 func NewDetailCgroupUpdater(resource sysutil.Resource, parentDir string, value string, updateFunc UpdateFunc) (ResourceUpdater, error) {
 	return &CgroupResourceUpdater{
-		file:       resource,
-		parentDir:  parentDir,
-		value:      value,
-		updateFunc: updateFunc,
+		file:        resource,
+		parentDir:   parentDir,
+		value:       value,
+		eventHelper: &audit.EventHelper{},
+		updateFunc:  updateFunc,
 	}, nil
 }
 
@@ -315,25 +320,40 @@ func (f *CgroupUpdaterFactoryImpl) Register(g NewResourceUpdaterFunc, resourceTy
 	}
 }
 
-func (f *CgroupUpdaterFactoryImpl) New(resourceType sysutil.ResourceType, parentDir string, value string) (ResourceUpdater, error) {
+//New() is used to pass custom audit log info
+func (f *CgroupUpdaterFactoryImpl) New(resourceType sysutil.ResourceType, parentDir string, value string, e *audit.EventHelper) (ResourceUpdater, error) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 	g, ok := f.registry[resourceType]
 	if !ok {
 		return nil, fmt.Errorf("resource type %s not registered", resourceType)
 	}
-	return g(resourceType, parentDir, value)
+	u, err := g(resourceType, parentDir, value)
+	if err != nil {
+		return nil, err
+	}
+	c := u.(*CgroupResourceUpdater)
+	c.eventHelper = e
+	return c, nil
 }
 
 func CommonCgroupUpdateFunc(resource ResourceUpdater) error {
 	c := resource.(*CgroupResourceUpdater)
-	_ = audit.V(5).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
-	return cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+	updated, err := cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+	if err != nil {
+		return err
+	}
+	if updated && c.eventHelper.Event.Reason != "" {
+		_ = c.eventHelper.Do()
+	} else if updated {
+		_ = audit.V(3).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
+	}
+	return nil
 }
 
 func CommonDefaultUpdateFunc(resource ResourceUpdater) error {
 	c := resource.(*DefaultResourceUpdater)
-	_ = audit.V(5).Reason(ReasonUpdateSystemConfig).Message("update %v to %v", resource.Path(), resource.Value()).Do()
+	_ = audit.V(3).Reason(ReasonUpdateSystemConfig).Message("update %v to %v", resource.Path(), resource.Value()).Do()
 	return sysutil.CommonFileWriteIfDifferent(c.Path(), c.value)
 }
 
@@ -344,8 +364,16 @@ func CgroupUpdateWithUnlimitedFunc(resource ResourceUpdater) error {
 	if c.value == "-1" && sysutil.GetCurrentCgroupVersion() == sysutil.CgroupVersionV2 {
 		c.value = "max"
 	}
-	_ = audit.V(5).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
-	return cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+	updated, err := cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+	if err != nil {
+		return err
+	}
+	if updated && c.eventHelper.Event.Reason != "" {
+		_ = c.eventHelper.Do()
+	} else if updated {
+		_ = audit.V(3).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
+	}
+	return nil
 }
 
 func CgroupUpdateCPUSharesFunc(resource ResourceUpdater) error {
@@ -358,8 +386,16 @@ func CgroupUpdateCPUSharesFunc(resource ResourceUpdater) error {
 		}
 		c.value = strconv.FormatInt(v, 10)
 	}
-	_ = audit.V(5).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
-	return cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+	updated, err := cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+	if err != nil {
+		return err
+	}
+	if updated && c.eventHelper.Event.Reason != "" {
+		_ = c.eventHelper.Do()
+	} else if updated {
+		_ = audit.V(3).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
+	}
+	return nil
 }
 
 type MergeConditionFunc func(oldValue, newValue string) (mergedValue string, needMerge bool, err error)
@@ -394,7 +430,11 @@ func MergeFuncUpdateCgroup(resource ResourceUpdater, mergeCondition MergeConditi
 	}
 
 	// otherwise, do write for the current value
-	_ = audit.V(5).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
+	if c.eventHelper.Event.Reason != "" {
+		_ = c.eventHelper.Do()
+	} else {
+		_ = audit.V(3).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
+	}
 	klog.V(6).Infof("merge update cgroup %v with merged value[%v], original new[%v], old[%v]",
 		c.Path(), mergedValue, c.value, oldStr)
 	// suppose current value is different

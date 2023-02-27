@@ -63,14 +63,14 @@ func (p *KubeQOSContext) injectForOrigin() {
 
 func (p *KubeQOSContext) injectForExt() {
 	if p.Response.Resources.CPUBvt != nil {
-		if err := injectCPUBvt(p.Request.CgroupParent, *p.Response.Resources.CPUBvt, p.executor); err != nil {
+		eventHelper := audit.V(3).Group(string(p.Request.KubeQOSClass)).Reason("runtime-hooks").Message(
+			"set kubeqos bvt to %v", *p.Response.Resources.CPUBvt)
+		if err := injectCPUBvt(p.Request.CgroupParent, *p.Response.Resources.CPUBvt, eventHelper, p.executor); err != nil {
 			klog.Infof("set kubeqos %v bvt %v on cgroup parent %v failed, error %v", p.Request.KubeQOSClass,
 				*p.Response.Resources.CPUBvt, p.Request.CgroupParent, err)
 		} else {
 			klog.V(5).Infof("set kubeqos %v bvt %v on cgroup parent %v", p.Request.KubeQOSClass,
 				*p.Response.Resources.CPUBvt, p.Request.CgroupParent)
-			audit.V(2).Group(string(p.Request.KubeQOSClass)).Reason("runtime-hooks").Message(
-				"set kubeqos bvt to %v", *p.Response.Resources.CPUBvt).Do()
 		}
 	}
 }

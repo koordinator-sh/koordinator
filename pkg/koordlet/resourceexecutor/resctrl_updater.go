@@ -135,7 +135,7 @@ func UpdateResctrlSchemataFunc(u ResourceUpdater) error {
 	// $ cat /sys/fs/resctrl/BE/schemata
 	// L3:0=03f;1=03f
 	// MB:0=100;1=100
-	_ = audit.V(5).Reason(ReasonUpdateResctrl).Message("update %v to %v", u.Key(), u.Value()).Do()
+	_ = audit.V(3).Reason(ReasonUpdateResctrl).Message("update %v to %v", u.Key(), u.Value()).Do()
 	return sysutil.CommonFileWrite(u.Path(), u.Value())
 }
 

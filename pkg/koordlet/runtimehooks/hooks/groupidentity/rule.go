@@ -133,14 +133,14 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
 		bvtValue := r.getKubeQOSDirBvtValue(kubeQOS)
 		kubeQOSCgroupPath := koordletutil.GetPodQoSRelativePath(kubeQOS)
-		bvtUpdater, err := resourceexecutor.NewCommonCgroupUpdater(sysutil.CPUBVTWarpNsName, kubeQOSCgroupPath, strconv.FormatInt(bvtValue, 10))
+
+		e := audit.V(3).Group(string(kubeQOS)).Reason(name).Message("set bvt to %v", bvtValue)
+		bvtUpdater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUBVTWarpNsName, kubeQOSCgroupPath, strconv.FormatInt(bvtValue, 10), e)
 		if err != nil {
-			klog.Infof("bvtupdater creat failed, dir %v, error %v", kubeQOSCgroupPath, err)
+			klog.Infof("bvtupdater create failed, dir %v, error %v", kubeQOSCgroupPath, err)
 		}
-		if _, err := b.executor.Update(false, bvtUpdater); err != nil {
+		if _, err := b.executor.Update(true, bvtUpdater); err != nil {
 			klog.Infof("update kube qos %v cpu bvt failed, dir %v, error %v", kubeQOS, kubeQOSCgroupPath, err)
-		} else {
-			audit.V(2).Group(string(kubeQOS)).Reason(name).Message("set bvt to %v", bvtValue)
 		}
 	}
 	for _, podMeta := range pods {
@@ -148,15 +148,14 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		podKubeQOS := podMeta.Pod.Status.QOSClass
 		podBvt := r.getPodBvtValue(podQOS, podKubeQOS)
 		podCgroupPath := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
-		bvtUpdater, err := resourceexecutor.NewCommonCgroupUpdater(sysutil.CPUBVTWarpNsName, podCgroupPath, strconv.FormatInt(podBvt, 10))
+
+		e := audit.V(3).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(name).Message("set bvt to %v", podBvt)
+		bvtUpdater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUBVTWarpNsName, podCgroupPath, strconv.FormatInt(podBvt, 10), e)
 		if err != nil {
 			klog.Infof("bvtupdater create failed, dir %v, error %v", podCgroupPath, err)
 		}
-		if _, err := b.executor.Update(false, bvtUpdater); err != nil {
-			klog.Infof("update pod %s cpu bvt failed, dir %v, error %v",
-				util.GetPodKey(podMeta.Pod), podCgroupPath, err)
-		} else {
-			audit.V(2).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(name).Message("set bvt to %v", podBvt).Do()
+		if _, err := b.executor.Update(true, bvtUpdater); err != nil {
+			klog.Infof("update pod %s cpu bvt failed, dir %v, error %v", util.GetPodKey(podMeta.Pod), podCgroupPath, err)
 		}
 	}
 	return nil
