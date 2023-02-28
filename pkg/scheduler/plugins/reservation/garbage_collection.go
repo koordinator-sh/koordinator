@@ -84,7 +84,7 @@ func (p *Plugin) expireReservationOnNode(node *corev1.Node) {
 			"node", node.Name, "err", err)
 		return
 	}
-	if len(rOnNode) <= 0 {
+	if len(rOnNode) == 0 {
 		klog.V(5).InfoS("skip expire reservation on deleted node",
 			"reason", "no active reservation", "node", node.Name)
 		return
@@ -148,7 +148,7 @@ func (p *Plugin) syncActiveReservation(r *schedulingv1alpha1.Reservation) {
 	}
 
 	// if current owner status is correct
-	if len(missedOwners) <= 0 && quotav1.Equals(actualAllocated, r.Status.Allocated) {
+	if len(missedOwners) == 0 && quotav1.Equals(actualAllocated, r.Status.Allocated) {
 		return
 	}
 

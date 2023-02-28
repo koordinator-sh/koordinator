@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	listercorev1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -58,8 +59,8 @@ const (
 	ErrReasonReservationNotFound = "reservation is not found"
 	// ErrReasonReservationInactive is the reason for the reservation is failed/succeeded and should not be used.
 	ErrReasonReservationInactive = "reservation is not active"
-	// ErrReasonReservationNotMatchStale is the reason for the assumed reservation does not match the pod any more.
-	ErrReasonReservationNotMatchStale = "reservation is stale and does not match any more"
+	// ErrReasonReservationNotMatchStale is the reason for the assumed reservation does not match the pod anymore.
+	ErrReasonReservationNotMatchStale = "reservation is stale and does not match anymore"
 	// SkipReasonNotReservation is the reason for pod does not match any reservation.
 	SkipReasonNotReservation = "pod does not match any reservation"
 )
@@ -72,7 +73,12 @@ var (
 	_ framework.ReservePlugin    = &Plugin{}
 	_ framework.PreBindPlugin    = &Plugin{}
 	_ framework.BindPlugin       = &Plugin{}
+
+	_ frameworkext.PreFilterTransformer = &Plugin{}
 )
+
+// for internal interface testing
+type parallelizeUntilFunc func(ctx context.Context, pieces int, doWorkPiece workqueue.DoWorkPieceFunc)
 
 type Plugin struct {
 	handle           frameworkext.ExtendedHandle
@@ -106,7 +112,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		rLister:          reservationInterface.Lister(),
 		podLister:        extendedHandle.SharedInformerFactory().Core().V1().Pods().Lister(),
 		client:           extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
-		parallelizeUntil: defaultParallelizeUntil(handle),
+		parallelizeUntil: handle.Parallelizer().Until,
 		reservationCache: getReservationCache(),
 	}
 
@@ -118,7 +124,8 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	}
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordSharedInformerFactory, reservationInformer, reservationEventHandler)
 	// handle reservations on deleted nodes
-	extendedHandle.SharedInformerFactory().Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	nodeInformer := extendedHandle.SharedInformerFactory().Core().V1().Nodes().Informer()
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), extendedHandle.SharedInformerFactory(), nodeInformer, cache.ResourceEventHandlerFuncs{
 		DeleteFunc: func(obj interface{}) {
 			switch t := obj.(type) {
 			case *corev1.Node:
@@ -137,7 +144,8 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	// handle deleting pods which allocate reservation resources
 	// FIXME: the handler does not recognize if the pod belongs to current scheduler, so the reconciliation could be
 	//  duplicated if multiple koord-scheduler runs in same cluster. Now we should keep the reconciliation idempotent.
-	extendedHandle.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	podInformer := extendedHandle.SharedInformerFactory().Core().V1().Pods().Informer()
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), extendedHandle.SharedInformerFactory(), podInformer, cache.ResourceEventHandlerFuncs{
 		DeleteFunc: func(obj interface{}) {
 			switch t := obj.(type) {
 			case *corev1.Pod:
@@ -155,6 +163,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	})
 
 	// check reservations' expiration
+	p.gcReservations()
 	go wait.Until(p.gcReservations, defaultGCCheckInterval, nil)
 	// check reservation cache expiration
 	go wait.Until(p.reservationCache.Run, defaultCacheCheckInterval, nil)
@@ -165,20 +174,45 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 
 func (p *Plugin) Name() string { return Name }
 
+var _ framework.StateData = &stateData{}
+
+type stateData struct {
+	skip              bool            // set true if pod does not allocate reserved resources
+	preBind           bool            // set true if pod succeeds the reservation pre-bind
+	matchedCache      *AvailableCache // matched reservations for the scheduling pod
+	mostPreferredNode string
+	assumed           *schedulingv1alpha1.Reservation // assumed reservation to be allocated by the pod
+	unmatched         map[string][]string
+}
+
+func (d *stateData) Clone() framework.StateData {
+	cacheCopy := newAvailableCache()
+	if d.matchedCache != nil {
+		for _, v := range d.matchedCache.reservations {
+			cacheCopy.Add(v.Reservation)
+		}
+	}
+	return &stateData{
+		skip:         d.skip,
+		preBind:      d.preBind,
+		matchedCache: cacheCopy,
+		assumed:      d.assumed,
+		unmatched:    d.unmatched,
+	}
+}
+
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.
 // Also do validations in this phase.
 func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
-	// if the pod is a reserve pod
 	if reservationutil.IsReservePod(pod) {
 		// validate reserve pod and reservation
 		klog.V(4).InfoS("Attempting to pre-filter reserve pod", "pod", klog.KObj(pod))
 		rName := reservationutil.GetReservationNameFromReservePod(pod)
 		r, err := p.rLister.Get(rName)
-		if errors.IsNotFound(err) {
-			klog.V(3).InfoS("skip the pre-filter for reservation since the object is not found",
-				"pod", klog.KObj(pod), "reservation", rName)
-			return nil
-		} else if err != nil {
+		if err != nil {
+			if errors.IsNotFound(err) {
+				klog.V(3).InfoS("skip the pre-filter for reservation since the object is not found", "pod", klog.KObj(pod), "reservation", rName)
+			}
 			return framework.NewStatus(framework.Error, "cannot get reservation, err: "+err.Error())
 		}
 		err = reservationutil.ValidateReservation(r)
@@ -203,7 +237,6 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return framework.NewStatus(framework.Error, "node not found")
 	}
 
-	// the pod is a reserve pod
 	if reservationutil.IsReservePod(pod) {
 		klog.V(4).InfoS("Attempting to filter reserve pod", "pod", klog.KObj(pod), "node", node.Name)
 		// if the reservation specifies a nodeName initially, check if the nodeName matches
@@ -252,7 +285,6 @@ func (p *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 }
 
 func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
-	// if pod is a reserve pod, ignored
 	if reservationutil.IsReservePod(pod) {
 		return nil
 	}
@@ -269,7 +301,7 @@ func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState,
 	p.parallelizeUntil(ctx, len(nodes), func(piece int) {
 		node := nodes[piece]
 		rOnNode := state.matchedCache.GetOnNode(node.Name)
-		if len(rOnNode) <= 0 {
+		if len(rOnNode) == 0 {
 			return
 		}
 		_, order := findMostPreferredReservationByOrder(rOnNode)
@@ -290,7 +322,6 @@ func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState,
 }
 
 func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
-	// if pod is a reserve pod, ignored
 	if reservationutil.IsReservePod(pod) {
 		return framework.MinNodeScore, nil
 	}
@@ -308,7 +339,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	}
 
 	rOnNode := state.matchedCache.GetOnNode(nodeName)
-	if len(rOnNode) <= 0 {
+	if len(rOnNode) == 0 {
 		return framework.MinNodeScore, nil
 	}
 
@@ -335,29 +366,27 @@ func (p *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleState
 	return pluginhelper.DefaultNormalizeScore(framework.MaxNodeScore, false, scores)
 }
 
-func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
-	// if the pod is a reserve pod
+func (p *Plugin) RecommendReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*schedulingv1alpha1.Reservation, *framework.Status) {
 	if reservationutil.IsReservePod(pod) {
-		return nil
+		return nil, nil
 	}
 
-	// if the pod match a reservation
 	state := getPreFilterState(cycleState)
 	if state == nil || state.skip { // expected matchedCache is prepared
 		klog.V(5).InfoS("skip the Reservation Reserve", "pod", klog.KObj(pod), "node", nodeName)
-		return nil
+		return nil, nil
 	}
 	rOnNode := state.matchedCache.GetOnNode(nodeName)
-	if len(rOnNode) <= 0 { // the pod is suggested to bind on a node with no reservation
-		return nil
+	if len(rOnNode) == 0 {
+		return nil, nil
 	}
 
 	// select one reservation for the pod to allocate
 	// sort: here we use MostAllocated (simply set all weights as 1.0)
 	var order int64 = math.MaxInt64
 	for i := range rOnNode {
-		var rInfo *reservationInfo
 		if order == math.MaxInt64 {
+			var rInfo *reservationInfo
 			rInfo, order = findMostPreferredReservationByOrder(rOnNode)
 			if order > 0 && rInfo != nil {
 				rInfo.Score = mostPreferredScore
@@ -369,52 +398,65 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	sort.Slice(rOnNode, func(i, j int) bool {
 		return rOnNode[i].Score >= rOnNode[j].Score
 	})
-
-	// NOTE: matchedCache may be stale, try next reservation when current one does not match any more
-	// TBD: currently Reserve got a failure if any reservation is selected but all failed to reserve
+	var reservation *schedulingv1alpha1.Reservation
 	for _, rInfo := range rOnNode {
-		target := rInfo.GetReservation()
-		// use the cached reservation, in case the version in cycle state is too old/incorrect or mutated by other pods
-		rInfo = p.reservationCache.GetInCache(target)
-		if rInfo == nil {
-			// check if the reservation is marked as expired
-			if p.reservationCache.IsInactive(target) { // in case reservation is marked as inactive
-				klog.V(5).InfoS("skip reserve current reservation since it is marked as expired",
-					"pod", klog.KObj(pod), "reservation", klog.KObj(target))
-			} else {
-				klog.V(4).InfoS("failed to reserve current reservation since it is not found in cache",
-					"pod", klog.KObj(pod), "reservation", klog.KObj(target))
-			}
-			continue
+		if !frameworkext.ReservationHasDiscarded(cycleState, rInfo.Reservation) {
+			reservation = rInfo.Reservation
+			break
 		}
+	}
+	return reservation, nil
+}
 
-		// avoid concurrency conflict inside the scheduler (i.e. scheduling cycle vs. binding cycle)
-		if !matchReservation(pod, rInfo) {
-			klog.V(5).InfoS("failed to reserve reservation since the reservation does not match the pod",
-				"pod", klog.KObj(pod), "reservation", klog.KObj(target), "reason", dumpMatchReservationReason(pod, rInfo))
-			continue
-		}
-
-		reserved := target.DeepCopy()
-		setReservationAllocated(reserved, pod)
-		// update assumed status in cache
-		p.reservationCache.Assume(reserved)
-
-		// update assume state
-		state.assumed = reserved
-		cycleState.Write(preFilterStateKey, state)
-		klog.V(4).InfoS("Attempting to reserve pod to node with reservations", "pod", klog.KObj(pod),
-			"node", nodeName, "matched count", len(rOnNode), "assumed", klog.KObj(reserved))
+func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	if reservationutil.IsReservePod(pod) {
 		return nil
 	}
 
-	klog.V(3).InfoS("failed to reserve pod with reservations, no reservation matched any more",
-		"pod", klog.KObj(pod), "node", nodeName, "tried count", len(rOnNode))
-	return framework.NewStatus(framework.Error, ErrReasonReservationNotMatchStale)
+	state := getPreFilterState(cycleState)
+	if state == nil || state.skip { // expected matchedCache is prepared
+		klog.V(5).InfoS("skip the Reservation Reserve", "pod", klog.KObj(pod), "node", nodeName)
+		return nil
+	}
+
+	reservation := frameworkext.GetRecommendReservation(cycleState)
+	if reservation == nil {
+		return nil
+	}
+
+	// use the cached reservation, in case the version in cycle state is too old/incorrect or mutated by other pods
+	rInfo := p.reservationCache.GetInCache(reservation)
+	if rInfo == nil {
+		// check if the reservation is marked as expired
+		if p.reservationCache.IsInactive(reservation) { // in case reservation is marked as inactive
+			klog.V(5).InfoS("skip reserve current reservation since it is marked as expired",
+				"pod", klog.KObj(pod), "reservation", klog.KObj(reservation))
+		} else {
+			klog.V(4).InfoS("failed to reserve current reservation since it is not found in cache",
+				"pod", klog.KObj(pod), "reservation", klog.KObj(reservation))
+		}
+		return framework.NewStatus(framework.Error, ErrReasonReservationNotMatchStale)
+	}
+
+	// avoid concurrency conflict inside the scheduler (i.e. scheduling cycle vs. binding cycle)
+	reservation = rInfo.Reservation
+	if !matchReservationOwners(pod, reservation) || !hasIntersectionOnResources(pod, reservation) {
+		klog.V(5).InfoS("failed to reserve reservation since the reservation does not match the pod",
+			"pod", klog.KObj(pod), "reservation", klog.KObj(reservation), "reason", dumpMatchReservationReason(pod, rInfo))
+		return framework.NewStatus(framework.Error, ErrReasonReservationNotMatchStale)
+	}
+
+	assumedReservation := rInfo.Reservation.DeepCopy()
+	setReservationAllocated(assumedReservation, pod)
+	p.reservationCache.Assume(assumedReservation)
+	state.assumed = assumedReservation
+	frameworkext.SetRecommendReservation(cycleState, assumedReservation)
+	klog.V(4).InfoS("Attempting to reserve pod to node with reservations", "pod", klog.KObj(pod),
+		"node", nodeName, "matched count", len(state.matchedCache.GetOnNode(nodeName)), "assumed", klog.KObj(assumedReservation))
+	return nil
 }
 
 func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
-	// if the pod is a reserve pod
 	if reservationutil.IsReservePod(pod) {
 		return
 	}
@@ -436,7 +478,6 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 
 	// clean assume state
 	state.assumed = nil
-	cycleState.Write(preFilterStateKey, state)
 
 	// update assume cache
 	unreserved := target.DeepCopy()
@@ -498,7 +539,7 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 		return
 	}
 	err = util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err1 := util.NewPatch().WithClientset(p.handle.ClientSet()).AddAnnotations(newPod.Annotations).PatchPod(pod)
+		_, err1 := util.NewPatch().WithClientset(p.handle.ClientSet()).AddAnnotations(newPod.Annotations).PatchPod(ctx, pod)
 		return err1
 	})
 	if err != nil {
@@ -508,7 +549,6 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 }
 
 func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
-	// if the pod is a reserve pod
 	if reservationutil.IsReservePod(pod) {
 		return nil
 	}
@@ -546,8 +586,8 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 				klog.KObj(curR), curR.Status.Phase)
 			return fmt.Errorf(ErrReasonReservationInactive)
 		}
-		// double-check if the latest version does not match the pod any more
-		if !matchReservation(pod, newReservationInfo(curR)) {
+		// double-check if the latest version does not match the pod anymore
+		if !matchReservationOwners(pod, curR) || !hasIntersectionOnResources(pod, curR) {
 			klog.V(5).InfoS("failed to allocate reservation since the reservation does not match the pod",
 				"pod", klog.KObj(pod), "reservation", klog.KObj(target), "reason", dumpMatchReservationReason(pod, newReservationInfo(curR)))
 			return fmt.Errorf(ErrReasonReservationNotMatchStale)
@@ -580,7 +620,7 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 	newPod := pod.DeepCopy()
 	apiext.SetReservationAllocated(newPod, target)
 	err = util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err1 := util.NewPatch().WithClientset(p.handle.ClientSet()).AddAnnotations(newPod.Annotations).PatchPod(pod)
+		_, err1 := util.NewPatch().WithClientset(p.handle.ClientSet()).AddAnnotations(newPod.Annotations).PatchPod(ctx, pod)
 		return err1
 	})
 	if err != nil {

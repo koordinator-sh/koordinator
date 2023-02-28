@@ -17,17 +17,15 @@ limitations under the License.
 package reservation
 
 import (
-	"math"
-	"strconv"
 	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -87,30 +85,11 @@ func (m *reservationInfo) ScoreForPod(pod *corev1.Pod) {
 	var s int64
 	for resource, capacity := range resources {
 		req := requested[resource]
-		s += framework.MaxNodeScore * req.MilliValue() / capacity.MilliValue()
+		if req.Cmp(capacity) <= 0 {
+			s += framework.MaxNodeScore * req.MilliValue() / capacity.MilliValue()
+		}
 	}
 	m.Score = s / w
-}
-
-func findMostPreferredReservationByOrder(rOnNode []*reservationInfo) (*reservationInfo, int64) {
-	var selectOrder int64 = math.MaxInt64
-	var rInfo *reservationInfo
-	for _, v := range rOnNode {
-		s := v.Reservation.Labels[apiext.LabelReservationOrder]
-		if s == "" {
-			continue
-		}
-		order, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
-			continue
-		}
-		// The smaller the order value is, the reservation will be selected first
-		if order != 0 && selectOrder > order {
-			selectOrder = order
-			rInfo = v
-		}
-	}
-	return rInfo, selectOrder
 }
 
 // AvailableCache is for efficiently querying the reservation allocation results.
@@ -120,15 +99,15 @@ func findMostPreferredReservationByOrder(rOnNode []*reservationInfo) (*reservati
 // 3. check which reservations are on a node.
 type AvailableCache struct {
 	lock         sync.RWMutex
-	reservations map[string]*reservationInfo   // reservation key -> reservation meta (including r, node, resource, labelSelector)
-	nodeToR      map[string][]*reservationInfo // node name -> reservation meta (of same node)
-	ownerToR     map[string]*reservationInfo   // owner UID -> reservation
+	reservations map[string]*reservationInfo               // reservation key -> reservation meta (including r, node, resource, labelSelector)
+	nodeToR      map[string]map[types.UID]*reservationInfo // node name -> reservation meta (of same node)
+	ownerToR     map[string]*reservationInfo               // owner UID -> reservation
 }
 
 func newAvailableCache(rList ...*schedulingv1alpha1.Reservation) *AvailableCache {
 	a := &AvailableCache{
 		reservations: map[string]*reservationInfo{},
-		nodeToR:      map[string][]*reservationInfo{},
+		nodeToR:      map[string]map[types.UID]*reservationInfo{},
 		ownerToR:     map[string]*reservationInfo{},
 	}
 	for _, r := range rList {
@@ -138,7 +117,12 @@ func newAvailableCache(rList ...*schedulingv1alpha1.Reservation) *AvailableCache
 		rInfo := newReservationInfo(r)
 		a.reservations[reservationutil.GetReservationKey(r)] = rInfo
 		nodeName := reservationutil.GetReservationNodeName(r)
-		a.nodeToR[nodeName] = append(a.nodeToR[nodeName], rInfo)
+		rInfoMap := a.nodeToR[nodeName]
+		if rInfoMap == nil {
+			rInfoMap = map[types.UID]*reservationInfo{}
+			a.nodeToR[nodeName] = rInfoMap
+		}
+		rInfoMap[rInfo.Reservation.UID] = rInfo
 		for _, owner := range r.Status.CurrentOwners { // one owner at most owns one reservation
 			a.ownerToR[getOwnerKey(&owner)] = rInfo
 		}
@@ -160,7 +144,13 @@ func (a *AvailableCache) Add(r *schedulingv1alpha1.Reservation) {
 	rInfo := newReservationInfo(r)
 	a.reservations[reservationutil.GetReservationKey(r)] = rInfo
 	nodeName := reservationutil.GetReservationNodeName(r)
-	a.nodeToR[nodeName] = append(a.nodeToR[nodeName], rInfo)
+
+	rInfoMap := a.nodeToR[nodeName]
+	if rInfoMap == nil {
+		rInfoMap = map[types.UID]*reservationInfo{}
+		a.nodeToR[nodeName] = rInfoMap
+	}
+	rInfoMap[rInfo.Reservation.UID] = rInfo
 	for _, owner := range r.Status.CurrentOwners { // one owner at most owns one reservation
 		a.ownerToR[getOwnerKey(&owner)] = rInfo
 	}
@@ -169,7 +159,7 @@ func (a *AvailableCache) Add(r *schedulingv1alpha1.Reservation) {
 func (a *AvailableCache) Delete(r *schedulingv1alpha1.Reservation) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
-	if r == nil || len(reservationutil.GetReservationNodeName(r)) <= 0 {
+	if r == nil || len(reservationutil.GetReservationNodeName(r)) == 0 {
 		return
 	}
 	// cleanup r map
@@ -177,13 +167,8 @@ func (a *AvailableCache) Delete(r *schedulingv1alpha1.Reservation) {
 	// cleanup nodeToR
 	nodeName := reservationutil.GetReservationNodeName(r)
 	rOnNode := a.nodeToR[nodeName]
-	for i, rInfo := range rOnNode {
-		if rInfo.Reservation.Name == r.Name {
-			a.nodeToR[nodeName] = append(rOnNode[:i], rOnNode[i+1:]...)
-			break
-		}
-	}
-	if len(a.nodeToR[nodeName]) <= 0 {
+	delete(rOnNode, r.UID)
+	if len(rOnNode) == 0 {
 		delete(a.nodeToR, nodeName)
 	}
 	// cleanup ownerToR
@@ -204,7 +189,15 @@ func (a *AvailableCache) Get(key string) *reservationInfo {
 func (a *AvailableCache) GetOnNode(nodeName string) []*reservationInfo {
 	a.lock.RLock()
 	defer a.lock.RUnlock()
-	return a.nodeToR[nodeName]
+	rOnNode := a.nodeToR[nodeName]
+	if len(rOnNode) == 0 {
+		return nil
+	}
+	result := make([]*reservationInfo, 0, len(rOnNode))
+	for _, v := range rOnNode {
+		result = append(result, v)
+	}
+	return result
 }
 
 func (a *AvailableCache) GetOwnedR(key string) *reservationInfo {
@@ -360,36 +353,4 @@ func (c *reservationCache) IsInactive(r *schedulingv1alpha1.Reservation) bool {
 	defer c.lock.RUnlock()
 	_, ok := c.inactive[reservationutil.GetReservationKey(r)]
 	return ok
-}
-
-var _ framework.StateData = &stateData{}
-
-type stateData struct {
-	skip               bool            // set true if pod does not allocate reserved resources
-	preBind            bool            // set true if pod succeeds the reservation pre-bind
-	matchedCache       *AvailableCache // matched reservations for the scheduling pod
-	mostPreferredNode  string
-	assumed            *schedulingv1alpha1.Reservation // assumed reservation to be allocated by the pod
-	allocatedResources map[string]corev1.ResourceList
-}
-
-func (d *stateData) Clone() framework.StateData {
-	cacheCopy := newAvailableCache()
-	if d.matchedCache != nil {
-		for k, v := range d.matchedCache.reservations {
-			cacheCopy.reservations[k] = v
-		}
-		for k, v := range d.matchedCache.nodeToR {
-			rs := make([]*reservationInfo, len(v))
-			copy(rs, v)
-			cacheCopy.nodeToR[k] = v
-		}
-	}
-	return &stateData{
-		skip:               d.skip,
-		preBind:            d.preBind,
-		matchedCache:       cacheCopy,
-		assumed:            d.assumed,
-		allocatedResources: d.allocatedResources,
-	}
 }

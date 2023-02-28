@@ -18,6 +18,8 @@ package reservation
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +31,7 @@ import (
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -233,12 +236,6 @@ func getReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceLi
 	return requests
 }
 
-func matchReservation(pod *corev1.Pod, rMeta *reservationInfo) bool {
-	return matchReservationOwners(pod, rMeta.Reservation) &&
-		matchReservationResources(pod, rMeta.Reservation, rMeta.Resources) &&
-		matchReservationPort(pod, rMeta)
-}
-
 func matchReservationPort(pod *corev1.Pod, rMeta *reservationInfo) bool {
 	for _, container := range pod.Spec.Containers {
 		for _, podPort := range container.Ports {
@@ -253,7 +250,7 @@ func matchReservationPort(pod *corev1.Pod, rMeta *reservationInfo) bool {
 func matchReservationResources(pod *corev1.Pod, r *schedulingv1alpha1.Reservation, reservedResources corev1.ResourceList) bool {
 	if r.Status.Allocated != nil {
 		// multi owners can share one reservation when reserved resources are sufficient
-		reservedResources = quotav1.Subtract(reservedResources, r.Status.Allocated)
+		reservedResources = quotav1.SubtractWithNonNegativeResult(reservedResources, r.Status.Allocated)
 	}
 	reservedResources = quotav1.Mask(reservedResources, quotav1.ResourceNames(r.Status.Allocatable))
 	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
@@ -265,6 +262,12 @@ func matchReservationResources(pod *corev1.Pod, r *schedulingv1alpha1.Reservatio
 		}
 	}
 	return true
+}
+
+func hasIntersectionOnResources(pod *corev1.Pod, r *schedulingv1alpha1.Reservation) bool {
+	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+	resourceNames := quotav1.Intersection(quotav1.ResourceNames(r.Status.Allocatable), quotav1.ResourceNames(podRequests))
+	return len(resourceNames) > 0
 }
 
 // matchReservationOwners checks if the scheduling pod matches the reservation's owner spec.
@@ -287,10 +290,10 @@ func matchObjectRef(pod *corev1.Pod, objRef *corev1.ObjectReference) bool {
 	// `ResourceVersion`, `FieldPath` are ignored.
 	// since only pod type are compared, `Kind` field is also ignored.
 	return objRef == nil ||
-		(len(objRef.UID) <= 0 || pod.UID == objRef.UID) &&
-			(len(objRef.Name) <= 0 || pod.Name == objRef.Name) &&
-			(len(objRef.Namespace) <= 0 || pod.Namespace == objRef.Namespace) &&
-			(len(objRef.APIVersion) <= 0 || pod.APIVersion == objRef.APIVersion)
+		(len(objRef.UID) == 0 || pod.UID == objRef.UID) &&
+			(len(objRef.Name) == 0 || pod.Name == objRef.Name) &&
+			(len(objRef.Namespace) == 0 || pod.Namespace == objRef.Namespace) &&
+			(len(objRef.APIVersion) == 0 || pod.APIVersion == objRef.APIVersion)
 }
 
 func matchReservationControllerReference(pod *corev1.Pod, controllerRef *schedulingv1alpha1.ReservationControllerReference) bool {
@@ -305,10 +308,10 @@ func matchReservationControllerReference(pod *corev1.Pod, controllerRef *schedul
 	// currently `BlockOwnerDeletion` is ignored
 	for _, podOwner := range pod.OwnerReferences {
 		if (controllerRef.Controller == nil || podOwner.Controller != nil && *controllerRef.Controller == *podOwner.Controller) &&
-			(len(controllerRef.UID) <= 0 || controllerRef.UID == podOwner.UID) &&
-			(len(controllerRef.Name) <= 0 || controllerRef.Name == podOwner.Name) &&
-			(len(controllerRef.Kind) <= 0 || controllerRef.Kind == podOwner.Kind) &&
-			(len(controllerRef.APIVersion) <= 0 || controllerRef.APIVersion == podOwner.APIVersion) {
+			(len(controllerRef.UID) == 0 || controllerRef.UID == podOwner.UID) &&
+			(len(controllerRef.Name) == 0 || controllerRef.Name == podOwner.Name) &&
+			(len(controllerRef.Kind) == 0 || controllerRef.Kind == podOwner.Kind) &&
+			(len(controllerRef.APIVersion) == 0 || controllerRef.APIVersion == podOwner.APIVersion) {
 			return true
 		}
 	}
@@ -363,4 +366,25 @@ func getPreFilterState(cycleState *framework.CycleState) *stateData {
 		return nil
 	}
 	return cache
+}
+
+func findMostPreferredReservationByOrder(rOnNode []*reservationInfo) (*reservationInfo, int64) {
+	var selectOrder int64 = math.MaxInt64
+	var rInfo *reservationInfo
+	for _, v := range rOnNode {
+		s := v.Reservation.Labels[apiext.LabelReservationOrder]
+		if s == "" {
+			continue
+		}
+		order, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			continue
+		}
+		// The smaller the order value is, the reservation will be selected first
+		if order != 0 && selectOrder > order {
+			selectOrder = order
+			rInfo = v
+		}
+	}
+	return rInfo, selectOrder
 }

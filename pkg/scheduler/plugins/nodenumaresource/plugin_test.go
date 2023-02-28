@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -208,6 +209,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
+				preemptibleCPUs:        map[string]cpuset.CPUSet{},
+				reservedCPUs:           map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
@@ -240,6 +243,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
+				preemptibleCPUs:        map[string]cpuset.CPUSet{},
+				reservedCPUs:           map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
@@ -269,13 +274,17 @@ func TestPlugin_PreFilter(t *testing.T) {
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyDefault},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
+				preemptibleCPUs:        map[string]cpuset.CPUSet{},
+				reservedCPUs:           map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
 			name: "skip cpu share pod",
 			pod:  &corev1.Pod{},
 			wantState: &preFilterState{
-				skip: true,
+				skip:            true,
+				preemptibleCPUs: map[string]cpuset.CPUSet{},
+				reservedCPUs:    map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
@@ -304,7 +313,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				skip: true,
+				skip:            true,
+				preemptibleCPUs: map[string]cpuset.CPUSet{},
+				reservedCPUs:    map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
@@ -323,7 +334,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				skip: true,
+				skip:            true,
+				preemptibleCPUs: map[string]cpuset.CPUSet{},
+				reservedCPUs:    map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
@@ -369,7 +382,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				skip: true,
+				skip:            true,
+				preemptibleCPUs: map[string]cpuset.CPUSet{},
+				reservedCPUs:    map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 	}

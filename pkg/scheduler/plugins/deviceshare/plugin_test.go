@@ -204,8 +204,10 @@ func Test_Plugin_PreFilter(t *testing.T) {
 			name: "skip non device pod",
 			pod:  &corev1.Pod{},
 			wantState: &preFilterState{
-				skip:                    true,
-				convertedDeviceResource: make(corev1.ResourceList),
+				skip:               true,
+				podRequests:        make(corev1.ResourceList),
+				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				reservedDevices:    map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
 		{
@@ -280,10 +282,12 @@ func Test_Plugin_PreFilter(t *testing.T) {
 			},
 			wantState: &preFilterState{
 				skip: false,
-				convertedDeviceResource: corev1.ResourceList{
+				podRequests: corev1.ResourceList{
 					apiext.ResourceGPUCore:        resource.MustParse("100"),
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
+				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				reservedDevices:    map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
 		{
@@ -310,9 +314,11 @@ func Test_Plugin_PreFilter(t *testing.T) {
 			},
 			wantState: &preFilterState{
 				skip: false,
-				convertedDeviceResource: corev1.ResourceList{
+				podRequests: corev1.ResourceList{
 					apiext.ResourceFPGA: resource.MustParse("100"),
 				},
+				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				reservedDevices:    map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
 		{
@@ -340,11 +346,13 @@ func Test_Plugin_PreFilter(t *testing.T) {
 			},
 			wantState: &preFilterState{
 				skip: false,
-				convertedDeviceResource: corev1.ResourceList{
+				podRequests: corev1.ResourceList{
 					apiext.ResourceGPUCore:        resource.MustParse("100"),
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					apiext.ResourceRDMA:           resource.MustParse("100"),
 				},
+				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				reservedDevices:    map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
 	}
@@ -406,7 +414,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			name: "insufficient device resource 1",
 			state: &preFilterState{
 				skip: false,
-				convertedDeviceResource: corev1.ResourceList{
+				podRequests: corev1.ResourceList{
 					apiext.ResourceGPUCore:        resource.MustParse("100"),
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
@@ -424,7 +432,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			name: "insufficient device resource 2",
 			state: &preFilterState{
 				skip: false,
-				convertedDeviceResource: corev1.ResourceList{
+				podRequests: corev1.ResourceList{
 					apiext.ResourceGPUCore:        resource.MustParse("100"),
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
@@ -470,7 +478,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			name: "insufficient device resource 3",
 			state: &preFilterState{
 				skip: false,
-				convertedDeviceResource: corev1.ResourceList{
+				podRequests: corev1.ResourceList{
 					apiext.ResourceFPGA:           resource.MustParse("100"),
 					apiext.ResourceGPUCore:        resource.MustParse("100"),
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -527,7 +535,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			name: "insufficient device resource 4",
 			state: &preFilterState{
 				skip: false,
-				convertedDeviceResource: corev1.ResourceList{
+				podRequests: corev1.ResourceList{
 					apiext.ResourceFPGA:           resource.MustParse("100"),
 					apiext.ResourceGPUCore:        resource.MustParse("100"),
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -589,7 +597,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			name: "sufficient device resource 1",
 			state: &preFilterState{
 				skip: false,
-				convertedDeviceResource: corev1.ResourceList{
+				podRequests: corev1.ResourceList{
 					apiext.ResourceFPGA: resource.MustParse("100"),
 				},
 			},
@@ -622,7 +630,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			name: "sufficient device resource 2",
 			state: &preFilterState{
 				skip: false,
-				convertedDeviceResource: corev1.ResourceList{
+				podRequests: corev1.ResourceList{
 					apiext.ResourceFPGA: resource.MustParse("100"),
 				},
 			},
@@ -667,7 +675,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			name: "sufficient device resource 3",
 			state: &preFilterState{
 				skip: false,
-				convertedDeviceResource: corev1.ResourceList{
+				podRequests: corev1.ResourceList{
 					apiext.ResourceGPUCore:        resource.MustParse("100"),
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
@@ -715,7 +723,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			name: "sufficient device resource 4",
 			state: &preFilterState{
 				skip: false,
-				convertedDeviceResource: corev1.ResourceList{
+				podRequests: corev1.ResourceList{
 					apiext.ResourceGPUCore:        resource.MustParse("100"),
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
@@ -869,7 +877,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				pod: &corev1.Pod{},
 				state: &preFilterState{
 					skip: false,
-					convertedDeviceResource: corev1.ResourceList{
+					podRequests: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
@@ -919,7 +927,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				pod: &corev1.Pod{},
 				state: &preFilterState{
 					skip: false,
-					convertedDeviceResource: corev1.ResourceList{
+					podRequests: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("200"),
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
 					},
@@ -961,7 +969,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				pod: &corev1.Pod{},
 				state: &preFilterState{
 					skip: false,
-					convertedDeviceResource: corev1.ResourceList{
+					podRequests: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("200"),
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
 					},
@@ -1005,7 +1013,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				pod: &corev1.Pod{},
 				state: &preFilterState{
 					skip: false,
-					convertedDeviceResource: corev1.ResourceList{
+					podRequests: corev1.ResourceList{
 						apiext.ResourceRDMA: resource.MustParse("100"),
 					},
 				},
@@ -1052,7 +1060,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				pod: &corev1.Pod{},
 				state: &preFilterState{
 					skip: false,
-					convertedDeviceResource: corev1.ResourceList{
+					podRequests: corev1.ResourceList{
 						apiext.ResourceRDMA: resource.MustParse("200"),
 						apiext.ResourceFPGA: resource.MustParse("200"),
 					},
@@ -1115,7 +1123,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				pod: &corev1.Pod{},
 				state: &preFilterState{
 					skip: false,
-					convertedDeviceResource: corev1.ResourceList{
+					podRequests: corev1.ResourceList{
 						apiext.ResourceRDMA:           resource.MustParse("100"),
 						apiext.ResourceFPGA:           resource.MustParse("100"),
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
@@ -1292,7 +1300,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				pod: &corev1.Pod{},
 				state: &preFilterState{
 					skip: false,
-					convertedDeviceResource: corev1.ResourceList{
+					podRequests: corev1.ResourceList{
 						apiext.ResourceRDMA:           resource.MustParse("200"),
 						apiext.ResourceFPGA:           resource.MustParse("200"),
 						apiext.ResourceGPUCore:        resource.MustParse("200"),
@@ -1883,7 +1891,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 							},
 						},
 					},
-					convertedDeviceResource: corev1.ResourceList{
+					podRequests: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("200"),
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
 						apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
@@ -1922,7 +1930,7 @@ func (f *fakeAllocator) Name() string {
 	return "fake"
 }
 
-func (f *fakeAllocator) Allocate(nodeName string, pod *corev1.Pod, podRequest corev1.ResourceList, nodeDevice *nodeDevice) (apiext.DeviceAllocations, error) {
+func (f *fakeAllocator) Allocate(nodeName string, pod *corev1.Pod, podRequest corev1.ResourceList, nodeDevice *nodeDevice, preemptibleFreeDevices map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
 	return nil, nil
 }
 

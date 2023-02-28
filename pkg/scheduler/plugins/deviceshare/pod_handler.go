@@ -25,10 +25,12 @@ import (
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-func registerPodEventHandler(deviceCache *nodeDeviceCache, sharedInformerFactory informers.SharedInformerFactory) {
+func registerPodEventHandler(deviceCache *nodeDeviceCache, sharedInformerFactory informers.SharedInformerFactory, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory) {
 	podInformer := sharedInformerFactory.Core().V1().Pods().Informer()
 	eventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    deviceCache.onPodAdd,
@@ -37,6 +39,9 @@ func registerPodEventHandler(deviceCache *nodeDeviceCache, sharedInformerFactory
 	}
 	// make sure Pods are loaded before scheduler starts working
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, podInformer, eventHandler)
+	reservationInformer := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations()
+	reservationEventHandler := reservationutil.NewReservationToPodEventHandler(eventHandler, reservationutil.IsObjValidActiveReservation)
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordSharedInformerFactory, reservationInformer.Informer(), reservationEventHandler)
 }
 
 func (n *nodeDeviceCache) onPodAdd(obj interface{}) {

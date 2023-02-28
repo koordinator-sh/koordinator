@@ -26,6 +26,29 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
+func takePreferredCPUs(
+	topology *CPUTopology,
+	maxRefCount int,
+	availableCPUs cpuset.CPUSet,
+	preferredCPUs cpuset.CPUSet,
+	allocatedCPUs CPUDetails,
+	numCPUsNeeded int,
+	cpuBindPolicy schedulingconfig.CPUBindPolicy,
+	cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy,
+	numaAllocatedStrategy schedulingconfig.NUMAAllocateStrategy,
+) (cpuset.CPUSet, error) {
+	preferredCPUs = availableCPUs.Intersection(preferredCPUs)
+	size := preferredCPUs.Size()
+	if size == 0 {
+		return cpuset.CPUSet{}, nil
+	}
+	if numCPUsNeeded > size {
+		numCPUsNeeded = size
+	}
+
+	return takeCPUs(topology, maxRefCount, preferredCPUs, allocatedCPUs, numCPUsNeeded, cpuBindPolicy, cpuExclusivePolicy, numaAllocatedStrategy)
+}
+
 func takeCPUs(
 	topology *CPUTopology,
 	maxRefCount int,

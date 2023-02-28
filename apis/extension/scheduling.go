@@ -206,9 +206,10 @@ var GetDeviceAllocations = func(podAnnotations map[string]string) (DeviceAllocat
 	return deviceAllocations, nil
 }
 
-func SetDeviceAllocations(pod *corev1.Pod, allocations DeviceAllocations) error {
-	if pod.Annotations == nil {
-		pod.Annotations = map[string]string{}
+func SetDeviceAllocations(obj metav1.Object, allocations DeviceAllocations) error {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
 	}
 
 	data, err := json.Marshal(allocations)
@@ -216,7 +217,8 @@ func SetDeviceAllocations(pod *corev1.Pod, allocations DeviceAllocations) error 
 		return err
 	}
 
-	pod.Annotations[AnnotationDeviceAllocated] = string(data)
+	annotations[AnnotationDeviceAllocated] = string(data)
+	obj.SetAnnotations(annotations)
 	return nil
 }
 

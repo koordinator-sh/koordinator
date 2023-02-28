@@ -45,6 +45,11 @@ func (n *cpuAllocation) updateAllocatedCPUSet(cpuTopology *CPUTopology, podUID t
 	n.addCPUs(cpuTopology, podUID, cpuset, cpuExclusivePolicy)
 }
 
+func (n *cpuAllocation) getCPUs(podUID types.UID) (cpuset.CPUSet, bool) {
+	cpuset, ok := n.allocatedPods[podUID]
+	return cpuset, ok
+}
+
 func (n *cpuAllocation) addCPUs(cpuTopology *CPUTopology, podUID types.UID, cpuset cpuset.CPUSet, exclusivePolicy schedulingconfig.CPUExclusivePolicy) {
 	if _, ok := n.allocatedPods[podUID]; ok {
 		return
@@ -83,8 +88,23 @@ func (n *cpuAllocation) releaseCPUs(podUID types.UID) {
 	}
 }
 
-func (n *cpuAllocation) getAvailableCPUs(cpuTopology *CPUTopology, maxRefCount int, reservedCPUs cpuset.CPUSet) (availableCPUs cpuset.CPUSet, allocateInfo CPUDetails) {
+func (n *cpuAllocation) getAvailableCPUs(cpuTopology *CPUTopology, maxRefCount int, reservedCPUs, preferredCPUs, preemptibleCPUs cpuset.CPUSet) (availableCPUs cpuset.CPUSet, allocateInfo CPUDetails) {
 	allocateInfo = n.allocatedCPUs.Clone()
+	if !preferredCPUs.IsEmpty() || !preemptibleCPUs.IsEmpty() {
+		for _, cpus := range []cpuset.CPUSet{preferredCPUs, preemptibleCPUs} {
+			for _, cpuID := range cpus.ToSliceNoSort() {
+				cpuInfo, ok := allocateInfo[cpuID]
+				if ok {
+					cpuInfo.RefCount--
+					if cpuInfo.RefCount == 0 {
+						delete(allocateInfo, cpuID)
+					} else {
+						allocateInfo[cpuID] = cpuInfo
+					}
+				}
+			}
+		}
+	}
 	allocated := allocateInfo.CPUs().Filter(func(cpuID int) bool {
 		return allocateInfo[cpuID].RefCount >= maxRefCount
 	})

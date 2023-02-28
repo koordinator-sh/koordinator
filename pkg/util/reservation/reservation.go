@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -49,7 +48,7 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	// name, uid: reservation uid
 	reservePod.Name = GetReservationKey(r)
 	reservePod.UID = r.UID
-	if len(reservePod.Namespace) <= 0 {
+	if len(reservePod.Namespace) == 0 {
 		reservePod.Namespace = corev1.NamespaceDefault
 	}
 
@@ -89,7 +88,6 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	}
 
 	reservePod.Spec.SchedulerName = GetReservationSchedulerName(r)
-
 	return reservePod
 }
 
@@ -100,7 +98,7 @@ func ValidateReservation(r *schedulingv1alpha1.Reservation) error {
 	if r.Spec.Template == nil {
 		return fmt.Errorf("the reservation misses the template spec")
 	}
-	if len(r.Spec.Owners) <= 0 {
+	if len(r.Spec.Owners) == 0 {
 		return fmt.Errorf("the reservation misses the owner spec")
 	}
 	if r.Spec.TTL == nil && r.Spec.Expires == nil {
@@ -117,10 +115,6 @@ func GetReservationKey(r *schedulingv1alpha1.Reservation) string {
 	return string(r.UID)
 }
 
-func GetReservePodKey(pod *corev1.Pod) string {
-	return string(pod.UID)
-}
-
 func GetReservePodNodeName(pod *corev1.Pod) string {
 	return pod.Annotations[AnnotationReservationNode]
 }
@@ -130,7 +124,7 @@ func GetReservationNameFromReservePod(pod *corev1.Pod) string {
 }
 
 func GetReservationSchedulerName(r *schedulingv1alpha1.Reservation) string {
-	if r == nil || r.Spec.Template == nil || len(r.Spec.Template.Spec.SchedulerName) <= 0 {
+	if r == nil || r.Spec.Template == nil || len(r.Spec.Template.Spec.SchedulerName) == 0 {
 		return corev1.DefaultSchedulerName
 	}
 	return r.Spec.Template.Spec.SchedulerName
@@ -170,96 +164,4 @@ func IsReservationExpired(r *schedulingv1alpha1.Reservation) bool {
 
 func GetReservationNodeName(r *schedulingv1alpha1.Reservation) string {
 	return r.Status.NodeName
-}
-
-func IsObjValidActiveReservation(obj interface{}) bool {
-	reservation, _ := obj.(*schedulingv1alpha1.Reservation)
-	err := ValidateReservation(reservation)
-	if err != nil {
-		klog.ErrorS(err, "failed to validate reservation obj", "reservation", klog.KObj(reservation))
-		return false
-	}
-	if !IsReservationActive(reservation) {
-		klog.V(6).InfoS("ignore reservation obj since it is not active",
-			"reservation", klog.KObj(reservation), "phase", reservation.Status.Phase)
-		return false
-	}
-	return true
-}
-
-// ReservationToPodEventHandler can be used to handle reservation events with a pod event handler, which converts
-// each reservation object into the corresponding reserve pod object.
-//
-//	e.g.
-//	func registerReservationEventHandler(handle framework.Handle, podHandler podHandler) {
-//	  extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
-//	  if !ok { // if not implement extendedHandle, ignore reservation events
-//	    klog.V(3).Infof("registerReservationEventHandler aborted, cannot convert handle to frameworkext.ExtendedHandle, got %T", handle)
-//	    return
-//	  }
-//	  extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Informer().
-//	 	 AddEventHandler(util.NewReservationToPodEventHandler(&podHandler, IsObjValidActiveReservation))
-//	}
-type ReservationToPodEventHandler struct {
-	handler cache.ResourceEventHandler
-}
-
-var _ cache.ResourceEventHandler = &ReservationToPodEventHandler{}
-
-func NewReservationToPodEventHandler(handler cache.ResourceEventHandler, filters ...func(obj interface{}) bool) cache.ResourceEventHandler {
-	return cache.FilteringResourceEventHandler{
-		FilterFunc: func(obj interface{}) bool {
-			for _, fn := range filters {
-				if !fn(obj) {
-					return false
-				}
-			}
-			return true
-		},
-		Handler: &ReservationToPodEventHandler{
-			handler: handler,
-		},
-	}
-}
-
-func (r ReservationToPodEventHandler) OnAdd(obj interface{}) {
-	reservation, ok := obj.(*schedulingv1alpha1.Reservation)
-	if !ok {
-		return
-	}
-	pod := NewReservePod(reservation)
-	r.handler.OnAdd(pod)
-}
-
-// OnUpdate calls UpdateFunc if it's not nil.
-func (r ReservationToPodEventHandler) OnUpdate(oldObj, newObj interface{}) {
-	oldR, oldOK := oldObj.(*schedulingv1alpha1.Reservation)
-	newR, newOK := newObj.(*schedulingv1alpha1.Reservation)
-	if !oldOK || !newOK {
-		return
-	}
-
-	oldPod := NewReservePod(oldR)
-	newPod := NewReservePod(newR)
-	r.handler.OnUpdate(oldPod, newPod)
-}
-
-// OnDelete calls DeleteFunc if it's not nil.
-func (r ReservationToPodEventHandler) OnDelete(obj interface{}) {
-	var reservation *schedulingv1alpha1.Reservation
-	switch t := obj.(type) {
-	case *schedulingv1alpha1.Reservation:
-		reservation = t
-	case cache.DeletedFinalStateUnknown:
-		var ok bool
-		reservation, ok = t.Obj.(*schedulingv1alpha1.Reservation)
-		if !ok {
-			return
-		}
-	default:
-		return
-	}
-
-	pod := NewReservePod(reservation)
-	r.handler.OnDelete(pod)
 }

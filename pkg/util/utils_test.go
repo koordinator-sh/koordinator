@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -35,7 +36,6 @@ import (
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	clientschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 func Test_MergeCfg(t *testing.T) {
@@ -323,13 +323,12 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 			UID:  "123456",
 		},
 	}
-	testReservePod := reservationutil.NewReservePod(testR)
 	type fields struct {
 		handle      framework.Handle
 		annotations map[string]string
 	}
 	type args struct {
-		pod *corev1.Pod
+		obj metav1.Object
 	}
 	tests := []struct {
 		name    string
@@ -345,7 +344,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 				},
 			},
 			args: args{
-				pod: &corev1.Pod{},
+				obj: &corev1.Pod{},
 			},
 			wantErr: false,
 		},
@@ -360,7 +359,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 				},
 			},
 			args: args{
-				pod: testNormalPod,
+				obj: testNormalPod,
 			},
 			wantErr: false,
 		},
@@ -372,7 +371,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 				},
 			},
 			args: args{
-				pod: testReservePod,
+				obj: testR,
 			},
 			wantErr: false,
 		},
@@ -391,7 +390,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 				},
 			},
 			args: args{
-				pod: testReservePod,
+				obj: testR,
 			},
 			wantErr: false,
 		},
@@ -413,7 +412,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 				},
 			},
 			args: args{
-				pod: testReservePod,
+				obj: testR,
 			},
 			wantErr: true,
 		},
@@ -430,7 +429,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 				},
 			},
 			args: args{
-				pod: testReservePod,
+				obj: testR,
 			},
 			wantErr: true,
 		},
@@ -443,14 +442,15 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 				},
 			},
 			args: args{
-				pod: testReservePod,
+				obj: testR,
 			},
 			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, gotErr := NewPatch().WithHandle(tt.fields.handle).AddAnnotations(tt.fields.annotations).PatchPodOrReservation(tt.args.pod)
+			obj := tt.args.obj.(runtime.Object).DeepCopyObject()
+			_, gotErr := NewPatch().WithHandle(tt.fields.handle).AddAnnotations(tt.fields.annotations).Patch(context.TODO(), obj.(metav1.Object))
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 		})
 	}
