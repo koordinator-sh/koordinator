@@ -18,16 +18,8 @@ package system
 
 import (
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
-
-	"k8s.io/klog/v2"
-)
-
-const (
-	CgroupControllersName    = "cgroup.controllers"
-	CgroupSubtreeControlName = "cgroup.subtree_control"
 )
 
 type CPUStatV2Raw struct {
@@ -42,28 +34,6 @@ type CPUStatV2Raw struct {
 
 func initCgroupsVersion() {
 	UseCgroupsV2 = IsUsingCgroupsV2()
-}
-
-func IsUsingCgroupsV2() bool {
-	// currently we only check the absences of `cgroup.controllers` and `cgroup.subtree_control`
-	// TBD: check if the filesystem type of the cgroup root.
-	// link: https://kubernetes.io/docs/concepts/architecture/cgroups/#check-cgroup-version
-	cgroupControllersPath := filepath.Join(Conf.CgroupRootDir, CgroupControllersName)
-	exists, err := PathExists(cgroupControllersPath)
-	klog.V(2).Infof("[%v] PathExists exists %v, err: %v", cgroupControllersPath, exists, err)
-	if err != nil || !exists {
-		return false
-	}
-
-	cgroupSubtreeControlPath := filepath.Join(Conf.CgroupRootDir, CgroupSubtreeControlName)
-	exists, err = PathExists(cgroupSubtreeControlPath)
-	klog.V(2).Infof("[%v] PathExists exists %v, err: %v", cgroupSubtreeControlPath, exists, err)
-	if err != nil && !exists {
-		return false
-	}
-
-	klog.V(5).Infof("check cgroups v2 successfully")
-	return true
 }
 
 func ParseCPUCFSQuotaV2(content string) (int64, error) {

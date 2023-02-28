@@ -65,6 +65,9 @@ func (r *CgroupResourceRegistryImpl) Add(v CgroupVersion, s ...Resource) {
 		m = r.v2
 	}
 	for i := range s {
+		if conv, ok := s[i].(*CgroupResource); ok {
+			conv.SetCgroupVersion(v)
+		}
 		m[s[i].ResourceType()] = s[i]
 	}
 }
@@ -93,6 +96,13 @@ func GetCgroupResource(resourceType ResourceType) (Resource, error) {
 		return nil, fmt.Errorf("%s not found in cgroup registry", resourceType)
 	}
 	return r, nil
+}
+
+func IsCgroupV2Resource(r Resource) bool {
+	if conv, ok := r.(*CgroupResource); ok {
+		return conv.GetCgroupVersion() == CgroupVersionV2
+	}
+	return false
 }
 
 const ( // subsystems
@@ -309,6 +319,7 @@ type CgroupResource struct {
 	SupportMsg     string
 	CheckSupported func(r Resource, parentDir string) (isSupported bool, msg string)
 	Validator      ResourceValidator
+	CgroupVersion  CgroupVersion
 }
 
 func (c *CgroupResource) ResourceType() ResourceType {
@@ -355,6 +366,14 @@ func (c *CgroupResource) WithCheckSupported(checkSupportedFn func(r Resource, pa
 	c.Supported = nil
 	c.CheckSupported = checkSupportedFn
 	return c
+}
+
+func (c *CgroupResource) SetCgroupVersion(cv CgroupVersion) {
+	c.CgroupVersion = cv
+}
+
+func (c *CgroupResource) GetCgroupVersion() CgroupVersion {
+	return c.CgroupVersion
 }
 
 func NewCommonCgroupResource(resourceType ResourceType, filename string, subfs string) Resource {

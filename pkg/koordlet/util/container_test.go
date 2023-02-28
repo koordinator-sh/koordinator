@@ -292,6 +292,7 @@ func Test_GetContainerCurTasks(t *testing.T) {
 }
 
 func Test_GetContainerCgroupXXXPath(t *testing.T) {
+	system.UseCgroupsV2 = false
 	system.SetupCgroupPathFormatter(system.Systemd)
 	defer system.SetupCgroupPathFormatter(system.Systemd)
 	type args struct {

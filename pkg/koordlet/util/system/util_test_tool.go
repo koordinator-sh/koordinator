@@ -19,6 +19,7 @@ package system
 import (
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -177,6 +178,9 @@ func (c *FileTestUtil) ReadProcSubFileContents(relativeFilePath string) string {
 }
 
 func (c *FileTestUtil) CreateCgroupFile(taskDir string, r Resource) {
+
+	c.SetCgroupsV2(IsCgroupV2Resource(r))
+
 	filePath := GetCgroupFilePath(taskDir, r)
 	dir, _ := path.Split(filePath)
 	if err := os.MkdirAll(dir, 0777); err != nil {
@@ -188,6 +192,9 @@ func (c *FileTestUtil) CreateCgroupFile(taskDir string, r Resource) {
 }
 
 func (c *FileTestUtil) WriteCgroupFileContents(taskDir string, r Resource, contents string) {
+
+	c.SetCgroupsV2(IsCgroupV2Resource(r))
+
 	filePath := GetCgroupFilePath(taskDir, r)
 	if !FileExists(filePath) {
 		c.CreateCgroupFile(taskDir, r)
@@ -198,7 +205,27 @@ func (c *FileTestUtil) WriteCgroupFileContents(taskDir string, r Resource, conte
 	}
 }
 
+func (c *FileTestUtil) ReadCgroupFileContentsInt(taskDir string, r Resource) *int64 {
+
+	c.SetCgroupsV2(IsCgroupV2Resource(r))
+
+	contents, err := CgroupFileRead(taskDir, r)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+
+	data, err := strconv.ParseInt(strings.TrimSpace(contents), 10, 64)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+
+	return &data
+}
+
 func (c *FileTestUtil) ReadCgroupFileContents(taskDir string, r Resource) string {
+
+	c.SetCgroupsV2(IsCgroupV2Resource(r))
+
 	contents, err := CgroupFileRead(taskDir, r)
 	if err != nil {
 		c.t.Fatal(err)
