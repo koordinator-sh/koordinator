@@ -215,11 +215,23 @@ func TestFilterHook(t *testing.T) {
 	rScheduled := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-1",
+			UID:  "reserve-1",
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
 			Template: &corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "reserve-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: *resource.NewQuantity(1, resource.DecimalSI),
+								},
+							},
+						},
+					},
 				},
 			},
 			Owners: []schedulingv1alpha1.ReservationOwner{
@@ -236,6 +248,7 @@ func TestFilterHook(t *testing.T) {
 			NodeName: testNodeName,
 		},
 	}
+	testNodeInfo.AddPod(util.NewReservePod(rScheduled))
 	stateNoMatched := framework.NewCycleState()
 	stateNoMatched.Write(preFilterStateKey, &stateData{
 		skip:         true,
@@ -359,9 +372,11 @@ func TestFilterHook(t *testing.T) {
 				pod:        normalPod,
 				nodeInfo:   testNodeInfo,
 			},
-			want:  normalPod,
-			want1: true,
-			want2: true,
+			want:             normalPod,
+			want1:            true,
+			want2:            true,
+			needCheckRequest: true,
+			expectCPU:        0,
 		},
 	}
 	for _, tt := range tests {

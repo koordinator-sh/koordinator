@@ -25,7 +25,6 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
-	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -128,7 +127,7 @@ func (h *Hook) FilterHook(handle frameworkext.ExtendedHandle, cycleState *framew
 	klog.V(5).InfoS("FilterHook get reservation matched on node",
 		"pod", klog.KObj(pod), "node", node.Name, "count", len(rOnNode))
 	// fix-up reserved resources and ports
-	return pod, prepareFilterNodeInfo(pod, nodeInfo, rOnNode, allocatedResource), true
+	return pod, prepareFilterNodeInfo(handle, cycleState, pod, nodeInfo, rOnNode, allocatedResource), true
 }
 
 func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, pod *corev1.Pod) (*stateData, error) {
@@ -270,46 +269,34 @@ func preparePreFilterPod(pod *corev1.Pod) *corev1.Pod {
 	// FIXME: here is a rough implementation which sets incoming pod affinities/anti-affinities as empty to skip
 	//  IncomingAffinityAntiAffinity check. however, the pod may have different affinities/anti-affinities and topo
 	//  constrains with the reservation.
-	hasPodAffinity := false
+	// hasPodAffinity := false
 	// only consider required anti-affinities
-	if pod.Spec.Affinity != nil && pod.Spec.Affinity.PodAntiAffinity != nil &&
-		pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
-		hasPodAffinity = true
-	}
-	hasTopologySpreadConstraints := len(pod.Spec.TopologySpreadConstraints) > 0
-	if !hasPodAffinity && !hasTopologySpreadConstraints {
-		return pod
-	}
+	// if pod.Spec.Affinity != nil && pod.Spec.Affinity.PodAntiAffinity != nil &&
+	// 	pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
+	// 	hasPodAffinity = true
+	// }
+	// hasTopologySpreadConstraints := len(pod.Spec.TopologySpreadConstraints) > 0
+	// if !hasPodAffinity && !hasTopologySpreadConstraints {
+	// 	return pod
+	// }
 	rPod := pod.DeepCopy()
-	rPod.Spec.Affinity.PodAntiAffinity = nil
-	rPod.Spec.TopologySpreadConstraints = nil
+	// rPod.Spec.Affinity.PodAntiAffinity = nil
+	// rPod.Spec.TopologySpreadConstraints = nil
 	return rPod
 }
 
-func prepareFilterNodeInfo(pod *corev1.Pod, nodeInfo *framework.NodeInfo, rOnNode []*reservationInfo, allocatedResources corev1.ResourceList) *framework.NodeInfo {
+func prepareFilterNodeInfo(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, rOnNode []*reservationInfo, allocatedResources corev1.ResourceList) *framework.NodeInfo {
 	newNodeInfo := nodeInfo.Clone()
-	// 1. ignore current pod requests by reducing node requests
-	//    newNode.requests = node.requests - pod.requests
-	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
-	newNodeInfo.Requested.Add(quotav1.Subtract(util.NewZeroResourceList(), podRequests))
-	newNodeInfo.Requested.Add(quotav1.Subtract(util.NewZeroResourceList(), allocatedResources))
-
-	// 2. ignore reserved node ports on the reserved node, only non-reserved ports are counted
-	portReserved := framework.HostPortInfo{}
 	for _, rInfo := range rOnNode {
-		for ip, protocolPortMap := range rInfo.Port {
-			for protocolPort := range protocolPortMap {
-				portReserved.Add(ip, protocolPort.Protocol, protocolPort.Port)
-			}
+		po := util.NewReservePod(rInfo.Reservation)
+		newNodeInfo.RemovePod(po)
+		if handle != nil {
+			handle.RunPreFilterExtensionRemovePod(context.TODO(), cycleState, pod, framework.NewPodInfo(po), newNodeInfo)
 		}
 	}
-	for _, container := range pod.Spec.Containers {
-		for _, podPort := range container.Ports {
-			if portReserved.CheckConflict(podPort.HostIP, string(podPort.Protocol), podPort.HostPort) {
-				newNodeInfo.UsedPorts.Remove(podPort.HostIP, string(podPort.Protocol), podPort.HostPort)
-			}
-		}
-	}
+	// 1. ignore current pod requests by reducing node requests
+	//    newNode.requests = node.requests - allocatedResources - matchedReservation.Requests
+	newNodeInfo.Requested.Add(quotav1.Subtract(util.NewZeroResourceList(), allocatedResources))
 
 	return newNodeInfo
 }
