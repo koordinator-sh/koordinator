@@ -18,17 +18,19 @@ package extension
 
 import corev1 "k8s.io/api/core/v1"
 
-const (
-	DomainPrefix = "koordinator.sh/"
-	// ResourceDomainPrefix is a prefix "kubernetes.io/" used by particular extend resources (e.g. batch resources)
-	ResourceDomainPrefix = corev1.ResourceDefaultNamespacePrefix
-	// SchedulingDomainPrefix represents the scheduling domain prefix
-	SchedulingDomainPrefix = "scheduling.koordinator.sh"
-	// NodeDomainPrefix represents the node domain prefix
-	NodeDomainPrefix = "node.koordinator.sh"
+// NOTE: functions in this file can be overwritten for extension
 
-	LabelPodQoS      = DomainPrefix + "qosClass"
-	LabelPodPriority = DomainPrefix + "priority"
+func GetPodQoSClass(pod *corev1.Pod) QoSClass {
+	if pod == nil || pod.Labels == nil {
+		return QoSNone
+	}
+	return GetQoSClassByAttrs(pod.Labels, pod.Annotations)
+}
 
-	LabelManagedBy = "app.kubernetes.io/managed-by"
-)
+func GetQoSClassByAttrs(labels, annotations map[string]string) QoSClass {
+	// annotations are for old format adaption reason
+	if q, exist := labels[LabelPodQoS]; exist {
+		return GetPodQoSClassByName(q)
+	}
+	return QoSNone
+}

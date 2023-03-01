@@ -16,10 +16,9 @@ limitations under the License.
 
 package extension
 
-import corev1 "k8s.io/api/core/v1"
-
 type QoSClass string
 
+// https://koordinator.sh/docs/architecture/qos/
 const (
 	QoSLSE    QoSClass = "LSE"
 	QoSLSR    QoSClass = "LSR"
@@ -28,21 +27,6 @@ const (
 	QoSSystem QoSClass = "SYSTEM"
 	QoSNone   QoSClass = ""
 )
-
-func GetPodQoSClass(pod *corev1.Pod) QoSClass {
-	if pod == nil || pod.Labels == nil {
-		return QoSNone
-	}
-	return GetQoSClassByAttrs(pod.Labels, pod.Annotations)
-}
-
-func GetQoSClassByAttrs(labels, annotations map[string]string) QoSClass {
-	// annotations are for old format adaption reason
-	if q, exist := labels[LabelPodQoS]; exist {
-		return GetPodQoSClassByName(q)
-	}
-	return QoSNone
-}
 
 func GetPodQoSClassByName(qos string) QoSClass {
 	q := QoSClass(qos)
