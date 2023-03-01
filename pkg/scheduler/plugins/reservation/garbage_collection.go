@@ -31,6 +31,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 const (
@@ -52,10 +53,10 @@ func (p *Plugin) gcReservations() {
 			if err = p.expireReservation(r); err != nil {
 				klog.Warningf("failed to update reservation %s as expired, err: %s", klog.KObj(r), err)
 			}
-		} else if util.IsReservationActive(r) {
+		} else if reservationutil.IsReservationActive(r) {
 			// sync active reservation for correct owner statuses
 			p.syncActiveReservation(r)
-		} else if util.IsReservationExpired(r) || util.IsReservationSucceeded(r) {
+		} else if reservationutil.IsReservationExpired(r) || reservationutil.IsReservationSucceeded(r) {
 			p.reservationCache.AddToInactive(r)
 		}
 	}
@@ -127,7 +128,7 @@ func (p *Plugin) expireReservation(r *schedulingv1alpha1.Reservation) error {
 
 func (p *Plugin) syncActiveReservation(r *schedulingv1alpha1.Reservation) {
 	var actualOwners, missedOwners []corev1.ObjectReference
-	actualAllocated := util.NewZeroResourceList()
+	var actualAllocated corev1.ResourceList
 	for _, owner := range r.Status.CurrentOwners {
 		pod, err := p.podLister.Pods(owner.Namespace).Get(owner.Name)
 		if err != nil {
@@ -185,7 +186,7 @@ func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
 		}
 
 		// check if the reservation is still scheduled; succeeded ones are ignored to update
-		if !util.IsReservationAvailable(r) {
+		if !reservationutil.IsReservationAvailable(r) {
 			klog.V(4).InfoS("skip sync for reservation no longer available or scheduled",
 				"reservation", klog.KObj(r))
 			return nil

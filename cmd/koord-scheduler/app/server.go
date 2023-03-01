@@ -61,14 +61,15 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/eventhandlers"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/sharedlisterext"
 	utilroutes "github.com/koordinator-sh/koordinator/pkg/util/routes"
 )
 
 // Option configures a framework.Registry.
-type Option func(frameworkext.ExtendedHandle, runtime.Registry) error
+type Option func(*frameworkext.FrameworkExtenderFactory, runtime.Registry) error
 
 // NewSchedulerCommand creates a *cobra.Command object with default parameters and registryOptions
-func NewSchedulerCommand(schedulingHooks []frameworkext.SchedulingPhaseHook, registryOptions ...Option) *cobra.Command {
+func NewSchedulerCommand(registryOptions ...Option) *cobra.Command {
 	opts := options.NewOptions()
 
 	cmd := &cobra.Command{
@@ -81,7 +82,7 @@ scenarios,ensuring the runtime quality of different workloads and users' demands
 for cost reduction and efficiency enhancement.
 `,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := runCommand(cmd, opts, schedulingHooks, registryOptions...); err != nil {
+			if err := runCommand(cmd, opts, registryOptions...); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
@@ -114,7 +115,7 @@ for cost reduction and efficiency enhancement.
 }
 
 // runCommand runs the scheduler.
-func runCommand(cmd *cobra.Command, opts *options.Options, schedulingHooks []frameworkext.SchedulingPhaseHook, registryOptions ...Option) error {
+func runCommand(cmd *cobra.Command, opts *options.Options, registryOptions ...Option) error {
 	verflag.PrintAndExitIfRequested()
 	cliflag.PrintFlags(cmd.Flags())
 
@@ -126,7 +127,7 @@ func runCommand(cmd *cobra.Command, opts *options.Options, schedulingHooks []fra
 		cancel()
 	}()
 
-	cc, sched, extendedHandle, err := Setup(ctx, opts, schedulingHooks, registryOptions...)
+	cc, sched, extendedHandle, err := Setup(ctx, opts, registryOptions...)
 	if err != nil {
 		return err
 	}
@@ -135,7 +136,7 @@ func runCommand(cmd *cobra.Command, opts *options.Options, schedulingHooks []fra
 }
 
 // Run executes the scheduler based on the given configuration. It only returns on error or when context is done.
-func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *scheduler.Scheduler, extendedHandle frameworkext.ExtendedHandle) error {
+func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *scheduler.Scheduler, extenderFactory *frameworkext.FrameworkExtenderFactory) error {
 	// To help debugging, immediately log version
 	klog.V(1).InfoS("Starting Koordinator Scheduler version", "version", version.Get())
 
@@ -203,7 +204,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 		cc.LeaderElection.Callbacks = leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				close(waitingForLeader)
-				go extendedHandle.Run()
+				go extenderFactory.Run()
 				sched.Run(ctx)
 			},
 			OnStoppedLeading: func() {
@@ -230,7 +231,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 
 	// Leader election is disabled, so runCommand inline until done.
 	close(waitingForLeader)
-	go extendedHandle.Run()
+	go extenderFactory.Run()
 	sched.Run(ctx)
 	return fmt.Errorf("finished without leader elect")
 }
@@ -311,13 +312,13 @@ func getRecorderFactory(cc *schedulerserverconfig.CompletedConfig) profile.Recor
 // WithPlugin creates an Option based on plugin name and factory. Please don't remove this function: it is used to register out-of-tree plugins,
 // hence there are no references to it from the kubernetes scheduler code base.
 func WithPlugin(name string, factory runtime.PluginFactory) Option {
-	return func(handle frameworkext.ExtendedHandle, registry runtime.Registry) error {
-		return registry.Register(name, frameworkext.PluginFactoryProxy(handle, factory))
+	return func(extenderFactory *frameworkext.FrameworkExtenderFactory, registry runtime.Registry) error {
+		return registry.Register(name, frameworkext.PluginFactoryProxy(extenderFactory, factory))
 	}
 }
 
 // Setup creates a completed config and a scheduler based on the command args and options
-func Setup(ctx context.Context, opts *options.Options, schedulingHooks []frameworkext.SchedulingPhaseHook, outOfTreeRegistryOptions ...Option) (*schedulerserverconfig.CompletedConfig, *scheduler.Scheduler, frameworkext.ExtendedHandle, error) {
+func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions ...Option) (*schedulerserverconfig.CompletedConfig, *scheduler.Scheduler, *frameworkext.FrameworkExtenderFactory, error) {
 	if cfg, err := latest.Default(); err != nil {
 		return nil, nil, nil, err
 	} else {
@@ -338,10 +339,12 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 
 	// NOTE(joseph): K8s scheduling framework does not provide extension point for initialization.
 	// Currently, only by copying the initialization code and implementing custom initialization.
-	extendedHandle, err := frameworkext.NewExtendedHandle(
+	frameworkExtenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithServicesEngine(cc.ServicesEngine),
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
+		frameworkext.WithSharedListerFactory(sharedlisterext.NewSharedListerAdapter),
+		frameworkext.WithDefaultTransformers(frameworkext.DefaultTransformers...),
 	)
 	if err != nil {
 		return nil, nil, nil, err
@@ -349,7 +352,7 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 
 	outOfTreeRegistry := make(runtime.Registry)
 	for _, option := range outOfTreeRegistryOptions {
-		if err := option(extendedHandle, outOfTreeRegistry); err != nil {
+		if err := option(frameworkExtenderFactory, outOfTreeRegistry); err != nil {
 			return nil, nil, nil, err
 		}
 	}
@@ -387,16 +390,18 @@ func Setup(ctx context.Context, opts *options.Options, schedulingHooks []framewo
 	//  such as replacing some interfaces in Scheduler to implement custom logic
 
 	// extend framework to hook run plugin functions
-	extendedFrameworkFactory := frameworkext.NewFrameworkExtenderFactory(extendedHandle, schedulingHooks...)
-	for k, v := range sched.Profiles {
-		sched.Profiles[k] = extendedFrameworkFactory.New(v)
+	for k := range sched.Profiles {
+		extender := frameworkExtenderFactory.GetExtender(k)
+		if extender != nil {
+			sched.Profiles[k] = extender
+		}
 	}
 
 	schedulerInternalHandler := &eventhandlers.SchedulerInternalHandlerImpl{
 		Scheduler: sched,
 	}
-	eventhandlers.AddScheduleEventHandler(sched, schedulerInternalHandler, extendedHandle)
-	eventhandlers.AddReservationErrorHandler(sched, schedulerInternalHandler, extendedHandle)
+	eventhandlers.AddScheduleEventHandler(sched, schedulerInternalHandler, frameworkExtenderFactory.KoordinatorSharedInformerFactory())
+	eventhandlers.AddReservationErrorHandler(sched, schedulerInternalHandler, frameworkExtenderFactory.KoordinatorClientSet(), frameworkExtenderFactory.KoordinatorSharedInformerFactory())
 
-	return &cc, sched, extendedHandle, nil
+	return &cc, sched, frameworkExtenderFactory, nil
 }

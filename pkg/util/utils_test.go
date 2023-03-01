@@ -35,6 +35,7 @@ import (
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	clientschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 func Test_MergeCfg(t *testing.T) {
@@ -322,7 +323,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 			UID:  "123456",
 		},
 	}
-	testReservePod := NewReservePod(testR)
+	testReservePod := reservationutil.NewReservePod(testR)
 	type fields struct {
 		handle      framework.Handle
 		annotations map[string]string

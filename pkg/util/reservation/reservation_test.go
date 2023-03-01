@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package reservation
 
 import (
 	"testing"
@@ -398,236 +398,6 @@ func TestIsObjValidActiveReservation(t *testing.T) {
 	}
 }
 
-func TestSetReservationUnschedulable(t *testing.T) {
-	type args struct {
-		r   *schedulingv1alpha1.Reservation
-		msg string
-	}
-	tests := []struct {
-		name string
-		args args
-		want *schedulingv1alpha1.Reservation
-	}{
-		{
-			name: "add condition",
-			args: args{
-				r: &schedulingv1alpha1.Reservation{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "reserve-pod-0",
-					},
-					Spec: schedulingv1alpha1.ReservationSpec{
-						Owners: []schedulingv1alpha1.ReservationOwner{
-							{
-								Object: &corev1.ObjectReference{
-									Kind: "Pod",
-									Name: "test-pod-0",
-								},
-							},
-						},
-						TTL: &metav1.Duration{Duration: 30 * time.Minute},
-					},
-					Status: schedulingv1alpha1.ReservationStatus{
-						Phase: schedulingv1alpha1.ReservationPending,
-					},
-				},
-				msg: "unschedule msg",
-			},
-			want: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "reserve-pod-0",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "test-pod-0",
-							},
-						},
-					},
-					TTL: &metav1.Duration{Duration: 30 * time.Minute},
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					Phase: schedulingv1alpha1.ReservationPending,
-					Conditions: []schedulingv1alpha1.ReservationCondition{
-						{
-							Type:               schedulingv1alpha1.ReservationConditionScheduled,
-							Status:             schedulingv1alpha1.ConditionStatusFalse,
-							Reason:             schedulingv1alpha1.ReasonReservationUnschedulable,
-							Message:            "unschedule msg",
-							LastProbeTime:      metav1.Now(),
-							LastTransitionTime: metav1.Now(),
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "update condition",
-			args: args{
-				r: &schedulingv1alpha1.Reservation{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "reserve-pod-0",
-					},
-					Spec: schedulingv1alpha1.ReservationSpec{
-						Owners: []schedulingv1alpha1.ReservationOwner{
-							{
-								Object: &corev1.ObjectReference{
-									Kind: "Pod",
-									Name: "test-pod-0",
-								},
-							},
-						},
-						TTL: &metav1.Duration{Duration: 30 * time.Minute},
-					},
-					Status: schedulingv1alpha1.ReservationStatus{
-						Phase: schedulingv1alpha1.ReservationPending,
-						Conditions: []schedulingv1alpha1.ReservationCondition{
-							{
-								Type:               schedulingv1alpha1.ReservationConditionScheduled,
-								Status:             schedulingv1alpha1.ConditionStatusTrue,
-								Reason:             schedulingv1alpha1.ReasonReservationScheduled,
-								LastProbeTime:      metav1.Now(),
-								LastTransitionTime: metav1.Now(),
-							},
-						},
-					},
-				},
-				msg: "unschedule msg",
-			},
-			want: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "reserve-pod-0",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "test-pod-0",
-							},
-						},
-					},
-					TTL: &metav1.Duration{Duration: 30 * time.Minute},
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					Phase: schedulingv1alpha1.ReservationPending,
-					Conditions: []schedulingv1alpha1.ReservationCondition{
-						{
-							Type:               schedulingv1alpha1.ReservationConditionScheduled,
-							Status:             schedulingv1alpha1.ConditionStatusTrue,
-							Reason:             schedulingv1alpha1.ReasonReservationScheduled,
-							LastProbeTime:      metav1.Now(),
-							LastTransitionTime: metav1.Now(),
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "change condition",
-			args: args{
-				r: &schedulingv1alpha1.Reservation{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "reserve-pod-0",
-					},
-					Spec: schedulingv1alpha1.ReservationSpec{
-						Owners: []schedulingv1alpha1.ReservationOwner{
-							{
-								Object: &corev1.ObjectReference{
-									Kind: "Pod",
-									Name: "test-pod-0",
-								},
-							},
-						},
-						TTL: &metav1.Duration{Duration: 30 * time.Minute},
-					},
-					Status: schedulingv1alpha1.ReservationStatus{
-						Phase: schedulingv1alpha1.ReservationPending,
-						Conditions: []schedulingv1alpha1.ReservationCondition{
-							{
-								Type:               schedulingv1alpha1.ReservationConditionScheduled,
-								Status:             schedulingv1alpha1.ConditionStatusFalse,
-								Reason:             schedulingv1alpha1.ReasonReservationUnschedulable,
-								Message:            "old unschedule msg",
-								LastProbeTime:      metav1.Now(),
-								LastTransitionTime: metav1.Now(),
-							},
-						},
-					},
-				},
-				msg: "unschedule msg",
-			},
-			want: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "reserve-pod-0",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "test-pod-0",
-							},
-						},
-					},
-					TTL: &metav1.Duration{Duration: 30 * time.Minute},
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					Phase: schedulingv1alpha1.ReservationPending,
-					Conditions: []schedulingv1alpha1.ReservationCondition{
-						{
-							Type:               schedulingv1alpha1.ReservationConditionScheduled,
-							Status:             schedulingv1alpha1.ConditionStatusFalse,
-							Reason:             schedulingv1alpha1.ReasonReservationUnschedulable,
-							Message:            "unschedule msg",
-							LastProbeTime:      metav1.Now(),
-							LastTransitionTime: metav1.Now(),
-						},
-					},
-				},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			SetReservationUnschedulable(tt.args.r, tt.args.msg)
-			assertEqualReservationCondition(t, tt.want, tt.args.r)
-		})
-	}
-}
-
-func assertEqualReservationCondition(t *testing.T, expect, got *schedulingv1alpha1.Reservation) {
-	if expect == nil && got == nil {
-		return
-	}
-	if expect == nil || got == nil {
-		if expect != got {
-			t.Errorf("reservation condition not equal, expect %v, got %v", expect, got)
-		}
-		return
-	}
-	if len(expect.Status.Conditions) != len(got.Status.Conditions) {
-		t.Errorf("reservation condition not equal, expect len %v, got len %v", len(expect.Status.Conditions), len(got.Status.Conditions))
-		return
-	}
-	expectConditions := map[string]*schedulingv1alpha1.ReservationCondition{}
-	for i, condition := range expect.Status.Conditions {
-		expectConditions[string(condition.Type)] = &expect.Status.Conditions[i]
-	}
-	for _, condition := range got.Status.Conditions {
-		e, ok := expectConditions[string(condition.Type)]
-		if !ok {
-			t.Errorf("reservation condition not equal, got unexpect condition type %v", condition.Type)
-			continue
-		}
-		msg := "condition type " + string(condition.Type)
-		assert.Equal(t, e.Status, condition.Status, msg)
-		assert.Equal(t, e.Message, condition.Message, msg)
-		assert.Equal(t, e.Reason, condition.Reason, msg)
-	}
-}
-
 var _ cache.ResourceEventHandler = &fakePodHandler{}
 
 type fakePodHandler struct {
@@ -659,7 +429,7 @@ func (f *fakePodHandler) OnDelete(obj interface{}) {
 	}
 }
 
-func TestReservationToPodEventHandlerFuncs(t *testing.T) {
+func TestReservationToPodEventHandler(t *testing.T) {
 	testReservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-0",
@@ -693,14 +463,12 @@ func TestReservationToPodEventHandlerFuncs(t *testing.T) {
 		Obj: testReservation,
 	}
 	t.Run("test not panic", func(t *testing.T) {
-		h := &ReservationToPodEventHandlerFuncs{
-			FilterFunc: func(obj interface{}) bool {
+		h := NewReservationToPodEventHandler(
+			&fakePodHandler{t: t},
+			func(obj interface{}) bool {
 				return true
 			},
-			PodHandler: &fakePodHandler{
-				t: t,
-			},
-		}
+		)
 
 		h.OnAdd(testReservation)
 
@@ -709,9 +477,13 @@ func TestReservationToPodEventHandlerFuncs(t *testing.T) {
 		h.OnDelete(testReservation)
 		h.OnDelete(testDeletedFinalStateUnknown)
 
-		h.FilterFunc = func(obj interface{}) bool {
-			return false
-		}
+		h = NewReservationToPodEventHandler(
+			&fakePodHandler{t: t},
+			func(obj interface{}) bool {
+				return false
+			},
+		)
+
 		h.OnAdd(testReservation)
 		h.OnUpdate(testReservation, testReservation)
 		h.OnDelete(testReservation)
