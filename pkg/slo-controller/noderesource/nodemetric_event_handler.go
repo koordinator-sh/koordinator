@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -36,7 +37,7 @@ var _ handler.EventHandler = &EnqueueRequestForNodeMetric{}
 
 type EnqueueRequestForNodeMetric struct {
 	client.Client
-	syncContext *SyncContext
+	syncContext *framework.SyncContext
 }
 
 func (n *EnqueueRequestForNodeMetric) Create(e event.CreateEvent, q workqueue.RateLimitingInterface) {
