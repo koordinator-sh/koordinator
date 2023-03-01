@@ -57,6 +57,7 @@ import (
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	deschedulercontrollers "github.com/koordinator-sh/koordinator/pkg/descheduler/controllers"
 	deschedulercontrollersoptions "github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/options"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
 	frameworkruntime "github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
 )
@@ -291,6 +292,10 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		return record.NewEventRecorderAdapter(cc.Manager.GetEventRecorderFor(name))
 	}
 
+	evictionLimiter := evictions.NewEvictionLimiter(
+		cc.ComponentConfig.MaxNoOfPodsToEvictPerNode,
+		cc.ComponentConfig.MaxNoOfPodsToEvictPerNamespace)
+
 	desched, err := descheduler.New(
 		cc.Client,
 		cc.InformerFactory,
@@ -304,6 +309,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		descheduler.WithDryRun(cc.ComponentConfig.DryRun),
 		descheduler.WithDeschedulingInterval(cc.ComponentConfig.DeschedulingInterval.Duration),
 		descheduler.WithNodeSelector(cc.ComponentConfig.NodeSelector),
+		descheduler.WithEvictionLimiter(evictionLimiter),
 		descheduler.WithPodAssignedToNodeFn(podAssignedToNode(cc.Manager.GetClient())),
 		descheduler.WithBuildFrameworkCapturer(func(profile deschedulerconfig.DeschedulerProfile) {
 			completedProfiles = append(completedProfiles, profile)

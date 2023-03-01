@@ -83,6 +83,9 @@ type EvictOptions struct {
 	DeleteOptions *metav1.DeleteOptions
 }
 
+// TODO(joseph): The existing Evictor interface needs to be split.
+//  There can only be one Evictor.Evict globally, but there can be multiple Evictor.Filter and Evictor.PreEvictionFilter
+
 type Evictor interface {
 	Plugin
 	// Filter checks if a pod can be evicted
@@ -116,8 +119,4 @@ func FillEvictOptionsFromContext(ctx context.Context, options *EvictOptions) {
 
 func PluginNameWithContext(ctx context.Context, pluginName string) context.Context {
 	return context.WithValue(ctx, EvictionPluginNameContextKey, pluginName)
-}
-
-func EvictionReasonWithContext(ctx context.Context, reason string) context.Context {
-	return context.WithValue(ctx, EvictionReasonContextKey, reason)
 }

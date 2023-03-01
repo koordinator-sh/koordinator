@@ -23,66 +23,6 @@ import (
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// DefaultEvictorArgs holds arguments used to configure the DefaultEvictor plugin.
-type DefaultEvictorArgs struct {
-	metav1.TypeMeta
-
-	DryRun bool
-	// MaxNoOfPodsToEvictPerNode restricts maximum of pods to be evicted per node.
-	MaxNoOfPodsToEvictPerNode *int
-	// MaxNoOfPodsToEvictPerNamespace restricts maximum of pods to be evicted per namespace.
-	MaxNoOfPodsToEvictPerNamespace *int
-
-	// EvictFailedBarePods allows pods without ownerReferences and in failed phase to be evicted.
-	EvictFailedBarePods bool
-
-	// EvictLocalStoragePods allows pods using local storage to be evicted.
-	EvictLocalStoragePods bool
-
-	// EvictSystemCriticalPods allows eviction of pods of any priority (including Kubernetes system pods)
-	EvictSystemCriticalPods bool
-
-	// IgnorePVCPods prevents pods with PVCs from being evicted.
-	IgnorePvcPods bool
-
-	// NodeFit sets whether to consider taints, node selectors,
-	// and pod affinity when evicting. A pod whose tolerations, node selectors,
-	// and affinity match a node other than the one it is currently running on
-	// is evictable.
-	NodeFit bool
-	// PriorityThreshold represents a threshold for pod's priority class.
-	// Any pod whose priority class is lower is evictable.
-	PriorityThreshold *PriorityThreshold
-	// LabelSelector sets whether to apply label filtering when evicting.
-	// Any pod matching the label selector is considered evictable.
-	LabelSelector *metav1.LabelSelector
-}
-
-type PriorityThreshold struct {
-	Value *int32
-	Name  string
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// RemovePodsViolatingNodeAffinityArgs holds arguments used to configure the RemovePodsViolatingNodeAffinity plugin.
-type RemovePodsViolatingNodeAffinityArgs struct {
-	metav1.TypeMeta
-
-	Namespaces       *Namespaces
-	LabelSelector    *metav1.LabelSelector
-	NodeAffinityType []string
-}
-
-// Namespaces carries a list of included/excluded namespaces
-// for which a given strategy is applicable
-type Namespaces struct {
-	Include []string
-	Exclude []string
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
 // MigrationControllerArgs holds arguments used to configure the MigrationController
 type MigrationControllerArgs struct {
 	metav1.TypeMeta

@@ -36,9 +36,11 @@ import (
 )
 
 type frameworkImpl struct {
+	dryRun                    bool
 	clientSet                 clientset.Interface
 	kubeConfig                *restclient.Config
 	eventRecorder             events.EventRecorder
+	evictionLimiter           EvictionLimiter
 	sharedInformerFactory     informers.SharedInformerFactory
 	getPodsAssignedToNodeFunc framework.GetPodsAssignedToNodeFunc
 	deschedulePlugins         []framework.DeschedulePlugin
@@ -50,12 +52,20 @@ type frameworkImpl struct {
 type Option func(*frameworkOptions)
 
 type frameworkOptions struct {
+	dryRun                    bool
 	clientSet                 clientset.Interface
 	kubeConfig                *restclient.Config
 	eventRecorder             events.EventRecorder
 	sharedInformerFactory     informers.SharedInformerFactory
 	getPodsAssignedToNodeFunc framework.GetPodsAssignedToNodeFunc
+	evictionLimiter           EvictionLimiter
 	captureProfile            CaptureProfile
+}
+
+func WithDryRun(dryRun bool) Option {
+	return func(o *frameworkOptions) {
+		o.dryRun = dryRun
+	}
 }
 
 // WithClientSet sets clientSet for the scheduling Framework.
@@ -101,6 +111,12 @@ func WithEventRecorder(recorder events.EventRecorder) Option {
 	}
 }
 
+func WithEvictionLimiter(limiter EvictionLimiter) Option {
+	return func(o *frameworkOptions) {
+		o.evictionLimiter = limiter
+	}
+}
+
 func NewFramework(r Registry, profile *deschedulerconfig.DeschedulerProfile, opts ...Option) (framework.Handle, error) {
 	options := &frameworkOptions{}
 	for _, optFnc := range opts {
@@ -108,9 +124,11 @@ func NewFramework(r Registry, profile *deschedulerconfig.DeschedulerProfile, opt
 	}
 
 	f := &frameworkImpl{
+		dryRun:                    options.dryRun,
 		clientSet:                 options.clientSet,
 		kubeConfig:                options.kubeConfig,
 		eventRecorder:             options.eventRecorder,
+		evictionLimiter:           options.evictionLimiter,
 		sharedInformerFactory:     options.sharedInformerFactory,
 		getPodsAssignedToNodeFunc: options.getPodsAssignedToNodeFunc,
 	}
@@ -293,7 +311,12 @@ func (f *frameworkImpl) Evictor() framework.Evictor {
 	if len(f.evictorPlugins) == 0 {
 		panic("No Evictor plugin is registered in the frameworkImpl.")
 	}
-	return f.evictorPlugins[0]
+	evictorPlugin := f.evictorPlugins[0]
+	return &evictorProxy{
+		dryRun:          f.dryRun,
+		evictionLimiter: f.evictionLimiter,
+		evictor:         evictorPlugin,
+	}
 }
 
 func (f *frameworkImpl) GetPodsAssignedToNodeFunc() framework.GetPodsAssignedToNodeFunc {

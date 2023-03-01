@@ -205,19 +205,6 @@ func SetDefaults_DeschedulerConfiguration(obj *DeschedulerConfiguration) {
 	}
 }
 
-func SetDefaults_DefaultEvictorArgs(obj *DefaultEvictorArgs) {
-	// TODO(joseph): the current version disables the eviction ability by default
-	if obj.DryRun == nil {
-		obj.DryRun = pointer.Bool(true)
-	}
-}
-
-func SetDefaults_RemovePodsViolatingNodeAffinityArgs(obj *RemovePodsViolatingNodeAffinityArgs) {
-	if len(obj.NodeAffinityType) == 0 {
-		obj.NodeAffinityType = append(obj.NodeAffinityType, "requiredDuringSchedulingIgnoredDuringExecution")
-	}
-}
-
 func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 	if obj.MaxConcurrentReconciles == nil {
 		obj.MaxConcurrentReconciles = pointer.Int32(defaultMigrationControllerMaxConcurrentReconciles)

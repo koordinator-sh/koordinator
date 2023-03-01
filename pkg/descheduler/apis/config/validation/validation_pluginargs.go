@@ -27,23 +27,6 @@ import (
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 )
 
-func ValidateRemovePodsViolatingNodeAffinityArgs(path *field.Path, args *deschedulerconfig.RemovePodsViolatingNodeAffinityArgs) error {
-	var allErrs field.ErrorList
-
-	if len(args.NodeAffinityType) == 0 {
-		allErrs = append(allErrs, field.Invalid(path.Child("nodeAffinityType"), args.NodeAffinityType, "nodeAffinityType should not be empty"))
-	}
-	// At most one of include/exclude can be set
-	if args.Namespaces != nil && len(args.Namespaces.Include) > 0 && len(args.Namespaces.Exclude) > 0 {
-		allErrs = append(allErrs, field.Invalid(path.Child("namespaces"), args.Namespaces, "only one of Include/Exclude namespaces can be set"))
-	}
-
-	if len(allErrs) == 0 {
-		return nil
-	}
-	return allErrs.ToAggregate()
-}
-
 func ValidateMigrationControllerArgs(path *field.Path, args *deschedulerconfig.MigrationControllerArgs) error {
 	var allErrs field.ErrorList
 

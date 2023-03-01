@@ -28,58 +28,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/v1alpha2"
 )
 
-func TestValidateRemovePodsViolatingNodeAffinityArgs(t *testing.T) {
-	tests := []struct {
-		name    string
-		args    *v1alpha2.RemovePodsViolatingNodeAffinityArgs
-		wantErr bool
-	}{
-		{
-			name:    "default args",
-			args:    &v1alpha2.RemovePodsViolatingNodeAffinityArgs{},
-			wantErr: false,
-		},
-		{
-			name: "only include namespaces",
-			args: &v1alpha2.RemovePodsViolatingNodeAffinityArgs{
-				Namespaces: &v1alpha2.Namespaces{
-					Include: []string{"test-1", "test-2"},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "only exclude namespaces",
-			args: &v1alpha2.RemovePodsViolatingNodeAffinityArgs{
-				Namespaces: &v1alpha2.Namespaces{
-					Exclude: []string{"test-1", "test-2"},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid namespaces",
-			args: &v1alpha2.RemovePodsViolatingNodeAffinityArgs{
-				Namespaces: &v1alpha2.Namespaces{
-					Include: []string{"test-1", "test-2"},
-					Exclude: []string{"test-1", "test-2"},
-				},
-			},
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			v1alpha2.SetDefaults_RemovePodsViolatingNodeAffinityArgs(tt.args)
-			args := &deschedulerconfig.RemovePodsViolatingNodeAffinityArgs{}
-			assert.NoError(t, v1alpha2.Convert_v1alpha2_RemovePodsViolatingNodeAffinityArgs_To_config_RemovePodsViolatingNodeAffinityArgs(tt.args, args, nil))
-			if err := ValidateRemovePodsViolatingNodeAffinityArgs(nil, args); (err != nil) != tt.wantErr {
-				t.Errorf("ValidateRemovePodsViolatingNodeAffinityArgs() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestValidateMigrationControllerArgs(t *testing.T) {
 	tests := []struct {
 		name    string
