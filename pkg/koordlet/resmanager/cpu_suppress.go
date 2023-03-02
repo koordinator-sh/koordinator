@@ -160,7 +160,8 @@ func (r *CPUSuppress) applyBESuppressCPUSet(beCPUSet []int32, oldCPUSet []int32)
 	}
 	kubeletPolicy, err := apiext.GetKubeletCPUManagerPolicy(nodeTopo.Annotations)
 	if err != nil {
-		klog.Warningf("failed to get kubelet cpu manager policy, error %v", err)
+		klog.Errorf("failed to get kubelet cpu manager policy, error %v", err)
+		return fmt.Errorf("failed to get kubelet cpu manager policy, %w", err)
 	}
 	if kubeletPolicy.Policy == apiext.KubeletCPUManagerPolicyStatic {
 		r.recoverCPUSetIfNeed(koordletutil.PodCgroupPathRelativeDepth)
