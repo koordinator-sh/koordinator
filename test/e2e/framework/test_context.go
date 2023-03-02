@@ -188,6 +188,11 @@ type TestContextType struct {
 
 	// SnapshotControllerHTTPPort the port used for communicating with the snapshot controller HTTP endpoint.
 	SnapshotControllerHTTPPort int
+
+	// KoordinatorComponentNamespace is the namespace of the koordinator components deployed to.
+	KoordinatorComponentNamespace string
+	// SLOCtrlConfigMap is the name of the slo-controller configmap.
+	SLOCtrlConfigMap string
 }
 
 // NodeKillerConfig describes configuration of NodeKiller -- a utility to
@@ -326,6 +331,10 @@ func RegisterCommonFlags(flags *flag.FlagSet) {
 
 	flags.StringVar(&TestContext.SnapshotControllerPodName, "snapshot-controller-pod-name", "", "The pod name to use for identifying the snapshot controller in the kube-system namespace.")
 	flags.IntVar(&TestContext.SnapshotControllerHTTPPort, "snapshot-controller-http-port", 0, "The port to use for snapshot controller HTTP communication.")
+
+	// koordinator configs
+	flags.StringVar(&TestContext.KoordinatorComponentNamespace, "koordinator-component-namespace", "koordinator-system", "The namespace of the koordinator components deployed to.")
+	flags.StringVar(&TestContext.SLOCtrlConfigMap, "slo-config-name", "slo-controller-config", "The name of the slo-controller configmap.")
 }
 
 // RegisterClusterFlags registers flags specific to the cluster e2e test suite.
