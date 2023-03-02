@@ -36,9 +36,6 @@ import (
 )
 
 var (
-	sloConfigName      = "slo-controller-config"
-	sloConfigNamespace = "koordinator-system"
-
 	colocationEnabledConfigData = `{
   "enable": true,
   "cpuReclaimThresholdPercent": 60,
@@ -58,6 +55,7 @@ var _ = SIGDescribe("BatchResource", func() {
 	var nodeList *corev1.NodeList
 	var c clientset.Interface
 	var koordClient koordinatorclientset.Interface
+	var koordNamespace, sloConfigName string
 	var err error
 
 	f := framework.NewDefaultFramework("batchresource")
@@ -66,6 +64,8 @@ var _ = SIGDescribe("BatchResource", func() {
 	ginkgo.BeforeEach(func() {
 		c = f.ClientSet
 		koordClient = f.KoordinatorClientSet
+		koordNamespace = framework.TestContext.KoordinatorComponentNamespace
+		sloConfigName = framework.TestContext.SLOCtrlConfigMap
 
 		framework.Logf("get some nodes which are ready and schedulable")
 		nodeList, err = e2enode.GetReadySchedulableNodes(c)
@@ -79,16 +79,16 @@ var _ = SIGDescribe("BatchResource", func() {
 		framework.ConformanceIt("update batch resources in the node allocatable", func() {
 			ginkgo.By("Loading slo-controller-config in the cluster")
 			isConfigCreated := false
-			configMap, err := c.CoreV1().ConfigMaps(sloConfigNamespace).Get(context.TODO(), sloConfigName, metav1.GetOptions{})
+			configMap, err := c.CoreV1().ConfigMaps(koordNamespace).Get(context.TODO(), sloConfigName, metav1.GetOptions{})
 			if err == nil {
 				isConfigCreated = true
-				framework.Logf("successfully get slo-controller-config %s/%s", sloConfigNamespace, sloConfigName)
+				framework.Logf("successfully get slo-controller-config %s/%s", koordNamespace, sloConfigName)
 			} else if errors.IsNotFound(err) {
 				framework.Logf("cannot get slo-controller-config %s/%s, try to create a new one",
-					sloConfigNamespace, sloConfigName)
+					koordNamespace, sloConfigName)
 			} else {
 				framework.Failf("failed to get slo-controller-config %s/%s, got unexpected error: %v",
-					sloConfigNamespace, sloConfigName, err)
+					koordNamespace, sloConfigName, err)
 			}
 
 			// If configmap is created, try to patch it with colocation enabled.
@@ -106,14 +106,14 @@ var _ = SIGDescribe("BatchResource", func() {
 				}
 
 				if _, ok := rollbackData[apiext.ColocationConfigKey]; ok && needUpdate {
-					defer rollbackSLOConfigData(f, rollbackData)
+					defer rollbackSLOConfigData(f, koordNamespace, sloConfigName, rollbackData)
 				}
 
 				if needUpdate {
 					framework.Logf("colocation is not enabled in slo-controller-config, need update")
 					newConfigMap := configMap.DeepCopy()
 					newConfigMap.Data[apiext.ColocationConfigKey] = colocationEnabledConfigData
-					newConfigMapUpdated, err := c.CoreV1().ConfigMaps(sloConfigNamespace).Update(context.TODO(), newConfigMap, metav1.UpdateOptions{})
+					newConfigMapUpdated, err := c.CoreV1().ConfigMaps(koordNamespace).Update(context.TODO(), newConfigMap, metav1.UpdateOptions{})
 					framework.ExpectNoError(err)
 					framework.Logf("update slo-controller-config successfully, data: %v", newConfigMapUpdated.Data)
 					configMap = newConfigMapUpdated
@@ -124,12 +124,12 @@ var _ = SIGDescribe("BatchResource", func() {
 				framework.Logf("slo-controller-config does not exist, need create")
 				newConfigMap, err := manifest.ConfigMapFromManifest("slocontroller/slo-controller-config.yaml")
 				framework.ExpectNoError(err)
-				newConfigMapCreated, err := c.CoreV1().ConfigMaps(sloConfigNamespace).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
+				newConfigMapCreated, err := c.CoreV1().ConfigMaps(koordNamespace).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
 				framework.ExpectNoError(err)
 				framework.Logf("create slo-controller-config successfully, data: %v", newConfigMapCreated.Data)
 				configMap = newConfigMapCreated
 
-				defer rollbackSLOConfigObject(f)
+				defer rollbackSLOConfigObject(f, koordNamespace, sloConfigName)
 			}
 
 			ginkgo.By("Check node allocatable for batch resources")
@@ -221,7 +221,7 @@ func isNodeBatchResourcesValid(node *corev1.Node, nodeMetric *slov1alpha1.NodeMe
 }
 
 // restore the slo-controller-config by updating with the initial data
-func rollbackSLOConfigData(f *framework.Framework, rollbackData map[string]string) {
+func rollbackSLOConfigData(f *framework.Framework, sloConfigNamespace, sloConfigName string, rollbackData map[string]string) {
 	configMap, err := f.ClientSet.CoreV1().ConfigMaps(sloConfigNamespace).Get(context.TODO(), sloConfigName, metav1.GetOptions{})
 	framework.ExpectNoError(err)
 	newConfigMap := configMap.DeepCopy()
@@ -234,7 +234,7 @@ func rollbackSLOConfigData(f *framework.Framework, rollbackData map[string]strin
 }
 
 // delete slo-controller-config configmap if it does not exist initially
-func rollbackSLOConfigObject(f *framework.Framework) {
+func rollbackSLOConfigObject(f *framework.Framework, sloConfigNamespace, sloConfigName string) {
 	err := f.ClientSet.CoreV1().ConfigMaps(sloConfigNamespace).Delete(context.TODO(), sloConfigName, metav1.DeleteOptions{})
 	framework.ExpectNoError(err)
 	framework.Logf("finish deleting slo-controller-config")
