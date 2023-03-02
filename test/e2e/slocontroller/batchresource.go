@@ -124,6 +124,8 @@ var _ = SIGDescribe("BatchResource", func() {
 				framework.Logf("slo-controller-config does not exist, need create")
 				newConfigMap, err := manifest.ConfigMapFromManifest("slocontroller/slo-controller-config.yaml")
 				framework.ExpectNoError(err)
+				newConfigMap.SetNamespace(koordNamespace)
+				newConfigMap.SetName(sloConfigName)
 				newConfigMapCreated, err := c.CoreV1().ConfigMaps(koordNamespace).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
 				framework.ExpectNoError(err)
 				framework.Logf("create slo-controller-config successfully, data: %v", newConfigMapCreated.Data)
