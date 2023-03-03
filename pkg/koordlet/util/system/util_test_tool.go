@@ -222,15 +222,20 @@ func (c *FileTestUtil) WriteCgroupFileContents(taskDir string, r Resource, conte
 }
 
 func (c *FileTestUtil) ReadCgroupFileContentsInt(taskDir string, r Resource) *int64 {
-
 	c.SetCgroupsV2(IsCgroupV2Resource(r))
 
-	contents, err := CgroupFileRead(taskDir, r)
+	if supported, msg := r.IsSupported(taskDir); !supported {
+		err := ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
+		c.t.Fatal(err)
+	}
+
+	filePath := r.Path(taskDir)
+	contents, err := os.ReadFile(filePath)
 	if err != nil {
 		c.t.Fatal(err)
 	}
 
-	data, err := strconv.ParseInt(strings.TrimSpace(contents), 10, 64)
+	data, err := strconv.ParseInt(strings.TrimSpace(string(contents)), 10, 64)
 	if err != nil {
 		c.t.Fatal(err)
 	}
@@ -239,21 +244,15 @@ func (c *FileTestUtil) ReadCgroupFileContentsInt(taskDir string, r Resource) *in
 }
 
 func (c *FileTestUtil) ReadCgroupFileContents(taskDir string, r Resource) string {
-<<<<<<< HEAD
-
 	c.SetCgroupsV2(IsCgroupV2Resource(r))
 
-	contents, err := CgroupFileRead(taskDir, r)
-=======
 	if supported, msg := r.IsSupported(taskDir); !supported {
 		err := ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
 		c.t.Fatal(err)
 	}
-	filePath := r.Path(taskDir)
-	klog.V(5).Infof("read %s", filePath)
 
+	filePath := r.Path(taskDir)
 	data, err := os.ReadFile(filePath)
->>>>>>> 14a1d946 (cgrouprw)
 	if err != nil {
 		c.t.Fatal(err)
 	}

@@ -1414,15 +1414,9 @@ func assertCgroupResourceEqual(t *testing.T, expect, got []resourceexecutor.Reso
 
 func gotQOSStrategyFromFile(helper *system.FileTestUtil) *slov1alpha1.ResourceQOSStrategy {
 	strategy := &slov1alpha1.ResourceQOSStrategy{}
-<<<<<<< HEAD
-	strategy.LSRClass = readMemFromCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), helper)
-	strategy.LSClass = readMemFromCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), helper)
-	strategy.BEClass = readMemFromCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), helper)
-=======
-	strategy.LSRClass = readMemFromCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed))
-	strategy.LSClass = readMemFromCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable))
-	strategy.BEClass = readMemFromCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort))
->>>>>>> e961bf13 (cgroup-rw)
+	strategy.LSRClass = readMemFromCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), helper)
+	strategy.LSClass = readMemFromCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), helper)
+	strategy.BEClass = readMemFromCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), helper)
 	return strategy
 }
 
@@ -1439,17 +1433,6 @@ func readMemFromCgroupFile(parentDir string, helper *system.FileTestUtil) *slov1
 
 	// dynamic resources, calculate with pod request/limit=1GiB
 	// testingPodMemRequestLimitBytes = 1073741824
-<<<<<<< HEAD
-	minLimitPercent := helper.ReadCgroupFileContentsInt(parentDir, system.MemoryMin)
-	if minLimitPercent != nil {
-		resourceQoS.MemoryQOS.MinLimitPercent = pointer.Int64Ptr((*minLimitPercent) * 100 / testingPodMemRequestLimitBytes)
-	}
-	lowLimitPercent := helper.ReadCgroupFileContentsInt(parentDir, system.MemoryLow)
-	if lowLimitPercent != nil {
-		resourceQoS.MemoryQOS.LowLimitPercent = pointer.Int64Ptr((*lowLimitPercent) * 100 / testingPodMemRequestLimitBytes)
-	}
-	throttlingPercent := helper.ReadCgroupFileContentsInt(parentDir, system.MemoryHigh)
-=======
 	minLimitPercent, _ := cgroupFileReadIntforTest(parentDir, system.MemoryMin)
 	if minLimitPercent != nil {
 		resourceQoS.MemoryQOS.MinLimitPercent = pointer.Int64Ptr((*minLimitPercent) * 100 / testingPodMemRequestLimitBytes)
@@ -1459,26 +1442,16 @@ func readMemFromCgroupFile(parentDir string, helper *system.FileTestUtil) *slov1
 		resourceQoS.MemoryQOS.LowLimitPercent = pointer.Int64Ptr((*lowLimitPercent) * 100 / testingPodMemRequestLimitBytes)
 	}
 	throttlingPercent, _ := cgroupFileReadIntforTest(parentDir, system.MemoryHigh)
->>>>>>> 14a1d946 (cgrouprw)
 	if throttlingPercent != nil {
 		resourceQoS.MemoryQOS.ThrottlingPercent = pointer.Int64Ptr(0) // assert test setting disabled
 	}
 	// static resources
-<<<<<<< HEAD
-	resourceQoS.MemoryQOS.WmarkRatio = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryWmarkRatio)
-	resourceQoS.MemoryQOS.WmarkScalePermill = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryWmarkScaleFactor)
-	resourceQoS.MemoryQOS.WmarkMinAdj = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryWmarkMinAdj)
-	resourceQoS.MemoryQOS.PriorityEnable = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryUsePriorityOom)
-	resourceQoS.MemoryQOS.Priority = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryPriority)
-	resourceQoS.MemoryQOS.OomKillGroup = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryOomGroup)
-=======
 	resourceQoS.MemoryQOS.WmarkRatio, _ = cgroupFileReadIntforTest(parentDir, system.MemoryWmarkRatio)
 	resourceQoS.MemoryQOS.WmarkScalePermill, _ = cgroupFileReadIntforTest(parentDir, system.MemoryWmarkScaleFactor)
 	resourceQoS.MemoryQOS.WmarkMinAdj, _ = cgroupFileReadIntforTest(parentDir, system.MemoryWmarkMinAdj)
 	resourceQoS.MemoryQOS.PriorityEnable, _ = cgroupFileReadIntforTest(parentDir, system.MemoryUsePriorityOom)
 	resourceQoS.MemoryQOS.Priority, _ = cgroupFileReadIntforTest(parentDir, system.MemoryPriority)
 	resourceQoS.MemoryQOS.OomKillGroup, _ = cgroupFileReadIntforTest(parentDir, system.MemoryOomGroup)
->>>>>>> 14a1d946 (cgrouprw)
 
 	// assume NONE cfg equals to disabled
 	memoryQoSDisabled := reflect.DeepEqual(util.NoneMemoryQOS(), &resourceQoS.MemoryQOS)
