@@ -24,9 +24,9 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -181,7 +181,7 @@ func (c *ContainerContext) injectForOrigin() {
 	}
 	if c.Response.Resources.CPUSet != nil {
 		err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet)
-		if err != nil && system.IsCgroupDirErr(err) {
+		if err != nil && resourceexecutor.IsCgroupDirErr(err) {
 			klog.V(5).Infof("set container %v/%v/%v cpuset %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CPUSet, c.Request.CgroupParent, err)
 		} else if err != nil {

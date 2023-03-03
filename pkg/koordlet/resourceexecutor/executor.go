@@ -119,7 +119,7 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(cacheable bool, updaters
 			}
 
 			mergedUpdater, err := updater.MergeUpdate()
-			if err != nil && (sysutil.IsResourceUnsupportedErr(err) || sysutil.IsCgroupDirErr(err)) {
+			if err != nil && (sysutil.IsResourceUnsupportedErr(err) || IsCgroupDirErr(err)) {
 				klog.V(5).Infof("failed merge update resource %s, err: %v", updater.Key(), err)
 				continue
 			} else if err != nil {
@@ -155,7 +155,7 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(cacheable bool, updaters
 				continue
 			}
 			err = updater.Update()
-			if err != nil && (sysutil.IsResourceUnsupportedErr(err) || sysutil.IsCgroupDirErr(err)) {
+			if err != nil && (sysutil.IsResourceUnsupportedErr(err) || IsCgroupDirErr(err)) {
 				klog.V(5).Infof("failed update resource %s, err: %v", updater.Key(), err)
 				continue
 			} else if err != nil {

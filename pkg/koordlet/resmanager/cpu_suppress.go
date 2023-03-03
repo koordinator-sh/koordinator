@@ -414,9 +414,9 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 	newBeQuota := cpuQuantity.MilliValue() * cfsPeriod / 1000
 	newBeQuota = int64(math.Max(float64(newBeQuota), float64(beMinQuota)))
 
-	beCgroupPath := koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
+	beCgroupPath := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
 	// read current offline quota
-	currentBeQuota, err := system.CgroupFileReadInt(beCgroupPath, system.CPUCFSQuota)
+	currentBeQuota, err := r.cgroupReader.ReadCPUQuota(beCgroupPath)
 	if err != nil {
 		klog.Warningf("suppressBECPU fail:get currentBeQuota fail,error: %v", err)
 		return
@@ -424,15 +424,15 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 
 	minQuotaDelta := float64(node.Status.Capacity.Cpu().Value()) * float64(cfsPeriod) * suppressBypassQuotaDeltaRatio
 	//  delta is large enough
-	if math.Abs(float64(newBeQuota)-float64(*currentBeQuota)) < minQuotaDelta && newBeQuota != beMinQuota {
+	if math.Abs(float64(newBeQuota)-float64(currentBeQuota)) < minQuotaDelta && newBeQuota != beMinQuota {
 		klog.Infof("suppressBECPU: quota delta is too small, bypass suppress.reason: current quota: %d, target quota: %d, min quota delta: %f",
-			*currentBeQuota, newBeQuota, minQuotaDelta)
+			currentBeQuota, newBeQuota, minQuotaDelta)
 		return
 	}
 
 	beMaxIncreaseCPUQuota := float64(node.Status.Capacity.Cpu().Value()) * float64(cfsPeriod) * beMaxIncreaseCPUPercent
-	if float64(newBeQuota)-float64(*currentBeQuota) > beMaxIncreaseCPUQuota {
-		newBeQuota = *currentBeQuota + int64(beMaxIncreaseCPUQuota)
+	if float64(newBeQuota)-float64(currentBeQuota) > beMaxIncreaseCPUQuota {
+		newBeQuota = currentBeQuota + int64(beMaxIncreaseCPUQuota)
 	}
 
 	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, beCgroupPath, strconv.FormatInt(newBeQuota, 10))

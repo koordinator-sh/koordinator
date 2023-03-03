@@ -171,7 +171,7 @@ func (m *CgroupResourcesReconcile) calculateQoSResources(summary *cgroupResource
 		return nil
 	}
 
-	qosDir := koordletutil.GetKubeQosRelativePath(qos)
+	qosDir := koordletutil.GetPodQoSRelativePath(qos)
 
 	// Mem QoS
 	if qosCfg.MemoryQOS != nil {

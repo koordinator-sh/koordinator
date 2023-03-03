@@ -17,9 +17,6 @@ limitations under the License.
 package util
 
 import (
-	"os"
-	"path/filepath"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -112,6 +109,7 @@ func Test_GetRootCgroupCPUSetDirWithCgroupfsDriver(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 func Test_GetRootCgroupCurCPUSet(t *testing.T) {
 	// prepare testing tmp files
 	cgroupRootDir := t.TempDir()
@@ -148,6 +146,8 @@ func Test_GetRootCgroupCurCPUSet(t *testing.T) {
 	}
 }
 
+=======
+>>>>>>> e961bf13 (cgroup-rw)
 func Test_GetPodKubeRelativePath(t *testing.T) {
 	system.SetupCgroupPathFormatter(system.Systemd)
 	system.Conf = system.NewDsModeConfig()

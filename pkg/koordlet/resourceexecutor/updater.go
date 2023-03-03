@@ -328,7 +328,7 @@ func (f *CgroupUpdaterFactoryImpl) New(resourceType sysutil.ResourceType, parent
 func CommonCgroupUpdateFunc(resource ResourceUpdater) error {
 	c := resource.(*CgroupResourceUpdater)
 	_ = audit.V(5).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
-	return sysutil.CgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+	return cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
 }
 
 func CommonDefaultUpdateFunc(resource ResourceUpdater) error {
@@ -345,7 +345,7 @@ func CgroupUpdateWithUnlimitedFunc(resource ResourceUpdater) error {
 		c.value = "max"
 	}
 	_ = audit.V(5).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
-	return sysutil.CgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+	return cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
 }
 
 func CgroupUpdateCPUSharesFunc(resource ResourceUpdater) error {
@@ -359,7 +359,7 @@ func CgroupUpdateCPUSharesFunc(resource ResourceUpdater) error {
 		c.value = strconv.FormatInt(v, 10)
 	}
 	_ = audit.V(5).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
-	return sysutil.CgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+	return cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
 }
 
 type MergeConditionFunc func(oldValue, newValue string) (mergedValue string, needMerge bool, err error)
@@ -373,7 +373,7 @@ func MergeFuncUpdateCgroup(resource ResourceUpdater, mergeCondition MergeConditi
 		return resource, fmt.Errorf("parse new value failed, err: %v", msg)
 	}
 
-	oldStr, err := sysutil.CgroupFileRead(c.parentDir, c.file)
+	oldStr, err := cgroupFileRead(c.parentDir, c.file)
 	if err != nil {
 		klog.V(6).Infof("failed to merge update cgroup %v, read old value err: %s", c.Path(), err)
 		return resource, err
@@ -398,7 +398,7 @@ func MergeFuncUpdateCgroup(resource ResourceUpdater, mergeCondition MergeConditi
 	klog.V(6).Infof("merge update cgroup %v with merged value[%v], original new[%v], old[%v]",
 		c.Path(), mergedValue, c.value, oldStr)
 	// suppose current value is different
-	return resource, sysutil.CgroupFileWrite(c.parentDir, c.file, mergedValue)
+	return resource, cgroupFileWrite(c.parentDir, c.file, mergedValue)
 }
 
 // MergeConditionIfValueIsLarger returns a merge condition where only do update when the new value is larger.

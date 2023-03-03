@@ -36,7 +36,7 @@ type CgroupReader interface {
 	ReadMemoryLimit(parentDir string) (int64, error)
 	ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRaw, error)
 	ReadCPUTasks(parentDir string) ([]int32, error)
-	ReadPSI(parentDir string) (*sysutil.PSIByResource, error)
+	ReadPSI(parentDir string) (*PSIByResource, error)
 }
 
 var _ CgroupReader = &CgroupV1Reader{}
@@ -48,7 +48,7 @@ func (r *CgroupV1Reader) ReadCPUQuota(parentDir string) (int64, error) {
 	if !ok {
 		return -1, ErrResourceNotRegistered
 	}
-	return sysutil.ReadCgroupAndParseInt64(parentDir, resource)
+	return readCgroupAndParseInt64(parentDir, resource)
 }
 
 func (r *CgroupV1Reader) ReadCPUPeriod(parentDir string) (int64, error) {
@@ -56,7 +56,7 @@ func (r *CgroupV1Reader) ReadCPUPeriod(parentDir string) (int64, error) {
 	if !ok {
 		return -1, ErrResourceNotRegistered
 	}
-	return sysutil.ReadCgroupAndParseInt64(parentDir, resource)
+	return readCgroupAndParseInt64(parentDir, resource)
 }
 
 func (r *CgroupV1Reader) ReadCPUShares(parentDir string) (int64, error) {
@@ -64,10 +64,10 @@ func (r *CgroupV1Reader) ReadCPUShares(parentDir string) (int64, error) {
 	if !ok {
 		return -1, ErrResourceNotRegistered
 	}
-	return sysutil.ReadCgroupAndParseInt64(parentDir, resource)
+	return readCgroupAndParseInt64(parentDir, resource)
 }
 
-func (r *CgroupV1Reader) ReadPSI(parentDir string) (*sysutil.PSIByResource, error) {
+func (r *CgroupV1Reader) ReadPSI(parentDir string) (*PSIByResource, error) {
 	cpuPressureResource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.CPUAcctCPUPressureName)
 	if !ok {
 		return nil, ErrResourceNotRegistered
@@ -81,12 +81,12 @@ func (r *CgroupV1Reader) ReadPSI(parentDir string) (*sysutil.PSIByResource, erro
 		return nil, ErrResourceNotRegistered
 	}
 
-	paths := sysutil.PSIPath{
+	paths := PSIPath{
 		CPU: cpuPressureResource.Path(parentDir),
 		Mem: memPressureResource.Path(parentDir),
 		IO:  ioPressureResource.Path(parentDir),
 	}
-	psi, err := sysutil.GetPSIByResource(paths)
+	psi, err := getPSIByResource(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (r *CgroupV1Reader) ReadCPUSet(parentDir string) (*cpuset.CPUSet, error) {
 	if !ok {
 		return nil, ErrResourceNotRegistered
 	}
-	s, err := sysutil.CgroupFileRead(parentDir, resource)
+	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
@@ -115,7 +115,7 @@ func (r *CgroupV1Reader) ReadCPUAcctUsage(parentDir string) (uint64, error) {
 	if !ok {
 		return 0, ErrResourceNotRegistered
 	}
-	return sysutil.ReadCgroupAndParseUint64(parentDir, resource)
+	return readCgroupAndParseUint64(parentDir, resource)
 }
 
 func (r *CgroupV1Reader) ReadCPUStat(parentDir string) (*sysutil.CPUStatRaw, error) {
@@ -123,7 +123,7 @@ func (r *CgroupV1Reader) ReadCPUStat(parentDir string) (*sysutil.CPUStatRaw, err
 	if !ok {
 		return nil, ErrResourceNotRegistered
 	}
-	s, err := sysutil.CgroupFileRead(parentDir, resource)
+	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
@@ -140,7 +140,7 @@ func (r *CgroupV1Reader) ReadMemoryLimit(parentDir string) (int64, error) {
 	if !ok {
 		return -1, ErrResourceNotRegistered
 	}
-	v, err := sysutil.ReadCgroupAndParseInt64(parentDir, resource)
+	v, err := readCgroupAndParseInt64(parentDir, resource)
 	if err != nil {
 		return -1, err
 	}
@@ -156,7 +156,7 @@ func (r *CgroupV1Reader) ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRa
 	if !ok {
 		return nil, ErrResourceNotRegistered
 	}
-	s, err := sysutil.CgroupFileRead(parentDir, resource)
+	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
@@ -176,7 +176,7 @@ func (r *CgroupV1Reader) ReadCPUTasks(parentDir string) ([]int32, error) {
 		return nil, ErrResourceNotRegistered
 	}
 	// content: `7742\n10971\n11049\n11051...`
-	return sysutil.ReadCgroupAndParseInt32Slice(parentDir, resource)
+	return readCgroupAndParseInt32Slice(parentDir, resource)
 }
 
 var _ CgroupReader = &CgroupV2Reader{}
@@ -188,8 +188,8 @@ func (r *CgroupV2Reader) ReadCPUQuota(parentDir string) (int64, error) {
 	if !ok {
 		return -1, ErrResourceNotRegistered
 	}
-	s, err := sysutil.CgroupFileRead(parentDir, resource)
-	if err != nil && sysutil.IsCgroupDirErr(err) {
+	s, err := cgroupFileRead(parentDir, resource)
+	if err != nil && IsCgroupDirErr(err) {
 		return -1, err
 	} else if err != nil {
 		return -1, fmt.Errorf("cannot read cgroup file, err: %v", err)
@@ -208,7 +208,7 @@ func (r *CgroupV2Reader) ReadCPUPeriod(parentDir string) (int64, error) {
 	if !ok {
 		return -1, ErrResourceNotRegistered
 	}
-	s, err := sysutil.CgroupFileRead(parentDir, resource)
+	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
 		return -1, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
@@ -227,7 +227,7 @@ func (r *CgroupV2Reader) ReadCPUShares(parentDir string) (int64, error) {
 		return -1, ErrResourceNotRegistered
 	}
 
-	v, err := sysutil.ReadCgroupAndParseInt64(parentDir, resource)
+	v, err := readCgroupAndParseInt64(parentDir, resource)
 	if err != nil {
 		return -1, err
 	}
@@ -242,7 +242,7 @@ func (r *CgroupV2Reader) ReadCPUSet(parentDir string) (*cpuset.CPUSet, error) {
 	if !ok {
 		return nil, ErrResourceNotRegistered
 	}
-	s, err := sysutil.CgroupFileRead(parentDir, resource)
+	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
@@ -259,7 +259,7 @@ func (r *CgroupV2Reader) ReadCPUAcctUsage(parentDir string) (uint64, error) {
 	if !ok {
 		return 0, ErrResourceNotRegistered
 	}
-	s, err := sysutil.CgroupFileRead(parentDir, resource)
+	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
 		return 0, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
@@ -276,7 +276,7 @@ func (r *CgroupV2Reader) ReadCPUStat(parentDir string) (*sysutil.CPUStatRaw, err
 	if !ok {
 		return nil, ErrResourceNotRegistered
 	}
-	s, err := sysutil.CgroupFileRead(parentDir, resource)
+	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
@@ -293,7 +293,7 @@ func (r *CgroupV2Reader) ReadMemoryLimit(parentDir string) (int64, error) {
 	if !ok {
 		return -1, ErrResourceNotRegistered
 	}
-	return sysutil.ReadCgroupAndParseInt64(parentDir, resource)
+	return readCgroupAndParseInt64(parentDir, resource)
 }
 
 func (r *CgroupV2Reader) ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRaw, error) {
@@ -301,7 +301,7 @@ func (r *CgroupV2Reader) ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRa
 	if !ok {
 		return nil, ErrResourceNotRegistered
 	}
-	s, err := sysutil.CgroupFileRead(parentDir, resource)
+	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
@@ -319,10 +319,10 @@ func (r *CgroupV2Reader) ReadCPUTasks(parentDir string) ([]int32, error) {
 		return nil, ErrResourceNotRegistered
 	}
 	// content: `7742\n10971\n11049\n11051...`
-	return sysutil.ReadCgroupAndParseInt32Slice(parentDir, resource)
+	return readCgroupAndParseInt32Slice(parentDir, resource)
 }
 
-func (r *CgroupV2Reader) ReadPSI(parentDir string) (*sysutil.PSIByResource, error) {
+func (r *CgroupV2Reader) ReadPSI(parentDir string) (*PSIByResource, error) {
 	cpuPressureResource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.CPUAcctCPUPressureName)
 	if !ok {
 		return nil, ErrResourceNotRegistered
@@ -336,12 +336,12 @@ func (r *CgroupV2Reader) ReadPSI(parentDir string) (*sysutil.PSIByResource, erro
 		return nil, ErrResourceNotRegistered
 	}
 
-	paths := sysutil.PSIPath{
+	paths := PSIPath{
 		CPU: cpuPressureResource.Path(parentDir),
 		Mem: memPressureResource.Path(parentDir),
 		IO:  ioPressureResource.Path(parentDir),
 	}
-	psi, err := sysutil.GetPSIByResource(paths)
+	psi, err := getPSIByResource(paths)
 	if err != nil {
 		return nil, err
 	}

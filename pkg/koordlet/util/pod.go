@@ -24,6 +24,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -98,9 +99,9 @@ func GetPodCgroupCPUStatPath(podParentDir string) string {
 //    Mem: /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.pressure
 //    IO:  /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/io.pressure
 //  }
-func GetPodCgroupCPUAcctPSIPath(podParentDir string) system.PSIPath {
+func GetPodCgroupCPUAcctPSIPath(podParentDir string) resourceexecutor.PSIPath {
 	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.PSIPath{
+	return resourceexecutor.PSIPath{
 		CPU: system.GetCgroupFilePath(podPath, system.CPUAcctCPUPressure),
 		Mem: system.GetCgroupFilePath(podPath, system.CPUAcctMemoryPressure),
 		IO:  system.GetCgroupFilePath(podPath, system.CPUAcctIOPressure),

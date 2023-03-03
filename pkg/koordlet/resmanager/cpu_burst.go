@@ -325,7 +325,7 @@ func (b *CPUBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 			continue
 		}
 		containerCurCFS, err := b.cgroupReader.ReadCPUQuota(containerPath)
-		if err != nil && system.IsCgroupDirErr(err) {
+		if err != nil && resourceexecutor.IsCgroupDirErr(err) {
 			klog.V(5).Infof("get container %s/%s/%s current cfs quota failed, maybe not exist, skip this round, reason %v",
 				pod.Namespace, pod.Name, containerStat.Name, err)
 			continue

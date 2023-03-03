@@ -20,8 +20,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -29,6 +31,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -546,19 +549,19 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				},
 			},
 			want: []resourceexecutor.ResourceUpdater{
-				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), "0", true),
-				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), "0", true),
-				createCgroupResourceUpdater(t, system.MemoryPriorityName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), "0", false),
-				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), "0", false),
-				createCgroupResourceUpdater(t, system.MemoryOomGroupName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), "0", false),
-				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), "0", true),
-				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), "0", true),
-				createCgroupResourceUpdater(t, system.MemoryPriorityName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), "0", false),
-				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), "0", false),
-				createCgroupResourceUpdater(t, system.MemoryOomGroupName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), "0", false),
-				createCgroupResourceUpdater(t, system.MemoryPriorityName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), "0", false),
-				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), "0", false),
-				createCgroupResourceUpdater(t, system.MemoryOomGroupName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "0", false),
 			},
 			want1: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, podParentDirLS, "0", true),
@@ -616,10 +619,10 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				},
 			},
 			want: []resourceexecutor.ResourceUpdater{
-				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
-				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), "0", true),
-				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
-				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "0", true),
 			},
 			want1: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, podParentDirBE, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
@@ -690,12 +693,12 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				},
 			},
 			want: []resourceexecutor.ResourceUpdater{
-				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
-				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), "0", true),
-				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), "0", true),
-				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), "0", true),
-				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
-				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "0", true),
 			},
 			want1: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, podParentDirLS, "0", true),
@@ -770,10 +773,10 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				},
 			},
 			want: []resourceexecutor.ResourceUpdater{
-				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), true),
-				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), "0", true),
-				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), true),
-				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "0", true),
 			},
 			want1: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, podParentDirBE, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), true),
@@ -1411,16 +1414,22 @@ func assertCgroupResourceEqual(t *testing.T, expect, got []resourceexecutor.Reso
 
 func gotQOSStrategyFromFile(helper *system.FileTestUtil) *slov1alpha1.ResourceQOSStrategy {
 	strategy := &slov1alpha1.ResourceQOSStrategy{}
+<<<<<<< HEAD
 	strategy.LSRClass = readMemFromCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), helper)
 	strategy.LSClass = readMemFromCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), helper)
 	strategy.BEClass = readMemFromCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), helper)
+=======
+	strategy.LSRClass = readMemFromCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed))
+	strategy.LSClass = readMemFromCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable))
+	strategy.BEClass = readMemFromCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort))
+>>>>>>> e961bf13 (cgroup-rw)
 	return strategy
 }
 
 func initQOSCgroupFile(qos *slov1alpha1.ResourceQOSStrategy, helper *system.FileTestUtil) {
-	writeMemToCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), qos.LSRClass, helper)
-	writeMemToCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBurstable), qos.LSClass, helper)
-	writeMemToCgroupFile(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), qos.BEClass, helper)
+	writeMemToCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), qos.LSRClass, helper)
+	writeMemToCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), qos.LSClass, helper)
+	writeMemToCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), qos.BEClass, helper)
 }
 
 func readMemFromCgroupFile(parentDir string, helper *system.FileTestUtil) *slov1alpha1.ResourceQOS {
@@ -1430,6 +1439,7 @@ func readMemFromCgroupFile(parentDir string, helper *system.FileTestUtil) *slov1
 
 	// dynamic resources, calculate with pod request/limit=1GiB
 	// testingPodMemRequestLimitBytes = 1073741824
+<<<<<<< HEAD
 	minLimitPercent := helper.ReadCgroupFileContentsInt(parentDir, system.MemoryMin)
 	if minLimitPercent != nil {
 		resourceQoS.MemoryQOS.MinLimitPercent = pointer.Int64Ptr((*minLimitPercent) * 100 / testingPodMemRequestLimitBytes)
@@ -1439,16 +1449,36 @@ func readMemFromCgroupFile(parentDir string, helper *system.FileTestUtil) *slov1
 		resourceQoS.MemoryQOS.LowLimitPercent = pointer.Int64Ptr((*lowLimitPercent) * 100 / testingPodMemRequestLimitBytes)
 	}
 	throttlingPercent := helper.ReadCgroupFileContentsInt(parentDir, system.MemoryHigh)
+=======
+	minLimitPercent, _ := cgroupFileReadIntforTest(parentDir, system.MemoryMin)
+	if minLimitPercent != nil {
+		resourceQoS.MemoryQOS.MinLimitPercent = pointer.Int64Ptr((*minLimitPercent) * 100 / testingPodMemRequestLimitBytes)
+	}
+	lowLimitPercent, _ := cgroupFileReadIntforTest(parentDir, system.MemoryLow)
+	if lowLimitPercent != nil {
+		resourceQoS.MemoryQOS.LowLimitPercent = pointer.Int64Ptr((*lowLimitPercent) * 100 / testingPodMemRequestLimitBytes)
+	}
+	throttlingPercent, _ := cgroupFileReadIntforTest(parentDir, system.MemoryHigh)
+>>>>>>> 14a1d946 (cgrouprw)
 	if throttlingPercent != nil {
 		resourceQoS.MemoryQOS.ThrottlingPercent = pointer.Int64Ptr(0) // assert test setting disabled
 	}
 	// static resources
+<<<<<<< HEAD
 	resourceQoS.MemoryQOS.WmarkRatio = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryWmarkRatio)
 	resourceQoS.MemoryQOS.WmarkScalePermill = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryWmarkScaleFactor)
 	resourceQoS.MemoryQOS.WmarkMinAdj = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryWmarkMinAdj)
 	resourceQoS.MemoryQOS.PriorityEnable = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryUsePriorityOom)
 	resourceQoS.MemoryQOS.Priority = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryPriority)
 	resourceQoS.MemoryQOS.OomKillGroup = helper.ReadCgroupFileContentsInt(parentDir, system.MemoryOomGroup)
+=======
+	resourceQoS.MemoryQOS.WmarkRatio, _ = cgroupFileReadIntforTest(parentDir, system.MemoryWmarkRatio)
+	resourceQoS.MemoryQOS.WmarkScalePermill, _ = cgroupFileReadIntforTest(parentDir, system.MemoryWmarkScaleFactor)
+	resourceQoS.MemoryQOS.WmarkMinAdj, _ = cgroupFileReadIntforTest(parentDir, system.MemoryWmarkMinAdj)
+	resourceQoS.MemoryQOS.PriorityEnable, _ = cgroupFileReadIntforTest(parentDir, system.MemoryUsePriorityOom)
+	resourceQoS.MemoryQOS.Priority, _ = cgroupFileReadIntforTest(parentDir, system.MemoryPriority)
+	resourceQoS.MemoryQOS.OomKillGroup, _ = cgroupFileReadIntforTest(parentDir, system.MemoryOomGroup)
+>>>>>>> 14a1d946 (cgrouprw)
 
 	// assume NONE cfg equals to disabled
 	memoryQoSDisabled := reflect.DeepEqual(util.NoneMemoryQOS(), &resourceQoS.MemoryQOS)
@@ -1467,4 +1497,38 @@ func writeMemToCgroupFile(parentDir string, qos *slov1alpha1.ResourceQOS, helper
 	helper.WriteCgroupFileContents(parentDir, system.MemoryUsePriorityOom, strconv.FormatInt(*qos.MemoryQOS.PriorityEnable, 10))
 	helper.WriteCgroupFileContents(parentDir, system.MemoryPriority, strconv.FormatInt(*qos.MemoryQOS.Priority, 10))
 	helper.WriteCgroupFileContents(parentDir, system.MemoryOomGroup, strconv.FormatInt(*qos.MemoryQOS.OomKillGroup, 10))
+}
+
+// This function is only intended for testing functions within the current file. For specific read/write functionalities, please refer to the executor package.
+func cgroupFileReadIntforTest(cgroupTaskDir string, r system.Resource) (*int64, error) {
+	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
+		return nil, system.ResourceUnsupportedErr(fmt.Sprintf("read cgroup %s failed, msg: %s", r.ResourceType(), msg))
+	}
+	if exist, msg := resourceexecutor.IsCgroupPathExist(cgroupTaskDir, r); !exist {
+		return nil, resourceexecutor.ResourceCgroupDirErr(fmt.Sprintf("read cgroup %s failed, msg: %s", r.ResourceType(), msg))
+	}
+
+	filePath := r.Path(cgroupTaskDir)
+	klog.V(5).Infof("read %s", filePath)
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	dataStr := strings.Trim(string(data), "\n ")
+
+	if dataStr == "" {
+		return nil, fmt.Errorf("EmptyValueError")
+	}
+	if dataStr == "max" {
+		// compatible with cgroup valued "max"
+		data := int64(math.MaxInt64)
+		klog.V(6).Infof("read %s and got str value, considered as MaxInt64", r.Path(cgroupTaskDir))
+		return &data, nil
+	}
+	intData, err := strconv.ParseInt((dataStr), 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &intData, nil
 }

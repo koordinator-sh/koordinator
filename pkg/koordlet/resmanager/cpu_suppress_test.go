@@ -609,13 +609,13 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 
 			// prepare testing files
 			helper := system.NewFileTestUtil(t)
-			helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.CPUSet, tt.args.nodeCPUSet)
-			helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet, tt.args.preBECPUSet)
-			helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, strconv.FormatInt(tt.args.preBECFSQuota, 10))
-			helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, strconv.FormatInt(system.DefaultCPUCFSPeriod, 10))
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), system.CPUSet, tt.args.nodeCPUSet)
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet, tt.args.preBECPUSet)
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, strconv.FormatInt(tt.args.preBECFSQuota, 10))
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, strconv.FormatInt(system.DefaultCPUCFSPeriod, 10))
 			for _, podMeta := range tt.args.podMetas {
 				podMeta.CgroupDir = koordletutil.GetPodKubeRelativePath(podMeta.Pod)
-				helper.WriteCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), podMeta.CgroupDir), system.CPUSet, tt.args.preBECPUSet)
+				helper.WriteCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), podMeta.CgroupDir), system.CPUSet, tt.args.preBECPUSet)
 			}
 
 			r := &resmanager{
@@ -632,8 +632,8 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			cpuSuppress.suppressBECPU()
 
 			// checkCFSQuota
-			gotBECFSQuota := helper.ReadCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota)
-			assert.Equal(t, strconv.FormatInt(tt.wantBECFSQuota, 10), gotBECFSQuota, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort))
+			gotBECFSQuota := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota)
+			assert.Equal(t, strconv.FormatInt(tt.wantBECFSQuota, 10), gotBECFSQuota, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort))
 			gotCFSQuotaPolicy, exist := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)]
 			assert.Equal(t, tt.wantCFSQuotaPolicyStatus == nil, !exist, "check_CFSQuotaPolicyStatus_exist")
 			if tt.wantCFSQuotaPolicyStatus != nil {
@@ -646,12 +646,12 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			if tt.wantCPUSetPolicyStatus != nil {
 				assert.Equal(t, *tt.wantCPUSetPolicyStatus, gotCPUSetPolicyStatus, "check_CPUSetPolicyStatus_equal")
 			}
-			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 			assert.Equal(t, tt.wantBECPUSet, gotCPUSetBECgroup, "checkBECPUSet")
 			for _, podMeta := range tt.args.podMetas {
 				if util.GetKubeQosClass(podMeta.Pod) == corev1.PodQOSBestEffort {
-					gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), podMeta.CgroupDir), system.CPUSet)
-					assert.Equal(t, tt.wantBECPUSet, gotPodCPUSet, "checkPodCPUSet", filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), podMeta.CgroupDir))
+					gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), podMeta.CgroupDir), system.CPUSet)
+					assert.Equal(t, tt.wantBECPUSet, gotPodCPUSet, "checkPodCPUSet", filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), podMeta.CgroupDir))
 				}
 			}
 		})
@@ -973,10 +973,10 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 			cpuSuppress.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
 			gotPolicyStatus := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)]
 			assert.Equal(t, *tt.wantPolicyStatus, gotPolicyStatus, "checkStatus")
-			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 			assert.Equal(t, tt.wantCPUSet, gotCPUSetBECgroup, "checkBECPUSet")
 			for _, podDir := range podDirs {
-				gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
+				gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
 				assert.Equal(t, tt.wantCPUSet, gotPodCPUSet, "checkPodCPUSet")
 			}
 		})
@@ -1016,7 +1016,7 @@ func Test_cpuSuppress_recoverCFSQuotaIfNeed(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
-			beQosDir := koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
+			beQosDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
 			helper.CreateCgroupFile(beQosDir, system.CPUCFSQuota)
 
 			helper.WriteCgroupFileContents(beQosDir, system.CPUCFSQuota, strconv.FormatInt(tt.preBECfsQuota, 10))
@@ -1207,10 +1207,10 @@ func Test_cpuSuppress_applyCPUSetWithNonePolicy(t *testing.T) {
 
 	err = r.applyCPUSetWithNonePolicy(cpuset, oldCPUSet)
 	assert.NoError(t, err)
-	gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+	gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 	assert.Equal(t, wantCPUSetStr, gotCPUSetBECgroup, "checkBECPUSet")
 	for _, podDir := range podDirs {
-		gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
+		gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
 		assert.Equal(t, wantCPUSetStr, gotPodCPUSet, "checkPodCPUSet")
 	}
 }
@@ -1305,10 +1305,10 @@ func Test_cpuSuppress_adjustByCPUSet(t *testing.T) {
 
 			cpuSuppress.adjustByCPUSet(tt.args.cpusetQuantity, tt.args.nodeCPUInfo)
 
-			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 			assert.Equal(t, tt.wantCPUSet, gotCPUSetBECgroup, "checkBECPUSet")
 			for _, podDir := range podDirs {
-				gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
+				gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
 				assert.Equal(t, tt.wantCPUSet, gotPodCPUSet, "checkPodCPUSet")
 			}
 		})
@@ -1317,7 +1317,7 @@ func Test_cpuSuppress_adjustByCPUSet(t *testing.T) {
 
 func Test_cpuSuppress_adjustByCfsQuota(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
-	beQosDir := koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort)
+	beQosDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
 	helper.CreateCgroupFile(beQosDir, system.CPUCFSQuota)
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1393,9 +1393,9 @@ func Test_cpuSuppress_writeBECgroupsCPUSet(t *testing.T) {
 	testingPrepareBECgroupData(helper, podDirs, "1,2")
 
 	var dirPaths []string
-	dirPaths = append(dirPaths, koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort))
+	dirPaths = append(dirPaths, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort))
 	for _, podDir := range podDirs {
-		dirPaths = append(dirPaths, filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), podDir))
+		dirPaths = append(dirPaths, filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), podDir))
 	}
 
 	r := newTestCPUSuppress(nil)
@@ -1406,35 +1406,35 @@ func Test_cpuSuppress_writeBECgroupsCPUSet(t *testing.T) {
 	cpuSetStr := "0,1,2"
 	r.writeBECgroupsCPUSet(dirPaths, cpuSetStr, false)
 
-	gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+	gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 	assert.Equal(t, cpuSetStr, gotCPUSetBECgroup, "checkBECPUSet_reversed_false")
 	for _, podDir := range podDirs {
-		gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
+		gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
 		assert.Equal(t, cpuSetStr, gotPodCPUSet, "checkPodCPUSet_reversed_false")
 	}
 
 	cpuSetStr = "0,1"
 	r.writeBECgroupsCPUSet(dirPaths, cpuSetStr, true)
-	gotCPUSetBECgroup = helper.ReadCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+	gotCPUSetBECgroup = helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 	assert.Equal(t, cpuSetStr, gotCPUSetBECgroup, "checkBECPUSet_reversed_true")
 	for _, podDir := range podDirs {
-		gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
+		gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
 		assert.Equal(t, cpuSetStr, gotPodCPUSet, "checkPodCPUSet_reversed_true")
 	}
 }
 
 func testingPrepareBECgroupData(helper *system.FileTestUtil, podDirs []string, cpusets string) {
-	helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.CPUSet, cpusets)
-	helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet, cpusets)
+	helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), system.CPUSet, cpusets)
+	helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet, cpusets)
 	for _, podDir := range podDirs {
-		helper.WriteCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet, cpusets)
+		helper.WriteCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet, cpusets)
 	}
 }
 
 func testingPrepareBEContainerCgroupData(helper *system.FileTestUtil, groupDirs []string, cpusets string) {
-	helper.WriteCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet, cpusets)
+	helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet, cpusets)
 	for _, dir := range groupDirs {
-		helper.WriteCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), dir), system.CPUSet, cpusets)
+		helper.WriteCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), dir), system.CPUSet, cpusets)
 	}
 }
 
@@ -1629,14 +1629,14 @@ func TestCPUSuppress_applyBESuppressCPUSet(t *testing.T) {
 			err := r.applyBESuppressCPUSet(tt.args.beCPUSet, tt.args.oldCPUSet)
 
 			assert.NoError(t, err)
-			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 			assert.Equal(t, tt.wants.beDirCPUSet, gotCPUSetBECgroup, "checkBECPUSet")
 			for _, podDir := range podDirs {
-				gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
+				gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
 				assert.Equal(t, tt.wants.podDirCPUSet, gotPodCPUSet, "checkPodCPUSet")
 			}
 			for _, containerDir := range containerDirs {
-				gotContainerCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetKubeQosRelativePath(corev1.PodQOSBestEffort), containerDir), system.CPUSet)
+				gotContainerCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), containerDir), system.CPUSet)
 				assert.Equal(t, tt.wants.containerDirCPUSet, gotContainerCPUSet, "checkContainerCPUSet")
 			}
 		})

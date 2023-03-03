@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package system
+package resourceexecutor
 
 import (
 	"bufio"
@@ -28,6 +28,18 @@ import (
 )
 
 const psiLineFormat = "avg10=%f avg60=%f avg300=%f total=%d"
+
+type PSIPath struct {
+	CPU string
+	Mem string
+	IO  string
+}
+
+type PSIByResource struct {
+	CPU PSIStats
+	Mem PSIStats
+	IO  PSIStats
+}
 
 type PSILine struct {
 	Avg10  float64
@@ -43,22 +55,8 @@ type PSIStats struct {
 	FullSupported bool
 }
 
-func ReadPSI(pressureFilePath string) (PSIStats, error) {
-	fileContents, err := os.ReadFile(pressureFilePath)
-	if err != nil {
-		return PSIStats{}, err
-	}
-	//todo: delete these logs after panic handled
-	klog.V(4).Infof("read psi file contents: %s", string(fileContents))
-	stats, err := parsePSIStats(bytes.NewReader(fileContents))
-	if err != nil {
-		return PSIStats{}, err
-	}
-	return stats, nil
-}
-
 // parsePSIStats parses the specified file for pressure stall information.
-func parsePSIStats(r io.Reader) (PSIStats, error) {
+func ParsePSIStats(r io.Reader) (PSIStats, error) {
 	psiStats := PSIStats{}
 
 	scanner := bufio.NewScanner(r)
@@ -93,4 +91,37 @@ func parsePSIStats(r io.Reader) (PSIStats, error) {
 	}
 
 	return psiStats, nil
+}
+
+func getPSIByResource(paths PSIPath) (*PSIByResource, error) {
+	cpuStats, err := readPSI(paths.CPU)
+	if err != nil {
+		return nil, err
+	}
+	memStats, err := readPSI(paths.Mem)
+	if err != nil {
+		return nil, err
+	}
+	ioStats, err := readPSI(paths.IO)
+	if err != nil {
+		return nil, err
+	}
+	return &PSIByResource{
+		CPU: cpuStats,
+		Mem: memStats,
+		IO:  ioStats,
+	}, nil
+}
+
+func readPSI(pressureFilePath string) (PSIStats, error) {
+	fileContents, err := os.ReadFile(pressureFilePath)
+	if err != nil {
+		return PSIStats{}, err
+	}
+	klog.V(5).Infof("read psi file contents: %s, path is %v", string(fileContents), pressureFilePath)
+	stats, err := ParsePSIStats(bytes.NewReader(fileContents))
+	if err != nil {
+		return PSIStats{}, err
+	}
+	return stats, nil
 }

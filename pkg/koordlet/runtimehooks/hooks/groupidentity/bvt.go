@@ -64,7 +64,7 @@ func (b *bvtPlugin) SystemSupported() bool {
 		isBVTSupported, msg := false, "resource not found"
 		bvtResource, err := sysutil.GetCgroupResource(sysutil.CPUBVTWarpNsName)
 		if err == nil {
-			isBVTSupported, msg = bvtResource.IsSupported(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed))
+			isBVTSupported, msg = bvtResource.IsSupported(util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed))
 		}
 		bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
 		b.sysSupported = pointer.BoolPtr(isBVTSupported || sysutil.FileExists(bvtConfigPath))

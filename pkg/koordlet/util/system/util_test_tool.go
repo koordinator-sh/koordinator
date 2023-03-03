@@ -17,11 +17,14 @@ limitations under the License.
 package system
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"testing"
+
+	"k8s.io/klog/v2"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -191,6 +194,7 @@ func (c *FileTestUtil) CreateCgroupFile(taskDir string, r Resource) {
 	}
 }
 
+//This function is only intended for test functions. For specific read/write functionalities, please refer to the executor package.
 func (c *FileTestUtil) WriteCgroupFileContents(taskDir string, r Resource, contents string) {
 
 	c.SetCgroupsV2(IsCgroupV2Resource(r))
@@ -199,7 +203,19 @@ func (c *FileTestUtil) WriteCgroupFileContents(taskDir string, r Resource, conte
 	if !FileExists(filePath) {
 		c.CreateCgroupFile(taskDir, r)
 	}
-	err := CgroupFileWrite(taskDir, r, contents)
+
+	if supported, msg := r.IsSupported(taskDir); !supported {
+		err := ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
+		c.t.Fatal(err)
+	}
+	if valid, msg := r.IsValid(contents); !valid {
+		err := fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), contents, msg)
+		c.t.Fatal(err)
+	}
+	filePath = r.Path(taskDir)
+	klog.V(5).Infof("write %s [%s]", filePath, contents)
+
+	err := os.WriteFile(filePath, []byte(contents), 0644)
 	if err != nil {
 		c.t.Fatal(err)
 	}
@@ -223,13 +239,25 @@ func (c *FileTestUtil) ReadCgroupFileContentsInt(taskDir string, r Resource) *in
 }
 
 func (c *FileTestUtil) ReadCgroupFileContents(taskDir string, r Resource) string {
+<<<<<<< HEAD
 
 	c.SetCgroupsV2(IsCgroupV2Resource(r))
 
 	contents, err := CgroupFileRead(taskDir, r)
+=======
+	if supported, msg := r.IsSupported(taskDir); !supported {
+		err := ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
+		c.t.Fatal(err)
+	}
+	filePath := r.Path(taskDir)
+	klog.V(5).Infof("read %s", filePath)
+
+	data, err := os.ReadFile(filePath)
+>>>>>>> 14a1d946 (cgrouprw)
 	if err != nil {
 		c.t.Fatal(err)
 	}
+	contents := strings.Trim(string(data), "\n")
 	return contents
 }
 

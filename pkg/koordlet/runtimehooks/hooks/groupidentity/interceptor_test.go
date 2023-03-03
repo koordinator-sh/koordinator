@@ -425,7 +425,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
-			kubeQOSDir := util.GetKubeQosRelativePath(tt.args.kubeQOS)
+			kubeQOSDir := util.GetPodQoSRelativePath(tt.args.kubeQOS)
 			initCPUBvt(kubeQOSDir, 0, testHelper)
 			if tt.fields.initKernelGroupIdentity {
 				initKernelGroupIdentity(int64(tt.fields.initKernelGroupIdentityValue), testHelper)

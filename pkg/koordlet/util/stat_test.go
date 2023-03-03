@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -137,34 +138,11 @@ func Test_readPodCPUUsage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := readCPUAcctUsage(tt.args.podCgroupDir)
+			got, err := resourceexecutor.NewCgroupReader().ReadCPUAcctUsage(tt.args.podCgroupDir)
 			assert.Equal(t, tt.wantErr, err != nil)
 			assert.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func Test_GetPodCPUUsageNanoseconds(t *testing.T) {
-	tempDir := t.TempDir()
-	system.Conf = system.NewDsModeConfig()
-	_, err := GetPodCPUUsageNanoseconds(tempDir)
-	assert.NotNil(t, err)
-}
-
-func Test_GetContainerCPUUsageNanoseconds(t *testing.T) {
-	tempDir := t.TempDir()
-	system.Conf = system.NewDsModeConfig()
-	container := &corev1.ContainerStatus{ContainerID: "fakeid"}
-	_, err := GetContainerCPUUsageNanoseconds(tempDir, container)
-	assert.NotNil(t, err)
-}
-
-func Test_GetRootCgroupCPUUsageNanoseconds(t *testing.T) {
-	helper := system.NewFileTestUtil(t)
-	helper.WriteCgroupFileContents(GetKubeQosRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, getUsageContents())
-	got, err := GetRootCgroupCPUUsageNanoseconds(corev1.PodQOSBestEffort)
-	assert.NoError(t, err)
-	assert.Equal(t, uint64(1356232), got)
 }
 
 func Test_GetContainerCyclesAndInstructions(t *testing.T) {

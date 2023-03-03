@@ -18,13 +18,7 @@ package system
 
 import (
 	"fmt"
-	"math"
-	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
-
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -43,7 +37,6 @@ const (
 	CgroupMaxValueStr string = "9223372036854775807"
 )
 
-const EmptyValueError string = "EmptyValueError"
 const ErrCgroupDir = "cgroup path or file not exist"
 
 type CPUStatRaw struct {
@@ -68,205 +61,10 @@ func (m *MemoryStatRaw) Usage() int64 {
 	return m.InactiveAnon + m.ActiveAnon + m.Unevictable
 }
 
-// CgroupFileWriteIfDifferent writes the cgroup file if current value is different from the given value.
-// TODO: moved into resourceexecutor package and marked as private.
-func CgroupFileWriteIfDifferent(cgroupTaskDir string, r Resource, value string) error {
-	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
-		return ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
-	}
-	if valid, msg := r.IsValid(value); !valid {
-		return fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), value, msg)
-	}
-	if exist, msg := IsCgroupPathExist(cgroupTaskDir, r); !exist {
-		return ResourceCgroupDirErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
-	}
-
-	currentValue, currentErr := CgroupFileRead(cgroupTaskDir, r)
-	if currentErr != nil {
-		return currentErr
-	}
-	if value == currentValue || value == CgroupMaxValueStr && currentValue == CgroupMaxSymbolStr {
-		// compatible with cgroup valued "max"
-		klog.V(6).Infof("read before write %s and got str value, considered as MaxInt64", r.Path(cgroupTaskDir))
-		return nil
-	}
-	return CgroupFileWrite(cgroupTaskDir, r, value)
-}
-
-func IsCgroupPathExist(parentDir string, r Resource) (bool, string) {
-	filePath := r.Path(parentDir)
-	cgroupPath := filepath.Dir(filePath)
-	pathexists, _ := PathExists(cgroupPath)
-	if !pathexists {
-		klog.V(5).Infof("cgroup directory not exist, path: %v", cgroupPath)
-		return false, "cgroup path err"
-	}
-	fileexists, _ := PathExists(filePath)
-	if !fileexists && pathexists {
-		return false, "cgroup file err"
-	}
-	return true, ""
-}
-
-func ResourceCgroupDirErr(msg string) error {
-	return fmt.Errorf("%s, reason: %s", ErrCgroupDir, msg)
-}
-
-func IsCgroupDirErr(err error) bool {
-	return strings.HasPrefix(err.Error(), ErrCgroupDir)
-}
-
-// CgroupFileWrite writes the cgroup file with the given value.
-// TODO: moved into resourceexecutor package and marked as private.
-func CgroupFileWrite(cgroupTaskDir string, r Resource, value string) error {
-	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
-		return ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
-	}
-	if valid, msg := r.IsValid(value); !valid {
-		return fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), value, msg)
-	}
-	if exist, msg := IsCgroupPathExist(cgroupTaskDir, r); !exist {
-		return ResourceCgroupDirErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
-	}
-
-	filePath := r.Path(cgroupTaskDir)
-	klog.V(5).Infof("write %s [%s]", filePath, value)
-
-	return os.WriteFile(filePath, []byte(value), 0644)
-}
-
-// CgroupFileReadInt reads the cgroup file and returns an int64 value.
-// TODO: moved into resourceexecutor package and marked as private.
-func CgroupFileReadInt(cgroupTaskDir string, r Resource) (*int64, error) {
-	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
-		return nil, ResourceUnsupportedErr(fmt.Sprintf("read cgroup %s failed, msg: %s", r.ResourceType(), msg))
-	}
-
-	dataStr, err := CgroupFileRead(cgroupTaskDir, r)
-	if err != nil {
-		return nil, err
-	}
-	if dataStr == "" {
-		return nil, fmt.Errorf(EmptyValueError)
-	}
-	if dataStr == CgroupMaxSymbolStr {
-		// compatible with cgroup valued "max"
-		data := int64(math.MaxInt64)
-		klog.V(6).Infof("read %s and got str value, considered as MaxInt64", r.Path(cgroupTaskDir))
-		return &data, nil
-	}
-	data, err := strconv.ParseInt(strings.TrimSpace(dataStr), 10, 64)
-	if err != nil {
-		return nil, err
-	}
-	return &data, nil
-}
-
-// CgroupFileRead reads the cgroup file.
-// TODO: moved into resourceexecutor package and marked as private.
-func CgroupFileRead(cgroupTaskDir string, r Resource) (string, error) {
-	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
-		return "", ResourceUnsupportedErr(fmt.Sprintf("read cgroup %s failed, msg: %s", r.ResourceType(), msg))
-	}
-	if exist, msg := IsCgroupPathExist(cgroupTaskDir, r); !exist {
-		return "", ResourceCgroupDirErr(fmt.Sprintf("read cgroup %s failed, msg: %s", r.ResourceType(), msg))
-	}
-
-	filePath := r.Path(cgroupTaskDir)
-	klog.V(5).Infof("read %s", filePath)
-
-	data, err := os.ReadFile(filePath)
-	return strings.Trim(string(data), "\n"), err
-}
-
 // @cgroupTaskDir kubepods.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.shares
 func GetCgroupFilePath(cgroupTaskDir string, r Resource) string {
 	return r.Path(cgroupTaskDir)
-}
-
-func GetCgroupCurTasks(cgroupPath string) ([]int, error) {
-	var tasks []int
-	rawContent, err := os.ReadFile(cgroupPath)
-	if err != nil {
-		return nil, err
-	}
-	lines := strings.Split(string(rawContent), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if len(line) <= 0 {
-			continue
-		}
-		task, err := strconv.Atoi(line)
-		if err != nil {
-			return nil, err
-		}
-		tasks = append(tasks, task)
-	}
-	return tasks, nil
-}
-
-func ReadCgroupAndParseInt64(parentDir string, r Resource) (int64, error) {
-	s, err := CgroupFileRead(parentDir, r)
-	if err != nil && IsCgroupDirErr(err) {
-		return -1, err
-	} else if err != nil {
-		return -1, fmt.Errorf("cannot read cgroup file, err: %v", err)
-	}
-
-	// "max" means unlimited
-	if strings.Trim(s, "\n ") == CgroupMaxSymbolStr {
-		return -1, nil
-	}
-	// content: `%lld`
-	v, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return -1, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
-	}
-	return v, nil
-}
-
-func ReadCgroupAndParseUint64(parentDir string, r Resource) (uint64, error) {
-	s, err := CgroupFileRead(parentDir, r)
-	if err != nil {
-		return 0, fmt.Errorf("cannot read cgroup file, err: %v", err)
-	}
-
-	// "max" means unlimited
-	if strings.Trim(s, "\n ") == CgroupMaxSymbolStr {
-		return math.MaxInt64, nil
-	}
-	// content: `%llu`
-	v, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
-	}
-	return v, nil
-}
-
-// ReadCgroupAndParseInt32Slice reads the given cgroup content and parses it into an int32 slice.
-// e.g. content: "1\n23\n0\n4\n56789" -> []int32{ 1, 23, 0, 4, 56789 }
-func ReadCgroupAndParseInt32Slice(parentDir string, r Resource) ([]int32, error) {
-	s, err := CgroupFileRead(parentDir, r)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
-	}
-
-	// content: "%d\n%d\n%d\n..."
-	var values []int32
-	lines := strings.Split(s, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if len(line) <= 0 {
-			continue
-		}
-		v, err := strconv.ParseInt(line, 10, 32)
-		if err != nil {
-			return nil, fmt.Errorf("cannot parse cgroup value of line %s, err: %v", line, err)
-		}
-		values = append(values, int32(v))
-	}
-	return values, nil
 }
 
 func ParseCPUStatRaw(content string) (*CPUStatRaw, error) {
@@ -353,54 +151,6 @@ func ParseMemoryStatRaw(content string) (*MemoryStatRaw, error) {
 	}
 
 	return memoryStatRaw, nil
-}
-
-// ReadCPUStatRaw reads the cpu.stat under the given cgroup path.
-// DEPRECATED: use NewCgroupReader().ReadCPUStat() instead.
-func ReadCPUStatRaw(cgroupPath string) (*CPUStatRaw, error) {
-	content, err := os.ReadFile(cgroupPath)
-	if err != nil {
-		return nil, err
-	}
-
-	cpuThrottledRaw := &CPUStatRaw{}
-	lines := strings.Split(string(content), "\n")
-	counter := 0
-	for _, line := range lines {
-		lineItems := strings.Fields(line)
-		if len(lineItems) < 2 {
-			continue
-		}
-		key := lineItems[0]
-		val := lineItems[1]
-		switch key {
-		case "nr_periods":
-			if cpuThrottledRaw.NrPeriods, err = strconv.ParseInt(val, 10, 64); err != nil {
-				return nil, fmt.Errorf("parsec nr_periods field failed, path %s, raw content %s, err: %v",
-					cgroupPath, content, err)
-			}
-			counter++
-		case "nr_throttled":
-			if cpuThrottledRaw.NrThrottled, err = strconv.ParseInt(val, 10, 64); err != nil {
-				return nil, fmt.Errorf("parse nr_throttled field failed, path %s, raw content %s, err: %v",
-					cgroupPath, content, err)
-			}
-			counter++
-		case "throttled_time":
-			if cpuThrottledRaw.ThrottledNanoSeconds, err = strconv.ParseInt(val, 10, 64); err != nil {
-				return nil, fmt.Errorf("parse throttled_time field failed, path %s, raw content %s, err: %v",
-					cgroupPath, content, err)
-			}
-			counter++
-		}
-	}
-
-	if counter != 3 {
-		return nil, fmt.Errorf("parse cpu throttled iterms failed, path %s, raw content %s, err: %v",
-			cgroupPath, content, err)
-	}
-
-	return cpuThrottledRaw, nil
 }
 
 func CalcCPUThrottledRatio(curPoint, prePoint *CPUStatRaw) float64 {

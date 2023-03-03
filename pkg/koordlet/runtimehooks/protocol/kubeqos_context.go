@@ -31,7 +31,7 @@ type KubeQOSRequet struct {
 
 func (r *KubeQOSRequet) FromReconciler(kubeQOS corev1.PodQOSClass) {
 	r.KubeQOSClass = kubeQOS
-	r.CgroupParent = util.GetKubeQosRelativePath(kubeQOS)
+	r.CgroupParent = util.GetPodQoSRelativePath(kubeQOS)
 }
 
 type KubeQOSResponse struct {
