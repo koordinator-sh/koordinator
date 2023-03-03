@@ -25,7 +25,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -96,55 +95,6 @@ func Test_GetCPUStatUsageTicks(t *testing.T) {
 	t.Log("get cpu stat usage ticks ", cpuStatUsage)
 }
 
-func Test_readPodCPUUsage(t *testing.T) {
-	tempDir := t.TempDir()
-	tempInvalidPodCgroupDir := filepath.Join(tempDir, "no_cgroup")
-	tempPodStatPath := filepath.Join(tempDir, system.CPUAcctUsageName)
-	err := os.WriteFile(tempPodStatPath, []byte(getUsageContents()), 0666)
-	assert.NoError(t, err)
-	tempInvalidPodCgroupDir1 := filepath.Join(tempDir, "no_cgroup_1")
-	err = os.Mkdir(tempInvalidPodCgroupDir1, 0755)
-	assert.NoError(t, err)
-	tempPodInvalidStatPath := filepath.Join(tempInvalidPodCgroupDir1, system.CPUAcctUsageName)
-	err = os.WriteFile(tempPodInvalidStatPath, []byte(getInvalidUsageContents()), 0666)
-	assert.NoError(t, err)
-	type args struct {
-		podCgroupDir string
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    uint64
-		wantErr bool
-	}{
-		{
-			name:    "read illegal cpu usage path",
-			args:    args{podCgroupDir: tempInvalidPodCgroupDir},
-			want:    0,
-			wantErr: true,
-		},
-		{
-			name:    "read test cpu usage path",
-			args:    args{podCgroupDir: tempPodStatPath},
-			want:    1356232,
-			wantErr: false,
-		},
-		{
-			name:    "read invalid cpu usage content",
-			args:    args{podCgroupDir: tempPodInvalidStatPath},
-			want:    0,
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := resourceexecutor.NewCgroupReader().ReadCPUAcctUsage(tt.args.podCgroupDir)
-			assert.Equal(t, tt.wantErr, err != nil)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func Test_GetContainerCyclesAndInstructions(t *testing.T) {
 	tempDir := t.TempDir()
 	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
@@ -169,12 +119,4 @@ func Test_GetContainerPerfCollector(t *testing.T) {
 	}
 	_, err := GetContainerPerfCollector(tempDir, wrongContainerStatus, 1)
 	assert.NotNil(t, err)
-}
-
-func getUsageContents() string {
-	return "1356232"
-}
-
-func getInvalidUsageContents() string {
-	return "-987654321"
 }
