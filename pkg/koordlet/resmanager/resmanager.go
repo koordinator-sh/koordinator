@@ -21,8 +21,6 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -68,6 +66,7 @@ type resmanager struct {
 	podsEvicted                   *expireCache.Cache
 	kubeClient                    clientset.Interface
 	eventRecorder                 record.EventRecorder
+	evictVersion                  string
 }
 
 func (r *resmanager) getNodeSLOCopy() *slov1alpha1.NodeSLO {
@@ -75,7 +74,7 @@ func (r *resmanager) getNodeSLOCopy() *slov1alpha1.NodeSLO {
 }
 
 func NewResManager(cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.Interface, crdClient *koordclientset.Clientset, nodeName string,
-	statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache, collectResUsedIntervalSeconds int64) ResManager {
+	statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache, collectResUsedIntervalSeconds int64, evictVersion string) ResManager {
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
@@ -93,6 +92,7 @@ func NewResManager(cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.
 		kubeClient:                    kubeClient,
 		eventRecorder:                 recorder,
 		collectResUsedIntervalSeconds: collectResUsedIntervalSeconds,
+		evictVersion:                  evictVersion,
 	}
 	return r
 }
@@ -183,25 +183,19 @@ func (r *resmanager) evictPodIfNotEvicted(evictPod *corev1.Pod, node *corev1.Nod
 func (r *resmanager) evictPod(evictPod *corev1.Pod, node *corev1.Node, reason string, message string) bool {
 	podEvictMessage := fmt.Sprintf("evict Pod:%s, reason: %s, message: %v", evictPod.Name, reason, message)
 	_ = audit.V(0).Pod(evictPod.Namespace, evictPod.Name).Reason(reason).Message(message).Do()
-	podEvict := policyv1beta1.Eviction{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      evictPod.Name,
-			Namespace: evictPod.Namespace,
-		},
-	}
 
-	// TODO EvictV1 only supports k8s 1.22+, use EvictV1beta1 for compatible reason
-	if err := r.kubeClient.CoreV1().Pods(evictPod.Namespace).EvictV1beta1(context.TODO(), &podEvict); err == nil {
+	if err := util.EvictPodByVersion(context.TODO(), r.kubeClient, evictPod.Namespace, evictPod.Name, metav1.DeleteOptions{
+		GracePeriodSeconds: nil,
+		Preconditions:      metav1.NewUIDPreconditions(string(evictPod.UID))}, r.evictVersion); err == nil {
 		r.eventRecorder.Eventf(node, corev1.EventTypeWarning, evictPodSuccess, podEvictMessage)
 		metrics.RecordPodEviction(evictPod.Namespace, evictPod.Name, reason)
 		klog.Infof("evict pod %v/%v success, reason: %v", evictPod.Namespace, evictPod.Name, reason)
 		return true
-	} else if !errors.IsNotFound(err) {
+	} else {
 		r.eventRecorder.Eventf(node, corev1.EventTypeWarning, evictPodFail, podEvictMessage)
 		klog.Errorf("evict pod %v/%v failed, reason: %v, error: %v", evictPod.Namespace, evictPod.Name, reason, err)
 		return false
 	}
-	return true
 }
 
 // killContainers kills containers inside the pod

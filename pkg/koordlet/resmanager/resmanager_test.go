@@ -23,13 +23,17 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	coretesting "k8s.io/client-go/testing"
 	"k8s.io/component-base/featuregate"
 	"k8s.io/utils/pointer"
 
@@ -40,6 +44,7 @@ import (
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	expireCache "github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
 
@@ -57,7 +62,7 @@ func TestNewResManager(t *testing.T) {
 		statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 
-		r := NewResManager(NewDefaultConfig(), scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(framework.NewDefaultConfig().CollectResUsedIntervalSeconds))
+		r := NewResManager(NewDefaultConfig(), scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(framework.NewDefaultConfig().CollectResUsedIntervalSeconds), policyv1beta1.SchemeGroupVersion.String())
 		assert.NotNil(t, r)
 	})
 }
@@ -150,7 +155,7 @@ func Test_EvictPodsIfNotEvicted(t *testing.T) {
 
 	fakeRecorder := &FakeRecorder{}
 	client := clientsetfake.NewSimpleClientset()
-	r := &resmanager{eventRecorder: fakeRecorder, kubeClient: client, podsEvicted: expireCache.NewCacheDefault()}
+	r := &resmanager{eventRecorder: fakeRecorder, kubeClient: client, podsEvicted: expireCache.NewCacheDefault(), evictVersion: policyv1beta1.SchemeGroupVersion.Version}
 	stop := make(chan struct{})
 	err := r.podsEvicted.Run(stop)
 	assert.NoError(t, err)
@@ -176,7 +181,38 @@ func Test_EvictPodsIfNotEvicted(t *testing.T) {
 	assert.Equal(t, "", fakeRecorder.eventReason, "check evict duplication, no event send!")
 }
 
-func Test_evictPod(t *testing.T) {
+func setupFakeDiscoveryWithPolicyResource(fake *coretesting.Fake, groupVersion string) {
+	fake.AddReactor("get", "group", func(action coretesting.Action) (handled bool, ret runtime.Object, err error) {
+		fake.Resources = []*metav1.APIResourceList{
+			{
+				GroupVersion: groupVersion,
+				APIResources: []metav1.APIResource{
+					{
+						Name: apiext.EvictionSubResouceName,
+						Kind: apiext.EvictionKind,
+					},
+				},
+			},
+		}
+		return true, nil, nil
+	})
+	fake.AddReactor("get", "resource", func(action coretesting.Action) (handled bool, ret runtime.Object, err error) {
+		fake.Resources = []*metav1.APIResourceList{
+			{
+				GroupVersion: "v1",
+				APIResources: []metav1.APIResource{
+					{
+						Name: apiext.EvictionSubResouceName,
+						Kind: apiext.EvictionKind,
+					},
+				},
+			},
+		}
+		return true, nil, nil
+	})
+}
+
+func Test_evictPod_policy_v1beta1(t *testing.T) {
 	// test data
 	pod := createTestPod(apiext.QoSBE, "test_be_pod")
 	node := getNode("80", "120G")
@@ -190,10 +226,14 @@ func Test_evictPod(t *testing.T) {
 
 	fakeRecorder := &FakeRecorder{}
 	client := clientsetfake.NewSimpleClientset()
-	r := &resmanager{statesInformer: mockStatesInformer, eventRecorder: fakeRecorder, kubeClient: client}
+	setupFakeDiscoveryWithPolicyResource(&client.Fake, policyv1beta1.SchemeGroupVersion.String())
+	evictVersion, err := util.FindSupportedEvictVersion(client)
+	assert.Nil(t, err)
+
+	r := &resmanager{statesInformer: mockStatesInformer, eventRecorder: fakeRecorder, kubeClient: client, evictVersion: evictVersion}
 
 	// create pod
-	_, err := client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	_, err = client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 	assert.NoError(t, err)
 	// check pod
 	existPod, err := client.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
@@ -206,6 +246,71 @@ func Test_evictPod(t *testing.T) {
 	assert.NotNil(t, getEvictObject, "evictPod Fail", err)
 
 	assert.Equal(t, evictPodSuccess, fakeRecorder.eventReason, "expect evict success event! but got %s", fakeRecorder.eventReason)
+}
+
+func Test_evictPod_policy_v1(t *testing.T) {
+	// test data
+	pod := createTestPod(apiext.QoSBE, "test_be_pod")
+	node := getNode("80", "120G")
+	// env
+	ctl := gomock.NewController(t)
+	defer ctl.Finish()
+
+	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
+	mockStatesInformer.EXPECT().GetAllPods().Return(getPodMetas([]*corev1.Pod{pod})).AnyTimes()
+	mockStatesInformer.EXPECT().GetNode().Return(node).AnyTimes()
+
+	fakeRecorder := &FakeRecorder{}
+	client := clientsetfake.NewSimpleClientset()
+	setupFakeDiscoveryWithPolicyResource(&client.Fake, policyv1.SchemeGroupVersion.String())
+	evictVersion, err := util.FindSupportedEvictVersion(client)
+	assert.Nil(t, err)
+
+	r := &resmanager{statesInformer: mockStatesInformer, eventRecorder: fakeRecorder, kubeClient: client, evictVersion: evictVersion}
+
+	// create pod
+	_, err = client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+	// check pod
+	existPod, err := client.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
+	assert.NotNil(t, existPod, "pod exist in k8s!", err)
+
+	// evict success
+	r.evictPod(pod, node, "evict pod first", "")
+	getEvictObject, err := client.Tracker().Get(podsResource, pod.Namespace, pod.Name)
+	assert.NoError(t, err)
+	assert.NotNil(t, getEvictObject, "evictPod Fail", err)
+
+	assert.Equal(t, evictPodSuccess, fakeRecorder.eventReason, "expect evict success event! but got %s", fakeRecorder.eventReason)
+}
+
+func Test_evictPod_policy_none(t *testing.T) {
+	// test data
+	pod := createTestPod(apiext.QoSBE, "test_be_pod")
+	node := getNode("80", "120G")
+	// env
+	ctl := gomock.NewController(t)
+	defer ctl.Finish()
+
+	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
+	mockStatesInformer.EXPECT().GetAllPods().Return(getPodMetas([]*corev1.Pod{pod})).AnyTimes()
+	mockStatesInformer.EXPECT().GetNode().Return(node).AnyTimes()
+
+	fakeRecorder := &FakeRecorder{}
+	client := clientsetfake.NewSimpleClientset()
+
+	r := &resmanager{statesInformer: mockStatesInformer, eventRecorder: fakeRecorder, kubeClient: client}
+
+	// create pod
+	_, err := client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+	// check pod
+	existPod, err := client.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
+	assert.NotNil(t, existPod, "pod exist in k8s!", err)
+
+	// evict success
+	evicted := r.evictPod(pod, node, "evict pod first", "")
+	assert.False(t, evicted, "pod evicted", err)
 }
 
 func createTestPod(qosClass apiext.QoSClass, name string) *corev1.Pod {

@@ -392,7 +392,9 @@ func Test_memoryEvict(t *testing.T) {
 				eventRecorder:  fakeRecorder,
 				metricCache:    mockMetricCache,
 				kubeClient:     client,
-				config:         NewDefaultConfig()}
+				config:         NewDefaultConfig(),
+				evictVersion:   policyv1beta1.SchemeGroupVersion.Version,
+			}
 			stop := make(chan struct{})
 			_ = resmanager.podsEvicted.Run(stop)
 			defer func() { stop <- struct{}{} }()
