@@ -47,7 +47,7 @@ func Test_collectNodeMetricsAvg(t *testing.T) {
 		{
 			name:             "test no metrics in db",
 			windowSize:       4,
-			expectNodeMetric: nil,
+			expectNodeMetric: &metriccache.NodeResourceMetric{},
 		},
 		{
 			name: "test windowSize < dataInterval",
@@ -68,7 +68,7 @@ func Test_collectNodeMetricsAvg(t *testing.T) {
 				},
 			},
 			windowSize:       1,
-			expectNodeMetric: nil,
+			expectNodeMetric: &metriccache.NodeResourceMetric{},
 		},
 		{
 			name: "test windowSize > dataInterval",
@@ -143,7 +143,7 @@ func Test_collectNodeAndPodMetricLast(t *testing.T) {
 		{
 			name:             "test no metrics in db",
 			pod:              &statesinformer.PodMeta{Pod: createTestPod(extension.QoSLSR, "test_pod")},
-			expectNodeMetric: nil,
+			expectNodeMetric: &metriccache.NodeResourceMetric{},
 			expectPodMetric:  nil,
 		},
 		{
