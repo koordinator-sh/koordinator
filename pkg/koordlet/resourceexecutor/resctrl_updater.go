@@ -40,7 +40,7 @@ func (r *ResctrlSchemataResourceUpdater) Key() string {
 	return r.schemataRaw.Prefix() + r.file
 }
 
-func (r *ResctrlSchemataResourceUpdater) Update() error {
+func (r *ResctrlSchemataResourceUpdater) update() error {
 	return r.DefaultResourceUpdater.updateFunc(r)
 }
 

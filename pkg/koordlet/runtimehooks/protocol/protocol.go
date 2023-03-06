@@ -75,7 +75,8 @@ func injectCPUShares(cgroupParent string, cpuShares int64) error {
 	if err != nil {
 		return err
 	}
-	return updater.Update()
+	_, err = resourceexecutor.NewResourceUpdateExecutor().Update(false, updater)
+	return err
 }
 
 func injectCPUSet(cgroupParent string, cpuset string) error {
@@ -83,7 +84,8 @@ func injectCPUSet(cgroupParent string, cpuset string) error {
 	if err != nil {
 		return err
 	}
-	return updater.Update()
+	_, err = resourceexecutor.NewResourceUpdateExecutor().Update(false, updater)
+	return err
 }
 
 func injectCPUQuota(cgroupParent string, cpuQuota int64) error {
@@ -92,7 +94,8 @@ func injectCPUQuota(cgroupParent string, cpuQuota int64) error {
 	if err != nil {
 		return err
 	}
-	return updater.Update()
+	_, err = resourceexecutor.NewResourceUpdateExecutor().Update(false, updater)
+	return err
 }
 
 func injectMemoryLimit(cgroupParent string, memoryLimit int64) error {
@@ -101,7 +104,8 @@ func injectMemoryLimit(cgroupParent string, memoryLimit int64) error {
 	if err != nil {
 		return err
 	}
-	return updater.Update()
+	_, err = resourceexecutor.NewResourceUpdateExecutor().Update(false, updater)
+	return err
 }
 
 func injectCPUBvt(cgroupParent string, bvtValue int64) error {
@@ -110,5 +114,6 @@ func injectCPUBvt(cgroupParent string, bvtValue int64) error {
 	if err != nil {
 		return err
 	}
-	return updater.Update()
+	_, err = resourceexecutor.NewResourceUpdateExecutor().Update(false, updater)
+	return err
 }

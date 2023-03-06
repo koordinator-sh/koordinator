@@ -78,11 +78,11 @@ type ResourceUpdater interface {
 	Key() string
 	Path() string
 	Value() string
-	Update() error
 	MergeUpdate() (ResourceUpdater, error)
 	Clone() ResourceUpdater
 	GetLastUpdateTimestamp() time.Time
 	UpdateLastUpdateTimestamp(time time.Time)
+	update() error
 }
 
 type CgroupResourceUpdater struct {
@@ -117,7 +117,7 @@ func (u *CgroupResourceUpdater) Value() string {
 	return u.value
 }
 
-func (u *CgroupResourceUpdater) Update() error {
+func (u *CgroupResourceUpdater) update() error {
 	return u.updateFunc(u)
 }
 
@@ -176,7 +176,7 @@ func (u *DefaultResourceUpdater) Value() string {
 	return u.value
 }
 
-func (u *DefaultResourceUpdater) Update() error {
+func (u *DefaultResourceUpdater) update() error {
 	return u.updateFunc(u)
 }
 
