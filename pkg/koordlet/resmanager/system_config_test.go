@@ -25,9 +25,11 @@ import (
 	"k8s.io/utils/pointer"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
 
 func Test_systemConfig_reconcile(t *testing.T) {
@@ -130,14 +132,24 @@ func Test_systemConfig_reconcile(t *testing.T) {
 				config:         NewDefaultConfig(),
 			}
 
-			reconcile := NewSystemConfig(resmanager)
+			reconcile := &SystemConfig{
+				resmanager: resmanager,
+				executor: &resourceexecutor.ResourceUpdateExecutorImpl{
+					Config:        resourceexecutor.NewDefaultConfig(),
+					ResourceCache: cache.NewCacheDefault(),
+				},
+			}
+			stopCh := make(chan struct{})
+			defer func() {
+				close(stopCh)
+			}()
+			reconcile.executor.Run(stopCh)
 
 			reconcile.reconcile()
 			for file, expectValue := range tt.expect {
 				got, err := sysutil.CommonFileRead(file.Path(""))
 				assert.NoError(t, err, file.Path(""))
 				assert.Equal(t, expectValue, got, file.Path(""))
-
 			}
 		})
 	}
