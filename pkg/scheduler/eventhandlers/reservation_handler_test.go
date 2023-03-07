@@ -26,18 +26,24 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/informers"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/apis/core/validation"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
+	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 type fakeExtendHandle struct {
@@ -76,26 +82,33 @@ func TestAddReservationErrorHandler(t *testing.T) {
 			NodeName: testNodeName,
 		},
 	}
-	testPod := util.NewReservePod(testR)
+	testPod := reservationutil.NewReservePod(testR)
 
 	t.Run("test not panic", func(t *testing.T) {
-		sched := &scheduler.Scheduler{}
-		internalHandler := &fakeSchedulerInternalHandler{}
-		koordClientSet := koordfake.NewSimpleClientset(testR)
-		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-		extendHandle, _ := frameworkext.NewExtendedHandle(
-			frameworkext.WithKoordinatorClientSet(koordClientSet),
-			frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
-		)
+		registeredPlugins := []schedulertesting.RegisterPluginFunc{
+			schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+			schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		}
 
 		fakeRecorder := record.NewFakeRecorder(1024)
 		eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
-		feh := &fakeExtendHandle{
-			ExtendedHandle: extendHandle,
-			eventRecorder:  eventRecorder,
-		}
 
-		AddReservationErrorHandler(sched, internalHandler, feh)
+		fh, err := schedulertesting.NewFramework(registeredPlugins, "koord-scheduler",
+			frameworkruntime.WithEventRecorder(eventRecorder),
+			frameworkruntime.WithClientSet(kubefake.NewSimpleClientset()),
+			frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(kubefake.NewSimpleClientset(), 0)),
+		)
+		assert.Nil(t, err)
+		sched := &scheduler.Scheduler{
+			Profiles: profile.Map{
+				"default-scheduler": fh,
+			},
+		}
+		internalHandler := &fakeSchedulerInternalHandler{}
+		koordClientSet := koordfake.NewSimpleClientset(testR)
+		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+
+		AddReservationErrorHandler(sched, internalHandler, koordClientSet, koordSharedInformerFactory)
 
 		koordSharedInformerFactory.Start(nil)
 		koordSharedInformerFactory.WaitForCacheSync(nil)
@@ -127,11 +140,7 @@ func TestAddScheduleEventHandler(t *testing.T) {
 		internalHandler := &fakeSchedulerInternalHandler{}
 		koordClientSet := koordfake.NewSimpleClientset()
 		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-		extendHandle, _ := frameworkext.NewExtendedHandle(
-			frameworkext.WithKoordinatorClientSet(koordClientSet),
-			frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
-		)
-		AddScheduleEventHandler(sched, internalHandler, extendHandle)
+		AddScheduleEventHandler(sched, internalHandler, koordSharedInformerFactory)
 	})
 }
 
@@ -815,5 +824,235 @@ func Test_isResponsibleForReservation(t *testing.T) {
 			got := isResponsibleForReservation(tt.args.profiles, tt.args.r)
 			assert.Equal(t, tt.want, got)
 		})
+	}
+}
+
+func Test_setReservationUnschedulable(t *testing.T) {
+	type args struct {
+		r   *schedulingv1alpha1.Reservation
+		msg string
+	}
+	tests := []struct {
+		name string
+		args args
+		want *schedulingv1alpha1.Reservation
+	}{
+		{
+			name: "add condition",
+			args: args{
+				r: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "reserve-pod-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "test-pod-0",
+								},
+							},
+						},
+						TTL: &metav1.Duration{Duration: 30 * time.Minute},
+					},
+					Status: schedulingv1alpha1.ReservationStatus{
+						Phase: schedulingv1alpha1.ReservationPending,
+					},
+				},
+				msg: "unschedule msg",
+			},
+			want: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-0",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "test-pod-0",
+							},
+						},
+					},
+					TTL: &metav1.Duration{Duration: 30 * time.Minute},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationPending,
+					Conditions: []schedulingv1alpha1.ReservationCondition{
+						{
+							Type:               schedulingv1alpha1.ReservationConditionScheduled,
+							Status:             schedulingv1alpha1.ConditionStatusFalse,
+							Reason:             schedulingv1alpha1.ReasonReservationUnschedulable,
+							Message:            "unschedule msg",
+							LastProbeTime:      metav1.Now(),
+							LastTransitionTime: metav1.Now(),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "update condition",
+			args: args{
+				r: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "reserve-pod-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "test-pod-0",
+								},
+							},
+						},
+						TTL: &metav1.Duration{Duration: 30 * time.Minute},
+					},
+					Status: schedulingv1alpha1.ReservationStatus{
+						Phase: schedulingv1alpha1.ReservationPending,
+						Conditions: []schedulingv1alpha1.ReservationCondition{
+							{
+								Type:               schedulingv1alpha1.ReservationConditionScheduled,
+								Status:             schedulingv1alpha1.ConditionStatusTrue,
+								Reason:             schedulingv1alpha1.ReasonReservationScheduled,
+								LastProbeTime:      metav1.Now(),
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					},
+				},
+				msg: "unschedule msg",
+			},
+			want: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-0",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "test-pod-0",
+							},
+						},
+					},
+					TTL: &metav1.Duration{Duration: 30 * time.Minute},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationPending,
+					Conditions: []schedulingv1alpha1.ReservationCondition{
+						{
+							Type:               schedulingv1alpha1.ReservationConditionScheduled,
+							Status:             schedulingv1alpha1.ConditionStatusTrue,
+							Reason:             schedulingv1alpha1.ReasonReservationScheduled,
+							LastProbeTime:      metav1.Now(),
+							LastTransitionTime: metav1.Now(),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "change condition",
+			args: args{
+				r: &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "reserve-pod-0",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Kind: "Pod",
+									Name: "test-pod-0",
+								},
+							},
+						},
+						TTL: &metav1.Duration{Duration: 30 * time.Minute},
+					},
+					Status: schedulingv1alpha1.ReservationStatus{
+						Phase: schedulingv1alpha1.ReservationPending,
+						Conditions: []schedulingv1alpha1.ReservationCondition{
+							{
+								Type:               schedulingv1alpha1.ReservationConditionScheduled,
+								Status:             schedulingv1alpha1.ConditionStatusFalse,
+								Reason:             schedulingv1alpha1.ReasonReservationUnschedulable,
+								Message:            "old unschedule msg",
+								LastProbeTime:      metav1.Now(),
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					},
+				},
+				msg: "unschedule msg",
+			},
+			want: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-0",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "test-pod-0",
+							},
+						},
+					},
+					TTL: &metav1.Duration{Duration: 30 * time.Minute},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationPending,
+					Conditions: []schedulingv1alpha1.ReservationCondition{
+						{
+							Type:               schedulingv1alpha1.ReservationConditionScheduled,
+							Status:             schedulingv1alpha1.ConditionStatusFalse,
+							Reason:             schedulingv1alpha1.ReasonReservationUnschedulable,
+							Message:            "unschedule msg",
+							LastProbeTime:      metav1.Now(),
+							LastTransitionTime: metav1.Now(),
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setReservationUnschedulable(tt.args.r, tt.args.msg)
+			assertEqualReservationCondition(t, tt.want, tt.args.r)
+		})
+	}
+}
+
+func assertEqualReservationCondition(t *testing.T, expect, got *schedulingv1alpha1.Reservation) {
+	if expect == nil && got == nil {
+		return
+	}
+	if expect == nil || got == nil {
+		if expect != got {
+			t.Errorf("reservation condition not equal, expect %v, got %v", expect, got)
+		}
+		return
+	}
+	if len(expect.Status.Conditions) != len(got.Status.Conditions) {
+		t.Errorf("reservation condition not equal, expect len %v, got len %v", len(expect.Status.Conditions), len(got.Status.Conditions))
+		return
+	}
+	expectConditions := map[string]*schedulingv1alpha1.ReservationCondition{}
+	for i, condition := range expect.Status.Conditions {
+		expectConditions[string(condition.Type)] = &expect.Status.Conditions[i]
+	}
+	for _, condition := range got.Status.Conditions {
+		e, ok := expectConditions[string(condition.Type)]
+		if !ok {
+			t.Errorf("reservation condition not equal, got unexpect condition type %v", condition.Type)
+			continue
+		}
+		msg := "condition type " + string(condition.Type)
+		assert.Equal(t, e.Status, condition.Status, msg)
+		assert.Equal(t, e.Message, condition.Message, msg)
+		assert.Equal(t, e.Reason, condition.Reason, msg)
 	}
 }

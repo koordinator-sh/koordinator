@@ -25,7 +25,6 @@ import (
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/batchresource"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/compatibledefaultpreemption"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling"
@@ -52,12 +51,6 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	compatibledefaultpreemption.Name: compatibledefaultpreemption.New,
 }
 
-// Register custom scheduling hooks for pre-process scheduling context before call plugins.
-// e.g. change the nodeInfo and make a copy before calling filter plugins
-var schedulingHooks = []frameworkext.SchedulingPhaseHook{
-	reservation.NewHook(),
-}
-
 func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {
 	options := make([]app.Option, 0, len(plugins))
 	for name, factoryFn := range plugins {
@@ -73,7 +66,6 @@ func main() {
 	// Later they can consist of scheduler profile(s) and hence
 	// used by various kinds of workloads.
 	command := app.NewSchedulerCommand(
-		schedulingHooks,
 		flatten(koordinatorPlugins)...,
 	)
 

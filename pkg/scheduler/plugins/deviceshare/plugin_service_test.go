@@ -38,7 +38,7 @@ import (
 
 func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(&config.DeviceShareArgs{}, suit.Handle)
+	p, err := suit.proxyNew(&config.DeviceShareArgs{}, suit.Framework)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 

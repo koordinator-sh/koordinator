@@ -28,10 +28,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
-	clientset "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -47,20 +45,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
-
-type fakeExtendedHandle struct {
-	frameworkext.ExtendedHandle
-	cs                    *kubefake.Clientset
-	sharedInformerFactory informers.SharedInformerFactory
-}
-
-func (f *fakeExtendedHandle) ClientSet() clientset.Interface {
-	return f.cs
-}
-
-func (f *fakeExtendedHandle) SharedInformerFactory() informers.SharedInformerFactory {
-	return f.sharedInformerFactory
-}
 
 var _ framework.SharedLister = &testSharedLister{}
 
@@ -119,49 +103,23 @@ func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 }
 
 type pluginTestSuit struct {
-	framework.Handle
 	framework.Framework
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	sharedInformerFactory            informers.SharedInformerFactory
 	proxyNew                         runtime.PluginFactory
-	plugin                           framework.Plugin
-}
-
-func proxyPluginFactory(extendHandle *fakeExtendedHandle, factory runtime.PluginFactory) runtime.PluginFactory {
-	return func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
-		extendHandle.sharedInformerFactory = f.SharedInformerFactory()
-		return factory(configuration, extendHandle)
-	}
 }
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-	extendHandle, _ := frameworkext.NewExtendedHandle(
+	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 	)
-	fakeHandle := &fakeExtendedHandle{
-		ExtendedHandle: extendHandle,
-		cs:             kubefake.NewSimpleClientset(),
-	}
-
-	proxyNew := proxyPluginFactory(fakeHandle, New)
-
-	deviceSharePluginConfig := schedulerconfig.PluginConfig{
-		Name: Name,
-		Args: &config.DeviceShareArgs{},
-	}
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
-		func(reg *runtime.Registry, profile *schedulerconfig.KubeSchedulerProfile) {
-			profile.PluginConfig = []schedulerconfig.PluginConfig{
-				deviceSharePluginConfig,
-			}
-		},
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		schedulertesting.RegisterPreFilterPlugin(Name, proxyNew),
 	}
 
 	cs := kubefake.NewSimpleClientset()
@@ -177,7 +135,7 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 	)
 	assert.Nil(t, err)
 	return &pluginTestSuit{
-		Handle:                           fh,
+		Framework:                        fh,
 		koordinatorSharedInformerFactory: koordSharedInformerFactory,
 		proxyNew:                         proxyNew,
 	}
@@ -186,15 +144,11 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 func Test_New(t *testing.T) {
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-	extendHandle, _ := frameworkext.NewExtendedHandle(
+	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 	)
-	fakeHandle := &fakeExtendedHandle{
-		ExtendedHandle: extendHandle,
-		cs:             kubefake.NewSimpleClientset(),
-	}
-	proxyNew := proxyPluginFactory(fakeHandle, New)
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 	deviceSharePluginConfig := schedulerconfig.PluginConfig{
 		Name: Name,
@@ -1885,7 +1839,6 @@ func Test_Plugin_PreBind(t *testing.T) {
 	tests := []struct {
 		name       string
 		args       args
-		handle     frameworkext.ExtendedHandle
 		wantStatus *framework.Status
 	}{
 		{
@@ -1937,17 +1890,26 @@ func Test_Plugin_PreBind(t *testing.T) {
 					},
 				},
 			},
-			handle: &fakeExtendedHandle{cs: kubefake.NewSimpleClientset(testPod)},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Plugin{nodeDeviceCache: newNodeDeviceCache(), handle: tt.handle, allocator: &defaultAllocator{}}
+			suit := newPluginTestSuit(t, nil)
+			_, err := suit.ClientSet().CoreV1().Pods(testPod.Namespace).Create(context.TODO(), testPod, metav1.CreateOptions{})
+			assert.NoError(t, err)
+			pl, err := suit.proxyNew(&config.DeviceShareArgs{}, suit.Framework)
+			assert.NoError(t, err)
+
+			suit.Framework.SharedInformerFactory().Start(nil)
+			suit.koordinatorSharedInformerFactory.Start(nil)
+			suit.Framework.SharedInformerFactory().WaitForCacheSync(nil)
+			suit.koordinatorSharedInformerFactory.WaitForCacheSync(nil)
+
 			cycleState := framework.NewCycleState()
 			if tt.args.state != nil {
 				cycleState.Write(stateKey, tt.args.state)
 			}
-			status := p.PreBind(context.TODO(), cycleState, tt.args.pod, "test-node")
+			status := pl.(*Plugin).PreBind(context.TODO(), cycleState, tt.args.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
 		})
 	}
@@ -1980,15 +1942,11 @@ func TestAllocator(t *testing.T) {
 
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-	extendHandle, _ := frameworkext.NewExtendedHandle(
+	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 	)
-	fakeHandle := &fakeExtendedHandle{
-		ExtendedHandle: extendHandle,
-		cs:             kubefake.NewSimpleClientset(),
-	}
-	proxyNew := proxyPluginFactory(fakeHandle, New)
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),

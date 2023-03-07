@@ -56,7 +56,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 var _ listerschedulingv1alpha1.ReservationLister = &fakeReservationLister{}
@@ -215,7 +215,7 @@ func (f *fakeKoordinatorSharedInformerFactory) Scheduling() scheduling.Interface
 	if f.informer != nil {
 		return f
 	}
-	return f.Scheduling()
+	return f.SharedInformerFactory.Scheduling()
 }
 
 func (f *fakeKoordinatorSharedInformerFactory) V1alpha1() v1alpha1.Interface {
@@ -297,11 +297,11 @@ func TestNew(t *testing.T) {
 
 		koordClientSet := koordfake.NewSimpleClientset()
 		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-		extendHandle, _ := frameworkext.NewExtendedHandle(
+		extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 			frameworkext.WithKoordinatorClientSet(koordClientSet),
 			frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 		)
-		proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
+		proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 		registeredPlugins := []schedulertesting.RegisterPluginFunc{
 			func(reg *runtime.Registry, profile *scheduledconfig.KubeSchedulerProfile) {
@@ -530,7 +530,7 @@ func TestFilter(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-0",
 			Annotations: map[string]string{
-				util.AnnotationReservationNode: testNode.Name,
+				reservationutil.AnnotationReservationNode: testNode.Name,
 			},
 		},
 	})
@@ -538,7 +538,7 @@ func TestFilter(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-1",
 			Annotations: map[string]string{
-				util.AnnotationReservationNode: testNode.Name,
+				reservationutil.AnnotationReservationNode: testNode.Name,
 			},
 		},
 	})
@@ -546,7 +546,7 @@ func TestFilter(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-1",
 			Annotations: map[string]string{
-				util.AnnotationReservationNode: "other-node",
+				reservationutil.AnnotationReservationNode: "other-node",
 			},
 		},
 	})
@@ -760,7 +760,7 @@ func TestPostFilter(t *testing.T) {
 			assert.Equal(t, tt.want1, got1)
 			if tt.changePriority {
 				for _, p := range n.Pods {
-					if util.IsReservePod(p.Pod) {
+					if reservationutil.IsReservePod(p.Pod) {
 						assert.Equal(t, int32(math.MaxInt32), *p.Pod.Spec.Priority)
 					}
 				}
@@ -2274,7 +2274,7 @@ func testGetReservePod(pod *corev1.Pod) *corev1.Pod {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
-	pod.Annotations[util.AnnotationReservePod] = "true"
-	pod.Annotations[util.AnnotationReservationName] = pod.Name
+	pod.Annotations[reservationutil.AnnotationReservePod] = "true"
+	pod.Annotations[reservationutil.AnnotationReservationName] = pod.Name
 	return pod
 }

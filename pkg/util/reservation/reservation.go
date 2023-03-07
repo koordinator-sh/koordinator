@@ -14,27 +14,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package reservation
 
 import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 var (
 	// AnnotationReservePod indicates whether the pod is a reserved pod.
-	AnnotationReservePod = apiext.SchedulingDomainPrefix + "/reserve-pod"
+	AnnotationReservePod = extension.SchedulingDomainPrefix + "/reserve-pod"
 	// AnnotationReservationName indicates the name of the reservation.
-	AnnotationReservationName = apiext.SchedulingDomainPrefix + "/reservation-name"
+	AnnotationReservationName = extension.SchedulingDomainPrefix + "/reservation-name"
 	// AnnotationReservationNode indicates the node name if the reservation specifies a node.
-	AnnotationReservationNode = apiext.SchedulingDomainPrefix + "/reservation-node"
+	AnnotationReservationNode = extension.SchedulingDomainPrefix + "/reservation-node"
 )
 
 // NewReservePod returns a fake pod set as the reservation's specifications.
@@ -82,6 +81,14 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	if nodeName := GetReservationNodeName(r); len(nodeName) > 0 {
 		reservePod.Spec.NodeName = nodeName
 	}
+
+	if IsReservationSucceeded(r) {
+		reservePod.Status.Phase = corev1.PodSucceeded
+	} else if IsReservationExpired(r) || IsReservationFailed(r) {
+		reservePod.Status.Phase = corev1.PodFailed
+	}
+
+	reservePod.Spec.SchedulerName = GetReservationSchedulerName(r)
 
 	return reservePod
 }
@@ -165,40 +172,6 @@ func GetReservationNodeName(r *schedulingv1alpha1.Reservation) string {
 	return r.Status.NodeName
 }
 
-func SetReservationNodeName(r *schedulingv1alpha1.Reservation, nodeName string) {
-	r.Status.NodeName = nodeName
-}
-
-func SetReservationUnschedulable(r *schedulingv1alpha1.Reservation, msg string) {
-	// unschedule reservations can try scheduling in next cycles, so we does not update its phase
-	// not duplicate condition info
-	idx := -1
-	isScheduled := false
-	for i, condition := range r.Status.Conditions {
-		if condition.Type == schedulingv1alpha1.ReservationConditionScheduled {
-			idx = i
-			isScheduled = condition.Status == schedulingv1alpha1.ConditionStatusTrue
-		}
-	}
-	if idx < 0 { // if not set condition
-		condition := schedulingv1alpha1.ReservationCondition{
-			Type:               schedulingv1alpha1.ReservationConditionScheduled,
-			Status:             schedulingv1alpha1.ConditionStatusFalse,
-			Reason:             schedulingv1alpha1.ReasonReservationUnschedulable,
-			Message:            msg,
-			LastProbeTime:      metav1.Now(),
-			LastTransitionTime: metav1.Now(),
-		}
-		r.Status.Conditions = append(r.Status.Conditions, condition)
-	} else if isScheduled { // if is scheduled, keep the condition status
-		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
-	} else { // if already unschedulable, update the message
-		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationUnschedulable
-		r.Status.Conditions[idx].Message = msg
-		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
-	}
-}
-
 func IsObjValidActiveReservation(obj interface{}) bool {
 	reservation, _ := obj.(*schedulingv1alpha1.Reservation)
 	err := ValidateReservation(reservation)
@@ -214,7 +187,7 @@ func IsObjValidActiveReservation(obj interface{}) bool {
 	return true
 }
 
-// ReservationToPodEventHandlerFuncs can be used to handle reservation events with a pod event handler, which converts
+// ReservationToPodEventHandler can be used to handle reservation events with a pod event handler, which converts
 // each reservation object into the corresponding reserve pod object.
 //
 //	e.g.
@@ -224,59 +197,55 @@ func IsObjValidActiveReservation(obj interface{}) bool {
 //	    klog.V(3).Infof("registerReservationEventHandler aborted, cannot convert handle to frameworkext.ExtendedHandle, got %T", handle)
 //	    return
 //	  }
-//	  extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Informer().AddEventHandler(&util.ReservationToPodEventHandlerFuncs{
-//	    FilterFunc: util.IsObjValidActiveReservation,
-//	    PodHandler: &podHandler,
-//	  })
+//	  extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Informer().
+//	 	 AddEventHandler(util.NewReservationToPodEventHandler(&podHandler, IsObjValidActiveReservation))
 //	}
-type ReservationToPodEventHandlerFuncs struct {
-	FilterFunc func(obj interface{}) bool
-	PodHandler cache.ResourceEventHandler
+type ReservationToPodEventHandler struct {
+	handler cache.ResourceEventHandler
 }
 
-var _ cache.ResourceEventHandler = &ReservationToPodEventHandlerFuncs{}
+var _ cache.ResourceEventHandler = &ReservationToPodEventHandler{}
 
-func (r ReservationToPodEventHandlerFuncs) OnAdd(obj interface{}) {
+func NewReservationToPodEventHandler(handler cache.ResourceEventHandler, filters ...func(obj interface{}) bool) cache.ResourceEventHandler {
+	return cache.FilteringResourceEventHandler{
+		FilterFunc: func(obj interface{}) bool {
+			for _, fn := range filters {
+				if !fn(obj) {
+					return false
+				}
+			}
+			return true
+		},
+		Handler: &ReservationToPodEventHandler{
+			handler: handler,
+		},
+	}
+}
+
+func (r ReservationToPodEventHandler) OnAdd(obj interface{}) {
 	reservation, ok := obj.(*schedulingv1alpha1.Reservation)
 	if !ok {
 		return
 	}
-	if !r.FilterFunc(reservation) {
-		return
-	}
-
 	pod := NewReservePod(reservation)
-	r.PodHandler.OnAdd(pod)
+	r.handler.OnAdd(pod)
 }
 
 // OnUpdate calls UpdateFunc if it's not nil.
-func (r ReservationToPodEventHandlerFuncs) OnUpdate(oldObj, newObj interface{}) {
+func (r ReservationToPodEventHandler) OnUpdate(oldObj, newObj interface{}) {
 	oldR, oldOK := oldObj.(*schedulingv1alpha1.Reservation)
 	newR, newOK := newObj.(*schedulingv1alpha1.Reservation)
 	if !oldOK || !newOK {
 		return
 	}
 
-	oldOK = r.FilterFunc(oldR)
-	newOK = r.FilterFunc(newR)
-	switch {
-	case oldOK && newOK:
-		oldPod := NewReservePod(oldR)
-		newPod := NewReservePod(newR)
-		r.PodHandler.OnUpdate(oldPod, newPod)
-	case !oldOK && newOK:
-		newPod := NewReservePod(newR)
-		r.PodHandler.OnAdd(newPod)
-	case oldOK && !newOK:
-		oldPod := NewReservePod(oldR)
-		r.PodHandler.OnDelete(oldPod)
-	default:
-		// do nothing
-	}
+	oldPod := NewReservePod(oldR)
+	newPod := NewReservePod(newR)
+	r.handler.OnUpdate(oldPod, newPod)
 }
 
 // OnDelete calls DeleteFunc if it's not nil.
-func (r ReservationToPodEventHandlerFuncs) OnDelete(obj interface{}) {
+func (r ReservationToPodEventHandler) OnDelete(obj interface{}) {
 	var reservation *schedulingv1alpha1.Reservation
 	switch t := obj.(type) {
 	case *schedulingv1alpha1.Reservation:
@@ -290,10 +259,7 @@ func (r ReservationToPodEventHandlerFuncs) OnDelete(obj interface{}) {
 	default:
 		return
 	}
-	if !r.FilterFunc(reservation) {
-		return
-	}
 
 	pod := NewReservePod(reservation)
-	r.PodHandler.OnDelete(pod)
+	r.handler.OnDelete(pod)
 }
