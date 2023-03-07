@@ -532,14 +532,16 @@ func (r *Reconciler) preparePendingJob(ctx context.Context, job *sev1alpha1.PodM
 		}
 	}
 
-	if aborted, err := r.abortJobIfUnretriablePodFilterFailed(ctx, job); aborted || err != nil {
-		if err == nil {
-			err = fmt.Errorf("abort job since failed to unretriable Pod filter")
+	if !evictionsutil.HaveEvictAnnotation(job) {
+		if aborted, err := r.abortJobIfUnretriablePodFilterFailed(ctx, job); aborted || err != nil {
+			if err == nil {
+				err = fmt.Errorf("abort job since failed to unretriable Pod filter")
+			}
+			return reconcile.Result{}, err
 		}
-		return reconcile.Result{}, err
-	}
-	if requeue, err := r.requeueJobIfRetriablePodFilterFailed(ctx, job); requeue || err != nil {
-		return reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
+		if requeue, err := r.requeueJobIfRetriablePodFilterFailed(ctx, job); requeue || err != nil {
+			return reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
+		}
 	}
 
 	job.Status.Phase = sev1alpha1.PodMigrationJobRunning
