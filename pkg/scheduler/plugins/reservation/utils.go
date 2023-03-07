@@ -30,7 +30,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 func isReservationNeedExpiration(r *schedulingv1alpha1.Reservation) bool {
@@ -51,13 +51,13 @@ func isReservationNeedCleanup(r *schedulingv1alpha1.Reservation) bool {
 	if r == nil {
 		return true
 	}
-	if util.IsReservationExpired(r) {
+	if reservationutil.IsReservationExpired(r) {
 		for _, condition := range r.Status.Conditions {
 			if condition.Reason == schedulingv1alpha1.ReasonReservationExpired {
 				return time.Since(condition.LastTransitionTime.Time) > defaultGCDuration
 			}
 		}
-	} else if util.IsReservationSucceeded(r) {
+	} else if reservationutil.IsReservationSucceeded(r) {
 		for _, condition := range r.Status.Conditions {
 			if condition.Reason == schedulingv1alpha1.ReasonReservationSucceeded {
 				return time.Since(condition.LastProbeTime.Time) > defaultGCDuration
@@ -68,14 +68,13 @@ func isReservationNeedCleanup(r *schedulingv1alpha1.Reservation) bool {
 }
 
 func setReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string) {
-	// just annotate scheduled node at status
-	util.SetReservationNodeName(r, nodeName)
+	r.Status.NodeName = nodeName
 	r.Status.Phase = schedulingv1alpha1.ReservationAvailable
 	r.Status.CurrentOwners = make([]corev1.ObjectReference, 0)
 
 	requests := getReservationRequests(r)
 	r.Status.Allocatable = requests
-	r.Status.Allocated = util.NewZeroResourceList()
+	r.Status.Allocated = nil
 
 	// initialize the conditions
 	r.Status.Conditions = []schedulingv1alpha1.ReservationCondition{

@@ -36,6 +36,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 // MergeCfg returns a merged interface. Value in new will
@@ -282,13 +283,13 @@ func (p *Patch) PatchReservation(r *schedulingv1alpha1.Reservation) (*scheduling
 // pod is a reserve pod) with the given patch data.
 func (p *Patch) PatchPodOrReservation(pod *corev1.Pod) (interface{}, error) {
 	// if pod is not a reserve pod, patch the pod with pod client
-	if !IsReservePod(pod) {
+	if !reservationutil.IsReservePod(pod) {
 		return p.PatchPod(pod)
 	}
 
 	// otherwise the pod is a reserve pod, patch the reservation with reservation client
 	// fake reservation objects to generate patch
-	rName := GetReservationNameFromReservePod(pod)
+	rName := reservationutil.GetReservationNameFromReservePod(pod)
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: pod.ObjectMeta,
 	}

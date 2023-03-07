@@ -33,6 +33,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	index "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 // for internal interface testing
@@ -43,40 +44,23 @@ func defaultParallelizeUntil(handle framework.Handle) parallelizeUntilFunc {
 }
 
 var (
-	_ frameworkext.PreFilterPhaseHook = &Hook{}
-	_ frameworkext.FilterPhaseHook    = &Hook{}
+	_ frameworkext.PreFilterTransformer = &Plugin{}
+	_ frameworkext.FilterTransformer    = &Plugin{}
 )
 
-type Hook struct {
-	parallelizeUntil func(handle framework.Handle) parallelizeUntilFunc
-}
-
-func NewHook() *Hook {
-	return &Hook{
-		parallelizeUntil: defaultParallelizeUntil,
-	}
-}
-
-func (h *Hook) Name() string { return Name }
-
-func (h *Hook) PreFilterHook(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool) {
-	// do not hook if reservation plugin is disabled
-	if !pluginEnabled.Load() {
-		return nil, false
-	}
-
+func (p *Plugin) BeforePreFilter(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool) {
 	// skip if the pod is a reserve pod
-	if util.IsReservePod(pod) {
+	if reservationutil.IsReservePod(pod) {
 		return nil, false
 	}
 
 	// list reservations and nodes, and check each available reservation whether it matches the pod or not
-	state, err := h.prepareMatchReservationState(handle, pod)
+	state, err := p.prepareMatchReservationState(handle, pod)
 	if err != nil {
-		klog.Warningf("PreFilterHook failed to get matched reservations, err: %v", err)
+		klog.Warningf("BeforePreFilter failed to get matched reservations, err: %v", err)
 		return nil, false
 	}
-	klog.V(4).InfoS("PreFilterHook successfully prepares reservation state",
+	klog.V(4).InfoS("BeforePreFilter successfully prepares reservation state",
 		"pod", klog.KObj(pod))
 
 	// initialize a state for matched reservations.
@@ -85,7 +69,7 @@ func (h *Hook) PreFilterHook(handle frameworkext.ExtendedHandle, cycleState *fra
 	cycleState.Write(preFilterStateKey, state)
 
 	if state.skip {
-		klog.V(5).InfoS("PreFilterHook skips for no reservation matched", "pod", klog.KObj(pod))
+		klog.V(5).InfoS("BeforePreFilter skips for no reservation matched", "pod", klog.KObj(pod))
 		return nil, false
 	}
 
@@ -93,45 +77,37 @@ func (h *Hook) PreFilterHook(handle frameworkext.ExtendedHandle, cycleState *fra
 	return preparePreFilterPod(pod), true
 }
 
-func (h *Hook) FilterHook(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool) {
-	// do not hook if reservation plugin is disabled
-	if !pluginEnabled.Load() {
+func (p *Plugin) BeforeFilter(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool) {
+	// do not transformer if not reserve state (where we should check if pod match any reservation on node)
+	if reservationutil.IsReservePod(pod) {
 		return nil, nil, false
 	}
-
-	// do not hook if not reserve state (where we should check if pod match any reservation on node)
-	if util.IsReservePod(pod) {
-		return nil, nil, false
-	}
-	// abort the hook if node is not found
+	// abort if node is not found
 	node := nodeInfo.Node()
 	if node == nil {
 		return nil, nil, false
 	}
 
-	// only continue if matchedCache is prepared in PreFilterHook (i.e. find any reservation matched)
+	// only continue if matchedCache is prepared in BeforePreFilter (i.e. find any reservation matched)
 	state := getPreFilterState(cycleState)
 	if state == nil {
 		return nil, nil, false
 	}
 
 	allocatedResource, ok := state.allocatedResources[node.Name]
-	// skip hook when no reservation matched on this node
+	// skip when no reservation matched on this node
 	rOnNode := state.matchedCache.GetOnNode(node.Name)
 	if len(rOnNode) <= 0 && !ok {
 		return nil, nil, false
 	}
-	if !ok {
-		allocatedResource = util.NewZeroResourceList()
-	}
 
-	klog.V(5).InfoS("FilterHook get reservation matched on node",
+	klog.V(5).InfoS("BeforeFilter get reservation matched on node",
 		"pod", klog.KObj(pod), "node", node.Name, "count", len(rOnNode))
 	// fix-up reserved resources and ports
 	return pod, prepareFilterNodeInfo(pod, nodeInfo, rOnNode, allocatedResource), true
 }
 
-func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, pod *corev1.Pod) (*stateData, error) {
+func (p *Plugin) prepareMatchReservationState(handle frameworkext.ExtendedHandle, pod *corev1.Pod) (*stateData, error) {
 	allNodes, err := handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil { // never reach here
 		return nil, fmt.Errorf("cannot list NodeInfo, err: %v", err)
@@ -139,16 +115,14 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 
 	indexer := handle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Informer().GetIndexer()
 	matchedCache := newAvailableCache()
-	// parallelize in nodes count
-	parallelizeUntil := h.parallelizeUntil(handle)
 	var lock sync.Mutex
 	allocatedResource := map[string]corev1.ResourceList{}
 	processNode := func(i int) {
-		resourceNeedUnreserve := util.NewZeroResourceList()
+		var resourceNeedUnreserve corev1.ResourceList
 		nodeInfo := allNodes[i]
 		node := nodeInfo.Node()
 		if node == nil {
-			klog.V(4).InfoS("PreFilterHook failed to get node", "pod", klog.KObj(pod),
+			klog.V(4).InfoS("BeforePreFilter failed to get node", "pod", klog.KObj(pod),
 				"nodeInfo", nodeInfo)
 			return
 		}
@@ -156,11 +130,11 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 		// list reservations on the current node
 		rOnNode, err := indexer.ByIndex(index.ReservationStatusNodeNameIndex, node.Name)
 		if err != nil {
-			klog.V(3).InfoS("PreFilterHook failed to list reservations",
+			klog.V(3).InfoS("BeforePreFilter failed to list reservations",
 				"node", node.Name, "index", index.ReservationStatusNodeNameIndex, "err", err)
 			return
 		}
-		klog.V(6).InfoS("PreFilterHook indexer list reservation on node",
+		klog.V(6).InfoS("BeforePreFilter indexer list reservation on node",
 			"node", node.Name, "count", len(rOnNode))
 		count := 0
 		rCache := getReservationCache()
@@ -176,7 +150,7 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 				rInfo = newReservationInfo(r)
 			}
 			// only count available reservations, ignore succeeded ones
-			if !util.IsReservationAvailable(rInfo.Reservation) {
+			if !reservationutil.IsReservationAvailable(rInfo.Reservation) {
 				continue
 			}
 
@@ -205,10 +179,10 @@ func (h *Hook) prepareMatchReservationState(handle frameworkext.ExtendedHandle, 
 		// NOTE: when the pod can allocate any reservation on the node, we should alter the nodeInfo snapshot to skip
 		//  the affinity/anti-affinity/topo constrains filtering in InterPodAffinity and PodTopologySpread plugins.
 		preparePreFilterNodeInfo(handle, nodeInfo, pod, matchedCache)
-		klog.V(4).InfoS("PreFilterHook get matched reservations", "pod", klog.KObj(pod),
+		klog.V(4).InfoS("BeforePreFilter get matched reservations", "pod", klog.KObj(pod),
 			"node", node.Name, "count", count)
 	}
-	parallelizeUntil(context.TODO(), len(allNodes), processNode)
+	p.parallelizeUntil(context.TODO(), len(allNodes), processNode)
 
 	state := &stateData{
 		skip:               matchedCache.Len() <= 0, // skip if no reservation matched
@@ -231,7 +205,7 @@ func preparePreFilterNodeInfo(handle frameworkext.ExtendedHandle, nodeInfo *fram
 		if existingPod == nil {
 			continue
 		}
-		if matchedCache.Get(util.GetReservePodKey(existingPod)) != nil {
+		if matchedCache.Get(reservationutil.GetReservePodKey(existingPod)) != nil {
 			// clean affinity terms for matched reservations
 			newPodInfo := podInfo.DeepCopy()
 			newPodInfo.RequiredAntiAffinityTerms = nil

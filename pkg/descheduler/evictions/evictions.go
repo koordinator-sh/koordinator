@@ -351,8 +351,8 @@ func (ef *EvictorFilter) Filter(pod *corev1.Pod) bool {
 }
 
 // HaveEvictAnnotation checks if the pod have evict annotation
-func HaveEvictAnnotation(pod *corev1.Pod) bool {
-	_, found := pod.ObjectMeta.Annotations[evictPodAnnotationKey]
+func HaveEvictAnnotation(obj metav1.Object) bool {
+	_, found := obj.GetAnnotations()[evictPodAnnotationKey]
 	return found
 }
 

@@ -32,7 +32,6 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	clientschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type fakePodLister struct {
@@ -546,7 +545,7 @@ func Test_syncActiveReservation(t *testing.T) {
 		Status: schedulingv1alpha1.ReservationStatus{
 			Phase:     schedulingv1alpha1.ReservationAvailable,
 			NodeName:  "node-0",
-			Allocated: util.NewZeroResourceList(),
+			Allocated: nil,
 		},
 	}
 	testHasOwner := testNoOwner.DeepCopy()

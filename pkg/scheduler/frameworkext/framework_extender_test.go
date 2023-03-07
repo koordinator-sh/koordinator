@@ -30,18 +30,18 @@ import (
 )
 
 var (
-	_ PreFilterPhaseHook = &TestHook{}
-	_ FilterPhaseHook    = &TestHook{}
-	_ ScorePhaseHook     = &TestHook{}
+	_ PreFilterTransformer = &TestTransformer{}
+	_ FilterTransformer    = &TestTransformer{}
+	_ ScoreTransformer     = &TestTransformer{}
 )
 
-type TestHook struct {
+type TestTransformer struct {
 	index int
 }
 
-func (h *TestHook) Name() string { return "TestHook" }
+func (h *TestTransformer) Name() string { return "TestTransformer" }
 
-func (h *TestHook) PreFilterHook(handle ExtendedHandle, state *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool) {
+func (h *TestTransformer) BeforePreFilter(handle ExtendedHandle, state *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -49,7 +49,7 @@ func (h *TestHook) PreFilterHook(handle ExtendedHandle, state *framework.CycleSt
 	return pod, true
 }
 
-func (h *TestHook) FilterHook(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool) {
+func (h *TestTransformer) BeforeFilter(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -57,7 +57,7 @@ func (h *TestHook) FilterHook(handle ExtendedHandle, cycleState *framework.Cycle
 	return pod, nodeInfo, true
 }
 
-func (h *TestHook) ScoreHook(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool) {
+func (h *TestTransformer) BeforeScore(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -66,34 +66,24 @@ func (h *TestHook) ScoreHook(handle ExtendedHandle, cycleState *framework.CycleS
 }
 
 func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
-	type args struct {
-		ctx        context.Context
-		cycleState *framework.CycleState
-		pod        *corev1.Pod
-	}
 	tests := []struct {
 		name string
-		args args
+		pod  *corev1.Pod
 		want *framework.Status
 	}{
 		{
 			name: "normal RunPreFilterPlugins",
-			args: args{
-				ctx:        context.TODO(),
-				cycleState: framework.NewCycleState(),
-				pod:        &corev1.Pod{},
-			},
+			pod:  &corev1.Pod{},
 			want: nil,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			schedulingHooks := []SchedulingPhaseHook{
-				&TestHook{index: 1},
-				&TestHook{index: 2},
+			testTransformers := []SchedulingTransformer{
+				&TestTransformer{index: 1},
+				&TestTransformer{index: 2},
 			}
-			extendedHandle, _ := NewExtendedHandle()
-			extendedFrameworkFactory := NewFrameworkExtenderFactory(extendedHandle, schedulingHooks...)
+			extenderFactory, _ := NewFrameworkExtenderFactory(WithDefaultTransformers(testTransformers...))
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
@@ -103,46 +93,36 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 				"koord-scheduler",
 			)
 			assert.NoError(t, err)
-			extendedFramework := extendedFrameworkFactory.New(fh)
-			assert.Equal(t, tt.want, extendedFramework.RunPreFilterPlugins(tt.args.ctx, tt.args.cycleState, tt.args.pod))
-			assert.Len(t, tt.args.pod.Annotations, 2)
-			assert.Equal(t, "1", tt.args.pod.Annotations["1"])
-			assert.Equal(t, "2", tt.args.pod.Annotations["2"])
+			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
+			assert.Equal(t, tt.want, frameworkExtender.RunPreFilterPlugins(context.TODO(), framework.NewCycleState(), tt.pod))
+			assert.Len(t, tt.pod.Annotations, 2)
+			assert.Equal(t, "1", tt.pod.Annotations["1"])
+			assert.Equal(t, "2", tt.pod.Annotations["2"])
 		})
 	}
 }
 
 func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedPods(t *testing.T) {
-	type args struct {
-		ctx        context.Context
-		cycleState *framework.CycleState
-		pod        *corev1.Pod
-		nodeInfo   *framework.NodeInfo
-	}
 	tests := []struct {
-		name string
-		args args
-		want *framework.Status
+		name     string
+		pod      *corev1.Pod
+		nodeInfo *framework.NodeInfo
+		want     *framework.Status
 	}{
 		{
-			name: "normal RunFilterPluginsWithNominatedPods",
-			args: args{
-				ctx:        context.TODO(),
-				cycleState: framework.NewCycleState(),
-				pod:        &corev1.Pod{},
-				nodeInfo:   framework.NewNodeInfo(),
-			},
-			want: nil,
+			name:     "normal RunFilterPluginsWithNominatedPods",
+			pod:      &corev1.Pod{},
+			nodeInfo: framework.NewNodeInfo(),
+			want:     nil,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			schedulingHooks := []SchedulingPhaseHook{
-				&TestHook{index: 1},
-				&TestHook{index: 2},
+			testTransformers := []SchedulingTransformer{
+				&TestTransformer{index: 1},
+				&TestTransformer{index: 2},
 			}
-			extendedHandle, _ := NewExtendedHandle()
-			extendedFrameworkFactory := NewFrameworkExtenderFactory(extendedHandle, schedulingHooks...)
+			extenderFactory, _ := NewFrameworkExtenderFactory(WithDefaultTransformers(testTransformers...))
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
@@ -152,56 +132,38 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedPods(t *testing.T) 
 				"koord-scheduler",
 			)
 			assert.NoError(t, err)
-			extendedFramework := extendedFrameworkFactory.New(fh)
-			assert.Equal(t, tt.want, extendedFramework.RunFilterPluginsWithNominatedPods(tt.args.ctx, tt.args.cycleState, tt.args.pod, tt.args.nodeInfo))
-			assert.Len(t, tt.args.pod.Annotations, 2)
-			assert.Equal(t, "1", tt.args.pod.Annotations["1"])
-			assert.Equal(t, "2", tt.args.pod.Annotations["2"])
+			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
+			assert.Equal(t, tt.want, frameworkExtender.RunFilterPluginsWithNominatedPods(context.TODO(), framework.NewCycleState(), tt.pod, tt.nodeInfo))
+			assert.Len(t, tt.pod.Annotations, 2)
+			assert.Equal(t, "1", tt.pod.Annotations["1"])
+			assert.Equal(t, "2", tt.pod.Annotations["2"])
 		})
 	}
 }
 
 func Test_frameworkExtenderImpl_RunScorePlugins(t *testing.T) {
-	type fields struct {
-		Framework      framework.Framework
-		handle         ExtendedHandle
-		preFilterHooks []PreFilterPhaseHook
-		filterHooks    []FilterPhaseHook
-		scoreHooks     []ScorePhaseHook
-	}
-	type args struct {
-		ctx   context.Context
-		state *framework.CycleState
-		pod   *corev1.Pod
-		nodes []*corev1.Node
-	}
 	tests := []struct {
 		name       string
-		fields     fields
-		args       args
+		pod        *corev1.Pod
+		nodes      []*corev1.Node
 		wantScore  framework.PluginToNodeScores
 		wantStatus *framework.Status
 	}{
 		{
-			name: "normal RunScorePlugins",
-			args: args{
-				ctx:   context.TODO(),
-				state: framework.NewCycleState(),
-				pod:   &corev1.Pod{},
-				nodes: []*corev1.Node{{}},
-			},
+			name:       "normal RunScorePlugins",
+			pod:        &corev1.Pod{},
+			nodes:      []*corev1.Node{{}},
 			wantScore:  framework.PluginToNodeScores{},
 			wantStatus: nil,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			schedulingHooks := []SchedulingPhaseHook{
-				&TestHook{index: 1},
-				&TestHook{index: 2},
+			testTransformers := []SchedulingTransformer{
+				&TestTransformer{index: 1},
+				&TestTransformer{index: 2},
 			}
-			extendedHandle, _ := NewExtendedHandle()
-			extendedFrameworkFactory := NewFrameworkExtenderFactory(extendedHandle, schedulingHooks...)
+			extenderFactory, _ := NewFrameworkExtenderFactory(WithDefaultTransformers(testTransformers...))
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
@@ -211,13 +173,13 @@ func Test_frameworkExtenderImpl_RunScorePlugins(t *testing.T) {
 				"koord-scheduler",
 			)
 			assert.NoError(t, err)
-			extendedFramework := extendedFrameworkFactory.New(fh)
-			score, status := extendedFramework.RunScorePlugins(tt.args.ctx, tt.args.state, tt.args.pod, tt.args.nodes)
-			assert.Equalf(t, tt.wantScore, score, "RunScorePlugins(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.nodes)
-			assert.Equalf(t, tt.wantStatus, status, "RunScorePlugins(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.nodes)
-			assert.Len(t, tt.args.pod.Annotations, 2)
-			assert.Equal(t, "1", tt.args.pod.Annotations["1"])
-			assert.Equal(t, "2", tt.args.pod.Annotations["2"])
+			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
+			score, status := frameworkExtender.RunScorePlugins(context.TODO(), framework.NewCycleState(), tt.pod, tt.nodes)
+			assert.Equal(t, tt.wantScore, score)
+			assert.Equal(t, tt.wantStatus, status)
+			assert.Len(t, tt.pod.Annotations, 2)
+			assert.Equal(t, "1", tt.pod.Annotations["1"])
+			assert.Equal(t, "2", tt.pod.Annotations["2"])
 		})
 	}
 }

@@ -102,6 +102,65 @@ type NodeResourceQOSStrategy struct {
 	*slov1alpha1.ResourceQOSStrategy
 }
 
+// +k8s:deepcopy-gen=true
+type ExtensionCfgMap struct {
+	Object map[string]ExtensionCfg `json:",inline"`
+}
+
+// +k8s:deepcopy-gen=false
+type ExtensionCfg struct {
+	ClusterStrategy interface{}             `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeExtensionStrategy `json:"nodeStrategies,omitempty"`
+}
+
+func (in *ExtensionCfg) DeepCopyInto(out *ExtensionCfg) {
+	*out = *in
+	if in.ClusterStrategy != nil {
+		outIf := deepcopy.Copy(in.ClusterStrategy)
+		out.ClusterStrategy = outIf
+	}
+	if in.NodeStrategies != nil {
+		in, out := &in.NodeStrategies, &out.NodeStrategies
+		*out = make([]NodeExtensionStrategy, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+}
+
+func (in *ExtensionCfg) DeepCopy() *ExtensionCfg {
+	if in == nil {
+		return nil
+	}
+	out := new(ExtensionCfg)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// +k8s:deepcopy-gen=false
+type NodeExtensionStrategy struct {
+	NodeCfgProfile `json:",inline"`
+	NodeStrategy   interface{} // for third-party extension
+}
+
+func (in *NodeExtensionStrategy) DeepCopyInto(out *NodeExtensionStrategy) {
+	*out = *in
+	in.NodeCfgProfile.DeepCopyInto(&out.NodeCfgProfile)
+	if in.NodeStrategy != nil {
+		outIf := deepcopy.Copy(in.NodeStrategy)
+		out.NodeStrategy = outIf
+	}
+}
+
+func (in *NodeExtensionStrategy) DeepCopy() *NodeExtensionStrategy {
+	if in == nil {
+		return nil
+	}
+	out := new(NodeExtensionStrategy)
+	in.DeepCopyInto(out)
+	return out
+}
+
 type CalculatePolicy string
 
 const (

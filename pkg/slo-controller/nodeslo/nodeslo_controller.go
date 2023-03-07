@@ -90,6 +90,8 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 		klog.Warningf("getNodeSLOSpec(): failed to get systemConfig spec for node %s,error: %v", node.Name, err)
 	}
 
+	nodeSLOSpec.Extensions = getExtensionsConfigSpec(node, &sloCfg.ExtensionCfgMerged)
+
 	return nodeSLOSpec, nil
 }
 

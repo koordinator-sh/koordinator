@@ -2455,3 +2455,58 @@ func TestFilterObjectLimiter(t *testing.T) {
 		})
 	}
 }
+
+func TestAllowAnnotatedPodMigrationJobPassFilter(t *testing.T) {
+	reconciler := newTestReconciler()
+	enter := false
+	reconciler.unretriablePodFilter = func(pod *corev1.Pod) bool {
+		enter = true
+		return false
+	}
+	reconciler.retriablePodFilter = func(pod *corev1.Pod) bool {
+		enter = true
+		return false
+	}
+
+	job := &sev1alpha1.PodMigrationJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test",
+			CreationTimestamp: metav1.Time{Time: time.Now()},
+			Annotations:       map[string]string{"descheduler.alpha.kubernetes.io/evict": "true"},
+		},
+		Spec: sev1alpha1.PodMigrationJobSpec{
+			PodRef: &corev1.ObjectReference{
+				Namespace: "default",
+				Name:      "test-pod",
+			},
+		},
+	}
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Controller: pointer.Bool(true),
+					Kind:       "StatefulSet",
+					Name:       "test",
+					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
+
+	result, err := reconciler.preparePendingJob(context.TODO(), job)
+	assert.False(t, enter)
+	assert.Nil(t, err)
+	assert.Equal(t, reconcile.Result{}, result)
+
+	assert.NoError(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
+	assert.Equal(t, sev1alpha1.PodMigrationJobRunning, job.Status.Phase)
+}

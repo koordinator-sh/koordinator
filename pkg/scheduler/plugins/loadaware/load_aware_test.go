@@ -112,11 +112,11 @@ func TestNew(t *testing.T) {
 
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-	extendHandle, _ := frameworkext.NewExtendedHandle(
+	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 	)
-	proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 	cs := kubefake.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
@@ -206,11 +206,11 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle, _ := frameworkext.NewExtendedHandle(
+			extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 				frameworkext.WithKoordinatorClientSet(koordClientSet),
 				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 			)
-			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
+			proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 			cs := kubefake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
@@ -791,11 +791,11 @@ func TestFilterUsage(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle, _ := frameworkext.NewExtendedHandle(
+			extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 				frameworkext.WithKoordinatorClientSet(koordClientSet),
 				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 			)
-			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
+			proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 			cs := kubefake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
@@ -1735,11 +1735,11 @@ func TestScore(t *testing.T) {
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extendHandle, _ := frameworkext.NewExtendedHandle(
+			extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 				frameworkext.WithKoordinatorClientSet(koordClientSet),
 				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 			)
-			proxyNew := frameworkext.PluginFactoryProxy(extendHandle, New)
+			proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 			cs := kubefake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
