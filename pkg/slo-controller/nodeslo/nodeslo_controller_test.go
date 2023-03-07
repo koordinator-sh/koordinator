@@ -18,6 +18,7 @@ package nodeslo
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -38,6 +39,30 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
+
+// change strategy to interface
+// plugins in koordlet/resmanager will get the interface and
+// change it to strategy individually
+func getExtensionsIfMap(in slov1alpha1.ExtensionsMap) (*slov1alpha1.ExtensionsMap, error) {
+	extensionsMap := &slov1alpha1.ExtensionsMap{}
+	for extkey, extIf := range in.Object {
+		//marshal unmarshal to
+		extStr, err := json.Marshal(extIf)
+		if err != nil {
+			return nil, err
+		}
+		var strategy interface{}
+		if err := json.Unmarshal(extStr, &strategy); err != nil {
+			return nil, err
+		}
+		if extensionsMap.Object == nil {
+			extensionsMap.Object = make(map[string]interface{})
+		}
+		extensionsMap.Object[extkey] = strategy
+	}
+
+	return extensionsMap, nil
+}
 
 func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 	scheme := runtime.NewScheme()
@@ -63,6 +88,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 			},
 		},
 	}
+	testingExtensions := getDefaultExtensionStrategy()
 	type args struct {
 		node    *corev1.Node
 		nodeSLO *slov1alpha1.NodeSLO
@@ -89,6 +115,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 				SystemStrategy:              util.DefaultSystemStrategy(),
+				Extensions:                  testingExtensions,
 			},
 			wantErr: false,
 		},
@@ -117,6 +144,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 				SystemStrategy:              util.DefaultSystemStrategy(),
+				Extensions:                  testingExtensions,
 			},
 			wantErr: false,
 		},
@@ -144,6 +172,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 				SystemStrategy:              util.DefaultSystemStrategy(),
+				Extensions:                  testingExtensions,
 			},
 			wantErr: false,
 		},
@@ -182,6 +211,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceQOSStrategy:         testingResourceQOSStrategy,
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 				SystemStrategy:              util.DefaultSystemStrategy(),
+				Extensions:                  testingExtensions,
 			},
 			wantErr: false,
 		},
@@ -220,6 +250,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceQOSStrategy:         testingResourceQOSStrategyOld,
 				CPUBurstStrategy:            util.DefaultCPUBurstStrategy(),
 				SystemStrategy:              util.DefaultSystemStrategy(),
+				Extensions:                  testingExtensions,
 			},
 			wantErr: false,
 		},
@@ -307,16 +338,23 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 	testingSystemStrategy := util.DefaultSystemStrategy()
 	testingSystemStrategy.MinFreeKbytesFactor = pointer.Int64Ptr(150)
 
+	testingExtensionsMap := *getDefaultExtensionStrategy()
+	testingExtensionsIfMap, err := getExtensionsIfMap(testingExtensionsMap)
+	if err != nil {
+		t.Errorf("failed to get extensions interface map, err:%s", err)
+	}
+
 	nodeSLOSpec := &slov1alpha1.NodeSLOSpec{
 		ResourceUsedThresholdWithBE: testingResourceThresholdStrategy,
 		ResourceQOSStrategy:         testingResourceQOSStrategy,
 		CPUBurstStrategy:            testingCPUBurstStrategy,
 		SystemStrategy:              testingSystemStrategy,
+		Extensions:                  testingExtensionsIfMap,
 	}
 	nodeReq := ctrl.Request{NamespacedName: types.NamespacedName{Name: testingNode.Name}}
 	// the NodeSLO does not exists before getting created
 	nodeSLO := &slov1alpha1.NodeSLO{}
-	err := r.Client.Get(context.TODO(), nodeReq.NamespacedName, nodeSLO)
+	err = r.Client.Get(context.TODO(), nodeReq.NamespacedName, nodeSLO)
 	if !errors.IsNotFound(err) {
 		t.Errorf("the testing NodeSLO should not exist before getting created, err: %s", err)
 	}
