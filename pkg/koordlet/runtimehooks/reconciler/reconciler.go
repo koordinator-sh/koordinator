@@ -206,8 +206,8 @@ type Reconciler interface {
 }
 
 type Options struct {
-	S        statesinformer.StatesInformer
-	Executor resourceexecutor.ResourceUpdateExecutor
+	StatesInformer statesinformer.StatesInformer
+	Executor       resourceexecutor.ResourceUpdateExecutor
 }
 
 func NewReconciler(op Options) Reconciler {
@@ -216,7 +216,7 @@ func NewReconciler(op Options) Reconciler {
 		executor:   op.Executor,
 	}
 	// TODO register individual pod event
-	op.S.RegisterCallbacks(statesinformer.RegisterTypeAllPods, "runtime-hooks-reconciler",
+	op.StatesInformer.RegisterCallbacks(statesinformer.RegisterTypeAllPods, "runtime-hooks-reconciler",
 		"Reconcile cgroup files if pod updated", r.podRefreshCallback)
 	return r
 }

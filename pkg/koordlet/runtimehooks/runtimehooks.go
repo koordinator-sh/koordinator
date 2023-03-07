@@ -84,8 +84,8 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	}
 	s, err := proxyserver.NewServer(newServerOptions)
 	newReconcilerOptions := reconciler.Options{
-		S:        si,
-		Executor: e,
+		StatesInformer: si,
+		Executor:       e,
 	}
 
 	newPluginOptions := hooks.Options{

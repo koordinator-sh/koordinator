@@ -230,8 +230,8 @@ func TestNewReconciler(t *testing.T) {
 	si := mock_statesinformer.NewMockStatesInformer(ctrl)
 	si.EXPECT().RegisterCallbacks(statesinformer.RegisterTypeAllPods, gomock.Any(), gomock.Any(), gomock.Any())
 	op := Options{
-		S:        si,
-		Executor: resourceexecutor.NewResourceUpdateExecutor(),
+		StatesInformer: si,
+		Executor:       resourceexecutor.NewResourceUpdateExecutor(),
 	}
 	r := NewReconciler(op)
 	nr := r.(*reconciler)
