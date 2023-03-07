@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/pointer"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -106,7 +107,7 @@ func Test_bvtPlugin_systemSupported(t *testing.T) {
 func Test_bvtPlugin_Register(t *testing.T) {
 	t.Run("register bvt plugin", func(t *testing.T) {
 		b := &bvtPlugin{}
-		b.Register()
+		b.Register(hooks.Options{})
 	})
 }
 

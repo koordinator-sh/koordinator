@@ -124,7 +124,7 @@ func (p *cpusetPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 				klog.Infof("parse cpuset from pod annotation failed during callback, error: %v", err)
 				continue
 			}
-			containerCtx.ReconcilerDone()
+			containerCtx.ReconcilerDone(p.executor)
 		}
 	}
 	return nil

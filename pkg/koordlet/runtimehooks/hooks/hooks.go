@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
@@ -30,6 +31,10 @@ type Hook struct {
 	stage       rmconfig.RuntimeHookType
 	description string
 	fn          HookFn
+}
+
+type Options struct {
+	Executor resourceexecutor.ResourceUpdateExecutor
 }
 
 type HookFn func(protocol.HooksProtocol) error

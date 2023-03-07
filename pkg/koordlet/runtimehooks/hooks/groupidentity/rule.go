@@ -137,7 +137,7 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		if err != nil {
 			klog.Infof("bvtupdater creat failed, dir %v, error %v", kubeQOSCgroupPath, err)
 		}
-		if _, err := resourceexecutor.NewResourceUpdateExecutor().Update(false, bvtUpdater); err != nil {
+		if _, err := b.executor.Update(false, bvtUpdater); err != nil {
 			klog.Infof("update kube qos %v cpu bvt failed, dir %v, error %v", kubeQOS, kubeQOSCgroupPath, err)
 		} else {
 			audit.V(2).Group(string(kubeQOS)).Reason(name).Message("set bvt to %v", bvtValue)
@@ -152,7 +152,7 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		if err != nil {
 			klog.Infof("bvtupdater create failed, dir %v, error %v", podCgroupPath, err)
 		}
-		if _, err := resourceexecutor.NewResourceUpdateExecutor().Update(false, bvtUpdater); err != nil {
+		if _, err := b.executor.Update(false, bvtUpdater); err != nil {
 			klog.Infof("update pod %s cpu bvt failed, dir %v, error %v",
 				util.GetPodKey(podMeta.Pod), podCgroupPath, err)
 		} else {

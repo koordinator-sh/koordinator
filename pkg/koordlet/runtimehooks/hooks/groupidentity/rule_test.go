@@ -28,6 +28,7 @@ import (
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -568,8 +569,13 @@ func Test_bvtPlugin_ruleUpdateCb(t *testing.T) {
 		}
 		t.Run(tt.name, func(t *testing.T) {
 			b := &bvtPlugin{
-				rule: tt.fields.rule,
+				rule:     tt.fields.rule,
+				executor: resourceexecutor.NewResourceUpdateExecutor(),
 			}
+			stop := make(chan struct{})
+			defer func() { close(stop) }()
+			b.executor.Run(stop)
+
 			if err := b.ruleUpdateCb(podList); (err != nil) != tt.wantErr {
 				t.Errorf("ruleUpdateCb() error = %v, wantErr %v", err, tt.wantErr)
 			}

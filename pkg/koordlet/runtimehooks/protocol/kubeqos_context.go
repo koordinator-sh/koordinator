@@ -21,6 +21,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
@@ -41,13 +42,17 @@ type KubeQOSResponse struct {
 type KubeQOSContext struct {
 	Request  KubeQOSRequet
 	Response KubeQOSResponse
+	executor resourceexecutor.ResourceUpdateExecutor
 }
 
 func (k *KubeQOSContext) FromReconciler(kubeQOS corev1.PodQOSClass) {
 	k.Request.FromReconciler(kubeQOS)
 }
 
-func (k *KubeQOSContext) ReconcilerDone() {
+func (k *KubeQOSContext) ReconcilerDone(executor resourceexecutor.ResourceUpdateExecutor) {
+	if k.executor == nil {
+		k.executor = executor
+	}
 	k.injectForOrigin()
 	k.injectForExt()
 }
@@ -58,7 +63,7 @@ func (p *KubeQOSContext) injectForOrigin() {
 
 func (p *KubeQOSContext) injectForExt() {
 	if p.Response.Resources.CPUBvt != nil {
-		if err := injectCPUBvt(p.Request.CgroupParent, *p.Response.Resources.CPUBvt); err != nil {
+		if err := injectCPUBvt(p.Request.CgroupParent, *p.Response.Resources.CPUBvt, p.executor); err != nil {
 			klog.Infof("set kubeqos %v bvt %v on cgroup parent %v failed, error %v", p.Request.KubeQOSClass,
 				*p.Response.Resources.CPUBvt, p.Request.CgroupParent, err)
 		} else {

@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
@@ -79,7 +80,11 @@ func Test_doKubeQOSCgroup(t *testing.T) {
 				return nil
 			}
 			RegisterCgroupReconciler(KubeQOSLevel, tt.args.resource, tt.name, reconcilerFn, NoneFilter())
-			doKubeQOSCgroup()
+			e := resourceexecutor.NewResourceUpdateExecutor()
+			stop := make(chan struct{})
+			defer func() { close(stop) }()
+			e.Run(stop)
+			doKubeQOSCgroup(e)
 			assert.Equal(t, tt.wants.kubeQOSVal, tt.gots.kubeQOSVal, "kube qos map value should be equal")
 		})
 	}
@@ -224,7 +229,11 @@ func TestNewReconciler(t *testing.T) {
 	defer ctrl.Finish()
 	si := mock_statesinformer.NewMockStatesInformer(ctrl)
 	si.EXPECT().RegisterCallbacks(statesinformer.RegisterTypeAllPods, gomock.Any(), gomock.Any(), gomock.Any())
-	r := NewReconciler(si)
+	op := Options{
+		S:        si,
+		Executor: resourceexecutor.NewResourceUpdateExecutor(),
+	}
+	r := NewReconciler(op)
 	nr := r.(*reconciler)
 	stopCh := make(chan struct{}, 1)
 	stopCh <- struct{}{}

@@ -25,6 +25,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
@@ -43,11 +44,12 @@ const (
 type plugin struct {
 	rule        *batchResourceRule
 	ruleRWMutex sync.RWMutex
+	executor    resourceexecutor.ResourceUpdateExecutor
 }
 
 var podQOSConditions = []string{string(apiext.QoSBE), string(apiext.QoSLS), string(apiext.QoSNone)}
 
-func (p *plugin) Register() {
+func (p *plugin) Register(op hooks.Options) {
 	klog.V(5).Infof("register hook %v", name)
 	rule.Register(name, description,
 		rule.WithParseFunc(statesinformer.RegisterTypeNodeSLOSpec, p.parseRule),
@@ -67,6 +69,7 @@ func (p *plugin) Register() {
 		p.SetContainerCFSQuota, reconciler.PodQOSFilter(), podQOSConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.MemoryLimit, description+" (container memory limit)",
 		p.SetContainerMemoryLimit, reconciler.PodQOSFilter(), podQOSConditions...)
+	p.executor = op.Executor
 }
 
 var singleton *plugin

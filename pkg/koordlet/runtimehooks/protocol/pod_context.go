@@ -23,6 +23,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -96,6 +97,7 @@ type PodResponse struct {
 type PodContext struct {
 	Request  PodRequest
 	Response PodResponse
+	executor resourceexecutor.ResourceUpdateExecutor
 }
 
 func (p *PodResponse) ProxyDone(resp *runtimeapi.PodSandboxHookResponse) {
@@ -121,7 +123,10 @@ func (p *PodContext) FromProxy(req *runtimeapi.PodSandboxHookRequest) {
 	p.Request.FromProxy(req)
 }
 
-func (p *PodContext) ProxyDone(resp *runtimeapi.PodSandboxHookResponse) {
+func (p *PodContext) ProxyDone(resp *runtimeapi.PodSandboxHookResponse, executor resourceexecutor.ResourceUpdateExecutor) {
+	if p.executor == nil {
+		p.executor = executor
+	}
 	p.injectForExt()
 	p.Response.ProxyDone(resp)
 }
@@ -130,7 +135,10 @@ func (p *PodContext) FromReconciler(podMeta *statesinformer.PodMeta) {
 	p.Request.FromReconciler(podMeta)
 }
 
-func (p *PodContext) ReconcilerDone() {
+func (p *PodContext) ReconcilerDone(executor resourceexecutor.ResourceUpdateExecutor) {
+	if p.executor == nil {
+		p.executor = executor
+	}
 	p.injectForExt()
 	p.injectForOrigin()
 }
@@ -141,7 +149,7 @@ func (p *PodContext) injectForOrigin() {
 
 func (p *PodContext) injectForExt() {
 	if p.Response.Resources.CPUBvt != nil {
-		if err := injectCPUBvt(p.Request.CgroupParent, *p.Response.Resources.CPUBvt); err != nil {
+		if err := injectCPUBvt(p.Request.CgroupParent, *p.Response.Resources.CPUBvt, p.executor); err != nil {
 			klog.Infof("set pod %v/%v bvt %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.CPUBvt, p.Request.CgroupParent, err)
 		} else {
@@ -154,7 +162,7 @@ func (p *PodContext) injectForExt() {
 	// some of pod-level cgroups are manually updated since pod-stage hooks do not support it;
 	// kubelet may set the cgroups when pod is created or restarted, so we need to update the cgroups repeatedly
 	if p.Response.Resources.CPUShares != nil {
-		if err := injectCPUShares(p.Request.CgroupParent, *p.Response.Resources.CPUShares); err != nil {
+		if err := injectCPUShares(p.Request.CgroupParent, *p.Response.Resources.CPUShares, p.executor); err != nil {
 			klog.Infof("set pod %v/%v cpu shares %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.CPUShares, p.Request.CgroupParent, err)
 		} else {
@@ -165,7 +173,7 @@ func (p *PodContext) injectForExt() {
 		}
 	}
 	if p.Response.Resources.CFSQuota != nil {
-		if err := injectCPUQuota(p.Request.CgroupParent, *p.Response.Resources.CFSQuota); err != nil {
+		if err := injectCPUQuota(p.Request.CgroupParent, *p.Response.Resources.CFSQuota, p.executor); err != nil {
 			klog.Infof("set pod %v/%v cfs quota %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.CFSQuota, p.Request.CgroupParent, err)
 		} else {
@@ -176,7 +184,7 @@ func (p *PodContext) injectForExt() {
 		}
 	}
 	if p.Response.Resources.MemoryLimit != nil {
-		if err := injectMemoryLimit(p.Request.CgroupParent, *p.Response.Resources.MemoryLimit); err != nil {
+		if err := injectMemoryLimit(p.Request.CgroupParent, *p.Response.Resources.MemoryLimit, p.executor); err != nil {
 			klog.Infof("set pod %v/%v memory limit %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.MemoryLimit, p.Request.CgroupParent, err)
 		} else {
