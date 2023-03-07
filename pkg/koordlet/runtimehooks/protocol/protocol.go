@@ -75,7 +75,7 @@ func injectCPUShares(cgroupParent string, cpuShares int64, e resourceexecutor.Re
 	if err != nil {
 		return err
 	}
-	_, err = e.Update(false, updater)
+	_, err = e.Update(true, updater)
 	return err
 }
 
@@ -104,7 +104,7 @@ func injectMemoryLimit(cgroupParent string, memoryLimit int64, e resourceexecuto
 	if err != nil {
 		return err
 	}
-	_, err = e.Update(false, updater)
+	_, err = e.Update(true, updater)
 	return err
 }
 
@@ -114,6 +114,6 @@ func injectCPUBvt(cgroupParent string, bvtValue int64, e resourceexecutor.Resour
 	if err != nil {
 		return err
 	}
-	_, err = e.Update(false, updater)
+	_, err = e.Update(true, updater)
 	return err
 }
