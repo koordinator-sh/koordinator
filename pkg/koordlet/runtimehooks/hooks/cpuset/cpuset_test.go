@@ -24,6 +24,8 @@ import (
 	"k8s.io/utils/pointer"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -65,7 +67,7 @@ func Test_cpusetPlugin_Register(t *testing.T) {
 			rule: testRule,
 		}
 
-		p.Register()
+		p.Register(hooks.Options{})
 	})
 }
 
@@ -270,7 +272,8 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 			var containerCtx *protocol.ContainerContext
 
 			p := &cpusetPlugin{
-				rule: tt.fields.rule,
+				rule:     tt.fields.rule,
+				executor: resourceexecutor.NewResourceUpdateExecutor(),
 			}
 			if tt.args.proto != nil {
 				containerCtx = tt.args.proto.(*protocol.ContainerContext)
@@ -287,6 +290,11 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("SetContainerCPUSet() error = %v, wantErr %v", err, tt.wantErr)
 			}
+			stop := make(chan struct{})
+			defer func() {
+				close(stop)
+			}()
+			p.executor.Run(stop)
 
 			if containerCtx == nil {
 				return
@@ -294,7 +302,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 			if tt.wantCPUSet == nil {
 				assert.Nil(t, containerCtx.Response.Resources.CPUSet, "cpuset value should be nil")
 			} else {
-				containerCtx.ReconcilerDone()
+				containerCtx.ReconcilerDone(p.executor)
 				assert.Equal(t, *tt.wantCPUSet, *containerCtx.Response.Resources.CPUSet, "container cpuset should be equal")
 				gotCPUSet := getCPUSet(containerCtx.Request.CgroupParent, testHelper)
 				assert.Equal(t, *tt.wantCPUSet, gotCPUSet, "container cpuset should be equal")
@@ -420,10 +428,17 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 			if podCtx == nil {
 				return
 			}
+			e := resourceexecutor.NewResourceUpdateExecutor()
+			stop := make(chan struct{})
+			defer func() {
+				close(stop)
+			}()
+			e.Run(stop)
+
 			if tt.wantCPUQuota == nil {
 				assert.Nil(t, podCtx.Response.Resources.CFSQuota, "cfs quota value should be nil")
 			} else {
-				podCtx.ReconcilerDone()
+				podCtx.ReconcilerDone(e)
 				assert.Equal(t, *tt.wantCPUQuota, *podCtx.Response.Resources.CFSQuota, "pod cfs quota should be equal")
 				gotCPUQuota := getCPUQuota(podCtx.Request.CgroupParent, testHelper)
 				gotCPUQuotaStr, err := strconv.ParseInt(gotCPUQuota, 10, 64)
@@ -538,10 +553,17 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 			if containerCtx == nil {
 				return
 			}
+			e := resourceexecutor.NewResourceUpdateExecutor()
+			stop := make(chan struct{})
+			defer func() {
+				close(stop)
+			}()
+			e.Run(stop)
+
 			if tt.wantCPUQuota == nil {
 				assert.Nil(t, containerCtx.Response.Resources.CFSQuota, "cfs quota value should be nil")
 			} else {
-				containerCtx.ReconcilerDone()
+				containerCtx.ReconcilerDone(e)
 				assert.Equal(t, *tt.wantCPUQuota, *containerCtx.Response.Resources.CFSQuota, "container cfs quota should be equal")
 				gotCPUQuota := getCPUQuota(containerCtx.Request.CgroupParent, testHelper)
 				gotCPUQuotaStr, err := strconv.ParseInt(gotCPUQuota, 10, 64)

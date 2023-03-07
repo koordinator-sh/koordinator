@@ -20,6 +20,8 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/proxyserver"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
@@ -28,7 +30,7 @@ import (
 )
 
 type HookPlugin interface {
-	Register()
+	Register(op hooks.Options)
 }
 
 type RuntimeHook interface {
@@ -39,10 +41,12 @@ type runtimeHook struct {
 	statesInformer statesinformer.StatesInformer
 	server         proxyserver.Server
 	reconciler     reconciler.Reconciler
+	executor       resourceexecutor.ResourceUpdateExecutor
 }
 
 func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	klog.V(5).Infof("runtime hook server start running")
+	go r.executor.Run(stopCh)
 	if err := r.server.Start(); err != nil {
 		return err
 	}
@@ -67,6 +71,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	if err != nil {
 		return nil, err
 	}
+	e := resourceexecutor.NewResourceUpdateExecutor()
 	newServerOptions := proxyserver.Options{
 		Network:             cfg.RuntimeHooksNetwork,
 		Address:             cfg.RuntimeHooksAddr,
@@ -75,17 +80,28 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		PluginFailurePolicy: pluginFailurePolicy,
 		ConfigFilePath:      cfg.RuntimeHookConfigFilePath,
 		DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
+		Executor:            e,
 	}
 	s, err := proxyserver.NewServer(newServerOptions)
+	newReconcilerOptions := reconciler.Options{
+		StatesInformer: si,
+		Executor:       e,
+	}
+
+	newPluginOptions := hooks.Options{
+		Executor: e,
+	}
+
 	if err != nil {
 		return nil, err
 	}
 	r := &runtimeHook{
 		statesInformer: si,
 		server:         s,
-		reconciler:     reconciler.NewReconciler(si),
+		reconciler:     reconciler.NewReconciler(newReconcilerOptions),
+		executor:       e,
 	}
-	registerPlugins()
+	registerPlugins(newPluginOptions)
 	si.RegisterCallbacks(statesinformer.RegisterTypeNodeSLOSpec, "runtime-hooks-rule-node-slo",
 		"Update hooks rule can run callbacks if NodeSLO spec update",
 		rule.UpdateRules)
@@ -99,12 +115,12 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	return r, nil
 }
 
-func registerPlugins() {
+func registerPlugins(op hooks.Options) {
 	klog.V(5).Infof("start register plugins for runtime hook")
 	for hookFeature, hookPlugin := range runtimeHookPlugins {
 		enabled := features.DefaultKoordletFeatureGate.Enabled(hookFeature)
 		if enabled {
-			hookPlugin.Register()
+			hookPlugin.Register(op)
 		}
 		klog.Infof("runtime hook plugin %s enable %v", hookFeature, enabled)
 	}

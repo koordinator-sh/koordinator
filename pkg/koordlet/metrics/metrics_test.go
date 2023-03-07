@@ -18,6 +18,7 @@ package metrics
 
 import (
 	"fmt"
+
 	"testing"
 	"time"
 
@@ -27,7 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -76,30 +77,15 @@ func TestCommonCollectors(t *testing.T) {
 			UID:       "test01",
 		},
 	}
-	testingPSI := &system.PSIByResource{
-		CPU: system.PSIStats{
-			Some: &system.PSILine{
+	testingPSI := &resourceexecutor.PSIByResource{
+		CPU: resourceexecutor.PSIStats{
+			Some: &resourceexecutor.PSILine{
 				Avg10:  1,
 				Avg60:  1,
 				Avg300: 1,
 				Total:  1,
 			},
-			Full: &system.PSILine{
-				Avg10:  1,
-				Avg60:  1,
-				Avg300: 1,
-				Total:  1,
-			},
-			FullSupported: true,
-		},
-		Mem: system.PSIStats{
-			Some: &system.PSILine{
-				Avg10:  1,
-				Avg60:  1,
-				Avg300: 1,
-				Total:  1,
-			},
-			Full: &system.PSILine{
+			Full: &resourceexecutor.PSILine{
 				Avg10:  1,
 				Avg60:  1,
 				Avg300: 1,
@@ -107,14 +93,29 @@ func TestCommonCollectors(t *testing.T) {
 			},
 			FullSupported: true,
 		},
-		IO: system.PSIStats{
-			Some: &system.PSILine{
+		Mem: resourceexecutor.PSIStats{
+			Some: &resourceexecutor.PSILine{
 				Avg10:  1,
 				Avg60:  1,
 				Avg300: 1,
 				Total:  1,
 			},
-			Full: &system.PSILine{
+			Full: &resourceexecutor.PSILine{
+				Avg10:  1,
+				Avg60:  1,
+				Avg300: 1,
+				Total:  1,
+			},
+			FullSupported: true,
+		},
+		IO: resourceexecutor.PSIStats{
+			Some: &resourceexecutor.PSILine{
+				Avg10:  1,
+				Avg60:  1,
+				Avg300: 1,
+				Total:  1,
+			},
+			Full: &resourceexecutor.PSILine{
 				Avg10:  1,
 				Avg60:  1,
 				Avg300: 1,

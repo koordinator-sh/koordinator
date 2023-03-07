@@ -23,9 +23,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	corev1 "k8s.io/api/core/v1"
-
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func Test_readMemInfo(t *testing.T) {
@@ -174,74 +171,4 @@ func Test_GetMemInfoUsageKB(t *testing.T) {
 		t.Error("failed to get MemInfo usage: ", err)
 	}
 	t.Log("meminfo: ", memInfoUsage)
-}
-
-func Test_readPodMemStat(t *testing.T) {
-	tempDir := t.TempDir()
-	tempInvalidPodCgroupDir := filepath.Join(tempDir, "no_cgroup")
-	tempPodMemStatPath := filepath.Join(tempDir, system.MemoryStatName)
-	memStatContentStr := "...\ntotal_cache 4843945984\ntotal_rss 310595584\ntotal_rss_huge 60817408\n" +
-		"total_mapped_file 243519488\ntotal_dirty 413696\ntotal_writeback 0\ntotal_swap 0\n" +
-		"total_workingset_refault 0\ntotal_workingset_activate 0total_workingset_restore 0\n" +
-		"total_pgpgin 723136924\ntotal_pgpgout 721893310\ntotal_pgfault 1613203098\n" +
-		"total_pgmajfault 5663\ntotal_pgoutrun 0\ntotal_allocstall 0\n" +
-		"total_kswapd_steal 0\ntotal_pg_pgsteal 0\ntotal_kswapd_pgscan 0\n" +
-		"total_pg_pgscan 0\ntotal_pgrefill 0\ntotal_inactive_anon 1331200\n" +
-		"total_active_anon 310775808\ntotal_inactive_file 2277351424\ntotal_active_file 2564194304\n" +
-		"total_unevictable 0"
-	err := os.WriteFile(tempPodMemStatPath, []byte(memStatContentStr), 0666)
-	if err != nil {
-		t.Error(err)
-	}
-	type args struct {
-		podCgroupDir string
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    int64
-		wantErr bool
-	}{
-		{
-			name:    "read illegal mem stat path",
-			args:    args{podCgroupDir: tempInvalidPodCgroupDir},
-			want:    0,
-			wantErr: true,
-		},
-		{
-			name:    "read test mem stat path",
-			args:    args{podCgroupDir: tempPodMemStatPath},
-			want:    312107008,
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := readCgroupMemStat(tt.args.podCgroupDir)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("readCgroupMemStat wantErr %v but got err %s", tt.wantErr, err)
-			}
-			if !tt.wantErr && got != tt.want {
-				t.Errorf("readCgroupMemStat want %v but got %v", tt.want, got)
-			}
-		})
-	}
-}
-
-func Test_GetPodMemStatUsageBytes(t *testing.T) {
-	tempDir := t.TempDir()
-	system.Conf = system.NewDsModeConfig()
-	_, err := GetPodMemStatUsageBytes(tempDir)
-	assert.NotNil(t, err)
-}
-
-func TestGetContainerMemStatUsageBytes(t *testing.T) {
-	tempDir := t.TempDir()
-	container := &corev1.ContainerStatus{
-		Name:        "test-container",
-		ContainerID: "test-container-id",
-	}
-	system.Conf = system.NewDsModeConfig()
-	_, err := GetContainerMemStatUsageBytes(tempDir, container)
-	assert.NotNil(t, err)
 }

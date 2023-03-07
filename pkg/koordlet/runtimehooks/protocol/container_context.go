@@ -24,9 +24,9 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -146,6 +146,7 @@ func (c *ContainerResponse) ProxyDone(resp *runtimeapi.ContainerResourceHookResp
 type ContainerContext struct {
 	Request  ContainerRequest
 	Response ContainerResponse
+	executor resourceexecutor.ResourceUpdateExecutor
 }
 
 func (c *ContainerContext) FromProxy(req *runtimeapi.ContainerResourceHookRequest) {
@@ -161,14 +162,17 @@ func (c *ContainerContext) FromReconciler(podMeta *statesinformer.PodMeta, conta
 	c.Request.FromReconciler(podMeta, containerName)
 }
 
-func (c *ContainerContext) ReconcilerDone() {
+func (c *ContainerContext) ReconcilerDone(executor resourceexecutor.ResourceUpdateExecutor) {
+	if c.executor == nil {
+		c.executor = executor
+	}
 	c.injectForExt()
 	c.injectForOrigin()
 }
 
 func (c *ContainerContext) injectForOrigin() {
 	if c.Response.Resources.CPUShares != nil {
-		if err := injectCPUShares(c.Request.CgroupParent, *c.Response.Resources.CPUShares); err != nil {
+		if err := injectCPUShares(c.Request.CgroupParent, *c.Response.Resources.CPUShares, c.executor); err != nil {
 			klog.Infof("set container %v/%v/%v cpu share %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CPUShares, c.Request.CgroupParent, err)
 		} else {
@@ -180,8 +184,8 @@ func (c *ContainerContext) injectForOrigin() {
 		}
 	}
 	if c.Response.Resources.CPUSet != nil {
-		err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet)
-		if err != nil && system.IsCgroupDirErr(err) {
+		err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet, c.executor)
+		if err != nil && resourceexecutor.IsCgroupDirErr(err) {
 			klog.V(5).Infof("set container %v/%v/%v cpuset %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CPUSet, c.Request.CgroupParent, err)
 		} else if err != nil {
@@ -196,7 +200,7 @@ func (c *ContainerContext) injectForOrigin() {
 		}
 	}
 	if c.Response.Resources.CFSQuota != nil {
-		if err := injectCPUQuota(c.Request.CgroupParent, *c.Response.Resources.CFSQuota); err != nil {
+		if err := injectCPUQuota(c.Request.CgroupParent, *c.Response.Resources.CFSQuota, c.executor); err != nil {
 			klog.Infof("set container %v/%v/%v cfs quota %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CFSQuota, c.Request.CgroupParent, err)
 		} else {
@@ -208,7 +212,7 @@ func (c *ContainerContext) injectForOrigin() {
 		}
 	}
 	if c.Response.Resources.MemoryLimit != nil {
-		if err := injectMemoryLimit(c.Request.CgroupParent, *c.Response.Resources.MemoryLimit); err != nil {
+		if err := injectMemoryLimit(c.Request.CgroupParent, *c.Response.Resources.MemoryLimit, c.executor); err != nil {
 			klog.Infof("set container %v/%v/%v memory limit %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.MemoryLimit, c.Request.CgroupParent, err)
 		} else {

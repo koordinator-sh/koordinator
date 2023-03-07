@@ -24,6 +24,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -76,13 +77,13 @@ func GetContainerCgroupCPUAcctUsagePath(podParentDir string, c *corev1.Container
 	return system.GetCgroupFilePath(containerPath, system.CPUAcctUsage), nil
 }
 
-func GetContainerCgroupCPUAcctPSIPath(podParentDir string, c *corev1.ContainerStatus) (system.PSIPath, error) {
+func GetContainerCgroupCPUAcctPSIPath(podParentDir string, c *corev1.ContainerStatus) (resourceexecutor.PSIPath, error) {
 	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
 	if err != nil {
-		return system.PSIPath{}, err
+		return resourceexecutor.PSIPath{}, err
 	}
 	// psi file saved in cpuacct for cgroup v1 file system
-	return system.PSIPath{
+	return resourceexecutor.PSIPath{
 		CPU: system.GetCgroupFilePath(containerPath, system.CPUAcctCPUPressure),
 		Mem: system.GetCgroupFilePath(containerPath, system.CPUAcctMemoryPressure),
 		IO:  system.GetCgroupFilePath(containerPath, system.CPUAcctIOPressure),
@@ -191,16 +192,6 @@ func GetContainerCurMemLimitBytes(podParentDir string, c *corev1.ContainerStatus
 		return 0, err
 	}
 	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
-}
-
-// GetContainerCurTasks gets the TIDs of the given container's cgroup.
-// DEPRECATED: use resourceexecutor.CgroupReader instead.
-func GetContainerCurTasks(podParentDir string, c *corev1.ContainerStatus) ([]int, error) {
-	cgroupPath, err := GetContainerCurTasksPath(podParentDir, c)
-	if err != nil {
-		return nil, err
-	}
-	return system.GetCgroupCurTasks(cgroupPath)
 }
 
 func GetContainerBaseCFSQuota(container *corev1.Container) int64 {

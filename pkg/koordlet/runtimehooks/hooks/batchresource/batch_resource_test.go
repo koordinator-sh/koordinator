@@ -18,6 +18,7 @@ package batchresource
 
 import (
 	"encoding/json"
+
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,13 +27,14 @@ import (
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 )
 
 func Test_plugin_Register(t *testing.T) {
 	t.Run("test not panic", func(t *testing.T) {
 		p := &plugin{}
-		p.Register()
+		p.Register(hooks.Options{})
 	})
 }
 

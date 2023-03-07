@@ -17,9 +17,6 @@ limitations under the License.
 package util
 
 import (
-	"os"
-	"path/filepath"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -109,42 +106,6 @@ func Test_GetRootCgroupCPUSetDirWithCgroupfsDriver(t *testing.T) {
 				t.Errorf("getRootCgroupDir want %v but got %v", tt.want, got)
 			}
 		})
-	}
-}
-
-func Test_GetRootCgroupCurCPUSet(t *testing.T) {
-	// prepare testing tmp files
-	cgroupRootDir := t.TempDir()
-	dname := filepath.Join(cgroupRootDir, system.CgroupCPUSetDir)
-	err := os.MkdirAll(dname, 0700)
-	if err != nil {
-		t.Errorf("failed to prepare tmpdir in %v, err: %v", "GetRootCgroupCurCPUSet", err)
-		return
-	}
-	fname := filepath.Join(dname, system.CPUSetCPUSName)
-	_ = os.WriteFile(fname, []byte{'1', ',', '2'}, 0666)
-
-	system.Conf = &system.Config{
-		CgroupRootDir: cgroupRootDir,
-	}
-	// reset Formatter after testing
-	rawParentDir := system.CgroupPathFormatter.ParentDir
-	system.CgroupPathFormatter.ParentDir = ""
-	defer func() {
-		system.CgroupPathFormatter.ParentDir = rawParentDir
-	}()
-
-	wantCPUSet := []int32{1, 2}
-
-	system.UseCgroupsV2 = false
-	gotCPUSet, err := GetRootCgroupCurCPUSet(corev1.PodQOSGuaranteed)
-	if err != nil {
-		t.Errorf("failed to GetRootCgroupCurCPUSet, err: %v", err)
-		return
-	}
-	if !reflect.DeepEqual(wantCPUSet, gotCPUSet) {
-		t.Errorf("failed to GetRootCgroupCurCPUSet, want cpuset %v, got %v", wantCPUSet, gotCPUSet)
-		return
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
@@ -44,9 +45,10 @@ type bvtPlugin struct {
 	sysSupported     *bool
 	hasKernelEnabled *bool // whether kernel is configurable for enabling bvt (via `kernel.sched_group_identity_enabled`)
 	kernelEnabled    *bool // if not nil, indicates whether bvt feature is enabled via `kernel.sched_group_identity_enabled`
+	executor         resourceexecutor.ResourceUpdateExecutor
 }
 
-func (b *bvtPlugin) Register() {
+func (b *bvtPlugin) Register(op hooks.Options) {
 	klog.V(5).Infof("register hook %v", name)
 	hooks.Register(rmconfig.PreRunPodSandbox, name, description, b.SetPodBvtValue)
 	rule.Register(name, description,
@@ -57,6 +59,7 @@ func (b *bvtPlugin) Register() {
 		b.SetPodBvtValue, reconciler.NoneFilter())
 	reconciler.RegisterCgroupReconciler(reconciler.KubeQOSLevel, sysutil.CPUBVTWarpNs, "reconcile kubeqos level cpu bvt value",
 		b.SetKubeQOSBvtValue, reconciler.NoneFilter())
+	b.executor = op.Executor
 }
 
 func (b *bvtPlugin) SystemSupported() bool {
@@ -64,7 +67,7 @@ func (b *bvtPlugin) SystemSupported() bool {
 		isBVTSupported, msg := false, "resource not found"
 		bvtResource, err := sysutil.GetCgroupResource(sysutil.CPUBVTWarpNsName)
 		if err == nil {
-			isBVTSupported, msg = bvtResource.IsSupported(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed))
+			isBVTSupported, msg = bvtResource.IsSupported(util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed))
 		}
 		bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
 		b.sysSupported = pointer.BoolPtr(isBVTSupported || sysutil.FileExists(bvtConfigPath))

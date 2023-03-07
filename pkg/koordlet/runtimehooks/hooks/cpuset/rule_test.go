@@ -26,6 +26,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
@@ -622,7 +623,11 @@ func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
 				}
 			}
 
-			p := &cpusetPlugin{}
+			p := &cpusetPlugin{executor: resourceexecutor.NewResourceUpdateExecutor()}
+			stop := make(chan struct{})
+			defer func() { close(stop) }()
+			p.executor.Run(stop)
+
 			if err := p.ruleUpdateCb(tt.args.pods); (err != nil) != tt.wantErr {
 				t.Errorf("ruleUpdateCb() error = %v, wantErr %v", err, tt.wantErr)
 			}

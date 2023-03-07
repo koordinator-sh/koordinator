@@ -33,7 +33,7 @@ const GpuAllocEnv = "NVIDIA_VISIBLE_DEVICES"
 
 type gpuPlugin struct{}
 
-func (p *gpuPlugin) Register() {
+func (p *gpuPlugin) Register(op hooks.Options) {
 	klog.V(5).Infof("register hook %v", "gpu env inject")
 	hooks.Register(rmconfig.PreCreateContainer, "gpu env inject", "inject NVIDIA_VISIBLE_DEVICES env into container", p.InjectContainerGPUEnv)
 }

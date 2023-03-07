@@ -26,6 +26,7 @@ import (
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -131,8 +132,12 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 	for _, kubeQOS := range []corev1.PodQOSClass{
 		corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
 		bvtValue := r.getKubeQOSDirBvtValue(kubeQOS)
-		kubeQOSCgroupPath := koordletutil.GetKubeQosRelativePath(kubeQOS)
-		if err := sysutil.CgroupFileWrite(kubeQOSCgroupPath, sysutil.CPUBVTWarpNs, strconv.FormatInt(bvtValue, 10)); err != nil {
+		kubeQOSCgroupPath := koordletutil.GetPodQoSRelativePath(kubeQOS)
+		bvtUpdater, err := resourceexecutor.NewCommonCgroupUpdater(sysutil.CPUBVTWarpNsName, kubeQOSCgroupPath, strconv.FormatInt(bvtValue, 10))
+		if err != nil {
+			klog.Infof("bvtupdater creat failed, dir %v, error %v", kubeQOSCgroupPath, err)
+		}
+		if _, err := b.executor.Update(false, bvtUpdater); err != nil {
 			klog.Infof("update kube qos %v cpu bvt failed, dir %v, error %v", kubeQOS, kubeQOSCgroupPath, err)
 		} else {
 			audit.V(2).Group(string(kubeQOS)).Reason(name).Message("set bvt to %v", bvtValue)
@@ -143,7 +148,11 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		podKubeQOS := podMeta.Pod.Status.QOSClass
 		podBvt := r.getPodBvtValue(podQOS, podKubeQOS)
 		podCgroupPath := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
-		if err := sysutil.CgroupFileWrite(podCgroupPath, sysutil.CPUBVTWarpNs, strconv.FormatInt(podBvt, 10)); err != nil {
+		bvtUpdater, err := resourceexecutor.NewCommonCgroupUpdater(sysutil.CPUBVTWarpNsName, podCgroupPath, strconv.FormatInt(podBvt, 10))
+		if err != nil {
+			klog.Infof("bvtupdater create failed, dir %v, error %v", podCgroupPath, err)
+		}
+		if _, err := b.executor.Update(false, bvtUpdater); err != nil {
 			klog.Infof("update pod %s cpu bvt failed, dir %v, error %v",
 				util.GetPodKey(podMeta.Pod), podCgroupPath, err)
 		} else {

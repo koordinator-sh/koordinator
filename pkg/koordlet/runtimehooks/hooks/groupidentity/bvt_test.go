@@ -25,12 +25,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/pointer"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func initCPUBvt(dirWithKube string, value int64, helper *system.FileTestUtil) {
-	helper.WriteCgroupFileContents(util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed), system.CPUBVTWarpNs,
+	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), system.CPUBVTWarpNs,
 		strconv.FormatInt(value, 10))
 	helper.WriteCgroupFileContents(dirWithKube, system.CPUBVTWarpNs, strconv.FormatInt(value, 10))
 }
@@ -46,7 +47,7 @@ func getPodCPUBvt(podDirWithKube string, helper *system.FileTestUtil) int64 {
 }
 
 func Test_bvtPlugin_systemSupported(t *testing.T) {
-	kubeRootDir := util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed)
+	kubeRootDir := util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed)
 	type fields struct {
 		UseCgroupsV2            bool
 		initPath                *string
@@ -106,12 +107,12 @@ func Test_bvtPlugin_systemSupported(t *testing.T) {
 func Test_bvtPlugin_Register(t *testing.T) {
 	t.Run("register bvt plugin", func(t *testing.T) {
 		b := &bvtPlugin{}
-		b.Register()
+		b.Register(hooks.Options{})
 	})
 }
 
 func Test_bvtPlugin_initialized(t *testing.T) {
-	kubeRootDir := util.GetKubeQosRelativePath(corev1.PodQOSGuaranteed)
+	kubeRootDir := util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed)
 	type fields struct {
 		initPath                     *string
 		initKernelGroupIdentity      bool

@@ -39,7 +39,7 @@ func (s *server) PreRunPodSandboxHook(ctx context.Context,
 	podCtx := &protocol.PodContext{}
 	podCtx.FromProxy(req)
 	err := hooks.RunHooks(s.options.PluginFailurePolicy, rmconfig.PreRunPodSandbox, podCtx)
-	podCtx.ProxyDone(resp)
+	podCtx.ProxyDone(resp, s.options.Executor)
 	klog.V(5).Infof("send PreRunPodSandboxHook for pod %v response %v", req.PodMeta.String(), resp.String())
 	return resp, err
 }
@@ -56,7 +56,7 @@ func (s *server) PostStopPodSandboxHook(ctx context.Context,
 	podCtx := &protocol.PodContext{}
 	podCtx.FromProxy(req)
 	err := hooks.RunHooks(s.options.PluginFailurePolicy, rmconfig.PostStopPodSandbox, podCtx)
-	podCtx.ProxyDone(resp)
+	podCtx.ProxyDone(resp, s.options.Executor)
 	klog.V(5).Infof("send PostStopPodSandboxHook for pod %v response %v", req.PodMeta.String(), resp.String())
 	return resp, err
 }

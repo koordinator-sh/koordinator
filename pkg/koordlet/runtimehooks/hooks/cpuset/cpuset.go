@@ -24,6 +24,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
@@ -42,11 +43,12 @@ const (
 type cpusetPlugin struct {
 	rule        *cpusetRule
 	ruleRWMutex sync.RWMutex
+	executor    resourceexecutor.ResourceUpdateExecutor
 }
 
 var podQOSConditions = []string{string(apiext.QoSLSE), string(apiext.QoSLSR)}
 
-func (p *cpusetPlugin) Register() {
+func (p *cpusetPlugin) Register(op hooks.Options) {
 	klog.V(5).Infof("register hook %v", name)
 	hooks.Register(rmconfig.PreCreateContainer, name, description, p.SetContainerCPUSetAndUnsetCFS)
 	hooks.Register(rmconfig.PreUpdateContainerResources, name, description, p.SetContainerCPUSetAndUnsetCFS)
@@ -59,6 +61,7 @@ func (p *cpusetPlugin) Register() {
 		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), podQOSConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUCFSQuota, "unset pod cpu quota if needed",
 		UnsetPodCPUQuota, reconciler.PodQOSFilter(), podQOSConditions...)
+	p.executor = op.Executor
 }
 
 var singleton *cpusetPlugin

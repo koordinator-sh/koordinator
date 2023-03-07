@@ -91,7 +91,7 @@ func TestNewResctrlL3SchemataResource(t *testing.T) {
 		testingPrepareResctrlL3CatGroups(t, "7ff", "    L3:0=ff;1=ff\n    MB:0=100;1=100")
 		updater := NewResctrlL3SchemataResource("BE", "3c", 2)
 		assert.Equal(t, updater.Value(), "L3:0=3c;1=3c;\n")
-		err := updater.Update()
+		err := updater.update()
 		assert.NoError(t, err)
 	})
 }
@@ -108,7 +108,7 @@ func TestNewResctrlMbSchemataResource(t *testing.T) {
 		testingPrepareResctrlL3CatGroups(t, "7ff", "    L3:0=ff;1=ff\n    MB:0=100;1=100")
 		updater := NewResctrlMbSchemataResource("BE", "90", 2)
 		assert.Equal(t, updater.Value(), "MB:0=90;1=90;\n")
-		err := updater.Update()
+		err := updater.update()
 		assert.NoError(t, err)
 	})
 }

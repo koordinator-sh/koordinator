@@ -17,15 +17,11 @@ limitations under the License.
 package util
 
 import (
-	"fmt"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
-
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -127,60 +123,4 @@ func GetMemInfoUsageKB() (int64, error) {
 	}
 	usage := int64(memInfo.MemTotal - memInfo.MemAvailable)
 	return usage, nil
-}
-
-// DEPRECATED: use NewCgroupReader().ReadMemoryStat() instead.
-func readCgroupMemStat(memStatPath string) (int64, error) {
-	// memory.stat usage: total_inactive_anon + total_active_anon + total_unevictable
-	// format: ...total_inactive_anon $total_inactive_anon\ntotal_active_anon $total_active_anon\n
-	//         total_inactive_file $total_inactive_file\ntotal_active_file $total_active_file\n
-	//         total_unevictable $total_unevictable\n
-	rawStats, err := os.ReadFile(memStatPath)
-	if err != nil {
-		return 0, err
-	}
-	var total int64 = 0
-	// check if all "usage" entries are exactly counted
-	entryMap := map[string]bool{"total_inactive_anon": true, "total_active_anon": true, "total_unevictable": true}
-	memStats := strings.Split(string(rawStats), "\n")
-	for _, stat := range memStats {
-		fieldStat := strings.Fields(stat)
-		if len(fieldStat) == 2 && entryMap[fieldStat[0]] {
-			v, err := strconv.ParseInt(fieldStat[1], 10, 64)
-			if err != nil {
-				return 0, fmt.Errorf("failed to parse pod memStats %v, err: %s", memStats, err)
-			}
-			total += v
-			entryMap[fieldStat[0]] = false
-		}
-	}
-	if entryMap["total_inactive_anon"] || entryMap["total_active_anon"] || entryMap["total_unevictable"] {
-		return 0, fmt.Errorf("pod memStat %s is illegally formatted", memStats)
-	}
-	return total, nil
-}
-
-// GetPodMemStatUsageBytes returns the pod's memory usage quantity (Byte)
-// DEPRECATED: use resourceexecutor.CgroupReader instead.
-func GetPodMemStatUsageBytes(podCgroupDir string) (int64, error) {
-	podPath := GetPodCgroupDirWithKube(podCgroupDir)
-	memStat, err := resourceexecutor.NewCgroupReader().ReadMemoryStat(podPath)
-	if err != nil {
-		return 0, err
-	}
-	return memStat.Usage(), nil
-}
-
-// GetContainerMemStatUsageBytes returns the container's memory usage quantity (Byte)
-// DEPRECATED: use resourceexecutor.CgroupReader instead.
-func GetContainerMemStatUsageBytes(podCgroupDir string, c *corev1.ContainerStatus) (int64, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podCgroupDir, c)
-	if err != nil {
-		return 0, err
-	}
-	memStat, err := resourceexecutor.NewCgroupReader().ReadMemoryStat(containerPath)
-	if err != nil {
-		return 0, err
-	}
-	return memStat.Usage(), nil
 }

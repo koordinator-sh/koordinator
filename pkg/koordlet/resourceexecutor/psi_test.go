@@ -14,13 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package system
+package resourceexecutor
 
 import (
 	"path"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 const (
@@ -35,7 +37,7 @@ func TestGetPSIByResource_CPUErr(t *testing.T) {
 		IO:  path.Join(dir, "io.pressure"),
 	}
 	assert.NotPanics(t, func() {
-		_, err := GetPSIByResource(psiPath)
+		_, err := getPSIByResource(psiPath)
 		if err != nil {
 			return
 		}
@@ -43,7 +45,7 @@ func TestGetPSIByResource_CPUErr(t *testing.T) {
 }
 
 func TestGetPSIByResource_MemErr(t *testing.T) {
-	helper := NewFileTestUtil(t)
+	helper := sysutil.NewFileTestUtil(t)
 	helper.CreateFile("cpu.pressure")
 	helper.WriteFileContents("cpu.pressure", FullCorrectPSIContents)
 	psiPath := PSIPath{
@@ -52,7 +54,7 @@ func TestGetPSIByResource_MemErr(t *testing.T) {
 		IO:  path.Join(helper.TempDir, "io.pressure"),
 	}
 	assert.NotPanics(t, func() {
-		_, err := GetPSIByResource(psiPath)
+		_, err := getPSIByResource(psiPath)
 		if err != nil {
 			return
 		}
@@ -60,7 +62,7 @@ func TestGetPSIByResource_MemErr(t *testing.T) {
 }
 
 func TestGetPSIByResource_IOErr(t *testing.T) {
-	helper := NewFileTestUtil(t)
+	helper := sysutil.NewFileTestUtil(t)
 	helper.CreateFile("cpu.pressure")
 	helper.WriteFileContents("cpu.pressure", FullCorrectPSIContents)
 	helper.CreateFile("memory.pressure")
@@ -71,7 +73,7 @@ func TestGetPSIByResource_IOErr(t *testing.T) {
 		IO:  path.Join(helper.TempDir, "io.pressure"),
 	}
 	assert.NotPanics(t, func() {
-		_, err := GetPSIByResource(psiPath)
+		_, err := getPSIByResource(psiPath)
 		if err != nil {
 			return
 		}
@@ -79,7 +81,7 @@ func TestGetPSIByResource_IOErr(t *testing.T) {
 }
 
 func TestGetPSIByResource(t *testing.T) {
-	helper := NewFileTestUtil(t)
+	helper := sysutil.NewFileTestUtil(t)
 	helper.CreateFile("cpu.pressure")
 	helper.WriteFileContents("cpu.pressure", FullCorrectPSIContents)
 	helper.CreateFile("memory.pressure")
@@ -92,9 +94,59 @@ func TestGetPSIByResource(t *testing.T) {
 		IO:  path.Join(helper.TempDir, "io.pressure"),
 	}
 	assert.NotPanics(t, func() {
-		_, err := GetPSIByResource(psiPath)
+		_, err := getPSIByResource(psiPath)
 		if err != nil {
 			return
 		}
 	})
+}
+
+func TestGetPSIRecords(t *testing.T) {
+	helper := sysutil.NewFileTestUtil(t)
+	helper.CreateFile("cpu.pressure")
+	helper.WriteFileContents("cpu.pressure", "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0")
+
+	assert.NotPanics(t, func() {
+		_, err := readPSI(helper.TempDir + "/cpu.pressure")
+		if err != nil {
+			return
+		}
+	})
+}
+
+func TestGetPSIRecords_wrongSomeFormat(t *testing.T) {
+	helper := sysutil.NewFileTestUtil(t)
+	helper.CreateFile("cpu.pressure")
+	helper.WriteFileContents("cpu.pressure", "some avg10=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0")
+
+	_, err := readPSI(helper.TempDir + "/cpu.pressure")
+	assert.NotNil(t, err)
+}
+
+func TestGetPSIRecords_wrongFullFormat(t *testing.T) {
+	helper := sysutil.NewFileTestUtil(t)
+	helper.CreateFile("cpu.pressure")
+	helper.WriteFileContents("cpu.pressure", "some avg10=0.00 total=0\nfull 0.00 avg300=0.00 total=0")
+
+	_, err := readPSI(helper.TempDir + "/cpu.pressure")
+	assert.NotNil(t, err)
+}
+
+func TestGetPSIRecords_wrongPrefix(t *testing.T) {
+	helper := sysutil.NewFileTestUtil(t)
+	helper.CreateFile("cpu.pressure")
+	helper.WriteFileContents("cpu.pressure", "wrong avg10=0.00 total=0\nfull 0.00 avg300=0.00 total=0")
+
+	_, err := readPSI(helper.TempDir + "/cpu.pressure")
+	assert.NotNil(t, err)
+}
+
+func TestGetPSIRecords_FullNotSupported(t *testing.T) {
+	helper := sysutil.NewFileTestUtil(t)
+	helper.CreateFile("cpu.pressure")
+	helper.WriteFileContents("cpu.pressure", "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\n")
+
+	psi, err := readPSI(helper.TempDir + "/cpu.pressure")
+	assert.Nil(t, err)
+	assert.Equal(t, false, psi.FullSupported)
 }

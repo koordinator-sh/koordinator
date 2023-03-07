@@ -28,6 +28,7 @@ import (
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -559,7 +560,7 @@ func Test_bvtPlugin_ruleUpdateCb(t *testing.T) {
 	for _, tt := range tests {
 		testHelper := system.NewFileTestUtil(t)
 		for _, kubeQoS := range []corev1.PodQOSClass{corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
-			initCPUBvt(util.GetKubeQosRelativePath(kubeQoS), 0, testHelper)
+			initCPUBvt(util.GetPodQoSRelativePath(kubeQoS), 0, testHelper)
 		}
 		podList := make([]*statesinformer.PodMeta, 0, len(tt.args.pods))
 		for _, pod := range tt.args.pods {
@@ -568,13 +569,18 @@ func Test_bvtPlugin_ruleUpdateCb(t *testing.T) {
 		}
 		t.Run(tt.name, func(t *testing.T) {
 			b := &bvtPlugin{
-				rule: tt.fields.rule,
+				rule:     tt.fields.rule,
+				executor: resourceexecutor.NewResourceUpdateExecutor(),
 			}
+			stop := make(chan struct{})
+			defer func() { close(stop) }()
+			b.executor.Run(stop)
+
 			if err := b.ruleUpdateCb(podList); (err != nil) != tt.wantErr {
 				t.Errorf("ruleUpdateCb() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			for kubeQoS, wantBvt := range tt.wantKubeDirVal {
-				gotBvtStr := testHelper.ReadCgroupFileContents(util.GetKubeQosRelativePath(kubeQoS), system.CPUBVTWarpNs)
+				gotBvtStr := testHelper.ReadCgroupFileContents(util.GetPodQoSRelativePath(kubeQoS), system.CPUBVTWarpNs)
 				gotBvt, _ := strconv.ParseInt(gotBvtStr, 10, 64)
 				assert.Equal(t, gotBvt, wantBvt, "qos %s bvt value not equal", kubeQoS)
 			}

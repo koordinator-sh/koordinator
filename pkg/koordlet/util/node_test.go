@@ -27,22 +27,22 @@ import (
 )
 
 func Test_GetKubeQosRelativePath(t *testing.T) {
-	guaranteedPathSystemd := GetKubeQosRelativePath(corev1.PodQOSGuaranteed)
+	guaranteedPathSystemd := GetPodQoSRelativePath(corev1.PodQOSGuaranteed)
 	assert.Equal(t, path.Clean(system.KubeRootNameSystemd), guaranteedPathSystemd)
 
-	burstablePathSystemd := GetKubeQosRelativePath(corev1.PodQOSBurstable)
+	burstablePathSystemd := GetPodQoSRelativePath(corev1.PodQOSBurstable)
 	assert.Equal(t, path.Join(system.KubeRootNameSystemd, system.KubeBurstableNameSystemd), burstablePathSystemd)
 
-	besteffortPathSystemd := GetKubeQosRelativePath(corev1.PodQOSBestEffort)
+	besteffortPathSystemd := GetPodQoSRelativePath(corev1.PodQOSBestEffort)
 	assert.Equal(t, path.Join(system.KubeRootNameSystemd, system.KubeBesteffortNameSystemd), besteffortPathSystemd)
 
 	system.SetupCgroupPathFormatter(system.Cgroupfs)
-	guaranteedPathCgroupfs := GetKubeQosRelativePath(corev1.PodQOSGuaranteed)
+	guaranteedPathCgroupfs := GetPodQoSRelativePath(corev1.PodQOSGuaranteed)
 	assert.Equal(t, path.Clean(system.KubeRootNameCgroupfs), guaranteedPathCgroupfs)
 
-	burstablePathCgroupfs := GetKubeQosRelativePath(corev1.PodQOSBurstable)
+	burstablePathCgroupfs := GetPodQoSRelativePath(corev1.PodQOSBurstable)
 	assert.Equal(t, path.Join(system.KubeRootNameCgroupfs, system.KubeBurstableNameCgroupfs), burstablePathCgroupfs)
 
-	besteffortPathCgroupfs := GetKubeQosRelativePath(corev1.PodQOSBestEffort)
+	besteffortPathCgroupfs := GetPodQoSRelativePath(corev1.PodQOSBestEffort)
 	assert.Equal(t, path.Join(system.KubeRootNameCgroupfs, system.KubeBesteffortNameCgroupfs), besteffortPathCgroupfs)
 }

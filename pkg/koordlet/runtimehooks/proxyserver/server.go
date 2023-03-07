@@ -28,6 +28,7 @@ import (
 	"k8s.io/klog/v2"
 
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
@@ -42,6 +43,7 @@ type Options struct {
 	PluginFailurePolicy config.FailurePolicyType
 	ConfigFilePath      string
 	DisableStages       map[string]struct{}
+	Executor            resourceexecutor.ResourceUpdateExecutor
 }
 
 type Server interface {

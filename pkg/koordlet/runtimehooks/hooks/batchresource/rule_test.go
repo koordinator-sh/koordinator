@@ -28,6 +28,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -365,8 +366,13 @@ func Test_plugin_ruleUpdateCb(t *testing.T) {
 			}
 
 			p := plugin{
-				rule: tt.fields.rule,
+				rule:     tt.fields.rule,
+				executor: resourceexecutor.NewResourceUpdateExecutor(),
 			}
+			stop := make(chan struct{})
+			defer func() { close(stop) }()
+			p.executor.Run(stop)
+
 			err := p.ruleUpdateCb(tt.args.pods)
 			assert.Equal(t, tt.wantErr, err != nil)
 			// init cgroups cpuset file

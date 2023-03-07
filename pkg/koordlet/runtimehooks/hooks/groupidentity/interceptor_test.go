@@ -25,6 +25,7 @@ import (
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -238,11 +239,16 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 				rule:             tt.fields.rule,
 				sysSupported:     tt.fields.systemSupported,
 				hasKernelEnabled: tt.fields.hasKernelEnable,
+				executor:         resourceexecutor.NewResourceUpdateExecutor(),
 			}
+			stop := make(chan struct{})
+			defer func() { close(stop) }()
+			b.executor.Run(stop)
+
 			ctx := &protocol.PodContext{}
 			ctx.FromProxy(tt.args.request)
 			err := b.SetPodBvtValue(ctx)
-			ctx.ProxyDone(tt.args.response)
+			ctx.ProxyDone(tt.args.response, b.executor)
 			assert.NoError(t, err)
 
 			if tt.want.bvtValue == nil {
@@ -425,7 +431,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
-			kubeQOSDir := util.GetKubeQosRelativePath(tt.args.kubeQOS)
+			kubeQOSDir := util.GetPodQoSRelativePath(tt.args.kubeQOS)
 			initCPUBvt(kubeQOSDir, 0, testHelper)
 			if tt.fields.initKernelGroupIdentity {
 				initKernelGroupIdentity(int64(tt.fields.initKernelGroupIdentityValue), testHelper)
@@ -435,11 +441,18 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 				rule:             tt.fields.rule,
 				sysSupported:     tt.fields.sysSupported,
 				hasKernelEnabled: tt.fields.hasKernelEnable,
+				executor:         resourceexecutor.NewResourceUpdateExecutor(),
 			}
+			stop := make(chan struct{})
+			defer func() {
+				close(stop)
+			}()
+			b.executor.Run(stop)
+
 			ctx := &protocol.KubeQOSContext{}
 			ctx.FromReconciler(tt.args.kubeQOS)
 			err := b.SetKubeQOSBvtValue(ctx)
-			ctx.ReconcilerDone()
+			ctx.ReconcilerDone(b.executor)
 
 			assert.NoError(t, err)
 

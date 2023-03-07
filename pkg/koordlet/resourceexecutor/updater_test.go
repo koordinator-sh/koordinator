@@ -170,7 +170,7 @@ func TestCgroupResourceUpdater_Update(t *testing.T) {
 				helper.WriteCgroupFileContents(tt.args.parentDir, c.file, tt.fields.initialValue)
 			}
 
-			gotErr = u.Update()
+			gotErr = u.update()
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			if !tt.wantErr {
 				assert.Equal(t, tt.want, helper.ReadCgroupFileContents(c.parentDir, c.file))
@@ -246,7 +246,7 @@ func TestDefaultResourceUpdater_Update(t *testing.T) {
 				helper.WriteFileContents(filepath.Join(tt.args.subDir, tt.args.file), tt.fields.initialValue)
 			}
 
-			gotErr = u.Update()
+			gotErr = u.update()
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 			if !tt.wantErr {
 				assert.Equal(t, tt.want, helper.ReadFileContents(filepath.Join(tt.args.subDir, tt.args.file)))

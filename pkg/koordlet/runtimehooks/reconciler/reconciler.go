@@ -24,6 +24,7 @@ import (
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -204,12 +205,18 @@ type Reconciler interface {
 	Run(stopCh <-chan struct{}) error
 }
 
-func NewReconciler(s statesinformer.StatesInformer) Reconciler {
+type Options struct {
+	StatesInformer statesinformer.StatesInformer
+	Executor       resourceexecutor.ResourceUpdateExecutor
+}
+
+func NewReconciler(op Options) Reconciler {
 	r := &reconciler{
 		podUpdated: make(chan struct{}, 1),
+		executor:   op.Executor,
 	}
 	// TODO register individual pod event
-	s.RegisterCallbacks(statesinformer.RegisterTypeAllPods, "runtime-hooks-reconciler",
+	op.StatesInformer.RegisterCallbacks(statesinformer.RegisterTypeAllPods, "runtime-hooks-reconciler",
 		"Reconcile cgroup files if pod updated", r.podRefreshCallback)
 	return r
 }
@@ -218,6 +225,7 @@ type reconciler struct {
 	podsMutex  sync.RWMutex
 	podsMeta   []*statesinformer.PodMeta
 	podUpdated chan struct{}
+	executor   resourceexecutor.ResourceUpdateExecutor
 }
 
 func (c *reconciler) Run(stopCh <-chan struct{}) error {
@@ -253,7 +261,7 @@ func (c *reconciler) reconcileKubeQOSCgroup(stopCh <-chan struct{}) {
 	for {
 		select {
 		case <-timer.C:
-			doKubeQOSCgroup()
+			doKubeQOSCgroup(c.executor)
 			timer.Reset(duration)
 		case <-stopCh:
 			klog.V(1).Infof("stop reconcile kube qos cgroup")
@@ -261,7 +269,7 @@ func (c *reconciler) reconcileKubeQOSCgroup(stopCh <-chan struct{}) {
 	}
 }
 
-func doKubeQOSCgroup() {
+func doKubeQOSCgroup(e resourceexecutor.ResourceUpdateExecutor) {
 	for _, kubeQOS := range []corev1.PodQOSClass{
 		corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
 		for _, r := range globalCgroupReconcilers.kubeQOSLevel {
@@ -275,7 +283,7 @@ func doKubeQOSCgroup() {
 			if err := reconcileFn(kubeQOSCtx); err != nil {
 				klog.Warningf("calling reconcile function %v failed, error %v", r.description, err)
 			} else {
-				kubeQOSCtx.ReconcilerDone()
+				kubeQOSCtx.ReconcilerDone(e)
 				klog.V(5).Infof("calling reconcile function %v for kube qos %v finish",
 					r.description, kubeQOS)
 			}
@@ -303,7 +311,7 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 					if err := reconcileFn(podCtx); err != nil {
 						klog.Warningf("calling reconcile function %v failed, error %v", r.description, err)
 					} else {
-						podCtx.ReconcilerDone()
+						podCtx.ReconcilerDone(c.executor)
 						klog.V(5).Infof("calling reconcile function %v for pod %v finished",
 							r.description, util.GetPodKey(podMeta.Pod))
 					}
@@ -321,7 +329,7 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 						if err := reconcileFn(containerCtx); err != nil {
 							klog.Warningf("calling reconcile function %v failed, error %v", r.description, err)
 						} else {
-							containerCtx.ReconcilerDone()
+							containerCtx.ReconcilerDone(c.executor)
 							klog.V(5).Infof("calling reconcile function %v for container %v/%v finish",
 								r.description, util.GetPodKey(podMeta.Pod), containerStat.Name)
 						}
