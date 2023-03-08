@@ -1076,6 +1076,139 @@ pagetables 1048576`,
 	}
 }
 
+func TestCgroupReader_ReadMemoryNumaStat(t *testing.T) {
+	type fields struct {
+		UseCgroupsV2           bool
+		MemoryNumaStateValue   string
+		MemoryNumaStateV2Value string
+	}
+	type args struct {
+		parentDir string
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    []sysutil.NumaMemoryPages
+		wantErr bool
+	}{
+		{
+			name:   "v1 path not exist",
+			fields: fields{},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "parse v1 value successfully",
+			fields: fields{
+				MemoryNumaStateValue: `total=42227 N0=42184 N1=1
+file=40094 N0=40126 N1=1
+anon=2133 N0=2058 N1=0
+unevictable=0 N0=0 N1=0
+hierarchical_total=3453155 N0=3453155 N1=1
+hierarchical_file=3012431 N0=3012431 N1=1
+hierarchical_anon=440724 N0=440724 N1=0
+hierarchical_unevictable=0 N0=0 N1=1`,
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    []sysutil.NumaMemoryPages{{NumaId: 0, PagesNum: 42184}, {NumaId: 1, PagesNum: 1}},
+			wantErr: false,
+		},
+		{
+			name: "parse v1 value failed",
+			fields: fields{
+				MemoryNumaStateValue: `file=40094 N0=40126 N1=1
+anon=2133 N0=2058 N1=0
+unevictable=0 N0=0 N1=0
+hierarchical_total=3453155 N0=3453155 N1=1
+hierarchical_file=3012431 N0=3012431 N1=1
+hierarchical_anon=440724 N0=440724 N1=0
+hierarchical_unevictable=0 N0=0 N1=1`,
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "v2 path not exist",
+			fields: fields{
+				UseCgroupsV2: true,
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "parse v2 value successfully",
+			fields: fields{
+				UseCgroupsV2: true,
+				MemoryNumaStateV2Value: `anon N0=193236992 N1=4096
+file N0=1367764992 N1=0
+kernel_stack N0=0 N1=0
+shmem N0=1486848 N1=0
+file_mapped N0=224243712 N1=0
+file_dirty N0=3108864 N1=0
+file_writeback N0=0 N1=0
+anon_thp N0=0 N1=0
+file_thp N0=0 N1=0
+shmem_thp N0=0 N1=0
+inactive_anon N0=203943936 N1=0
+active_anon N0=135168 N1=4096
+inactive_file N0=1152172032 N1=0
+active_file N0=215052288 N1=0
+unevictable N0=0 N1=0
+slab_reclaimable N0=0 N1=0
+slab_unreclaimable N0=0 N1=0
+workingset_refault_anon N0=0 N1=0
+workingset_refault_file N0=0 N1=0
+workingset_activate_anon N0=0 N1=0
+workingset_activate_file N0=0 N1=0
+workingset_restore_anon N0=0 N1=0
+workingset_restore_file N0=0 N1=0
+workingset_nodereclaim N0=0 N1=0`,
+			},
+			want:    []sysutil.NumaMemoryPages{{NumaId: 0, PagesNum: 381104}, {NumaId: 1, PagesNum: 1}},
+			wantErr: false,
+		},
+		{
+			name: "parse v2 value failed",
+			fields: fields{
+				UseCgroupsV2: true,
+				MemoryNumaStateV2Value: `anon N0=193236992 
+file N0=1367764992 N1=0`,
+			},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := sysutil.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.SetCgroupsV2(tt.fields.UseCgroupsV2)
+			if tt.fields.MemoryNumaStateValue != "" {
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.MemoryNumaStat, tt.fields.MemoryNumaStateValue)
+			}
+			if tt.fields.MemoryNumaStateV2Value != "" {
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.MemoryNumaStatV2, tt.fields.MemoryNumaStateV2Value)
+			}
+
+			got, gotErr := NewCgroupReader().ReadMemoryNumaStat(tt.args.parentDir)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestCgroupReader_ReadPSI(t *testing.T) {
 	type fields struct {
 		UseCgroupsV2  bool

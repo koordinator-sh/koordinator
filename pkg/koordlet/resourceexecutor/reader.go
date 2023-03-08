@@ -35,6 +35,7 @@ type CgroupReader interface {
 	ReadCPUStat(parentDir string) (*sysutil.CPUStatRaw, error)
 	ReadMemoryLimit(parentDir string) (int64, error)
 	ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRaw, error)
+	ReadMemoryNumaStat(parentDir string) ([]sysutil.NumaMemoryPages, error)
 	ReadCPUTasks(parentDir string) ([]int32, error)
 	ReadPSI(parentDir string) (*PSIByResource, error)
 }
@@ -164,6 +165,24 @@ func (r *CgroupV1Reader) ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRa
 	//           total_inactive_file $total_inactive_file\ntotal_active_file $total_active_file\n
 	//           total_unevictable $total_unevictable\n`
 	v, err := sysutil.ParseMemoryStatRaw(s)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
+	}
+	return v, nil
+}
+
+func (r *CgroupV1Reader) ReadMemoryNumaStat(parentDir string) ([]sysutil.NumaMemoryPages, error) {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.MemoryNumaStatName)
+	if !ok {
+		return nil, ErrResourceNotRegistered
+	}
+	s, err := cgroupFileRead(parentDir, resource)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+	}
+	// `total=42227 N0=42184 N1=...\nfile=40094 N0=40126 N1=...\nanon=2133 N0=2058 N1=...\nunevictable=0 N0=0\n...`
+	// the unit is page
+	v, err := sysutil.ParseMemoryNumaStat(s)
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
 	}
@@ -307,6 +326,24 @@ func (r *CgroupV2Reader) ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRa
 	}
 	// content: `anon 0\nfile 0\nkernel_stack 0\n...inactive_anon 0\nactive_anon 0\n...`
 	v, err := sysutil.ParseMemoryStatRawV2(s)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
+	}
+	return v, nil
+}
+
+func (r *CgroupV2Reader) ReadMemoryNumaStat(parentDir string) ([]sysutil.NumaMemoryPages, error) {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.MemoryNumaStatName)
+	if !ok {
+		return nil, ErrResourceNotRegistered
+	}
+	s, err := cgroupFileRead(parentDir, resource)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+	}
+	// `anon N0=193236992 N1=...\nfile N0=1367764992 N1=...`
+	// the unit is byte, 2Kbyte -> a page
+	v, err := sysutil.ParseMemoryNumaStatV2(s)
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
 	}

@@ -31,6 +31,7 @@ func Test_DefaultNodeSLOSpecConfig(t *testing.T) {
 		ResourceQOSStrategy:         DefaultResourceQOSStrategy(),
 		CPUBurstStrategy:            DefaultCPUBurstStrategy(),
 		SystemStrategy:              DefaultSystemStrategy(),
+		Extensions:                  DefaultExtensions(),
 	}
 	got := DefaultNodeSLOSpecConfig()
 	assert.Equal(t, expect, got)

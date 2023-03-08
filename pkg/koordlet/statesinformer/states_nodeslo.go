@@ -159,6 +159,14 @@ func (s *nodeSLOInformer) mergeNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	if mergedSystemStrategySpec != nil {
 		s.nodeSLO.Spec.SystemStrategy = mergedSystemStrategySpec
 	}
+
+	// merge Extensions
+	mergedExtensions := mergeSLOSpecExtensions(util.DefaultNodeSLOSpecConfig().Extensions,
+		nodeSLO.Spec.Extensions)
+	if mergedExtensions != nil {
+		s.nodeSLO.Spec.Extensions = mergedExtensions
+	}
+
 }
 
 func newNodeSLOInformer(client koordclientset.Interface, nodeName string) cache.SharedIndexInformer {
@@ -227,6 +235,20 @@ func mergeSLOSpecCPUBurstStrategy(defaultSpec,
 func mergeSLOSpecSystemStrategy(defaultSpec,
 	newSpec *slov1alpha1.SystemStrategy) *slov1alpha1.SystemStrategy {
 	spec := &slov1alpha1.SystemStrategy{}
+	if newSpec != nil {
+		spec = newSpec
+	}
+	// ignore err for serializing/deserializing the same struct type
+	data, _ := json.Marshal(spec)
+	// NOTE: use deepcopy to avoid a overwrite to the global default
+	out := defaultSpec.DeepCopy()
+	_ = json.Unmarshal(data, &out)
+	return out
+}
+
+func mergeSLOSpecExtensions(defaultSpec,
+	newSpec *slov1alpha1.ExtensionsMap) *slov1alpha1.ExtensionsMap {
+	spec := &slov1alpha1.ExtensionsMap{}
 	if newSpec != nil {
 		spec = newSpec
 	}

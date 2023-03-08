@@ -17,6 +17,7 @@ limitations under the License.
 package system
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -230,6 +231,53 @@ func ParseMemoryStatRawV2(content string) (*MemoryStatRaw, error) {
 	}
 
 	return memoryStatRaw, nil
+}
+
+func ParseMemoryNumaStatV2(content string) ([]NumaMemoryPages, error) {
+	var stat []NumaMemoryPages
+	parseErr := errors.New("parse cgroup memory numa stat err")
+	rawlines := strings.Split(content, "\n")
+	if len(rawlines) < 2 {
+		return nil, parseErr
+	}
+	lines := []string{rawlines[0], rawlines[1]}
+	prefixes := []string{"anon", "file"}
+	for index, line := range lines {
+		if len(line) <= 0 || !strings.HasPrefix(line, prefixes[index]) {
+			return nil, parseErr
+		}
+		mems := strings.Split(strings.TrimSpace(line), " ")
+		if len(mems) < 2 {
+			return nil, parseErr
+		}
+		if stat == nil {
+			stat = make([]NumaMemoryPages, len(mems)-1)
+		} else {
+			if len(stat) != len(mems)-1 {
+				return nil, parseErr
+			}
+		}
+		for i := 1; i < len(mems); i++ {
+			str := strings.Split(mems[i], "=")
+			numaStr := strings.TrimLeft(str[0], "N")
+			numaId, err := strconv.Atoi(numaStr)
+			if err != nil {
+				return nil, err
+			}
+			if numaId != i-1 {
+				return nil, parseErr
+			}
+			bytesCnt, err := strconv.ParseUint(str[1], 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			pagesCnt := bytesCnt / (4 * 1024)
+			stat[numaId].NumaId = numaId
+			stat[numaId].PagesNum = stat[numaId].PagesNum + pagesCnt
+		}
+	}
+
+	return stat, nil
 }
 
 // ConvertCPUWeightToShares converts the value of `cpu.weight` (cgroups-v2) into the value of `cpu.shares` (cgroups-v1)

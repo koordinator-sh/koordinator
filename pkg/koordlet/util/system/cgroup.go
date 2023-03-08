@@ -17,8 +17,10 @@ limitations under the License.
 package system
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -54,6 +56,11 @@ type MemoryStatRaw struct {
 	ActiveAnon   int64
 	Unevictable  int64
 	// add more fields
+}
+
+type NumaMemoryPages struct {
+	NumaId   int
+	PagesNum uint64
 }
 
 func (m *MemoryStatRaw) Usage() int64 {
@@ -151,6 +158,38 @@ func ParseMemoryStatRaw(content string) (*MemoryStatRaw, error) {
 	}
 
 	return memoryStatRaw, nil
+}
+
+func ParseMemoryNumaStat(content string) ([]NumaMemoryPages, error) {
+	stat := []NumaMemoryPages{}
+	parseErr := errors.New("parse cgroup memory numa stat err")
+	lines := strings.Split(content, "\n")
+	if len(lines) <= 0 {
+		return nil, parseErr
+	}
+	line := strings.TrimSpace(lines[0])
+	if len(line) <= 0 || !strings.HasPrefix(line, "total") {
+		return nil, parseErr
+	}
+	mems := strings.Split(line, " ")
+	if len(mems) < 2 {
+		return nil, parseErr
+	}
+	for i := 1; i < len(mems); i++ {
+		str := strings.Split(mems[i], "=")
+		numaStr := strings.TrimLeft(str[0], "N")
+		numaId, err := strconv.Atoi(numaStr)
+		if err != nil {
+			return nil, err
+		}
+		pagesCnt, err := strconv.ParseUint(str[1], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		stat = append(stat, NumaMemoryPages{NumaId: numaId, PagesNum: pagesCnt})
+
+	}
+	return stat, nil
 }
 
 func CalcCPUThrottledRatio(curPoint, prePoint *CPUStatRaw) float64 {
