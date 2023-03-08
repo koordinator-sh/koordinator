@@ -146,6 +146,7 @@ const (
 	MemoryLimitName            = "memory.limit_in_bytes"
 	MemoryUsageName            = "memory.usage_in_bytes"
 	MemoryStatName             = "memory.stat"
+	MemoryNumaStatName         = "memory.numa_stat"
 	MemoryWmarkRatioName       = "memory.wmark_ratio"
 	MemoryWmarkScaleFactorName = "memory.wmark_scale_factor"
 	MemoryWmarkMinAdjName      = "memory.wmark_min_adj"
@@ -205,6 +206,7 @@ var (
 	MemoryLimit            = DefaultFactory.New(MemoryLimitName, CgroupMemDir)
 	MemoryUsage            = DefaultFactory.New(MemoryUsageName, CgroupMemDir)
 	MemoryStat             = DefaultFactory.New(MemoryStatName, CgroupMemDir)
+	MemoryNumaStat         = DefaultFactory.New(MemoryNumaStatName, CgroupMemDir)
 	MemoryWmarkRatio       = DefaultFactory.New(MemoryWmarkRatioName, CgroupMemDir).WithValidator(MemoryWmarkRatioValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryWmarkRatioName, CgroupMemDir))
 	MemoryWmarkScaleFactor = DefaultFactory.New(MemoryWmarkScaleFactorName, CgroupMemDir).WithValidator(MemoryWmarkScaleFactorFileNameValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryWmarkScaleFactorName, CgroupMemDir))
 	MemoryWmarkMinAdj      = DefaultFactory.New(MemoryWmarkMinAdjName, CgroupMemDir).WithValidator(MemoryWmarkMinAdjValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryWmarkMinAdjName, CgroupMemDir))
@@ -237,6 +239,7 @@ var (
 		MemoryLimit,
 		MemoryUsage,
 		MemoryStat,
+		MemoryNumaStat,
 		MemoryWmarkRatio,
 		MemoryWmarkScaleFactor,
 		MemoryWmarkMinAdj,
@@ -270,6 +273,7 @@ var (
 	MemoryLimitV2            = DefaultFactory.NewV2(MemoryLimitName, MemoryMaxName)
 	MemoryUsageV2            = DefaultFactory.NewV2(MemoryUsageName, MemoryCurrentName)
 	MemoryStatV2             = DefaultFactory.NewV2(MemoryStatName, MemoryStatName)
+	MemoryNumaStatV2         = DefaultFactory.NewV2(MemoryNumaStatName, MemoryNumaStatName)
 	MemoryMinV2              = DefaultFactory.NewV2(MemoryMinName, MemoryMinName).WithValidator(NaturalInt64Validator)
 	MemoryLowV2              = DefaultFactory.NewV2(MemoryLowName, MemoryLowName).WithValidator(NaturalInt64Validator)
 	MemoryHighV2             = DefaultFactory.NewV2(MemoryHighName, MemoryHighName).WithValidator(NaturalInt64Validator)
@@ -297,6 +301,7 @@ var (
 		MemoryLimitV2,
 		MemoryUsageV2,
 		MemoryStatV2,
+		MemoryNumaStatV2,
 		MemoryMinV2,
 		MemoryLowV2,
 		MemoryHighV2,

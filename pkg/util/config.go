@@ -24,6 +24,19 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
+var defautExtensions = &slov1alpha1.ExtensionsMap{}
+
+func getDefaultExtensionsMap() *slov1alpha1.ExtensionsMap {
+	return defautExtensions.DeepCopy()
+}
+
+func RegisterDefaultExtensionsMap(extKey string, extCfg interface{}) {
+	if defautExtensions.Object == nil {
+		defautExtensions.Object = make(map[string]interface{})
+	}
+	defautExtensions.Object[extKey] = extCfg
+}
+
 // DefaultNodeSLOSpecConfig defines the default config of the nodeSLOSpec, which would be used by the resmgr
 func DefaultNodeSLOSpecConfig() slov1alpha1.NodeSLOSpec {
 	return slov1alpha1.NodeSLOSpec{
@@ -31,6 +44,7 @@ func DefaultNodeSLOSpecConfig() slov1alpha1.NodeSLOSpec {
 		ResourceQOSStrategy:         DefaultResourceQOSStrategy(),
 		CPUBurstStrategy:            DefaultCPUBurstStrategy(),
 		SystemStrategy:              DefaultSystemStrategy(),
+		Extensions:                  DefaultExtensions(),
 	}
 }
 
@@ -270,4 +284,8 @@ func DefaultSystemStrategy() *slov1alpha1.SystemStrategy {
 		MinFreeKbytesFactor:  pointer.Int64Ptr(100), // 1 means 1/10000
 		WatermarkScaleFactor: pointer.Int64Ptr(150), // 1 means 1/10000
 	}
+}
+
+func DefaultExtensions() *slov1alpha1.ExtensionsMap {
+	return getDefaultExtensionsMap()
 }
