@@ -17,6 +17,7 @@ limitations under the License.
 package resourceexecutor
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -37,7 +38,7 @@ type ResourceUpdateExecutor interface {
 	// 1. update batch of cgroup resources group by cgroup interface, i.e. cgroup filename.
 	// 2. update each cgroup resource by the order of layers: firstly update resources from upper to lower by merging
 	//    the new value with old value; then update resources from lower to upper with the new value.
-	LeveledUpdateBatch(cacheable bool, updaters [][]ResourceUpdater)
+	LeveledUpdateBatch(updaters [][]ResourceUpdater)
 	Run(stopCh <-chan struct{})
 }
 
@@ -46,7 +47,8 @@ type ResourceUpdateExecutorImpl struct {
 	ResourceCache     *cache.Cache
 	Config            *Config
 
-	onceRun sync.Once
+	onceRun   sync.Once
+	gcStarted bool
 }
 
 var singleton = &ResourceUpdateExecutorImpl{
@@ -61,6 +63,10 @@ func NewResourceUpdateExecutor() ResourceUpdateExecutor {
 // Update updates the resources with the given cacheable attribute with the cacheable attribute directly.
 func (e *ResourceUpdateExecutorImpl) Update(cacheable bool, resource ResourceUpdater) (bool, error) {
 	if cacheable {
+		if !e.gcStarted {
+			klog.V(5).Info("failed to cacheable update resources, err: cache GC is not started")
+			return false, fmt.Errorf("cache GC is not started")
+		}
 		return e.updateByCache(resource)
 	}
 	return true, e.update(resource)
@@ -71,6 +77,11 @@ func (e *ResourceUpdateExecutorImpl) Update(cacheable bool, resource ResourceUpd
 func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...ResourceUpdater) {
 	failures, unsupported := 0, 0
 	if cacheable {
+		if !e.gcStarted {
+			klog.Error("failed to cacheable update resources, err: cache GC is not started")
+			return
+		}
+
 		for _, updater := range updaters {
 			isUpdated, err := e.updateByCache(updater)
 			if err != nil && sysutil.IsResourceUnsupportedErr(err) {
@@ -107,9 +118,14 @@ func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...Res
 		cacheable, len(updaters), failures, unsupported)
 }
 
-func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(cacheable bool, updaters [][]ResourceUpdater) {
+func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(updaters [][]ResourceUpdater) {
 	e.LeveledUpdateLock.Lock()
 	defer e.LeveledUpdateLock.Unlock()
+	if !e.gcStarted {
+		klog.Error("failed to cacheable level update resources, err: cache GC is not started")
+		return
+	}
+
 	var err error
 	skipMerge := map[string]bool{}
 	for i := 0; i < len(updaters); i++ {
@@ -180,6 +196,7 @@ func (e *ResourceUpdateExecutorImpl) Run(stopCh <-chan struct{}) {
 	e.onceRun.Do(func() {
 		_ = e.ResourceCache.Run(stopCh)
 		klog.V(4).Info("starting ResourceUpdateExecutor successfully")
+		e.gcStarted = true
 	})
 }
 

@@ -47,18 +47,113 @@ func TestNewResourceUpdateExecutor_Run(t *testing.T) {
 	})
 }
 
+func TestResourceUpdateExecutor_Update(t *testing.T) {
+	testUpdater, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, "test", "-1")
+	assert.NoError(t, err)
+	testUpdater1, err := DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, "test", "1048576")
+	assert.NoError(t, err)
+	type fields struct {
+		notStarted bool
+		updateErr  bool
+	}
+	type args struct {
+		isCacheable bool
+		resource    ResourceUpdater
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    bool
+		wantErr bool
+	}{
+		{
+			name: "non-cacheable update",
+			args: args{
+				isCacheable: false,
+				resource:    testUpdater,
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "cacheable update",
+			args: args{
+				isCacheable: true,
+				resource:    testUpdater1,
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "cacheable update but not started",
+			fields: fields{
+				notStarted: true,
+			},
+			args: args{
+				isCacheable: true,
+				resource:    testUpdater1,
+			},
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name: "update error",
+			fields: fields{
+				updateErr: true,
+			},
+			args: args{
+				isCacheable: true,
+				resource:    testUpdater1,
+			},
+			want:    false,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := sysutil.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			if !tt.fields.updateErr { // make update non-exist file error
+				helper.WriteFileContents(tt.args.resource.Path(), "")
+			}
+
+			e := &ResourceUpdateExecutorImpl{
+				ResourceCache: cache.NewCacheDefault(),
+				Config:        NewDefaultConfig(),
+			}
+			if !tt.fields.notStarted {
+				stop := make(chan struct{})
+				defer func() {
+					close(stop)
+				}()
+
+				e.Run(stop)
+			}
+
+			got, gotErr := e.Update(tt.args.isCacheable, tt.args.resource)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+		})
+	}
+}
+
 func TestResourceUpdateExecutor_UpdateBatch(t *testing.T) {
 	testUpdater, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, "test", "-1")
 	assert.NoError(t, err)
 	testUpdater1, err := DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, "test", "1048576")
 	assert.NoError(t, err)
+	type fields struct {
+		notStarted bool
+	}
 	type args struct {
 		isCacheable bool
 		resources   []ResourceUpdater
 	}
 	tests := []struct {
-		name string
-		args args
+		name   string
+		fields fields
+		args   args
 	}{
 		{
 			name: "nothing to update",
@@ -86,6 +181,18 @@ func TestResourceUpdateExecutor_UpdateBatch(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "abort cacheable update when GC is not started",
+			fields: fields{
+				notStarted: true,
+			},
+			args: args{
+				isCacheable: true,
+				resources: []ResourceUpdater{
+					testUpdater,
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -95,12 +202,14 @@ func TestResourceUpdateExecutor_UpdateBatch(t *testing.T) {
 				ResourceCache: cache.NewCacheDefault(),
 				Config:        NewDefaultConfig(),
 			}
-			stop := make(chan struct{})
-			defer func() {
-				close(stop)
-			}()
+			if !tt.fields.notStarted {
+				stop := make(chan struct{})
+				defer func() {
+					close(stop)
+				}()
 
-			e.Run(stop)
+				e.Run(stop)
+			}
 
 			e.UpdateBatch(tt.args.isCacheable, tt.args.resources...)
 		})

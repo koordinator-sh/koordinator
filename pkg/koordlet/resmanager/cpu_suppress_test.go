@@ -967,6 +967,11 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 				metricCache:    mockMetricCache,
 			}
 			cpuSuppress := newTestCPUSuppress(r)
+			stopCh := make(chan struct{})
+			cpuSuppress.executor.Run(stopCh)
+			defer func() {
+				close(stopCh)
+			}()
 			if tt.args.currentPolicyStatus != nil {
 				cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = *tt.args.currentPolicyStatus
 			}
@@ -1617,14 +1622,15 @@ func TestCPUSuppress_applyBESuppressCPUSet(t *testing.T) {
 			si.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
 			mc := mockmetriccache.NewMockMetricCache(ctl)
 			mc.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(mockNodeInfo, nil).AnyTimes()
-			r := &CPUSuppress{
-				resmanager: &resmanager{
-					statesInformer: si,
-					metricCache:    mc,
-				},
-				executor:               resourceexecutor.NewResourceUpdateExecutor(),
-				suppressPolicyStatuses: map[string]suppressPolicyStatus{},
-			}
+			r := newTestCPUSuppress(&resmanager{
+				statesInformer: si,
+				metricCache:    mc,
+			})
+			stopCh := make(chan struct{})
+			r.executor.Run(stopCh)
+			defer func() {
+				close(stopCh)
+			}()
 
 			err := r.applyBESuppressCPUSet(tt.args.beCPUSet, tt.args.oldCPUSet)
 

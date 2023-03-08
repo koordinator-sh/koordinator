@@ -110,7 +110,7 @@ func (m *CgroupResourcesReconcile) calculateAndUpdateResources(nodeSLO *slov1alp
 	// cgroup-level order.
 	// e.g. /kubepods.slice/memory.min, /kubepods.slice-podxxx/memory.min, /kubepods.slice-podxxx/docker-yyy/memory.min
 	leveledResources := [][]resourceexecutor.ResourceUpdater{qosResources, podResources, containerResources}
-	m.executor.LeveledUpdateBatch(true, leveledResources)
+	m.executor.LeveledUpdateBatch(leveledResources)
 }
 
 // calculateResources calculates qos-level, pod-level and container-level resources with nodeCfg and podMetas
