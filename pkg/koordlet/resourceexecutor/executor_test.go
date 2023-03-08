@@ -140,10 +140,9 @@ func TestResourceUpdateExecutor_Update(t *testing.T) {
 }
 
 func TestResourceUpdateExecutor_UpdateBatch(t *testing.T) {
-	e := &audit.EventHelper{}
-	testUpdater, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, "test", "-1", e)
+	testUpdater, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, "test", "-1", &audit.EventHelper{})
 	assert.NoError(t, err)
-	testUpdater1, err := DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, "test", "1048576", e)
+	testUpdater1, err := DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, "test", "1048576", &audit.EventHelper{})
 	assert.NoError(t, err)
 	type fields struct {
 		notStarted bool
