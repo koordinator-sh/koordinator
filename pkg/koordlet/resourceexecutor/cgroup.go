@@ -40,27 +40,30 @@ const EmptyValueError string = "EmptyValueError"
 const ErrCgroupDir = "cgroup path or file not exist"
 
 // CgroupFileWriteIfDifferent writes the cgroup file if current value is different from the given value.
-func cgroupFileWriteIfDifferent(cgroupTaskDir string, r sysutil.Resource, value string) error {
+func cgroupFileWriteIfDifferent(cgroupTaskDir string, r sysutil.Resource, value string) (bool, error) {
 	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {
-		return sysutil.ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
+		return false, sysutil.ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
 	}
 	if valid, msg := r.IsValid(value); !valid {
-		return fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), value, msg)
+		return false, fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), value, msg)
 	}
 	if exist, msg := IsCgroupPathExist(cgroupTaskDir, r); !exist {
-		return ResourceCgroupDirErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
+		return false, ResourceCgroupDirErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
 	}
 
 	currentValue, currentErr := cgroupFileRead(cgroupTaskDir, r)
 	if currentErr != nil {
-		return currentErr
+		return false, currentErr
 	}
 	if value == currentValue || value == CgroupMaxValueStr && currentValue == CgroupMaxSymbolStr {
 		// compatible with cgroup valued "max"
 		klog.V(6).Infof("read before write %s and got str value, considered as MaxInt64", r.Path(cgroupTaskDir))
-		return nil
+		return false, nil
 	}
-	return cgroupFileWrite(cgroupTaskDir, r, value)
+	if err := cgroupFileWrite(cgroupTaskDir, r, value); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // CgroupFileWrite writes the cgroup file with the given value.

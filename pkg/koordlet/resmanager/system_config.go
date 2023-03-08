@@ -21,6 +21,7 @@ import (
 	"k8s.io/klog/v2"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -81,7 +82,8 @@ func caculateMemoryConfig(strategy *slov1alpha1.SystemStrategy, nodeMemory int64
 		if sysutil.ValidateResourceValue(&minFreeKbytes, "", sysutil.MinFreeKbytes) {
 			valueStr := strconv.FormatInt(minFreeKbytes, 10)
 			file := sysutil.MinFreeKbytes.Path("")
-			resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr)
+			eventHelper := audit.V(3).Node().Reason("systemConfig reconcile").Message("update calculated mem config min_free_kbytes to : %v", valueStr)
+			resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr, eventHelper)
 			if err != nil {
 				return resources
 			}
@@ -92,7 +94,8 @@ func caculateMemoryConfig(strategy *slov1alpha1.SystemStrategy, nodeMemory int64
 	if sysutil.ValidateResourceValue(strategy.WatermarkScaleFactor, "", sysutil.WatermarkScaleFactor) {
 		valueStr := strconv.FormatInt(*strategy.WatermarkScaleFactor, 10)
 		file := sysutil.WatermarkScaleFactor.Path("")
-		resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr)
+		eventHelper := audit.V(3).Node().Reason("systemConfig reconcile").Message("update calculated mem config watermark_scale_factor to : %v", valueStr)
+		resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr, eventHelper)
 		if err != nil {
 			return resources
 		}

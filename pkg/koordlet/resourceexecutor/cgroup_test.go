@@ -37,6 +37,7 @@ func TestCgroupFileWriteIfDifferent(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
+		want    bool
 		wantErr bool
 	}{
 		{
@@ -47,6 +48,7 @@ func TestCgroupFileWriteIfDifferent(t *testing.T) {
 				value:         "1024",
 				currentValue:  "1024",
 			},
+			want:    false,
 			wantErr: false,
 		},
 		{
@@ -57,6 +59,7 @@ func TestCgroupFileWriteIfDifferent(t *testing.T) {
 				value:         "1024",
 				currentValue:  "512",
 			},
+			want:    true,
 			wantErr: false,
 		},
 	}
@@ -65,10 +68,11 @@ func TestCgroupFileWriteIfDifferent(t *testing.T) {
 			helper := sysutil.NewFileTestUtil(t)
 			helper.CreateCgroupFile(taskDir, tt.args.resource)
 
-			err := cgroupFileWrite(taskDir, tt.args.resource, tt.args.currentValue)
+			err := cgroupFileWrite(taskDir, tt.args.resource, tt.args.value)
 			assert.NoError(t, err)
 
-			gotErr := cgroupFileWriteIfDifferent(taskDir, tt.args.resource, tt.args.currentValue)
+			got, gotErr := cgroupFileWriteIfDifferent(taskDir, tt.args.resource, tt.args.currentValue)
+			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 		})
 	}

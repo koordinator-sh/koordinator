@@ -89,7 +89,7 @@ func TestNewCommonCgroupUpdater(t *testing.T) {
 			defer helper.Cleanup()
 			helper.SetCgroupsV2(tt.fields.UseCgroupsV2)
 
-			got, gotErr := NewCommonCgroupUpdater(tt.args.resourceType, tt.args.parentDir, tt.args.value)
+			got, gotErr := NewCommonCgroupUpdater(tt.args.resourceType, tt.args.parentDir, tt.args.value, nil)
 			if !tt.wantErr {
 				assert.NotNil(t, got)
 				assert.Equal(t, tt.want.ResourceType(), got.ResourceType())
@@ -162,7 +162,7 @@ func TestCgroupResourceUpdater_Update(t *testing.T) {
 			defer helper.Cleanup()
 			helper.SetCgroupsV2(tt.fields.UseCgroupsV2)
 
-			u, gotErr := NewCommonCgroupUpdater(tt.args.resourceType, tt.args.parentDir, tt.args.value)
+			u, gotErr := NewCommonCgroupUpdater(tt.args.resourceType, tt.args.parentDir, tt.args.value, nil)
 			assert.NoError(t, gotErr)
 			c, ok := u.(*CgroupResourceUpdater)
 			assert.True(t, ok)
@@ -238,7 +238,7 @@ func TestDefaultResourceUpdater_Update(t *testing.T) {
 			defer helper.Cleanup()
 
 			file := filepath.Join(helper.TempDir, tt.args.subDir, tt.args.file)
-			u, gotErr := NewCommonDefaultUpdater(file, file, tt.args.value)
+			u, gotErr := NewCommonDefaultUpdater(file, file, tt.args.value, nil)
 			assert.NoError(t, gotErr)
 			_, ok := u.(*DefaultResourceUpdater)
 			assert.True(t, ok)

@@ -1386,9 +1386,9 @@ func createCgroupResourceUpdater(t *testing.T, resourceType system.ResourceType,
 	var u resourceexecutor.ResourceUpdater
 	var err error
 	if isMergeable {
-		u, err = resourceexecutor.NewMergeableCgroupUpdaterIfValueLarger(resourceType, parentDir, value)
+		u, err = resourceexecutor.NewMergeableCgroupUpdaterIfValueLarger(resourceType, parentDir, value, nil)
 	} else {
-		u, err = resourceexecutor.NewCommonCgroupUpdater(resourceType, parentDir, value)
+		u, err = resourceexecutor.NewCommonCgroupUpdater(resourceType, parentDir, value, nil)
 	}
 	assert.NoError(t, err)
 	return u
@@ -1408,6 +1408,8 @@ func assertCgroupResourceEqual(t *testing.T, expect, got []resourceexecutor.Reso
 		// assert not support func arguments
 		e.SetUpdateFunc(nil, nil)
 		g.SetUpdateFunc(nil, nil)
+		// set expect eventhelper like reality
+		e.SeteventHelper(g.GeteventHelper())
 		assert.Equal(t, e, g, fmt.Sprintf("check for index %v", i))
 	}
 }
