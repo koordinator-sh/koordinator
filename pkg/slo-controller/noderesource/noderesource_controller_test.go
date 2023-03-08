@@ -37,6 +37,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 )
 
 func Test_NodeResourceController_ConfigNotAvaliable(t *testing.T) {
@@ -44,9 +45,9 @@ func Test_NodeResourceController_ConfigNotAvaliable(t *testing.T) {
 		cfgCache: &FakeCfgCache{
 			available: false,
 		},
-		Recorder:      &record.FakeRecorder{},
-		BESyncContext: SyncContext{},
-		Clock:         clock.RealClock{},
+		Recorder:        &record.FakeRecorder{},
+		NodeSyncContext: framework.NewSyncContext(),
+		Clock:           clock.RealClock{},
 	}
 
 	nodeName := "test-node"
@@ -69,9 +70,9 @@ func Test_NodeResourceController_NodeNotFound(t *testing.T) {
 		cfgCache: &FakeCfgCache{
 			available: true,
 		},
-		Recorder:      &record.FakeRecorder{},
-		BESyncContext: SyncContext{},
-		Clock:         clock.RealClock{},
+		Recorder:        &record.FakeRecorder{},
+		NodeSyncContext: framework.NewSyncContext(),
+		Clock:           clock.RealClock{},
 	}
 
 	nodeName := "test-node"
@@ -105,9 +106,9 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 				},
 			},
 		},
-		Recorder:      &record.FakeRecorder{},
-		BESyncContext: SyncContext{},
-		Clock:         clock.RealClock{},
+		Recorder:        &record.FakeRecorder{},
+		NodeSyncContext: framework.NewSyncContext(),
+		Clock:           clock.RealClock{},
 	}
 
 	nodeName := "test-node"
@@ -128,9 +129,9 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 
 func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	scheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(scheme)
-	slov1alpha1.AddToScheme(scheme)
-	schedulingv1alpha1.AddToScheme(scheme)
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = slov1alpha1.AddToScheme(scheme)
+	_ = schedulingv1alpha1.AddToScheme(scheme)
 	client := fake.NewClientBuilder().WithScheme(scheme).Build()
 	r := &NodeResourceReconciler{
 		Client: client,
@@ -147,14 +148,14 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 				},
 			},
 		},
-		Recorder:      &record.FakeRecorder{},
-		BESyncContext: NewSyncContext(),
-		Clock:         clock.RealClock{},
+		Recorder:        &record.FakeRecorder{},
+		NodeSyncContext: framework.NewSyncContext(),
+		Clock:           clock.RealClock{},
 	}
 
 	nodeName := "test-node"
 	ctx := context.Background()
-	r.Client.Create(ctx, &corev1.Node{
+	err := r.Client.Create(ctx, &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: nodeName,
 		},
@@ -167,7 +168,8 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 			},
 		},
 	})
-	r.Client.Create(ctx, &slov1alpha1.NodeMetric{
+	assert.NoError(t, err)
+	err = r.Client.Create(ctx, &slov1alpha1.NodeMetric{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: nodeName,
 		},
@@ -176,17 +178,14 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 			NodeMetric: &slov1alpha1.NodeMetricInfo{},
 		},
 	})
+	assert.NoError(t, err)
 
 	key := types.NamespacedName{Name: nodeName}
 	nodeReq := ctrl.Request{NamespacedName: key}
 
 	result, err := r.Reconcile(ctx, nodeReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Requeue != false {
-		t.Errorf("failed to reconcile")
-	}
+	assert.NoError(t, err)
+	assert.False(t, result.Requeue)
 
 	node := &corev1.Node{}
 	err = r.Client.Get(ctx, key, node)
@@ -194,8 +193,8 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	batchCPUQ := node.Status.Allocatable[extension.BatchCPU]
-	batchcpu, _ := batchCPUQ.AsInt64()
-	assert.Equal(t, int64(65000), batchcpu)
+	batchCPU, _ := batchCPUQ.AsInt64()
+	assert.Equal(t, int64(65000), batchCPU)
 
 	// reset node resources
 	r.Clock = clock.NewFakeClock(r.Clock.Now().Add(time.Hour))
@@ -212,6 +211,6 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	batchCPUQ = node.Status.Allocatable[extension.BatchCPU]
-	batchcpu, _ = batchCPUQ.AsInt64()
-	assert.Equal(t, int64(0), batchcpu)
+	batchCPU, _ = batchCPUQ.AsInt64()
+	assert.Equal(t, int64(0), batchCPU)
 }
