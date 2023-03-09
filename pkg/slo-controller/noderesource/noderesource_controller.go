@@ -34,14 +34,8 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/batchresource"
+	_ "github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/batchresource"
 )
-
-func init() {
-	_ = framework.RegisterNodeSyncExtender(batchresource.PluginName, &batchresource.Plugin{})
-	_ = framework.RegisterNodePrepareExtender(batchresource.PluginName, &batchresource.Plugin{})
-	_ = framework.RegisterResourceCalculateExtender(batchresource.PluginName, &batchresource.Plugin{})
-}
 
 const (
 	disableInConfig          string = "DisableInConfig"
