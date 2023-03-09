@@ -70,7 +70,7 @@ type PodControllerFinder func(ref ControllerReference, namespace string) (*Scale
 
 type Interface interface {
 	GetPodsForRef(apiVersion, kind, name, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, int32, error)
-	GetExpectedScaleForPods(pods []*corev1.Pod) (int32, error)
+	GetExpectedScaleForPod(pods *corev1.Pod) (int32, error)
 }
 
 type ControllerFinder struct {
@@ -81,7 +81,7 @@ type ControllerFinder struct {
 	discoveryClient discovery.DiscoveryInterface
 }
 
-func New(manager manager.Manager) (*ControllerFinder, error) {
+var New = func(manager manager.Manager) (Interface, error) {
 	finder := &ControllerFinder{
 		Client: manager.GetClient(),
 		mapper: manager.GetRESTMapper(),
@@ -106,37 +106,22 @@ func New(manager manager.Manager) (*ControllerFinder, error) {
 	return finder, nil
 }
 
-func (r *ControllerFinder) GetExpectedScaleForPods(pods []*corev1.Pod) (int32, error) {
-	// 1. Find the controller for each pod.  If any pod has 0 controllers,
-	// that's an error. With ControllerRef, a pod can only have 1 controller.
-	// A mapping from controllers to their scale.
-	controllerScale := map[types.UID]int32{}
-	for _, pod := range pods {
-		ref := metav1.GetControllerOf(pod)
-		if ref == nil {
-			continue
-		}
-		// If we already know the scale of the controller there is no need to do anything.
-		if _, found := controllerScale[ref.UID]; found {
-			continue
-		}
-		// Check all the supported controllers to find the desired scale.
-		workload, err := r.GetScaleAndSelectorForRef(ref.APIVersion, ref.Kind, pod.Namespace, ref.Name, ref.UID)
-		if err != nil && !errors.IsNotFound(err) {
-			return 0, err
-		}
-		if workload != nil && workload.Metadata.DeletionTimestamp.IsZero() {
-			controllerScale[workload.UID] = workload.Scale
-		}
+func (r *ControllerFinder) GetExpectedScaleForPod(pod *corev1.Pod) (int32, error) {
+	if pod == nil {
+		return 0, nil
 	}
-
-	// 2. Add up all the controllers.
-	var expectedCount int32
-	for _, count := range controllerScale {
-		expectedCount += count
+	ref := metav1.GetControllerOf(pod)
+	if ref == nil {
+		return 0, nil
 	}
-
-	return expectedCount, nil
+	workload, err := r.GetScaleAndSelectorForRef(ref.APIVersion, ref.Kind, pod.Namespace, ref.Name, ref.UID)
+	if err != nil && !errors.IsNotFound(err) {
+		return 0, err
+	}
+	if workload != nil && workload.Metadata.DeletionTimestamp.IsZero() {
+		return workload.Scale, nil
+	}
+	return 0, nil
 }
 
 func (r *ControllerFinder) GetScaleAndSelectorForRef(apiVersion, kind, ns, name string, uid types.UID) (*ScaleAndSelector, error) {

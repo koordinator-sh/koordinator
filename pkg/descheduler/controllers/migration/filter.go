@@ -247,7 +247,7 @@ func (r *Reconciler) trackEvictedPod(pod *corev1.Pod) {
 	}
 
 	var maxMigratingReplicas int
-	if expectedReplicas, err := r.controllerFinder.GetExpectedScaleForPods([]*corev1.Pod{pod}); err == nil {
+	if expectedReplicas, err := r.controllerFinder.GetExpectedScaleForPod(pod); err == nil {
 		maxMigrating := objectLimiterArgs.MaxMigrating
 		if maxMigrating == nil {
 			maxMigrating = r.args.MaxMigratingPerWorkload

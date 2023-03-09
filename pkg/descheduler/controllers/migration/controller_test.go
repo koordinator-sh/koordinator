@@ -102,7 +102,7 @@ func (f *fakeControllerFinder) GetPodsForRef(apiVersion, kind, name, ns string, 
 	return f.pods, f.replicas, f.err
 }
 
-func (f *fakeControllerFinder) GetExpectedScaleForPods(pods []*corev1.Pod) (int32, error) {
+func (f *fakeControllerFinder) GetExpectedScaleForPod(pod *corev1.Pod) (int32, error) {
 	return f.replicas, f.err
 }
 
