@@ -18,6 +18,7 @@ package noderesource
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -42,23 +43,6 @@ func (r *NodeResourceReconciler) isColocationCfgDisabled(node *corev1.Node) bool
 		return true
 	}
 	return !(*strategy.Enable)
-}
-
-func (r *NodeResourceReconciler) isDegradeNeeded(nodeMetric *slov1alpha1.NodeMetric, node *corev1.Node) bool {
-	if nodeMetric == nil || nodeMetric.Status.UpdateTime == nil {
-		klog.Warningf("invalid NodeMetric: %v, need degradation", nodeMetric)
-		return true
-	}
-
-	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
-
-	if r.Clock.Now().After(nodeMetric.Status.UpdateTime.Add(time.Duration(*strategy.DegradeTimeMinutes) * time.Minute)) {
-		klog.Warningf("timeout NodeMetric: %v, current timestamp: %v, metric last update timestamp: %v",
-			nodeMetric.Name, r.Clock.Now(), nodeMetric.Status.UpdateTime)
-		return true
-	}
-
-	return false
 }
 
 func (r *NodeResourceReconciler) resetNodeResource(node *corev1.Node, message string) error {
@@ -120,7 +104,8 @@ func (r *NodeResourceReconciler) updateNodeResource(node *corev1.Node, nr *frame
 func (r *NodeResourceReconciler) updateNodeExtensions(node *corev1.Node, nodeMetric *slov1alpha1.NodeMetric, podList *corev1.PodList) error {
 	// update device resources
 	if err := r.updateDeviceResources(node); err != nil {
-		klog.Errorf("failed to update device resources for node %s, err: %v", node.Name, err)
+		klog.V(4).InfoS("failed to update device resources for node", "node", node.Name,
+			"err", err)
 		return err
 	}
 
@@ -129,22 +114,22 @@ func (r *NodeResourceReconciler) updateNodeExtensions(node *corev1.Node, nodeMet
 
 func (r *NodeResourceReconciler) isNodeResourceSyncNeeded(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) bool {
 	if newNode == nil || newNode.Status.Allocatable == nil || newNode.Status.Capacity == nil {
-		klog.Errorf("invalid input, node should not be nil")
+		klog.ErrorS(fmt.Errorf("invalid node status"), "invalid input, node should be non-nil")
 		return false
 	}
 
 	if r.isCommonNodeNeedSync(strategy, oldNode, newNode) {
-		klog.V(6).Infof("need sync for node %v", newNode.GetName())
+		klog.V(6).InfoS("need sync for node", "node", newNode.Name)
 		return true
 	}
 
 	needSync := framework.RunNodeSyncExtenders(strategy, oldNode, newNode)
 	if needSync {
-		klog.V(6).Infof("need sync for node %v by extender", newNode.Name)
+		klog.V(6).InfoS("need sync for node by extender", "node", newNode.Name)
 		return true
 	}
 
-	klog.V(4).Infof("all good, no need to sync for node %v", newNode.GetName())
+	klog.V(4).InfoS("all good, no need to sync for node", "node", newNode.Name)
 	return false
 }
 
@@ -152,7 +137,7 @@ func (r *NodeResourceReconciler) isCommonNodeNeedSync(strategy *extension.Coloca
 	// update time gap is bigger than UpdateTimeThresholdSeconds
 	lastUpdatedTime, ok := r.NodeSyncContext.Load(util.GenerateNodeKey(&newNode.ObjectMeta))
 	if !ok || r.Clock.Since(lastUpdatedTime) > time.Duration(*strategy.UpdateTimeThresholdSeconds)*time.Second {
-		klog.V(4).Infof("node %v resource expired, need sync", newNode.Name)
+		klog.V(4).InfoS("node resource expired, need sync", "node", newNode.Name)
 		return true
 	}
 

@@ -19,7 +19,6 @@ package noderesource
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -89,6 +88,7 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 	scheme := runtime.NewScheme()
 	clientgoscheme.AddToScheme(scheme)
 	slov1alpha1.AddToScheme(scheme)
+	schedulingv1alpha1.AddToScheme(scheme)
 
 	client := fake.NewClientBuilder().WithScheme(scheme).Build()
 	r := &NodeResourceReconciler{
@@ -197,20 +197,15 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	assert.Equal(t, int64(65000), batchCPU)
 
 	// reset node resources
-	r.Clock = clock.NewFakeClock(r.Clock.Now().Add(time.Hour))
+	r.cfgCache.GetCfgCopy().Enable = pointer.BoolPtr(false)
 	result, err = r.Reconcile(ctx, nodeReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Requeue != false {
-		t.Errorf("failed to reconcile")
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, false, result.Requeue)
 	node = &corev1.Node{}
 	err = r.Client.Get(ctx, key, node)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.NoError(t, err)
 	batchCPUQ = node.Status.Allocatable[extension.BatchCPU]
-	batchCPU, _ = batchCPUQ.AsInt64()
+	batchCPU, isValid := batchCPUQ.AsInt64()
+	assert.True(t, isValid)
 	assert.Equal(t, int64(0), batchCPU)
 }

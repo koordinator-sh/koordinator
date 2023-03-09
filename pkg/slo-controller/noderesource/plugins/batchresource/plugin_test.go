@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -464,6 +465,127 @@ func TestPluginCalculate(t *testing.T) {
 			got, gotErr := p.Calculate(tt.args.strategy, tt.args.node, tt.args.podList, tt.args.metrics)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			testingCorrectResourceItems(t, tt.want, got)
+		})
+	}
+}
+
+func TestPlugin_isDegradeNeeded(t *testing.T) {
+	const degradeTimeoutMinutes = 10
+	type fields struct {
+		Clock clock.Clock
+	}
+	type args struct {
+		strategy   *extension.ColocationStrategy
+		nodeMetric *slov1alpha1.NodeMetric
+		node       *corev1.Node
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   bool
+	}{
+		{
+			name: "empty NodeMetric should degrade",
+			fields: fields{
+				Clock: clock.RealClock{},
+			},
+			args: args{
+				nodeMetric: nil,
+			},
+			want: true,
+		},
+		{
+			name: "empty NodeMetric status should degrade",
+			fields: fields{
+				Clock: clock.RealClock{},
+			},
+			args: args{
+				nodeMetric: &slov1alpha1.NodeMetric{},
+			},
+			want: true,
+		},
+		{
+			name: "outdated NodeMetric status should degrade",
+			fields: fields{
+				Clock: clock.RealClock{},
+			},
+			args: args{
+				strategy: &extension.ColocationStrategy{
+					Enable:             pointer.BoolPtr(true),
+					DegradeTimeMinutes: pointer.Int64Ptr(degradeTimeoutMinutes),
+				},
+				nodeMetric: &slov1alpha1.NodeMetric{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+						Labels: map[string]string{
+							"xxx": "yy",
+						},
+					},
+					Status: slov1alpha1.NodeMetricStatus{
+						UpdateTime: &metav1.Time{
+							Time: time.Now().Add(time.Minute * -(degradeTimeoutMinutes + 1)),
+						},
+					},
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+						Labels: map[string]string{
+							"xxx": "yyy",
+						},
+					},
+					Status: corev1.NodeStatus{},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "outdated NodeMetric status should degrade 1",
+			fields: fields{
+				Clock: clock.NewFakeClock(time.Now().Add(time.Minute * (degradeTimeoutMinutes + 1))),
+			},
+			args: args{
+				strategy: &extension.ColocationStrategy{
+					Enable:             pointer.BoolPtr(true),
+					DegradeTimeMinutes: pointer.Int64Ptr(degradeTimeoutMinutes),
+				},
+				nodeMetric: &slov1alpha1.NodeMetric{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+						Labels: map[string]string{
+							"xxx": "yy",
+						},
+					},
+					Status: slov1alpha1.NodeMetricStatus{
+						UpdateTime: &metav1.Time{
+							Time: time.Now(),
+						},
+					},
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+						Labels: map[string]string{
+							"xxx": "yyy",
+						},
+					},
+					Status: corev1.NodeStatus{},
+				},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldClock := Clock
+			Clock = tt.fields.Clock
+			defer func() {
+				Clock = oldClock
+			}()
+
+			p := &Plugin{}
+			assert.Equal(t, tt.want, p.isDegradeNeeded(tt.args.strategy, tt.args.nodeMetric, tt.args.node))
 		})
 	}
 }
