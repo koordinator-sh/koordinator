@@ -488,6 +488,10 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 	}
 
 	boundPod := reservationObj.GetBoundPod()
+	if err := r.handleReservationBoundSuccess(ctx, job, boundPod); err != nil {
+		return reconcile.Result{}, err
+	}
+
 	podNamespacedName := types.NamespacedName{Namespace: boundPod.Namespace, Name: boundPod.Name}
 	podReady, result, err := r.waitForPodReady(ctx, job, podNamespacedName)
 	if err != nil {
@@ -1023,6 +1027,24 @@ func (r *Reconciler) handleReservationCreateSuccess(ctx context.Context, job *se
 		Status: sev1alpha1.PodMigrationJobConditionStatusTrue,
 	}
 	return r.updateCondition(ctx, job, cond)
+}
+
+func (r *Reconciler) handleReservationBoundSuccess(ctx context.Context, job *sev1alpha1.PodMigrationJob, boundPod *corev1.ObjectReference) error {
+	updated := util.UpdateCondition(&job.Status, &sev1alpha1.PodMigrationJobCondition{
+		Type:   sev1alpha1.PodMigrationJobConditionReservationBound,
+		Status: sev1alpha1.PodMigrationJobConditionStatusTrue,
+	})
+	if job.Status.PodRef == nil || updated {
+		job.Status.PodRef = boundPod
+		err := r.Client.Status().Update(ctx, job)
+		if err == nil {
+			podNamespacedName := types.NamespacedName{Namespace: boundPod.Namespace, Name: boundPod.Name}
+			msg := fmt.Sprintf("Reservation bound by pod %q", podNamespacedName)
+			r.eventRecorder.Eventf(job, nil, corev1.EventTypeNormal, "PodBoundReservation", "Migrating", msg)
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *Reconciler) handleBoundPodReadySuccess(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
