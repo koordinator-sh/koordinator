@@ -162,7 +162,7 @@ func (pl *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *frame
 		return nil
 	}
 
-	markNormalNodes(lowNodes, pl.nodeAnomalyDetectors)
+	resetNodesAsNormal(lowNodes, pl.nodeAnomalyDetectors)
 
 	if len(lowNodes) <= int(pl.args.NumberOfNodes) {
 		klog.V(4).InfoS("Number of nodes underutilized is less or equal than NumberOfNodes, nothing to do here", "underutilizedNodes", len(lowNodes), "numberOfNodes", pl.args.NumberOfNodes)
@@ -187,7 +187,7 @@ func (pl *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *frame
 
 	continueEvictionCond := func(nodeInfo NodeInfo, totalAvailableUsages map[corev1.ResourceName]*resource.Quantity) bool {
 		if _, overutilized := isNodeOverutilized(nodeInfo.NodeUsage.usage, nodeInfo.thresholds.highResourceThreshold); !overutilized {
-			markNormalNodes([]NodeInfo{nodeInfo}, pl.nodeAnomalyDetectors)
+			resetNodesAsNormal([]NodeInfo{nodeInfo}, pl.nodeAnomalyDetectors)
 			return false
 		}
 		for _, resourceName := range resourceNames {
@@ -216,12 +216,22 @@ func (pl *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *frame
 		continueEvictionCond,
 		overUtilizedEvictionReason(highThresholds),
 	)
+	tryMarkNodesAsNormal(sourceNodes, pl.nodeAnomalyDetectors)
 
 	return nil
 }
 
-func markNormalNodes(lowNodes []NodeInfo, nodeAnomalyDetectors *gocache.Cache) {
+func resetNodesAsNormal(lowNodes []NodeInfo, nodeAnomalyDetectors *gocache.Cache) {
 	for _, v := range lowNodes {
+		if obj, ok := nodeAnomalyDetectors.Get(v.node.Name); ok {
+			anomalyDetector := obj.(anomaly.Detector)
+			anomalyDetector.Reset()
+		}
+	}
+}
+
+func tryMarkNodesAsNormal(nodes []NodeInfo, nodeAnomalyDetectors *gocache.Cache) {
+	for _, v := range nodes {
 		if obj, ok := nodeAnomalyDetectors.Get(v.node.Name); ok {
 			anomalyDetector := obj.(anomaly.Detector)
 			anomalyDetector.Mark(true)
@@ -239,6 +249,9 @@ func filterRealAbnormalNodes(sourceNodes []NodeInfo, nodeAnomalyDetectors *gocac
 		if !ok {
 			opts := anomaly.Options{
 				Timeout: anomalyCondition.Timeout.Duration,
+				NormalConditionFn: func(counter anomaly.Counter) bool {
+					return counter.ConsecutiveNormalities > anomalyCondition.ConsecutiveNormalities
+				},
 				AnomalyConditionFn: func(counter anomaly.Counter) bool {
 					return counter.ConsecutiveAbnormalities > anomalyCondition.ConsecutiveAbnormalities
 				},

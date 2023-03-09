@@ -83,4 +83,6 @@ type LoadAnomalyCondition struct {
 	Timeout metav1.Duration
 	// ConsecutiveAbnormalities indicates the number of consecutive abnormalities
 	ConsecutiveAbnormalities uint32
+	// ConsecutiveNormalities indicates the number of consecutive normalities
+	ConsecutiveNormalities uint32
 }

@@ -29,12 +29,21 @@ func defaultAnomalyCondition(counter Counter) bool {
 	return counter.ConsecutiveAbnormalities > 5
 }
 
+func defaultNormalCondition(counter Counter) bool {
+	return counter.ConsecutiveNormalities > 3
+}
+
 // Options configures BasicDetector
 type Options struct {
 	// Timeout is the period of the open state,
 	// after which the state of the BasicDetector becomes half-open.
 	// If Timeout is less than or equal to 0, the timeout value of the BasicDetector is set to 60 seconds.
 	Timeout time.Duration
+	// NormalConditionFn is called with a copy of Counter whenever a request success in the anomaly state.
+	// If NormalConditionFn returns true, the BasicDetector will be placed into the ok state.
+	// If NormalConditionFn is nil, default NormalConditionFn is used.
+	// Default NormalConditionFn returns true when the number of consecutive normalities is more than 3.
+	NormalConditionFn func(counter Counter) bool
 	// AnomalyConditionFn is called with a copy of Counter whenever a request fails in the ok state.
 	// If AnomalyConditionFn returns true, the BasicDetector will be placed into the anomaly state.
 	// If AnomalyConditionFn is nil, default AnomalyConditionFn is used.
@@ -51,6 +60,7 @@ type BasicDetector struct {
 	name               string
 	timeout            time.Duration
 	anomalyConditionFn func(counts Counter) bool
+	normalConditionFn  func(counts Counter) bool
 	onStateChange      func(name string, from State, to State)
 
 	mutex      sync.Mutex
@@ -66,6 +76,7 @@ func NewBasicDetector(name string, opts Options) *BasicDetector {
 		name:               name,
 		timeout:            defaultTimeout,
 		anomalyConditionFn: defaultAnomalyCondition,
+		normalConditionFn:  defaultNormalCondition,
 		onStateChange:      opts.OnStateChange,
 	}
 	if opts.Timeout > 0 {
@@ -73,6 +84,9 @@ func NewBasicDetector(name string, opts Options) *BasicDetector {
 	}
 	if opts.AnomalyConditionFn != nil {
 		d.anomalyConditionFn = opts.AnomalyConditionFn
+	}
+	if opts.NormalConditionFn != nil {
+		d.normalConditionFn = opts.NormalConditionFn
 	}
 
 	d.toNewGeneration(time.Now())
@@ -118,13 +132,21 @@ func (d *BasicDetector) Mark(normality bool) (State, error) {
 	return d.currentState(now), nil
 }
 
+func (d *BasicDetector) Reset() {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	d.setState(StateOK, time.Now())
+}
+
 func (d *BasicDetector) onNormality(state State, now time.Time) {
 	switch state {
 	case StateOK:
 		d.counter.onNormality()
 	case StateAnomaly:
 		d.counter.onNormality()
-		d.setState(StateOK, now)
+		if d.normalConditionFn(d.counter) {
+			d.setState(StateOK, now)
+		}
 	}
 }
 
@@ -135,6 +157,9 @@ func (d *BasicDetector) onAbnormalities(state State, now time.Time) {
 		if d.anomalyConditionFn(d.counter) {
 			d.setState(StateAnomaly, now)
 		}
+	case StateAnomaly:
+		d.counter.onAbnormalities()
+		d.setState(StateAnomaly, now)
 	}
 }
 
@@ -145,7 +170,7 @@ func (d *BasicDetector) currentState(now time.Time) State {
 			d.toNewGeneration(now)
 		}
 	case StateAnomaly:
-		if d.expiration.Before(now) {
+		if d.expiration.Before(now) || d.normalConditionFn(d.counter) {
 			d.setState(StateOK, now)
 		}
 	}
