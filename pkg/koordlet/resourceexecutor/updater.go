@@ -343,30 +343,12 @@ func (f *CgroupUpdaterFactoryImpl) New(resourceType sysutil.ResourceType, parent
 
 func CommonCgroupUpdateFunc(resource ResourceUpdater) error {
 	c := resource.(*CgroupResourceUpdater)
-	updated, err := cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
-	if err != nil {
-		return err
-	}
-	if updated && c.eventHelper != nil {
-		_ = c.eventHelper.Do()
-	} else if updated {
-		_ = audit.V(3).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
-	}
-	return nil
+	return cgroupWriteIfDifferentWithLog(c)
 }
 
 func CommonDefaultUpdateFunc(resource ResourceUpdater) error {
 	c := resource.(*DefaultResourceUpdater)
-	updated, err := sysutil.CommonFileWriteIfDifferent(c.Path(), c.value)
-	if err != nil {
-		return err
-	}
-	if updated && c.eventHelper != nil {
-		_ = c.eventHelper.Do()
-	} else if updated {
-		_ = audit.V(3).Reason(ReasonUpdateSystemConfig).Message("update %v to %v", resource.Path(), resource.Value()).Do()
-	}
-	return nil
+	return commonWriteIfDifferentWithLog(c)
 }
 
 func CgroupUpdateWithUnlimitedFunc(resource ResourceUpdater) error {
@@ -376,16 +358,7 @@ func CgroupUpdateWithUnlimitedFunc(resource ResourceUpdater) error {
 	if c.value == "-1" && sysutil.GetCurrentCgroupVersion() == sysutil.CgroupVersionV2 {
 		c.value = "max"
 	}
-	updated, err := cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
-	if err != nil {
-		return err
-	}
-	if updated && c.eventHelper != nil {
-		_ = c.eventHelper.Do()
-	} else if updated {
-		_ = audit.V(3).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
-	}
-	return nil
+	return cgroupWriteIfDifferentWithLog(c)
 }
 
 func CgroupUpdateCPUSharesFunc(resource ResourceUpdater) error {
@@ -398,16 +371,7 @@ func CgroupUpdateCPUSharesFunc(resource ResourceUpdater) error {
 		}
 		c.value = strconv.FormatInt(v, 10)
 	}
-	updated, err := cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
-	if err != nil {
-		return err
-	}
-	if updated && c.eventHelper != nil {
-		_ = c.eventHelper.Do()
-	} else if updated {
-		_ = audit.V(3).Reason(ReasonUpdateCgroups).Message("update %v to %v", resource.Path(), resource.Value()).Do()
-	}
-	return nil
+	return cgroupWriteIfDifferentWithLog(c)
 }
 
 type MergeConditionFunc func(oldValue, newValue string) (mergedValue string, needMerge bool, err error)
@@ -495,4 +459,30 @@ func MergeConditionIfCPUSetIsLooser(oldValue, newValue string) (string, bool, er
 	// need to update with the merged of old and new cpuset values
 	merged := v.Union(old)
 	return merged.String(), true, nil
+}
+
+func cgroupWriteIfDifferentWithLog(c *CgroupResourceUpdater) error {
+	updated, err := cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+	if err != nil {
+		return err
+	}
+	if updated && c.eventHelper != nil {
+		_ = c.eventHelper.Do()
+	} else if updated {
+		_ = audit.V(3).Reason(ReasonUpdateCgroups).Message("update %v to %v", c.Path(), c.Value()).Do()
+	}
+	return nil
+}
+
+func commonWriteIfDifferentWithLog(c *DefaultResourceUpdater) error {
+	updated, err := sysutil.CommonFileWriteIfDifferent(c.Path(), c.value)
+	if err != nil {
+		return err
+	}
+	if updated && c.eventHelper != nil {
+		_ = c.eventHelper.Do()
+	} else if updated {
+		_ = audit.V(3).Reason(ReasonUpdateSystemConfig).Message("update %v to %v", c.Path(), c.Value()).Do()
+	}
+	return nil
 }

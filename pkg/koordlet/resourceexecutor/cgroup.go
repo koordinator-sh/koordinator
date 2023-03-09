@@ -27,6 +27,7 @@ import (
 	"k8s.io/klog/v2"
 
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 const (
@@ -55,6 +56,9 @@ func cgroupFileWriteIfDifferent(cgroupTaskDir string, r sysutil.Resource, value 
 	if currentErr != nil {
 		return false, currentErr
 	}
+	if r.ResourceType() == sysutil.CPUSetCPUSName && IsEqualCpus(currentValue, value) {
+		return false, nil
+	}
 	if value == currentValue || value == CgroupMaxValueStr && currentValue == CgroupMaxSymbolStr {
 		// compatible with cgroup valued "max"
 		klog.V(6).Infof("read before write %s and got str value, considered as MaxInt64", r.Path(cgroupTaskDir))
@@ -64,6 +68,12 @@ func cgroupFileWriteIfDifferent(cgroupTaskDir string, r sysutil.Resource, value 
 		return false, err
 	}
 	return true, nil
+}
+
+func IsEqualCpus(a, b string) bool {
+	cpus1, _ := cpuset.Parse(a)
+	cpus2, _ := cpuset.Parse(b)
+	return cpus1.Equals(cpus2)
 }
 
 // CgroupFileWrite writes the cgroup file with the given value.
