@@ -169,6 +169,7 @@ const (
 
 // These are valid reasons of PodMigrationJob.
 const (
+	PodMigrationJobReasonDryRunEvictFailed         = "DryRunEvictFailed"
 	PodMigrationJobReasonTimeout                   = "Timeout"
 	PodMigrationJobReasonFailedCreateReservation   = "FailedCreateReservation"
 	PodMigrationJobReasonReservationExpired        = "ReservationExpired"

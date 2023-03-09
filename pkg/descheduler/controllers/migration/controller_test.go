@@ -576,6 +576,49 @@ func TestEvictPod(t *testing.T) {
 	assert.Equal(t, expectCond, cond)
 }
 
+func TestRequeueJobIfDryRunEvictFailed(t *testing.T) {
+	reconciler := newTestReconciler()
+	reconciler.evictorInterpreter = fakeEvictionInterpreter{err: fmt.Errorf("dry run failed")}
+
+	job := &sev1alpha1.PodMigrationJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test",
+			CreationTimestamp: metav1.Time{Time: time.Now()},
+		},
+		Spec: sev1alpha1.PodMigrationJobSpec{
+			Paused: true,
+			PodRef: &corev1.ObjectReference{
+				Namespace: "default",
+				Name:      "test-pod",
+			},
+		},
+	}
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Controller: pointer.Bool(true),
+					Kind:       "StatefulSet",
+					Name:       "test",
+					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
+
+	failed, err := reconciler.requeueJobIfDryRunEvictFailed(context.TODO(), job)
+	assert.True(t, failed)
+	assert.NoError(t, err)
+}
+
 func TestDeleteReservation(t *testing.T) {
 	reconciler := newTestReconciler()
 	assert.Nil(t, reconciler.deleteReservation(context.TODO(), &sev1alpha1.PodMigrationJob{}))

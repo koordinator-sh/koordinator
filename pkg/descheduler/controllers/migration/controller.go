@@ -413,6 +413,10 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 	}
 
 	if job.Spec.ReservationOptions == nil || job.Spec.ReservationOptions.ReservationRef == nil {
+		dryRunEvictPodFailed, err := r.requeueJobIfDryRunEvictFailed(ctx, job)
+		if dryRunEvictPodFailed || err != nil {
+			return reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
+		}
 		err = r.createReservation(ctx, job)
 		return reconcile.Result{}, err
 	} else {
@@ -912,6 +916,37 @@ func (r *Reconciler) evictPod(ctx context.Context, job *sev1alpha1.PodMigrationJ
 		r.eventRecorder.Eventf(job, nil, corev1.EventTypeNormal, sev1alpha1.PodMigrationJobReasonEvicting, "Migrating", "%s", cond.Message)
 	}
 	return false, reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
+}
+
+func (r *Reconciler) requeueJobIfDryRunEvictFailed(ctx context.Context, job *sev1alpha1.PodMigrationJob) (failed bool, err error) {
+	_, cond := util.GetCondition(&job.Status, sev1alpha1.PodMigrationJobConditionEviction)
+	if cond != nil {
+		return false, nil
+	}
+
+	klog.V(4).Infof("MigrationJob %s dry run evict pod before create reservation", job.Name)
+	pod := &corev1.Pod{}
+	podNamespacedName := types.NamespacedName{Namespace: job.Spec.PodRef.Namespace, Name: job.Spec.PodRef.Name}
+	err = r.Client.Get(ctx, podNamespacedName, pod)
+	if errors.IsNotFound(err) {
+		err = r.abortJobByMissingPod(ctx, job, podNamespacedName)
+		return true, err
+	}
+	if err != nil {
+		klog.Errorf("Failed to get target Pod %q, MigrationJob: %s, err: %v", podNamespacedName, job.Name, err)
+		return true, err
+	}
+	job = job.DeepCopy()
+	if job.Spec.DeleteOptions == nil {
+		job.Spec.DeleteOptions = &metav1.DeleteOptions{}
+	}
+	job.Spec.DeleteOptions.DryRun = []string{metav1.DryRunAll}
+	err = r.evictorInterpreter.Evict(ctx, job, pod)
+	if err != nil {
+		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, "Requeue", "Migrating", "Failed to dry run evict pod")
+		return true, nil
+	}
+	return false, nil
 }
 
 func (r *Reconciler) prepareJobWithReservationScheduleSuccess(ctx context.Context, job *sev1alpha1.PodMigrationJob, reservationObj reservation.Object) error {

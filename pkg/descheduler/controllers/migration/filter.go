@@ -149,6 +149,9 @@ func (r *Reconciler) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod)
 	if err != nil {
 		return false
 	}
+	if expectedReplicas == 0 {
+		return true
+	}
 
 	maxMigrating, err := util.GetMaxMigrating(int(expectedReplicas), r.args.MaxMigratingPerWorkload)
 	if err != nil {
