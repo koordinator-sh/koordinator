@@ -46,12 +46,22 @@ type MigrationControllerArgs struct {
 	// IgnorePVCPods prevents pods with PVCs from being evicted.
 	IgnorePvcPods bool
 
+	// PriorityThreshold filtering only pods under the threshold can be evicted
+	PriorityThreshold *PriorityThreshold
+
 	// LabelSelector sets whether to apply label filtering when evicting.
 	// Any pod matching the label selector is considered evictable.
 	LabelSelector *metav1.LabelSelector
 
 	// Namespaces carries a list of included/excluded namespaces
 	Namespaces *Namespaces
+
+	// NodeFit if enabled, it will check whether the candidate Pods have suitable nodes,
+	// including NodeAffinity, TaintTolerance, and whether resources are sufficient.
+	NodeFit bool
+
+	// NodeSelector for a set of nodes to operate over
+	NodeSelector string
 
 	// MaxMigratingPerNode represents he maximum number of pods that can be migrating during migrate per node.
 	MaxMigratingPerNode *int32

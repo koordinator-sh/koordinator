@@ -45,7 +45,8 @@ type frameworkImpl struct {
 	getPodsAssignedToNodeFunc framework.GetPodsAssignedToNodeFunc
 	deschedulePlugins         []framework.DeschedulePlugin
 	balancePlugins            []framework.BalancePlugin
-	evictorPlugins            []framework.Evictor
+	evictPlugins              []framework.EvictPlugin
+	filterPlugins             []framework.FilterPlugin
 }
 
 // Option for the frameworkImpl.
@@ -152,29 +153,20 @@ func NewFramework(r Registry, profile *deschedulerconfig.DeschedulerProfile, opt
 
 	pluginsMap := make(map[string]framework.Plugin)
 
-	// Other plugins may depend on the evictor plugin, so we should initialize the evictor plugin first.
-	evictorExtensionPoint := f.getEvictorExtensionPoint(profile.Plugins)
-	outputPluginConfig, err := f.initPlugins(r, pluginConfig, evictorExtensionPoint, pluginsMap)
+	extensionPoints := f.getExtensionPoints(profile.Plugins)
+	outputPluginConfig, err := f.initPlugins(r, pluginConfig, extensionPoints, pluginsMap)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(f.evictorPlugins) == 0 {
+	if len(f.evictPlugins) == 0 {
 		return nil, fmt.Errorf("no evict plugin is enabled")
 	}
-	if len(f.evictorPlugins) > 1 {
+	if len(f.evictPlugins) > 1 {
 		return nil, fmt.Errorf("only one evict plugin can be enabled")
 	}
 
 	outputProfile.PluginConfig = append(outputProfile.PluginConfig, outputPluginConfig...)
-
-	otherExtensionPoints := f.getOtherExtensionPoints(profile.Plugins)
-	outputPluginConfig, err = f.initPlugins(r, pluginConfig, otherExtensionPoints, pluginsMap)
-	if err != nil {
-		return nil, err
-	}
-	outputProfile.PluginConfig = append(outputProfile.PluginConfig, outputPluginConfig...)
-
 	if options.captureProfile != nil {
 		if len(outputProfile.PluginConfig) != 0 {
 			sort.Slice(outputProfile.PluginConfig, func(i, j int) bool {
@@ -266,17 +258,7 @@ type extensionPoint struct {
 	slicePtr interface{}
 }
 
-func (f *frameworkImpl) getEvictorExtensionPoint(plugins *deschedulerconfig.Plugins) []extensionPoint {
-	if plugins == nil {
-		return nil
-	}
-
-	return []extensionPoint{
-		{&plugins.Evictor, &f.evictorPlugins},
-	}
-}
-
-func (f *frameworkImpl) getOtherExtensionPoints(plugins *deschedulerconfig.Plugins) []extensionPoint {
+func (f *frameworkImpl) getExtensionPoints(plugins *deschedulerconfig.Plugins) []extensionPoint {
 	if plugins == nil {
 		return nil
 	}
@@ -284,6 +266,8 @@ func (f *frameworkImpl) getOtherExtensionPoints(plugins *deschedulerconfig.Plugi
 	return []extensionPoint{
 		{&plugins.Deschedule, &f.deschedulePlugins},
 		{&plugins.Balance, &f.balancePlugins},
+		{&plugins.Evict, &f.evictPlugins},
+		{&plugins.Filter, &f.filterPlugins},
 	}
 }
 
@@ -308,14 +292,10 @@ func (f *frameworkImpl) EventRecorder() events.EventRecorder {
 }
 
 func (f *frameworkImpl) Evictor() framework.Evictor {
-	if len(f.evictorPlugins) == 0 {
-		panic("No Evictor plugin is registered in the frameworkImpl.")
-	}
-	evictorPlugin := f.evictorPlugins[0]
 	return &evictorProxy{
 		dryRun:          f.dryRun,
 		evictionLimiter: f.evictionLimiter,
-		evictor:         evictorPlugin,
+		handle:          f,
 	}
 }
 

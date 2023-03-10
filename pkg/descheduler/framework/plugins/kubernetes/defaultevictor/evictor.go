@@ -46,7 +46,8 @@ type DefaultEvictor struct {
 	evictor       *evictions.PodEvictor
 }
 
-var _ framework.Evictor = &DefaultEvictor{}
+var _ framework.EvictPlugin = &DefaultEvictor{}
+var _ framework.FilterPlugin = &DefaultEvictor{}
 var _ k8sdeschedulerframework.EvictorPlugin = &DefaultEvictor{}
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {

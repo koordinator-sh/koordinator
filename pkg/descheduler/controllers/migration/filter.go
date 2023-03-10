@@ -26,17 +26,93 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
-	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	kubecontroller "k8s.io/kubernetes/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	k8sdeschedulerapi "sigs.k8s.io/descheduler/pkg/api"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/util"
+	evictionsutil "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/kubernetes/defaultevictor"
+	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
+
+func (r *Reconciler) initFilters(args *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) error {
+	defaultEvictorArgs := &defaultevictor.DefaultEvictorArgs{
+		NodeFit:                 args.NodeFit,
+		NodeSelector:            args.NodeSelector,
+		EvictLocalStoragePods:   args.EvictLocalStoragePods,
+		EvictSystemCriticalPods: args.EvictSystemCriticalPods,
+		IgnorePvcPods:           args.IgnorePvcPods,
+		EvictFailedBarePods:     args.EvictFailedBarePods,
+		LabelSelector:           args.LabelSelector,
+	}
+	if args.PriorityThreshold != nil {
+		defaultEvictorArgs.PriorityThreshold = &k8sdeschedulerapi.PriorityThreshold{
+			Name:  args.PriorityThreshold.Name,
+			Value: args.PriorityThreshold.Value,
+		}
+	}
+	defaultEvictor, err := defaultevictor.New(defaultEvictorArgs, handle)
+	if err != nil {
+		return err
+	}
+
+	var includedNamespaces, excludedNamespaces sets.String
+	if args.Namespaces != nil {
+		includedNamespaces = sets.NewString(args.Namespaces.Include...)
+		excludedNamespaces = sets.NewString(args.Namespaces.Exclude...)
+	}
+
+	wrapFilterFuncs := podutil.WrapFilterFuncs(
+		util.FilterPodWithMaxEvictionCost,
+		defaultEvictor.(framework.FilterPlugin).Filter)
+	podFilter, err := podutil.NewOptions().
+		WithFilter(wrapFilterFuncs).
+		WithNamespaces(includedNamespaces).
+		WithoutNamespaces(excludedNamespaces).
+		BuildFilterFunc()
+	if err != nil {
+		return err
+	}
+	retriablePodFilters := podutil.WrapFilterFuncs(
+		r.filterLimitedObject,
+		r.filterMaxMigratingPerNode,
+		r.filterMaxMigratingPerNamespace,
+		r.filterMaxMigratingOrUnavailablePerWorkload,
+	)
+	r.retriablePodFilter = func(pod *corev1.Pod) bool {
+		return evictionsutil.HaveEvictAnnotation(pod) || retriablePodFilters(pod)
+	}
+	r.unretriablePodFilter = podFilter
+	r.defaultFilterPlugin = defaultEvictor.(framework.FilterPlugin)
+	return nil
+}
+
+// Filter checks if a pod can be evicted
+func (r *Reconciler) Filter(pod *corev1.Pod) bool {
+	if !r.filterExistingPodMigrationJob(pod) {
+		return false
+	}
+	if r.unretriablePodFilter != nil && !r.unretriablePodFilter(pod) {
+		return false
+	}
+	if r.retriablePodFilter != nil && !r.retriablePodFilter(pod) {
+		return false
+	}
+	return true
+}
+
+func (r *Reconciler) PreEvictionFilter(pod *corev1.Pod) bool {
+	return r.defaultFilterPlugin.PreEvictionFilter(pod)
+}
 
 func (r *Reconciler) forEachAvailableMigrationJobs(listOpts *client.ListOptions, handler func(job *sev1alpha1.PodMigrationJob) bool) {
 	jobList := &sev1alpha1.PodMigrationJobList{}
@@ -214,7 +290,7 @@ func (r *Reconciler) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod)
 func (r *Reconciler) getUnavailablePods(pods []*corev1.Pod) map[types.NamespacedName]struct{} {
 	unavailablePods := make(map[types.NamespacedName]struct{})
 	for _, pod := range pods {
-		if kubecontroller.IsPodActive(pod) && podutil.IsPodReady(pod) {
+		if kubecontroller.IsPodActive(pod) && k8spodutil.IsPodReady(pod) {
 			continue
 		}
 		k := types.NamespacedName{

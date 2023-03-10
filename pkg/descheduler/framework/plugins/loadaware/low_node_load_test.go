@@ -47,6 +47,7 @@ import (
 	frameworktesting "github.com/koordinator-sh/koordinator/pkg/descheduler/framework/testing"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/test"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/anomaly"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -1001,7 +1002,8 @@ func TestLowNodeLoad(t *testing.T) {
 				[]frameworktesting.RegisterPluginFunc{
 					func(reg *frameworkruntime.Registry, profile *deschedulerconfig.DeschedulerProfile) {
 						reg.Register(defaultevictor.PluginName, defaultevictor.New)
-						profile.Plugins.Evictor.Enabled = append(profile.Plugins.Evictor.Enabled, deschedulerconfig.Plugin{Name: defaultevictor.PluginName})
+						profile.Plugins.Evict.Enabled = append(profile.Plugins.Evict.Enabled, deschedulerconfig.Plugin{Name: defaultevictor.PluginName})
+						profile.Plugins.Filter.Enabled = append(profile.Plugins.Filter.Enabled, deschedulerconfig.Plugin{Name: defaultevictor.PluginName})
 						profile.PluginConfig = append(profile.PluginConfig, deschedulerconfig.PluginConfig{
 							Name: defaultevictor.PluginName,
 							Args: &defaultevictor.DefaultEvictorArgs{},
@@ -1214,7 +1216,7 @@ func Test_filterNodes(t *testing.T) {
 	}
 }
 
-func Test_markNormalNodes(t *testing.T) {
+func Test_resetNodesAsNormal(t *testing.T) {
 	node := NodeInfo{
 		NodeUsage: &NodeUsage{
 			node: test.BuildTestNode("test-node-", 4000, 3000, 10, nil),
@@ -1232,9 +1234,48 @@ func Test_markNormalNodes(t *testing.T) {
 	abnormalNodes := filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, condition)
 	assert.Equal(t, sourceNodes, abnormalNodes)
 
-	markNormalNodes(sourceNodes, nodeAnomalyDetectors)
+	resetNodesAsNormal(sourceNodes, nodeAnomalyDetectors)
 	abnormalNodes = filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, condition)
 	assert.Equal(t, []NodeInfo(nil), abnormalNodes)
+}
+
+func Test_tryMarkNodesAsNormal(t *testing.T) {
+	node := NodeInfo{
+		NodeUsage: &NodeUsage{
+			node: test.BuildTestNode("test-node-", 4000, 3000, 10, nil),
+		},
+	}
+	sourceNodes := []NodeInfo{node}
+
+	condition := &deschedulerconfig.LoadAnomalyCondition{
+		ConsecutiveAbnormalities: 2,
+		ConsecutiveNormalities:   2,
+	}
+	nodeAnomalyDetectors := gocache.New(5*time.Minute, 5*time.Minute)
+	for i := 0; i < int(condition.ConsecutiveAbnormalities); i++ {
+		filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, condition)
+	}
+	abnormalNodes := filterRealAbnormalNodes(sourceNodes, nodeAnomalyDetectors, condition)
+	assert.Equal(t, sourceNodes, abnormalNodes)
+
+	tryMarkNodesAsNormal(sourceNodes, nodeAnomalyDetectors)
+	tryMarkNodesAsNormal(sourceNodes, nodeAnomalyDetectors)
+
+	for _, v := range sourceNodes {
+		obj, ok := nodeAnomalyDetectors.Get(v.node.Name)
+		assert.True(t, ok)
+		anomalyDetector := obj.(anomaly.Detector)
+		assert.Equal(t, anomaly.StateAnomaly, anomalyDetector.State())
+	}
+
+	tryMarkNodesAsNormal(sourceNodes, nodeAnomalyDetectors)
+
+	for _, v := range sourceNodes {
+		obj, ok := nodeAnomalyDetectors.Get(v.node.Name)
+		assert.True(t, ok)
+		anomalyDetector := obj.(anomaly.Detector)
+		assert.Equal(t, anomaly.StateOK, anomalyDetector.State())
+	}
 }
 
 func Test_filterRealAbnormalNodes(t *testing.T) {

@@ -9,7 +9,7 @@ reviewers:
   - "@saintube"
   - "@zwzhang0107"
 creation-date: 2022-07-01
-last-updated: 2022-07-15
+last-updated: 2023-03-08
 status: provisional
 ---
 
@@ -29,8 +29,8 @@ status: provisional
     - [Proposal](#proposal)
         - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
             - [Descheduler profile](#descheduler-profile)
-            - [Abstract PodEvictor interface](#abstract-podevictor-interface)
-            - [Plug-in descheduler strategy](#plug-in-descheduler-strategy)
+            - [Abstract Evict and Filter interfaces](#abstract-evict-and-filter-interfaces)
+            - [Plugin descheduler strategy](#plugin-descheduler-strategy)
     - [Alternatives](#alternatives)
     - [Implementation History](#implementation-history)
 
@@ -70,26 +70,52 @@ The current descheduler configuration is too simple to support disabling or enab
 - The descheduling framework configuration can be converted into an internal representation.
 - To reduce need to specify value for every possible configuration, also defaulting serves as a recommended/opinionated settings for the plugins.
 
-#### Abstract PodEvictor interface
+The K8s Descheduler Profile does not yet support custom eviction mechanisms, but Koordinator Descheduler allows users to configure eviction plug-ins using the `Evict` extension point in the Profile, allowing users to customize the eviction mechanism; Koordinator Descheduler also supports users to use the `Filter` extension in the Profile Configure different eviction filter plug-ins, which is similar to the `Evict` extension point in the K8s Descheduler Profile.
 
-Currently, descheduler has split `Pod Evictor` and `Evictor Filter`. Users can inject `Evictor Filter` on demand, and the plug-in calls `Evictor Filter` when selecting abnormal Pods to select Pods that meet the requirements and calls `Pod Evictor` to initiate eviction. At present, `Pod Evictor` has not been abstracted as an interface. We adopt the solution in [PoC #781](https://github.com/kubernetes-sigs/descheduler/pull/781) to abstract an `Evictor interface`. And refer to [PR #885](https://github.com/kubernetes-sigs/descheduler/pull/885) to add an `EvictOptions` paramters.  We can implement custom Evictor based on [PodMigrationJob](https://github.com/koordinator-sh/koordinator/blob/main/docs/proposals/scheduling/20220701-pod-migration-job.md). 
+#### Abstract Evict and Filter interfaces
 
-The `Evictor` interface defined as follows:
+The `Evict` interface encapsulates specific eviction methods. The `Filter` interface encapsulates the criteria for determining whether pod eviction is allowed. The specific interfaces are defined as follows:
 
 ```go
-type EvictOptons struct {
-  Strategy string
-  Reason   string
+type EvictPlugin interface {
+	Plugin
+	// Evict evicts a pod (no pre-check performed)
+	Evict(ctx context.Context, pod *corev1.Pod, evictOptions EvictOptions) bool
 }
 
-type Evictor interface {
-  Evict(context.Context, *v1.Pod, options EvictOptions) bool
+type FilterPlugin interface {
+	Plugin
+	// Filter checks if a pod can be evicted
+	Filter(pod *corev1.Pod) bool
+	// PreEvictionFilter checks if pod can be evicted right before eviction
+	PreEvictionFilter(pod *corev1.Pod) bool
+}
+
+// EvictOptions provides a handle for passing additional info to EvictPod
+type EvictOptions struct {
+	// PluginName represents the initiator of the eviction operation
+	PluginName string
+	// Reason allows for passing details about the specific eviction for logging.
+	Reason string
+	// DeleteOptions holds the arguments used to delete
+	DeleteOptions *metav1.DeleteOptions
 }
 ```
 
-#### Plug-in descheduler strategy
+Although multiple Evict plugins can be configured in a Descheduler Profile, but only one Evict plugin instance is used. Koordinator descheduler will use MigrationController based on [PodMigrationJob](https://github.com/koordinator-sh/koordinator/blob/main/docs/proposals/scheduling/20220701-pod-migration-job.md) as the default Evict plugin. 
+
+The Evict plugin can get the `Filter` instance through the descheduler `Framework.Evictor()` method. The `Evict`, `Deschedule` and `Balance` plugins can use `Filter` to determine whether eviction is allowed before initiating Pod eviction. 
+Multiple Filter plugins can be configured in the Descheduler Profile. When a plugin instance filter fails, it is considered that the Pod should not be evicted. 
+
+`Filter` is theoretically stateless, but if there is state, the plugin implementer needs to ensure concurrency safety, because it is possible for the framework layer to execute Deschedule/Balance plugins concurrently, and these plugins will call the Filter interface concurrently.
+
+For example, Deschedule/Balance plugins are used to implement custom descheduling strategies. These plugins generally select some Pods as candidates based on their own internal logic, and then call `Filter` to exclude some Pods. One reason for this is that multiple Deschedule/Balance plugins can do some linkage through Filter. For example, some plugins may have evicted a batch of Pods, if the next plugin does not call `Filter`, there may be a risk of failure. Moreover, `Filter` also has global common properties, for example, the replicas of unavailable of the workload to which the Pod belongs has exceeded maxUnavailable.
+
+#### Plugin descheduler strategy
 
 The current descheduler has some strategies. In [PoC #781](https://github.com/kubernetes-sigs/descheduler/pull/781), it is converted into `Plugin` and executed periodically. In this `periodic execution mode`, it is appropriate to abstract the policy for Pod and Node dimensions as `DeschedulePlugin` or `BalancePlugin`. The load hotspot descheduling capability that we will implement later can also implement the BalancePlugin interface.
+
+The goals of both `Deschedule` and `Balance` Plugin are to evict a batch of Pods to obtain better orchestration status or runtime quality. The reason why they have two names is that the semantics of the scenarios they represent are different. For example, to evict pods that fail to run on some nodes to achieve a single goal or local optimum, it is more appropriate to use `Deschedule`; but if it involves balancing the state of a batch of nodes to obtain a global optimum, such as resource allocation balance, or load balance, etc., it is more appropriate to use `Balance`.
 
 We also need to support the `event-triggered mode`, which means that descheduling is performed in the form of a Controller.
 In some scenarios, CRD-oriented descheduling needs to be implemented. For example, different descheduling configurations are provided according to the workload. When some abnormality is detected in the workload, descheduling will be triggered. We can think of Controller as a special form of Plugin. When the descheduler is initialized, an instance is constructed through the plugin factory function like a normal Plugin, and then a similar Run method is called to start execution.
@@ -100,3 +126,4 @@ In some scenarios, CRD-oriented descheduling needs to be implemented. For exampl
 
 - 2022-07-01: Initial proposal
 - 2022-07-15: Refactor proposal for review
+- 2023-03-28: Append description of extension point responsibilities and relationships

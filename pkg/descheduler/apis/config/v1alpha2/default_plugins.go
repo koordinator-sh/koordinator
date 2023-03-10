@@ -31,7 +31,12 @@ func getDefaultPlugins() *Plugins {
 				// NOTE: add default deschedule plugins here.
 			},
 		},
-		Evictor: PluginSet{
+		Evict: PluginSet{
+			Enabled: []Plugin{
+				{Name: names.MigrationController},
+			},
+		},
+		Filter: PluginSet{
 			Enabled: []Plugin{
 				{Name: names.MigrationController},
 			},
@@ -48,7 +53,8 @@ func mergePlugins(defaultPlugins, customPlugins *Plugins) *Plugins {
 
 	defaultPlugins.Deschedule = mergePluginSet(defaultPlugins.Deschedule, customPlugins.Deschedule)
 	defaultPlugins.Balance = mergePluginSet(defaultPlugins.Balance, customPlugins.Balance)
-	defaultPlugins.Evictor = mergePluginSet(defaultPlugins.Evictor, customPlugins.Evictor)
+	defaultPlugins.Evict = mergePluginSet(defaultPlugins.Evict, customPlugins.Evict)
+	defaultPlugins.Filter = mergePluginSet(defaultPlugins.Filter, customPlugins.Filter)
 	return defaultPlugins
 }
 
