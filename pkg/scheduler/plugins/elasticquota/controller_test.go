@@ -245,6 +245,13 @@ func (e *eqWrapper) Used(used v1.ResourceList) *eqWrapper {
 	return e
 }
 
+func (e *eqWrapper) Annotations(annotations map[string]string) *eqWrapper {
+	for k, v := range annotations {
+		e.ElasticQuota.Annotations[k] = v
+	}
+	return e
+}
+
 func (e *eqWrapper) Obj() *v1alpha1.ElasticQuota {
 	return e.ElasticQuota
 }

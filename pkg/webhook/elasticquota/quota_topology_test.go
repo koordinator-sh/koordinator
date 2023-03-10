@@ -17,6 +17,7 @@ limitations under the License.
 package elasticquota
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -25,7 +26,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	testing2 "k8s.io/kubernetes/pkg/scheduler/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -503,17 +503,64 @@ func TestQuotaTopology_AddPod_UpdatePod(t *testing.T) {
 }
 
 func TestQuotaTopology_getQuotaNameFromPod(t *testing.T) {
-	qt := newFakeQuotaTopology()
-	client := fake.NewClientBuilder().Build()
-	client.Scheme().AddKnownTypes(schema.GroupVersion{
-		Group:   "scheduling.sigs.k8s.io",
-		Version: "v1alpha1",
-	}, &v1alpha1.ElasticQuota{}, &v1alpha1.ElasticQuotaList{})
-	qt.client = client
-	pod := MakePod("test-ns", "test-pod").Obj()
-	pod.Labels = make(map[string]string)
-	quotaName := qt.getQuotaNameFromPodNoLock(pod)
-	assert.Equal(t, extension.DefaultQuotaName, quotaName)
+	tests := []struct {
+		name              string
+		pod               *v1.Pod
+		elasticQuotas     []*v1alpha1.ElasticQuota
+		expectedQuotaName string
+	}{
+		{
+			name:              "default quota",
+			pod:               &v1.Pod{},
+			expectedQuotaName: extension.DefaultQuotaName,
+		},
+		{
+			name: "quota name from label",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name:      "test",
+					Labels: map[string]string{
+						extension.LabelQuotaName: "test-quota",
+					},
+				},
+			},
+			elasticQuotas: []*v1alpha1.ElasticQuota{
+				MakeQuota("test-quota").Namespace("test-ns").IsParent(false).Obj(),
+			},
+			expectedQuotaName: "test-quota",
+		},
+		{
+			name: "quota name from namespace",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name:      "test",
+				},
+			},
+			elasticQuotas: []*v1alpha1.ElasticQuota{
+				MakeQuota("parent-quota").Namespace("test-ns").IsParent(true).Obj(),
+				MakeQuota("test-ns").Namespace("test-ns").IsParent(false).Obj(),
+			},
+			expectedQuotaName: "test-ns",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewClientBuilder().Build()
+			v1alpha1.AddToScheme(client.Scheme())
+			qt := newFakeQuotaTopology()
+			qt.client = client
+			for _, eq := range tt.elasticQuotas {
+				err := client.Create(context.TODO(), eq)
+				assert.NoError(t, err)
+				qt.OnQuotaAdd(eq)
+			}
+			quotaName := qt.getQuotaNameFromPodNoLock(tt.pod)
+			assert.Equal(t, tt.expectedQuotaName, quotaName)
+		})
+	}
 }
 
 func TestQuotaTopology_checkParentQuotaInfoExist(t *testing.T) {
@@ -587,7 +634,7 @@ func (q *quotaWrapper) Max(max v1.ResourceList) *quotaWrapper {
 
 func (q *quotaWrapper) sharedWeight(sharedWeight v1.ResourceList) *quotaWrapper {
 	sharedWeightBytes, _ := json.Marshal(sharedWeight)
-	q.Annotations[extension.AnnotationSharedWeight] = string(sharedWeightBytes)
+	q.ElasticQuota.Annotations[extension.AnnotationSharedWeight] = string(sharedWeightBytes)
 	return q
 }
 
@@ -602,6 +649,13 @@ func (q *quotaWrapper) IsParent(isParent bool) *quotaWrapper {
 
 func (q *quotaWrapper) ParentName(parentName string) *quotaWrapper {
 	q.Labels[extension.LabelQuotaParent] = parentName
+	return q
+}
+
+func (q *quotaWrapper) Annotations(annotations map[string]string) *quotaWrapper {
+	for k, v := range annotations {
+		q.ElasticQuota.Annotations[k] = v
+	}
 	return q
 }
 

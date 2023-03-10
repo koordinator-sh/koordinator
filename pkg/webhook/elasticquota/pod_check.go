@@ -21,12 +21,13 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
 // TODO If the parentQuotaGroup submits pods, the runtime will be calculated incorrectly.
@@ -53,30 +54,25 @@ func (qt *quotaTopology) ValidateUpdatePod(oldPod, newPod *corev1.Pod) error {
 }
 
 func (qt *quotaTopology) getQuotaNameFromPodNoLock(pod *corev1.Pod) string {
-	quotaLabelName := extension.GetQuotaName(pod)
-	if quotaLabelName == "" {
-		quotaLabelName = GetQuotaName(qt.client, pod)
-	}
-
+	quotaLabelName := GetQuotaName(pod, qt.client)
 	if _, exist := qt.quotaInfoMap[quotaLabelName]; !exist {
 		quotaLabelName = extension.DefaultQuotaName
 	}
 	return quotaLabelName
 }
 
-var GetQuotaName = func(clientImpl client.Client, pod *corev1.Pod) string {
-	quotaList := &v1alpha1.ElasticQuotaList{}
-	opts := &client.ListOptions{
-		Namespace: pod.Namespace,
+var GetQuotaName = func(pod *corev1.Pod, client client.Client) string {
+	quotaName := extension.GetQuotaName(pod)
+	if quotaName != "" {
+		return quotaName
 	}
-	err := clientImpl.List(context.TODO(), quotaList, opts, utilclient.DisableDeepCopy)
-	if err != nil {
-		runtime.HandleError(err)
-		return extension.DefaultQuotaName
+
+	eq := &v1alpha1.ElasticQuota{}
+	err := client.Get(context.TODO(), types.NamespacedName{Namespace: pod.Namespace, Name: pod.Namespace}, eq)
+	if err == nil {
+		return eq.Name
+	} else if !errors.IsNotFound(err) {
+		klog.Errorf("Failed to Get ElasticQuota %s, err: %v", pod.Namespace, err)
 	}
-	if len(quotaList.Items) == 0 {
-		return extension.DefaultQuotaName
-	}
-	// todo when elastic quota supports multiple instances in a namespace, modify this
-	return quotaList.Items[0].Name
+	return extension.DefaultQuotaName
 }
