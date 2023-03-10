@@ -17,24 +17,16 @@ limitations under the License.
 package core
 
 import (
-	"context"
 	"sync"
-	"time"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/validation"
 	listerv1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 
 	pglister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
@@ -101,48 +93,19 @@ func (gangCache *GangCache) onPodAdd(obj interface{}) {
 	if gangName == "" {
 		return
 	}
-	// gangName has to match DNS (RFC 1123) check
-	errMSg := validation.IsDNS1123Subdomain(gangName)
-	if len(errMSg) != 0 {
-		klog.Errorf("gangName is invalid,it has to match RFC 1123 check, gangName: %v", gangName)
-		return
-	}
 
 	gangNamespace := pod.Namespace
 	gangId := util.GetId(gangNamespace, gangName)
 	gang := gangCache.getGangFromCacheByGangId(gangId, true)
 
 	// the gang is created in Annotation way
-	shouldCreatePg := false
 	if pod.Labels[v1alpha1.PodGroupLabel] == "" {
-		if gang.tryInitByPodConfig(pod, gangCache.pluginArgs) {
-			shouldCreatePg = util.ShouldCreatePodGroup(pod)
-		}
+		gang.tryInitByPodConfig(pod, gangCache.pluginArgs)
 	}
 	gang.setChild(pod)
 	if pod.Spec.NodeName != "" {
 		gang.addBoundPod(pod)
 		gang.setResourceSatisfied()
-	}
-
-	if shouldCreatePg {
-		pg, _ := gangCache.pgLister.PodGroups(gangNamespace).Get(gangName)
-		// cluster doesn't have the podGroup
-		if pg == nil {
-			pgFromAnnotation := generateNewPodGroup(gang, pod)
-			err := retry.OnError(
-				retry.DefaultRetry,
-				errors.IsTooManyRequests,
-				func() error {
-					_, err := gangCache.pgClient.SchedulingV1alpha1().PodGroups(pod.Namespace).Create(context.TODO(), pgFromAnnotation, metav1.CreateOptions{})
-					return err
-				})
-			if err != nil {
-				klog.Errorf("Create podGroup by pod's annotations error, pod: %v, err: %v ", util.GetId(pod.Namespace, pod.Name), err)
-			} else {
-				klog.Infof("Create podGroup by pod's annotations success, pg: %v, pod: %v", gangId, util.GetId(pod.Namespace, pod.Name))
-			}
-		}
 	}
 }
 
@@ -169,32 +132,12 @@ func (gangCache *GangCache) onPodDelete(obj interface{}) {
 	shouldDeleteGang := gang.deletePod(pod)
 	if shouldDeleteGang {
 		gangCache.deleteGangFromCacheByGangId(gangId)
-		if !util.ShouldDeletePodGroup(pod) {
-			return
-		}
-		// delete podGroup
-		err := retry.OnError(
-			retry.DefaultRetry,
-			errors.IsTooManyRequests,
-			func() error {
-				err := gangCache.pgClient.SchedulingV1alpha1().PodGroups(pod.Namespace).Delete(context.TODO(), gangName, metav1.DeleteOptions{})
-				return err
-			})
-		if err != nil {
-			klog.Errorf("Delete podGroup by gang's deletion error, gang: %v, error: %v", gangId, err)
-		} else {
-			klog.Infof("Delete podGroup by gang's deletion , gang: %v", gangId)
-		}
 	}
 }
 
 func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 	pg, ok := obj.(*v1alpha1.PodGroup)
 	if !ok {
-		return
-	}
-	// if podGroup is created from pod's annotation, we ignore it
-	if pg.Annotations[PodGroupFromPodAnnotation] == "true" {
 		return
 	}
 	gangNamespace := pg.Namespace
@@ -218,9 +161,6 @@ func (gangCache *GangCache) onPodGroupDelete(obj interface{}) {
 	if !ok {
 		return
 	}
-	if pg.Annotations[PodGroupFromPodAnnotation] == "true" {
-		return
-	}
 	gangNamespace := pg.Namespace
 	gangName := pg.Name
 
@@ -230,26 +170,4 @@ func (gangCache *GangCache) onPodGroupDelete(obj interface{}) {
 		return
 	}
 	gangCache.deleteGangFromCacheByGangId(gangId)
-}
-
-func generateNewPodGroup(gang *Gang, pod *v1.Pod) *v1alpha1.PodGroup {
-	gangName := extension.GetGangName(pod)
-	pg := &v1alpha1.PodGroup{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:              gangName,
-			Namespace:         pod.Namespace,
-			CreationTimestamp: metav1.Time{Time: gang.CreateTime},
-			Annotations: map[string]string{
-				PodGroupFromPodAnnotation: "true",
-			},
-		},
-		Spec: v1alpha1.PodGroupSpec{
-			ScheduleTimeoutSeconds: pointer.Int32(int32(gang.getGangWaitTime() / time.Second)),
-			MinMember:              int32(gang.getGangMinNum()),
-		},
-		Status: v1alpha1.PodGroupStatus{
-			ScheduleStartTime: metav1.Now(),
-		},
-	}
-	return pg
 }

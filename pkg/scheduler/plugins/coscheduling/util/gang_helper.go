@@ -67,17 +67,6 @@ func GetGangMinNumFromPod(pod *v1.Pod) (minNum int, err error) {
 	return 0, errors.New("missing min available")
 }
 
-func ShouldCreatePodGroup(pod *v1.Pod) bool {
-	// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
-	return pod.Labels[v1alpha1.PodGroupLabel] == "" &&
-		pod.Labels[extension.LabelLightweightCoschedulingPodGroupName] == "" &&
-		pod.Annotations[extension.AnnotationGangName] != ""
-}
-
-func ShouldDeletePodGroup(pod *v1.Pod) bool {
-	return ShouldCreatePodGroup(pod)
-}
-
 func IsPodNeedGang(pod *v1.Pod) bool {
 	return GetGangNameByPod(pod) != ""
 }
