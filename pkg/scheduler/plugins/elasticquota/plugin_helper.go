@@ -88,6 +88,7 @@ func (g *Plugin) migratePods(out, in string) {
 func (g *Plugin) createDefaultQuotaIfNotPresent() {
 	eq, _ := g.quotaLister.ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(extension.DefaultQuotaName)
 	if eq != nil {
+		klog.Infof("DefaultQuota already exists, skip create it.")
 		return
 	}
 
@@ -103,13 +104,13 @@ func (g *Plugin) createDefaultQuotaIfNotPresent() {
 	}
 	sharedWeight, _ := json.Marshal(defaultElasticQuota.Spec.Max)
 	defaultElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
-	eq, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
+	_, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
 		Create(context.TODO(), defaultElasticQuota, metav1.CreateOptions{})
 	if err != nil {
 		klog.Errorf("create default group fail, err:%v", err.Error())
 		return
 	}
-	klog.V(5).Infof("create default group success, quota:%+v", eq)
+	klog.Infof("create DefaultQuota successfully")
 }
 
 // defaultQuotaInfo and systemQuotaInfo are created once the groupQuotaManager is created, but we also want to see
@@ -117,6 +118,7 @@ func (g *Plugin) createDefaultQuotaIfNotPresent() {
 func (g *Plugin) createSystemQuotaIfNotPresent() {
 	eq, _ := g.quotaLister.ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(extension.SystemQuotaName)
 	if eq != nil {
+		klog.Infof("SystemQuota already exists, skip create it.")
 		return
 	}
 
@@ -132,13 +134,13 @@ func (g *Plugin) createSystemQuotaIfNotPresent() {
 	}
 	sharedWeight, _ := json.Marshal(systemElasticQuota.Spec.Max)
 	systemElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
-	eq, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
+	_, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
 		Create(context.TODO(), systemElasticQuota, metav1.CreateOptions{})
 	if err != nil {
 		klog.Errorf("create system group fail, err:%v", err.Error())
 		return
 	}
-	klog.V(5).Infof("create system group success, quota:%+v", eq)
+	klog.Infof("create SystemQuota successfully")
 }
 
 func (g *Plugin) snapshotPostFilterState(quotaName string, state *framework.CycleState) bool {
