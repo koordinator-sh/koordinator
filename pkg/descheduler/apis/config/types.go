@@ -79,7 +79,8 @@ type DeschedulerProfile struct {
 type Plugins struct {
 	Deschedule PluginSet
 	Balance    PluginSet
-	Evictor    PluginSet
+	Evict      PluginSet
+	Filter     PluginSet
 }
 
 type PluginSet struct {

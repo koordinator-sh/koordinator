@@ -254,6 +254,11 @@ func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.PriorityThreshold != nil {
+		in, out := &in.PriorityThreshold, &out.PriorityThreshold
+		*out = new(PriorityThreshold)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.LabelSelector != nil {
 		in, out := &in.LabelSelector, &out.LabelSelector
 		*out = new(v1.LabelSelector)
@@ -466,7 +471,8 @@ func (in *Plugins) DeepCopyInto(out *Plugins) {
 	*out = *in
 	in.Deschedule.DeepCopyInto(&out.Deschedule)
 	in.Balance.DeepCopyInto(&out.Balance)
-	in.Evictor.DeepCopyInto(&out.Evictor)
+	in.Evict.DeepCopyInto(&out.Evict)
+	in.Filter.DeepCopyInto(&out.Filter)
 	return
 }
 

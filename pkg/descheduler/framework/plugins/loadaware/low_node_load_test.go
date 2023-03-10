@@ -1002,7 +1002,8 @@ func TestLowNodeLoad(t *testing.T) {
 				[]frameworktesting.RegisterPluginFunc{
 					func(reg *frameworkruntime.Registry, profile *deschedulerconfig.DeschedulerProfile) {
 						reg.Register(defaultevictor.PluginName, defaultevictor.New)
-						profile.Plugins.Evictor.Enabled = append(profile.Plugins.Evictor.Enabled, deschedulerconfig.Plugin{Name: defaultevictor.PluginName})
+						profile.Plugins.Evict.Enabled = append(profile.Plugins.Evict.Enabled, deschedulerconfig.Plugin{Name: defaultevictor.PluginName})
+						profile.Plugins.Filter.Enabled = append(profile.Plugins.Filter.Enabled, deschedulerconfig.Plugin{Name: defaultevictor.PluginName})
 						profile.PluginConfig = append(profile.PluginConfig, deschedulerconfig.PluginConfig{
 							Name: defaultevictor.PluginName,
 							Args: &defaultevictor.DefaultEvictorArgs{},
