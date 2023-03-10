@@ -56,7 +56,7 @@ func cgroupFileWriteIfDifferent(cgroupTaskDir string, r sysutil.Resource, value 
 	if currentErr != nil {
 		return false, currentErr
 	}
-	if r.ResourceType() == sysutil.CPUSetCPUSName && IsEqualCpus(currentValue, value) {
+	if r.ResourceType() == sysutil.CPUSetCPUSName && cpuset.IsEqualStrCpus(currentValue, value) {
 		return false, nil
 	}
 	if value == currentValue || value == CgroupMaxValueStr && currentValue == CgroupMaxSymbolStr {
@@ -68,12 +68,6 @@ func cgroupFileWriteIfDifferent(cgroupTaskDir string, r sysutil.Resource, value 
 		return false, err
 	}
 	return true, nil
-}
-
-func IsEqualCpus(a, b string) bool {
-	cpus1, _ := cpuset.Parse(a)
-	cpus2, _ := cpuset.Parse(b)
-	return cpus1.Equals(cpus2)
 }
 
 // CgroupFileWrite writes the cgroup file with the given value.
