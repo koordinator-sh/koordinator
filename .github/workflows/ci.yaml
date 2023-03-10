@@ -115,10 +115,10 @@ jobs:
             org.opencontainers.image.licenses=Apache-2.0
           tags: |
             ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/${{ matrix.target }}:latest
-            ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/${{ matrix.target }}:${GITHUB_SHA::7}
+            ${{ env.GITHUB_REG }}/${{ github.repository_owner }}/${{ matrix.target }}:${{ github.sha }}
             ${{ env.ALIYUN_BJ_REG }}/${{ github.repository_owner }}/${{ matrix.target }}:latest
-            ${{ env.ALIYUN_BJ_REG }}/${{ github.repository_owner }}/${{ matrix.target }}:${GITHUB_SHA::7}
+            ${{ env.ALIYUN_BJ_REG }}/${{ github.repository_owner }}/${{ matrix.target }}:${{ github.sha }}
             ${{ env.ALIYUN_HZ_REG }}/${{ github.repository_owner }}/${{ matrix.target }}:latest
-            ${{ env.ALIYUN_HZ_REG }}/${{ github.repository_owner }}/${{ matrix.target }}:${GITHUB_SHA::7}
+            ${{ env.ALIYUN_HZ_REG }}/${{ github.repository_owner }}/${{ matrix.target }}:${{ github.sha }}
           cache-from: type=gha,scope=build-${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=build-${{ matrix.target }}
