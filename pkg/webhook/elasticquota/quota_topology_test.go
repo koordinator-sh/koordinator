@@ -137,7 +137,7 @@ func TestQuotaTopology_checkSubAndParentGroupMaxQuotaKeySame(t *testing.T) {
 		},
 		{
 			name: "parent is root",
-			quota: MakeQuota("temp-bu1").ParentName("root").
+			quota: MakeQuota("temp-bu1").ParentName(extension.RootQuotaName).
 				Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).IsParent(false).Obj(),
 			err: nil,
 		},
@@ -354,9 +354,9 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 	err = qt.ValidUpdateQuota(nil, sub1)
 	assert.Equal(t, "quota not exist in quotaInfoMap:tmp", err.Error())
 
-	sub1.Name = "root"
+	sub1.Name = extension.RootQuotaName
 	err = qt.ValidUpdateQuota(nil, sub1)
-	assert.Equal(t, "invalid quota root", err.Error())
+	assert.Equal(t, fmt.Sprintf("invalid quota %s", extension.RootQuotaName), err.Error())
 
 	quota.Labels[extension.LabelQuotaIsParent] = "false"
 	err = qt.ValidUpdateQuota(oldQuotaCopy, quota)

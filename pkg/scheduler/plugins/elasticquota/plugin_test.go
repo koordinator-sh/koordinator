@@ -648,10 +648,10 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	// test1 Max[96, 160]  Min[50,80] request[60,100]
 	//   `-- test1-a Max[96, 160]  Min[50,80] request[60,100]
 	//         `-- a-123 Max[96, 160]  Min[50,80] request[60,100]
-	plugin.addQuota("test1", "root", 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test1", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
 	plugin.addQuota("test1-a", "test1", 96, 160, 50, 80, 96, 160, true, "")
 	changeQuota := plugin.addQuota("a-123", "test1-a", 96, 160, 50, 80, 96, 160, false, "")
-	plugin.addQuota("test2", "root", 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
 	mmQuota := plugin.addQuota("test2-a", "test2", 96, 160, 50, 80, 96, 160, false, "")
 	gqm.UpdateClusterTotalResource(createResourceList(96, 160))
 	request := createResourceList(60, 100)
@@ -720,7 +720,7 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	assert.Equal(t, createResourceList(80, 140), quotaInfo.GetRequest())
 	assert.Equal(t, createResourceList(80, 140), quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(80, 140), quotaInfo.GetRuntime())
-	changeQuota.Name = "root"
+	changeQuota.Name = extension.RootQuotaName
 	plugin.OnQuotaUpdate(oldQuota, changeQuota)
 	changeQuota.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 	plugin.OnQuotaUpdate(oldQuota, changeQuota)
@@ -739,8 +739,8 @@ func TestPlugin_OnPodAdd_Update_Delete(t *testing.T) {
 	suit := newPluginTestSuitWithPod(t, nil, nil)
 	plugin := suit.plugin.(*Plugin)
 	gqm := plugin.groupQuotaManager
-	plugin.addQuota("test1", "root", 96, 160, 100, 160, 96, 160, true, "")
-	plugin.addQuota("test2", "root", 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test1", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
 	pods := []*corev1.Pod{
 		defaultCreatePodWithQuotaName("1", "test1", 10, 10, 10),
 		defaultCreatePodWithQuotaName("2", "test1", 10, 10, 10),
@@ -801,7 +801,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			},
 			expectedStatus: *framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
 				"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [cpu]",
-				"default", printResourceList(MakeResourceList().CPU(0).Mem(20).GPU(10).Obj()),
+				extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(0).Mem(20).GPU(10).Obj()),
 				printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()))),
 		},
 		{
@@ -829,7 +829,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			expectedStatus: *framework.NewStatus(framework.Unschedulable,
 				fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
 					"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [memory]",
-					"default", printResourceList(MakeResourceList().CPU(1).Mem(2).Obj()),
+					extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(1).Mem(2).Obj()),
 					printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(3).GPU(1).Obj()))),
 		},
 		{
@@ -1017,7 +1017,7 @@ func TestPlugin_AddPod(t *testing.T) {
 					Label(extension.LabelQuotaName, "t1-eq1").UID("1").Obj(),
 			},
 			quotaInfo: &core.QuotaInfo{
-				Name: "default",
+				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
 					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
 				},
@@ -1059,7 +1059,7 @@ func TestPlugin_RemovePod(t *testing.T) {
 					Label(extension.LabelQuotaName, "t1-eq1").UID("1").Phase(corev1.PodRunning).Obj(),
 			},
 			quotaInfo: &core.QuotaInfo{
-				Name: "default",
+				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
 					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
 				},
@@ -1130,12 +1130,12 @@ func TestPlugin_DryRunPreemption(t *testing.T) {
 			quotaInfos: []*core.QuotaInfo{
 				{
 					Name:       "ns1",
-					ParentName: "root",
+					ParentName: extension.RootQuotaName,
 					PodCache:   make(map[string]*core.PodInfo),
 				},
 				{
 					Name:       "ns2",
-					ParentName: "root",
+					ParentName: extension.RootQuotaName,
 					PodCache:   make(map[string]*core.PodInfo),
 				},
 			},
@@ -1169,12 +1169,12 @@ func TestPlugin_DryRunPreemption(t *testing.T) {
 			quotaInfos: []*core.QuotaInfo{
 				{
 					Name:       "ns1",
-					ParentName: "root",
+					ParentName: extension.RootQuotaName,
 					PodCache:   make(map[string]*core.PodInfo),
 				},
 				{
 					Name:       "ns2",
-					ParentName: "root",
+					ParentName: extension.RootQuotaName,
 					PodCache:   make(map[string]*core.PodInfo),
 				},
 			},
@@ -1207,12 +1207,12 @@ func TestPlugin_DryRunPreemption(t *testing.T) {
 			quotaInfos: []*core.QuotaInfo{
 				{
 					Name:       "ns1",
-					ParentName: "root",
+					ParentName: extension.RootQuotaName,
 					PodCache:   make(map[string]*core.PodInfo),
 				},
 				{
 					Name:       "ns2",
-					ParentName: "root",
+					ParentName: extension.RootQuotaName,
 					PodCache:   make(map[string]*core.PodInfo),
 				},
 			},
@@ -1282,7 +1282,7 @@ func TestPlugin_DryRunPreemption(t *testing.T) {
 
 func TestPlugin_createDefaultQuotaIfNotPresent(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	eq, _ := suit.client.SchedulingV1alpha1().ElasticQuotas(suit.elasticQuotaArgs.QuotaGroupNamespace).Get(context.TODO(), "default", metav1.GetOptions{})
+	eq, _ := suit.client.SchedulingV1alpha1().ElasticQuotas(suit.elasticQuotaArgs.QuotaGroupNamespace).Get(context.TODO(), extension.DefaultQuotaName, metav1.GetOptions{})
 	if !v1.Equals(eq.Spec.Max, suit.elasticQuotaArgs.DefaultQuotaGroupMax) {
 		t.Errorf("error")
 	}
@@ -1290,7 +1290,7 @@ func TestPlugin_createDefaultQuotaIfNotPresent(t *testing.T) {
 
 func TestPlugin_createSystemQuotaIfNotPresent(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	eq, _ := suit.client.SchedulingV1alpha1().ElasticQuotas(suit.elasticQuotaArgs.QuotaGroupNamespace).Get(context.TODO(), "system", metav1.GetOptions{})
+	eq, _ := suit.client.SchedulingV1alpha1().ElasticQuotas(suit.elasticQuotaArgs.QuotaGroupNamespace).Get(context.TODO(), extension.SystemQuotaName, metav1.GetOptions{})
 	if !v1.Equals(eq.Spec.Max, suit.elasticQuotaArgs.SystemQuotaGroupMax) {
 		t.Errorf("error")
 	}
@@ -1467,7 +1467,7 @@ func TestPlugin_Recover(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond)
 	suit.AddQuota("test1", "test-parent", 100, 1000, 0, 0, 0, 0, false, "")
-	suit.AddQuota("test-parent", "root", 100, 1000, 0, 0, 0, 0, true, "")
+	suit.AddQuota("test-parent", extension.RootQuotaName, 100, 1000, 0, 0, 0, 0, true, "")
 	time.Sleep(100 * time.Millisecond)
 	pods := []*corev1.Pod{
 		defaultCreatePodWithQuotaName("1", "test1", 10, 10, 10),
@@ -1484,7 +1484,7 @@ func TestPlugin_Recover(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetRequest(), createResourceList(40, 40))
 	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetUsed(), createResourceList(40, 40))
-	assert.True(t, v1.IsZero(pl.groupQuotaManager.GetQuotaInfoByName("default").GetRequest()))
+	assert.True(t, v1.IsZero(pl.groupQuotaManager.GetQuotaInfoByName(extension.DefaultQuotaName).GetRequest()))
 	assert.Equal(t, len(pl.groupQuotaManager.GetAllQuotaNames()), 4)
 }
 
@@ -1493,7 +1493,7 @@ func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {
 	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
-	plugin.addQuota("test2", "root", 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
 	pods := []*corev1.Pod{
 		defaultCreatePodWithQuotaName("1", "test1", 10, 10, 10),
 		defaultCreatePodWithQuotaName("2", "test1", 10, 10, 10),
@@ -1503,19 +1503,19 @@ func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {
 	for _, pod := range pods {
 		plugin.OnPodAdd(pod)
 	}
-	assert.Equal(t, gqm.GetQuotaInfoByName("default").GetRequest(), createResourceList(40, 40))
-	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName("default").PodCache))
-	plugin.addQuota("test1", "root", 96, 160, 100, 160, 96, 160, true, "")
+	assert.Equal(t, gqm.GetQuotaInfoByName(extension.DefaultQuotaName).GetRequest(), createResourceList(40, 40))
+	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName(extension.DefaultQuotaName).PodCache))
+	plugin.addQuota("test1", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
 	time.Sleep(100 * time.Millisecond)
 	go plugin.Start()
 	for i := 0; i < 10; i++ {
-		if len(gqm.GetQuotaInfoByName("default").GetPodCache()) != 0 || len(gqm.GetQuotaInfoByName("test1").GetPodCache()) != 4 {
+		if len(gqm.GetQuotaInfoByName(extension.DefaultQuotaName).GetPodCache()) != 0 || len(gqm.GetQuotaInfoByName("test1").GetPodCache()) != 4 {
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		break
 	}
-	assert.Equal(t, 0, len(gqm.GetQuotaInfoByName("default").PodCache))
+	assert.Equal(t, 0, len(gqm.GetQuotaInfoByName(extension.DefaultQuotaName).PodCache))
 	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName("test1").PodCache))
 }
 

@@ -25,6 +25,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
@@ -32,7 +34,7 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 	pg := p.(*Plugin)
 	pg.groupQuotaManager.UpdateClusterTotalResource(MakeResourceList().CPU(100).Mem(100).GPU(100).Obj())
-	suit.AddQuota("test1", "root", 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
+	suit.AddQuota("test1", extension.RootQuotaName, 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
 	gqm := pg.groupQuotaManager
 	gqm.UpdateClusterTotalResource(createResourceList(100, 1000))
 	gqm.RefreshRuntime("test1")
@@ -97,7 +99,7 @@ func TestQuotaOverUsedRevokeController_GetToRevokePodList(t *testing.T) {
 	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
-	suit.AddQuota("test1", "root", 4797411900, 0, 1085006000, 0, 4797411900, 0, false, "extended")
+	suit.AddQuota("test1", extension.RootQuotaName, 4797411900, 0, 1085006000, 0, 4797411900, 0, false, "extended")
 	time.Sleep(10 * time.Millisecond)
 	qi := gqm.GetQuotaInfoByName("test1")
 	qi.Lock()
@@ -148,9 +150,9 @@ func TestQuotaOverUsedRevokeController_GetToMonitorQuotas(t *testing.T) {
 	cc := NewQuotaOverUsedRevokeController(plugin.handle.ClientSet(), 0*time.Second,
 		plugin.pluginArgs.RevokePodInterval.Duration, plugin.groupQuotaManager, true)
 
-	suit.AddQuota("test1", "root", 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
-	suit.AddQuota("test2", "root", 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
-	suit.AddQuota("test3", "root", 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
+	suit.AddQuota("test1", extension.RootQuotaName, 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
+	suit.AddQuota("test2", extension.RootQuotaName, 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
+	suit.AddQuota("test3", extension.RootQuotaName, 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
 	time.Sleep(10 * time.Millisecond)
 	pod := makePod2("pod", createResourceList(100, 0))
 	gqm.OnPodAdd("test1", pod)

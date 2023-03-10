@@ -40,7 +40,7 @@ const (
 )
 
 func TestGroupQuotaManager_QuotaAdd(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	gqm.UpdateClusterTotalResource(createResourceList(10000000, 3000*GigaByte))
 	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96000, 160*GigaByte, 50000, 50*GigaByte, true, false)
 	AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96000, 160*GigaByte, 80000, 80*GigaByte, true, false)
@@ -59,7 +59,7 @@ func TestGroupQuotaManager_QuotaAdd(t *testing.T) {
 }
 
 func TestGroupQuotaManager_QuotaAdd_AutoMakeUpSharedWeight(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	gqm.UpdateClusterTotalResource(createResourceList(1000000, 200*GigaByte))
 
 	quota := CreateQuota("test", extension.RootQuotaName, 96000, 160*GigaByte, 50000, 80*GigaByte, true, false)
@@ -75,7 +75,7 @@ func TestGroupQuotaManager_QuotaAdd_AutoMakeUpSharedWeight(t *testing.T) {
 }
 
 func TestGroupQuotaManager_QuotaAdd_AutoMakeUpScaleRatio2(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	quota := &v1alpha1.ElasticQuota{
 		TypeMeta: metav1.TypeMeta{
@@ -110,7 +110,7 @@ func TestGroupQuotaManager_QuotaAdd_AutoMakeUpScaleRatio2(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateQuotaInternal(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
@@ -140,14 +140,14 @@ func TestGroupQuotaManager_UpdateQuotaInternal(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateQuota(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	quota := CreateQuota("test1", "test-parent", 64, 100*GigaByte, 50, 80*GigaByte, true, false)
 	gqm.UpdateQuota(quota, false)
 	assert.Equal(t, len(gqm.quotaInfoMap), 3)
 }
 
 func TestGroupQuotaManager_UpdateQuotaInternalAndRequest(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	deltaRes := createResourceList(96, 160*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
 	assert.Equal(t, deltaRes, gqm.totalResource)
@@ -174,7 +174,7 @@ func TestGroupQuotaManager_UpdateQuotaInternalAndRequest(t *testing.T) {
 }
 
 func TestGroupQuotaManager_DeleteOneGroup(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000*GigaByte))
 	quota1 := AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 	quota2 := AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96, 160*GigaByte, 80, 80*GigaByte, true, false)
@@ -208,7 +208,7 @@ func TestGroupQuotaManager_DeleteOneGroup(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateQuotaDeltaRequest(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	deltaRes := createResourceList(96, 160*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
@@ -235,7 +235,7 @@ func TestGroupQuotaManager_UpdateQuotaDeltaRequest(t *testing.T) {
 }
 
 func TestGroupQuotaManager_NotAllowLentResource(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	deltaRes := createResourceList(100, 0)
 	gqm.UpdateClusterTotalResource(deltaRes)
@@ -252,7 +252,7 @@ func TestGroupQuotaManager_NotAllowLentResource(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateQuotaRequest(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	deltaRes := createResourceList(96, 160*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
@@ -285,9 +285,9 @@ func TestGroupQuotaManager_UpdateQuotaRequest(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateGroupDeltaUsed(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
-	AddQuotaToManager(t, gqm, "test1", "root", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
 	// 1. test1 used[120, 290]  runtime == maxQuota
 	used := createResourceList(120, 290*GigaByte)
@@ -312,7 +312,7 @@ func TestGroupQuotaManager_UpdateGroupDeltaUsed(t *testing.T) {
 }
 
 func TestGroupQuotaManager_MultiQuotaAdd(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 60, 100*GigaByte, true, true)
 	AddQuotaToManager(t, gqm, "test1-sub1", "test1", 96, 160*GigaByte, 10, 30*GigaByte, true, false)
@@ -335,7 +335,7 @@ func TestGroupQuotaManager_MultiQuotaAdd(t *testing.T) {
 // TestGroupQuotaManager_MultiUpdateQuotaRequest  test the relationship of request and max
 // parentQuotaGroup's request is the sum of limitedRequest of its child.
 func TestGroupQuotaManager_MultiUpdateQuotaRequest(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	deltaRes := createResourceList(96, 160*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
@@ -384,25 +384,25 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateDefaultQuotaGroup(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	gqm.UpdateQuota(&v1alpha1.ElasticQuota{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "default",
+			Name: extension.DefaultQuotaName,
 		},
 		Spec: v1alpha1.ElasticQuotaSpec{
 			Max: createResourceList(100, 1000),
 		},
 	}, false)
-	assert.Equal(t, gqm.GetQuotaInfoByName("default").CalculateInfo.Max, createResourceList(100, 1000))
-	runtime := gqm.RefreshRuntime("default")
+	assert.Equal(t, gqm.GetQuotaInfoByName(extension.DefaultQuotaName).CalculateInfo.Max, createResourceList(100, 1000))
+	runtime := gqm.RefreshRuntime(extension.DefaultQuotaName)
 	assert.Equal(t, runtime, createResourceList(100, 1000))
 }
 
 // TestGroupQuotaManager_MultiUpdateQuotaRequest2 test the relationship of min/max and request
 // increase the request to test the case request < min, min < request < max, max < request
 func TestGroupQuotaManager_MultiUpdateQuotaRequest2(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	deltaRes := createResourceList(96, 160*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
@@ -451,10 +451,10 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest2(t *testing.T) {
 // TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota1 test scaledMinQuota when quotaGroup's sum of the minQuota
 // is larger than totalRes; and enlarge the totalRes to test whether gqm can recover the oriMinQuota or not.
 func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota1(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	gqm.scaleMinQuotaEnabled = true
 
-	AddQuotaToManager(t, gqm, "p", "root", 1000, 1000*GigaByte, 300, 300*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "p", extension.RootQuotaName, 1000, 1000*GigaByte, 300, 300*GigaByte, true, true)
 	AddQuotaToManager(t, gqm, "a", "p", 1000, 1000*GigaByte, 100, 100*GigaByte, true, false)
 	AddQuotaToManager(t, gqm, "b", "p", 1000, 1000*GigaByte, 100, 100*GigaByte, true, false)
 	AddQuotaToManager(t, gqm, "c", "p", 1000, 1000*GigaByte, 100, 100*GigaByte, true, false)
@@ -522,12 +522,12 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota1(t *testin
 // TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota1 test scaledMinQuota when quotaGroup's sum of the
 // minQuota is larger than totalRes, with one of the quotaGroup's request is zero.
 func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota2(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	gqm.scaleMinQuotaEnabled = true
 	deltaRes := createResourceList(1, 1*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
 
-	AddQuotaToManager(t, gqm, "p", "root", 1000, 1000*GigaByte, 300, 300*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "p", extension.RootQuotaName, 1000, 1000*GigaByte, 300, 300*GigaByte, true, true)
 	AddQuotaToManager(t, gqm, "a", "p", 1000, 1000*GigaByte, 100, 100*GigaByte, true, false)
 	AddQuotaToManager(t, gqm, "b", "p", 1000, 1000*GigaByte, 100, 100*GigaByte, true, false)
 	AddQuotaToManager(t, gqm, "c", "p", 1000, 1000*GigaByte, 100, 100*GigaByte, true, false)
@@ -567,9 +567,9 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota2(t *testin
 }
 
 func TestGroupQuotaManager_MultiUpdateQuotaUsed(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
-	AddQuotaToManager(t, gqm, "test1", "root", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, true)
 	AddQuotaToManager(t, gqm, "test1-sub1", "test1", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
 	AddQuotaToManager(t, gqm, "test1-sub1-1", "test1-sub1", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
@@ -589,7 +589,7 @@ func TestGroupQuotaManager_MultiUpdateQuotaUsed(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	deltaRes := createResourceList(96, 160*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
@@ -602,11 +602,11 @@ func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 	// test1 Max[96, 160]  Min[50,80] request[60,100]
 	//   `-- test1-a Max[96, 160]  Min[50,80] request[60,100]
 	//         `-- a-123 Max[96, 160]  Min[50,80] request[60,100]
-	AddQuotaToManager(t, gqm, "test1", "root", 96, 160*GigaByte, 100, 160*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 100, 160*GigaByte, true, true)
 	AddQuotaToManager(t, gqm, "test1-a", "test1", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
 	changeQuota := AddQuotaToManager(t, gqm, "a-123", "test1-a", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
-	AddQuotaToManager(t, gqm, "test2", "root", 96, 160*GigaByte, 100, 160*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96, 160*GigaByte, 100, 160*GigaByte, true, true)
 	AddQuotaToManager(t, gqm, "test2-a", "test2", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
 	// a-123 request [60,100]
@@ -674,7 +674,7 @@ func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateClusterTotalResource(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	totalRes := createResourceList(96, 160*GigaByte)
 	gqm.UpdateClusterTotalResource(totalRes)
@@ -787,14 +787,14 @@ func CreateQuota(quotaName string, parent string, maxCpu, maxMem, minCpu, minMem
 }
 
 func TestGroupQuotaManager_MultiChildMaxGreaterParentMax_MaxGreaterThanTotalRes(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	deltaRes := createResourceList(300, 8000)
 	gqm.UpdateClusterTotalResource(deltaRes)
 
 	// test1 Max[600, 4096]  Min[100, 100]
 	//   |-- test1-sub1 Max[500, 2048]  Min[100, 100]  Req[500, 4096]
-	AddQuotaToManager(t, gqm, "test1", "root", 600, 4096, 100, 100, true, true)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 600, 4096, 100, 100, true, true)
 	AddQuotaToManager(t, gqm, "test1-sub1", "test1", 500, 2048, 100, 100, true, false)
 
 	// test1 Request [500, 4096] limitRequest [500, 2048]
@@ -825,14 +825,14 @@ func TestGroupQuotaManager_MultiChildMaxGreaterParentMax_MaxGreaterThanTotalRes(
 }
 
 func TestGroupQuotaManager_MultiChildMaxGreaterParentMax(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	deltaRes := createResourceList(350, 1800*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
 
 	// test1 Max[300, 1024]  Min[176, 756]
 	//   |-- test1-sub1 Max[500, 2048]  Min[100, 512]
-	AddQuotaToManager(t, gqm, "test1", "root", 300, 1024*GigaByte, 176, 756*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 300, 1024*GigaByte, 176, 756*GigaByte, true, true)
 	AddQuotaToManager(t, gqm, "test1-sub1", "test1", 500, 2048*GigaByte, 100, 512*GigaByte, true, false)
 
 	// test1 max < request < test1-sub1 max
@@ -858,7 +858,7 @@ func TestGroupQuotaManager_MultiChildMaxGreaterParentMax(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateQuotaTreeDimension_UpdateQuota(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	info3 := CreateQuota("3", extension.RootQuotaName, 1000, 10000, 100, 1000, true, false)
 	info3.Spec.Max["tmp"] = *resource.NewQuantity(1, resource.DecimalSI)
 	res := createResourceList(1000, 10000)
@@ -876,7 +876,7 @@ func createQuota(name, parent string, cpuMax, memMax, cpuMin, memMin int64) *v1a
 }
 
 func TestGroupQuotaManager_RefreshAndGetRuntimeQuota_UpdateQuota(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 
 	gqm.scaleMinQuotaEnabled = true
 	cluRes := createResourceList(50, 50)
@@ -922,7 +922,7 @@ func TestGroupQuotaManager_RefreshAndGetRuntimeQuota_UpdateQuota(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateSharedWeight_UpdateQuota(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	gqm.scaleMinQuotaEnabled = true
 
 	gqm.UpdateClusterTotalResource(createResourceList(60, 60))
@@ -950,7 +950,7 @@ func TestGroupQuotaManager_UpdateSharedWeight_UpdateQuota(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateOneGroupMaxQuota_UpdateQuota(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	gqm.scaleMinQuotaEnabled = true
 
 	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
@@ -991,7 +991,7 @@ func TestGroupQuotaManager_UpdateOneGroupMaxQuota_UpdateQuota(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdateOneGroupMinQuota_UpdateQuota(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	gqm.scaleMinQuotaEnabled = true
 
 	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
@@ -1058,7 +1058,7 @@ func TestGroupQuotaManager_UpdateOneGroupMinQuota_UpdateQuota(t *testing.T) {
 }
 
 func TestGroupQuotaManager_DeleteOneGroup_UpdateQuota(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	gqm.scaleMinQuotaEnabled = true
 
 	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
@@ -1078,7 +1078,7 @@ func TestGroupQuotaManager_DeleteOneGroup_UpdateQuota(t *testing.T) {
 	assert.Nil(t, gqm.quotaInfoMap["1"])
 }
 
-func NewGroupQuotaManager4Test() *GroupQuotaManager {
+func NewGroupQuotaManagerForTest() *GroupQuotaManager {
 	quotaManager := &GroupQuotaManager{
 		totalResourceExceptSystemAndDefaultUsed: v1.ResourceList{},
 		totalResource:                           v1.ResourceList{},
@@ -1096,7 +1096,7 @@ func NewGroupQuotaManager4Test() *GroupQuotaManager {
 
 func BenchmarkGroupQuotaManager_RefreshRuntime(b *testing.B) {
 	b.StopTimer()
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	random := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for i := 0; i < 2000; i++ {
 		AddQuotaToManager2(gqm, fmt.Sprintf("%v", i), extension.RootQuotaName, 96, 160*GigaByte, 0, 0, true, false)
@@ -1128,7 +1128,7 @@ func AddQuotaToManager2(gqm *GroupQuotaManager, quotaName string, parent string,
 }
 
 func TestGroupQuotaManager_GetAllQuotaNames(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	gqm.scaleMinQuotaEnabled = true
 
 	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
@@ -1144,7 +1144,7 @@ func TestGroupQuotaManager_GetAllQuotaNames(t *testing.T) {
 }
 
 func TestGroupQuotaManager_UpdatePodCache_UpdatePodIsAssigned_GetPodIsAssigned_UpdatePodRequest_UpdatePodUsed(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	gqm.scaleMinQuotaEnabled = true
 
 	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
@@ -1183,15 +1183,15 @@ func TestGroupQuotaManager_UpdatePodCache_UpdatePodIsAssigned_GetPodIsAssigned_U
 
 func TestNewGroupQuotaManager(t *testing.T) {
 	gqm := NewGroupQuotaManager(createResourceList(100, 100), createResourceList(300, 300))
-	assert.Equal(t, createResourceList(100, 100), gqm.GetQuotaInfoByName("system").getMax())
-	assert.Equal(t, createResourceList(300, 300), gqm.GetQuotaInfoByName("default").getMax())
+	assert.Equal(t, createResourceList(100, 100), gqm.GetQuotaInfoByName(extension.SystemQuotaName).getMax())
+	assert.Equal(t, createResourceList(300, 300), gqm.GetQuotaInfoByName(extension.DefaultQuotaName).getMax())
 	assert.True(t, gqm.scaleMinQuotaEnabled)
 	gqm.UpdateClusterTotalResource(createResourceList(500, 500))
 	assert.Equal(t, createResourceList(500, 500), gqm.GetClusterTotalResource())
 }
 
 func TestGroupQuotaManager_GetQuotaInformationForSyncHandler(t *testing.T) {
-	gqm := NewGroupQuotaManager4Test()
+	gqm := NewGroupQuotaManagerForTest()
 	qi1 := createQuota("1", extension.RootQuotaName, 400, 400, 10, 10)
 	gqm.UpdateQuota(qi1, false)
 	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000))

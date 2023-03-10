@@ -75,7 +75,7 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 
 	quotaExpected := core.QuotaInfoSummary{
 		Name:              "test1",
-		ParentName:        "root",
+		ParentName:        extension.RootQuotaName,
 		IsParent:          false,
 		AllowLentResource: true,
 		Max:               createResourceList(100, 100),
