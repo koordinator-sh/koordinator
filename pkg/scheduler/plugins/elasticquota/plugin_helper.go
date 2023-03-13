@@ -24,9 +24,8 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/util/runtime"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -39,10 +38,7 @@ import (
 // getPodAssociateQuotaName If pod's don't have the "quota-name" label, we will use the namespace to associate pod with quota
 // group. If the plugin can't find the matched quota group, it will force the pod to associate with the "default-group".
 func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
-	quotaName := extension.GetQuotaName(pod)
-	if quotaName == "" {
-		quotaName = GetQuotaName(g.quotaLister, pod)
-	}
+	quotaName := GetQuotaName(pod, g.quotaLister)
 	// can't get the quotaInfo by quotaName, let the pod belongs to DefaultQuotaGroup
 	if g.groupQuotaManager.GetQuotaInfoByName(quotaName) == nil {
 		quotaName = extension.DefaultQuotaName
@@ -51,17 +47,18 @@ func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
 	return quotaName
 }
 
-var GetQuotaName = func(quotaLister schedulinglisterv1alpha1.ElasticQuotaLister, pod *v1.Pod) string {
-	list, err := quotaLister.ElasticQuotas(pod.Namespace).List(labels.Everything())
-	if err != nil {
-		runtime.HandleError(err)
-		return extension.DefaultQuotaName
+var GetQuotaName = func(pod *v1.Pod, quotaLister schedulinglisterv1alpha1.ElasticQuotaLister) string {
+	quotaName := extension.GetQuotaName(pod)
+	if quotaName != "" {
+		return quotaName
 	}
-	if len(list) == 0 {
-		return extension.DefaultQuotaName
+	eq, err := quotaLister.ElasticQuotas(pod.Namespace).Get(pod.Namespace)
+	if err == nil && eq != nil {
+		return eq.Name
+	} else if !errors.IsNotFound(err) {
+		klog.Errorf("Failed to Get ElasticQuota %s, err: %v", pod.Namespace, err)
 	}
-	// todo when elastic quota supports multiple instances in a namespace, modify this
-	return list[0].Name
+	return extension.DefaultQuotaName
 }
 
 // migrateDefaultQuotaGroupsPod traverse all the pods in DefaultQuotaGroup, if the pod's QuotaName is not DefaultQuotaName,
