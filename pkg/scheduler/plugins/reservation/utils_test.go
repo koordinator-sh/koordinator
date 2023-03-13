@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/pointer"
@@ -422,6 +423,226 @@ func Test_matchReservationOwners(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := matchReservationOwners(tt.args.pod, tt.args.r)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_matchReservationResources(t *testing.T) {
+	tests := []struct {
+		name        string
+		requests    corev1.ResourceList
+		allocatable corev1.ResourceList
+		allocated   corev1.ResourceList
+		want        bool
+	}{
+		{
+			name: "full matched",
+			requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+			allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+			want: true,
+		},
+		{
+			name: "unmatched",
+			requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+			allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("2"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+			want: false,
+		},
+		{
+			name: "part matched",
+			requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+			allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+			want: true,
+		},
+		{
+			name: "match with allocated",
+			requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+			allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+			allocated: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+			want: false,
+		},
+		{
+			name: "match with part allocated",
+			requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+			allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+			allocated: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("1"),
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Limits:   tt.requests,
+								Requests: tt.requests,
+							},
+						},
+					},
+				},
+			}
+			reeservation := &schedulingv1alpha1.Reservation{
+				Status: schedulingv1alpha1.ReservationStatus{
+					Allocatable: tt.allocatable,
+					Allocated:   tt.allocated,
+				},
+			}
+			got := matchReservationResources(pod, reeservation, tt.allocatable)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_setReservationAllocated(t *testing.T) {
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationAvailable,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+		},
+	}
+
+	tests := []struct {
+		name            string
+		pod             *corev1.Pod
+		reservation     *schedulingv1alpha1.Reservation
+		wantReservation *schedulingv1alpha1.Reservation
+	}{
+		{
+			name: "allocate in reservation",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "1234567890",
+					Namespace: "test-ns",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			reservation: reservation.DeepCopy(),
+			wantReservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-reservation",
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationAvailable,
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("4Gi"),
+					},
+					Allocated: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+					CurrentOwners: []corev1.ObjectReference{
+						{
+							UID:       "1234567890",
+							Namespace: "test-ns",
+							Name:      "test",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "only allocate CPUs in reservation",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "1234567890",
+					Namespace: "test-ns",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			reservation: reservation.DeepCopy(),
+			wantReservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-reservation",
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationAvailable,
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("4Gi"),
+					},
+					Allocated: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("1"),
+					},
+					CurrentOwners: []corev1.ObjectReference{
+						{
+							UID:       "1234567890",
+							Namespace: "test-ns",
+							Name:      "test",
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setReservationAllocated(tt.reservation, tt.pod)
+			assert.Equal(t, tt.wantReservation, tt.reservation)
 		})
 	}
 }

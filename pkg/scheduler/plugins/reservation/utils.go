@@ -133,6 +133,7 @@ func setReservationExpired(r *schedulingv1alpha1.Reservation) {
 func setReservationAllocated(r *schedulingv1alpha1.Reservation, pod *corev1.Pod) {
 	owner := getPodOwner(pod)
 	requests, _ := resourceapi.PodRequestsAndLimits(pod)
+	requests = quotav1.Mask(requests, quotav1.ResourceNames(r.Status.Allocatable))
 	// avoid duplication (it happens if pod allocated annotation was missing)
 	idx := -1
 	for i, current := range r.Status.CurrentOwners {
@@ -195,6 +196,7 @@ func removeReservationAllocated(r *schedulingv1alpha1.Reservation, pod *corev1.P
 
 	// decrease resources allocated
 	requests, _ := resourceapi.PodRequestsAndLimits(pod)
+	requests = quotav1.Mask(requests, quotav1.ResourceNames(r.Status.Allocatable))
 	if r.Status.Allocated != nil {
 		r.Status.Allocated = quotav1.Subtract(r.Status.Allocated, requests)
 	} else {
@@ -232,7 +234,9 @@ func getReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceLi
 }
 
 func matchReservation(pod *corev1.Pod, rMeta *reservationInfo) bool {
-	return matchReservationOwners(pod, rMeta.Reservation) && matchReservationResources(pod, rMeta.Reservation, rMeta.Resources) && matchReservationPort(pod, rMeta)
+	return matchReservationOwners(pod, rMeta.Reservation) &&
+		matchReservationResources(pod, rMeta.Reservation, rMeta.Resources) &&
+		matchReservationPort(pod, rMeta)
 }
 
 func matchReservationPort(pod *corev1.Pod, rMeta *reservationInfo) bool {
@@ -251,10 +255,12 @@ func matchReservationResources(pod *corev1.Pod, r *schedulingv1alpha1.Reservatio
 		// multi owners can share one reservation when reserved resources are sufficient
 		reservedResources = quotav1.Subtract(reservedResources, r.Status.Allocated)
 	}
+	reservedResources = quotav1.Mask(reservedResources, quotav1.ResourceNames(r.Status.Allocatable))
 	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
 	for resource, quantity := range podRequests {
-		q := reservedResources[resource]
-		if quantity.Cmp(q) > 0 { // not match if any pod request is larger than reserved resources
+		q, ok := reservedResources[resource]
+		if ok && quantity.Cmp(q) > 0 {
+			// not match if any pod request is larger than reserved resources
 			return false
 		}
 	}
