@@ -55,11 +55,9 @@ func getTestDefaultCoschedulingArgs(t *testing.T) *config.CoschedulingArgs {
 func TestGangCache_OnPodAdd(t *testing.T) {
 	defaultArgs := getTestDefaultCoschedulingArgs(t)
 	tests := []struct {
-		name              string
-		pods              []*corev1.Pod
-		podGroups         []*v1alpha1.PodGroup
-		wantCache         map[string]*Gang
-		wantedPodGroupMap map[string]*v1alpha1.PodGroup
+		name      string
+		pods      []*corev1.Pod
+		wantCache map[string]*Gang
 	}{
 		{
 			name:      "add invalid pod",
@@ -215,39 +213,6 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					ScheduleCycle:            1,
 					OnceResourceSatisfied:    true,
 					ChildrenScheduleRoundMap: map[string]int{},
-				},
-			},
-			podGroups: []*v1alpha1.PodGroup{
-				// default/gangA pg has already existed, so pod1's pg will not create
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:              "ganga",
-						Namespace:         "default",
-						CreationTimestamp: metav1.Time{Time: fakeTimeNowFn()},
-						Annotations: map[string]string{
-							PodGroupFromPodAnnotation: "true",
-						},
-					},
-					Spec: v1alpha1.PodGroupSpec{
-						ScheduleTimeoutSeconds: pointer.Int32(30),
-						MinMember:              int32(10),
-					},
-				},
-			},
-			wantedPodGroupMap: map[string]*v1alpha1.PodGroup{
-				"ganga": {
-					ObjectMeta: metav1.ObjectMeta{
-						Name:              "ganga",
-						Namespace:         "default",
-						CreationTimestamp: metav1.Time{Time: fakeTimeNowFn()},
-						Annotations: map[string]string{
-							PodGroupFromPodAnnotation: "true",
-						},
-					},
-					Spec: v1alpha1.PodGroupSpec{
-						ScheduleTimeoutSeconds: pointer.Int32(30),
-						MinMember:              int32(10),
-					},
 				},
 			},
 		},
@@ -427,22 +392,6 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					ChildrenScheduleRoundMap: map[string]int{},
 				},
 			},
-			wantedPodGroupMap: map[string]*v1alpha1.PodGroup{
-				"gangb": {
-					ObjectMeta: metav1.ObjectMeta{
-						Name:              "gangb",
-						Namespace:         "default",
-						CreationTimestamp: metav1.Time{Time: fakeTimeNowFn()},
-						Annotations: map[string]string{
-							PodGroupFromPodAnnotation: "true",
-						},
-					},
-					Spec: v1alpha1.PodGroupSpec{
-						ScheduleTimeoutSeconds: pointer.Int32(int32(defaultArgs.DefaultTimeout.Duration.Seconds())),
-						MinMember:              int32(2),
-					},
-				},
-			},
 		},
 		{
 			name: "add pods announcing Gang in Annotation way,but with illegal args",
@@ -538,36 +487,6 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					ChildrenScheduleRoundMap: map[string]int{},
 				},
 			},
-			wantedPodGroupMap: map[string]*v1alpha1.PodGroup{
-				"gangc": {
-					ObjectMeta: metav1.ObjectMeta{
-						Name:              "gangc",
-						Namespace:         "default",
-						CreationTimestamp: metav1.Time{Time: fakeTimeNowFn()},
-						Annotations: map[string]string{
-							PodGroupFromPodAnnotation: "true",
-						},
-					},
-					Spec: v1alpha1.PodGroupSpec{
-						ScheduleTimeoutSeconds: pointer.Int32(int32(defaultArgs.DefaultTimeout.Duration.Seconds())),
-						MinMember:              int32(0),
-					},
-				},
-				"gangd": {
-					ObjectMeta: metav1.ObjectMeta{
-						Name:              "gangd",
-						Namespace:         "default",
-						CreationTimestamp: metav1.Time{Time: fakeTimeNowFn()},
-						Annotations: map[string]string{
-							PodGroupFromPodAnnotation: "true",
-						},
-					},
-					Spec: v1alpha1.PodGroupSpec{
-						ScheduleTimeoutSeconds: pointer.Int32(int32(defaultArgs.DefaultTimeout.Duration.Seconds())),
-						MinMember:              int32(0),
-					},
-				},
-			},
 		},
 	}
 
@@ -584,19 +503,6 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 			pglister := pgInformer.Lister()
 
 			gangCache := NewGangCache(defaultArgs, nil, pglister, pgClientSet)
-			for _, pg := range tt.podGroups {
-				err := retry.OnError(
-					retry.DefaultRetry,
-					errors.IsTooManyRequests,
-					func() error {
-						var err error
-						pg, err = pgClientSet.SchedulingV1alpha1().PodGroups("default").Create(context.TODO(), pg, metav1.CreateOptions{})
-						return err
-					})
-				if err != nil {
-					t.Errorf("retry pgClient create PodGroup err: %v", err)
-				}
-			}
 			for _, pod := range tt.pods {
 				gangCache.onPodAdd(pod)
 			}
@@ -607,29 +513,6 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 				tt.wantCache[k].GangGroupId = util.GetGangGroupId(v.GangGroup)
 			}
 			assert.Equal(t, tt.wantCache, gangCache.gangItems)
-			if len(tt.wantedPodGroupMap) == 0 {
-				podGroupList, err := pgClientSet.SchedulingV1alpha1().PodGroups("default").List(context.TODO(), metav1.ListOptions{})
-				assert.NoError(t, err)
-				assert.Empty(t, podGroupList.Items)
-			}
-			for pgKey, targetPg := range tt.wantedPodGroupMap {
-				var pg *v1alpha1.PodGroup
-				err := retry.OnError(
-					retry.DefaultRetry,
-					errors.IsTooManyRequests,
-					func() error {
-						var err error
-						pg, err = pgClientSet.SchedulingV1alpha1().PodGroups("default").Get(context.TODO(), pgKey, metav1.GetOptions{})
-						return err
-					})
-				if err != nil {
-					t.Errorf("retry pgClient Get PodGroup err: %v", err)
-				} else {
-					targetPg.Status.ScheduleStartTime = metav1.Time{}
-					pg.Status.ScheduleStartTime = metav1.Time{}
-					assert.Equal(t, targetPg, pg)
-				}
-			}
 		})
 	}
 }
@@ -840,25 +723,6 @@ func TestGangCache_OnPodGroupAdd(t *testing.T) {
 		wantCache map[string]*Gang
 	}{
 		{
-			name: "update podGroup with annotations that created from annotations",
-			pgs: []*v1alpha1.PodGroup{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "default",
-						Name:      " gangb",
-						Annotations: map[string]string{
-							PodGroupFromPodAnnotation: "true",
-						},
-					},
-					Spec: v1alpha1.PodGroupSpec{
-						MinMember:              2,
-						ScheduleTimeoutSeconds: &waitTime,
-					},
-				},
-			},
-			wantCache: map[string]*Gang{},
-		},
-		{
 			name: "update podGroup with annotations",
 			pgs: []*v1alpha1.PodGroup{
 				{
@@ -1006,19 +870,7 @@ func TestGangCache_OnGangDelete(t *testing.T) {
 	}
 
 	cache.onPodAdd(podToCreatePg)
-	var pg *v1alpha1.PodGroup
-	err := retry.OnError(
-		retry.DefaultRetry,
-		errors.IsTooManyRequests,
-		func() error {
-			var err error
-			pg, err = pgClient.SchedulingV1alpha1().PodGroups("default").Get(context.TODO(), "gangb", metav1.GetOptions{})
-			return err
-		})
-	if err != nil {
-		t.Errorf("pgLister get pg err: %v", err)
-	}
-	cache.onPodGroupDelete(pg)
+
 	wantedGang := &Gang{
 		Name:              "default/gangb",
 		WaitTime:          30 * time.Second,

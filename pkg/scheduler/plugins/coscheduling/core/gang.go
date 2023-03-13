@@ -35,9 +35,8 @@ var (
 )
 
 const (
-	GangFromPodGroupCrd       string = "GangFromPodGroupCrd"
-	GangFromPodAnnotation     string = "GangFromPodAnnotation"
-	PodGroupFromPodAnnotation string = "PodGroupFromPodAnnotation"
+	GangFromPodGroupCrd   string = "GangFromPodGroupCrd"
+	GangFromPodAnnotation string = "GangFromPodAnnotation"
 )
 
 // Gang  basic podGroup info recorded in gangCache:
