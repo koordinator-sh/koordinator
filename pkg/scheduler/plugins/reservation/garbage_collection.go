@@ -154,6 +154,7 @@ func (p *Plugin) syncActiveReservation(r *schedulingv1alpha1.Reservation) {
 
 	// fix the incorrect owner status
 	newR := r.DeepCopy()
+	actualAllocated = quotav1.Mask(actualAllocated, quotav1.ResourceNames(r.Status.Allocatable))
 	newR.Status.Allocated = actualAllocated
 	newR.Status.CurrentOwners = actualOwners
 	// if failed to update, abort and let the next event reconcile
