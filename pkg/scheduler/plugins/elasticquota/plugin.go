@@ -160,6 +160,7 @@ func (g *Plugin) Name() string {
 
 func (g *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) *framework.Status {
 	quotaName := g.getPodAssociateQuotaName(pod)
+	g.groupQuotaManager.RefreshRuntime(quotaName)
 	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(quotaName)
 	if quotaInfo == nil {
 		return framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))

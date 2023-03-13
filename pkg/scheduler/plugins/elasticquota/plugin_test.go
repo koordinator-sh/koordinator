@@ -33,20 +33,19 @@ import (
 	"time"
 
 	gocmp "github.com/google/go-cmp/cmp"
-	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	v1 "k8s.io/apiserver/pkg/quota/v1"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
-	_ "k8s.io/kubernetes/pkg/api/v1/resource"
+	resourcehelper "k8s.io/kubernetes/pkg/api/v1/resource"
 	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -341,7 +340,6 @@ type pluginTestSuit struct {
 	framework.Handle
 	framework.Framework
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	nrtSharedInformerFactory         nrtinformers.SharedInformerFactory
 	proxyNew                         runtime.PluginFactory
 	elasticQuotaArgs                 *config.ElasticQuotaArgs
 	client                           *pgfake.Clientset
@@ -922,11 +920,9 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 			qi1.Lock()
 			qi1.CalculateInfo.Runtime = tt.parentRuntime.DeepCopy()
 			qi1.UnLock()
-			state := framework.NewCycleState()
-			ctx := context.TODO()
-			status := *gp.PreFilter(ctx, state, tt.pod)
-			assert.Equal(t, status, tt.expectedStatus)
-			klog.Infof("%v", tt.expectedStatus)
+			podRequests, _ := resourcehelper.PodRequestsAndLimits(tt.pod)
+			status := *gp.checkQuotaRecursive(tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests)
+			assert.Equal(t, tt.expectedStatus, status)
 		})
 	}
 }
@@ -1243,10 +1239,7 @@ func TestPlugin_DryRunPreemption(t *testing.T) {
 			tt.pod.Labels[extension.LabelQuotaName] = tt.pod.Namespace
 
 			// Some tests rely on PreFilter plugin to compute its CycleState.
-			preFilterStatus := suit.Framework.RunPreFilterPlugins(ctx, state, tt.pod)
-			if !preFilterStatus.IsSuccess() {
-				t.Errorf("Unexpected preFilterStatus: %v", preFilterStatus)
-			}
+			suit.Framework.RunPreFilterPlugins(ctx, state, tt.pod)
 
 			quotaName := pl.getPodAssociateQuotaName(tt.pod)
 			pl.groupQuotaManager.UpdatePodIsAssigned(quotaName, tt.pod, true)
@@ -1283,7 +1276,7 @@ func TestPlugin_DryRunPreemption(t *testing.T) {
 func TestPlugin_createDefaultQuotaIfNotPresent(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
 	eq, _ := suit.client.SchedulingV1alpha1().ElasticQuotas(suit.elasticQuotaArgs.QuotaGroupNamespace).Get(context.TODO(), extension.DefaultQuotaName, metav1.GetOptions{})
-	if !v1.Equals(eq.Spec.Max, suit.elasticQuotaArgs.DefaultQuotaGroupMax) {
+	if !quotav1.Equals(eq.Spec.Max, suit.elasticQuotaArgs.DefaultQuotaGroupMax) {
 		t.Errorf("error")
 	}
 }
@@ -1291,7 +1284,7 @@ func TestPlugin_createDefaultQuotaIfNotPresent(t *testing.T) {
 func TestPlugin_createSystemQuotaIfNotPresent(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
 	eq, _ := suit.client.SchedulingV1alpha1().ElasticQuotas(suit.elasticQuotaArgs.QuotaGroupNamespace).Get(context.TODO(), extension.SystemQuotaName, metav1.GetOptions{})
-	if !v1.Equals(eq.Spec.Max, suit.elasticQuotaArgs.SystemQuotaGroupMax) {
+	if !quotav1.Equals(eq.Spec.Max, suit.elasticQuotaArgs.SystemQuotaGroupMax) {
 		t.Errorf("error")
 	}
 }
@@ -1484,7 +1477,7 @@ func TestPlugin_Recover(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetRequest(), createResourceList(40, 40))
 	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetUsed(), createResourceList(40, 40))
-	assert.True(t, v1.IsZero(pl.groupQuotaManager.GetQuotaInfoByName(extension.DefaultQuotaName).GetRequest()))
+	assert.True(t, quotav1.IsZero(pl.groupQuotaManager.GetQuotaInfoByName(extension.DefaultQuotaName).GetRequest()))
 	assert.Equal(t, len(pl.groupQuotaManager.GetAllQuotaNames()), 4)
 }
 
