@@ -28,6 +28,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
@@ -469,7 +470,8 @@ func (b *CPUBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 
 		targetPodCFS := curPodCFS + deltaContainerCFS
 		podCFSValStr := strconv.FormatInt(targetPodCFS, 10)
-		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, podDir, podCFSValStr)
+		eventHelper := audit.V(3).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason("CFSQuotaBurst").Message("update pod CFSQuota: %v", podCFSValStr)
+		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, podDir, podCFSValStr, eventHelper)
 		if _, err := b.executor.Update(true, updater); err != nil {
 			return fmt.Errorf("update pod cgroup %v failed, error %v", podMeta.CgroupDir, err)
 		}
@@ -480,7 +482,8 @@ func (b *CPUBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 	updateContainerCFSQuota := func() error {
 		targetContainerCFS := curContaienrCFS + deltaContainerCFS
 		containerCFSValStr := strconv.FormatInt(targetContainerCFS, 10)
-		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, containerDir, containerCFSValStr)
+		eventHelper := audit.V(3).Container(containerStat.Name).Reason("CFSQuotaBurst").Message("update container CFSQuota: %v", containerCFSValStr)
+		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, containerDir, containerCFSValStr, eventHelper)
 		if _, err := b.executor.Update(true, updater); err != nil {
 			return fmt.Errorf("update container cgroup %v failed, reason %v", containerDir, err)
 		}
@@ -532,7 +535,8 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 
 		podCFSBurstVal += containerCFSBurstVal
 		containerCFSBurstValStr := strconv.FormatInt(containerCFSBurstVal, 10)
-		updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUBurstName, containerDir, containerCFSBurstValStr)
+		eventHelper := audit.V(3).Container(containerStat.Name).Reason("CPUBurst").Message("update container CPUBurst: %v", containerCFSBurstValStr)
+		updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUBurstName, containerDir, containerCFSBurstValStr, eventHelper)
 		if err != nil { // normally cpu burst resource not supported on current system
 			klog.V(5).Infof("get cpu burst updater for container %s/%s/%s failed, maybe system unsupported, err: %v",
 				pod.Namespace, pod.Name, containerStat.Name, err)
@@ -554,7 +558,8 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 
 	podDir := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
 	podCFSBurstValStr := strconv.FormatInt(podCFSBurstVal, 10)
-	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUBurstName, podDir, podCFSBurstValStr)
+	eventHelper := audit.V(3).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason("CPUBurst").Message("update pod CFSQuota: %v", podCFSBurstValStr)
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUBurstName, podDir, podCFSBurstValStr, eventHelper)
 	if err != nil { // normally cpu burst resource not supported on current system
 		klog.V(5).Infof("get cpu burst updater for pod %s/%s failed, maybe system unsupported, err: %v",
 			pod.Namespace, pod.Name, err)

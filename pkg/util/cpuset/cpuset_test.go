@@ -334,6 +334,7 @@ func TestParse(t *testing.T) {
 		{"1,2,3,4,5", NewCPUSet(1, 2, 3, 4, 5), false},
 		{"1-5", NewCPUSet(1, 2, 3, 4, 5), false},
 		{"1-2,3-5", NewCPUSet(1, 2, 3, 4, 5), false},
+		{"3-5,1-2", NewCPUSet(1, 2, 3, 4, 5), false},
 		{"1-3-4", NewCPUSet(), true},
 	}
 

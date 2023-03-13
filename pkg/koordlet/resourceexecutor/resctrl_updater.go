@@ -100,8 +100,8 @@ func CalculateResctrlL3TasksResource(group string, taskIds []int32) (ResourceUpd
 		builder.WriteString(strconv.FormatInt(int64(id), 10))
 		builder.WriteByte('\n')
 	}
-
-	return NewCommonDefaultUpdaterWithUpdateFunc(tasksPath, tasksPath, builder.String(), UpdateResctrlTasksFunc)
+	eventHelper := audit.V(5).Reason("ApplyCatL3GroupTasks").Message("update Resctrl L3Tasks for group : %v to : %v", group, builder.String())
+	return NewCommonDefaultUpdaterWithUpdateFunc(tasksPath, tasksPath, builder.String(), UpdateResctrlTasksFunc, eventHelper)
 }
 
 func UpdateResctrlSchemataFunc(u ResourceUpdater) error {
@@ -135,7 +135,7 @@ func UpdateResctrlSchemataFunc(u ResourceUpdater) error {
 	// $ cat /sys/fs/resctrl/BE/schemata
 	// L3:0=03f;1=03f
 	// MB:0=100;1=100
-	_ = audit.V(5).Reason(ReasonUpdateResctrl).Message("update %v to %v", u.Key(), u.Value()).Do()
+	_ = audit.V(3).Reason(ReasonUpdateResctrl).Message("update %v to %v", u.Key(), u.Value()).Do()
 	return sysutil.CommonFileWrite(u.Path(), u.Value())
 }
 
@@ -151,7 +151,12 @@ func UpdateResctrlTasksFunc(resource ResourceUpdater) error {
 	// 122
 	// 123
 	// 124
-	_ = audit.V(5).Reason(ReasonUpdateResctrl).Message("update %v to %v", resource.Key(), resource.Value()).Do()
+	c := resource.(*DefaultResourceUpdater)
+	if c.eventHelper != nil {
+		_ = c.eventHelper.Do()
+	} else {
+		_ = audit.V(5).Reason(ReasonUpdateResctrl).Message("update %v to %v", resource.Key(), resource.Value()).Do()
+	}
 
 	f, err := os.OpenFile(resource.Path(), os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {

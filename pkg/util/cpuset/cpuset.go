@@ -364,3 +364,12 @@ func Parse(s string) (CPUSet, error) {
 	}
 	return b.Result(), nil
 }
+
+func IsEqualStrCpus(a, b string) bool {
+	cpus1, err1 := Parse(a)
+	cpus2, err2 := Parse(b)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return cpus1.Equals(cpus2)
+}

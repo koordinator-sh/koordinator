@@ -21,6 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -69,9 +70,9 @@ func (r *Resources) IsOriginResSet() bool {
 	return r.CPUShares != nil || r.CFSQuota != nil || r.CPUSet != nil || r.MemoryLimit != nil
 }
 
-func injectCPUShares(cgroupParent string, cpuShares int64, e resourceexecutor.ResourceUpdateExecutor) error {
+func injectCPUShares(cgroupParent string, cpuShares int64, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) error {
 	cpuShareStr := strconv.FormatInt(cpuShares, 10)
-	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUSharesName, cgroupParent, cpuShareStr)
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUSharesName, cgroupParent, cpuShareStr, a)
 	if err != nil {
 		return err
 	}
@@ -79,8 +80,8 @@ func injectCPUShares(cgroupParent string, cpuShares int64, e resourceexecutor.Re
 	return err
 }
 
-func injectCPUSet(cgroupParent string, cpuset string, e resourceexecutor.ResourceUpdateExecutor) error {
-	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUSetCPUSName, cgroupParent, cpuset)
+func injectCPUSet(cgroupParent string, cpuset string, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) error {
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUSetCPUSName, cgroupParent, cpuset, a)
 	if err != nil {
 		return err
 	}
@@ -88,9 +89,9 @@ func injectCPUSet(cgroupParent string, cpuset string, e resourceexecutor.Resourc
 	return err
 }
 
-func injectCPUQuota(cgroupParent string, cpuQuota int64, e resourceexecutor.ResourceUpdateExecutor) error {
+func injectCPUQuota(cgroupParent string, cpuQuota int64, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) error {
 	cpuQuotaStr := strconv.FormatInt(cpuQuota, 10)
-	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, cgroupParent, cpuQuotaStr)
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, cgroupParent, cpuQuotaStr, a)
 	if err != nil {
 		return err
 	}
@@ -98,9 +99,9 @@ func injectCPUQuota(cgroupParent string, cpuQuota int64, e resourceexecutor.Reso
 	return err
 }
 
-func injectMemoryLimit(cgroupParent string, memoryLimit int64, e resourceexecutor.ResourceUpdateExecutor) error {
+func injectMemoryLimit(cgroupParent string, memoryLimit int64, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) error {
 	memoryLimitStr := strconv.FormatInt(memoryLimit, 10)
-	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, cgroupParent, memoryLimitStr)
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, cgroupParent, memoryLimitStr, a)
 	if err != nil {
 		return err
 	}
@@ -108,9 +109,9 @@ func injectMemoryLimit(cgroupParent string, memoryLimit int64, e resourceexecuto
 	return err
 }
 
-func injectCPUBvt(cgroupParent string, bvtValue int64, e resourceexecutor.ResourceUpdateExecutor) error {
+func injectCPUBvt(cgroupParent string, bvtValue int64, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) error {
 	bvtValueStr := strconv.FormatInt(bvtValue, 10)
-	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUBVTWarpNsName, cgroupParent, bvtValueStr)
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUBVTWarpNsName, cgroupParent, bvtValueStr, a)
 	if err != nil {
 		return err
 	}

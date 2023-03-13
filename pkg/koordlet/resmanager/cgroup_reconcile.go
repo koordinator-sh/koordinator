@@ -26,6 +26,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -506,9 +507,11 @@ func makeCgroupResources(parentDir string, summary *cgroupResourceSummary) []res
 		var r resourceexecutor.ResourceUpdater
 		var err error
 		if t.isMergeable {
-			r, err = resourceexecutor.NewMergeableCgroupUpdaterIfValueLarger(t.resourceType, parentDir, valueStr)
+			eventHelper := audit.V(3).Reason("cgroup reconcile").Message("update calculated mergeable mem resources: %v to : %v", t.resourceType, valueStr)
+			r, err = resourceexecutor.NewMergeableCgroupUpdaterIfValueLarger(t.resourceType, parentDir, valueStr, eventHelper)
 		} else {
-			r, err = resourceexecutor.NewCommonCgroupUpdater(t.resourceType, parentDir, valueStr)
+			eventHelper := audit.V(3).Reason("cgroup reconcile").Message("update calculated mem resources: %v to : %v", t.resourceType, valueStr)
+			r, err = resourceexecutor.NewCommonCgroupUpdater(t.resourceType, parentDir, valueStr, eventHelper)
 		}
 
 		if err != nil {

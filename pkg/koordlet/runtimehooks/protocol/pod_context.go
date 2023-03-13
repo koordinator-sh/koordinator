@@ -149,49 +149,49 @@ func (p *PodContext) injectForOrigin() {
 
 func (p *PodContext) injectForExt() {
 	if p.Response.Resources.CPUBvt != nil {
-		if err := injectCPUBvt(p.Request.CgroupParent, *p.Response.Resources.CPUBvt, p.executor); err != nil {
+		eventHelper := audit.V(3).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
+			"set pod bvt to %v", *p.Response.Resources.CPUBvt)
+		if err := injectCPUBvt(p.Request.CgroupParent, *p.Response.Resources.CPUBvt, eventHelper, p.executor); err != nil {
 			klog.Infof("set pod %v/%v bvt %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.CPUBvt, p.Request.CgroupParent, err)
 		} else {
 			klog.V(5).Infof("set pod %v/%v bvt %v on cgroup parent %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.CPUBvt, p.Request.CgroupParent)
-			audit.V(2).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
-				"set pod bvt to %v", *p.Response.Resources.CPUBvt).Do()
 		}
 	}
 	// some of pod-level cgroups are manually updated since pod-stage hooks do not support it;
 	// kubelet may set the cgroups when pod is created or restarted, so we need to update the cgroups repeatedly
 	if p.Response.Resources.CPUShares != nil {
-		if err := injectCPUShares(p.Request.CgroupParent, *p.Response.Resources.CPUShares, p.executor); err != nil {
+		eventHelper := audit.V(3).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
+			"set pod cpu shares to %v", *p.Response.Resources.CPUShares)
+		if err := injectCPUShares(p.Request.CgroupParent, *p.Response.Resources.CPUShares, eventHelper, p.executor); err != nil {
 			klog.Infof("set pod %v/%v cpu shares %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.CPUShares, p.Request.CgroupParent, err)
 		} else {
 			klog.V(5).Infof("set pod %v/%v cpu shares %v on cgroup parent %v",
 				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.CPUShares, p.Request.CgroupParent)
-			audit.V(2).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
-				"set pod cpu shares to %v", *p.Response.Resources.CPUShares).Do()
 		}
 	}
 	if p.Response.Resources.CFSQuota != nil {
-		if err := injectCPUQuota(p.Request.CgroupParent, *p.Response.Resources.CFSQuota, p.executor); err != nil {
+		eventHelper := audit.V(3).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
+			"set pod cfs quota to %v", *p.Response.Resources.CFSQuota)
+		if err := injectCPUQuota(p.Request.CgroupParent, *p.Response.Resources.CFSQuota, eventHelper, p.executor); err != nil {
 			klog.Infof("set pod %v/%v cfs quota %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.CFSQuota, p.Request.CgroupParent, err)
 		} else {
 			klog.V(5).Infof("set pod %v/%v cfs quota %v on cgroup parent %v",
 				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.CFSQuota, p.Request.CgroupParent)
-			audit.V(2).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
-				"set pod cfs quota to %v", *p.Response.Resources.CFSQuota).Do()
 		}
 	}
 	if p.Response.Resources.MemoryLimit != nil {
-		if err := injectMemoryLimit(p.Request.CgroupParent, *p.Response.Resources.MemoryLimit, p.executor); err != nil {
+		eventHelper := audit.V(3).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
+			"set pod memory limit to %v", *p.Response.Resources.MemoryLimit)
+		if err := injectMemoryLimit(p.Request.CgroupParent, *p.Response.Resources.MemoryLimit, eventHelper, p.executor); err != nil {
 			klog.Infof("set pod %v/%v memory limit %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
 				p.Request.PodMeta.Name, *p.Response.Resources.MemoryLimit, p.Request.CgroupParent, err)
 		} else {
 			klog.V(5).Infof("set pod %v/%v memory limit %v on cgroup parent %v",
 				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.MemoryLimit, p.Request.CgroupParent)
-			audit.V(2).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
-				"set pod memory limit to %v", *p.Response.Resources.MemoryLimit).Do()
 		}
 	}
 }

@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
@@ -48,9 +49,9 @@ func TestNewResourceUpdateExecutor_Run(t *testing.T) {
 }
 
 func TestResourceUpdateExecutor_Update(t *testing.T) {
-	testUpdater, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, "test", "-1")
+	testUpdater, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, "test", "-1", &audit.EventHelper{})
 	assert.NoError(t, err)
-	testUpdater1, err := DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, "test", "1048576")
+	testUpdater1, err := DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, "test", "1048576", &audit.EventHelper{})
 	assert.NoError(t, err)
 	type fields struct {
 		notStarted bool
@@ -139,9 +140,9 @@ func TestResourceUpdateExecutor_Update(t *testing.T) {
 }
 
 func TestResourceUpdateExecutor_UpdateBatch(t *testing.T) {
-	testUpdater, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, "test", "-1")
+	testUpdater, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, "test", "-1", &audit.EventHelper{})
 	assert.NoError(t, err)
-	testUpdater1, err := DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, "test", "1048576")
+	testUpdater1, err := DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, "test", "1048576", &audit.EventHelper{})
 	assert.NoError(t, err)
 	type fields struct {
 		notStarted bool

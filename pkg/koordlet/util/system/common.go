@@ -36,16 +36,19 @@ func CommonFileRead(file string) (string, error) {
 	return strings.Trim(string(data), "\n"), err
 }
 
-func CommonFileWriteIfDifferent(file string, value string) error {
+func CommonFileWriteIfDifferent(file string, value string) (bool, error) {
 	currentValue, err := CommonFileRead(file)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if value == currentValue {
 		klog.Infof("resource currentValue equal newValue, skip update resource! file:%s, value %s", file, value)
-		return nil
+		return false, nil
 	}
-	return CommonFileWrite(file, value)
+	if err := CommonFileWrite(file, value); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func CommonFileWrite(file string, data string) error {
