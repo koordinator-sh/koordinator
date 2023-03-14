@@ -36,66 +36,48 @@ import (
 )
 
 // GetPodsForRef return target workload's podList and spec.replicas.
-func (r *ControllerFinder) GetPodsForRef(apiVersion, kind, name, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, int32, error) {
+func (r *ControllerFinder) GetPodsForRef(ownerReference *metav1.OwnerReference, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, int32, error) {
 	workloadUIDs := make([]types.UID, 0)
 	var workloadReplicas int32
 
-	switch kind {
-	// ReplicaSet
-	case ControllerKindRS.Kind:
-		rs, err := r.getReplicaSet(ControllerReference{APIVersion: apiVersion, Kind: kind, Name: name}, ns)
+	obj, err := r.GetScaleAndSelectorForRef(ownerReference.APIVersion, ownerReference.Kind, ns, ownerReference.Name, ownerReference.UID)
+	if err != nil {
+		return nil, -1, err
+	} else if obj == nil {
+		return nil, 0, nil
+	}
+	workloadReplicas = obj.Scale
+	if ownerReference.Kind == ControllerKindRS.Kind && obj.Kind == ControllerKindDep.Kind {
+		rss, err := r.getReplicaSetsForDeployment(obj.APIVersion, obj.Kind, ns, obj.Name)
 		if err != nil {
 			return nil, -1, err
 		}
-		if rs == nil {
-			return nil, 0, nil
-		}
-		workloadReplicas = *rs.Spec.Replicas
-		workloadUIDs = append(workloadUIDs, rs.UID)
-	// statefulset, rc, cloneSet
-	case ControllerKindSS.Kind, ControllerKindRC.Kind, ControllerKruiseKindCS.Kind, ControllerKruiseKindSS.Kind:
-		obj, err := r.GetScaleAndSelectorForRef(apiVersion, kind, ns, name, "")
-		if err != nil {
-			return nil, -1, err
-		} else if obj == nil {
-			return nil, 0, nil
-		}
-		workloadReplicas = obj.Scale
-		workloadUIDs = append(workloadUIDs, obj.UID)
-	// Deployment, Deployment-like workload, and other workload
-	default:
-		obj, err := r.GetScaleAndSelectorForRef(apiVersion, kind, ns, name, "")
-		if err != nil {
-			return nil, -1, err
-		} else if obj == nil {
-			return nil, 0, nil
-		}
-		workloadReplicas = obj.Scale
-		// try to get replicaSets
-		rss, err := r.getReplicaSetsForDeployment(apiVersion, kind, ns, name)
-		if err != nil {
-			return nil, -1, err
-		}
-
-		if len(rss) == 0 {
-			workloadUIDs = append(workloadUIDs, obj.UID)
-		} else {
-			for _, rs := range rss {
-				workloadUIDs = append(workloadUIDs, rs.UID)
-			}
+		for _, rs := range rss {
+			workloadUIDs = append(workloadUIDs, rs.UID)
 		}
 	}
+	if len(workloadUIDs) == 0 {
+		workloadUIDs = append(workloadUIDs, obj.UID)
+	}
 
+	// List all Pods owned by workload UID.
+	matchedPods, err := r.ListPodsByWorkloads(workloadUIDs, ns, labelSelector, active)
+	if err != nil {
+		return nil, -1, err
+	}
+	return matchedPods, workloadReplicas, nil
+}
+
+func (r *ControllerFinder) ListPodsByWorkloads(workloadUIDs []types.UID, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, error) {
 	var selector labels.Selector
 	if labelSelector != nil {
 		var err error
 		selector, err = util.GetFastLabelSelector(labelSelector)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 	}
 
-	// List all Pods owned by workload UID.
 	matchedPods := make([]*corev1.Pod, 0)
 	for _, uid := range workloadUIDs {
 		podList := &corev1.PodList{}
@@ -107,7 +89,7 @@ func (r *ControllerFinder) GetPodsForRef(apiVersion, kind, name, ns string, labe
 			listOption.LabelSelector = selector
 		}
 		if err := r.List(context.TODO(), podList, listOption, utilclient.DisableDeepCopy); err != nil {
-			return nil, -1, err
+			return nil, err
 		}
 		for i := range podList.Items {
 			pod := &podList.Items[i]
@@ -119,7 +101,7 @@ func (r *ControllerFinder) GetPodsForRef(apiVersion, kind, name, ns string, labe
 		}
 	}
 
-	return matchedPods, workloadReplicas, nil
+	return matchedPods, nil
 }
 
 func (r *ControllerFinder) getReplicaSetsForDeployment(apiVersion, kind, ns, name string) ([]appsv1.ReplicaSet, error) {

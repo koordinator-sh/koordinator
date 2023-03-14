@@ -69,8 +69,9 @@ type ControllerReference struct {
 type PodControllerFinder func(ref ControllerReference, namespace string) (*ScaleAndSelector, error)
 
 type Interface interface {
-	GetPodsForRef(apiVersion, kind, name, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, int32, error)
+	GetPodsForRef(ownerReference *metav1.OwnerReference, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, int32, error)
 	GetExpectedScaleForPod(pods *corev1.Pod) (int32, error)
+	ListPodsByWorkloads(workloadUIDs []types.UID, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, error)
 }
 
 type ControllerFinder struct {

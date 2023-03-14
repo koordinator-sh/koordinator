@@ -221,7 +221,7 @@ func (r *Reconciler) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod)
 	if ownerRef == nil {
 		return true
 	}
-	pods, expectedReplicas, err := r.controllerFinder.GetPodsForRef(ownerRef.APIVersion, ownerRef.Kind, ownerRef.Name, pod.Namespace, nil, false)
+	pods, expectedReplicas, err := r.controllerFinder.GetPodsForRef(ownerRef, pod.Namespace, nil, false)
 	if err != nil {
 		return false
 	}
