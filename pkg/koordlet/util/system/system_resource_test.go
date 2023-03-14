@@ -27,7 +27,8 @@ func TestSystemResource(t *testing.T) {
 	type fields struct {
 		resource    Resource
 		createdFile bool
-		value       int64
+		initValue   int64
+		newValue    int64
 	}
 	tests := []struct {
 		name             string
@@ -42,7 +43,8 @@ func TestSystemResource(t *testing.T) {
 			fields: fields{
 				resource:    MinFreeKbytes,
 				createdFile: false,
-				value:       5 * 1024 * 1024,
+				initValue:   5 * 1024 * 1024,
+				newValue:    8 * 1024 * 1024,
 			},
 			wantPath:         path.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
 			wantSupported:    true,
@@ -54,7 +56,8 @@ func TestSystemResource(t *testing.T) {
 			fields: fields{
 				resource:    MinFreeKbytes,
 				createdFile: false,
-				value:       1024,
+				initValue:   5 * 1024 * 1024,
+				newValue:    1024,
 			},
 			wantPath:         path.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
 			wantSupported:    true,
@@ -66,7 +69,8 @@ func TestSystemResource(t *testing.T) {
 			fields: fields{
 				resource:    NewCommonSystemResource(ProcSysVmRelativePath, MinFreeKbytesFileName, GetProcRootDir).WithValidator(MinFreeKbytesValidator).WithCheckSupported(SupportedIfFileExists),
 				createdFile: false,
-				value:       5 * 1024 * 1024,
+				initValue:   5 * 1024 * 1024,
+				newValue:    8 * 1024 * 1024,
 			},
 			wantPath:         path.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
 			wantSupported:    false,
@@ -78,12 +82,39 @@ func TestSystemResource(t *testing.T) {
 			fields: fields{
 				resource:    NewCommonSystemResource(ProcSysVmRelativePath, MinFreeKbytesFileName, GetProcRootDir).WithValidator(MinFreeKbytesValidator).WithCheckSupported(SupportedIfFileExists),
 				createdFile: true,
-				value:       5 * 1024 * 1024,
+				initValue:   5 * 1024 * 1024,
+				newValue:    8 * 1024 * 1024,
 			},
 			wantPath:         path.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
 			wantSupported:    true,
 			wantValid:        true,
 			wantResourceType: MinFreeKbytesFileName,
+		},
+		{
+			name: "memecg_reap resource not supported",
+			fields: fields{
+				resource:    NewCommonSystemResource(MemcgReaperRelativePath, MemcgReapBackGroundFileName, GetSysRootDir).WithValidator(MemcgReapBackGroundValidator).WithCheckSupported(SupportedIfFileExists),
+				createdFile: false,
+				initValue:   0,
+				newValue:    1,
+			},
+			wantPath:         path.Join(GetSysRootDir(), MemcgReaperRelativePath, MemcgReapBackGroundFileName),
+			wantSupported:    false,
+			wantValid:        true,
+			wantResourceType: MemcgReapBackGroundFileName,
+		},
+		{
+			name: "memecg_reap resource supported",
+			fields: fields{
+				resource:    NewCommonSystemResource(MemcgReaperRelativePath, MemcgReapBackGroundFileName, GetSysRootDir).WithValidator(MemcgReapBackGroundValidator).WithCheckSupported(SupportedIfFileExists),
+				createdFile: true,
+				initValue:   0,
+				newValue:    1,
+			},
+			wantPath:         path.Join(GetSysRootDir(), MemcgReaperRelativePath, MemcgReapBackGroundFileName),
+			wantSupported:    true,
+			wantValid:        true,
+			wantResourceType: MemcgReapBackGroundFileName,
 		},
 	}
 	for _, tt := range tests {
@@ -92,10 +123,10 @@ func TestSystemResource(t *testing.T) {
 			defer testHelper.Cleanup()
 
 			if tt.fields.createdFile {
-				testHelper.WriteFileContents(tt.fields.resource.Path(""), "1000000")
+				testHelper.WriteFileContents(tt.fields.resource.Path(""), strconv.FormatInt(tt.fields.initValue, 10))
 			}
 			assert.Equal(t, ResourceType(tt.wantResourceType), tt.fields.resource.ResourceType(), "checkResourceType")
-			isValid, _ := tt.fields.resource.IsValid(strconv.FormatInt(tt.fields.value, 10))
+			isValid, _ := tt.fields.resource.IsValid(strconv.FormatInt(tt.fields.newValue, 10))
 			assert.Equal(t, tt.wantValid, isValid, "checkValid")
 			isSupported, _ := tt.fields.resource.IsSupported("")
 			assert.Equal(t, tt.wantSupported, isSupported)

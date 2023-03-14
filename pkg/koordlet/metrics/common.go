@@ -37,7 +37,7 @@ var (
 		Subsystem: KoordletSubsystem,
 		Name:      "pod_eviction",
 		Help:      "Number of eviction launched by koordlet",
-	}, []string{NodeKey, EvictionReasonKey})
+	}, []string{NodeKey, PodNamespace, PodName, EvictionReasonKey})
 
 	NodeUsedCPU = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
@@ -72,12 +72,14 @@ func RecordCollectNodeCPUInfoStatus(err error) {
 	CollectNodeCPUInfoStatus.With(labels).Inc()
 }
 
-func RecordPodEviction(reasonType string) {
+func RecordPodEviction(namespace, podName, reasonType string) {
 	labels := genNodeLabels()
 	if labels == nil {
 		return
 	}
 	labels[EvictionReasonKey] = reasonType
+	labels[PodNamespace] = namespace
+	labels[PodName] = podName
 	PodEviction.With(labels).Inc()
 }
 
