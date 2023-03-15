@@ -17,8 +17,9 @@ limitations under the License.
 package util
 
 import (
+	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -29,33 +30,25 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
+// GetContainerCgroupPath gets the file path of the given container's cgroup.
 // @parentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/****.scope
-func GetContainerCgroupPathWithKube(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	return GetContainerCgroupPathWithKubeByID(podParentDir, c.ContainerID)
-}
-
-// @parentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/****.scope
-func GetContainerCgroupPathWithKubeByID(podParentDir string, containerID string) (string, error) {
-	containerDir, err := system.CgroupPathFormatter.ContainerDirFn(containerID)
+// @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cgroup.procs
+func GetContainerCgroupPath(podParentDir string, c *corev1.ContainerStatus, resourceType system.ResourceType) (string, error) {
+	resource, err := system.GetCgroupResource(resourceType)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get resource type %v, err: %w", resourceType, err)
 	}
-	return path.Join(
-		GetPodCgroupDirWithKube(podParentDir),
-		containerDir,
-	), nil
+	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	if err != nil {
+		return "", fmt.Errorf("failed to get container cgroup path, err: %w", err)
+	}
+	return system.GetCgroupFilePath(containerPath, resource), nil
 }
 
 // @parentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cgroup.procs
 func GetContainerCgroupCPUProcsPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
-	if err != nil {
-		return "", err
-	}
-	return system.GetCgroupFilePath(containerPath, system.CPUProcs), nil
+	return GetContainerCgroupPath(podParentDir, c, system.CPUProcsName)
 }
 
 func GetContainerCgroupPerfPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
@@ -64,17 +57,9 @@ func GetContainerCgroupPerfPath(podParentDir string, c *corev1.ContainerStatus) 
 		return "", err
 	}
 	if system.GetCurrentCgroupVersion() == system.CgroupVersionV2 {
-		return path.Join(system.Conf.CgroupRootDir, containerPath), nil
+		return filepath.Join(system.Conf.CgroupRootDir, containerPath), nil
 	}
-	return path.Join(system.Conf.CgroupRootDir, "perf_event/", containerPath), nil
-}
-
-func GetContainerCgroupCPUAcctUsagePath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
-	if err != nil {
-		return "", err
-	}
-	return system.GetCgroupFilePath(containerPath, system.CPUAcctUsage), nil
+	return filepath.Join(system.Conf.CgroupRootDir, "perf_event/", containerPath), nil
 }
 
 func GetContainerCgroupCPUAcctPSIPath(podParentDir string, c *corev1.ContainerStatus) (resourceexecutor.PSIPath, error) {
@@ -90,110 +75,6 @@ func GetContainerCgroupCPUAcctPSIPath(podParentDir string, c *corev1.ContainerSt
 	}, nil
 }
 
-func GetContainerCgroupMemStatPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
-	if err != nil {
-		return "", err
-	}
-	return system.GetCgroupFilePath(containerPath, system.MemoryStat), nil
-}
-
-func GetContainerCgroupCPUStatPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
-	if err != nil {
-		return "", err
-	}
-	return system.GetCgroupFilePath(containerPath, system.CPUStat), nil
-}
-
-func GetContainerCgroupMemLimitPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
-	if err != nil {
-		return "", err
-	}
-	return system.GetCgroupFilePath(containerPath, system.MemoryLimit), nil
-}
-
-func GetContainerCgroupCPUSharePath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
-	if err != nil {
-		return "", err
-	}
-	return system.GetCgroupFilePath(containerPath, system.CPUShares), nil
-}
-
-func GetContainerCgroupCFSPeriodPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
-	if err != nil {
-		return "", err
-	}
-	return system.GetCgroupFilePath(containerPath, system.CPUCFSPeriod), nil
-}
-
-func GetContainerCgroupCFSQuotaPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
-	if err != nil {
-		return "", err
-	}
-	return system.GetCgroupFilePath(containerPath, system.CPUCFSQuota), nil
-}
-
-func GetContainerCurTasksPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
-	if err != nil {
-		return "", err
-	}
-	return system.GetCgroupFilePath(containerPath, system.CPUTasks), nil
-}
-
-func GetContainerCurCPUShare(podParentDir string, c *corev1.ContainerStatus) (int64, error) {
-	cgroupPath, err := GetContainerCgroupCPUSharePath(podParentDir, c)
-	if err != nil {
-		return 0, err
-	}
-	rawContent, err := os.ReadFile(cgroupPath)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
-}
-
-func GetContainerCurCFSPeriod(podParentDir string, c *corev1.ContainerStatus) (int64, error) {
-	cgroupPath, err := GetContainerCgroupCFSPeriodPath(podParentDir, c)
-	if err != nil {
-		return 0, err
-	}
-	rawContent, err := os.ReadFile(cgroupPath)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
-}
-
-func GetContainerCurCFSQuota(podParentDir string, c *corev1.ContainerStatus) (int64, error) {
-	cgroupPath, err := GetContainerCgroupCFSQuotaPath(podParentDir, c)
-	if err != nil {
-		return 0, err
-	}
-	rawContent, err := os.ReadFile(cgroupPath)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
-}
-
-func GetContainerCurMemLimitBytes(podParentDir string, c *corev1.ContainerStatus) (int64, error) {
-	cgroupPath, err := GetContainerCgroupMemLimitPath(podParentDir, c)
-	if err != nil {
-		return 0, err
-	}
-	rawContent, err := os.ReadFile(cgroupPath)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
-}
-
 func GetContainerBaseCFSQuota(container *corev1.Container) int64 {
 	cpuMilliLimit := util.GetContainerMilliCPULimit(container)
 	if cpuMilliLimit <= 0 {
@@ -203,16 +84,10 @@ func GetContainerBaseCFSQuota(container *corev1.Container) int64 {
 	}
 }
 
-func GetPIDsInPod(podParentDir string, cs []corev1.ContainerStatus) ([]uint32, error) {
-	pids := make([]uint32, 0)
-	for i := range cs {
-		p, err := GetPIDsInContainer(podParentDir, &cs[i])
-		if err != nil {
-			return nil, err
-		}
-		pids = append(pids, p...)
-	}
-	return pids, nil
+// ParseContainerID parse container ID from the container base path.
+// e.g. 7712555c_ce62_454a_9e18_9ff0217b8941 from docker-7712555c_ce62_454a_9e18_9ff0217b8941.scope
+func ParseContainerID(basename string) (string, error) {
+	return system.CgroupPathFormatter.ContainerIDParser(basename)
 }
 
 func GetPIDsInContainer(podParentDir string, c *corev1.ContainerStatus) ([]uint32, error) {

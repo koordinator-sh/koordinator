@@ -236,6 +236,7 @@ var (
 		CPUAcctCPUPressure,
 		CPUAcctMemoryPressure,
 		CPUAcctIOPressure,
+		CPUProcs,
 		MemoryLimit,
 		MemoryUsage,
 		MemoryStat,
