@@ -1,6 +1,8 @@
 vendor
 pkg/descheduler
 pkg/descheduler/controllers/migration/controllerfinder
+pkg/scheduler/frameworkext/temporary_snapshot.go
+pkg/scheduler/frameworkext/temporary_snapshot_test.go
 pkg/scheduler/plugins/coscheduling
 pkg/koordlet/util/kubelet
 pkg/util/cpuset/cpuset.go

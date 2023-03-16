@@ -17,17 +17,10 @@ limitations under the License.
 package sharedlisterext
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
 type NodeInfoTransformerFn func(nodeInfo *framework.NodeInfo)
-
-func init() {
-	frameworkext.RegisterDefaultTransformers(NewNodeInfoTransformer())
-}
 
 var nodeInfoTransformerFns []NodeInfoTransformerFn
 
@@ -54,21 +47,4 @@ func TransformOneNodeInfo(nodeInfo *framework.NodeInfo) (transformedNodeInfo *fr
 		fn(transformedNodeInfo)
 	}
 	return transformedNodeInfo
-}
-
-var _ frameworkext.FilterTransformer = &nodeInfoTransformer{}
-
-type nodeInfoTransformer struct{}
-
-func NewNodeInfoTransformer() frameworkext.SchedulingTransformer {
-	return &nodeInfoTransformer{}
-}
-
-func (h *nodeInfoTransformer) Name() string { return "defaultNodeInfoTransformer" }
-
-// BeforeFilter transforms nodeInfo if needed. When the scheduler executes the Filter, the passed NodeInfos comes from the cache instead of SnapshotSharedLister.
-// This means that when these NodeInfos need to be transformed, they can only be done in the execution of Filter.
-func (h *nodeInfoTransformer) BeforeFilter(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool) {
-	transformedNodeInfo := TransformOneNodeInfo(nodeInfo)
-	return pod, transformedNodeInfo, true
 }
