@@ -37,7 +37,13 @@ var (
 		Subsystem: KoordletSubsystem,
 		Name:      "pod_eviction",
 		Help:      "Number of eviction launched by koordlet",
-	}, []string{NodeKey, PodNamespace, PodName, EvictionReasonKey})
+	}, []string{NodeKey, EvictionReasonKey})
+
+	PodEvictionDetail = NewGCCounterVec("pod_eviction_detail", prometheus.NewCounterVec(prometheus.CounterOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "pod_eviction_detail",
+		Help:      "evict detail launched by koordlet",
+	}, []string{NodeKey, PodNamespace, PodName, EvictionReasonKey}))
 
 	NodeUsedCPU = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
@@ -49,6 +55,7 @@ var (
 		KoordletStartTime,
 		CollectNodeCPUInfoStatus,
 		PodEviction,
+		PodEvictionDetail.GetCounterVec(),
 		NodeUsedCPU,
 	}
 )
@@ -78,9 +85,12 @@ func RecordPodEviction(namespace, podName, reasonType string) {
 		return
 	}
 	labels[EvictionReasonKey] = reasonType
-	labels[PodNamespace] = namespace
-	labels[PodName] = podName
 	PodEviction.With(labels).Inc()
+
+	detailLabels := labelsClone(labels)
+	detailLabels[PodNamespace] = namespace
+	detailLabels[PodName] = podName
+	PodEvictionDetail.WithInc(detailLabels)
 }
 
 func RecordNodeUsedCPU(value float64) {
@@ -89,4 +99,12 @@ func RecordNodeUsedCPU(value float64) {
 		return
 	}
 	NodeUsedCPU.With(labels).Set(value)
+}
+
+func labelsClone(labels prometheus.Labels) prometheus.Labels {
+	copyLabels := prometheus.Labels{}
+	for key, value := range labels {
+		copyLabels[key] = value
+	}
+	return copyLabels
 }
