@@ -17,18 +17,20 @@ limitations under the License.
 package util
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func Test_GetRootCgroupCPUSetDirWithSystemdDriver(t *testing.T) {
-	system.UseCgroupsV2 = false
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	helper.SetCgroupsV2(false)
 	system.SetupCgroupPathFormatter(system.Systemd)
 	defer system.SetupCgroupPathFormatter(system.Systemd)
 	tests := []struct {
@@ -69,7 +71,9 @@ func Test_GetRootCgroupCPUSetDirWithSystemdDriver(t *testing.T) {
 }
 
 func Test_GetRootCgroupCPUSetDirWithCgroupfsDriver(t *testing.T) {
-	system.UseCgroupsV2 = false
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	helper.SetCgroupsV2(false)
 	system.SetupCgroupPathFormatter(system.Cgroupfs)
 	defer system.SetupCgroupPathFormatter(system.Systemd)
 	tests := []struct {
@@ -109,191 +113,66 @@ func Test_GetRootCgroupCPUSetDirWithCgroupfsDriver(t *testing.T) {
 	}
 }
 
-func Test_GetPodKubeRelativePath(t *testing.T) {
+func TestGetPIDsInPod(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	helper.SetCgroupsV2(false)
 	system.SetupCgroupPathFormatter(system.Systemd)
-	system.Conf = system.NewDsModeConfig()
+	defer system.SetupCgroupPathFormatter(system.Systemd)
+	dir := t.TempDir()
+	system.Conf.CgroupRootDir = dir
 
-	assert := assert.New(t)
+	p1 := "/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cgroup.procs"
+	p1CgroupPath := filepath.Join(dir, p1)
+	if err := writeCgroupContent(p1CgroupPath, []byte("12\n23")); err != nil {
+		t.Fatal(err)
+	}
 
-	testCases := []struct {
-		name string
-		pod  *corev1.Pod
-		path string
+	p2 := "/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4acff.scope/cgroup.procs"
+	p2CgroupPath := filepath.Join(dir, p2)
+	if err := writeCgroupContent(p2CgroupPath, []byte("45\n67")); err != nil {
+		t.Fatal(err)
+	}
+	type args struct {
+		podParentDir string
+		cs           []corev1.ContainerStatus
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    []uint32
+		wantErr bool
 	}{
 		{
-			name: "guaranteed",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID: types.UID("uid1"),
-				},
-				Status: corev1.PodStatus{
-					QOSClass: corev1.PodQOSGuaranteed,
-				},
-			},
-			path: "/kubepods-poduid1.slice",
-		},
-		{
-			name: "burstable",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID: types.UID("uid1"),
-				},
-				Status: corev1.PodStatus{
-					QOSClass: corev1.PodQOSBurstable,
+			name: "cgroup",
+			args: args{
+				podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				cs: []corev1.ContainerStatus{
+					{
+						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
+					},
+					{
+						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4acff",
+					},
 				},
 			},
-			path: "kubepods-burstable.slice/kubepods-burstable-poduid1.slice",
-		},
-		{
-			name: "besteffort",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID: types.UID("uid1"),
-				},
-				Status: corev1.PodStatus{
-					QOSClass: corev1.PodQOSBestEffort,
-				},
-			},
-			path: "kubepods-besteffort.slice/kubepods-besteffort-poduid1.slice",
+			want:    []uint32{12, 23, 45, 67},
+			wantErr: false,
 		},
 	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			path := GetPodKubeRelativePath(tc.pod)
-			assert.Equal(tc.path, path)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetPIDsInPod(tt.args.podParentDir, tt.args.cs)
+			assert.Equal(t, tt.wantErr, err != nil)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func Test_GetPodCgroupStatPath(t *testing.T) {
-	system.SetupCgroupPathFormatter(system.Systemd)
-
-	assert := assert.New(t)
-
-	testCases := []struct {
-		name         string
-		relativePath string
-		path         string
-		fn           func(p string) string
-	}{
-		{
-			name:         "cpuacct",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/cpuacct.usage",
-			fn: func(p string) string {
-				return GetPodCgroupCPUAcctUsagePath(p)
-			},
-		},
-		{
-			name:         "cpushare",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.shares",
-			fn: func(p string) string {
-				return GetPodCgroupCPUSharePath(p)
-			},
-		},
-		{
-			name:         "cfsperiod",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.cfs_period_us",
-			fn: func(p string) string {
-				return GetPodCgroupCFSPeriodPath(p)
-			},
-		},
-		{
-			name:         "cfsperiod",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.cfs_quota_us",
-			fn: func(p string) string {
-				return GetPodCgroupCFSQuotaPath(p)
-			},
-		},
-		{
-			name:         "memorystat",
-			relativePath: "pod1",
-			path:         "/host-cgroup/memory/kubepods.slice/pod1/memory.stat",
-			fn: func(p string) string {
-				return GetPodCgroupMemStatPath(p)
-			},
-		},
-		{
-			name:         "memorylimit",
-			relativePath: "pod1",
-			path:         "/host-cgroup/memory/kubepods.slice/pod1/memory.limit_in_bytes",
-			fn: func(p string) string {
-				return GetPodCgroupMemLimitPath(p)
-			},
-		},
-		{
-			name:         "cpustat",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.stat",
-			fn: func(p string) string {
-				return GetPodCgroupCPUStatPath(p)
-			},
-		},
-		{
-			name:         "cpupressure",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/cpu.pressure",
-			fn: func(p string) string {
-				return GetPodCgroupCPUAcctPSIPath(p).CPU
-			},
-		},
-		{
-			name:         "mempressure",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/memory.pressure",
-			fn: func(p string) string {
-				return GetPodCgroupCPUAcctPSIPath(p).Mem
-			},
-		},
-		{
-			name:         "iopressure",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/io.pressure",
-			fn: func(p string) string {
-				return GetPodCgroupCPUAcctPSIPath(p).IO
-			},
-		},
+func writeCgroupContent(filePath string, content []byte) error {
+	err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
+	if err != nil {
+		return err
 	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			path := tc.fn(tc.relativePath)
-			assert.Equal(tc.path, path)
-		})
-	}
-}
-
-func Test_GetKubeQoSByCgroupParent(t *testing.T) {
-	system.SetupCgroupPathFormatter(system.Systemd)
-	assert := assert.New(t)
-
-	testCases := []struct {
-		name              string
-		path              string
-		wantPriorityClass corev1.PodQOSClass
-	}{
-		{
-			name:              "burstable",
-			path:              "kubepods-burstable.slice/kubepods-poduid1.slice",
-			wantPriorityClass: corev1.PodQOSBurstable,
-		},
-		{
-			name:              "besteffort",
-			path:              "kubepods-besteffort.slice/kubepods-poduid1.slice",
-			wantPriorityClass: corev1.PodQOSBestEffort,
-		},
-		{
-			name:              "guaranteed",
-			path:              "kubepods-poduid1.slice",
-			wantPriorityClass: corev1.PodQOSGuaranteed,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(tc.wantPriorityClass, GetKubeQoSByCgroupParent(tc.path))
-		})
-	}
+	return os.WriteFile(filePath, content, 0655)
 }

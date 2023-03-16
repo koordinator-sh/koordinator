@@ -17,81 +17,11 @@ limitations under the License.
 package util
 
 import (
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
-
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
-
-// @podKubeRelativeDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-func GetPodCgroupDirWithKube(podKubeRelativeDir string) string {
-	return filepath.Join(system.CgroupPathFormatter.ParentDir, podKubeRelativeDir)
-}
-
-// @return like kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-func GetPodKubeRelativePath(pod *corev1.Pod) string {
-	qosClass := util.GetKubeQosClass(pod)
-	return filepath.Join(
-		system.CgroupPathFormatter.QOSDirFn(qosClass),
-		system.CgroupPathFormatter.PodDirFn(qosClass, string(pod.UID)),
-	)
-}
-
-// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return /sys/fs/cgroup/cpuacct/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpuacct.usage
-func GetPodCgroupCPUAcctUsagePath(podParentDir string) string {
-	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.GetCgroupFilePath(podPath, system.CPUAcctUsage)
-}
-
-// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.shares
-func GetPodCgroupCPUSharePath(podParentDir string) string {
-	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.GetCgroupFilePath(podPath, system.CPUShares)
-}
-
-// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.cfs_period_us
-func GetPodCgroupCFSPeriodPath(podParentDir string) string {
-	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.GetCgroupFilePath(podPath, system.CPUCFSPeriod)
-}
-
-// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.cfs_quota_us
-func GetPodCgroupCFSQuotaPath(podParentDir string) string {
-	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.GetCgroupFilePath(podPath, system.CPUCFSQuota)
-}
-
-// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return /sys/fs/cgroup/memory/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.stat
-func GetPodCgroupMemStatPath(podParentDir string) string {
-	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.GetCgroupFilePath(podPath, system.MemoryStat)
-}
-
-// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return /sys/fs/cgroup/memory/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.limit_in_bytes
-func GetPodCgroupMemLimitPath(podParentDir string) string {
-	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.GetCgroupFilePath(podPath, system.MemoryLimit)
-}
-
-// @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.stat
-func GetPodCgroupCPUStatPath(podParentDir string) string {
-	podPath := GetPodCgroupDirWithKube(podParentDir)
-	return system.GetCgroupFilePath(podPath, system.CPUStat)
-}
 
 // @podParentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @return {
@@ -108,65 +38,20 @@ func GetPodCgroupCPUAcctPSIPath(podParentDir string) resourceexecutor.PSIPath {
 	}
 }
 
-func GetKubeQoSByCgroupParent(cgroupDir string) corev1.PodQOSClass {
-	if strings.Contains(cgroupDir, "besteffort") {
-		return corev1.PodQOSBestEffort
-	} else if strings.Contains(cgroupDir, "burstable") {
-		return corev1.PodQOSBurstable
-	}
-	return corev1.PodQOSGuaranteed
-}
-
-func GetPodCurCPUShare(podParentDir string) (int64, error) {
-	cgroupPath := GetPodCgroupCPUSharePath(podParentDir)
-	rawContent, err := os.ReadFile(cgroupPath)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
-}
-
-func GetPodCurCFSPeriod(podParentDir string) (int64, error) {
-	cgroupPath := GetPodCgroupCFSPeriodPath(podParentDir)
-	rawContent, err := os.ReadFile(cgroupPath)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
-}
-
-func GetPodCurCFSQuota(podParentDir string) (int64, error) {
-	cgroupPath := GetPodCgroupCFSQuotaPath(podParentDir)
-	rawContent, err := os.ReadFile(cgroupPath)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
-}
-
-func GetPodCurMemLimitBytes(podParentDir string) (int64, error) {
-	cgroupPath := GetPodCgroupMemLimitPath(podParentDir)
-	rawContent, err := os.ReadFile(cgroupPath)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(strings.TrimSpace(string(rawContent)), 10, 64)
-}
-
-// @return like kubepods.slice/kubepods-burstable.slice/
-func GetPodQoSRelativePath(qosClass corev1.PodQOSClass) string {
-	return filepath.Join(
-		system.CgroupPathFormatter.ParentDir,
-		system.CgroupPathFormatter.QOSDirFn(qosClass),
-	)
-}
-
-// @return 7712555c_ce62_454a_9e18_9ff0217b8941 from kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice
+// ParsePodID parse pod ID from the pod base path.
+// e.g. 7712555c_ce62_454a_9e18_9ff0217b8941 from kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice
 func ParsePodID(basename string) (string, error) {
 	return system.CgroupPathFormatter.PodIDParser(basename)
 }
 
-// @return 7712555c_ce62_454a_9e18_9ff0217b8941 from docker-7712555c_ce62_454a_9e18_9ff0217b8941.scope
-func ParseContainerID(basename string) (string, error) {
-	return system.CgroupPathFormatter.ContainerIDParser(basename)
+func GetPIDsInPod(podParentDir string, cs []corev1.ContainerStatus) ([]uint32, error) {
+	pids := make([]uint32, 0)
+	for i := range cs {
+		p, err := GetPIDsInContainer(podParentDir, &cs[i])
+		if err != nil {
+			return nil, err
+		}
+		pids = append(pids, p...)
+	}
+	return pids, nil
 }

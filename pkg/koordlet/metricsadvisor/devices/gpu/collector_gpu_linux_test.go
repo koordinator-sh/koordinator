@@ -18,7 +18,7 @@ package gpu
 
 import (
 	"os"
-	"path"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -286,20 +286,22 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 }
 
 func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
-
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	helper.SetCgroupsV2(false)
 	system.SetupCgroupPathFormatter(system.Systemd)
 	defer system.SetupCgroupPathFormatter(system.Systemd)
 	dir := t.TempDir()
 	system.Conf.CgroupRootDir = dir
 
 	p1 := "/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cgroup.procs"
-	p1CgroupPath := path.Join(dir, p1)
+	p1CgroupPath := filepath.Join(dir, p1)
 	if err := writeCgroupContent(p1CgroupPath, []byte("122\n222")); err != nil {
 		t.Fatal(err)
 	}
 
 	p2 := "/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4acff.scope/cgroup.procs"
-	p2CgroupPath := path.Join(dir, p2)
+	p2CgroupPath := filepath.Join(dir, p2)
 	if err := writeCgroupContent(p2CgroupPath, []byte("45\n67")); err != nil {
 		t.Fatal(err)
 	}
@@ -490,20 +492,22 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 	}
 }
 func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
-
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	helper.SetCgroupsV2(false)
 	system.SetupCgroupPathFormatter(system.Systemd)
 	defer system.SetupCgroupPathFormatter(system.Systemd)
 	dir := t.TempDir()
 	system.Conf.CgroupRootDir = dir
 
 	p1 := "/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf.scope/cgroup.procs"
-	p1CgroupPath := path.Join(dir, p1)
+	p1CgroupPath := filepath.Join(dir, p1)
 	if err := writeCgroupContent(p1CgroupPath, []byte("122\n222")); err != nil {
 		t.Fatal(err)
 	}
 
 	p2 := "/cpu/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/docker-703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4acff.scope/cgroup.procs"
-	p2CgroupPath := path.Join(dir, p2)
+	p2CgroupPath := filepath.Join(dir, p2)
 	if err := writeCgroupContent(p2CgroupPath, []byte("122")); err != nil {
 		t.Fatal(err)
 	}
@@ -626,7 +630,7 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 }
 
 func writeCgroupContent(filePath string, content []byte) error {
-	err := os.MkdirAll(path.Dir(filePath), os.ModePerm)
+	err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
 	if err != nil {
 		return err
 	}

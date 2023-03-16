@@ -23,14 +23,9 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-)
-
-var (
-	cpuacctUsageTypeStat = sets.NewString("user", "nice", "system", "irq", "softirq")
 )
 
 func readTotalCPUStat(statPath string) (uint64, error) {
@@ -65,33 +60,6 @@ func readTotalCPUStat(statPath string) (uint64, error) {
 func GetCPUStatUsageTicks() (uint64, error) {
 	statPath := system.GetProcFilePath(system.ProcStatName)
 	return readTotalCPUStat(statPath)
-}
-
-func readCPUAcctStatUsageTicks(statPath string) (uint64, error) {
-	// format: user $user\nnice $nice\nsystem $system\nidle $idle\niowait $iowait\nirq $irq\nsoftirq $softirq
-	rawStats, err := os.ReadFile(statPath)
-	if err != nil {
-		return 0, err
-	}
-	var total uint64 = 0
-	stats := strings.Split(string(rawStats), "\n")
-	for _, stat := range stats {
-		fieldStat := strings.Fields(stat)
-		// stat usage: $user + $nice + $system + $irq + $softirq
-		if len(fieldStat) == 2 && cpuacctUsageTypeStat.Has(fieldStat[0]) {
-			v, err := strconv.ParseUint(fieldStat[1], 10, 64)
-			if err != nil {
-				return 0, fmt.Errorf("failed to parse pod stats %v, err: %s", stats, err)
-			}
-			total += v
-		}
-	}
-	return total, nil
-}
-
-func GetCPUAcctStatUsageTicks(podCgroupDir string) (uint64, error) {
-	podStatPath := GetPodCgroupCPUAcctUsagePath(podCgroupDir)
-	return readCPUAcctStatUsageTicks(podStatPath)
 }
 
 func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, number int32) (*perf.PerfCollector, error) {
