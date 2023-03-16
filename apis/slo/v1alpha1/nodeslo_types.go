@@ -175,13 +175,17 @@ type ResourceThresholdStrategy struct {
 	// +kubebuilder:validation:Minimum=0
 	MemoryEvictLowerPercent *int64 `json:"memoryEvictLowerPercent,omitempty"`
 
-	// if be CPU RealLimit/allocatedLimit > CPUEvictBESatisfactionUpperPercent/100, then stop evict BE pods
+	// be.satisfactionRate = be.CPURealLimit/be.CPURequest
+	// if be.satisfactionRate > CPUEvictBESatisfactionUpperPercent/100, then stop to evict.
 	CPUEvictBESatisfactionUpperPercent *int64 `json:"cpuEvictBESatisfactionUpperPercent,omitempty"`
-	// if be CPU (RealLimit/allocatedLimit < CPUEvictBESatisfactionLowerPercent/100 and usage >= CPUEvictBEUsageThresholdPercent/100) continue CPUEvictTimeWindowSeconds, then start evict
+	// be.satisfactionRate = be.CPURealLimit/be.CPURequest; be.cpuUsage = be.CPUUsed/be.CPURealLimit
+	// if be.satisfactionRate < CPUEvictBESatisfactionLowerPercent/100 && be.usage >= CPUEvictBEUsageThresholdPercent/100,
+	// then start to evict pod, and will evict to ${CPUEvictBESatisfactionUpperPercent}
 	CPUEvictBESatisfactionLowerPercent *int64 `json:"cpuEvictBESatisfactionLowerPercent,omitempty"`
-	// if be CPU (RealLimit/allocatedLimit < CPUEvictBESatisfactionLowerPercent/100 and usage >= CPUEvictBEUsageThresholdPercent/100) continue CPUEvictTimeWindowSeconds, then start evict
+	// if be.cpuUsage >= CPUEvictBEUsageThresholdPercent/100, then start to calculate the resources need to be released.
 	CPUEvictBEUsageThresholdPercent *int64 `json:"cpuEvictBEUsageThresholdPercent,omitempty"`
-	// cpu evict start after continue avg(cpuusage) > CPUEvictThresholdPercent in seconds
+	// when avg(cpuusage) > CPUEvictThresholdPercent, will start to evict pod by cpu,
+	// and avg(cpuusage) is calculated based on the most recent CPUEvictTimeWindowSeconds data
 	CPUEvictTimeWindowSeconds *int64 `json:"cpuEvictTimeWindowSeconds,omitempty"`
 }
 

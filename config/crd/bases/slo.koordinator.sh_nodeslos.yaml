@@ -795,25 +795,27 @@ spec:
                 description: BE pods will be limited if node resource usage overload
                 properties:
                   cpuEvictBESatisfactionLowerPercent:
-                    description: if be CPU (RealLimit/allocatedLimit < CPUEvictBESatisfactionLowerPercent/100
-                      and usage >= CPUEvictBEUsageThresholdPercent/100) continue CPUEvictTimeWindowSeconds,
-                      then start evict
+                    description: be.satisfactionRate = be.CPURealLimit/be.CPURequest;
+                      be.cpuUsage = be.CPUUsed/be.CPURealLimit if be.satisfactionRate
+                      < CPUEvictBESatisfactionLowerPercent/100 && be.usage >= CPUEvictBEUsageThresholdPercent/100,
+                      then start to evict pod, and will evict to ${CPUEvictBESatisfactionUpperPercent}
                     format: int64
                     type: integer
                   cpuEvictBESatisfactionUpperPercent:
-                    description: if be CPU RealLimit/allocatedLimit > CPUEvictBESatisfactionUpperPercent/100,
-                      then stop evict BE pods
+                    description: be.satisfactionRate = be.CPURealLimit/be.CPURequest
+                      if be.satisfactionRate > CPUEvictBESatisfactionUpperPercent/100,
+                      then stop to evict.
                     format: int64
                     type: integer
                   cpuEvictBEUsageThresholdPercent:
-                    description: if be CPU (RealLimit/allocatedLimit < CPUEvictBESatisfactionLowerPercent/100
-                      and usage >= CPUEvictBEUsageThresholdPercent/100) continue CPUEvictTimeWindowSeconds,
-                      then start evict
+                    description: if be.cpuUsage >= CPUEvictBEUsageThresholdPercent/100,
+                      then start to calculate the resources need to be released.
                     format: int64
                     type: integer
                   cpuEvictTimeWindowSeconds:
-                    description: cpu evict start after continue avg(cpuusage) > CPUEvictThresholdPercent
-                      in seconds
+                    description: when avg(cpuusage) > CPUEvictThresholdPercent, will
+                      start to evict pod by cpu, and avg(cpuusage) is calculated based
+                      on the most recent CPUEvictTimeWindowSeconds data
                     format: int64
                     type: integer
                   cpuSuppressPolicy:
