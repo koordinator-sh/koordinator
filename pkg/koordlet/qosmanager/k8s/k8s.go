@@ -102,7 +102,7 @@ func (r *k8sClient) evictPod(evictPod *corev1.Pod, node *corev1.Node, reasonMsg 
 
 	if err := r.kubeClient.CoreV1().Pods(evictPod.Namespace).EvictV1(context.TODO(), &podEvict); err == nil {
 		r.eventRecorder.Eventf(node, corev1.EventTypeWarning, reason.EvictPodSuccess, podEvictMessage)
-		metrics.RecordPodEviction(reasonMsg)
+		metrics.RecordPodEviction(evictPod.Namespace, evictPod.Name, reasonMsg)
 		klog.Infof("evict pod %v/%v success, reason: %v", evictPod.Namespace, evictPod.Name, reasonMsg)
 		return true
 	} else if !errors.IsNotFound(err) {

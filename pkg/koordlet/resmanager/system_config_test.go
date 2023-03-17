@@ -50,6 +50,7 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: strconv.FormatInt(*defaultStrategy.WatermarkScaleFactor, 10),
+				sysutil.MemcgReapBackGround:  strconv.FormatInt(*defaultStrategy.MemcgReapBackGround, 10),
 			},
 		},
 		{
@@ -60,6 +61,7 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: strconv.FormatInt(*defaultStrategy.WatermarkScaleFactor, 10),
+				sysutil.MemcgReapBackGround:  strconv.FormatInt(*defaultStrategy.MemcgReapBackGround, 10),
 			},
 		},
 		{
@@ -70,46 +72,51 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: strconv.FormatInt(*defaultStrategy.WatermarkScaleFactor, 10),
+				sysutil.MemcgReapBackGround:  strconv.FormatInt(*defaultStrategy.MemcgReapBackGround, 10),
 			},
 		},
 		{
 			name:         "testInvalid",
 			initStrategy: defaultStrategy,
 			node:         getNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(-1), WatermarkScaleFactor: pointer.Int64Ptr(-1)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(-1), WatermarkScaleFactor: pointer.Int64Ptr(-1), MemcgReapBackGround: pointer.Int64Ptr(-1)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: strconv.FormatInt(*defaultStrategy.WatermarkScaleFactor, 10),
+				sysutil.MemcgReapBackGround:  strconv.FormatInt(*defaultStrategy.MemcgReapBackGround, 10),
 			},
 		},
 		{
 			name:         "testTooSmall",
 			initStrategy: defaultStrategy,
 			node:         getNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(0), WatermarkScaleFactor: pointer.Int64Ptr(5)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(0), WatermarkScaleFactor: pointer.Int64Ptr(5), MemcgReapBackGround: pointer.Int64Ptr(-1)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: "150",
+				sysutil.MemcgReapBackGround:  "0",
 			},
 		},
 		{
 			name:         "testValid",
 			initStrategy: defaultStrategy,
 			node:         getNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(88), WatermarkScaleFactor: pointer.Int64Ptr(99)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(88), WatermarkScaleFactor: pointer.Int64Ptr(99), MemcgReapBackGround: pointer.Int64Ptr(1)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024*88/10000, 10),
 				sysutil.WatermarkScaleFactor: "99",
+				sysutil.MemcgReapBackGround:  "1",
 			},
 		},
 		{
 			name:         "testToolarge",
 			initStrategy: defaultStrategy,
 			node:         getNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(400), WatermarkScaleFactor: pointer.Int64Ptr(500)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(400), WatermarkScaleFactor: pointer.Int64Ptr(500), MemcgReapBackGround: pointer.Int64Ptr(2)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: "150",
+				sysutil.MemcgReapBackGround:  "0",
 			},
 		},
 	}
@@ -147,8 +154,7 @@ func Test_systemConfig_reconcile(t *testing.T) {
 
 			reconcile.reconcile()
 			for file, expectValue := range tt.expect {
-				got, err := sysutil.CommonFileRead(file.Path(""))
-				assert.NoError(t, err, file.Path(""))
+				got := helper.ReadFileContents(file.Path(""))
 				assert.Equal(t, expectValue, got, file.Path(""))
 			}
 		})
@@ -160,6 +166,9 @@ func prepareFiles(helper *sysutil.FileTestUtil, stragegy *slov1alpha1.SystemStra
 	helper.WriteFileContents(sysutil.MinFreeKbytes.Path(""), strconv.FormatInt(*stragegy.MinFreeKbytesFactor*nodeMemory/1024/10000, 10))
 	helper.CreateFile(sysutil.WatermarkScaleFactor.Path(""))
 	helper.WriteFileContents(sysutil.WatermarkScaleFactor.Path(""), strconv.FormatInt(*stragegy.WatermarkScaleFactor, 10))
+	helper.CreateFile(sysutil.MemcgReapBackGround.Path(""))
+	helper.WriteFileContents(sysutil.MemcgReapBackGround.Path(""), strconv.FormatInt(*stragegy.MemcgReapBackGround, 10))
+
 }
 
 func getNodeSLOBySystemStrategy(stragegy *slov1alpha1.SystemStrategy) *slov1alpha1.NodeSLO {

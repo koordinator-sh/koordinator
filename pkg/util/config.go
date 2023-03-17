@@ -283,6 +283,7 @@ func DefaultSystemStrategy() *slov1alpha1.SystemStrategy {
 	return &slov1alpha1.SystemStrategy{
 		MinFreeKbytesFactor:  pointer.Int64Ptr(100), // 1 means 1/10000
 		WatermarkScaleFactor: pointer.Int64Ptr(150), // 1 means 1/10000
+		MemcgReapBackGround:  pointer.Int64Ptr(0),
 	}
 }
 

@@ -193,7 +193,7 @@ func (r *resmanager) evictPod(evictPod *corev1.Pod, node *corev1.Node, reason st
 	// TODO EvictV1 only supports k8s 1.22+, use EvictV1beta1 for compatible reason
 	if err := r.kubeClient.CoreV1().Pods(evictPod.Namespace).EvictV1beta1(context.TODO(), &podEvict); err == nil {
 		r.eventRecorder.Eventf(node, corev1.EventTypeWarning, evictPodSuccess, podEvictMessage)
-		metrics.RecordPodEviction(reason)
+		metrics.RecordPodEviction(evictPod.Namespace, evictPod.Name, reason)
 		klog.Infof("evict pod %v/%v success, reason: %v", evictPod.Namespace, evictPod.Name, reason)
 		return true
 	} else if !errors.IsNotFound(err) {

@@ -83,6 +83,10 @@ func GetProcRootDir() string {
 	return Conf.ProcRootDir
 }
 
+func GetSysRootDir() string {
+	return Conf.SysRootDir
+}
+
 func GetProcSysFilePath(file string) string {
 	return filepath.Join(Conf.ProcRootDir, SysctlSubDir, file)
 }
