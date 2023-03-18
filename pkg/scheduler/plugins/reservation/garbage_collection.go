@@ -167,23 +167,22 @@ func (p *Plugin) syncActiveReservation(r *schedulingv1alpha1.Reservation) {
 }
 
 func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
-	rInfo := p.reservationCache.GetOwned(pod)
+	reservation := p.reservationCache.GetOwned(pod)
 	// Most pods have no reservation allocated.
-	if rInfo == nil {
+	if reservation == nil {
 		return
 	}
 
 	// pod has allocated reservation, should remove allocation info in the reservation
-	cached := rInfo.GetReservation()
 	err := util.RetryOnConflictOrTooManyRequests(func() error {
-		r, err1 := p.rLister.Get(cached.Name)
-		if err1 != nil {
-			if errors.IsNotFound(err1) {
+		r, err := p.rLister.Get(reservation.Name)
+		if err != nil {
+			if errors.IsNotFound(err) {
 				klog.V(5).InfoS("skip sync for reservation not found", "reservation", klog.KObj(r))
 				return nil
 			}
-			klog.V(4).InfoS("failed to get reservation", "reservation", klog.KObj(cached), "err", err1)
-			return err1
+			klog.V(4).ErrorS(err, "failed to get reservation", "reservation", klog.KObj(reservation))
+			return err
 		}
 
 		// check if the reservation is still scheduled; succeeded ones are ignored to update
@@ -193,20 +192,20 @@ func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
 			return nil
 		}
 		// got different versions of the reservation; still check if the reservation was allocated by this pod
-		if r.UID != cached.UID {
+		if r.UID != reservation.UID {
 			klog.V(4).InfoS("failed to get original reservation, got reservation with a different UID",
-				"reservation", cached.Name, "old UID", cached.UID, "current UID", r.UID)
+				"reservation", reservation.Name, "old UID", reservation.UID, "current UID", r.UID)
 		}
 		curR := r.DeepCopy()
-		err1 = removeReservationAllocated(curR, pod)
-		if err1 != nil {
+		err = removeReservationAllocated(curR, pod)
+		if err != nil {
 			klog.V(5).InfoS("failed to remove reservation allocated",
-				"reservation", klog.KObj(curR), "pod", klog.KObj(pod), "err", err1)
+				"reservation", klog.KObj(curR), "pod", klog.KObj(pod), "err", err)
 			return nil
 		}
 
-		_, err1 = p.client.Reservations().UpdateStatus(context.TODO(), curR, metav1.UpdateOptions{})
-		return err1
+		_, err = p.client.Reservations().UpdateStatus(context.TODO(), curR, metav1.UpdateOptions{})
+		return err
 	})
 	if err != nil {
 		klog.Warningf("failed to sync pod deletion for reservation, pod %v, err: %v", klog.KObj(pod), err)

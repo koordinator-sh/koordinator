@@ -358,13 +358,12 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	defer nodeDeviceInfo.lock.RUnlock()
 
 	if reservedDevices := state.reservedDevices[node.Name]; len(reservedDevices) > 0 {
-		for reservationUID, reserved := range reservedDevices {
+		for _, reserved := range reservedDevices {
 			devices := nodeDeviceInfo.replaceWith(reserved)
 			allocateResult, err := p.allocator.Allocate(nodeInfo.Node().Name, pod, state.podRequests, devices, state.preemptibleDevices[node.Name])
 			if len(allocateResult) > 0 && err == nil {
 				return nil
 			}
-			frameworkext.DiscardReservation(cycleState, reservationUID)
 		}
 	} else {
 		allocateResult, err := p.allocator.Allocate(nodeInfo.Node().Name, pod, state.podRequests, nodeDeviceInfo, state.preemptibleDevices[node.Name])
@@ -373,6 +372,33 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		}
 	}
 	return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
+}
+
+func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
+	state, status := getPreFilterState(cycleState)
+	if !status.IsSuccess() {
+		return status
+	}
+	if state.skip {
+		return nil
+	}
+
+	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName)
+	if nodeDeviceInfo == nil {
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
+	}
+
+	nodeDeviceInfo.lock.RLock()
+	defer nodeDeviceInfo.lock.RUnlock()
+
+	if reservedDevices := state.reservedDevices[nodeName][reservation.UID]; len(reservedDevices) > 0 {
+		devices := nodeDeviceInfo.replaceWith(reservedDevices)
+		allocateResult, err := p.allocator.Allocate(nodeName, pod, state.podRequests, devices, state.preemptibleDevices[nodeName])
+		if len(allocateResult) == 0 || err != nil {
+			return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
+		}
+	}
+	return nil
 }
 
 func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {

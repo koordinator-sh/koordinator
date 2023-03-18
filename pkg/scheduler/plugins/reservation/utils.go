@@ -18,8 +18,6 @@ package reservation
 
 import (
 	"fmt"
-	"math"
-	"strconv"
 	"strings"
 	"time"
 
@@ -31,7 +29,6 @@ import (
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -236,34 +233,6 @@ func getReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceLi
 	return requests
 }
 
-func matchReservationPort(pod *corev1.Pod, rMeta *reservationInfo) bool {
-	for _, container := range pod.Spec.Containers {
-		for _, podPort := range container.Ports {
-			if podPort.HostPort > 0 && !rMeta.Port.CheckConflict(podPort.HostIP, string(podPort.Protocol), podPort.HostPort) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func matchReservationResources(pod *corev1.Pod, r *schedulingv1alpha1.Reservation, reservedResources corev1.ResourceList) bool {
-	if r.Status.Allocated != nil {
-		// multi owners can share one reservation when reserved resources are sufficient
-		reservedResources = quotav1.SubtractWithNonNegativeResult(reservedResources, r.Status.Allocated)
-	}
-	reservedResources = quotav1.Mask(reservedResources, quotav1.ResourceNames(r.Status.Allocatable))
-	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
-	for resource, quantity := range podRequests {
-		q, ok := reservedResources[resource]
-		if ok && quantity.Cmp(q) > 0 {
-			// not match if any pod request is larger than reserved resources
-			return false
-		}
-	}
-	return true
-}
-
 func hasIntersectionOnResources(pod *corev1.Pod, r *schedulingv1alpha1.Reservation) bool {
 	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
 	resourceNames := quotav1.Intersection(quotav1.ResourceNames(r.Status.Allocatable), quotav1.ResourceNames(podRequests))
@@ -318,16 +287,13 @@ func matchReservationControllerReference(pod *corev1.Pod, controllerRef *schedul
 	return false
 }
 
-func dumpMatchReservationReason(pod *corev1.Pod, rMeta *reservationInfo) string {
+func dumpMatchReservationReason(pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation) string {
 	var msg strings.Builder
-	if !matchReservationOwners(pod, rMeta.Reservation) {
+	if !matchReservationOwners(pod, reservation) {
 		msg.WriteString("owner specs not matched;")
 	}
-	if !matchReservationResources(pod, rMeta.Reservation, rMeta.Resources) {
+	if !hasIntersectionOnResources(pod, reservation) {
 		msg.WriteString("resources not matched;")
-	}
-	if !matchReservationPort(pod, rMeta) {
-		msg.WriteString("port not matched;")
 	}
 	return msg.String()
 }
@@ -352,39 +318,12 @@ func getPodOwner(pod *corev1.Pod) corev1.ObjectReference {
 	}
 }
 
-func getOwnerKey(owner *corev1.ObjectReference) string {
-	return string(owner.UID)
-}
-
-func getPreFilterState(cycleState *framework.CycleState) *stateData {
-	v, err := cycleState.Read(preFilterStateKey)
-	if err != nil {
-		return nil
-	}
-	cache, ok := v.(*stateData)
-	if !ok || cache == nil {
-		return nil
-	}
-	return cache
-}
-
-func findMostPreferredReservationByOrder(rOnNode []*reservationInfo) (*reservationInfo, int64) {
-	var selectOrder int64 = math.MaxInt64
-	var rInfo *reservationInfo
-	for _, v := range rOnNode {
-		s := v.Reservation.Labels[apiext.LabelReservationOrder]
-		if s == "" {
-			continue
-		}
-		order, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
-			continue
-		}
-		// The smaller the order value is, the reservation will be selected first
-		if order != 0 && selectOrder > order {
-			selectOrder = order
-			rInfo = v
+func getReservePorts(r *schedulingv1alpha1.Reservation) framework.HostPortInfo {
+	portInfo := framework.HostPortInfo{}
+	for _, container := range r.Spec.Template.Spec.Containers {
+		for _, podPort := range container.Ports {
+			portInfo.Add(podPort.HostIP, string(podPort.Protocol), podPort.HostPort)
 		}
 	}
-	return rInfo, selectOrder
+	return portInfo
 }

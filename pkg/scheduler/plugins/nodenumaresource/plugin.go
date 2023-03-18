@@ -401,12 +401,22 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		}
 	}
 
-	for reservationUID, cpus := range state.reservedCPUs[node.Name] {
-		if cpus.IsEmpty() {
-			frameworkext.DiscardReservation(cycleState, reservationUID)
-		}
+	return nil
+}
+
+func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
+	state, status := getPreFilterState(cycleState)
+	if !status.IsSuccess() {
+		return status
+	}
+	if state.skip {
+		return nil
 	}
 
+	cpus, ok := state.reservedCPUs[nodeName][reservation.UID]
+	if ok && cpus.IsEmpty() {
+		return framework.NewStatus(framework.Unschedulable, "Reservation hasn't CPUs")
+	}
 	return nil
 }
 

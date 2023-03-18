@@ -1024,26 +1024,26 @@ func TestScore(t *testing.T) {
 	}
 
 	stateSkip := framework.NewCycleState()
-	stateSkip.Write(preFilterStateKey, &stateData{
+	stateSkip.Write(stateKey, &stateData{
 		skip: true,
 	})
 	stateForMatch := framework.NewCycleState()
-	stateForMatch.Write(preFilterStateKey, &stateData{
+	stateForMatch.Write(stateKey, &stateData{
 		matchedCache: newAvailableCache(rScheduled, rScheduled1),
 	})
 
 	stateForOrderMatch := framework.NewCycleState()
-	stateForOrderMatch.Write(preFilterStateKey, &stateData{
+	stateForOrderMatch.Write(stateKey, &stateData{
 		matchedCache: newAvailableCache(rScheduled, rScheduled1, rScheduled2),
 	})
 
 	stateForEmptyResources := framework.NewCycleState()
-	stateForEmptyResources.Write(preFilterStateKey, &stateData{
+	stateForEmptyResources.Write(stateKey, &stateData{
 		matchedCache: newAvailableCache(rScheduled, rScheduled1, rScheduled3),
 	})
 
 	stateForPartEmptyResources := framework.NewCycleState()
-	stateForPartEmptyResources.Write(preFilterStateKey, &stateData{
+	stateForPartEmptyResources.Write(stateKey, &stateData{
 		matchedCache: newAvailableCache(rScheduled, rScheduled1, rScheduled3, rScheduled4),
 	})
 
@@ -1241,7 +1241,7 @@ func TestScoreWithOrder(t *testing.T) {
 	}
 
 	cycleState := framework.NewCycleState()
-	cycleState.Write(preFilterStateKey, stateData)
+	cycleState.Write(stateKey, stateData)
 
 	var nodes []*corev1.Node
 	for nodeName := range stateData.matchedCache.nodeToR {
@@ -1358,11 +1358,11 @@ func TestReserve(t *testing.T) {
 	rAllocated := rScheduled.DeepCopy()
 	setReservationAllocated(rAllocated, normalPod)
 	stateSkip := framework.NewCycleState()
-	stateSkip.Write(preFilterStateKey, &stateData{
+	stateSkip.Write(stateKey, &stateData{
 		skip: true,
 	})
 	stateForMatch := framework.NewCycleState()
-	stateForMatch.Write(preFilterStateKey, &stateData{
+	stateForMatch.Write(stateKey, &stateData{
 		matchedCache: newAvailableCache(rScheduled, rScheduled1),
 	})
 	stateForMatch1 := stateForMatch.Clone()
@@ -1372,7 +1372,7 @@ func TestReserve(t *testing.T) {
 	}
 	setReservationAllocated(rscheduled2, normalPod)
 	stateForOrderMatch := framework.NewCycleState()
-	stateForOrderMatch.Write(preFilterStateKey, &stateData{
+	stateForOrderMatch.Write(stateKey, &stateData{
 		matchedCache: newAvailableCache(rScheduled, rScheduled1, rscheduled2),
 	})
 	cacheNotActive := newReservationCache()
@@ -1502,7 +1502,7 @@ func TestReserve(t *testing.T) {
 			got := p.Reserve(context.TODO(), tt.args.cycleState, tt.args.pod, tt.args.nodeName)
 			assert.Equal(t, tt.want, got)
 			if tt.args.cycleState != nil {
-				state := getPreFilterState(tt.args.cycleState)
+				state := getStateData(tt.args.cycleState)
 				assert.Equal(t, tt.wantField, state.assumed)
 			}
 		})
@@ -1552,25 +1552,25 @@ func TestUnreserve(t *testing.T) {
 	rAllocateOnce.Spec.AllocateOnce = true
 	setReservationAllocated(rAllocateOnce, normalPod)
 	stateSkip := framework.NewCycleState()
-	stateSkip.Write(preFilterStateKey, &stateData{
+	stateSkip.Write(stateKey, &stateData{
 		skip: true,
 	})
 	stateNoAssumed := framework.NewCycleState()
-	stateNoAssumed.Write(preFilterStateKey, &stateData{
+	stateNoAssumed.Write(stateKey, &stateData{
 		assumed: nil,
 	})
 	stateAssumed := framework.NewCycleState()
-	stateAssumed.Write(preFilterStateKey, &stateData{
+	stateAssumed.Write(stateKey, &stateData{
 		assumed: rAllocated,
 	})
 	stateAssumedAndPreBind := framework.NewCycleState()
-	stateAssumedAndPreBind.Write(preFilterStateKey, &stateData{
+	stateAssumedAndPreBind.Write(stateKey, &stateData{
 		assumed: rAllocated,
 		preBind: true,
 	})
 	stateAssumedAndPreBind1 := stateAssumedAndPreBind.Clone()
 	stateAllocateOnce := framework.NewCycleState()
-	stateAllocateOnce.Write(preFilterStateKey, &stateData{
+	stateAllocateOnce.Write(stateKey, &stateData{
 		assumed: rAllocateOnce,
 		preBind: true,
 	})
@@ -1709,7 +1709,7 @@ func TestUnreserve(t *testing.T) {
 			}
 			p.Unreserve(context.TODO(), tt.args.cycleState, tt.args.pod, tt.args.nodeName)
 			if tt.args.cycleState != nil {
-				state := getPreFilterState(tt.args.cycleState)
+				state := getStateData(tt.args.cycleState)
 				assert.Equal(t, tt.wantField, state.assumed)
 			}
 		})
@@ -1759,19 +1759,19 @@ func TestPreBind(t *testing.T) {
 	rExpired := rScheduled.DeepCopy()
 	setReservationExpired(rExpired)
 	stateSkip := framework.NewCycleState()
-	stateSkip.Write(preFilterStateKey, &stateData{
+	stateSkip.Write(stateKey, &stateData{
 		skip: true,
 	})
 	stateNoAssumed := framework.NewCycleState()
-	stateNoAssumed.Write(preFilterStateKey, &stateData{
+	stateNoAssumed.Write(stateKey, &stateData{
 		assumed: nil,
 	})
 	stateAssumed := framework.NewCycleState()
-	stateAssumed.Write(preFilterStateKey, &stateData{
+	stateAssumed.Write(stateKey, &stateData{
 		assumed: rAllocated,
 	})
 	stateAssumedAllocateOnce := framework.NewCycleState()
-	stateAssumedAllocateOnce.Write(preFilterStateKey, &stateData{
+	stateAssumedAllocateOnce.Write(stateKey, &stateData{
 		assumed: rAllocateOnce,
 	})
 	cacheAssumed := newReservationCache()

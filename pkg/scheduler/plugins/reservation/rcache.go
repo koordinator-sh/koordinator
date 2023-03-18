@@ -22,10 +22,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/klog/v2"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -35,130 +34,56 @@ const (
 	defaultCacheCheckInterval          = 60 * time.Second
 )
 
-// reservationInfo stores the basic info of an active reservation
-type reservationInfo struct {
-	Reservation *schedulingv1alpha1.Reservation
-
-	Resources corev1.ResourceList
-	Port      framework.HostPortInfo
-
-	Score int64
-}
-
-func newReservationInfo(r *schedulingv1alpha1.Reservation) *reservationInfo {
-	requests := getReservationRequests(r)
-	portInfo := framework.HostPortInfo{}
-	for _, container := range r.Spec.Template.Spec.Containers {
-		for _, podPort := range container.Ports {
-			portInfo.Add(podPort.HostIP, string(podPort.Protocol), podPort.HostPort)
-		}
-	}
-	return &reservationInfo{
-		Reservation: r,
-		Resources:   requests,
-		Port:        portInfo,
-	}
-}
-
-func (m *reservationInfo) GetReservation() *schedulingv1alpha1.Reservation {
-	if m == nil {
-		return nil
-	}
-	return m.Reservation
-}
-
-func (m *reservationInfo) ScoreForPod(pod *corev1.Pod) {
-	// assert pod.request <= r.request
-	// score := sum_i (w_i * sum(pod.request_i) / r.allocatable_i)) / sum_i(w_i)
-	requested, _ := resourceapi.PodRequestsAndLimits(pod)
-	if allocated := m.Reservation.Status.Allocated; allocated != nil {
-		// consider multi owners sharing one reservation
-		requested = quotav1.Add(requested, allocated)
-	}
-	resources := quotav1.RemoveZeros(m.Resources)
-
-	w := int64(len(resources))
-	if w <= 0 {
-		m.Score = 0
-		return
-	}
-	var s int64
-	for resource, capacity := range resources {
-		req := requested[resource]
-		if req.Cmp(capacity) <= 0 {
-			s += framework.MaxNodeScore * req.MilliValue() / capacity.MilliValue()
-		}
-	}
-	m.Score = s / w
-}
-
 // AvailableCache is for efficiently querying the reservation allocation results.
 // Typical usages are as below:
 // 1. check if a pod match any of available reservations (ownership and resource requirements).
 // 2. check which nodes a pod match available reservation are at.
 // 3. check which reservations are on a node.
 type AvailableCache struct {
-	lock         sync.RWMutex
-	reservations map[string]*reservationInfo               // reservation key -> reservation meta (including r, node, resource, labelSelector)
-	nodeToR      map[string]map[types.UID]*reservationInfo // node name -> reservation meta (of same node)
-	ownerToR     map[string]*reservationInfo               // owner UID -> reservation
+	reservations map[string]*schedulingv1alpha1.Reservation               // reservation key -> reservation meta (including r, node, resource, labelSelector)
+	nodeToR      map[string]map[types.UID]*schedulingv1alpha1.Reservation // node name -> reservation meta (of same node)
 }
 
 func newAvailableCache(rList ...*schedulingv1alpha1.Reservation) *AvailableCache {
 	a := &AvailableCache{
-		reservations: map[string]*reservationInfo{},
-		nodeToR:      map[string]map[types.UID]*reservationInfo{},
-		ownerToR:     map[string]*reservationInfo{},
+		reservations: map[string]*schedulingv1alpha1.Reservation{},
+		nodeToR:      map[string]map[types.UID]*schedulingv1alpha1.Reservation{},
 	}
 	for _, r := range rList {
 		if !reservationutil.IsReservationAvailable(r) {
 			continue
 		}
-		rInfo := newReservationInfo(r)
-		a.reservations[reservationutil.GetReservationKey(r)] = rInfo
+		a.reservations[reservationutil.GetReservationKey(r)] = r
 		nodeName := reservationutil.GetReservationNodeName(r)
-		rInfoMap := a.nodeToR[nodeName]
-		if rInfoMap == nil {
-			rInfoMap = map[types.UID]*reservationInfo{}
-			a.nodeToR[nodeName] = rInfoMap
+		rOnNode := a.nodeToR[nodeName]
+		if rOnNode == nil {
+			rOnNode = map[types.UID]*schedulingv1alpha1.Reservation{}
+			a.nodeToR[nodeName] = rOnNode
 		}
-		rInfoMap[rInfo.Reservation.UID] = rInfo
-		for _, owner := range r.Status.CurrentOwners { // one owner at most owns one reservation
-			a.ownerToR[getOwnerKey(&owner)] = rInfo
-		}
+		rOnNode[r.UID] = r
 	}
 	return a
 }
 
 func (a *AvailableCache) Len() int {
-	a.lock.RLock()
-	defer a.lock.RUnlock()
 	return len(a.reservations)
 }
 
 func (a *AvailableCache) Add(r *schedulingv1alpha1.Reservation) {
 	// NOTE: the caller should ensure the reservation is valid and available.
 	// such as phase=Available, nodeName != "", requests > 0
-	a.lock.Lock()
-	defer a.lock.Unlock()
-	rInfo := newReservationInfo(r)
-	a.reservations[reservationutil.GetReservationKey(r)] = rInfo
+	a.reservations[reservationutil.GetReservationKey(r)] = r
 	nodeName := reservationutil.GetReservationNodeName(r)
 
-	rInfoMap := a.nodeToR[nodeName]
-	if rInfoMap == nil {
-		rInfoMap = map[types.UID]*reservationInfo{}
-		a.nodeToR[nodeName] = rInfoMap
+	rOnNode := a.nodeToR[nodeName]
+	if rOnNode == nil {
+		rOnNode = map[types.UID]*schedulingv1alpha1.Reservation{}
+		a.nodeToR[nodeName] = rOnNode
 	}
-	rInfoMap[rInfo.Reservation.UID] = rInfo
-	for _, owner := range r.Status.CurrentOwners { // one owner at most owns one reservation
-		a.ownerToR[getOwnerKey(&owner)] = rInfo
-	}
+	rOnNode[r.UID] = r
 }
 
 func (a *AvailableCache) Delete(r *schedulingv1alpha1.Reservation) {
-	a.lock.Lock()
-	defer a.lock.Unlock()
 	if r == nil || len(reservationutil.GetReservationNodeName(r)) == 0 {
 		return
 	}
@@ -171,45 +96,28 @@ func (a *AvailableCache) Delete(r *schedulingv1alpha1.Reservation) {
 	if len(rOnNode) == 0 {
 		delete(a.nodeToR, nodeName)
 	}
-	// cleanup ownerToR
-	for _, owner := range r.Status.CurrentOwners {
-		rInfo := a.ownerToR[getOwnerKey(&owner)]
-		if rInfo != nil && rInfo.Reservation.Name != r.Name {
-			delete(a.ownerToR, getOwnerKey(&owner))
-		}
-	}
 }
 
-func (a *AvailableCache) Get(key string) *reservationInfo {
-	a.lock.RLock()
-	defer a.lock.RUnlock()
+func (a *AvailableCache) Get(key string) *schedulingv1alpha1.Reservation {
 	return a.reservations[key]
 }
 
-func (a *AvailableCache) GetOnNode(nodeName string) []*reservationInfo {
-	a.lock.RLock()
-	defer a.lock.RUnlock()
+func (a *AvailableCache) GetOnNode(nodeName string) []*schedulingv1alpha1.Reservation {
 	rOnNode := a.nodeToR[nodeName]
 	if len(rOnNode) == 0 {
 		return nil
 	}
-	result := make([]*reservationInfo, 0, len(rOnNode))
+	result := make([]*schedulingv1alpha1.Reservation, 0, len(rOnNode))
 	for _, v := range rOnNode {
 		result = append(result, v)
 	}
 	return result
 }
 
-func (a *AvailableCache) GetOwnedR(key string) *reservationInfo {
-	a.lock.RLock()
-	defer a.lock.RUnlock()
-	return a.ownerToR[key]
-}
-
 type assumedInfo struct {
-	info   *reservationInfo // previous version of
-	shared int              // the sharing count of the reservation info
-	ddl    *time.Time       // marked as not shared and should get deleted in an expiring interval
+	reservation *schedulingv1alpha1.Reservation // previous version of
+	shared      int                             // the sharing count of the Reservation
+	ddl         *time.Time                      // marked as not shared and should get deleted in an expiring interval
 }
 
 // reservationCache caches the active, failed and assumed reservations synced from informer and plugin reserve.
@@ -272,11 +180,11 @@ func (c *reservationCache) Assume(r *schedulingv1alpha1.Reservation) {
 	assumed, ok := c.assumed[key]
 	if ok {
 		assumed.shared++
-		assumed.info = newReservationInfo(r)
+		assumed.reservation = r
 	} else {
 		assumed = &assumedInfo{
-			info:   newReservationInfo(r),
-			shared: 1,
+			reservation: r,
+			shared:      1,
 		}
 		c.assumed[key] = assumed
 	}
@@ -301,7 +209,7 @@ func (c *reservationCache) unassume(r *schedulingv1alpha1.Reservation, update bo
 			assumed.ddl = &ddl
 		}
 		if update { // if `update` is set, update with the current
-			assumed.info = newReservationInfo(r)
+			assumed.reservation = r
 		}
 	} // otherwise the info has been removed, ignore
 }
@@ -319,23 +227,35 @@ func (c *reservationCache) Delete(r *schedulingv1alpha1.Reservation) {
 	delete(c.inactive, reservationutil.GetReservationKey(r))
 }
 
-func (c *reservationCache) GetOwned(pod *corev1.Pod) *reservationInfo {
+func (c *reservationCache) GetOwned(pod *corev1.Pod) *schedulingv1alpha1.Reservation {
+	allocated, err := apiext.GetReservationAllocated(pod)
+	if allocated == nil {
+		if err != nil {
+			klog.Errorf("Failed to GetReservationAllocated, pod %v, err: %v", klog.KObj(pod), err)
+		}
+		return nil
+	}
+
 	c.lock.RLock()
 	defer c.lock.RUnlock()
-	return c.active.GetOwnedR(string(pod.UID))
+	return c.GetInCacheByKey(string(allocated.UID))
 }
 
-func (c *reservationCache) GetInCache(r *schedulingv1alpha1.Reservation) *reservationInfo {
+func (c *reservationCache) GetInCache(r *schedulingv1alpha1.Reservation) *schedulingv1alpha1.Reservation {
+	key := reservationutil.GetReservationKey(r)
+	return c.GetInCacheByKey(key)
+}
+
+func (c *reservationCache) GetInCacheByKey(key string) *schedulingv1alpha1.Reservation {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
-	key := reservationutil.GetReservationKey(r)
 	// if assumed, use the assumed state
 	assumed, ok := c.assumed[key]
 	if ok {
-		return assumed.info
+		return assumed.reservation
 	}
 	// otherwise, use in active cache
-	return c.active.Get(reservationutil.GetReservationKey(r))
+	return c.active.Get(key)
 }
 
 func (c *reservationCache) GetAllInactive() map[string]*schedulingv1alpha1.Reservation {

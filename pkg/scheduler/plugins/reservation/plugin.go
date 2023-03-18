@@ -20,12 +20,12 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	listercorev1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -33,7 +33,6 @@ import (
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	pluginhelper "k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -47,11 +46,8 @@ import (
 )
 
 const (
-	Name = "Reservation" // the plugin name
-
-	mostPreferredScore = 1000
-
-	preFilterStateKey = "PreFilter" + Name // what nodes the scheduling pod match any reservation at
+	Name     = "Reservation"
+	stateKey = Name
 
 	// ErrReasonNodeNotMatchReservation is the reason for node not matching which the reserve pod specifies.
 	ErrReasonNodeNotMatchReservation = "node(s) didn't match the nodeName specified by reservation"
@@ -177,28 +173,27 @@ func (p *Plugin) Name() string { return Name }
 var _ framework.StateData = &stateData{}
 
 type stateData struct {
-	skip              bool            // set true if pod does not allocate reserved resources
-	preBind           bool            // set true if pod succeeds the reservation pre-bind
-	matchedCache      *AvailableCache // matched reservations for the scheduling pod
+	matched           map[string]sets.String
+	unmatched         map[string]sets.String
+	preBind           bool
 	mostPreferredNode string
-	assumed           *schedulingv1alpha1.Reservation // assumed reservation to be allocated by the pod
-	unmatched         map[string][]string
+	assumed           *schedulingv1alpha1.Reservation
 }
 
-func (d *stateData) Clone() framework.StateData {
-	cacheCopy := newAvailableCache()
-	if d.matchedCache != nil {
-		for _, v := range d.matchedCache.reservations {
-			cacheCopy.Add(v.Reservation)
-		}
+func (s *stateData) Clone() framework.StateData {
+	return s
+}
+
+func getStateData(cycleState *framework.CycleState) *stateData {
+	v, err := cycleState.Read(stateKey)
+	if err != nil {
+		return &stateData{}
 	}
-	return &stateData{
-		skip:         d.skip,
-		preBind:      d.preBind,
-		matchedCache: cacheCopy,
-		assumed:      d.assumed,
-		unmatched:    d.unmatched,
+	s, ok := v.(*stateData)
+	if !ok || s == nil {
+		return &stateData{}
 	}
+	return s
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.
@@ -270,142 +265,20 @@ func (p *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 		if err != nil {
 			return
 		}
-		rinfos := p.reservationCache.active.GetOnNode(allNodes[piece])
-		for _, r := range rinfos {
-			newReservePod := reservationutil.NewReservePod(r.Reservation)
+		reservations := p.reservationCache.active.GetOnNode(allNodes[piece])
+		for _, r := range reservations {
+			newReservePod := reservationutil.NewReservePod(r)
 			if corev1helpers.PodPriority(newReservePod) < corev1helpers.PodPriority(pod) {
 				maxPri := int32(math.MaxInt32)
 				nodeInfo.RemovePod(newReservePod)
 				newReservePod.Spec.Priority = &maxPri
 				nodeInfo.AddPod(newReservePod)
+				// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, you need to set Generation to -1
+				nodeInfo.Generation = -1
 			}
 		}
 	})
 	return nil, framework.NewStatus(framework.Unschedulable)
-}
-
-func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
-	if reservationutil.IsReservePod(pod) {
-		return nil
-	}
-
-	state := getPreFilterState(cycleState)
-	if state == nil {
-		return nil
-	}
-	if state.skip {
-		return nil
-	}
-
-	nodeOrders := make([]int64, len(nodes))
-	p.parallelizeUntil(ctx, len(nodes), func(piece int) {
-		node := nodes[piece]
-		rOnNode := state.matchedCache.GetOnNode(node.Name)
-		if len(rOnNode) == 0 {
-			return
-		}
-		_, order := findMostPreferredReservationByOrder(rOnNode)
-		nodeOrders[piece] = order
-	})
-	var selectOrder int64 = math.MaxInt64
-	var nodeIndex int
-	for i, order := range nodeOrders {
-		if order != 0 && selectOrder > order {
-			selectOrder = order
-			nodeIndex = i
-		}
-	}
-	if selectOrder != math.MaxInt64 {
-		state.mostPreferredNode = nodes[nodeIndex].Name
-	}
-	return nil
-}
-
-func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
-	if reservationutil.IsReservePod(pod) {
-		return framework.MinNodeScore, nil
-	}
-
-	state := getPreFilterState(cycleState)
-	if state == nil { // expected matchedCache is prepared
-		return framework.MinNodeScore, nil
-	}
-	if state.skip {
-		return framework.MinNodeScore, nil
-	}
-
-	if state.mostPreferredNode == nodeName {
-		return mostPreferredScore, nil
-	}
-
-	rOnNode := state.matchedCache.GetOnNode(nodeName)
-	if len(rOnNode) == 0 {
-		return framework.MinNodeScore, nil
-	}
-
-	// select one reservation for the pod to allocate
-	// sort: here we use MostAllocated (simply set all weights as 1.0)
-	for i := range rOnNode {
-		rOnNode[i].ScoreForPod(pod)
-	}
-	sort.Slice(rOnNode, func(i, j int) bool {
-		return rOnNode[i].Score >= rOnNode[j].Score
-	})
-
-	return rOnNode[0].Score, nil
-}
-
-func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
-	return p
-}
-
-func (p *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, scores framework.NodeScoreList) *framework.Status {
-	if reservationutil.IsReservePod(pod) {
-		return nil
-	}
-	return pluginhelper.DefaultNormalizeScore(framework.MaxNodeScore, false, scores)
-}
-
-func (p *Plugin) RecommendReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*schedulingv1alpha1.Reservation, *framework.Status) {
-	if reservationutil.IsReservePod(pod) {
-		return nil, nil
-	}
-
-	state := getPreFilterState(cycleState)
-	if state == nil || state.skip { // expected matchedCache is prepared
-		klog.V(5).InfoS("skip the Reservation Reserve", "pod", klog.KObj(pod), "node", nodeName)
-		return nil, nil
-	}
-	rOnNode := state.matchedCache.GetOnNode(nodeName)
-	if len(rOnNode) == 0 {
-		return nil, nil
-	}
-
-	// select one reservation for the pod to allocate
-	// sort: here we use MostAllocated (simply set all weights as 1.0)
-	var order int64 = math.MaxInt64
-	for i := range rOnNode {
-		if order == math.MaxInt64 {
-			var rInfo *reservationInfo
-			rInfo, order = findMostPreferredReservationByOrder(rOnNode)
-			if order > 0 && rInfo != nil {
-				rInfo.Score = mostPreferredScore
-				continue
-			}
-		}
-		rOnNode[i].ScoreForPod(pod)
-	}
-	sort.Slice(rOnNode, func(i, j int) bool {
-		return rOnNode[i].Score >= rOnNode[j].Score
-	})
-	var reservation *schedulingv1alpha1.Reservation
-	for _, rInfo := range rOnNode {
-		if !frameworkext.ReservationHasDiscarded(cycleState, rInfo.Reservation) {
-			reservation = rInfo.Reservation
-			break
-		}
-	}
-	return reservation, nil
 }
 
 func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
@@ -413,46 +286,42 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
-	state := getPreFilterState(cycleState)
-	if state == nil || state.skip { // expected matchedCache is prepared
-		klog.V(5).InfoS("skip the Reservation Reserve", "pod", klog.KObj(pod), "node", nodeName)
-		return nil
-	}
-
-	reservation := frameworkext.GetRecommendReservation(cycleState)
-	if reservation == nil {
+	recommendReservation := frameworkext.GetRecommendReservation(cycleState)
+	if recommendReservation == nil {
 		return nil
 	}
 
 	// use the cached reservation, in case the version in cycle state is too old/incorrect or mutated by other pods
-	rInfo := p.reservationCache.GetInCache(reservation)
-	if rInfo == nil {
+	reservation := p.reservationCache.GetInCache(recommendReservation)
+	if reservation == nil {
 		// check if the reservation is marked as expired
-		if p.reservationCache.IsInactive(reservation) { // in case reservation is marked as inactive
+		if p.reservationCache.IsInactive(recommendReservation) { // in case reservation is marked as inactive
 			klog.V(5).InfoS("skip reserve current reservation since it is marked as expired",
-				"pod", klog.KObj(pod), "reservation", klog.KObj(reservation))
+				"pod", klog.KObj(pod), "reservation", klog.KObj(recommendReservation))
 		} else {
 			klog.V(4).InfoS("failed to reserve current reservation since it is not found in cache",
-				"pod", klog.KObj(pod), "reservation", klog.KObj(reservation))
+				"pod", klog.KObj(pod), "reservation", klog.KObj(recommendReservation))
 		}
 		return framework.NewStatus(framework.Error, ErrReasonReservationNotMatchStale)
 	}
 
 	// avoid concurrency conflict inside the scheduler (i.e. scheduling cycle vs. binding cycle)
-	reservation = rInfo.Reservation
-	if !matchReservationOwners(pod, reservation) || !hasIntersectionOnResources(pod, reservation) {
+	recommendReservation = reservation
+	if !matchReservationOwners(pod, recommendReservation) || !hasIntersectionOnResources(pod, recommendReservation) {
 		klog.V(5).InfoS("failed to reserve reservation since the reservation does not match the pod",
-			"pod", klog.KObj(pod), "reservation", klog.KObj(reservation), "reason", dumpMatchReservationReason(pod, rInfo))
+			"pod", klog.KObj(pod), "reservation", klog.KObj(recommendReservation), "reason", dumpMatchReservationReason(pod, reservation))
 		return framework.NewStatus(framework.Error, ErrReasonReservationNotMatchStale)
 	}
 
-	assumedReservation := rInfo.Reservation.DeepCopy()
+	assumedReservation := reservation.DeepCopy()
 	setReservationAllocated(assumedReservation, pod)
 	p.reservationCache.Assume(assumedReservation)
+
+	state := getStateData(cycleState)
 	state.assumed = assumedReservation
 	frameworkext.SetRecommendReservation(cycleState, assumedReservation)
 	klog.V(4).InfoS("Attempting to reserve pod to node with reservations", "pod", klog.KObj(pod),
-		"node", nodeName, "matched count", len(state.matchedCache.GetOnNode(nodeName)), "assumed", klog.KObj(assumedReservation))
+		"node", nodeName, "assumed", klog.KObj(assumedReservation))
 	return nil
 }
 
@@ -461,20 +330,13 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 		return
 	}
 
-	state := getPreFilterState(cycleState)
-	if state == nil || state.skip { // expected matchedCache is prepared
-		klog.V(5).InfoS("skip the Reservation Unreserve", "pod", klog.KObj(pod), "node", nodeName)
-		return
-	}
-	klog.V(4).InfoS("Attempting to unreserve pod to node with reservations", "pod", klog.KObj(pod),
-		"node", nodeName, "assumed", klog.KObj(state.assumed))
-
+	state := getStateData(cycleState)
 	target := state.assumed
 	if target == nil {
-		klog.V(5).InfoS("skip the Reservation Unreserve, no assumed reservation",
-			"pod", klog.KObj(pod), "node", nodeName)
+		klog.V(5).InfoS("skip the Reservation Unreserve, no assumed reservation", "pod", klog.KObj(pod), "node", nodeName)
 		return
 	}
+	klog.V(4).InfoS("Attempting to unreserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(state.assumed))
 
 	// clean assume state
 	state.assumed = nil
@@ -554,11 +416,7 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 	}
 
 	// if the pod match a reservation
-	state := getPreFilterState(cycleState)
-	if state == nil || state.skip { // expected matchedCache is prepared
-		klog.V(5).InfoS("skip the Reservation PreBind", "pod", klog.KObj(pod), "node", nodeName)
-		return nil
-	}
+	state := getStateData(cycleState)
 	if state.assumed == nil {
 		klog.V(5).InfoS("skip the Reservation PreBind since no reservation allocated for the pod",
 			"pod", klog.KObj(pod), "node", nodeName)
@@ -589,7 +447,7 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 		// double-check if the latest version does not match the pod anymore
 		if !matchReservationOwners(pod, curR) || !hasIntersectionOnResources(pod, curR) {
 			klog.V(5).InfoS("failed to allocate reservation since the reservation does not match the pod",
-				"pod", klog.KObj(pod), "reservation", klog.KObj(target), "reason", dumpMatchReservationReason(pod, newReservationInfo(curR)))
+				"pod", klog.KObj(pod), "reservation", klog.KObj(target), "reason", dumpMatchReservationReason(pod, curR))
 			return fmt.Errorf(ErrReasonReservationNotMatchStale)
 		}
 
