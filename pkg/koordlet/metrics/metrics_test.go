@@ -137,7 +137,7 @@ func TestCommonCollectors(t *testing.T) {
 		RecordNodeUsedCPU(2.0)
 		RecordContainerScaledCFSBurstUS(testingPod.Namespace, testingPod.Name, testingContainer.ContainerID, testingContainer.Name, 1000000)
 		RecordContainerScaledCFSQuotaUS(testingPod.Namespace, testingPod.Name, testingContainer.ContainerID, testingContainer.Name, 1000000)
-		RecordPodEviction("evictByCPU")
+		RecordPodEviction(testingPod.Namespace, testingPod.Name, "evictByCPU")
 		ResetContainerCPI()
 		RecordContainerCPI(testingContainer, testingPod, 1, 1)
 		ResetContainerPSI()

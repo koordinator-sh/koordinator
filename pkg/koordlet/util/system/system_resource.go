@@ -22,20 +22,24 @@ import (
 )
 
 const (
-	ProcSysVmRelativePath = "sys/vm/"
+	ProcSysVmRelativePath   = "sys/vm/"
+	MemcgReaperRelativePath = "kernel/mm/memcg_reaper/"
 
 	MinFreeKbytesFileName        = "min_free_kbytes"
 	WatermarkScaleFactorFileName = "watermark_scale_factor"
+	MemcgReapBackGroundFileName  = "reap_background"
 )
 
 var (
 	MinFreeKbytesValidator        = &RangeValidator{min: 10 * 1024, max: 10 * 1024 * 1024}
 	WatermarkScaleFactorValidator = &RangeValidator{min: 10, max: 400}
+	MemcgReapBackGroundValidator  = &RangeValidator{min: 0, max: 1}
 )
 
 var (
 	MinFreeKbytes        = NewCommonSystemResource(ProcSysVmRelativePath, MinFreeKbytesFileName, GetProcRootDir).WithValidator(MinFreeKbytesValidator)
 	WatermarkScaleFactor = NewCommonSystemResource(ProcSysVmRelativePath, WatermarkScaleFactorFileName, GetProcRootDir).WithValidator(WatermarkScaleFactorValidator)
+	MemcgReapBackGround  = NewCommonSystemResource(MemcgReaperRelativePath, MemcgReapBackGroundFileName, GetSysRootDir).WithValidator(MemcgReapBackGroundValidator).WithCheckSupported(SupportedIfFileExists)
 )
 
 var _ Resource = &SystemResource{}

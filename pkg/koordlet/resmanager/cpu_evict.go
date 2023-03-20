@@ -287,19 +287,19 @@ func isQueryResultValid(queryResult metriccache.BECPUResourceQueryResult) bool {
 func isSatisfactionConfigValid(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) bool {
 	lowPercent := thresholdConfig.CPUEvictBESatisfactionLowerPercent
 	upperPercent := thresholdConfig.CPUEvictBESatisfactionUpperPercent
-	if lowPercent == nil && upperPercent == nil {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, CPUEvictBESatisfactionLowerPercent and  CPUEvictBESatisfactionUpperPercent not config!")
+	if lowPercent == nil || upperPercent == nil {
+		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, CPUEvictBESatisfactionLowerPercent or  CPUEvictBESatisfactionUpperPercent not config!")
 		return false
 	}
-	if lowPercent == nil || *lowPercent > beCPUSatisfactionLowPercentMax || *lowPercent <= 0 {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, CPUEvictBESatisfactionLowerPercent(%d) is not valid! must (0,%d]", lowPercent, beCPUSatisfactionLowPercentMax)
+	if *lowPercent > beCPUSatisfactionLowPercentMax || *lowPercent <= 0 {
+		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, CPUEvictBESatisfactionLowerPercent(%d) is not valid! must (0,%d]", *lowPercent, beCPUSatisfactionLowPercentMax)
 		return false
 	}
-	if upperPercent == nil || *upperPercent >= beCPUSatisfactionUpperPercentMax || *upperPercent <= 0 {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, CPUEvictBESatisfactionUpperPercent(%d) is not valid,must (0,%d)!", upperPercent, beCPUSatisfactionUpperPercentMax)
+	if *upperPercent >= beCPUSatisfactionUpperPercentMax || *upperPercent <= 0 {
+		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, CPUEvictBESatisfactionUpperPercent(%d) is not valid,must (0,%d)!", *upperPercent, beCPUSatisfactionUpperPercentMax)
 		return false
 	} else if *upperPercent < *lowPercent {
-		klog.Infof("cpuEvict by ResourceSatisfaction skipped, CPUEvictBESatisfactionUpperPercent(%d) < CPUEvictBESatisfactionLowerPercent(%d)!", upperPercent, lowPercent)
+		klog.Infof("cpuEvict by ResourceSatisfaction skipped, CPUEvictBESatisfactionUpperPercent(%d) < CPUEvictBESatisfactionLowerPercent(%d)!", *upperPercent, *lowPercent)
 		return false
 	}
 	return true

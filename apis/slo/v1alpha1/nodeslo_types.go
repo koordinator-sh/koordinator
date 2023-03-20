@@ -243,6 +243,8 @@ type SystemStrategy struct {
 	MinFreeKbytesFactor *int64 `json:"minFreeKbytesFactor,omitempty"`
 	// /proc/sys/vm/watermark_scale_factor
 	WatermarkScaleFactor *int64 `json:"watermarkScaleFactor,omitempty"`
+	// /sys/kernel/mm/memcg_reaper/reap_background
+	MemcgReapBackGround *int64 `json:"memcgReapBackGround,omitempty"`
 }
 
 // NodeSLOSpec defines the desired state of NodeSLO

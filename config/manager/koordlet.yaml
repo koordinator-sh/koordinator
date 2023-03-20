@@ -70,7 +70,6 @@ spec:
               name: host-var-run-koordlet
             - mountPath: /host-sys/
               name: host-sys
-              readOnly: true
             - mountPath: /etc/kubernetes/
               name: host-kubernetes
               readOnly: true

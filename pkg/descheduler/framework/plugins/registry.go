@@ -17,6 +17,7 @@ limitations under the License.
 package plugins
 
 import (
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/customevictor"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/kubernetes"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/loadaware"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
@@ -25,6 +26,7 @@ import (
 func NewInTreeRegistry() runtime.Registry {
 	registry := runtime.Registry{
 		loadaware.LowNodeLoadName: loadaware.NewLowNodeLoad,
+		customevictor.PluginName:  customevictor.New,
 	}
 	kubernetes.SetupK8sDeschedulerPlugins(registry)
 	return registry

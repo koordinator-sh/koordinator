@@ -925,11 +925,13 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 	testingCfgOnliCluster := &extension.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
 			WatermarkScaleFactor: pointer.Int64Ptr(151),
+			MemcgReapBackGround:  pointer.Int64Ptr(1),
 		},
 	}
 	testingCfgOnliClusterStr, _ := json.Marshal(testingCfgOnliCluster)
-	expectTestingCfgOnliCluster := defaultSLOCfg.SystemCfgMerged.DeepCopy()
-	expectTestingCfgOnliCluster.ClusterStrategy.WatermarkScaleFactor = testingCfgOnliCluster.ClusterStrategy.WatermarkScaleFactor
+	expectTestingCfgOnlyCluster := defaultSLOCfg.SystemCfgMerged.DeepCopy()
+	expectTestingCfgOnlyCluster.ClusterStrategy.WatermarkScaleFactor = testingCfgOnliCluster.ClusterStrategy.WatermarkScaleFactor
+	expectTestingCfgOnlyCluster.ClusterStrategy.MemcgReapBackGround = testingCfgOnliCluster.ClusterStrategy.MemcgReapBackGround
 
 	testingSystemConfig1 := &extension.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
@@ -946,6 +948,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
 					MinFreeKbytesFactor: pointer.Int64Ptr(130),
+					MemcgReapBackGround: pointer.Int64Ptr(1),
 				},
 			},
 			{
@@ -958,6 +961,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
 					MinFreeKbytesFactor: pointer.Int64Ptr(140),
+					MemcgReapBackGround: pointer.Int64Ptr(0),
 				},
 			},
 		},
@@ -967,6 +971,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
 			MinFreeKbytesFactor:  oldSLOCfg.SystemCfgMerged.ClusterStrategy.MinFreeKbytesFactor,
 			WatermarkScaleFactor: pointer.Int64Ptr(151),
+			MemcgReapBackGround:  oldSLOCfg.SystemCfgMerged.ClusterStrategy.MemcgReapBackGround,
 		},
 		NodeStrategies: []extension.NodeSystemStrategy{
 			{
@@ -981,6 +986,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 				SystemStrategy: &slov1alpha1.SystemStrategy{
 					MinFreeKbytesFactor:  pointer.Int64Ptr(130),
 					WatermarkScaleFactor: pointer.Int64Ptr(151),
+					MemcgReapBackGround:  pointer.Int64Ptr(1),
 				},
 			},
 			{NodeCfgProfile: extension.NodeCfgProfile{
@@ -993,6 +999,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 				SystemStrategy: &slov1alpha1.SystemStrategy{
 					MinFreeKbytesFactor:  pointer.Int64Ptr(140),
 					WatermarkScaleFactor: pointer.Int64Ptr(151),
+					MemcgReapBackGround:  pointer.Int64Ptr(0),
 				},
 			},
 		},
@@ -1040,7 +1047,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 					},
 				},
 			},
-			want: expectTestingCfgOnliCluster,
+			want: expectTestingCfgOnlyCluster,
 		},
 		{
 			name: "node config merged",

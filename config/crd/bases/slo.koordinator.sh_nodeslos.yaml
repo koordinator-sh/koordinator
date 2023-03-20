@@ -847,6 +847,10 @@ spec:
               systemStrategy:
                 description: node global system config
                 properties:
+                  memcgReapBackGround:
+                    description: /sys/kernel/mm/memcg_reaper/reap_background
+                    format: int64
+                    type: integer
                   minFreeKbytesFactor:
                     description: for /proc/sys/vm/min_free_kbytes, min_free_kbytes
                       = minFreeKbytesFactor * nodeTotalMemory /10000

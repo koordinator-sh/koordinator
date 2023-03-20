@@ -69,6 +69,7 @@ func NewFileTestUtil(t *testing.T) *FileTestUtil {
 	err := os.MkdirAll(Conf.ProcRootDir, 0777)
 	assert.NoError(t, err)
 	Conf.CgroupRootDir = tempDir
+	Conf.SysRootDir = tempDir
 
 	return &FileTestUtil{TempDir: tempDir, t: t}
 }
