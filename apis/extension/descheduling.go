@@ -17,8 +17,11 @@ limitations under the License.
 package extension
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -33,6 +36,35 @@ const (
 	// and the Pod with the smallest cost will be evicted.
 	AnnotationEvictionCost = SchedulingDomainPrefix + "/eviction-cost"
 )
+
+const (
+	// AnnotationSoftEviction indicates custom eviction. It can be used to set to an "true".
+	AnnotationSoftEviction = SchedulingDomainPrefix + "/soft-eviction"
+)
+
+type SoftEvictionSpec struct {
+	// Timestamp indicates time when custom eviction occurs . It can be used to set a second timestamp.
+	Timestamp *metav1.Time `json:"timestamp,omitempty"`
+	// DeleteOptions indicates the options to delete the pod.
+	DeleteOptions *metav1.DeleteOptions `json:"deleteOptions,omitempty"`
+	// Initiator indicates the initiator of the eviction.
+	Initiator string `json:"initiator,omitempty"`
+	// Reason indicates reason for eviction.
+	Reason string `json:"reason,omitempty"`
+}
+
+func GetSoftEvictionSpec(annotations map[string]string) (*SoftEvictionSpec, error) {
+	evictionSpec := &SoftEvictionSpec{}
+	data, ok := annotations[AnnotationSoftEviction]
+	if !ok {
+		return evictionSpec, nil
+	}
+	err := json.Unmarshal([]byte(data), evictionSpec)
+	if err != nil {
+		return evictionSpec, err
+	}
+	return evictionSpec, err
+}
 
 func GetEvictionCost(annotations map[string]string) (int32, error) {
 	if value, exist := annotations[AnnotationEvictionCost]; exist {
