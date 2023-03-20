@@ -18,6 +18,7 @@ package reservation
 
 import (
 	"context"
+	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -26,16 +27,15 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
-	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 const (
-	defaultGCCheckInterval = 60 * time.Second
+	defaultGCCheckInterval = 10 * time.Second
 	defaultGCDuration      = 24 * time.Hour
 )
 
@@ -57,54 +57,35 @@ func (p *Plugin) gcReservations() {
 			// sync active reservation for correct owner statuses
 			p.syncActiveReservation(r)
 		} else if reservationutil.IsReservationExpired(r) || reservationutil.IsReservationSucceeded(r) {
-			p.reservationCache.AddToInactive(r)
+			// TBD: cleanup orphan reservations
+			if !isReservationNeedCleanup(r) {
+				continue
+			}
+			// cleanup expired reservations
+			if err = p.client.Reservations().Delete(context.TODO(), r.Name, metav1.DeleteOptions{}); err != nil {
+				klog.V(3).InfoS("failed to delete reservation", "reservation", klog.KObj(r), "err", err)
+				continue
+			}
 		}
-	}
-
-	expiredMap := p.reservationCache.GetAllInactive()
-	// TBD: cleanup orphan reservations
-	for _, r := range expiredMap {
-		if !isReservationNeedCleanup(r) {
-			continue
-		}
-		// cleanup expired reservations
-		if err = p.client.Reservations().Delete(context.TODO(), r.Name, metav1.DeleteOptions{}); err != nil {
-			klog.V(3).InfoS("failed to delete reservation", "reservation", klog.KObj(r), "err", err)
-			continue
-		}
-		p.reservationCache.Delete(r)
 	}
 }
 
 func (p *Plugin) expireReservationOnNode(node *corev1.Node) {
 	// assert node != nil
-	rOnNode, err := p.informer.GetIndexer().ByIndex(indexer.ReservationStatusNodeNameIndex, node.Name)
-	if err != nil {
-		klog.V(4).InfoS("failed to list reservations for node deletion from indexer",
-			"node", node.Name, "err", err)
-		return
-	}
+	rOnNode := p.reservationCache.listReservationInfosOnNode(node.Name)
 	if len(rOnNode) == 0 {
-		klog.V(5).InfoS("skip expire reservation on deleted node",
-			"reason", "no active reservation", "node", node.Name)
+		klog.V(5).InfoS("skip expire reservation on deleted node", "reason", "no active reservation", "node", node.Name)
 		return
 	}
 	// for reservations scheduled on the deleted node, mark them as expired
-	for _, obj := range rOnNode {
-		r, ok := obj.(*schedulingv1alpha1.Reservation)
-		if !ok {
-			klog.V(5).Infof("unable to convert to *schedulingv1alpha1.Reservation, obj %T", obj)
-			continue
-		}
-		if err = p.expireReservation(r); err != nil {
-			klog.Warningf("failed to update reservation %s as expired, err: %s", klog.KObj(r), err)
+	for _, r := range rOnNode {
+		if err := p.expireReservation(r.reservation); err != nil {
+			klog.Warningf("failed to update reservation %s as expired, err: %s", klog.KObj(r.reservation), err)
 		}
 	}
 }
 
 func (p *Plugin) expireReservation(r *schedulingv1alpha1.Reservation) error {
-	// marked as expired in cache even if the reservation is failed to set expired
-	p.reservationCache.AddToInactive(r)
 	// update reservation status
 	return util.RetryOnConflictOrTooManyRequests(func() error {
 		curR, err := p.rLister.Get(r.Name)
@@ -127,32 +108,25 @@ func (p *Plugin) expireReservation(r *schedulingv1alpha1.Reservation) error {
 }
 
 func (p *Plugin) syncActiveReservation(r *schedulingv1alpha1.Reservation) {
-	var actualOwners, missedOwners []corev1.ObjectReference
+	var actualOwners []corev1.ObjectReference
 	var actualAllocated corev1.ResourceList
-	for _, owner := range r.Status.CurrentOwners {
-		pod, err := p.podLister.Pods(owner.Namespace).Get(owner.Name)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				klog.V(5).InfoS("failed to get reservation's owner pod",
-					"reservation", klog.KObj(r), "namespace", owner.Namespace, "name", owner.Name, "err", err)
-			} else {
-				klog.V(3).InfoS("failed to get reservation's owner pod with unexpected reason",
-					"reservation", klog.KObj(r), "namespace", owner.Namespace, "name", owner.Name, "err", err)
-			}
-			missedOwners = append(missedOwners, owner)
-			continue
-		}
-		actualOwners = append(actualOwners, owner)
-		req, _ := resourceapi.PodRequestsAndLimits(pod)
-		actualAllocated = quotav1.Add(actualAllocated, req)
+	rInfo := p.reservationCache.getReservationInfoByUID(r.UID)
+	if rInfo == nil {
+		return
+	}
+	for _, pod := range rInfo.pods {
+		actualOwners = append(actualOwners, corev1.ObjectReference{
+			Namespace: pod.namespace,
+			Name:      pod.name,
+			UID:       pod.uid,
+		})
+		actualAllocated = quotav1.Add(actualAllocated, pod.requests)
 	}
 
-	// if current owner status is correct
-	if len(missedOwners) == 0 && quotav1.Equals(actualAllocated, r.Status.Allocated) {
+	if reflect.DeepEqual(r.Status.CurrentOwners, actualOwners) && quotav1.Equals(actualAllocated, r.Status.Allocated) {
 		return
 	}
 
-	// fix the incorrect owner status
 	newR := r.DeepCopy()
 	actualAllocated = quotav1.Mask(actualAllocated, quotav1.ResourceNames(r.Status.Allocatable))
 	newR.Status.Allocated = actualAllocated
@@ -160,21 +134,29 @@ func (p *Plugin) syncActiveReservation(r *schedulingv1alpha1.Reservation) {
 	// if failed to update, abort and let the next event reconcile
 	_, err := p.client.Reservations().UpdateStatus(context.TODO(), newR, metav1.UpdateOptions{})
 	if err != nil {
-		klog.V(3).InfoS("failed to update status for reservation correction",
-			"reservation", klog.KObj(r), "err", err)
+		klog.V(3).InfoS("failed to update status for reservation correction", "reservation", klog.KObj(r), "err", err)
+	} else {
+		klog.V(5).InfoS("update active reservation for status correction", "reservation", klog.KObj(r))
 	}
-	klog.V(5).InfoS("update active reservation for status correction", "reservation", klog.KObj(r))
 }
 
 func (p *Plugin) syncPodDeleted(pod *corev1.Pod) {
-	reservation := p.reservationCache.GetOwned(pod)
-	// Most pods have no reservation allocated.
-	if reservation == nil {
+	reservationAllocated, err := apiext.GetReservationAllocated(pod)
+	if reservationAllocated == nil {
+		if err != nil {
+			klog.Errorf("Failed to GetReservationAllocated, pod %v, err: %v", klog.KObj(pod), err)
+		}
 		return
 	}
 
+	rInfo := p.reservationCache.getReservationInfoByUID(reservationAllocated.UID)
+	if rInfo == nil {
+		return
+	}
+	reservation := rInfo.reservation
+
 	// pod has allocated reservation, should remove allocation info in the reservation
-	err := util.RetryOnConflictOrTooManyRequests(func() error {
+	err = util.RetryOnConflictOrTooManyRequests(func() error {
 		r, err := p.rLister.Get(reservation.Name)
 		if err != nil {
 			if errors.IsNotFound(err) {

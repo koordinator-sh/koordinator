@@ -1254,7 +1254,7 @@ func TestScoreWithOrder(t *testing.T) {
 
 	status := p.PreScore(context.TODO(), cycleState, normalPod, nodes)
 	assert.True(t, status.IsSuccess())
-	assert.Equal(t, "test-node-4", stateData.mostPreferredNode)
+	assert.Equal(t, "test-node-4", stateData.preferredNode)
 
 	var scoreList framework.NodeScoreList
 	for _, v := range nodes {
@@ -2002,7 +2002,7 @@ func TestBind(t *testing.T) {
 			args: args{
 				pod: normalPod,
 			},
-			want: framework.NewStatus(framework.Skip, SkipReasonNotReservation),
+			want: framework.NewStatus(framework.Skip),
 		},
 		{
 			name: "failed to get reservation",
