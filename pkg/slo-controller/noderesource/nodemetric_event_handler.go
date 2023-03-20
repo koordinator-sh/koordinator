@@ -62,7 +62,7 @@ func (n *EnqueueRequestForNodeMetric) Delete(e event.DeleteEvent, q workqueue.Ra
 		return
 	}
 	if err := n.cleanSyncContext(nodeMetric); err != nil {
-		klog.Errorf("%v for NodeMetric %v", err, nodeMetric.Name)
+		klog.ErrorS(err, "failed to clean sync context for NodeMetric", "nodeMetric", nodeMetric.Name)
 	}
 	q.Add(reconcile.Request{
 		NamespacedName: types.NamespacedName{

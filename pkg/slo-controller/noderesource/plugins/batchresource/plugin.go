@@ -18,9 +18,11 @@ package batchresource
 
 import (
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/clock"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 
@@ -30,15 +32,11 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-func init() {
-	_ = framework.RegisterNodeSyncExtender(PluginName, &Plugin{})
-	_ = framework.RegisterNodePrepareExtender(PluginName, &Plugin{})
-	_ = framework.RegisterResourceCalculateExtender(PluginName, &Plugin{})
-}
-
 const PluginName = "BatchResource"
 
 var ResourceNames = []corev1.ResourceName{extension.BatchCPU, extension.BatchMemory}
+
+var Clock clock.Clock = clock.RealClock{} // for testing
 
 type Plugin struct{}
 
@@ -48,7 +46,7 @@ func (p *Plugin) Name() string {
 
 func (p *Plugin) NeedSync(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
 	// batch resource diff is bigger than ResourceDiffThreshold
-	resourcesToDiff := util.ExtendedResourceNames
+	resourcesToDiff := ResourceNames
 	for _, resourceName := range resourcesToDiff {
 		if util.IsResourceDiff(oldNode.Status.Allocatable, newNode.Status.Allocatable, resourceName,
 			*strategy.ResourceDiffThreshold) {
@@ -85,6 +83,13 @@ func (p *Plugin) Calculate(strategy *extension.ColocationStrategy, node *corev1.
 	metrics *framework.ResourceMetrics) ([]framework.ResourceItem, error) {
 	if strategy == nil || node == nil || podList == nil || metrics == nil || metrics.NodeMetric == nil {
 		return nil, fmt.Errorf("missing essential arguments")
+	}
+
+	// if the node metric is abnormal, do degraded calculation
+	if p.isDegradeNeeded(strategy, metrics.NodeMetric, node) {
+		klog.InfoS("node need degradation, reset node resources", "node", node.Name)
+		return p.degradeCalculate(node,
+			"degrade node resource because of abnormal nodeMetric, reason: degradedByBatchResource"), nil
 	}
 
 	// NOTE: currently, non-BE pods are considered as LS, and BE pods are considered using Batch
@@ -182,6 +187,26 @@ func calculateBatchResourceByPolicy(strategy *extension.ColocationStrategy, node
 	}
 
 	return batchAllocatable, cpuMsg, memMsg
+}
+
+func (p *Plugin) isDegradeNeeded(strategy *extension.ColocationStrategy, nodeMetric *slov1alpha1.NodeMetric, node *corev1.Node) bool {
+	if nodeMetric == nil || nodeMetric.Status.UpdateTime == nil {
+		klog.V(3).Infof("invalid NodeMetric: %v, need degradation", nodeMetric)
+		return true
+	}
+
+	now := Clock.Now()
+	if now.After(nodeMetric.Status.UpdateTime.Add(time.Duration(*strategy.DegradeTimeMinutes) * time.Minute)) {
+		klog.V(3).Infof("timeout NodeMetric: %v, current timestamp: %v, metric last update timestamp: %v",
+			nodeMetric.Name, now, nodeMetric.Status.UpdateTime)
+		return true
+	}
+
+	return false
+}
+
+func (p *Plugin) degradeCalculate(node *corev1.Node, message string) []framework.ResourceItem {
+	return p.Reset(node, message)
 }
 
 func prepareNodeForResource(node *corev1.Node, nr *framework.NodeResource, name corev1.ResourceName) {

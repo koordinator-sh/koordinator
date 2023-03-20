@@ -34,12 +34,10 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
-	_ "github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/batchresource"
 )
 
 const (
-	disableInConfig          string = "DisableInConfig"
-	degradeByKoordController string = "DegradeByKoordController"
+	disableInConfig string = "DisableInConfig"
 )
 
 type NodeResourceReconciler struct {
@@ -61,7 +59,7 @@ type NodeResourceReconciler struct {
 
 func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	if !r.cfgCache.IsCfgAvailable() {
-		klog.Warningf("colocation config is not available")
+		klog.InfoS("colocation config is not available")
 		return ctrl.Result{}, nil
 	}
 
@@ -69,15 +67,15 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, node); err != nil {
 		if errors.IsNotFound(err) {
 			// skip non-existing node and return no error to forget the request
-			klog.V(3).Infof("skip for node %v not found", req.Name)
+			klog.V(3).InfoS("skip for node not found", "node", req.Name)
 			return ctrl.Result{}, nil
 		}
-		klog.Errorf("failed to get node %v, error: %v", req.Name, err)
+		klog.ErrorS(err, "failed to get node", "node", req.Name)
 		return ctrl.Result{Requeue: true}, err
 	}
 
-	if r.isColocationCfgDisabled(node) {
-		klog.Infof("colocation for node %v is disabled, reset BE resource", req.Name)
+	if r.isColocationCfgDisabled(node) { // disable all resources
+		klog.InfoS("node colocation is disabled, reset node resources", "node", req.Name)
 		if err := r.resetNodeResource(node, "node colocation is disabled in Config, reason: "+disableInConfig); err != nil {
 			return ctrl.Result{Requeue: true}, err
 		}
@@ -86,21 +84,12 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	nodeMetric := &slov1alpha1.NodeMetric{}
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, nodeMetric); err != nil {
-		if errors.IsNotFound(err) {
-			// skip non-existing node metric and return no error to forget the request
-			klog.V(3).Infof("skip for nodeMetric %v not found", req.Name)
-			return ctrl.Result{}, nil
-		}
-		klog.Errorf("failed to get nodeMetric %v, error: %v", req.Name, err)
-		return ctrl.Result{Requeue: true}, err
-	}
-
-	if r.isDegradeNeeded(nodeMetric, node) {
-		klog.Warningf("node %v need degradation, reset BE resource", req.Name)
-		if err := r.resetNodeResource(node, "degrade node resource because of abnormal nodeMetric, reason: "+degradeByKoordController); err != nil {
+		if !errors.IsNotFound(err) {
+			klog.ErrorS(err, "failed to get nodeMetric", "node", req.Name)
 			return ctrl.Result{Requeue: true}, err
 		}
-		return ctrl.Result{}, nil
+		// the node metric might be not exist or abnormal, resource calculation should handle this case
+		klog.V(4).InfoS("calculate node resource while nodeMetric is not found", "node", req.Name)
 	}
 
 	podList := &corev1.PodList{}
@@ -115,17 +104,17 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// update node status
 	if err := r.updateNodeResource(node, nr); err != nil {
-		klog.Errorf("failed to update node resource for node %s, err: %v", node.Name, err)
+		klog.ErrorS(err, "failed to update node resource for node", "node", node.Name)
 		return ctrl.Result{Requeue: true}, err
 	}
 
 	// do other node updates. e.g. update device resources
 	if err := r.updateNodeExtensions(node, nodeMetric, podList); err != nil {
-		klog.V(5).Infof("failed to update node extensions for node %s, err: %s", node.Name, err)
+		klog.ErrorS(err, "failed to update node extensions for node", "node", node.Name)
 		return ctrl.Result{Requeue: true}, err
 	}
 
-	klog.V(6).Infof("noderesource-controller update node %v successfully", node.Name)
+	klog.V(6).InfoS("noderesource-controller update node successfully", "node", node.Name)
 	return ctrl.Result{}, nil
 }
 

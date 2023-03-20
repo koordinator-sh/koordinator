@@ -47,11 +47,9 @@ func NewNodeResource(items ...ResourceItem) *NodeResource {
 func (nr *NodeResource) Set(items ...ResourceItem) {
 	for _, item := range items {
 		nr.Resources[item.Name] = item.Quantity
+		nr.Resets[item.Name] = item.Reset
 		if len(item.Message) > 0 { // omit empty message
 			nr.Messages[item.Name] = item.Message
-		}
-		if item.Reset { // omit empty reset
-			nr.Resets[item.Name] = item.Reset
 		}
 	}
 }
