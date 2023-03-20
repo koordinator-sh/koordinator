@@ -111,7 +111,7 @@ func (p *Plugin) AfterPreFilter(handle frameworkext.ExtendedHandle, cycleState *
 		}
 
 		for _, rInfo := range reservationInfos {
-			if err := restoreReservedResources(handle, cycleState, pod, rInfo.reservation, nodeInfo, podInfoMap); err != nil {
+			if err := restoreReservedResources(handle, cycleState, pod, rInfo, nodeInfo, podInfoMap); err != nil {
 				return err
 			}
 		}
@@ -120,13 +120,13 @@ func (p *Plugin) AfterPreFilter(handle frameworkext.ExtendedHandle, cycleState *
 	return nil
 }
 
-func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeInfo *framework.NodeInfo, podInfoMap map[types.UID]*framework.PodInfo) error {
-	reservePod := reservationutil.NewReservePod(reservation)
+func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, rInfo *reservationInfo, nodeInfo *framework.NodeInfo, podInfoMap map[types.UID]*framework.PodInfo) error {
+	reservePod := reservationutil.NewReservePod(rInfo.reservation)
 	reservePodInfo := framework.NewPodInfo(reservePod)
 
 	// Retain ports that are not used by other Pods. These ports need to be erased from NodeInfo.UsedPorts,
 	// otherwise it may cause Pod port conflicts
-	retainReservePodUnusedPorts(reservePod, reservation, podInfoMap)
+	retainReservePodUnusedPorts(reservePod, rInfo.reservation, podInfoMap)
 
 	// When AllocateOnce is disabled, some resources may have been allocated,
 	// and an additional resource record will be accumulated at this time.
@@ -155,14 +155,14 @@ func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *fr
 	// We should find an appropriate time to return resources allocated by custom plugins held by Reservation,
 	// such as fine-grained CPUs(CPU Cores), Devices(e.g. GPU/RDMA/FPGA etc.).
 	if extender, ok := handle.(frameworkext.FrameworkExtender); ok {
-		status := extender.RunReservationPreFilterExtensionRemoveReservation(context.Background(), cycleState, pod, reservation, nodeInfo)
+		status := extender.RunReservationPreFilterExtensionRemoveReservation(context.Background(), cycleState, pod, rInfo.reservation, nodeInfo)
 		if !status.IsSuccess() {
 			return status.AsError()
 		}
 
-		for _, assignedPod := range reservation.Status.CurrentOwners {
-			if assignedPodInfo, ok := podInfoMap[assignedPod.UID]; ok {
-				status := extender.RunReservationPreFilterExtensionAddPodInReservation(context.Background(), cycleState, pod, assignedPodInfo, reservation, nodeInfo)
+		for _, assignedPod := range rInfo.pods {
+			if assignedPodInfo, ok := podInfoMap[assignedPod.uid]; ok {
+				status := extender.RunReservationPreFilterExtensionAddPodInReservation(context.Background(), cycleState, pod, assignedPodInfo, rInfo.reservation, nodeInfo)
 				if !status.IsSuccess() {
 					return status.AsError()
 				}
@@ -242,10 +242,6 @@ func (p *Plugin) prepareMatchReservationState(handle frameworkext.ExtendedHandle
 
 		rOnNode := p.reservationCache.listReservationInfosOnNode(node.Name)
 		for _, rInfo := range rOnNode {
-			// TODO: There are some boundary scenarios that need to be dealt with.
-			// For example, when it is recognized that the Reservation has expired, it is possible that the NodeInfo also
-			// contains the Reserve Pod corresponding to the Reservation. This may cause the current round of scheduling to fail.
-			// Only count available reservations, ignore succeeded ones
 			if !reservationutil.IsReservationAvailable(rInfo.reservation) {
 				continue
 			}

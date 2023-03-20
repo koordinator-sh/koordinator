@@ -21,18 +21,16 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 type reservationInfo struct {
-	reservation      *schedulingv1alpha1.Reservation
-	resourceNames    []corev1.ResourceName
-	allocatable      corev1.ResourceList
-	allocated        corev1.ResourceList
-	allocatablePorts framework.HostPortInfo
-	pods             map[types.UID]*podRequirement
+	reservation   *schedulingv1alpha1.Reservation
+	resourceNames []corev1.ResourceName
+	allocatable   corev1.ResourceList
+	allocated     corev1.ResourceList
+	pods          map[types.UID]*podRequirement
 }
 
 type podRequirement struct {
@@ -47,11 +45,10 @@ func newReservationInfo(r *schedulingv1alpha1.Reservation) *reservationInfo {
 	resourceNames := quotav1.ResourceNames(allocatable)
 
 	return &reservationInfo{
-		reservation:      r.DeepCopy(),
-		resourceNames:    resourceNames,
-		allocatable:      allocatable,
-		allocatablePorts: getReservePorts(r),
-		pods:             map[types.UID]*podRequirement{},
+		reservation:   r.DeepCopy(),
+		resourceNames: resourceNames,
+		allocatable:   allocatable,
+		pods:          map[types.UID]*podRequirement{},
 	}
 }
 
@@ -59,12 +56,6 @@ func (ri *reservationInfo) Clone() *reservationInfo {
 	resourceNames := make([]corev1.ResourceName, 0, len(ri.resourceNames))
 	for _, v := range ri.resourceNames {
 		resourceNames = append(resourceNames, v)
-	}
-	allocatablePorts := make(framework.HostPortInfo)
-	for k, v := range ri.allocatablePorts {
-		for port := range v {
-			allocatablePorts.Add(k, port.Protocol, port.Port)
-		}
 	}
 
 	pods := map[types.UID]*podRequirement{}
@@ -78,12 +69,11 @@ func (ri *reservationInfo) Clone() *reservationInfo {
 	}
 
 	return &reservationInfo{
-		reservation:      ri.reservation.DeepCopy(),
-		resourceNames:    resourceNames,
-		allocatable:      ri.allocatable.DeepCopy(),
-		allocated:        ri.allocated.DeepCopy(),
-		allocatablePorts: allocatablePorts,
-		pods:             pods,
+		reservation:   ri.reservation.DeepCopy(),
+		resourceNames: resourceNames,
+		allocatable:   ri.allocatable.DeepCopy(),
+		allocated:     ri.allocated.DeepCopy(),
+		pods:          pods,
 	}
 }
 
@@ -92,7 +82,6 @@ func (ri *reservationInfo) updateReservation(r *schedulingv1alpha1.Reservation) 
 	ri.allocatable = getReservationRequests(r)
 	ri.resourceNames = quotav1.ResourceNames(ri.allocatable)
 	ri.allocated = quotav1.Mask(ri.allocated, ri.resourceNames)
-	ri.allocatablePorts = getReservePorts(r)
 }
 
 func (ri *reservationInfo) addPod(pod *corev1.Pod) {

@@ -17,55 +17,14 @@ limitations under the License.
 package reservation
 
 import (
-	"fmt"
-	"strings"
-	"time"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
-
-func isReservationNeedExpiration(r *schedulingv1alpha1.Reservation) bool {
-	// 1. failed or succeeded reservations does not need to expire
-	if r.Status.Phase == schedulingv1alpha1.ReservationFailed || r.Status.Phase == schedulingv1alpha1.ReservationSucceeded {
-		return false
-	}
-	// 2. disable expiration if TTL is set as 0
-	if r.Spec.TTL != nil && r.Spec.TTL.Duration == 0 {
-		return false
-	}
-	// 3. if both TTL and Expires are set, firstly check Expires
-	return r.Spec.Expires != nil && time.Now().After(r.Spec.Expires.Time) ||
-		r.Spec.TTL != nil && time.Since(r.CreationTimestamp.Time) > r.Spec.TTL.Duration
-}
-
-func isReservationNeedCleanup(r *schedulingv1alpha1.Reservation) bool {
-	if r == nil {
-		return true
-	}
-	if reservationutil.IsReservationExpired(r) {
-		for _, condition := range r.Status.Conditions {
-			if condition.Reason == schedulingv1alpha1.ReasonReservationExpired {
-				return time.Since(condition.LastTransitionTime.Time) > defaultGCDuration
-			}
-		}
-	} else if reservationutil.IsReservationSucceeded(r) {
-		for _, condition := range r.Status.Conditions {
-			if condition.Reason == schedulingv1alpha1.ReasonReservationSucceeded {
-				return time.Since(condition.LastProbeTime.Time) > defaultGCDuration
-			}
-		}
-	}
-	return false
-}
 
 func setReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string) {
 	r.Status.NodeName = nodeName
@@ -95,137 +54,6 @@ func setReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string)
 	}
 }
 
-func setReservationExpired(r *schedulingv1alpha1.Reservation) {
-	r.Status.Phase = schedulingv1alpha1.ReservationFailed
-	// not duplicate expired info
-	idx := -1
-	isReady := false
-	for i, condition := range r.Status.Conditions {
-		if condition.Type == schedulingv1alpha1.ReservationConditionReady {
-			idx = i
-			isReady = condition.Status == schedulingv1alpha1.ConditionStatusTrue
-		}
-	}
-	if idx < 0 { // if not set condition
-		condition := schedulingv1alpha1.ReservationCondition{
-			Type:               schedulingv1alpha1.ReservationConditionReady,
-			Status:             schedulingv1alpha1.ConditionStatusFalse,
-			Reason:             schedulingv1alpha1.ReasonReservationExpired,
-			LastProbeTime:      metav1.Now(),
-			LastTransitionTime: metav1.Now(),
-		}
-		r.Status.Conditions = append(r.Status.Conditions, condition)
-	} else if isReady { // if was ready
-		condition := schedulingv1alpha1.ReservationCondition{
-			Type:               schedulingv1alpha1.ReservationConditionReady,
-			Status:             schedulingv1alpha1.ConditionStatusFalse,
-			Reason:             schedulingv1alpha1.ReasonReservationExpired,
-			LastProbeTime:      metav1.Now(),
-			LastTransitionTime: metav1.Now(),
-		}
-		r.Status.Conditions[idx] = condition
-	} else { // if already not ready
-		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationExpired
-		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
-	}
-}
-
-func setReservationAllocated(r *schedulingv1alpha1.Reservation, pod *corev1.Pod) {
-	owner := getPodOwner(pod)
-	requests, _ := resourceapi.PodRequestsAndLimits(pod)
-	requests = quotav1.Mask(requests, quotav1.ResourceNames(r.Status.Allocatable))
-	// avoid duplication (it happens if pod allocated annotation was missing)
-	idx := -1
-	for i, current := range r.Status.CurrentOwners {
-		if matchObjectRef(pod, &current) {
-			idx = i
-		}
-	}
-	if idx < 0 {
-		r.Status.CurrentOwners = append(r.Status.CurrentOwners, owner)
-		if r.Status.Allocated == nil {
-			r.Status.Allocated = requests
-		} else {
-			r.Status.Allocated = quotav1.Add(r.Status.Allocated, requests)
-		}
-	} else {
-		// keep old allocated
-		r.Status.CurrentOwners[idx] = owner
-	}
-	if r.Spec.AllocateOnce {
-		setReservationSucceeded(r)
-	}
-}
-
-func setReservationSucceeded(r *schedulingv1alpha1.Reservation) {
-	r.Status.Phase = schedulingv1alpha1.ReservationSucceeded
-	idx := -1
-	for i, condition := range r.Status.Conditions {
-		if condition.Type == schedulingv1alpha1.ReservationConditionReady {
-			idx = i
-		}
-	}
-	if idx < 0 { // if not set condition
-		condition := schedulingv1alpha1.ReservationCondition{
-			Type:               schedulingv1alpha1.ReservationConditionReady,
-			Status:             schedulingv1alpha1.ConditionStatusFalse,
-			Reason:             schedulingv1alpha1.ReasonReservationSucceeded,
-			LastProbeTime:      metav1.Now(),
-			LastTransitionTime: metav1.Now(),
-		}
-		r.Status.Conditions = append(r.Status.Conditions, condition)
-	} else {
-		r.Status.Conditions[idx].Status = schedulingv1alpha1.ConditionStatusFalse
-		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationSucceeded
-		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
-	}
-}
-
-func removeReservationAllocated(r *schedulingv1alpha1.Reservation, pod *corev1.Pod) error {
-	// remove matched owner info
-	idx := -1
-	for i, owner := range r.Status.CurrentOwners {
-		if matchObjectRef(pod, &owner) {
-			idx = i
-		}
-	}
-	if idx < 0 {
-		return fmt.Errorf("current owner not matched")
-	}
-	r.Status.CurrentOwners = append(r.Status.CurrentOwners[:idx], r.Status.CurrentOwners[idx+1:]...)
-
-	// decrease resources allocated
-	requests, _ := resourceapi.PodRequestsAndLimits(pod)
-	requests = quotav1.Mask(requests, quotav1.ResourceNames(r.Status.Allocatable))
-	if r.Status.Allocated != nil {
-		r.Status.Allocated = quotav1.Subtract(r.Status.Allocated, requests)
-	} else {
-		klog.V(5).InfoS("failed to remove pod from reservation allocated, err: allocated is nil")
-	}
-
-	if r.Spec.AllocateOnce {
-		removeReservationSucceeded(r)
-	}
-
-	return nil
-}
-
-func removeReservationSucceeded(r *schedulingv1alpha1.Reservation) {
-	// only available reservation can trans to succeeded
-	r.Status.Phase = schedulingv1alpha1.ReservationAvailable
-	idx := -1
-	for i, condition := range r.Status.Conditions {
-		if condition.Type == schedulingv1alpha1.ReservationConditionReady {
-			idx = i
-		}
-	}
-	if idx >= 0 {
-		r.Status.Conditions[idx].Status = schedulingv1alpha1.ConditionStatusTrue
-		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationAvailable
-		r.Status.Conditions[idx].LastProbeTime = r.Status.Conditions[idx].LastTransitionTime
-	}
-}
-
 func getReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceList {
 	requests, _ := resourceapi.PodRequestsAndLimits(&corev1.Pod{
 		Spec: r.Spec.Template.Spec,
@@ -233,10 +61,14 @@ func getReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceLi
 	return requests
 }
 
-func hasIntersectionOnResources(pod *corev1.Pod, r *schedulingv1alpha1.Reservation) bool {
-	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
-	resourceNames := quotav1.Intersection(quotav1.ResourceNames(r.Status.Allocatable), quotav1.ResourceNames(podRequests))
-	return len(resourceNames) > 0
+func getReservePorts(r *schedulingv1alpha1.Reservation) framework.HostPortInfo {
+	portInfo := framework.HostPortInfo{}
+	for _, container := range r.Spec.Template.Spec.Containers {
+		for _, podPort := range container.Ports {
+			portInfo.Add(podPort.HostIP, string(podPort.Protocol), podPort.HostPort)
+		}
+	}
+	return portInfo
 }
 
 // matchReservationOwners checks if the scheduling pod matches the reservation's owner spec.
@@ -287,17 +119,6 @@ func matchReservationControllerReference(pod *corev1.Pod, controllerRef *schedul
 	return false
 }
 
-func dumpMatchReservationReason(pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation) string {
-	var msg strings.Builder
-	if !matchReservationOwners(pod, reservation) {
-		msg.WriteString("owner specs not matched;")
-	}
-	if !hasIntersectionOnResources(pod, reservation) {
-		msg.WriteString("resources not matched;")
-	}
-	return msg.String()
-}
-
 func matchLabelSelector(pod *corev1.Pod, labelSelector *metav1.LabelSelector) bool {
 	if labelSelector == nil {
 		return true
@@ -307,23 +128,4 @@ func matchLabelSelector(pod *corev1.Pod, labelSelector *metav1.LabelSelector) bo
 		return false
 	}
 	return selector.Matches(labels.Set(pod.Labels))
-}
-
-func getPodOwner(pod *corev1.Pod) corev1.ObjectReference {
-	return corev1.ObjectReference{
-		Namespace: pod.Namespace,
-		Name:      pod.Name,
-		UID:       pod.UID,
-		// currently `Kind`, `APIVersion`m `ResourceVersion`, `FieldPath` are ignored
-	}
-}
-
-func getReservePorts(r *schedulingv1alpha1.Reservation) framework.HostPortInfo {
-	portInfo := framework.HostPortInfo{}
-	for _, container := range r.Spec.Template.Spec.Containers {
-		for _, podPort := range container.Ports {
-			portInfo.Add(podPort.HostIP, string(podPort.Protocol), podPort.HostPort)
-		}
-	}
-	return portInfo
 }

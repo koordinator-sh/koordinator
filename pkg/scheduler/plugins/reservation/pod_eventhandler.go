@@ -28,12 +28,12 @@ import (
 )
 
 type podEventHandler struct {
-	mgr *reservationCache
+	cache *reservationCache
 }
 
-func registerPodEventHandler(mgr *reservationCache, factory informers.SharedInformerFactory) {
+func registerPodEventHandler(cache *reservationCache, factory informers.SharedInformerFactory) {
 	eventHandler := &podEventHandler{
-		mgr: mgr,
+		cache: cache,
 	}
 	informer := factory.Core().V1().Pods().Informer()
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), factory, informer, eventHandler)
@@ -49,7 +49,7 @@ func (h *podEventHandler) OnAdd(obj interface{}) {
 	if err != nil || reservationAllocated == nil || reservationAllocated.UID == "" {
 		return
 	}
-	h.mgr.addPod(reservationAllocated.UID, pod)
+	h.cache.addPod(reservationAllocated.UID, pod)
 }
 
 func (h *podEventHandler) OnUpdate(oldObj, newObj interface{}) {
@@ -71,5 +71,5 @@ func (h *podEventHandler) OnDelete(obj interface{}) {
 	if err != nil || reservationAllocated == nil || reservationAllocated.UID == "" {
 		return
 	}
-	h.mgr.deleteAllocatedPod(reservationAllocated.UID, pod)
+	h.cache.deleteAllocatedPod(reservationAllocated.UID, pod)
 }

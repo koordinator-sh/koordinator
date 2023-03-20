@@ -20,19 +20,16 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	pluginhelper "k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -173,135 +170,4 @@ func scoreReservation(pod *corev1.Pod, reservation *reservationInfo) int64 {
 		}
 	}
 	return s / w
-}
-
-func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
-	state := getStateData(cycleState)
-	rOnNode := state.matched[nodeName]
-
-	var rInfo *reservationInfo
-	for _, v := range rOnNode {
-		if v.reservation.UID == reservation.UID {
-			rInfo = v
-			break
-		}
-	}
-
-	if rInfo == nil {
-		return framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
-	}
-
-	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
-	if quotav1.IsZero(podRequests) {
-		return nil
-	}
-
-	resourceNames := quotav1.Intersection(rInfo.resourceNames, quotav1.ResourceNames(podRequests))
-	if len(resourceNames) == 0 {
-		return framework.AsStatus(fmt.Errorf("no matching resource type"))
-	}
-
-	remainedResource := quotav1.SubtractWithNonNegativeResult(rInfo.allocatable, rInfo.allocated)
-	if quotav1.IsZero(quotav1.Mask(remainedResource, resourceNames)) {
-		return framework.AsStatus(fmt.Errorf("insufficient resources in reservation"))
-	}
-	return nil
-}
-
-func (p *Plugin) RecommendReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*schedulingv1alpha1.Reservation, *framework.Status) {
-	if reservationutil.IsReservePod(pod) {
-		return nil, nil
-	}
-
-	state := getStateData(cycleState)
-	rOnNode := state.matched[nodeName]
-	if len(rOnNode) == 0 {
-		return nil, nil
-	}
-
-	highestScorer, _ := findMostPreferredReservationByOrder(rOnNode)
-	if highestScorer != nil {
-		return highestScorer, nil
-	}
-
-	extender, ok := p.handle.(frameworkext.FrameworkExtender)
-	if !ok {
-		return nil, framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
-	}
-
-	reservations := make([]*schedulingv1alpha1.Reservation, 0, len(rOnNode))
-	for _, rInfo := range rOnNode {
-		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo.reservation, nodeName)
-		if !status.IsSuccess() {
-			continue
-		}
-		reservations = append(reservations, rInfo.reservation)
-	}
-	if len(reservations) == 0 {
-		return nil, nil
-	}
-
-	reservationScoreList, err := prioritizeReservations(ctx, extender, cycleState, pod, reservations, nodeName)
-	if err != nil {
-		return nil, framework.AsStatus(err)
-	}
-	if len(reservationScoreList) == 0 {
-		return nil, framework.AsStatus(fmt.Errorf("not found suitable reservation on node %v", nodeName))
-	}
-
-	sort.Slice(reservationScoreList, func(i, j int) bool {
-		return reservationScoreList[i].Score > reservationScoreList[j].Score
-	})
-
-	highestScorer = nil
-	for _, v := range reservations {
-		if v.Name == reservationScoreList[0].Name {
-			highestScorer = v
-			break
-		}
-	}
-
-	if highestScorer == nil {
-		return nil, framework.AsStatus(fmt.Errorf("missing the most suitable reservation %v(%v)", reservationScoreList[0].Name, highestScorer.UID))
-	}
-	return highestScorer, nil
-}
-
-func prioritizeReservations(
-	ctx context.Context,
-	fwk frameworkext.FrameworkExtender,
-	state *framework.CycleState,
-	pod *corev1.Pod,
-	reservations []*schedulingv1alpha1.Reservation,
-	nodeName string,
-) (frameworkext.ReservationScoreList, error) {
-	scoresMap, scoreStatus := fwk.RunReservationScorePlugins(ctx, state, pod, reservations, nodeName)
-	if !scoreStatus.IsSuccess() {
-		return nil, scoreStatus.AsError()
-	}
-
-	if klog.V(5).Enabled() {
-		for plugin, reservationScoreList := range scoresMap {
-			for _, score := range reservationScoreList {
-				klog.InfoS("Plugin scored reservation for pod", "pod", klog.KObj(pod), "plugin", plugin, "reservation", score.Name, "score", score.Score)
-			}
-		}
-	}
-
-	// Summarize all scores.
-	result := make(frameworkext.ReservationScoreList, 0, len(reservations))
-
-	for i := range reservations {
-		result = append(result, frameworkext.ReservationScore{Name: reservations[i].Name, Score: 0})
-		for j := range scoresMap {
-			result[i].Score += scoresMap[j][i].Score
-		}
-	}
-
-	if klog.V(5).Enabled() {
-		for i := range result {
-			klog.InfoS("Calculated reservation's final score for pod", "pod", klog.KObj(pod), "reservation", result[i].Name, "score", result[i].Score)
-		}
-	}
-	return result, nil
 }

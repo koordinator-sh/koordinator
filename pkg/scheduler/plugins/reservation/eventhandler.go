@@ -29,12 +29,12 @@ import (
 )
 
 type reservationEventHandler struct {
-	mgr *reservationCache
+	cache *reservationCache
 }
 
-func registerReservationEventHandler(mgr *reservationCache, koordinatorInformerFactory koordinatorinformers.SharedInformerFactory) {
+func registerReservationEventHandler(cache *reservationCache, koordinatorInformerFactory koordinatorinformers.SharedInformerFactory) {
 	eventHandler := &reservationEventHandler{
-		mgr: mgr,
+		cache: cache,
 	}
 	reservationInformer := koordinatorInformerFactory.Scheduling().V1alpha1().Reservations().Informer()
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordinatorInformerFactory, reservationInformer, eventHandler)
@@ -46,7 +46,7 @@ func (h *reservationEventHandler) OnAdd(obj interface{}) {
 		return
 	}
 	if reservationutil.IsReservationActive(r) {
-		h.mgr.addReservation(r)
+		h.cache.updateReservation(r)
 	}
 	klog.V(5).InfoS("reservation cache add", "reservation", klog.KObj(r))
 }
@@ -62,9 +62,9 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 	}
 
 	if reservationutil.IsReservationActive(newR) {
-		h.mgr.updateReservation(newR)
+		h.cache.updateReservation(newR)
 	} else if reservationutil.IsReservationFailed(newR) || reservationutil.IsReservationSucceeded(newR) {
-		h.mgr.deleteReservation(newR)
+		h.cache.deleteReservation(newR)
 	}
 	klog.V(5).InfoS("reservation cache update", "reservation", klog.KObj(newR))
 }
@@ -84,6 +84,6 @@ func (h *reservationEventHandler) OnDelete(obj interface{}) {
 		klog.V(4).InfoS("reservation cache delete failed to parse, obj %T", obj)
 		return
 	}
-	h.mgr.deleteReservation(r)
+	h.cache.deleteReservation(r)
 	klog.V(5).InfoS("reservation cache delete", "reservation", klog.KObj(r))
 }
