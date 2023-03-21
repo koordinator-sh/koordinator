@@ -184,56 +184,52 @@ func newPodUsage(name string, cpuMilliUsage, memBytesUsage int64) *metriccache.P
 }
 
 func initPodCPUBurst(podMeta *statesinformer.PodMeta, value int64, helper *system.FileTestUtil) {
-	podPath := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
-	helper.WriteCgroupFileContents(podPath, system.CPUBurst, strconv.FormatInt(value, 10))
+	helper.WriteCgroupFileContents(podMeta.CgroupDir, system.CPUBurst, strconv.FormatInt(value, 10))
 }
 
 func initContainerCPUBurst(podMeta *statesinformer.PodMeta, value int64, helper *system.FileTestUtil) {
 	for i := range podMeta.Pod.Status.ContainerStatuses {
 		containerStat := &podMeta.Pod.Status.ContainerStatuses[i]
-		containerPath, _ := util.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStat)
+		containerPath, _ := util.GetContainerCgroupParentDir(podMeta.CgroupDir, containerStat)
 		helper.WriteCgroupFileContents(containerPath, system.CPUBurst, strconv.FormatInt(value, 10))
 	}
 }
 
 func initPodCFSQuota(podMeta *statesinformer.PodMeta, value int64, helper *system.FileTestUtil) {
-	podDir := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
-	helper.WriteCgroupFileContents(podDir, system.CPUCFSQuota, strconv.FormatInt(value, 10))
+	helper.WriteCgroupFileContents(podMeta.CgroupDir, system.CPUCFSQuota, strconv.FormatInt(value, 10))
 }
 
 func initContainerCFSQuota(podMeta *statesinformer.PodMeta, containersNameValue map[string]int64,
 	helper *system.FileTestUtil) {
 	for i := range podMeta.Pod.Status.ContainerStatuses {
 		containerStat := &podMeta.Pod.Status.ContainerStatuses[i]
-		containerPath, _ := util.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStat)
+		containerPath, _ := util.GetContainerCgroupParentDir(podMeta.CgroupDir, containerStat)
 		value := containersNameValue[containerStat.Name]
 		helper.WriteCgroupFileContents(containerPath, system.CPUCFSQuota, strconv.FormatInt(value, 10))
 	}
 }
 
 func getPodCPUBurst(podDir string, helper *system.FileTestUtil) int64 {
-	podPath := util.GetPodCgroupDirWithKube(podDir)
-	valueStr := helper.ReadCgroupFileContents(podPath, system.CPUBurst)
+	valueStr := helper.ReadCgroupFileContents(podDir, system.CPUBurst)
 	value, _ := strconv.ParseInt(valueStr, 10, 64)
 	return value
 }
 
 func getContainerCPUBurst(podDir string, containerStat *corev1.ContainerStatus, helper *system.FileTestUtil) int64 {
-	containerPath, _ := util.GetContainerCgroupPathWithKube(podDir, containerStat)
+	containerPath, _ := util.GetContainerCgroupParentDir(podDir, containerStat)
 	valueStr := helper.ReadCgroupFileContents(containerPath, system.CPUBurst)
 	value, _ := strconv.ParseInt(valueStr, 10, 64)
 	return value
 }
 
 func getPodCFSQuota(podMeta *statesinformer.PodMeta, helper *system.FileTestUtil) int64 {
-	podDir := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
-	content := helper.ReadCgroupFileContents(podDir, system.CPUCFSQuota)
+	content := helper.ReadCgroupFileContents(podMeta.CgroupDir, system.CPUCFSQuota)
 	val, _ := strconv.ParseInt(content, 10, 64)
 	return val
 }
 
 func getContainerCFSQuota(podDir string, containerStat *corev1.ContainerStatus, helper *system.FileTestUtil) int64 {
-	containerPath, _ := util.GetContainerCgroupPathWithKube(podDir, containerStat)
+	containerPath, _ := util.GetContainerCgroupParentDir(podDir, containerStat)
 	content := helper.ReadCgroupFileContents(containerPath, system.CPUCFSQuota)
 	val, _ := strconv.ParseInt(content, 10, 64)
 	return val
@@ -270,7 +266,7 @@ func createPodMetaByResource(podName string, containersRes map[string]corev1.Res
 	}
 	return &statesinformer.PodMeta{
 		Pod:       pod,
-		CgroupDir: util.GetPodKubeRelativePath(pod),
+		CgroupDir: util.GetPodCgroupParentDir(pod),
 	}
 }
 
@@ -456,7 +452,7 @@ func getPodMetas(pods []*corev1.Pod) []*statesinformer.PodMeta {
 	podMetas := make([]*statesinformer.PodMeta, len(pods))
 
 	for index, pod := range pods {
-		cgroupDir := util.GetPodKubeRelativePath(pod)
+		cgroupDir := util.GetPodCgroupParentDir(pod)
 		podMeta := &statesinformer.PodMeta{CgroupDir: cgroupDir, Pod: pod.DeepCopy()}
 		podMetas[index] = podMeta
 	}

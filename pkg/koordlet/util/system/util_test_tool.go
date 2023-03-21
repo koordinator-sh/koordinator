@@ -195,9 +195,9 @@ func (c *FileTestUtil) CreateCgroupFile(taskDir string, r Resource) {
 	}
 }
 
-//This function is only intended for test functions. For specific read/write functionalities, please refer to the executor package.
+// WriteCgroupFileContents is only intended for test functions. For specific read/write functionalities, please refer
+// to the executor package.
 func (c *FileTestUtil) WriteCgroupFileContents(taskDir string, r Resource, contents string) {
-
 	c.SetCgroupsV2(IsCgroupV2Resource(r))
 
 	filePath := GetCgroupFilePath(taskDir, r)

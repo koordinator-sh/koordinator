@@ -27,19 +27,18 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
-func Test_GetPodKubeRelativePath(t *testing.T) {
-	system.SetupCgroupPathFormatter(system.Systemd)
+func Test_GetPodCgroupParentDir(t *testing.T) {
 	system.Conf = system.NewDsModeConfig()
 
-	assert := assert.New(t)
-
 	testCases := []struct {
-		name string
-		pod  *corev1.Pod
-		path string
+		name         string
+		cgroupDriver system.CgroupDriverType
+		pod          *corev1.Pod
+		path         string
 	}{
 		{
-			name: "guaranteed",
+			name:         "systemd guaranteed",
+			cgroupDriver: system.Systemd,
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					UID: types.UID("uid1"),
@@ -48,10 +47,11 @@ func Test_GetPodKubeRelativePath(t *testing.T) {
 					QOSClass: corev1.PodQOSGuaranteed,
 				},
 			},
-			path: "/kubepods-poduid1.slice",
+			path: "kubepods.slice/kubepods-poduid1.slice",
 		},
 		{
-			name: "burstable",
+			name:         "systemd burstable",
+			cgroupDriver: system.Systemd,
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					UID: types.UID("uid1"),
@@ -60,10 +60,11 @@ func Test_GetPodKubeRelativePath(t *testing.T) {
 					QOSClass: corev1.PodQOSBurstable,
 				},
 			},
-			path: "kubepods-burstable.slice/kubepods-burstable-poduid1.slice",
+			path: "kubepods.slice/kubepods-burstable.slice/kubepods-burstable-poduid1.slice",
 		},
 		{
-			name: "besteffort",
+			name:         "systemd besteffort",
+			cgroupDriver: system.Systemd,
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					UID: types.UID("uid1"),
@@ -72,101 +73,47 @@ func Test_GetPodKubeRelativePath(t *testing.T) {
 					QOSClass: corev1.PodQOSBestEffort,
 				},
 			},
-			path: "kubepods-besteffort.slice/kubepods-besteffort-poduid1.slice",
+			path: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-poduid1.slice",
+		},
+		{
+			name:         "cgroupfs guaranteed",
+			cgroupDriver: system.Cgroupfs,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID: types.UID("uid1"),
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSGuaranteed,
+				},
+			},
+			path: "kubepods/poduid1",
+		},
+		{
+			name:         "cgroupfs besteffort",
+			cgroupDriver: system.Cgroupfs,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID: types.UID("uid1"),
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBestEffort,
+				},
+			},
+			path: "kubepods/besteffort/poduid1",
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			path := GetPodKubeRelativePath(tc.pod)
-			assert.Equal(tc.path, path)
-		})
-	}
-}
+			system.SetupCgroupPathFormatter(tc.cgroupDriver)
 
-func Test_GetPodCgroupPath(t *testing.T) {
-	system.SetupCgroupPathFormatter(system.Systemd)
-
-	assert := assert.New(t)
-
-	testCases := []struct {
-		name         string
-		relativePath string
-		path         string
-		cgroup       system.Resource
-	}{
-		{
-			name:         "cpuacct",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/cpuacct.usage",
-			cgroup:       system.CPUAcctUsage,
-		},
-		{
-			name:         "cpushare",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.shares",
-			cgroup:       system.CPUShares,
-		},
-		{
-			name:         "cfsperiod",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.cfs_period_us",
-			cgroup:       system.CPUCFSPeriod,
-		},
-		{
-			name:         "cfsperiod",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.cfs_quota_us",
-			cgroup:       system.CPUCFSQuota,
-		},
-		{
-			name:         "memorystat",
-			relativePath: "pod1",
-			path:         "/host-cgroup/memory/kubepods.slice/pod1/memory.stat",
-			cgroup:       system.MemoryStat,
-		},
-		{
-			name:         "memorylimit",
-			relativePath: "pod1",
-			path:         "/host-cgroup/memory/kubepods.slice/pod1/memory.limit_in_bytes",
-			cgroup:       system.MemoryLimit,
-		},
-		{
-			name:         "cpustat",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpu/kubepods.slice/pod1/cpu.stat",
-			cgroup:       system.CPUStat,
-		},
-		{
-			name:         "cpupressure",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/cpu.pressure",
-			cgroup:       system.CPUAcctCPUPressure,
-		},
-		{
-			name:         "mempressure",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/memory.pressure",
-			cgroup:       system.CPUAcctMemoryPressure,
-		},
-		{
-			name:         "iopressure",
-			relativePath: "pod1",
-			path:         "/host-cgroup/cpuacct/kubepods.slice/pod1/io.pressure",
-			cgroup:       system.CPUAcctIOPressure,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			podPath := GetPodCgroupDirWithKube(tc.relativePath)
-			path := system.GetCgroupFilePath(podPath, tc.cgroup)
-			assert.Equal(tc.path, path)
+			path := GetPodCgroupParentDir(tc.pod)
+			assert.Equal(t, tc.path, path)
 		})
 	}
 }
 
 func Test_GetKubeQoSByCgroupParent(t *testing.T) {
 	system.SetupCgroupPathFormatter(system.Systemd)
-	assert := assert.New(t)
 
 	testCases := []struct {
 		name              string
@@ -192,12 +139,12 @@ func Test_GetKubeQoSByCgroupParent(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(tc.wantPriorityClass, GetKubeQoSByCgroupParent(tc.path))
+			assert.Equal(t, tc.wantPriorityClass, GetKubeQoSByCgroupParent(tc.path))
 		})
 	}
 }
 
-func TestGetContainerCgroupPathWithKube_SystemdDriver(t *testing.T) {
+func TestGetContainerCgroupParentDir_SystemdDriver(t *testing.T) {
 	system.SetupCgroupPathFormatter(system.Systemd)
 	defer system.SetupCgroupPathFormatter(system.Systemd)
 	type args struct {
@@ -213,7 +160,7 @@ func TestGetContainerCgroupPathWithKube_SystemdDriver(t *testing.T) {
 		{
 			name: "docker-container",
 			args: args{
-				podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				podParentDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
 				c: &corev1.ContainerStatus{
 					ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
 				},
@@ -224,7 +171,7 @@ func TestGetContainerCgroupPathWithKube_SystemdDriver(t *testing.T) {
 		{
 			name: "containerd-container",
 			args: args{
-				podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				podParentDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
 				c: &corev1.ContainerStatus{
 					ContainerID: "containerd://413715dc061efe71c16ef989f2f2ff5cf999a7dc905bb7078eda82cbb38210ec",
 				},
@@ -258,19 +205,14 @@ func TestGetContainerCgroupPathWithKube_SystemdDriver(t *testing.T) {
 	for _, tt := range tests {
 		system.Conf = system.NewDsModeConfig()
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := GetContainerCgroupPathWithKube(tt.args.podParentDir, tt.args.c)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("getContainerCgroupPath() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("getContainerCgroupPath() got = %v, want %v", got, tt.want)
-			}
+			got, err := GetContainerCgroupParentDir(tt.args.podParentDir, tt.args.c)
+			assert.Equal(t, tt.wantErr, err != nil)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestGetContainerCgroupPathWithKube_CgroupfsDriver(t *testing.T) {
+func TestGetContainerCgroupParentDir_CgroupfsDriver(t *testing.T) {
 	system.SetupCgroupPathFormatter(system.Cgroupfs)
 	defer system.SetupCgroupPathFormatter(system.Systemd)
 	type args struct {
@@ -286,7 +228,7 @@ func TestGetContainerCgroupPathWithKube_CgroupfsDriver(t *testing.T) {
 		{
 			name: "docker-container",
 			args: args{
-				podParentDir: "besteffort/pod6553a60b-2b97-442a-b6da-a5704d81dd98/",
+				podParentDir: "kubepods/besteffort/pod6553a60b-2b97-442a-b6da-a5704d81dd98/",
 				c: &corev1.ContainerStatus{
 					ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
 				},
@@ -297,7 +239,7 @@ func TestGetContainerCgroupPathWithKube_CgroupfsDriver(t *testing.T) {
 		{
 			name: "containerd-container",
 			args: args{
-				podParentDir: "besteffort/pod6553a60b-2b97-442a-b6da-a5704d81dd98/",
+				podParentDir: "kubepods/besteffort/pod6553a60b-2b97-442a-b6da-a5704d81dd98/",
 				c: &corev1.ContainerStatus{
 					ContainerID: "containerd://413715dc061efe71c16ef989f2f2ff5cf999a7dc905bb7078eda82cbb38210ec",
 				},
@@ -331,14 +273,9 @@ func TestGetContainerCgroupPathWithKube_CgroupfsDriver(t *testing.T) {
 	for _, tt := range tests {
 		system.Conf = system.NewDsModeConfig()
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := GetContainerCgroupPathWithKube(tt.args.podParentDir, tt.args.c)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("getContainerCgroupPath() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("getContainerCgroupPath() got = %v, want %v", got, tt.want)
-			}
+			got, err := GetContainerCgroupParentDir(tt.args.podParentDir, tt.args.c)
+			assert.Equal(t, tt.wantErr, err != nil)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

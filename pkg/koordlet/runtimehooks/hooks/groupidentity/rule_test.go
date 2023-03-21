@@ -564,7 +564,7 @@ func Test_bvtPlugin_ruleUpdateCb(t *testing.T) {
 		}
 		podList := make([]*statesinformer.PodMeta, 0, len(tt.args.pods))
 		for _, pod := range tt.args.pods {
-			initCPUBvt(util.GetPodCgroupDirWithKube(pod.CgroupDir), 0, testHelper)
+			initCPUBvt(pod.CgroupDir, 0, testHelper)
 			podList = append(podList, pod)
 		}
 		t.Run(tt.name, func(t *testing.T) {
@@ -585,7 +585,7 @@ func Test_bvtPlugin_ruleUpdateCb(t *testing.T) {
 				assert.Equal(t, gotBvt, wantBvt, "qos %s bvt value not equal", kubeQoS)
 			}
 			for podName, pod := range tt.args.pods {
-				gotBvtStr := testHelper.ReadCgroupFileContents(util.GetPodCgroupDirWithKube(pod.CgroupDir), system.CPUBVTWarpNs)
+				gotBvtStr := testHelper.ReadCgroupFileContents(pod.CgroupDir, system.CPUBVTWarpNs)
 				gotBvt, _ := strconv.ParseInt(gotBvtStr, 10, 64)
 				wantBvt := tt.wantPodVal[podName]
 				assert.Equal(t, gotBvt, wantBvt, "pod %s bvt value not equal", podName)

@@ -259,7 +259,7 @@ func Test_collectContainerPSI(t *testing.T) {
 	testPodMeta := mockInterferencePodMeta(t.TempDir())
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{testPodMeta}).AnyTimes()
 
-	paths := util.GetPodCgroupCPUAcctPSIPath(cgroupDir)
+	paths := getPodCgroupCPUAcctPSIPath(cgroupDir)
 	errCreateCPU := createTestPSIFile(paths.CPU, FullCorrectPSIContents)
 	if errCreateCPU != nil {
 		t.Fatalf("got error when create psi files: %v", errCreateCPU)
@@ -297,7 +297,7 @@ func Test_collectPodPSI(t *testing.T) {
 	testPodMeta := mockInterferencePodMeta(t.TempDir())
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{testPodMeta}).AnyTimes()
 
-	paths := util.GetPodCgroupCPUAcctPSIPath(cgroupDir)
+	paths := getPodCgroupCPUAcctPSIPath(cgroupDir)
 	errCreateCPU := createTestPSIFile(paths.CPU, FullCorrectPSIContents)
 	if errCreateCPU != nil {
 		t.Fatalf("got error when create psi files: %v", errCreateCPU)
@@ -374,5 +374,19 @@ func mockLSPod() *corev1.Pod {
 				},
 			},
 		},
+	}
+}
+
+// @podParentDir kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @return {
+//    CPU: /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.pressure
+//    Mem: /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.pressure
+//    IO:  /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/io.pressure
+//  }
+func getPodCgroupCPUAcctPSIPath(podParentDir string) resourceexecutor.PSIPath {
+	return resourceexecutor.PSIPath{
+		CPU: system.GetCgroupFilePath(podParentDir, system.CPUAcctCPUPressure),
+		Mem: system.GetCgroupFilePath(podParentDir, system.CPUAcctMemoryPressure),
+		IO:  system.GetCgroupFilePath(podParentDir, system.CPUAcctIOPressure),
 	}
 }

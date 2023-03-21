@@ -146,7 +146,7 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		podQOS := ext.GetPodQoSClass(podMeta.Pod)
 		podKubeQOS := podMeta.Pod.Status.QOSClass
 		podBvt := r.getPodBvtValue(podQOS, podKubeQOS)
-		podCgroupPath := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+		podCgroupPath := podMeta.CgroupDir
 		e := audit.V(3).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(name).Message("set bvt to %v", podBvt)
 		bvtUpdater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUBVTWarpNsName, podCgroupPath, strconv.FormatInt(podBvt, 10), e)
 		if err != nil {

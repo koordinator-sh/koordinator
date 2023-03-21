@@ -104,7 +104,7 @@ type GPUDeviceManager interface {
 
 type dummyDeviceManager struct{}
 
-func (g *dummyDeviceManager) started() bool {
+func (d *dummyDeviceManager) started() bool {
 	return true
 }
 

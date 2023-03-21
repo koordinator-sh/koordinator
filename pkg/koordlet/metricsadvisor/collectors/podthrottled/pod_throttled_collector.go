@@ -88,7 +88,7 @@ func (c *podThrottledCollector) collectPodThrottledInfo() {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
 		collectTime := time.Now()
-		podCgroupDir := koordletutil.GetPodCgroupDirWithKube(meta.CgroupDir)
+		podCgroupDir := meta.CgroupDir
 		currentCPUStat, err := c.cgroupReader.ReadCPUStat(podCgroupDir)
 		if err != nil || currentCPUStat == nil {
 			if pod.Status.Phase == corev1.PodRunning {
@@ -139,7 +139,7 @@ func (c *podThrottledCollector) collectContainerThrottledInfo(podMeta *statesinf
 			continue
 		}
 
-		containerCgroupDir, err := koordletutil.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStat)
+		containerCgroupDir, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, containerStat)
 		if err != nil {
 			klog.V(4).Infof("collect container %s/%s/%s cpu throttled failed, cannot get container cgroup, err: %s",
 				pod.Namespace, pod.Name, containerStat.Name, err)

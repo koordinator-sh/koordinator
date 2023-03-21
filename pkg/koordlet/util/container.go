@@ -25,7 +25,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -38,7 +37,7 @@ func GetContainerCgroupPath(podParentDir string, c *corev1.ContainerStatus, reso
 	if err != nil {
 		return "", fmt.Errorf("failed to get resource type %v, err: %w", resourceType, err)
 	}
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	containerPath, err := GetContainerCgroupParentDir(podParentDir, c)
 	if err != nil {
 		return "", fmt.Errorf("failed to get container cgroup path, err: %w", err)
 	}
@@ -52,7 +51,7 @@ func GetContainerCgroupCPUProcsPath(podParentDir string, c *corev1.ContainerStat
 }
 
 func GetContainerCgroupPerfPath(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
+	containerPath, err := GetContainerCgroupParentDir(podParentDir, c)
 	if err != nil {
 		return "", err
 	}
@@ -60,19 +59,6 @@ func GetContainerCgroupPerfPath(podParentDir string, c *corev1.ContainerStatus) 
 		return filepath.Join(system.Conf.CgroupRootDir, containerPath), nil
 	}
 	return filepath.Join(system.Conf.CgroupRootDir, "perf_event/", containerPath), nil
-}
-
-func GetContainerCgroupCPUAcctPSIPath(podParentDir string, c *corev1.ContainerStatus) (resourceexecutor.PSIPath, error) {
-	containerPath, err := GetContainerCgroupPathWithKube(podParentDir, c)
-	if err != nil {
-		return resourceexecutor.PSIPath{}, err
-	}
-	// psi file saved in cpuacct for cgroup v1 file system
-	return resourceexecutor.PSIPath{
-		CPU: system.GetCgroupFilePath(containerPath, system.CPUAcctCPUPressure),
-		Mem: system.GetCgroupFilePath(containerPath, system.CPUAcctMemoryPressure),
-		IO:  system.GetCgroupFilePath(containerPath, system.CPUAcctIOPressure),
-	}, nil
 }
 
 func GetContainerBaseCFSQuota(container *corev1.Container) int64 {

@@ -68,6 +68,7 @@ func (m *MemoryStatRaw) Usage() int64 {
 	return m.InactiveAnon + m.ActiveAnon + m.Unevictable
 }
 
+// GetCgroupFilePath gets the full path of the given cgroup dir and resource.
 // @cgroupTaskDir kubepods.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @return /sys/fs/cgroup/cpu/kubepods.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.shares
 func GetCgroupFilePath(cgroupTaskDir string, r Resource) string {

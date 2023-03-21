@@ -93,7 +93,7 @@ func (p *podResourceCollector) collectPodResUsed() {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
 		collectTime := time.Now()
-		podCgroupDir := koordletutil.GetPodCgroupDirWithKube(meta.CgroupDir)
+		podCgroupDir := meta.CgroupDir
 
 		currentCPUUsage, err0 := p.cgroupReader.ReadCPUAcctUsage(podCgroupDir)
 		memStat, err1 := p.cgroupReader.ReadMemoryStat(podCgroupDir)
@@ -137,7 +137,7 @@ func (p *podResourceCollector) collectPodResUsed() {
 			},
 		}
 		for deviceName, deviceCollector := range p.deviceCollectors {
-			if err := deviceCollector.FillPodMetric(&podMetric, meta.CgroupDir, meta.Pod.Status.ContainerStatuses); err != nil {
+			if err := deviceCollector.FillPodMetric(&podMetric, meta.CgroupDir, pod.Status.ContainerStatuses); err != nil {
 				klog.Warningf("fill pod %s/%s/%s device usage failed for %v, error: %v",
 					pod.Namespace, pod.Name, deviceName, err)
 			}
@@ -170,7 +170,7 @@ func (p *podResourceCollector) collectContainerResUsed(meta *statesinformer.PodM
 			continue
 		}
 
-		containerCgroupDir, err := koordletutil.GetContainerCgroupPathWithKube(meta.CgroupDir, containerStat)
+		containerCgroupDir, err := koordletutil.GetContainerCgroupParentDir(meta.CgroupDir, containerStat)
 		if err != nil {
 			klog.V(4).Infof("failed to collect container usage for %s/%s/%s, cannot get container cgroup, err: %s",
 				pod.Namespace, pod.Name, containerStat.Name, err)

@@ -356,10 +356,10 @@ func Test_plugin_ruleUpdateCb(t *testing.T) {
 			helper := sysutil.NewFileTestUtil(t)
 			// init cgroups cpuset file
 			for _, podMeta := range tt.args.pods {
-				cgroupDir := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+				cgroupDir := podMeta.CgroupDir
 				helper.WriteCgroupFileContents(cgroupDir, sysutil.CPUCFSQuota, "-1")
 				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
-					cgroupDir, err := util.GetContainerCgroupPathWithKubeByID(podMeta.CgroupDir, containerStat.ContainerID)
+					cgroupDir, err := util.GetContainerCgroupParentDirByID(podMeta.CgroupDir, containerStat.ContainerID)
 					assert.NoError(t, err, "container "+containerStat.Name)
 					helper.WriteCgroupFileContents(cgroupDir, sysutil.CPUCFSQuota, "-1")
 				}
@@ -378,10 +378,10 @@ func Test_plugin_ruleUpdateCb(t *testing.T) {
 			// init cgroups cpuset file
 			for i, podMeta := range tt.args.pods {
 				w := tt.want[i]
-				cgroupDir := util.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+				cgroupDir := podMeta.CgroupDir
 				assert.Equal(t, w.cfsQuota, helper.ReadCgroupFileContents(cgroupDir, sysutil.CPUCFSQuota))
 				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
-					cgroupDir, err := util.GetContainerCgroupPathWithKubeByID(podMeta.CgroupDir, containerStat.ContainerID)
+					cgroupDir, err := util.GetContainerCgroupParentDirByID(podMeta.CgroupDir, containerStat.ContainerID)
 					assert.NoError(t, err, "container "+containerStat.Name)
 					assert.Equal(t, w.cfsQuota, helper.ReadCgroupFileContents(cgroupDir, sysutil.CPUCFSQuota))
 				}
