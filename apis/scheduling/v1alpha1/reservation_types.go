@@ -57,9 +57,9 @@ type ReservationSpec struct {
 	// reservation would be waiting to be available until free resources are sufficient.
 	// +optional
 	PreAllocation bool `json:"preAllocation,omitempty"`
-	// By default, reserved resources are always allocatable as long as the reservation phase is Available. When
-	// `AllocateOnce` is set, the reserved resources are only available for the first owner who allocates successfully
-	// and are not allocatable to other owners anymore.
+	// When `AllocateOnce` is set, the reserved resources are only available for the first owner who allocates successfully
+	// and are not allocatable to other owners anymore. Defaults to true.
+	// +kubebuilder:default=true
 	// +optional
 	AllocateOnce bool `json:"allocateOnce,omitempty"`
 }
