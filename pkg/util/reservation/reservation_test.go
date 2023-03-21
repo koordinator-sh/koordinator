@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
@@ -276,6 +277,193 @@ func TestGetReservationSchedulerName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := GetReservationSchedulerName(tt.arg)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_matchReservationOwners(t *testing.T) {
+	type args struct {
+		pod *corev1.Pod
+		r   *schedulingv1alpha1.Reservation
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "no owner to match",
+			args: args{
+				pod: &corev1.Pod{},
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: nil,
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "match objRef",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod-0",
+						Namespace: "test",
+					},
+				},
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Name:      "test-pod-0",
+									Namespace: "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "match controllerRef",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-sts-0-0",
+						Namespace: "test",
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								Name:       "test-sts-0",
+								Controller: pointer.Bool(true),
+								Kind:       "StatefulSet",
+								APIVersion: "apps/v1",
+							},
+						},
+					},
+				},
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Controller: &schedulingv1alpha1.ReservationControllerReference{
+									OwnerReference: metav1.OwnerReference{
+										Name:       "test-sts-0",
+										Controller: pointer.Bool(true),
+									},
+									Namespace: "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "match labels",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod-1",
+						Namespace: "test",
+						Labels: map[string]string{
+							"aaa": "bbb",
+							"ccc": "ddd",
+						},
+					},
+				},
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"aaa": "bbb",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "fail on one term of owner spec",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod-1",
+						Namespace: "test",
+						Labels: map[string]string{
+							"aaa": "bbb",
+							"ccc": "ddd",
+						},
+					},
+				},
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Name: "test-pod-2",
+								},
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"aaa": "bbb",
+										"xxx": "yyy",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "match one of owner specs",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod-2",
+						Namespace: "test",
+						Labels: map[string]string{
+							"aaa": "bbb",
+							"ccc": "ddd",
+						},
+					},
+				},
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Name:      "test-pod-0",
+									Namespace: "test",
+								},
+							},
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"aaa": "bbb",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MatchReservationOwners(tt.args.pod, tt.args.r)
 			assert.Equal(t, tt.want, got)
 		})
 	}

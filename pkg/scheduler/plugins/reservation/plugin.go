@@ -64,7 +64,7 @@ var (
 
 	_ frameworkext.ControllerProvider     = &Plugin{}
 	_ frameworkext.PreFilterTransformer   = &Plugin{}
-	_ frameworkext.ReservationRecommender = &Plugin{}
+	_ frameworkext.ReservationNominator   = &Plugin{}
 	_ frameworkext.ReservationScorePlugin = &Plugin{}
 )
 
@@ -263,8 +263,8 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
-	recommendReservation := frameworkext.GetRecommendReservation(cycleState)
-	if recommendReservation == nil {
+	nominatedReservation := frameworkext.GetNominatedReservation(cycleState)
+	if nominatedReservation == nil {
 		klog.V(5).Infof("Skip reserve with reservation since there are no matched reservations, pod %v, node: %v", klog.KObj(pod), nodeName)
 		return nil
 	}
@@ -272,7 +272,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	// NOTE: Having entered the Reserve stage means that the Pod scheduling is successful,
 	// even though the associated Reservation may have expired, but in fact the real impact
 	// will not be encountered until the next round of scheduling.
-	assumed := recommendReservation.DeepCopy()
+	assumed := nominatedReservation.DeepCopy()
 	p.reservationCache.assumePod(assumed.UID, pod)
 
 	state := getStateData(cycleState)
@@ -349,7 +349,7 @@ func (p *Plugin) Bind(ctx context.Context, cycleState *framework.CycleState, pod
 
 		// mark reservation as available
 		reservation = reservation.DeepCopy()
-		setReservationAvailable(reservation, nodeName)
+		reservationutil.SetReservationAvailable(reservation, nodeName)
 		_, err = p.client.Reservations().UpdateStatus(context.TODO(), reservation, metav1.UpdateOptions{})
 		if err != nil {
 			klog.V(4).ErrorS(err, "failed to update reservation", "reservation", klog.KObj(reservation))

@@ -208,7 +208,7 @@ func (c *Controller) sync(reservationName string) (result, error) {
 }
 
 func (c *Controller) expireReservation(reservation *schedulingv1alpha1.Reservation) error {
-	setReservationExpired(reservation)
+	reservationutil.SetReservationExpired(reservation)
 	_, err := c.koordClientSet.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), reservation, metav1.UpdateOptions{})
 	return err
 }
@@ -251,7 +251,7 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) err
 	reservation.Status.CurrentOwners = actualOwners
 
 	if reservation.Spec.AllocateOnce {
-		setReservationSucceeded(reservation)
+		reservationutil.SetReservationSucceeded(reservation)
 	}
 
 	_, err := c.koordClientSet.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), reservation, metav1.UpdateOptions{})
@@ -261,4 +261,18 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) err
 		klog.V(5).InfoS("update active reservation for status correction", "reservation", klog.KObj(reservation))
 	}
 	return err
+}
+
+func isReservationNeedExpiration(r *schedulingv1alpha1.Reservation) bool {
+	// 1. failed or succeeded reservations does not need to expire
+	if r.Status.Phase == schedulingv1alpha1.ReservationFailed || r.Status.Phase == schedulingv1alpha1.ReservationSucceeded {
+		return false
+	}
+	// 2. disable expiration if TTL is set as 0
+	if r.Spec.TTL != nil && r.Spec.TTL.Duration == 0 {
+		return false
+	}
+	// 3. if both TTL and Expires are set, firstly check Expires
+	return r.Spec.Expires != nil && time.Now().After(r.Spec.Expires.Time) ||
+		r.Spec.TTL != nil && time.Since(r.CreationTimestamp.Time) > r.Spec.TTL.Duration
 }

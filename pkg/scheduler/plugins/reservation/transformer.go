@@ -173,7 +173,7 @@ func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *fr
 }
 
 func retainReservePodUnusedPorts(reservePod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, podInfoMap map[types.UID]*framework.PodInfo) {
-	port := getReservePorts(reservation)
+	port := reservationutil.ReservePorts(reservation)
 	if len(port) == 0 {
 		return
 	}
@@ -246,7 +246,7 @@ func (p *Plugin) prepareMatchReservationState(handle frameworkext.ExtendedHandle
 				continue
 			}
 
-			if matchReservationOwners(pod, rInfo.reservation) {
+			if reservationutil.MatchReservationOwners(pod, rInfo.reservation) {
 				matched = append(matched, rInfo)
 			} else {
 				if len(rInfo.allocated) > 0 {

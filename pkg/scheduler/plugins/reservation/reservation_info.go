@@ -23,6 +23,7 @@ import (
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 type reservationInfo struct {
@@ -41,7 +42,7 @@ type podRequirement struct {
 }
 
 func newReservationInfo(r *schedulingv1alpha1.Reservation) *reservationInfo {
-	allocatable := getReservationRequests(r)
+	allocatable := reservationutil.ReservationRequests(r)
 	resourceNames := quotav1.ResourceNames(allocatable)
 
 	return &reservationInfo{
@@ -79,7 +80,7 @@ func (ri *reservationInfo) Clone() *reservationInfo {
 
 func (ri *reservationInfo) updateReservation(r *schedulingv1alpha1.Reservation) {
 	ri.reservation = r.DeepCopy()
-	ri.allocatable = getReservationRequests(r)
+	ri.allocatable = reservationutil.ReservationRequests(r)
 	ri.resourceNames = quotav1.ResourceNames(ri.allocatable)
 	ri.allocated = quotav1.Mask(ri.allocated, ri.resourceNames)
 }

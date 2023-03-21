@@ -440,7 +440,7 @@ func (p *Plugin) reserveDevicesInReservation(cycleState *framework.CycleState, s
 		return nil, true, nil
 	}
 
-	reservation := frameworkext.GetRecommendReservation(cycleState)
+	reservation := frameworkext.GetNominatedReservation(cycleState)
 	if reservation == nil {
 		return nil, true, nil
 	}

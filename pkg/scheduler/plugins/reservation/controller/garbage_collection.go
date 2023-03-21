@@ -64,3 +64,23 @@ func missingNode(reservation *schedulingv1alpha1.Reservation, nodeLister corelis
 	}
 	return false
 }
+
+func isReservationNeedCleanup(r *schedulingv1alpha1.Reservation) bool {
+	if r == nil {
+		return true
+	}
+	if reservationutil.IsReservationExpired(r) {
+		for _, condition := range r.Status.Conditions {
+			if condition.Reason == schedulingv1alpha1.ReasonReservationExpired {
+				return time.Since(condition.LastTransitionTime.Time) > defaultGCDuration
+			}
+		}
+	} else if reservationutil.IsReservationSucceeded(r) {
+		for _, condition := range r.Status.Conditions {
+			if condition.Reason == schedulingv1alpha1.ReasonReservationSucceeded {
+				return time.Since(condition.LastProbeTime.Time) > defaultGCDuration
+			}
+		}
+	}
+	return false
+}

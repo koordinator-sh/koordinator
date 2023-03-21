@@ -508,7 +508,7 @@ func (p *Plugin) reserveCPUsInReservation(cycleState *framework.CycleState, pod 
 	if reservationutil.IsReservePod(pod) {
 		return result, true, nil
 	}
-	reservation := frameworkext.GetRecommendReservation(cycleState)
+	reservation := frameworkext.GetNominatedReservation(cycleState)
 	if reservation == nil {
 		return result, true, nil
 	}
