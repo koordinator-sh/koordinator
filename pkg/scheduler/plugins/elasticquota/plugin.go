@@ -41,6 +41,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 const (
@@ -192,8 +193,11 @@ func (g *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 
 // AddPod is called by the framework while trying to evaluate the impact
 // of adding podToAdd to the node while scheduling podToSchedule.
-func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToSchedule *corev1.Pod,
-	podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+	if reservationutil.IsReservePod(podInfoToAdd.Pod) {
+		return nil
+	}
+
 	postFilterState, err := getPostFilterState(state)
 	if err != nil {
 		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", postFilterState)
@@ -211,8 +215,11 @@ func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToS
 
 // RemovePod is called by the framework while trying to evaluate the impact
 // of removing podToRemove from the node while scheduling podToSchedule.
-func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, podToSchedule *corev1.Pod,
-	podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, podToSchedule *corev1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+	if reservationutil.IsReservePod(podInfoToRemove.Pod) {
+		return nil
+	}
+
 	postFilterState, err := getPostFilterState(state)
 	if err != nil {
 		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", postFilterState)
