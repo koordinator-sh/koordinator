@@ -132,9 +132,9 @@ func TestPreFilterTransformer(t *testing.T) {
 			name:         "failed to list nodes",
 			sharedLister: newFakeSharedLister(nil, nil, true),
 			pod:          normalPod,
-			wantPod:      normalPod,
+			wantPod:      nil,
 			wantState:    nil,
-			want1:        true,
+			want1:        false,
 		},
 		{
 			name:         "get skip state",

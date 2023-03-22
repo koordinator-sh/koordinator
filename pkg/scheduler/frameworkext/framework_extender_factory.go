@@ -80,7 +80,7 @@ type FrameworkExtenderFactory struct {
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	sharedListerAdapter              SharedListerAdapter
-	profiles                         map[string]*frameworkExtenderImpl
+	profiles                         map[string]FrameworkExtender
 }
 
 func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, error) {
@@ -100,20 +100,14 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		koordinatorClientSet:             handleOptions.koordinatorClientSet,
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
 		sharedListerAdapter:              handleOptions.sharedListerAdapter,
-		profiles:                         map[string]*frameworkExtenderImpl{},
+		profiles:                         map[string]FrameworkExtender{},
 	}, nil
 }
 
 func (f *FrameworkExtenderFactory) NewFrameworkExtender(fw framework.Framework) FrameworkExtender {
 	frameworkExtender := f.profiles[fw.ProfileName()]
 	if frameworkExtender == nil {
-		frameworkExtender = &frameworkExtenderImpl{
-			Framework:                        fw,
-			sharedListerAdapter:              f.SharedListerAdapter(),
-			koordinatorClientSet:             f.KoordinatorClientSet(),
-			koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
-		}
-		frameworkExtender.updateTransformer(f.defaultTransformers...)
+		frameworkExtender = NewFrameworkExtender(f, fw)
 		f.profiles[fw.ProfileName()] = frameworkExtender
 	}
 	return frameworkExtender

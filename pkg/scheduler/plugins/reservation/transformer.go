@@ -77,6 +77,10 @@ func (p *Plugin) BeforePreFilter(handle frameworkext.ExtendedHandle, cycleState 
 	return preparePreFilterPod(pod), true
 }
 
+func (p *Plugin) AfterPreFilter(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) error {
+	return nil
+}
+
 func (p *Plugin) BeforeFilter(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool) {
 	// do not transformer if not reserve state (where we should check if pod match any reservation on node)
 	if reservationutil.IsReservePod(pod) {

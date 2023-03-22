@@ -23,8 +23,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	frameworkfake "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
+	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -63,6 +65,7 @@ func TestExtenderFactory(t *testing.T) {
 	fh, err := schedulertesting.NewFramework(
 		registeredPlugins,
 		"koord-scheduler",
+		frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister{}}),
 	)
 	assert.NoError(t, err)
 	pl, err := proxyNew(nil, fh)
@@ -76,7 +79,12 @@ func TestExtenderFactory(t *testing.T) {
 	assert.Len(t, impl.preFilterTransformers, 2)
 	assert.Len(t, impl.filterTransformers, 2)
 	assert.Len(t, impl.scoreTransformers, 2)
-	lister := extender.SnapshotSharedLister()
-	_, ok := lister.(*fakeSharedLister)
+	assert.NotNil(t, impl.sharedListerAdapter)
+	snapshot := extender.SnapshotSharedLister()
+	_, ok := snapshot.(*fakeSharedLister)
+	assert.True(t, ok)
+	assert.NoError(t, impl.takeTemporarySnapshot())
+	snapshot = extender.SnapshotSharedLister()
+	_, ok = snapshot.(*TemporarySnapshot)
 	assert.True(t, ok)
 }
