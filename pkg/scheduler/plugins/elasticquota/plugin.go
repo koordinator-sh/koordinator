@@ -204,12 +204,11 @@ func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToS
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	quotaInfo := postFilterState.quotaInfo
-	if err = quotaInfo.UpdatePodIsAssigned(podInfoToAdd.Pod, true); err != nil {
-		return framework.NewStatus(framework.Error, err.Error())
+	if err = quotaInfo.UpdatePodIsAssigned(podInfoToAdd.Pod, true); err == nil {
+		pod := core.RunDecoratePod(podInfoToAdd.Pod)
+		podReq, _ := resource.PodRequestsAndLimits(pod)
+		quotaInfo.CalculateInfo.Used = quotav1.Add(quotaInfo.CalculateInfo.Used, podReq)
 	}
-	pod := core.RunDecoratePod(podInfoToAdd.Pod)
-	podReq, _ := resource.PodRequestsAndLimits(pod)
-	quotaInfo.CalculateInfo.Used = quotav1.Add(quotaInfo.CalculateInfo.Used, podReq)
 	return framework.NewStatus(framework.Success, "")
 }
 
@@ -226,12 +225,11 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	quotaInfo := postFilterState.quotaInfo
-	if err = quotaInfo.UpdatePodIsAssigned(podInfoToRemove.Pod, false); err != nil {
-		return framework.NewStatus(framework.Error, err.Error())
+	if err = quotaInfo.UpdatePodIsAssigned(podInfoToRemove.Pod, false); err == nil {
+		pod := core.RunDecoratePod(podInfoToRemove.Pod)
+		podReq, _ := resource.PodRequestsAndLimits(pod)
+		quotaInfo.CalculateInfo.Used = quotav1.SubtractWithNonNegativeResult(quotaInfo.CalculateInfo.Used, podReq)
 	}
-	pod := core.RunDecoratePod(podInfoToRemove.Pod)
-	podReq, _ := resource.PodRequestsAndLimits(pod)
-	quotaInfo.CalculateInfo.Used = quotav1.SubtractWithNonNegativeResult(quotaInfo.CalculateInfo.Used, podReq)
 	return framework.NewStatus(framework.Success, "")
 }
 

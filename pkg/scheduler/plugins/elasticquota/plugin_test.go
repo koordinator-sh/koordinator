@@ -1000,10 +1000,12 @@ func TestPlugin_Unreserve(t *testing.T) {
 
 func TestPlugin_AddPod(t *testing.T) {
 	test := []struct {
-		name         string
-		podInfo      *framework.PodInfo
-		quotaInfo    *core.QuotaInfo
-		expectedUsed corev1.ResourceList
+		name              string
+		podInfo           *framework.PodInfo
+		shouldAdd         bool
+		quotaInfo         *core.QuotaInfo
+		wantStatusSuccess bool
+		expectedUsed      corev1.ResourceList
 	}{
 		{
 			name: "basic",
@@ -1012,6 +1014,7 @@ func TestPlugin_AddPod(t *testing.T) {
 					MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()).
 					Label(extension.LabelQuotaName, "t1-eq1").UID("1").Obj(),
 			},
+			shouldAdd: true,
 			quotaInfo: &core.QuotaInfo{
 				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
@@ -1019,7 +1022,26 @@ func TestPlugin_AddPod(t *testing.T) {
 				},
 				PodCache: make(map[string]*core.PodInfo),
 			},
-			expectedUsed: MakeResourceList().CPU(11).Mem(22).GPU(11).Obj(),
+			wantStatusSuccess: true,
+			expectedUsed:      MakeResourceList().CPU(11).Mem(22).GPU(11).Obj(),
+		},
+		{
+			name: "missing pod",
+			podInfo: &framework.PodInfo{
+				Pod: MakePod("t1-ns1", "pod1").Container(
+					MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()).
+					Label(extension.LabelQuotaName, "t1-eq1").UID("1").Obj(),
+			},
+			shouldAdd: false,
+			quotaInfo: &core.QuotaInfo{
+				Name: extension.DefaultQuotaName,
+				CalculateInfo: core.QuotaCalculateInfo{
+					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
+				},
+				PodCache: make(map[string]*core.PodInfo),
+			},
+			wantStatusSuccess: true,
+			expectedUsed:      MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
 		},
 	}
 	for _, tt := range test {
@@ -1029,23 +1051,28 @@ func TestPlugin_AddPod(t *testing.T) {
 			gp := p.(*Plugin)
 			pod := makePod2("test", tt.quotaInfo.CalculateInfo.Used)
 			gp.OnPodAdd(pod)
-			gp.OnPodAdd(tt.podInfo.Pod)
+			if tt.shouldAdd {
+				gp.OnPodAdd(tt.podInfo.Pod)
+			}
 			state := framework.NewCycleState()
 			ctx := context.TODO()
 			gp.snapshotPostFilterState(gp.getPodAssociateQuotaName(tt.podInfo.Pod), state)
-			gp.AddPod(ctx, state, nil, tt.podInfo, nil)
+			status := gp.AddPod(ctx, state, nil, tt.podInfo, nil)
+			assert.Equal(t, tt.wantStatusSuccess, status.IsSuccess())
 			data, _ := getPostFilterState(state)
-			assert.Equal(t, data.quotaInfo.GetUsed(), tt.expectedUsed)
+			assert.Equal(t, tt.expectedUsed, data.quotaInfo.GetUsed())
 		})
 	}
 }
 
 func TestPlugin_RemovePod(t *testing.T) {
 	test := []struct {
-		name         string
-		podInfo      *framework.PodInfo
-		quotaInfo    *core.QuotaInfo
-		expectedUsed corev1.ResourceList
+		name              string
+		podInfo           *framework.PodInfo
+		shouldAdd         bool
+		quotaInfo         *core.QuotaInfo
+		wantStatusSuccess bool
+		expectedUsed      corev1.ResourceList
 	}{
 		{
 			name: "basic",
@@ -1054,13 +1081,32 @@ func TestPlugin_RemovePod(t *testing.T) {
 					MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()).
 					Label(extension.LabelQuotaName, "t1-eq1").UID("1").Phase(corev1.PodRunning).Obj(),
 			},
+			shouldAdd: true,
 			quotaInfo: &core.QuotaInfo{
 				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
 					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
 				},
 			},
-			expectedUsed: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
+			wantStatusSuccess: true,
+			expectedUsed:      MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
+		},
+		{
+			name: "missing pod",
+			podInfo: &framework.PodInfo{
+				Pod: MakePod("t1-ns1", "pod1").Container(
+					MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()).
+					Label(extension.LabelQuotaName, "t1-eq1").UID("1").Phase(corev1.PodRunning).Obj(),
+			},
+			shouldAdd: false,
+			quotaInfo: &core.QuotaInfo{
+				Name: extension.DefaultQuotaName,
+				CalculateInfo: core.QuotaCalculateInfo{
+					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
+				},
+			},
+			wantStatusSuccess: true,
+			expectedUsed:      MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
 		},
 	}
 	for _, tt := range test {
@@ -1070,13 +1116,16 @@ func TestPlugin_RemovePod(t *testing.T) {
 			gp := p.(*Plugin)
 			pod := makePod2("pod", tt.quotaInfo.CalculateInfo.Used)
 			gp.OnPodAdd(pod)
-			gp.OnPodAdd(tt.podInfo.Pod)
+			if tt.shouldAdd {
+				gp.OnPodAdd(tt.podInfo.Pod)
+			}
 			state := framework.NewCycleState()
 			ctx := context.TODO()
 			gp.snapshotPostFilterState(gp.getPodAssociateQuotaName(tt.podInfo.Pod), state)
-			gp.RemovePod(ctx, state, nil, tt.podInfo, nil)
+			status := gp.RemovePod(ctx, state, nil, tt.podInfo, nil)
+			assert.Equal(t, tt.wantStatusSuccess, status.IsSuccess())
 			data, _ := getPostFilterState(state)
-			assert.Equal(t, data.quotaInfo.GetUsed(), tt.expectedUsed)
+			assert.Equal(t, tt.expectedUsed, data.quotaInfo.GetUsed())
 		})
 	}
 }
