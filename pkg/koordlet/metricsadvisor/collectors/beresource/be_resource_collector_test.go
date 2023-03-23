@@ -42,7 +42,10 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	metricCache, _ := metriccache.NewMetricCache(metriccache.NewDefaultConfig())
+	cfg := metriccache.NewDefaultConfig()
+	cfg.TSDBPath = t.TempDir()
+	metricCache, err := metriccache.NewMetricCache(cfg)
+	assert.NoError(t, err)
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 	collector := beResourceCollector{
 		collectInterval: 0,

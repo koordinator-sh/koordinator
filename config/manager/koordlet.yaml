@@ -82,6 +82,8 @@ spec:
             - mountPaht: /dev
               name: host-dev
               mountPropagation: HostToContainer
+            - mountPath: /metric-data/
+              name: metric-db-path
       hostNetwork: true
       hostPID: true
       restartPolicy: Always
@@ -130,3 +132,6 @@ spec:
             path: /dev
             type: ""
           name: host-dev
+        - emptyDir:
+            sizeLimit: 150Mi
+          name: metric-db-path

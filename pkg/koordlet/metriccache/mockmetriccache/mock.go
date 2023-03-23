@@ -52,6 +52,34 @@ func (m *MockMetricCache) EXPECT() *MockMetricCacheMockRecorder {
 	return m.recorder
 }
 
+// Appender mocks base method.
+func (m *MockMetricCache) Appender() metriccache.Appender {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Appender")
+	ret0, _ := ret[0].(metriccache.Appender)
+	return ret0
+}
+
+// Appender indicates an expected call of Appender.
+func (mr *MockMetricCacheMockRecorder) Appender() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Appender", reflect.TypeOf((*MockMetricCache)(nil).Appender))
+}
+
+// Close mocks base method.
+func (m *MockMetricCache) Close() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Close")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Close indicates an expected call of Close.
+func (mr *MockMetricCacheMockRecorder) Close() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockMetricCache)(nil).Close))
+}
+
 // GetBECPUResourceMetric mocks base method.
 func (m *MockMetricCache) GetBECPUResourceMetric(param *metriccache.QueryParam) metriccache.BECPUResourceQueryResult {
 	m.ctrl.T.Helper()
@@ -92,20 +120,6 @@ func (m *MockMetricCache) GetContainerResourceMetric(containerID *string, param 
 func (mr *MockMetricCacheMockRecorder) GetContainerResourceMetric(containerID, param interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContainerResourceMetric", reflect.TypeOf((*MockMetricCache)(nil).GetContainerResourceMetric), containerID, param)
-}
-
-// GetContainerThrottledMetric mocks base method.
-func (m *MockMetricCache) GetContainerThrottledMetric(containerID *string, param *metriccache.QueryParam) metriccache.ContainerThrottledQueryResult {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetContainerThrottledMetric", containerID, param)
-	ret0, _ := ret[0].(metriccache.ContainerThrottledQueryResult)
-	return ret0
-}
-
-// GetContainerThrottledMetric indicates an expected call of GetContainerThrottledMetric.
-func (mr *MockMetricCacheMockRecorder) GetContainerThrottledMetric(containerID, param interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContainerThrottledMetric", reflect.TypeOf((*MockMetricCache)(nil).GetContainerThrottledMetric), containerID, param)
 }
 
 // GetNodeCPUInfo mocks base method.
@@ -180,20 +194,6 @@ func (mr *MockMetricCacheMockRecorder) GetPodResourceMetric(podUID, param interf
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPodResourceMetric", reflect.TypeOf((*MockMetricCache)(nil).GetPodResourceMetric), podUID, param)
 }
 
-// GetPodThrottledMetric mocks base method.
-func (m *MockMetricCache) GetPodThrottledMetric(podUID *string, param *metriccache.QueryParam) metriccache.PodThrottledQueryResult {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPodThrottledMetric", podUID, param)
-	ret0, _ := ret[0].(metriccache.PodThrottledQueryResult)
-	return ret0
-}
-
-// GetPodThrottledMetric indicates an expected call of GetPodThrottledMetric.
-func (mr *MockMetricCacheMockRecorder) GetPodThrottledMetric(podUID, param interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPodThrottledMetric", reflect.TypeOf((*MockMetricCache)(nil).GetPodThrottledMetric), podUID, param)
-}
-
 // InsertBECPUResourceMetric mocks base method.
 func (m *MockMetricCache) InsertBECPUResourceMetric(t time.Time, metric *metriccache.BECPUResourceMetric) error {
 	m.ctrl.T.Helper()
@@ -234,20 +234,6 @@ func (m *MockMetricCache) InsertContainerResourceMetric(t time.Time, containerRe
 func (mr *MockMetricCacheMockRecorder) InsertContainerResourceMetric(t, containerResUsed interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertContainerResourceMetric", reflect.TypeOf((*MockMetricCache)(nil).InsertContainerResourceMetric), t, containerResUsed)
-}
-
-// InsertContainerThrottledMetrics mocks base method.
-func (m *MockMetricCache) InsertContainerThrottledMetrics(t time.Time, metric *metriccache.ContainerThrottledMetric) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InsertContainerThrottledMetrics", t, metric)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// InsertContainerThrottledMetrics indicates an expected call of InsertContainerThrottledMetrics.
-func (mr *MockMetricCacheMockRecorder) InsertContainerThrottledMetrics(t, metric interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertContainerThrottledMetrics", reflect.TypeOf((*MockMetricCache)(nil).InsertContainerThrottledMetrics), t, metric)
 }
 
 // InsertNodeCPUInfo mocks base method.
@@ -320,18 +306,19 @@ func (mr *MockMetricCacheMockRecorder) InsertPodResourceMetric(t, podResUsed int
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertPodResourceMetric", reflect.TypeOf((*MockMetricCache)(nil).InsertPodResourceMetric), t, podResUsed)
 }
 
-// InsertPodThrottledMetrics mocks base method.
-func (m *MockMetricCache) InsertPodThrottledMetrics(t time.Time, metric *metriccache.PodThrottledMetric) error {
+// Querier mocks base method.
+func (m *MockMetricCache) Querier(startTime, endTime time.Time) (metriccache.Querier, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InsertPodThrottledMetrics", t, metric)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret := m.ctrl.Call(m, "Querier", startTime, endTime)
+	ret0, _ := ret[0].(metriccache.Querier)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
-// InsertPodThrottledMetrics indicates an expected call of InsertPodThrottledMetrics.
-func (mr *MockMetricCacheMockRecorder) InsertPodThrottledMetrics(t, metric interface{}) *gomock.Call {
+// Querier indicates an expected call of Querier.
+func (mr *MockMetricCacheMockRecorder) Querier(startTime, endTime interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertPodThrottledMetrics", reflect.TypeOf((*MockMetricCache)(nil).InsertPodThrottledMetrics), t, metric)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Querier", reflect.TypeOf((*MockMetricCache)(nil).Querier), startTime, endTime)
 }
 
 // Run mocks base method.

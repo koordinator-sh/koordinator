@@ -41,8 +41,6 @@ type MetricsQuery interface {
 
 	CollectContainerResMetricLast(containerID *string, collectResUsedIntervalSeconds int64) metriccache.ContainerResourceQueryResult
 
-	CollectContainerThrottledMetricLast(containerID *string, collectResUsedIntervalSeconds int64) metriccache.ContainerThrottledQueryResult
-
 	CollectPodMetric(podMeta *statesinformer.PodMeta, queryParam *metriccache.QueryParam) metriccache.PodResourceQueryResult
 }
 
@@ -138,26 +136,6 @@ func (r *metricsQuery) CollectContainerResMetricLast(containerID *string, collec
 	queryResult := r.metricCache.GetContainerResourceMetric(containerID, queryParam)
 	if queryResult.Error != nil {
 		klog.Warningf("get container %v resource metric failed, error %v", containerID, queryResult.Error)
-		return queryResult
-	}
-	if queryResult.Metric == nil {
-		klog.Warningf("container %v metric not exist", containerID)
-		return queryResult
-	}
-	return queryResult
-}
-
-// CollectContainerThrottledMetricLast creates an instance which implements interface MetricsQuery.
-func (r *metricsQuery) CollectContainerThrottledMetricLast(containerID *string, collectResUsedIntervalSeconds int64) metriccache.ContainerThrottledQueryResult {
-	if containerID == nil {
-		return metriccache.ContainerThrottledQueryResult{
-			QueryResult: metriccache.QueryResult{Error: fmt.Errorf("container is nil")},
-		}
-	}
-	queryParam := GenerateQueryParamsLast(collectResUsedIntervalSeconds * 2)
-	queryResult := r.metricCache.GetContainerThrottledMetric(containerID, queryParam)
-	if queryResult.Error != nil {
-		klog.Warningf("get container %v throttled metric failed, error %v", containerID, queryResult.Error)
 		return queryResult
 	}
 	if queryResult.Metric == nil {

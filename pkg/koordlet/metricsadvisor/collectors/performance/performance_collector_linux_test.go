@@ -199,6 +199,9 @@ func Test_profilePerfOnSingleContainer(t *testing.T) {
 	config := &metriccache.Config{
 		MetricGCIntervalSeconds: 60,
 		MetricExpireSeconds:     60,
+		TSDBPath:                t.TempDir(),
+		TSDBRetentionDuration:   0,
+		TSDBEnablePromMetrics:   false,
 	}
 	m, _ := metriccache.NewMetricCache(config)
 

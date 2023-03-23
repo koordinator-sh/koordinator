@@ -427,20 +427,27 @@ func (b *CPUBurst) genOperationByContainer(burstCfg *slov1alpha1.CPUBurstConfig,
 		return cfsScaleDown
 	}
 
-	containerThrottled := b.resmanager.collectContainerThrottledMetricLast(&containerStat.ContainerID)
-	if containerThrottled.Error != nil {
+	containerThrottled, err := b.resmanager.collectContainerThrottledMetric(&containerStat.ContainerID)
+	if err != nil {
 		klog.V(4).Infof("failed to get container %s/%s/%s throttled metric, maybe not exist, skip this round, reason %v",
-			pod.Namespace, pod.Name, containerStat.Name, containerThrottled.Error)
-		return cfsRemain
-	}
-	if containerThrottled.Metric == nil || containerThrottled.AggregateInfo == nil ||
-		containerThrottled.Metric.CPUThrottledMetric == nil {
-		klog.V(4).Infof("container %s/%s/%s throttled metric is nil, skip this round, detail %v",
-			pod.Namespace, pod.Name, containerStat.Name, containerThrottled)
+			pod.Namespace, pod.Name, containerStat.Name, err)
 		return cfsRemain
 	}
 
-	if containerThrottled.Metric.CPUThrottledMetric.ThrottledRatio > 0 {
+	if containerThrottled.Count() == 0 {
+		klog.V(4).Infof("container %s/%s/%s throttled metric is empty, skip this round",
+			pod.Namespace, pod.Name, containerStat.Name)
+		return cfsRemain
+	}
+
+	containerThrottledLastValue, err := containerThrottled.Value(metriccache.AggregationTypeLast)
+	if err != nil {
+		klog.V(4).Infof("failed to get container %s/%s/%s last throttled metric, skip this round, reason %v",
+			pod.Namespace, pod.Name, containerStat.Name, err)
+		return cfsRemain
+	}
+
+	if containerThrottledLastValue > 0 {
 		return cfsScaleUp
 	}
 	klog.V(5).Infof("container %s/%s/%s is not throttled, no need to scale up cfs quota",

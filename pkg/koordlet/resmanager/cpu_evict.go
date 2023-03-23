@@ -66,12 +66,12 @@ func (c *CPUEvictor) cpuEvict() {
 		klog.Warningf("cpuEvict failed, cannot check the feature gate, err: %s", err)
 		return
 	} else if disabled {
-		klog.Warningf("cpuEvict skipped, nodeSLO disable the feature gate")
+		klog.V(4).Infof("cpuEvict skipped, nodeSLO disable the feature gate")
 		return
 	}
 
 	if time.Since(c.lastEvictTime) < time.Duration(c.resmanager.config.CPUEvictCoolTimeSeconds)*time.Second {
-		klog.Warningf("skip CPU evict process, still in evict cool time")
+		klog.V(4).Infof("skip CPU evict process, still in evict cool time")
 		return
 	}
 
