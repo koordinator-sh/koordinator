@@ -57,7 +57,7 @@ func Test_genPodCgroupParentDirWithCgroupfsDriver(t *testing.T) {
 					QOSClass: corev1.PodQOSGuaranteed,
 				},
 			},
-			want: "/pod111-222-333",
+			want: "/kubepods/pod111-222-333",
 		},
 		{
 			name: "BestEffort",
@@ -69,7 +69,7 @@ func Test_genPodCgroupParentDirWithCgroupfsDriver(t *testing.T) {
 					QOSClass: corev1.PodQOSBestEffort,
 				},
 			},
-			want: "/besteffort/pod111-222-333",
+			want: "/kubepods/besteffort/pod111-222-333",
 		},
 		{
 			name: "Burstable",
@@ -81,7 +81,7 @@ func Test_genPodCgroupParentDirWithCgroupfsDriver(t *testing.T) {
 					QOSClass: corev1.PodQOSBurstable,
 				},
 			},
-			want: "/burstable/pod111-222-333",
+			want: "/kubepods/burstable/pod111-222-333",
 		},
 	}
 	for _, tt := range tests {

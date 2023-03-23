@@ -452,9 +452,9 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 
 func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 	testingPodLS := createPod(corev1.PodQOSBurstable, apiext.QoSLS)
-	podParentDirLS := koordletutil.GetPodCgroupDirWithKube(testingPodLS.CgroupDir)
-	containerDirLS, _ := koordletutil.GetContainerCgroupPathWithKube(testingPodLS.CgroupDir, &testingPodLS.Pod.Status.ContainerStatuses[0])
-	containerDirLS1, _ := koordletutil.GetContainerCgroupPathWithKube(testingPodLS.CgroupDir, &testingPodLS.Pod.Status.ContainerStatuses[1])
+	podParentDirLS := testingPodLS.CgroupDir
+	containerDirLS, _ := koordletutil.GetContainerCgroupParentDir(testingPodLS.CgroupDir, &testingPodLS.Pod.Status.ContainerStatuses[0])
+	containerDirLS1, _ := koordletutil.GetContainerCgroupParentDir(testingPodLS.CgroupDir, &testingPodLS.Pod.Status.ContainerStatuses[1])
 	testingPodBEWithMemQOS := createPodWithMemoryQOS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQOSConfig{
 		Policy: slov1alpha1.PodMemoryQOSPolicyAuto,
 		MemoryQOS: slov1alpha1.MemoryQOS{
@@ -477,9 +477,9 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			WmarkMinAdj:       pointer.Int64Ptr(50),
 		},
 	})
-	podParentDirBE := koordletutil.GetPodCgroupDirWithKube(testingPodBEWithMemQOS.CgroupDir)
-	containerDirBE, _ := koordletutil.GetContainerCgroupPathWithKube(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[0])
-	containerDirBE1, _ := koordletutil.GetContainerCgroupPathWithKube(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[1])
+	podParentDirBE := testingPodBEWithMemQOS.CgroupDir
+	containerDirBE, _ := koordletutil.GetContainerCgroupParentDir(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[0])
+	containerDirBE1, _ := koordletutil.GetContainerCgroupParentDir(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[1])
 	type fields struct {
 		resmanager *resmanager
 	}
@@ -1357,7 +1357,7 @@ func createPod(kubeQosClass corev1.PodQOSClass, qosClass apiext.QoSClass) *state
 	}
 
 	return &statesinformer.PodMeta{
-		CgroupDir: koordletutil.GetPodKubeRelativePath(pod),
+		CgroupDir: koordletutil.GetPodCgroupParentDir(pod),
 		Pod:       pod,
 	}
 }

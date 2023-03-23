@@ -604,7 +604,7 @@ func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
 			// init cgroups cpuset file
 			for _, podMeta := range tt.args.pods {
 				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
-					containerPath, err := koordletutil.GetContainerCgroupPathWithKubeByID(podMeta.CgroupDir, containerStat.ContainerID)
+					containerPath, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, containerStat.ContainerID)
 					assert.NoError(t, err, "get contaienr cgorup path during init container cpuset")
 					initCPUSet(containerPath, "", testHelper)
 				}
@@ -634,7 +634,7 @@ func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
 
 			for _, podMeta := range tt.args.pods {
 				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
-					containerPath, err := koordletutil.GetContainerCgroupPathWithKubeByID(podMeta.CgroupDir, containerStat.ContainerID)
+					containerPath, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, containerStat.ContainerID)
 					assert.NoError(t, err, "get contaienr cgorup path during check container cpuset")
 					gotCPUSEt := getCPUSet(containerPath, testHelper)
 					assert.Equal(t, tt.wants.containersCPUSet[containerStat.Name], gotCPUSEt,

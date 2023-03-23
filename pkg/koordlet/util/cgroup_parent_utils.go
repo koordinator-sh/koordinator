@@ -28,18 +28,13 @@ import (
 
 // NOTE: functions in this file can be overwritten for extension
 
-// GetPodCgroupDirWithKube gets the full pod cgroup parent dir with the podParentDir (excluding kubepods dir).
-// @podKubeRelativeDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-func GetPodCgroupDirWithKube(podParentDir string) string {
-	return filepath.Join(system.CgroupPathFormatter.ParentDir, podParentDir)
-}
-
-// GetPodKubeRelativePath gets the full pod cgroup parent with the pod info.
-// @return like kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-func GetPodKubeRelativePath(pod *corev1.Pod) string {
+// GetPodCgroupParentDir gets the full pod cgroup parent with the pod info.
+// @podKubeRelativeDir kubepods-burstable.slice/kubepods-burstable-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @return kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+func GetPodCgroupParentDir(pod *corev1.Pod) string {
 	qosClass := util.GetKubeQosClass(pod)
 	return filepath.Join(
+		system.CgroupPathFormatter.ParentDir,
 		system.CgroupPathFormatter.QOSDirFn(qosClass),
 		system.CgroupPathFormatter.PodDirFn(qosClass, string(pod.UID)),
 	)
@@ -54,7 +49,9 @@ func GetKubeQoSByCgroupParent(cgroupDir string) corev1.PodQOSClass {
 	return corev1.PodQOSGuaranteed
 }
 
-// @return like kubepods.slice/kubepods-burstable.slice/
+// GetPodQoSRelativePath gets the relative parent directory of a pod's qos class.
+// @qosClass corev1.PodQOSBurstable
+// @return kubepods.slice/kubepods-burstable.slice/
 func GetPodQoSRelativePath(qosClass corev1.PodQOSClass) string {
 	return filepath.Join(
 		system.CgroupPathFormatter.ParentDir,
@@ -62,25 +59,23 @@ func GetPodQoSRelativePath(qosClass corev1.PodQOSClass) string {
 	)
 }
 
-// GetContainerCgroupPathWithKube gets the full container cgroup parent dir with the podKubeRelativeDir and the
-// containerStatus.
-// @parentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/****.scope
-func GetContainerCgroupPathWithKube(podParentDir string, c *corev1.ContainerStatus) (string, error) {
-	return GetContainerCgroupPathWithKubeByID(podParentDir, c.ContainerID)
+// GetContainerCgroupParentDir gets the full container cgroup parent with the pod parent dir and the containerStatus.
+// @parentDir kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @return kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/****.scope
+func GetContainerCgroupParentDir(podParentDir string, c *corev1.ContainerStatus) (string, error) {
+	return GetContainerCgroupParentDirByID(podParentDir, c.ContainerID)
 }
 
-// GetContainerCgroupPathWithKubeByID gets the full container cgroup parent dir with the podKubeRelativeDir and the
-// container ID.
-// @parentDir kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/****.scope
-func GetContainerCgroupPathWithKubeByID(podParentDir string, containerID string) (string, error) {
+// GetContainerCgroupParentDirByID gets the full container cgroup parent dir with the podParentDir and the container ID.
+// @parentDir kubepods.slice/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
+// @return kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/****.scope
+func GetContainerCgroupParentDirByID(podParentDir string, containerID string) (string, error) {
 	containerDir, err := system.CgroupPathFormatter.ContainerDirFn(containerID)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(
-		GetPodCgroupDirWithKube(podParentDir),
+		podParentDir,
 		containerDir,
 	), nil
 }

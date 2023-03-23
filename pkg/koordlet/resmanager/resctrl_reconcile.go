@@ -170,7 +170,7 @@ func (r *ResctrlReconcile) getPodCgroupNewTaskIds(podMeta *statesinformer.PodMet
 			continue
 		}
 
-		containerDir, err := koordletutil.GetContainerCgroupPathWithKube(podMeta.CgroupDir, &containerStat)
+		containerDir, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, &containerStat)
 		if err != nil {
 			klog.V(4).Infof("failed to get pod container cgroup path for container %s/%s/%s, err: %s",
 				pod.Namespace, pod.Name, container.Name, err)

@@ -146,7 +146,7 @@ func TestGetPIDsInPod(t *testing.T) {
 		{
 			name: "cgroup",
 			args: args{
-				podParentDir: "kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				podParentDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
 				cs: []corev1.ContainerStatus{
 					{
 						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",

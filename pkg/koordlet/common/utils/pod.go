@@ -27,7 +27,7 @@ func GetPodMetas(pods []*corev1.Pod) []*statesinformer.PodMeta {
 	podMetas := make([]*statesinformer.PodMeta, len(pods))
 
 	for index, pod := range pods {
-		cgroupDir := util.GetPodKubeRelativePath(pod)
+		cgroupDir := util.GetPodCgroupParentDir(pod)
 		podMeta := &statesinformer.PodMeta{CgroupDir: cgroupDir, Pod: pod.DeepCopy()}
 		podMetas[index] = podMeta
 	}

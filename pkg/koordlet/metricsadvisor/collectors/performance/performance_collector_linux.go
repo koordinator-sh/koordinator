@@ -234,7 +234,7 @@ func (p *performanceCollector) collectContainerPSI() {
 
 func (p *performanceCollector) collectSingleContainerPSI(podParentCgroupDir string, containerStatus *corev1.ContainerStatus, pod *corev1.Pod) {
 	collectTime := time.Now()
-	containerPath, err := util.GetContainerCgroupPathWithKube(podParentCgroupDir, containerStatus)
+	containerPath, err := util.GetContainerCgroupParentDir(podParentCgroupDir, containerStatus)
 	if err != nil {
 		klog.Errorf("failed to get container path for container %v/%v/%v cgroup path failed, error: %v", pod.Namespace, pod.Name, containerStatus.Name, err)
 		return
@@ -288,8 +288,7 @@ func (p *performanceCollector) collectPodPSI() {
 
 func (p *performanceCollector) collectSinglePodPSI(pod *corev1.Pod, podCgroupDir string) {
 	collectTime := time.Now()
-	paths := util.GetPodCgroupDirWithKube(podCgroupDir)
-	podPSI, err := p.cgroupReader.ReadPSI(paths)
+	podPSI, err := p.cgroupReader.ReadPSI(podCgroupDir)
 	if err != nil {
 		klog.Errorf("collect pod %v/%v psi err: %v", pod.Namespace, pod.Name, err)
 		return

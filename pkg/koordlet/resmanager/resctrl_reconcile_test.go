@@ -335,7 +335,7 @@ func Test_getPodCgroupNewTaskIds(t *testing.T) {
 							},
 						},
 					},
-					CgroupDir: "p0",
+					CgroupDir: "kubepods.slice/p0",
 				},
 				tasksMap: map[int32]struct{}{
 					122450: {},
@@ -373,7 +373,7 @@ func Test_getPodCgroupNewTaskIds(t *testing.T) {
 							},
 						},
 					},
-					CgroupDir: "p0",
+					CgroupDir: "kubepods.slice/p0",
 				},
 				tasksMap: map[int32]struct{}{
 					122450: {},
@@ -407,7 +407,7 @@ func Test_getPodCgroupNewTaskIds(t *testing.T) {
 							ContainerStatuses: []corev1.ContainerStatus{},
 						},
 					},
-					CgroupDir: "p0",
+					CgroupDir: "kubepods.slice/p0",
 				},
 				tasksMap: map[int32]struct{}{
 					122450: {},
@@ -445,7 +445,7 @@ func Test_getPodCgroupNewTaskIds(t *testing.T) {
 							},
 						},
 					},
-					CgroupDir: "p0",
+					CgroupDir: "kubepods.slice/p0",
 				},
 				tasksMap: map[int32]struct{}{
 					122450: {},
@@ -1122,7 +1122,7 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 				},
 			},
 		},
-		CgroupDir: "p0",
+		CgroupDir: "kubepods.slice/p0",
 	}
 	testQOSStrategy := util.DefaultResourceQOSStrategy()
 	testQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.BoolPtr(true)

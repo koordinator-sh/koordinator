@@ -187,7 +187,7 @@ func (m *CgroupResourcesReconcile) calculateQoSResources(summary *cgroupResource
 func (m *CgroupResourcesReconcile) calculatePodAndContainerResources(podMeta *statesinformer.PodMeta, node *corev1.Node,
 	podCfg *slov1alpha1.ResourceQOS) (podResources, containerResources []resourceexecutor.ResourceUpdater) {
 	pod := podMeta.Pod
-	podDir := koordletutil.GetPodCgroupDirWithKube(podMeta.CgroupDir)
+	podDir := podMeta.CgroupDir
 
 	podResources = m.calculatePodResources(pod, podDir, podCfg)
 
@@ -198,7 +198,7 @@ func (m *CgroupResourcesReconcile) calculatePodAndContainerResources(podMeta *st
 				util.GetPodKey(pod), container.Name, err)
 			continue
 		}
-		containerDir, err := koordletutil.GetContainerCgroupPathWithKube(podMeta.CgroupDir, containerStatus)
+		containerDir, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, containerStatus)
 		if err != nil {
 			klog.Warningf("parse containerDir error! msg: %v", err)
 			continue

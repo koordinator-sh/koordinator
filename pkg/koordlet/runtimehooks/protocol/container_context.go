@@ -56,7 +56,7 @@ func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookReques
 	c.ContainerMeta.FromProxy(req.ContainerMeta, req.PodAnnotations)
 	c.PodLabels = req.GetPodLabels()
 	c.PodAnnotations = req.GetPodAnnotations()
-	c.CgroupParent, _ = koordletutil.GetContainerCgroupPathWithKubeByID(req.GetPodCgroupParent(), c.ContainerMeta.ID)
+	c.CgroupParent, _ = koordletutil.GetContainerCgroupParentDirByID(req.GetPodCgroupParent(), c.ContainerMeta.ID)
 	c.ContainerEnvs = req.GetContainerEnvs()
 	// retrieve ExtendedResources from pod annotations
 	spec, err := apiext.GetExtendedResourceSpec(req.GetPodAnnotations())
@@ -95,7 +95,7 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 	}
 	c.PodLabels = podMeta.Pod.Labels
 	c.PodAnnotations = podMeta.Pod.Annotations
-	c.CgroupParent, _ = koordletutil.GetContainerCgroupPathWithKubeByID(podMeta.CgroupDir, c.ContainerMeta.ID)
+	c.CgroupParent, _ = koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, c.ContainerMeta.ID)
 	// retrieve ExtendedResources from container spec and pod annotations (prefer container spec)
 	specFromAnnotations, err := apiext.GetExtendedResourceSpec(podMeta.Pod.Annotations)
 	if err != nil {

@@ -238,8 +238,8 @@ func newKubeletStubFromConfig(node *corev1.Node, cfg *Config) (KubeletStub, erro
 
 func genPodCgroupParentDir(pod *corev1.Pod) string {
 	// todo use cri interface to get pod cgroup dir
-	// e.g. kubepods-burstable.slice/kubepods-burstable-pod9dba1d9e_67ba_4db6_8a73_fb3ea297c363.slice/
-	return koordletutil.GetPodKubeRelativePath(pod)
+	// e.g. kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod9dba1d9e_67ba_4db6_8a73_fb3ea297c363.slice/
+	return koordletutil.GetPodCgroupParentDir(pod)
 }
 
 func resetPodMetrics() {

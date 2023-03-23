@@ -39,7 +39,7 @@ import (
 func Test_collector_collectPodResUsed(t *testing.T) {
 	testNow := time.Now()
 	testContainerID := "containerd://123abc"
-	testPodMetaDir := "/kubepods-podxxxxxxxx.slice"
+	testPodMetaDir := "kubepods.slice/kubepods-podxxxxxxxx.slice"
 	testPodParentDir := "/kubepods.slice/kubepods-podxxxxxxxx.slice"
 	testContainerParentDir := "/kubepods.slice/kubepods-podxxxxxxxx.slice/cri-containerd-123abc.scope"
 	testPod := &corev1.Pod{

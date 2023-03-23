@@ -614,8 +614,8 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, strconv.FormatInt(tt.args.preBECFSQuota, 10))
 			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, strconv.FormatInt(system.DefaultCPUCFSPeriod, 10))
 			for _, podMeta := range tt.args.podMetas {
-				podMeta.CgroupDir = koordletutil.GetPodKubeRelativePath(podMeta.Pod)
-				helper.WriteCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), podMeta.CgroupDir), system.CPUSet, tt.args.preBECPUSet)
+				podMeta.CgroupDir = koordletutil.GetPodCgroupParentDir(podMeta.Pod)
+				helper.WriteCgroupFileContents(podMeta.CgroupDir, system.CPUSet, tt.args.preBECPUSet)
 			}
 
 			r := &resmanager{
@@ -650,8 +650,8 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			assert.Equal(t, tt.wantBECPUSet, gotCPUSetBECgroup, "checkBECPUSet")
 			for _, podMeta := range tt.args.podMetas {
 				if util.GetKubeQosClass(podMeta.Pod) == corev1.PodQOSBestEffort {
-					gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), podMeta.CgroupDir), system.CPUSet)
-					assert.Equal(t, tt.wantBECPUSet, gotPodCPUSet, "checkPodCPUSet", filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), podMeta.CgroupDir))
+					gotPodCPUSet := helper.ReadCgroupFileContents(podMeta.CgroupDir, system.CPUSet)
+					assert.Equal(t, tt.wantBECPUSet, gotPodCPUSet, "checkPodCPUSet", podMeta.CgroupDir)
 				}
 			}
 		})
