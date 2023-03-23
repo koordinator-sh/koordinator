@@ -21,34 +21,24 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/informers"
-	corelister "k8s.io/client-go/listers/core/v1"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulinglister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 )
 
 type reservationCache struct {
-	podLister          corelister.PodLister
 	reservationLister  schedulinglister.ReservationLister
 	lock               sync.Mutex
 	reservationInfos   map[types.UID]*reservationInfo
 	reservationsOnNode map[string]map[types.UID]*schedulingv1alpha1.Reservation
 }
 
-func newReservationCache(sharedInformerFactory informers.SharedInformerFactory, koordinatorInformerFactory koordinatorinformers.SharedInformerFactory) *reservationCache {
-	podLister := sharedInformerFactory.Core().V1().Pods().Lister()
-	reservationInterface := koordinatorInformerFactory.Scheduling().V1alpha1().Reservations()
-	reservationLister := reservationInterface.Lister()
+func newReservationCache(reservationLister schedulinglister.ReservationLister) *reservationCache {
 	cache := &reservationCache{
-		podLister:          podLister,
 		reservationLister:  reservationLister,
 		reservationInfos:   map[types.UID]*reservationInfo{},
 		reservationsOnNode: map[string]map[types.UID]*schedulingv1alpha1.Reservation{},
 	}
-	registerReservationEventHandler(cache, koordinatorInformerFactory)
-	registerPodEventHandler(cache, sharedInformerFactory)
 	return cache
 }
 
@@ -103,7 +93,7 @@ func (cache *reservationCache) assumePod(reservationUID types.UID, pod *corev1.P
 }
 
 func (cache *reservationCache) forgetPod(reservationUID types.UID, pod *corev1.Pod) {
-	cache.deleteAllocatedPod(reservationUID, pod)
+	cache.deletePod(reservationUID, pod)
 }
 
 func (cache *reservationCache) addPod(reservationUID types.UID, pod *corev1.Pod) {
@@ -127,7 +117,7 @@ func (cache *reservationCache) updatePod(reservationUID types.UID, oldPod, newPo
 	}
 }
 
-func (cache *reservationCache) deleteAllocatedPod(reservationUID types.UID, pod *corev1.Pod) {
+func (cache *reservationCache) deletePod(reservationUID types.UID, pod *corev1.Pod) {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
 

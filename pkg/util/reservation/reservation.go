@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
@@ -186,8 +186,8 @@ func SetReservationExpired(r *schedulingv1alpha1.Reservation) {
 			Type:               schedulingv1alpha1.ReservationConditionReady,
 			Status:             schedulingv1alpha1.ConditionStatusFalse,
 			Reason:             schedulingv1alpha1.ReasonReservationExpired,
-			LastProbeTime:      v1.Now(),
-			LastTransitionTime: v1.Now(),
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
 		}
 		r.Status.Conditions = append(r.Status.Conditions, condition)
 	} else if isReady { // if was ready
@@ -195,13 +195,13 @@ func SetReservationExpired(r *schedulingv1alpha1.Reservation) {
 			Type:               schedulingv1alpha1.ReservationConditionReady,
 			Status:             schedulingv1alpha1.ConditionStatusFalse,
 			Reason:             schedulingv1alpha1.ReasonReservationExpired,
-			LastProbeTime:      v1.Now(),
-			LastTransitionTime: v1.Now(),
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
 		}
 		r.Status.Conditions[idx] = condition
 	} else { // if already not ready
 		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationExpired
-		r.Status.Conditions[idx].LastProbeTime = v1.Now()
+		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
 	}
 }
 
@@ -218,14 +218,14 @@ func SetReservationSucceeded(r *schedulingv1alpha1.Reservation) {
 			Type:               schedulingv1alpha1.ReservationConditionReady,
 			Status:             schedulingv1alpha1.ConditionStatusFalse,
 			Reason:             schedulingv1alpha1.ReasonReservationSucceeded,
-			LastProbeTime:      v1.Now(),
-			LastTransitionTime: v1.Now(),
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
 		}
 		r.Status.Conditions = append(r.Status.Conditions, condition)
 	} else {
 		r.Status.Conditions[idx].Status = schedulingv1alpha1.ConditionStatusFalse
 		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationSucceeded
-		r.Status.Conditions[idx].LastProbeTime = v1.Now()
+		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
 	}
 }
 
@@ -244,15 +244,15 @@ func SetReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string)
 			Type:               schedulingv1alpha1.ReservationConditionScheduled,
 			Status:             schedulingv1alpha1.ConditionStatusTrue,
 			Reason:             schedulingv1alpha1.ReasonReservationScheduled,
-			LastProbeTime:      v1.Now(),
-			LastTransitionTime: v1.Now(),
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
 		},
 		{
 			Type:               schedulingv1alpha1.ReservationConditionReady,
 			Status:             schedulingv1alpha1.ConditionStatusTrue,
 			Reason:             schedulingv1alpha1.ReasonReservationAvailable,
-			LastProbeTime:      v1.Now(),
-			LastTransitionTime: v1.Now(),
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
 		},
 	}
 }
@@ -322,11 +322,11 @@ func MatchReservationControllerReference(pod *corev1.Pod, controllerRef *schedul
 	return false
 }
 
-func matchLabelSelector(pod *corev1.Pod, labelSelector *v1.LabelSelector) bool {
+func matchLabelSelector(pod *corev1.Pod, labelSelector *metav1.LabelSelector) bool {
 	if labelSelector == nil {
 		return true
 	}
-	selector, err := v1.LabelSelectorAsSelector(labelSelector)
+	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
 	if err != nil {
 		return false
 	}

@@ -48,6 +48,9 @@ import (
 
 const (
 	Name = "reservationController"
+
+	minRetryAfterTime = 3 * time.Second
+	maxRetryAfterTime = 15 * time.Second
 )
 
 var _ frameworkext.Controller = &Controller{}
@@ -74,7 +77,7 @@ func New(
 ) *Controller {
 	nodeLister := sharedInformerFactory.Core().V1().Nodes().Lister()
 	podLister := sharedInformerFactory.Core().V1().Pods().Lister()
-	reservationInterface := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations()
+	reservationLister := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 
 	rateLimiter := workqueue.DefaultControllerRateLimiter()
 	queue := workqueue.NewNamedRateLimitingQueue(rateLimiter, Name)
@@ -87,7 +90,7 @@ func New(
 		koordSharedInformerFactory: koordSharedInformerFactory,
 		nodeLister:                 nodeLister,
 		podLister:                  podLister,
-		reservationLister:          reservationInterface.Lister(),
+		reservationLister:          reservationLister,
 		koordClientSet:             koordClientSet,
 		queue:                      queue,
 		numWorker:                  numWorker,
@@ -174,12 +177,12 @@ func (c *Controller) sync(reservationName string) (result, error) {
 		return result{}, nil
 	}
 
-	reservation = reservation.DeepCopy()
-
 	if reservationutil.IsReservationFailed(reservation) ||
 		reservationutil.IsReservationSucceeded(reservation) {
 		return result{}, nil
 	}
+
+	reservation = reservation.DeepCopy()
 
 	if reservationutil.IsReservationActive(reservation) {
 		if isReservationNeedExpiration(reservation) {
@@ -187,24 +190,15 @@ func (c *Controller) sync(reservationName string) (result, error) {
 		}
 	}
 
-	if reservation.Status.NodeName != "" {
-		if _, err := c.nodeLister.Get(reservation.Status.NodeName); err != nil {
-			if !errors.IsNotFound(err) {
-				return result{}, err
-			}
-			return result{}, c.expireReservation(reservation)
-		}
+	if reservation.Status.NodeName != "" && missingNode(reservation, c.nodeLister) {
+		return result{}, c.expireReservation(reservation)
 	}
 
 	if err := c.syncStatus(reservation); err != nil {
 		return result{}, err
 	}
 
-	if reservation.Spec.TTL != nil && reservation.Spec.TTL.Duration > 0 {
-		return result{requeueAfter: 5 * time.Second}, nil
-	}
-
-	return result{}, nil
+	return result{requeueAfter: nextSyncTime(reservation)}, nil
 }
 
 func (c *Controller) expireReservation(reservation *schedulingv1alpha1.Reservation) error {
@@ -242,11 +236,11 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) err
 		return actualOwners[i].UID < actualOwners[j].UID
 	})
 
+	actualAllocated = quotav1.Mask(actualAllocated, quotav1.ResourceNames(reservation.Status.Allocatable))
 	if reflect.DeepEqual(reservation.Status.CurrentOwners, actualOwners) && quotav1.Equals(actualAllocated, reservation.Status.Allocated) {
 		return nil
 	}
 
-	actualAllocated = quotav1.Mask(actualAllocated, quotav1.ResourceNames(reservation.Status.Allocatable))
 	reservation.Status.Allocated = actualAllocated
 	reservation.Status.CurrentOwners = actualOwners
 
@@ -255,10 +249,8 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) err
 	}
 
 	_, err := c.koordClientSet.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), reservation, metav1.UpdateOptions{})
-	if err != nil {
-		klog.V(3).InfoS("failed to update status for reservation correction", "reservation", klog.KObj(reservation), "err", err)
-	} else {
-		klog.V(5).InfoS("update active reservation for status correction", "reservation", klog.KObj(reservation))
+	if err == nil {
+		klog.V(4).InfoS("Successfully sync reservation status", "reservation", klog.KObj(reservation))
 	}
 	return err
 }
@@ -275,4 +267,25 @@ func isReservationNeedExpiration(r *schedulingv1alpha1.Reservation) bool {
 	// 3. if both TTL and Expires are set, firstly check Expires
 	return r.Spec.Expires != nil && time.Now().After(r.Spec.Expires.Time) ||
 		r.Spec.TTL != nil && time.Since(r.CreationTimestamp.Time) > r.Spec.TTL.Duration
+}
+
+func nextSyncTime(r *schedulingv1alpha1.Reservation) time.Duration {
+	if reservationutil.IsReservationFailed(r) || reservationutil.IsReservationSucceeded(r) {
+		return 0
+	}
+	var duration time.Duration
+	if r.Spec.Expires != nil {
+		duration = time.Until(r.Spec.Expires.Time)
+	} else if r.Spec.TTL != nil && r.Spec.TTL.Duration > 0 {
+		duration = time.Until(r.CreationTimestamp.Add(r.Spec.TTL.Duration))
+	}
+	if duration == 0 {
+		return 0
+	}
+	if duration < minRetryAfterTime {
+		duration = minRetryAfterTime
+	} else if duration > maxRetryAfterTime {
+		duration = maxRetryAfterTime
+	}
+	return duration
 }

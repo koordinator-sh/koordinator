@@ -71,5 +71,5 @@ func (h *podEventHandler) OnDelete(obj interface{}) {
 	if err != nil || reservationAllocated == nil || reservationAllocated.UID == "" {
 		return
 	}
-	h.cache.deleteAllocatedPod(reservationAllocated.UID, pod)
+	h.cache.deletePod(reservationAllocated.UID, pod)
 }

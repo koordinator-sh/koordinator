@@ -43,12 +43,12 @@ func (c *Controller) gcReservations() {
 	}
 	for _, reservation := range reservations {
 		if reservationutil.IsReservationExpired(reservation) || reservationutil.IsReservationSucceeded(reservation) {
-			if !isReservationNeedCleanup(reservation) || missingNode(reservation, c.nodeLister) {
-				continue
-			}
-			if err = c.koordClientSet.SchedulingV1alpha1().Reservations().Delete(context.TODO(), reservation.Name, metav1.DeleteOptions{}); err != nil {
-				klog.V(3).InfoS("failed to delete reservation", "reservation", klog.KObj(reservation), "err", err)
-				continue
+			if isReservationNeedCleanup(reservation) || missingNode(reservation, c.nodeLister) {
+				if err = c.koordClientSet.SchedulingV1alpha1().Reservations().Delete(context.TODO(), reservation.Name, metav1.DeleteOptions{}); err != nil {
+					klog.V(3).InfoS("failed to delete reservation", "reservation", klog.KObj(reservation), "err", err)
+				} else {
+					klog.V(4).InfoS("Reservation %v has been garbage collected", "reservation", klog.KObj(reservation))
+				}
 			}
 		}
 	}

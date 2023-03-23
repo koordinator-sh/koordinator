@@ -21,127 +21,26 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
-func Test_setReservationAllocated(t *testing.T) {
+func TestSetReservationAllocated(t *testing.T) {
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
 			Name: "test-reservation",
 		},
-		Status: schedulingv1alpha1.ReservationStatus{
-			Phase: schedulingv1alpha1.ReservationAvailable,
-			Allocatable: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("4"),
-				corev1.ResourceMemory: resource.MustParse("4Gi"),
-			},
-		},
 	}
-
-	tests := []struct {
-		name            string
-		pod             *corev1.Pod
-		reservation     *schedulingv1alpha1.Reservation
-		wantReservation *schedulingv1alpha1.Reservation
-	}{
-		{
-			name: "allocate in reservation",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "1234567890",
-					Namespace: "test-ns",
-					Name:      "test",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1"),
-									corev1.ResourceMemory: resource.MustParse("1Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-			reservation: reservation.DeepCopy(),
-			wantReservation: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-reservation",
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					Phase: schedulingv1alpha1.ReservationAvailable,
-					Allocatable: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("4"),
-						corev1.ResourceMemory: resource.MustParse("4Gi"),
-					},
-					Allocated: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("1"),
-						corev1.ResourceMemory: resource.MustParse("1Gi"),
-					},
-					CurrentOwners: []corev1.ObjectReference{
-						{
-							UID:       "1234567890",
-							Namespace: "test-ns",
-							Name:      "test",
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "only allocate CPUs in reservation",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "1234567890",
-					Namespace: "test-ns",
-					Name:      "test",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("1"),
-								},
-							},
-						},
-					},
-				},
-			},
-			reservation: reservation.DeepCopy(),
-			wantReservation: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-reservation",
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					Phase: schedulingv1alpha1.ReservationAvailable,
-					Allocatable: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("4"),
-						corev1.ResourceMemory: resource.MustParse("4Gi"),
-					},
-					Allocated: corev1.ResourceList{
-						corev1.ResourceCPU: resource.MustParse("1"),
-					},
-					CurrentOwners: []corev1.ObjectReference{
-						{
-							UID:       "1234567890",
-							Namespace: "test-ns",
-							Name:      "test",
-						},
-					},
-				},
-			},
-		},
+	pod := &corev1.Pod{}
+	SetReservationAllocated(pod, reservation)
+	reservationAllocated, err := GetReservationAllocated(pod)
+	assert.NoError(t, err)
+	expectReservationAllocated := &ReservationAllocated{
+		UID:  reservation.UID,
+		Name: reservation.Name,
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			SetReservationAllocated(tt.pod, tt.reservation)
-			assert.Equal(t, tt.wantReservation, tt.reservation)
-		})
-	}
+	assert.Equal(t, expectReservationAllocated, reservationAllocated)
 }

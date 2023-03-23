@@ -30,7 +30,7 @@ import (
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-func (p *Plugin) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*schedulingv1alpha1.Reservation, *framework.Status) {
+func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*schedulingv1alpha1.Reservation, *framework.Status) {
 	if reservationutil.IsReservePod(pod) {
 		return nil, nil
 	}
@@ -46,7 +46,7 @@ func (p *Plugin) NominateReservation(ctx context.Context, cycleState *framework.
 		return highestScorer, nil
 	}
 
-	extender, ok := p.handle.(frameworkext.FrameworkExtender)
+	extender, ok := pl.handle.(frameworkext.FrameworkExtender)
 	if !ok {
 		return nil, framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
 	}
@@ -67,10 +67,6 @@ func (p *Plugin) NominateReservation(ctx context.Context, cycleState *framework.
 	if err != nil {
 		return nil, framework.AsStatus(err)
 	}
-	if len(reservationScoreList) == 0 {
-		return nil, framework.AsStatus(fmt.Errorf("not found suitable reservation on node %v", nodeName))
-	}
-
 	sort.Slice(reservationScoreList, func(i, j int) bool {
 		return reservationScoreList[i].Score > reservationScoreList[j].Score
 	})
@@ -82,7 +78,6 @@ func (p *Plugin) NominateReservation(ctx context.Context, cycleState *framework.
 			break
 		}
 	}
-
 	if highestScorer == nil {
 		return nil, framework.AsStatus(fmt.Errorf("missing the most suitable reservation %v(%v)", reservationScoreList[0].Name, highestScorer.UID))
 	}
@@ -112,7 +107,6 @@ func prioritizeReservations(
 
 	// Summarize all scores.
 	result := make(frameworkext.ReservationScoreList, 0, len(reservations))
-
 	for i := range reservations {
 		result = append(result, frameworkext.ReservationScore{Name: reservations[i].Name, Score: 0})
 		for j := range scoresMap {

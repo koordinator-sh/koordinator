@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	"k8s.io/client-go/informers"
 	"k8s.io/klog/v2"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -33,12 +34,12 @@ import (
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-func (p *Plugin) BeforePreFilter(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool) {
+func (pl *Plugin) BeforePreFilter(_ frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool) {
 	if reservationutil.IsReservePod(pod) {
 		return nil, false
 	}
 
-	state, err := p.prepareMatchReservationState(handle, pod)
+	state, err := pl.prepareMatchReservationState(pod)
 	if err != nil {
 		klog.Warningf("BeforePreFilter failed to get matched reservations, err: %v", err)
 		return nil, false
@@ -46,17 +47,17 @@ func (p *Plugin) BeforePreFilter(handle frameworkext.ExtendedHandle, cycleState 
 	cycleState.Write(stateKey, state)
 
 	klog.V(4).Infof("Pod %v has %d matched reservations and %d unmatched reservations before PreFilter", klog.KObj(pod), len(state.matched), len(state.unmatched))
-	return pod, false
+	return nil, false
 }
 
-func (p *Plugin) AfterPreFilter(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) error {
+func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) error {
 	if reservationutil.IsReservePod(pod) {
 		return nil
 	}
 
 	state := getStateData(cycleState)
 	for nodeName, reservationInfos := range state.unmatched {
-		nodeInfo, err := handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 		if err != nil {
 			continue
 		}
@@ -78,7 +79,7 @@ func (p *Plugin) AfterPreFilter(handle frameworkext.ExtendedHandle, cycleState *
 				klog.Errorf("Failed to remove reserve pod %v from node %v, err: %v", klog.KObj(rInfo.reservation), nodeName, err)
 				return err
 			}
-			// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, you need to set Generation to -1
+			// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
 			nodeInfo.Generation = -1
 
 			for i := range reservePod.Spec.Containers {
@@ -95,7 +96,7 @@ func (p *Plugin) AfterPreFilter(handle frameworkext.ExtendedHandle, cycleState *
 	}
 
 	for nodeName, reservationInfos := range state.matched {
-		nodeInfo, err := handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 		if err != nil {
 			continue
 		}
@@ -111,7 +112,7 @@ func (p *Plugin) AfterPreFilter(handle frameworkext.ExtendedHandle, cycleState *
 		}
 
 		for _, rInfo := range reservationInfos {
-			if err := restoreReservedResources(handle, cycleState, pod, rInfo, nodeInfo, podInfoMap); err != nil {
+			if err := restoreReservedResources(pl.handle, cycleState, pod, rInfo, nodeInfo, podInfoMap); err != nil {
 				return err
 			}
 		}
@@ -137,7 +138,7 @@ func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *fr
 	if err := nodeInfo.RemovePod(reservePod); err != nil {
 		return err
 	}
-	// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, you need to set Generation to -1
+	// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
 	nodeInfo.Generation = -1
 
 	// Regardless of whether the Reservation enables AllocateOnce
@@ -220,8 +221,8 @@ func retainReservePodUnusedPorts(reservePod *corev1.Pod, reservation *scheduling
 	}
 }
 
-func (p *Plugin) prepareMatchReservationState(handle frameworkext.ExtendedHandle, pod *corev1.Pod) (*stateData, error) {
-	allNodes, err := handle.SnapshotSharedLister().NodeInfos().List()
+func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, error) {
+	allNodes, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
 		return nil, fmt.Errorf("cannot list NodeInfo, err: %v", err)
 	}
@@ -240,7 +241,7 @@ func (p *Plugin) prepareMatchReservationState(handle frameworkext.ExtendedHandle
 			return
 		}
 
-		rOnNode := p.reservationCache.listReservationInfosOnNode(node.Name)
+		rOnNode := pl.reservationCache.listReservationInfosOnNode(node.Name)
 		for _, rInfo := range rOnNode {
 			if !reservationutil.IsReservationAvailable(rInfo.reservation) {
 				continue
@@ -269,10 +270,10 @@ func (p *Plugin) prepareMatchReservationState(handle frameworkext.ExtendedHandle
 			return
 		}
 
-		restorePVCRefCounts(handle, nodeInfo, pod, matched)
+		restorePVCRefCounts(pl.handle.SharedInformerFactory(), nodeInfo, pod, matched)
 		klog.V(4).Infof("Pod %v has %d matched reservations before PreFilter, %d unmatched reservations on node %v", klog.KObj(pod), len(matched), len(unmatched), node.Name)
 	}
-	p.parallelizeUntil(context.TODO(), len(allNodes), processNode)
+	pl.handle.Parallelizer().Until(context.TODO(), len(allNodes), processNode)
 	return state, nil
 }
 
@@ -280,14 +281,14 @@ func genPVCRefKey(pvc *corev1.PersistentVolumeClaim) string {
 	return pvc.Namespace + "/" + pvc.Name
 }
 
-func restorePVCRefCounts(handle framework.Handle, nodeInfo *framework.NodeInfo, pod *corev1.Pod, reservationInfos []*reservationInfo) {
+func restorePVCRefCounts(informerFactory informers.SharedInformerFactory, nodeInfo *framework.NodeInfo, pod *corev1.Pod, reservationInfos []*reservationInfo) {
 	// VolumeRestrictions plugin will check PVCRefCounts in NodeInfo in BeforePreFilter phase.
 	// If the scheduling pod declare a PVC with ReadWriteOncePod access mode and the
 	// PVC has been used by other scheduled pod, the scheduling pod will be marked
 	// as UnschedulableAndUnresolvable.
 	// So we need to modify PVCRefCounts that are added by matched reservePod in nodeInfo
 	// to schedule the real pod.
-	pvcLister := handle.SharedInformerFactory().Core().V1().PersistentVolumeClaims().Lister()
+	pvcLister := informerFactory.Core().V1().PersistentVolumeClaims().Lister()
 	for _, rInfo := range reservationInfos {
 		podSpecTemplate := rInfo.reservation.Spec.Template
 		for _, volume := range podSpecTemplate.Spec.Volumes {
@@ -304,7 +305,7 @@ func restorePVCRefCounts(handle framework.Handle, nodeInfo *framework.NodeInfo, 
 			}
 
 			nodeInfo.PVCRefCounts[genPVCRefKey(pvc)] -= 1
-			// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, you need to set Generation to -1
+			// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
 			nodeInfo.Generation = -1
 		}
 	}

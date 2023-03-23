@@ -37,7 +37,7 @@ const (
 	mostPreferredScore = 1000
 )
 
-func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
 	if reservationutil.IsReservePod(pod) {
 		return nil
 	}
@@ -48,7 +48,7 @@ func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState,
 	}
 
 	nodeOrders := make([]int64, len(nodes))
-	p.parallelizeUntil(ctx, len(nodes), func(piece int) {
+	pl.handle.Parallelizer().Until(ctx, len(nodes), func(piece int) {
 		node := nodes[piece]
 		rOnNode := state.matched[node.Name]
 		if len(rOnNode) == 0 {
@@ -71,7 +71,7 @@ func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState,
 	return nil
 }
 
-func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
+func (pl *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
 	if reservationutil.IsReservePod(pod) {
 		return framework.MinNodeScore, nil
 	}
@@ -97,18 +97,18 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	return maxScore, nil
 }
 
-func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
-	return p
+func (pl *Plugin) ScoreExtensions() framework.ScoreExtensions {
+	return pl
 }
 
-func (p *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, scores framework.NodeScoreList) *framework.Status {
+func (pl *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, scores framework.NodeScoreList) *framework.Status {
 	if reservationutil.IsReservePod(pod) {
 		return nil
 	}
 	return pluginhelper.DefaultNormalizeScore(framework.MaxNodeScore, false, scores)
 }
 
-func (p *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) (int64, *framework.Status) {
+func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) (int64, *framework.Status) {
 	state := getStateData(cycleState)
 	rOnNode := state.matched[nodeName]
 
@@ -119,7 +119,6 @@ func (p *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cyc
 			break
 		}
 	}
-
 	if rInfo == nil {
 		return 0, framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
 	}
@@ -149,6 +148,7 @@ func findMostPreferredReservationByOrder(rOnNode []*reservationInfo) (*schedulin
 }
 
 func scoreReservation(pod *corev1.Pod, reservation *reservationInfo) int64 {
+	// TODO(joseph): we should support zero-request pods
 	requested, _ := resourceapi.PodRequestsAndLimits(pod)
 	if allocated := reservation.allocated; allocated != nil {
 		// consider multi owners sharing one reservation

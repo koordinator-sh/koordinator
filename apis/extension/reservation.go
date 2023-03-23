@@ -67,15 +67,3 @@ func SetReservationAllocated(pod *corev1.Pod, r *schedulingv1alpha1.Reservation)
 	data, _ := json.Marshal(reservationAllocated) // assert no error
 	pod.Annotations[AnnotationReservationAllocated] = string(data)
 }
-
-func RemoveReservationAllocated(pod *corev1.Pod, r *schedulingv1alpha1.Reservation) (bool, error) {
-	reservationAllocated, err := GetReservationAllocated(pod)
-	if err != nil {
-		return false, err
-	}
-	if reservationAllocated != nil && reservationAllocated.Name == r.Name && reservationAllocated.UID == r.UID {
-		delete(pod.Annotations, AnnotationReservationAllocated)
-		return true, nil
-	}
-	return false, nil
-}
