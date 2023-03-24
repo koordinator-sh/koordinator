@@ -155,7 +155,6 @@ the implementation of this part depends on the `nodeResource`  controller in koo
 so for batch-resource, the `batchResourceFit` plugin can take into account the resources reserved by the node.
 The detailed algorithm is as follows:
 ```
-node.alloc = node.alloc - node.anno.reserved
 reserveRatio = (100-thresholdPercent) / 100.0
 node.reserved = node.alloc * reserveRatio
 system.used = max(node.used - pod.used, node.anno.reserved)
