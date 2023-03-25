@@ -20,8 +20,11 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/tools/cache"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/api/v1/resource"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -49,7 +52,7 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	// name, uid: reservation uid
 	reservePod.Name = GetReservationKey(r)
 	reservePod.UID = r.UID
-	if len(reservePod.Namespace) <= 0 {
+	if len(reservePod.Namespace) == 0 {
 		reservePod.Namespace = corev1.NamespaceDefault
 	}
 
@@ -89,7 +92,6 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	}
 
 	reservePod.Spec.SchedulerName = GetReservationSchedulerName(r)
-
 	return reservePod
 }
 
@@ -100,7 +102,7 @@ func ValidateReservation(r *schedulingv1alpha1.Reservation) error {
 	if r.Spec.Template == nil {
 		return fmt.Errorf("the reservation misses the template spec")
 	}
-	if len(r.Spec.Owners) <= 0 {
+	if len(r.Spec.Owners) == 0 {
 		return fmt.Errorf("the reservation misses the owner spec")
 	}
 	if r.Spec.TTL == nil && r.Spec.Expires == nil {
@@ -117,10 +119,6 @@ func GetReservationKey(r *schedulingv1alpha1.Reservation) string {
 	return string(r.UID)
 }
 
-func GetReservePodKey(pod *corev1.Pod) string {
-	return string(pod.UID)
-}
-
 func GetReservePodNodeName(pod *corev1.Pod) string {
 	return pod.Annotations[AnnotationReservationNode]
 }
@@ -130,7 +128,7 @@ func GetReservationNameFromReservePod(pod *corev1.Pod) string {
 }
 
 func GetReservationSchedulerName(r *schedulingv1alpha1.Reservation) string {
-	if r == nil || r.Spec.Template == nil || len(r.Spec.Template.Spec.SchedulerName) <= 0 {
+	if r == nil || r.Spec.Template == nil || len(r.Spec.Template.Spec.SchedulerName) == 0 {
 		return corev1.DefaultSchedulerName
 	}
 	return r.Spec.Template.Spec.SchedulerName
@@ -172,94 +170,165 @@ func GetReservationNodeName(r *schedulingv1alpha1.Reservation) string {
 	return r.Status.NodeName
 }
 
-func IsObjValidActiveReservation(obj interface{}) bool {
-	reservation, _ := obj.(*schedulingv1alpha1.Reservation)
-	err := ValidateReservation(reservation)
-	if err != nil {
-		klog.ErrorS(err, "failed to validate reservation obj", "reservation", klog.KObj(reservation))
-		return false
-	}
-	if !IsReservationActive(reservation) {
-		klog.V(6).InfoS("ignore reservation obj since it is not active",
-			"reservation", klog.KObj(reservation), "phase", reservation.Status.Phase)
-		return false
-	}
-	return true
-}
-
-// ReservationToPodEventHandler can be used to handle reservation events with a pod event handler, which converts
-// each reservation object into the corresponding reserve pod object.
-//
-//	e.g.
-//	func registerReservationEventHandler(handle framework.Handle, podHandler podHandler) {
-//	  extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
-//	  if !ok { // if not implement extendedHandle, ignore reservation events
-//	    klog.V(3).Infof("registerReservationEventHandler aborted, cannot convert handle to frameworkext.ExtendedHandle, got %T", handle)
-//	    return
-//	  }
-//	  extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Informer().
-//	 	 AddEventHandler(util.NewReservationToPodEventHandler(&podHandler, IsObjValidActiveReservation))
-//	}
-type ReservationToPodEventHandler struct {
-	handler cache.ResourceEventHandler
-}
-
-var _ cache.ResourceEventHandler = &ReservationToPodEventHandler{}
-
-func NewReservationToPodEventHandler(handler cache.ResourceEventHandler, filters ...func(obj interface{}) bool) cache.ResourceEventHandler {
-	return cache.FilteringResourceEventHandler{
-		FilterFunc: func(obj interface{}) bool {
-			for _, fn := range filters {
-				if !fn(obj) {
-					return false
-				}
-			}
-			return true
-		},
-		Handler: &ReservationToPodEventHandler{
-			handler: handler,
-		},
-	}
-}
-
-func (r ReservationToPodEventHandler) OnAdd(obj interface{}) {
-	reservation, ok := obj.(*schedulingv1alpha1.Reservation)
-	if !ok {
-		return
-	}
-	pod := NewReservePod(reservation)
-	r.handler.OnAdd(pod)
-}
-
-// OnUpdate calls UpdateFunc if it's not nil.
-func (r ReservationToPodEventHandler) OnUpdate(oldObj, newObj interface{}) {
-	oldR, oldOK := oldObj.(*schedulingv1alpha1.Reservation)
-	newR, newOK := newObj.(*schedulingv1alpha1.Reservation)
-	if !oldOK || !newOK {
-		return
-	}
-
-	oldPod := NewReservePod(oldR)
-	newPod := NewReservePod(newR)
-	r.handler.OnUpdate(oldPod, newPod)
-}
-
-// OnDelete calls DeleteFunc if it's not nil.
-func (r ReservationToPodEventHandler) OnDelete(obj interface{}) {
-	var reservation *schedulingv1alpha1.Reservation
-	switch t := obj.(type) {
-	case *schedulingv1alpha1.Reservation:
-		reservation = t
-	case cache.DeletedFinalStateUnknown:
-		var ok bool
-		reservation, ok = t.Obj.(*schedulingv1alpha1.Reservation)
-		if !ok {
-			return
+func SetReservationExpired(r *schedulingv1alpha1.Reservation) {
+	r.Status.Phase = schedulingv1alpha1.ReservationFailed
+	// not duplicate expired info
+	idx := -1
+	isReady := false
+	for i, condition := range r.Status.Conditions {
+		if condition.Type == schedulingv1alpha1.ReservationConditionReady {
+			idx = i
+			isReady = condition.Status == schedulingv1alpha1.ConditionStatusTrue
 		}
-	default:
-		return
 	}
+	if idx < 0 { // if not set condition
+		condition := schedulingv1alpha1.ReservationCondition{
+			Type:               schedulingv1alpha1.ReservationConditionReady,
+			Status:             schedulingv1alpha1.ConditionStatusFalse,
+			Reason:             schedulingv1alpha1.ReasonReservationExpired,
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
+		}
+		r.Status.Conditions = append(r.Status.Conditions, condition)
+	} else if isReady { // if was ready
+		condition := schedulingv1alpha1.ReservationCondition{
+			Type:               schedulingv1alpha1.ReservationConditionReady,
+			Status:             schedulingv1alpha1.ConditionStatusFalse,
+			Reason:             schedulingv1alpha1.ReasonReservationExpired,
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
+		}
+		r.Status.Conditions[idx] = condition
+	} else { // if already not ready
+		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationExpired
+		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
+	}
+}
 
-	pod := NewReservePod(reservation)
-	r.handler.OnDelete(pod)
+func SetReservationSucceeded(r *schedulingv1alpha1.Reservation) {
+	r.Status.Phase = schedulingv1alpha1.ReservationSucceeded
+	idx := -1
+	for i, condition := range r.Status.Conditions {
+		if condition.Type == schedulingv1alpha1.ReservationConditionReady {
+			idx = i
+		}
+	}
+	if idx < 0 { // if not set condition
+		condition := schedulingv1alpha1.ReservationCondition{
+			Type:               schedulingv1alpha1.ReservationConditionReady,
+			Status:             schedulingv1alpha1.ConditionStatusFalse,
+			Reason:             schedulingv1alpha1.ReasonReservationSucceeded,
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
+		}
+		r.Status.Conditions = append(r.Status.Conditions, condition)
+	} else {
+		r.Status.Conditions[idx].Status = schedulingv1alpha1.ConditionStatusFalse
+		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationSucceeded
+		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
+	}
+}
+
+func SetReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string) {
+	r.Status.NodeName = nodeName
+	r.Status.Phase = schedulingv1alpha1.ReservationAvailable
+	r.Status.CurrentOwners = make([]corev1.ObjectReference, 0)
+
+	requests := ReservationRequests(r)
+	r.Status.Allocatable = requests
+	r.Status.Allocated = nil
+
+	// initialize the conditions
+	r.Status.Conditions = []schedulingv1alpha1.ReservationCondition{
+		{
+			Type:               schedulingv1alpha1.ReservationConditionScheduled,
+			Status:             schedulingv1alpha1.ConditionStatusTrue,
+			Reason:             schedulingv1alpha1.ReasonReservationScheduled,
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
+		},
+		{
+			Type:               schedulingv1alpha1.ReservationConditionReady,
+			Status:             schedulingv1alpha1.ConditionStatusTrue,
+			Reason:             schedulingv1alpha1.ReasonReservationAvailable,
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
+		},
+	}
+}
+
+func ReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceList {
+	requests, _ := resource.PodRequestsAndLimits(&corev1.Pod{
+		Spec: r.Spec.Template.Spec,
+	})
+	return requests
+}
+
+func ReservePorts(r *schedulingv1alpha1.Reservation) framework.HostPortInfo {
+	portInfo := framework.HostPortInfo{}
+	for _, container := range r.Spec.Template.Spec.Containers {
+		for _, podPort := range container.Ports {
+			portInfo.Add(podPort.HostIP, string(podPort.Protocol), podPort.HostPort)
+		}
+	}
+	return portInfo
+}
+
+// MatchReservationOwners checks if the scheduling pod matches the reservation's owner spec.
+// `reservation.spec.owners` defines the DNF (disjunctive normal form) of ObjectReference, ControllerReference
+// (extended), LabelSelector, which means multiple selectors are firstly ANDed and secondly ORed.
+func MatchReservationOwners(pod *corev1.Pod, r *schedulingv1alpha1.Reservation) bool {
+	// assert pod != nil && r != nil
+	// Owners == nil matches nothing, while Owners = [{}] matches everything
+	for _, owner := range r.Spec.Owners {
+		if MatchObjectRef(pod, owner.Object) &&
+			MatchReservationControllerReference(pod, owner.Controller) &&
+			matchLabelSelector(pod, owner.LabelSelector) {
+			return true
+		}
+	}
+	return false
+}
+
+func MatchObjectRef(pod *corev1.Pod, objRef *corev1.ObjectReference) bool {
+	// `ResourceVersion`, `FieldPath` are ignored.
+	// since only pod type are compared, `Kind` field is also ignored.
+	return objRef == nil ||
+		(len(objRef.UID) == 0 || pod.UID == objRef.UID) &&
+			(len(objRef.Name) == 0 || pod.Name == objRef.Name) &&
+			(len(objRef.Namespace) == 0 || pod.Namespace == objRef.Namespace) &&
+			(len(objRef.APIVersion) == 0 || pod.APIVersion == objRef.APIVersion)
+}
+
+func MatchReservationControllerReference(pod *corev1.Pod, controllerRef *schedulingv1alpha1.ReservationControllerReference) bool {
+	// controllerRef matched if any of pod owner references matches the controllerRef;
+	// typically a pod has only one controllerRef
+	if controllerRef == nil {
+		return true
+	}
+	if len(controllerRef.Namespace) > 0 && controllerRef.Namespace != pod.Namespace { // namespace field is extended
+		return false
+	}
+	// currently `BlockOwnerDeletion` is ignored
+	for _, podOwner := range pod.OwnerReferences {
+		if (controllerRef.Controller == nil || podOwner.Controller != nil && *controllerRef.Controller == *podOwner.Controller) &&
+			(len(controllerRef.UID) == 0 || controllerRef.UID == podOwner.UID) &&
+			(len(controllerRef.Name) == 0 || controllerRef.Name == podOwner.Name) &&
+			(len(controllerRef.Kind) == 0 || controllerRef.Kind == podOwner.Kind) &&
+			(len(controllerRef.APIVersion) == 0 || controllerRef.APIVersion == podOwner.APIVersion) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchLabelSelector(pod *corev1.Pod, labelSelector *metav1.LabelSelector) bool {
+	if labelSelector == nil {
+		return true
+	}
+	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
+	if err != nil {
+		return false
+	}
+	return selector.Matches(labels.Set(pod.Labels))
 }
