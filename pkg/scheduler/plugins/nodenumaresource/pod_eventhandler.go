@@ -23,9 +23,11 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 type podEventHandler struct {
@@ -38,6 +40,12 @@ func registerPodEventHandler(handle framework.Handle, cpuManager CPUManager) {
 		cpuManager: cpuManager,
 	}
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), handle.SharedInformerFactory(), podInformer, eventHandler)
+	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
+	if ok {
+		reservationInformer := extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations()
+		reservationEventHandler := reservationutil.NewReservationToPodEventHandler(eventHandler, reservationutil.IsObjValidActiveReservation)
+		frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), extendedHandle.KoordinatorSharedInformerFactory(), reservationInformer.Informer(), reservationEventHandler)
+	}
 }
 
 func (c *podEventHandler) OnAdd(obj interface{}) {

@@ -37,9 +37,13 @@ type CPUManager interface {
 		node *corev1.Node,
 		numCPUsNeeded int,
 		cpuBindPolicy schedulingconfig.CPUBindPolicy,
-		cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy) (cpuset.CPUSet, error)
+		cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy,
+		preferredCPUs cpuset.CPUSet,
+	) (cpuset.CPUSet, error)
 
 	UpdateAllocatedCPUSet(nodeName string, podUID types.UID, cpuset cpuset.CPUSet, cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy)
+
+	GetAllocatedCPUSet(nodeName string, podUID types.UID) (cpuset.CPUSet, bool)
 
 	Free(nodeName string, podUID types.UID)
 
@@ -47,7 +51,9 @@ type CPUManager interface {
 		node *corev1.Node,
 		numCPUsNeeded int,
 		cpuBindPolicy schedulingconfig.CPUBindPolicy,
-		cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy) int64
+		cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy,
+		preferredCPUs cpuset.CPUSet,
+	) int64
 
 	GetAvailableCPUs(nodeName string) (availableCPUs cpuset.CPUSet, allocated CPUDetails, err error)
 }
@@ -112,6 +118,7 @@ func (c *cpuManagerImpl) Allocate(
 	numCPUsNeeded int,
 	cpuBindPolicy schedulingconfig.CPUBindPolicy,
 	cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy,
+	preferredCPUs cpuset.CPUSet,
 ) (cpuset.CPUSet, error) {
 	result := cpuset.CPUSet{}
 	// The Pod requires the CPU to be allocated according to CPUBindPolicy,
@@ -131,19 +138,47 @@ func (c *cpuManagerImpl) Allocate(
 	allocation.lock.Lock()
 	defer allocation.lock.Unlock()
 
-	availableCPUs, allocated := allocation.getAvailableCPUs(cpuTopologyOptions.CPUTopology, cpuTopologyOptions.MaxRefCount, reservedCPUs)
+	availableCPUs, allocated := allocation.getAvailableCPUs(cpuTopologyOptions.CPUTopology, cpuTopologyOptions.MaxRefCount, reservedCPUs, preferredCPUs)
 	numaAllocateStrategy := c.getNUMAAllocateStrategy(node)
-	result, err := takeCPUs(
-		cpuTopologyOptions.CPUTopology,
-		cpuTopologyOptions.MaxRefCount,
-		availableCPUs,
-		allocated,
-		numCPUsNeeded,
-		cpuBindPolicy,
-		cpuExclusivePolicy,
-		numaAllocateStrategy,
-	)
-	return result, err
+	if !preferredCPUs.IsEmpty() {
+		var err error
+		result, err = takePreferredCPUs(
+			cpuTopologyOptions.CPUTopology,
+			cpuTopologyOptions.MaxRefCount,
+			availableCPUs,
+			preferredCPUs,
+			allocated,
+			numCPUsNeeded,
+			cpuBindPolicy,
+			cpuExclusivePolicy,
+			numaAllocateStrategy)
+		if err != nil {
+			return result, err
+		}
+		numCPUsNeeded -= result.Size()
+		availableCPUs = availableCPUs.Difference(preferredCPUs)
+	}
+	if numCPUsNeeded > 0 {
+		cpus, err := takeCPUs(
+			cpuTopologyOptions.CPUTopology,
+			cpuTopologyOptions.MaxRefCount,
+			availableCPUs,
+			allocated,
+			numCPUsNeeded,
+			cpuBindPolicy,
+			cpuExclusivePolicy,
+			numaAllocateStrategy,
+		)
+		if err != nil {
+			return cpuset.CPUSet{}, err
+		}
+		if result.IsEmpty() {
+			result = cpus
+		} else {
+			result = result.Union(cpus)
+		}
+	}
+	return result, nil
 }
 
 func (c *cpuManagerImpl) UpdateAllocatedCPUSet(nodeName string, podUID types.UID, cpuset cpuset.CPUSet, cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy) {
@@ -159,6 +194,14 @@ func (c *cpuManagerImpl) UpdateAllocatedCPUSet(nodeName string, podUID types.UID
 	allocation.updateAllocatedCPUSet(cpuTopologyOptions.CPUTopology, podUID, cpuset, cpuExclusivePolicy)
 }
 
+func (c *cpuManagerImpl) GetAllocatedCPUSet(nodeName string, podUID types.UID) (cpuset.CPUSet, bool) {
+	allocation := c.getOrCreateAllocation(nodeName)
+	allocation.lock.Lock()
+	defer allocation.lock.Unlock()
+
+	return allocation.getCPUs(podUID)
+}
+
 func (c *cpuManagerImpl) Free(nodeName string, podUID types.UID) {
 	allocation := c.getOrCreateAllocation(nodeName)
 	allocation.lock.Lock()
@@ -166,12 +209,7 @@ func (c *cpuManagerImpl) Free(nodeName string, podUID types.UID) {
 	allocation.releaseCPUs(podUID)
 }
 
-func (c *cpuManagerImpl) Score(
-	node *corev1.Node,
-	numCPUsNeeded int,
-	cpuBindPolicy schedulingconfig.CPUBindPolicy,
-	cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy,
-) int64 {
+func (c *cpuManagerImpl) Score(node *corev1.Node, numCPUsNeeded int, cpuBindPolicy schedulingconfig.CPUBindPolicy, cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy, preferredCPUs cpuset.CPUSet) int64 {
 	cpuTopologyOptions := c.topologyManager.GetCPUTopologyOptions(node.Name)
 	if cpuTopologyOptions.CPUTopology == nil || !cpuTopologyOptions.CPUTopology.IsValid() {
 		return 0
@@ -184,8 +222,10 @@ func (c *cpuManagerImpl) Score(
 	allocation.lock.Lock()
 	defer allocation.lock.Unlock()
 
+	// TODO(joseph): should support score with preferredCPUs.
+
 	cpuTopology := cpuTopologyOptions.CPUTopology
-	availableCPUs, allocated := allocation.getAvailableCPUs(cpuTopology, cpuTopologyOptions.MaxRefCount, reservedCPUs)
+	availableCPUs, allocated := allocation.getAvailableCPUs(cpuTopology, cpuTopologyOptions.MaxRefCount, reservedCPUs, preferredCPUs)
 	acc := newCPUAccumulator(
 		cpuTopology,
 		cpuTopologyOptions.MaxRefCount,
@@ -289,6 +329,7 @@ func (c *cpuManagerImpl) GetAvailableCPUs(nodeName string) (availableCPUs cpuset
 	allocation := c.getOrCreateAllocation(nodeName)
 	allocation.lock.Lock()
 	defer allocation.lock.Unlock()
-	availableCPUs, allocated = allocation.getAvailableCPUs(cpuTopologyOptions.CPUTopology, cpuTopologyOptions.MaxRefCount, cpuTopologyOptions.ReservedCPUs)
+	emptyCPUs := cpuset.NewCPUSet()
+	availableCPUs, allocated = allocation.getAvailableCPUs(cpuTopologyOptions.CPUTopology, cpuTopologyOptions.MaxRefCount, cpuTopologyOptions.ReservedCPUs, emptyCPUs)
 	return availableCPUs, allocated, nil
 }
