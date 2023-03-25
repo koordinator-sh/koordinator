@@ -88,8 +88,8 @@ func TestCPUTopologyManager(t *testing.T) {
 	assert.NotNil(t, topologyManager)
 
 	extendHandle := &frameworkHandleExtender{
-		Handle:    suit.Handle,
-		Clientset: suit.NRTClientset,
+		ExtendedHandle: suit.Extender,
+		Clientset:      suit.NRTClientset,
 	}
 	err = registerNodeResourceTopologyEventHandler(extendHandle, topologyManager)
 	assert.NoError(t, err)

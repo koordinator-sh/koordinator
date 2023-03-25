@@ -754,3 +754,20 @@ func BenchmarkTakeCPUsWithSpread(b *testing.B) {
 		})
 	}
 }
+
+func TestTakePreferredCPUs(t *testing.T) {
+	topology := buildCPUTopologyForTest(2, 1, 16, 2)
+	cpus := topology.CPUDetails.CPUs()
+	result, err := takeCPUs(topology, 1, cpus, nil, 2, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	assert.NoError(t, err)
+	assert.Equal(t, []int{0, 2}, result.ToSlice())
+
+	result, err = takePreferredCPUs(topology, 1, cpus, cpuset.NewCPUSet(), nil, 2, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	assert.NoError(t, err)
+	assert.Empty(t, result.ToSlice())
+
+	preferredCPUs := cpuset.NewCPUSet(11, 13, 15, 17)
+	result, err = takePreferredCPUs(topology, 1, cpus, preferredCPUs, nil, 2, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	assert.NoError(t, err)
+	assert.Equal(t, []int{11, 13}, result.ToSlice())
+}
