@@ -569,7 +569,7 @@ func TestTakeCPUsWithMaxRefCount(t *testing.T) {
 
 	// first pod request 4 CPUs
 	podUID := uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails := allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	availableCPUs, allocatedCPUsDetails := allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet(), cpuset.NewCPUSet(), cpuset.NewCPUSet())
 	result, err := takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		4, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
@@ -579,7 +579,7 @@ func TestTakeCPUsWithMaxRefCount(t *testing.T) {
 
 	// second pod request 5 CPUs
 	podUID = uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet(), cpuset.NewCPUSet(), cpuset.NewCPUSet())
 	result, err = takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		5, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
@@ -589,7 +589,7 @@ func TestTakeCPUsWithMaxRefCount(t *testing.T) {
 
 	// third pod request 4 cpus
 	podUID = uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet(), cpuset.NewCPUSet(), cpuset.NewCPUSet())
 	result, err = takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		4, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
@@ -610,7 +610,7 @@ func TestTakeCPUsSortByRefCount(t *testing.T) {
 
 	// first pod request 16 CPUs
 	podUID := uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails := allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	availableCPUs, allocatedCPUsDetails := allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet(), cpuset.NewCPUSet(), cpuset.NewCPUSet())
 	result, err := takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		16, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
@@ -620,7 +620,7 @@ func TestTakeCPUsSortByRefCount(t *testing.T) {
 
 	// second pod request 16 CPUs
 	podUID = uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet(), cpuset.NewCPUSet(), cpuset.NewCPUSet())
 	result, err = takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		16, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
@@ -630,7 +630,7 @@ func TestTakeCPUsSortByRefCount(t *testing.T) {
 
 	// third pod request 16 cpus
 	podUID = uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet(), cpuset.NewCPUSet(), cpuset.NewCPUSet())
 	result, err = takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		16, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
@@ -640,7 +640,7 @@ func TestTakeCPUsSortByRefCount(t *testing.T) {
 
 	// forth pod request 16 cpus
 	podUID = uuid.NewUUID()
-	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	availableCPUs, allocatedCPUsDetails = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet(), cpuset.NewCPUSet(), cpuset.NewCPUSet())
 	result, err = takeCPUs(
 		cpuTopology, 2, availableCPUs, allocatedCPUsDetails,
 		16, schedulingconfig.CPUBindPolicyFullPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
@@ -648,7 +648,7 @@ func TestTakeCPUsSortByRefCount(t *testing.T) {
 	assert.NoError(t, err)
 	allocationState.addCPUs(cpuTopology, podUID, result, schedulingconfig.CPUExclusivePolicyPCPULevel)
 
-	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet())
+	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 2, cpuset.NewCPUSet(), cpuset.NewCPUSet(), cpuset.NewCPUSet())
 	assert.Equal(t, cpuset.MustParse(""), availableCPUs)
 }
 
@@ -753,4 +753,21 @@ func BenchmarkTakeCPUsWithSpread(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestTakePreferredCPUs(t *testing.T) {
+	topology := buildCPUTopologyForTest(2, 1, 16, 2)
+	cpus := topology.CPUDetails.CPUs()
+	result, err := takeCPUs(topology, 1, cpus, nil, 2, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	assert.NoError(t, err)
+	assert.Equal(t, []int{0, 2}, result.ToSlice())
+
+	result, err = takePreferredCPUs(topology, 1, cpus, cpuset.NewCPUSet(), nil, 2, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	assert.NoError(t, err)
+	assert.Empty(t, result.ToSlice())
+
+	preferredCPUs := cpuset.NewCPUSet(11, 13, 15, 17)
+	result, err = takePreferredCPUs(topology, 1, cpus, preferredCPUs, nil, 2, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	assert.NoError(t, err)
+	assert.Equal(t, []int{11, 13}, result.ToSlice())
 }
