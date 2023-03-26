@@ -26,6 +26,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -254,4 +255,45 @@ func fillGPUTotalMem(nodeDeviceTotal deviceResources, podRequest corev1.Resource
 		gpuMemRatio := podRequest[apiext.ResourceGPUMemoryRatio]
 		podRequest[apiext.ResourceGPUMemory] = memRatioToBytes(gpuMemRatio, nodeDeviceTotal[activeMinor][apiext.ResourceGPUMemory])
 	}
+}
+
+func subtractAllocated(m, podAllocated map[schedulingv1alpha1.DeviceType]deviceResources) {
+	for deviceType, podToAddDevices := range podAllocated {
+		ra := m[deviceType]
+		if len(ra) == 0 {
+			continue
+		}
+		for minor, res := range podToAddDevices {
+			raRes, ok := ra[minor]
+			if !ok {
+				continue
+			}
+			resourceNames := quotav1.ResourceNames(raRes)
+			raRes = quotav1.SubtractWithNonNegativeResult(raRes, quotav1.Mask(res, resourceNames))
+			ra[minor] = raRes
+		}
+	}
+}
+
+func appendAllocatedDevices(m, podAllocated map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
+	if m == nil {
+		m = map[schedulingv1alpha1.DeviceType]deviceResources{}
+	}
+	for deviceType, deviceResources := range podAllocated {
+		devices := m[deviceType]
+		if devices == nil {
+			m[deviceType] = deviceResources.DeepCopy()
+		} else {
+			for minor, resources := range deviceResources {
+				device, ok := devices[minor]
+				if !ok {
+					devices[minor] = resources.DeepCopy()
+				} else {
+					util.AddResourceList(device, resources)
+					devices[minor] = device
+				}
+			}
+		}
+	}
+	return m
 }

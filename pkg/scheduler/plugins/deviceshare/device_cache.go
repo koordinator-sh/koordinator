@@ -182,7 +182,6 @@ func (n *nodeDevice) replaceWith(r map[schedulingv1alpha1.DeviceType]deviceResou
 		} else {
 			nn.deviceTotal[deviceType] = resources.DeepCopy()
 		}
-
 	}
 
 	for deviceType, used := range n.deviceUsed {
@@ -284,7 +283,7 @@ func (n *nodeDevice) updateAllocateSet(deviceType schedulingv1alpha1.DeviceType,
 	}
 }
 
-func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptibleFreeDevices map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
+func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
 	allocateResult := make(apiext.DeviceAllocations)
 
 	for deviceType := range DeviceResourceNames {
@@ -293,14 +292,14 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptib
 			if !hasDeviceResource(podRequest, deviceType) {
 				break
 			}
-			if err := n.tryAllocateCommonDevice(podRequest, deviceType, allocateResult, preemptibleFreeDevices); err != nil {
+			if err := n.tryAllocateCommonDevice(podRequest, deviceType, allocateResult, preemptibleDevices); err != nil {
 				return nil, err
 			}
 		case schedulingv1alpha1.GPU:
 			if !hasDeviceResource(podRequest, deviceType) {
 				break
 			}
-			if err := n.tryAllocateGPU(podRequest, allocateResult, preemptibleFreeDevices); err != nil {
+			if err := n.tryAllocateGPU(podRequest, allocateResult, preemptibleDevices); err != nil {
 				return nil, err
 			}
 		default:
@@ -311,7 +310,7 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptib
 	return allocateResult, nil
 }
 
-func (n *nodeDevice) tryAllocateCommonDevice(podRequest corev1.ResourceList, deviceType schedulingv1alpha1.DeviceType, allocateResult apiext.DeviceAllocations, preemptibleFreeDevices map[schedulingv1alpha1.DeviceType]deviceResources) error {
+func (n *nodeDevice) tryAllocateCommonDevice(podRequest corev1.ResourceList, deviceType schedulingv1alpha1.DeviceType, allocateResult apiext.DeviceAllocations, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) error {
 	podRequest = quotav1.Mask(podRequest, DeviceResourceNames[deviceType])
 	nodeDeviceTotal := n.deviceTotal[deviceType]
 	if len(nodeDeviceTotal) <= 0 {
@@ -319,9 +318,9 @@ func (n *nodeDevice) tryAllocateCommonDevice(podRequest corev1.ResourceList, dev
 	}
 
 	freeDevices := n.deviceFree[deviceType]
-	preemptibleDevices := preemptibleFreeDevices[deviceType]
+	preemptible := preemptibleDevices[deviceType]
 	mergedFreeDevices := deviceResources{}
-	for minor, v := range preemptibleDevices {
+	for minor, v := range preemptible {
 		mergedFreeDevices[minor] = v.DeepCopy()
 	}
 	for minor, v := range freeDevices {
@@ -387,15 +386,16 @@ func (n *nodeDevice) tryAllocateCommonDevice(podRequest corev1.ResourceList, dev
 	return fmt.Errorf("node does not have enough %v", deviceType)
 }
 
-func (n *nodeDevice) tryAllocateGPU(podRequest corev1.ResourceList, allocateResult apiext.DeviceAllocations, preemptibleFreeDevices map[schedulingv1alpha1.DeviceType]deviceResources) error {
+func (n *nodeDevice) tryAllocateGPU(podRequest corev1.ResourceList, allocateResult apiext.DeviceAllocations, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) error {
 	podRequest = quotav1.Mask(podRequest, DeviceResourceNames[schedulingv1alpha1.GPU])
 	nodeDeviceTotal := n.deviceTotal[schedulingv1alpha1.GPU]
 	if len(nodeDeviceTotal) <= 0 {
 		return fmt.Errorf("node does not have enough GPU")
 	}
 
+	// freeGPUs is the rest of the whole machine, or is the rest of the reservation
 	freeGPUs := n.deviceFree[schedulingv1alpha1.GPU]
-	preemptibleGPUs := preemptibleFreeDevices[schedulingv1alpha1.GPU]
+	preemptibleGPUs := preemptibleDevices[schedulingv1alpha1.GPU]
 	mergedFreeGPUs := deviceResources{}
 	for minor, v := range preemptibleGPUs {
 		mergedFreeGPUs[minor] = v.DeepCopy()
