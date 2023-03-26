@@ -173,6 +173,42 @@ func (n *nodeDevice) getUsed(pod *corev1.Pod) map[schedulingv1alpha1.DeviceType]
 	return allocations
 }
 
+func (n *nodeDevice) replaceWith(freeDevices map[schedulingv1alpha1.DeviceType]deviceResources) *nodeDevice {
+	nn := newNodeDevice()
+	usedDevices := map[schedulingv1alpha1.DeviceType]deviceResources{}
+	for deviceType, total := range n.deviceTotal {
+		resources, ok := freeDevices[deviceType]
+		if !ok {
+			nn.deviceTotal[deviceType] = total.DeepCopy()
+			continue
+		}
+
+		deviceTotalResources := deviceResources{}
+		deviceUsedResources := deviceResources{}
+		for minor, free := range resources {
+			deviceTotalResources[minor] = total[minor].DeepCopy()
+			used := quotav1.SubtractWithNonNegativeResult(total[minor], free)
+			deviceUsedResources[minor] = used
+		}
+		nn.deviceTotal[deviceType] = deviceTotalResources
+		usedDevices[deviceType] = deviceUsedResources
+	}
+
+	for deviceType, used := range n.deviceUsed {
+		resources, ok := usedDevices[deviceType]
+		if !ok {
+			nn.deviceUsed[deviceType] = used.DeepCopy()
+			continue
+		}
+		nn.deviceUsed[deviceType] = resources
+	}
+
+	for deviceType := range nn.deviceTotal {
+		nn.resetDeviceFree(deviceType)
+	}
+	return nn
+}
+
 func (n *nodeDevice) resetDeviceFree(deviceType schedulingv1alpha1.DeviceType) {
 	if n.deviceFree[deviceType] == nil {
 		n.deviceFree[deviceType] = make(deviceResources)

@@ -387,7 +387,7 @@ func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, 
 
 	// patch pod or reservation (if the pod is a reserve pod) with new annotations
 	err = util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err1 := util.NewPatch().WithHandle(p.handle).AddAnnotations(pod.Annotations).PatchPodOrReservation(podOriginal)
+		_, err1 := util.NewPatch().WithHandle(p.handle).AddAnnotations(pod.Annotations).Patch(ctx, podOriginal)
 		return err1
 	})
 	if err != nil {

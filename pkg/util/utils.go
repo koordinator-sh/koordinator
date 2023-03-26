@@ -36,7 +36,6 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 // MergeCfg returns a merged interface. Value in new will
@@ -98,7 +97,7 @@ func GeneratePodPatch(oldPod, newPod *corev1.Pod) ([]byte, error) {
 	return strategicpatch.CreateTwoWayMergePatch(oldData, newData, &corev1.Pod{})
 }
 
-func PatchPod(clientset clientset.Interface, oldPod, newPod *corev1.Pod) (*corev1.Pod, error) {
+func PatchPod(ctx context.Context, clientset clientset.Interface, oldPod, newPod *corev1.Pod) (*corev1.Pod, error) {
 	// generate patch bytes for the update
 	patchBytes, err := GeneratePodPatch(oldPod, newPod)
 	if err != nil {
@@ -111,7 +110,7 @@ func PatchPod(clientset clientset.Interface, oldPod, newPod *corev1.Pod) (*corev
 
 	// patch with pod client
 	patched, err := clientset.CoreV1().Pods(oldPod.Namespace).
-		Patch(context.TODO(), oldPod.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		Patch(ctx, oldPod.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 	if err != nil {
 		klog.V(5).InfoS("failed to patch pod", "pod", klog.KObj(oldPod), "patch", string(patchBytes), "err", err)
 		return nil, err
@@ -133,7 +132,7 @@ func GenerateReservationPatch(oldReservation, newReservation *schedulingv1alpha1
 	return jsonpatch.CreateMergePatch(oldData, newData)
 }
 
-func PatchReservation(clientset koordinatorclientset.Interface, oldReservation, newReservation *schedulingv1alpha1.Reservation) (*schedulingv1alpha1.Reservation, error) {
+func PatchReservation(ctx context.Context, clientset koordinatorclientset.Interface, oldReservation, newReservation *schedulingv1alpha1.Reservation) (*schedulingv1alpha1.Reservation, error) {
 	patchBytes, err := GenerateReservationPatch(oldReservation, newReservation)
 	if err != nil {
 		klog.V(5).InfoS("failed to generate reservation patch", "reservation", klog.KObj(oldReservation), "err", err)
@@ -146,7 +145,7 @@ func PatchReservation(clientset koordinatorclientset.Interface, oldReservation, 
 	// NOTE: CRDs do not support strategy merge patch, so here falls back to merge patch.
 	// link: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#advanced-features-and-flexibility
 	patched, err := clientset.SchedulingV1alpha1().Reservations().
-		Patch(context.TODO(), oldReservation.Name, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{})
+		Patch(ctx, oldReservation.Name, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{})
 	if err != nil {
 		klog.V(5).InfoS("failed to patch pod", "pod", klog.KObj(oldReservation), "patch", string(patchBytes), "err", err)
 		return nil, err
@@ -223,7 +222,7 @@ func (p *Patch) RemoveAnnotations(annotationKeys []string) *Patch {
 	return p
 }
 
-func (p *Patch) PatchPod(pod *corev1.Pod) (*corev1.Pod, error) {
+func (p *Patch) PatchPod(ctx context.Context, pod *corev1.Pod) (*corev1.Pod, error) {
 	if p.Clientset == nil || reflect.ValueOf(p.Clientset).IsNil() {
 		return nil, fmt.Errorf("missing clientset for pod")
 	}
@@ -248,10 +247,10 @@ func (p *Patch) PatchPod(pod *corev1.Pod) (*corev1.Pod, error) {
 		delete(newPod.Annotations, key)
 	}
 
-	return PatchPod(p.Clientset, pod, newPod)
+	return PatchPod(ctx, p.Clientset, pod, newPod)
 }
 
-func (p *Patch) PatchReservation(r *schedulingv1alpha1.Reservation) (*schedulingv1alpha1.Reservation, error) {
+func (p *Patch) PatchReservation(ctx context.Context, r *schedulingv1alpha1.Reservation) (*schedulingv1alpha1.Reservation, error) {
 	if p.KoordClientset == nil || reflect.ValueOf(p.KoordClientset).IsNil() {
 		return nil, fmt.Errorf("missing clientset for reservation")
 	}
@@ -276,23 +275,17 @@ func (p *Patch) PatchReservation(r *schedulingv1alpha1.Reservation) (*scheduling
 		delete(newR.Annotations, key)
 	}
 
-	return PatchReservation(p.KoordClientset, r, newR)
+	return PatchReservation(ctx, p.KoordClientset, r, newR)
 }
 
-// PatchPodOrReservation patches the pod (if the pod is not a reserve pod) or corresponding reservation object (if the
-// pod is a reserve pod) with the given patch data.
-func (p *Patch) PatchPodOrReservation(pod *corev1.Pod) (interface{}, error) {
-	// if pod is not a reserve pod, patch the pod with pod client
-	if !reservationutil.IsReservePod(pod) {
-		return p.PatchPod(pod)
+// Patch patches the obj (if the obj is not a reserve pod) or corresponding reservation object (if the
+// obj is a reserve pod) with the given patch data.
+func (p *Patch) Patch(ctx context.Context, obj metav1.Object) (metav1.Object, error) {
+	switch t := obj.(type) {
+	case *corev1.Pod:
+		return p.PatchPod(ctx, t)
+	case *schedulingv1alpha1.Reservation:
+		return p.PatchReservation(ctx, t)
 	}
-
-	// otherwise the pod is a reserve pod, patch the reservation with reservation client
-	// fake reservation objects to generate patch
-	rName := reservationutil.GetReservationNameFromReservePod(pod)
-	reservation := &schedulingv1alpha1.Reservation{
-		ObjectMeta: pod.ObjectMeta,
-	}
-	reservation.Name = rName
-	return p.PatchReservation(reservation)
+	return nil, fmt.Errorf("unsupported Object")
 }

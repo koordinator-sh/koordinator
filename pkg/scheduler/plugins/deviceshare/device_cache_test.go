@@ -81,6 +81,110 @@ func Test_nodeDevice_getUsed(t *testing.T) {
 	assert.Equal(t, expectUsed, used)
 }
 
+func Test_nodeDevice_replaceWith(t *testing.T) {
+	nd := newNodeDevice()
+	nd.resetDeviceTotal(map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			1: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+			},
+			2: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+			},
+		},
+		schedulingv1alpha1.RDMA: {
+			1: corev1.ResourceList{
+				apiext.ResourceRDMA: resource.MustParse("100"),
+			},
+			2: corev1.ResourceList{
+				apiext.ResourceRDMA: resource.MustParse("100"),
+			},
+		},
+	})
+
+	allocations := apiext.DeviceAllocations{
+		schedulingv1alpha1.GPU: {
+			{
+				Minor: 2,
+				Resources: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("50"),
+					apiext.ResourceGPUMemory:      resource.MustParse("5Gi"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+				},
+			},
+		},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod-1",
+		},
+	}
+	nd.updateCacheUsed(allocations, pod, true)
+
+	nnd := nd.replaceWith(map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			2: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemory:      resource.MustParse("3Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			},
+		},
+	})
+	expectTotal := map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			2: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+			},
+		},
+		schedulingv1alpha1.RDMA: {
+			1: corev1.ResourceList{
+				apiext.ResourceRDMA: resource.MustParse("100"),
+			},
+			2: corev1.ResourceList{
+				apiext.ResourceRDMA: resource.MustParse("100"),
+			},
+		},
+	}
+	assert.Equal(t, expectTotal, nnd.deviceTotal)
+
+	expectUsed := map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			2: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemory:      resource.MustParse("5Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			},
+		},
+	}
+	assert.True(t, equality.Semantic.DeepEqual(expectUsed, nnd.deviceUsed))
+
+	expectFree := map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			2: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemory:      resource.MustParse("3Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			},
+		},
+		schedulingv1alpha1.RDMA: {
+			1: corev1.ResourceList{
+				apiext.ResourceRDMA: resource.MustParse("100"),
+			},
+			2: corev1.ResourceList{
+				apiext.ResourceRDMA: resource.MustParse("100"),
+			},
+		},
+	}
+	assert.True(t, equality.Semantic.DeepEqual(expectFree, nnd.deviceFree))
+}
+
 func Test_nodeDevice_allocateGPU(t *testing.T) {
 	nd := newNodeDevice()
 	nd.resetDeviceTotal(map[schedulingv1alpha1.DeviceType]deviceResources{
