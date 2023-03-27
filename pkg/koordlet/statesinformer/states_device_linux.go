@@ -118,28 +118,31 @@ func (s *statesInformer) createDevice(device *schedulingv1alpha1.Device) error {
 	return err
 }
 
-func (s *statesInformer) updateDevice(deviceNew *schedulingv1alpha1.Device) error {
+func (s *statesInformer) updateDevice(device *schedulingv1alpha1.Device) error {
 	sorter := func(devices []schedulingv1alpha1.DeviceInfo) {
 		sort.Slice(devices, func(i, j int) bool {
 			return *(devices[i].Minor) < *(devices[j].Minor)
 		})
 	}
-	sorter(deviceNew.Spec.Devices)
+	sorter(device.Spec.Devices)
 
 	return util.RetryOnConflictOrTooManyRequests(func() error {
-		deviceOld, err := s.deviceClient.Get(context.TODO(), deviceNew.Name, metav1.GetOptions{ResourceVersion: "0"})
+		latestDevice, err := s.deviceClient.Get(context.TODO(), device.Name, metav1.GetOptions{ResourceVersion: "0"})
 		if err != nil {
 			return err
 		}
-		sorter(deviceOld.Spec.Devices)
+		sorter(latestDevice.Spec.Devices)
 
-		if apiequality.Semantic.DeepEqual(deviceNew.Spec.Devices, deviceOld.Spec.Devices) &&
-			apiequality.Semantic.DeepEqual(deviceNew.Labels, deviceOld.Labels) {
-			klog.V(4).Infof("Device %s has not changed and does not need to be updated", deviceNew.Name)
+		if apiequality.Semantic.DeepEqual(device.Spec.Devices, latestDevice.Spec.Devices) &&
+			apiequality.Semantic.DeepEqual(device.Labels, latestDevice.Labels) {
+			klog.V(4).Infof("Device %s has not changed and does not need to be updated", device.Name)
 			return nil
 		}
 
-		_, err = s.deviceClient.Update(context.TODO(), deviceNew, metav1.UpdateOptions{})
+		latestDevice.Spec.Devices = device.Spec.Devices
+		latestDevice.Labels = device.Labels
+
+		_, err = s.deviceClient.Update(context.TODO(), latestDevice, metav1.UpdateOptions{})
 		return err
 	})
 }
