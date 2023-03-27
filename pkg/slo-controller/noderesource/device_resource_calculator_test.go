@@ -111,7 +111,9 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 		},
 	}
 	fakeClient.Create(context.TODO(), fakeDevice, metav1.CreateOptions{})
-	r.updateGPUNodeResource(testNode, fakeDevice)
+	for i := 0; i < 10; i++ {
+		r.updateGPUNodeResource(testNode, fakeDevice)
+	}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: testNode.Name}, testNode)
 	assert.Equal(t, nil, err)
 	actualMemoryRatio := testNode.Status.Allocatable[extension.ResourceGPUMemoryRatio]

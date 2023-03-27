@@ -105,7 +105,9 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 	}
 
 	copyNode := node.DeepCopy()
-	util.AddResourceList(copyNode.Status.Allocatable, gpuResources)
+	for resourceName, quantity := range gpuResources {
+		copyNode.Status.Allocatable[resourceName] = quantity.DeepCopy()
+	}
 	if !r.isGPUResourceNeedSync(copyNode, node) {
 		return nil
 	}
@@ -121,9 +123,10 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 		}
 
 		updateNode = updateNode.DeepCopy() // avoid overwriting the cache
-		util.AddResourceList(updateNode.Status.Capacity, gpuResources)
-		util.AddResourceList(updateNode.Status.Allocatable, gpuResources)
-
+		for resourceName, quantity := range gpuResources {
+			updateNode.Status.Capacity[resourceName] = quantity.DeepCopy()
+			updateNode.Status.Allocatable[resourceName] = quantity.DeepCopy()
+		}
 		if err := r.Client.Status().Update(context.TODO(), updateNode); err != nil {
 			klog.Errorf("failed to update node gpu resource, %v, error: %v", updateNode.Name, err)
 			return err
