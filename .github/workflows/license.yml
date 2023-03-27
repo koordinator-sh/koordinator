@@ -5,8 +5,8 @@ on:
     branches:
       - main
       - release-*
-  pull_request: {}
-  workflow_dispatch: {}
+  pull_request: { }
+  workflow_dispatch: { }
 
 jobs:
   license-check:
@@ -22,7 +22,8 @@ jobs:
           license_finder --decisions_file .license/dependency_decisions.yml
       - uses: actions/setup-go@v4
         with:
-          go-version: 1.17
+          cache: false
+          go-version-file: go.mod
       - name: Check license header
         run: |
           make lint-license && git add apis pkg cmd || exit 1
