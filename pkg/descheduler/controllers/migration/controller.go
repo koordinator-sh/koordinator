@@ -286,7 +286,8 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 		}
 	}
 
-	if job.Spec.Mode == sev1alpha1.PodMigrationJobModeEvictionDirectly {
+	if job.Spec.Mode == sev1alpha1.PodMigrationJobModeEvictionDirectly ||
+		(job.Spec.Mode == "" && r.args.DefaultJobMode == string(sev1alpha1.PodMigrationJobModeEvictionDirectly)) {
 		return r.evictPodDirectly(ctx, job)
 	}
 

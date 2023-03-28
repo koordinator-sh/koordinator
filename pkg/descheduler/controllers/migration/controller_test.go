@@ -457,33 +457,52 @@ func TestWaitForPodBindReservation(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+type FakeInterpreter struct {
+	client.Client
+}
+
+func (p *FakeInterpreter) Evict(ctx context.Context, job *sev1alpha1.PodMigrationJob, pod *corev1.Pod) error {
+	return p.Delete(ctx, pod)
+}
+
 func TestEvictPodDirectly(t *testing.T) {
 	reconciler := newTestReconciler()
 
+	reconciler.args.DefaultJobMode = string(sev1alpha1.PodMigrationJobModeEvictionDirectly)
+	reconciler.evictorInterpreter = &FakeInterpreter{Client: reconciler.Client}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod",
+		},
+	}
+	assert.NoError(t, reconciler.Create(context.TODO(), pod))
+
 	job := &sev1alpha1.PodMigrationJob{
 		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				evictionsutil.EvictPodAnnotationKey: "true",
+			},
 			Name:              "test",
 			CreationTimestamp: metav1.Time{Time: time.Now()},
 		},
 		Spec: sev1alpha1.PodMigrationJobSpec{
 			PodRef: &corev1.ObjectReference{
-				Namespace: "default",
-				Name:      "test-pod",
-			},
-		},
-		Status: sev1alpha1.PodMigrationJobStatus{
-			Conditions: []sev1alpha1.PodMigrationJobCondition{
-				{
-					Type:   sev1alpha1.PodMigrationJobConditionEviction,
-					Status: sev1alpha1.PodMigrationJobConditionStatusTrue,
-				},
+				Namespace: pod.Namespace,
+				Name:      pod.Name,
 			},
 		},
 	}
 	assert.Nil(t, reconciler.Create(context.TODO(), job))
-	result, err := reconciler.evictPodDirectly(context.TODO(), job)
-	assert.Equal(t, reconcile.Result{}, result)
-	assert.Nil(t, err)
+
+	for i := 0; i < 2; i++ {
+		result, err := reconciler.doMigrate(context.TODO(), job)
+		assert.Nil(t, err)
+		if result.RequeueAfter == 0 && !result.Requeue {
+			break
+		}
+	}
 	assert.Equal(t, sev1alpha1.PodMigrationJobSucceeded, job.Status.Phase)
 	assert.Equal(t, "Complete", job.Status.Status)
 	assert.Equal(t, "", job.Status.Reason)
