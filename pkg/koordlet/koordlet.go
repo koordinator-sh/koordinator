@@ -127,7 +127,8 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(config.CollectorConf.CollectResUsedIntervalSeconds), evictVersion)
+
+	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(config.CollectorConf.CollectResUsedInterval.Seconds()), evictVersion)
 
 	qosManager := qosmanager.NewQosManager(config.QosManagerConf, scheme, kubeClient, nodeName, statesInformer, metricCache)
 

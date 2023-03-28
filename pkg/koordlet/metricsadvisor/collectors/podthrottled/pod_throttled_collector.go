@@ -51,7 +51,7 @@ type podThrottledCollector struct {
 }
 
 func New(opt *framework.Options) framework.Collector {
-	collectInterval := time.Duration(opt.Config.CollectResUsedIntervalSeconds) * time.Second
+	collectInterval := opt.Config.CollectResUsedInterval
 	return &podThrottledCollector{
 		collectInterval:           collectInterval,
 		started:                   atomic.NewBool(false),

@@ -49,7 +49,7 @@ type nodeResourceCollector struct {
 
 func New(opt *framework.Options) framework.Collector {
 	return &nodeResourceCollector{
-		collectInterval: time.Duration(opt.Config.CollectResUsedIntervalSeconds) * time.Second,
+		collectInterval: opt.Config.CollectResUsedInterval,
 		started:         atomic.NewBool(false),
 		metricDB:        opt.MetricCache,
 	}

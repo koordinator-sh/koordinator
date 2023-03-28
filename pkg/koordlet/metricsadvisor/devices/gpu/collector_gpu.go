@@ -41,7 +41,7 @@ type gpuCollector struct {
 func New(opt *framework.Options) framework.DeviceCollector {
 	return &gpuCollector{
 		enabled:         features.DefaultKoordletFeatureGate.Enabled(features.Accelerators),
-		collectInterval: time.Duration(opt.Config.CollectResUsedIntervalSeconds) * time.Second,
+		collectInterval: opt.Config.CollectResUsedInterval,
 	}
 }
 

@@ -42,7 +42,7 @@ type nodeInfoCollector struct {
 
 func New(opt *framework.Options) framework.Collector {
 	return &nodeInfoCollector{
-		collectInterval: time.Duration(opt.Config.CollectNodeCPUInfoIntervalSeconds) * time.Second,
+		collectInterval: opt.Config.CollectNodeCPUInfoInterval,
 		metricDB:        opt.MetricCache,
 		started:         atomic.NewBool(false),
 	}
