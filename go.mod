@@ -27,7 +27,7 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/spf13/cobra v1.6.1
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	go.uber.org/atomic v1.10.0
 	go.uber.org/multierr v1.6.0
 	golang.org/x/crypto v0.1.0
