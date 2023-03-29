@@ -25,6 +25,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -140,12 +141,20 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric *metr
 		systemUsedCPU = *resource.NewMilliQuantity(0, resource.DecimalSI)
 	}
 
-	// suppress(BE) := node.Total * SLOPercent - pod(LS).Used - system.Used
+	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
+	systemUsed := corev1.ResourceList{
+		corev1.ResourceCPU: systemUsedCPU,
+	}
+	systemUsed = quotav1.Max(systemUsed, nodeAnnoReserved)
+	systemUsedCPU = systemUsed[corev1.ResourceCPU]
+
+	// suppress(BE) := node.Total * SLOPercent - pod(LS).Used - max(system.Used, node.anno.reserved)
 	// NOTE: valid milli-cpu values should not larger than 2^20, so there is no overflow during the calculation
 	nodeBESuppressCPU := resource.NewMilliQuantity(node.Status.Allocatable.Cpu().MilliValue()*beCPUUsedThreshold/100,
 		node.Status.Allocatable.Cpu().Format)
 	nodeBESuppressCPU.Sub(podLSUsedCPU)
 	nodeBESuppressCPU.Sub(systemUsedCPU)
+
 	metrics.RecordBESuppressLSUsedCPU(float64(podLSUsedCPU.MilliValue()) / 1000)
 	klog.Infof("nodeSuppressBE[CPU(Core)]:%v = node.Total:%v * SLOPercent:%v%% - systemUsage:%v - podLSUsed:%v\n",
 		nodeBESuppressCPU.Value(), node.Status.Allocatable.Cpu().Value(), beCPUUsedThreshold, systemUsedCPU.Value(),
@@ -318,10 +327,25 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 			cpuIdToPool[int32(cpuID)] = apiext.GetPodQoSClass(podMeta.Pod)
 		}
 	}
+
+	topo := r.resmanager.statesInformer.GetNodeTopo()
+	if topo == nil {
+		klog.Errorf("node topo is nil")
+		return
+	}
+
+	cpusReservedByAnno, _ := apiext.GetReservedCPUs(topo.Annotations)
+	cpusetReserved := cpuset.MustParse(cpusReservedByAnno)
+
 	var lsrCpus []koordletutil.ProcessorInfo
 	var lsCpus []koordletutil.ProcessorInfo
 	// FIXME: be pods might be starved since lse pods can run out of all cpus
 	for _, processor := range nodeCPUInfo.ProcessorInfos {
+		cpuset := cpuset.NewCPUSet(int(processor.CPUID))
+		if cpuset.IsSubsetOf(cpusetReserved) {
+			continue
+		}
+
 		if cpuIdToPool[processor.CPUID] == apiext.QoSLSR {
 			lsrCpus = append(lsrCpus, processor)
 		} else if cpuIdToPool[processor.CPUID] != apiext.QoSLSE {

@@ -41,6 +41,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
@@ -198,6 +199,7 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 	}
 
 	var cpuManagerPolicy extension.KubeletCPUManagerPolicy
+	topology := kubelet.NewCPUTopology((*koordletutil.LocalCPUInfo)(nodeCPUInfo))
 	if s.config != nil && !s.config.DisableQueryKubeletConfig {
 		kubeletConfiguration, err := s.kubelet.GetKubeletConfiguration()
 		if err != nil {
@@ -212,7 +214,6 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 		}
 
 		if kubeletConfiguration.CPUManagerPolicy == string(cpumanager.PolicyStatic) {
-			topology := kubelet.NewCPUTopology((*koordletutil.LocalCPUInfo)(nodeCPUInfo))
 			reservedCPUs, err := kubelet.GetStaticCPUManagerPolicyReservedCPUs(topology, kubeletConfiguration)
 			if err != nil {
 				klog.Errorf("Failed to GetStaticCPUManagerPolicyReservedCPUs, err: %v", err)
@@ -228,6 +229,14 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 	cpuManagerPolicyJSON, err := json.Marshal(cpuManagerPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal cpu manager policy, err: %v", err)
+	}
+
+	// handle cpus reserved by annotation of node.
+	node := s.nodeInformer.GetNode()
+	reserved := getNodeReserved(topology, node.Annotations)
+	reservedJson, err := json.Marshal(reserved)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal reserved resource by node.annotation, err: %v", err)
 	}
 
 	// Users can specify the kubelet RootDirectory on the host in the koordlet DaemonSet,
@@ -260,6 +269,9 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 	}
 
 	sharePools := s.calCPUSharePools(sharedPoolCPUs)
+	// remove cpus that already reserved by node.annotation.
+	nodeAnnoReserved := cpuset.MustParse(reserved.ReservedCPUs)
+	sharePools = removeNodeReservedCPUs(sharePools, nodeAnnoReserved)
 	cpuSharePoolsJSON, err := json.Marshal(sharePools)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal cpushare pools of node, err: %v", err)
@@ -272,8 +284,46 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 	if len(podAllocsJSON) != 0 {
 		annotations[extension.AnnotationNodeCPUAllocs] = string(podAllocsJSON)
 	}
+	if len(reservedJson) != 0 {
+		annotations[extension.AnnotationNodeReservation] = string(reservedJson)
+	}
 
 	return annotations, nil
+}
+
+// removeNodeReservedCPUs filter out cpus that reserved by annotation of node.
+func removeNodeReservedCPUs(cpuSharePools []extension.CPUSharedPool, reservedCPUs cpuset.CPUSet) []extension.CPUSharedPool {
+	newCPUSharePools := make([]extension.CPUSharedPool, len(cpuSharePools))
+	for idx, val := range cpuSharePools {
+		newCPUSharePools[idx] = val
+	}
+
+	for idx, pool := range cpuSharePools {
+		originCPUs, err := cpuset.Parse(pool.CPUSet)
+		if err != nil {
+			return newCPUSharePools
+		}
+
+		newCPUSharePools[idx].CPUSet = originCPUs.Difference(reservedCPUs).String()
+	}
+
+	return newCPUSharePools
+}
+
+func getNodeReserved(topo *topology.CPUTopology, anno map[string]string) extension.NodeReservation {
+	reserved := extension.NodeReservation{}
+	allCPUs := topo.CPUDetails.CPUs()
+	reservedCPUs, numReservedCPUs := extension.GetReservedCPUs(anno)
+	if numReservedCPUs > 0 {
+		cpus, _ := kubelet.TakeByTopology(allCPUs, numReservedCPUs, topo)
+		reserved.ReservedCPUs = cpus.String()
+	}
+	if reservedCPUs != "" {
+		res, _ := cpuset.Parse(reservedCPUs)
+		reserved.ReservedCPUs = res.String()
+	}
+
+	return reserved
 }
 
 func (s *nodeTopoInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInfo, stateJSON string) ([]extension.PodCPUAlloc, error) {
@@ -403,6 +453,7 @@ func isSyncNeeded(oldNRT, newNRT *v1alpha1.NodeResourceTopology, nodename string
 	if oldNRT == nil || oldNRT.Annotations == nil || newNRT.Annotations == nil {
 		return true
 	}
+
 	if isEqualTopo(oldNRT.Annotations, newNRT.Annotations) {
 		// do nothing
 		klog.V(4).Infof("all good, no need to report nodetopo  %s", nodename)
@@ -419,8 +470,14 @@ func isEqualTopo(OldTopo map[string]string, NewTopo map[string]string) bool {
 		OldData interface{}
 		NewData interface{}
 	)
-	keyslice := []string{extension.AnnotationKubeletCPUManagerPolicy, extension.AnnotationNodeCPUSharedPools,
-		extension.AnnotationNodeCPUTopology, extension.AnnotationNodeCPUAllocs}
+	keyslice := []string{
+		extension.AnnotationKubeletCPUManagerPolicy,
+		extension.AnnotationNodeCPUSharedPools,
+		extension.AnnotationNodeCPUTopology,
+		extension.AnnotationNodeCPUAllocs,
+		extension.AnnotationNodeReservation,
+	}
+
 	for _, key := range keyslice {
 		oldValue, oldExist := OldTopo[key]
 		newValue, newExist := NewTopo[key]

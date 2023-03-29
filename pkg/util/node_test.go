@@ -17,9 +17,13 @@ limitations under the License.
 package util
 
 import (
+	"reflect"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 func TestGetNodeAddress(t *testing.T) {
@@ -114,6 +118,107 @@ func TestIsNodeAddressTypeSupported(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := IsNodeAddressTypeSupported(tt.args.addrType); got != tt.want {
 				t.Errorf("IsAddressTypeSupported() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetNodeReservationFromAnnotation(t *testing.T) {
+	type args struct {
+		anno map[string]string
+	}
+	tests := []struct {
+		name string
+		args args
+		want corev1.ResourceList
+	}{
+		// TODO: Add test cases.
+		{
+			name: "reserve nothing",
+			args: args{},
+			want: nil,
+		},
+		{
+			name: "reserve cpu only by quantity",
+			args: args{map[string]string{
+				apiext.AnnotationNodeReservation: GetNodeAnnoReservedJson(apiext.NodeReservation{
+					Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+				})}},
+			want: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+		},
+		{
+			name: "reserve cpu only by specific cpus",
+			args: args{map[string]string{
+				apiext.AnnotationNodeReservation: GetNodeAnnoReservedJson(apiext.NodeReservation{
+					ReservedCPUs: "0-1",
+				})}},
+			want: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		},
+		{
+			name: "reserve cpu by specific cpus and quantity",
+			args: args{map[string]string{
+				apiext.AnnotationNodeReservation: GetNodeAnnoReservedJson(apiext.NodeReservation{
+					Resources:    corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+					ReservedCPUs: "0-1",
+				})}},
+			want: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		},
+		{
+			name: "reserve memory by quantity",
+			args: args{map[string]string{
+				apiext.AnnotationNodeReservation: GetNodeAnnoReservedJson(apiext.NodeReservation{
+					Resources: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("10")},
+				})}},
+			want: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("10")},
+		},
+		{
+			name: "reserve memory and cpu by quantity",
+			args: args{map[string]string{
+				apiext.AnnotationNodeReservation: GetNodeAnnoReservedJson(apiext.NodeReservation{
+					Resources: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("10"),
+						corev1.ResourceCPU:    resource.MustParse("10"),
+					},
+				})}},
+			want: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("10"),
+				corev1.ResourceCPU:    resource.MustParse("10"),
+			},
+		},
+		{
+			name: "reserve memory by quantity and reserve cpu by specific cpus",
+			args: args{map[string]string{
+				apiext.AnnotationNodeReservation: GetNodeAnnoReservedJson(apiext.NodeReservation{
+					Resources: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("10"),
+					},
+					ReservedCPUs: "0-1",
+				})}},
+			want: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("10"),
+				corev1.ResourceCPU:    resource.MustParse("2"),
+			},
+		},
+		{
+			name: "reserve memory by quantity, reserve cpu by specific cpus and quantity",
+			args: args{map[string]string{
+				apiext.AnnotationNodeReservation: GetNodeAnnoReservedJson(apiext.NodeReservation{
+					Resources: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("10"),
+						corev1.ResourceCPU:    resource.MustParse("5"),
+					},
+					ReservedCPUs: "0-1",
+				})}},
+			want: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("10"),
+				corev1.ResourceCPU:    resource.MustParse("2"),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GetNodeReservationFromAnnotation(tt.args.anno); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetNodeReservationFromAnnotation() = %v, want %v", got, tt.want)
 			}
 		})
 	}

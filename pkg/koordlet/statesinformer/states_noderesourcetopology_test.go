@@ -19,6 +19,7 @@ package statesinformer
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -28,12 +29,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -41,6 +44,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 var _ topologylister.NodeResourceTopologyLister = &fakeNodeResourceTopologyLister{}
@@ -581,6 +585,134 @@ func Test_isEqualTopo(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equalf(t, tt.want, isEqualTopo(tt.args.oldtopo, tt.args.newtopo), "isEqualTopo(%v, %v)", tt.args.oldtopo, tt.args.newtopo)
+		})
+	}
+}
+
+func Test_getNodeReserved(t *testing.T) {
+	fakeTopo := topology.CPUTopology{
+		NumCPUs:    12,
+		NumSockets: 2,
+		NumCores:   6,
+		CPUDetails: map[int]topology.CPUInfo{
+			0:  {CoreID: 0, SocketID: 0, NUMANodeID: 0},
+			1:  {CoreID: 1, SocketID: 1, NUMANodeID: 1},
+			2:  {CoreID: 2, SocketID: 0, NUMANodeID: 0},
+			3:  {CoreID: 3, SocketID: 1, NUMANodeID: 1},
+			4:  {CoreID: 4, SocketID: 0, NUMANodeID: 0},
+			5:  {CoreID: 5, SocketID: 1, NUMANodeID: 1},
+			6:  {CoreID: 0, SocketID: 0, NUMANodeID: 0},
+			7:  {CoreID: 1, SocketID: 1, NUMANodeID: 1},
+			8:  {CoreID: 2, SocketID: 0, NUMANodeID: 0},
+			9:  {CoreID: 3, SocketID: 1, NUMANodeID: 1},
+			10: {CoreID: 4, SocketID: 0, NUMANodeID: 0},
+			11: {CoreID: 5, SocketID: 1, NUMANodeID: 1},
+		},
+	}
+	type args struct {
+		anno map[string]string
+	}
+	tests := []struct {
+		name string
+		args args
+		want extension.NodeReservation
+	}{
+		{
+			name: "node.annotation is nil",
+			args: args{},
+			want: extension.NodeReservation{},
+		},
+		{
+			name: "node.annotation not nil but nothing reserved",
+			args: args{
+				map[string]string{
+					"k": "v",
+				},
+			},
+			want: extension.NodeReservation{},
+		},
+		{
+			name: "node.annotation not nil but without cpu reserved",
+			args: args{
+				map[string]string{
+					extension.AnnotationNodeReservation: util.GetNodeAnnoReservedJson(extension.NodeReservation{}),
+				},
+			},
+			want: extension.NodeReservation{},
+		},
+		{
+			name: "reserve cpu only by quantity",
+			args: args{
+				map[string]string{
+					extension.AnnotationNodeReservation: util.GetNodeAnnoReservedJson(extension.NodeReservation{
+						Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+					}),
+				},
+			},
+			want: extension.NodeReservation{ReservedCPUs: "0,6"},
+		},
+		{
+			name: "reserve cpu only by quantity but value not integer",
+			args: args{
+				map[string]string{
+					extension.AnnotationNodeReservation: util.GetNodeAnnoReservedJson(extension.NodeReservation{
+						Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2.5")},
+					}),
+				},
+			},
+			want: extension.NodeReservation{ReservedCPUs: "0,2,6"},
+		},
+		{
+			name: "reserve cpu only by quantity but value is negative",
+			args: args{
+				map[string]string{
+					extension.AnnotationNodeReservation: util.GetNodeAnnoReservedJson(extension.NodeReservation{
+						Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("-2")},
+					}),
+				},
+			},
+			want: extension.NodeReservation{},
+		},
+		{
+			name: "reserve cpu only by specific cpus",
+			args: args{
+				map[string]string{
+					extension.AnnotationNodeReservation: util.GetNodeAnnoReservedJson(extension.NodeReservation{
+						ReservedCPUs: "0-1",
+					}),
+				},
+			},
+			want: extension.NodeReservation{ReservedCPUs: "0-1"},
+		},
+		{
+			name: "reserve cpu only by specific cpus but core id is unavailable",
+			args: args{
+				map[string]string{
+					extension.AnnotationNodeReservation: util.GetNodeAnnoReservedJson(extension.NodeReservation{
+						ReservedCPUs: "-1",
+					}),
+				},
+			},
+			want: extension.NodeReservation{},
+		},
+		{
+			name: "reserve cpu by specific cpus and quantity",
+			args: args{
+				map[string]string{
+					extension.AnnotationNodeReservation: util.GetNodeAnnoReservedJson(extension.NodeReservation{
+						Resources:    corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+						ReservedCPUs: "0-1",
+					}),
+				},
+			},
+			want: extension.NodeReservation{ReservedCPUs: "0-1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getNodeReserved(&fakeTopo, tt.args.anno); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("getNodeReserved() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

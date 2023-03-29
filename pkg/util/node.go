@@ -17,10 +17,17 @@ limitations under the License.
 package util
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
+
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 // GenerateNodeKey returns a generated key with given meta
@@ -48,4 +55,39 @@ func IsNodeAddressTypeSupported(addrType corev1.NodeAddressType) bool {
 		return true
 	}
 	return false
+}
+
+func GetNodeReservationFromAnnotation(anno map[string]string) corev1.ResourceList {
+	reserved, ok := anno[apiext.AnnotationNodeReservation]
+	if !ok {
+		return nil
+	}
+
+	reservedObj := apiext.NodeReservation{}
+	if err := json.Unmarshal([]byte(reserved), &reservedObj); err != nil {
+		klog.Errorf("Failed to unmarshal cpus reserved by node annotation. err=%v.\n", err)
+		return nil
+	}
+
+	rl := make(corev1.ResourceList)
+	if reservedObj.Resources != nil {
+		rl = reservedObj.Resources
+	}
+	if reservedObj.ReservedCPUs != "" {
+		if cpus, err := cpuset.Parse(reservedObj.ReservedCPUs); err == nil {
+			rl[corev1.ResourceCPU] = resource.MustParse(strconv.Itoa(cpus.Size()))
+		}
+	}
+
+	return rl
+}
+
+func GetNodeAnnoReservedJson(reserved apiext.NodeReservation) string {
+	result := ""
+	resultBytes, err := json.Marshal(&reserved)
+	if err == nil {
+		result = string(resultBytes)
+	}
+
+	return result
 }

@@ -1320,6 +1320,105 @@ func Test_cpuSuppress_adjustByCPUSet(t *testing.T) {
 	}
 }
 
+func genNodeResourceTopo(annoReserv string) *topov1alpha1.NodeResourceTopology {
+	return &topov1alpha1.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				apiext.AnnotationNodeReservation: annoReserv,
+			},
+		},
+	}
+}
+
+func Test_cpuSuppress_adjustByCPUSet_withCPUsReservedFromNodeAnno(t *testing.T) {
+	fakeNodeCPUInfo := metriccache.NodeCPUInfo{
+		ProcessorInfos: []koordletutil.ProcessorInfo{
+			{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 1},
+			{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 1},
+			{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 1},
+		},
+	}
+	type args struct {
+		cpusetQuantity   *resource.Quantity
+		nodeCPUInfo      *metriccache.NodeCPUInfo
+		oldCPUSets       string
+		nodeResourceTopo *topov1alpha1.NodeResourceTopology
+	}
+	tests := []struct {
+		name       string
+		args       args
+		wantCPUSet string
+	}{
+		{ // total - node.anno.reserv - LSE.used > be.quantity, just select enough cpus to modify cgroup.
+			name: "test scale by cpuset and ensure there is enough cpu available for bepod.",
+			args: args{
+				cpusetQuantity:   resource.NewQuantity(3, resource.DecimalSI),
+				nodeCPUInfo:      &fakeNodeCPUInfo,
+				oldCPUSets:       "7,6,3,2",
+				nodeResourceTopo: genNodeResourceTopo(`{"reservedCPUs":"3"}`),
+			},
+			wantCPUSet: "0,4-5",
+		},
+		{ // total - node.anno.reserv - LSE.used < be.quantity, do nothing
+			name: "test scale by cpuset and cpus that bepod can used less than bepod needed.",
+			args: args{
+				cpusetQuantity:   resource.NewQuantity(3, resource.DecimalSI),
+				nodeCPUInfo:      &fakeNodeCPUInfo,
+				oldCPUSets:       "7,6,3,2",
+				nodeResourceTopo: genNodeResourceTopo(`{"reservedCPUs":"1-6"}`),
+			},
+			wantCPUSet: "7,6,3,2",
+		},
+		{ // total - node.anno.reserv - LSE.used == be.quantity, then change cgroup.
+			name: "test scale by cpuset and just enough cpu allocated to bepod.",
+			args: args{
+				cpusetQuantity:   resource.NewQuantity(3, resource.DecimalSI),
+				nodeCPUInfo:      &fakeNodeCPUInfo,
+				oldCPUSets:       "7,6,3,2",
+				nodeResourceTopo: genNodeResourceTopo(`{"reservedCPUs":"0-1,5-6"}`),
+			},
+			wantCPUSet: "2-4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mockStatesInformer := mockstatesinformer.NewMockStatesInformer(ctrl)
+			lsrPod := mockLSRPod()
+			lsePod := mockLSEPod()
+			mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{Pod: lsrPod}, {Pod: lsePod}}).AnyTimes()
+			mockStatesInformer.EXPECT().GetNodeTopo().Return(tt.args.nodeResourceTopo).AnyTimes()
+			r := &resmanager{
+				statesInformer: mockStatesInformer,
+			}
+			cpuSuppress := newTestCPUSuppress(r)
+			stop := make(chan struct{})
+			err := cpuSuppress.RunInit(stop)
+			assert.NoError(t, err)
+
+			// prepare testing files
+			helper := system.NewFileTestUtil(t)
+			podDirs := []string{"pod1", "pod2", "pod3"}
+			testingPrepareBECgroupData(helper, podDirs, tt.args.oldCPUSets)
+
+			cpuSuppress.adjustByCPUSet(tt.args.cpusetQuantity, tt.args.nodeCPUInfo)
+
+			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+			assert.Equal(t, tt.wantCPUSet, gotCPUSetBECgroup, "checkBECPUSet")
+			for _, podDir := range podDirs {
+				gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
+				assert.Equal(t, tt.wantCPUSet, gotPodCPUSet, "checkPodCPUSet")
+			}
+		})
+	}
+}
+
 func Test_cpuSuppress_adjustByCfsQuota(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
 	beQosDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)

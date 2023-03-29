@@ -118,14 +118,19 @@ func (m *nodeResourceTopologyEventHandler) updateNodeResourceTopology(oldNodeRes
 		}
 	}
 
+	// remove cpus reserved by node.annotation.
+	specificCPUsReserved, _ := extension.GetReservedCPUs(newNodeResTopology.Annotations)
+	nodeAnnoReserved := cpuset.MustParse(specificCPUsReserved)
 	reportedCPUTopology, err := extension.GetCPUTopology(newNodeResTopology.Annotations)
 	if err != nil {
 		klog.Errorf("Failed to GetCPUTopology, name: %s, err: %v", newNodeResTopology.Name, err)
 	}
 
+	// reservedCPUs = cpus(all) - cpus(guaranteed) - cpus(kubeletReserved) - cpus(nodeAnnoReserved)
 	cpuTopology := convertCPUTopology(reportedCPUTopology)
 	reservedCPUs := m.getPodAllocsCPUSet(podCPUAllocs)
 	reservedCPUs = reservedCPUs.Union(kubeletReservedCPUs)
+	reservedCPUs = reservedCPUs.Union(nodeAnnoReserved)
 
 	nodeName := newNodeResTopology.Name
 	m.topologyManager.UpdateCPUTopologyOptions(nodeName, func(options *CPUTopologyOptions) {
