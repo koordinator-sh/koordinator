@@ -18,6 +18,7 @@ package client
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/golang/groupcache/lru"
 	"google.golang.org/grpc"
@@ -32,6 +33,7 @@ type HookServerClientManagerInterface interface {
 }
 
 type HookServerClientManager struct {
+	sync.RWMutex
 	cache *lru.Cache
 }
 
@@ -72,6 +74,9 @@ func newRuntimeHookClient(sockPath string) (*RuntimeHookClient, error) {
 }
 
 func (cm *HookServerClientManager) RuntimeHookServerClient(serverPath HookServerPath) (*RuntimeHookClient, error) {
+	cm.Lock()
+	defer cm.Unlock()
+
 	if client, ok := cm.cache.Get(serverPath); ok {
 		return client.(*RuntimeHookClient), nil
 	}
