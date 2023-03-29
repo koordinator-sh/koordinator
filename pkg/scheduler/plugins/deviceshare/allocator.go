@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/informers"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 )
 
@@ -39,7 +40,7 @@ type AllocatorFactoryFn func(options AllocatorOptions) Allocator
 
 type Allocator interface {
 	Name() string
-	Allocate(nodeName string, pod *corev1.Pod, podRequest corev1.ResourceList, nodeDevice *nodeDevice) (apiext.DeviceAllocations, error)
+	Allocate(nodeName string, pod *corev1.Pod, podRequest corev1.ResourceList, nodeDevice *nodeDevice, preemptibleFreeDevices map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error)
 	Reserve(pod *corev1.Pod, nodeDevice *nodeDevice, allocations apiext.DeviceAllocations)
 	Unreserve(pod *corev1.Pod, nodeDevice *nodeDevice, allocations apiext.DeviceAllocations)
 }
@@ -68,8 +69,8 @@ func (a *defaultAllocator) Name() string {
 	return defaultAllocatorName
 }
 
-func (a *defaultAllocator) Allocate(nodeName string, pod *corev1.Pod, podRequest corev1.ResourceList, nodeDevice *nodeDevice) (apiext.DeviceAllocations, error) {
-	return nodeDevice.tryAllocateDevice(podRequest)
+func (a *defaultAllocator) Allocate(nodeName string, pod *corev1.Pod, podRequest corev1.ResourceList, nodeDevice *nodeDevice, preemptibleFreeDevices map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
+	return nodeDevice.tryAllocateDevice(podRequest, preemptibleFreeDevices)
 }
 
 func (a *defaultAllocator) Reserve(pod *corev1.Pod, nodeDevice *nodeDevice, allocations apiext.DeviceAllocations) {
