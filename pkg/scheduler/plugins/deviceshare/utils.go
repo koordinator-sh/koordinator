@@ -182,12 +182,15 @@ var ConvertGPUResource = func(podRequest corev1.ResourceList, combination uint) 
 	return nil
 }
 
-func isMultipleCommonDevicePod(podRequest corev1.ResourceList, deviceType schedulingv1alpha1.DeviceType) bool {
+func isPodRequestsMultipleDevice(podRequest corev1.ResourceList, deviceType schedulingv1alpha1.DeviceType) bool {
 	if podRequest == nil || len(podRequest) == 0 {
 		klog.Warningf("pod request should not be empty")
 		return false
 	}
 	switch deviceType {
+	case schedulingv1alpha1.GPU:
+		gpuCore := podRequest[apiext.ResourceGPUCore]
+		return gpuCore.Value() > 100 && gpuCore.Value()%100 == 0
 	case schedulingv1alpha1.RDMA:
 		rdma := podRequest[apiext.ResourceRDMA]
 		return rdma.Value() > 100 && rdma.Value()%100 == 0
@@ -197,15 +200,6 @@ func isMultipleCommonDevicePod(podRequest corev1.ResourceList, deviceType schedu
 	default:
 		return false
 	}
-}
-
-func isMultipleGPUPod(podRequest corev1.ResourceList) bool {
-	if podRequest == nil || len(podRequest) == 0 {
-		klog.Warningf("pod request should not be empty")
-		return false
-	}
-	gpuCore := podRequest[apiext.ResourceGPUCore]
-	return gpuCore.Value() > 100 && gpuCore.Value()%100 == 0
 }
 
 func memRatioToBytes(ratio, totalMemory resource.Quantity) resource.Quantity {
@@ -239,13 +233,19 @@ func patchContainerGPUResource(pod *corev1.Pod, podRequest corev1.ResourceList) 
 	}
 }
 
-func fillGPUTotalMem(nodeDeviceTotal deviceResources, podRequest corev1.ResourceList) {
+func fillGPUTotalMem(nodeDeviceTotal deviceResources, podRequest corev1.ResourceList) error {
 	// nodeDeviceTotal uses the minor of GPU as key. However, under certain circumstances,
 	// minor 0 might not exist. We need to iterate the cache once to find the active minor.
-	var activeMinor int
-	for i := range nodeDeviceTotal {
+	activeMinor := -1
+	for i, resources := range nodeDeviceTotal {
+		if len(resources) == 0 {
+			continue
+		}
 		activeMinor = i
 		break
+	}
+	if activeMinor == -1 {
+		return fmt.Errorf("cannot find sastisfied GPU resources")
 	}
 
 	// a node can only contain one type of GPU, so each of them has the same total memory.
@@ -255,6 +255,7 @@ func fillGPUTotalMem(nodeDeviceTotal deviceResources, podRequest corev1.Resource
 		gpuMemRatio := podRequest[apiext.ResourceGPUMemoryRatio]
 		podRequest[apiext.ResourceGPUMemory] = memRatioToBytes(gpuMemRatio, nodeDeviceTotal[activeMinor][apiext.ResourceGPUMemory])
 	}
+	return nil
 }
 
 func subtractAllocated(m, podAllocated map[schedulingv1alpha1.DeviceType]deviceResources, removeZero bool) map[schedulingv1alpha1.DeviceType]deviceResources {

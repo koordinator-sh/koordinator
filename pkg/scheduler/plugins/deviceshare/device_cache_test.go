@@ -138,7 +138,6 @@ func Test_nodeDevice_allocateGPU(t *testing.T) {
 		apiext.ResourceGPUCore:        resource.MustParse("50"),
 		apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
 	}
-	allocateResult := apiext.DeviceAllocations{}
 	preemptible := map[schedulingv1alpha1.DeviceType]deviceResources{
 		schedulingv1alpha1.GPU: {
 			1: corev1.ResourceList{
@@ -153,7 +152,7 @@ func Test_nodeDevice_allocateGPU(t *testing.T) {
 			},
 		},
 	}
-	err := nd.tryAllocateGPU(podRequests, allocateResult, preemptible)
+	allocateResult, err := nd.tryAllocateDevice(podRequests, preemptible)
 	assert.NoError(t, err)
 	expectAllocations := apiext.DeviceAllocations{
 		schedulingv1alpha1.GPU: {
@@ -173,10 +172,43 @@ func Test_nodeDevice_allocateGPU(t *testing.T) {
 		apiext.ResourceGPUCore:        resource.MustParse("200"),
 		apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
 	}
-	allocateResult = apiext.DeviceAllocations{}
-	err = nd.tryAllocateGPU(podRequests, allocateResult, preemptible)
+	allocateResult, err = nd.tryAllocateDevice(podRequests, preemptible)
 	assert.NoError(t, err)
 	expectAllocations = allocations
+	assert.True(t, equality.Semantic.DeepEqual(expectAllocations, allocateResult))
+}
+
+func Test_nodeDevice_allocateGPUWithUnhealthyInstance(t *testing.T) {
+	nd := newNodeDevice()
+	nd.resetDeviceTotal(map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			1: corev1.ResourceList{}, // mock unhealthy state
+			2: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+			},
+		},
+	})
+
+	podRequests := corev1.ResourceList{
+		apiext.ResourceGPUCore:        resource.MustParse("50"),
+		apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+	}
+	allocateResult, err := nd.tryAllocateDevice(podRequests, nil)
+	assert.NoError(t, err)
+	expectAllocations := apiext.DeviceAllocations{
+		schedulingv1alpha1.GPU: {
+			{
+				Minor: 2,
+				Resources: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("50"),
+					apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+				},
+			},
+		},
+	}
 	assert.True(t, equality.Semantic.DeepEqual(expectAllocations, allocateResult))
 }
 
@@ -243,7 +275,7 @@ func Test_nodeDevice_allocateRDMA(t *testing.T) {
 			},
 		},
 	}
-	err := nd.tryAllocateCommonDevice(podRequests, schedulingv1alpha1.RDMA, allocateResult, preemptible)
+	err := nd.tryAllocateDeviceByType(podRequests, schedulingv1alpha1.RDMA, allocateResult, preemptible)
 	assert.NoError(t, err)
 	expectAllocations := apiext.DeviceAllocations{
 		schedulingv1alpha1.RDMA: {
@@ -261,7 +293,7 @@ func Test_nodeDevice_allocateRDMA(t *testing.T) {
 		apiext.ResourceRDMA: resource.MustParse("200"),
 	}
 	allocateResult = apiext.DeviceAllocations{}
-	err = nd.tryAllocateCommonDevice(podRequests, schedulingv1alpha1.RDMA, allocateResult, preemptible)
+	err = nd.tryAllocateDeviceByType(podRequests, schedulingv1alpha1.RDMA, allocateResult, preemptible)
 	assert.NoError(t, err)
 	expectAllocations = allocations
 	assert.True(t, equality.Semantic.DeepEqual(expectAllocations, allocateResult))

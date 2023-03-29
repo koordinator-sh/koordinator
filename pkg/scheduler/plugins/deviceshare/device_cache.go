@@ -264,18 +264,11 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptib
 
 	for deviceType := range DeviceResourceNames {
 		switch deviceType {
-		case schedulingv1alpha1.RDMA, schedulingv1alpha1.FPGA:
+		case schedulingv1alpha1.GPU, schedulingv1alpha1.RDMA, schedulingv1alpha1.FPGA:
 			if !hasDeviceResource(podRequest, deviceType) {
 				break
 			}
-			if err := n.tryAllocateCommonDevice(podRequest, deviceType, allocateResult, preemptibleDevices); err != nil {
-				return nil, err
-			}
-		case schedulingv1alpha1.GPU:
-			if !hasDeviceResource(podRequest, deviceType) {
-				break
-			}
-			if err := n.tryAllocateGPU(podRequest, allocateResult, preemptibleDevices); err != nil {
+			if err := n.tryAllocateDeviceByType(podRequest, deviceType, allocateResult, preemptibleDevices); err != nil {
 				return nil, err
 			}
 		default:
@@ -286,151 +279,94 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptib
 	return allocateResult, nil
 }
 
-func (n *nodeDevice) tryAllocateCommonDevice(podRequest corev1.ResourceList, deviceType schedulingv1alpha1.DeviceType, allocateResult apiext.DeviceAllocations, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) error {
+func (n *nodeDevice) tryAllocateDeviceByType(podRequest corev1.ResourceList, deviceType schedulingv1alpha1.DeviceType, allocateResult apiext.DeviceAllocations, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) error {
 	podRequest = quotav1.Mask(podRequest, DeviceResourceNames[deviceType])
 	nodeDeviceTotal := n.deviceTotal[deviceType]
-	if len(nodeDeviceTotal) <= 0 {
+	if len(nodeDeviceTotal) == 0 {
 		return fmt.Errorf("node does not have enough %v", deviceType)
 	}
 
+	// freeDevices is the rest of the whole machine, or is the rest of the reservation
 	freeDevices := n.deviceFree[deviceType]
+	// preemptible represent preemptible devices, which may be a complete device instance or part of an instance's resources
 	preemptible := preemptibleDevices[deviceType]
-	mergedFreeDevices := deviceResources{}
-	for minor, v := range preemptible {
-		mergedFreeDevices[minor] = v.DeepCopy()
-	}
-	for minor, v := range freeDevices {
-		res := mergedFreeDevices[minor]
-		if res == nil {
+	var mergedFreeDevices deviceResources
+	if len(preemptible) > 0 {
+		mergedFreeDevices = make(deviceResources)
+		for minor, v := range preemptible {
 			mergedFreeDevices[minor] = v.DeepCopy()
-		} else {
-			util.AddResourceList(res, v)
 		}
 	}
-	freeDevices = mergedFreeDevices
+
+	// The merging logic is executed only when there is a device that can be preempted,
+	// and the remaining idle devices are merged together to participate in the allocation
+	if len(mergedFreeDevices) > 0 {
+		for minor, v := range freeDevices {
+			res := mergedFreeDevices[minor]
+			if res == nil {
+				mergedFreeDevices[minor] = v.DeepCopy()
+			} else {
+				util.AddResourceList(res, v)
+			}
+		}
+		freeDevices = mergedFreeDevices
+	}
+
+	if deviceType == schedulingv1alpha1.GPU {
+		if err := fillGPUTotalMem(nodeDeviceTotal, podRequest); err != nil {
+			return err
+		}
+	}
 
 	var deviceAllocations []*apiext.DeviceAllocation
-
-	if isMultipleCommonDevicePod(podRequest, deviceType) {
-		var commonDeviceWanted int64
-		var podRequestPerCard corev1.ResourceList
+	deviceWanted := int64(1)
+	podRequestPerCard := podRequest
+	if isPodRequestsMultipleDevice(podRequest, deviceType) {
 		switch deviceType {
+		case schedulingv1alpha1.GPU:
+			gpuCore, gpuMem, gpuMemRatio := podRequest[apiext.ResourceGPUCore], podRequest[apiext.ResourceGPUMemory], podRequest[apiext.ResourceGPUMemoryRatio]
+			deviceWanted = gpuCore.Value() / 100
+			podRequestPerCard = corev1.ResourceList{
+				apiext.ResourceGPUCore:        *resource.NewQuantity(gpuCore.Value()/deviceWanted, resource.DecimalSI),
+				apiext.ResourceGPUMemory:      *resource.NewQuantity(gpuMem.Value()/deviceWanted, resource.BinarySI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(gpuMemRatio.Value()/deviceWanted, resource.DecimalSI),
+			}
 		case schedulingv1alpha1.RDMA:
 			commonDevice := podRequest[apiext.ResourceRDMA]
-			commonDeviceWanted = commonDevice.Value() / 100
+			deviceWanted = commonDevice.Value() / 100
 			podRequestPerCard = corev1.ResourceList{
-				apiext.ResourceRDMA: *resource.NewQuantity(commonDevice.Value()/commonDeviceWanted, resource.DecimalSI),
+				apiext.ResourceRDMA: *resource.NewQuantity(commonDevice.Value()/deviceWanted, resource.DecimalSI),
 			}
 		case schedulingv1alpha1.FPGA:
 			commonDevice := podRequest[apiext.ResourceFPGA]
-			commonDeviceWanted = commonDevice.Value() / 100
+			deviceWanted = commonDevice.Value() / 100
 			podRequestPerCard = corev1.ResourceList{
-				apiext.ResourceFPGA: *resource.NewQuantity(commonDevice.Value()/commonDeviceWanted, resource.DecimalSI),
+				apiext.ResourceFPGA: *resource.NewQuantity(commonDevice.Value()/deviceWanted, resource.DecimalSI),
 			}
 		}
-		satisfiedDeviceCount := 0
-		orderedDeviceResources := sortDeviceResourcesByMinor(freeDevices)
-		for _, deviceResource := range orderedDeviceResources {
-			if satisfied, _ := quotav1.LessThanOrEqual(podRequestPerCard, deviceResource.resources); satisfied {
-				satisfiedDeviceCount++
-				deviceAllocations = append(deviceAllocations, &apiext.DeviceAllocation{
-					Minor:     int32(deviceResource.minor),
-					Resources: podRequestPerCard,
-				})
-			}
-			if satisfiedDeviceCount == int(commonDeviceWanted) {
-				allocateResult[deviceType] = deviceAllocations
-				return nil
-			}
-		}
-		klog.V(5).Infof("node resource does not satisfy pod's multiple %v request, expect %v, got %v", deviceType, commonDeviceWanted, satisfiedDeviceCount)
-		return fmt.Errorf("node does not have enough %v", deviceType)
 	}
 
+	satisfiedDeviceCount := 0
 	orderedDeviceResources := sortDeviceResourcesByMinor(freeDevices)
 	for _, deviceResource := range orderedDeviceResources {
-		if satisfied, _ := quotav1.LessThanOrEqual(podRequest, deviceResource.resources); satisfied {
+		// Skip unhealthy Device instances with zero resources
+		if quotav1.IsZero(deviceResource.resources) {
+			continue
+		}
+		if satisfied, _ := quotav1.LessThanOrEqual(podRequestPerCard, deviceResource.resources); satisfied {
+			satisfiedDeviceCount++
 			deviceAllocations = append(deviceAllocations, &apiext.DeviceAllocation{
 				Minor:     int32(deviceResource.minor),
-				Resources: podRequest,
+				Resources: podRequestPerCard,
 			})
+		}
+		if satisfiedDeviceCount == int(deviceWanted) {
 			allocateResult[deviceType] = deviceAllocations
 			return nil
 		}
 	}
-	klog.V(5).Infof("node resource does not satisfy pod's %v request", deviceType)
+	klog.V(5).Infof("node resource does not satisfy pod's multiple %v request, expect %v, got %v", deviceType, deviceWanted, satisfiedDeviceCount)
 	return fmt.Errorf("node does not have enough %v", deviceType)
-}
-
-func (n *nodeDevice) tryAllocateGPU(podRequest corev1.ResourceList, allocateResult apiext.DeviceAllocations, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) error {
-	podRequest = quotav1.Mask(podRequest, DeviceResourceNames[schedulingv1alpha1.GPU])
-	nodeDeviceTotal := n.deviceTotal[schedulingv1alpha1.GPU]
-	if len(nodeDeviceTotal) <= 0 {
-		return fmt.Errorf("node does not have enough GPU")
-	}
-
-	// freeGPUs is the rest of the whole machine, or is the rest of the reservation
-	freeGPUs := n.deviceFree[schedulingv1alpha1.GPU]
-	preemptibleGPUs := preemptibleDevices[schedulingv1alpha1.GPU]
-	mergedFreeGPUs := deviceResources{}
-	for minor, v := range preemptibleGPUs {
-		mergedFreeGPUs[minor] = v.DeepCopy()
-	}
-	for minor, v := range freeGPUs {
-		res := mergedFreeGPUs[minor]
-		if res == nil {
-			mergedFreeGPUs[minor] = v.DeepCopy()
-		} else {
-			util.AddResourceList(res, v)
-		}
-	}
-	freeGPUs = mergedFreeGPUs
-
-	fillGPUTotalMem(nodeDeviceTotal, podRequest)
-
-	var deviceAllocations []*apiext.DeviceAllocation
-	if isMultipleGPUPod(podRequest) {
-		gpuCore, gpuMem, gpuMemRatio := podRequest[apiext.ResourceGPUCore], podRequest[apiext.ResourceGPUMemory], podRequest[apiext.ResourceGPUMemoryRatio]
-		gpuWanted := gpuCore.Value() / 100
-		podRequestPerCard := corev1.ResourceList{
-			apiext.ResourceGPUCore:        *resource.NewQuantity(gpuCore.Value()/gpuWanted, resource.DecimalSI),
-			apiext.ResourceGPUMemory:      *resource.NewQuantity(gpuMem.Value()/gpuWanted, resource.BinarySI),
-			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(gpuMemRatio.Value()/gpuWanted, resource.DecimalSI),
-		}
-		satisfiedDeviceCount := 0
-		orderedDeviceResources := sortDeviceResourcesByMinor(freeGPUs)
-		for _, deviceResource := range orderedDeviceResources {
-			if satisfied, _ := quotav1.LessThanOrEqual(podRequestPerCard, deviceResource.resources); satisfied {
-				satisfiedDeviceCount++
-				deviceAllocations = append(deviceAllocations, &apiext.DeviceAllocation{
-					Minor:     int32(deviceResource.minor),
-					Resources: podRequestPerCard,
-				})
-			}
-			if satisfiedDeviceCount == int(gpuWanted) {
-				allocateResult[schedulingv1alpha1.GPU] = deviceAllocations
-				return nil
-			}
-		}
-		klog.V(5).Infof("node GPU resource does not satisfy pod's multiple GPU request, expect %v, got %v", gpuWanted, satisfiedDeviceCount)
-		return fmt.Errorf("node does not have enough GPU")
-	}
-
-	orderedDeviceResources := sortDeviceResourcesByMinor(freeGPUs)
-	for _, deviceResource := range orderedDeviceResources {
-		if satisfied, _ := quotav1.LessThanOrEqual(podRequest, deviceResource.resources); !satisfied {
-			continue
-		}
-
-		deviceAllocations = append(deviceAllocations, &apiext.DeviceAllocation{
-			Minor:     int32(deviceResource.minor),
-			Resources: podRequest,
-		})
-		allocateResult[schedulingv1alpha1.GPU] = deviceAllocations
-		return nil
-	}
-	klog.V(5).Infof("node GPU resource does not satisfy pod's request")
-	return fmt.Errorf("node does not have enough GPU")
 }
 
 type nodeDeviceCache struct {
