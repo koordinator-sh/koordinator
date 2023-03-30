@@ -43,7 +43,7 @@ import (
 )
 
 const (
-	evictPodAnnotationKey = "descheduler.alpha.kubernetes.io/evict"
+	EvictPodAnnotationKey = "descheduler.alpha.kubernetes.io/evict"
 )
 
 type nodePodEvictedCount map[string]uint
@@ -361,7 +361,7 @@ func (ef *EvictorFilter) Filter(pod *corev1.Pod) bool {
 
 // HaveEvictAnnotation checks if the pod have evict annotation
 func HaveEvictAnnotation(obj metav1.Object) bool {
-	_, found := obj.GetAnnotations()[evictPodAnnotationKey]
+	_, found := obj.GetAnnotations()[EvictPodAnnotationKey]
 	return found
 }
 
