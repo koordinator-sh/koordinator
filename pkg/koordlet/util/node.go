@@ -127,3 +127,16 @@ func GetBECPUSetPathsByTargetDepth(relativeDepth int) ([]string, error) {
 	})
 	return containerPaths, err
 }
+
+// GetCgroupRootBlkIOAbsoluteDir gets the root blkio directory
+// @output /sys/fs/cgroup/blkio
+func GetCgroupRootBlkIOAbsoluteDir() string {
+	return filepath.Join(system.Conf.CgroupRootDir, system.CgroupBlkioDir)
+}
+
+// GetPodCgroupBlkIOAbsoluteDir gets the blkio parent directory of the specified podQos' root cgroup
+// @output /sys/fs/cgroup/blkio/kubepods.slice/kubepods-besteffort.slice
+func GetPodCgroupBlkIOAbsoluteDir(qosClass corev1.PodQOSClass) string {
+	podCgroupParentDir := GetPodQoSRelativePath(qosClass)
+	return filepath.Join(GetCgroupRootBlkIOAbsoluteDir(), podCgroupParentDir)
+}

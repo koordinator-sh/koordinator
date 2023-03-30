@@ -159,6 +159,9 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	util.RunFeatureWithInit(func() error { return rdtResCtrl.RunInit(stopCh) }, rdtResCtrl.reconcile,
 		[]featuregate.Feature{features.RdtResctrl}, r.config.ReconcileIntervalSeconds, stopCh)
 
+	blkioReconcile := NewBlkIOReconcile(r)
+	util.RunFeatureWithInit(func() error { return blkioReconcile.RunInit(stopCh) }, blkioReconcile.reconcile, []featuregate.Feature{features.BlkIOReconcile}, r.config.ReconcileIntervalSeconds, stopCh)
+
 	klog.Infof("start resmanager extensions")
 	plugins.SetupPlugins(r.kubeClient, r.metricCache, r.statesInformer)
 	utilruntime.Must(plugins.StartPlugins(r.config.QOSExtensionCfg, stopCh))

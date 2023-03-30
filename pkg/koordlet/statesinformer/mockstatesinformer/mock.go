@@ -109,6 +109,19 @@ func (mr *MockStatesInformerMockRecorder) GetNodeTopo() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeTopo", reflect.TypeOf((*MockStatesInformer)(nil).GetNodeTopo))
 }
 
+// GetVolumeName mocks base method.
+func (m *MockStatesInformer) GetVolumeName(pvcNamespace, pvcName string) string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVolumeName", pvcNamespace, pvcName)
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+func (mr *MockStatesInformerMockRecorder) GetVolumeName(pvcNamespace, pvcName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumeName", reflect.TypeOf((*MockStatesInformer)(nil).GetVolumeName), pvcNamespace, pvcName)
+}
+
 // HasSynced mocks base method.
 func (m *MockStatesInformer) HasSynced() bool {
 	m.ctrl.T.Helper()

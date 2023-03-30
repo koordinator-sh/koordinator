@@ -54,6 +54,8 @@ type StatesInformer interface {
 
 	GetNodeTopo() *topov1alpha1.NodeResourceTopology
 
+	GetVolumeName(pvcNamespace, pvcName string) string
+
 	RegisterCallbacks(objType RegisterType, name, description string, callbackFn UpdateCbFn)
 }
 
@@ -232,6 +234,15 @@ func (s *statesInformer) GetAllPods() []*PodMeta {
 		return nil
 	}
 	return podsInformer.GetAllPods()
+}
+
+func (s *statesInformer) GetVolumeName(pvcNamespace, pvcName string) string {
+	pvcInformerIf := s.states.informerPlugins[pvcInformerName]
+	pvcInformer, ok := pvcInformerIf.(*pvcInformer)
+	if !ok {
+		klog.Fatalf("pvc informer format error")
+	}
+	return pvcInformer.GetVolumeName(pvcNamespace, pvcName)
 }
 
 func (s *statesInformer) RegisterCallbacks(rType RegisterType, name, description string, callbackFn UpdateCbFn) {

@@ -79,6 +79,8 @@ type ContainerResourceQueryResult struct {
 
 type NodeCPUInfo util.LocalCPUInfo
 
+type NodeLocalStorageInfo util.LocalStorageInfo
+
 type BECPUResourceMetric struct {
 	CPUUsed      resource.Quantity // cpuUsed cores for BestEffort Cgroup
 	CPURealLimit resource.Quantity // suppressCPUQuantity: if suppress by cfs_quota then this  value is cfs_quota/cfs_period

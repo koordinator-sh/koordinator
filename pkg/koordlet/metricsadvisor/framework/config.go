@@ -27,26 +27,29 @@ const (
 )
 
 type Config struct {
-	CollectResUsedInterval     time.Duration
-	CollectNodeCPUInfoInterval time.Duration
-	CPICollectorInterval       time.Duration
-	PSICollectorInterval       time.Duration
-	CPICollectorTimeWindow     time.Duration
+	CollectResUsedInterval         time.Duration
+	CollectNodeCPUInfoInterval     time.Duration
+	CollectNodeStorageInfoInterval time.Duration
+	CPICollectorInterval           time.Duration
+	PSICollectorInterval           time.Duration
+	CPICollectorTimeWindow         time.Duration
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
-		CollectResUsedInterval:     1 * time.Second,
-		CollectNodeCPUInfoInterval: 60 * time.Second,
-		CPICollectorInterval:       60 * time.Second,
-		PSICollectorInterval:       10 * time.Second,
-		CPICollectorTimeWindow:     10 * time.Second,
+		CollectResUsedInterval:         1 * time.Second,
+		CollectNodeCPUInfoInterval:     60 * time.Second,
+		CollectNodeStorageInfoInterval: 1 * time.Second,
+		CPICollectorInterval:           60 * time.Second,
+		PSICollectorInterval:           10 * time.Second,
+		CPICollectorTimeWindow:         10 * time.Second,
 	}
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.CollectResUsedInterval, "collect-res-used-interval", c.CollectResUsedInterval, "Collect node/pod resource usage interval. Minimum interval is 1 second. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.CollectNodeCPUInfoInterval, "collect-node-cpu-info-interval", c.CollectNodeCPUInfoInterval, "Collect node cpu info interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
+	fs.DurationVar(&c.CollectNodeStorageInfoInterval, "collect-node-storage-info-interval", c.CollectNodeStorageInfoInterval, "Collect node storage info interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.CPICollectorInterval, "cpi-collector-interval", c.CPICollectorInterval, "Collect cpi interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.PSICollectorInterval, "psi-collector-interval", c.PSICollectorInterval, "Collect psi interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.CPICollectorTimeWindow, "collect-cpi-timewindow", c.CPICollectorTimeWindow, "Collect cpi time window. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")

@@ -73,6 +73,72 @@ spec:
                   beClass:
                     description: ResourceQOS for BE pods.
                     properties:
+                      blkioQOS:
+                        properties:
+                          blocks:
+                            items:
+                              properties:
+                                ioCfg:
+                                  properties:
+                                    ioWeightPercent:
+                                      description: 'This field is used to set the
+                                        weight of a sub-group. Default value: 100.
+                                        Valid values: 1 to 100.'
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 1
+                                      type: integer
+                                    readBPS:
+                                      description: Throttling of throughput The value
+                                        is set to 0, which indicates that the feature
+                                        is disabled.
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    readIOPS:
+                                      description: Throttling of IOPS The value is
+                                        set to 0, which indicates that the feature
+                                        is disabled.
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    readLatency:
+                                      description: 'Configure the weight-based throttling
+                                        feature of blk-iocost Only used for RootClass
+                                        After blk-iocost is enabled, the kernel calculates
+                                        the proportion of requests that exceed the
+                                        read or write latency threshold out of all
+                                        requests. When the proportion is greater than
+                                        the read or write latency percentile (95%),
+                                        the kernel considers the disk to be saturated
+                                        and reduces the rate at which requests are
+                                        sent to the disk. the read latency threshold.
+                                        Unit: microseconds.'
+                                      format: int64
+                                      type: integer
+                                    writeBPS:
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    writeIOPS:
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    writeLatency:
+                                      description: 'the write latency threshold. Unit:
+                                        microseconds.'
+                                      format: int64
+                                      type: integer
+                                  type: object
+                                name:
+                                  type: string
+                                type:
+                                  type: string
+                              type: object
+                            type: array
+                          enable:
+                            type: boolean
+                        type: object
                       cpuQOS:
                         description: CPUQOSCfg stores node-level config of cpu qos
                         properties:
@@ -217,6 +283,72 @@ spec:
                   cgroupRoot:
                     description: ResourceQOS for root cgroup.
                     properties:
+                      blkioQOS:
+                        properties:
+                          blocks:
+                            items:
+                              properties:
+                                ioCfg:
+                                  properties:
+                                    ioWeightPercent:
+                                      description: 'This field is used to set the
+                                        weight of a sub-group. Default value: 100.
+                                        Valid values: 1 to 100.'
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 1
+                                      type: integer
+                                    readBPS:
+                                      description: Throttling of throughput The value
+                                        is set to 0, which indicates that the feature
+                                        is disabled.
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    readIOPS:
+                                      description: Throttling of IOPS The value is
+                                        set to 0, which indicates that the feature
+                                        is disabled.
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    readLatency:
+                                      description: 'Configure the weight-based throttling
+                                        feature of blk-iocost Only used for RootClass
+                                        After blk-iocost is enabled, the kernel calculates
+                                        the proportion of requests that exceed the
+                                        read or write latency threshold out of all
+                                        requests. When the proportion is greater than
+                                        the read or write latency percentile (95%),
+                                        the kernel considers the disk to be saturated
+                                        and reduces the rate at which requests are
+                                        sent to the disk. the read latency threshold.
+                                        Unit: microseconds.'
+                                      format: int64
+                                      type: integer
+                                    writeBPS:
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    writeIOPS:
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    writeLatency:
+                                      description: 'the write latency threshold. Unit:
+                                        microseconds.'
+                                      format: int64
+                                      type: integer
+                                  type: object
+                                name:
+                                  type: string
+                                type:
+                                  type: string
+                              type: object
+                            type: array
+                          enable:
+                            type: boolean
+                        type: object
                       cpuQOS:
                         description: CPUQOSCfg stores node-level config of cpu qos
                         properties:
@@ -361,6 +493,72 @@ spec:
                   lsClass:
                     description: ResourceQOS for LS pods.
                     properties:
+                      blkioQOS:
+                        properties:
+                          blocks:
+                            items:
+                              properties:
+                                ioCfg:
+                                  properties:
+                                    ioWeightPercent:
+                                      description: 'This field is used to set the
+                                        weight of a sub-group. Default value: 100.
+                                        Valid values: 1 to 100.'
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 1
+                                      type: integer
+                                    readBPS:
+                                      description: Throttling of throughput The value
+                                        is set to 0, which indicates that the feature
+                                        is disabled.
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    readIOPS:
+                                      description: Throttling of IOPS The value is
+                                        set to 0, which indicates that the feature
+                                        is disabled.
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    readLatency:
+                                      description: 'Configure the weight-based throttling
+                                        feature of blk-iocost Only used for RootClass
+                                        After blk-iocost is enabled, the kernel calculates
+                                        the proportion of requests that exceed the
+                                        read or write latency threshold out of all
+                                        requests. When the proportion is greater than
+                                        the read or write latency percentile (95%),
+                                        the kernel considers the disk to be saturated
+                                        and reduces the rate at which requests are
+                                        sent to the disk. the read latency threshold.
+                                        Unit: microseconds.'
+                                      format: int64
+                                      type: integer
+                                    writeBPS:
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    writeIOPS:
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    writeLatency:
+                                      description: 'the write latency threshold. Unit:
+                                        microseconds.'
+                                      format: int64
+                                      type: integer
+                                  type: object
+                                name:
+                                  type: string
+                                type:
+                                  type: string
+                              type: object
+                            type: array
+                          enable:
+                            type: boolean
+                        type: object
                       cpuQOS:
                         description: CPUQOSCfg stores node-level config of cpu qos
                         properties:
@@ -505,6 +703,72 @@ spec:
                   lsrClass:
                     description: ResourceQOS for LSR pods.
                     properties:
+                      blkioQOS:
+                        properties:
+                          blocks:
+                            items:
+                              properties:
+                                ioCfg:
+                                  properties:
+                                    ioWeightPercent:
+                                      description: 'This field is used to set the
+                                        weight of a sub-group. Default value: 100.
+                                        Valid values: 1 to 100.'
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 1
+                                      type: integer
+                                    readBPS:
+                                      description: Throttling of throughput The value
+                                        is set to 0, which indicates that the feature
+                                        is disabled.
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    readIOPS:
+                                      description: Throttling of IOPS The value is
+                                        set to 0, which indicates that the feature
+                                        is disabled.
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    readLatency:
+                                      description: 'Configure the weight-based throttling
+                                        feature of blk-iocost Only used for RootClass
+                                        After blk-iocost is enabled, the kernel calculates
+                                        the proportion of requests that exceed the
+                                        read or write latency threshold out of all
+                                        requests. When the proportion is greater than
+                                        the read or write latency percentile (95%),
+                                        the kernel considers the disk to be saturated
+                                        and reduces the rate at which requests are
+                                        sent to the disk. the read latency threshold.
+                                        Unit: microseconds.'
+                                      format: int64
+                                      type: integer
+                                    writeBPS:
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    writeIOPS:
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    writeLatency:
+                                      description: 'the write latency threshold. Unit:
+                                        microseconds.'
+                                      format: int64
+                                      type: integer
+                                  type: object
+                                name:
+                                  type: string
+                                type:
+                                  type: string
+                              type: object
+                            type: array
+                          enable:
+                            type: boolean
+                        type: object
                       cpuQOS:
                         description: CPUQOSCfg stores node-level config of cpu qos
                         properties:
@@ -649,6 +913,72 @@ spec:
                   systemClass:
                     description: ResourceQOS for system pods
                     properties:
+                      blkioQOS:
+                        properties:
+                          blocks:
+                            items:
+                              properties:
+                                ioCfg:
+                                  properties:
+                                    ioWeightPercent:
+                                      description: 'This field is used to set the
+                                        weight of a sub-group. Default value: 100.
+                                        Valid values: 1 to 100.'
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 1
+                                      type: integer
+                                    readBPS:
+                                      description: Throttling of throughput The value
+                                        is set to 0, which indicates that the feature
+                                        is disabled.
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    readIOPS:
+                                      description: Throttling of IOPS The value is
+                                        set to 0, which indicates that the feature
+                                        is disabled.
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    readLatency:
+                                      description: 'Configure the weight-based throttling
+                                        feature of blk-iocost Only used for RootClass
+                                        After blk-iocost is enabled, the kernel calculates
+                                        the proportion of requests that exceed the
+                                        read or write latency threshold out of all
+                                        requests. When the proportion is greater than
+                                        the read or write latency percentile (95%),
+                                        the kernel considers the disk to be saturated
+                                        and reduces the rate at which requests are
+                                        sent to the disk. the read latency threshold.
+                                        Unit: microseconds.'
+                                      format: int64
+                                      type: integer
+                                    writeBPS:
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    writeIOPS:
+                                      format: int64
+                                      minimum: 0
+                                      type: integer
+                                    writeLatency:
+                                      description: 'the write latency threshold. Unit:
+                                        microseconds.'
+                                      format: int64
+                                      type: integer
+                                  type: object
+                                name:
+                                  type: string
+                                type:
+                                  type: string
+                              type: object
+                            type: array
+                          enable:
+                            type: boolean
+                        type: object
                       cpuQOS:
                         description: CPUQOSCfg stores node-level config of cpu qos
                         properties:

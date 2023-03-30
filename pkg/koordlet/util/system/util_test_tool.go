@@ -46,6 +46,12 @@ var (
 		MemoryPriority,
 		MemoryUsePriorityOom,
 		MemoryOomGroup,
+		BlkioIOQoS,
+		BlkioIOWeight,
+		BlkioReadBps,
+		BlkioReadIops,
+		BlkioWriteBps,
+		BlkioWriteIops,
 	}
 )
 
@@ -96,7 +102,7 @@ func (c *FileTestUtil) SetCgroupsV2(useCgroupsV2 bool) {
 	UseCgroupsV2 = useCgroupsV2
 }
 
-//if dir contain TempDir, mkdir direct, else join with TempDir and mkdir
+// if dir contain TempDir, mkdir direct, else join with TempDir and mkdir
 func (c *FileTestUtil) MkDirAll(testDir string) {
 	dir := testDir
 	if !strings.Contains(dir, c.TempDir) {
@@ -107,7 +113,7 @@ func (c *FileTestUtil) MkDirAll(testDir string) {
 	}
 }
 
-//if filePath contain TempDir, createFile direct, else join with TempDir and create
+// if filePath contain TempDir, createFile direct, else join with TempDir and create
 func (c *FileTestUtil) CreateFile(testFilePath string) {
 	filePath := testFilePath
 	if !strings.Contains(filePath, c.TempDir) {
@@ -122,7 +128,7 @@ func (c *FileTestUtil) CreateFile(testFilePath string) {
 	}
 }
 
-//if filePath contain TempDir, write direct, else join with TempDir and write
+// if filePath contain TempDir, write direct, else join with TempDir and write
 func (c *FileTestUtil) WriteFileContents(testFilePath, contents string) {
 	filePath := testFilePath
 	if !strings.Contains(filePath, c.TempDir) {
@@ -137,7 +143,7 @@ func (c *FileTestUtil) WriteFileContents(testFilePath, contents string) {
 	}
 }
 
-//if filePath contain TempDir, read direct, else join with TempDir and read
+// if filePath contain TempDir, read direct, else join with TempDir and read
 func (c *FileTestUtil) ReadFileContents(testFilePath string) string {
 	filePath := testFilePath
 	if !strings.Contains(filePath, c.TempDir) {

@@ -28,6 +28,8 @@ const (
 	AnnotationPodCPUBurst = DomainPrefix + "cpuBurst"
 
 	AnnotationPodMemoryQoS = DomainPrefix + "memoryQOS"
+
+	AnnotationPodBlkioQoS = DomainPrefix + "blkioQOS"
 )
 
 func GetPodCPUBurstConfig(pod *corev1.Pod) (*slov1alpha1.CPUBurstConfig, error) {

@@ -20,6 +20,7 @@ package statesinformer
 
 var DefaultPluginRegistry = map[pluginName]informerPlugin{
 	nodeSLOInformerName:    NewNodeSLOInformer(),
+	pvcInformerName:        NewPVCInformer(),
 	nodeTopoInformerName:   NewNodeTopoInformer(),
 	nodeInformerName:       NewNodeInformer(),
 	podsInformerName:       NewPodsInformer(),

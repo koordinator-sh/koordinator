@@ -289,3 +289,7 @@ func (p *Patch) Patch(ctx context.Context, obj metav1.Object) (metav1.Object, er
 	}
 	return nil, fmt.Errorf("unsupported Object")
 }
+
+func GetNamespacedName(namespace, name string) string {
+	return fmt.Sprintf("%s/%s", namespace, name)
+}

@@ -17,8 +17,11 @@ limitations under the License.
 package resourceexecutor
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -52,10 +55,6 @@ func init() {
 		sysutil.MemoryPriorityName,
 		sysutil.MemoryUsePriorityOomName,
 		sysutil.MemoryOomGroupName,
-		sysutil.BlkioTRIopsName,
-		sysutil.BlkioTRBpsName,
-		sysutil.BlkioTWIopsName,
-		sysutil.BlkioTWBpsName,
 	)
 	// special cases
 	DefaultCgroupUpdaterFactory.Register(NewCPUSharesCgroupUpdater, sysutil.CPUSharesName)
@@ -66,6 +65,14 @@ func init() {
 	)
 	DefaultCgroupUpdaterFactory.Register(NewMergeableCgroupUpdaterIfCPUSetLooser,
 		sysutil.CPUSetCPUSName,
+	)
+	DefaultCgroupUpdaterFactory.Register(NewBlkIOResourceUpdater,
+		sysutil.BlkioTRIopsName,
+		sysutil.BlkioTRBpsName,
+		sysutil.BlkioTWIopsName,
+		sysutil.BlkioTWBpsName,
+		sysutil.BlkioIOQoSName,
+		sysutil.BlkioIOWeightName,
 	)
 }
 
@@ -485,4 +492,92 @@ func commonWriteIfDifferentWithLog(c *DefaultResourceUpdater) error {
 		_ = audit.V(3).Reason(ReasonUpdateSystemConfig).Message("update %v to %v", c.Path(), c.Value()).Do()
 	}
 	return nil
+}
+
+func BlkIOUpdateFunc(resource ResourceUpdater) error {
+	info := resource.(*CgroupResourceUpdater)
+	return cgroupBlkIOFileWriteIfDifferent(info.parentDir, info.file, info.Value())
+}
+
+// resourceType sysutil.ResourceType, parentDir string, value string, updateFunc UpdateFunc
+func NewBlkIOResourceUpdater(resourceType sysutil.ResourceType, parentDir string, value string, e *audit.EventHelper) (ResourceUpdater, error) {
+	return NewCgroupUpdater(resourceType, parentDir, value, BlkIOUpdateFunc, e)
+}
+func cgroupBlkIOFileWriteIfDifferent(cgroupTaskDir string, file sysutil.Resource, value string) error {
+	var needUpdate bool
+	currentValue, currentErr := cgroupFileRead(cgroupTaskDir, file)
+	if currentErr != nil {
+		return currentErr
+	}
+
+	switch file.ResourceType() {
+	case sysutil.BlkioIOQoSName:
+		needUpdate = CheckIfBlkRootConfigNeedUpdate(currentValue, value)
+	case sysutil.BlkioTRIopsName, sysutil.BlkioTRBpsName, sysutil.BlkioTWIopsName, sysutil.BlkioTWBpsName, sysutil.BlkioIOWeightName:
+		needUpdate = CheckIfBlkQOSNeedUpdate(currentValue, value)
+	default:
+		return fmt.Errorf("unknown blkio resource file %s", file.ResourceType())
+	}
+
+	if !needUpdate {
+		klog.V(6).Infof("no need to update blk cgroup file %s/%s: currentValue is %s, value is %s", cgroupTaskDir, file.ResourceType(), currentValue, value)
+		return nil
+	}
+
+	klog.V(6).Infof("need to update blk cgroup file %s/%s: currentValue is %s, value is %s", cgroupTaskDir, file.ResourceType(), currentValue, value)
+	return cgroupFileWrite(cgroupTaskDir, file, value)
+}
+
+// https://www.alibabacloud.com/help/en/elastic-compute-service/latest/configure-the-weight-based-throttling-feature-of-blk-iocost
+func CheckIfBlkRootConfigNeedUpdate(oldValue string, newValue string) bool {
+	needUpdate := true
+	scanner := bufio.NewScanner(bytes.NewReader([]byte(oldValue)))
+	for scanner.Scan() {
+		if regexp.MustCompile(fmt.Sprintf("^%s$", newValue)).FindString(scanner.Text()) == newValue {
+			needUpdate = false
+			break
+		}
+	}
+
+	return needUpdate
+}
+
+// blkio.cost.weight: configure iocost weight
+// blkio.throttle.read_bps_device: configure read bps
+// blkio.throttle.read_iops_device: configure read iops
+// blkio.throttle.write_bps_device: configure write bps
+// blkio.throttle.write_iops_device: configure write iops
+func CheckIfBlkQOSNeedUpdate(oldValue string, newValue string) bool {
+	var needUpdate bool
+	scanner := bufio.NewScanner(bytes.NewReader([]byte(oldValue)))
+	// newValue: "253:0 30"
+	// out: [["253:0 0" "253:0" "0"]]
+	out := regexp.MustCompile(`(^[0-9]+:[0-9]+) ([0-9]+)$`).FindAllStringSubmatch(newValue, -1)
+
+	var majminWithZero string
+	if len(out) == 1 && len(out[0]) == 3 && out[0][2] == "0" {
+		majminWithZero = out[0][1]
+	}
+	if majminWithZero != "" {
+		// If majminWithZero is not empty, it means to assign a zero value to a device
+		needUpdate = false
+		for scanner.Scan() {
+			if len(regexp.MustCompile(fmt.Sprintf("^%s ", majminWithZero)).FindString(scanner.Text())) != 0 {
+				needUpdate = true
+				break
+			}
+		}
+	} else {
+		// If majminWithZero is empty, it means to update the blkio cgroup file
+		needUpdate = true
+		for scanner.Scan() {
+			// If currentValue does not completely contain newValue, a write operation is required
+			if regexp.MustCompile(fmt.Sprintf("^%s$", newValue)).FindString(scanner.Text()) == newValue {
+				needUpdate = false
+				break
+			}
+		}
+	}
+
+	return needUpdate
 }
