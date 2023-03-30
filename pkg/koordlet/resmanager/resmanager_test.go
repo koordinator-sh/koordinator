@@ -188,8 +188,8 @@ func setupFakeDiscoveryWithPolicyResource(fake *coretesting.Fake, groupVersion s
 				GroupVersion: groupVersion,
 				APIResources: []metav1.APIResource{
 					{
-						Name: apiext.EvictionSubResouceName,
-						Kind: apiext.EvictionKind,
+						Name: util.EvictionSubResourceName,
+						Kind: util.EvictionKind,
 					},
 				},
 			},
@@ -202,8 +202,8 @@ func setupFakeDiscoveryWithPolicyResource(fake *coretesting.Fake, groupVersion s
 				GroupVersion: "v1",
 				APIResources: []metav1.APIResource{
 					{
-						Name: apiext.EvictionSubResouceName,
-						Kind: apiext.EvictionKind,
+						Name: util.EvictionSubResourceName,
+						Kind: util.EvictionKind,
 					},
 				},
 			},
