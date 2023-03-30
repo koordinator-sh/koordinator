@@ -483,44 +483,38 @@ func Test_isMultipleCommonDevicePod(t *testing.T) {
 			},
 			want: false,
 		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := isMultipleCommonDevicePod(tt.args.podRequest, tt.args.deviceType)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func Test_isMultipleGPUPod(t *testing.T) {
-	tests := []struct {
-		name       string
-		podRequest corev1.ResourceList
-		want       bool
-	}{
 		{
-			name:       "empty pod request",
-			podRequest: corev1.ResourceList{},
-			want:       false,
+			name: "empty pod request",
+			args: args{
+				podRequest: corev1.ResourceList{},
+				deviceType: schedulingv1alpha1.GPU,
+			},
+			want: false,
 		},
 		{
 			name: "single gpu",
-			podRequest: corev1.ResourceList{
-				apiext.ResourceGPUCore: resource.MustParse("80"),
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceGPUCore: resource.MustParse("80"),
+				},
+				deviceType: schedulingv1alpha1.GPU,
 			},
 			want: false,
 		},
 		{
 			name: "multiple gpu",
-			podRequest: corev1.ResourceList{
-				apiext.ResourceGPUCore: resource.MustParse("200"),
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceGPUCore: resource.MustParse("200"),
+				},
+				deviceType: schedulingv1alpha1.GPU,
 			},
 			want: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isMultipleGPUPod(tt.podRequest)
+			got := isPodRequestsMultipleDevice(tt.args.podRequest, tt.args.deviceType)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -665,68 +659,77 @@ func Test_patchContainerGPUResource(t *testing.T) {
 
 func Test_fillGPUTotalMem(t *testing.T) {
 	type args struct {
-		gpuTotal   deviceResources
-		podRequest corev1.ResourceList
 	}
 	type wants struct {
-		podRequest corev1.ResourceList
 	}
 	tests := []struct {
-		name  string
-		args  args
-		wants wants
+		name           string
+		gpuTotal       deviceResources
+		podRequest     corev1.ResourceList
+		wantPodRequest corev1.ResourceList
+		wantErr        bool
 	}{
 		{
 			name: "ratio to mem",
-			args: args{
-				gpuTotal: deviceResources{
-					0: corev1.ResourceList{
-						apiext.ResourceGPUCore:        resource.MustParse("100"),
-						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-						apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
-					},
-				},
-				podRequest: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("50"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			gpuTotal: deviceResources{
+				0: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
 				},
 			},
-			wants: wants{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("50"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
-					apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
-				},
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			},
+			wantPodRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+				apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 			},
 		},
 		{
 			name: "mem to ratio",
-			args: args{
-				gpuTotal: deviceResources{
-					0: corev1.ResourceList{
-						apiext.ResourceGPUCore:        resource.MustParse("100"),
-						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-						apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
-					},
-				},
-				podRequest: corev1.ResourceList{
-					apiext.ResourceGPUCore:   resource.MustParse("50"),
-					apiext.ResourceGPUMemory: resource.MustParse("16Gi"),
+			gpuTotal: deviceResources{
+				0: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
 				},
 			},
-			wants: wants{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("50"),
-					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
-					apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
-				},
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("50"),
+				apiext.ResourceGPUMemory: resource.MustParse("16Gi"),
 			},
+			wantPodRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+				apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+			},
+		},
+		{
+			name: "missing total",
+			gpuTotal: deviceResources{
+				0: corev1.ResourceList{},
+			},
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			},
+			wantPodRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			},
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fillGPUTotalMem(tt.args.gpuTotal, tt.args.podRequest)
-			assert.Equal(t, tt.wants.podRequest, tt.args.podRequest)
+			err := fillGPUTotalMem(tt.gpuTotal, tt.podRequest)
+			if tt.wantErr != (err != nil) {
+				t.Errorf("wantErr %v but got %v", tt.wantErr, err != nil)
+			}
+			assert.Equal(t, tt.wantPodRequest, tt.podRequest)
 		})
 	}
 }
