@@ -17,8 +17,6 @@ limitations under the License.
 package extension
 
 import (
-	"time"
-
 	"github.com/mohae/deepcopy"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -194,12 +192,7 @@ func (in *ExtraFields) DeepCopy() *ExtraFields {
 	return out
 }
 
-// +k8s:deepcopy-gen=true
-type AggregatePolicy struct {
-	Durations      []time.Duration               `json:"durations,omitempty"`
-	StatisticTypes []slov1alpha1.AggregationType `json:"statisticTypes,omitempty"`
-}
-
+// ColocationStrategy defines the strategy for node colocation.
 // +k8s:deepcopy-gen=true
 type ColocationStrategy struct {
 	Enable                         *bool                        `json:"enable,omitempty"`
@@ -237,15 +230,9 @@ data:
       "metricReportIntervalSeconds": 60,
       "metricAggregatePolicy": {
         "durations": [
-          {
-            "duration": "5m"
-          },
-          {
-            "duration": "10m"
-          },
-          {
-            "duration": "15m"
-          }
+          "5m",
+          "10m",
+          "15m"
         ]
       },
       "cpuReclaimThresholdPercent": 60,
