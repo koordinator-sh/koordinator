@@ -138,7 +138,7 @@ func TestResctrlSchemataRaw(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := NewResctrlSchemataRaw()
-			r.WithL3Num(tt.fields.l3Num).WithL3Mask(tt.fields.l3Mask).WithMBPercent(tt.fields.mbPercent)
+			r.WithL3Num(tt.fields.l3Num).WithL3Mask(tt.fields.l3Mask).WithMB(tt.fields.mbPercent)
 			if len(tt.fields.l3Mask) > 0 {
 				got := r.L3String()
 				assert.Equal(t, tt.wantL3String, got)

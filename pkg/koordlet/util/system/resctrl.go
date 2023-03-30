@@ -47,6 +47,9 @@ const (
 	L3SchemataPrefix = "L3"
 	// MbSchemataPrefix is the prefix of mba schemata
 	MbSchemataPrefix = "MB"
+
+	// other cpu vendor like "GenuineIntel"
+	AMD_VENDOR_ID = "AuthenticAMD"
 )
 
 var (
@@ -61,18 +64,23 @@ func isCPUSupportResctrl() (bool, error) {
 		klog.Errorf("isResctrlAvailableByCpuInfo error: %v", err)
 		return false, err
 	}
-	klog.Infof("isResctrlAvailableByCpuInfo result, isCatFlagSet: %v, isMbaFlagSet: %v", isCatFlagSet, isMbaFlagSet)
+	klog.V(4).Infof("isResctrlAvailableByCpuInfo result, isCatFlagSet: %v, isMbaFlagSet: %v", isCatFlagSet, isMbaFlagSet)
 	isInit = true
 	return isCatFlagSet && isMbaFlagSet, nil
 }
 
 func isKernelSupportResctrl() (bool, error) {
+	if vendorID, err := GetVendorIDByCPUInfo(filepath.Join(Conf.ProcRootDir, CPUInfoFileName)); err == nil && vendorID == AMD_VENDOR_ID {
+		// AMD CPU support resctrl by default
+		klog.V(4).Infof("isKernelSupportResctrl true, since the cpu vendor is %v, no need to check kernel command line", vendorID)
+		return true, nil
+	}
 	isCatFlagSet, isMbaFlagSet, err := isResctrlAvailableByKernelCmd(filepath.Join(Conf.ProcRootDir, KernelCmdlineFileName))
 	if err != nil {
 		klog.Errorf("isResctrlAvailableByKernelCmd error: %v", err)
 		return false, err
 	}
-	klog.Infof("isResctrlAvailableByKernelCmd result,isCatFlagSet: %v,isMbaFlagSet: %v", isCatFlagSet, isMbaFlagSet)
+	klog.V(4).Infof("isResctrlAvailableByKernelCmd result,isCatFlagSet: %v,isMbaFlagSet: %v", isCatFlagSet, isMbaFlagSet)
 	isInit = true
 	return isCatFlagSet && isMbaFlagSet, nil
 }
@@ -188,11 +196,13 @@ func (r *ResctrlSchemataRaw) WithL3Mask(mask string) *ResctrlSchemataRaw {
 	return r
 }
 
-func (r *ResctrlSchemataRaw) WithMBPercent(percent string) *ResctrlSchemataRaw {
-	// mba percent MUST be a valid integer
-	percentValue, err := strconv.ParseInt(strings.TrimSpace(percent), 10, 64)
+func (r *ResctrlSchemataRaw) WithMB(valueOrPercent string) *ResctrlSchemataRaw {
+	// mba valueOrPercent MUST be a valid integer
+	// for intel: "MB:0=100;1=100"
+	// for amd format: "MB:0=2048;1=2048;2=2048;3=2048"
+	percentValue, err := strconv.ParseInt(strings.TrimSpace(valueOrPercent), 10, 64)
 	if err != nil {
-		klog.V(5).Infof("failed to parse mba percent %s, err: %v", percent, err)
+		klog.V(5).Infof("failed to parse mba %s, err: %v", valueOrPercent, err)
 	}
 	r.MB = make([]int64, r.L3Num)
 	for i := 0; i < r.L3Num; i++ {

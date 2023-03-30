@@ -88,6 +88,37 @@ func isResctrlAvailableByCpuInfo(path string) (bool, bool, error) {
 	return isCatFlagSet, isMbaFlagSet, nil
 }
 
+// return vendor_id like AuthenticAMD from cpu info, e.g.
+// vendor_id       : AuthenticAMD
+// vendor_id       : GenuineIntel
+func GetVendorIDByCPUInfo(path string) (string, error) {
+	vendorID := "unknown"
+	f, err := os.Open(path)
+	if err != nil {
+		return vendorID, err
+	}
+	defer f.Close()
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		if err := s.Err(); err != nil {
+			return vendorID, err
+		}
+
+		line := s.Text()
+
+		// get "vendor_id" from first line
+		if strings.Contains(line, "vendor_id") {
+			attrs := strings.Split(line, ":")
+			if len(attrs) >= 2 {
+				vendorID = strings.TrimSpace(attrs[1])
+				break
+			}
+		}
+	}
+	return vendorID, nil
+}
+
 // file content example:
 // BOOT_IMAGE=/boot/vmlinuz-4.19.91-24.1.al7.x86_64 root=UUID=231efa3b-302b-4e82-9445-0f7d5d353dda \
 // crashkernel=0M-2G:0M,2G-8G:192M,8G-:256M cryptomgr.notests cgroup.memory=nokmem rcupdate.rcu_cpu_stall_timeout=300 \
