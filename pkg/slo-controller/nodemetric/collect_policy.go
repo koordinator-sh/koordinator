@@ -40,6 +40,7 @@ func getNodeMetricCollectPolicy(strategy *extension.ColocationStrategy) (*slov1a
 	collectPolicy := &slov1alpha1.NodeMetricCollectPolicy{
 		AggregateDurationSeconds: strategy.MetricAggregateDurationSeconds,
 		ReportIntervalSeconds:    strategy.MetricReportIntervalSeconds,
+		NodeAggregatePolicy:      strategy.MetricAggregatePolicy,
 	}
 	return collectPolicy, nil
 }

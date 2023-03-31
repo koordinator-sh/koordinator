@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -159,6 +160,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 					AggregateDurationSeconds: pointer.Int64Ptr(10),
 					ReportIntervalSeconds:    pointer.Int64Ptr(30),
+					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 				},
 			},
 			wantErr: false,
@@ -211,6 +213,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 					AggregateDurationSeconds: pointer.Int64Ptr(20),
 					ReportIntervalSeconds:    getDefaultSpec().CollectPolicy.ReportIntervalSeconds,
+					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 				},
 			},
 			wantErr: false,
@@ -244,6 +247,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 					AggregateDurationSeconds: pointer.Int64Ptr(30),
 					ReportIntervalSeconds:    getDefaultSpec().CollectPolicy.ReportIntervalSeconds,
+					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 				},
 			},
 			wantErr: false,
@@ -278,6 +282,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 					AggregateDurationSeconds: pointer.Int64Ptr(10),
 					ReportIntervalSeconds:    pointer.Int64Ptr(50),
+					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 				},
 			},
 			wantErr: false,
@@ -313,7 +318,15 @@ func TestNodeMetricReconciler_initNodeMetric(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "throw an error if cannot get the configmap",
+			name: "throw an error when the node is invalid",
+			args: args{
+				nodeMetric: &slov1alpha1.NodeMetric{},
+			},
+			want:    &slov1alpha1.NodeMetricSpec{},
+			wantErr: true,
+		},
+		{
+			name: "make an event if cannot get the configmap",
 			args: args{
 				node:       &corev1.Node{},
 				nodeMetric: &slov1alpha1.NodeMetric{},
@@ -345,6 +358,54 @@ func TestNodeMetricReconciler_initNodeMetric(t *testing.T) {
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 					AggregateDurationSeconds: pointer.Int64Ptr(10),
 					ReportIntervalSeconds:    pointer.Int64Ptr(20),
+					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "get spec successfully 1",
+			args: args{
+				node:       &corev1.Node{},
+				nodeMetric: &slov1alpha1.NodeMetric{},
+			},
+			fields: fields{configMap: &corev1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      config.SLOCtrlConfigMap,
+					Namespace: config.ConfigNameSpace,
+				},
+				Data: map[string]string{
+					extension.ColocationConfigKey: `
+{
+  "enable": true,
+  "metricAggregateDurationSeconds": 10,
+  "metricReportIntervalSeconds": 20,
+  "metricAggregatePolicy": {
+    "durations": [
+      "10s",
+      "1m",
+      "10m"
+    ]
+  }
+}
+`,
+				},
+			}},
+			want: &slov1alpha1.NodeMetricSpec{
+				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+					AggregateDurationSeconds: pointer.Int64Ptr(10),
+					ReportIntervalSeconds:    pointer.Int64Ptr(20),
+					NodeAggregatePolicy: &slov1alpha1.AggregatePolicy{
+						Durations: []metav1.Duration{
+							{Duration: 10 * time.Second},
+							{Duration: 1 * time.Minute},
+							{Duration: 10 * time.Minute},
+						},
+					},
 				},
 			},
 			wantErr: false,
@@ -353,7 +414,7 @@ func TestNodeMetricReconciler_initNodeMetric(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctr, handler := createTestReconciler()
-			ctr.Create(context.Background(), tt.fields.configMap)
+			_ = ctr.Create(context.Background(), tt.fields.configMap)
 			handler.SyncCacheIfChanged(tt.fields.configMap)
 
 			err := ctr.initNodeMetric(tt.args.node, tt.args.nodeMetric)
@@ -389,13 +450,12 @@ func Test_Reconcile_SkipCreateNodeMetricWhenNodeNotExist(t *testing.T) {
 
 	key := types.NamespacedName{Name: nodeName}
 	nodeReq := ctrl.Request{NamespacedName: key}
-	reconciler.Reconcile(ctx, nodeReq)
+	_, err := reconciler.Reconcile(ctx, nodeReq)
+	assert.NoError(t, err)
 
 	createdNodeMetric := &slov1alpha1.NodeMetric{}
-	err := reconciler.Get(ctx, key, createdNodeMetric)
-	if !errors.IsNotFound(err) {
-		t.Fatal("nodeMetric should not created", err)
-	}
+	err = reconciler.Get(ctx, key, createdNodeMetric)
+	assert.True(t, errors.IsNotFound(err), "nodeMetric should not created")
 }
 
 func Test_Reconcile_RemoveNodeMetricWhenNodeNotExist(t *testing.T) {
@@ -413,19 +473,16 @@ func Test_Reconcile_RemoveNodeMetricWhenNodeNotExist(t *testing.T) {
 		},
 	}
 	err := reconciler.Create(ctx, nodeMetric)
-	if err != nil {
-		t.Fatalf("failed create nodemetric: %v", err)
-	}
+	assert.NoError(t, err)
 	//test reconcile
 	key := types.NamespacedName{Name: nodeName}
 	nodeReq := ctrl.Request{NamespacedName: key}
-	reconciler.Reconcile(ctx, nodeReq)
+	_, err = reconciler.Reconcile(ctx, nodeReq)
+	assert.NoError(t, err)
 
 	createdNodeMetric := &slov1alpha1.NodeMetric{}
 	err = reconciler.Get(ctx, key, createdNodeMetric)
-	if !errors.IsNotFound(err) {
-		t.Fatal("nodeMetric should be removed", err)
-	}
+	assert.True(t, errors.IsNotFound(err), "nodeMetric should be removed")
 }
 
 // 1. Test createNodeMetric
@@ -448,18 +505,18 @@ func Test_CreateNodeMetricAndUpdateUnmarshalError(t *testing.T) {
 
 	key := types.NamespacedName{Name: nodeName}
 	nodeReq := ctrl.Request{NamespacedName: key}
-	reconciler.Reconcile(ctx, nodeReq)
+	_, err = reconciler.Reconcile(ctx, nodeReq)
+	assert.NoError(t, err)
 
 	//Test createNode Metric
 	createdNodeMetric := &slov1alpha1.NodeMetric{}
 	err = reconciler.Get(ctx, key, createdNodeMetric)
-	if err != nil {
-		t.Fatal("nodeMetric should created", err)
-	}
+	assert.NoError(t, err)
 	wantSpec := &slov1alpha1.NodeMetricSpec{
 		CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 			AggregateDurationSeconds: cfg.MetricAggregateDurationSeconds,
 			ReportIntervalSeconds:    cfg.MetricReportIntervalSeconds,
+			NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 		},
 	}
 	assert.Equal(t, wantSpec, &createdNodeMetric.Spec, "create node metric success by valid config")
@@ -468,19 +525,16 @@ func Test_CreateNodeMetricAndUpdateUnmarshalError(t *testing.T) {
 	//update config invalid
 	invalidConfigMap := createConfigMapUnmashalError()
 	err = reconciler.Update(context.TODO(), invalidConfigMap)
-	if err != nil {
-		t.Fatalf("failed update configmap: %v", err)
-	}
+	assert.NoError(t, err)
 	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 	handler.Update(event.UpdateEvent{ObjectOld: configMap, ObjectNew: invalidConfigMap}, queue)
 
-	reconciler.Reconcile(ctx, nodeReq)
+	_, err = reconciler.Reconcile(ctx, nodeReq)
+	assert.NoError(t, err)
 
 	updateNodeMetric := &slov1alpha1.NodeMetric{}
 	err = reconciler.Get(ctx, key, updateNodeMetric)
-	if err != nil {
-		t.Fatal("nodeMetric should created", err)
-	}
+	assert.NoError(t, err)
 	assert.Equal(t, wantSpec, &updateNodeMetric.Spec, "unmarshal configmap error then use old spec")
 }
 
@@ -495,13 +549,9 @@ func Test_UpdateNodeMetricFromConfigmap(t *testing.T) {
 	}
 	ctx := context.Background()
 	err := reconciler.Create(ctx, nodeMetric)
-	if err != nil {
-		t.Fatalf("failed create nodemetric: %v", err)
-	}
+	assert.NoError(t, err)
 	err = reconciler.Create(ctx, newNodeForTest(nodeName))
-	if err != nil {
-		t.Fatalf("failed create node: %v", err)
-	}
+	assert.NoError(t, err)
 
 	//prepare config cache
 	cfg, configMap := createValidColocationConfigMap(t)
@@ -510,17 +560,17 @@ func Test_UpdateNodeMetricFromConfigmap(t *testing.T) {
 	//test reconcile
 	key := types.NamespacedName{Name: nodeName}
 	nodeReq := ctrl.Request{NamespacedName: key}
-	reconciler.Reconcile(ctx, nodeReq)
+	_, err = reconciler.Reconcile(ctx, nodeReq)
+	assert.NoError(t, err)
 
 	nodeMetric = &slov1alpha1.NodeMetric{}
 	err = reconciler.Get(ctx, key, nodeMetric)
-	if err != nil {
-		t.Fatal("nodeMetric should created", err)
-	}
+	assert.NoError(t, err)
 	assert.Equal(t, &slov1alpha1.NodeMetricSpec{
 		CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 			AggregateDurationSeconds: cfg.MetricAggregateDurationSeconds,
 			ReportIntervalSeconds:    cfg.MetricReportIntervalSeconds,
+			NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 		},
 	}, &nodeMetric.Spec, "update node metric success by valid config")
 }
@@ -556,9 +606,7 @@ func createValidColocationConfigMap(t *testing.T) (*extension.ColocationCfg, *co
 		},
 	}
 	data, err := json.Marshal(policyConfig)
-	if err != nil {
-		t.Fatal("failed to marshal ColocationCfg", err)
-	}
+	assert.NoError(t, err)
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: config.ConfigNameSpace,
@@ -586,9 +634,7 @@ func createConfigMapUnmashalError() *corev1.ConfigMap {
 
 func prepareConfig(t *testing.T, reconciler *NodeMetricReconciler, handler *config.ColocationHandlerForConfigMapEvent, configMap *corev1.ConfigMap) {
 	err := reconciler.Create(context.TODO(), configMap)
-	if err != nil {
-		t.Fatalf("failed create configmap: %v", err)
-	}
+	assert.NoError(t, err, "failed to create config")
 
 	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 	handler.Create(event.CreateEvent{Object: configMap}, queue)
