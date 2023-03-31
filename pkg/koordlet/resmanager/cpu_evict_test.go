@@ -25,6 +25,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -376,7 +377,7 @@ func Test_killAndEvictBEPodsRelease(t *testing.T) {
 
 	fakeRecorder := &FakeRecorder{}
 	client := clientsetfake.NewSimpleClientset()
-	resmanager := &resmanager{eventRecorder: fakeRecorder, kubeClient: client, podsEvicted: cache.NewCacheDefault(), config: NewDefaultConfig()}
+	resmanager := &resmanager{eventRecorder: fakeRecorder, kubeClient: client, podsEvicted: cache.NewCacheDefault(), config: NewDefaultConfig(), evictVersion: policyv1beta1.SchemeGroupVersion.Version}
 	stop := make(chan struct{})
 	_ = resmanager.podsEvicted.Run(stop)
 	defer func() { stop <- struct{}{} }()
@@ -401,14 +402,18 @@ func Test_killAndEvictBEPodsRelease(t *testing.T) {
 
 	cpuEvictor := &CPUEvictor{resmanager: resmanager, lastEvictTime: time.Now().Add(-5 * time.Minute)}
 
-	cpuEvictor.killAndEvictBEPodsRelease(node, podEvictInfosSorted, 18)
+	cpuEvictor.killAndEvictBEPodsRelease(node, podEvictInfosSorted, 18*1000)
 
 	getEvictObject, err := client.Tracker().Get(podsResource, podEvictInfosSorted[0].pod.Namespace, podEvictInfosSorted[0].pod.Name)
-	assert.NotNil(t, getEvictObject, "evictPod Fail", err)
-	getEvictObject, err = client.Tracker().Get(podsResource, podEvictInfosSorted[1].pod.Namespace, podEvictInfosSorted[1].pod.Name)
-	assert.NotNil(t, getEvictObject, "evictPod Fail", err)
+	assert.NotNil(t, getEvictObject, "evictPod Fail, err: %v", err)
+	assert.IsType(t, &policyv1beta1.Eviction{}, getEvictObject, "evictPod: %s Fail", podEvictInfosSorted[0].pod.Name)
 
-	getNotEvictObject, _ := client.Tracker().Get(podsResource, podEvictInfosSorted[2].pod.Namespace, podEvictInfosSorted[2].pod.Name)
+	getEvictObject, err = client.Tracker().Get(podsResource, podEvictInfosSorted[1].pod.Namespace, podEvictInfosSorted[1].pod.Name)
+	assert.NotNil(t, getEvictObject, "evictPod Fail, err: %v", err)
+	assert.IsType(t, &policyv1beta1.Eviction{}, getEvictObject, "evictPod: %s Fail", podEvictInfosSorted[1].pod.Name)
+
+	getNotEvictObject, err := client.Tracker().Get(podsResource, podEvictInfosSorted[2].pod.Namespace, podEvictInfosSorted[2].pod.Name)
+	assert.Nil(t, err, "get pod fail", err)
 	assert.IsType(t, &corev1.Pod{}, getNotEvictObject, "no need evict", podEvictInfosSorted[2].pod.Name)
 	assert.True(t, cpuEvictor.lastEvictTime.After(time.Now().Add(-5*time.Second)), "checkLastTime")
 
