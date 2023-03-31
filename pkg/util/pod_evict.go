@@ -24,16 +24,19 @@ import (
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-
-	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
-// Evict Pods using the best available method in Kubernetes.
+const (
+	EvictionKind            = "Eviction"
+	EvictionGroupName       = "policy"
+	EvictionSubResourceName = "pods/eviction"
+)
+
+// EvictPodByVersion evicts Pods using the best available method in Kubernetes.
 //
 // The available methods are, in order of preference:
 // * v1 eviction API
 // * v1beta1 eviction API
-
 func EvictPodByVersion(ctx context.Context, kubernetes kubernetes.Interface, namespace, name string, opts metav1.DeleteOptions, evictVersion string) error {
 	if evictVersion == "v1" {
 		return kubernetes.CoreV1().Pods(namespace).EvictV1(ctx, &policyv1.Eviction{
@@ -73,7 +76,7 @@ func FindSupportedEvictVersion(client kubernetes.Interface) (groupVersion string
 	}
 
 	for _, serverGroup := range serverGroups.Groups {
-		if serverGroup.Name == extension.EvictionGroupName {
+		if serverGroup.Name == EvictionGroupName {
 			foundPolicyGroup = true
 			preferredVersion = serverGroup.PreferredVersion.Version
 			break
@@ -88,7 +91,7 @@ func FindSupportedEvictVersion(client kubernetes.Interface) (groupVersion string
 		return
 	}
 	for _, resource := range resourceList.APIResources {
-		if resource.Name == extension.EvictionSubResouceName && resource.Kind == extension.EvictionKind {
+		if resource.Name == EvictionSubResourceName && resource.Kind == EvictionKind {
 			groupVersion = preferredVersion
 			return
 		}
