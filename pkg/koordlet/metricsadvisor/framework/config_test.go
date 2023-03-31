@@ -19,17 +19,18 @@ package framework
 import (
 	"flag"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		CollectResUsedIntervalSeconds:     1,
-		CollectNodeCPUInfoIntervalSeconds: 60,
-		CPICollectorIntervalSeconds:       60,
-		PSICollectorIntervalSeconds:       10,
-		CPICollectorTimeWindowSeconds:     10,
+		CollectResUsedInterval:     1 * time.Second,
+		CollectNodeCPUInfoInterval: 60 * time.Second,
+		CPICollectorInterval:       60 * time.Second,
+		PSICollectorInterval:       10 * time.Second,
+		CPICollectorTimeWindow:     10 * time.Second,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -38,20 +39,20 @@ func Test_NewDefaultConfig(t *testing.T) {
 func Test_InitFlags(t *testing.T) {
 	cmdArgs := []string{
 		"",
-		"--collect-res-used-interval-seconds=3",
-		"--collect-node-cpu-info-interval-seconds=90",
-		"--cpi-collector-interval-seconds=90",
-		"--psi-collector-interval-seconds=5",
-		"--collect-cpi-timewindow-seconds=15",
+		"--collect-res-used-interval=3s",
+		"--collect-node-cpu-info-interval=90s",
+		"--cpi-collector-interval=90s",
+		"--psi-collector-interval=5s",
+		"--collect-cpi-timewindow=15s",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
 	type fields struct {
-		CollectResUsedIntervalSeconds     int
-		CollectNodeCPUInfoIntervalSeconds int
-		CPICollectorIntervalSeconds       int
-		PSICollectorIntervalSeconds       int
-		CPICollectorTimeWindowSeconds     int
+		CollectResUsedInterval     time.Duration
+		CollectNodeCPUInfoInterval time.Duration
+		CPICollectorInterval       time.Duration
+		PSICollectorInterval       time.Duration
+		CPICollectorTimeWindow     time.Duration
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -64,11 +65,11 @@ func Test_InitFlags(t *testing.T) {
 		{
 			name: "not default",
 			fields: fields{
-				CollectResUsedIntervalSeconds:     3,
-				CollectNodeCPUInfoIntervalSeconds: 90,
-				CPICollectorIntervalSeconds:       90,
-				PSICollectorIntervalSeconds:       5,
-				CPICollectorTimeWindowSeconds:     15,
+				CollectResUsedInterval:     3 * time.Second,
+				CollectNodeCPUInfoInterval: 90 * time.Second,
+				CPICollectorInterval:       90 * time.Second,
+				PSICollectorInterval:       5 * time.Second,
+				CPICollectorTimeWindow:     15 * time.Second,
 			},
 			args: args{fs: fs},
 		},
@@ -76,11 +77,11 @@ func Test_InitFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			raw := &Config{
-				CollectResUsedIntervalSeconds:     tt.fields.CollectResUsedIntervalSeconds,
-				CollectNodeCPUInfoIntervalSeconds: tt.fields.CollectNodeCPUInfoIntervalSeconds,
-				CPICollectorIntervalSeconds:       tt.fields.CPICollectorIntervalSeconds,
-				PSICollectorIntervalSeconds:       tt.fields.PSICollectorIntervalSeconds,
-				CPICollectorTimeWindowSeconds:     tt.fields.CPICollectorTimeWindowSeconds,
+				CollectResUsedInterval:     tt.fields.CollectResUsedInterval,
+				CollectNodeCPUInfoInterval: tt.fields.CollectNodeCPUInfoInterval,
+				CPICollectorInterval:       tt.fields.CPICollectorInterval,
+				PSICollectorInterval:       tt.fields.PSICollectorInterval,
+				CPICollectorTimeWindow:     tt.fields.CPICollectorTimeWindow,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

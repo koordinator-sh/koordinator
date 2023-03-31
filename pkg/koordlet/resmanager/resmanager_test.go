@@ -62,7 +62,7 @@ func TestNewResManager(t *testing.T) {
 		statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 
-		r := NewResManager(NewDefaultConfig(), scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(framework.NewDefaultConfig().CollectResUsedIntervalSeconds), policyv1beta1.SchemeGroupVersion.String())
+		r := NewResManager(NewDefaultConfig(), scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(framework.NewDefaultConfig().CollectResUsedInterval.Seconds()), policyv1beta1.SchemeGroupVersion.String())
 		assert.NotNil(t, r)
 	})
 }

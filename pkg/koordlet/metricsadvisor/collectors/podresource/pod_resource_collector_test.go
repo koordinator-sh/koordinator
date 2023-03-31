@@ -208,7 +208,7 @@ unevictable 0
 
 			collector := New(&framework.Options{
 				Config: &framework.Config{
-					CollectResUsedIntervalSeconds: 1,
+					CollectResUsedInterval: 1 * time.Second,
 				},
 				StatesInformer: statesInformer,
 				MetricCache:    metricCache,

@@ -18,6 +18,7 @@ package metricsadvisor
 
 import (
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -200,8 +201,8 @@ unevictable 0
 			metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 
 			c := NewMetricAdvisor(&framework.Config{
-				CollectResUsedIntervalSeconds:     1,
-				CollectNodeCPUInfoIntervalSeconds: 1,
+				CollectResUsedInterval:     1 * time.Second,
+				CollectNodeCPUInfoInterval: 1 * time.Second,
 			}, statesInformer, metricCache)
 
 			statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{

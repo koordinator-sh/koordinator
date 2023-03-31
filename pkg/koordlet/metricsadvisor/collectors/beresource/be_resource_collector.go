@@ -51,7 +51,7 @@ type beResourceCollector struct {
 
 func New(opt *framework.Options) framework.Collector {
 	return &beResourceCollector{
-		collectInterval: time.Duration(opt.Config.CollectResUsedIntervalSeconds) * time.Second,
+		collectInterval: opt.Config.CollectResUsedInterval,
 		started:         atomic.NewBool(false),
 		metricDB:        opt.MetricCache,
 		statesInformer:  opt.StatesInformer,

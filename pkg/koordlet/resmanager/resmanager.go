@@ -117,6 +117,13 @@ func isFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature
 
 func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
+	// minimum interval is one second.
+	if r.collectResUsedIntervalSeconds < 1 {
+		klog.Infof("collectResUsedIntervalSeconds is %v, resource manager is disabled",
+			r.collectResUsedIntervalSeconds)
+		return nil
+	}
+
 	klog.Info("Starting resmanager")
 
 	_ = r.podsEvicted.Run(stopCh)

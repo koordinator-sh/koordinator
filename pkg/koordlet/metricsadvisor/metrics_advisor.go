@@ -17,6 +17,8 @@ limitations under the License.
 package metricsadvisor
 
 import (
+	"time"
+
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/klog/v2"
 
@@ -89,9 +91,9 @@ func (m *metricAdvisor) HasSynced() bool {
 
 func (m *metricAdvisor) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	if m.options.Config.CollectResUsedIntervalSeconds <= 0 {
-		klog.Infof("CollectResUsedIntervalSeconds is %v, metric collector is disabled",
-			m.options.Config.CollectResUsedIntervalSeconds)
+	if m.options.Config.CollectResUsedInterval < time.Second {
+		klog.Infof("CollectResUsedInterval is %v, metric collector is disabled",
+			m.options.Config.CollectResUsedInterval)
 		return nil
 	}
 

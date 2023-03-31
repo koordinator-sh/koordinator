@@ -57,9 +57,9 @@ func New(opt *framework.Options) framework.Collector {
 	return &performanceCollector{
 		cpiEnbaled:                features.DefaultKoordletFeatureGate.Enabled(features.CPICollector),
 		psiEnabled:                features.DefaultKoordletFeatureGate.Enabled(features.PSICollector),
-		cpiCollectInterval:        time.Duration(opt.Config.CPICollectorIntervalSeconds) * time.Second,
-		psiCollectInterval:        time.Duration(opt.Config.PSICollectorIntervalSeconds) * time.Second,
-		collectTimeWindowDuration: time.Duration(opt.Config.CPICollectorTimeWindowSeconds) * time.Second,
+		cpiCollectInterval:        opt.Config.CPICollectorInterval,
+		psiCollectInterval:        opt.Config.PSICollectorInterval,
+		collectTimeWindowDuration: opt.Config.CPICollectorTimeWindow,
 
 		started:        atomic.NewBool(false),
 		statesInformer: opt.StatesInformer,
