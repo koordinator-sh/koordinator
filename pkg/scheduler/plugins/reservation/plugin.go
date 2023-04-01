@@ -66,6 +66,7 @@ var (
 
 	_ frameworkext.ControllerProvider      = &Plugin{}
 	_ frameworkext.PreFilterTransformer    = &Plugin{}
+	_ frameworkext.FilterTransformer       = &Plugin{}
 	_ frameworkext.ReservationNominator    = &Plugin{}
 	_ frameworkext.ReservationFilterPlugin = &Plugin{}
 	_ frameworkext.ReservationScorePlugin  = &Plugin{}
@@ -194,14 +195,12 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 	if err != nil {
 		return framework.NewStatus(framework.Error, "reservation not found")
 	}
-	if !reservation.Spec.AllocateOnce {
-		rInfos := pl.reservationCache.listReservationInfosOnNode(node.Name)
-		for _, v := range rInfos {
-			if !v.reservation.Spec.AllocateOnce {
-				if reflect.DeepEqual(v.reservation.Spec.Owners, reservation.Spec.Owners) {
-					return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonOnlyOneSameReusableReservationOnSameNode)
-				}
-			}
+	rInfos := pl.reservationCache.listReservationInfosOnNode(node.Name)
+	for _, v := range rInfos {
+		if (reservation.Spec.AllocateOnce != v.reservation.Spec.AllocateOnce ||
+			!reservation.Spec.AllocateOnce == !v.reservation.Spec.AllocateOnce) &&
+			reflect.DeepEqual(v.reservation.Spec.Owners, reservation.Spec.Owners) {
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonOnlyOneSameReusableReservationOnSameNode)
 		}
 	}
 

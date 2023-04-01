@@ -65,33 +65,8 @@ func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *fram
 			continue
 		}
 
-		// Reservations and Pods that consume the Reservations are cumulative in resource accounting.
-		// For example, on a 32C machine, ReservationA reserves 8C, and then PodA uses ReservationA to allocate 4C,
-		// then the record on NodeInfo is that 12C is allocated. But in fact it should be calculated according to 8C,
-		// so we need to return some resources.
-		for _, rInfo := range reservationInfos {
-			if len(rInfo.allocated) == 0 {
-				continue
-			}
-
-			reservePod := reservationutil.NewReservePod(rInfo.reservation)
-			if err := nodeInfo.RemovePod(reservePod); err != nil {
-				klog.Errorf("Failed to remove reserve pod %v from node %v, err: %v", klog.KObj(rInfo.reservation), nodeName, err)
-				return err
-			}
-			// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
-			nodeInfo.Generation = -1
-
-			for i := range reservePod.Spec.Containers {
-				reservePod.Spec.Containers[i].Resources.Requests = corev1.ResourceList{}
-			}
-			remainedResource := quotav1.SubtractWithNonNegativeResult(rInfo.allocatable, rInfo.allocated)
-			if !quotav1.IsZero(remainedResource) {
-				reservePod.Spec.Containers = append(reservePod.Spec.Containers, corev1.Container{
-					Resources: corev1.ResourceRequirements{Requests: remainedResource},
-				})
-			}
-			nodeInfo.AddPod(reservePod)
+		if err := pl.restoreUnmatchedReservations(cycleState, pod, nodeInfo, reservationInfos); err != nil {
+			return err
 		}
 	}
 
@@ -104,42 +79,111 @@ func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *fram
 			continue
 		}
 
-		podInfoMap := make(map[types.UID]*framework.PodInfo)
-		for _, podInfo := range nodeInfo.Pods {
-			if !reservationutil.IsReservePod(podInfo.Pod) {
-				podInfoMap[podInfo.Pod.UID] = podInfo
-			}
-		}
-
-		// Currently, only one reusable Reservation matching the Pod is supported on a same node.
-		// Although there is a Filter that can intercept Reservations of the same Owner, if the user creates
-		// multiple reusable Reservations that can be used by different Owners for the Pod and bypasses the Filter,
-		// we choose the instance with the earliest creation time.
-		var earliestReusableRInfo *reservationInfo
-		for _, v := range reservationInfos {
-			if !v.reservation.Spec.AllocateOnce {
-				if earliestReusableRInfo == nil ||
-					v.reservation.CreationTimestamp.Before(&earliestReusableRInfo.reservation.CreationTimestamp) {
-					earliestReusableRInfo = v
-					break
-				}
-			}
-		}
-
-		for _, rInfo := range reservationInfos {
-			if !rInfo.reservation.Spec.AllocateOnce && earliestReusableRInfo != nil && rInfo != earliestReusableRInfo {
-				continue
-			}
-			if err := restoreReservedResources(pl.handle, cycleState, pod, rInfo, nodeInfo, podInfoMap); err != nil {
-				return err
-			}
+		// NOTE: After PreFilter, all reserved resources need to be returned to the corresponding NodeInfo,
+		// and each plugin is triggered to adjust its own StateData through RemovePod, RemoveReservation and AddPodInReservation,
+		// and adjust the state data related to Reservation and Pod
+		if err := pl.restoreMatchedReservations(cycleState, pod, nodeInfo, reservationInfos, true); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, rInfo *reservationInfo, nodeInfo *framework.NodeInfo, podInfoMap map[types.UID]*framework.PodInfo) error {
+func (pl *Plugin) BeforeFilter(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool) {
+	node := nodeInfo.Node()
+	if node == nil {
+		return nil, nil, false
+	}
+	// Generation equals -1 means that the Reservation return logic has been executed once, but it should not happen.
+	if nodeInfo.Generation == -1 {
+		return nil, nil, false
+	}
+
+	state := getStateData(cycleState)
+	matchedReservationInfos := state.matched[node.Name]
+	unmatchedReservationInfos := state.unmatched[node.Name]
+	if len(matchedReservationInfos) == 0 && len(unmatchedReservationInfos) == 0 {
+		return nil, nil, false
+	}
+
+	nodeInfo = nodeInfo.Clone()
+	if err := pl.restoreUnmatchedReservations(cycleState, pod, nodeInfo, unmatchedReservationInfos); err != nil {
+		return nil, nil, false
+	}
+	if err := pl.restoreMatchedReservations(cycleState, pod, nodeInfo, matchedReservationInfos, false); err != nil {
+		return nil, nil, false
+	}
+	return pod, nodeInfo, true
+}
+
+func (pl *Plugin) restoreUnmatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*reservationInfo) error {
+	// Reservations and Pods that consume the Reservations are cumulative in resource accounting.
+	// For example, on a 32C machine, ReservationA reserves 8C, and then PodA uses ReservationA to allocate 4C,
+	// then the record on NodeInfo is that 12C is allocated. But in fact it should be calculated according to 8C,
+	// so we need to return some resources.
+	for _, rInfo := range reservationInfos {
+		if len(rInfo.allocated) == 0 {
+			continue
+		}
+
+		reservePod := reservationutil.NewReservePod(rInfo.reservation)
+		if err := nodeInfo.RemovePod(reservePod); err != nil {
+			klog.Errorf("Failed to remove reserve pod %v from node %v, err: %v", klog.KObj(rInfo.reservation), nodeInfo.Node().Name, err)
+			return err
+		}
+
+		for i := range reservePod.Spec.Containers {
+			reservePod.Spec.Containers[i].Resources.Requests = corev1.ResourceList{}
+		}
+		remainedResource := quotav1.SubtractWithNonNegativeResult(rInfo.allocatable, rInfo.allocated)
+		if !quotav1.IsZero(remainedResource) {
+			reservePod.Spec.Containers = append(reservePod.Spec.Containers, corev1.Container{
+				Resources: corev1.ResourceRequirements{Requests: remainedResource},
+			})
+		}
+		nodeInfo.AddPod(reservePod)
+		// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
+		nodeInfo.Generation = -1
+	}
+	return nil
+}
+
+func (pl *Plugin) restoreMatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*reservationInfo, restorePods bool) error {
+	podInfoMap := make(map[types.UID]*framework.PodInfo)
+	for _, podInfo := range nodeInfo.Pods {
+		if !reservationutil.IsReservePod(podInfo.Pod) {
+			podInfoMap[podInfo.Pod.UID] = podInfo
+		}
+	}
+
+	// Currently, only one reusable Reservation matching the Pod is supported on a same node.
+	// Although there is a Filter that can intercept Reservations of the same Owner, if the user creates
+	// multiple reusable Reservations that can be used by different Owners for the Pod and bypasses the Filter,
+	// we choose the instance with the earliest creation time.
+	var earliestReusableRInfo *reservationInfo
+	for _, v := range reservationInfos {
+		if !v.reservation.Spec.AllocateOnce {
+			if earliestReusableRInfo == nil ||
+				v.reservation.CreationTimestamp.Before(&earliestReusableRInfo.reservation.CreationTimestamp) {
+				earliestReusableRInfo = v
+				break
+			}
+		}
+	}
+
+	for _, rInfo := range reservationInfos {
+		if !rInfo.reservation.Spec.AllocateOnce && earliestReusableRInfo != nil && rInfo != earliestReusableRInfo {
+			continue
+		}
+		if err := restoreReservedResources(pl.handle, cycleState, pod, rInfo, nodeInfo, podInfoMap, restorePods); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, rInfo *reservationInfo, nodeInfo *framework.NodeInfo, podInfoMap map[types.UID]*framework.PodInfo, restorePods bool) error {
 	reservePod := reservationutil.NewReservePod(rInfo.reservation)
 	reservePodInfo := framework.NewPodInfo(reservePod)
 
@@ -158,6 +202,10 @@ func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *fr
 	}
 	// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
 	nodeInfo.Generation = -1
+
+	if !restorePods {
+		return nil
+	}
 
 	// Regardless of whether the Reservation enables AllocateOnce
 	// and whether the Reservation uses high-availability constraints such as InterPodAffinity/PodTopologySpread,

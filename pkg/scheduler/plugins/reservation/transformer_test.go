@@ -147,7 +147,7 @@ func TestBeforePreFilter(t *testing.T) {
 	assert.Equal(t, expectState, getStateData(cycleState))
 }
 
-func TestAfterFilter(t *testing.T) {
+func TestAfterPreFilter(t *testing.T) {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",
@@ -403,6 +403,267 @@ func TestAfterFilter(t *testing.T) {
 	assert.Equal(t, expectNodeInfo.Requested, nodeInfo.Requested)
 	assert.Equal(t, expectNodeInfo.UsedPorts, nodeInfo.UsedPorts)
 	assert.True(t, equality.Semantic.DeepEqual(expectNodeInfo, nodeInfo))
+}
+
+func TestBeforeFilter(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("64Gi"),
+			},
+		},
+	}
+	// normal pods allocated 12C24Gi and ports 8080/9090
+	pods := []*corev1.Pod{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod-1",
+				UID:       uuid.NewUUID(),
+			},
+			Spec: corev1.PodSpec{
+				NodeName: node.Name,
+				Affinity: &corev1.Affinity{
+					PodAntiAffinity: &corev1.PodAntiAffinity{
+						RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "test-app-1",
+									},
+								},
+								TopologyKey: corev1.LabelHostname,
+							},
+						},
+					},
+				},
+				Containers: []corev1.Container{
+					{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("4"),
+								corev1.ResourceMemory: resource.MustParse("8Gi"),
+							},
+						},
+						Ports: []corev1.ContainerPort{
+							{
+								HostIP:   "0.0.0.0",
+								Protocol: corev1.ProtocolTCP,
+								HostPort: 8080,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod-2",
+				UID:       uuid.NewUUID(),
+			},
+			Spec: corev1.PodSpec{
+				NodeName: node.Name,
+				Affinity: &corev1.Affinity{
+					PodAntiAffinity: &corev1.PodAntiAffinity{
+						RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "test-app-2",
+									},
+								},
+								TopologyKey: corev1.LabelHostname,
+							},
+						},
+					},
+				},
+				Containers: []corev1.Container{
+					{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("8"),
+								corev1.ResourceMemory: resource.MustParse("16Gi"),
+							},
+						},
+						Ports: []corev1.ContainerPort{
+							{
+								HostIP:   "0.0.0.0",
+								Protocol: corev1.ProtocolTCP,
+								HostPort: 9090,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// unmatched reservation allocated 12C24Gi, but assigned Pod with 4C8Gi, remaining 8C16Gi
+	unmatchedReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "reservation4C8G",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Affinity: &corev1.Affinity{
+						PodAntiAffinity: &corev1.PodAntiAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"app": "test-app-2",
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("12"),
+									corev1.ResourceMemory: resource.MustParse("24Gi"),
+								},
+							},
+							Ports: []corev1.ContainerPort{
+								{
+									HostIP:   "0.0.0.0",
+									Protocol: corev1.ProtocolTCP,
+									HostPort: 8080,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node",
+		},
+	}
+	pods = append(pods, reservationutil.NewReservePod(unmatchedReservation))
+
+	// matchedReservation allocated 8C16Gi
+	matchedReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "reservation2C4G",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Affinity: &corev1.Affinity{
+						PodAntiAffinity: &corev1.PodAntiAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"app": "test-app-3",
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("8"),
+									corev1.ResourceMemory: resource.MustParse("16Gi"),
+								},
+							},
+							Ports: []corev1.ContainerPort{
+								{
+									HostIP:   "0.0.0.0",
+									Protocol: corev1.ProtocolTCP,
+									HostPort: 7070,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node",
+		},
+	}
+	pods = append(pods, reservationutil.NewReservePod(matchedReservation))
+
+	suit := newPluginTestSuitWith(t, pods, []*corev1.Node{node})
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+
+	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
+	expectedRequestedResources := &framework.Resource{
+		MilliCPU: 32000,
+		Memory:   64 * 1024 * 1024 * 1024,
+	}
+	assert.Equal(t, expectedRequestedResources, nodeInfo.Requested)
+
+	pl.reservationCache.updateReservation(unmatchedReservation)
+	pl.reservationCache.updateReservation(matchedReservation)
+
+	unmatchedRInfo := pl.reservationCache.getReservationInfoByUID(unmatchedReservation.UID)
+	unmatchedRInfo.allocated = corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("4"),
+		corev1.ResourceMemory: resource.MustParse("8Gi"),
+	}
+
+	matchRInfo := pl.reservationCache.getReservationInfoByUID(matchedReservation.UID)
+
+	cycleState := framework.NewCycleState()
+	cycleState.Write(stateKey, &stateData{
+		matched: map[string][]*reservationInfo{
+			node.Name: {matchRInfo},
+		},
+		unmatched: map[string][]*reservationInfo{
+			node.Name: {unmatchedRInfo},
+		},
+	})
+
+	nodeInfo, err = suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
+	assert.NotNil(t, nodeInfo)
+	nodeInfo.Generation = 0
+
+	pod, newNodeInfo, transformed := pl.BeforeFilter(nil, cycleState, &corev1.Pod{}, nodeInfo)
+	assert.True(t, transformed)
+	assert.NotNil(t, newNodeInfo)
+	assert.NotNil(t, pod)
+
+	unmatchedReservePod := pods[2].DeepCopy()
+	unmatchedReservePod.Spec.Containers[0].Resources.Requests = corev1.ResourceList{}
+	unmatchedReservePod.Spec.Containers = append(unmatchedReservePod.Spec.Containers, corev1.Container{
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8000m"),
+				corev1.ResourceMemory: resource.MustParse("16Gi"),
+			},
+		},
+	})
+	expectNodeInfo := framework.NewNodeInfo(pods[0], pods[1], unmatchedReservePod)
+	expectNodeInfo.SetNode(node)
+	expectNodeInfo.Generation = 0
+	newNodeInfo.Generation = 0
+	assert.Equal(t, expectNodeInfo.Requested, newNodeInfo.Requested)
+	assert.Equal(t, expectNodeInfo.UsedPorts, newNodeInfo.UsedPorts)
+	assert.True(t, equality.Semantic.DeepEqual(expectNodeInfo, newNodeInfo))
 }
 
 func Test_restorePVCRefCounts(t *testing.T) {

@@ -318,6 +318,15 @@ func TestFilter(t *testing.T) {
 		},
 	}
 
+	owners := []schedulingv1alpha1.ReservationOwner{
+		{
+			Object: &corev1.ObjectReference{
+				Namespace: "default",
+				Name:      "test",
+				UID:       "123456",
+			},
+		},
+	}
 	reusableReservationNotScheduled := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reusableReservationNotScheduled",
@@ -325,6 +334,22 @@ func TestFilter(t *testing.T) {
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
 			AllocateOnce: false,
+			Owners:       owners,
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{},
+	}
+
+	allocateOnceReservationNotScheduled := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "allocateOnceReservationNotScheduled",
+			UID:  uuid.NewUUID(),
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocateOnce: true,
+			Owners:       owners,
 			Template: &corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{},
 			},
@@ -339,6 +364,7 @@ func TestFilter(t *testing.T) {
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
 			AllocateOnce: false,
+			Owners:       owners,
 			Template: &corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{},
 			},
@@ -401,6 +427,13 @@ func TestFilter(t *testing.T) {
 			name:         "only one reusable reservation can be scheduled on a same node",
 			pod:          reservationutil.NewReservePod(reusableReservationNotScheduled),
 			reservations: []*schedulingv1alpha1.Reservation{reusableReservationNotScheduled, reusableReservationScheduled},
+			nodeInfo:     testNodeInfo,
+			want:         framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonOnlyOneSameReusableReservationOnSameNode),
+		},
+		{
+			name:         "reusable reservation with allocateOnce reservation cannot be scheduled on a same node",
+			pod:          reservationutil.NewReservePod(allocateOnceReservationNotScheduled),
+			reservations: []*schedulingv1alpha1.Reservation{allocateOnceReservationNotScheduled, reusableReservationScheduled},
 			nodeInfo:     testNodeInfo,
 			want:         framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonOnlyOneSameReusableReservationOnSameNode),
 		},
