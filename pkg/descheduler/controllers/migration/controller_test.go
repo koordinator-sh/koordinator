@@ -165,7 +165,7 @@ func newTestReconciler() *Reconciler {
 		reservationInterpreter: nil,
 		evictorInterpreter:     nil,
 		controllerFinder:       controllerFinder,
-		unretriablePodFilter:   podFilter,
+		nonRetryablePodFilter:  podFilter,
 		assumedCache:           newAssumedCache(),
 		clock:                  clock.RealClock{},
 	}
@@ -1487,11 +1487,12 @@ func TestAbortJobIfReserveOnSameNode(t *testing.T) {
 	assert.Equal(t, sev1alpha1.PodMigrationJobReasonForbiddenMigratePod, job.Status.Reason)
 }
 
-func TestRequeueJobIfRetriablePodFilterFailed(t *testing.T) {
+func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
 	reconciler := newTestReconciler()
 	enter := false
-	reconciler.retriablePodFilter = func(pod *corev1.Pod) bool {
+	reconciler.retryablePodFilter = func(pod *corev1.Pod) bool {
 		enter = true
+		assert.True(t, isPodPrepareMigrating(pod))
 		return false
 	}
 
@@ -1537,11 +1538,12 @@ func TestRequeueJobIfRetriablePodFilterFailed(t *testing.T) {
 	assert.Equal(t, "", job.Status.Reason)
 }
 
-func TestAbortJobIfUnretriablePodFilterFailed(t *testing.T) {
+func TestAbortJobIfNonRetryablePodFilterFailed(t *testing.T) {
 	reconciler := newTestReconciler()
 	enter := false
-	reconciler.unretriablePodFilter = func(pod *corev1.Pod) bool {
+	reconciler.nonRetryablePodFilter = func(pod *corev1.Pod) bool {
 		enter = true
+		assert.True(t, isPodPrepareMigrating(pod))
 		return false
 	}
 
@@ -1630,6 +1632,7 @@ func TestFilterMaxMigratingPerNode(t *testing.T) {
 		numMigratingPods int
 		samePod          bool
 		sameNode         bool
+		prepareMigrating bool
 		maxMigrating     int32
 		want             bool
 	}{
@@ -1689,6 +1692,15 @@ func TestFilterMaxMigratingPerNode(t *testing.T) {
 			sameNode:         true,
 			maxMigrating:     2,
 			want:             false,
+		},
+		{
+			name:             "maxMigrating=2 two migrating Pod with diff Pod but prepare migrating and same Node",
+			numMigratingPods: 2,
+			samePod:          false,
+			sameNode:         true,
+			prepareMigrating: true,
+			maxMigrating:     2,
+			want:             true,
 		},
 	}
 
@@ -1753,6 +1765,9 @@ func TestFilterMaxMigratingPerNode(t *testing.T) {
 			} else {
 				filterPod.Spec.NodeName = "test-other-node"
 			}
+			if tt.prepareMigrating {
+				markPodPrepareMigrating(filterPod)
+			}
 
 			got := reconciler.filterMaxMigratingPerNode(filterPod)
 			assert.Equal(t, tt.want, got)
@@ -1766,6 +1781,7 @@ func TestFilterMaxMigratingPerNamespace(t *testing.T) {
 		numMigratingPods int
 		samePod          bool
 		sameNamespace    bool
+		prepareMigrating bool
 		maxMigrating     int32
 		want             bool
 	}{
@@ -1825,6 +1841,15 @@ func TestFilterMaxMigratingPerNamespace(t *testing.T) {
 			sameNamespace:    true,
 			maxMigrating:     2,
 			want:             false,
+		},
+		{
+			name:             "maxMigrating=2 two migrating Pod with diff Pod but prepare migrating and same Namespace",
+			numMigratingPods: 2,
+			samePod:          false,
+			sameNamespace:    true,
+			prepareMigrating: true,
+			maxMigrating:     2,
+			want:             true,
 		},
 	}
 
@@ -1890,6 +1915,9 @@ func TestFilterMaxMigratingPerNamespace(t *testing.T) {
 			if !tt.sameNamespace {
 				filterPod.Namespace = "other-namespace"
 			}
+			if tt.prepareMigrating {
+				markPodPrepareMigrating(filterPod)
+			}
 
 			got := reconciler.filterMaxMigratingPerNamespace(filterPod)
 			assert.Equal(t, tt.want, got)
@@ -1923,6 +1951,7 @@ func TestFilterMaxMigratingPerWorkload(t *testing.T) {
 		numMigratingPods int
 		samePod          bool
 		sameWorkload     bool
+		prepareMigrating bool
 		maxMigrating     int
 		want             bool
 	}{
@@ -1997,6 +2026,16 @@ func TestFilterMaxMigratingPerWorkload(t *testing.T) {
 			samePod:          false,
 			sameWorkload:     true,
 			want:             false,
+		},
+		{
+			name:             "totalReplicas=10 and maxMigrating=2 two migrating Pod with diff Pod but prepare migrating and same Workload",
+			totalReplicas:    10,
+			numMigratingPods: 2,
+			maxMigrating:     2,
+			samePod:          false,
+			sameWorkload:     true,
+			prepareMigrating: true,
+			want:             true,
 		},
 		{
 			name:             "totalReplicas=10 and maxMigrating=2 two migrating Pod with diff Pod and diff Workload",
@@ -2082,6 +2121,9 @@ func TestFilterMaxMigratingPerWorkload(t *testing.T) {
 			if !tt.sameWorkload {
 				filterPod.OwnerReferences = ownerReferences2
 			}
+			if tt.prepareMigrating {
+				markPodPrepareMigrating(filterPod)
+			}
 
 			reconciler.controllerFinder = &fakeControllerFinder{
 				replicas: tt.totalReplicas,
@@ -2119,6 +2161,7 @@ func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
 		numUnavailablePods int
 		numMigratingPods   int
 		maxUnavailable     int
+		prepareMigrating   bool
 		sameWorkload       bool
 		want               bool
 	}{
@@ -2209,6 +2252,16 @@ func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
 			maxUnavailable:     2,
 			sameWorkload:       true,
 			want:               false,
+		},
+		{
+			name:               "totalReplicas=10 and maxUnavailable=2 one unavailable Pod and one migrating Pod but prepare migrating with same Workload",
+			totalReplicas:      10,
+			numUnavailablePods: 1,
+			numMigratingPods:   1,
+			maxUnavailable:     2,
+			sameWorkload:       true,
+			prepareMigrating:   true,
+			want:               true,
 		},
 		{
 			name:               "totalReplicas=10 and maxUnavailable=2 one unavailable Pod and one migrating Pod with diff Workload",
@@ -2331,6 +2384,9 @@ func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
 			}
 			if !tt.sameWorkload {
 				filterPod.OwnerReferences = ownerReferences2
+			}
+			if tt.prepareMigrating {
+				markPodPrepareMigrating(filterPod)
 			}
 
 			reconciler.controllerFinder = &fakeControllerFinder{
@@ -2482,11 +2538,11 @@ func TestFilterObjectLimiter(t *testing.T) {
 func TestAllowAnnotatedPodMigrationJobPassFilter(t *testing.T) {
 	reconciler := newTestReconciler()
 	enter := false
-	reconciler.unretriablePodFilter = func(pod *corev1.Pod) bool {
+	reconciler.nonRetryablePodFilter = func(pod *corev1.Pod) bool {
 		enter = true
 		return false
 	}
-	reconciler.retriablePodFilter = func(pod *corev1.Pod) bool {
+	reconciler.retryablePodFilter = func(pod *corev1.Pod) bool {
 		enter = true
 		return false
 	}

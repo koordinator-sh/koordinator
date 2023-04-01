@@ -77,8 +77,8 @@ type Reconciler struct {
 	reservationInterpreter reservation.Interpreter
 	evictorInterpreter     evictor.Interpreter
 	controllerFinder       controllerfinder.Interface
-	unretriablePodFilter   framework.FilterFunc
-	retriablePodFilter     framework.FilterFunc
+	nonRetryablePodFilter  framework.FilterFunc
+	retryablePodFilter     framework.FilterFunc
 	defaultFilterPlugin    framework.FilterPlugin
 	assumedCache           *assumedCache
 	clock                  clock.Clock
@@ -405,7 +405,7 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 }
 
 func (r *Reconciler) preparePendingJob(ctx context.Context, job *sev1alpha1.PodMigrationJob) (reconcile.Result, error) {
-	changed, err := r.preparePodRef(ctx, job)
+	changed, pod, err := r.preparePodRef(ctx, job)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -416,13 +416,14 @@ func (r *Reconciler) preparePendingJob(ctx context.Context, job *sev1alpha1.PodM
 	}
 
 	if !evictionsutil.HaveEvictAnnotation(job) {
-		if aborted, err := r.abortJobIfUnretriablePodFilterFailed(ctx, job); aborted || err != nil {
+		markPodPrepareMigrating(pod)
+		if aborted, err := r.abortJobIfNonRetryablePodFilterFailed(ctx, pod, job); aborted || err != nil {
 			if err == nil {
-				err = fmt.Errorf("abort job since failed to unretriable Pod filter")
+				err = fmt.Errorf("abort job since failed to non-retryable Pod filter")
 			}
 			return reconcile.Result{}, err
 		}
-		if requeue, err := r.requeueJobIfRetriablePodFilterFailed(ctx, job); requeue || err != nil {
+		if requeue, err := r.requeueJobIfRetryablePodFilterFailed(ctx, pod, job); requeue || err != nil {
 			return reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
 		}
 	}
@@ -432,10 +433,10 @@ func (r *Reconciler) preparePendingJob(ctx context.Context, job *sev1alpha1.PodM
 	return reconcile.Result{}, err
 }
 
-func (r *Reconciler) preparePodRef(ctx context.Context, job *sev1alpha1.PodMigrationJob) (bool, error) {
+func (r *Reconciler) preparePodRef(ctx context.Context, job *sev1alpha1.PodMigrationJob) (bool, *corev1.Pod, error) {
 	if job.Spec.PodRef.Namespace == "" || job.Spec.PodRef.Name == "" {
 		_ = r.abortJobByInvalidPodRef(ctx, job)
-		return false, fmt.Errorf("abort job by invalid podRef")
+		return false, nil, fmt.Errorf("abort job by invalid podRef")
 	}
 
 	podNamespacedName := types.NamespacedName{
@@ -448,10 +449,10 @@ func (r *Reconciler) preparePodRef(ctx context.Context, job *sev1alpha1.PodMigra
 		if errors.IsNotFound(err) {
 			_ = r.abortJobByMissingPod(ctx, job, podNamespacedName)
 		}
-		return false, err
+		return false, nil, err
 	}
 	job.Spec.PodRef.UID = pod.UID
-	return true, nil
+	return true, &pod, nil
 }
 
 func (r *Reconciler) abortJobIfTimeout(ctx context.Context, job *sev1alpha1.PodMigrationJob) (bool, error) {
@@ -481,16 +482,13 @@ func (r *Reconciler) abortJobIfTimeout(ctx context.Context, job *sev1alpha1.PodM
 	return true, err
 }
 
-func (r *Reconciler) requeueJobIfRetriablePodFilterFailed(ctx context.Context, job *sev1alpha1.PodMigrationJob) (bool, error) {
-	if r.retriablePodFilter == nil {
+func (r *Reconciler) requeueJobIfRetryablePodFilterFailed(ctx context.Context, pod *corev1.Pod, job *sev1alpha1.PodMigrationJob) (bool, error) {
+	if r.retryablePodFilter == nil {
 		return false, nil
 	}
 
-	pod := &corev1.Pod{}
-	podNamespacedName := types.NamespacedName{Namespace: job.Spec.PodRef.Namespace, Name: job.Spec.PodRef.Name}
-	err := r.Client.Get(ctx, podNamespacedName, pod)
-	if err == nil {
-		if !r.retriablePodFilter(pod) {
+	if pod != nil {
+		if !r.retryablePodFilter(pod) {
 			r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, "Requeue", "Migrating", "Failed to retriable filter")
 			return true, nil
 		}
@@ -499,20 +497,17 @@ func (r *Reconciler) requeueJobIfRetriablePodFilterFailed(ctx context.Context, j
 	return false, nil
 }
 
-func (r *Reconciler) abortJobIfUnretriablePodFilterFailed(ctx context.Context, job *sev1alpha1.PodMigrationJob) (bool, error) {
-	if r.unretriablePodFilter == nil {
+func (r *Reconciler) abortJobIfNonRetryablePodFilterFailed(ctx context.Context, pod *corev1.Pod, job *sev1alpha1.PodMigrationJob) (bool, error) {
+	if r.nonRetryablePodFilter == nil {
 		return false, nil
 	}
 
-	pod := &corev1.Pod{}
-	podNamespacedName := types.NamespacedName{Namespace: job.Spec.PodRef.Namespace, Name: job.Spec.PodRef.Name}
-	err := r.Client.Get(ctx, podNamespacedName, pod)
-	if err == nil {
-		if !r.unretriablePodFilter(pod) {
+	if pod != nil {
+		if !r.nonRetryablePodFilter(pod) {
 			job.Status.Phase = sev1alpha1.PodMigrationJobFailed
 			job.Status.Reason = sev1alpha1.PodMigrationJobReasonForbiddenMigratePod
-			job.Status.Message = fmt.Sprintf("Pod %q is forbidden to migrate because it does not meet the requirements", podNamespacedName)
-			err = r.Status().Update(ctx, job)
+			job.Status.Message = fmt.Sprintf("Pod %q is forbidden to migrate because it does not meet the requirements", klog.KObj(pod))
+			err := r.Status().Update(ctx, job)
 			if err == nil {
 				r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonForbiddenMigratePod, "Migrating", job.Status.Message)
 			}
