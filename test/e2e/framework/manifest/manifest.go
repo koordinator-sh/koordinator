@@ -30,6 +30,7 @@ import (
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes/scheme"
 
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/test/e2e/common"
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
 	e2etestfiles "github.com/koordinator-sh/koordinator/test/e2e/framework/testfiles"
@@ -156,4 +157,21 @@ func ConfigMapFromManifest(filename string) (*v1.ConfigMap, error) {
 		return nil, err
 	}
 	return &configMap, nil
+}
+
+func ReservationFromManifest(filename string) (*schedulingv1alpha1.Reservation, error) {
+	var reservation schedulingv1alpha1.Reservation
+	data, err := e2etestfiles.Read(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	json, err := utilyaml.ToJSON(common.SubstituteImageName(string(data)))
+	if err != nil {
+		return nil, err
+	}
+	if err := runtime.DecodeInto(scheme.Codecs.UniversalDecoder(), json, &reservation); err != nil {
+		return nil, err
+	}
+	return &reservation, nil
 }

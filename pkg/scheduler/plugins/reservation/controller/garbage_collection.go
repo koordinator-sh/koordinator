@@ -47,7 +47,7 @@ func (c *Controller) gcReservations() {
 				if err = c.koordClientSet.SchedulingV1alpha1().Reservations().Delete(context.TODO(), reservation.Name, metav1.DeleteOptions{}); err != nil {
 					klog.V(3).InfoS("failed to delete reservation", "reservation", klog.KObj(reservation), "err", err)
 				} else {
-					klog.V(4).InfoS("Reservation %v has been garbage collected", "reservation", klog.KObj(reservation))
+					klog.V(4).InfoS("Reservation has been garbage collected", "reservation", klog.KObj(reservation))
 				}
 			}
 		}
