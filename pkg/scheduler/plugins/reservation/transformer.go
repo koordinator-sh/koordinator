@@ -35,10 +35,6 @@ import (
 )
 
 func (pl *Plugin) BeforePreFilter(_ frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool) {
-	if reservationutil.IsReservePod(pod) {
-		return nil, false
-	}
-
 	state, err := pl.prepareMatchReservationState(pod)
 	if err != nil {
 		klog.Warningf("BeforePreFilter failed to get matched reservations, err: %v", err)
@@ -51,10 +47,6 @@ func (pl *Plugin) BeforePreFilter(_ frameworkext.ExtendedHandle, cycleState *fra
 }
 
 func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) error {
-	if reservationutil.IsReservePod(pod) {
-		return nil
-	}
-
 	state := getStateData(cycleState)
 	for nodeName, reservationInfos := range state.unmatched {
 		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
@@ -65,25 +57,27 @@ func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *fram
 			continue
 		}
 
-		if err := pl.restoreUnmatchedReservations(cycleState, pod, nodeInfo, reservationInfos); err != nil {
+		if err := pl.restoreUnmatchedReservations(cycleState, pod, nodeInfo, reservationInfos, true); err != nil {
 			return err
 		}
 	}
 
-	for nodeName, reservationInfos := range state.matched {
-		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
-		if err != nil {
-			continue
-		}
-		if nodeInfo.Node() == nil {
-			continue
-		}
+	if !reservationutil.IsReservePod(pod) {
+		for nodeName, reservationInfos := range state.matched {
+			nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+			if err != nil {
+				continue
+			}
+			if nodeInfo.Node() == nil {
+				continue
+			}
 
-		// NOTE: After PreFilter, all reserved resources need to be returned to the corresponding NodeInfo,
-		// and each plugin is triggered to adjust its own StateData through RemovePod, RemoveReservation and AddPodInReservation,
-		// and adjust the state data related to Reservation and Pod
-		if err := pl.restoreMatchedReservations(cycleState, pod, nodeInfo, reservationInfos, true); err != nil {
-			return err
+			// NOTE: After PreFilter, all reserved resources need to be returned to the corresponding NodeInfo,
+			// and each plugin is triggered to adjust its own StateData through RemovePod, RemoveReservation and AddPodInReservation,
+			// and adjust the state data related to Reservation and Pod
+			if err := pl.restoreMatchedReservations(cycleState, pod, nodeInfo, reservationInfos, true); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -108,25 +102,29 @@ func (pl *Plugin) BeforeFilter(handle frameworkext.ExtendedHandle, cycleState *f
 	}
 
 	nodeInfo = nodeInfo.Clone()
-	if err := pl.restoreUnmatchedReservations(cycleState, pod, nodeInfo, unmatchedReservationInfos); err != nil {
+	if err := pl.restoreUnmatchedReservations(cycleState, pod, nodeInfo, unmatchedReservationInfos, false); err != nil {
 		return nil, nil, false
 	}
-	if err := pl.restoreMatchedReservations(cycleState, pod, nodeInfo, matchedReservationInfos, false); err != nil {
-		return nil, nil, false
+
+	if !reservationutil.IsReservePod(pod) {
+		if err := pl.restoreMatchedReservations(cycleState, pod, nodeInfo, matchedReservationInfos, false); err != nil {
+			return nil, nil, false
+		}
 	}
+
 	return pod, nodeInfo, true
 }
 
-func (pl *Plugin) restoreUnmatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*reservationInfo) error {
-	// Reservations and Pods that consume the Reservations are cumulative in resource accounting.
-	// For example, on a 32C machine, ReservationA reserves 8C, and then PodA uses ReservationA to allocate 4C,
-	// then the record on NodeInfo is that 12C is allocated. But in fact it should be calculated according to 8C,
-	// so we need to return some resources.
+func (pl *Plugin) restoreUnmatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*reservationInfo, shouldRestoreStates bool) error {
 	for _, rInfo := range reservationInfos {
 		if len(rInfo.allocated) == 0 {
 			continue
 		}
 
+		// Reservations and Pods that consume the Reservations are cumulative in resource accounting.
+		// For example, on a 32C machine, ReservationA reserves 8C, and then PodA uses ReservationA to allocate 4C,
+		// then the record on NodeInfo is that 12C is allocated. But in fact it should be calculated according to 8C,
+		// so we need to return some resources.
 		reservePod := reservationutil.NewReservePod(rInfo.reservation)
 		if err := nodeInfo.RemovePod(reservePod); err != nil {
 			klog.Errorf("Failed to remove reserve pod %v from node %v, err: %v", klog.KObj(rInfo.reservation), nodeInfo.Node().Name, err)
@@ -145,11 +143,19 @@ func (pl *Plugin) restoreUnmatchedReservations(cycleState *framework.CycleState,
 		nodeInfo.AddPod(reservePod)
 		// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
 		nodeInfo.Generation = -1
+
+		if shouldRestoreStates {
+			reservePodInfo := framework.NewPodInfo(reservePod)
+			status := pl.handle.RunPreFilterExtensionRemovePod(context.Background(), cycleState, pod, reservePodInfo, nodeInfo)
+			if !status.IsSuccess() {
+				return status.AsError()
+			}
+		}
 	}
 	return nil
 }
 
-func (pl *Plugin) restoreMatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*reservationInfo, restorePods bool) error {
+func (pl *Plugin) restoreMatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*reservationInfo, shouldRestoreStates bool) error {
 	podInfoMap := make(map[types.UID]*framework.PodInfo)
 	for _, podInfo := range nodeInfo.Pods {
 		if !reservationutil.IsReservePod(podInfo.Pod) {
@@ -176,14 +182,14 @@ func (pl *Plugin) restoreMatchedReservations(cycleState *framework.CycleState, p
 		if !rInfo.reservation.Spec.AllocateOnce && earliestReusableRInfo != nil && rInfo != earliestReusableRInfo {
 			continue
 		}
-		if err := restoreReservedResources(pl.handle, cycleState, pod, rInfo, nodeInfo, podInfoMap, restorePods); err != nil {
+		if err := restoreReservedResources(pl.handle, cycleState, pod, rInfo, nodeInfo, podInfoMap, shouldRestoreStates); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, rInfo *reservationInfo, nodeInfo *framework.NodeInfo, podInfoMap map[types.UID]*framework.PodInfo, restorePods bool) error {
+func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, rInfo *reservationInfo, nodeInfo *framework.NodeInfo, podInfoMap map[types.UID]*framework.PodInfo, shouldRestoreStates bool) error {
 	reservePod := reservationutil.NewReservePod(rInfo.reservation)
 	reservePodInfo := framework.NewPodInfo(reservePod)
 
@@ -203,7 +209,7 @@ func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *fr
 	// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
 	nodeInfo.Generation = -1
 
-	if !restorePods {
+	if !shouldRestoreStates {
 		return nil
 	}
 
@@ -298,6 +304,8 @@ func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, err
 		matched:   map[string][]*reservationInfo{},
 		unmatched: map[string][]*reservationInfo{},
 	}
+
+	isReservedPod := reservationutil.IsReservePod(pod)
 	processNode := func(i int) {
 		var matched, unmatched []*reservationInfo
 		nodeInfo := allNodes[i]
@@ -313,13 +321,15 @@ func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, err
 				continue
 			}
 
-			if reservationutil.MatchReservationOwners(pod, rInfo.reservation) {
+			if !isReservedPod && reservationutil.MatchReservationOwners(pod, rInfo.reservation) {
 				matched = append(matched, rInfo)
 			} else {
 				if len(rInfo.allocated) > 0 {
 					unmatched = append(unmatched, rInfo)
 				}
-				klog.V(6).InfoS("got reservation on node does not match the pod", "reservation", klog.KObj(rInfo.reservation), "pod", klog.KObj(pod))
+				if !isReservedPod {
+					klog.V(6).InfoS("got reservation on node does not match the pod", "reservation", klog.KObj(rInfo.reservation), "pod", klog.KObj(pod))
+				}
 			}
 		}
 
