@@ -46,6 +46,10 @@ func (n *nodeDeviceCache) onPodAdd(obj interface{}) {
 		return
 	}
 
+	if pod.Spec.NodeName == "" {
+		return
+	}
+
 	devicesAllocation, err := apiext.GetDeviceAllocations(pod.Annotations)
 	if err != nil {
 		klog.Errorf("failed to get device allocation from pod %v, err: %v", klog.KObj(pod), err)
@@ -86,6 +90,10 @@ func (n *nodeDeviceCache) onPodDelete(obj interface{}) {
 			return
 		}
 	default:
+		return
+	}
+
+	if pod.Spec.NodeName == "" {
 		return
 	}
 
