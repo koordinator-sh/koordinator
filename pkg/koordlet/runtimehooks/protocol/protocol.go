@@ -76,8 +76,7 @@ func injectCPUShares(cgroupParent string, cpuShares int64, a *audit.EventHelper,
 	if err != nil {
 		return err
 	}
-	_, err = e.Update(true, updater)
-	return err
+	return update(e, updater, a)
 }
 
 func injectCPUSet(cgroupParent string, cpuset string, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) error {
@@ -85,8 +84,7 @@ func injectCPUSet(cgroupParent string, cpuset string, a *audit.EventHelper, e re
 	if err != nil {
 		return err
 	}
-	_, err = e.Update(true, updater)
-	return err
+	return update(e, updater, a)
 }
 
 func injectCPUQuota(cgroupParent string, cpuQuota int64, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) error {
@@ -95,8 +93,7 @@ func injectCPUQuota(cgroupParent string, cpuQuota int64, a *audit.EventHelper, e
 	if err != nil {
 		return err
 	}
-	_, err = e.Update(true, updater)
-	return err
+	return update(e, updater, a)
 }
 
 func injectMemoryLimit(cgroupParent string, memoryLimit int64, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) error {
@@ -105,8 +102,7 @@ func injectMemoryLimit(cgroupParent string, memoryLimit int64, a *audit.EventHel
 	if err != nil {
 		return err
 	}
-	_, err = e.Update(true, updater)
-	return err
+	return update(e, updater, a)
 }
 
 func injectCPUBvt(cgroupParent string, bvtValue int64, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) error {
@@ -115,6 +111,13 @@ func injectCPUBvt(cgroupParent string, bvtValue int64, a *audit.EventHelper, e r
 	if err != nil {
 		return err
 	}
-	_, err = e.Update(true, updater)
-	return err
+	return update(e, updater, a)
+}
+
+func update(e resourceexecutor.ResourceUpdateExecutor, updater resourceexecutor.ResourceUpdater, eventHelper *audit.EventHelper) error {
+	_, err := e.Update(true, updater, eventHelper)
+	if err != nil {
+		return err
+	}
+	return nil
 }

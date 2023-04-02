@@ -138,7 +138,7 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		if err != nil {
 			klog.Infof("bvtupdater create failed, dir %v, error %v", kubeQOSCgroupPath, err)
 		}
-		if _, err := b.executor.Update(true, bvtUpdater); err != nil {
+		if _, err := b.executor.Update(true, bvtUpdater, nil); err != nil {
 			klog.Infof("update kube qos %v cpu bvt failed, dir %v, error %v", kubeQOS, kubeQOSCgroupPath, err)
 		}
 	}
@@ -152,7 +152,7 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		if err != nil {
 			klog.Infof("bvtupdater create failed, dir %v, error %v", podCgroupPath, err)
 		}
-		if _, err := b.executor.Update(true, bvtUpdater); err != nil {
+		if _, err := b.executor.Update(true, bvtUpdater, nil); err != nil {
 			klog.Infof("update pod %s cpu bvt failed, dir %v, error %v",
 				util.GetPodKey(podMeta.Pod), podCgroupPath, err)
 		}

@@ -704,7 +704,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 			if tt.field.noUpdate {
 				// prepare fake record in cache
 				fakeResource := resourceexecutor.NewResctrlL3SchemataResource(tt.args.group, tt.field.cachedMask, tt.args.l3Num)
-				isUpdate, err := r.executor.Update(true, fakeResource)
+				isUpdate, err := r.executor.Update(true, fakeResource, nil)
 				assert.False(t, isUpdate)
 				assert.NoError(t, err)
 			}
@@ -934,7 +934,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			if tt.field.noUpdate {
 				// prepare fake record in cache
 				fakeResource := resourceexecutor.NewResctrlMbSchemataResource(tt.args.group, tt.field.cachedPercent, tt.args.l3Num)
-				isUpdate, err := r.executor.Update(true, fakeResource)
+				isUpdate, err := r.executor.Update(true, fakeResource, nil)
 				assert.False(t, isUpdate)
 				assert.NoError(t, err)
 			}

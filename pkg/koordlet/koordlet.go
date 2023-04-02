@@ -23,6 +23,7 @@ import (
 	"time"
 
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -40,6 +41,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -93,6 +95,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 	// setup cgroup path formatter from cgroup driver type
 	var detectCgroupDriver system.CgroupDriverType
+	var node *corev1.Node
 	if pollErr := wait.PollImmediate(time.Second*10, time.Minute, func() (bool, error) {
 		driver := system.GuessCgroupDriverFromCgroupName()
 		if driver.Validate() {
@@ -101,7 +104,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		}
 		klog.Infof("can not detect cgroup driver from 'kubepods' cgroup name")
 
-		node, err := kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, v1.GetOptions{})
+		node, err = kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, v1.GetOptions{})
 		if err != nil || node == nil {
 			klog.Error("Can't get node")
 			return false, nil
@@ -119,6 +122,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, fmt.Errorf("can not detect kubelet cgroup driver: %v", pollErr)
 	}
 	system.SetupCgroupPathFormatter(detectCgroupDriver)
+	resourceexecutor.NewResourceExecutorEventRecorder(scheme, kubeClient, nodeName, node)
 	klog.Infof("Node %s use '%s' as cgroup driver", nodeName, string(detectCgroupDriver))
 
 	collectorService := metricsadvisor.NewMetricAdvisor(config.CollectorConf, statesInformer, metricCache)

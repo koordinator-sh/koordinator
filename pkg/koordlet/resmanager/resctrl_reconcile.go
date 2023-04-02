@@ -248,7 +248,7 @@ func (r *ResctrlReconcile) calculateAndApplyCatL3PolicyForGroup(group string, cb
 	resource := resourceexecutor.NewResctrlL3SchemataResource(group, l3MaskValue, l3Num)
 
 	// write policy into resctrl files if need update
-	isUpdated, err := r.executor.Update(true, resource)
+	isUpdated, err := r.executor.Update(true, resource, nil)
 	if err != nil {
 		klog.Warningf("failed to write l3 cat policy on schemata for group %s, err: %s", group, err)
 		return err
@@ -274,7 +274,7 @@ func (r *ResctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3
 	resource := resourceexecutor.NewResctrlMbSchemataResource(group, memBwPercent, l3Num)
 
 	// write policy into resctrl files if need update
-	isUpdated, err := r.executor.Update(true, resource)
+	isUpdated, err := r.executor.Update(true, resource, nil)
 	if err != nil {
 		klog.Warningf("failed to write mba policy on schemata for group %s, err: %s", group, err)
 		return err
@@ -299,7 +299,7 @@ func (r *ResctrlReconcile) calculateAndApplyCatL3GroupTasks(group string, taskId
 	// write policy into resctrl files
 	// NOTE: the operation should not be cacheable, since old tid has chance to be reused by a new task and here the
 	// tasks ids are the realtime diff between cgroup and resctrl
-	updated, err := r.executor.Update(false, resource)
+	updated, err := r.executor.Update(false, resource, nil)
 	if err != nil {
 		klog.Warningf("failed to write l3 cat policy on tasks for group %s, updated %v, err: %s", group, updated, err)
 		return err

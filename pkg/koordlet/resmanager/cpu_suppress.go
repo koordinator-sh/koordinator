@@ -465,7 +465,7 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 		klog.V(4).Infof("failed to get be cfs quota updater, err: %v", err)
 		return
 	}
-	isUpdated, err := r.executor.Update(false, updater)
+	isUpdated, err := r.executor.Update(false, updater, nil)
 	if err != nil {
 		klog.Errorf("suppressBECPU: failed to write cfs_quota_us for be pods, error: %v", err)
 		return
@@ -488,7 +488,7 @@ func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
 		klog.V(4).Infof("failed to get be cfs quota updater, err: %v", err)
 		return
 	}
-	isUpdated, err := r.executor.Update(false, updater)
+	isUpdated, err := r.executor.Update(false, updater, nil)
 	if err != nil {
 		klog.Errorf("recover bestEffort cfsQuota err: %v", err)
 		return

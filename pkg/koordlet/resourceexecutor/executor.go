@@ -21,8 +21,14 @@ import (
 	"sync"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
+	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
@@ -30,7 +36,7 @@ import (
 var _ ResourceUpdateExecutor = &ResourceUpdateExecutorImpl{}
 
 type ResourceUpdateExecutor interface {
-	Update(cacheable bool, updater ResourceUpdater) (updated bool, err error)
+	Update(cacheable bool, updater ResourceUpdater, eventHelper *audit.EventHelper) (updated bool, err error)
 	UpdateBatch(cacheable bool, updaters ...ResourceUpdater)
 	// LeveledUpdateBatch is to cacheable update resources by the order of resources' level.
 	// For cgroup interfaces like `cpuset.cpus` and `memory.min`, reconciliation from top to bottom should keep the
@@ -47,29 +53,46 @@ type ResourceUpdateExecutorImpl struct {
 	ResourceCache     *cache.Cache
 	Config            *Config
 
-	onceRun   sync.Once
-	gcStarted bool
+	onceRun       sync.Once
+	gcStarted     bool
+	eventRecorder record.EventRecorder
+	node          *corev1.Node
 }
 
-var singleton = &ResourceUpdateExecutorImpl{
-	ResourceCache: cache.NewCacheDefault(),
-	Config:        Conf,
+var singleton *ResourceUpdateExecutorImpl
+var recorderSingleton record.EventRecorder
+var nodeSingleton *corev1.Node
+
+func NewResourceExecutorEventRecorder(schema *apiruntime.Scheme, kubeClient kubernetes.Interface, nodeName string, node *corev1.Node) {
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	recorder := eventBroadcaster.NewRecorder(schema, corev1.EventSource{Component: "koordlet-resource-executor", Host: nodeName})
+	recorderSingleton = recorder
+	nodeSingleton = node
 }
 
 func NewResourceUpdateExecutor() ResourceUpdateExecutor {
+	if singleton == nil {
+		singleton = &ResourceUpdateExecutorImpl{
+			ResourceCache: cache.NewCacheDefault(),
+			Config:        Conf,
+			eventRecorder: recorderSingleton,
+			node:          nodeSingleton,
+		}
+	}
 	return singleton
 }
 
 // Update updates the resources with the given cacheable attribute with the cacheable attribute directly.
-func (e *ResourceUpdateExecutorImpl) Update(cacheable bool, resource ResourceUpdater) (bool, error) {
+func (e *ResourceUpdateExecutorImpl) Update(cacheable bool, resource ResourceUpdater, eventHelper *audit.EventHelper) (bool, error) {
 	if cacheable {
 		if !e.gcStarted {
 			klog.V(5).Info("failed to cacheable update resources, err: cache GC is not started")
 			return false, fmt.Errorf("cache GC is not started")
 		}
-		return e.updateByCache(resource)
+		return e.updateByCache(resource, eventHelper)
 	}
-	return true, e.update(resource)
+	return true, e.update(resource, eventHelper)
 }
 
 // UpdateBatch updates a batch of resources with the given cacheable attribute.
@@ -83,7 +106,7 @@ func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...Res
 		}
 
 		for _, updater := range updaters {
-			isUpdated, err := e.updateByCache(updater)
+			isUpdated, err := e.updateByCache(updater, nil)
 			if err != nil && sysutil.IsResourceUnsupportedErr(err) {
 				unsupported++
 				klog.V(5).Infof("failed to cacheable update unsupported resource %s to %v, isUpdated %v, err: %v",
@@ -100,7 +123,7 @@ func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...Res
 		}
 	} else {
 		for _, updater := range updaters {
-			err := e.update(updater)
+			err := e.update(updater, nil)
 			if err != nil && sysutil.IsResourceUnsupportedErr(err) {
 				unsupported++
 				klog.V(5).Infof("failed to update unsupported resource %s to %v, err: %v",
@@ -170,7 +193,7 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(updaters [][]ResourceUpd
 				klog.V(6).Infof("skip update resource %s since it should skip the merge", updater.Key())
 				continue
 			}
-			err = updater.update()
+			err = e.update(updater, nil)
 			if err != nil && (sysutil.IsResourceUnsupportedErr(err) || IsCgroupDirErr(err)) {
 				klog.V(5).Infof("failed update resource %s, err: %v", updater.Key(), err)
 				continue
@@ -220,19 +243,25 @@ func (e *ResourceUpdateExecutorImpl) needUpdate(updater ResourceUpdater) bool {
 	return false
 }
 
-func (e *ResourceUpdateExecutorImpl) update(updater ResourceUpdater) error {
+func (e *ResourceUpdateExecutorImpl) update(updater ResourceUpdater, eventHelper *audit.EventHelper) error {
 	err := updater.update()
 	if err != nil {
 		klog.V(4).Infof("failed to update resource %s to %v, err: %v", updater.Key(), updater.Value(), err)
 		return err
 	}
 	klog.V(6).Infof("successfully update resource %s to %v", updater.Key(), updater.Value())
+
+	if eventHelper != nil && e.eventRecorder != nil {
+		executorMessage := fmt.Sprintf("successfully update resource: %s to value: %s", updater.Key(), updater.Value())
+		e.eventRecorder.Eventf(e.node, corev1.EventTypeNormal, eventHelper.Event.Reason, executorMessage)
+	}
+
 	return nil
 }
 
-func (e *ResourceUpdateExecutorImpl) updateByCache(updater ResourceUpdater) (bool, error) {
+func (e *ResourceUpdateExecutorImpl) updateByCache(updater ResourceUpdater, eventHelper *audit.EventHelper) (bool, error) {
 	if e.needUpdate(updater) {
-		err := updater.update()
+		err := e.update(updater, eventHelper)
 		if err != nil {
 			klog.V(5).Infof("failed to cacheable update resource %s to %v, err: %v", updater.Key(), updater.Value(), err)
 			return false, err

@@ -472,7 +472,7 @@ func (b *CPUBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 		podCFSValStr := strconv.FormatInt(targetPodCFS, 10)
 		eventHelper := audit.V(3).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason("CFSQuotaBurst").Message("update pod CFSQuota: %v", podCFSValStr)
 		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, podDir, podCFSValStr, eventHelper)
-		if _, err := b.executor.Update(true, updater); err != nil {
+		if _, err := b.executor.Update(true, updater, nil); err != nil {
 			return fmt.Errorf("update pod cgroup %v failed, error %v", podMeta.CgroupDir, err)
 		}
 
@@ -484,7 +484,7 @@ func (b *CPUBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 		containerCFSValStr := strconv.FormatInt(targetContainerCFS, 10)
 		eventHelper := audit.V(3).Container(containerStat.Name).Reason("CFSQuotaBurst").Message("update container CFSQuota: %v", containerCFSValStr)
 		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, containerDir, containerCFSValStr, eventHelper)
-		if _, err := b.executor.Update(true, updater); err != nil {
+		if _, err := b.executor.Update(true, updater, nil); err != nil {
 			return fmt.Errorf("update container cgroup %v failed, reason %v", containerDir, err)
 		}
 
@@ -542,7 +542,7 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 				pod.Namespace, pod.Name, containerStat.Name, err)
 			continue
 		}
-		updated, err := b.executor.Update(true, updater)
+		updated, err := b.executor.Update(true, updater, nil)
 		if err != nil && system.IsResourceUnsupportedErr(err) {
 			klog.V(5).Infof("update container %v/%v/%v cpu burst failed, cfs burst not supported, dir %v, info %v",
 				pod.Namespace, pod.Name, containerStat.Name, containerDir, err)
@@ -565,7 +565,7 @@ func (b *CPUBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 			pod.Namespace, pod.Name, err)
 		return
 	}
-	updated, err := b.executor.Update(true, updater)
+	updated, err := b.executor.Update(true, updater, nil)
 	if err != nil && system.IsResourceUnsupportedErr(err) {
 		klog.V(5).Infof("update pod %v/%v cpu burst failed, cfs burst not supported, dir %v, info %v",
 			pod.Namespace, pod.Name, podDir, err)

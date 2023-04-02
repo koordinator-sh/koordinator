@@ -20,6 +20,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -30,6 +33,21 @@ func TestNewResourceUpdateExecutor(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		e := NewResourceUpdateExecutor()
 		assert.NotNil(t, e)
+	})
+}
+
+func TestNewResourceUpdateExecutorWithEventRecorder(t *testing.T) {
+	t.Run("", func(t *testing.T) {
+		singleton = nil
+		scheme := runtime.NewScheme()
+		eventBroadcaster := record.NewBroadcaster()
+		recorder := eventBroadcaster.NewRecorder(scheme, corev1.EventSource{Component: "koordlet-resource-executor"})
+		recorderSingleton = recorder
+		nodeSingleton = &corev1.Node{}
+		e := NewResourceUpdateExecutor()
+		assert.NotNil(t, e)
+		assert.NotNil(t, e.(*ResourceUpdateExecutorImpl).eventRecorder)
+		assert.NotNil(t, e.(*ResourceUpdateExecutorImpl).node)
 	})
 }
 
@@ -132,7 +150,7 @@ func TestResourceUpdateExecutor_Update(t *testing.T) {
 				e.Run(stop)
 			}
 
-			got, gotErr := e.Update(tt.args.isCacheable, tt.args.resource)
+			got, gotErr := e.Update(tt.args.isCacheable, tt.args.resource, nil)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 		})
@@ -215,4 +233,31 @@ func TestResourceUpdateExecutor_UpdateBatch(t *testing.T) {
 			e.UpdateBatch(tt.args.isCacheable, tt.args.resources...)
 		})
 	}
+}
+
+func TestResourceUpdateExecutor_UpdateWithEventRecorded(t *testing.T) {
+	t.Run("", func(t *testing.T) {
+		testUpdater, err := DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, "test", "1048576", &audit.EventHelper{})
+		helper := sysutil.NewFileTestUtil(t)
+		defer helper.Cleanup()
+		helper.WriteFileContents(testUpdater.Path(), "")
+
+		scheme := runtime.NewScheme()
+		eventBroadcaster := record.NewBroadcaster()
+		recorderSingleton = eventBroadcaster.NewRecorder(scheme, corev1.EventSource{Component: "koordlet-resource-executor"})
+		e := &ResourceUpdateExecutorImpl{
+			ResourceCache: cache.NewCacheDefault(),
+			Config:        NewDefaultConfig(),
+			eventRecorder: recorderSingleton,
+			node:          &corev1.Node{},
+		}
+
+		assert.NoError(t, err)
+		eventHelper := audit.V(3).Container("testContainer").Reason("runtime-hooks").Message(
+			"set container cpu share to %v", 10)
+
+		updated, err := e.Update(false, testUpdater, eventHelper)
+		assert.NoError(t, err)
+		assert.True(t, updated)
+	})
 }
