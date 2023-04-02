@@ -14,23 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package cri
+package utils
 
-type ServiceType int
+type CallHookPluginOperation string
 
 const (
-	RuntimeService ServiceType = iota
-	ImageService
+	ShouldCallHookPlugin          CallHookPluginOperation = "ShouldCallHookPlugin"
+	ShouldNotCallHookPluginAlways CallHookPluginOperation = "ShouldNotCallHookPluginAlways"
+	Unknown                       CallHookPluginOperation = "Unknown"
 )
 
-type RuntimeServiceType int
-
 const (
-	RunPodSandbox RuntimeServiceType = iota
-	StopPodSandbox
-	CreateContainer
-	StartContainer
-	StopContainer
-	RemoveContainer
-	UpdateContainerResources
+	SkipRuntimeHookServer = "runtimeproxy.koordinator.sh/skip-hookserver"
 )

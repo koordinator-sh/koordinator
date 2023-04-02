@@ -16,14 +16,6 @@ limitations under the License.
 
 package utils
 
-type CallHookPluginOperation string
-
-const (
-	ShouldCallHookPlugin          CallHookPluginOperation = "ShouldCallHookPlugin"
-	ShouldNotCallHookPluginAlways CallHookPluginOperation = "ShouldNotCallHookPluginAlways"
-	Unknown                       CallHookPluginOperation = "Unknown"
-)
-
 func MergeMap(a, b map[string]string) map[string]string {
 	if a == nil {
 		a = make(map[string]string)
@@ -32,4 +24,15 @@ func MergeMap(a, b map[string]string) map[string]string {
 		a[key] = val
 	}
 	return a
+}
+
+func SkipRuntimeHook(labels map[string]string) bool {
+	if labels == nil {
+		return false
+	}
+
+	if val, ok := labels[SkipRuntimeHookServer]; ok && val == "true" {
+		return true
+	}
+	return false
 }

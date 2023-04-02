@@ -30,7 +30,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
-	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/options"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/dispatcher"
 	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/types"
@@ -41,8 +41,10 @@ import (
 type RuntimeManagerDockerServer struct {
 	dispatcher   *dispatcher.RuntimeHookDispatcher
 	reverseProxy *httputil.ReverseProxy
+	dockerClient *client.Client
 	router       map[*regexp.Regexp]func(context.Context, http.ResponseWriter, *http.Request)
 	cgroupDriver string
+	proxyConfig  *config.Config
 }
 
 type proxyDockerClient interface {
@@ -52,12 +54,39 @@ type proxyDockerClient interface {
 }
 
 func (d *RuntimeManagerDockerServer) Name() string {
-	return "RuntimeManagerDockerServer"
+	return "RuntimeManagerDockerdServer"
 }
 
-func NewRuntimeManagerDockerServer() *RuntimeManagerDockerServer {
+func NewRuntimeManagerDockerdServer(proxyConfig *config.Config) (*RuntimeManagerDockerServer, error) {
+	if proxyConfig == nil {
+		return nil, fmt.Errorf("runtime proxy config is nil")
+	}
+
+	reverseProxy := &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+			param := ""
+			if len(req.URL.RawQuery) > 0 {
+				param = "?" + req.URL.RawQuery
+			}
+			u, _ := url.Parse("http://docker" + req.URL.Path + param)
+			*req.URL = *u
+		},
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", proxyConfig.RemoteRuntimeServiceEndpoint)
+			}},
+	}
+
+	dockerClient, err := client.NewClientWithOpts(client.WithHost("unix://"+proxyConfig.RemoteRuntimeServiceEndpoint), client.WithVersion("1.39"))
+	if err != nil {
+		return nil, err
+	}
+
 	interceptor := &RuntimeManagerDockerServer{
-		dispatcher: dispatcher.NewRuntimeDispatcher(),
+		dispatcher:   dispatcher.NewRuntimeDispatcher(),
+		reverseProxy: reverseProxy,
+		dockerClient: dockerClient,
+		proxyConfig:  proxyConfig,
 	}
 	interceptor.router = map[*regexp.Regexp]func(context.Context, http.ResponseWriter, *http.Request){
 		regexp.MustCompile(`^/(v\d\.\d+/)?containers(/\w+)?/update$`): interceptor.HandleUpdateContainer,
@@ -65,7 +94,7 @@ func NewRuntimeManagerDockerServer() *RuntimeManagerDockerServer {
 		regexp.MustCompile(`^/(v\d\.\d+/)?containers(/\w+)?/start$`):  interceptor.HandleStartContainer,
 		regexp.MustCompile(`^/(v\d\.\d+/)?containers(/\w+)?/stop`):    interceptor.HandleStopContainer,
 	}
-	return interceptor
+	return interceptor, nil
 }
 
 func (d *RuntimeManagerDockerServer) Direct(wr http.ResponseWriter, req *http.Request) string {
@@ -172,37 +201,22 @@ func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) er
 }
 
 func (d *RuntimeManagerDockerServer) Run() error {
-	d.reverseProxy = &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
-			param := ""
-			if len(req.URL.RawQuery) > 0 {
-				param = "?" + req.URL.RawQuery
-			}
-			u, _ := url.Parse("http://docker" + req.URL.Path + param)
-			*req.URL = *u
-		},
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", options.RemoteRuntimeServiceEndpoint)
-			}},
+	err := d.failOver(d.dockerClient)
+	if err != nil {
+		return fmt.Errorf("Failed to backup container info from backend, err: %v", err)
 	}
 
-	dockerClient, err := client.NewClientWithOpts(client.WithHost("unix://"+options.RemoteRuntimeServiceEndpoint), client.WithVersion("1.39"))
+	listener, err := net.Listen("unix", d.proxyConfig.RuntimeProxyEndpoint)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to listen on %q", err)
 	}
 
-	err = d.failOver(dockerClient)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to backup container info from backend, err: %v", err))
-	}
+	go func() {
+		err := http.Serve(listener, d)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to serve connections: %v", err))
+		}
+	}()
 
-	lis, err := net.Listen("unix", options.RuntimeProxyEndpoint)
-	if err != nil {
-		klog.Fatal("Failed to create the lis %v", err)
-	}
-	if err := http.Serve(lis, d); err != nil {
-		klog.Fatal("ListenAndServe:", err)
-	}
 	return nil
 }

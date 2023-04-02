@@ -24,6 +24,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/app/options"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/types"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
 )
@@ -83,8 +85,16 @@ func Test_failover(t *testing.T) {
 			},
 		},
 	}
-	manager := NewRuntimeManagerDockerServer()
-	err := manager.failOver(fakeClient)
+
+	proxyConfig := &config.Config{
+		RuntimeProxyEndpoint:         options.DefaultRuntimeProxyEndpoint,
+		RemoteRuntimeServiceEndpoint: options.BackendRuntimeModeContainerd,
+		RemoteImageServiceEndpoint:   options.DefaultContainerdImageServiceEndpoint,
+	}
+
+	manager, err := NewRuntimeManagerDockerdServer(proxyConfig)
+	assert.Equal(t, nil, err)
+	err = manager.failOver(fakeClient)
 	assert.Equal(t, nil, err)
 	assert.NotEqual(t, nil, store.GetContainerInfo("id2"))
 	assert.NotEqual(t, nil, store.GetPodSandboxInfo("id1"))

@@ -43,6 +43,13 @@ func GetFailurePolicyType(typeString string) (FailurePolicyType, error) {
 	}
 }
 
+// Config defines configuration for the runtime proxy.
+type Config struct {
+	RuntimeProxyEndpoint         string
+	RemoteRuntimeServiceEndpoint string
+	RemoteImageServiceEndpoint   string
+}
+
 type RuntimeHookType string
 
 const (

@@ -26,7 +26,6 @@ import (
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/options"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/dispatcher"
 	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor"
@@ -39,40 +38,61 @@ const (
 )
 
 type RuntimeManagerCriServer struct {
-	hookDispatcher              *dispatcher.RuntimeHookDispatcher
-	backendRuntimeServiceClient runtimeapi.RuntimeServiceClient
-	backendImageServiceClient   runtimeapi.ImageServiceClient
+	dispatcher    *dispatcher.RuntimeHookDispatcher
+	runtimeClient runtimeapi.RuntimeServiceClient
+	imageClient   runtimeapi.ImageServiceClient
+	proxyConfig   *config.Config
 }
 
-func NewRuntimeManagerCriServer() *RuntimeManagerCriServer {
-	criInterceptor := &RuntimeManagerCriServer{
-		hookDispatcher: dispatcher.NewRuntimeDispatcher(),
+func NewRuntimeManagerCRIServer(proxyConfig *config.Config) (*RuntimeManagerCriServer, error) {
+	if proxyConfig == nil {
+		return nil, fmt.Errorf("runtime proxy config is nil")
 	}
-	return criInterceptor
+
+	runtimeClient, imageClient, err := createRuntimeAndImageClient(proxyConfig.RemoteRuntimeServiceEndpoint, proxyConfig.RemoteImageServiceEndpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	interceptor := &RuntimeManagerCriServer{
+		dispatcher:    dispatcher.NewRuntimeDispatcher(),
+		runtimeClient: runtimeClient,
+		imageClient:   imageClient,
+		proxyConfig:   proxyConfig,
+	}
+	return interceptor, nil
 }
 
 func (c *RuntimeManagerCriServer) Name() string {
-	return "RuntimeManagerCriServer"
+	return "RuntimeManagerCRIServer"
 }
 
 func (c *RuntimeManagerCriServer) Run() error {
-	if err := c.initBackendServer(options.RemoteRuntimeServiceEndpoint, options.RemoteImageServiceEndpoint); err != nil {
-		return err
+	klog.V(2).Infof("Start runtime proxy grpc server")
+
+	if err := c.failOver(); err != nil {
+		return fmt.Errorf("Failed to backup container info from runtime service, err: %v", err)
 	}
-	c.failOver()
 
-	klog.Infof("do failOver done")
-
-	listener, err := net.Listen("unix", options.RuntimeProxyEndpoint)
+	listener, err := net.Listen("unix", c.proxyConfig.RuntimeProxyEndpoint)
 	if err != nil {
-		klog.Errorf("failed to create listener, error: %v", err)
+		klog.Errorf("Failed to listen on %q: %v", c.proxyConfig.RuntimeProxyEndpoint, err)
 		return err
 	}
+
+	// Create the grpc server and register runtime and image services.
 	grpcServer := grpc.NewServer()
 	runtimeapi.RegisterRuntimeServiceServer(grpcServer, c)
 	runtimeapi.RegisterImageServiceServer(grpcServer, c)
-	err = grpcServer.Serve(listener)
-	return err
+
+	go func() {
+		err := grpcServer.Serve(listener)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to serve connections: %v", err))
+		}
+	}()
+
+	return nil
 }
 
 func (c *RuntimeManagerCriServer) getRuntimeHookInfo(serviceType RuntimeServiceType) (config.RuntimeRequestPath,
@@ -108,7 +128,7 @@ func (c *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeSer
 	switch callHookOperation {
 	case utils.ShouldCallHookPlugin:
 		// TODO deal with the Dispatch response
-		response, err, policy := c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest())
+		response, err, policy := c.dispatcher.Dispatch(ctx, runtimeHookPath, config.PreHook, resourceExecutor.GenerateHookRequest())
 		if err != nil {
 			klog.Errorf("fail to call hook server %v", err)
 			if policy == config.PolicyFail {
@@ -135,7 +155,7 @@ func (c *RuntimeManagerCriServer) interceptRuntimeRequest(serviceType RuntimeSer
 	case utils.ShouldCallHookPlugin:
 		// post call hook server
 		// TODO the response
-		c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, resourceExecutor.GenerateHookRequest())
+		c.dispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, resourceExecutor.GenerateHookRequest())
 	}
 	return res, err
 }
@@ -144,32 +164,39 @@ func dialer(ctx context.Context, addr string) (net.Conn, error) {
 	return (&net.Dialer{}).DialContext(ctx, "unix", addr)
 }
 
-func (c *RuntimeManagerCriServer) initBackendServer(runtimeSockPath, imageSockPath string) error {
+func createRuntimeAndImageClient(runtimeSockPath, imageSockPath string) (runtimeapi.RuntimeServiceClient, runtimeapi.ImageServiceClient, error) {
+	if runtimeSockPath == "" {
+		return nil, nil, fmt.Errorf("must be set remote runtime sock path")
+	}
+
+	if imageSockPath == "" {
+		imageSockPath = runtimeSockPath
+	}
+
 	generateGrpcConn := func(sockPath string) (*grpc.ClientConn, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 		defer cancel()
 		return grpc.DialContext(ctx, sockPath, grpc.WithInsecure(), grpc.WithContextDialer(dialer))
 	}
-	if conn, err := generateGrpcConn(runtimeSockPath); err != nil {
-		klog.Errorf("fail to create runtime service client %v", err)
-		return err
-	} else {
-		c.backendRuntimeServiceClient = runtimeapi.NewRuntimeServiceClient(conn)
-		klog.Infof("success to create runtime client %v", runtimeSockPath)
-	}
-	if conn, err := generateGrpcConn(imageSockPath); err != nil {
-		klog.Errorf("fail to create image service client %v", err)
-		return err
-	} else {
-		c.backendImageServiceClient = runtimeapi.NewImageServiceClient(conn)
-		klog.Infof("success to create image client %v", imageSockPath)
-	}
 
-	return nil
+	runtimeConn, err := generateGrpcConn(runtimeSockPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	runtimeServiceClient := runtimeapi.NewRuntimeServiceClient(runtimeConn)
+
+	imageConn, err := generateGrpcConn(imageSockPath)
+	if err != nil {
+		klog.Errorf("fail to create image service client %v", err)
+		return nil, nil, err
+	}
+	imageServiceClient := runtimeapi.NewImageServiceClient(imageConn)
+
+	return runtimeServiceClient, imageServiceClient, nil
 }
 
 func (c *RuntimeManagerCriServer) failOver() error {
-	podResponse, podErr := c.backendRuntimeServiceClient.ListPodSandbox(context.TODO(), &runtimeapi.ListPodSandboxRequest{})
+	podResponse, podErr := c.runtimeClient.ListPodSandbox(context.TODO(), &runtimeapi.ListPodSandboxRequest{})
 	if podErr != nil {
 		return podErr
 	}
@@ -181,7 +208,7 @@ func (c *RuntimeManagerCriServer) failOver() error {
 		})
 	}
 
-	containerResponse, containerErr := c.backendRuntimeServiceClient.ListContainers(context.TODO(), &runtimeapi.ListContainersRequest{})
+	containerResponse, containerErr := c.runtimeClient.ListContainers(context.TODO(), &runtimeapi.ListContainersRequest{})
 	if containerErr != nil {
 		return containerErr
 	}

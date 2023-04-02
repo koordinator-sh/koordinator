@@ -23,21 +23,21 @@ import (
 )
 
 func (c *RuntimeManagerCriServer) PullImage(ctx context.Context, req *runtimeapi.PullImageRequest) (*runtimeapi.PullImageResponse, error) {
-	return c.backendImageServiceClient.PullImage(ctx, req)
+	return c.imageClient.PullImage(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatusRequest) (*runtimeapi.ImageStatusResponse, error) {
-	return c.backendImageServiceClient.ImageStatus(ctx, req)
+	return c.imageClient.ImageStatus(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) RemoveImage(ctx context.Context, req *runtimeapi.RemoveImageRequest) (*runtimeapi.RemoveImageResponse, error) {
-	return c.backendImageServiceClient.RemoveImage(ctx, req)
+	return c.imageClient.RemoveImage(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) ListImages(ctx context.Context, req *runtimeapi.ListImagesRequest) (*runtimeapi.ListImagesResponse, error) {
-	return c.backendImageServiceClient.ListImages(ctx, req)
+	return c.imageClient.ListImages(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) ImageFsInfo(ctx context.Context, req *runtimeapi.ImageFsInfoRequest) (*runtimeapi.ImageFsInfoResponse, error) {
-	return c.backendImageServiceClient.ImageFsInfo(ctx, req)
+	return c.imageClient.ImageFsInfo(ctx, req)
 }

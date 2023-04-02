@@ -61,6 +61,10 @@ type RuntimeHookClient struct {
 }
 
 func newRuntimeHookClient(sockPath string) (*RuntimeHookClient, error) {
+	if sockPath == "" {
+		return nil, fmt.Errorf("must be set hook sever sock.")
+	}
+
 	client := &RuntimeHookClient{
 		SockPath: sockPath,
 	}

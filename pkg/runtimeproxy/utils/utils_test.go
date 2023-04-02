@@ -83,3 +83,48 @@ func TestMergeMap(t *testing.T) {
 		assert.Equal(t, tt.want, result)
 	}
 }
+
+func TestSkipRuntimeHook(t *testing.T) {
+	type args struct {
+		labels map[string]string
+	}
+
+	tests := []struct {
+		name     string
+		args     args
+		expected bool
+	}{
+		{
+			name: "case1: skip hook server success",
+			args: args{
+				labels: map[string]string{
+					SkipRuntimeHookServer: "true",
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "case2: skip hook server fail",
+			args: args{
+				labels: map[string]string{
+					SkipRuntimeHookServer: "false",
+				},
+			},
+			expected: false,
+		},
+		{
+			name:     "case3: labels args is nil",
+			args:     args{},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			observed := SkipRuntimeHook(tt.args.labels)
+			if observed != tt.expected {
+				t.Errorf("got %v, want: %v", observed, tt.expected)
+			}
+		})
+	}
+}

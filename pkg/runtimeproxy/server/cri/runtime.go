@@ -23,13 +23,13 @@ import (
 )
 
 func (c *RuntimeManagerCriServer) Version(ctx context.Context, req *runtimeapi.VersionRequest) (*runtimeapi.VersionResponse, error) {
-	return c.backendRuntimeServiceClient.Version(ctx, req)
+	return c.runtimeClient.Version(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSandboxRequest) (*runtimeapi.RunPodSandboxResponse, error) {
 	rsp, err := c.interceptRuntimeRequest(RunPodSandbox, ctx, req,
 		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.RunPodSandbox(ctx, req.(*runtimeapi.RunPodSandboxRequest))
+			return c.runtimeClient.RunPodSandbox(ctx, req.(*runtimeapi.RunPodSandboxRequest))
 		})
 	if err != nil {
 		return nil, err
@@ -40,7 +40,7 @@ func (c *RuntimeManagerCriServer) StopPodSandbox(ctx context.Context, req *runti
 
 	rsp, err := c.interceptRuntimeRequest(StopPodSandbox, ctx, req,
 		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.StopPodSandbox(ctx, req.(*runtimeapi.StopPodSandboxRequest))
+			return c.runtimeClient.StopPodSandbox(ctx, req.(*runtimeapi.StopPodSandboxRequest))
 		})
 
 	if err != nil {
@@ -50,21 +50,21 @@ func (c *RuntimeManagerCriServer) StopPodSandbox(ctx context.Context, req *runti
 }
 
 func (c *RuntimeManagerCriServer) RemovePodSandbox(ctx context.Context, req *runtimeapi.RemovePodSandboxRequest) (*runtimeapi.RemovePodSandboxResponse, error) {
-	return c.backendRuntimeServiceClient.RemovePodSandbox(ctx, req)
+	return c.runtimeClient.RemovePodSandbox(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) PodSandboxStatus(ctx context.Context, req *runtimeapi.PodSandboxStatusRequest) (*runtimeapi.PodSandboxStatusResponse, error) {
-	return c.backendRuntimeServiceClient.PodSandboxStatus(ctx, req)
+	return c.runtimeClient.PodSandboxStatus(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) ListPodSandbox(ctx context.Context, req *runtimeapi.ListPodSandboxRequest) (*runtimeapi.ListPodSandboxResponse, error) {
-	return c.backendRuntimeServiceClient.ListPodSandbox(ctx, req)
+	return c.runtimeClient.ListPodSandbox(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) CreateContainer(ctx context.Context, req *runtimeapi.CreateContainerRequest) (*runtimeapi.CreateContainerResponse, error) {
 	rsp, err := c.interceptRuntimeRequest(CreateContainer, ctx, req,
 		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.CreateContainer(ctx, req.(*runtimeapi.CreateContainerRequest))
+			return c.runtimeClient.CreateContainer(ctx, req.(*runtimeapi.CreateContainerRequest))
 		})
 	if err != nil {
 		return nil, err
@@ -75,7 +75,7 @@ func (c *RuntimeManagerCriServer) CreateContainer(ctx context.Context, req *runt
 func (c *RuntimeManagerCriServer) StartContainer(ctx context.Context, req *runtimeapi.StartContainerRequest) (*runtimeapi.StartContainerResponse, error) {
 	rsp, err := c.interceptRuntimeRequest(StartContainer, ctx, req,
 		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.StartContainer(ctx, req.(*runtimeapi.StartContainerRequest))
+			return c.runtimeClient.StartContainer(ctx, req.(*runtimeapi.StartContainerRequest))
 		})
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func (c *RuntimeManagerCriServer) StartContainer(ctx context.Context, req *runti
 func (c *RuntimeManagerCriServer) StopContainer(ctx context.Context, req *runtimeapi.StopContainerRequest) (*runtimeapi.StopContainerResponse, error) {
 	rsp, err := c.interceptRuntimeRequest(StopContainer, ctx, req,
 		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.StopContainer(ctx, req.(*runtimeapi.StopContainerRequest))
+			return c.runtimeClient.StopContainer(ctx, req.(*runtimeapi.StopContainerRequest))
 		})
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func (c *RuntimeManagerCriServer) StopContainer(ctx context.Context, req *runtim
 func (c *RuntimeManagerCriServer) RemoveContainer(ctx context.Context, req *runtimeapi.RemoveContainerRequest) (*runtimeapi.RemoveContainerResponse, error) {
 	rsp, err := c.interceptRuntimeRequest(RemoveContainer, ctx, req,
 		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.RemoveContainer(ctx, req.(*runtimeapi.RemoveContainerRequest))
+			return c.runtimeClient.RemoveContainer(ctx, req.(*runtimeapi.RemoveContainerRequest))
 		})
 	if err != nil {
 		return nil, err
@@ -106,17 +106,17 @@ func (c *RuntimeManagerCriServer) RemoveContainer(ctx context.Context, req *runt
 }
 
 func (c *RuntimeManagerCriServer) ContainerStatus(ctx context.Context, req *runtimeapi.ContainerStatusRequest) (*runtimeapi.ContainerStatusResponse, error) {
-	return c.backendRuntimeServiceClient.ContainerStatus(ctx, req)
+	return c.runtimeClient.ContainerStatus(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) ListContainers(ctx context.Context, req *runtimeapi.ListContainersRequest) (*runtimeapi.ListContainersResponse, error) {
-	return c.backendRuntimeServiceClient.ListContainers(ctx, req)
+	return c.runtimeClient.ListContainers(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) UpdateContainerResources(ctx context.Context, req *runtimeapi.UpdateContainerResourcesRequest) (*runtimeapi.UpdateContainerResourcesResponse, error) {
 	rsp, err := c.interceptRuntimeRequest(UpdateContainerResources, ctx, req,
 		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.UpdateContainerResources(ctx, req.(*runtimeapi.UpdateContainerResourcesRequest))
+			return c.runtimeClient.UpdateContainerResources(ctx, req.(*runtimeapi.UpdateContainerResourcesRequest))
 		})
 	if err != nil {
 		return nil, err
@@ -125,34 +125,34 @@ func (c *RuntimeManagerCriServer) UpdateContainerResources(ctx context.Context, 
 }
 
 func (c *RuntimeManagerCriServer) ContainerStats(ctx context.Context, req *runtimeapi.ContainerStatsRequest) (*runtimeapi.ContainerStatsResponse, error) {
-	return c.backendRuntimeServiceClient.ContainerStats(ctx, req)
+	return c.runtimeClient.ContainerStats(ctx, req)
 }
 func (c *RuntimeManagerCriServer) ListContainerStats(ctx context.Context, req *runtimeapi.ListContainerStatsRequest) (*runtimeapi.ListContainerStatsResponse, error) {
-	return c.backendRuntimeServiceClient.ListContainerStats(ctx, req)
+	return c.runtimeClient.ListContainerStats(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) Status(ctx context.Context, req *runtimeapi.StatusRequest) (*runtimeapi.StatusResponse, error) {
-	return c.backendRuntimeServiceClient.Status(ctx, req)
+	return c.runtimeClient.Status(ctx, req)
 }
 
 func (c *RuntimeManagerCriServer) ReopenContainerLog(ctx context.Context, in *runtimeapi.ReopenContainerLogRequest) (*runtimeapi.ReopenContainerLogResponse, error) {
-	return c.backendRuntimeServiceClient.ReopenContainerLog(ctx, in)
+	return c.runtimeClient.ReopenContainerLog(ctx, in)
 }
 func (c *RuntimeManagerCriServer) ExecSync(ctx context.Context, in *runtimeapi.ExecSyncRequest) (*runtimeapi.ExecSyncResponse, error) {
-	return c.backendRuntimeServiceClient.ExecSync(ctx, in)
+	return c.runtimeClient.ExecSync(ctx, in)
 }
 func (c *RuntimeManagerCriServer) Exec(ctx context.Context, in *runtimeapi.ExecRequest) (*runtimeapi.ExecResponse, error) {
-	return c.backendRuntimeServiceClient.Exec(ctx, in)
+	return c.runtimeClient.Exec(ctx, in)
 }
 
 func (c *RuntimeManagerCriServer) Attach(ctx context.Context, in *runtimeapi.AttachRequest) (*runtimeapi.AttachResponse, error) {
-	return c.backendRuntimeServiceClient.Attach(ctx, in)
+	return c.runtimeClient.Attach(ctx, in)
 }
 
 func (c *RuntimeManagerCriServer) PortForward(ctx context.Context, in *runtimeapi.PortForwardRequest) (*runtimeapi.PortForwardResponse, error) {
-	return c.backendRuntimeServiceClient.PortForward(ctx, in)
+	return c.runtimeClient.PortForward(ctx, in)
 }
 
 func (c *RuntimeManagerCriServer) UpdateRuntimeConfig(ctx context.Context, in *runtimeapi.UpdateRuntimeConfigRequest) (*runtimeapi.UpdateRuntimeConfigResponse, error) {
-	return c.backendRuntimeServiceClient.UpdateRuntimeConfig(ctx, in)
+	return c.runtimeClient.UpdateRuntimeConfig(ctx, in)
 }

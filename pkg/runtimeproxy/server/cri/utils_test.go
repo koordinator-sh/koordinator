@@ -15,22 +15,3 @@ limitations under the License.
 */
 
 package cri
-
-type ServiceType int
-
-const (
-	RuntimeService ServiceType = iota
-	ImageService
-)
-
-type RuntimeServiceType int
-
-const (
-	RunPodSandbox RuntimeServiceType = iota
-	StopPodSandbox
-	CreateContainer
-	StartContainer
-	StopContainer
-	RemoveContainer
-	UpdateContainerResources
-)

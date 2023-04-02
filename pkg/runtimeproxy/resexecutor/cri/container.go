@@ -25,7 +25,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
-	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/options"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
 )
@@ -106,7 +105,7 @@ func (c *ContainerResourceExecutor) ParseRequest(req interface{}) (utils.CallHoo
 	if err != nil {
 		return utils.Unknown, err
 	}
-	if exist := IsKeyValExistInLabels(c.GetPodLabels(), options.RuntimeHookServerKey, options.RuntimeHookServerVal); exist {
+	if exist := IsKeyValExistInLabels(c.GetPodLabels(), utils.SkipRuntimeHookServer, "true"); exist {
 		return utils.ShouldNotCallHookPluginAlways, nil
 	}
 	return utils.ShouldCallHookPlugin, nil

@@ -14,23 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package cri
+package options
 
-type ServiceType int
+import (
+	"flag"
+	"os"
 
-const (
-	RuntimeService ServiceType = iota
-	ImageService
+	"github.com/spf13/pflag"
+	"k8s.io/klog/v2"
 )
 
-type RuntimeServiceType int
+// Add used to add klog flags to specified flag set.
+func AddKlogFlags(fs *pflag.FlagSet) {
+	// Since klog only accepts golang flag set, so introduce a shim here.
+	flagSetShim := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	klog.InitFlags(flagSetShim)
 
-const (
-	RunPodSandbox RuntimeServiceType = iota
-	StopPodSandbox
-	CreateContainer
-	StartContainer
-	StopContainer
-	RemoveContainer
-	UpdateContainerResources
-)
+	fs.AddGoFlagSet(flagSetShim)
+}

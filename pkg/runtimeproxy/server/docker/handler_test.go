@@ -29,9 +29,17 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/app/options"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/types"
 	"github.com/koordinator-sh/koordinator/pkg/util/httputil"
 )
+
+var fakeProxyConfig = &config.Config{
+	RuntimeProxyEndpoint:         options.DefaultRuntimeProxyEndpoint,
+	RemoteRuntimeServiceEndpoint: options.BackendRuntimeModeContainerd,
+	RemoteImageServiceEndpoint:   options.DefaultContainerdImageServiceEndpoint,
+}
 
 func Test_CreateContainer(t *testing.T) {
 	// create docker reverse proxy
@@ -48,7 +56,10 @@ func Test_CreateContainer(t *testing.T) {
 	}
 	proxyHandler := httputil.NewSingleHostReverseProxy(backendURL)
 	proxyHandler.ErrorLog = log.New(io.Discard, "", 0) // quiet for tests
-	manager := NewRuntimeManagerDockerServer()
+	manager, err := NewRuntimeManagerDockerdServer(fakeProxyConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 	manager.reverseProxy = proxyHandler
 
 	frontend := httptest.NewServer(manager)
@@ -103,7 +114,10 @@ func Test_StopContainer(t *testing.T) {
 	}
 	proxyHandler := httputil.NewSingleHostReverseProxy(backendURL)
 	proxyHandler.ErrorLog = log.New(io.Discard, "", 0) // quiet for tests
-	manager := NewRuntimeManagerDockerServer()
+	manager, err := NewRuntimeManagerDockerdServer(fakeProxyConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 	manager.reverseProxy = proxyHandler
 
 	frontend := httptest.NewServer(manager)
@@ -167,7 +181,10 @@ func Test_StartContainer(t *testing.T) {
 	}
 	proxyHandler := httputil.NewSingleHostReverseProxy(backendURL)
 	proxyHandler.ErrorLog = log.New(io.Discard, "", 0) // quiet for tests
-	manager := NewRuntimeManagerDockerServer()
+	manager, err := NewRuntimeManagerDockerdServer(fakeProxyConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 	manager.reverseProxy = proxyHandler
 
 	frontend := httptest.NewServer(manager)
@@ -228,7 +245,10 @@ func Test_StopContainerError(t *testing.T) {
 	}
 	proxyHandler := httputil.NewSingleHostReverseProxy(backendURL)
 	proxyHandler.ErrorLog = log.New(io.Discard, "", 0) // quiet for tests
-	manager := NewRuntimeManagerDockerServer()
+	manager, err := NewRuntimeManagerDockerdServer(fakeProxyConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 	manager.reverseProxy = proxyHandler
 
 	frontend := httptest.NewServer(manager)
@@ -258,7 +278,10 @@ func Test_UpdateContainer(t *testing.T) {
 	}
 	proxyHandler := httputil.NewSingleHostReverseProxy(backendURL)
 	proxyHandler.ErrorLog = log.New(io.Discard, "", 0) // quiet for tests
-	manager := NewRuntimeManagerDockerServer()
+	manager, err := NewRuntimeManagerDockerdServer(fakeProxyConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 	manager.reverseProxy = proxyHandler
 
 	frontend := httptest.NewServer(manager)

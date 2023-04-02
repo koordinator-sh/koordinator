@@ -33,6 +33,7 @@ import (
 	resource_executor "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/resexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/types"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/store"
+	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
 )
 
 func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, wr http.ResponseWriter, req *http.Request) {
@@ -102,7 +103,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 		}
 		hookReq = podInfo.GetPodSandboxHookRequest()
 	}
-	if types.SkipRuntimeHook(podInfo.Labels) {
+	if utils.SkipRuntimeHook(podInfo.Labels) {
 		runtimeHookPath = config.NoneRuntimeHookPath
 	}
 
@@ -184,7 +185,7 @@ func (d *RuntimeManagerDockerServer) HandleStartContainer(ctx context.Context, w
 	runtimeHookPath := config.NoneRuntimeHookPath
 	var hookReq interface{}
 	if containerMeta != nil {
-		if !types.SkipRuntimeHook(containerMeta.PodLabels) {
+		if !utils.SkipRuntimeHook(containerMeta.PodLabels) {
 			runtimeHookPath = config.StartContainer
 			hookReq = containerMeta.GetContainerResourceHookRequest()
 		}
@@ -220,7 +221,7 @@ func (d *RuntimeManagerDockerServer) HandleStopContainer(ctx context.Context, wr
 	var hookReq interface{}
 	containerMeta := store.GetContainerInfo(containerID)
 	if containerMeta != nil {
-		if !types.SkipRuntimeHook(containerMeta.PodLabels) {
+		if !utils.SkipRuntimeHook(containerMeta.PodLabels) {
 			runtimeHookPath = config.StopContainer
 			hookReq = containerMeta.GetContainerResourceHookRequest()
 		}
@@ -232,7 +233,7 @@ func (d *RuntimeManagerDockerServer) HandleStopContainer(ctx context.Context, wr
 			http.Error(wr, fmt.Sprintf("No such container: %s", containerID), http.StatusInternalServerError)
 			return
 		}
-		if !types.SkipRuntimeHook(podInfo.Labels) {
+		if !utils.SkipRuntimeHook(podInfo.Labels) {
 			runtimeHookPath = config.StopPodSandbox
 			hookReq = podInfo.GetPodSandboxHookRequest()
 		}
@@ -278,7 +279,7 @@ func (d *RuntimeManagerDockerServer) HandleUpdateContainer(ctx context.Context, 
 	containerMeta := store.GetContainerInfo(containerID)
 	runtimeHookPath := config.NoneRuntimeHookPath
 	if containerMeta != nil {
-		if !types.SkipRuntimeHook(containerMeta.PodLabels) {
+		if !utils.SkipRuntimeHook(containerMeta.PodLabels) {
 			runtimeHookPath = config.UpdateContainerResources
 			hookReq = containerMeta.GetContainerResourceHookRequest()
 		}
