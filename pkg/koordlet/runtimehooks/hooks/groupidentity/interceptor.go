@@ -35,16 +35,12 @@ func (b *bvtPlugin) SetPodBvtValue(p protocol.HooksProtocol) error {
 		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
 		return nil
 	}
-	enable, err := b.initialize()
+	err := b.initialize()
 	if err != nil {
 		klog.V(4).Infof("failed to initialize plugin %s, err: %s", name, err)
 		return nil
 	}
-	// skip if the feature is disabled by the kernel config
-	if !enable && b.hasKernelEnable() {
-		klog.V(5).Infof("skip for pod since hook plugin %s has been disabled by kernel config", name)
-		return nil
-	}
+
 	podCtx := p.(*protocol.PodContext)
 	req := podCtx.Request
 	podQOS := ext.GetQoSClassByAttrs(req.Labels, req.Annotations)
@@ -64,16 +60,12 @@ func (b *bvtPlugin) SetKubeQOSBvtValue(p protocol.HooksProtocol) error {
 		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
 		return nil
 	}
-	enable, err := b.initialize()
+	err := b.initialize()
 	if err != nil {
 		klog.V(4).Infof("failed to initialize plugin %s, err: %s", name, err)
 		return nil
 	}
-	// skip if the feature is disabled by the kernel config
-	if !enable && b.hasKernelEnable() {
-		klog.V(5).Infof("skip for qos since hook plugin %s has been disabled by kernel config", name)
-		return nil
-	}
+
 	kubeQOSCtx := p.(*protocol.KubeQOSContext)
 	req := kubeQOSCtx.Request
 	bvtValue := r.getKubeQOSDirBvtValue(req.KubeQOSClass)

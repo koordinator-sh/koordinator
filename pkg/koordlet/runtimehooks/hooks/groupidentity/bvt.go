@@ -85,35 +85,33 @@ func (b *bvtPlugin) hasKernelEnable() bool {
 	return *b.hasKernelEnabled
 }
 
-// initKernelEnable checks if the kernel supports sysctl configuration for bvt (group identity).
-// It returns:
-// 1. whether the feature is enabled after initialization (set sysctl config if the kernel supports)
-// 2. any error for the initialization
-func (b *bvtPlugin) initialize() (bool, error) {
+// initKernelEnable checks and initializes the sysctl configuration for the bvt (group identity).
+// It returns any error for the initialization.
+func (b *bvtPlugin) initialize() error {
 	// NOTE: bvt (group identity) is supported and can be initialized in the system if:
 	// 1. anolis os kernel (<26.4): cgroup cpu.bvt_warp_ns exists but sysctl kernel.sched_group_identity_enabled no exist,
 	//    the bvt feature is enabled by default, no need to set sysctl.
 	// 2. anolis os kernel (>=26.4): both cgroup cpu.bvt_warp_ns and sysctl kernel.sched_group_identity_enabled exist,
 	//    the bvt feature is enabled when kernel.sched_group_identity_enabled is set as `1`.
-	enable := b.getRule().getEnable()
-	if !b.hasKernelEnable() {
-		return enable, nil
+	if !b.hasKernelEnable() { // skip initialization of kernel does not support bvt sysctl
+		return nil
 	}
 
 	// if cpu qos is enabled/disabled in rule, check if we need to change the sysctl config for bvt (group identity)
-	if b.kernelEnabled != nil && *b.kernelEnabled == enable {
-		klog.V(6).Infof("skip initialize bvt to %v, hook plugin rule not change", enable)
-		return enable, nil
+	if b.kernelEnabled != nil && *b.kernelEnabled {
+		klog.V(6).Infof("skip initialize plugin %s, no need to change sysctl", name)
+		return nil
 	}
 
-	// try to set bvt kernel enabled via sysctl
-	err := sysutil.SetSchedGroupIdentity(enable)
+	// try to set bvt kernel enabled via sysctl when the sysctl config is disabled or unknown
+	err := sysutil.SetSchedGroupIdentity(true)
 	if err != nil {
-		return false, fmt.Errorf("cannot enable kernel sysctl for bvt, err: %v", err)
+		return fmt.Errorf("cannot enable kernel sysctl for bvt, err: %v", err)
 	}
-	b.kernelEnabled = pointer.BoolPtr(enable)
-	klog.V(4).Infof("hook plugin %s is successfully initialized to %v", name, enable)
-	return enable, nil
+	b.kernelEnabled = pointer.BoolPtr(true)
+	klog.V(4).Infof("hook plugin %s is successfully initialized", name)
+
+	return nil
 }
 
 var singleton *bvtPlugin

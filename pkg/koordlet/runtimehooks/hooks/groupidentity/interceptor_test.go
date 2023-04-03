@@ -186,7 +186,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			},
 		},
 		{
-			name: "skip set guaranteed dir bvt since kernel sysctl not changed",
+			name: "set guaranteed bvt none while kernel sysctl changed",
 			fields: fields{
 				rule:                         noneRule,
 				systemSupported:              pointer.BoolPtr(true),
@@ -203,7 +203,28 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 				response: &runtimeapi.PodSandboxHookResponse{},
 			},
 			want: want{
-				bvtValue: nil,
+				bvtValue: pointer.Int64(0),
+			},
+		},
+		{
+			name: "set besteffort bvt while kernel sysctl not changed",
+			fields: fields{
+				rule:                         defaultRule,
+				systemSupported:              pointer.BoolPtr(true),
+				initKernelGroupIdentity:      true,
+				initKernelGroupIdentityValue: 1,
+			},
+			args: args{
+				request: &runtimeapi.PodSandboxHookRequest{
+					Labels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSBE),
+					},
+					CgroupParent: "kubepods/besteffort/pod-besteffort-test-uid/",
+				},
+				response: &runtimeapi.PodSandboxHookResponse{},
+			},
+			want: want{
+				bvtValue: pointer.Int64(-1),
 			},
 		},
 		{
@@ -242,7 +263,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 				executor:         resourceexecutor.NewResourceUpdateExecutor(),
 			}
 			stop := make(chan struct{})
-			defer func() { close(stop) }()
+			defer close(stop)
 			b.executor.Run(stop)
 
 			ctx := &protocol.PodContext{}
@@ -399,7 +420,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			},
 		},
 		{
-			name: "skip set guaranteed dir bvt since kernel sysctl not changed",
+			name: "set guaranteed bvt none while kernel sysctl changed",
 			fields: fields{
 				rule:                         noneRule,
 				sysSupported:                 pointer.BoolPtr(true),
@@ -410,7 +431,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 				kubeQOS: corev1.PodQOSGuaranteed,
 			},
 			want: want{
-				bvtValue: nil,
+				bvtValue: pointer.Int64(0),
 			},
 		},
 		{
@@ -444,9 +465,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 				executor:         resourceexecutor.NewResourceUpdateExecutor(),
 			}
 			stop := make(chan struct{})
-			defer func() {
-				close(stop)
-			}()
+			defer close(stop)
 			b.executor.Run(stop)
 
 			ctx := &protocol.KubeQOSContext{}

@@ -40,6 +40,11 @@ func initKernelGroupIdentity(value int64, helper *system.FileTestUtil) {
 	helper.WriteProcSubFileContents(filepath.Join(system.SysctlSubDir, system.KernelSchedGroupIdentityEnable), strconv.FormatInt(value, 10))
 }
 
+func getKernelGroupIdentity(helper *system.FileTestUtil) (int64, error) {
+	valueStr := helper.ReadProcSubFileContents(filepath.Join(system.SysctlSubDir, system.KernelSchedGroupIdentityEnable))
+	return strconv.ParseInt(valueStr, 10, 64)
+}
+
 func getPodCPUBvt(podDirWithKube string, helper *system.FileTestUtil) int64 {
 	valueStr := helper.ReadCgroupFileContents(podDirWithKube, system.CPUBVTWarpNs)
 	value, _ := strconv.ParseInt(valueStr, 10, 64)
@@ -122,29 +127,28 @@ func Test_bvtPlugin_initialized(t *testing.T) {
 		kernelEnabled                *bool
 	}
 	tests := []struct {
-		name    string
-		fields  fields
-		want    bool
-		wantErr bool
+		name       string
+		fields     fields
+		wantErr    bool
+		wantFields *int64
 	}{
 		{
-			name:   "cannot initialize since system not support",
-			fields: fields{},
-			want:   false,
+			name:    "cannot initialize since system not support",
+			fields:  fields{},
+			wantErr: false,
 		},
 		{
 			name: "no need to initialize",
 			fields: fields{
 				hasKernelEnable: pointer.Bool(false),
 			},
-			want: false,
+			wantErr: false,
 		},
 		{
 			name: "failed to initialize",
 			fields: fields{
 				hasKernelEnable: pointer.Bool(true),
 			},
-			want:    false,
 			wantErr: true,
 		},
 		{
@@ -152,7 +156,7 @@ func Test_bvtPlugin_initialized(t *testing.T) {
 			fields: fields{
 				initPath: &kubeRootDir,
 			},
-			want: false,
+			wantErr: false,
 		},
 		{
 			name: "initialized since bvt kernel file exist",
@@ -163,7 +167,7 @@ func Test_bvtPlugin_initialized(t *testing.T) {
 					enable: true,
 				},
 			},
-			want: true,
+			wantFields: pointer.Int64(1),
 		},
 		{
 			name: "initialized since bvt kernel file exist 1",
@@ -174,7 +178,7 @@ func Test_bvtPlugin_initialized(t *testing.T) {
 					enable: true,
 				},
 			},
-			want: true,
+			wantFields: pointer.Int64(1),
 		},
 		{
 			name: "initialized since bvt kernel file exist 2",
@@ -186,7 +190,7 @@ func Test_bvtPlugin_initialized(t *testing.T) {
 					enable: true,
 				},
 			},
-			want: true,
+			wantFields: pointer.Int64(1),
 		},
 		{
 			name: "not initialize since bvt file not exist and cpu qos disabled",
@@ -197,7 +201,7 @@ func Test_bvtPlugin_initialized(t *testing.T) {
 					enable: false,
 				},
 			},
-			want: false,
+			wantFields: pointer.Int64(1),
 		},
 		{
 			name: "skip sysctl set since bvt kernel enable not changed",
@@ -211,7 +215,7 @@ func Test_bvtPlugin_initialized(t *testing.T) {
 				hasKernelEnable: pointer.Bool(true),
 				kernelEnabled:   pointer.Bool(true),
 			},
-			want: true,
+			wantFields: pointer.Int64(0),
 		},
 	}
 	for _, tt := range tests {
@@ -229,9 +233,14 @@ func Test_bvtPlugin_initialized(t *testing.T) {
 				hasKernelEnabled: tt.fields.hasKernelEnable,
 				kernelEnabled:    tt.fields.kernelEnabled,
 			}
-			got, gotErr := b.initialize()
+			gotErr := b.initialize()
 			assert.Equal(t, tt.wantErr, gotErr != nil)
-			assert.Equal(t, tt.want, got)
+
+			if tt.wantFields != nil {
+				got, err := getKernelGroupIdentity(testHelper)
+				assert.NoError(t, err)
+				assert.Equal(t, *tt.wantFields, got)
+			}
 		})
 	}
 }
