@@ -46,13 +46,12 @@ func CreateOrUpdateReservationOptions(job *sev1alpha1.PodMigrationJob, pod *core
 	if reservationOptions.Template == nil {
 		reservationOptions.Template = &sev1alpha1.ReservationTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: pod.Namespace,
-				Name:      string(job.UID),
+				Name: string(job.UID),
 			},
 			Spec: sev1alpha1.ReservationSpec{
 				Template: &corev1.PodTemplateSpec{
-					ObjectMeta: pod.ObjectMeta,
-					Spec:       pod.Spec,
+					ObjectMeta: *pod.ObjectMeta.DeepCopy(),
+					Spec:       *pod.Spec.DeepCopy(),
 				},
 				Owners: GenerateReserveResourceOwners(pod),
 			},
@@ -64,8 +63,8 @@ func CreateOrUpdateReservationOptions(job *sev1alpha1.PodMigrationJob, pod *core
 
 		if reservationOptions.Template.Spec.Template == nil {
 			reservationOptions.Template.Spec.Template = &corev1.PodTemplateSpec{
-				ObjectMeta: pod.ObjectMeta,
-				Spec:       pod.Spec,
+				ObjectMeta: *pod.ObjectMeta.DeepCopy(),
+				Spec:       *pod.Spec.DeepCopy(),
 			}
 		}
 		if len(reservationOptions.Template.Spec.Owners) == 0 {
@@ -89,7 +88,49 @@ func CreateOrUpdateReservationOptions(job *sev1alpha1.PodMigrationJob, pod *core
 		reservationOptions.Template.Spec.TTL = job.Spec.TTL
 	}
 
+	appendSkipNodeAffinity(pod, reservationOptions)
 	return reservationOptions
+}
+
+func appendSkipNodeAffinity(pod *corev1.Pod, reservationOptions *sev1alpha1.PodMigrateReservationOptions) {
+	if pod.Spec.NodeName == "" {
+		return
+	}
+
+	affinity := reservationOptions.Template.Spec.Template.Spec.Affinity
+	if reservationOptions.Template.Spec.Template.Spec.Affinity == nil {
+		affinity = &corev1.Affinity{}
+		reservationOptions.Template.Spec.Template.Spec.Affinity = affinity
+	}
+	if affinity.NodeAffinity == nil {
+		affinity.NodeAffinity = &corev1.NodeAffinity{}
+	}
+	if affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
+		affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution = &corev1.NodeSelector{}
+	}
+
+	skipNodeSelectorRequirement := corev1.NodeSelectorRequirement{
+		Key:      "metadata.name",
+		Operator: corev1.NodeSelectorOpNotIn,
+		Values: []string{
+			pod.Spec.NodeName,
+		},
+	}
+
+	for i := range affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms {
+		term := &affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[i]
+		term.MatchFields = append(term.MatchFields, skipNodeSelectorRequirement)
+	}
+
+	if len(affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms) == 0 {
+		affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms = []corev1.NodeSelectorTerm{
+			{
+				MatchFields: []corev1.NodeSelectorRequirement{
+					skipNodeSelectorRequirement,
+				},
+			},
+		}
+	}
 }
 
 func GenerateReserveResourceOwners(pod *corev1.Pod) []sev1alpha1.ReservationOwner {
