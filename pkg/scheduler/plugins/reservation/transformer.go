@@ -321,6 +321,12 @@ func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, err
 				continue
 			}
 
+			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
+			// but in fact it can no longer be used for allocation. So it's better to skip first.
+			if rInfo.reservation.Spec.AllocateOnce && len(rInfo.pods) > 0 {
+				continue
+			}
+
 			if !isReservedPod && reservationutil.MatchReservationOwners(pod, rInfo.reservation) {
 				matched = append(matched, rInfo)
 			} else {
@@ -333,14 +339,18 @@ func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, err
 			}
 		}
 
-		lock.Lock()
-		if len(matched) > 0 {
-			state.matched[node.Name] = matched
+		// Most scenarios do not have reservations. It is better to check if there is a reservation
+		// before deciding whether to add a lock update, which can reduce race conditions.
+		if len(matched) > 0 || len(unmatched) > 0 {
+			lock.Lock()
+			if len(matched) > 0 {
+				state.matched[node.Name] = matched
+			}
+			if len(unmatched) > 0 {
+				state.unmatched[node.Name] = unmatched
+			}
+			lock.Unlock()
 		}
-		if len(unmatched) > 0 {
-			state.unmatched[node.Name] = unmatched
-		}
-		lock.Unlock()
 
 		if len(matched) == 0 {
 			return
