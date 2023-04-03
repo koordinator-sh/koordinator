@@ -72,7 +72,7 @@ func NewResctrlL3SchemataResource(group, schemataDelta string, l3Num int) Resour
 func NewResctrlMbSchemataResource(group, schemataDelta string, l3Num int) ResourceUpdater {
 	schemataFile := sysutil.ResctrlSchemata.Path(group)
 	mbSchemataKey := sysutil.MbSchemataPrefix + ":" + schemataFile
-	schemata := sysutil.NewResctrlSchemataRaw().WithL3Num(l3Num).WithMBPercent(schemataDelta)
+	schemata := sysutil.NewResctrlSchemataRaw().WithL3Num(l3Num).WithMB(schemataDelta)
 	klog.V(6).Infof("generate new resctrl mba schemata resource, file %s, key %s, value %s",
 		schemataFile, mbSchemataKey, schemata.MBString())
 

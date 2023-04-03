@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +38,7 @@ const cpuCmdTimeout = 3 * time.Second
 type CPUBasicInfo struct {
 	HyperThreadEnabled bool   `json:"hyperThreadEnabled,omitempty"`
 	CatL3CbmMask       string `json:"catL3CbmMask,omitempty"`
+	VendorID           string `json:"vendorID,omitempty"`
 }
 
 // ProcessorInfo describes the processor topology information of a single logic cpu, including the core, socket and numa
@@ -114,6 +116,9 @@ func getCPUBasicInfo() (*CPUBasicInfo, error) {
 	}
 	if cpuBasicInfo.CatL3CbmMask, err = system.ReadCatL3CbmString(); err != nil {
 		klog.V(5).Infof("get l3 cache bit mask error: %v", err)
+	}
+	if cpuBasicInfo.VendorID, err = system.GetVendorIDByCPUInfo(filepath.Join(system.Conf.ProcRootDir, system.CPUInfoFileName)); err != nil {
+		klog.V(5).Infof("get cpu vendor error: %v", err)
 	}
 	return cpuBasicInfo, nil
 }

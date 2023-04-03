@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -510,8 +511,8 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(100),
+								CATRangeStartPercent: pointer.Int64(0),
+								CATRangeEndPercent:   pointer.Int64(100),
 							},
 						},
 					},
@@ -531,8 +532,8 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(100),
+								CATRangeStartPercent: pointer.Int64(0),
+								CATRangeEndPercent:   pointer.Int64(100),
 							},
 						},
 					},
@@ -551,8 +552,8 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(100),
+								CATRangeStartPercent: pointer.Int64(0),
+								CATRangeEndPercent:   pointer.Int64(100),
 							},
 						},
 					},
@@ -571,8 +572,8 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(100),
+								CATRangeStartPercent: pointer.Int64(0),
+								CATRangeEndPercent:   pointer.Int64(100),
 							},
 						},
 					},
@@ -591,16 +592,16 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(10),
-								CATRangeEndPercent:   pointer.Int64Ptr(50),
+								CATRangeStartPercent: pointer.Int64(10),
+								CATRangeEndPercent:   pointer.Int64(50),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(100),
+								CATRangeStartPercent: pointer.Int64(0),
+								CATRangeEndPercent:   pointer.Int64(100),
 							},
 						},
 					},
@@ -619,16 +620,16 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					LSRClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(50),
+								CATRangeStartPercent: pointer.Int64(0),
+								CATRangeEndPercent:   pointer.Int64(50),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(100),
+								CATRangeStartPercent: pointer.Int64(0),
+								CATRangeEndPercent:   pointer.Int64(100),
 							},
 						},
 					},
@@ -647,16 +648,16 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(100),
+								CATRangeStartPercent: pointer.Int64(0),
+								CATRangeEndPercent:   pointer.Int64(100),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(10),
-								CATRangeEndPercent:   pointer.Int64Ptr(50),
+								CATRangeStartPercent: pointer.Int64(10),
+								CATRangeEndPercent:   pointer.Int64(50),
 							},
 						},
 					},
@@ -713,9 +714,10 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 
 func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 	type args struct {
-		group       string
-		l3Num       int
-		qosStrategy *slov1alpha1.ResourceQOSStrategy
+		group        string
+		l3Num        int
+		basicCPUInfo koordletutil.CPUBasicInfo
+		qosStrategy  *slov1alpha1.ResourceQOSStrategy
 	}
 	type field struct {
 		invalidPath   bool
@@ -738,13 +740,14 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 		{
 			name: "throw an error for write on invalid path",
 			args: args{
-				group: LSResctrlGroup,
-				l3Num: 2,
+				group:        LSResctrlGroup,
+				l3Num:        2,
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64Ptr(90),
+								MBAPercent: pointer.Int64(90),
 							},
 						},
 					},
@@ -757,13 +760,14 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 		{
 			name: "warning to empty policy",
 			args: args{
-				group: LSResctrlGroup,
-				l3Num: 2,
+				group:        LSResctrlGroup,
+				l3Num:        2,
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64Ptr(90),
+								MBAPercent: pointer.Int64(90),
 							},
 						},
 					},
@@ -773,15 +777,16 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "apply policy correctly",
+			name: "apply policy correctly on intel",
 			args: args{
-				group: LSResctrlGroup,
-				l3Num: 2,
+				group:        LSResctrlGroup,
+				l3Num:        2,
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64Ptr(90),
+								MBAPercent: pointer.Int64(90),
 							},
 						},
 					},
@@ -791,22 +796,68 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "apply policy correctly on amd",
+			field: field{
+				schemataData: []string{"    L3:0=f;1=f;2=f;3=f\n    MB:0=2048;1=2048;2=2048;3=2048"},
+			},
+			args: args{
+				group:        BEResctrlGroup,
+				l3Num:        4,
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					BEClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
+								MBAPercent: pointer.Int64(30),
+							},
+						},
+					},
+				},
+			},
+			// AMDCCDMaxMBGbps*0.3=25*0.8*8*0.3
+			want:    "MB:0=48;1=48;2=48;3=48;\n",
+			wantErr: false,
+		},
+		{
+			name: "apply unlimited policy correctly on amd",
+			field: field{
+				schemataData: []string{"    L3:0=f;1=f;2=f;3=f\n    MB:0=100;1=100;2=100;3=100"},
+			},
+			args: args{
+				group:        BEResctrlGroup,
+				l3Num:        4,
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
+				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
+					BEClass: &slov1alpha1.ResourceQOS{
+						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
+							ResctrlQOS: slov1alpha1.ResctrlQOS{
+								MBAPercent: pointer.Int64(100),
+							},
+						},
+					},
+				},
+			},
+			want:    "MB:0=2048;1=2048;2=2048;3=2048;\n",
+			wantErr: false,
+		},
+		{
 			name: "calculate the policy but no need to update",
 			args: args{
-				group: BEResctrlGroup,
-				l3Num: 2,
+				group:        BEResctrlGroup,
+				l3Num:        2,
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64Ptr(100),
+								MBAPercent: pointer.Int64(100),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64Ptr(90),
+								MBAPercent: pointer.Int64(90),
 							},
 						},
 					},
@@ -822,20 +873,21 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 		{
 			name: "calculate the policy but no need to update 1",
 			args: args{
-				group: BEResctrlGroup,
-				l3Num: 1,
+				group:        BEResctrlGroup,
+				l3Num:        1,
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64Ptr(90),
+								MBAPercent: pointer.Int64(90),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64Ptr(80),
+								MBAPercent: pointer.Int64(80),
 							},
 						},
 					},
@@ -871,7 +923,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			}
 
 			// execute function
-			err = r.calculateAndApplyCatMbPolicyForGroup(tt.args.group, tt.args.l3Num,
+			err = r.calculateAndApplyCatMbPolicyForGroup(tt.args.group, tt.args.l3Num, tt.args.basicCPUInfo,
 				getResourceQOSForResctrlGroup(tt.args.qosStrategy, tt.args.group))
 			assert.Equal(t, tt.wantErr, err != nil)
 
@@ -996,25 +1048,25 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 					LSRClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(100),
+								CATRangeStartPercent: pointer.Int64(0),
+								CATRangeEndPercent:   pointer.Int64(100),
 							},
 						},
 					},
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(100),
-								MBAPercent:           pointer.Int64Ptr(90),
+								CATRangeStartPercent: pointer.Int64(0),
+								CATRangeEndPercent:   pointer.Int64(100),
+								MBAPercent:           pointer.Int64(90),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64Ptr(0),
-								CATRangeEndPercent:   pointer.Int64Ptr(50),
+								CATRangeStartPercent: pointer.Int64(0),
+								CATRangeEndPercent:   pointer.Int64(50),
 							},
 						},
 					},
@@ -1188,24 +1240,24 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 				LSRClass: &slov1alpha1.ResourceQOS{
 					ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 						ResctrlQOS: slov1alpha1.ResctrlQOS{
-							CATRangeStartPercent: pointer.Int64Ptr(0),
-							CATRangeEndPercent:   pointer.Int64Ptr(100),
+							CATRangeStartPercent: pointer.Int64(0),
+							CATRangeEndPercent:   pointer.Int64(100),
 						},
 					},
 				},
 				LSClass: &slov1alpha1.ResourceQOS{
 					ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 						ResctrlQOS: slov1alpha1.ResctrlQOS{
-							CATRangeStartPercent: pointer.Int64Ptr(0),
-							CATRangeEndPercent:   pointer.Int64Ptr(100),
+							CATRangeStartPercent: pointer.Int64(0),
+							CATRangeEndPercent:   pointer.Int64(100),
 						},
 					},
 				},
 				BEClass: &slov1alpha1.ResourceQOS{
 					ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 						ResctrlQOS: slov1alpha1.ResctrlQOS{
-							CATRangeStartPercent: pointer.Int64Ptr(0),
-							CATRangeEndPercent:   pointer.Int64Ptr(30),
+							CATRangeStartPercent: pointer.Int64(0),
+							CATRangeEndPercent:   pointer.Int64(30),
 						},
 					},
 				},
@@ -1304,8 +1356,9 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 
 func Test_calculateMbaPercentForGroup(t *testing.T) {
 	type args struct {
-		group     string
-		mbPercent *int64
+		group        string
+		basicCPUInfo koordletutil.CPUBasicInfo
+		mbPercent    *int64
 	}
 	tests := []struct {
 		name string
@@ -1315,46 +1368,69 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 		{
 			name: "mbPercent not config",
 			args: args{
-				group: "BE",
+				group:        "BE",
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
 			},
 			want: "",
 		},
 		{
 			name: "mbPercent value is invalid,not between (0,100]",
 			args: args{
-				group:     "BE",
-				mbPercent: pointer.Int64Ptr(0),
+				group:        "BE",
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				mbPercent:    pointer.Int64(0),
 			},
 			want: "",
 		},
 		{
 			name: "mbPercent value is invalid,not between (0,100]",
 			args: args{
-				group:     "BE",
-				mbPercent: pointer.Int64Ptr(101),
+				group:        "BE",
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				mbPercent:    pointer.Int64(101),
 			},
 			want: "",
 		},
 		{
 			name: "mbPercent value is invalid, not multiple of 10",
 			args: args{
-				group:     "BE",
-				mbPercent: pointer.Int64Ptr(85),
+				group:        "BE",
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				mbPercent:    pointer.Int64(85),
 			},
 			want: "90",
 		},
 		{
-			name: "mbPercent value is valid",
+			name: "mbPercent value is valid on intel",
 			args: args{
-				group:     "BE",
-				mbPercent: pointer.Int64Ptr(80),
+				group:        "BE",
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				mbPercent:    pointer.Int64(80),
 			},
 			want: "80",
+		},
+		{
+			name: "mbPercent value is valid on amd",
+			args: args{
+				group:        "BE",
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
+				mbPercent:    pointer.Int64(80),
+			},
+			want: strconv.FormatInt(int64(0.8*AMDCCDMaxMBGbps), 10),
+		},
+		{
+			name: "mbPercent value is unlimited on amd",
+			args: args{
+				group:        "BE",
+				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
+				mbPercent:    pointer.Int64(100),
+			},
+			want: AMDCCDUnlimitedMB,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := calculateMbaPercentForGroup(tt.args.group, tt.args.mbPercent)
+			got := calculateMbaPercentForGroup(tt.args.group, tt.args.mbPercent, tt.args.basicCPUInfo)
 			assert.Equal(t, tt.want, got)
 		})
 	}

@@ -125,3 +125,54 @@ func Test_isResctrlAvailableByKernelCmd(t *testing.T) {
 		})
 	}
 }
+
+func TestGetVendorIDByCPUInfo(t *testing.T) {
+	type args struct {
+		content string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "test amd",
+			args: args{
+				content: "vendor_id       : AuthenticAMD\n",
+			},
+			want:    AMD_VENDOR_ID,
+			wantErr: false,
+		},
+		{
+			name: "test amd on one line",
+			args: args{
+				content: "vendor_id       : AuthenticAMD",
+			},
+			want:    AMD_VENDOR_ID,
+			wantErr: false,
+		},
+		{
+			name: "test intel",
+			args: args{
+				content: "vendor_id       : GenuineIntel",
+			},
+			want:    "GenuineIntel",
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			helper.WriteProcSubFileContents("cpuinfo", tt.args.content)
+			got, err := GetVendorIDByCPUInfo(filepath.Join(Conf.ProcRootDir, "cpuinfo"))
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetVendorIDByCPUInfo() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("GetVendorIDByCPUInfo() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

@@ -22,6 +22,7 @@ import (
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -43,6 +44,16 @@ const (
 	BEResctrlGroup = "BE"
 	// UnknownResctrlGroup is the resctrl group which is unknown to reconcile
 	UnknownResctrlGroup = "Unknown"
+
+	// Max memory bandwidth for AMD CPU, Gb/s, since the extreme limit is hard to reach, we set a discount by 0.8
+	// TODO The max memory bandwidth varies across SKU, so koordlet should be aware of the maximum automatically,
+	// or support an configuration list.
+	// Currently, the value is measured on "AMD EPYC(TM) MILAN"
+
+	AMDCCDMaxMBGbps = 25 * 8 * 0.8
+
+	// the AMD CPU use 2048 to express the unlimited memory bandwidth
+	AMDCCDUnlimitedMB = "2048"
 )
 
 var (
@@ -51,17 +62,19 @@ var (
 )
 
 type ResctrlReconcile struct {
-	resManager   *resmanager
-	executor     resourceexecutor.ResourceUpdateExecutor
-	cgroupReader resourceexecutor.CgroupReader
+	resManager    *resmanager
+	executor      resourceexecutor.ResourceUpdateExecutor
+	cgroupReader  resourceexecutor.CgroupReader
+	eventRecorder record.EventRecorder
 }
 
 func NewResctrlReconcile(resManager *resmanager) *ResctrlReconcile {
 	e := resourceexecutor.NewResourceUpdateExecutor()
 	return &ResctrlReconcile{
-		resManager:   resManager,
-		executor:     e,
-		cgroupReader: resManager.cgroupReader,
+		resManager:    resManager,
+		executor:      e,
+		cgroupReader:  resManager.cgroupReader,
+		eventRecorder: resManager.eventRecorder,
 	}
 }
 
@@ -129,7 +142,7 @@ func initCatGroupIfNotExist(group string) error {
 	return nil
 }
 
-func calculateMbaPercentForGroup(group string, mbaPercentConfig *int64) string {
+func calculateMbaPercentForGroup(group string, mbaPercentConfig *int64, cpuBasicInfo koordletutil.CPUBasicInfo) string {
 	if mbaPercentConfig == nil {
 		klog.Warningf("cat MBA will not change, since MBAPercent is nil for group %v, "+
 			"mbaPercentConfig %v", mbaPercentConfig, group)
@@ -142,14 +155,30 @@ func calculateMbaPercentForGroup(group string, mbaPercentConfig *int64) string {
 		return ""
 	}
 
-	if *mbaPercentConfig%10 != 0 {
-		actualPercent := *mbaPercentConfig/10*10 + 10
-		klog.Warningf("cat MBA must multiple of 10, group: %v, mbaPercentConfig is %d, actualMBAPercent will be %d",
-			group, *mbaPercentConfig, actualPercent)
+	if cpuBasicInfo.VendorID == system.AMD_VENDOR_ID {
+		return calculateAMDMba(*mbaPercentConfig)
+	} else {
+		return calculateIntel(*mbaPercentConfig)
+	}
+}
+
+func calculateIntel(mbaPercent int64) string {
+	if mbaPercent%10 != 0 {
+		actualPercent := mbaPercent/10*10 + 10
+		klog.V(4).Infof("cat MBA must multiple of 10, mbaPercentConfig is %d, actualMBAPercent will be %d",
+			mbaPercent, actualPercent)
 		return strconv.FormatInt(actualPercent, 10)
 	}
 
-	return strconv.FormatInt(*mbaPercentConfig, 10)
+	return strconv.FormatInt(mbaPercent, 10)
+}
+
+func calculateAMDMba(mbaPercent int64) string {
+	if mbaPercent == 100 {
+		return AMDCCDUnlimitedMB
+	}
+	mbaLimitValue := float64(AMDCCDMaxMBGbps*mbaPercent) / 100
+	return strconv.FormatInt(int64(mbaLimitValue), 10)
 }
 
 func (r *ResctrlReconcile) getPodCgroupNewTaskIds(podMeta *statesinformer.PodMeta, tasksMap map[int32]struct{}) []int32 {
@@ -230,14 +259,14 @@ func (r *ResctrlReconcile) calculateAndApplyCatL3PolicyForGroup(group string, cb
 	return nil
 }
 
-func (r *ResctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3Num int, resourceQoS *slov1alpha1.ResourceQOS) error {
+func (r *ResctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3Num int, cpuBasicInfo koordletutil.CPUBasicInfo, resourceQoS *slov1alpha1.ResourceQOS) error {
 	if resourceQoS == nil || resourceQoS.ResctrlQOS == nil {
 		klog.Warningf("skipped, since resourceQoS or ResctrlQOS is nil for group %v, "+
 			"resourceQoS %v", resourceQoS, group)
 		return nil
 	}
 
-	memBwPercent := calculateMbaPercentForGroup(group, resourceQoS.ResctrlQOS.MBAPercent)
+	memBwPercent := calculateMbaPercentForGroup(group, resourceQoS.ResctrlQOS.MBAPercent, cpuBasicInfo)
 	if memBwPercent == "" {
 		return nil
 	}
@@ -322,7 +351,7 @@ func (r *ResctrlReconcile) reconcileCatResctrlPolicy(qosStrategy *slov1alpha1.Re
 		if err != nil {
 			klog.Warningf("failed to apply l3 cat policy for group %v, err: %v", group, err)
 		}
-		err = r.calculateAndApplyCatMbPolicyForGroup(group, l3Num, resQoSStrategy)
+		err = r.calculateAndApplyCatMbPolicyForGroup(group, l3Num, nodeCPUInfo.BasicInfo, resQoSStrategy)
 		if err != nil {
 			klog.Warningf("failed to apply cat MB policy for group %v, err: %v", group, err)
 		}
