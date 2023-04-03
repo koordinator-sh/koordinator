@@ -41,8 +41,6 @@ import (
 )
 
 type performanceCollector struct {
-	cpiEnbaled                bool
-	psiEnabled                bool
 	cpiCollectInterval        time.Duration
 	psiCollectInterval        time.Duration
 	collectTimeWindowDuration time.Duration
@@ -55,8 +53,6 @@ type performanceCollector struct {
 
 func New(opt *framework.Options) framework.Collector {
 	return &performanceCollector{
-		cpiEnbaled:                features.DefaultKoordletFeatureGate.Enabled(features.CPICollector),
-		psiEnabled:                features.DefaultKoordletFeatureGate.Enabled(features.PSICollector),
 		cpiCollectInterval:        opt.Config.CPICollectorInterval,
 		psiCollectInterval:        opt.Config.PSICollectorInterval,
 		collectTimeWindowDuration: opt.Config.CPICollectorTimeWindow,
@@ -69,7 +65,7 @@ func New(opt *framework.Options) framework.Collector {
 }
 
 func (p *performanceCollector) Enabled() bool {
-	return p.cpiEnbaled || p.psiEnabled
+	return features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) || features.DefaultKoordletFeatureGate.Enabled(features.PSICollector)
 }
 
 func (p *performanceCollector) Setup(s *framework.Context) {}
@@ -79,23 +75,10 @@ func (p *performanceCollector) Run(stopCh <-chan struct{}) {
 		// Koordlet exit because of statesInformer sync failed.
 		klog.Fatalf("timed out waiting for states informer caches to sync")
 	}
-	if p.psiEnabled {
-		// CgroupV1 psi collector support only on anolis os currently
-		if system.GetCurrentCgroupVersion() == system.CgroupVersionV1 {
-			cpuPressureCheck, _ := system.CPUAcctCPUPressure.IsSupported("")
-			memPressureCheck, _ := system.CPUAcctMemoryPressure.IsSupported("")
-			ioPressureCheck, _ := system.CPUAcctIOPressure.IsSupported("")
-			if !(cpuPressureCheck && memPressureCheck && ioPressureCheck) {
-				klog.V(5).Infof("system now not support psi feature in CgroupV1, please check pressure file exist and readable in cpuacct directory.")
-				return
-			}
-		}
-		go wait.Until(func() {
-			p.collectContainerPSI()
-			p.collectPodPSI()
-		}, p.psiCollectInterval, stopCh)
+	if features.DefaultKoordletFeatureGate.Enabled(features.PSICollector) {
+		p.collectPSI(stopCh)
 	}
-	if p.cpiEnbaled {
+	if features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) {
 		go wait.Until(p.collectContainerCPI, p.cpiCollectInterval, stopCh)
 	}
 }
@@ -311,4 +294,23 @@ func (p *performanceCollector) collectSinglePodPSI(pod *corev1.Pod, podCgroupDir
 		klog.Errorf("insert pod psi metrics failed, err %v", err)
 	}
 	metrics.RecordPodPSI(pod, podPSI)
+}
+
+func (p *performanceCollector) collectPSI(stopCh <-chan struct{}) {
+	// CgroupV1 psi collector support only on anolis os currently
+	if system.GetCurrentCgroupVersion() == system.CgroupVersionV1 {
+		cpuPressureCheck, _ := system.CPUAcctCPUPressure.IsSupported("")
+		memPressureCheck, _ := system.CPUAcctMemoryPressure.IsSupported("")
+		ioPressureCheck, _ := system.CPUAcctIOPressure.IsSupported("")
+		if !(cpuPressureCheck && memPressureCheck && ioPressureCheck) {
+			klog.V(4).Infof("Collect psi failed, system now not support psi feature in CgroupV1, please check pressure file exist and readable in cpuacct directory.")
+			//skip collect psi when system not support
+			p.started.Store(true)
+			return
+		}
+	}
+	go wait.Until(func() {
+		p.collectContainerPSI()
+		p.collectPodPSI()
+	}, p.psiCollectInterval, stopCh)
 }
