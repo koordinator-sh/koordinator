@@ -383,14 +383,18 @@ func newNodeDeviceCache() *nodeDeviceCache {
 }
 
 func (n *nodeDeviceCache) getNodeDevice(nodeName string) *nodeDevice {
-	n.lock.RLock()
-	defer n.lock.RUnlock()
-	return n.nodeDeviceInfos[nodeName]
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	if n.nodeDeviceInfos[nodeName] != nil {
+		return n.nodeDeviceInfos[nodeName]
+	}
+
+	klog.V(5).Infof("node device cache not found, nodeName: %v, createNodeDevice", nodeName)
+	return n.createNodeDevice(nodeName)
 }
 
 func (n *nodeDeviceCache) createNodeDevice(nodeName string) *nodeDevice {
-	n.lock.Lock()
-	defer n.lock.Unlock()
 	n.nodeDeviceInfos[nodeName] = newNodeDevice()
 	return n.nodeDeviceInfos[nodeName]
 }
@@ -410,9 +414,6 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 	}
 
 	info := n.getNodeDevice(nodeName)
-	if info == nil {
-		info = n.createNodeDevice(nodeName)
-	}
 
 	info.lock.Lock()
 	defer info.lock.Unlock()

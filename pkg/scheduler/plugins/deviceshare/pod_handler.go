@@ -61,10 +61,6 @@ func (n *nodeDeviceCache) onPodAdd(obj interface{}) {
 	transformDeviceAllocations(devicesAllocation)
 
 	info := n.getNodeDevice(pod.Spec.NodeName)
-	if info == nil {
-		info = n.createNodeDevice(pod.Spec.NodeName)
-		klog.V(5).Infof("node device cache not found, nodeName: %v, pod: %v, createNodeDevice", pod.Spec.NodeName, klog.KObj(pod))
-	}
 
 	info.lock.Lock()
 	defer info.lock.Unlock()
