@@ -183,7 +183,7 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, p
 		return nil
 	}
 
-	nd := p.nodeDeviceCache.getNodeDevice(podInfoToAdd.Pod.Spec.NodeName)
+	nd := p.nodeDeviceCache.getNodeDevice(podInfoToAdd.Pod.Spec.NodeName, false)
 	if nd == nil {
 		return nil
 	}
@@ -219,7 +219,7 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState
 		return nil
 	}
 
-	nd := p.nodeDeviceCache.getNodeDevice(podInfoToRemove.Pod.Spec.NodeName)
+	nd := p.nodeDeviceCache.getNodeDevice(podInfoToRemove.Pod.Spec.NodeName, false)
 	if nd == nil {
 		return nil
 	}
@@ -249,7 +249,7 @@ func (p *Plugin) RemoveReservation(ctx context.Context, cycleState *framework.Cy
 		return nil
 	}
 
-	nd := p.nodeDeviceCache.getNodeDevice(reservation.Status.NodeName)
+	nd := p.nodeDeviceCache.getNodeDevice(reservation.Status.NodeName, false)
 	if nd == nil {
 		return nil
 	}
@@ -289,7 +289,7 @@ func (p *Plugin) AddPodInReservation(ctx context.Context, cycleState *framework.
 		return nil
 	}
 
-	nd := p.nodeDeviceCache.getNodeDevice(podInfoToAdd.Pod.Spec.NodeName)
+	nd := p.nodeDeviceCache.getNodeDevice(podInfoToAdd.Pod.Spec.NodeName, false)
 	if nd == nil {
 		return nil
 	}
@@ -326,7 +326,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return framework.NewStatus(framework.Error, "node not found")
 	}
 
-	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(node.Name)
+	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(node.Name, false)
 	if nodeDeviceInfo == nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
 	}
@@ -359,7 +359,7 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 		return nil
 	}
 
-	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName)
+	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
 	if nodeDeviceInfo == nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
 	}
@@ -386,7 +386,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
-	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName)
+	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
 	if nodeDeviceInfo == nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
 	}
@@ -431,7 +431,7 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 		return
 	}
 
-	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName)
+	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
 	if nodeDeviceInfo == nil {
 		return
 	}

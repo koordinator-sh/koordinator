@@ -406,7 +406,7 @@ func (n *nodeDevice) tryAllocateDeviceByType(podRequest corev1.ResourceList, dev
 }
 
 type nodeDeviceCache struct {
-	lock sync.RWMutex
+	lock sync.Mutex
 	// nodeDeviceInfos stores nodeDevice for each node
 	// and uses node name as map key.
 	nodeDeviceInfos map[string]*nodeDevice
@@ -418,16 +418,16 @@ func newNodeDeviceCache() *nodeDeviceCache {
 	}
 }
 
-func (n *nodeDeviceCache) getNodeDevice(nodeName string) *nodeDevice {
-	n.lock.RLock()
-	defer n.lock.RUnlock()
-	return n.nodeDeviceInfos[nodeName]
-}
-
-func (n *nodeDeviceCache) createNodeDevice(nodeName string) *nodeDevice {
+func (n *nodeDeviceCache) getNodeDevice(nodeName string, needInit bool) *nodeDevice {
 	n.lock.Lock()
 	defer n.lock.Unlock()
-	n.nodeDeviceInfos[nodeName] = newNodeDevice()
+
+	// getNodeDevice will create new `nodeDevice` if needInit is true and nodeDeviceInfos[nodeName] is nil
+	if n.nodeDeviceInfos[nodeName] == nil && needInit {
+		klog.V(5).Infof("node device cache not found, nodeName: %v, createNodeDevice", nodeName)
+		n.nodeDeviceInfos[nodeName] = newNodeDevice()
+	}
+
 	return n.nodeDeviceInfos[nodeName]
 }
 
@@ -445,10 +445,7 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 		return
 	}
 
-	info := n.getNodeDevice(nodeName)
-	if info == nil {
-		info = n.createNodeDevice(nodeName)
-	}
+	info := n.getNodeDevice(nodeName, true)
 
 	info.lock.Lock()
 	defer info.lock.Unlock()
@@ -474,8 +471,8 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 }
 
 func (n *nodeDeviceCache) getNodeDeviceSummary(nodeName string) (*NodeDeviceSummary, bool) {
-	n.lock.RLock()
-	defer n.lock.RUnlock()
+	n.lock.Lock()
+	defer n.lock.Unlock()
 
 	if _, exist := n.nodeDeviceInfos[nodeName]; !exist {
 		return nil, false
@@ -486,8 +483,8 @@ func (n *nodeDeviceCache) getNodeDeviceSummary(nodeName string) (*NodeDeviceSumm
 }
 
 func (n *nodeDeviceCache) getAllNodeDeviceSummary() map[string]*NodeDeviceSummary {
-	n.lock.RLock()
-	defer n.lock.RUnlock()
+	n.lock.Lock()
+	defer n.lock.Unlock()
 
 	nodeDeviceSummaries := make(map[string]*NodeDeviceSummary)
 	for nodeName, nodeDeviceInfo := range n.nodeDeviceInfos {

@@ -247,7 +247,7 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 			},
 		},
 	})
-	nd := pl.nodeDeviceCache.getNodeDevice("test-node-1")
+	nd := pl.nodeDeviceCache.getNodeDevice("test-node-1", false)
 	allocations := apiext.DeviceAllocations{
 		schedulingv1alpha1.GPU: {
 			{
@@ -356,7 +356,7 @@ func Test_Plugin_ReservationPreFilterExtension(t *testing.T) {
 			},
 		},
 	})
-	nd := pl.nodeDeviceCache.getNodeDevice("test-node-1")
+	nd := pl.nodeDeviceCache.getNodeDevice("test-node-1", false)
 	allocations := apiext.DeviceAllocations{
 		schedulingv1alpha1.GPU: {
 			{
@@ -1304,7 +1304,7 @@ func Test_Plugin_FilterReservation(t *testing.T) {
 			},
 		},
 	})
-	nd := pl.nodeDeviceCache.getNodeDevice("test-node-1")
+	nd := pl.nodeDeviceCache.getNodeDevice("test-node-1", false)
 	allocations := apiext.DeviceAllocations{
 		schedulingv1alpha1.GPU: {
 			{
