@@ -154,8 +154,7 @@ func (pl *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *frame
 	nodeThresholds := getNodeThresholds(nodeUsages, lowThresholds, highThresholds, resourceNames, pl.args.UseDeviationThresholds)
 	lowNodes, sourceNodes := classifyNodes(nodeUsages, nodeThresholds, lowThresholdFilter, highThresholdFilter)
 
-	logUtilizationCriteria("Criteria for a node under low thresholds", lowThresholds, len(lowNodes))
-	logUtilizationCriteria("Criteria for a node above high thresholds", highThresholds, len(sourceNodes))
+	logUtilizationCriteria("Criteria for nodes under low thresholds and above high thresholds", lowThresholds, highThresholds, len(lowNodes), len(sourceNodes), len(nodes))
 
 	if len(lowNodes) == 0 {
 		klog.V(4).InfoS("No nodes are underutilized, nothing to do here, you might tune your thresholds further")
@@ -353,12 +352,15 @@ func filterPods(podSelectors []deschedulerconfig.LowNodeLoadPodSelector) (framew
 	}, nil
 }
 
-func logUtilizationCriteria(message string, thresholds deschedulerconfig.ResourceThresholds, totalNumber int) {
+func logUtilizationCriteria(message string, lowThresholds, highThresholds deschedulerconfig.ResourceThresholds, totalLowNodesNumber, totalHighNodesNumber, totalNumber int) {
 	utilizationCriteria := []interface{}{
+		"nodesUnderLowThresholds", totalLowNodesNumber,
+		"nodesAboveHighThresholds", totalHighNodesNumber,
+		"nodesAppropriately", totalNumber - totalLowNodesNumber - totalHighNodesNumber,
 		"totalNumberOfNodes", totalNumber,
 	}
-	for name := range thresholds {
-		utilizationCriteria = append(utilizationCriteria, string(name), int64(thresholds[name]))
+	for name := range lowThresholds {
+		utilizationCriteria = append(utilizationCriteria, string(name), fmt.Sprintf("%d%%(low)-%d%%(high)", int64(lowThresholds[name]), int64(highThresholds[name])))
 	}
 	klog.InfoS(message, utilizationCriteria...)
 }

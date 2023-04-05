@@ -307,25 +307,25 @@ func evictPods(
 		}
 
 		if !podFilter(pod) {
-			klog.V(4).InfoS("Pod aborted eviction because it was filtered by filters", "pod", klog.KObj(pod))
+			klog.V(4).InfoS("Pod aborted eviction because it was filtered by filters", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node))
 			continue
 		}
 		if dryRun {
-			klog.InfoS("Evict pod in dry run mode", "pod", klog.KObj(pod))
+			klog.InfoS("Evict pod in dry run mode", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node))
 		} else {
 			evictionOptions := framework.EvictOptions{
 				Reason: evictionReasonGenerator(nodeInfo),
 			}
 			if !podEvictor.Evict(ctx, pod, evictionOptions) {
-				klog.InfoS("Failed to Evict Pod", "pod", klog.KObj(pod))
+				klog.InfoS("Failed to Evict Pod", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node))
 				continue
 			}
-			klog.InfoS("Evicted Pod", "pod", klog.KObj(pod))
+			klog.InfoS("Evicted Pod", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node))
 		}
 
 		podMetric := nodeInfo.podMetrics[types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}]
 		if podMetric == nil {
-			klog.V(4).InfoS("Failed to find PodMetric", "pod", klog.KObj(pod))
+			klog.V(4).InfoS("Failed to find PodMetric", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node))
 			continue
 		}
 		for resourceName, availableUsage := range totalAvailableUsages {
