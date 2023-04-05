@@ -248,14 +248,24 @@ func (g *gpuDeviceManager) collectGPUUsage() {
 		})
 
 		klog.V(3).Infof("Found %d processes on device %d\n", len(processesInfos), deviceIndex)
-		for idx, info := range processesInfos {
+		for _, info := range processesInfos {
+			var utilization *nvml.ProcessUtilizationSample
+			for i := range processUtilizations {
+				if processUtilizations[i].Pid == info.Pid {
+					utilization = &processUtilizations[i]
+					break
+				}
+			}
+			if utilization == nil {
+				continue
+			}
 			if _, ok := processesGPUUsages[info.Pid]; !ok {
 				// pid not exist.
 				// init processes gpu metric array.
 				processesGPUUsages[info.Pid] = make([]*rawGPUMetric, g.deviceCount)
 			}
 			processesGPUUsages[info.Pid][deviceIndex] = &rawGPUMetric{
-				SMUtil:     processUtilizations[idx].SmUtil,
+				SMUtil:     utilization.SmUtil,
 				MemoryUsed: info.UsedGpuMemory,
 			}
 		}
