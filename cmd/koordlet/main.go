@@ -20,7 +20,6 @@ import (
 	"flag"
 	"net/http"
 	_ "net/http/pprof"
-	"os"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -35,8 +34,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/config"
 )
-
-func init() {}
 
 func main() {
 	cfg := config.NewConfiguration()
@@ -67,23 +64,20 @@ func main() {
 	}
 
 	// Get a config to talk to the apiserver
-	klog.Info("Setting up client for koordlet")
-	err := cfg.InitClient()
+	klog.Info("Setting up kubeconfig for koordlet")
+	err := cfg.InitKubeConfigForKoordlet(*options.KubeAPIQPS, *options.KubeAPIBurst)
 	if err != nil {
-		klog.Error("Unable to setup client config: ", err)
-		os.Exit(1)
+		klog.Fatalf("Unable to setup kubeconfig: %v", err)
 	}
 
-	// Init config from ConfigMap.
-	if err = cfg.InitFromConfigMap(); err != nil {
-		klog.Error("Unable to init config from ConfigMap: ", err)
-		os.Exit(1)
+	// Init qos manager config from ConfigMap.
+	if err = cfg.InitQosManagerConfigFromConfigMap(); err != nil {
+		klog.Fatalf("Unable to init qos manager config from ConfigMap: %v", err)
 	}
 
 	d, err := agent.NewDaemon(cfg)
 	if err != nil {
-		klog.Error("Unable to setup koordlet daemon: ", err)
-		os.Exit(1)
+		klog.Fatalf("Unable to setup koordlet daemon: %v", err)
 	}
 
 	// Expose the Prometheus http endpoint
