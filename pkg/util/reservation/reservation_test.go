@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/pointer"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
@@ -282,210 +282,189 @@ func TestGetReservationSchedulerName(t *testing.T) {
 	}
 }
 
-func TestIsObjValidActiveReservation(t *testing.T) {
+func Test_matchReservationOwners(t *testing.T) {
+	type args struct {
+		pod *corev1.Pod
+		r   *schedulingv1alpha1.Reservation
+	}
 	tests := []struct {
 		name string
-		arg  interface{}
+		args args
 		want bool
 	}{
 		{
-			name: "valid and active",
-			arg: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "reserve-pod-0",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: "reserve-pod-0",
-						},
+			name: "no owner to match",
+			args: args{
+				pod: &corev1.Pod{},
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: nil,
 					},
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "test-pod-0",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "match objRef",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod-0",
+						Namespace: "test",
+					},
+				},
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Name:      "test-pod-0",
+									Namespace: "test",
+								},
 							},
 						},
 					},
-					TTL: &metav1.Duration{Duration: 30 * time.Minute},
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					Phase:    schedulingv1alpha1.ReservationAvailable,
-					NodeName: "test-node-0",
 				},
 			},
 			want: true,
 		},
 		{
-			name: "valid but not active",
-			arg: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "reserve-pod-0",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: "reserve-pod-0",
-						},
-					},
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "test-pod-0",
+			name: "match controllerRef",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-sts-0-0",
+						Namespace: "test",
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								Name:       "test-sts-0",
+								Controller: pointer.Bool(true),
+								Kind:       "StatefulSet",
+								APIVersion: "apps/v1",
 							},
 						},
 					},
-					TTL: &metav1.Duration{Duration: 30 * time.Minute},
 				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					Phase:    schedulingv1alpha1.ReservationSucceeded,
-					NodeName: "test-node-0",
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Controller: &schedulingv1alpha1.ReservationControllerReference{
+									OwnerReference: metav1.OwnerReference{
+										Name:       "test-sts-0",
+										Controller: pointer.Bool(true),
+									},
+									Namespace: "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "match labels",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod-1",
+						Namespace: "test",
+						Labels: map[string]string{
+							"aaa": "bbb",
+							"ccc": "ddd",
+						},
+					},
+				},
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"aaa": "bbb",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "fail on one term of owner spec",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod-1",
+						Namespace: "test",
+						Labels: map[string]string{
+							"aaa": "bbb",
+							"ccc": "ddd",
+						},
+					},
+				},
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Name: "test-pod-2",
+								},
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"aaa": "bbb",
+										"xxx": "yyy",
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 			want: false,
 		},
 		{
-			name: "invalid",
-			arg: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "reserve-pod-0",
+			name: "match one of owner specs",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod-2",
+						Namespace: "test",
+						Labels: map[string]string{
+							"aaa": "bbb",
+							"ccc": "ddd",
+						},
+					},
 				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "test-pod-0",
+				r: &schedulingv1alpha1.Reservation{
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								Object: &corev1.ObjectReference{
+									Name:      "test-pod-0",
+									Namespace: "test",
+								},
+							},
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"aaa": "bbb",
+									},
+								},
 							},
 						},
 					},
-					TTL: &metav1.Duration{Duration: 30 * time.Minute},
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					Phase: schedulingv1alpha1.ReservationPending,
 				},
 			},
-			want: false,
-		},
-		{
-			name: "invalid 1",
-			arg: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "reserve-pod-0",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: "reserve-pod-0",
-						},
-					},
-					TTL: &metav1.Duration{Duration: 30 * time.Minute},
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					Phase: schedulingv1alpha1.ReservationPending,
-				},
-			},
-			want: false,
+			want: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsObjValidActiveReservation(tt.arg)
+			got := MatchReservationOwners(tt.args.pod, tt.args.r)
 			assert.Equal(t, tt.want, got)
 		})
 	}
-}
-
-var _ cache.ResourceEventHandler = &fakePodHandler{}
-
-type fakePodHandler struct {
-	t *testing.T
-}
-
-func (f *fakePodHandler) OnAdd(obj interface{}) {
-	_, ok := obj.(*corev1.Pod)
-	if !ok {
-		f.t.Errorf("OnAdd got object %T, but not a pod", obj)
-	}
-}
-
-func (f *fakePodHandler) OnUpdate(oldObj, newObj interface{}) {
-	_, ok := oldObj.(*corev1.Pod)
-	if !ok {
-		f.t.Errorf("OnUpdate got old object %T, but not a pod", oldObj)
-	}
-	_, ok = newObj.(*corev1.Pod)
-	if !ok {
-		f.t.Errorf("OnUpdate got new object %T, but not a pod", newObj)
-	}
-}
-
-func (f *fakePodHandler) OnDelete(obj interface{}) {
-	_, ok := obj.(*corev1.Pod)
-	if !ok {
-		f.t.Errorf("OnDelete got object %T, but not a pod", obj)
-	}
-}
-
-func TestReservationToPodEventHandler(t *testing.T) {
-	testReservation := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "reserve-0",
-		},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Owners: []schedulingv1alpha1.ReservationOwner{
-				{
-					Object: &corev1.ObjectReference{
-						Kind: "Pod",
-						Name: "test-pod-0",
-					},
-				},
-			},
-			TTL: &metav1.Duration{Duration: 30 * time.Minute},
-		},
-		Status: schedulingv1alpha1.ReservationStatus{
-			Phase: schedulingv1alpha1.ReservationPending,
-			Conditions: []schedulingv1alpha1.ReservationCondition{
-				{
-					Type:               schedulingv1alpha1.ReservationConditionScheduled,
-					Status:             schedulingv1alpha1.ConditionStatusTrue,
-					Reason:             schedulingv1alpha1.ReasonReservationScheduled,
-					LastProbeTime:      metav1.Now(),
-					LastTransitionTime: metav1.Now(),
-				},
-			},
-		},
-	}
-	testDeletedFinalStateUnknown := cache.DeletedFinalStateUnknown{
-		Key: "reserve-0",
-		Obj: testReservation,
-	}
-	t.Run("test not panic", func(t *testing.T) {
-		h := NewReservationToPodEventHandler(
-			&fakePodHandler{t: t},
-			func(obj interface{}) bool {
-				return true
-			},
-		)
-
-		h.OnAdd(testReservation)
-
-		h.OnUpdate(testReservation, testReservation)
-
-		h.OnDelete(testReservation)
-		h.OnDelete(testDeletedFinalStateUnknown)
-
-		h = NewReservationToPodEventHandler(
-			&fakePodHandler{t: t},
-			func(obj interface{}) bool {
-				return false
-			},
-		)
-
-		h.OnAdd(testReservation)
-		h.OnUpdate(testReservation, testReservation)
-		h.OnDelete(testReservation)
-	})
 }

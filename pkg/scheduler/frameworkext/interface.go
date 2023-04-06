@@ -147,7 +147,9 @@ func (r *nominatedReservationState) Clone() framework.StateData {
 }
 
 func SetNominatedReservation(cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation) {
-	cycleState.Write(nominatedReservationKey, &nominatedReservationState{reservation: reservation})
+	if reservation != nil {
+		cycleState.Write(nominatedReservationKey, &nominatedReservationState{reservation: reservation})
+	}
 }
 
 func GetNominatedReservation(cycleState *framework.CycleState) *schedulingv1alpha1.Reservation {

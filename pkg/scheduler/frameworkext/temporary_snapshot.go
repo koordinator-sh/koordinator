@@ -82,6 +82,11 @@ func (snapshot *TemporarySnapshot) UpdateSnapshot(sharedLister framework.SharedL
 				updateAllLists = true
 				existing = &framework.NodeInfo{}
 				snapshot.nodeInfoMap[np.Name] = existing
+			} else if existing.Generation > 0 && existing.Generation == node.Generation {
+				// NOTE: There is currently no better way to implement incremental updates.
+				// If we directly modify the NodeInfo of TemporarySnapshot during scheduling, we need to set NodeInfo.Generation to -1.
+				// Such cases currently only occur in the Reservation Scheduling.
+				continue
 			}
 			clone := node.Clone()
 			// We track nodes that have pods with affinity, here we check if this node changed its
