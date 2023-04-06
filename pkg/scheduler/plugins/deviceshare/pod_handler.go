@@ -65,11 +65,7 @@ func (n *nodeDeviceCache) onPodAdd(obj interface{}) {
 	}
 	transformDeviceAllocations(devicesAllocation)
 
-	info := n.getNodeDevice(pod.Spec.NodeName)
-	if info == nil {
-		info = n.createNodeDevice(pod.Spec.NodeName)
-		klog.V(5).Infof("node device cache not found, nodeName: %v, pod: %v, createNodeDevice", pod.Spec.NodeName, klog.KObj(pod))
-	}
+	info := n.getNodeDevice(pod.Spec.NodeName, true)
 
 	info.lock.Lock()
 	defer info.lock.Unlock()
@@ -112,7 +108,7 @@ func (n *nodeDeviceCache) onPodDelete(obj interface{}) {
 	}
 	transformDeviceAllocations(devicesAllocation)
 
-	info := n.getNodeDevice(pod.Spec.NodeName)
+	info := n.getNodeDevice(pod.Spec.NodeName, false)
 	if info == nil {
 		klog.Errorf("node device cache not found, nodeName: %v, pod: %v", pod.Spec.NodeName, klog.KObj(pod))
 		return
