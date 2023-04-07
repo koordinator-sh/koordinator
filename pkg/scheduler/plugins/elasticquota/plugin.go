@@ -51,12 +51,14 @@ const (
 )
 
 type PostFilterState struct {
-	quotaInfo *core.QuotaInfo
+	used    corev1.ResourceList
+	runtime corev1.ResourceList
 }
 
 func (p *PostFilterState) Clone() framework.StateData {
 	return &PostFilterState{
-		quotaInfo: p.quotaInfo.DeepCopy(),
+		used:    p.used.DeepCopy(),
+		runtime: p.runtime.DeepCopy(),
 	}
 }
 
@@ -159,25 +161,23 @@ func (g *Plugin) Name() string {
 	return Name
 }
 
-func (g *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) *framework.Status {
+func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
 	quotaName := g.getPodAssociateQuotaName(pod)
 	g.groupQuotaManager.RefreshRuntime(quotaName)
 	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(quotaName)
 	if quotaInfo == nil {
 		return framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))
 	}
-	g.snapshotPostFilterState(quotaName, state)
-	quotaUsed := quotaInfo.GetUsed()
-	quotaRuntime := quotaInfo.GetRuntime()
+	state := g.snapshotPostFilterState(quotaInfo, cycleState)
 
 	pod = core.RunDecoratePod(pod)
 	podRequest, _ := resource.PodRequestsAndLimits(pod)
-	newUsed := quotav1.Add(podRequest, quotaUsed)
+	used := quotav1.Add(podRequest, state.used)
 
-	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(newUsed, quotaRuntime); !isLessEqual {
-		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
+	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.runtime); !isLessEqual {
+		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v",
-			quotaName, printResourceList(quotaRuntime), printResourceList(quotaUsed), printResourceList(podRequest), exceedDimensions))
+			quotaName, printResourceList(state.runtime), printResourceList(state.used), printResourceList(podRequest), exceedDimensions))
 	}
 
 	if *g.pluginArgs.EnableCheckParentQuota {
@@ -203,12 +203,9 @@ func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToS
 		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", postFilterState)
 		return framework.NewStatus(framework.Error, err.Error())
 	}
-	quotaInfo := postFilterState.quotaInfo
-	if err = quotaInfo.UpdatePodIsAssigned(podInfoToAdd.Pod, true); err == nil {
-		pod := core.RunDecoratePod(podInfoToAdd.Pod)
-		podReq, _ := resource.PodRequestsAndLimits(pod)
-		quotaInfo.CalculateInfo.Used = quotav1.Add(quotaInfo.CalculateInfo.Used, podReq)
-	}
+	pod := core.RunDecoratePod(podInfoToAdd.Pod)
+	podReq, _ := resource.PodRequestsAndLimits(pod)
+	postFilterState.used = quotav1.Add(postFilterState.used, podReq)
 	return framework.NewStatus(framework.Success, "")
 }
 
@@ -224,12 +221,9 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", postFilterState)
 		return framework.NewStatus(framework.Error, err.Error())
 	}
-	quotaInfo := postFilterState.quotaInfo
-	if err = quotaInfo.UpdatePodIsAssigned(podInfoToRemove.Pod, false); err == nil {
-		pod := core.RunDecoratePod(podInfoToRemove.Pod)
-		podReq, _ := resource.PodRequestsAndLimits(pod)
-		quotaInfo.CalculateInfo.Used = quotav1.SubtractWithNonNegativeResult(quotaInfo.CalculateInfo.Used, podReq)
-	}
+	pod := core.RunDecoratePod(podInfoToRemove.Pod)
+	podReq, _ := resource.PodRequestsAndLimits(pod)
+	postFilterState.used = quotav1.SubtractWithNonNegativeResult(postFilterState.used, podReq)
 	return framework.NewStatus(framework.Success, "")
 }
 

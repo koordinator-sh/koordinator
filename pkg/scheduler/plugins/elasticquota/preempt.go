@@ -275,7 +275,6 @@ func (g *Plugin) selectVictimsOnNode(
 	violatingVictims, nonViolatingVictims := filterPodsWithPDBViolation(potentialVictims, pdbs)
 
 	postFilterState, _ := getPostFilterState(state)
-	quotaInfo := postFilterState.quotaInfo
 	pod = core.RunDecoratePod(pod)
 	podReq, _ := resource.PodRequestsAndLimits(pod)
 
@@ -294,8 +293,8 @@ func (g *Plugin) selectVictimsOnNode(
 			klog.V(5).InfoS("Pod is a potential preemption victim on node", "pod", klog.KObj(rpi), "node", klog.KObj(nodeInfo.Node()))
 		}
 
-		newUsed := quotav1.Add(quotaInfo.GetUsed(), podReq)
-		if isLessEqual, _ := quotav1.LessThanOrEqual(newUsed, postFilterState.quotaInfo.CalculateInfo.Runtime); !isLessEqual {
+		newUsed := quotav1.Add(postFilterState.used, podReq)
+		if isLessEqual, _ := quotav1.LessThanOrEqual(newUsed, postFilterState.runtime); !isLessEqual {
 			if err := removePod(pi); err != nil {
 				return false, err
 			}
