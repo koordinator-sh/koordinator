@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -38,8 +39,12 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
+	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
@@ -102,22 +107,16 @@ func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 }
 
 type frameworkHandleExtender struct {
-	framework.Handle
+	frameworkext.ExtendedHandle
 	*nrtfake.Clientset
-}
-
-func proxyPluginFactory(fakeClientSet *nrtfake.Clientset, factory runtime.PluginFactory) runtime.PluginFactory {
-	return func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
-		return factory(configuration, &frameworkHandleExtender{
-			Handle:    f,
-			Clientset: fakeClientSet,
-		})
-	}
 }
 
 type pluginTestSuit struct {
 	framework.Handle
+	ExtenderFactory      *frameworkext.FrameworkExtenderFactory
+	Extender             frameworkext.FrameworkExtender
 	NRTClientset         *nrtfake.Clientset
+	KoordClientSet       *koordfake.Clientset
 	proxyNew             runtime.PluginFactory
 	nodeNUMAResourceArgs *schedulingconfig.NodeNUMAResourceArgs
 }
@@ -130,12 +129,24 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 	assert.NoError(t, err)
 
 	nrtClientSet := nrtfake.NewSimpleClientset()
-	proxyNew := proxyPluginFactory(nrtClientSet, New)
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	assert.NoError(t, err)
+
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
+		return New(configuration, &frameworkHandleExtender{
+			ExtendedHandle: f.(frameworkext.ExtendedHandle),
+			Clientset:      nrtClientSet,
+		})
+	})
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		schedulertesting.RegisterPluginAsExtensions(Name, proxyNew, "PreFilter", "Filter", "Score", "Reserve", "PreBind"),
 	}
 
 	cs := kubefake.NewSimpleClientset()
@@ -149,9 +160,15 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 		runtime.WithSnapshotSharedLister(snapshot),
 	)
 	assert.Nil(t, err)
+
+	extender := extenderFactory.NewFrameworkExtender(fh)
+
 	return &pluginTestSuit{
 		Handle:               fh,
+		ExtenderFactory:      extenderFactory,
+		Extender:             extender,
 		NRTClientset:         nrtClientSet,
+		KoordClientSet:       koordClientSet,
 		proxyNew:             proxyNew,
 		nodeNUMAResourceArgs: &nodeNUMAResourceArgs,
 	}
@@ -208,6 +225,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
+				reservedCPUs:           map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
@@ -240,6 +258,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
+				reservedCPUs:           map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
@@ -269,13 +288,15 @@ func TestPlugin_PreFilter(t *testing.T) {
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyDefault},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
+				reservedCPUs:           map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
 			name: "skip cpu share pod",
 			pod:  &corev1.Pod{},
 			wantState: &preFilterState{
-				skip: true,
+				skip:         true,
+				reservedCPUs: map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
@@ -304,7 +325,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				skip: true,
+				skip:         true,
+				reservedCPUs: map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
@@ -323,7 +345,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				skip: true,
+				skip:         true,
+				reservedCPUs: map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 		{
@@ -369,7 +392,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				skip: true,
+				skip:         true,
+				reservedCPUs: map[string]map[types.UID]cpuset.CPUSet{},
 			},
 		},
 	}
@@ -940,6 +964,26 @@ func TestPlugin_Reserve(t *testing.T) {
 			want:          nil,
 			wantCPUSet:    cpuset.NewCPUSet(4, 5, 6, 7),
 		},
+		{
+			name: "succeed allocate from reservation reserved cpus",
+			state: &preFilterState{
+				skip:          false,
+				numCPUsNeeded: 4,
+				resourceSpec: &extension.ResourceSpec{
+					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+				},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				reservedCPUs: map[string]map[types.UID]cpuset.CPUSet{
+					"test-node-1": {
+						uuid.NewUUID(): cpuset.NewCPUSet(4, 5, 6, 7, 8, 9, 10),
+					},
+				},
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantCPUSet:  cpuset.NewCPUSet(4, 5, 6, 7),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -975,6 +1019,11 @@ func TestPlugin_Reserve(t *testing.T) {
 				if len(tt.allocatedCPUs) > 0 {
 					allocationState.addCPUs(tt.cpuTopology, uuid.NewUUID(), cpuset.NewCPUSet(tt.allocatedCPUs...), schedulingconfig.CPUExclusivePolicyNone)
 				}
+				if len(tt.state.reservedCPUs) > 0 {
+					for reservationUID, cpus := range tt.state.reservedCPUs["test-node-1"] {
+						allocationState.addCPUs(tt.cpuTopology, reservationUID, cpus, schedulingconfig.CPUExclusivePolicyNone)
+					}
+				}
 			}
 
 			cpuManager := plg.cpuManager.(*cpuManagerImpl)
@@ -985,6 +1034,16 @@ func TestPlugin_Reserve(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
 				cycleState.Write(stateKey, tt.state)
+				if len(tt.state.reservedCPUs) > 0 {
+					for reservationUID := range tt.state.reservedCPUs["test-node-1"] {
+						frameworkext.SetNominatedReservation(cycleState, &schedulingv1alpha1.Reservation{
+							ObjectMeta: metav1.ObjectMeta{
+								UID:  reservationUID,
+								Name: "test-reservation",
+							},
+						})
+					}
+				}
 			}
 
 			nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get("test-node-1")
@@ -1138,4 +1197,126 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 		PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 	}
 	assert.Equal(t, expectedResourceSpec, resourceSpec)
+}
+
+func TestPlugin_PreBindReservation(t *testing.T) {
+	suit := newPluginTestSuit(t, nil)
+	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	assert.NotNil(t, p)
+	assert.Nil(t, err)
+
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation-1",
+		},
+	}
+
+	_, status := suit.KoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+	assert.Nil(t, status)
+
+	suit.start()
+
+	plg := p.(*Plugin)
+
+	state := &preFilterState{
+		skip:          false,
+		numCPUsNeeded: 4,
+		resourceSpec: &extension.ResourceSpec{
+			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+		},
+		allocatedCPUs: cpuset.NewCPUSet(0, 1, 2, 3),
+	}
+	cycleState := framework.NewCycleState()
+	cycleState.Write(stateKey, state)
+
+	s := plg.PreBindReservation(context.TODO(), cycleState, reservation, "test-node-1")
+	assert.True(t, s.IsSuccess())
+
+	gotReservation, status := suit.KoordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
+	assert.Nil(t, status)
+	assert.NotNil(t, gotReservation)
+	resourceStatus, err := extension.GetResourceStatus(gotReservation.Annotations)
+	assert.NoError(t, err)
+	assert.NotNil(t, resourceStatus)
+	expectResourceStatus := &extension.ResourceStatus{
+		CPUSet: "0-3",
+	}
+	assert.Equal(t, expectResourceStatus, resourceStatus)
+}
+
+func TestReservationPreFilterExtension(t *testing.T) {
+	suit := newPluginTestSuit(t, nil)
+	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	cycleState := framework.NewCycleState()
+	state := &preFilterState{
+		skip:          false,
+		numCPUsNeeded: 4,
+		resourceSpec: &extension.ResourceSpec{
+			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+		},
+		reservedCPUs: map[string]map[types.UID]cpuset.CPUSet{},
+	}
+	cycleState.Write(stateKey, state)
+
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+			UID:  uuid.NewUUID(),
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: "test-node",
+		},
+	}
+	pl.topologyManager.UpdateCPUTopologyOptions("test-node", func(options *CPUTopologyOptions) {
+		options.CPUTopology = buildCPUTopologyForTest(1, 2, 8, 2)
+		options.MaxRefCount = 1
+	})
+	pl.cpuManager.UpdateAllocatedCPUSet("test-node", reservation.UID, cpuset.NewCPUSet(6, 7, 8, 9), schedulingconfig.CPUExclusivePolicyNone)
+
+	podA := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "pod-a",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node",
+		},
+	}
+	podB := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "pod-b",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node",
+		},
+	}
+	pl.cpuManager.UpdateAllocatedCPUSet("test-node", podA.UID, cpuset.NewCPUSet(6, 7), schedulingconfig.CPUExclusivePolicyNone)
+	pl.cpuManager.UpdateAllocatedCPUSet("test-node", podB.UID, cpuset.NewCPUSet(8, 9), schedulingconfig.CPUExclusivePolicyNone)
+
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+	}
+	nodeInfo := framework.NewNodeInfo()
+	nodeInfo.SetNode(node)
+
+	status := pl.RemoveReservation(context.TODO(), cycleState, &corev1.Pod{}, reservation, nodeInfo)
+	assert.True(t, status.IsSuccess())
+	assert.Equal(t, cpuset.NewCPUSet(6, 7, 8, 9), state.reservedCPUs["test-node"][reservation.UID])
+
+	status = pl.AddPodInReservation(context.TODO(), cycleState, &corev1.Pod{}, framework.NewPodInfo(podA), reservation, nodeInfo)
+	assert.True(t, status.IsSuccess())
+	assert.Equal(t, cpuset.NewCPUSet(8, 9), state.reservedCPUs["test-node"][reservation.UID])
+
+	status = pl.AddPodInReservation(context.TODO(), cycleState, &corev1.Pod{}, framework.NewPodInfo(podB), reservation, nodeInfo)
+	assert.True(t, status.IsSuccess())
+	assert.True(t, state.reservedCPUs["test-node"][reservation.UID].IsEmpty())
+	assert.Empty(t, state.reservedCPUs)
 }

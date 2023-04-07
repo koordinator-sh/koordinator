@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -155,18 +156,20 @@ func GetResourceStatus(annotations map[string]string) (*ResourceStatus, error) {
 	return resourceStatus, nil
 }
 
-func SetResourceStatus(pod *corev1.Pod, status *ResourceStatus) error {
-	if pod == nil {
+func SetResourceStatus(obj metav1.Object, status *ResourceStatus) error {
+	if obj == nil {
 		return nil
 	}
-	if pod.Annotations == nil {
-		pod.Annotations = map[string]string{}
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
 	}
 	data, err := json.Marshal(status)
 	if err != nil {
 		return err
 	}
-	pod.Annotations[AnnotationResourceStatus] = string(data)
+	annotations[AnnotationResourceStatus] = string(data)
+	obj.SetAnnotations(annotations)
 	return nil
 }
 
