@@ -17,6 +17,7 @@ limitations under the License.
 package deviceshare
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -280,6 +281,82 @@ func Test_nodeDevice_allocateGPU(t *testing.T) {
 	assert.NoError(t, err)
 	expectAllocations = allocations
 	assert.True(t, equality.Semantic.DeepEqual(expectAllocations, allocateResult))
+}
+
+func Test_nodeDevice_failedPreemptGPUFromReservation(t *testing.T) {
+	nd := newNodeDevice()
+	nd.resetDeviceTotal(map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			1: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+			},
+			2: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+			},
+		},
+		schedulingv1alpha1.RDMA: {
+			1: corev1.ResourceList{
+				apiext.ResourceRDMA: resource.MustParse("100"),
+			},
+			2: corev1.ResourceList{
+				apiext.ResourceRDMA: resource.MustParse("100"),
+			},
+		},
+	})
+
+	allocations := apiext.DeviceAllocations{
+		schedulingv1alpha1.GPU: {
+			{
+				Minor: 1,
+				Resources: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("200"),
+					apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+				},
+			},
+			{
+				Minor: 2,
+				Resources: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("200"),
+					apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+				},
+			},
+		},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod-1",
+		},
+	}
+	nd.updateCacheUsed(allocations, pod, true)
+
+	podRequests := corev1.ResourceList{
+		apiext.ResourceGPUCore:        resource.MustParse("50"),
+		apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+	}
+	preemptible := map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			1: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+			},
+			2: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+			},
+		},
+	}
+	allocateResult, err := nd.tryAllocateDevice(podRequests, preemptible)
+	assert.EqualError(t, err, fmt.Sprintf("node does not have enough %v", schedulingv1alpha1.GPU))
+	assert.Nil(t, allocateResult)
 }
 
 func Test_nodeDevice_allocateGPUWithUnhealthyInstance(t *testing.T) {

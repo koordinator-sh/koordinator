@@ -324,13 +324,18 @@ func (n *nodeDevice) tryAllocateDeviceByType(podRequest corev1.ResourceList, dev
 
 	// freeDevices is the rest of the whole machine, or is the rest of the reservation
 	freeDevices := n.deviceFree[deviceType]
+	deviceUsed := n.deviceUsed[deviceType]
 	// preemptible represent preemptible devices, which may be a complete device instance or part of an instance's resources
 	preemptible := preemptibleDevices[deviceType]
 	var mergedFreeDevices deviceResources
 	if len(preemptible) > 0 {
 		mergedFreeDevices = make(deviceResources)
 		for minor, v := range preemptible {
-			mergedFreeDevices[minor] = v.DeepCopy()
+			used := quotav1.SubtractWithNonNegativeResult(deviceUsed[minor], v)
+			remaining := quotav1.SubtractWithNonNegativeResult(nodeDeviceTotal[minor], used)
+			if !quotav1.IsZero(remaining) {
+				mergedFreeDevices[minor] = remaining
+			}
 		}
 	}
 
