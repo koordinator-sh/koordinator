@@ -32,6 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/nodenumaresource"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/numatopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 
 	// Ensure metric package is initialized
@@ -48,6 +49,7 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	coscheduling.Name:                coscheduling.New,
 	deviceshare.Name:                 deviceshare.New,
 	elasticquota.Name:                elasticquota.New,
+	numatopology.Name:                numatopology.New,
 	compatibledefaultpreemption.Name: compatibledefaultpreemption.New,
 }
 

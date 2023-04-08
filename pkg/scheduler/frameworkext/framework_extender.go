@@ -49,6 +49,8 @@ type frameworkExtenderImpl struct {
 	reservationNominatorPlugins    []ReservationNominator
 	reservationPreBindPlugins      []ReservationPreBindPlugin
 	reservationPreFilterExtensions []ReservationPreFilterExtension
+
+	numaTopologyHintProviders []NUMATopologyHintProvider
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -100,6 +102,9 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	}
 	if r, ok := pl.(ReservationPreFilterExtension); ok {
 		ext.reservationPreFilterExtensions = append(ext.reservationPreFilterExtensions, r)
+	}
+	if p, ok := pl.(NUMATopologyHintProvider); ok {
+		ext.numaTopologyHintProviders = append(ext.numaTopologyHintProviders, p)
 	}
 }
 
@@ -326,4 +331,8 @@ func (ext *frameworkExtenderImpl) RunReservationScorePlugins(ctx context.Context
 	}
 
 	return pluginToReservationScores, nil
+}
+
+func (ext *frameworkExtenderImpl) GetHintProviders() []NUMATopologyHintProvider {
+	return ext.numaTopologyHintProviders
 }

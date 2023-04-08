@@ -25,6 +25,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 )
 
 // ExtendedHandle extends the k8s scheduling framework Handle interface
@@ -167,4 +168,25 @@ func GetNominatedReservation(cycleState *framework.CycleState) *schedulingv1alph
 type ReservationPreBindPlugin interface {
 	framework.Plugin
 	PreBindReservation(ctx context.Context, state *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status
+}
+
+// NUMATopologyHint is a struct containing the NUMANodeAffinity for a Container
+type NUMATopologyHint struct {
+	NUMANodeAffinity bitmask.BitMask
+	// Preferred is set to true when the NUMANodeAffinity encodes a preferred
+	// allocation for the Pod. It is set to false otherwise.
+	Preferred bool
+}
+
+type NUMATopologyHintProvider interface {
+	// GetPodTopologyHints returns a map of resource names to a list of possible
+	// concrete resource allocations per Pod in terms of NUMA locality hints.
+	GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) map[string][]NUMATopologyHint
+	// Allocate triggers resource allocation to occur on the HintProvider after
+	// all hints have been gathered and the aggregated Hint
+	Allocate(ctx context.Context, cycleState *framework.CycleState, affinity NUMATopologyHint, pod *corev1.Pod, nodeName string, assume bool) error
+}
+
+type NUMATopologyHintProviderGetter interface {
+	GetHintProviders() []NUMATopologyHintProvider
 }
