@@ -23,68 +23,75 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
-	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
+	proxyconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
-type Hook struct {
-	name        string
-	stage       rmconfig.RuntimeHookType
-	description string
-	fn          HookFn
-}
+var globalStageHooks map[proxyconfig.RuntimeHookType][]*Hook
 
 type Options struct {
 	Executor resourceexecutor.ResourceUpdateExecutor
 }
 
-type HookFn func(protocol.HooksProtocol) error
-
-var globalStageHooks map[rmconfig.RuntimeHookType][]*Hook
-
-func Register(stage rmconfig.RuntimeHookType, name, description string, hookFn HookFn) *Hook {
-	h, err := generateNewHook(stage, name)
-	if err != nil {
-		klog.Fatalf("hook %s register failed, reason: %v", name, err)
-		return h
-	}
-	klog.V(1).Infof("hook %s is registered", name)
-	h.description = description
-	h.fn = hookFn
-	return h
+type Hook struct {
+	name        string
+	stage       proxyconfig.RuntimeHookType
+	description string
+	fn          HookFn
 }
 
-func generateNewHook(stage rmconfig.RuntimeHookType, name string) (*Hook, error) {
-	stageHooks, stageExist := globalStageHooks[stage]
-	if !stageExist {
-		return nil, fmt.Errorf("stage %s is invalid", stage)
+type HookFn func(protocol.HooksProtocol) error
+
+func init() {
+	globalStageHooks = map[proxyconfig.RuntimeHookType][]*Hook{
+		proxyconfig.PreRunPodSandbox:            make([]*Hook, 0),
+		proxyconfig.PreCreateContainer:          make([]*Hook, 0),
+		proxyconfig.PreStartContainer:           make([]*Hook, 0),
+		proxyconfig.PostStartContainer:          make([]*Hook, 0),
+		proxyconfig.PostStopContainer:           make([]*Hook, 0),
+		proxyconfig.PostStopPodSandbox:          make([]*Hook, 0),
+		proxyconfig.PreUpdateContainerResources: make([]*Hook, 0),
+	}
+}
+
+func Register(stage proxyconfig.RuntimeHookType, name, description string, hookFn HookFn) error {
+	stageHooks, exist := globalStageHooks[stage]
+	if !exist {
+		return fmt.Errorf("stage %s is invalid", stage)
 	}
 
 	for _, hook := range stageHooks {
 		if hook.name == name {
-			return hook, fmt.Errorf("hook %s with stage %s is conflict since already registered", name, stage)
+			return fmt.Errorf("a hook named %v already exists", name)
 		}
 	}
-	newHook := &Hook{name: name, stage: stage}
-	globalStageHooks[stage] = append(globalStageHooks[stage], newHook)
-	return newHook, nil
-}
 
-func getHooksByStage(stage rmconfig.RuntimeHookType) []*Hook {
-	if hooks, exist := globalStageHooks[stage]; exist {
-		return hooks
-	} else {
-		return []*Hook{}
+	h := &Hook{
+		name:        name,
+		stage:       stage,
+		description: description,
+		fn:          hookFn,
 	}
+
+	globalStageHooks[stage] = append(globalStageHooks[stage], h)
+	return nil
 }
 
-func RunHooks(failPolicy rmconfig.FailurePolicyType, stage rmconfig.RuntimeHookType, protocol protocol.HooksProtocol) error {
+func getHooksByStage(stage proxyconfig.RuntimeHookType) []*Hook {
+	hooks, exist := globalStageHooks[stage]
+	if !exist {
+		return nil
+	}
+	return hooks
+}
+
+func RunHooks(failPolicy proxyconfig.FailurePolicyType, stage proxyconfig.RuntimeHookType, protocol protocol.HooksProtocol) error {
 	hooks := getHooksByStage(stage)
-	klog.V(5).Infof("start run %v hooks at %s", len(hooks), stage)
+	klog.Infof("start run %v hooks at %s", len(hooks), stage)
 	for _, hook := range hooks {
-		klog.V(5).Infof("call hook %v", hook.name)
+		klog.V(5).Infof("start calling hook %v at %v stage.", hook.name, stage)
 		if err := hook.fn(protocol); err != nil {
-			klog.Errorf("failed to run hook %s in stage %s, reason: %v", hook.name, stage, err)
-			if failPolicy == rmconfig.PolicyFail {
+			klog.Errorf("failed to run hook %s at stage %s, reason: %v", hook.name, stage, err)
+			if failPolicy == proxyconfig.PolicyFail {
 				return err
 			}
 		}
@@ -92,22 +99,10 @@ func RunHooks(failPolicy rmconfig.FailurePolicyType, stage rmconfig.RuntimeHookT
 	return nil
 }
 
-func init() {
-	globalStageHooks = map[rmconfig.RuntimeHookType][]*Hook{
-		rmconfig.PreRunPodSandbox:            make([]*Hook, 0),
-		rmconfig.PreCreateContainer:          make([]*Hook, 0),
-		rmconfig.PreStartContainer:           make([]*Hook, 0),
-		rmconfig.PostStartContainer:          make([]*Hook, 0),
-		rmconfig.PostStopContainer:           make([]*Hook, 0),
-		rmconfig.PostStopPodSandbox:          make([]*Hook, 0),
-		rmconfig.PreUpdateContainerResources: make([]*Hook, 0),
-	}
-}
-
-func GetStages(disable map[string]struct{}) []rmconfig.RuntimeHookType {
-	var stages []rmconfig.RuntimeHookType
+func GetStages(disabled map[string]struct{}) []proxyconfig.RuntimeHookType {
+	var stages []proxyconfig.RuntimeHookType
 	for stage, hooks := range globalStageHooks {
-		if _, ok := disable[string(stage)]; ok {
+		if _, ok := disabled[string(stage)]; ok {
 			continue
 		}
 		if len(hooks) > 0 {
