@@ -46,7 +46,7 @@ var globalRWMutex sync.RWMutex
 func Register(name, description string, injectOpts ...InjectOption) *Rule {
 	r, exist := find(name)
 	if exist {
-		klog.Fatalf("rule %s is conflict since name is already registered")
+		klog.Errorf("rule %s is conflict since name is already registered")
 		return r
 	}
 	r.description = description

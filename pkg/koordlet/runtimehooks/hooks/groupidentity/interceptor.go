@@ -17,7 +17,8 @@ limitations under the License.
 package groupidentity
 
 import (
-	"k8s.io/klog/v2"
+	"fmt"
+
 	"k8s.io/utils/pointer"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -27,18 +28,15 @@ import (
 
 func (b *bvtPlugin) SetPodBvtValue(p protocol.HooksProtocol) error {
 	if !b.SystemSupported() {
-		klog.V(5).Infof("plugin %s is not supported by system", name)
-		return nil
+		return fmt.Errorf("plugin %s is not supported by system", name)
 	}
 	r := b.getRule()
 	if r == nil {
-		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
-		return nil
+		return fmt.Errorf("hook plugin rule is nil, nothing to do for plugin %v", name)
 	}
 	err := b.initialize()
 	if err != nil {
-		klog.V(4).Infof("failed to initialize plugin %s, err: %s", name, err)
-		return nil
+		return fmt.Errorf("failed to initialize plugin %s, err: %s", name, err)
 	}
 
 	podCtx := p.(*protocol.PodContext)
@@ -52,18 +50,15 @@ func (b *bvtPlugin) SetPodBvtValue(p protocol.HooksProtocol) error {
 
 func (b *bvtPlugin) SetKubeQOSBvtValue(p protocol.HooksProtocol) error {
 	if !b.SystemSupported() {
-		klog.V(5).Infof("plugin %s is not supported by system", name)
-		return nil
+		return fmt.Errorf("plugin %s is not supported by system", name)
 	}
 	r := b.getRule()
 	if r == nil {
-		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
-		return nil
+		return fmt.Errorf("hook plugin rule is nil, nothing to do for plugin %v", name)
 	}
 	err := b.initialize()
 	if err != nil {
-		klog.V(4).Infof("failed to initialize plugin %s, err: %s", name, err)
-		return nil
+		return fmt.Errorf("failed to initialize plugin %s, err: %s", name, err)
 	}
 
 	kubeQOSCtx := p.(*protocol.KubeQOSContext)
