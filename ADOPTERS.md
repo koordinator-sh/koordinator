@@ -19,7 +19,7 @@ free to get in touch.
 | [Quwan](https://www.52tt.com)          | [@zhushaohua](mailTo:zhushaohua@52tt.com)                                            | Stable   | Use Koordinatior in production cluster for online/offline colocation to improve k8s cluster resource utilization.                                                                                                                                                                          |
 | [360](https://www.360.com)             | [@liuming](https://github.com/lucming)                                               | Stable   | 1. Machines running some middleware procs they can limit the resources they use and we will use the idle resources to run some online/offline pods to increase resource utilization; 2. To improve the resource utilization in production clusters with online/offline colocation.         |
 | [meiyapico](https://www.300188.cn/)       | [@complone](https://github.com/complone)                                             | Sample   | Koordinatior is used as the elastic scheduler of flink, hudi, and alloxio to maximize the use of resources by using resource quotas and fair scheduling                                                                                                                                 |
-
+| [dewu](https://www.dewu.com/)       | [@zhouzijiang](https://github.com/zhouzijiang)                                             | Stable   | Use Koordinatior in production cluster for online/offline/flink colocation to improve k8s cluster resource utilization.|
 ## Process
 
 Send a PR
