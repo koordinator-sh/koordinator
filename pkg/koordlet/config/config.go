@@ -92,17 +92,19 @@ func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 		"Options are:\n"+strings.Join(features.DefaultKoordletFeatureGate.KnownFeatures(), "\n"))
 }
 
-func (c *Configuration) InitClient() error {
+func (c *Configuration) InitKubeConfigForKoordlet(kubeAPIQPS float64, kubeAPIBurst int) error {
 	cfg, err := config.GetConfig()
 	if err != nil {
 		return err
 	}
 	cfg.UserAgent = "koordlet"
+	cfg.QPS = float32(kubeAPIQPS)
+	cfg.Burst = kubeAPIBurst
 	c.KubeRestConf = cfg
 	return nil
 }
 
-func (c *Configuration) InitFromConfigMap() error {
+func (c *Configuration) InitQosManagerConfigFromConfigMap() error {
 	if c.KubeRestConf == nil {
 		return errors.New("KubeRestConf is nil")
 	}

@@ -21,7 +21,9 @@ import (
 )
 
 var (
-	ServerAddr  = flag.String("addr", ":9316", "port of koordlet server")
-	EnablePprof = flag.Bool("enable-pprof", false, "Enable pprof for controller manager.")
-	PprofAddr   = flag.String("pprof-addr", ":9317", "The address the pprof binds to.")
+	ServerAddr   = flag.String("addr", ":9316", "port of koordlet server")
+	EnablePprof  = flag.Bool("enable-pprof", false, "Enable pprof for koordlet.")
+	PprofAddr    = flag.String("pprof-addr", ":9317", "The address the pprof binds to.")
+	KubeAPIQPS   = flag.Float64("kube-api-qps", 20.0, "QPS to use while talking with kube-apiserver.")
+	KubeAPIBurst = flag.Int("kube-api-burst", 30, "Burst to use while talking with kube-apiserver.")
 )
