@@ -12,6 +12,7 @@ test/e2e/framework
 test/e2e/generated
 test/e2e/perftype
 test/e2e/reporters
+test/e2e/scheduling/helper.go
 test/e2e/testing-manifests
 test/e2e/e2e.go
 test/e2e/e2e_test.go
