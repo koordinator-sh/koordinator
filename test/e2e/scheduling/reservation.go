@@ -39,6 +39,7 @@ import (
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
 	"github.com/koordinator-sh/koordinator/test/e2e/framework/manifest"
 	e2enode "github.com/koordinator-sh/koordinator/test/e2e/framework/node"
+	e2epod "github.com/koordinator-sh/koordinator/test/e2e/framework/pod"
 )
 
 var _ = SIGDescribe("Reservation", func() {
@@ -81,40 +82,18 @@ var _ = SIGDescribe("Reservation", func() {
 			framework.ExpectNoError(err, "unable to create reservation")
 
 			ginkgo.By("Wait for reservation scheduled")
-			gomega.Eventually(func() bool {
-				r, err := f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
-				framework.ExpectNoError(err)
-				return reservationutil.IsReservationAvailable(r)
-			}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true), "unable to schedule Reservation")
+			waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
 
 			ginkgo.By("Create pod to consume reservation")
 			pod, err := manifest.PodFromManifest("scheduling/simple-pod-with-reservation.yaml")
 			framework.ExpectNoError(err, "unable to load pod")
 			pod.Namespace = f.Namespace.Name
 
-			f.PodClient().Create(pod)
-			gomega.Eventually(func() bool {
-				p, err := f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
-				gomega.Expect(err).NotTo(gomega.HaveOccurred())
-				_, podCondition := k8spodutil.GetPodCondition(&p.Status, corev1.PodScheduled)
-				return podCondition != nil && podCondition.Status == corev1.ConditionTrue
-			}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
+			pod = f.PodClient().Create(pod)
+			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, pod), "unable to schedule pod")
 
 			ginkgo.By("Check pod and reservation status")
-			r, err := f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
-			framework.ExpectNoError(err, "unable to get reservation")
-
-			p, err := f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
-			framework.ExpectNoError(err)
-			gomega.Expect(p.Spec.NodeName).Should(gomega.Equal(r.Status.NodeName),
-				fmt.Sprintf("reservation is scheduled to node %v but pod is scheduled to node %v", r.Status.NodeName, pod.Spec.NodeName))
-
-			reservationAllocated, err := apiext.GetReservationAllocated(p)
-			framework.ExpectNoError(err)
-			gomega.Expect(reservationAllocated).Should(gomega.Equal(&apiext.ReservationAllocated{
-				Name: r.Name,
-				UID:  r.UID,
-			}), "pod is not using the expected reservation")
+			expectPodBoundReservation(f.ClientSet, f.KoordinatorClientSet, pod.Namespace, pod.Name, reservation.Name)
 
 			gomega.Eventually(func() bool {
 				r, err := f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
@@ -122,19 +101,19 @@ var _ = SIGDescribe("Reservation", func() {
 				return r.Status.Phase == schedulingv1alpha1.ReservationSucceeded
 			}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
 
-			r, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
+			reservation, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
 			framework.ExpectNoError(err)
-			reservationRequests := reservationutil.ReservationRequests(r)
-			gomega.Expect(r.Status.Allocatable).Should(gomega.Equal(reservationRequests))
+			reservationRequests := reservationutil.ReservationRequests(reservation)
+			gomega.Expect(reservation.Status.Allocatable).Should(gomega.Equal(reservationRequests))
 
-			podRequests, _ := resourceapi.PodRequestsAndLimits(p)
-			podRequests = quotav1.Mask(podRequests, quotav1.ResourceNames(r.Status.Allocatable))
-			gomega.Expect(r.Status.Allocated).Should(gomega.Equal(podRequests))
-			gomega.Expect(r.Status.CurrentOwners).Should(gomega.Equal([]corev1.ObjectReference{
+			podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+			podRequests = quotav1.Mask(podRequests, quotav1.ResourceNames(reservation.Status.Allocatable))
+			gomega.Expect(reservation.Status.Allocated).Should(gomega.Equal(podRequests))
+			gomega.Expect(reservation.Status.CurrentOwners).Should(gomega.Equal([]corev1.ObjectReference{
 				{
-					Namespace: p.Namespace,
-					Name:      p.Name,
-					UID:       p.UID,
+					Namespace: pod.Namespace,
+					Name:      pod.Name,
+					UID:       pod.UID,
 				},
 			}), "reservation.status.currentOwners is not as expected")
 		})
@@ -158,11 +137,7 @@ var _ = SIGDescribe("Reservation", func() {
 			framework.ExpectNoError(err, "unable to create reservation")
 
 			ginkgo.By("Wait for reservation scheduled")
-			gomega.Eventually(func() bool {
-				r, err := f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
-				framework.ExpectNoError(err)
-				return reservationutil.IsReservationAvailable(r)
-			}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
+			waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
 
 			ginkgo.By("Loading pod from manifest")
 			pod, err := manifest.PodFromManifest("scheduling/simple-pod-with-reservation.yaml")
@@ -174,12 +149,7 @@ var _ = SIGDescribe("Reservation", func() {
 				testPod := pod.DeepCopy()
 				testPod.Name = fmt.Sprintf("%s-%d", pod.Name, i)
 				f.PodClient().Create(testPod)
-				gomega.Eventually(func() bool {
-					p, err := f.PodClient().Get(context.TODO(), testPod.Name, metav1.GetOptions{})
-					gomega.Expect(err).NotTo(gomega.HaveOccurred())
-					_, podCondition := k8spodutil.GetPodCondition(&p.Status, corev1.PodScheduled)
-					return podCondition != nil && podCondition.Status == corev1.ConditionTrue
-				}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
+				framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, testPod), "unable to schedule pod")
 			}
 
 			ginkgo.By("Check pod and reservation Status")
@@ -298,11 +268,7 @@ var _ = SIGDescribe("Reservation", func() {
 				framework.ExpectNoError(err, "unable to create reservation: %v", reservation.Name)
 
 				ginkgo.By("Wait for Reservation Scheduled")
-				gomega.Eventually(func() bool {
-					r, err := f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
-					framework.ExpectNoError(err)
-					return reservationutil.IsReservationAvailable(r)
-				}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
+				waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
 
 				ginkgo.By("Create Pod")
 				pod := createPausePod(f, pausePodConfig{
@@ -320,12 +286,10 @@ var _ = SIGDescribe("Reservation", func() {
 				})
 
 				ginkgo.By("Wait for Pod schedule failed")
-				gomega.Eventually(func() bool {
-					p, err := f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
-					framework.ExpectNoError(err)
-					_, scheduledCondition := k8spodutil.GetPodCondition(&p.Status, corev1.PodScheduled)
-					return scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse
-				}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
+				framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+					_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+					return scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse, nil
+				}))
 			})
 
 			framework.ConformanceIt("after a Pod uses a Reservation, the remaining resources of the node can be reserved by another reservation", func() {
@@ -359,11 +323,7 @@ var _ = SIGDescribe("Reservation", func() {
 				framework.ExpectNoError(err, "unable to create reservation: %v", reservation.Name)
 
 				ginkgo.By("Wait for reservation scheduled")
-				gomega.Eventually(func() bool {
-					r, err := f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
-					framework.ExpectNoError(err)
-					return reservationutil.IsReservationAvailable(r)
-				}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
+				waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
 
 				ginkgo.By("Create pod and wait for scheduled")
 				pod := createPausePod(f, pausePodConfig{
@@ -382,14 +342,9 @@ var _ = SIGDescribe("Reservation", func() {
 					NodeName:      testNodeName,
 					SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
 				})
-				gomega.Eventually(func() bool {
-					p, err := f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
-					gomega.Expect(err).NotTo(gomega.HaveOccurred())
-					_, podCondition := k8spodutil.GetPodCondition(&p.Status, corev1.PodScheduled)
-					return podCondition != nil && podCondition.Status == corev1.ConditionTrue
-				}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
+				framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, pod))
 
-				p, err := f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
+				pod, err = f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
 				gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
 				ginkgo.By("Create other reservation reserves the remaining fakeResource")
@@ -408,15 +363,11 @@ var _ = SIGDescribe("Reservation", func() {
 				framework.ExpectNoError(err, "unable to create reservation: %v", otherReservation.Name)
 
 				ginkgo.By("Wait for Reservation Scheduled")
-				gomega.Eventually(func() bool {
-					r, err := f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), otherReservation.Name, metav1.GetOptions{})
-					framework.ExpectNoError(err)
-					return reservationutil.IsReservationAvailable(r)
-				}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
+				waitingForReservationScheduled(f.KoordinatorClientSet, otherReservation)
 
 				r, err := f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), otherReservation.Name, metav1.GetOptions{})
 				framework.ExpectNoError(err)
-				gomega.Expect(r.Status.NodeName).Should(gomega.Equal(p.Spec.NodeName))
+				gomega.Expect(r.Status.NodeName).Should(gomega.Equal(pod.Spec.NodeName))
 			})
 		})
 
@@ -448,14 +399,7 @@ var _ = SIGDescribe("Reservation", func() {
 			framework.ExpectNoError(err, "unable to create reservation")
 
 			ginkgo.By("Wait for reservation scheduled")
-			gomega.Eventually(func() bool {
-				r, err := f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
-				framework.ExpectNoError(err)
-				return reservationutil.IsReservationAvailable(r)
-			}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true), "unable to schedule Reservation")
-
-			r, err := f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
-			framework.ExpectNoError(err)
+			reservedNodeName := waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
 
 			ginkgo.By("Create pod and wait for scheduled")
 			pod := createPausePod(f, pausePodConfig{
@@ -464,19 +408,14 @@ var _ = SIGDescribe("Reservation", func() {
 					"e2e-reservation-interpodaffinity": "true",
 				},
 				Affinity:      reservation.Spec.Template.Spec.Affinity,
-				NodeName:      r.Status.NodeName,
+				NodeName:      reservedNodeName,
 				SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
 			})
-			gomega.Eventually(func() bool {
-				p, err := f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
-				gomega.Expect(err).NotTo(gomega.HaveOccurred())
-				_, podCondition := k8spodutil.GetPodCondition(&p.Status, corev1.PodScheduled)
-				return podCondition != nil && podCondition.Status == corev1.ConditionTrue
-			}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
+			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, pod))
 
 			p, err := f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
-			gomega.Expect(p.Spec.NodeName).Should(gomega.Equal(r.Status.NodeName))
+			gomega.Expect(p.Spec.NodeName).Should(gomega.Equal(reservedNodeName))
 		})
 
 		ginkgo.Context("PodTopologySpread Filtering With Reservation", func() {
@@ -550,11 +489,7 @@ var _ = SIGDescribe("Reservation", func() {
 				framework.ExpectNoError(err, "unable to create reservation: %v", reservation.Name)
 
 				ginkgo.By("Wait for Reservation Scheduled")
-				gomega.Eventually(func() bool {
-					r, err := f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
-					framework.ExpectNoError(err)
-					return reservationutil.IsReservationAvailable(r)
-				}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
+				waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
 
 				ginkgo.By("Create 4 pods")
 				requests := reservationutil.ReservationRequests(reservation)

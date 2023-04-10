@@ -19,14 +19,21 @@ package scheduling
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/onsi/ginkgo"
+	"github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clientset "k8s.io/client-go/kubernetes"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
 	e2epod "github.com/koordinator-sh/koordinator/test/e2e/framework/pod"
 	e2ereplicaset "github.com/koordinator-sh/koordinator/test/e2e/framework/replicaset"
@@ -203,4 +210,34 @@ func runPauseRS(f *framework.Framework, conf pauseRSConfig) *appsv1.ReplicaSet {
 	rs := createPauseRS(f, conf)
 	framework.ExpectNoError(e2ereplicaset.WaitForReplicaSetTargetAvailableReplicasWithTimeout(f.ClientSet, rs, conf.Replicas, framework.PodGetTimeout))
 	return rs
+}
+
+func waitingForReservationScheduled(koordinatorClientSet koordclientset.Interface, reservation *schedulingv1alpha1.Reservation) string {
+	var r *schedulingv1alpha1.Reservation
+	gomega.Eventually(func() bool {
+		var err error
+		r, err = koordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
+		framework.ExpectNoError(err)
+		return reservationutil.IsReservationAvailable(r)
+	}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
+	if r == nil {
+		return ""
+	}
+	return r.Status.NodeName
+}
+
+func expectPodBoundReservation(clientSet clientset.Interface, koordinatorClientSet koordclientset.Interface, podNamespace, podName, reservationName string) {
+	pod, err := clientSet.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	framework.ExpectNoError(err)
+	reservation, err := koordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservationName, metav1.GetOptions{})
+	framework.ExpectNoError(err)
+	gomega.Expect(pod.Spec.NodeName).Should(gomega.Equal(reservation.Status.NodeName),
+		fmt.Sprintf("reservation is scheduled to node %v but pod is scheduled to node %v", reservation.Status.NodeName, pod.Spec.NodeName))
+
+	reservationAllocated, err := apiext.GetReservationAllocated(pod)
+	framework.ExpectNoError(err)
+	gomega.Expect(reservationAllocated).Should(gomega.Equal(&apiext.ReservationAllocated{
+		Name: reservation.Name,
+		UID:  reservation.UID,
+	}), "pod is not using the expected reservation")
 }
