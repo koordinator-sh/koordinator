@@ -32,6 +32,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 const (
@@ -132,14 +133,14 @@ func (s *nodeSLOInformer) mergeNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	}
 
 	// merge ResourceUsedThresholdWithBE individually for nil-ResourceUsedThresholdWithBE case
-	mergedResourceUsedThresholdWithBESpec := mergeSLOSpecResourceUsedThresholdWithBE(util.DefaultNodeSLOSpecConfig().ResourceUsedThresholdWithBE,
+	mergedResourceUsedThresholdWithBESpec := mergeSLOSpecResourceUsedThresholdWithBE(sloconfig.DefaultNodeSLOSpecConfig().ResourceUsedThresholdWithBE,
 		nodeSLO.Spec.ResourceUsedThresholdWithBE)
 	if mergedResourceUsedThresholdWithBESpec != nil {
 		s.nodeSLO.Spec.ResourceUsedThresholdWithBE = mergedResourceUsedThresholdWithBESpec
 	}
 
 	// merge ResourceQOSStrategy
-	mergedResourceQOSStrategySpec := mergeSLOSpecResourceQOSStrategy(util.DefaultNodeSLOSpecConfig().ResourceQOSStrategy,
+	mergedResourceQOSStrategySpec := mergeSLOSpecResourceQOSStrategy(sloconfig.DefaultNodeSLOSpecConfig().ResourceQOSStrategy,
 		nodeSLO.Spec.ResourceQOSStrategy)
 	mergeNoneResourceQOSIfDisabled(mergedResourceQOSStrategySpec)
 	if mergedResourceQOSStrategySpec != nil {
@@ -147,21 +148,21 @@ func (s *nodeSLOInformer) mergeNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	}
 
 	// merge CPUBurstStrategy
-	mergedCPUBurstStrategySpec := mergeSLOSpecCPUBurstStrategy(util.DefaultNodeSLOSpecConfig().CPUBurstStrategy,
+	mergedCPUBurstStrategySpec := mergeSLOSpecCPUBurstStrategy(sloconfig.DefaultNodeSLOSpecConfig().CPUBurstStrategy,
 		nodeSLO.Spec.CPUBurstStrategy)
 	if mergedCPUBurstStrategySpec != nil {
 		s.nodeSLO.Spec.CPUBurstStrategy = mergedCPUBurstStrategySpec
 	}
 
 	// merge SystemStrategy
-	mergedSystemStrategySpec := mergeSLOSpecSystemStrategy(util.DefaultNodeSLOSpecConfig().SystemStrategy,
+	mergedSystemStrategySpec := mergeSLOSpecSystemStrategy(sloconfig.DefaultNodeSLOSpecConfig().SystemStrategy,
 		nodeSLO.Spec.SystemStrategy)
 	if mergedSystemStrategySpec != nil {
 		s.nodeSLO.Spec.SystemStrategy = mergedSystemStrategySpec
 	}
 
 	// merge Extensions
-	mergedExtensions := mergeSLOSpecExtensions(util.DefaultNodeSLOSpecConfig().Extensions,
+	mergedExtensions := mergeSLOSpecExtensions(sloconfig.DefaultNodeSLOSpecConfig().Extensions,
 		nodeSLO.Spec.Extensions)
 	if mergedExtensions != nil {
 		s.nodeSLO.Spec.Extensions = mergedExtensions
@@ -272,15 +273,15 @@ func mergeNoneResourceQOSIfDisabled(resourceQOS *slov1alpha1.ResourceQOSStrategy
 func mergeNoneResctrlQOSIfDisabled(resourceQOS *slov1alpha1.ResourceQOSStrategy) {
 	if resourceQOS.LSRClass != nil && resourceQOS.LSRClass.ResctrlQOS != nil &&
 		resourceQOS.LSRClass.ResctrlQOS.Enable != nil && !(*resourceQOS.LSRClass.ResctrlQOS.Enable) {
-		resourceQOS.LSRClass.ResctrlQOS.ResctrlQOS = *util.NoneResctrlQOS()
+		resourceQOS.LSRClass.ResctrlQOS.ResctrlQOS = *sloconfig.NoneResctrlQOS()
 	}
 	if resourceQOS.LSClass != nil && resourceQOS.LSClass.ResctrlQOS != nil &&
 		resourceQOS.LSClass.ResctrlQOS.Enable != nil && !(*resourceQOS.LSClass.ResctrlQOS.Enable) {
-		resourceQOS.LSClass.ResctrlQOS.ResctrlQOS = *util.NoneResctrlQOS()
+		resourceQOS.LSClass.ResctrlQOS.ResctrlQOS = *sloconfig.NoneResctrlQOS()
 	}
 	if resourceQOS.BEClass != nil && resourceQOS.BEClass.ResctrlQOS != nil &&
 		resourceQOS.BEClass.ResctrlQOS.Enable != nil && !(*resourceQOS.BEClass.ResctrlQOS.Enable) {
-		resourceQOS.BEClass.ResctrlQOS.ResctrlQOS = *util.NoneResctrlQOS()
+		resourceQOS.BEClass.ResctrlQOS.ResctrlQOS = *sloconfig.NoneResctrlQOS()
 	}
 }
 
@@ -289,15 +290,15 @@ func mergeNoneMemoryQOSIfDisabled(resourceQOS *slov1alpha1.ResourceQOSStrategy) 
 	// if MemoryQOS.Enable=false, merge with NoneMemoryQOS
 	if resourceQOS.LSRClass != nil && resourceQOS.LSRClass.MemoryQOS != nil &&
 		resourceQOS.LSRClass.MemoryQOS.Enable != nil && !(*resourceQOS.LSRClass.MemoryQOS.Enable) {
-		resourceQOS.LSRClass.MemoryQOS.MemoryQOS = *util.NoneMemoryQOS()
+		resourceQOS.LSRClass.MemoryQOS.MemoryQOS = *sloconfig.NoneMemoryQOS()
 	}
 	if resourceQOS.LSClass != nil && resourceQOS.LSClass.MemoryQOS != nil &&
 		resourceQOS.LSClass.MemoryQOS.Enable != nil && !(*resourceQOS.LSClass.MemoryQOS.Enable) {
-		resourceQOS.LSClass.MemoryQOS.MemoryQOS = *util.NoneMemoryQOS()
+		resourceQOS.LSClass.MemoryQOS.MemoryQOS = *sloconfig.NoneMemoryQOS()
 	}
 	if resourceQOS.BEClass != nil && resourceQOS.BEClass.MemoryQOS != nil &&
 		resourceQOS.BEClass.MemoryQOS.Enable != nil && !(*resourceQOS.BEClass.MemoryQOS.Enable) {
-		resourceQOS.BEClass.MemoryQOS.MemoryQOS = *util.NoneMemoryQOS()
+		resourceQOS.BEClass.MemoryQOS.MemoryQOS = *sloconfig.NoneMemoryQOS()
 	}
 }
 
@@ -305,14 +306,14 @@ func mergeNoneCPUQOSIfDisabled(resourceQOS *slov1alpha1.ResourceQOSStrategy) {
 	// if CPUQOS.Enabled=false, merge with NoneCPUQOS
 	if resourceQOS.LSRClass != nil && resourceQOS.LSRClass.CPUQOS != nil &&
 		resourceQOS.LSRClass.CPUQOS.Enable != nil && !(*resourceQOS.LSRClass.CPUQOS.Enable) {
-		resourceQOS.LSRClass.CPUQOS.CPUQOS = *util.NoneCPUQOS()
+		resourceQOS.LSRClass.CPUQOS.CPUQOS = *sloconfig.NoneCPUQOS()
 	}
 	if resourceQOS.LSClass != nil && resourceQOS.LSClass.CPUQOS != nil &&
 		resourceQOS.LSClass.CPUQOS.Enable != nil && !(*resourceQOS.LSClass.CPUQOS.Enable) {
-		resourceQOS.LSClass.CPUQOS.CPUQOS = *util.NoneCPUQOS()
+		resourceQOS.LSClass.CPUQOS.CPUQOS = *sloconfig.NoneCPUQOS()
 	}
 	if resourceQOS.BEClass != nil && resourceQOS.BEClass.CPUQOS != nil &&
 		resourceQOS.BEClass.CPUQOS.Enable != nil && !(*resourceQOS.BEClass.CPUQOS.Enable) {
-		resourceQOS.BEClass.CPUQOS.CPUQOS = *util.NoneCPUQOS()
+		resourceQOS.BEClass.CPUQOS.CPUQOS = *sloconfig.NoneCPUQOS()
 	}
 }

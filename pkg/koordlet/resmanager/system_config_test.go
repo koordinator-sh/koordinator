@@ -28,12 +28,12 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cache"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func Test_systemConfig_reconcile(t *testing.T) {
-	defaultStrategy := util.DefaultSystemStrategy()
+	defaultStrategy := sloconfig.DefaultSystemStrategy()
 	nodeValidMemory := int64(512) * 1024 * 1024 * 1024
 	initNode := getNode("80", strconv.FormatInt(nodeValidMemory, 10))
 	tests := []struct {

@@ -30,8 +30,8 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func (r *NodeResourceReconciler) updateDeviceResources(node *corev1.Node) error {
@@ -59,7 +59,7 @@ func (r *NodeResourceReconciler) updateDeviceResources(node *corev1.Node) error 
 }
 
 func (r *NodeResourceReconciler) isGPUResourceNeedSync(new, old *corev1.Node) bool {
-	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), new)
+	strategy := sloconfig.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), new)
 
 	lastUpdatedTime, ok := r.GPUSyncContext.Load(util.GenerateNodeKey(&new.ObjectMeta))
 	if !ok || r.Clock.Since(lastUpdatedTime) > time.Duration(*strategy.UpdateTimeThresholdSeconds)*time.Second {

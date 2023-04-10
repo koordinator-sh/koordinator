@@ -40,6 +40,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
@@ -98,8 +99,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      config.SLOCtrlConfigMap,
-					Namespace: config.ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "invalid contents",
@@ -120,8 +121,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      config.SLOCtrlConfigMap,
-					Namespace: config.ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"enable\":true}",
@@ -142,8 +143,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      config.SLOCtrlConfigMap,
-					Namespace: config.ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":10,\"metricReportIntervalSeconds\":30}",
@@ -173,8 +174,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      config.SLOCtrlConfigMap,
-					Namespace: config.ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":-10}",
@@ -192,8 +193,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      config.SLOCtrlConfigMap,
-					Namespace: config.ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30," +
@@ -226,8 +227,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      config.SLOCtrlConfigMap,
-					Namespace: config.ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30," +
@@ -260,8 +261,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      config.SLOCtrlConfigMap,
-					Namespace: config.ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30,\"metricReportIntervalSeconds\":50," +
@@ -347,8 +348,8 @@ func TestNodeMetricReconciler_initNodeMetric(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      config.SLOCtrlConfigMap,
-					Namespace: config.ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":10,\"metricReportIntervalSeconds\":20}",
@@ -375,8 +376,8 @@ func TestNodeMetricReconciler_initNodeMetric(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      config.SLOCtrlConfigMap,
-					Namespace: config.ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: `
@@ -592,7 +593,7 @@ func createTestReconciler() (*NodeMetricReconciler, *config.ColocationHandlerFor
 		Client: client,
 		Scheme: scheme,
 	}
-	handler := config.NewColocationHandlerForConfigMapEvent(reconciler.Client, *config.NewDefaultColocationCfg(), &record.FakeRecorder{})
+	handler := config.NewColocationHandlerForConfigMapEvent(reconciler.Client, *sloconfig.NewDefaultColocationCfg(), &record.FakeRecorder{})
 	reconciler.cfgCache = handler
 	return reconciler, handler
 }
@@ -609,8 +610,8 @@ func createValidColocationConfigMap(t *testing.T) (*extension.ColocationCfg, *co
 	assert.NoError(t, err)
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: config.ConfigNameSpace,
-			Name:      config.SLOCtrlConfigMap,
+			Namespace: sloconfig.ConfigNameSpace,
+			Name:      sloconfig.SLOCtrlConfigMap,
 		},
 		Data: map[string]string{
 			extension.ColocationConfigKey: string(data),
@@ -622,8 +623,8 @@ func createValidColocationConfigMap(t *testing.T) (*extension.ColocationCfg, *co
 func createConfigMapUnmashalError() *corev1.ConfigMap {
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: config.ConfigNameSpace,
-			Name:      config.SLOCtrlConfigMap,
+			Namespace: sloconfig.ConfigNameSpace,
+			Name:      sloconfig.SLOCtrlConfigMap,
 		},
 		Data: map[string]string{
 			extension.ColocationConfigKey: "invalid contents",

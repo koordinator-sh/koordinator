@@ -43,7 +43,6 @@ import (
 	"github.com/koordinator-sh/koordinator/cmd/koord-manager/extensions"
 	extclient "github.com/koordinator-sh/koordinator/pkg/client"
 	"github.com/koordinator-sh/koordinator/pkg/features"
-	sloconfig "github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodeslo"
@@ -51,6 +50,7 @@ import (
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
 	_ "github.com/koordinator-sh/koordinator/pkg/util/metrics/leadership"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 	"github.com/koordinator-sh/koordinator/pkg/webhook"
 	// +kubebuilder:scaffold:imports
 )

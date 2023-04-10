@@ -28,9 +28,9 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func (r *NodeResourceReconciler) isColocationCfgDisabled(node *corev1.Node) bool {
@@ -38,7 +38,7 @@ func (r *NodeResourceReconciler) isColocationCfgDisabled(node *corev1.Node) bool
 	if cfg.Enable == nil || !*cfg.Enable {
 		return true
 	}
-	strategy := config.GetNodeColocationStrategy(cfg, node)
+	strategy := sloconfig.GetNodeColocationStrategy(cfg, node)
 	if strategy == nil || strategy.Enable == nil {
 		return true
 	}
@@ -60,7 +60,7 @@ func (r *NodeResourceReconciler) calculateNodeResource(node *corev1.Node,
 		NodeMetric: nodeMetric,
 	}
 
-	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
+	strategy := sloconfig.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
 	framework.RunResourceCalculateExtenders(nr, strategy, node, podList, metrics)
 
 	return nr
@@ -68,7 +68,7 @@ func (r *NodeResourceReconciler) calculateNodeResource(node *corev1.Node,
 
 func (r *NodeResourceReconciler) updateNodeResource(node *corev1.Node, nr *framework.NodeResource) error {
 	nodeCopy := node.DeepCopy() // avoid overwriting the cache
-	strategy := config.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
+	strategy := sloconfig.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
 
 	r.prepareNodeResource(strategy, nodeCopy, nr)
 

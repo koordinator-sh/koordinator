@@ -33,6 +33,7 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 // NodeMetricReconciler reconciles a NodeMetric object
@@ -139,7 +140,7 @@ func (r *NodeMetricReconciler) getNodeMetricSpec(node *corev1.Node, oldSpec *slo
 	nodeMetricSpec := getDefaultSpec()
 
 	cfg := r.cfgCache.GetCfgCopy()
-	mergedStrategy := config.GetNodeColocationStrategy(cfg, node)
+	mergedStrategy := sloconfig.GetNodeColocationStrategy(cfg, node)
 
 	nodeMetricCollectPolicy, err := getNodeMetricCollectPolicy(mergedStrategy)
 	if err != nil {
@@ -152,7 +153,7 @@ func (r *NodeMetricReconciler) getNodeMetricSpec(node *corev1.Node, oldSpec *slo
 }
 
 func getDefaultSpec() *slov1alpha1.NodeMetricSpec {
-	defaultColocationCfg := config.NewDefaultColocationCfg()
+	defaultColocationCfg := sloconfig.NewDefaultColocationCfg()
 	return &slov1alpha1.NodeMetricSpec{
 		CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 			AggregateDurationSeconds: defaultColocationCfg.MetricAggregateDurationSeconds,
@@ -173,7 +174,7 @@ func Add(mgr ctrl.Manager) error {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *config.NewDefaultColocationCfg(), r.Recorder)
+	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *sloconfig.NewDefaultColocationCfg(), r.Recorder)
 	r.cfgCache = handler
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&slov1alpha1.NodeMetric{}).
