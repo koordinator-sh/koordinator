@@ -33,6 +33,7 @@ import (
 	schedulinglisterv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 // getPodAssociateQuotaName If pod's don't have the "quota-name" label, we will use the namespace to associate pod with quota
@@ -143,16 +144,14 @@ func (g *Plugin) createSystemQuotaIfNotPresent() {
 	klog.Infof("create SystemQuota successfully")
 }
 
-func (g *Plugin) snapshotPostFilterState(quotaName string, state *framework.CycleState) bool {
-	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(quotaName)
-	if quotaInfo == nil {
-		return false
-	}
+func (g *Plugin) snapshotPostFilterState(quotaInfo *core.QuotaInfo, state *framework.CycleState) *PostFilterState {
 	postFilterState := &PostFilterState{
 		quotaInfo: quotaInfo,
+		used:      quotaInfo.GetUsed(),
+		runtime:   quotaInfo.GetRuntime(),
 	}
 	state.Write(postFilterKey, postFilterState)
-	return true
+	return postFilterState
 }
 
 func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, error) {
@@ -174,7 +173,7 @@ func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string
 	quotaRuntime := quotaInfo.GetRuntime()
 	newUsed := quotav1.Add(podRequest, quotaUsed)
 	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(newUsed, quotaRuntime); !isLessEqual {
-		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
+		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v", quotaNameTopo,
 			printResourceList(quotaRuntime), printResourceList(quotaUsed), printResourceList(podRequest), exceedDimensions))
 	}

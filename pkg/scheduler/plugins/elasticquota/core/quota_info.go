@@ -273,7 +273,7 @@ func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 	return false
 }
 
-func (qi *QuotaInfo) isPodExist(pod *v1.Pod) bool {
+func (qi *QuotaInfo) IsPodExist(pod *v1.Pod) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 	_, exist := qi.PodCache[generatePodCacheKey(pod)]

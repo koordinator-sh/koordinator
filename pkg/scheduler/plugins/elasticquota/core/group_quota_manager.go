@@ -614,7 +614,7 @@ func (gqm *GroupQuotaManager) OnPodAdd(quotaName string, pod *v1.Pod) {
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
-	if quotaInfo != nil && quotaInfo.isPodExist(pod) {
+	if quotaInfo != nil && quotaInfo.IsPodExist(pod) {
 		return
 	}
 

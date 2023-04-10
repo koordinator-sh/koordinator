@@ -797,7 +797,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(0).Mem(20).GPU(10).Obj(),
 				},
 			},
-			expectedStatus: *framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
+			expectedStatus: *framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 				"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [cpu]",
 				extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(0).Mem(20).GPU(10).Obj()),
 				printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()))),
@@ -825,7 +825,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			expectedStatus: *framework.NewStatus(framework.Unschedulable,
-				fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
+				fmt.Sprintf("Insufficient quotas, "+
 					"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [memory]",
 					extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(1).Mem(2).Obj()),
 					printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(3).GPU(1).Obj()))),
@@ -898,7 +898,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 				},
 			},
 			expectedStatus: *framework.NewStatus(framework.Unschedulable,
-				fmt.Sprintf("Scheduling refused due to insufficient quotas, "+
+				fmt.Sprintf("Insufficient quotas, "+
 					"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [memory]",
 					[]string{"test", "test-child"}, printResourceList(MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()),
 					printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(3).GPU(1).Obj()))),
@@ -1025,24 +1025,6 @@ func TestPlugin_AddPod(t *testing.T) {
 			wantStatusSuccess: true,
 			expectedUsed:      MakeResourceList().CPU(11).Mem(22).GPU(11).Obj(),
 		},
-		{
-			name: "missing pod",
-			podInfo: &framework.PodInfo{
-				Pod: MakePod("t1-ns1", "pod1").Container(
-					MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()).
-					Label(extension.LabelQuotaName, "t1-eq1").UID("1").Obj(),
-			},
-			shouldAdd: false,
-			quotaInfo: &core.QuotaInfo{
-				Name: extension.DefaultQuotaName,
-				CalculateInfo: core.QuotaCalculateInfo{
-					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
-				},
-				PodCache: make(map[string]*core.PodInfo),
-			},
-			wantStatusSuccess: true,
-			expectedUsed:      MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
-		},
 	}
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1056,11 +1038,13 @@ func TestPlugin_AddPod(t *testing.T) {
 			}
 			state := framework.NewCycleState()
 			ctx := context.TODO()
-			gp.snapshotPostFilterState(gp.getPodAssociateQuotaName(tt.podInfo.Pod), state)
+			quotaName := gp.getPodAssociateQuotaName(tt.podInfo.Pod)
+			quotaInfo := gp.groupQuotaManager.GetQuotaInfoByName(quotaName)
+			gp.snapshotPostFilterState(quotaInfo, state)
 			status := gp.AddPod(ctx, state, nil, tt.podInfo, nil)
 			assert.Equal(t, tt.wantStatusSuccess, status.IsSuccess())
 			data, _ := getPostFilterState(state)
-			assert.Equal(t, tt.expectedUsed, data.quotaInfo.GetUsed())
+			assert.Equal(t, tt.expectedUsed, data.used)
 		})
 	}
 }
@@ -1089,24 +1073,7 @@ func TestPlugin_RemovePod(t *testing.T) {
 				},
 			},
 			wantStatusSuccess: true,
-			expectedUsed:      MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
-		},
-		{
-			name: "missing pod",
-			podInfo: &framework.PodInfo{
-				Pod: MakePod("t1-ns1", "pod1").Container(
-					MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()).
-					Label(extension.LabelQuotaName, "t1-eq1").UID("1").Phase(corev1.PodRunning).Obj(),
-			},
-			shouldAdd: false,
-			quotaInfo: &core.QuotaInfo{
-				Name: extension.DefaultQuotaName,
-				CalculateInfo: core.QuotaCalculateInfo{
-					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
-				},
-			},
-			wantStatusSuccess: true,
-			expectedUsed:      MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
+			expectedUsed:      MakeResourceList().CPU(9).Mem(18).GPU(9).Obj(),
 		},
 	}
 	for _, tt := range test {
@@ -1121,11 +1088,13 @@ func TestPlugin_RemovePod(t *testing.T) {
 			}
 			state := framework.NewCycleState()
 			ctx := context.TODO()
-			gp.snapshotPostFilterState(gp.getPodAssociateQuotaName(tt.podInfo.Pod), state)
+			quotaName := gp.getPodAssociateQuotaName(tt.podInfo.Pod)
+			quotaInfo := gp.groupQuotaManager.GetQuotaInfoByName(quotaName)
+			gp.snapshotPostFilterState(quotaInfo, state)
 			status := gp.RemovePod(ctx, state, nil, tt.podInfo, nil)
 			assert.Equal(t, tt.wantStatusSuccess, status.IsSuccess())
 			data, _ := getPostFilterState(state)
-			assert.Equal(t, tt.expectedUsed, data.quotaInfo.GetUsed())
+			assert.Equal(t, tt.expectedUsed, data.used)
 		})
 	}
 }
@@ -1293,7 +1262,8 @@ func TestPlugin_DryRunPreemption(t *testing.T) {
 			quotaName := pl.getPodAssociateQuotaName(tt.pod)
 			pl.groupQuotaManager.UpdatePodIsAssigned(quotaName, tt.pod, true)
 			pl.groupQuotaManager.RefreshRuntime(tt.pod.Namespace)
-			pl.snapshotPostFilterState(quotaName, state)
+			quotaInfo := pl.groupQuotaManager.GetQuotaInfoByName(quotaName)
+			pl.snapshotPostFilterState(quotaInfo, state)
 
 			got, status := pl.findCandidates(ctx, state, tt.pod, tt.nodesStatuses)
 			if !status.IsSuccess() {
