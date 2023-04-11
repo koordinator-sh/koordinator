@@ -45,7 +45,6 @@ func Register(stage rmconfig.RuntimeHookType, name, description string, hookFn H
 	h, err := generateNewHook(stage, name)
 	if err != nil {
 		klog.Fatalf("hook %s register failed, reason: %v", name, err)
-		return h
 	}
 	klog.V(1).Infof("hook %s is registered", name)
 	h.description = description
