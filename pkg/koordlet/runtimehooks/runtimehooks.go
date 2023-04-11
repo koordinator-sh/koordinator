@@ -17,6 +17,8 @@ limitations under the License.
 package runtimehooks
 
 import (
+	"fmt"
+
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
@@ -109,8 +111,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		"Update hooks rule if NodeTopology infor update",
 		rule.UpdateRules)
 	if err := s.Setup(); err != nil {
-		klog.Fatal("failed to setup runtime hook server, error %v", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to setup runtime hook server, error %v", err)
 	}
 	return r, nil
 }
