@@ -212,7 +212,7 @@ func runPauseRS(f *framework.Framework, conf pauseRSConfig) *appsv1.ReplicaSet {
 	return rs
 }
 
-func waitingForReservationScheduled(koordinatorClientSet koordclientset.Interface, reservation *schedulingv1alpha1.Reservation) string {
+func waitingForReservationScheduled(koordinatorClientSet koordclientset.Interface, reservation *schedulingv1alpha1.Reservation) *schedulingv1alpha1.Reservation {
 	var r *schedulingv1alpha1.Reservation
 	gomega.Eventually(func() bool {
 		var err error
@@ -220,10 +220,7 @@ func waitingForReservationScheduled(koordinatorClientSet koordclientset.Interfac
 		framework.ExpectNoError(err)
 		return reservationutil.IsReservationAvailable(r)
 	}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
-	if r == nil {
-		return ""
-	}
-	return r.Status.NodeName
+	return r
 }
 
 func expectPodBoundReservation(clientSet clientset.Interface, koordinatorClientSet koordclientset.Interface, podNamespace, podName, reservationName string) {

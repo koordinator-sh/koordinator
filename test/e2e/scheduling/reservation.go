@@ -399,7 +399,7 @@ var _ = SIGDescribe("Reservation", func() {
 			framework.ExpectNoError(err, "unable to create reservation")
 
 			ginkgo.By("Wait for reservation scheduled")
-			reservedNodeName := waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
+			reservation = waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
 
 			ginkgo.By("Create pod and wait for scheduled")
 			pod := createPausePod(f, pausePodConfig{
@@ -408,14 +408,14 @@ var _ = SIGDescribe("Reservation", func() {
 					"e2e-reservation-interpodaffinity": "true",
 				},
 				Affinity:      reservation.Spec.Template.Spec.Affinity,
-				NodeName:      reservedNodeName,
+				NodeName:      reservation.Status.NodeName,
 				SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, pod))
 
 			p, err := f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
-			gomega.Expect(p.Spec.NodeName).Should(gomega.Equal(reservedNodeName))
+			gomega.Expect(p.Spec.NodeName).Should(gomega.Equal(reservation.Status.NodeName))
 		})
 
 		ginkgo.Context("PodTopologySpread Filtering With Reservation", func() {
