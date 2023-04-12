@@ -20,6 +20,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const maxQueueUpdateCallBack = 1000
+
 type RegisterType int64
 
 const (
@@ -60,9 +62,9 @@ type callbackRunner struct {
 func NewCallbackRunner() *callbackRunner {
 	c := &callbackRunner{}
 	c.callbackChans = map[RegisterType]chan UpdateCbCtx{
-		RegisterTypeNodeSLOSpec:  make(chan UpdateCbCtx, 1),
-		RegisterTypeAllPods:      make(chan UpdateCbCtx, 1),
-		RegisterTypeNodeTopology: make(chan UpdateCbCtx, 1),
+		RegisterTypeNodeSLOSpec:  make(chan UpdateCbCtx, maxQueueUpdateCallBack),
+		RegisterTypeAllPods:      make(chan UpdateCbCtx, maxQueueUpdateCallBack),
+		RegisterTypeNodeTopology: make(chan UpdateCbCtx, maxQueueUpdateCallBack),
 	}
 	c.stateUpdateCallbacks = map[RegisterType][]updateCallback{
 		RegisterTypeNodeSLOSpec:  {},
@@ -104,7 +106,7 @@ func (s *callbackRunner) SendCallback(objType RegisterType) {
 			klog.Infof("last callback runner %v has not finished, ignore this time", objType.String())
 		}
 	} else {
-		klog.Warningf("callback runner %v is not exist", objType.String())
+		klog.Errorf("callback runner %v does not exist", objType.String())
 	}
 }
 
