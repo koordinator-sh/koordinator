@@ -200,8 +200,6 @@ func (s *podsInformer) syncKubeletLoop(duration time.Duration, stopCh <-chan str
 }
 
 func newKubeletStubFromConfig(node *corev1.Node, cfg *Config) (KubeletStub, error) {
-	var address string
-	var err error
 	var port int
 	var scheme string
 	var restConfig *rest.Config
@@ -212,9 +210,9 @@ func newKubeletStubFromConfig(node *corev1.Node, cfg *Config) (KubeletStub, erro
 		klog.Warningf("Wrong address type or empty type, InternalIP will be used, error: (%+v).", addressPreferredType)
 		addressPreferredType = corev1.NodeInternalIP
 	}
-	address, err = util.GetNodeAddress(node, addressPreferredType)
+	address, err := util.GetNodeAddress(node, addressPreferredType)
 	if err != nil {
-		klog.Fatalf("Get node address error: %v type(%s) ", err, cfg.KubeletPreferredAddressType)
+		klog.Errorf("Get node address error: %v type(%s) ", err, cfg.KubeletPreferredAddressType)
 		return nil, err
 	}
 
