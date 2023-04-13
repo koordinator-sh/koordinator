@@ -357,19 +357,17 @@ func removeSystemQOSCPUs(cpuSharePools []extension.CPUSharedPool, sysQOSRes *ext
 	return newCPUSharePools
 }
 
-func getNodeReserved(topo *topology.CPUTopology, anno map[string]string) extension.NodeReservation {
+func getNodeReserved(cpuTopology *topology.CPUTopology, nodeAnnotations map[string]string) extension.NodeReservation {
 	reserved := extension.NodeReservation{}
-	allCPUs := topo.CPUDetails.CPUs()
-	reservedCPUs, numReservedCPUs := extension.GetReservedCPUs(anno)
-	if numReservedCPUs > 0 {
-		cpus, _ := kubelet.TakeByTopology(allCPUs, numReservedCPUs, topo)
+	reservedCPUs, numReservedCPUs := extension.GetReservedCPUs(nodeAnnotations)
+	if reservedCPUs != "" {
+		cpus, _ := cpuset.Parse(reservedCPUs)
+		reserved.ReservedCPUs = cpus.String()
+	} else if numReservedCPUs > 0 {
+		allCPUs := cpuTopology.CPUDetails.CPUs()
+		cpus, _ := kubelet.TakeByTopology(allCPUs, numReservedCPUs, cpuTopology)
 		reserved.ReservedCPUs = cpus.String()
 	}
-	if reservedCPUs != "" {
-		res, _ := cpuset.Parse(reservedCPUs)
-		reserved.ReservedCPUs = res.String()
-	}
-
 	return reserved
 }
 

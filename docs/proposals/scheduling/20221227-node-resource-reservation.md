@@ -10,35 +10,37 @@ reviewers:
   - "@zwzhang0107"
   - "@jasonliu747"
 creation-date: 2022-12-27
-last-updated: 2022-12-27
+last-updated: 2023-04-13
 ---
 
 # Resource Reservation
 
 ## Table of Contents
 
-<!--ts-->
+<!-- TOC -->
 
 - [Resource Reservation](#resource-reservation)
-  - [Table of Contents](#table-of-contents)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals/Future Work](#non-goalsfuture-work)
-  - [Proposal](#proposal)
-    - [User Stories](#user-stories)
-      - [Story 1](#story-1)
-      - [Story 2](#story-2)
-      - [Story 3](#story-3)
-    - [Implementation Details](#implementation-details)
-      - [koordlet](#koordlet)
-      - [koord-manager](#koord-manager)
-      - [koord-scheduler](#koord-scheduler)
-      - [descheduler](#descheduler)
-      - [eviction](#eviction)
-      - [example](#example)
-  - [Implementation History](#implementation-history)
-<!--te-->
+    - [Table of Contents](#table-of-contents)
+    - [Summary](#summary)
+    - [Motivation](#motivation)
+        - [Goals](#goals)
+        - [Non-Goals/Future Work](#non-goalsfuture-work)
+    - [Proposal](#proposal)
+        - [User Stories](#user-stories)
+            - [Story 1](#story-1)
+            - [Story 2](#story-2)
+            - [Story 3](#story-3)
+        - [Implementation Details](#implementation-details)
+            - [API](#api)
+            - [koordlet](#koordlet)
+            - [koord-manager](#koord-manager)
+            - [koord-scheduler](#koord-scheduler)
+            - [Descheduler](#descheduler)
+            - [Eviction](#eviction)
+            - [Example](#example)
+    - [Implementation History](#implementation-history)
+
+<!-- /TOC -->
 
 ## Summary
 The proposal provides a scheduling mechanism to reserve resources by node.annotation, such as reserving 0-6 cores of CPU on the node. 
@@ -80,19 +82,44 @@ so for K8S, the 0-11 core is reserved and it can not be used.
 #### Story 2
 As a K8S cluster administrator, set the total amount of resources to be reserved directly via `node.annotation`, just like: `1C2Gi`.
 
+#### Story 3
+
+The cluster administrator just wants to reserve some cpu cores on the nods, and also wants to use reservation mechanism of kubelet to trim the allocatable resources.  For example, suppose the CPU capacity of node A is 32000m, the administrator reserve `0-3` CPU cores to the processes outside the Kubernetes, and kubelet reserve 8000m CPU to keep the `Node.Status.Allocatable` is 24000m.
 
 ### Implementation Details
+
+#### API
+
 By adding annotation to the node, we specify the resources to be reserved by the koordinator, such as memory, CPU, etc. 
 For CPU, we can specify the total amount of CPU to be reserved, or we can specify which cores to reserve explicitly. 
+
+If resources are reserved and ApplyPolicy is empty or Default, it will affect `Node.Status.Allocatable`. If `ReservedCPUsOnly` is used, only CPU is reserved, but it will not affect `Node.Status.Allocatable`.
+
 ```golang
 // resources that koordinator reserved, and you can reserve other resource if needed.
 type NodeReservation struct {
-	// resources need to be reserved. like, {"cpu":"1C", "memory":"2Gi"}
-	Resources corev1.ResourceList `json:"resources,omitempty"`
-	// reserved cpus need to be reserved, such as 1-6, or 2,4,6,8
-	ReservedCPUs string `json:"reservedCPUs,omitempty"`
+  // resources need to be reserved. like, {"cpu":"1C", "memory":"2Gi"}
+  Resources corev1.ResourceList `json:"resources,omitempty"`
+  // reserved cpus need to be reserved, such as 1-6, or 2,4,6,8
+  ReservedCPUs string `json:"reservedCPUs,omitempty"`
+  // ApplyPolicy indicates how the reserved resources take effect.
+  ApplyPolicy NodeReservationApplyPolicy `json:"applyPolicy,omitempty"`
 }
+
+type NodeReservationApplyPolicy string
+
+const (
+  // NodeReservationApplyPolicyDefault will affect the total amount of schedulable resources of the node and reserve CPU Cores.
+  // For example, NodeInfo.Allocatable will be modified in the scheduler to deduct the amount of reserved resources
+  NodeReservationApplyPolicyDefault NodeReservationApplyPolicy = "Default"
+  // NodeReservationApplyPolicyReservedCPUsOnly means that only CPU Cores are reserved, but it will
+  // not affect the total amount of schedulable resources of the node.
+  // The total amount of schedulable resources is taken into effect by the kubelet's reservation mechanism.
+  // But koordinator need to exclude reserved CPUs when allocating CPU Cores
+  NodeReservationApplyPolicyReservedCPUsOnly NodeReservationApplyPolicy = "ReservedCPUsOnly"
+)
 ```
+
 #### koordlet   
 1. When koordlet reports `NodeResourceTopology`, it updates the explicitly reserved cores in node.annntation to 
   `NodeResourceTopology.annotation["node.koordinator.sh/reservation"]`, so that the `runtimehook` can ignore these cores 
@@ -150,6 +177,7 @@ LS pod use cpus from the shared pool, so here we can ensure that LS pods do not 
 
 
 #### koord-manager  
+
 we should update batch-resource on node here, just like `batch-memory`,`batch-cpu`. 
 the implementation of this part depends on the `nodeResource`  controller in koord-manager, 
 so for batch-resource, the `batchResourceFit` plugin can take into account the resources reserved by the node.
@@ -162,23 +190,24 @@ Node(BE).Alloc = Node.Alloc - Node.Reserved - System.Used - Pod(LS).Used
 ```
 
 #### koord-scheduler
-1. Register the corresponding function by `RegisterNodeInfoTransformer`, subtract the resources reserved from `node.annotation` in `nodeinfo.allocatable`. 
-This part of the logic executed before the filter() of the scheduling plugin. So the resources reserved from node are also taken into account in other scheduler plugins.
-2. When allocating cpus to the LSE/LSR pod in the reserve phase of the `nodenumaresource` plugin, the reserved cores in `nodetopo.annotation` need to be removed.
-    ```
-   cpus(alloc) = cpus(total) - cpus(allocated) - cpus(kubeletReserved) - cpus(nodeAnnoReserved)
-   ```
-3. `elasticquota` plugin shuould also remove those reserved resource when calculate the total amount that can be allocated by Quota  
+
+1. Register the corresponding function by `RegisterNodeInfoTransformer`, subtract the resources reserved from `node.annotation` in `Nodeinfo.Allocatable` if the reservation apply policy is empty or `Default`.
+This part of the logic executed before the Filter of the scheduling plugin. So the resources reserved from node are also taken into account in other scheduler plugins.
+
+2. When allocating cpus to the LSE/LSR pod in the reserve phase of the `NodeNUMAResource` plugin, the reserved cores in `nodetopo.annotation` need to be removed.
+  ```
+  cpus(alloc) = cpus(total) - cpus(allocated) - cpus(kubeletReserved) - cpus(nodeAnnoReserved)
+  ```
+3. `ElasticQuota` plugin shuould also remove those reserved resource if the apply policy is empty or `Default` when calculate the total amount that can be allocated by Quota  
 
   <font color=Chocolate>*description*</font>: 
-  In summary, the resources reserved in node.annotation are taken into account during the `filter` phase of scheduling; 
-  When allocating cores to pod in the `reserve` phase, do not allocate the cores already reserved in node.annotation.  
-
-
+  In summary, the resources reserved in node.annotation are taken into account during the `Filter` phase of scheduling; 
+  When allocating cores to pod in the `Reserve` phase, do not allocate the cores already reserved in node.annotation.  
 ...
 
 
-#### descheduler
+#### Descheduler
+
 - cpu: evict (LSE/LSR)pods that are using reserved cpus in node.annotation.  
 for example, 0-1 core is already used by LSE/LSR pods, but at at the same time we have reserved 0-3 core CPU through `node.annotation`, as declared below.   
 `node.annotation["node.koordinator.sh/reservation"]={"reservedCPUs":"0-3"}`  
@@ -186,9 +215,10 @@ We should evict those pods that occupy 0-3 cores
 - ...
 
 Other eviction policies also need to take into account the resources reserved in node.annotation,   
-e.g. `node.alloctable` in the `LowNodeLoad` descheduler plugin should be minus the reserved resources  
+e.g. `Node.Status.Allocatable` in the `LowNodeLoad` descheduler plugin should be minus the reserved resources if the policy is empty or `Default`.
 
-#### eviction
+#### Eviction
+
 We can do something in the following stages：
 - On the agent side, 
   it is easier to get the resource usage of individual containers,  we can evict pods with lower priority or higher CPU usage. 
@@ -198,7 +228,7 @@ We can do something in the following stages：
   at this time, we should evict a group of pods according to the job/crd dimension. The simplest algorithm looks like this, 
   sorted by priority / number of pods in a group / total resource usage in a group of pods.
 
-#### example  
+#### Example
 There is a demo to reserve CPU by quantity, like this:
 ```yaml
 apiVersion: v1
@@ -238,9 +268,8 @@ zones:
 
 ```
 
-
-
 ## Implementation History
 
 - [ ] 12/27/2022: Open PR for initial draft.
+- [ ] 13/04/2023: Add ApplyPolicy.
 
