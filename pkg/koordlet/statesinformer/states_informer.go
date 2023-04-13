@@ -194,7 +194,8 @@ func (s *statesInformer) GetNode() *corev1.Node {
 	nodeInformerIf := s.states.informerPlugins[nodeInformerName]
 	nodeInformer, ok := nodeInformerIf.(*nodeInformer)
 	if !ok {
-		klog.Fatalf("node informer format error")
+		klog.Errorf("node informer format error")
+		return nil
 	}
 	return nodeInformer.GetNode()
 }
@@ -203,7 +204,8 @@ func (s *statesInformer) GetNodeSLO() *slov1alpha1.NodeSLO {
 	nodeSLOInformerIf := s.states.informerPlugins[nodeSLOInformerName]
 	nodeSLOInformer, ok := nodeSLOInformerIf.(*nodeSLOInformer)
 	if !ok {
-		klog.Fatalf("node slo informer format error")
+		klog.Errorf("node slo informer format error")
+		return nil
 	}
 	return nodeSLOInformer.GetNodeSLO()
 }
@@ -212,7 +214,8 @@ func (s *statesInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology {
 	nodeTopoInformerIf := s.states.informerPlugins[nodeTopoInformerName]
 	nodeTopoInformer, ok := nodeTopoInformerIf.(*nodeTopoInformer)
 	if !ok {
-		klog.Fatalf("node topo informer format error")
+		klog.Errorf("node topo informer format error")
+		return nil
 	}
 	return nodeTopoInformer.GetNodeTopo()
 }
@@ -221,7 +224,8 @@ func (s *statesInformer) GetAllPods() []*PodMeta {
 	podsInformerIf := s.states.informerPlugins[podsInformerName]
 	podsInformer, ok := podsInformerIf.(*podsInformer)
 	if !ok {
-		klog.Fatalf("pods informer format error")
+		klog.Errorf("pods informer format error")
+		return nil
 	}
 	return podsInformer.GetAllPods()
 }

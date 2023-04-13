@@ -49,6 +49,10 @@ func generateQueryParam() *metriccache.QueryParam {
 
 func (s *statesInformer) reportDevice() {
 	node := s.GetNode()
+	if node == nil {
+		klog.Errorf("node is nil")
+		return
+	}
 	gpuDevices := s.buildGPUDevice()
 	if len(gpuDevices) == 0 {
 		return
