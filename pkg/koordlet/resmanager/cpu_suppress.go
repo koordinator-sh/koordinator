@@ -114,7 +114,7 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric *metr
 	nodeUsedCPU := &nodeMetric.CPUUsed.CPUUsed
 
 	podAllUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
-	podLSUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
+	podNoneBEUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
 
 	podMetaMap := map[string]*statesinformer.PodMeta{}
 	for _, podMeta := range podMetas {
@@ -130,7 +130,7 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric *metr
 		}
 		if !ok || (apiext.GetPodQoSClass(podMeta.Pod) != apiext.QoSBE && util.GetKubeQosClass(podMeta.Pod) != corev1.PodQOSBestEffort) {
 			// NOTE: consider non-BE pods and podMeta-missing pods as LS
-			podLSUsedCPU.Add(*getPodMetricCPUUsage(podMetric))
+			podNoneBEUsedCPU.Add(*getPodMetricCPUUsage(podMetric))
 		}
 	}
 
@@ -148,17 +148,17 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric *metr
 	systemUsed = quotav1.Max(systemUsed, nodeAnnoReserved)
 	systemUsedCPU = systemUsed[corev1.ResourceCPU]
 
-	// suppress(BE) := node.Total * SLOPercent - pod(LS).Used - max(system.Used, node.anno.reserved)
+	// suppress(BE) := node.Total * SLOPercent - pod(non-be).Used - max(system.Used, node.anno.reserved)
 	// NOTE: valid milli-cpu values should not larger than 2^20, so there is no overflow during the calculation
 	nodeBESuppressCPU := resource.NewMilliQuantity(node.Status.Allocatable.Cpu().MilliValue()*beCPUUsedThreshold/100,
 		node.Status.Allocatable.Cpu().Format)
-	nodeBESuppressCPU.Sub(podLSUsedCPU)
+	nodeBESuppressCPU.Sub(podNoneBEUsedCPU)
 	nodeBESuppressCPU.Sub(systemUsedCPU)
 
-	metrics.RecordBESuppressLSUsedCPU(float64(podLSUsedCPU.MilliValue()) / 1000)
+	metrics.RecordBESuppressLSUsedCPU(float64(podNoneBEUsedCPU.MilliValue()) / 1000)
 	klog.Infof("nodeSuppressBE[CPU(Core)]:%v = node.Total:%v * SLOPercent:%v%% - systemUsage:%v - podLSUsed:%v\n",
 		nodeBESuppressCPU.Value(), node.Status.Allocatable.Cpu().Value(), beCPUUsedThreshold, systemUsedCPU.Value(),
-		podLSUsedCPU.Value())
+		podNoneBEUsedCPU.Value())
 
 	return nodeBESuppressCPU
 }
@@ -334,15 +334,24 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 		return
 	}
 
+	var cpusetReserved cpuset.CPUSet
 	cpusReservedByAnno, _ := apiext.GetReservedCPUs(topo.Annotations)
-	cpusetReserved := cpuset.MustParse(cpusReservedByAnno)
+	if cpusetReserved, err = cpuset.Parse(cpusReservedByAnno); err != nil {
+		klog.Warningf("failed to parse cpuset from node reservation %v, err: %v", cpusReservedByAnno, err)
+	}
+
+	// system qos exclusive cpuset
+	exclusiveSystemQOSCPUSet, err := getSystemQOSExclusiveCPU(topo.Annotations)
+	if err != nil {
+		klog.Warningf("get system qos exclusive cpuset failed, error: %v", err)
+	}
 
 	var lsrCpus []koordletutil.ProcessorInfo
 	var lsCpus []koordletutil.ProcessorInfo
 	// FIXME: be pods might be starved since lse pods can run out of all cpus
 	for _, processor := range nodeCPUInfo.ProcessorInfos {
-		cpuset := cpuset.NewCPUSet(int(processor.CPUID))
-		if cpuset.IsSubsetOf(cpusetReserved) {
+		cpuCoreID := cpuset.NewCPUSet(int(processor.CPUID))
+		if cpuCoreID.IsSubsetOf(cpusetReserved) || cpuCoreID.IsSubsetOf(exclusiveSystemQOSCPUSet) {
 			continue
 		}
 
@@ -394,9 +403,38 @@ func (r *CPUSuppress) recoverCPUSetIfNeed(maxDepth int) {
 	for _, p := range nodeInfo.ProcessorInfos {
 		cpus = append(cpus, int(p.CPUID))
 	}
-
 	beCPUSet := cpuset.NewCPUSet(cpus...)
-	lseCPUID := make(map[int]bool)
+
+	topo := r.resmanager.statesInformer.GetNodeTopo()
+	if topo == nil {
+		klog.Errorf("node topo is nil")
+		return
+	}
+
+	// LSE pod, reserved cpu and system qos exclusive
+	exclusiveCPUID := make(map[int]bool)
+
+	// System pod, exclude cpuset if exclusive
+	exclusiveSystemQOSCPUSet, err := getSystemQOSExclusiveCPU(topo.Annotations)
+	if err != nil {
+		klog.Warningf("get system qos exclusive cpuset failed, error: %v", err)
+	} else if !exclusiveSystemQOSCPUSet.IsEmpty() {
+		for _, cpuID := range exclusiveSystemQOSCPUSet.ToSliceNoSort() {
+			exclusiveCPUID[cpuID] = true
+		}
+	}
+
+	// exclude reserved cpuset
+	var cpusetReserved cpuset.CPUSet
+	cpusReservedByAnno, _ := apiext.GetReservedCPUs(topo.Annotations)
+	if cpusetReserved, err = cpuset.Parse(cpusReservedByAnno); err != nil {
+		klog.Warningf("failed to parse cpuset from node reservation %v, err: %v", cpusReservedByAnno, err)
+	} else {
+		for _, cpuID := range cpusetReserved.ToSliceNoSort() {
+			exclusiveCPUID[cpuID] = true
+		}
+	}
+
 	podMetas := r.resmanager.statesInformer.GetAllPods()
 	for _, podMeta := range podMetas {
 		alloc, err := apiext.GetResourceStatus(podMeta.Pod.Annotations)
@@ -415,11 +453,11 @@ func (r *CPUSuppress) recoverCPUSetIfNeed(maxDepth int) {
 			continue
 		}
 		for _, cpuID := range set.ToSliceNoSort() {
-			lseCPUID[cpuID] = true
+			exclusiveCPUID[cpuID] = true
 		}
 	}
-	beCPUSet.Filter(func(ID int) bool {
-		return !lseCPUID[ID]
+	beCPUSet = beCPUSet.Filter(func(ID int) bool {
+		return !exclusiveCPUID[ID]
 	})
 
 	cpusetCgroupPaths, err := koordletutil.GetBECPUSetPathsByMaxDepth(maxDepth)
@@ -610,4 +648,17 @@ func calculateBESuppressCPUSetPolicy(cpus int32, processorInfos []koordletutil.P
 	}
 	klog.Infof("calculated BE suppress policy: cpuset %v", CPUSets)
 	return CPUSets
+}
+
+func getSystemQOSExclusiveCPU(nodeTopoAnno map[string]string) (cpuset.CPUSet, error) {
+	exclusiveSystemQOSCPUSet := cpuset.CPUSet{}
+	// system qos cpuset exist and exclusive
+	if systemQOSRes, err := apiext.GetSystemQOSResource(nodeTopoAnno); err == nil && systemQOSRes != nil && len(systemQOSRes.CPUSet) > 0 && systemQOSRes.IsCPUSetExclusive() {
+		// parse cpuset string to struct
+		if exclusiveSystemQOSCPUSet, err = cpuset.Parse(systemQOSRes.CPUSet); err != nil {
+			return exclusiveSystemQOSCPUSet, fmt.Errorf("parse cpuset from system qos resource failed, origin %v, error %v",
+				systemQOSRes.CPUSet, err)
+		}
+	}
+	return exclusiveSystemQOSCPUSet, nil
 }

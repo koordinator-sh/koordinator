@@ -236,7 +236,18 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 	reserved := getNodeReserved(topology, node.Annotations)
 	reservedJson, err := json.Marshal(reserved)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal reserved resource by node.annotation, err: %v", err)
+		return nil, fmt.Errorf("failed to marshal reserved resource by node.annotation, error: %v", err)
+	}
+
+	// handle cpus allocated for system qos of node
+	systemQOSRes, err := extension.GetSystemQOSResource(node.Annotations)
+	// TODO consider define in NodeSLO for system qos, annotation on node is provided as "Syntactic Sugar", which overlaps the NodeSLO for custom-definition
+	if err != nil {
+		return nil, fmt.Errorf("failed to get system qos resource from node annotation, error: %v", err)
+	}
+	systemQOSJson, err := json.Marshal(systemQOSRes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal system qos resource, error %v", err)
 	}
 
 	// Users can specify the kubelet RootDirectory on the host in the koordlet DaemonSet,
@@ -270,8 +281,12 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 
 	sharePools := s.calCPUSharePools(sharedPoolCPUs)
 	// remove cpus that already reserved by node.annotation.
-	nodeAnnoReserved := cpuset.MustParse(reserved.ReservedCPUs)
-	sharePools = removeNodeReservedCPUs(sharePools, nodeAnnoReserved)
+	if nodeAnnoReserved, err := cpuset.Parse(reserved.ReservedCPUs); err == nil {
+		sharePools = removeNodeReservedCPUs(sharePools, nodeAnnoReserved)
+	}
+
+	// remove cpus that exclusive for system qos from annotation
+	sharePools = removeSystemQOSCPUs(sharePools, systemQOSRes)
 	cpuSharePoolsJSON, err := json.Marshal(sharePools)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal cpushare pools of node, err: %v", err)
@@ -286,6 +301,9 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 	}
 	if len(reservedJson) != 0 {
 		annotations[extension.AnnotationNodeReservation] = string(reservedJson)
+	}
+	if len(systemQOSJson) != 0 {
+		annotations[extension.AnnotationNodeSystemQOSResource] = string(systemQOSJson)
 	}
 
 	return annotations, nil
@@ -305,6 +323,35 @@ func removeNodeReservedCPUs(cpuSharePools []extension.CPUSharedPool, reservedCPU
 		}
 
 		newCPUSharePools[idx].CPUSet = originCPUs.Difference(reservedCPUs).String()
+	}
+
+	return newCPUSharePools
+}
+
+// removeSystemQOSCPUs filter out cpus that for system qos.
+func removeSystemQOSCPUs(cpuSharePools []extension.CPUSharedPool, sysQOSRes *extension.SystemQOSResource) []extension.CPUSharedPool {
+	if sysQOSRes == nil || len(sysQOSRes.CPUSet) == 0 || !sysQOSRes.IsCPUSetExclusive() {
+		// system QoS resource not specified, or cpu is not exclusive
+		return cpuSharePools
+	}
+
+	systemQOSCPUs, err := cpuset.Parse(sysQOSRes.CPUSet)
+	if err != nil {
+		return cpuSharePools
+	}
+
+	newCPUSharePools := make([]extension.CPUSharedPool, len(cpuSharePools))
+	for idx, val := range cpuSharePools {
+		newCPUSharePools[idx] = val
+	}
+
+	for idx, pool := range cpuSharePools {
+		originCPUs, err := cpuset.Parse(pool.CPUSet)
+		if err != nil {
+			return newCPUSharePools
+		}
+
+		newCPUSharePools[idx].CPUSet = originCPUs.Difference(systemQOSCPUs).String()
 	}
 
 	return newCPUSharePools
@@ -476,6 +523,7 @@ func isEqualTopo(OldTopo map[string]string, NewTopo map[string]string) bool {
 		extension.AnnotationNodeCPUTopology,
 		extension.AnnotationNodeCPUAllocs,
 		extension.AnnotationNodeReservation,
+		extension.AnnotationNodeSystemQOSResource,
 	}
 
 	for _, key := range keyslice {

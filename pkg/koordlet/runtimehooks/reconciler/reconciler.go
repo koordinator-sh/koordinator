@@ -302,8 +302,8 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 				for _, r := range globalCgroupReconcilers.podLevel {
 					reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
 					if !ok {
-						klog.V(5).Infof("calling reconcile function %v aborted, condition %s not registered",
-							r.description, r.filter.Filter(podMeta))
+						klog.V(5).Infof("calling reconcile function %v aborted for pod %v, condition %s not registered",
+							r.description, util.GetPodKey(podMeta.Pod), r.filter.Filter(podMeta))
 						continue
 					}
 
@@ -320,8 +320,8 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 					for _, r := range globalCgroupReconcilers.containerLevel {
 						reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
 						if !ok {
-							klog.V(5).Infof("calling reconcile function %v aborted, condition %s not registered",
-								r.description, r.filter.Filter(podMeta))
+							klog.V(5).Infof("calling reconcile function %v aborted for pod %v, condition %s not registered",
+								r.description, util.GetPodKey(podMeta.Pod), r.filter.Filter(podMeta))
 							continue
 						}
 

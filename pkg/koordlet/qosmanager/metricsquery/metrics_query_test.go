@@ -32,7 +32,10 @@ import (
 )
 
 func Test_collectNodeMetricsAvg(t *testing.T) {
-
+	now := time.Now()
+	timeNow = func() time.Time {
+		return now // Some time that you need
+	}
 	type nodeMetric struct {
 		timestamp   time.Time
 		nodeResUsed *metriccache.NodeResourceMetric
@@ -54,14 +57,14 @@ func Test_collectNodeMetricsAvg(t *testing.T) {
 			name: "test windowSize < dataInterval",
 			nodeMetrics: []*nodeMetric{
 				{
-					timestamp: time.Now().Add(-3 * time.Second),
+					timestamp: now.Add(-4 * time.Second),
 					nodeResUsed: &metriccache.NodeResourceMetric{
 						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("14")},
 						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("60G")},
 					},
 				},
 				{
-					timestamp: time.Now().Add(-1 * time.Second),
+					timestamp: now.Add(-2 * time.Second),
 					nodeResUsed: &metriccache.NodeResourceMetric{
 						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("16")},
 						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("70G")},
@@ -75,28 +78,28 @@ func Test_collectNodeMetricsAvg(t *testing.T) {
 			name: "test windowSize > dataInterval",
 			nodeMetrics: []*nodeMetric{
 				{
-					timestamp: time.Now().Add(-7 * time.Second),
+					timestamp: now.Add(-7 * time.Second),
 					nodeResUsed: &metriccache.NodeResourceMetric{
 						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("10")},
 						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("40G")},
 					},
 				},
 				{
-					timestamp: time.Now().Add(-5 * time.Second),
+					timestamp: now.Add(-5 * time.Second),
 					nodeResUsed: &metriccache.NodeResourceMetric{
 						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("12")},
 						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("50G")},
 					},
 				},
 				{
-					timestamp: time.Now().Add(-3 * time.Second),
+					timestamp: now.Add(-3 * time.Second),
 					nodeResUsed: &metriccache.NodeResourceMetric{
 						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("14")},
 						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("60G")},
 					},
 				},
 				{
-					timestamp: time.Now().Add(-1 * time.Second),
+					timestamp: now.Add(-1 * time.Second),
 					nodeResUsed: &metriccache.NodeResourceMetric{
 						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("16")},
 						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("70G")},
@@ -127,7 +130,10 @@ func Test_collectNodeMetricsAvg(t *testing.T) {
 }
 
 func Test_collectNodeAndPodMetricLast(t *testing.T) {
-
+	now := time.Now()
+	timeNow = func() time.Time {
+		return now // Some time that you need
+	}
 	type metricInfos struct {
 		timestamp   time.Time
 		nodeResUsed *metriccache.NodeResourceMetric
@@ -153,7 +159,7 @@ func Test_collectNodeAndPodMetricLast(t *testing.T) {
 			pod:  &statesinformer.PodMeta{Pod: testutil.MockTestPod(extension.QoSLSR, "test_pod")},
 			metricInfos: []*metricInfos{
 				{
-					timestamp: time.Now().Add(-3 * time.Second),
+					timestamp: now.Add(-3 * time.Second),
 					nodeResUsed: &metriccache.NodeResourceMetric{
 						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("14")},
 						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("60G")},
@@ -165,7 +171,7 @@ func Test_collectNodeAndPodMetricLast(t *testing.T) {
 					},
 				},
 				{
-					timestamp: time.Now().Add(-1 * time.Second),
+					timestamp: now.Add(-1 * time.Second),
 					nodeResUsed: &metriccache.NodeResourceMetric{
 						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("16")},
 						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("70G")},

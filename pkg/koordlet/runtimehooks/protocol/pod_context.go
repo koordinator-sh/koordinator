@@ -17,6 +17,8 @@ limitations under the License.
 package protocol
 
 import (
+	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 
@@ -32,6 +34,10 @@ type PodMeta struct {
 	Namespace string
 	Name      string
 	UID       string
+}
+
+func (p *PodMeta) String() string {
+	return fmt.Sprintf("%v/%v", p.Namespace, p.Name)
 }
 
 func (p *PodMeta) FromProxy(meta *runtimeapi.PodSandboxMetadata) {
