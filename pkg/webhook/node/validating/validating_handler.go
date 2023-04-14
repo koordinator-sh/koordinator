@@ -32,7 +32,7 @@ import (
 	nodesloconfig "github.com/koordinator-sh/koordinator/pkg/webhook/node/plugins/sloconfig"
 )
 
-// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 
 type NodeValidatingHandler struct {
 	Client client.Client

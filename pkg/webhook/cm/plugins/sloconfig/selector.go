@@ -18,9 +18,12 @@ package sloconfig
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-type virtualNode = map[string]string
+// virtualNode not a realNode, just a mockNode only have labels
+type virtualNode = map[string] /*labelKey*/ string /*labelValue*/
 
-/** generateNodesByNodeSelector : generate testNodes to detect overlap for nodeConfigs */
+// generateNodesByNodeSelector : generate testNodes to detect overlap for nodeConfigs simply
+// example1: nodeSelector{MatchLabels{xx:v1}}, can generate one node {virtualNode{xx:v1}}
+// example2: nodeSelector{MatchExpressions{{xx in v1,v2}}}, can generate nodes{virtualNode{xx:v1},virtualNode{xx:v2}}
 func generateNodesByNodeSelector(nodeSelector *metav1.LabelSelector) []virtualNode {
 
 	if nodeSelector == nil {
@@ -36,7 +39,7 @@ func generateNodesByNodeSelector(nodeSelector *metav1.LabelSelector) []virtualNo
 	}
 
 	virtualNodes := make([]virtualNode, virtualNodeNums)
-
+	//fill label with MatchLabels
 	for key, value := range nodeSelector.MatchLabels {
 		for i := range virtualNodes {
 			if virtualNodes[i] == nil {
@@ -46,6 +49,7 @@ func generateNodesByNodeSelector(nodeSelector *metav1.LabelSelector) []virtualNo
 		}
 	}
 
+	//fill label with MatchExpressions
 	for _, e := range nodeSelector.MatchExpressions {
 		valuesNum := len(e.Values)
 		if valuesNum > 0 {

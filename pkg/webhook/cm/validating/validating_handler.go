@@ -34,7 +34,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/webhook/cm/plugins/sloconfig"
 )
 
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 
 type ConfigMapValidatingHandler struct {
 	Client client.Client

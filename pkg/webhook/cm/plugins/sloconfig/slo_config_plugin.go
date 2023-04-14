@@ -32,10 +32,10 @@ import (
 )
 
 const (
-	PluginName = "SLOControllerConfig"
+	PluginName = "SLOConfig"
 )
 
-// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 
 type SLOControllerPlugin struct {
 	client  ctrlclient.Client

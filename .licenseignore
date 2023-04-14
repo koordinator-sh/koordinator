@@ -7,6 +7,7 @@ pkg/scheduler/plugins/coscheduling
 pkg/koordlet/util/kubelet
 pkg/util/cpuset/cpuset.go
 pkg/util/cpuset/cpuset_test.go
+pkg/util/parallelize/parallelism.go
 test/e2e/common
 test/e2e/framework
 test/e2e/generated

@@ -36,10 +36,10 @@ const (
 	// ElasticQuotaValidatingWebhook enables validating webhook for ElasticQuotas creations or updates
 	ElasticQuotaValidatingWebhook featuregate.Feature = "ElasticValidatingWebhook"
 
-	//NodeValidatingWebhook enables validating webhook for Node Creation or updates
+	// NodeValidatingWebhook enables validating webhook for Node Creation or updates
 	NodeValidatingWebhook featuregate.Feature = "NodeValidatingWebhook"
 
-	//ConfigMapValidatingWebhook enables validating webhook for configmap Creation or updates
+	// ConfigMapValidatingWebhook enables validating webhook for configmap Creation or updates
 	ConfigMapValidatingWebhook featuregate.Feature = "ConfigMapValidatingWebhook"
 
 	// WebhookFramework enables webhook framework
