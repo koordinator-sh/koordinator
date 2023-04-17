@@ -26,6 +26,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
+var (
+	timeNow = time.Now
+)
+
 type MetricsQuery interface {
 	CollectNodeAndPodMetricLast(collectResUsedIntervalSeconds int64) (
 		*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric)
@@ -164,7 +168,7 @@ func (r *metricsQuery) CollectContainerThrottledMetricLast(containerID *string, 
 }
 
 func GenerateQueryParamsAvg(windowSeconds int64) *metriccache.QueryParam {
-	end := time.Now()
+	end := timeNow()
 	start := end.Add(-time.Duration(windowSeconds) * time.Second)
 	queryParam := &metriccache.QueryParam{
 		Aggregate: metriccache.AggregationTypeAVG,
@@ -175,7 +179,7 @@ func GenerateQueryParamsAvg(windowSeconds int64) *metriccache.QueryParam {
 }
 
 func GenerateQueryParamsLast(windowSeconds int64) *metriccache.QueryParam {
-	end := time.Now()
+	end := timeNow()
 	start := end.Add(-time.Duration(windowSeconds) * time.Second)
 	queryParam := &metriccache.QueryParam{
 		Aggregate: metriccache.AggregationTypeLast,
