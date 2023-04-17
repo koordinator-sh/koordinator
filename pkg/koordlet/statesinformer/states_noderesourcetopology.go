@@ -390,6 +390,9 @@ func (s *nodeTopoInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInf
 			delete(usedCPUs, int32(cpuID))
 		}
 	}
+	sort.Slice(podAllocs, func(i, j int) bool {
+		return string(podAllocs[i].UID) < string(podAllocs[j].UID)
+	})
 	return podAllocs, nil
 }
 
@@ -574,6 +577,9 @@ func (s *nodeTopoInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extensio
 		cpuTopology.Detail = append(cpuTopology.Detail, info)
 		cpus[cpu.CPUID] = &info
 	}
+	sort.Slice(cpuTopology.Detail, func(i, j int) bool {
+		return cpuTopology.Detail[i].ID < cpuTopology.Detail[j].ID
+	})
 	return nodeCPUInfo, cpuTopology, cpus, nil
 }
 
