@@ -25,7 +25,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 type batchResourceRule struct {
@@ -116,8 +116,8 @@ func (p *plugin) updateRule(newRule *batchResourceRule) bool {
 func getCPUSuppressPolicy(nodeSLOSpec *slov1alpha1.NodeSLOSpec) (bool, slov1alpha1.CPUSuppressPolicy) {
 	if nodeSLOSpec == nil || nodeSLOSpec.ResourceUsedThresholdWithBE == nil ||
 		nodeSLOSpec.ResourceUsedThresholdWithBE.CPUSuppressPolicy == "" {
-		return *util.DefaultResourceThresholdStrategy().Enable,
-			util.DefaultResourceThresholdStrategy().CPUSuppressPolicy
+		return *sloconfig.DefaultResourceThresholdStrategy().Enable,
+			sloconfig.DefaultResourceThresholdStrategy().CPUSuppressPolicy
 	}
 	return *nodeSLOSpec.ResourceUsedThresholdWithBE.Enable,
 		nodeSLOSpec.ResourceUsedThresholdWithBE.CPUSuppressPolicy

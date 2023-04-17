@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package config
+package sloconfig
 
 import (
 	"fmt"
@@ -45,6 +45,6 @@ func UnregisterDefaultColocationExtension(key string) {
 }
 
 // solving internal ut conflicts
-func clearDefaultColocationExtension() {
+func ClearDefaultColocationExtension() {
 	defaultColocationStrategyExtender.Extensions = nil
 }

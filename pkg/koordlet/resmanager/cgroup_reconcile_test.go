@@ -41,8 +41,8 @@ import (
 	mockstatesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cache"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 var (
@@ -831,20 +831,20 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 }
 
 func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
-	testingNodeNoneResourceQoS := util.NoneResourceQOSStrategy().BEClass
-	testingMemoryQoSEnableResourceQoS := util.DefaultResourceQOSStrategy().BEClass // qos enable
+	testingNodeNoneResourceQoS := sloconfig.NoneResourceQOSStrategy().BEClass
+	testingMemoryQoSEnableResourceQoS := sloconfig.DefaultResourceQOSStrategy().BEClass // qos enable
 	testingMemoryQoSEnableResourceQoS.MemoryQOS.Enable = pointer.BoolPtr(true)
-	testingMemoryQoSNoneResourceQoS := util.NoneResourceQOSStrategy().BEClass // qos disable
-	testingMemoryQoSNoneResourceQoS.MemoryQOS = util.NoneResourceQOSStrategy().BEClass.MemoryQOS
-	testingMemoryQoSNoneResourceQoS1 := util.DefaultResourceQOSStrategy().BEClass // qos partially disable
-	testingMemoryQoSNoneResourceQoS1.MemoryQOS = util.NoneResourceQOSStrategy().BEClass.MemoryQOS
-	testingMemoryQoSAutoResourceQoS := util.NoneResourceQOSStrategy().BEClass
-	testingMemoryQoSAutoResourceQoS.MemoryQOS.MemoryQOS = *util.DefaultMemoryQOS(apiext.QoSBE)
-	testingMemoryQoSAutoResourceQoS1 := util.DefaultResourceQOSStrategy().BEClass
+	testingMemoryQoSNoneResourceQoS := sloconfig.NoneResourceQOSStrategy().BEClass // qos disable
+	testingMemoryQoSNoneResourceQoS.MemoryQOS = sloconfig.NoneResourceQOSStrategy().BEClass.MemoryQOS
+	testingMemoryQoSNoneResourceQoS1 := sloconfig.DefaultResourceQOSStrategy().BEClass // qos partially disable
+	testingMemoryQoSNoneResourceQoS1.MemoryQOS = sloconfig.NoneResourceQOSStrategy().BEClass.MemoryQOS
+	testingMemoryQoSAutoResourceQoS := sloconfig.NoneResourceQOSStrategy().BEClass
+	testingMemoryQoSAutoResourceQoS.MemoryQOS.MemoryQOS = *sloconfig.DefaultMemoryQOS(apiext.QoSBE)
+	testingMemoryQoSAutoResourceQoS1 := sloconfig.DefaultResourceQOSStrategy().BEClass
 	testingMemoryQoSAutoResourceQoS1.MemoryQOS.ThrottlingPercent = pointer.Int64Ptr(90)
 	testingMemoryQoSAutoResourceQoS2 := &slov1alpha1.ResourceQOS{
 		MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-			MemoryQOS: *util.DefaultMemoryQOS(apiext.QoSBE),
+			MemoryQOS: *sloconfig.DefaultMemoryQOS(apiext.QoSBE),
 		},
 	}
 	testingMemoryQoSAutoResourceQoS2.MemoryQOS.ThrottlingPercent = pointer.Int64Ptr(90)
@@ -909,7 +909,7 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 						Phase: corev1.PodRunning,
 					},
 				},
-				cfg: util.DefaultResourceQOSStrategy().BEClass,
+				cfg: sloconfig.DefaultResourceQOSStrategy().BEClass,
 			},
 			want: testingMemoryQoSNoneResourceQoS1,
 		},
@@ -963,7 +963,7 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 						Phase: corev1.PodRunning,
 					},
 				},
-				cfg: util.DefaultResourceQOSStrategy().BEClass,
+				cfg: sloconfig.DefaultResourceQOSStrategy().BEClass,
 			},
 			want: testingMemoryQoSAutoResourceQoS1,
 		},
@@ -1456,7 +1456,7 @@ func readMemFromCgroupFile(parentDir string, helper *system.FileTestUtil) *slov1
 	resourceQoS.MemoryQOS.OomKillGroup, _ = cgroupFileReadIntforTest(parentDir, system.MemoryOomGroup)
 
 	// assume NONE cfg equals to disabled
-	memoryQoSDisabled := reflect.DeepEqual(util.NoneMemoryQOS(), &resourceQoS.MemoryQOS)
+	memoryQoSDisabled := reflect.DeepEqual(sloconfig.NoneMemoryQOS(), &resourceQoS.MemoryQOS)
 	resourceQoS.MemoryQOS.Enable = pointer.BoolPtr(!memoryQoSDisabled)
 
 	return resourceQoS

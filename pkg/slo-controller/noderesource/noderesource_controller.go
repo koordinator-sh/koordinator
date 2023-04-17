@@ -34,6 +34,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 const (
@@ -131,7 +132,7 @@ func Add(mgr ctrl.Manager) error {
 }
 
 func (r *NodeResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *config.NewDefaultColocationCfg(), r.Recorder)
+	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *sloconfig.NewDefaultColocationCfg(), r.Recorder)
 	r.cfgCache = handler
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Node{}).

@@ -43,6 +43,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cache"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 // TODO: unit test for cpuEvict() to improve coverage
@@ -50,7 +51,7 @@ func Test_cpuEvict(t *testing.T) {}
 
 func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 
-	thresholdConfig := util.DefaultResourceThresholdStrategy()
+	thresholdConfig := sloconfig.DefaultResourceThresholdStrategy()
 	thresholdConfig.CPUEvictBESatisfactionUpperPercent = pointer.Int64Ptr(40)
 	thresholdConfig.CPUEvictBESatisfactionLowerPercent = pointer.Int64Ptr(30)
 	collectResUsedIntervalSeconds := int64(1)

@@ -33,6 +33,7 @@ import (
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 type CgroupResourcesReconcile struct {
@@ -372,11 +373,11 @@ func (m *CgroupResourcesReconcile) mergePodResourceQoSForMemoryQoS(pod *corev1.P
 
 	// if policy is not default, replace memory qos config with the policy template
 	if policy == slov1alpha1.PodMemoryQOSPolicyNone { // fully disable memory qos for policy=None
-		cfg.MemoryQOS.MemoryQOS = *util.NoneMemoryQOS()
+		cfg.MemoryQOS.MemoryQOS = *sloconfig.NoneMemoryQOS()
 		cfg.MemoryQOS.Enable = pointer.BoolPtr(false)
 		return
 	} else if policy == slov1alpha1.PodMemoryQOSPolicyAuto { // qos=None would be set with kubeQoS for policy=Auto
-		cfg.MemoryQOS.MemoryQOS = getPodResourceQoSByQoSClass(pod, util.DefaultResourceQOSStrategy(), m.resmanager.config).MemoryQOS.MemoryQOS
+		cfg.MemoryQOS.MemoryQOS = getPodResourceQoSByQoSClass(pod, sloconfig.DefaultResourceQOSStrategy(), m.resmanager.config).MemoryQOS.MemoryQOS
 	}
 
 	// no need to merge config if pod-level config is nil

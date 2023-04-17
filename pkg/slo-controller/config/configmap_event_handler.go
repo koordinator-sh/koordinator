@@ -23,6 +23,8 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 var _ handler.EventHandler = &EnqueueRequestForConfigMap{}
@@ -37,7 +39,7 @@ func (p *EnqueueRequestForConfigMap) Create(evt event.CreateEvent, q workqueue.R
 	if !ok {
 		return
 	}
-	if configMap.Namespace != ConfigNameSpace || configMap.Name != SLOCtrlConfigMap {
+	if configMap.Namespace != sloconfig.ConfigNameSpace || configMap.Name != sloconfig.SLOCtrlConfigMap {
 		return
 	}
 
@@ -59,7 +61,7 @@ func (p *EnqueueRequestForConfigMap) Update(evt event.UpdateEvent, q workqueue.R
 	if reflect.DeepEqual(newConfigMap.Data, oldConfigMap.Data) {
 		return
 	}
-	if newConfigMap.Namespace != ConfigNameSpace || newConfigMap.Name != SLOCtrlConfigMap {
+	if newConfigMap.Namespace != sloconfig.ConfigNameSpace || newConfigMap.Name != sloconfig.SLOCtrlConfigMap {
 		return
 	}
 	if p.SyncCacheIfChanged != nil && !p.SyncCacheIfChanged(newConfigMap) {

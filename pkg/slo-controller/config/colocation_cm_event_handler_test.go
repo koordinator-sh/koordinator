@@ -28,11 +28,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func Test_syncColocationConfigIfChanged(t *testing.T) {
-	clearDefaultColocationExtension()
-	oldCfg := *NewDefaultColocationCfg()
+	sloconfig.ClearDefaultColocationExtension()
+	oldCfg := *sloconfig.NewDefaultColocationCfg()
 	oldCfg.MemoryReclaimThresholdPercent = pointer.Int64Ptr(40)
 	memoryCalcPolicyByUsage := extension.CalculateByPodUsage
 	memoryCalcPolicyByRequest := extension.CalculateByPodRequest
@@ -55,21 +56,21 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 			fields:      fields{config: &colocationCfgCache{}},
 			args:        args{configMap: nil},
 			wantChanged: true,
-			wantField:   &colocationCfgCache{colocationCfg: *NewDefaultColocationCfg(), available: true, errorStatus: true},
+			wantField:   &colocationCfgCache{colocationCfg: *sloconfig.NewDefaultColocationCfg(), available: true, errorStatus: true},
 		},
 		{
 			name:        "configmap is nil,cache have old cfg,  cfg will be changed to use default cfg",
 			fields:      fields{config: &colocationCfgCache{colocationCfg: oldCfg}},
 			args:        args{configMap: nil},
 			wantChanged: true,
-			wantField:   &colocationCfgCache{colocationCfg: *NewDefaultColocationCfg(), available: true, errorStatus: true},
+			wantField:   &colocationCfgCache{colocationCfg: *sloconfig.NewDefaultColocationCfg(), available: true, errorStatus: true},
 		},
 		{
 			name:        "configmap is nil, cache has been set default cfg ,so not changed",
-			fields:      fields{config: &colocationCfgCache{colocationCfg: *NewDefaultColocationCfg()}},
+			fields:      fields{config: &colocationCfgCache{colocationCfg: *sloconfig.NewDefaultColocationCfg()}},
 			args:        args{configMap: nil},
 			wantChanged: false,
-			wantField:   &colocationCfgCache{colocationCfg: *NewDefaultColocationCfg(), available: true, errorStatus: true},
+			wantField:   &colocationCfgCache{colocationCfg: *sloconfig.NewDefaultColocationCfg(), available: true, errorStatus: true},
 		},
 		{
 			name:   "no colocation config in configmap, cache have no old cfg, cfg will be changed to use default cfg",
@@ -80,13 +81,13 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{},
 			}},
 			wantChanged: true,
-			wantField:   &colocationCfgCache{colocationCfg: *NewDefaultColocationCfg(), available: true, errorStatus: false},
+			wantField:   &colocationCfgCache{colocationCfg: *sloconfig.NewDefaultColocationCfg(), available: true, errorStatus: false},
 		},
 		{
 			name:   "no colocation config in configmap, cache have old cfg, cfg will be changed to use default cfg",
@@ -97,30 +98,30 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{},
 			}},
 			wantChanged: true,
-			wantField:   &colocationCfgCache{colocationCfg: *NewDefaultColocationCfg(), available: true, errorStatus: false},
+			wantField:   &colocationCfgCache{colocationCfg: *sloconfig.NewDefaultColocationCfg(), available: true, errorStatus: false},
 		},
 		{
 			name:   "no colocation config in configmap, cache has been set default cfg ,so not changed",
-			fields: fields{config: &colocationCfgCache{colocationCfg: *NewDefaultColocationCfg()}},
+			fields: fields{config: &colocationCfgCache{colocationCfg: *sloconfig.NewDefaultColocationCfg()}},
 			args: args{configMap: &corev1.ConfigMap{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "ConfigMap",
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{},
 			}},
 			wantChanged: false,
-			wantField:   &colocationCfgCache{colocationCfg: *NewDefaultColocationCfg(), available: true, errorStatus: false},
+			wantField:   &colocationCfgCache{colocationCfg: *sloconfig.NewDefaultColocationCfg(), available: true, errorStatus: false},
 		},
 		{
 			name:   "unmarshal failed, for cache unavailable",
@@ -131,8 +132,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":10, \"invalidKey\":\"invalidValue\",}",
@@ -153,8 +154,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":10, \"invalidKey\":\"invalidValue\",}",
@@ -179,8 +180,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":60,\"cpuReclaimThresholdPercent\":70," +
@@ -194,7 +195,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						Enable:                         pointer.BoolPtr(false),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
-						MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(70),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
@@ -216,8 +217,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":60,\"cpuReclaimThresholdPercent\":70," +
@@ -239,8 +240,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":60,\"cpuReclaimThresholdPercent\":70," +
@@ -266,8 +267,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30,\"metricReportIntervalSeconds\":20," +
@@ -283,7 +284,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(30),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
-						MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
@@ -304,7 +305,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								Enable:                         pointer.BoolPtr(true),
 								MetricAggregateDurationSeconds: pointer.Int64Ptr(30),
 								MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
-								MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+								MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 								CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 								MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 								MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
@@ -331,8 +332,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60,\"metricReportIntervalSeconds\":20," +
@@ -347,7 +348,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
-						MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
@@ -368,7 +369,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
-						MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
@@ -385,8 +386,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60,\"metricAggregateDurationSeconds\":60," +
@@ -401,7 +402,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
-						MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
@@ -422,7 +423,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
-						MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 						DegradeTimeMinutes:             pointer.Int64Ptr(5),
@@ -442,7 +443,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								Enable:                         pointer.BoolPtr(true),
 								MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 								MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
-								MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+								MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 								CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 								MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 								DegradeTimeMinutes:             pointer.Int64Ptr(5),
@@ -461,8 +462,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60,\"metricReportIntervalSeconds\":20," +
@@ -478,7 +479,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
-						MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
@@ -499,7 +500,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								Enable:                         pointer.BoolPtr(true),
 								MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 								MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
-								MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+								MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 								CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 								MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 								MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
@@ -522,7 +523,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
-						MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
@@ -554,8 +555,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      SLOCtrlConfigMap,
-					Namespace: ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":30,\"metricReportIntervalSeconds\":20," +
@@ -572,7 +573,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						Enable:                         pointer.BoolPtr(true),
 						MetricAggregateDurationSeconds: pointer.Int64Ptr(30),
 						MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
-						MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 						MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByRequest,
@@ -594,7 +595,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								Enable:                         pointer.BoolPtr(true),
 								MetricAggregateDurationSeconds: pointer.Int64Ptr(30),
 								MetricReportIntervalSeconds:    pointer.Int64Ptr(20),
-								MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+								MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 								MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 								MemoryCalculatePolicy:          &memoryCalcPolicyByRequest,
 								DegradeTimeMinutes:             pointer.Int64Ptr(5),
@@ -614,7 +615,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
-			p := NewColocationHandlerForConfigMapEvent(fakeClient, *NewDefaultColocationCfg(), &record.FakeRecorder{})
+			p := NewColocationHandlerForConfigMapEvent(fakeClient, *sloconfig.NewDefaultColocationCfg(), &record.FakeRecorder{})
 			p.cfgCache = colocationCfgCache{available: tt.fields.config.available, colocationCfg: tt.fields.config.colocationCfg}
 			got := p.syncColocationCfgIfChanged(tt.args.configMap)
 			assert.Equal(t, tt.wantChanged, got)
@@ -626,7 +627,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 }
 
 func Test_IsCfgAvailable(t *testing.T) {
-	defaultConfig := DefaultColocationCfg()
+	defaultConfig := sloconfig.DefaultColocationCfg()
 	memoryCalcPolicyByUsage := extension.CalculateByPodUsage
 	type fields struct {
 		config    *colocationCfgCache
@@ -680,8 +681,8 @@ func Test_IsCfgAvailable(t *testing.T) {
 						APIVersion: "v1",
 					},
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      SLOCtrlConfigMap,
-						Namespace: ConfigNameSpace,
+						Name:      sloconfig.SLOCtrlConfigMap,
+						Namespace: sloconfig.ConfigNameSpace,
 					},
 					Data: map[string]string{
 						extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
@@ -695,7 +696,7 @@ func Test_IsCfgAvailable(t *testing.T) {
 				ColocationStrategy: extension.ColocationStrategy{
 					Enable:                         pointer.BoolPtr(true),
 					MetricAggregateDurationSeconds: pointer.Int64Ptr(60),
-					MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
+					MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 					CPUReclaimThresholdPercent:     pointer.Int64Ptr(70),
 					MemoryReclaimThresholdPercent:  pointer.Int64Ptr(80),
 					MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
@@ -713,7 +714,7 @@ func Test_IsCfgAvailable(t *testing.T) {
 			if tt.fields.configMap != nil {
 				fakeClient = fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(tt.fields.configMap).Build()
 			}
-			p := NewColocationHandlerForConfigMapEvent(fakeClient, *NewDefaultColocationCfg(), &record.FakeRecorder{})
+			p := NewColocationHandlerForConfigMapEvent(fakeClient, *sloconfig.NewDefaultColocationCfg(), &record.FakeRecorder{})
 			p.cfgCache = colocationCfgCache{available: tt.fields.config.available, colocationCfg: tt.fields.config.colocationCfg}
 			got := p.IsCfgAvailable()
 			assert.Equal(t, tt.want, got)

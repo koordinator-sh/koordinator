@@ -34,7 +34,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 var _ handler.EventHandler = &SLOCfgHandlerForConfigMapEvent{}
@@ -71,10 +71,10 @@ type sLOCfgCache struct {
 
 func DefaultSLOCfg() SLOCfg {
 	return SLOCfg{
-		ThresholdCfgMerged:   extension.ResourceThresholdCfg{ClusterStrategy: util.DefaultResourceThresholdStrategy()},
+		ThresholdCfgMerged:   extension.ResourceThresholdCfg{ClusterStrategy: sloconfig.DefaultResourceThresholdStrategy()},
 		ResourceQOSCfgMerged: extension.ResourceQOSCfg{ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{}},
-		CPUBurstCfgMerged:    extension.CPUBurstCfg{ClusterStrategy: util.DefaultCPUBurstStrategy()},
-		SystemCfgMerged:      extension.SystemCfg{ClusterStrategy: util.DefaultSystemStrategy()},
+		CPUBurstCfgMerged:    extension.CPUBurstCfg{ClusterStrategy: sloconfig.DefaultCPUBurstStrategy()},
+		SystemCfgMerged:      extension.SystemCfg{ClusterStrategy: sloconfig.DefaultSystemStrategy()},
 		ExtensionCfgMerged:   *getDefaultExtensionCfg(),
 	}
 }
@@ -180,10 +180,10 @@ func (p *SLOCfgHandlerForConfigMapEvent) IsCfgAvailable() bool {
 	configMap, err := config.GetConfigMapForCache(p.Client)
 	if err != nil {
 		klog.Errorf("failed to get configmap %s/%s, slo cache is unavailable, err: %s",
-			config.ConfigNameSpace, config.SLOCtrlConfigMap, err)
+			sloconfig.ConfigNameSpace, sloconfig.SLOCtrlConfigMap, err)
 		return false
 	}
 	p.syncConfig(configMap)
-	klog.V(5).Infof("sync slo cache from configmap %s/%s, available %v", config.ConfigNameSpace, config.SLOCtrlConfigMap, p.cfgCache.available)
+	klog.V(5).Infof("sync slo cache from configmap %s/%s, available %v", sloconfig.ConfigNameSpace, sloconfig.SLOCtrlConfigMap, p.cfgCache.available)
 	return p.cfgCache.available
 }

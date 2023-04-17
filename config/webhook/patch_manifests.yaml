@@ -19,3 +19,10 @@ webhooks:
     matchExpressions:
       - key: control-plane
         operator: DoesNotExist
+- name: vconfigmap.kb.io
+  objectSelector:
+    matchExpressions:
+      - key: koordinator.sh/configmap-type
+        operator: In
+        values:
+          - slo-controller-config

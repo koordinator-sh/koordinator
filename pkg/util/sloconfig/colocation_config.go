@@ -14,10 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package config
+package sloconfig
 
 import (
-	"flag"
 	"reflect"
 	"time"
 
@@ -30,18 +29,6 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
-
-var (
-	// ConfigNameSpace is the namespace of the slo-controller configmap.
-	ConfigNameSpace = "koordinator-system"
-	// SLOCtrlConfigMap is the name of the slo-controller configmap.
-	SLOCtrlConfigMap = "slo-controller-config"
-)
-
-func InitFlags(fs *flag.FlagSet) {
-	fs.StringVar(&SLOCtrlConfigMap, "slo-config-name", SLOCtrlConfigMap, "determines the name the slo-controller configmap uses.")
-	fs.StringVar(&ConfigNameSpace, "config-namespace", ConfigNameSpace, "determines the namespace of configmap uses.")
-}
 
 func NewDefaultColocationCfg() *extension.ColocationCfg {
 	defaultCfg := DefaultColocationCfg()
