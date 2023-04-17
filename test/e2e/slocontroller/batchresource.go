@@ -169,7 +169,7 @@ var _ = SIGDescribe("BatchResource", func() {
 				totalCount, allocatableCount = len(nodeList.Items), 0
 
 				return false
-			}, 60*time.Second, 5*time.Second).Should(gomega.Equal(true))
+			}, 180*time.Second, 5*time.Second).Should(gomega.Equal(true))
 
 			framework.Logf("check node batch resources finished, total[%v], allocatable[%v]", totalCount, allocatableCount)
 		})

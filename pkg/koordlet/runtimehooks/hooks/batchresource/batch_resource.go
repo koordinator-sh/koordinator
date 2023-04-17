@@ -172,7 +172,8 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 	// TODO: count init container and pod overhead
 	for _, c := range extendedResourceSpec.Containers {
 		if c.Limits == nil {
-			continue
+			milliCPULimit = -1
+			break
 		}
 		containerLimit := util.GetBatchMilliCPUFromResourceList(c.Limits)
 		if containerLimit <= 0 { // pod unlimited once a container is unlimited
@@ -185,8 +186,7 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 	cfsQuota := milliCPULimit * sysutil.CFSBasePeriodValue / 1000 // TBD: assert base cfs period not changed
 	if cfsQuota <= 0 {                                            // pod unlimited
 		cfsQuota = -1
-	}
-	if cfsQuota < sysutil.CFSQuotaMinValue { // cfs_quota_us should be no less than 1000
+	} else if cfsQuota < sysutil.CFSQuotaMinValue { // cfs_quota_us should be no less than 1000
 		cfsQuota = sysutil.CFSQuotaMinValue
 	}
 
@@ -214,7 +214,8 @@ func (p *plugin) SetPodMemoryLimit(proto protocol.HooksProtocol) error {
 	// TODO: count init container and pod overhead
 	for _, c := range extendedResourceSpec.Containers {
 		if c.Limits == nil {
-			continue
+			memoryLimit = -1
+			break
 		}
 		containerLimit := util.GetBatchMemoryFromResourceList(c.Limits)
 		if containerLimit <= 0 { // pod unlimited once a container is unlimited
