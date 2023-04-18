@@ -46,7 +46,7 @@ type cpusetPlugin struct {
 	executor    resourceexecutor.ResourceUpdateExecutor
 }
 
-var podQOSConditions = []string{string(apiext.QoSLSE), string(apiext.QoSLSR)}
+var podQOSConditions = []string{string(apiext.QoSSystem), string(apiext.QoSLSE), string(apiext.QoSLSR)}
 
 func (p *cpusetPlugin) Register(op hooks.Options) {
 	klog.V(5).Infof("register hook %v", name)
@@ -85,30 +85,40 @@ func (p *cpusetPlugin) SetContainerCPUSetAndUnsetCFS(proto protocol.HooksProtoco
 }
 
 func (p *cpusetPlugin) SetContainerCPUSet(proto protocol.HooksProtocol) error {
-	// TODO maybe consider support cpu-static policy for kubelet by refreshing cpuset of kubepods-burstable dir
 	containerCtx := proto.(*protocol.ContainerContext)
 	if containerCtx == nil {
 		return fmt.Errorf("container protocol is nil for plugin %v", name)
 	}
 	containerReq := containerCtx.Request
+	klog.V(5).Infof("getting container cpuset for %v/%v", containerReq.PodMeta.String(), containerReq.ContainerMeta.Name)
 
 	// cpuset from pod annotation (LSE, LSR)
 	if cpusetVal, err := util.GetCPUSetFromPod(containerReq.PodAnnotations); err != nil {
 		return err
 	} else if cpusetVal != "" {
-		containerCtx.Response.Resources.CPUSet = pointer.StringPtr(cpusetVal)
+		containerCtx.Response.Resources.CPUSet = pointer.String(cpusetVal)
+		klog.V(5).Infof("get cpuset %v for container %v/%v from pod annotation", cpusetVal,
+			containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name)
 		return nil
 	}
 
-	// use cpushare pool for pod
 	r := p.getRule()
 	if r == nil {
 		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
 		return nil
 	}
+
+	// cpuset from rule according to pod QoS
 	cpusetValue, err := r.getContainerCPUSet(&containerReq)
 	if err != nil {
 		return err
+	}
+	if cpusetValue != nil {
+		klog.V(5).Infof("get cpuset %v for container %v/%v from rule", *cpusetValue,
+			containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name)
+	} else {
+		klog.V(5).Infof("get empty cpuset for container %v/%v from rule", *cpusetValue,
+			containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name)
 	}
 	containerCtx.Response.Resources.CPUSet = cpusetValue
 	return nil

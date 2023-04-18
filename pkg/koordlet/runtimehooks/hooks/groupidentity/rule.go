@@ -31,6 +31,7 @@ import (
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 type bvtRule struct {
@@ -54,14 +55,14 @@ func (r *bvtRule) getPodBvtValue(podQoSClass ext.QoSClass, podKubeQOS corev1.Pod
 	if val, exist := r.kubeQOSPodParams[podKubeQOS]; exist {
 		return val
 	}
-	return *util.NoneCPUQOS().GroupIdentity
+	return *sloconfig.NoneCPUQOS().GroupIdentity
 }
 
 func (r *bvtRule) getKubeQOSDirBvtValue(kubeQOS corev1.PodQOSClass) int64 {
 	if bvtValue, exist := r.kubeQOSDirParams[kubeQOS]; exist {
 		return bvtValue
 	}
-	return *util.NoneCPUQOS().GroupIdentity
+	return *sloconfig.NoneCPUQOS().GroupIdentity
 }
 
 func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
@@ -86,9 +87,9 @@ func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
 	burstablePodVal := lsValue
 
 	// NOTICE guaranteed root dir must set as 0 until kernel supported
-	guaranteedDirVal := *util.NoneCPUQOS().GroupIdentity
+	guaranteedDirVal := *sloconfig.NoneCPUQOS().GroupIdentity
 	// setting guaranteed pod enabled if LS or LSR enabled
-	guaranteedPodVal := *util.NoneCPUQOS().GroupIdentity
+	guaranteedPodVal := *sloconfig.NoneCPUQOS().GroupIdentity
 	if *mergedNodeSLO.ResourceQOSStrategy.LSRClass.CPUQOS.Enable {
 		guaranteedPodVal = lsrValue
 	} else if *mergedNodeSLO.ResourceQOSStrategy.LSClass.CPUQOS.Enable {

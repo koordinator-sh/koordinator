@@ -31,7 +31,10 @@ import (
 )
 
 func Test_collectNodeMetricsAvg(t *testing.T) {
-
+	now := time.Now()
+	timeNow = func() time.Time {
+		return now // Some time that you need
+	}
 	type nodeMetric struct {
 		timestamp   time.Time
 		nodeResUsed *metriccache.NodeResourceMetric
@@ -125,7 +128,10 @@ func Test_collectNodeMetricsAvg(t *testing.T) {
 }
 
 func Test_collectNodeAndPodMetricLast(t *testing.T) {
-
+	now := time.Now()
+	timeNow = func() time.Time {
+		return now // Some time that you need
+	}
 	type metricInfos struct {
 		timestamp   time.Time
 		nodeResUsed *metriccache.NodeResourceMetric

@@ -88,6 +88,40 @@ func Test_plugin_SetPodResources(t *testing.T) {
 	}
 	testSpecBytes1, err := json.Marshal(testSpec1)
 	assert.NoError(t, err)
+	testSpec2 := &apiext.ExtendedResourceSpec{
+		Containers: map[string]apiext.ExtendedResourceContainerSpec{
+			"container-0": {
+				Requests: corev1.ResourceList{
+					apiext.BatchCPU:    resource.MustParse("500"),
+					apiext.BatchMemory: resource.MustParse("2Gi"),
+				},
+			},
+		},
+	}
+	testSpecBytes2, err := json.Marshal(testSpec2)
+	assert.NoError(t, err)
+	testSpec3 := &apiext.ExtendedResourceSpec{
+		Containers: map[string]apiext.ExtendedResourceContainerSpec{
+			"container-0": {
+				Requests: corev1.ResourceList{
+					apiext.BatchCPU:    resource.MustParse("500"),
+					apiext.BatchMemory: resource.MustParse("2Gi"),
+				},
+				Limits: corev1.ResourceList{
+					apiext.BatchCPU:    resource.MustParse("500"),
+					apiext.BatchMemory: resource.MustParse("2Gi"),
+				},
+			},
+			"container-1": {
+				Requests: corev1.ResourceList{
+					apiext.BatchCPU:    resource.MustParse("500"),
+					apiext.BatchMemory: resource.MustParse("2Gi"),
+				},
+			},
+		},
+	}
+	testSpecBytes3, err := json.Marshal(testSpec3)
+	assert.NoError(t, err)
 	type fields struct {
 		rule *batchResourceRule
 	}
@@ -263,6 +297,84 @@ func Test_plugin_SetPodResources(t *testing.T) {
 						CPUShares:   pointer.Int64Ptr(1024 * 500 / 1000),
 						CFSQuota:    pointer.Int64Ptr(100000 * 1500 / 1000),
 						MemoryLimit: pointer.Int64Ptr(4 * 1024 * 1024 * 1024),
+					},
+				},
+			},
+		},
+		{
+			name: "a Batch pod with no limit",
+			fields: fields{
+				rule: &batchResourceRule{
+					enableCFSQuota: true,
+				},
+			},
+			args: args{
+				proto: &protocol.PodContext{
+					Request: protocol.PodRequest{
+						Labels: map[string]string{
+							apiext.LabelPodQoS: string(apiext.QoSBE),
+						},
+						Annotations: map[string]string{
+							apiext.AnnotationExtendedResourceSpec: string(testSpecBytes2),
+						},
+						ExtendedResources: testSpec2,
+					},
+				},
+			},
+			want: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSBE),
+					},
+					Annotations: map[string]string{
+						apiext.AnnotationExtendedResourceSpec: string(testSpecBytes2),
+					},
+					ExtendedResources: testSpec2,
+				},
+				Response: protocol.PodResponse{
+					Resources: protocol.Resources{
+						CPUShares:   pointer.Int64Ptr(1024 * 500 / 1000),
+						CFSQuota:    pointer.Int64Ptr(-1),
+						MemoryLimit: pointer.Int64Ptr(-1),
+					},
+				},
+			},
+		},
+		{
+			name: "a Batch pod with partial limited",
+			fields: fields{
+				rule: &batchResourceRule{
+					enableCFSQuota: true,
+				},
+			},
+			args: args{
+				proto: &protocol.PodContext{
+					Request: protocol.PodRequest{
+						Labels: map[string]string{
+							apiext.LabelPodQoS: string(apiext.QoSBE),
+						},
+						Annotations: map[string]string{
+							apiext.AnnotationExtendedResourceSpec: string(testSpecBytes3),
+						},
+						ExtendedResources: testSpec3,
+					},
+				},
+			},
+			want: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSBE),
+					},
+					Annotations: map[string]string{
+						apiext.AnnotationExtendedResourceSpec: string(testSpecBytes3),
+					},
+					ExtendedResources: testSpec3,
+				},
+				Response: protocol.PodResponse{
+					Resources: protocol.Resources{
+						CPUShares:   pointer.Int64Ptr(1000 * 1024 / 1000),
+						CFSQuota:    pointer.Int64Ptr(-1),
+						MemoryLimit: pointer.Int64Ptr(-1),
 					},
 				},
 			},

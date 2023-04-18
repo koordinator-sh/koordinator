@@ -29,7 +29,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
@@ -40,8 +40,8 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      config.SLOCtrlConfigMap,
-			Namespace: config.ConfigNameSpace,
+			Name:      sloconfig.SLOCtrlConfigMap,
+			Namespace: sloconfig.ConfigNameSpace,
 		},
 		Data: map[string]string{
 			extension.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
@@ -130,8 +130,8 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 					APIVersion: "v1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      config.SLOCtrlConfigMap,
-					Namespace: config.ConfigNameSpace,
+					Name:      sloconfig.SLOCtrlConfigMap,
+					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
 					extension.ResourceThresholdConfigKey: "invalid_content",

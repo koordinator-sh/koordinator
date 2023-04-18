@@ -21,7 +21,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func getNodeMetricCollectPolicy(strategy *extension.ColocationStrategy) (*slov1alpha1.NodeMetricCollectPolicy, error) {
@@ -29,7 +29,7 @@ func getNodeMetricCollectPolicy(strategy *extension.ColocationStrategy) (*slov1a
 		return nil, fmt.Errorf("failed to find satisfied strategy")
 	}
 
-	if !config.IsColocationStrategyValid(strategy) {
+	if !sloconfig.IsColocationStrategyValid(strategy) {
 		return nil, fmt.Errorf("invalid colocationConfig")
 	}
 

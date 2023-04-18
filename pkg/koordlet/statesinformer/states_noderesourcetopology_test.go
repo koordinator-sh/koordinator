@@ -37,6 +37,7 @@ import (
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
+	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -309,9 +310,10 @@ func Test_reportNodeTopology(t *testing.T) {
 	defer ctl.Finish()
 
 	client := faketopologyclientset.NewSimpleClientset()
-	testNode := &corev1.Node{
+	testNodeTemp := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "test",
+			Name:        "test",
+			Annotations: map[string]string{},
 		},
 	}
 
@@ -363,9 +365,13 @@ func Test_reportNodeTopology(t *testing.T) {
 		config                          *Config
 		kubeletStub                     KubeletStub
 		disableCreateTopologyCRD        bool
+		nodeReserved                    *extension.NodeReservation
+		systemQOSRes                    *extension.SystemQOSResource
 		expectedKubeletCPUManagerPolicy extension.KubeletCPUManagerPolicy
 		expectedCPUSharedPool           string
 		expectedCPUTopology             string
+		expectedNodeReservation         string
+		expectedSystemQOS               string
 	}{
 		{
 			name:   "report topology",
@@ -382,8 +388,37 @@ func Test_reportNodeTopology(t *testing.T) {
 				Policy:       "static",
 				ReservedCPUs: "0-1",
 			},
-			expectedCPUSharedPool: expectedCPUSharedPool,
-			expectedCPUTopology:   expectedCPUTopology,
+			expectedCPUSharedPool:   expectedCPUSharedPool,
+			expectedCPUTopology:     expectedCPUTopology,
+			expectedNodeReservation: "{}",
+			expectedSystemQOS:       "{}",
+		},
+		{
+			name:   "report node topo with reserved and system qos specified",
+			config: NewDefaultConfig(),
+			kubeletStub: &testKubeletStub{
+				config: &kubeletconfiginternal.KubeletConfiguration{
+					CPUManagerPolicy: "static",
+					KubeReserved: map[string]string{
+						"cpu": "2000m",
+					},
+				},
+			},
+			disableCreateTopologyCRD: false,
+			nodeReserved: &extension.NodeReservation{
+				ReservedCPUs: "1-2",
+			},
+			systemQOSRes: &extension.SystemQOSResource{
+				CPUSet: "7",
+			},
+			expectedKubeletCPUManagerPolicy: extension.KubeletCPUManagerPolicy{
+				Policy:       "static",
+				ReservedCPUs: "0-1",
+			},
+			expectedCPUSharedPool:   `[{"socket":0,"node":0,"cpuset":"0"},{"socket":1,"node":1,"cpuset":"6"}]`,
+			expectedCPUTopology:     expectedCPUTopology,
+			expectedNodeReservation: `{"reservedCPUs":"1-2"}`,
+			expectedSystemQOS:       `{"cpuset":"7"}`,
 		},
 		{
 			name: "disable query topology",
@@ -402,8 +437,10 @@ func Test_reportNodeTopology(t *testing.T) {
 				Policy:       "",
 				ReservedCPUs: "",
 			},
-			expectedCPUSharedPool: expectedCPUSharedPool,
-			expectedCPUTopology:   expectedCPUTopology,
+			expectedCPUSharedPool:   expectedCPUSharedPool,
+			expectedCPUTopology:     expectedCPUTopology,
+			expectedNodeReservation: "{}",
+			expectedSystemQOS:       "{}",
 		},
 		{
 			name:                     "disable report topology",
@@ -421,8 +458,10 @@ func Test_reportNodeTopology(t *testing.T) {
 				Policy:       "static",
 				ReservedCPUs: "0-1",
 			},
-			expectedCPUSharedPool: expectedCPUSharedPool,
-			expectedCPUTopology:   expectedCPUTopology,
+			expectedCPUSharedPool:   expectedCPUSharedPool,
+			expectedCPUTopology:     expectedCPUTopology,
+			expectedNodeReservation: "{}",
+			expectedSystemQOS:       "{}",
 		},
 	}
 	for _, tt := range tests {
@@ -437,6 +476,14 @@ func Test_reportNodeTopology(t *testing.T) {
 				err = features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
 				assert.NoError(t, err)
 			}()
+
+			testNode := testNodeTemp.DeepCopy()
+			if tt.nodeReserved != nil {
+				testNode.Annotations[extension.AnnotationNodeReservation] = util.DumpJSON(tt.nodeReserved)
+			}
+			if tt.systemQOSRes != nil {
+				testNode.Annotations[extension.AnnotationNodeSystemQOSResource] = util.DumpJSON(tt.systemQOSRes)
+			}
 
 			r := &nodeTopoInformer{
 				config:         tt.config,
@@ -483,6 +530,8 @@ func Test_reportNodeTopology(t *testing.T) {
 			assert.Equal(t, tt.expectedKubeletCPUManagerPolicy, kubeletCPUManagerPolicy)
 			assert.Equal(t, tt.expectedCPUSharedPool, topology.Annotations[extension.AnnotationNodeCPUSharedPools])
 			assert.Equal(t, tt.expectedCPUTopology, topology.Annotations[extension.AnnotationNodeCPUTopology])
+			assert.Equal(t, tt.expectedNodeReservation, topology.Annotations[extension.AnnotationNodeReservation])
+			assert.Equal(t, tt.expectedSystemQOS, topology.Annotations[extension.AnnotationNodeSystemQOSResource])
 		})
 	}
 }
@@ -712,6 +761,98 @@ func Test_getNodeReserved(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := getNodeReserved(&fakeTopo, tt.args.anno); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("getNodeReserved() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_removeSystemQOSCPUs(t *testing.T) {
+	originCPUSharePool := []extension.CPUSharedPool{
+		{
+			Socket: 0,
+			Node:   0,
+			CPUSet: "0-7",
+		},
+		{
+			Socket: 1,
+			Node:   0,
+			CPUSet: "8-15",
+		},
+	}
+	type args struct {
+		cpuSharePools []extension.CPUSharedPool
+		sysQOSRes     *extension.SystemQOSResource
+	}
+	tests := []struct {
+		name string
+		args args
+		want []extension.CPUSharedPool
+	}{
+		{
+			name: "system qos res is nil",
+			args: args{
+				cpuSharePools: originCPUSharePool,
+				sysQOSRes:     nil,
+			},
+			want: originCPUSharePool,
+		},
+		{
+			name: "system qos res is empty cpuset",
+			args: args{
+				cpuSharePools: originCPUSharePool,
+				sysQOSRes: &extension.SystemQOSResource{
+					CPUSet: "",
+				},
+			},
+			want: originCPUSharePool,
+		},
+		{
+			name: "system qos res is not exclusive",
+			args: args{
+				cpuSharePools: originCPUSharePool,
+				sysQOSRes: &extension.SystemQOSResource{
+					CPUSet:          "0-3",
+					CPUSetExclusive: pointer.Bool(false),
+				},
+			},
+			want: originCPUSharePool,
+		},
+		{
+			name: "system qos with bad cpuset fmt",
+			args: args{
+				cpuSharePools: originCPUSharePool,
+				sysQOSRes: &extension.SystemQOSResource{
+					CPUSet: "0b",
+				},
+			},
+			want: originCPUSharePool,
+		},
+		{
+			name: "exclude cpuset from share pool",
+			args: args{
+				cpuSharePools: originCPUSharePool,
+				sysQOSRes: &extension.SystemQOSResource{
+					CPUSet: "0-3",
+				},
+			},
+			want: []extension.CPUSharedPool{
+				{
+					Socket: 0,
+					Node:   0,
+					CPUSet: "4-7",
+				},
+				{
+					Socket: 1,
+					Node:   0,
+					CPUSet: "8-15",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := removeSystemQOSCPUs(tt.args.cpuSharePools, tt.args.sysQOSRes); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("removeSystemQOSCPUs() = %v, want %v", got, tt.want)
 			}
 		})
 	}

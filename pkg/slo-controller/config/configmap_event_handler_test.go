@@ -27,6 +27,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func cacheChangedTrue(configMap *corev1.ConfigMap) bool {
@@ -64,8 +66,8 @@ func Test_common_Create(t *testing.T) {
 				evt: event.CreateEvent{
 					Object: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
-							Name:      SLOCtrlConfigMap,
+							Namespace: sloconfig.ConfigNameSpace,
+							Name:      sloconfig.SLOCtrlConfigMap,
 						},
 					}),
 				},
@@ -82,8 +84,8 @@ func Test_common_Create(t *testing.T) {
 				evt: event.CreateEvent{
 					Object: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
-							Name:      SLOCtrlConfigMap,
+							Namespace: sloconfig.ConfigNameSpace,
+							Name:      sloconfig.SLOCtrlConfigMap,
 						},
 					}),
 				},
@@ -101,8 +103,8 @@ func Test_common_Create(t *testing.T) {
 				evt: event.CreateEvent{
 					Object: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
-							Name:      SLOCtrlConfigMap,
+							Namespace: sloconfig.ConfigNameSpace,
+							Name:      sloconfig.SLOCtrlConfigMap,
 						},
 					}),
 				},
@@ -118,7 +120,7 @@ func Test_common_Create(t *testing.T) {
 				evt: event.CreateEvent{
 					Object: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
+							Namespace: sloconfig.ConfigNameSpace,
 							Name:      "test-config-map",
 						},
 					}),
@@ -168,14 +170,14 @@ func Test_common_Update(t *testing.T) {
 				evt: event.UpdateEvent{
 					ObjectOld: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
-							Name:      SLOCtrlConfigMap,
+							Namespace: sloconfig.ConfigNameSpace,
+							Name:      sloconfig.SLOCtrlConfigMap,
 						},
 					}),
 					ObjectNew: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
-							Name:      SLOCtrlConfigMap,
+							Namespace: sloconfig.ConfigNameSpace,
+							Name:      sloconfig.SLOCtrlConfigMap,
 						},
 						Data: map[string]string{
 							"a": "a",
@@ -195,14 +197,14 @@ func Test_common_Update(t *testing.T) {
 				evt: event.UpdateEvent{
 					ObjectOld: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
-							Name:      SLOCtrlConfigMap,
+							Namespace: sloconfig.ConfigNameSpace,
+							Name:      sloconfig.SLOCtrlConfigMap,
 						},
 					}),
 					ObjectNew: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
-							Name:      SLOCtrlConfigMap,
+							Namespace: sloconfig.ConfigNameSpace,
+							Name:      sloconfig.SLOCtrlConfigMap,
 						},
 						Data: map[string]string{
 							"a": "a",
@@ -223,14 +225,14 @@ func Test_common_Update(t *testing.T) {
 				evt: event.UpdateEvent{
 					ObjectOld: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
-							Name:      SLOCtrlConfigMap,
+							Namespace: sloconfig.ConfigNameSpace,
+							Name:      sloconfig.SLOCtrlConfigMap,
 						},
 					}),
 					ObjectNew: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
-							Name:      SLOCtrlConfigMap,
+							Namespace: sloconfig.ConfigNameSpace,
+							Name:      sloconfig.SLOCtrlConfigMap,
 						},
 						Data: map[string]string{
 							"a": "a",
@@ -249,13 +251,13 @@ func Test_common_Update(t *testing.T) {
 				evt: event.UpdateEvent{
 					ObjectOld: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
+							Namespace: sloconfig.ConfigNameSpace,
 							Name:      "other-name",
 						},
 					}),
 					ObjectNew: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
+							Namespace: sloconfig.ConfigNameSpace,
 							Name:      "test-config-map",
 						},
 					}),
@@ -272,14 +274,14 @@ func Test_common_Update(t *testing.T) {
 				evt: event.UpdateEvent{
 					ObjectOld: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
-							Name:      SLOCtrlConfigMap,
+							Namespace: sloconfig.ConfigNameSpace,
+							Name:      sloconfig.SLOCtrlConfigMap,
 						},
 					}),
 					ObjectNew: client.Object(&corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: ConfigNameSpace,
-							Name:      SLOCtrlConfigMap,
+							Namespace: sloconfig.ConfigNameSpace,
+							Name:      sloconfig.SLOCtrlConfigMap,
 						},
 					}),
 				},

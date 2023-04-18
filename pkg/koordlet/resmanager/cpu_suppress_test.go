@@ -895,6 +895,7 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 	type args struct {
 		oldCPUSets          string
 		currentPolicyStatus *suppressPolicyStatus
+		nodeTopo            *topov1alpha1.NodeResourceTopology
 	}
 	mockNodeInfo := metriccache.NodeCPUInfo{
 		ProcessorInfos: []koordletutil.ProcessorInfo{
@@ -927,8 +928,9 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 			args: args{
 				oldCPUSets:          "7,6,3,2",
 				currentPolicyStatus: nil,
+				nodeTopo:            &topov1alpha1.NodeResourceTopology{},
 			},
-			wantCPUSet:       "0-15",
+			wantCPUSet:       "0-6,8-15",
 			wantPolicyStatus: &policyRecovered,
 		},
 		{
@@ -936,8 +938,9 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 			args: args{
 				oldCPUSets:          "7,6,3,2",
 				currentPolicyStatus: &policyUsing,
+				nodeTopo:            &topov1alpha1.NodeResourceTopology{},
 			},
-			wantCPUSet:       "0-15",
+			wantCPUSet:       "0-6,8-15",
 			wantPolicyStatus: &policyRecovered,
 		},
 		{
@@ -945,8 +948,41 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 			args: args{
 				oldCPUSets:          "7,6,3,2",
 				currentPolicyStatus: &policyRecovered,
+				nodeTopo:            &topov1alpha1.NodeResourceTopology{},
 			},
-			wantCPUSet:       "0-15",
+			wantCPUSet:       "0-6,8-15",
+			wantPolicyStatus: &policyRecovered,
+		},
+		{
+			name: "test need recover, exclude node reserved",
+			args: args{
+				oldCPUSets:          "7,6,3,2",
+				currentPolicyStatus: &policyUsing,
+				nodeTopo: &topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							apiext.AnnotationNodeReservation: `{"reservedCPUs": "0-1"}`,
+						},
+					},
+				},
+			},
+			wantCPUSet:       "2-6,8-15",
+			wantPolicyStatus: &policyRecovered,
+		},
+		{
+			name: "test need recover, exclude system qos exclusive",
+			args: args{
+				oldCPUSets:          "7,6,3,2",
+				currentPolicyStatus: &policyUsing,
+				nodeTopo: &topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							apiext.AnnotationNodeSystemQOSResource: `{"cpuset": "0-1"}`,
+						},
+					},
+				},
+			},
+			wantCPUSet:       "2-6,8-15",
 			wantPolicyStatus: &policyRecovered,
 		},
 	}
@@ -961,6 +997,7 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 			mockMetricCache := mockmetriccache.NewMockMetricCache(ctl)
 			mockStatesInformer := mockstatesinformer.NewMockStatesInformer(ctl)
 			mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{Pod: lsePod}}).AnyTimes()
+			mockStatesInformer.EXPECT().GetNodeTopo().Return(tt.args.nodeTopo).AnyTimes()
 			mockMetricCache.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(&mockNodeInfo, nil).AnyTimes()
 			r := &resmanager{
 				statesInformer: mockStatesInformer,
@@ -1330,6 +1367,16 @@ func genNodeResourceTopo(annoReserv string) *topov1alpha1.NodeResourceTopology {
 	}
 }
 
+func genNodeTopoWithSystemQOSRes(annoReserv string) *topov1alpha1.NodeResourceTopology {
+	return &topov1alpha1.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				apiext.AnnotationNodeSystemQOSResource: annoReserv,
+			},
+		},
+	}
+}
+
 func Test_cpuSuppress_adjustByCPUSet_withCPUsReservedFromNodeAnno(t *testing.T) {
 	fakeNodeCPUInfo := metriccache.NodeCPUInfo{
 		ProcessorInfos: []koordletutil.ProcessorInfo{
@@ -1381,6 +1428,105 @@ func Test_cpuSuppress_adjustByCPUSet_withCPUsReservedFromNodeAnno(t *testing.T) 
 				nodeCPUInfo:      &fakeNodeCPUInfo,
 				oldCPUSets:       "7,6,3,2",
 				nodeResourceTopo: genNodeResourceTopo(`{"reservedCPUs":"0-1,5-6"}`),
+			},
+			wantCPUSet: "2-4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mockStatesInformer := mockstatesinformer.NewMockStatesInformer(ctrl)
+			lsrPod := mockLSRPod()
+			lsePod := mockLSEPod()
+			mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{Pod: lsrPod}, {Pod: lsePod}}).AnyTimes()
+			mockStatesInformer.EXPECT().GetNodeTopo().Return(tt.args.nodeResourceTopo).AnyTimes()
+			r := &resmanager{
+				statesInformer: mockStatesInformer,
+			}
+			cpuSuppress := newTestCPUSuppress(r)
+			stop := make(chan struct{})
+			err := cpuSuppress.RunInit(stop)
+			assert.NoError(t, err)
+
+			// prepare testing files
+			helper := system.NewFileTestUtil(t)
+			podDirs := []string{"pod1", "pod2", "pod3"}
+			testingPrepareBECgroupData(helper, podDirs, tt.args.oldCPUSets)
+
+			cpuSuppress.adjustByCPUSet(tt.args.cpusetQuantity, tt.args.nodeCPUInfo)
+
+			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+			assert.Equal(t, tt.wantCPUSet, gotCPUSetBECgroup, "checkBECPUSet")
+			for _, podDir := range podDirs {
+				gotPodCPUSet := helper.ReadCgroupFileContents(filepath.Join(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), podDir), system.CPUSet)
+				assert.Equal(t, tt.wantCPUSet, gotPodCPUSet, "checkPodCPUSet")
+			}
+		})
+	}
+}
+
+func Test_cpuSuppress_adjustByCPUSet_withSystemQOSResourceFromNodeAnno(t *testing.T) {
+	fakeNodeCPUInfo := metriccache.NodeCPUInfo{
+		ProcessorInfos: []koordletutil.ProcessorInfo{
+			{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 1},
+			{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 1},
+			{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 1},
+			{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 1},
+		},
+	}
+	type args struct {
+		cpusetQuantity   *resource.Quantity
+		nodeCPUInfo      *metriccache.NodeCPUInfo
+		oldCPUSets       string
+		nodeResourceTopo *topov1alpha1.NodeResourceTopology
+	}
+	tests := []struct {
+		name       string
+		args       args
+		wantCPUSet string
+	}{
+		{ // total - node.anno.reserv - LSE.used > be.quantity, just select enough cpus to modify cgroup.
+			name: "test scale by cpuset and ensure there is enough cpu available for bepod.",
+			args: args{
+				cpusetQuantity:   resource.NewQuantity(3, resource.DecimalSI),
+				nodeCPUInfo:      &fakeNodeCPUInfo,
+				oldCPUSets:       "7,6,3,2",
+				nodeResourceTopo: genNodeTopoWithSystemQOSRes(`{"cpuset":"3"}`),
+			},
+			wantCPUSet: "0,4-5",
+		},
+		{ // total - node.anno.reserv - LSE.used < be.quantity, do nothing
+			name: "test scale by cpuset and cpus that be pod can used less than be pod needed. there is nothing to do because the cpu runs out",
+			args: args{
+				cpusetQuantity:   resource.NewQuantity(3, resource.DecimalSI),
+				nodeCPUInfo:      &fakeNodeCPUInfo,
+				oldCPUSets:       "7,6,3,2",
+				nodeResourceTopo: genNodeTopoWithSystemQOSRes(`{"cpuset":"1-6"}`),
+			},
+			wantCPUSet: "7,6,3,2",
+		},
+		{ // total - node.anno.reserv - LSE.used == be.quantity, then change cgroup.
+			name: "test scale by cpuset and just enough cpu allocated to bepod.",
+			args: args{
+				cpusetQuantity:   resource.NewQuantity(3, resource.DecimalSI),
+				nodeCPUInfo:      &fakeNodeCPUInfo,
+				oldCPUSets:       "7,6,3,2",
+				nodeResourceTopo: genNodeTopoWithSystemQOSRes(`{"cpuset":"0-1,5-6"}`),
+			},
+			wantCPUSet: "2-4",
+		},
+		{ // system qos cpu is not exclusive
+			name: "system qos cpu is not exclusive",
+			args: args{
+				cpusetQuantity:   resource.NewQuantity(3, resource.DecimalSI),
+				nodeCPUInfo:      &fakeNodeCPUInfo,
+				oldCPUSets:       "7,6,3,2",
+				nodeResourceTopo: genNodeTopoWithSystemQOSRes(`{"cpuset":"1-6", "cpusetExclusive":false}`),
 			},
 			wantCPUSet: "2-4",
 		},

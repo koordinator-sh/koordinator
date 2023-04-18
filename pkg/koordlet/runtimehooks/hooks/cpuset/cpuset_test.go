@@ -202,6 +202,70 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 			wantCPUSet: nil,
 		},
 		{
+			name: "set cpu for system pod according to rule specified",
+			fields: fields{
+				rule: &cpusetRule{
+					sharePools: []ext.CPUSharedPool{
+						{
+							Socket: 0,
+							Node:   0,
+							CPUSet: "0-7",
+						},
+						{
+							Socket: 1,
+							Node:   0,
+							CPUSet: "8-15",
+						},
+					},
+					systemQOSCPUSet: "0-3",
+				},
+			},
+			args: args{
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+						PodLabels: map[string]string{
+							ext.LabelPodQoS: string(ext.QoSSystem),
+						},
+					},
+				},
+			},
+			wantErr:    false,
+			wantCPUSet: pointer.String("0-3"),
+		},
+		{
+			name: "set cpu for system pod by share pool without rule specified",
+			fields: fields{
+				rule: &cpusetRule{
+					sharePools: []ext.CPUSharedPool{
+						{
+							Socket: 0,
+							Node:   0,
+							CPUSet: "0-7",
+						},
+						{
+							Socket: 1,
+							Node:   0,
+							CPUSet: "8-15",
+						},
+					},
+					systemQOSCPUSet: "",
+				},
+			},
+			args: args{
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+						PodLabels: map[string]string{
+							ext.LabelPodQoS: string(ext.QoSSystem),
+						},
+					},
+				},
+			},
+			wantErr:    false,
+			wantCPUSet: pointer.String("0-7,8-15"),
+		},
+		{
 			name: "set cpu by pod allocated share pool",
 			fields: fields{
 				rule: &cpusetRule{
@@ -235,7 +299,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 				},
 			},
 			wantErr:    false,
-			wantCPUSet: pointer.StringPtr("0-7"),
+			wantCPUSet: pointer.String("0-7"),
 		},
 		{
 			name: "set cpu for origin besteffort pod",
@@ -263,7 +327,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 				},
 			},
 			wantErr:    false,
-			wantCPUSet: pointer.StringPtr(""),
+			wantCPUSet: pointer.String(""),
 		},
 	}
 	for _, tt := range tests {

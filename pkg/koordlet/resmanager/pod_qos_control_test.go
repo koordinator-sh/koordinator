@@ -30,7 +30,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager/configextensions"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 type cpuBurstGreyCtrlPlugin struct{}
@@ -113,7 +113,7 @@ func Test_genPodBurstConfigWithPlugin(t *testing.T) {
 					},
 				},
 				podCPUBurstCfg: nil,
-				nodeCfg:        util.DefaultCPUBurstConfig(),
+				nodeCfg:        sloconfig.DefaultCPUBurstConfig(),
 			},
 			want: &slov1alpha1.CPUBurstConfig{
 				Policy:                     slov1alpha1.CPUBurstAuto,
@@ -169,7 +169,7 @@ func TestCgroupResourcesReconcile_mergePodResourceQoSForMemoryQoS(t *testing.T) 
 			},
 			wants: wants{
 				memoryQOSCfg: &slov1alpha1.MemoryQOSCfg{
-					MemoryQOS: *util.DefaultMemoryQOS(apiext.QoSLS),
+					MemoryQOS: *sloconfig.DefaultMemoryQOS(apiext.QoSLS),
 				},
 			},
 		},

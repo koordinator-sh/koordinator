@@ -53,6 +53,27 @@ metadata:
   name: validating-webhook-configuration
 webhooks:
 - admissionReviewVersions:
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-configmap
+  failurePolicy: Fail
+  name: vconfigmap.kb.io
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    - DELETE
+    resources:
+    - configmaps
+  sideEffects: None
+- admissionReviewVersions:
   - v1
   - v1beta1
   clientConfig:
@@ -72,6 +93,27 @@ webhooks:
     - UPDATE
     resources:
     - elasticquotas
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-node
+  failurePolicy: Fail
+  name: vnode.kb.io
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - nodes
   sideEffects: None
 - admissionReviewVersions:
   - v1

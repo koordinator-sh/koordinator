@@ -34,6 +34,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 const (
@@ -86,33 +87,33 @@ func (p *ColocationHandlerForConfigMapEvent) syncConfig(configMap *corev1.Config
 	// if the configmap does not exist, use the default
 	if configMap == nil {
 		klog.Errorf("configmap is deleted!,use default config")
-		return p.updateCacheIfChanged(NewDefaultColocationCfg(), true)
+		return p.updateCacheIfChanged(sloconfig.NewDefaultColocationCfg(), true)
 	}
 
 	newCfg := &extension.ColocationCfg{}
 	configStr := configMap.Data[extension.ColocationConfigKey]
 	if configStr == "" {
 		klog.Warningf("colocation config is empty!,use default config")
-		return p.updateCacheIfChanged(NewDefaultColocationCfg(), false)
+		return p.updateCacheIfChanged(sloconfig.NewDefaultColocationCfg(), false)
 	}
 
 	err := json.Unmarshal([]byte(configStr), &newCfg)
 	if err != nil {
 		//if controller restart ,cache will unavailable, else use old cfg
 		klog.Errorf("syncConfig failed! parse colocation error then use old Cfg ,configmap %s/%s, err: %s",
-			ConfigNameSpace, SLOCtrlConfigMap, err)
+			sloconfig.ConfigNameSpace, sloconfig.SLOCtrlConfigMap, err)
 		p.recorder.Eventf(configMap, "Warning", ReasonColocationConfigUnmarshalFailed, "failed to unmarshal colocation config, err: %s", err)
 		p.cfgCache.errorStatus = true
 		return false
 	}
 
-	defaultCfg := NewDefaultColocationCfg()
+	defaultCfg := sloconfig.NewDefaultColocationCfg()
 	// merge default cluster strategy
 	mergedClusterCfg := defaultCfg.ColocationStrategy.DeepCopy()
 	mergedInterface, _ := util.MergeCfg(mergedClusterCfg, &newCfg.ColocationStrategy)
 	newCfg.ColocationStrategy = *(mergedInterface.(*extension.ColocationStrategy))
 
-	if !IsColocationStrategyValid(&newCfg.ColocationStrategy) {
+	if !sloconfig.IsColocationStrategyValid(&newCfg.ColocationStrategy) {
 		//if controller restart ,cache will unavailable, else use old cfg
 		klog.Errorf("syncConfig failed!  invalid cluster config,%+v", newCfg.ColocationStrategy)
 		p.cfgCache.errorStatus = true
@@ -124,7 +125,7 @@ func (p *ColocationHandlerForConfigMapEvent) syncConfig(configMap *corev1.Config
 		clusteStrategyCopy := newCfg.ColocationStrategy.DeepCopy()
 		mergedNodeStrategyInterface, _ := util.MergeCfg(clusteStrategyCopy, &nodeStrategy.ColocationStrategy)
 		newNodeStrategy := *mergedNodeStrategyInterface.(*extension.ColocationStrategy)
-		if !IsColocationStrategyValid(&newNodeStrategy) {
+		if !sloconfig.IsColocationStrategyValid(&newNodeStrategy) {
 			klog.Errorf("syncConfig failed! invalid node config,then use clusterCfg,nodeCfg:%+v", nodeStrategy)
 			newCfg.NodeConfigs[index].ColocationStrategy = *newCfg.ColocationStrategy.DeepCopy()
 		} else {
@@ -187,11 +188,11 @@ func (p *ColocationHandlerForConfigMapEvent) IsCfgAvailable() bool {
 	configMap, err := GetConfigMapForCache(p.Client)
 	if err != nil {
 		klog.Errorf("failed to get configmap %s/%s, colocation cache is unavailable, err: %s",
-			ConfigNameSpace, SLOCtrlConfigMap, err)
+			sloconfig.ConfigNameSpace, sloconfig.SLOCtrlConfigMap, err)
 		return false
 	}
 	p.syncConfig(configMap)
-	klog.V(5).Infof("sync colocation cache from configmap %s/%s, available %v", ConfigNameSpace, SLOCtrlConfigMap, p.cfgCache.available)
+	klog.V(5).Infof("sync colocation cache from configmap %s/%s, available %v", sloconfig.ConfigNameSpace, sloconfig.SLOCtrlConfigMap, p.cfgCache.available)
 	return p.cfgCache.available
 }
 
@@ -199,7 +200,7 @@ func GetConfigMapForCache(client client.Client) (*corev1.ConfigMap, error) {
 	// try to get the configmap from informer cache;
 	// if not found, set configmap to nil and ignore error
 	configMap := &corev1.ConfigMap{}
-	err := client.Get(context.TODO(), types.NamespacedName{Namespace: ConfigNameSpace, Name: SLOCtrlConfigMap}, configMap)
+	err := client.Get(context.TODO(), types.NamespacedName{Namespace: sloconfig.ConfigNameSpace, Name: sloconfig.SLOCtrlConfigMap}, configMap)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return nil, err

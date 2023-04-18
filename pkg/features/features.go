@@ -36,6 +36,12 @@ const (
 	// ElasticQuotaValidatingWebhook enables validating webhook for ElasticQuotas creations or updates
 	ElasticQuotaValidatingWebhook featuregate.Feature = "ElasticValidatingWebhook"
 
+	// NodeValidatingWebhook enables validating webhook for Node Creation or updates
+	NodeValidatingWebhook featuregate.Feature = "NodeValidatingWebhook"
+
+	// ConfigMapValidatingWebhook enables validating webhook for configmap Creation or updates
+	ConfigMapValidatingWebhook featuregate.Feature = "ConfigMapValidatingWebhook"
+
 	// WebhookFramework enables webhook framework
 	WebhookFramework featuregate.Feature = "WebhookFramework"
 )
@@ -45,6 +51,8 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	PodValidatingWebhook:          {Default: true, PreRelease: featuregate.Beta},
 	ElasticQuotaMutatingWebhook:   {Default: true, PreRelease: featuregate.Beta},
 	ElasticQuotaValidatingWebhook: {Default: true, PreRelease: featuregate.Beta},
+	NodeValidatingWebhook:         {Default: false, PreRelease: featuregate.Alpha},
+	ConfigMapValidatingWebhook:    {Default: false, PreRelease: featuregate.Alpha},
 	WebhookFramework:              {Default: true, PreRelease: featuregate.Beta},
 }
 

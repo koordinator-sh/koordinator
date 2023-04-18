@@ -38,8 +38,8 @@ import (
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cache"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func newTestResctrlReconcile(r *resmanager) *ResctrlReconcile {
@@ -1176,7 +1176,7 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		},
 		CgroupDir: "kubepods.slice/p0",
 	}
-	testQOSStrategy := util.DefaultResourceQOSStrategy()
+	testQOSStrategy := sloconfig.DefaultResourceQOSStrategy()
 	testQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.BoolPtr(true)
 
 	t.Run("test", func(t *testing.T) {

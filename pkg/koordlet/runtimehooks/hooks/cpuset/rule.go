@@ -30,15 +30,18 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 type cpusetRule struct {
-	kubeletPolicy ext.KubeletCPUManagerPolicy
-	sharePools    []ext.CPUSharedPool
+	kubeletPolicy   ext.KubeletCPUManagerPolicy
+	sharePools      []ext.CPUSharedPool
+	systemQOSCPUSet string
 }
 
 func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest) (*string, error) {
 	// pod specifies share pool id in annotations, use part cpu share pool
+	// pod specifies QoS=SYSTEM in labels, use system qos resource if rule exist
 	// pod specifies QoS=LS in labels, use all share pool
 	// besteffort pod(including QoS=BE) will be managed by cpu suppress policy, inject empty string
 	// guaranteed/bustable pod without QoS label, if kubelet use none policy, use all share pool, and if kubelet use
@@ -63,6 +66,8 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 				}
 			}
 		}
+		klog.V(6).Infof("get cpuset from specified cpushare pool for container %v/%v",
+			containerReq.PodMeta.String(), containerReq.ContainerMeta.Name)
 		return pointer.String(strings.Join(cpusetList, ",")), nil
 	}
 
@@ -72,8 +77,14 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 	}
 
 	podQOSClass := ext.GetQoSClassByAttrs(podLabels, podAnnotations)
-	if podQOSClass == ext.QoSLS {
+	if podQOSClass == ext.QoSSystem && len(r.systemQOSCPUSet) > 0 {
+		klog.V(6).Infof("get cpuset from system qos rule for container %v/%v",
+			containerReq.PodMeta.String(), containerReq.ContainerMeta.Name)
+		return pointer.String(r.systemQOSCPUSet), nil
+	} else if podQOSClass == ext.QoSLS {
 		// LS pods use all share pool
+		klog.V(6).Infof("get cpuset from all share pool for container %v/%v",
+			containerReq.PodMeta.String(), containerReq.ContainerMeta.Name)
 		return pointer.String(strings.Join(allSharePoolCPUs, ",")), nil
 	}
 
@@ -82,13 +93,19 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 		// besteffort pods including QoS=BE, clear cpuset of BE container to avoid conflict with kubelet static policy,
 		// which will pass cpuset in StartContainerRequest of CRI
 		// TODO remove this in the future since cpu suppress will keep besteffort dir as all cpuset
+		klog.V(6).Infof("get empty cpuset for be container %v/%v",
+			containerReq.PodMeta.String(), containerReq.ContainerMeta.Name)
 		return pointer.String(""), nil
 	}
 
 	if r.kubeletPolicy.Policy == ext.KubeletCPUManagerPolicyStatic {
+		klog.V(6).Infof("get empty cpuset if kubelet is static policy for container %v/%v",
+			containerReq.PodMeta.String(), containerReq.ContainerMeta.Name)
 		return nil, nil
 	} else {
 		// none policy
+		klog.V(6).Infof("get cpuset from all share pool if kubelet is none policy for container %v/%v",
+			containerReq.PodMeta.String(), containerReq.ContainerMeta.Name)
 		return pointer.String(strings.Join(allSharePoolCPUs, ",")), nil
 	}
 }
@@ -107,9 +124,24 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
+	systemQOSCPUSet := ""
+	systemQOSRes, err := ext.GetSystemQOSResource(nodeTopo.Annotations)
+	if err != nil {
+		return false, err
+	} else if systemQOSRes != nil {
+		// check cpuset format
+		if _, err := cpuset.Parse(systemQOSRes.CPUSet); err != nil {
+			return false, err
+		} else {
+			systemQOSCPUSet = systemQOSRes.CPUSet
+		}
+	}
+
 	newRule := &cpusetRule{
-		kubeletPolicy: *cpuManagerPolicy,
-		sharePools:    cpuSharePools,
+		kubeletPolicy:   *cpuManagerPolicy,
+		sharePools:      cpuSharePools,
+		systemQOSCPUSet: systemQOSCPUSet,
 	}
 	updated := p.updateRule(newRule)
 	return updated, nil
@@ -121,7 +153,7 @@ func (p *cpusetPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 			containerCtx := &protocol.ContainerContext{}
 			containerCtx.FromReconciler(podMeta, containerStat.Name)
 			if err := p.SetContainerCPUSet(containerCtx); err != nil {
-				klog.Infof("parse cpuset from pod annotation failed during callback, error: %v", err)
+				klog.V(4).Infof("parse cpuset from pod annotation failed during callback, error: %v", err)
 				continue
 			}
 			containerCtx.ReconcilerDone(p.executor)

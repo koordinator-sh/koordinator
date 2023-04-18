@@ -26,6 +26,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
+var (
+	timeNow = time.Now
+)
+
 func (r *resmanager) collectNodeMetricsAvg(windowSeconds int64) metriccache.NodeResourceQueryResult {
 	queryParam := generateQueryParamsAvg(windowSeconds)
 	return r.collectNodeMetric(queryParam)

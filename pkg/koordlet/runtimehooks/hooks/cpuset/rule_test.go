@@ -329,9 +329,10 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 		rule *cpusetRule
 	}
 	type args struct {
-		nodeTopo   *topov1alpha1.NodeResourceTopology
-		cpuPolicy  *ext.KubeletCPUManagerPolicy
-		sharePools []ext.CPUSharedPool
+		nodeTopo     *topov1alpha1.NodeResourceTopology
+		cpuPolicy    *ext.KubeletCPUManagerPolicy
+		sharePools   []ext.CPUSharedPool
+		systemQOSRes *ext.SystemQOSResource
 	}
 	tests := []struct {
 		name        string
@@ -466,6 +467,9 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 						CPUSet: "8-15",
 					},
 				},
+				systemQOSRes: &ext.SystemQOSResource{
+					CPUSet: "16-17",
+				},
 			},
 			wantUpdated: true,
 			wantRule: &cpusetRule{
@@ -484,6 +488,7 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 						CPUSet: "8-15",
 					},
 				},
+				systemQOSCPUSet: "16-17",
 			},
 			wantErr: false,
 		},
@@ -503,6 +508,10 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 			if len(tt.args.sharePools) != 0 {
 				sharePoolJson := util.DumpJSON(tt.args.sharePools)
 				tt.args.nodeTopo.Annotations[ext.AnnotationNodeCPUSharedPools] = sharePoolJson
+			}
+			if tt.args.systemQOSRes != nil {
+				systemQOSJson := util.DumpJSON(tt.args.systemQOSRes)
+				tt.args.nodeTopo.Annotations[ext.AnnotationNodeSystemQOSResource] = systemQOSJson
 			}
 			got, err := p.parseRule(tt.args.nodeTopo)
 			if (err != nil) != tt.wantErr {

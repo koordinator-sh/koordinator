@@ -27,8 +27,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
-	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func Test_getResourceThresholdSpec(t *testing.T) {
@@ -243,8 +242,8 @@ func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.SLOCtrlConfigMap,
-						Namespace: config.ConfigNameSpace,
+						Name:      sloconfig.SLOCtrlConfigMap,
+						Namespace: sloconfig.ConfigNameSpace,
 					},
 					Data: map[string]string{
 						extension.ResourceThresholdConfigKey: string(testingResourceThresholdCfg1Str),
@@ -518,8 +517,8 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.SLOCtrlConfigMap,
-						Namespace: config.ConfigNameSpace,
+						Name:      sloconfig.SLOCtrlConfigMap,
+						Namespace: sloconfig.ConfigNameSpace,
 					},
 					Data: map[string]string{
 						extension.ResourceQOSConfigKey: string(testingOnlyClusterStr),
@@ -533,8 +532,8 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.SLOCtrlConfigMap,
-						Namespace: config.ConfigNameSpace,
+						Name:      sloconfig.SLOCtrlConfigMap,
+						Namespace: sloconfig.ConfigNameSpace,
 					},
 					Data: map[string]string{
 						extension.ResourceQOSConfigKey: string(testingResourceQOSCfgStr1),
@@ -615,7 +614,7 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 				node: &corev1.Node{},
 				cfg:  &defaultConfig.CPUBurstCfgMerged,
 			},
-			want:    util.DefaultCPUBurstStrategy(),
+			want:    sloconfig.DefaultCPUBurstStrategy(),
 			wantErr: false,
 		},
 		{
@@ -771,8 +770,8 @@ func Test_calculateCPUBurstCfgMerged(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.SLOCtrlConfigMap,
-						Namespace: config.ConfigNameSpace,
+						Name:      sloconfig.SLOCtrlConfigMap,
+						Namespace: sloconfig.ConfigNameSpace,
 					},
 					Data: map[string]string{
 						extension.CPUBurstConfigKey: string(testingCfgClusterOnlyStr),
@@ -786,8 +785,8 @@ func Test_calculateCPUBurstCfgMerged(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.SLOCtrlConfigMap,
-						Namespace: config.ConfigNameSpace,
+						Name:      sloconfig.SLOCtrlConfigMap,
+						Namespace: sloconfig.ConfigNameSpace,
 					},
 					Data: map[string]string{
 						extension.CPUBurstConfigKey: string(testingCPUBurstCfgStr1),
@@ -860,7 +859,7 @@ func Test_getSystemConfigSpec(t *testing.T) {
 				node: &corev1.Node{},
 				cfg:  &defaultConfig.SystemCfgMerged,
 			},
-			want:    util.DefaultSystemStrategy(),
+			want:    sloconfig.DefaultSystemStrategy(),
 			wantErr: false,
 		},
 		{
@@ -1039,8 +1038,8 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.SLOCtrlConfigMap,
-						Namespace: config.ConfigNameSpace,
+						Name:      sloconfig.SLOCtrlConfigMap,
+						Namespace: sloconfig.ConfigNameSpace,
 					},
 					Data: map[string]string{
 						extension.SystemConfigKey: string(testingCfgOnliClusterStr),
@@ -1054,8 +1053,8 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.SLOCtrlConfigMap,
-						Namespace: config.ConfigNameSpace,
+						Name:      sloconfig.SLOCtrlConfigMap,
+						Namespace: sloconfig.ConfigNameSpace,
 					},
 					Data: map[string]string{
 						extension.SystemConfigKey: string(testingSystemConfig1Str),
