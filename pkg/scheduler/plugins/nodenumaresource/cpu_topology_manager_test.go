@@ -53,6 +53,7 @@ func TestCPUTopologyManager(t *testing.T) {
 		Options: map[string]string{
 			extension.KubeletCPUManagerPolicyStatic: "true",
 		},
+		ReservedCPUs: "0-1",
 	}
 	policyData, err := json.Marshal(expectPolicy)
 	assert.NoError(t, err)
@@ -69,6 +70,18 @@ func TestCPUTopologyManager(t *testing.T) {
 	podAllocsData, err := json.Marshal(podAllocs)
 	assert.NoError(t, err)
 
+	systemQOSResource := &extension.SystemQOSResource{
+		CPUSet: "4-5",
+	}
+	systemQOSResourceData, err := json.Marshal(systemQOSResource)
+	assert.NoError(t, err)
+
+	nodeReservation := &extension.NodeReservation{
+		ReservedCPUs: "6-7",
+	}
+	nodeReservationData, err := json.Marshal(nodeReservation)
+	assert.NoError(t, err)
+
 	nodeName := "test-node-1"
 	topology := &nrtv1alpha1.NodeResourceTopology{
 		ObjectMeta: metav1.ObjectMeta{
@@ -77,6 +90,8 @@ func TestCPUTopologyManager(t *testing.T) {
 				extension.AnnotationNodeCPUTopology:         string(data),
 				extension.AnnotationKubeletCPUManagerPolicy: string(policyData),
 				extension.AnnotationNodeCPUAllocs:           string(podAllocsData),
+				extension.AnnotationNodeSystemQOSResource:   string(systemQOSResourceData),
+				extension.AnnotationNodeReservation:         string(nodeReservationData),
 			},
 		},
 	}
@@ -110,7 +125,7 @@ func TestCPUTopologyManager(t *testing.T) {
 
 	assert.Equal(t, 1, cpuTopologyOptions.MaxRefCount)
 
-	expectReservedCPUs := cpuset.MustParse("0-3")
+	expectReservedCPUs := cpuset.MustParse("0-7")
 	assert.Equal(t, expectReservedCPUs, cpuTopologyOptions.ReservedCPUs)
 
 	delete(topology.Annotations, extension.AnnotationNodeCPUAllocs)
@@ -119,7 +134,7 @@ func TestCPUTopologyManager(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 	cpuTopologyOptions = topologyManager.GetCPUTopologyOptions(nodeName)
-	assert.True(t, cpuTopologyOptions.ReservedCPUs.IsEmpty())
+	assert.Equal(t, "0-1,4-7", cpuTopologyOptions.ReservedCPUs.String())
 
 	err = suit.NRTClientset.TopologyV1alpha1().NodeResourceTopologies().Delete(context.TODO(), topology.Name, metav1.DeleteOptions{})
 	assert.NoError(t, err)

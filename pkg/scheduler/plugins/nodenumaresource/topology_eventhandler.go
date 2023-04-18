@@ -119,18 +119,32 @@ func (m *nodeResourceTopologyEventHandler) updateNodeResourceTopology(oldNodeRes
 	}
 
 	// remove cpus reserved by node.annotation.
-	specificCPUsReserved, _ := extension.GetReservedCPUs(newNodeResTopology.Annotations)
-	nodeAnnoReserved := cpuset.MustParse(specificCPUsReserved)
+	reservedCPUsString, _ := extension.GetReservedCPUs(newNodeResTopology.Annotations)
+	nodeReservationReservedCPUs, err := cpuset.Parse(reservedCPUsString)
+	if err != nil {
+		klog.Errorf("Failed to parse nodeResourceResource reservedCPUs, name: %v, err: %v", newNodeResTopology.Name, err)
+	}
 	reportedCPUTopology, err := extension.GetCPUTopology(newNodeResTopology.Annotations)
 	if err != nil {
 		klog.Errorf("Failed to GetCPUTopology, name: %s, err: %v", newNodeResTopology.Name, err)
 	}
 
-	// reservedCPUs = cpus(all) - cpus(guaranteed) - cpus(kubeletReserved) - cpus(nodeAnnoReserved)
+	// reservedCPUs = cpus(all) - cpus(guaranteed) - cpus(kubeletReserved) - cpus(nodeReservationReserved) - cpus(systemQOSReserved)
 	cpuTopology := convertCPUTopology(reportedCPUTopology)
 	reservedCPUs := m.getPodAllocsCPUSet(podCPUAllocs)
 	reservedCPUs = reservedCPUs.Union(kubeletReservedCPUs)
-	reservedCPUs = reservedCPUs.Union(nodeAnnoReserved)
+	reservedCPUs = reservedCPUs.Union(nodeReservationReservedCPUs)
+	systemQOSResource, err := extension.GetSystemQOSResource(newNodeResTopology.Annotations)
+	if err != nil {
+		klog.Errorf("Failed to GetSystemQOSResource, name: %v, err: %v", newNodeResTopology.Name, err)
+	} else if systemQOSResource != nil && systemQOSResource.IsCPUSetExclusive() {
+		cpus, err := cpuset.Parse(systemQOSResource.CPUSet)
+		if err != nil {
+			klog.Errorf("Failed to parse systemQOSResource.CPUSet, name: %s, err: %v", newNodeResTopology.Name, err)
+		} else {
+			reservedCPUs = reservedCPUs.Union(cpus)
+		}
+	}
 
 	nodeName := newNodeResTopology.Name
 	m.topologyManager.UpdateCPUTopologyOptions(nodeName, func(options *CPUTopologyOptions) {
