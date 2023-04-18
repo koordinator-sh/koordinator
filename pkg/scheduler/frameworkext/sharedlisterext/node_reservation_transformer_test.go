@@ -18,7 +18,6 @@ package sharedlisterext
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -114,10 +113,31 @@ func TestNodeReservationTransformer(t *testing.T) {
 			},
 		},
 		{
+			name: "reserve cpu by quantity with default policy",
+			args: args{
+				apiext.NodeReservation{
+					Resources: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("1"),
+					},
+					ApplyPolicy: apiext.NodeReservationApplyPolicyDefault,
+				},
+			},
+		},
+		{
 			name: "reserve specific cores",
 			args: args{
 				apiext.NodeReservation{
 					ReservedCPUs: "0-1",
+				},
+			},
+		},
+
+		{
+			name: "reserve specific cores with policy",
+			args: args{
+				apiext.NodeReservation{
+					ReservedCPUs: "0-1",
+					ApplyPolicy:  apiext.NodeReservationApplyPolicyDefault,
 				},
 			},
 		},
@@ -184,6 +204,15 @@ func TestNodeReservationTransformer(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "only reserve cpus and do not trim allocatable",
+			args: args{
+				apiext.NodeReservation{
+					ReservedCPUs: "0-3",
+					ApplyPolicy:  apiext.NodeReservationApplyPolicyReservedCPUsOnly,
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -195,12 +224,14 @@ func TestNodeReservationTransformer(t *testing.T) {
 
 		for _, node := range nodes {
 			t.Run(tt.name, func(t *testing.T) {
-				nodeinfo := framework.NewNodeInfo()
-				nodeinfo.SetNode(node)
-				fmt.Println(nodeinfo.Allocatable.ScalarResources)
-				rl := util.GetNodeReservationFromAnnotation(node.Annotations)
+				nodeInfo := framework.NewNodeInfo()
+				nodeInfo.SetNode(node)
+				var rl corev1.ResourceList
+				if tt.args.nodeAnnoReserved.ApplyPolicy == "" || tt.args.nodeAnnoReserved.ApplyPolicy == apiext.NodeReservationApplyPolicyDefault {
+					rl = util.GetNodeReservationFromAnnotation(node.Annotations)
+				}
 
-				originAlloc := nodeinfo.Allocatable.Clone()
+				originAlloc := nodeInfo.Allocatable.Clone()
 
 				expectedResource := &framework.Resource{
 					MilliCPU:         originAlloc.MilliCPU - rl.Cpu().MilliValue(),
@@ -220,9 +251,8 @@ func TestNodeReservationTransformer(t *testing.T) {
 						expectedResource.ScalarResources[name] = originAllocQ - reservedQ.Value()
 					}
 				}
-
-				nodeReservationTransformer(nodeinfo)
-				assert.Equal(t, expectedResource, nodeinfo.Allocatable)
+				nodeReservationTransformer(nodeInfo)
+				assert.Equal(t, expectedResource, nodeInfo.Allocatable)
 			})
 		}
 	}

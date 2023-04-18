@@ -36,9 +36,8 @@ func (g *Plugin) OnNodeAdd(obj interface{}) {
 		return
 	}
 
-	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
-	allocatable := core.RunDecorateNode(node).Status.Allocatable
-	allocatable = quotav1.Subtract(allocatable, nodeAnnoReserved)
+	node = core.RunDecorateNode(node)
+	allocatable, _ := util.TrimNodeAllocatableByNodeReservation(node)
 
 	g.nodeResourceMapLock.Lock()
 	defer g.nodeResourceMapLock.Unlock()
@@ -72,14 +71,10 @@ func (g *Plugin) OnNodeUpdate(oldObj, newObj interface{}) {
 		return
 	}
 
-	oldNodeAllocatable := core.RunDecorateNode(oldNode).Status.Allocatable
-	reservedByOldNode := util.GetNodeReservationFromAnnotation(oldNode.Annotations)
-	oldNodeAllocatable = quotav1.Subtract(oldNodeAllocatable, reservedByOldNode)
-
-	newNodeAllocatable := core.RunDecorateNode(newNode).Status.Allocatable
-	reservedByNewNode := util.GetNodeReservationFromAnnotation(newNode.Annotations)
-	newNodeAllocatable = quotav1.Subtract(newNodeAllocatable, reservedByNewNode)
-
+	oldNode = core.RunDecorateNode(oldNode)
+	oldNodeAllocatable, _ := util.TrimNodeAllocatableByNodeReservation(oldNode)
+	newNode = core.RunDecorateNode(newNode)
+	newNodeAllocatable, _ := util.TrimNodeAllocatableByNodeReservation(newNode)
 	if quotav1.Equals(oldNodeAllocatable, newNodeAllocatable) {
 		return
 	}
@@ -103,9 +98,8 @@ func (g *Plugin) OnNodeDelete(obj interface{}) {
 		return
 	}
 
-	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
-	allocatable := core.RunDecorateNode(node).Status.Allocatable
-	allocatable = quotav1.Subtract(allocatable, nodeAnnoReserved)
+	node = core.RunDecorateNode(node)
+	allocatable, _ := util.TrimNodeAllocatableByNodeReservation(node)
 	delta := quotav1.Subtract(corev1.ResourceList{}, allocatable)
 	g.groupQuotaManager.UpdateClusterTotalResource(delta)
 	delete(g.nodeResourceMap, node.Name)

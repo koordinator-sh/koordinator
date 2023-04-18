@@ -17,10 +17,8 @@ limitations under the License.
 package sharedlisterext
 
 import (
-	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -35,20 +33,9 @@ func nodeReservationTransformer(nodeInfo *framework.NodeInfo) {
 	}
 
 	node := nodeInfo.Node()
-	resourceListReservedByNode := util.GetNodeReservationFromAnnotation(node.Annotations)
-	if resourceListReservedByNode == nil {
+	trimmedAllocatable, trimmed := util.TrimNodeAllocatableByNodeReservation(node)
+	if !trimmed {
 		return
 	}
-
-	originAlloc := node.Status.Allocatable.DeepCopy()
-	currentAlloc := quotav1.Subtract(originAlloc, resourceListReservedByNode)
-
-	// node.alloc(batch-memory) and node.alloc(batch-memory) have subtracted the reserved resources from the koord-manager,
-	// so we should keep the original data here.
-	currentAlloc[extension.BatchMemory] = originAlloc[extension.BatchMemory]
-	currentAlloc[extension.BatchCPU] = originAlloc[extension.BatchCPU]
-
-	if !quotav1.Equals(originAlloc, currentAlloc) {
-		nodeInfo.Allocatable = framework.NewResource(currentAlloc)
-	}
+	nodeInfo.Allocatable = framework.NewResource(trimmedAllocatable)
 }

@@ -17,10 +17,13 @@ limitations under the License.
 package util
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -220,6 +223,89 @@ func TestGetNodeReservationFromAnnotation(t *testing.T) {
 			if got := GetNodeReservationFromAnnotation(tt.args.anno); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("GetNodeReservationFromAnnotation() = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestTrimNodeAllocatableByNodeReservation(t *testing.T) {
+	tests := []struct {
+		name                string
+		node                *corev1.Node
+		reservation         *apiext.NodeReservation
+		expectedAllocatable corev1.ResourceList
+		expectedTrimmed     bool
+	}{
+		{
+			name: "trim cpu and memory but skip other resources",
+			node: &corev1.Node{
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:       resource.MustParse("96"),
+						corev1.ResourceMemory:    resource.MustParse("512Gi"),
+						apiext.BatchCPU:          resource.MustParse("16"),
+						apiext.BatchMemory:       resource.MustParse("32Gi"),
+						apiext.ResourceNvidiaGPU: resource.MustParse("8"),
+					},
+				},
+			},
+			reservation: &apiext.NodeReservation{
+				Resources: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("16"),
+					corev1.ResourceMemory: resource.MustParse("12Gi"),
+				},
+				ApplyPolicy: apiext.NodeReservationApplyPolicyDefault,
+			},
+			expectedAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:       resource.MustParse("80"),
+				corev1.ResourceMemory:    resource.MustParse("500Gi"),
+				apiext.BatchCPU:          resource.MustParse("16"),
+				apiext.BatchMemory:       resource.MustParse("32Gi"),
+				apiext.ResourceNvidiaGPU: resource.MustParse("8"),
+			},
+			expectedTrimmed: true,
+		},
+		{
+			name: "skip trim",
+			node: &corev1.Node{
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:       resource.MustParse("96"),
+						corev1.ResourceMemory:    resource.MustParse("512Gi"),
+						apiext.BatchCPU:          resource.MustParse("16"),
+						apiext.BatchMemory:       resource.MustParse("32Gi"),
+						apiext.ResourceNvidiaGPU: resource.MustParse("8"),
+					},
+				},
+			},
+			reservation: &apiext.NodeReservation{
+				Resources: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("16"),
+					corev1.ResourceMemory: resource.MustParse("12Gi"),
+				},
+				ApplyPolicy: apiext.NodeReservationApplyPolicyReservedCPUsOnly,
+			},
+			expectedAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:       resource.MustParse("96"),
+				corev1.ResourceMemory:    resource.MustParse("512Gi"),
+				apiext.BatchCPU:          resource.MustParse("16"),
+				apiext.BatchMemory:       resource.MustParse("32Gi"),
+				apiext.ResourceNvidiaGPU: resource.MustParse("8"),
+			},
+			expectedTrimmed: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.reservation)
+			assert.NoError(t, err)
+			if tt.node.Annotations == nil {
+				tt.node.Annotations = map[string]string{}
+			}
+			tt.node.Annotations[apiext.AnnotationNodeReservation] = string(data)
+
+			got, gotTrimmed := TrimNodeAllocatableByNodeReservation(tt.node)
+			assert.True(t, equality.Semantic.DeepEqual(tt.expectedAllocatable, got))
+			assert.Equal(t, tt.expectedTrimmed, gotTrimmed)
 		})
 	}
 }

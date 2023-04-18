@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -58,28 +59,66 @@ func IsNodeAddressTypeSupported(addrType corev1.NodeAddressType) bool {
 }
 
 func GetNodeReservationFromAnnotation(anno map[string]string) corev1.ResourceList {
-	reserved, ok := anno[apiext.AnnotationNodeReservation]
-	if !ok {
+	reservation, err := apiext.GetNodeReservation(anno)
+	if err != nil {
+		klog.ErrorS(err, "Failed to apiext.GetNodeReservation")
 		return nil
 	}
-
-	reservedObj := apiext.NodeReservation{}
-	if err := json.Unmarshal([]byte(reserved), &reservedObj); err != nil {
-		klog.Errorf("Failed to unmarshal cpus reserved by node annotation. err=%v.\n", err)
+	resources, err := GetNodeReservationResources(reservation)
+	if err != nil {
+		klog.ErrorS(err, "Failed to GetNodeReservationResources")
 		return nil
 	}
+	return resources
+}
 
-	rl := make(corev1.ResourceList)
-	if reservedObj.Resources != nil {
-		rl = reservedObj.Resources
+func GetNodeReservationResources(reservation *apiext.NodeReservation) (corev1.ResourceList, error) {
+	var resourceList corev1.ResourceList
+	if reservation.Resources != nil {
+		resourceList = reservation.Resources.DeepCopy()
 	}
-	if reservedObj.ReservedCPUs != "" {
-		if cpus, err := cpuset.Parse(reservedObj.ReservedCPUs); err == nil {
-			rl[corev1.ResourceCPU] = resource.MustParse(strconv.Itoa(cpus.Size()))
+	if reservation.ReservedCPUs != "" {
+		cpus, err := cpuset.Parse(reservation.ReservedCPUs)
+		if err != nil {
+			return nil, err
 		}
+		if resourceList == nil {
+			resourceList = make(corev1.ResourceList)
+		}
+		resourceList[corev1.ResourceCPU] = resource.MustParse(strconv.Itoa(cpus.Size()))
 	}
 
-	return rl
+	return resourceList, nil
+}
+
+func TrimNodeAllocatableByNodeReservation(node *corev1.Node) (trimmedAllocatable corev1.ResourceList, trimmed bool) {
+	trimmedAllocatable = node.Status.Allocatable.DeepCopy()
+	reservation, err := apiext.GetNodeReservation(node.Annotations)
+	if err != nil {
+		return
+	}
+	shouldTrim := reservation.ApplyPolicy == "" || reservation.ApplyPolicy == apiext.NodeReservationApplyPolicyDefault
+	if !shouldTrim {
+		return
+	}
+
+	reservedResources, err := GetNodeReservationResources(reservation)
+	if err != nil {
+		return
+	}
+	if quotav1.IsZero(reservedResources) {
+		return
+	}
+
+	allocatable := node.Status.Allocatable
+	trimmedAllocatable = quotav1.SubtractWithNonNegativeResult(allocatable, reservedResources)
+
+	// node.alloc(batch-memory) and node.alloc(batch-memory) have subtracted the reserved resources from the koord-manager,
+	// so we should keep the original data here.
+	trimmedAllocatable[apiext.BatchMemory] = allocatable[apiext.BatchMemory]
+	trimmedAllocatable[apiext.BatchCPU] = allocatable[apiext.BatchCPU]
+	trimmed = !quotav1.Equals(allocatable, trimmedAllocatable)
+	return
 }
 
 func GetNodeAnnoReservedJson(reserved apiext.NodeReservation) string {
