@@ -22,7 +22,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 )
@@ -159,6 +162,38 @@ func TestDefaultEstimator(t *testing.T) {
 			want: map[corev1.ResourceName]int64{
 				corev1.ResourceCPU:    3400,
 				corev1.ResourceMemory: 8589934592, // 5.6Gi
+			},
+		},
+		{
+			name: "estimate Batch pod",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSBE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityBatchValueMin),
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("4000"),
+									extension.BatchMemory: resource.MustParse("8Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("4000"),
+									extension.BatchMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    3400,
+				corev1.ResourceMemory: 6012954214, // 5.6Gi
 			},
 		},
 	}
