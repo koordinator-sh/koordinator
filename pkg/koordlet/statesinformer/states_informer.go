@@ -125,6 +125,10 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 	return s
 }
 
+func (s *statesInformer) initInformerPlugins() {
+	s.states.informerPlugins = DefaultPluginRegistry
+}
+
 func (s *statesInformer) setupPlugins() {
 	for name, plugin := range s.states.informerPlugins {
 		plugin.Setup(s.option, s.states)

@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
@@ -32,7 +34,6 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -174,14 +175,8 @@ func recordNodeResources(node *corev1.Node) {
 	}
 
 	// record node allocatable of BatchCPU & BatchMemory
-	if q, ok := node.Status.Allocatable[apiext.BatchCPU]; ok {
-		metrics.RecordNodeResourceAllocatable(string(apiext.BatchCPU), float64(util.QuantityPtr(q).Value()))
-	} else {
-		metrics.RecordNodeResourceAllocatable(string(apiext.BatchCPU), 0)
-	}
-	if q, ok := node.Status.Allocatable[apiext.BatchMemory]; ok {
-		metrics.RecordNodeResourceAllocatable(string(apiext.BatchMemory), float64(util.QuantityPtr(q).Value()))
-	} else {
-		metrics.RecordNodeResourceAllocatable(string(apiext.BatchMemory), 0)
-	}
+	batchCPU := node.Status.Allocatable.Name(apiext.BatchCPU, resource.DecimalSI)
+	metrics.RecordNodeResourceAllocatable(string(apiext.BatchCPU), metrics.UnitInteger, float64(batchCPU.Value()))
+	batchMemory := node.Status.Allocatable.Name(apiext.BatchMemory, resource.BinarySI)
+	metrics.RecordNodeResourceAllocatable(string(apiext.BatchMemory), metrics.UnitByte, float64(batchMemory.Value()))
 }

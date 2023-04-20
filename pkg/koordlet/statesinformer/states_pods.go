@@ -275,15 +275,15 @@ func recordPodResourceMetrics(podMeta *PodMeta) {
 func recordContainerResourceMetrics(container *corev1.Container, containerStatus *corev1.ContainerStatus, pod *corev1.Pod) {
 	// record pod requests/limits of BatchCPU & BatchMemory
 	if q, ok := container.Resources.Requests[apiext.BatchCPU]; ok {
-		metrics.RecordContainerResourceRequests(string(apiext.BatchCPU), containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+		metrics.RecordContainerResourceRequests(string(apiext.BatchCPU), metrics.UnitInteger, containerStatus, pod, float64(util.QuantityPtr(q).Value()))
 	}
 	if q, ok := container.Resources.Requests[apiext.BatchMemory]; ok {
-		metrics.RecordContainerResourceRequests(string(apiext.BatchMemory), containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+		metrics.RecordContainerResourceRequests(string(apiext.BatchMemory), metrics.UnitInteger, containerStatus, pod, float64(util.QuantityPtr(q).Value()))
 	}
 	if q, ok := container.Resources.Limits[apiext.BatchCPU]; ok {
-		metrics.RecordContainerResourceLimits(string(apiext.BatchCPU), containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+		metrics.RecordContainerResourceLimits(string(apiext.BatchCPU), metrics.UnitByte, containerStatus, pod, float64(util.QuantityPtr(q).Value()))
 	}
 	if q, ok := container.Resources.Limits[apiext.BatchMemory]; ok {
-		metrics.RecordContainerResourceLimits(string(apiext.BatchMemory), containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+		metrics.RecordContainerResourceLimits(string(apiext.BatchMemory), metrics.UnitByte, containerStatus, pod, float64(util.QuantityPtr(q).Value()))
 	}
 }

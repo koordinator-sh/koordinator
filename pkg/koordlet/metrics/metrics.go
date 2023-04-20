@@ -53,6 +53,11 @@ const (
 	PodNamespace = "pod_namespace"
 
 	ResourceKey = "resource"
+
+	UnitKey     = "unit"
+	UnitCore    = "core"
+	UnitByte    = "byte"
+	UnitInteger = "integer"
 )
 
 var (
