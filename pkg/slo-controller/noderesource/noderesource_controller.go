@@ -38,6 +38,8 @@ import (
 )
 
 const (
+	Name = "noderesource"
+
 	disableInConfig string = "DisableInConfig"
 )
 
@@ -139,6 +141,6 @@ func (r *NodeResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &slov1alpha1.NodeMetric{}}, &EnqueueRequestForNodeMetric{syncContext: r.NodeSyncContext}).
 		Watches(&source.Kind{Type: &schedulingv1alpha1.Device{}}, &EnqueueRequestForDevice{syncContext: r.GPUSyncContext}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler).
-		Named("noderesource"). // avoid conflict with others reconciling `Node`
+		Named(Name). // avoid conflict with others reconciling `Node`
 		Complete(r)
 }

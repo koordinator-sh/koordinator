@@ -18,15 +18,18 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
@@ -78,11 +81,15 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-var controllerAddFuncs = map[string]func(manager.Manager) error{
-	"NodeMetric":   nodemetric.Add,
-	"NodeResource": noderesource.Add,
-	"NodeSLO":      nodeslo.Add,
-}
+var (
+	controllerAddFuncs = map[string]func(manager.Manager) error{
+		nodemetric.Name:   nodemetric.Add,
+		noderesource.Name: noderesource.Add,
+		nodeslo.Name:      nodeslo.Add,
+	}
+
+	controllers = sets.StringKeySet(controllerAddFuncs).List()
+)
 
 func main() {
 	var metricsAddr, pprofAddr string
@@ -101,6 +108,9 @@ func main() {
 	flag.BoolVar(&enablePprof, "enable-pprof", true, "Enable pprof for controller manager.")
 	flag.StringVar(&pprofAddr, "pprof-addr", ":8090", "The address the pprof binds to.")
 	flag.StringVar(&syncPeriodStr, "sync-period", "", "Determines the minimum frequency at which watched resources are reconciled.")
+	pflag.StringSliceVar(&controllers, "controllers", controllers, fmt.Sprintf("A list of controllers to enable. '*' enables all on-by-default controllers,"+
+		"'noderesource' enables the controller named 'noderesource', '-noderesource' disables the controller named 'noderesource'.\n"+
+		"All controllers: %s", strings.Join(controllers, ", ")))
 	sloconfig.InitFlags(flag.CommandLine)
 
 	utilfeature.DefaultMutableFeatureGate.AddFlag(pflag.CommandLine)
@@ -206,13 +216,37 @@ func main() {
 	}
 }
 
+func isControllerEnabled(controllerName string, controllers []string) bool {
+	hasStar := false
+	for _, c := range controllers {
+		if c == controllerName {
+			return true
+		}
+		if c == "-"+controllerName {
+			return false
+		}
+		if c == "*" {
+			hasStar = true
+		}
+	}
+	return hasStar
+}
+
 func setupControllersWithManager(m manager.Manager) error {
 	for controllerName, addFn := range controllerAddFuncs {
+		if isControllerEnabled(controllerName, controllers) {
+			klog.Warningf("controller %q is disabled", controllerName)
+			continue
+		}
+
 		if err := addFn(m); err != nil {
 			klog.Errorf("Unable to create controller %s, err: %v", controllerName, err)
 			return err
+		} else {
+			klog.V(4).Infof("controller %q added", controllerName)
 		}
 	}
+
 	return nil
 }
 

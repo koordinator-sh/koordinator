@@ -36,6 +36,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
+const Name = "nodemetric"
+
 // NodeMetricReconciler reconciles a NodeMetric object
 type NodeMetricReconciler struct {
 	client.Client
@@ -180,6 +182,6 @@ func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&slov1alpha1.NodeMetric{}).
 		Watches(&source.Kind{Type: &corev1.Node{}}, &EnqueueRequestForNode{}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler).
-		Named("nodemetric").
+		Named(Name).
 		Complete(r)
 }
