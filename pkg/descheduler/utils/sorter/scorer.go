@@ -21,18 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-// ResourceToWeightMap contains resource name and weight.
-type ResourceToWeightMap map[corev1.ResourceName]int64
-
-func GenDefaultResourceToWeightMap(resourceNames []corev1.ResourceName) ResourceToWeightMap {
-	m := ResourceToWeightMap{}
-	for _, resourceName := range resourceNames {
-		m[resourceName] = 1
-	}
-	return m
-}
-
-func ResourceUsageScorer(resToWeightMap ResourceToWeightMap) func(requested, allocatable corev1.ResourceList) int64 {
+func ResourceUsageScorer(resToWeightMap map[corev1.ResourceName]int64) func(requested, allocatable corev1.ResourceList) int64 {
 	return func(requested, allocatable corev1.ResourceList) int64 {
 		var nodeScore, weightSum int64
 		for resourceName, quantity := range requested {

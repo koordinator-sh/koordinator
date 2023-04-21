@@ -26,7 +26,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
 var (
@@ -167,7 +166,11 @@ func TestResourceUsagePercentages(t *testing.T) {
 func TestSortNodesByUsageDescendingOrder(t *testing.T) {
 	nodeList := []NodeInfo{testNode1, testNode2, testNode3}
 	expectedNodeList := []NodeInfo{testNode3, testNode1, testNode2}
-	weightMap := sorter.GenDefaultResourceToWeightMap([]corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory, corev1.ResourcePods})
+	weightMap := map[corev1.ResourceName]int64{
+		corev1.ResourceCPU:    1,
+		corev1.ResourceMemory: 1,
+		corev1.ResourcePods:   1,
+	}
 	sortNodesByUsage(nodeList, weightMap, false)
 
 	assert.Equal(t, expectedNodeList, nodeList)
@@ -176,7 +179,11 @@ func TestSortNodesByUsageDescendingOrder(t *testing.T) {
 func TestSortNodesByUsageAscendingOrder(t *testing.T) {
 	nodeList := []NodeInfo{testNode1, testNode2, testNode3}
 	expectedNodeList := []NodeInfo{testNode2, testNode1, testNode3}
-	weightMap := sorter.GenDefaultResourceToWeightMap([]corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory, corev1.ResourcePods})
+	weightMap := map[corev1.ResourceName]int64{
+		corev1.ResourceCPU:    1,
+		corev1.ResourceMemory: 1,
+		corev1.ResourcePods:   1,
+	}
 	sortNodesByUsage(nodeList, weightMap, true)
 
 	assert.Equal(t, expectedNodeList, nodeList)

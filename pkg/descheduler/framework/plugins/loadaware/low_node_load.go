@@ -41,7 +41,6 @@ import (
 	nodeutil "github.com/koordinator-sh/koordinator/pkg/descheduler/node"
 	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/anomaly"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
 const (
@@ -199,8 +198,7 @@ func (pl *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *frame
 		return true
 	}
 
-	resourceToWeightMap := sorter.GenDefaultResourceToWeightMap(resourceNames)
-	sortNodesByUsage(abnormalNodes, resourceToWeightMap, false)
+	sortNodesByUsage(abnormalNodes, pl.args.ResourceWeights, false)
 
 	evictPodsFromSourceNodes(
 		ctx,
@@ -208,6 +206,7 @@ func (pl *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *frame
 		lowNodes,
 		pl.args.DryRun,
 		pl.args.NodeFit,
+		pl.args.ResourceWeights,
 		pl.handle.Evictor(),
 		pl.podFilter,
 		pl.handle.GetPodsAssignedToNodeFunc(),
