@@ -117,7 +117,7 @@ func (pl *Plugin) BeforeFilter(handle frameworkext.ExtendedHandle, cycleState *f
 
 func (pl *Plugin) restoreUnmatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*reservationInfo, shouldRestoreStates bool) error {
 	for _, rInfo := range reservationInfos {
-		if len(rInfo.allocated) == 0 {
+		if len(rInfo.pods) == 0 {
 			continue
 		}
 

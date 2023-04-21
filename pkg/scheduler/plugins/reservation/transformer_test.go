@@ -366,6 +366,7 @@ func TestAfterPreFilter(t *testing.T) {
 		corev1.ResourceCPU:    resource.MustParse("4"),
 		corev1.ResourceMemory: resource.MustParse("8Gi"),
 	}
+	unmatchedRInfo.pods[uuid.NewUUID()] = &podRequirement{}
 
 	matchRInfo := pl.reservationCache.getReservationInfoByUID(matchedReservation.UID)
 
@@ -624,6 +625,7 @@ func TestBeforeFilter(t *testing.T) {
 		corev1.ResourceCPU:    resource.MustParse("4"),
 		corev1.ResourceMemory: resource.MustParse("8Gi"),
 	}
+	unmatchedRInfo.pods[uuid.NewUUID()] = &podRequirement{}
 
 	matchRInfo := pl.reservationCache.getReservationInfoByUID(matchedReservation.UID)
 
