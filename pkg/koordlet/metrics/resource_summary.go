@@ -27,19 +27,19 @@ var (
 		Subsystem: KoordletSubsystem,
 		Name:      "node_resource_allocatable",
 		Help:      "the node allocatable of resources updated by koordinator",
-	}, []string{NodeKey, ResourceKey})
+	}, []string{NodeKey, ResourceKey, UnitKey})
 
 	ContainerResourceRequests = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "container_resource_requests",
 		Help:      "the container requests of resources updated by koordinator",
-	}, []string{NodeKey, ResourceKey, PodUID, PodName, PodNamespace, ContainerID, ContainerName})
+	}, []string{NodeKey, ResourceKey, UnitKey, PodUID, PodName, PodNamespace, ContainerID, ContainerName})
 
 	ContainerResourceLimits = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "container_resource_limits",
 		Help:      "the container limits of resources updated by koordinator",
-	}, []string{NodeKey, ResourceKey, PodUID, PodName, PodNamespace, ContainerID, ContainerName})
+	}, []string{NodeKey, ResourceKey, UnitKey, PodUID, PodName, PodNamespace, ContainerID, ContainerName})
 
 	ResourceSummaryCollectors = []prometheus.Collector{
 		NodeResourceAllocatable,
@@ -48,21 +48,23 @@ var (
 	}
 )
 
-func RecordNodeResourceAllocatable(resourceName string, value float64) {
+func RecordNodeResourceAllocatable(resourceName string, unit string, value float64) {
 	labels := genNodeLabels()
 	if labels == nil {
 		return
 	}
 	labels[ResourceKey] = resourceName
+	labels[UnitKey] = unit
 	NodeResourceAllocatable.With(labels).Set(value)
 }
 
-func RecordContainerResourceRequests(resourceName string, status *corev1.ContainerStatus, pod *corev1.Pod, value float64) {
+func RecordContainerResourceRequests(resourceName string, unit string, status *corev1.ContainerStatus, pod *corev1.Pod, value float64) {
 	labels := genNodeLabels()
 	if labels == nil {
 		return
 	}
 	labels[ResourceKey] = resourceName
+	labels[UnitKey] = unit
 	labels[PodUID] = string(pod.UID)
 	labels[PodName] = pod.Name
 	labels[PodNamespace] = pod.Namespace
@@ -75,12 +77,13 @@ func ResetContainerResourceRequests() {
 	ContainerResourceRequests.Reset()
 }
 
-func RecordContainerResourceLimits(resourceName string, status *corev1.ContainerStatus, pod *corev1.Pod, value float64) {
+func RecordContainerResourceLimits(resourceName string, unit string, status *corev1.ContainerStatus, pod *corev1.Pod, value float64) {
 	labels := genNodeLabels()
 	if labels == nil {
 		return
 	}
 	labels[ResourceKey] = resourceName
+	labels[UnitKey] = unit
 	labels[PodUID] = string(pod.UID)
 	labels[PodName] = pod.Name
 	labels[PodNamespace] = pod.Namespace

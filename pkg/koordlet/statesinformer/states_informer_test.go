@@ -233,8 +233,9 @@ func Test_statesInformer_GetAllPods(t *testing.T) {
 
 func Test_statesInformer_Run(t *testing.T) {
 	type fields struct {
-		config *Config
-		node   corev1.Node
+		config         *Config
+		node           corev1.Node
+		pluginRegistry map[pluginName]informerPlugin
 	}
 	tests := []struct {
 		name    string
@@ -258,6 +259,10 @@ func Test_statesInformer_Run(t *testing.T) {
 						},
 					},
 				},
+				pluginRegistry: map[pluginName]informerPlugin{
+					nodeSLOInformerName: NewNodeSLOInformer(),
+					nodeInformerName:    NewNodeInformer(),
+				},
 			},
 			wantErr: false,
 		},
@@ -278,11 +283,9 @@ func Test_statesInformer_Run(t *testing.T) {
 			schedClient := &fakeschedv1alpha1.FakeSchedulingV1alpha1{}
 			si := NewStatesInformer(tt.fields.config, kubeClient, koordClient, topoClient, metricCache, nodeName, schedClient)
 			s := si.(*statesInformer)
-			// pods informer needs a fake kubelet stub
-			delete(s.states.informerPlugins, podsInformerName)
-			delete(s.states.informerPlugins, nodeTopoInformerName)
-			delete(s.states.informerPlugins, nodeMetricInformerName)
+			s.states.informerPlugins = tt.fields.pluginRegistry
 			stopChannel := make(chan struct{}, 1)
+
 			go wait.Until(func() {
 				if s.started.Load() {
 					close(stopChannel)

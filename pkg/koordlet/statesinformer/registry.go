@@ -16,12 +16,12 @@ limitations under the License.
 
 package statesinformer
 
-func (s *statesInformer) initInformerPlugins() {
-	s.states.informerPlugins = map[pluginName]informerPlugin{
-		nodeSLOInformerName:    NewNodeSLOInformer(),
-		nodeTopoInformerName:   NewNodeTopoInformer(),
-		nodeInformerName:       NewNodeInformer(),
-		podsInformerName:       NewPodsInformer(),
-		nodeMetricInformerName: NewNodeMetricInformer(),
-	}
+// NOTE: variables in this file can be overwritten for extension
+
+var DefaultPluginRegistry = map[pluginName]informerPlugin{
+	nodeSLOInformerName:    NewNodeSLOInformer(),
+	nodeTopoInformerName:   NewNodeTopoInformer(),
+	nodeInformerName:       NewNodeInformer(),
+	podsInformerName:       NewPodsInformer(),
+	nodeMetricInformerName: NewNodeMetricInformer(),
 }
