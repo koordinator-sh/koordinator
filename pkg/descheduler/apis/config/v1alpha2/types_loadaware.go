@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha2
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -63,6 +64,10 @@ type LowNodeLoadArgs struct {
 
 	// LowThresholds defines the low usage threshold of resources
 	LowThresholds ResourceThresholds `json:"lowThresholds,omitempty"`
+
+	// ResourceWeights indicates the weights of resources.
+	// The weights of CPU and Memory are both 1 by default.
+	ResourceWeights map[corev1.ResourceName]int64 `json:"resourceWeights,omitempty"`
 
 	// AnomalyCondition indicates the node load anomaly thresholds,
 	// the default is 5 consecutive times exceeding HighThresholds,

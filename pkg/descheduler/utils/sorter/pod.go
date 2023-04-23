@@ -103,7 +103,7 @@ func KoordinatorPriorityClass(p1, p2 *corev1.Pod) int {
 }
 
 // PodUsage compares pods by the actual usage
-func PodUsage(podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap, nodeAllocatableMap map[string]corev1.ResourceList, resourceToWeightMap ResourceToWeightMap) CompareFn {
+func PodUsage(podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap, nodeAllocatableMap map[string]corev1.ResourceList, resourceToWeightMap map[corev1.ResourceName]int64) CompareFn {
 	scorer := ResourceUsageScorer(resourceToWeightMap)
 	return func(p1, p2 *corev1.Pod) int {
 		p1Metric, p1Found := podMetrics[types.NamespacedName{Namespace: p1.Namespace, Name: p1.Name}]
@@ -172,6 +172,6 @@ func PodSorter(cmp ...CompareFn) *MultiSorter {
 	return OrderedBy(comparators...)
 }
 
-func SortPodsByUsage(pods []*corev1.Pod, podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap, nodeAllocatableMap map[string]corev1.ResourceList, resourceToWeightMap ResourceToWeightMap) {
+func SortPodsByUsage(pods []*corev1.Pod, podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap, nodeAllocatableMap map[string]corev1.ResourceList, resourceToWeightMap map[corev1.ResourceName]int64) {
 	PodSorter(Reverse(PodUsage(podMetrics, nodeAllocatableMap, resourceToWeightMap))).Sort(pods)
 }

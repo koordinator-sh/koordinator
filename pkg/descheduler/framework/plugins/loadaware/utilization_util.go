@@ -225,6 +225,7 @@ func evictPodsFromSourceNodes(
 	sourceNodes, destinationNodes []NodeInfo,
 	dryRun bool,
 	nodeFit bool,
+	resourceWeights map[corev1.ResourceName]int64,
 	podEvictor framework.Evictor,
 	podFilter framework.FilterFunc,
 	nodeIndexer podutil.GetPodsAssignedToNodeFunc,
@@ -284,7 +285,7 @@ func evictPodsFromSourceNodes(
 			removablePods,
 			srcNode.podMetrics,
 			map[string]corev1.ResourceList{srcNode.node.Name: srcNode.node.Status.Allocatable},
-			sorter.GenDefaultResourceToWeightMap(resourceNames),
+			resourceWeights,
 		)
 		evictPods(ctx, dryRun, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction, evictionReasonGenerator)
 	}
@@ -356,7 +357,7 @@ func evictPods(
 }
 
 // sortNodesByUsage sorts nodes based on usage.
-func sortNodesByUsage(nodes []NodeInfo, resourceToWeightMap sorter.ResourceToWeightMap, ascending bool) {
+func sortNodesByUsage(nodes []NodeInfo, resourceToWeightMap map[corev1.ResourceName]int64, ascending bool) {
 	scorer := sorter.ResourceUsageScorer(resourceToWeightMap)
 	sort.Slice(nodes, func(i, j int) bool {
 		var iNodeUsage, jNodeUsage corev1.ResourceList

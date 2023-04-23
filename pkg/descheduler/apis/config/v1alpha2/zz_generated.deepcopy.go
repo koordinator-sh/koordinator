@@ -23,6 +23,7 @@ package v1alpha2
 
 import (
 	config "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
@@ -194,6 +195,13 @@ func (in *LowNodeLoadArgs) DeepCopyInto(out *LowNodeLoadArgs) {
 	if in.LowThresholds != nil {
 		in, out := &in.LowThresholds, &out.LowThresholds
 		*out = make(ResourceThresholds, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.ResourceWeights != nil {
+		in, out := &in.ResourceWeights, &out.ResourceWeights
+		*out = make(map[corev1.ResourceName]int64, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}

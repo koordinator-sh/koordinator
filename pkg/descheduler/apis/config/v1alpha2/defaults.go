@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -245,5 +246,25 @@ func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
 		obj.AnomalyCondition = defaultLoadAnomalyCondition
 	} else if obj.AnomalyCondition.ConsecutiveAbnormalities == 0 {
 		obj.AnomalyCondition.ConsecutiveAbnormalities = defaultLoadAnomalyCondition.ConsecutiveAbnormalities
+	}
+
+	defaultResourceWeights := map[corev1.ResourceName]int64{
+		corev1.ResourceCPU:    1,
+		corev1.ResourceMemory: 1,
+	}
+	for resourceName := range obj.LowThresholds {
+		defaultResourceWeights[resourceName] = 1
+	}
+	for resourceName := range obj.HighThresholds {
+		defaultResourceWeights[resourceName] = 1
+	}
+	if obj.ResourceWeights == nil {
+		obj.ResourceWeights = defaultResourceWeights
+	} else {
+		for resourceName, weight := range defaultResourceWeights {
+			if v := obj.ResourceWeights[resourceName]; v <= 0 {
+				obj.ResourceWeights[resourceName] = weight
+			}
+		}
 	}
 }

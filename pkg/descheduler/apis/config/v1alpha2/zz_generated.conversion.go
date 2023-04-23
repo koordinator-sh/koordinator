@@ -25,6 +25,7 @@ import (
 	unsafe "unsafe"
 
 	config "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -335,6 +336,7 @@ func autoConvert_v1alpha2_LowNodeLoadArgs_To_config_LowNodeLoadArgs(in *LowNodeL
 	}
 	out.HighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
 	out.LowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
 		*out = new(config.LoadAnomalyCondition)
@@ -373,6 +375,7 @@ func autoConvert_config_LowNodeLoadArgs_To_v1alpha2_LowNodeLoadArgs(in *config.L
 	}
 	out.HighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
 	out.LowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
 		*out = new(LoadAnomalyCondition)

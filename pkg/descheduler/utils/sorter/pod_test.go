@@ -124,7 +124,11 @@ func TestSortPods(t *testing.T) {
 			corev1.ResourceMemory: resource.MustParse("512Gi"),
 		},
 	}
-	resourceToWeightMap := GenDefaultResourceToWeightMap([]corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory})
+	resourceToWeightMap := map[corev1.ResourceName]int64{
+		corev1.ResourceCPU:    1,
+		corev1.ResourceMemory: 1,
+		corev1.ResourcePods:   1,
+	}
 	SortPodsByUsage(pods, podMetrics, nodeAllocatableMap, resourceToWeightMap)
 	expectedPodsOrder := []string{"test-18", "test-19", "test-17", "test-16", "test-15", "test-21", "test-20", "test-23", "test-22", "test-9", "test-8", "test-2", "test-3", "test-7", "test-4", "test-6", "test-5", "test-1", "test-11", "test-10", "test-12", "test-13", "test-14"}
 	var podsOrder []string
