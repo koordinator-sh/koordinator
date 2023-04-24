@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
@@ -769,6 +770,35 @@ func TestFilterUsage(t *testing.T) {
 			},
 			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Priority(extension.PriorityProdValueMax).Obj(),
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+		},
+		{
+			name:     "filter daemonset pod exceed cpu usage",
+			nodeName: "test-node-1",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("70"),
+								corev1.ResourceMemory: resource.MustParse("256Gi"),
+							},
+						},
+					},
+				},
+			},
+			testPod:    schedulertesting.MakePod().Namespace("default").Name("test-pod").Priority(extension.PriorityProdValueMax).OwnerReference("test-daemonset", schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}).Obj(),
+			wantStatus: nil,
 		},
 	}
 	for _, tt := range tests {

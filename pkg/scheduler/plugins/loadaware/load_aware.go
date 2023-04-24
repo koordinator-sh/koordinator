@@ -114,6 +114,10 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		return framework.NewStatus(framework.Error, "node not found")
 	}
 
+	if isDaemonSetPod(pod.OwnerReferences) {
+		return nil
+	}
+
 	nodeMetric, err := p.nodeMetricLister.Get(node.Name)
 	if err != nil {
 		// For nodes that lack load information, fall back to the situation where there is no load-aware scheduling.

@@ -184,3 +184,13 @@ func sumPodUsages(podMetrics map[string]corev1.ResourceList, estimatedPods sets.
 	}
 	return podUsages, estimatedPodsUsages
 }
+
+// isDaemonSetPod returns true if the pod is a IsDaemonSetPod.
+func isDaemonSetPod(ownerRefList []metav1.OwnerReference) bool {
+	for _, ownerRef := range ownerRefList {
+		if ownerRef.Kind == "DaemonSet" {
+			return true
+		}
+	}
+	return false
+}
