@@ -24,7 +24,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 var _ ConfigChecker = &SystemConfigChecker{}
@@ -48,36 +47,7 @@ func NewSystemConfigChecker(oldConfig, newConfig *corev1.ConfigMap, needUnmarsha
 }
 
 func (c *SystemConfigChecker) ConfigParamValid() error {
-	clusterCfg := c.cfg.ClusterStrategy
-	if clusterCfg != nil {
-		err := checkSystemStrategy(*clusterCfg)
-		if err != nil {
-			return buildParamInvalidError(fmt.Errorf("check System config cluster cfg fail! error:%s", err.Error()))
-		}
-	}
-	for _, nodeCfg := range c.cfg.NodeStrategies {
-		if nodeCfg.SystemStrategy != nil {
-			err := checkSystemStrategy(*nodeCfg.SystemStrategy)
-			if err != nil {
-				return buildParamInvalidError(fmt.Errorf("check System config node cfg fail! name(%s),error:%s", nodeCfg.Name, err.Error()))
-			}
-		}
-	}
-	return nil
-}
-
-func checkSystemStrategy(cfg slov1alpha1.SystemStrategy) error {
-
-	if cfg.MinFreeKbytesFactor != nil && *cfg.MinFreeKbytesFactor <= 0 {
-		return fmt.Errorf("MinFreeKbytesFactor invalid,value:%d", *cfg.MinFreeKbytesFactor)
-	}
-	if cfg.WatermarkScaleFactor != nil && *cfg.WatermarkScaleFactor <= 0 {
-		return fmt.Errorf("WatermarkScaleFactor invalid,value:%d", *cfg.WatermarkScaleFactor)
-	}
-	if cfg.MemcgReapBackGround != nil && (*cfg.MemcgReapBackGround != 0 && *cfg.MemcgReapBackGround != 1) {
-		return fmt.Errorf("MemcgReapBackGround invalid,value:%d", *cfg.MemcgReapBackGround)
-	}
-	return nil
+	return c.CheckByValidator(c.cfg)
 }
 
 func (c *SystemConfigChecker) initConfig() error {

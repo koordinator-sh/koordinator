@@ -47,41 +47,7 @@ func NewColocationConfigChecker(oldConfig, newConfig *corev1.ConfigMap, needUnma
 }
 
 func (c *ColocationConfigChecker) ConfigParamValid() error {
-	clusterCfg := c.cfg.ColocationStrategy
-	err := checkColocationStrategy(clusterCfg)
-	if err != nil {
-		return buildParamInvalidError(fmt.Errorf("check colocation cluster cfg fail! error:%s", err.Error()))
-	}
-	for _, nodeCfg := range c.cfg.NodeConfigs {
-		err = checkColocationStrategy(nodeCfg.ColocationStrategy)
-		if err != nil {
-			return buildParamInvalidError(fmt.Errorf("check colocation node cfg fail! name(%s),error:%s", nodeCfg.Name, err.Error()))
-		}
-	}
-	return nil
-}
-
-func checkColocationStrategy(cfg extension.ColocationStrategy) error {
-	if cfg.MetricAggregateDurationSeconds != nil && *cfg.MetricAggregateDurationSeconds <= 0 {
-		return fmt.Errorf("MetricAggregateDurationSeconds invalid,value:%d", *cfg.MetricAggregateDurationSeconds)
-	}
-	if cfg.UpdateTimeThresholdSeconds != nil && *cfg.UpdateTimeThresholdSeconds <= 0 {
-		return fmt.Errorf("UpdateTimeThresholdSeconds invalid,value:%d", *cfg.UpdateTimeThresholdSeconds)
-	}
-	if cfg.DegradeTimeMinutes != nil && *cfg.DegradeTimeMinutes <= 0 {
-		return fmt.Errorf("DegradeTimeMinutes invalid,value:%d", *cfg.DegradeTimeMinutes)
-	}
-	if isValueInvalidForPercent(cfg.CPUReclaimThresholdPercent) {
-		return fmt.Errorf("CPUReclaimThresholdPercent invalid,value:%d", *cfg.CPUReclaimThresholdPercent)
-	}
-	if isValueInvalidForPercent(cfg.MemoryReclaimThresholdPercent) {
-		return fmt.Errorf("MemoryReclaimThresholdPercent invalid,value:%v", *cfg.MemoryReclaimThresholdPercent)
-	}
-	if cfg.ResourceDiffThreshold != nil &&
-		(*cfg.ResourceDiffThreshold <= 0 || *cfg.ResourceDiffThreshold >= 1) {
-		return fmt.Errorf("ResourceDiffThreshold invalid,value:%f", *cfg.ResourceDiffThreshold)
-	}
-	return nil
+	return c.CheckByValidator(c.cfg)
 }
 
 func (c *ColocationConfigChecker) initConfig() error {

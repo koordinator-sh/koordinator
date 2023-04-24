@@ -24,7 +24,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 var _ ConfigChecker = &ResourceThresholdChecker{}
@@ -48,22 +47,7 @@ func NewResourceThresholdChecker(oldConfig, newConfig *corev1.ConfigMap, needUnm
 }
 
 func (c *ResourceThresholdChecker) ConfigParamValid() error {
-	clusterCfg := c.cfg.ClusterStrategy
-	if clusterCfg != nil {
-		err := checkThresholdStrategy(*clusterCfg)
-		if err != nil {
-			return buildParamInvalidError(fmt.Errorf("check ResourceThreshold cluster cfg fail! error:%s", err.Error()))
-		}
-	}
-	for _, nodeCfg := range c.cfg.NodeStrategies {
-		if nodeCfg.ResourceThresholdStrategy != nil {
-			err := checkThresholdStrategy(*nodeCfg.ResourceThresholdStrategy)
-			if err != nil {
-				return buildParamInvalidError(fmt.Errorf("check ResourceThreshold node cfg fail! name(%s),error:%s", nodeCfg.Name, err.Error()))
-			}
-		}
-	}
-	return nil
+	return c.CheckByValidator(c.cfg)
 }
 
 func (c *ResourceThresholdChecker) initConfig() error {
@@ -85,36 +69,6 @@ func (c *ResourceThresholdChecker) initConfig() error {
 		return err
 	}
 
-	return nil
-}
-
-func checkThresholdStrategy(cfg slov1alpha1.ResourceThresholdStrategy) error {
-	if isValueInvalidForPercent(cfg.CPUSuppressThresholdPercent) {
-		return fmt.Errorf("CPUSuppressThresholdPercent invalid,value:%d", *cfg.CPUSuppressThresholdPercent)
-	}
-	if isValueInvalidForPercent(cfg.CPUEvictBESatisfactionLowerPercent) {
-		return fmt.Errorf("CPUEvictBESatisfactionLowerPercent invalid,value:%d", *cfg.CPUEvictBESatisfactionLowerPercent)
-	}
-
-	if isValueInvalidForPercent(cfg.CPUEvictBESatisfactionUpperPercent) {
-		return fmt.Errorf("CPUEvictBESatisfactionUpperPercent invalid,value:%d", *cfg.CPUEvictBESatisfactionUpperPercent)
-	}
-
-	if cfg.CPUEvictBESatisfactionLowerPercent != nil && *cfg.CPUEvictBESatisfactionLowerPercent > 0 {
-		if cfg.CPUEvictBESatisfactionUpperPercent == nil {
-			return fmt.Errorf("CPUEvictBESatisfactionPercent invalid,upper must set when lower (%d) not nil", *cfg.CPUEvictBESatisfactionLowerPercent)
-		}
-		if *cfg.CPUEvictBESatisfactionUpperPercent < *cfg.CPUEvictBESatisfactionLowerPercent {
-			return fmt.Errorf("CPUEvictBESatisfactionPercent invalid,upper(%d) must set  larger than lower (%d)", *cfg.CPUEvictBESatisfactionUpperPercent, *cfg.CPUEvictBESatisfactionLowerPercent)
-		}
-	}
-
-	if isValueInvalidForPercent(cfg.MemoryEvictThresholdPercent) {
-		return fmt.Errorf("MemoryEvictThresholdPercent invalid,value:%d", *cfg.MemoryEvictThresholdPercent)
-	}
-	if cfg.CPUEvictTimeWindowSeconds != nil && *cfg.CPUEvictTimeWindowSeconds <= 0 {
-		return fmt.Errorf("CPUEvictTimeWindowSeconds invalid,value:%d", *cfg.CPUEvictTimeWindowSeconds)
-	}
 	return nil
 }
 

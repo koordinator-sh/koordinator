@@ -24,7 +24,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 var _ ConfigChecker = &ResourceQOSChecker{}
@@ -48,22 +47,7 @@ func NewResourceQOSChecker(oldConfig, newConfig *corev1.ConfigMap, needUnmarshal
 }
 
 func (c *ResourceQOSChecker) ConfigParamValid() error {
-	clusterCfg := c.cfg.ClusterStrategy
-	if clusterCfg != nil {
-		err := checkResourceQOSStrategy(*clusterCfg)
-		if err != nil {
-			return buildParamInvalidError(fmt.Errorf("check ResourceQOS cluster cfg fail! error:%s", err.Error()))
-		}
-	}
-	for _, nodeCfg := range c.cfg.NodeStrategies {
-		if nodeCfg.ResourceQOSStrategy != nil {
-			err := checkResourceQOSStrategy(*nodeCfg.ResourceQOSStrategy)
-			if err != nil {
-				return buildParamInvalidError(fmt.Errorf("check ResourceQOS node cfg fail! name(%s),error:%s", nodeCfg.Name, err.Error()))
-			}
-		}
-	}
-	return nil
+	return c.CheckByValidator(c.cfg)
 }
 
 func (c *ResourceQOSChecker) initConfig() error {
@@ -83,103 +67,6 @@ func (c *ResourceQOSChecker) initConfig() error {
 		klog.Error(fmt.Sprintf("Failed to parse ResourceQOS config in configmap %s/%s, err: %s",
 			c.NewConfigMap.Namespace, c.NewConfigMap.Name, err.Error()))
 		return err
-	}
-	return nil
-}
-
-func checkResourceQOSStrategy(cfg slov1alpha1.ResourceQOSStrategy) error {
-
-	err := checkResourceQOS(cfg.LSRClass)
-	if err != nil {
-		return err
-	}
-	err = checkResourceQOS(cfg.LSClass)
-	if err != nil {
-		return err
-	}
-	err = checkResourceQOS(cfg.BEClass)
-	if err != nil {
-		return err
-	}
-	err = checkResourceQOS(cfg.CgroupRoot)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func checkResourceQOS(resource *slov1alpha1.ResourceQOS) error {
-	if resource == nil {
-		return nil
-	}
-	if resource.CPUQOS != nil {
-		err := checkCPUQOS(resource.CPUQOS.CPUQOS)
-		if err != nil {
-			return err
-		}
-	}
-	if resource.MemoryQOS != nil {
-		err := checkMemoryQOS(resource.MemoryQOS.MemoryQOS)
-		if err != nil {
-			return err
-		}
-	}
-	if resource.ResctrlQOS != nil {
-		err := checkResctrlQOS(resource.ResctrlQOS.ResctrlQOS)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func checkCPUQOS(cfg slov1alpha1.CPUQOS) error {
-	if cfg.GroupIdentity != nil && (*cfg.GroupIdentity < -1 || *cfg.GroupIdentity > 2) {
-		return fmt.Errorf("GroupIdentity invalid,value:%d", *cfg.GroupIdentity)
-	}
-	return nil
-}
-
-func checkMemoryQOS(cfg slov1alpha1.MemoryQOS) error {
-	if isValueInvalidForPercent(cfg.MinLimitPercent) {
-		return fmt.Errorf("MinLimitPercent invalid,value:%d", *cfg.MinLimitPercent)
-	}
-	if isValueInvalidForPercent(cfg.LowLimitPercent) {
-		return fmt.Errorf("LowLimitPercent invalid,value:%d", *cfg.LowLimitPercent)
-	}
-	if isValueInvalidForPercent(cfg.ThrottlingPercent) {
-		return fmt.Errorf("ThrottlingPercent invalid,value:%d", *cfg.ThrottlingPercent)
-	}
-	if isValueInvalidForPercent(cfg.WmarkRatio) {
-		return fmt.Errorf("WmarkRatio invalid,value:%d", *cfg.WmarkRatio)
-	}
-	if isValueInvalidForPercent(cfg.WmarkScalePermill) {
-		return fmt.Errorf("WmarkScalePermill invalid,value:%d", *cfg.WmarkScalePermill)
-	}
-	if cfg.WmarkMinAdj != nil && (*cfg.WmarkMinAdj < -25 || *cfg.WmarkMinAdj > 50) {
-		return fmt.Errorf("WmarkMinAdj invalid,value:%d", *cfg.WmarkMinAdj)
-	}
-	if cfg.PriorityEnable != nil && (*cfg.PriorityEnable < 0 || *cfg.PriorityEnable > 1) {
-		return fmt.Errorf("PriorityEnable invalid,value:%d", *cfg.PriorityEnable)
-	}
-	if cfg.Priority != nil && (*cfg.Priority < 0 || *cfg.Priority > 12) {
-		return fmt.Errorf("Priority invalid, value:%d ", *cfg.Priority)
-	}
-	if cfg.OomKillGroup != nil && (*cfg.OomKillGroup < 0 || *cfg.OomKillGroup > 1) {
-		return fmt.Errorf("OomKillGroup invalid, value:%d ", *cfg.OomKillGroup)
-	}
-	return nil
-}
-
-func checkResctrlQOS(cfg slov1alpha1.ResctrlQOS) error {
-	if isValueInvalidForPercent(cfg.CATRangeStartPercent) {
-		return fmt.Errorf("CATRangeStartPercent invalid,value:%d", *cfg.CATRangeStartPercent)
-	}
-	if isValueInvalidForPercent(cfg.CATRangeEndPercent) {
-		return fmt.Errorf("CATRangeEndPercent invalid,value:%d", *cfg.CATRangeEndPercent)
-	}
-	if isValueInvalidForPercent(cfg.MBAPercent) {
-		return fmt.Errorf("CATRangeEndPercent invalid,value:%d", *cfg.MBAPercent)
 	}
 	return nil
 }

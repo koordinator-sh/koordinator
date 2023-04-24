@@ -24,7 +24,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 var _ ConfigChecker = &CPUBurstChecker{}
@@ -48,35 +47,7 @@ func NewCPUBurstChecker(oldConfig, newConfig *corev1.ConfigMap, needUnmarshal bo
 }
 
 func (c *CPUBurstChecker) ConfigParamValid() error {
-	clusterCfg := c.cfg.ClusterStrategy
-	if clusterCfg != nil {
-		err := checkCPUBurstStrategy(*clusterCfg)
-		if err != nil {
-			return buildParamInvalidError(fmt.Errorf("check CPUBurst cluster cfg fail! error:%s", err.Error()))
-		}
-	}
-	for _, nodeCfg := range c.cfg.NodeStrategies {
-		if nodeCfg.CPUBurstStrategy != nil {
-			err := checkCPUBurstStrategy(*nodeCfg.CPUBurstStrategy)
-			if err != nil {
-				return buildParamInvalidError(fmt.Errorf("check CPUBurst node cfg fail! name(%s),error:%s", nodeCfg.Name, err.Error()))
-			}
-		}
-	}
-	return nil
-}
-
-func checkCPUBurstStrategy(cfg slov1alpha1.CPUBurstStrategy) error {
-	if cfg.CPUBurstPercent != nil && *cfg.CPUBurstPercent <= 0 {
-		return fmt.Errorf("CPUBurstPercent invalid,value:%d", *cfg.CPUBurstPercent)
-	}
-	if cfg.CFSQuotaBurstPercent != nil && *cfg.CFSQuotaBurstPercent <= 0 {
-		return fmt.Errorf("CFSQuotaBurstPercent invalid,value:%d", *cfg.CFSQuotaBurstPercent)
-	}
-	if cfg.CFSQuotaBurstPeriodSeconds != nil && *cfg.CFSQuotaBurstPeriodSeconds <= 0 {
-		return fmt.Errorf("CFSQuotaBurstPeriodSeconds invalid,value:%d", *cfg.CFSQuotaBurstPeriodSeconds)
-	}
-	return nil
+	return c.CheckByValidator(c.cfg)
 }
 
 func (c *CPUBurstChecker) initConfig() error {

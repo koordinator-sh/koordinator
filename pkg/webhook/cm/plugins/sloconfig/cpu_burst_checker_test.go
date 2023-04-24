@@ -306,6 +306,9 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 					},
 					NodeStrategies: []extension.NodeCPUBurstCfg{
 						{
+							NodeCfgProfile: extension.NodeCfgProfile{
+								Name: "testNode",
+							},
 							CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 								CPUBurstConfig: slov1alpha1.CPUBurstConfig{},
 							},
@@ -358,7 +361,7 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 			if gotErr != nil {
 				fmt.Println(gotErr.Error())
 			}
-			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 		})
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 const InitSuccess = "Success"
@@ -73,6 +74,17 @@ func (c *CommonChecker) InitStatus() string {
 	return c.initStatus
 }
 
+func (c *CommonChecker) CheckByValidator(config interface{}) error {
+	info, err := sloconfig.GetValidatorInstance().StructWithTrans(config)
+	if err != nil {
+		return err
+	}
+	if len(info) > 0 {
+		return buildJsonError(ReasonParamInvalid, info)
+	}
+	return nil
+}
+
 type nodeConfigProfileChecker struct {
 	cfgName     string
 	nodeConfigs []profileCheckInfo
@@ -89,7 +101,6 @@ func CreateNodeConfigProfileChecker(configName string, profiles func() []extensi
 	nodeCfgs := profiles()
 	var profileCheckInfos []profileCheckInfo
 	for _, nodeConfig := range nodeCfgs {
-
 		//checkNodeSelector empty
 		if nodeConfig.NodeSelector == nil ||
 			(len(nodeConfig.NodeSelector.MatchLabels) == 0 && len(nodeConfig.NodeSelector.MatchExpressions) == 0) {
@@ -116,7 +127,13 @@ func (n *nodeConfigProfileChecker) HasMultiNodeConfigs() bool {
 }
 
 func (n *nodeConfigProfileChecker) ProfileParamValid() error {
+	if sloconfig.IsNodeStrategyNameNeedCheck() {
+		return n.checkName()
+	}
+	return nil
+}
 
+func (n *nodeConfigProfileChecker) checkName() error {
 	nameSets := sets.String{}
 	for _, nodeCfg := range n.nodeConfigs {
 		//checkName
@@ -185,8 +202,4 @@ func (n *nodeConfigProfileChecker) ExistNodeConflict(node *corev1.Node) error {
 		})
 	}
 	return nil
-}
-
-func isValueInvalidForPercent(value *int64) bool {
-	return value != nil && (*value < 0 || *value > 100)
 }
