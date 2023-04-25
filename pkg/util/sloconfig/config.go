@@ -19,7 +19,6 @@ package sloconfig
 import "flag"
 
 const (
-	Zh = "zh"
 	En = "en"
 )
 
@@ -28,8 +27,6 @@ var (
 	ConfigNameSpace = "koordinator-system"
 	// SLOCtrlConfigMap is the name of the slo-controller configmap.
 	SLOCtrlConfigMap = "slo-controller-config"
-	// DefaultTranslator = "en"
-	DefaultTranslator = "en"
 	// NodeStrategyNameNeedCheck true:enable to check name required and not conflict, false: not check
 	NodeStrategyNameNeedCheck = "false"
 )
@@ -37,7 +34,6 @@ var (
 func InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&SLOCtrlConfigMap, "slo-config-name", SLOCtrlConfigMap, "determines the name the slo-controller configmap uses.")
 	fs.StringVar(&ConfigNameSpace, "config-namespace", ConfigNameSpace, "determines the namespace of configmap uses.")
-	fs.StringVar(&DefaultTranslator, "default-config-translator", DefaultTranslator, "determines the sloConfig validator translator. e.g. 'en', 'zh'")
 	fs.StringVar(&NodeStrategyNameNeedCheck, "node-strategy-name-need-check", NodeStrategyNameNeedCheck, "determines the sloConfig validator nodeConfig name check enable, 'true':enable, 'false':unable, default:false.")
 }
 

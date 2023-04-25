@@ -19,11 +19,9 @@ import (
 	"sync"
 
 	"github.com/go-playground/locales/en"
-	"github.com/go-playground/locales/zh"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
 	transen "github.com/go-playground/validator/v10/translations/en"
-	transzh "github.com/go-playground/validator/v10/translations/zh"
 )
 
 var validatorInstance = &DefaultValidator{}
@@ -34,7 +32,6 @@ type DefaultValidator struct {
 	trans     *ut.Translator
 }
 
-// StructWithTrans support en or zh translator
 func (v *DefaultValidator) StructWithTrans(config interface{}) (validator.ValidationErrorsTranslations, error) {
 	err := v.validator.Struct(config)
 	switch err.(type) {
@@ -56,14 +53,7 @@ func GetValidatorInstance() *DefaultValidator {
 
 func createValidator() (*validator.Validate, *ut.Translator) {
 	instance := validator.New()
-	switch DefaultTranslator {
-	case Zh:
-		return instance, registerZhTranslator(instance)
-	case En:
-		return instance, registerEnTranslator(instance)
-	default:
-		return instance, registerEnTranslator(instance)
-	}
+	return instance, registerEnTranslator(instance)
 }
 
 func registerEnTranslator(instance *validator.Validate) *ut.Translator {
@@ -71,17 +61,6 @@ func registerEnTranslator(instance *validator.Validate) *ut.Translator {
 	uni := ut.New(locale, locale)
 	trans, _ := uni.GetTranslator(En)
 	err := transen.RegisterDefaultTranslations(instance, trans)
-	if err != nil {
-		return nil
-	}
-	return &trans
-}
-
-func registerZhTranslator(instance *validator.Validate) *ut.Translator {
-	locale := zh.New()
-	uni := ut.New(locale, locale)
-	trans, _ := uni.GetTranslator(Zh)
-	err := transzh.RegisterDefaultTranslations(instance, trans)
 	if err != nil {
 		return nil
 	}
