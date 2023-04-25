@@ -70,7 +70,7 @@ func GetContainerCgroupParentDir(podParentDir string, c *corev1.ContainerStatus)
 // @parentDir kubepods.slice/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
 // @return kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/****.scope
 func GetContainerCgroupParentDirByID(podParentDir string, containerID string) (string, error) {
-	containerDir, err := system.CgroupPathFormatter.ContainerDirFn(containerID)
+	_, containerDir, err := system.CgroupPathFormatter.ContainerDirFn(containerID)
 	if err != nil {
 		return "", err
 	}

@@ -33,6 +33,8 @@ import (
 type ContainerMeta struct {
 	Name string
 	ID   string // docker://xxx; containerd://
+	// is sandbox container
+	Sandbox bool
 }
 
 func (c *ContainerMeta) FromProxy(containerMeta *runtimeapi.ContainerMetadata, podAnnotations map[string]string) {
@@ -71,13 +73,26 @@ func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookReques
 	}
 }
 
-func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, containerName string) {
+func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, containerName string, sandbox bool) {
 	c.PodMeta.FromReconciler(podMeta.Pod.ObjectMeta)
 	c.ContainerMeta.Name = containerName
-	for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
-		if containerStat.Name == containerName {
-			c.ContainerMeta.ID = containerStat.ContainerID
-			break
+	c.ContainerMeta.Sandbox = sandbox
+	if sandbox {
+		var err error
+		if c.ContainerMeta.ID, err = koordletutil.GetPodSandboxContainerID(podMeta.Pod); err != nil {
+			klog.V(4).Infof("cannot get sandbox container id for pod %v, %v",
+				util.GetPodKey(podMeta.Pod), err)
+			return
+		} else if c.ContainerMeta.ID == "" {
+			klog.V(4).Infof("container status is empty for pod %v, skip")
+			return
+		}
+	} else {
+		for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
+			if containerStat.Name == containerName {
+				c.ContainerMeta.ID = containerStat.ContainerID
+				break
+			}
 		}
 	}
 	var specFromContainer *apiext.ExtendedResourceContainerSpec
@@ -158,11 +173,16 @@ func (c *ContainerContext) ProxyDone(resp *runtimeapi.ContainerResourceHookRespo
 	c.Response.ProxyDone(resp)
 }
 
-func (c *ContainerContext) FromReconciler(podMeta *statesinformer.PodMeta, containerName string) {
-	c.Request.FromReconciler(podMeta, containerName)
+func (c *ContainerContext) FromReconciler(podMeta *statesinformer.PodMeta, containerName string, sandbox bool) {
+	c.Request.FromReconciler(podMeta, containerName, sandbox)
 }
 
 func (c *ContainerContext) ReconcilerDone(executor resourceexecutor.ResourceUpdateExecutor) {
+	if len(c.Request.CgroupParent) == 0 {
+		klog.V(4).Infof("container cgroup parent is empty, skip reconciler for %v/%v",
+			c.Request.PodMeta.String(), c.Request.ContainerMeta.Name)
+		return
+	}
 	if c.executor == nil {
 		c.executor = executor
 	}

@@ -34,6 +34,7 @@ type HooksProtocol interface {
 type hooksProtocolBuilder struct {
 	KubeQOS   func(kubeQOS corev1.PodQOSClass) HooksProtocol
 	Pod       func(podMeta *statesinformer.PodMeta) HooksProtocol
+	Sandbox   func(podMeta *statesinformer.PodMeta) HooksProtocol
 	Container func(podMeta *statesinformer.PodMeta, containerName string) HooksProtocol
 }
 
@@ -48,9 +49,14 @@ var HooksProtocolBuilder = hooksProtocolBuilder{
 		p.FromReconciler(podMeta)
 		return p
 	},
+	Sandbox: func(podMeta *statesinformer.PodMeta) HooksProtocol {
+		p := &ContainerContext{}
+		p.FromReconciler(podMeta, "", true)
+		return p
+	},
 	Container: func(podMeta *statesinformer.PodMeta, containerName string) HooksProtocol {
 		c := &ContainerContext{}
-		c.FromReconciler(podMeta, containerName)
+		c.FromReconciler(podMeta, containerName, false)
 		return c
 	},
 }

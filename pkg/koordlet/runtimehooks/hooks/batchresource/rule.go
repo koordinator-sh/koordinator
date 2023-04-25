@@ -81,7 +81,7 @@ func (p *plugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		// container-level
 		for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
 			containerCtx := &protocol.ContainerContext{}
-			containerCtx.FromReconciler(podMeta, containerStat.Name)
+			containerCtx.FromReconciler(podMeta, containerStat.Name, false)
 			if err := p.SetContainerCFSQuota(containerCtx); err != nil {
 				klog.V(4).Infof("failed to set container cfs quota during callback %v, container %v, err: %v",
 					name, containerStat.Name, err)
@@ -89,6 +89,7 @@ func (p *plugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 			}
 			containerCtx.ReconcilerDone(p.executor)
 		}
+		// TODO set for sandbox container
 	}
 	return nil
 }

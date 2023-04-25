@@ -39,6 +39,10 @@ const (
 	KubeRootNameCgroupfs       = "kubepods/"
 	KubeBurstableNameCgroupfs  = "burstable/"
 	KubeBesteffortNameCgroupfs = "besteffort/"
+
+	RuntimeTypeDocker     = "docker"
+	RuntimeTypeContainerd = "containerd"
+	RuntimeTypeUnknown    = "unknown"
 )
 
 func (c CgroupDriverType) Validate() bool {
@@ -50,8 +54,8 @@ type formatter struct {
 	ParentDir string
 	QOSDirFn  func(qos corev1.PodQOSClass) string
 	PodDirFn  func(qos corev1.PodQOSClass, podUID string) string
-	// containerID format: "containerd://..." or "docker://..."
-	ContainerDirFn func(id string) (string, error)
+	// containerID format: "containerd://..." or "docker://...", return (containerd, HashID)
+	ContainerDirFn func(id string) (string, string, error)
 
 	PodIDParser       func(basename string) (string, error)
 	ContainerIDParser func(basename string) (string, error)
@@ -82,19 +86,19 @@ var cgroupPathFormatterInSystemd = formatter{
 		}
 		return "/"
 	},
-	ContainerDirFn: func(id string) (string, error) {
+	ContainerDirFn: func(id string) (string, string, error) {
 		hashID := strings.Split(id, "://")
 		if len(hashID) < 2 {
-			return "", fmt.Errorf("parse container id %s failed", id)
+			return RuntimeTypeUnknown, "", fmt.Errorf("parse container id %s failed", id)
 		}
 
 		switch hashID[0] {
-		case "docker":
-			return fmt.Sprintf("docker-%s.scope/", hashID[1]), nil
-		case "containerd":
-			return fmt.Sprintf("cri-containerd-%s.scope/", hashID[1]), nil
+		case RuntimeTypeDocker:
+			return RuntimeTypeDocker, fmt.Sprintf("docker-%s.scope", hashID[1]), nil
+		case RuntimeTypeContainerd:
+			return RuntimeTypeContainerd, fmt.Sprintf("cri-containerd-%s.scope", hashID[1]), nil
 		default:
-			return "", fmt.Errorf("unknown container protocol %s", id)
+			return RuntimeTypeUnknown, "", fmt.Errorf("unknown container protocol %s", id)
 		}
 	},
 	PodIDParser: func(basename string) (string, error) {
@@ -164,15 +168,17 @@ var cgroupPathFormatterInCgroupfs = formatter{
 	PodDirFn: func(qos corev1.PodQOSClass, podUID string) string {
 		return fmt.Sprintf("pod%s/", podUID)
 	},
-	ContainerDirFn: func(id string) (string, error) {
+	ContainerDirFn: func(id string) (string, string, error) {
 		hashID := strings.Split(id, "://")
 		if len(hashID) < 2 {
-			return "", fmt.Errorf("parse container id %s failed", id)
+			return RuntimeTypeUnknown, "", fmt.Errorf("parse container id %s failed", id)
 		}
-		if hashID[0] == "docker" || hashID[0] == "containerd" {
-			return fmt.Sprintf("%s/", hashID[1]), nil
+		if hashID[0] == RuntimeTypeDocker {
+			return RuntimeTypeDocker, fmt.Sprintf("%s", hashID[1]), nil
+		} else if hashID[0] == RuntimeTypeContainerd {
+			return RuntimeTypeContainerd, fmt.Sprintf("%s", hashID[1]), nil
 		} else {
-			return "", fmt.Errorf("unknown container protocol %s", id)
+			return RuntimeTypeUnknown, "", fmt.Errorf("unknown container protocol %s", id)
 		}
 	},
 	PodIDParser: func(basename string) (string, error) {

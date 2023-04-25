@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -175,4 +176,164 @@ func writeCgroupContent(filePath string, content []byte) error {
 		return err
 	}
 	return os.WriteFile(filePath, content, 0655)
+}
+
+func TestGetPodSandboxContainerID(t *testing.T) {
+	type fields struct {
+		otherContaienrIDs []string
+	}
+	type args struct {
+		pod *corev1.Pod
+	}
+	var tests = []struct {
+		name    string
+		fields  fields
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "pod-start-no-sandbox-container",
+			fields: fields{
+				otherContaienrIDs: []string{},
+			},
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pod",
+						UID:  "test-pod-uid",
+					},
+					Status: corev1.PodStatus{},
+				},
+			},
+			want:    "",
+			wantErr: false,
+		},
+		{
+			name: "pod-start-sandbox-no-container",
+			fields: fields{
+				otherContaienrIDs: []string{
+					"containerd://testPodSandboxHashID",
+				},
+			},
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pod",
+						UID:  "test-pod-uid",
+					},
+					Status: corev1.PodStatus{},
+				},
+			},
+			want:    "",
+			wantErr: false,
+		},
+		{
+			name: "pod-start-containerd-sandbox-and-container",
+			fields: fields{
+				otherContaienrIDs: []string{
+					"containerd://testPodSandboxHashID",
+					"containerd://testContainerHashID",
+				},
+			},
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pod",
+						UID:  "test-pod-uid",
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:        "test-container-name",
+								ContainerID: "containerd://testContainerHashID",
+								Started:     nil,
+							},
+						},
+					},
+				},
+			},
+			want:    "containerd://testPodSandboxHashID",
+			wantErr: false,
+		},
+		{
+			name: "pod-start-docker-sandbox-and-container",
+			fields: fields{
+				otherContaienrIDs: []string{
+					"docker://testPodSandboxHashID",
+					"docker://testContainerHashID",
+				},
+			},
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pod",
+						UID:  "test-pod-uid",
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:        "test-container-name",
+								ContainerID: "docker://testContainerHashID",
+								Started:     nil,
+							},
+						},
+					},
+				},
+			},
+			want:    "docker://testPodSandboxHashID",
+			wantErr: false,
+		},
+		{
+			name: "pod-start-new-container-but-status-has-not-synced",
+			fields: fields{
+				otherContaienrIDs: []string{
+					"docker://testPodSandboxHashID",
+					"docker://testContainerHashIDNew",
+				},
+			},
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pod",
+						UID:  "test-pod-uid",
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:        "test-container-name",
+								ContainerID: "docker://testContainerHashID",
+								Started:     nil,
+							},
+						},
+					},
+				},
+			},
+			want:    "",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testHelper := system.NewFileTestUtil(t)
+
+			podCgroupDir := GetPodCgroupParentDir(tt.args.pod)
+			testHelper.WriteCgroupFileContents(podCgroupDir, system.CPUSet, "")
+
+			for _, dirCreatedcontainerID := range tt.fields.otherContaienrIDs {
+				containerPath, err := GetContainerCgroupParentDirByID(podCgroupDir, dirCreatedcontainerID)
+				assert.NoError(t, err)
+				testHelper.WriteCgroupFileContents(containerPath, system.CPUSet, "")
+			}
+
+			got, err := GetPodSandboxContainerID(tt.args.pod)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetPodSandboxContainerID() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("GetPodSandboxContainerID() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

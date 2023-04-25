@@ -59,6 +59,9 @@ func (p *cpusetPlugin) Register(op hooks.Options) {
 	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSet,
 		"set container cpuset and unset container cpu quota if needed",
 		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), podQOSConditions...)
+	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.CPUSet,
+		"set sandbox container cpuset and unset container cpu quota if needed",
+		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), podQOSConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUCFSQuota, "unset pod cpu quota if needed",
 		UnsetPodCPUQuota, reconciler.PodQOSFilter(), podQOSConditions...)
 	p.executor = op.Executor

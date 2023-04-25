@@ -17,6 +17,10 @@ limitations under the License.
 package util
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -38,4 +42,54 @@ func GetPIDsInPod(podParentDir string, cs []corev1.ContainerStatus) ([]uint32, e
 		pids = append(pids, p...)
 	}
 	return pids, nil
+}
+
+// list all dirs of pod cgroup(cpuset), exclude containers' dir, get sandbox hash id from the remaining dir
+// e.g. return "containerd://91cf0413ee0e6745335e9043b261a829ce07d28a5a66b5ec39b06811ef75a1ff"
+func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
+	cpuSetCgroupRootDir := GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
+	podCgroupDir := GetPodCgroupParentDir(pod)
+	podCPUSetCgroupRootDir := filepath.Join(cpuSetCgroupRootDir, podCgroupDir)
+
+	if len(pod.Status.ContainerStatuses) <= 0 {
+		// container not created, skip until container is created because container runtime is unknown
+		return "", nil
+	}
+
+	// get runtime type and dir names of known containers
+	containerSubDirNames := make(map[string]struct{}, len(pod.Status.ContainerStatuses))
+	containerRuntime := system.RuntimeTypeUnknown
+	for _, containerStat := range pod.Status.ContainerStatuses {
+		runtimeType, containerDirName, err := system.CgroupPathFormatter.ContainerDirFn(containerStat.ContainerID)
+		if err != nil {
+			return "", err
+		}
+		containerSubDirNames[containerDirName] = struct{}{}
+		containerRuntime = runtimeType
+	}
+
+	sandboxCandidates := make([]string, 0)
+	containerDirs, err := os.ReadDir(podCPUSetCgroupRootDir)
+	if err != nil {
+		return "", err
+	}
+	for _, containerDir := range containerDirs {
+		if !containerDir.IsDir() {
+			continue
+		}
+		if _, exist := containerSubDirNames[containerDir.Name()]; !exist {
+			sandboxCandidates = append(sandboxCandidates, containerDir.Name())
+		}
+	}
+
+	if len(sandboxCandidates) != 1 {
+		return "", fmt.Errorf("candidates of sandbox id is %v, some container is not ready, detail %v",
+			len(sandboxCandidates), sandboxCandidates)
+	}
+
+	containerHashID, err := system.CgroupPathFormatter.ContainerIDParser(sandboxCandidates[0])
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s://%s", containerRuntime, containerHashID), nil
 }

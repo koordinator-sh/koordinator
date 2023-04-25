@@ -151,13 +151,24 @@ func (p *cpusetPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 	for _, podMeta := range pods {
 		for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
 			containerCtx := &protocol.ContainerContext{}
-			containerCtx.FromReconciler(podMeta, containerStat.Name)
+			containerCtx.FromReconciler(podMeta, containerStat.Name, false)
 			if err := p.SetContainerCPUSet(containerCtx); err != nil {
 				klog.V(4).Infof("parse cpuset from pod annotation failed during callback, error: %v", err)
 				continue
 			}
 			containerCtx.ReconcilerDone(p.executor)
 		}
+
+		sandboxContainerCtx := &protocol.ContainerContext{}
+		sandboxContainerCtx.FromReconciler(podMeta, "", true)
+		if err := p.SetContainerCPUSet(sandboxContainerCtx); err != nil {
+			klog.Warningf("set cpuset for failed for pod sandbox %v/%v, error %v",
+				sandboxContainerCtx.Request.PodMeta.String(), sandboxContainerCtx.Request.ContainerMeta.ID, err)
+			continue
+		}
+		sandboxContainerCtx.ReconcilerDone(p.executor)
+		klog.V(5).Infof("set cpuset finished pod sandbox %v/%v",
+			sandboxContainerCtx.Request.PodMeta.String(), sandboxContainerCtx.Request.ContainerMeta.ID)
 	}
 	return nil
 }
