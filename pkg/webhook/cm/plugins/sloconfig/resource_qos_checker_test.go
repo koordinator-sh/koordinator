@@ -328,6 +328,9 @@ func Test_ResourceQOS_ConfigContentsValid(t *testing.T) {
 					ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{},
 					NodeStrategies: []extension.NodeResourceQOSStrategy{
 						{
+							NodeCfgProfile: extension.NodeCfgProfile{
+								Name: "testNode",
+							},
 							ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{},
 						},
 					},
@@ -382,7 +385,7 @@ func Test_ResourceQOS_ConfigContentsValid(t *testing.T) {
 			if gotErr != nil {
 				fmt.Println(gotErr.Error())
 			}
-			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 		})
 	}
 }

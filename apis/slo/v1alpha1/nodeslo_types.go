@@ -26,7 +26,7 @@ import (
 // CPUQOS enables cpu qos features.
 type CPUQOS struct {
 	// group identity value for pods, default = 0
-	GroupIdentity *int64 `json:"groupIdentity,omitempty"`
+	GroupIdentity *int64 `json:"groupIdentity,omitempty" validate:"omitempty,min=-1,max=2"`
 }
 
 // MemoryQOS enables memory qos features.
@@ -41,7 +41,7 @@ type MemoryQOS struct {
 	// from global reclamation when memory usage does not exceed the min limit.
 	// Close: 0.
 	// +kubebuilder:validation:Minimum=0
-	MinLimitPercent *int64 `json:"minLimitPercent,omitempty"`
+	MinLimitPercent *int64 `json:"minLimitPercent,omitempty" validate:"omitempty,min=0,max=100"`
 	// LowLimitPercent specifies the lowLimitFactor percentage to calculate `memory.low`, which TRIES BEST
 	// protecting memory from global reclamation when memory usage does not exceed the low limit unless no unprotected
 	// memcg can be reclaimed.
@@ -49,13 +49,13 @@ type MemoryQOS struct {
 	// pod `memory.low` and `memory.high` become invalid, while `memory.wmark_ratio` is still in effect.
 	// Close: 0.
 	// +kubebuilder:validation:Minimum=0
-	LowLimitPercent *int64 `json:"lowLimitPercent,omitempty"`
+	LowLimitPercent *int64 `json:"lowLimitPercent,omitempty" validate:"omitempty,min=0,max=100"`
 	// ThrottlingPercent specifies the throttlingFactor percentage to calculate `memory.high` with pod
 	// memory.limits or node allocatable memory, which triggers memcg direct reclamation when memory usage exceeds.
 	// Lower the factor brings more heavier reclaim pressure.
 	// Close: 0.
 	// +kubebuilder:validation:Minimum=0
-	ThrottlingPercent *int64 `json:"throttlingPercent,omitempty"`
+	ThrottlingPercent *int64 `json:"throttlingPercent,omitempty" validate:"omitempty,min=0,max=100"`
 
 	// wmark_ratio (Anolis OS required)
 	// Async memory reclamation is triggered when cgroup memory usage exceeds `memory.wmark_high` and the reclamation
@@ -67,13 +67,13 @@ type MemoryQOS struct {
 	// Close: 0. Recommended: 95.
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
-	WmarkRatio *int64 `json:"wmarkRatio,omitempty"`
+	WmarkRatio *int64 `json:"wmarkRatio,omitempty" validate:"omitempty,min=0,max=100"`
 	// WmarkScalePermill specifies `memory.wmark_scale_factor` that helps calculate `memory.wmark_low`, which
 	// stops async memory reclamation when memory usage belows.
 	// Close: 50. Recommended: 20.
 	// +kubebuilder:validation:Maximum=1000
 	// +kubebuilder:validation:Minimum=1
-	WmarkScalePermill *int64 `json:"wmarkScalePermill,omitempty"`
+	WmarkScalePermill *int64 `json:"wmarkScalePermill,omitempty" validate:"omitempty,min=1,max=1000"`
 
 	// wmark_min_adj (Anolis OS required)
 	// WmarkMinAdj specifies `memory.wmark_min_adj` which adjusts per-memcg threshold for global memory
@@ -84,12 +84,12 @@ type MemoryQOS struct {
 	// Close: [LSR:0, LS:0, BE:0]. Recommended: [LSR:-25, LS:-25, BE:50].
 	// +kubebuilder:validation:Maximum=50
 	// +kubebuilder:validation:Minimum=-25
-	WmarkMinAdj *int64 `json:"wmarkMinAdj,omitempty"`
+	WmarkMinAdj *int64 `json:"wmarkMinAdj,omitempty" validate:"omitempty,min=-25,max=50"`
 
 	// TODO: enhance the usages of oom priority and oom kill group
-	PriorityEnable *int64 `json:"priorityEnable,omitempty"`
-	Priority       *int64 `json:"priority,omitempty"`
-	OomKillGroup   *int64 `json:"oomKillGroup,omitempty"`
+	PriorityEnable *int64 `json:"priorityEnable,omitempty" validate:"omitempty,min=0,max=1"`
+	Priority       *int64 `json:"priority,omitempty" validate:"omitempty,min=0,max=12"`
+	OomKillGroup   *int64 `json:"oomKillGroup,omitempty" validate:"omitempty,min=0,max=1"`
 }
 
 type PodMemoryQOSPolicy string
@@ -162,31 +162,31 @@ type ResourceThresholdStrategy struct {
 	// cpu suppress threshold percentage (0,100), default = 65
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
-	CPUSuppressThresholdPercent *int64 `json:"cpuSuppressThresholdPercent,omitempty"`
+	CPUSuppressThresholdPercent *int64 `json:"cpuSuppressThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
 	// CPUSuppressPolicy
 	CPUSuppressPolicy CPUSuppressPolicy `json:"cpuSuppressPolicy,omitempty"`
 
 	// upper: memory evict threshold percentage (0,100), default = 70
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
-	MemoryEvictThresholdPercent *int64 `json:"memoryEvictThresholdPercent,omitempty"`
+	MemoryEvictThresholdPercent *int64 `json:"memoryEvictThresholdPercent,omitempty" validate:"omitempty,min=0,max=100,gtfield=MemoryEvictLowerPercent"`
 	// lower: memory release util usage under MemoryEvictLowerPercent, default = MemoryEvictThresholdPercent - 2
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
-	MemoryEvictLowerPercent *int64 `json:"memoryEvictLowerPercent,omitempty"`
+	MemoryEvictLowerPercent *int64 `json:"memoryEvictLowerPercent,omitempty" validate:"omitempty,min=0,max=100,ltfield=MemoryEvictThresholdPercent"`
 
 	// be.satisfactionRate = be.CPURealLimit/be.CPURequest
 	// if be.satisfactionRate > CPUEvictBESatisfactionUpperPercent/100, then stop to evict.
-	CPUEvictBESatisfactionUpperPercent *int64 `json:"cpuEvictBESatisfactionUpperPercent,omitempty"`
+	CPUEvictBESatisfactionUpperPercent *int64 `json:"cpuEvictBESatisfactionUpperPercent,omitempty" validate:"omitempty,min=0,max=100,gtfield=CPUEvictBESatisfactionLowerPercent"`
 	// be.satisfactionRate = be.CPURealLimit/be.CPURequest; be.cpuUsage = be.CPUUsed/be.CPURealLimit
 	// if be.satisfactionRate < CPUEvictBESatisfactionLowerPercent/100 && be.usage >= CPUEvictBEUsageThresholdPercent/100,
 	// then start to evict pod, and will evict to ${CPUEvictBESatisfactionUpperPercent}
-	CPUEvictBESatisfactionLowerPercent *int64 `json:"cpuEvictBESatisfactionLowerPercent,omitempty"`
+	CPUEvictBESatisfactionLowerPercent *int64 `json:"cpuEvictBESatisfactionLowerPercent,omitempty" validate:"omitempty,min=0,max=100,ltfield=CPUEvictBESatisfactionUpperPercent"`
 	// if be.cpuUsage >= CPUEvictBEUsageThresholdPercent/100, then start to calculate the resources need to be released.
-	CPUEvictBEUsageThresholdPercent *int64 `json:"cpuEvictBEUsageThresholdPercent,omitempty"`
+	CPUEvictBEUsageThresholdPercent *int64 `json:"cpuEvictBEUsageThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
 	// when avg(cpuusage) > CPUEvictThresholdPercent, will start to evict pod by cpu,
 	// and avg(cpuusage) is calculated based on the most recent CPUEvictTimeWindowSeconds data
-	CPUEvictTimeWindowSeconds *int64 `json:"cpuEvictTimeWindowSeconds,omitempty"`
+	CPUEvictTimeWindowSeconds *int64 `json:"cpuEvictTimeWindowSeconds,omitempty" validate:"omitempty,gt=0"`
 }
 
 // ResctrlQOSCfg stores node-level config of resctrl qos
@@ -200,15 +200,15 @@ type ResctrlQOS struct {
 	// LLC available range start for pods by percentage
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
-	CATRangeStartPercent *int64 `json:"catRangeStartPercent,omitempty"`
+	CATRangeStartPercent *int64 `json:"catRangeStartPercent,omitempty" validate:"omitempty,min=0,max=100,ltfield=CATRangeEndPercent"`
 	// LLC available range end for pods by percentage
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
-	CATRangeEndPercent *int64 `json:"catRangeEndPercent,omitempty"`
+	CATRangeEndPercent *int64 `json:"catRangeEndPercent,omitempty" validate:"omitempty,min=0,max=100,gtfield=CATRangeStartPercent"`
 	// MBA percent
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
-	MBAPercent *int64 `json:"mbaPercent,omitempty"`
+	MBAPercent *int64 `json:"mbaPercent,omitempty" validate:"omitempty,min=0,max=100"`
 }
 
 type CPUBurstPolicy string
@@ -229,26 +229,26 @@ type CPUBurstConfig struct {
 	// cpu burst percentage for setting cpu.cfs_burst_us, legal range: [0, 10000], default as 1000 (1000%)
 	// +kubebuilder:validation:Maximum=10000
 	// +kubebuilder:validation:Minimum=0
-	CPUBurstPercent *int64 `json:"cpuBurstPercent,omitempty"`
+	CPUBurstPercent *int64 `json:"cpuBurstPercent,omitempty" validate:"omitempty,min=1,max=10000"`
 	// pod cfs quota scale up ceil percentage, default = 300 (300%)
-	CFSQuotaBurstPercent *int64 `json:"cfsQuotaBurstPercent,omitempty"`
+	CFSQuotaBurstPercent *int64 `json:"cfsQuotaBurstPercent,omitempty" validate:"omitempty,min=100"`
 	// specifies a period of time for pod can use at burst, default = -1 (unlimited)
-	CFSQuotaBurstPeriodSeconds *int64 `json:"cfsQuotaBurstPeriodSeconds,omitempty"`
+	CFSQuotaBurstPeriodSeconds *int64 `json:"cfsQuotaBurstPeriodSeconds,omitempty" validate:"omitempty,min=-1"`
 }
 
 type CPUBurstStrategy struct {
 	CPUBurstConfig `json:",inline"`
 	// scale down cfs quota if node cpu overload, default = 50
-	SharePoolThresholdPercent *int64 `json:"sharePoolThresholdPercent,omitempty"`
+	SharePoolThresholdPercent *int64 `json:"sharePoolThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
 }
 
 type SystemStrategy struct {
 	// for /proc/sys/vm/min_free_kbytes, min_free_kbytes = minFreeKbytesFactor * nodeTotalMemory /10000
-	MinFreeKbytesFactor *int64 `json:"minFreeKbytesFactor,omitempty"`
+	MinFreeKbytesFactor *int64 `json:"minFreeKbytesFactor,omitempty" validate:"omitempty,gt=0"`
 	// /proc/sys/vm/watermark_scale_factor
-	WatermarkScaleFactor *int64 `json:"watermarkScaleFactor,omitempty"`
+	WatermarkScaleFactor *int64 `json:"watermarkScaleFactor,omitempty" validate:"omitempty,gt=0,max=400"`
 	// /sys/kernel/mm/memcg_reaper/reap_background
-	MemcgReapBackGround *int64 `json:"memcgReapBackGround,omitempty"`
+	MemcgReapBackGround *int64 `json:"memcgReapBackGround,omitempty" validate:"omitempty,min=0,max=1"`
 }
 
 // NodeSLOSpec defines the desired state of NodeSLO

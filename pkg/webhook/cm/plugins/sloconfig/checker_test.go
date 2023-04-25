@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func Test_CommonChecker_IsCfgChanged(t *testing.T) {
@@ -161,7 +162,7 @@ func Test_CreateNodeConfigProfileChecker(t *testing.T) {
 }
 
 func Test_nodeConfigProfileChecker_ProfileParamValid(t *testing.T) {
-
+	sloconfig.NodeStrategyNameNeedCheck = "true"
 	type args struct {
 		nodeConfigs []profileCheckInfo
 	}

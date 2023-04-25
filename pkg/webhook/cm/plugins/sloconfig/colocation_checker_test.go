@@ -313,6 +313,7 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 			name: "cluster ResourceDiffThreshold invalid",
 			args: args{
 				cfg: extension.ColocationCfg{
+
 					ColocationStrategy: extension.ColocationStrategy{
 						ResourceDiffThreshold: pointer.Float64(2),
 					},
@@ -343,6 +344,9 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 					ColocationStrategy: extension.ColocationStrategy{},
 					NodeConfigs: []extension.NodeColocationCfg{
 						{
+							NodeCfgProfile: extension.NodeCfgProfile{
+								Name: "testNode",
+							},
 							ColocationStrategy: extension.ColocationStrategy{},
 						},
 					},
@@ -365,6 +369,9 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 					},
 					NodeConfigs: []extension.NodeColocationCfg{
 						{
+							NodeCfgProfile: extension.NodeCfgProfile{
+								Name: "testNode",
+							},
 							ColocationStrategy: extension.ColocationStrategy{
 								Enable:                         pointer.Bool(true),
 								MetricAggregateDurationSeconds: pointer.Int64(30),
@@ -389,7 +396,7 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 			if gotErr != nil {
 				fmt.Println(gotErr.Error())
 			}
-			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 		})
 	}
 }
