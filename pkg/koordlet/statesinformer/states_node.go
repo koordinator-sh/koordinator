@@ -77,7 +77,7 @@ func (s *nodeInformer) Setup(ctx *pluginOption, state *pluginState) {
 				klog.Errorf("unable to convert object to *corev1.Node, old %T, new %T", oldObj, newObj)
 				return
 			}
-			if reflect.DeepEqual(oldNode, newNode) {
+			if newNode.ResourceVersion == oldNode.ResourceVersion {
 				klog.V(5).Infof("find node %s has not changed", newNode.Name)
 				return
 			}
