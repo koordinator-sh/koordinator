@@ -79,6 +79,9 @@ spec:
             - mountPath: /var/lib/kubelet
               name: host-kubelet-rootdir
               readOnly: true
+            - mountPaht: /dev
+              name: host-dev
+              mountPropagation: HostToContainer
       hostNetwork: true
       hostPID: true
       restartPolicy: Always
@@ -123,3 +126,7 @@ spec:
             path: /var/lib/kubelet/
             type: ""
           name: host-kubelet-rootdir
+        - hostPath:
+            path: /dev
+            type: ""
+          name: host-dev
