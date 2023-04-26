@@ -20,5 +20,6 @@ RUN GOOS=linux GOARCH=amd64 go build -a -o koordlet cmd/koordlet/main.go
 
 FROM nvidia/cuda:11.2.2-base-ubuntu20.04
 WORKDIR /
+RUN apt-get update && apt-get install -y lvm2 && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /go/src/github.com/koordinator-sh/koordinator/koordlet .
 ENTRYPOINT ["/koordlet"]
