@@ -34,6 +34,8 @@ rules:
     - nodes/proxy
     - pods
     - pods/status
+    - persistentvolumeclaims
+    - persistentvolumeclaims/status
   verbs:
     - patch
     - update
