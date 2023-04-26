@@ -27,6 +27,9 @@ import (
 	"k8s.io/component-base/logs"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-descheduler/app"
+
+	// Ensure metric package is initialized
+	_ "k8s.io/component-base/metrics/prometheus/clientgo"
 )
 
 func main() {
