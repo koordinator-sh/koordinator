@@ -41,6 +41,7 @@ const (
 	KubeQOSLevel   ReconcilerLevel = "kubeqos"
 	PodLevel       ReconcilerLevel = "pod"
 	ContainerLevel ReconcilerLevel = "container"
+	SandboxLevel   ReconcilerLevel = "sandbox"
 )
 
 var globalCgroupReconcilers = struct {
@@ -49,10 +50,14 @@ var globalCgroupReconcilers = struct {
 	kubeQOSLevel   map[string]*cgroupReconciler
 	podLevel       map[string]*cgroupReconciler
 	containerLevel map[string]*cgroupReconciler
+
+	sandboxContainerLevel map[string]*cgroupReconciler
 }{
 	kubeQOSLevel:   map[string]*cgroupReconciler{},
 	podLevel:       map[string]*cgroupReconciler{},
 	containerLevel: map[string]*cgroupReconciler{},
+
+	sandboxContainerLevel: map[string]*cgroupReconciler{},
 }
 
 type cgroupReconciler struct {
@@ -194,6 +199,12 @@ func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.Resource,
 			r.fn[condition] = fn
 		}
 		globalCgroupReconcilers.containerLevel[string(r.cgroupFile.ResourceType())] = r
+	case SandboxLevel:
+		r.filter = filter
+		for _, condition := range conditions {
+			r.fn[condition] = fn
+		}
+		globalCgroupReconcilers.sandboxContainerLevel[string(r.cgroupFile.ResourceType())] = r
 	default:
 		klog.Fatalf("cgroup level %v is not supported", level)
 	}
@@ -316,6 +327,24 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 							r.description, util.GetPodKey(podMeta.Pod))
 					}
 				}
+
+				for _, r := range globalCgroupReconcilers.sandboxContainerLevel {
+					reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
+					if !ok {
+						klog.V(5).Infof("calling reconcile function %v aborted for pod %v, condition %s not registered",
+							r.description, util.GetPodKey(podMeta.Pod), r.filter.Filter(podMeta))
+						continue
+					}
+					sandboxContainerCtx := protocol.HooksProtocolBuilder.Sandbox(podMeta)
+					if err := reconcileFn(sandboxContainerCtx); err != nil {
+						klog.Warningf("calling reconcile function %v failed for sandbox, error %v", r.description, err)
+					} else {
+						sandboxContainerCtx.ReconcilerDone(c.executor)
+						klog.V(5).Infof("calling reconcile function %v for pod sandbox %v finished",
+							r.description, util.GetPodKey(podMeta.Pod))
+					}
+				}
+
 				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
 					for _, r := range globalCgroupReconcilers.containerLevel {
 						reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]

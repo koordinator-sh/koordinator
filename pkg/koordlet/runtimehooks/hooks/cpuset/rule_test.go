@@ -527,12 +527,17 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 }
 
 func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
+	type testPod struct {
+		pod       *corev1.Pod
+		sandboxID string
+	}
 	type args struct {
-		pods      []*statesinformer.PodMeta
+		pods      []*testPod
 		podAllocs map[string]ext.ResourceStatus
 	}
 	type wants struct {
 		containersCPUSet map[string]string
+		sandboxCPUSet    map[string]string
 	}
 	tests := []struct {
 		name    string
@@ -543,9 +548,9 @@ func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
 		{
 			name: "set container cpuset",
 			args: args{
-				pods: []*statesinformer.PodMeta{
+				pods: []*testPod{
 					{
-						Pod: &corev1.Pod{
+						pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								UID: "pod-with-cpuset-alloc-uid",
 							},
@@ -565,9 +570,10 @@ func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
 								},
 							},
 						},
+						sandboxID: "containerd://pod-with-cpuset-alloc-sandbox-id",
 					},
 					{
-						Pod: &corev1.Pod{
+						pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								UID: "pod-with-bad-cpuset-alloc-uid",
 								Annotations: map[string]string{
@@ -590,6 +596,7 @@ func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
 								},
 							},
 						},
+						sandboxID: "containerd://pod-with-bad-cpuset-alloc-sandbox-id",
 					},
 				},
 				podAllocs: map[string]ext.ResourceStatus{
@@ -603,6 +610,10 @@ func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
 					"container-with-cpuset-alloc-name":     "2-4",
 					"container-with-bad-cpuset-alloc-name": "",
 				},
+				sandboxCPUSet: map[string]string{
+					"pod-with-cpuset-alloc-uid":     "2-4",
+					"pod-with-bad-cpuset-alloc-uid": "",
+				},
 			},
 			wantErr: false,
 		},
@@ -610,17 +621,33 @@ func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
+
+			podUIDMetas := make(map[string]*statesinformer.PodMeta, len(tt.args.pods))
+			podUIDCgroupDirs := make(map[string]string, len(tt.args.pods))
+			for i := range tt.args.pods {
+				podUIDMetas[string(tt.args.pods[i].pod.UID)] = &statesinformer.PodMeta{
+					Pod:       tt.args.pods[i].pod,
+					CgroupDir: koordletutil.GetPodCgroupParentDir(tt.args.pods[i].pod),
+				}
+				podUIDCgroupDirs[string(tt.args.pods[i].pod.UID)] = tt.args.pods[i].sandboxID
+			}
+
 			// init cgroups cpuset file
-			for _, podMeta := range tt.args.pods {
+			for _, testPod := range tt.args.pods {
+				podMeta := podUIDMetas[string(testPod.pod.UID)]
 				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
 					containerPath, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, containerStat.ContainerID)
-					assert.NoError(t, err, "get contaienr cgorup path during init container cpuset")
+					assert.NoError(t, err, "get container cgroup path during init container cpuset")
 					initCPUSet(containerPath, "", testHelper)
 				}
+				sandboxPath, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, testPod.sandboxID)
+				assert.NoError(t, err, "get sandbox cgroup path during init container cpuset")
+				initCPUSet(sandboxPath, "", testHelper)
 			}
 
 			// init pod annotations
-			for _, podMeta := range tt.args.pods {
+			for _, testPod := range tt.args.pods {
+				podMeta := podUIDMetas[string(testPod.pod.UID)]
 				podUID := string(podMeta.Pod.UID)
 				podAlloc, exist := tt.args.podAllocs[podUID]
 				if !exist {
@@ -637,18 +664,29 @@ func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
 			defer func() { close(stop) }()
 			p.executor.Run(stop)
 
-			if err := p.ruleUpdateCb(tt.args.pods); (err != nil) != tt.wantErr {
+			podMetas := make([]*statesinformer.PodMeta, 0, len(tt.args.pods))
+			for _, podMeta := range podUIDMetas {
+				podMetas = append(podMetas, podMeta)
+			}
+			if err := p.ruleUpdateCb(podMetas); (err != nil) != tt.wantErr {
 				t.Errorf("ruleUpdateCb() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			for _, podMeta := range tt.args.pods {
+			for _, testPod := range tt.args.pods {
+				podMeta := podUIDMetas[string(testPod.pod.UID)]
 				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
 					containerPath, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, containerStat.ContainerID)
 					assert.NoError(t, err, "get contaienr cgorup path during check container cpuset")
-					gotCPUSEt := getCPUSet(containerPath, testHelper)
-					assert.Equal(t, tt.wants.containersCPUSet[containerStat.Name], gotCPUSEt,
-						"cpuset after callback should be equal")
+					gotCPUSet := getCPUSet(containerPath, testHelper)
+					assert.Equal(t, tt.wants.containersCPUSet[containerStat.Name], gotCPUSet,
+						"container cpuset after callback should be equal")
 				}
+
+				sandboxPath, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, testPod.sandboxID)
+				assert.NoError(t, err, "get sandbox cgorup path during check container cpuset")
+				gotCPUSet := getCPUSet(sandboxPath, testHelper)
+				assert.Equal(t, tt.wants.sandboxCPUSet[string(podMeta.Pod.UID)], gotCPUSet,
+					"sandbox cpuset after callback should be equal")
 			}
 		})
 	}
