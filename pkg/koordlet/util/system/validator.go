@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
@@ -61,5 +62,55 @@ func (c *CPUSetStrValidator) Validate(value string) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("value %v is not valid cpuset string", value)
 	}
+	return true, ""
+}
+
+type BlkIORangeValidator struct {
+	resource string
+	max      int64
+	min      int64
+}
+
+func (r *BlkIORangeValidator) Validate(value string) (bool, string) {
+	if value == "" {
+		return false, "value is nil"
+	}
+
+	newValues := []string{}
+	switch r.resource {
+	case BlkioTRBpsName, BlkioTRIopsName, BlkioTWBpsName, BlkioTWIopsName, BlkioIOWeightName:
+		// 253:16 2048
+		// 253:16 0
+		rst := strings.Split(value, " ")
+		if len(rst) == 2 {
+			newValues = append(newValues, rst[1])
+		}
+	case BlkioIOQoSName:
+		// 253:16 enable=1 ctrl=user rlat=3000 wlat=4000
+		// 253:16 enable=0
+		rst := strings.Split(value, " ")
+		if len(rst) == 5 {
+			newValues = append(newValues, []string{rst[3][5:], rst[4][5:]}...)
+		}
+	default:
+		return false, "unknown blkio resource name"
+	}
+
+	for _, newValue := range newValues {
+		var v int64
+		var err error
+		if newValue == CgroupMaxSymbolStr { // compatible to cgroup-v2 file valued "max"
+			v = math.MaxInt64
+		} else {
+			v, err = strconv.ParseInt(newValue, 10, 64)
+			if err != nil {
+				return false, fmt.Sprintf("value %v is not an integer, err: %v", newValue, err)
+			}
+		}
+		if v < r.min || v > r.max {
+			return false, fmt.Sprintf("value %v is not in [min:%d, max:%d]", newValue, r.min, r.max)
+		}
+	}
+
 	return true, ""
 }

@@ -125,9 +125,63 @@ type MemoryQOSCfg struct {
 	MemoryQOS `json:",inline"`
 }
 
+type BlockType string
+
+const (
+	// Device, such as /dev/sdb
+	// Only used for RootClass blk-iocost configuration
+	BlockTypeDevice BlockType = "device"
+	// LVM volume group
+	BlockTypeVolumeGroup BlockType = "volumegroup"
+	// Pod volume
+	BlockTypePodVolume BlockType = "podvolume"
+)
+
+type IOCfg struct {
+	// Throttling of IOPS
+	// The value is set to 0, which indicates that the feature is disabled.
+	// +kubebuilder:validation:Minimum=0
+	ReadIOPS *int64 `json:"readIOPS,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	WriteIOPS *int64 `json:"writeIOPS,omitempty"`
+	// Throttling of throughput
+	// The value is set to 0, which indicates that the feature is disabled.
+	// +kubebuilder:validation:Minimum=0
+	ReadBPS *int64 `json:"readBPS,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	WriteBPS *int64 `json:"writeBPS,omitempty"`
+	// This field is used to set the weight of a sub-group. Default value: 100. Valid values: 1 to 100.
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=1
+	IOWeightPercent *int64 `json:"ioWeightPercent,omitempty"`
+	// Configure the weight-based throttling feature of blk-iocost
+	// Only used for RootClass
+	// After blk-iocost is enabled, the kernel calculates the proportion of requests that exceed the read or write latency threshold out of all requests. When the proportion is greater than the read or write latency percentile (95%), the kernel considers the disk to be saturated and reduces the rate at which requests are sent to the disk.
+	// the read latency threshold. Unit: microseconds.
+	ReadLatency *int64 `json:"readLatency,omitempty"`
+	// the write latency threshold. Unit: microseconds.
+	WriteLatency *int64 `json:"writeLatency,omitempty"`
+}
+
+type BlockCfg struct {
+	Name      string    `json:"name,omitempty"`
+	BlockType BlockType `json:"type,omitempty"`
+	IOCfg     IOCfg     `json:"ioCfg,omitempty"`
+}
+
+type BlkIOQOS struct {
+	Blocks []*BlockCfg `json:"blocks,omitempty"`
+}
+
+type BlkIOQOSCfg struct {
+	Enable   *bool `json:"enable,omitempty"`
+	BlkIOQOS `json:",inline"`
+}
+
 type ResourceQOS struct {
 	CPUQOS     *CPUQOSCfg     `json:"cpuQOS,omitempty"`
 	MemoryQOS  *MemoryQOSCfg  `json:"memoryQOS,omitempty"`
+	BlkIOQOS   *BlkIOQOSCfg   `json:"blkioQOS,omitempty"`
 	ResctrlQOS *ResctrlQOSCfg `json:"resctrlQOS,omitempty"`
 }
 

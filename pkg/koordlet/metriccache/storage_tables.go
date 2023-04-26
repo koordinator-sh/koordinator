@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	NodeCPUInfoRecordType = "NodeCPUInfo"
+	NodeCPUInfoRecordType          = "NodeCPUInfo"
+	NodeLocalStorageInfoRecordType = "NodeLocalStorageInfo"
 )
 
 type gpuResourceMetric struct {

@@ -83,6 +83,17 @@ func SupportedIfFileExists(r Resource, dynamicPath string) (bool, string) {
 	return true, ""
 }
 
+func SupportedIfFileExistsInRootCgroup(filename string, subfs string) (bool, string) {
+	exists, err := PathExists(filepath.Join(Conf.CgroupRootDir, subfs, filename))
+	if err != nil {
+		return false, fmt.Sprintf("cannot check if %s exists in root cgroup, err: %v", filename, err)
+	}
+	if !exists {
+		return false, "file not exist in root cgroup"
+	}
+	return true, ""
+}
+
 func SupportedIfFileExistsInKubepods(filename string, subfs string) (bool, string) {
 	exists, err := PathExists(filepath.Join(Conf.CgroupRootDir, subfs, CgroupPathFormatter.ParentDir, CgroupPathFormatter.QOSDirFn(corev1.PodQOSGuaranteed), filename))
 	if err != nil {

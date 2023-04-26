@@ -363,11 +363,48 @@ data:
             "priority": 0,
             "oomKillGroup": 0
           },
+          "blkioQOS": {
+            "blocks": [
+              {
+                "ioCfg": {
+                  "ioWeightPercent": 60
+                },
+                "name": "ackdistro-pool",
+                "type": "volumegroup"
+              },
+              {
+                "ioCfg": {
+                  "readBPS": 102400000,
+                  "readIOPS": 20480,
+                  "writeBPS": 204800004,
+                  "writeIOPS": 10240
+                },
+                "name": "/dev/sdb",
+                "type": "device"
+              },
+            ],
+            "enable": true
+          },
           "resctrlQOS": {
             "enable": false,
             "catRangeStartPercent": 0,
             "catRangeEndPercent": 30,
             "mbaPercent": 100
+          }
+        },
+        "cgroupRoot": {
+          "blkioQOS": {
+            "blocks": [
+              {
+                "ioCfg": {
+                  "readLatency": 3000,
+                  "writeLatency": 3000
+                },
+                "name": "ackdistro-pool",
+                "type": "volumegroup"
+              }
+            ],
+            "enable": true
           }
         }
       },

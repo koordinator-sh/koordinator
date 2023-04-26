@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package nodeinfo
+package nodecpuinfo
 
 import (
 	"time"
@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	CollectorName = "NodeInfoCollector"
+	CollectorName = "NodeCPUInfoCollector"
 )
 
 // TODO more ut is needed for this plugin
@@ -63,7 +63,7 @@ func (n *nodeInfoCollector) Started() bool {
 }
 
 func (n *nodeInfoCollector) collectNodeCPUInfo() {
-	klog.V(6).Info("start nodeInfoCollector")
+	klog.V(6).Info("start collect node cpu info")
 
 	localCPUInfo, err := koordletutil.GetLocalCPUInfo()
 	if err != nil {

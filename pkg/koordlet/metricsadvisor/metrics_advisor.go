@@ -24,8 +24,9 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/beresource"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/nodeinfo"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/nodecpuinfo"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/noderesource"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/nodestorageinfo"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/performance"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/podresource"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/podthrottled"
@@ -46,12 +47,13 @@ var (
 	}
 
 	collectorPlugins = map[string]framework.CollectorFactory{
-		noderesource.CollectorName: noderesource.New,
-		beresource.CollectorName:   beresource.New,
-		nodeinfo.CollectorName:     nodeinfo.New,
-		podresource.CollectorName:  podresource.New,
-		podthrottled.CollectorName: podthrottled.New,
-		performance.CollectorName:  performance.New,
+		noderesource.CollectorName:    noderesource.New,
+		beresource.CollectorName:      beresource.New,
+		nodecpuinfo.CollectorName:     nodecpuinfo.New,
+		nodestorageinfo.CollectorName: nodestorageinfo.New,
+		podresource.CollectorName:     podresource.New,
+		podthrottled.CollectorName:    podthrottled.New,
+		performance.CollectorName:     performance.New,
 	}
 )
 

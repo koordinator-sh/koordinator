@@ -33,6 +33,12 @@ var (
 		Help:      "the count of CollectNodeCPUInfo status",
 	}, []string{NodeKey, StatusKey})
 
+	CollectNodeLocalStorageInfoStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "collect_node_local_storage_info_status",
+		Help:      "the count of CollectNodeLocalStorageInfo status",
+	}, []string{NodeKey, StatusKey})
+
 	PodEviction = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "pod_eviction",
@@ -77,6 +83,18 @@ func RecordCollectNodeCPUInfoStatus(err error) {
 		labels[StatusKey] = StatusFailed
 	}
 	CollectNodeCPUInfoStatus.With(labels).Inc()
+}
+
+func RecordCollectNodeLocalStorageInfoStatus(err error) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[StatusKey] = StatusSucceed
+	if err != nil {
+		labels[StatusKey] = StatusFailed
+	}
+	CollectNodeLocalStorageInfoStatus.With(labels).Inc()
 }
 
 func RecordPodEviction(namespace, podName, reasonType string) {

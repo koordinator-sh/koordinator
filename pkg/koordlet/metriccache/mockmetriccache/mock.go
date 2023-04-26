@@ -122,6 +122,21 @@ func (mr *MockMetricCacheMockRecorder) GetNodeCPUInfo(param interface{}) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeCPUInfo", reflect.TypeOf((*MockMetricCache)(nil).GetNodeCPUInfo), param)
 }
 
+// GetNodeCPUInfo mocks base method.
+func (m *MockMetricCache) GetNodeLocalStorageInfo(param *metriccache.QueryParam) (*metriccache.NodeLocalStorageInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNodeLocalStorageInfo", param)
+	ret0, _ := ret[0].(*metriccache.NodeLocalStorageInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNodeCPUInfo indicates an expected call of GetNodeCPUInfo.
+func (mr *MockMetricCacheMockRecorder) GetNodeLocalStorageInfo(param interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeLocalStorageInfo", reflect.TypeOf((*MockMetricCache)(nil).GetNodeLocalStorageInfo), param)
+}
+
 // GetNodeResourceMetric mocks base method.
 func (m *MockMetricCache) GetNodeResourceMetric(param *metriccache.QueryParam) metriccache.NodeResourceQueryResult {
 	m.ctrl.T.Helper()
@@ -246,6 +261,20 @@ func (m *MockMetricCache) InsertNodeCPUInfo(info *metriccache.NodeCPUInfo) error
 func (mr *MockMetricCacheMockRecorder) InsertNodeCPUInfo(info interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertNodeCPUInfo", reflect.TypeOf((*MockMetricCache)(nil).InsertNodeCPUInfo), info)
+}
+
+// InsertNodeCPUInfo mocks base method.
+func (m *MockMetricCache) InsertNodeLocalStorageInfo(info *metriccache.NodeLocalStorageInfo) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InsertNodeLocalStorageInfo", info)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InsertNodeCPUInfo indicates an expected call of InsertNodeCPUInfo.
+func (mr *MockMetricCacheMockRecorder) InsertNodeLocalStorageInfo(info interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertNodeLocalStorageInfo", reflect.TypeOf((*MockMetricCache)(nil).InsertNodeLocalStorageInfo), info)
 }
 
 // InsertNodeResourceMetric mocks base method.

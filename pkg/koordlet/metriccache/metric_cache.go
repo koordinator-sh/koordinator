@@ -95,6 +95,7 @@ type MetricCache interface {
 	GetPodResourceMetric(podUID *string, param *QueryParam) PodResourceQueryResult
 	GetContainerResourceMetric(containerID *string, param *QueryParam) ContainerResourceQueryResult
 	GetNodeCPUInfo(param *QueryParam) (*NodeCPUInfo, error)
+	GetNodeLocalStorageInfo(param *QueryParam) (*NodeLocalStorageInfo, error)
 	GetBECPUResourceMetric(param *QueryParam) BECPUResourceQueryResult
 	GetPodThrottledMetric(podUID *string, param *QueryParam) PodThrottledQueryResult
 	GetContainerThrottledMetric(containerID *string, param *QueryParam) ContainerThrottledQueryResult
@@ -104,6 +105,7 @@ type MetricCache interface {
 	InsertPodResourceMetric(t time.Time, podResUsed *PodResourceMetric) error
 	InsertContainerResourceMetric(t time.Time, containerResUsed *ContainerResourceMetric) error
 	InsertNodeCPUInfo(info *NodeCPUInfo) error
+	InsertNodeLocalStorageInfo(info *NodeLocalStorageInfo) error
 	InsertBECPUResourceMetric(t time.Time, metric *BECPUResourceMetric) error
 	InsertPodThrottledMetrics(t time.Time, metric *PodThrottledMetric) error
 	InsertContainerThrottledMetrics(t time.Time, metric *ContainerThrottledMetric) error
@@ -409,6 +411,28 @@ func (m *metricCache) GetNodeCPUInfo(param *QueryParam) (*NodeCPUInfo, error) {
 
 	if err := json.Unmarshal([]byte(record.RecordStr), info); err != nil {
 		return nil, fmt.Errorf("get node cpu info failed, parse recordStr %v, err %v", record.RecordStr, err)
+	}
+
+	return info, nil
+}
+
+func (m *metricCache) GetNodeLocalStorageInfo(param *QueryParam) (*NodeLocalStorageInfo, error) {
+	// get node local storage info from the rawRecordTable
+	if param == nil {
+		return nil, fmt.Errorf("node local storage info query parameters are illegal %v", param)
+	}
+
+	info := &NodeLocalStorageInfo{}
+	record, err := m.db.GetRawRecord(NodeLocalStorageInfoRecordType)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return info, nil
+		}
+		return nil, fmt.Errorf("get node local storage info failed, query params %v, err %v", param, err)
+	}
+
+	if err := json.Unmarshal([]byte(record.RecordStr), info); err != nil {
+		return nil, fmt.Errorf("get node local storage info failed, parse recordStr %v, err %v", record.RecordStr, err)
 	}
 
 	return info, nil
@@ -747,6 +771,20 @@ func (m *metricCache) InsertNodeCPUInfo(info *NodeCPUInfo) error {
 
 	record := &rawRecord{
 		RecordType: NodeCPUInfoRecordType,
+		RecordStr:  string(infoBytes),
+	}
+
+	return m.db.InsertRawRecord(record)
+}
+
+func (m *metricCache) InsertNodeLocalStorageInfo(info *NodeLocalStorageInfo) error {
+	infoBytes, err := json.Marshal(info)
+	if err != nil {
+		return err
+	}
+
+	record := &rawRecord{
+		RecordType: NodeLocalStorageInfoRecordType,
 		RecordStr:  string(infoBytes),
 	}
 

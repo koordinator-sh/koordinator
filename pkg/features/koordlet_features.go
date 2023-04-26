@@ -108,6 +108,12 @@ const (
 	//
 	// PSICollector enables psi collector feature of koordlet.
 	PSICollector featuregate.Feature = "PSICollector"
+
+	// owner: @TheBeatles1994
+	// alpha: v1.0
+	//
+	// BlkIOReconcile enables block I/O QoS feature of koordlet.
+	BlkIOReconcile featuregate.Feature = "BlkIOReconcile"
 )
 
 func init() {
@@ -132,6 +138,7 @@ var (
 		Accelerators:           {Default: false, PreRelease: featuregate.Alpha},
 		CPICollector:           {Default: false, PreRelease: featuregate.Alpha},
 		PSICollector:           {Default: false, PreRelease: featuregate.Alpha},
+		BlkIOReconcile:         {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 
