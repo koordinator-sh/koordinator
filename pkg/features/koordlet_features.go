@@ -109,8 +109,8 @@ const (
 	// PSICollector enables psi collector feature of koordlet.
 	PSICollector featuregate.Feature = "PSICollector"
 
-	// owner: @TheBeatles1994
-	// alpha: v1.0
+	// owner: @TheBeatles1994 @chzhj @zwzhang0107
+	// alpha: v1.3
 	//
 	// BlkIOReconcile enables block I/O QoS feature of koordlet.
 	BlkIOReconcile featuregate.Feature = "BlkIOReconcile"

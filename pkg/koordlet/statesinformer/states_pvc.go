@@ -25,11 +25,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
-
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -82,12 +82,21 @@ func (s *pvcInformer) Setup(ctx *pluginOption, state *pluginState) {
 }
 
 func (s *pvcInformer) Start(stopCh <-chan struct{}) {
+	if !features.DefaultKoordletFeatureGate.Enabled(features.BlkIOReconcile) {
+		klog.V(4).Infof("feature %v is not enabled, skip running pvc informer", features.BlkIOReconcile)
+		return
+	}
 	klog.V(2).Infof("starting node pvc informer")
 	go s.pvcInformer.Run(stopCh)
 	klog.V(2).Infof("node pvc informer started")
 }
 
 func (s *pvcInformer) HasSynced() bool {
+	// TODO add interface to check whether a plugin is enabled
+	if !features.DefaultKoordletFeatureGate.Enabled(features.BlkIOReconcile) {
+		klog.V(5).Infof("feature %v is not enabled, has sync return true", features.BlkIOReconcile)
+		return true
+	}
 	if s.pvcInformer == nil {
 		return false
 	}

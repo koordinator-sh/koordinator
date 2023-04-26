@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
@@ -48,7 +49,7 @@ func New(opt *framework.Options) framework.Collector {
 }
 
 func (n *nodeInfoCollector) Enabled() bool {
-	return true
+	return features.DefaultKoordletFeatureGate.Enabled(features.BlkIOReconcile)
 }
 
 func (n *nodeInfoCollector) Setup(s *framework.Context) {}
