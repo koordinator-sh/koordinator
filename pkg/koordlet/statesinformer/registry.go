@@ -18,7 +18,7 @@ package statesinformer
 
 // NOTE: variables in this file can be overwritten for extension
 
-var DefaultPluginRegistry = map[pluginName]informerPlugin{
+var DefaultPluginRegistry = map[PluginName]informerPlugin{
 	nodeSLOInformerName:    NewNodeSLOInformer(),
 	pvcInformerName:        NewPVCInformer(),
 	nodeTopoInformerName:   NewNodeTopoInformer(),

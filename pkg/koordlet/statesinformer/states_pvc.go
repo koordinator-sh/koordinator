@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	pvcInformerName pluginName = "pvcInformer"
+	pvcInformerName PluginName = "pvcInformer"
 )
 
 type pvcInformer struct {
@@ -57,7 +57,7 @@ func (s *pvcInformer) GetVolumeName(pvcNamespace, pvcName string) string {
 	return s.volumeNameMap[util.GetNamespacedName(pvcNamespace, pvcName)]
 }
 
-func (s *pvcInformer) Setup(ctx *pluginOption, state *pluginState) {
+func (s *pvcInformer) Setup(ctx *PluginOption, state *PluginState) {
 	s.pvcInformer = newPVCInformer(ctx.KubeClient)
 	s.pvcInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {

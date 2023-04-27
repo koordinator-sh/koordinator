@@ -74,8 +74,8 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 					RegisterTypeNodeTopology: {},
 				},
 				statesInformer: &statesInformer{
-					states: &pluginState{
-						informerPlugins: map[pluginName]informerPlugin{
+					states: &PluginState{
+						informerPlugins: map[PluginName]informerPlugin{
 							nodeSLOInformerName: &nodeSLOInformer{
 								nodeSLO: &slov1alpha1.NodeSLO{},
 							},
@@ -142,9 +142,9 @@ func Test_statesInformer_startCallbackRunners(t *testing.T) {
 				},
 			}
 			si := &statesInformer{
-				states: &pluginState{
+				states: &PluginState{
 					callbackRunner: cr,
-					informerPlugins: map[pluginName]informerPlugin{
+					informerPlugins: map[PluginName]informerPlugin{
 						nodeSLOInformerName: &nodeSLOInformer{
 							nodeSLO: tt.args.nodeSLO,
 						},

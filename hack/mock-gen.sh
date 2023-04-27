@@ -25,6 +25,7 @@ cd $GOPATH/src/github.com/koordinator-sh/koordinator
 # generates gomock files
 mockgen -source pkg/koordlet/statesinformer/states_informer.go \
   -destination pkg/koordlet/statesinformer/mockstatesinformer/mock.go \
+  -aux_files github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer=pkg/koordlet/statesinformer/states_informer.go \
   -copyright_file ${LICENSE_HEADER_PATH}
 mockgen -source pkg/koordlet/metriccache/metric_cache.go \
   -destination pkg/koordlet/metriccache/mockmetriccache/mock.go \

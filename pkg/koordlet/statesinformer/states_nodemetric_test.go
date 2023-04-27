@@ -749,8 +749,8 @@ func Test_nodeMetricInformer_NewAndSetup(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	type args struct {
-		ctx   *pluginOption
-		state *pluginState
+		ctx   *PluginOption
+		state *PluginState
 	}
 	tests := []struct {
 		name string
@@ -759,16 +759,16 @@ func Test_nodeMetricInformer_NewAndSetup(t *testing.T) {
 		{
 			name: "new and setup node metric",
 			args: args{
-				ctx: &pluginOption{
+				ctx: &PluginOption{
 					config:      NewDefaultConfig(),
 					KubeClient:  fakeclientset.NewSimpleClientset(),
 					KoordClient: fakekoordclientset.NewSimpleClientset(),
 					TopoClient:  faketopologyclientset.NewSimpleClientset(),
 					NodeName:    "test-node",
 				},
-				state: &pluginState{
+				state: &PluginState{
 					metricCache: mockmetriccache.NewMockMetricCache(ctrl),
-					informerPlugins: map[pluginName]informerPlugin{
+					informerPlugins: map[PluginName]informerPlugin{
 						podsInformerName: NewPodsInformer(),
 					},
 				},

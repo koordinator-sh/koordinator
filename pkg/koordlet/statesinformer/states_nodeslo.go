@@ -36,7 +36,7 @@ import (
 )
 
 const (
-	nodeSLOInformerName pluginName = "nodeSLOInformer"
+	nodeSLOInformerName PluginName = "nodeSLOInformer"
 )
 
 type nodeSLOInformer struct {
@@ -57,7 +57,7 @@ func (s *nodeSLOInformer) GetNodeSLO() *slov1alpha1.NodeSLO {
 	return s.nodeSLO.DeepCopy()
 }
 
-func (s *nodeSLOInformer) Setup(ctx *pluginOption, state *pluginState) {
+func (s *nodeSLOInformer) Setup(ctx *PluginOption, state *PluginState) {
 	s.nodeSLOInformer = newNodeSLOInformer(ctx.KoordClient, ctx.NodeName)
 	s.nodeSLOInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
