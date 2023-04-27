@@ -149,11 +149,12 @@ func (r *nodeMetricInformer) Setup(ctx *pluginOption, state *pluginState) {
 				klog.Errorf("unable to convert object to *slov1alpha1.NodeMetric, old %T, new %T", oldObj, newObj)
 				return
 			}
-			if reflect.DeepEqual(oldNodeMetric.Spec, newNodeMetric.Spec) {
+
+			if newNodeMetric.Generation == oldNodeMetric.Generation || reflect.DeepEqual(oldNodeMetric.Spec, newNodeMetric.Spec) {
 				klog.V(5).Infof("find nodeMetric spec %s has not changed.", newNodeMetric.Name)
 				return
 			}
-			klog.Infof("update node metric spec %v", newNodeMetric.Spec)
+			klog.V(2).Infof("update node metric spec %v", newNodeMetric.Spec)
 			r.updateMetricSpec(newNodeMetric)
 		},
 	})
