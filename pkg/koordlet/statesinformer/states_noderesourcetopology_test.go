@@ -97,8 +97,8 @@ func Test_nodeResourceTopology_NewAndSetup(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	type args struct {
-		ctx   *pluginOption
-		state *pluginState
+		ctx   *PluginOption
+		state *PluginState
 	}
 	tests := []struct {
 		name string
@@ -107,16 +107,16 @@ func Test_nodeResourceTopology_NewAndSetup(t *testing.T) {
 		{
 			name: "new and setup node topo",
 			args: args{
-				ctx: &pluginOption{
+				ctx: &PluginOption{
 					config:      NewDefaultConfig(),
 					KubeClient:  fakeclientset.NewSimpleClientset(),
 					KoordClient: fakekoordclientset.NewSimpleClientset(),
 					TopoClient:  faketopologyclientset.NewSimpleClientset(),
 					NodeName:    "test-node",
 				},
-				state: &pluginState{
+				state: &PluginState{
 					metricCache: mock_metriccache.NewMockMetricCache(ctrl),
-					informerPlugins: map[pluginName]informerPlugin{
+					informerPlugins: map[PluginName]informerPlugin{
 						podsInformerName: NewPodsInformer(),
 						nodeInformerName: NewNodeInformer(),
 					},

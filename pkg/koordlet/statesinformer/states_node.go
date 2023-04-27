@@ -37,7 +37,7 @@ import (
 )
 
 const (
-	nodeInformerName pluginName = "nodeInformer"
+	nodeInformerName PluginName = "nodeInformer"
 )
 
 type nodeInformer struct {
@@ -59,7 +59,7 @@ func (s *nodeInformer) GetNode() *corev1.Node {
 	return s.node.DeepCopy()
 }
 
-func (s *nodeInformer) Setup(ctx *pluginOption, state *pluginState) {
+func (s *nodeInformer) Setup(ctx *PluginOption, state *PluginState) {
 	s.nodeInformer = newNodeInformer(ctx.KubeClient, ctx.NodeName)
 	s.nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {

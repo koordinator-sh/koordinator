@@ -50,7 +50,7 @@ import (
 )
 
 const (
-	nodeMetricInformerName pluginName = "nodeMetricInformer"
+	nodeMetricInformerName PluginName = "nodeMetricInformer"
 
 	// defaultAggregateDurationSeconds is the default metric aggregate duration by seconds
 	minAggregateDurationSeconds     = 60
@@ -113,7 +113,7 @@ func (r *nodeMetricInformer) HasSynced() bool {
 	return synced
 }
 
-func (r *nodeMetricInformer) Setup(ctx *pluginOption, state *pluginState) {
+func (r *nodeMetricInformer) Setup(ctx *PluginOption, state *PluginState) {
 	r.reportEnabled = ctx.config.EnableNodeMetricReport
 	r.nodeName = ctx.NodeName
 	r.nodeMetricInformer = newNodeMetricInformer(ctx.KoordClient, ctx.NodeName)

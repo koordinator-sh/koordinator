@@ -59,9 +59,9 @@ type StatesInformer interface {
 	RegisterCallbacks(objType RegisterType, name, description string, callbackFn UpdateCbFn)
 }
 
-type pluginName string
+type PluginName string
 
-type pluginOption struct {
+type PluginOption struct {
 	config      *Config
 	KubeClient  clientset.Interface
 	KoordClient koordclientset.Interface
@@ -69,10 +69,10 @@ type pluginOption struct {
 	NodeName    string
 }
 
-type pluginState struct {
+type PluginState struct {
 	metricCache     metriccache.MetricCache
 	callbackRunner  *callbackRunner
-	informerPlugins map[pluginName]informerPlugin
+	informerPlugins map[PluginName]informerPlugin
 }
 
 type GetGPUDriverAndModelFunc func() (string, string)
@@ -85,31 +85,31 @@ type statesInformer struct {
 	unhealthyGPU map[string]struct{}
 	gpuMutex     sync.RWMutex
 
-	option  *pluginOption
-	states  *pluginState
+	option  *PluginOption
+	states  *PluginState
 	started *atomic.Bool
 
 	getGPUDriverAndModelFunc GetGPUDriverAndModelFunc
 }
 
 type informerPlugin interface {
-	Setup(ctx *pluginOption, state *pluginState)
+	Setup(ctx *PluginOption, state *PluginState)
 	Start(stopCh <-chan struct{})
 	HasSynced() bool
 }
 
 // TODO merge all clients into one struct
 func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient topologyclientset.Interface, metricsCache metriccache.MetricCache, nodeName string, schedulingClient schedv1alpha1.SchedulingV1alpha1Interface) StatesInformer {
-	opt := &pluginOption{
+	opt := &PluginOption{
 		config:      config,
 		KubeClient:  kubeClient,
 		KoordClient: crdClient,
 		TopoClient:  topologyClient,
 		NodeName:    nodeName,
 	}
-	stat := &pluginState{
+	stat := &PluginState{
 		metricCache:     metricsCache,
-		informerPlugins: map[pluginName]informerPlugin{},
+		informerPlugins: map[PluginName]informerPlugin{},
 		callbackRunner:  NewCallbackRunner(),
 	}
 	s := &statesInformer{

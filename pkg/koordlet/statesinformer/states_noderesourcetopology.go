@@ -53,7 +53,7 @@ import (
 )
 
 const (
-	nodeTopoInformerName pluginName = "nodeTopoInformer"
+	nodeTopoInformerName PluginName = "nodeTopoInformer"
 )
 
 type nodeTopoInformer struct {
@@ -83,7 +83,7 @@ func (s *nodeTopoInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology {
 	return s.nodeTopology.DeepCopy()
 }
 
-func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
+func (s *nodeTopoInformer) Setup(ctx *PluginOption, state *PluginState) {
 	s.config = ctx.config
 	s.topologyClient = ctx.TopoClient
 	s.metricCache = state.metricCache

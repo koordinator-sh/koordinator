@@ -37,7 +37,7 @@ import (
 )
 
 const (
-	podsInformerName pluginName = "podsInformer"
+	podsInformerName PluginName = "podsInformer"
 )
 
 type podsInformer struct {
@@ -73,7 +73,7 @@ func NewPodsInformer() *podsInformer {
 	return podsInformer
 }
 
-func (s *podsInformer) Setup(ctx *pluginOption, states *pluginState) {
+func (s *podsInformer) Setup(ctx *PluginOption, states *PluginState) {
 	s.config = ctx.config
 
 	nodeInformerIf := states.informerPlugins[nodeInformerName]

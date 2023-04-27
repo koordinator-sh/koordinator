@@ -67,8 +67,8 @@ func Test_reportGPUDevice(t *testing.T) {
 	r := &statesInformer{
 		deviceClient: fakeClient,
 		metricsCache: mockMetricCache,
-		states: &pluginState{
-			informerPlugins: map[pluginName]informerPlugin{
+		states: &PluginState{
+			informerPlugins: map[PluginName]informerPlugin{
 				nodeInformerName: &nodeInformer{
 					node: testNode,
 				},
