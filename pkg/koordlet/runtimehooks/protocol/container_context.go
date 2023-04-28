@@ -205,7 +205,7 @@ func (c *ContainerContext) injectForOrigin() {
 				"set container cpu share to %v", *c.Response.Resources.CPUShares).Do()
 		}
 	}
-	if c.Response.Resources.CPUSet != nil {
+	if c.Response.Resources.CPUSet != nil && *c.Response.Resources.CPUSet != "" {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message("set container cpuset to %v", *c.Response.Resources.CPUSet)
 		err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet, eventHelper, c.executor)
 		if err != nil && resourceexecutor.IsCgroupDirErr(err) {
