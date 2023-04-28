@@ -35,6 +35,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
 )
 
+const Name = "nodeslo"
+
 // NodeSLOReconciler reconciles a NodeSLO object
 type NodeSLOReconciler struct {
 	client.Client
@@ -206,6 +208,6 @@ func (r *NodeSLOReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			Client: r.Client,
 		}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, configMapCacheHandler).
-		Named("nodeslo").
+		Named(Name).
 		Complete(r)
 }
