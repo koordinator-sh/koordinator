@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package metrics
 
 import (
@@ -32,12 +33,20 @@ type metric struct {
 }
 
 func Test_GCGaugeVec_WithSet(t *testing.T) {
-
-	testGaugeVec := NewGCGaugeVec("test", prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	metricName := "test_gauge"
+	vec := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
-		Name:      "test_gauge",
-	}, []string{NodeKey, PodName, PodNamespace}))
-	vec := testGaugeVec.GetGaugeVec()
+		Name:      metricName,
+	}, []string{NodeKey, PodName, PodNamespace})
+
+	testDefaultGaugeVec := NewGCGaugeVec(metricName, vec)
+	assert.Equal(t, vec, testDefaultGaugeVec.GetGaugeVec())
+
+	testMetricGC := NewMetricGC(DefaultExpireTime, DefaultGCInterval).(*metricGC)
+	defer testMetricGC.Stop()
+
+	testGaugeVec := newGCGaugeVec(metricName, vec, testMetricGC)
+
 	//add metric1
 	pod1Labels := prometheus.Labels{NodeKey: "node1", PodName: "pod1", PodNamespace: "ns1"}
 	testGaugeVec.WithSet(pod1Labels, 1)
@@ -54,18 +63,23 @@ func Test_GCGaugeVec_WithSet(t *testing.T) {
 	testGaugeVec.WithSet(pod1Labels, 3)
 	metrics = collectMetrics(vec)
 	assert.Equal(t, 2, len(metrics), "checkMetricsNum")
-
-	testGaugeVec.expireStatus.Stop()
-
 }
 
 func Test_GCCounterVec_WithInc(t *testing.T) {
-
-	testCounterVec := NewGCCounterVec("test", prometheus.NewCounterVec(prometheus.CounterOpts{
+	metricName := "test_counter"
+	vec := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Subsystem: KoordletSubsystem,
-		Name:      "test_counter",
-	}, []string{NodeKey, PodName, PodNamespace}))
-	vec := testCounterVec.GetCounterVec()
+		Name:      metricName,
+	}, []string{NodeKey, PodName, PodNamespace})
+
+	testDefaultGaugeVec := NewGCCounterVec(metricName, vec)
+	assert.Equal(t, vec, testDefaultGaugeVec.GetCounterVec())
+
+	testMetricGC := NewMetricGC(DefaultExpireTime, DefaultGCInterval).(*metricGC)
+	defer testMetricGC.Stop()
+
+	testCounterVec := newGCCounterVec(metricName, vec, testMetricGC)
+
 	//add metric1
 	pod1Labels := prometheus.Labels{NodeKey: "node1", PodName: "pod1", PodNamespace: "ns1"}
 	testCounterVec.WithInc(pod1Labels)
@@ -82,23 +96,18 @@ func Test_GCCounterVec_WithInc(t *testing.T) {
 	testCounterVec.WithInc(pod1Labels)
 	metrics = collectMetrics(vec)
 	assert.Equal(t, 2, len(metrics), "checkMetricsNum")
-
-	testCounterVec.expireStatus.Stop()
-
 }
 
 func Test_MetricGC_GC(t *testing.T) {
+	testMetricGC := NewMetricGC(DefaultExpireTime, 1*time.Microsecond).(*metricGC)
+	defer testMetricGC.Stop()
 
+	metricName := "test_gauge"
 	gaugeVec := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
-		Name:      "test_gauge",
+		Name:      metricName,
 	}, []string{NodeKey, PodName, PodNamespace})
-	expireMetric := NewMetricGC("test_gauge", gaugeVec.MetricVec, DefaultExpireTime).(*metricGC)
-	expireMetric.interval = 1 * time.Microsecond
-	//test gc start
-	expireMetric.Run()
-
-	gcGaugeVec := GCGaugeVec{vec: gaugeVec, expireStatus: expireMetric}
+	gcGaugeVec := newGCGaugeVec(metricName, gaugeVec, testMetricGC)
 
 	// metric should not expire
 	metrics := generatePodMetrics(10, time.Now().Unix())
@@ -107,20 +116,18 @@ func Test_MetricGC_GC(t *testing.T) {
 	}
 	gotMetrics := collectMetrics(gaugeVec)
 	assert.Equal(t, len(metrics), len(gotMetrics), "checkMetricsNum")
-	assert.Equal(t, len(metrics), expireMetric.statusLen(), "checkStatusNum")
+	assert.Equal(t, len(metrics), testMetricGC.statusLen(), "checkStatusNum")
 
 	// metric should expire
 	metricsUpdate := generatePodMetrics(5, time.Now().Unix()-int64(DefaultExpireTime/time.Second))
 	for _, m := range metricsUpdate {
 		gcGaugeVec.WithSet(m.labels, m.value)
-		expireMetric.upateStatus(m.labels, m.updateTime)
+		testMetricGC.updateStatus(m.updateTime, metricName, m.labels)
 	}
 	time.Sleep(10 * time.Millisecond)
 	gotMetrics = collectMetrics(gaugeVec)
 	assert.Equal(t, len(metricsUpdate), len(gotMetrics), "checkMetricsNum")
-	assert.Equal(t, len(metricsUpdate), expireMetric.statusLen(), "checkStatusNum")
-
-	expireMetric.Stop()
+	assert.Equal(t, len(metricsUpdate), testMetricGC.statusLen(), "checkStatusNum")
 }
 
 func generatePodMetrics(num int, baseUpdateTime int64) []metric {
