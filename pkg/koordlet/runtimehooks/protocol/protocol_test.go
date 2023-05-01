@@ -17,6 +17,8 @@ limitations under the License.
 package protocol
 
 import (
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -76,7 +78,11 @@ func TestContainerResponse_ProxyDone(t *testing.T) {
 		resp *runtimeapi.ContainerResourceHookResponse
 	}
 	type wants struct {
-		CPUSet *string
+		CPUSet      *string
+		CPUShares   *int64
+		CFSQuota    *int64
+		MemoryLimit *int64
+		CPUBvt      *int64
 	}
 	tests := []struct {
 		name   string
@@ -85,11 +91,16 @@ func TestContainerResponse_ProxyDone(t *testing.T) {
 		wants  wants
 	}{
 		{
-			name: "origin resource is nil",
+			name: "origin resource is not nil",
 			fields: fields{
 				Resources: Resources{
-					CPUSet: pointer.String("0,1,2"),
+					CPUShares:   pointer.Int64(15),
+					CFSQuota:    pointer.Int64(1000),
+					CPUSet:      pointer.String("0,1,2"),
+					MemoryLimit: pointer.Int64(1048576),
+					CPUBvt:      pointer.Int64(10),
 				},
+				ContainerEnvs: make(map[string]string, 0),
 			},
 			args: args{
 				resp: &runtimeapi.ContainerResourceHookResponse{
@@ -97,7 +108,11 @@ func TestContainerResponse_ProxyDone(t *testing.T) {
 				},
 			},
 			wants: wants{
-				CPUSet: pointer.String("0,1,2"),
+				CPUSet:      pointer.String("0,1,2"),
+				CPUShares:   pointer.Int64(15),
+				CFSQuota:    pointer.Int64(1000),
+				MemoryLimit: pointer.Int64(1048576),
+				CPUBvt:      pointer.Int64(10),
 			},
 		},
 	}
@@ -109,6 +124,10 @@ func TestContainerResponse_ProxyDone(t *testing.T) {
 			}
 			c.ProxyDone(tt.args.resp)
 			assert.Equal(t, tt.wants.CPUSet, c.Resources.CPUSet, "cpu set equal")
+			assert.Equal(t, tt.wants.CPUBvt, c.Resources.CPUBvt, "cpu bvt equal")
+			assert.Equal(t, tt.wants.CPUShares, c.Resources.CPUShares, "cpu shares equal")
+			assert.Equal(t, tt.wants.CFSQuota, c.Resources.CFSQuota, "cfs quota equal")
+			assert.Equal(t, tt.wants.MemoryLimit, c.Resources.MemoryLimit, "memory limit equal")
 		})
 	}
 }
@@ -153,6 +172,88 @@ func TestPodResponse_ProxyDone(t *testing.T) {
 			}
 			p.ProxyDone(tt.args.resp)
 			assert.Equal(t, tt.wants.CPUSet, p.Resources.CPUSet, "cpu set equal")
+		})
+	}
+}
+func TestPodResponse_ReconcilerDone(t *testing.T) {
+
+	type wants struct {
+		CPUSet      *string
+		CPUShares   *int64
+		CFSQuota    *int64
+		MemoryLimit *int64
+		CPUBvt      *int64
+	}
+	var tests = []struct {
+		name  string
+		ex    *resourceexecutor.ResourceUpdateExecutorImpl
+		req   ContainerRequest
+		res   ContainerResponse
+		wants wants
+	}{
+		{
+			name: "req's parent is nil",
+			ex: &resourceexecutor.ResourceUpdateExecutorImpl{
+				LeveledUpdateLock: sync.Mutex{},
+				ResourceCache:     nil,
+				Config:            nil,
+			},
+			req: ContainerRequest{},
+		},
+		{
+			name: "test injectForExt nil",
+			ex: &resourceexecutor.ResourceUpdateExecutorImpl{
+				LeveledUpdateLock: sync.Mutex{},
+				ResourceCache:     nil,
+				Config:            nil,
+			},
+			req: ContainerRequest{
+				CgroupParent: "test",
+			},
+			res: ContainerResponse{
+				Resources:        Resources{},
+				AddContainerEnvs: nil,
+			},
+		},
+		{
+			name: "test injectForExt",
+			ex: &resourceexecutor.ResourceUpdateExecutorImpl{
+				LeveledUpdateLock: sync.Mutex{},
+				ResourceCache:     nil,
+				Config:            nil,
+			},
+			req: ContainerRequest{
+				CgroupParent: "test",
+			},
+			res: ContainerResponse{
+				Resources: Resources{
+					CPUSet:      pointer.String(""),
+					CPUShares:   pointer.Int64(15),
+					CFSQuota:    pointer.Int64(1000),
+					MemoryLimit: pointer.Int64(1048576),
+					CPUBvt:      pointer.Int64(10),
+				},
+				AddContainerEnvs: nil,
+			},
+			wants: wants{
+				CPUSet:      pointer.String(""),
+				CPUShares:   pointer.Int64(15),
+				CFSQuota:    pointer.Int64(1000),
+				MemoryLimit: pointer.Int64(1048576),
+				CPUBvt:      pointer.Int64(10),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			c := ContainerContext{
+				Request:  tt.req,
+				Response: tt.res,
+				executor: nil,
+			}
+			c.ReconcilerDone(tt.ex)
+
 		})
 	}
 }
