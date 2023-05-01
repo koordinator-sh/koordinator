@@ -18,7 +18,6 @@ package protocol
 
 import (
 	"fmt"
-
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -190,7 +189,9 @@ func (c *ContainerContext) ReconcilerDone(executor resourceexecutor.ResourceUpda
 	c.injectForOrigin()
 }
 
+// Inject illegal parameters
 func (c *ContainerContext) injectForOrigin() {
+	// CPUShares should not be nil
 	if c.Response.Resources.CPUShares != nil {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 			"set container cpu share to %v", *c.Response.Resources.CPUShares)
@@ -205,6 +206,7 @@ func (c *ContainerContext) injectForOrigin() {
 				"set container cpu share to %v", *c.Response.Resources.CPUShares).Do()
 		}
 	}
+	// CPUSet is required and cannot be an empty string
 	if c.Response.Resources.CPUSet != nil && *c.Response.Resources.CPUSet != "" {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message("set container cpuset to %v", *c.Response.Resources.CPUSet)
 		err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet, eventHelper, c.executor)
@@ -220,6 +222,7 @@ func (c *ContainerContext) injectForOrigin() {
 				*c.Response.Resources.CPUSet, c.Request.CgroupParent)
 		}
 	}
+	// CFSQuota is required
 	if c.Response.Resources.CFSQuota != nil {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 			"set container cfs quota to %v", *c.Response.Resources.CFSQuota)
@@ -232,6 +235,7 @@ func (c *ContainerContext) injectForOrigin() {
 				*c.Response.Resources.CFSQuota, c.Request.CgroupParent)
 		}
 	}
+	// MemoryLimit is required
 	if c.Response.Resources.MemoryLimit != nil {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 			"set container memory limit to %v", *c.Response.Resources.MemoryLimit)
