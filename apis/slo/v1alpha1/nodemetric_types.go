@@ -35,9 +35,15 @@ const (
 )
 
 type NodeMetricInfo struct {
+	// NodeUsage is the total resource usage of node
 	NodeUsage ResourceMap `json:"nodeUsage,omitempty"`
 	// AggregatedNodeUsages will report only if there are enough samples
 	AggregatedNodeUsages []AggregatedUsage `json:"aggregatedNodeUsages,omitempty"`
+	// SystemUsage is the resource usage of daemon processes and OS kernel, calculated by `NodeUsage - sum(podUsage)`
+	SystemUsage ResourceMap `json:"systemUsage,omitempty"`
+	// AggregatedSystemUsages will report only if there are enough samples
+	// Deleted pods will be excludes during aggregation
+	AggregatedSystemUsages []AggregatedUsage `json:"aggregatedSystemUsages,omitempty"`
 }
 
 type AggregatedUsage struct {
