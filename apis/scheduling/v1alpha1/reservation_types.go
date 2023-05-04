@@ -62,7 +62,28 @@ type ReservationSpec struct {
 	// +kubebuilder:default=true
 	// +optional
 	AllocateOnce bool `json:"allocateOnce,omitempty"`
+	// AllocatePolicy represents the allocation policy of reserved resources that Reservation expects.
+	// +kubebuilder:validation:Enum=AlignByPod;Restricted
+	// +optional
+	AllocatePolicy ReservationAllocatePolicy `json:"allocatePolicy,omitempty"`
 }
+
+type ReservationAllocatePolicy string
+
+const (
+	// ReservationAllocatePolicyDefault means that there is no restriction on the policy of reserved resources,
+	// and allocated from the Reservation first, and if it is insufficient, it is allocated from the node.
+	ReservationAllocatePolicyDefault ReservationAllocatePolicy = ""
+	// ReservationAllocatePolicyAlignByPod indicates that the Pod allocates resources from the Reservation first.
+	// If the remaining resources of the Reservation are insufficient, it can be allocated from the node,
+	// but it is required to strictly follow the resource specifications of the Pod.
+	// This can be used to avoid the problem that a Pod uses multiple Reservations at the same time.
+	ReservationAllocatePolicyAlignByPod ReservationAllocatePolicy = "AlignByPod"
+	// ReservationAllocatePolicyRestricted means that the resources requested by the Pod overlap with the resources reserved by the Reservation,
+	// then these intersection resources can only be allocated from the Reservation, but other resources can be allocated from the node.
+	// ReservationAllocatePolicyRestricted includes the semantics of ReservationAllocatePolicyAlignByPod.
+	ReservationAllocatePolicyRestricted ReservationAllocatePolicy = "Restricted"
+)
 
 // ReservationTemplateSpec describes the data a Reservation should have when created from a template
 type ReservationTemplateSpec struct {

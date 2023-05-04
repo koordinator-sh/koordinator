@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -272,6 +273,13 @@ func ReservePorts(r *schedulingv1alpha1.Reservation) framework.HostPortInfo {
 		}
 	}
 	return portInfo
+}
+
+func FitReservationResources(pod *corev1.Pod, allocatable, allocated corev1.ResourceList) bool {
+	remaining := quotav1.SubtractWithNonNegativeResult(allocatable, allocated)
+	podRequests, _ := resource.PodRequestsAndLimits(pod)
+	satisfied, _ := quotav1.LessThanOrEqual(podRequests, remaining)
+	return satisfied
 }
 
 // MatchReservationOwners checks if the scheduling pod matches the reservation's owner spec.

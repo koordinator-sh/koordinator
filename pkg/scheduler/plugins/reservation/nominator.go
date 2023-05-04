@@ -53,6 +53,12 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 
 	reservations := make([]*schedulingv1alpha1.Reservation, 0, len(rOnNode))
 	for _, rInfo := range rOnNode {
+		for _, unfitRInfo := range state.unfits[nodeName] {
+			if unfitRInfo.reservation.UID == rInfo.reservation.UID {
+				continue
+			}
+		}
+
 		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo.reservation, nodeName)
 		if !status.IsSuccess() {
 			continue

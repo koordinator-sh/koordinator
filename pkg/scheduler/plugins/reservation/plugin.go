@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -49,8 +48,8 @@ const (
 
 	// ErrReasonNodeNotMatchReservation is the reason for node not matching which the reserve pod specifies.
 	ErrReasonNodeNotMatchReservation = "node(s) didn't match the nodeName specified by reservation"
-	// ErrReasonOnlyOneSameReusableReservationOnSameNode is the reason for only one same reusable reservation can be scheduled on a same node
-	ErrReasonOnlyOneSameReusableReservationOnSameNode = "node(s) only one same reusable reservation can be scheduled on a same node"
+	// ErrReasonReservationAllocatePolicyConflict is the reason for the AllocatePolicy of the Reservation conflicts with other Reservations on the node
+	ErrReasonReservationAllocatePolicyConflict = "node(s) reservation allocate policy conflict"
 	// ErrReasonReservationInactive is the reason for the reservation is failed/succeeded and should not be used.
 	ErrReasonReservationInactive = "reservation is not active"
 )
@@ -124,6 +123,7 @@ var _ framework.StateData = &stateData{}
 type stateData struct {
 	matched       map[string][]*reservationInfo
 	unmatched     map[string][]*reservationInfo
+	unfits        map[string][]*reservationInfo
 	preferredNode string
 	assumed       *schedulingv1alpha1.Reservation
 }
@@ -162,6 +162,11 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 		if err != nil {
 			return framework.NewStatus(framework.Error, err.Error())
 		}
+
+		//if !r.Spec.AllocateOnce && r.Spec.AllocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault {
+		//	return framework.NewStatus(framework.Error, "the reusable Reservation must specify allocatePolicy")
+		//}
+
 		return nil
 	}
 
@@ -181,6 +186,23 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 	}
 
 	if !reservationutil.IsReservePod(pod) {
+		state := getStateData(cycleState)
+		rOnNode := state.matched[node.Name]
+		totalRestrictedReservations := 0
+		insufficientReservations := 0
+		for _, rInfo := range rOnNode {
+			if rInfo.reservation.Spec.AllocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
+				totalRestrictedReservations++
+				if reservationutil.FitReservationResources(pod, rInfo.allocatable, rInfo.allocated) {
+					return nil
+				}
+				insufficientReservations++
+			}
+		}
+		if totalRestrictedReservations > 0 && totalRestrictedReservations == insufficientReservations {
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, "node(s) no reservations satisfied resources")
+		}
+
 		return nil
 	}
 
@@ -197,10 +219,11 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 	}
 	rInfos := pl.reservationCache.listReservationInfosOnNode(node.Name)
 	for _, v := range rInfos {
-		if (reservation.Spec.AllocateOnce != v.reservation.Spec.AllocateOnce ||
-			!reservation.Spec.AllocateOnce == !v.reservation.Spec.AllocateOnce) &&
-			reflect.DeepEqual(v.reservation.Spec.Owners, reservation.Spec.Owners) {
-			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonOnlyOneSameReusableReservationOnSameNode)
+		// ReservationAllocatePolicyDefault cannot coexist with other allocate policies
+		if (reservation.Spec.AllocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
+			v.reservation.Spec.AllocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault) &&
+			reservation.Spec.AllocatePolicy != v.reservation.Spec.AllocatePolicy {
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAllocatePolicyConflict)
 		}
 	}
 
