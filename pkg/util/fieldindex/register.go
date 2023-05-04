@@ -20,21 +20,29 @@ import (
 	"context"
 	"sync"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var (
-	registerOnce sync.Once
-)
+var registerOnce sync.Once
 
-func RegisterFieldIndexes(c cache.Cache) error {
-	var err error
-	registerOnce.Do(func() {
-		// NOTE: add field index here if needed
-		c.IndexField(context.Background(), &v1.Pod{}, "spec.nodeName", func(obj client.Object) []string {
-			pod, ok := obj.(*v1.Pod)
+type fieldIndexDescriptor struct {
+	description string
+	obj         client.Object
+	field       string
+	indexerFunc client.IndexerFunc
+}
+
+// NOTE: add field index here if needed
+var indexDescriptors = []fieldIndexDescriptor{
+	{
+		description: "index pod by spec.NodeName",
+		obj:         &corev1.Pod{},
+		field:       "spec.nodeName",
+		indexerFunc: func(obj client.Object) []string {
+			pod, ok := obj.(*corev1.Pod)
 			if !ok {
 				return []string{}
 			}
@@ -42,7 +50,20 @@ func RegisterFieldIndexes(c cache.Cache) error {
 				return []string{}
 			}
 			return []string{pod.Spec.NodeName}
-		})
+		},
+	},
+}
+
+func RegisterFieldIndexes(c cache.Cache) error {
+	var err error
+	registerOnce.Do(func() {
+		for _, descriptor := range indexDescriptors {
+			err = c.IndexField(context.Background(), descriptor.obj, descriptor.field, descriptor.indexerFunc)
+			if err != nil {
+				klog.ErrorS(err, "Failed to register field index", "description", descriptor.description, "field", descriptor.field)
+				return
+			}
+		}
 	})
 	return err
 }
