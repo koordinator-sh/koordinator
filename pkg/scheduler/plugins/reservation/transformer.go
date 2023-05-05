@@ -43,7 +43,7 @@ func (pl *Plugin) BeforePreFilter(_ frameworkext.ExtendedHandle, cycleState *fra
 	cycleState.Write(stateKey, state)
 
 	klog.V(4).Infof("Pod %v has %d matched reservations and %d unmatched reservations before PreFilter", klog.KObj(pod), len(state.matched), len(state.unmatched))
-	return nil, false
+	return pod, len(state.matched) > 0 || len(state.unmatched) > 0
 }
 
 func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) error {
@@ -84,37 +84,6 @@ func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *fram
 	return nil
 }
 
-func (pl *Plugin) BeforeFilter(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool) {
-	node := nodeInfo.Node()
-	if node == nil {
-		return nil, nil, false
-	}
-	// Generation equals -1 means that the Reservation return logic has been executed once, but it should not happen.
-	if nodeInfo.Generation == -1 {
-		return nil, nil, false
-	}
-
-	state := getStateData(cycleState)
-	matchedReservationInfos := state.matched[node.Name]
-	unmatchedReservationInfos := state.unmatched[node.Name]
-	if len(matchedReservationInfos) == 0 && len(unmatchedReservationInfos) == 0 {
-		return nil, nil, false
-	}
-
-	nodeInfo = nodeInfo.Clone()
-	if err := pl.restoreUnmatchedReservations(cycleState, pod, nodeInfo, unmatchedReservationInfos, false); err != nil {
-		return nil, nil, false
-	}
-
-	if !reservationutil.IsReservePod(pod) {
-		if err := pl.restoreMatchedReservations(cycleState, pod, nodeInfo, matchedReservationInfos, false); err != nil {
-			return nil, nil, false
-		}
-	}
-
-	return pod, nodeInfo, true
-}
-
 func (pl *Plugin) restoreUnmatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*reservationInfo, shouldRestoreStates bool) error {
 	for _, rInfo := range reservationInfos {
 		if len(rInfo.pods) == 0 {
@@ -141,8 +110,6 @@ func (pl *Plugin) restoreUnmatchedReservations(cycleState *framework.CycleState,
 			})
 		}
 		nodeInfo.AddPod(reservePod)
-		// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
-		nodeInfo.Generation = -1
 
 		if shouldRestoreStates {
 			reservePodInfo := framework.NewPodInfo(reservePod)
@@ -206,8 +173,6 @@ func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *fr
 	if err := nodeInfo.RemovePod(reservePod); err != nil {
 		return err
 	}
-	// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
-	nodeInfo.Generation = -1
 
 	if !shouldRestoreStates {
 		return nil
@@ -391,8 +356,6 @@ func restorePVCRefCounts(informerFactory informers.SharedInformerFactory, nodeIn
 			}
 
 			nodeInfo.PVCRefCounts[genPVCRefKey(pvc)] -= 1
-			// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
-			nodeInfo.Generation = -1
 		}
 	}
 }

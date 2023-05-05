@@ -47,10 +47,6 @@ type FrameworkExtender interface {
 	RunReservationScorePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservations []*schedulingv1alpha1.Reservation, nodeName string) (PluginToReservationScores, *framework.Status)
 }
 
-// SharedListerAdapter intercepts the incoming ShareLister and
-// modifies the corresponding data to support some advanced scheduling scenarios.
-type SharedListerAdapter func(lister framework.SharedLister) framework.SharedLister
-
 // SchedulingTransformer is the parent type for all the custom transformer plugins.
 type SchedulingTransformer interface {
 	Name() string

@@ -31,11 +31,9 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
 // MergeCfg returns a merged interface. Value in new will
@@ -174,10 +172,18 @@ func NewPatch() *Patch {
 	}
 }
 
-func (p *Patch) WithHandle(handle framework.Handle) *Patch {
+type ClientSetHandle interface {
+	ClientSet() clientset.Interface
+}
+
+type KoordClientSetHandle interface {
+	KoordinatorClientSet() koordinatorclientset.Interface
+}
+
+func (p *Patch) WithHandle(handle ClientSetHandle) *Patch {
 	p.Clientset = handle.ClientSet()
 	// set KoordClientset if ExtendedHandle implemented
-	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
+	extendedHandle, ok := handle.(KoordClientSetHandle)
 	if ok {
 		p.KoordClientset = extendedHandle.KoordinatorClientSet()
 	}
