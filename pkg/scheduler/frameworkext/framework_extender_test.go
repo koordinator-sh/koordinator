@@ -51,12 +51,12 @@ type TestTransformer struct {
 
 func (h *TestTransformer) Name() string { return "TestTransformer" }
 
-func (h *TestTransformer) BeforePreFilter(handle ExtendedHandle, state *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool) {
+func (h *TestTransformer) BeforePreFilter(handle ExtendedHandle, state *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, error) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations[fmt.Sprintf("BeforePreFilter-%d", h.index)] = fmt.Sprintf("%d", h.index)
-	return pod, true
+	return pod, true, nil
 }
 
 func (h *TestTransformer) AfterPreFilter(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) error {

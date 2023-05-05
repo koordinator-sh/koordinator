@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -331,4 +332,49 @@ func matchLabelSelector(pod *corev1.Pod, labelSelector *metav1.LabelSelector) bo
 		return false
 	}
 	return selector.Matches(labels.Set(pod.Labels))
+}
+
+type RequiredReservationAffinity struct {
+	labelSelector labels.Selector
+	nodeSelector  *nodeaffinity.NodeSelector
+}
+
+// GetRequiredReservationAffinity returns the parsing result of pod's nodeSelector and nodeAffinity.
+func GetRequiredReservationAffinity(pod *corev1.Pod) (*RequiredReservationAffinity, error) {
+	reservationAffinity, err := extension.GetReservationAffinity(pod.Annotations)
+	if err != nil {
+		return nil, err
+	}
+	if len(reservationAffinity.ReservationSelector) == 0 && reservationAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
+		return nil, nil
+	}
+	var selector labels.Selector
+	if len(reservationAffinity.ReservationSelector) > 0 {
+		selector = labels.SelectorFromSet(reservationAffinity.ReservationSelector)
+	}
+	var affinity *nodeaffinity.NodeSelector
+	if reservationAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
+		nodeSelector := &corev1.NodeSelector{
+			NodeSelectorTerms: reservationAffinity.RequiredDuringSchedulingIgnoredDuringExecution.ReservationSelectorTerms,
+		}
+		affinity, err = nodeaffinity.NewNodeSelector(nodeSelector)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &RequiredReservationAffinity{labelSelector: selector, nodeSelector: affinity}, nil
+}
+
+// Match checks whether the pod is schedulable onto nodes according to
+// the requirements in both nodeSelector and nodeAffinity.
+func (s *RequiredReservationAffinity) Match(node *corev1.Node) bool {
+	if s.labelSelector != nil {
+		if !s.labelSelector.Matches(labels.Set(node.Labels)) {
+			return false
+		}
+	}
+	if s.nodeSelector != nil {
+		return s.nodeSelector.Match(node)
+	}
+	return true
 }

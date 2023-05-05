@@ -8,7 +8,7 @@ reviewers:
   - "@jasonliu747"
   - "@zwzhang0107"
 creation-date: 2022-06-09
-last-updated: 2023-04-01
+last-updated: 2023-05-09
 ---
 # Resource Reservation
 
@@ -29,7 +29,9 @@ last-updated: 2023-04-01
             - [Story 2](#story-2)
             - [Story 3](#story-3)
             - [Story 4](#story-4)
+            - [Story 5](#story-5)
         - [API](#api)
+            - [Reservation Affinity](#reservation-affinity)
         - [Implementation Details](#implementation-details)
             - [Schedule Reservations](#schedule-reservations)
             - [Allocate Reserved Resources](#allocate-reserved-resources)
@@ -98,6 +100,10 @@ As an application administrator, I want to make the **horizontal scaling** of my
 #### Story 4
 
 As a cluster administrator, I want to **pre-allocate** node resources for future usage no matter whether they are available now or not. I want to allocate the future free resources but do not disrupt the running of scheduled pods. Reservation can be made to pre-allocate resources since it makes no physical cost to the node. It may be in a `Waiting` state. When there is enough space for the reservation, it will become `Available` for the owner pods' scheduling.
+
+#### Story 5
+
+The user plans and reserves a batch of resources in advance, and the lifetime of reservation is relatively long. For example, there are 100 nodes in a cluster, and 32 Cores and 64GiB Memory are reserved on each node. When users need to use these resources, they want to use only a part of the instances, so they need to select these instances according to the label, and the subsequent resource allocation can only be continued after the selection is successful.
 
 ### API
 
@@ -257,6 +263,36 @@ type ReservationCondition struct {
 }
 ```
 
+#### Reservation Affinity
+
+The user can declare the Reservation Affinity Annotation on the Pod to select a batch of Reservation objects according to the label selector or selector terms, and the scheduler will constrain the owners of the batch of Reservation objects to match the Pod.
+
+The Annotation key is `scheduling.koordinator.sh/reservation-affinity`, and the corresponding value type is defined as follows:
+
+```go
+// ReservationAffinity represents the constraints of Pod selection Reservation
+type ReservationAffinity struct {
+	// If the affinity requirements specified by this field are not met at
+	// scheduling time, the pod will not be scheduled onto the node.
+	// If the affinity requirements specified by this field cease to be met
+	// at some point during pod execution (e.g. due to an update), the system
+	// may or may not try to eventually evict the pod from its node.
+	RequiredDuringSchedulingIgnoredDuringExecution *ReservationAffinitySelector `json:"requiredDuringSchedulingIgnoredDuringExecution,omitempty"`
+	// ReservationSelector is a selector which must be true for the pod to fit on a reservation.
+	// Selector which must match a reservation's labels for the pod to be scheduled on that node.
+	ReservationSelector map[string]string `json:"reservationSelector,omitempty"`
+}
+
+// ReservationAffinitySelector represents the union of the results of one or more label queries
+// over a set of reservations; that is, it represents the OR of the selectors represented
+// by the reservation selector terms.
+type ReservationAffinitySelector struct {
+	// Required. A list of reservation selector terms. The terms are ORed.
+	// Reuse corev1.NodeSelectorTerm to avoid defining too many repeated definitions.
+	ReservationSelectorTerms []corev1.NodeSelectorTerm `json:"reservationSelectorTerms,omitempty"`
+}
+```
+
 ### Implementation Details
 
 #### Schedule Reservations
@@ -281,6 +317,7 @@ Let's call the reservation is *matched* for a pod if:
 
 1. The reservation is available.
 2. The pod matches the reservation owner spec.
+3. If the pod has reservation affinity annotation, the affinity must match the reservation.
 
 When the reservation plugin is enabled, the scheduler checks for every scheduling pod if there are matched reservations on a node. 
 If the resources reserved by a Reservation matching a Pod or the remaining resources of the Reservation may be smaller than the requested resources of the Pod, the Pod will first allocate the remaining available resources from the Reservation, and then allocate for remaining requested resources from the node. This can ensure that Pods can be scheduled as successfully as possible, and resources will not be unable to be allocated due to resource fragmentation. In this way, it is convenient and flexible to support users to reserve only a certain type of resource. For example, the Reservation reserves 4000m CPU, but the Pod actually needs 4000m CPU and 4Gi Memory. In this case, the Pod needs to allocate resources from both the Reservation and the Node.
@@ -414,6 +451,7 @@ Reserving resources with [`pause` pods with very low assigned priority](https://
 - [X]  07/20/2022: Update design details
 - [X]  08/08/2022: Update allocateOnce API
 - [X]  25/03/2023: Update the API and E2E Tests
+- [X]  09/05/2023: Add Reservation Affinity API
 
 ## References
 

@@ -18,6 +18,7 @@ package scheduling
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -370,6 +371,88 @@ var _ = SIGDescribe("Reservation", func() {
 				framework.ExpectNoError(err)
 				gomega.Expect(r.Status.NodeName).Should(gomega.Equal(pod.Spec.NodeName))
 			})
+		})
+
+		framework.ConformanceIt("select reservation via reservation affinity", func() {
+			ginkgo.By("Create reservation")
+			reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
+			framework.ExpectNoError(err, "unable to load reservation")
+			if reservation.Labels == nil {
+				reservation.Labels = map[string]string{}
+			}
+			reservation.Labels["e2e-select-reservation"] = "true"
+			_, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+			framework.ExpectNoError(err, "unable to create reservation")
+
+			ginkgo.By("Wait for reservation scheduled")
+			reservation = waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
+
+			ginkgo.By("Create pod that must be failed to schedule")
+
+			reservationAffinity := &apiext.ReservationAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &apiext.ReservationAffinitySelector{
+					ReservationSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "e2e-select-reservation",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"false"},
+								},
+							},
+						},
+					},
+				},
+			}
+			affinityData, err := json.Marshal(reservationAffinity)
+			framework.ExpectNoError(err, "failed to marshal reservation")
+
+			pod := createPausePod(f, pausePodConfig{
+				Name: string(uuid.NewUUID()),
+				Labels: map[string]string{
+					"app": "e2e-test-reservation",
+				},
+				Annotations: map[string]string{
+					apiext.AnnotationReservationAffinity: string(affinityData),
+				},
+				NodeName:      reservation.Status.NodeName,
+				SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
+			})
+			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+				_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+				return scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse, nil
+			}))
+
+			ginkgo.By("Create pod and wait for scheduled")
+			reservationAffinity = &apiext.ReservationAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &apiext.ReservationAffinitySelector{
+					ReservationSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "e2e-select-reservation",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
+								},
+							},
+						},
+					},
+				},
+			}
+			affinityData, err = json.Marshal(reservationAffinity)
+			framework.ExpectNoError(err, "failed to marshal reservation")
+			pod = createPausePod(f, pausePodConfig{
+				Name: string(uuid.NewUUID()),
+				Labels: map[string]string{
+					"app": "e2e-test-reservation",
+				},
+				Annotations: map[string]string{
+					apiext.AnnotationReservationAffinity: string(affinityData),
+				},
+				NodeName:      reservation.Status.NodeName,
+				SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
+			})
+			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, pod))
 		})
 
 		framework.ConformanceIt("validates PodAntiAffinity with reservation", func() {

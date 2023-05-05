@@ -17,6 +17,7 @@ limitations under the License.
 package reservation
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/pointer"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -500,4 +502,99 @@ func Test_restorePVCRefCounts(t *testing.T) {
 
 	restorePVCRefCounts(informerFactory, testNodeInfo, normalPod, []*reservationInfo{rInfo})
 	assert.Zero(t, testNodeInfo.PVCRefCounts["default/claim-with-rwop"])
+}
+
+func Test_matchReservation(t *testing.T) {
+	tests := []struct {
+		name                string
+		pod                 *corev1.Pod
+		reservation         *schedulingv1alpha1.Reservation
+		reservationAffinity *apiext.ReservationAffinity
+		want                bool
+	}{
+		{
+			name: "only match reservation owners",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "test",
+					},
+				},
+			},
+			reservation: &schedulingv1alpha1.Reservation{
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"app": "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "match reservation owners and match reservation affinity",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "test",
+					},
+				},
+			},
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"reservation-type": "reservation-test",
+					},
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"app": "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			reservationAffinity: &apiext.ReservationAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &apiext.ReservationAffinitySelector{
+					ReservationSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "reservation-type",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"reservation-test"},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.reservationAffinity != nil {
+				affinityData, err := json.Marshal(tt.reservationAffinity)
+				assert.NoError(t, err)
+				if tt.pod.Annotations == nil {
+					tt.pod.Annotations = map[string]string{}
+				}
+				tt.pod.Annotations[apiext.AnnotationReservationAffinity] = string(affinityData)
+			}
+			reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(tt.pod)
+			assert.NoError(t, err)
+			got := matchReservation(tt.pod, &corev1.Node{}, tt.reservation, reservationAffinity)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

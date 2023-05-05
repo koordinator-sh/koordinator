@@ -249,6 +249,17 @@ func TestPreFilter(t *testing.T) {
 			reservation: r,
 			want:        nil,
 		},
+		{
+			name: "failed to reservation affinity",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationReservationAffinity: `{"reservationSelector": {"reservation-type": "test"}}`,
+					},
+				},
+			},
+			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
