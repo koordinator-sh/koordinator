@@ -16,7 +16,12 @@ limitations under the License.
 
 package statesinformer
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+)
+
+type informerName string
 
 type PodMeta struct {
 	Pod       *corev1.Pod
@@ -28,4 +33,9 @@ func (in *PodMeta) DeepCopy() *PodMeta {
 	out.Pod = in.Pod.DeepCopy()
 	out.CgroupDir = in.CgroupDir
 	return out
+}
+
+type ContainerMeta struct {
+	Status *runtimeapi.ContainerStatus
+	PodUID string
 }

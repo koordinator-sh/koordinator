@@ -28,6 +28,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
 const (
@@ -97,7 +98,7 @@ func (m *MemoryEvictor) memoryEvict() {
 		return
 	}
 
-	node := m.resManager.statesInformer.GetNode()
+	node := m.resManager.statesInformer.(*statesinformer.StatesInformerImpl).GetNode()
 	if node == nil {
 		klog.Warningf("skip memory evict, Node %v is nil", m.resManager.nodeName)
 		return
@@ -159,7 +160,7 @@ func (m *MemoryEvictor) getSortedBEPodInfos(podMetrics []*metriccache.PodResourc
 	}
 
 	var bePodInfos []*podInfo
-	for _, podMeta := range m.resManager.statesInformer.GetAllPods() {
+	for _, podMeta := range m.resManager.statesInformer.(*statesinformer.StatesInformerImpl).GetAllPods() {
 		pod := podMeta.Pod
 		if extension.GetPodQoSClass(pod) == extension.QoSBE {
 			info := &podInfo{

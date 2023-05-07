@@ -37,7 +37,7 @@ import (
 )
 
 const (
-	podsInformerName pluginName = "podsInformer"
+	PodsInformerName pluginName = "podsInformer"
 )
 
 type podsInformer struct {
@@ -76,7 +76,7 @@ func NewPodsInformer() *podsInformer {
 func (s *podsInformer) Setup(ctx *pluginOption, states *pluginState) {
 	s.config = ctx.config
 
-	nodeInformerIf := states.informerPlugins[nodeInformerName]
+	nodeInformerIf := states.informerPlugins[NodeInformerName]
 	nodeInformer, ok := nodeInformerIf.(*nodeInformer)
 	if !ok {
 		klog.Fatalf("node informer format error")

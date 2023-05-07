@@ -50,7 +50,7 @@ import (
 )
 
 const (
-	nodeMetricInformerName pluginName = "nodeMetricInformer"
+	NodeMetricInformerName pluginName = "nodeMetricInformer"
 
 	// defaultAggregateDurationSeconds is the default metric aggregate duration by seconds
 	minAggregateDurationSeconds     = 60
@@ -126,7 +126,7 @@ func (r *nodeMetricInformer) Setup(ctx *pluginOption, state *pluginState) {
 	r.statusUpdater = newStatusUpdater(ctx.KoordClient.SloV1alpha1().NodeMetrics())
 
 	r.metricCache = state.metricCache
-	podsInformerIf := state.informerPlugins[podsInformerName]
+	podsInformerIf := state.informerPlugins[PodsInformerName]
 	podsInformer, ok := podsInformerIf.(*podsInformer)
 	if !ok {
 		klog.Fatalf("pods informer format error")

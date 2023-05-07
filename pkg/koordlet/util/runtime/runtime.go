@@ -84,7 +84,7 @@ func getContainerdHandler() (handler.ContainerRuntimeHandler, error) {
 		return ContainerdHandler, nil
 	}
 
-	unixEndpoint, err := getContainerdEndpoint()
+	unixEndpoint, err := GetContainerdEndpoint()
 	if err != nil {
 		klog.Errorf("failed to get containerd endpoint, error: %v", err)
 		return nil, err
@@ -99,7 +99,7 @@ func getContainerdHandler() (handler.ContainerRuntimeHandler, error) {
 	return ContainerdHandler, nil
 }
 
-func getContainerdEndpoint() (string, error) {
+func GetContainerdEndpoint() (string, error) {
 	if isFile(handler.ContainerdEndpoint1) {
 		return fmt.Sprintf("unix://%s", handler.ContainerdEndpoint1), nil
 	}

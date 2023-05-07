@@ -89,7 +89,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, err
 	}
 
-	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, nodeName, schedulingClient)
+	statesInformer := statesinformer.NewStatesInformerImpl(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, nodeName, schedulingClient)
 
 	// setup cgroup path formatter from cgroup driver type
 	var detectCgroupDriver system.CgroupDriverType

@@ -47,7 +47,7 @@ func generateQueryParam() *metriccache.QueryParam {
 	}
 }
 
-func (s *statesInformer) reportDevice() {
+func (s *StatesInformerImpl) reportDevice() {
 	node := s.GetNode()
 	gpuDevices := s.buildGPUDevice()
 	if len(gpuDevices) == 0 {
@@ -77,7 +77,7 @@ func (s *statesInformer) reportDevice() {
 	}
 }
 
-func (s *statesInformer) buildBasicDevice(node *corev1.Node) *schedulingv1alpha1.Device {
+func (s *StatesInformerImpl) buildBasicDevice(node *corev1.Node) *schedulingv1alpha1.Device {
 	blocker := true
 	device := &schedulingv1alpha1.Device{
 		ObjectMeta: metav1.ObjectMeta{
@@ -98,7 +98,7 @@ func (s *statesInformer) buildBasicDevice(node *corev1.Node) *schedulingv1alpha1
 	return device
 }
 
-func (s *statesInformer) fillGPUDevice(device *schedulingv1alpha1.Device,
+func (s *StatesInformerImpl) fillGPUDevice(device *schedulingv1alpha1.Device,
 	gpuDevices []schedulingv1alpha1.DeviceInfo, gpuModel string, gpuDriverVer string) {
 
 	device.Spec.Devices = append(device.Spec.Devices, gpuDevices...)
@@ -113,12 +113,12 @@ func (s *statesInformer) fillGPUDevice(device *schedulingv1alpha1.Device,
 	}
 }
 
-func (s *statesInformer) createDevice(device *schedulingv1alpha1.Device) error {
+func (s *StatesInformerImpl) createDevice(device *schedulingv1alpha1.Device) error {
 	_, err := s.deviceClient.Create(context.TODO(), device, metav1.CreateOptions{})
 	return err
 }
 
-func (s *statesInformer) updateDevice(device *schedulingv1alpha1.Device) error {
+func (s *StatesInformerImpl) updateDevice(device *schedulingv1alpha1.Device) error {
 	sorter := func(devices []schedulingv1alpha1.DeviceInfo) {
 		sort.Slice(devices, func(i, j int) bool {
 			return *(devices[i].Minor) < *(devices[j].Minor)
@@ -147,7 +147,7 @@ func (s *statesInformer) updateDevice(device *schedulingv1alpha1.Device) error {
 	})
 }
 
-func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
+func (s *StatesInformerImpl) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
 	queryParam := generateQueryParam()
 	nodeResource := s.metricsCache.GetNodeResourceMetric(queryParam)
 	if nodeResource.Error != nil {
@@ -182,7 +182,7 @@ func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
 	return deviceInfos
 }
 
-func (s *statesInformer) initGPU() bool {
+func (s *StatesInformerImpl) initGPU() bool {
 	if ret := nvml.Init(); ret != nvml.SUCCESS {
 		if ret == nvml.ERROR_LIBRARY_NOT_FOUND {
 			klog.Warning("nvml init failed, library not found")
@@ -194,7 +194,7 @@ func (s *statesInformer) initGPU() bool {
 	return true
 }
 
-func (s *statesInformer) getGPUDriverAndModel() (string, string) {
+func (s *StatesInformerImpl) getGPUDriverAndModel() (string, string) {
 	count, ret := nvml.DeviceGetCount()
 	if ret != nvml.SUCCESS {
 		klog.Errorf("unable to get device count: %v", nvml.ErrorString(ret))
@@ -252,7 +252,7 @@ func (s *statesInformer) getGPUDriverAndModel() (string, string) {
 	return transModel, driverVersion
 }
 
-func (s *statesInformer) gpuHealCheck(stopCh <-chan struct{}) {
+func (s *StatesInformerImpl) gpuHealCheck(stopCh <-chan struct{}) {
 	count, ret := nvml.DeviceGetCount()
 	if ret != nvml.SUCCESS {
 		klog.Errorf("unable to get device count: %v", nvml.ErrorString(ret))

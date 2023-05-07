@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	nodeSLOInformerName pluginName = "nodeSLOInformer"
+	NodeSLOInformerName pluginName = "nodeSLOInformer"
 )
 
 type nodeSLOInformer struct {

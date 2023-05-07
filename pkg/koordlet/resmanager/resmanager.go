@@ -70,7 +70,7 @@ type resmanager struct {
 }
 
 func (r *resmanager) getNodeSLOCopy() *slov1alpha1.NodeSLO {
-	return r.statesInformer.GetNodeSLO()
+	return r.statesInformer.(*statesinformer.StatesInformerImpl).GetNodeSLO()
 }
 
 func NewResManager(cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.Interface, crdClient *koordclientset.Clientset, nodeName string,

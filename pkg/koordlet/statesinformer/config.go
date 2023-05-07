@@ -27,6 +27,8 @@ type Config struct {
 	KubeletPreferredAddressType string
 	KubeletSyncInterval         time.Duration
 	KubeletSyncTimeout          time.Duration
+	CRISyncInterval             time.Duration
+	CRISyncTimeout              time.Duration
 	InsecureKubeletTLS          bool
 	KubeletReadOnlyPort         uint
 	NodeTopologySyncInterval    time.Duration
@@ -40,6 +42,8 @@ func NewDefaultConfig() *Config {
 		KubeletPreferredAddressType: string(corev1.NodeInternalIP),
 		KubeletSyncInterval:         10 * time.Second,
 		KubeletSyncTimeout:          3 * time.Second,
+		CRISyncInterval:             10 * time.Second,
+		CRISyncTimeout:              3 * time.Second,
 		InsecureKubeletTLS:          false,
 		KubeletReadOnlyPort:         10255,
 		NodeTopologySyncInterval:    3 * time.Second,
@@ -52,6 +56,8 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.KubeletPreferredAddressType, "kubelet-preferred-address-type", c.KubeletPreferredAddressType, "The node address types to use when determining which address to use to connect to a particular node.")
 	fs.DurationVar(&c.KubeletSyncInterval, "kubelet-sync-interval", c.KubeletSyncInterval, "The interval at which Koordlet will retain data from Kubelet. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.KubeletSyncTimeout, "kubelet-sync-timeout", c.KubeletSyncTimeout, "The length of time to wait before giving up on a single request to Kubelet. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
+	fs.DurationVar(&c.CRISyncInterval, "cri-sync-interval", c.CRISyncInterval, "The interval at which Koordlet will retain data from CRI. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
+	fs.DurationVar(&c.CRISyncTimeout, "cri-sync-timeout", c.CRISyncTimeout, "The length of time to wait before giving up on a single request to CRI. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.BoolVar(&c.InsecureKubeletTLS, "kubelet-insecure-tls", c.InsecureKubeletTLS, "Using read-only port to communicate with Kubelet. For testing purposes only, not recommended for production use.")
 	fs.UintVar(&c.KubeletReadOnlyPort, "kubelet-read-only-port", c.KubeletReadOnlyPort, "The read-only port for the kubelet to serve on with no authentication/authorization. Default: 10255.")
 	fs.DurationVar(&c.NodeTopologySyncInterval, "node-topology-sync-interval", c.NodeTopologySyncInterval, "The interval which Koordlet will report the node topology info, include cpu and gpu")

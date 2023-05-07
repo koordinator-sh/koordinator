@@ -19,18 +19,18 @@ limitations under the License.
 
 package statesinformer
 
-func (s *statesInformer) reportDevice() {
+func (s *StatesInformerImpl) reportDevice() {
 	return
 }
 
-func (s *statesInformer) initGPU() bool {
+func (s *StatesInformerImpl) initGPU() bool {
 	return false
 }
 
-func (s *statesInformer) gpuHealCheck(stopCh <-chan struct{}) {
+func (s *StatesInformerImpl) gpuHealCheck(stopCh <-chan struct{}) {
 	return
 }
 
-func (s *statesInformer) getGPUDriverAndModel() (string, string) {
+func (s *StatesInformerImpl) getGPUDriverAndModel() (string, string) {
 	return "", ""
 }

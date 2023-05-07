@@ -153,7 +153,7 @@ func (b *beResourceCollector) getBECPURealMilliLimit() (int, error) {
 
 func (b *beResourceCollector) getBECPURequestSum() resource.Quantity {
 	requestSum := int64(0)
-	for _, podMeta := range b.statesInformer.GetAllPods() {
+	for _, podMeta := range b.statesInformer.(*statesinformer.StatesInformerImpl).GetAllPods() {
 		pod := podMeta.Pod
 		if apiext.GetPodQoSClass(pod) == apiext.QoSBE {
 			podCPUReq := util.GetPodBEMilliCPURequest(pod)

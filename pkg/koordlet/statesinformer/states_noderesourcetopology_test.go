@@ -115,9 +115,9 @@ func Test_nodeResourceTopology_NewAndSetup(t *testing.T) {
 				},
 				state: &pluginState{
 					metricCache: mock_metriccache.NewMockMetricCache(ctrl),
-					informerPlugins: map[pluginName]informerPlugin{
-						podsInformerName: NewPodsInformer(),
-						nodeInformerName: NewNodeInformer(),
+					informerPlugins: map[pluginName]InformerPlugin{
+						PodsInformerName: NewPodsInformer(),
+						NodeInformerName: NewNodeInformer(),
 					},
 				},
 			},

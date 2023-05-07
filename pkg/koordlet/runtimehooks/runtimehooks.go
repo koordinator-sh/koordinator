@@ -38,7 +38,7 @@ type RuntimeHook interface {
 }
 
 type runtimeHook struct {
-	statesInformer statesinformer.StatesInformer
+	statesInformer statesinformer.InformerGetter
 	server         proxyserver.Server
 	reconciler     reconciler.Reconciler
 	executor       resourceexecutor.ResourceUpdateExecutor
@@ -62,7 +62,7 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
-func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook, error) {
+func NewRuntimeHook(si statesinformer.InformerGetter, cfg *Config) (RuntimeHook, error) {
 	failurePolicy, err := config.GetFailurePolicyType(cfg.RuntimeHooksFailurePolicy)
 	if err != nil {
 		return nil, err
@@ -102,10 +102,10 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		executor:       e,
 	}
 	registerPlugins(newPluginOptions)
-	si.RegisterCallbacks(statesinformer.RegisterTypeNodeSLOSpec, "runtime-hooks-rule-node-slo",
+	si.GetInformer(statesinformer.StatesInformerName).RegisterCallbacks(statesinformer.RegisterTypeNodeSLOSpec, "runtime-hooks-rule-node-slo",
 		"Update hooks rule can run callbacks if NodeSLO spec update",
 		rule.UpdateRules)
-	si.RegisterCallbacks(statesinformer.RegisterTypeNodeTopology, "runtime-hooks-rule-node-topo",
+	si.GetInformer(statesinformer.ContainerInformerName).RegisterCallbacks(statesinformer.RegisterTypeNodeTopology, "runtime-hooks-rule-node-topo",
 		"Update hooks rule if NodeTopology infor update",
 		rule.UpdateRules)
 	if err := s.Setup(); err != nil {

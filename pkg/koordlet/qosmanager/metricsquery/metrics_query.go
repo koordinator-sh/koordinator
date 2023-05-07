@@ -45,7 +45,7 @@ type MetricsQuery interface {
 var _ MetricsQuery = &metricsQuery{}
 
 // NewMetricsQuery creates an instance which implements interface MetricsQuery.
-func NewMetricsQuery(metricCache metriccache.MetricCache, statesInformer statesinformer.StatesInformer) MetricsQuery {
+func NewMetricsQuery(metricCache metriccache.MetricCache, statesInformer statesinformer.InformerGetter) MetricsQuery {
 	return &metricsQuery{
 		metricCache:    metricCache,
 		statesInformer: statesInformer,
@@ -54,7 +54,7 @@ func NewMetricsQuery(metricCache metriccache.MetricCache, statesInformer statesi
 
 type metricsQuery struct {
 	metricCache    metriccache.MetricCache
-	statesInformer statesinformer.StatesInformer
+	statesInformer statesinformer.InformerGetter
 }
 
 // CollectNodeMetricsAvg impl plugins.MetricQuery interface.
@@ -79,7 +79,7 @@ func (r *metricsQuery) CollectNodeAndPodMetrics(queryParam *metriccache.QueryPar
 	nodeQueryResult := r.collectNodeMetric(queryParam)
 	nodeMetric := nodeQueryResult.Metric
 
-	podsMeta := r.statesInformer.GetAllPods()
+	podsMeta := r.statesInformer.GetInformer(statesinformer.StatesInformerName).GetAllPods()
 	podsMetrics := make([]*metriccache.PodResourceMetric, 0, len(podsMeta))
 	for _, podMeta := range podsMeta {
 		podQueryResult := r.CollectPodMetric(podMeta, queryParam)

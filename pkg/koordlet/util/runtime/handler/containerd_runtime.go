@@ -51,7 +51,7 @@ func NewContainerdRuntimeHandler(endpoint string) (ContainerRuntimeHandler, erro
 		return nil, err
 	}
 
-	client, err := getRuntimeClient(endpoint)
+	client, err := GetRuntimeClient(endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func (c *ContainerdRuntimeHandler) UpdateContainerResources(containerID string, 
 	return err
 }
 
-func getRuntimeClient(endpoint string) (runtimeapi.RuntimeServiceClient, error) {
+func GetRuntimeClient(endpoint string) (runtimeapi.RuntimeServiceClient, error) {
 	conn, err := getClientConnection(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %v", err)

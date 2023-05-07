@@ -114,7 +114,7 @@ func (s *callbackRunner) runCallbacks(objType RegisterType, obj interface{}) {
 		klog.Errorf("states informer callbacks type %v not exist", objType.String())
 		return
 	}
-	pods := s.statesInformer.GetAllPods()
+	pods := s.statesInformer.(*StatesInformerImpl).GetAllPods()
 	for _, c := range callbacks {
 		klog.V(5).Infof("start running callback function %v for type %v", c.name, objType.String())
 		c.fn(objType, obj, pods)
@@ -146,7 +146,7 @@ func (s *callbackRunner) Start(stopCh <-chan struct{}) {
 func (s *callbackRunner) getObjByType(objType RegisterType, cbCtx UpdateCbCtx) interface{} {
 	switch objType {
 	case RegisterTypeNodeSLOSpec:
-		nodeSLO := s.statesInformer.GetNodeSLO()
+		nodeSLO := s.statesInformer.(*StatesInformerImpl).GetNodeSLO()
 		if nodeSLO != nil {
 			return &nodeSLO.Spec
 		}
@@ -154,7 +154,7 @@ func (s *callbackRunner) getObjByType(objType RegisterType, cbCtx UpdateCbCtx) i
 	case RegisterTypeAllPods:
 		return &struct{}{}
 	case RegisterTypeNodeTopology:
-		return s.statesInformer.GetNodeTopo()
+		return s.statesInformer.(*StatesInformerImpl).GetNodeTopo()
 	}
 	return nil
 }

@@ -69,10 +69,10 @@ func Test_statesInformer_GetNode(t *testing.T) {
 			nodeInformer := &nodeInformer{
 				node: tt.fields.node,
 			}
-			s := &statesInformer{
+			s := &StatesInformerImpl{
 				states: &pluginState{
-					informerPlugins: map[pluginName]informerPlugin{
-						nodeInformerName: nodeInformer,
+					informerPlugins: map[pluginName]InformerPlugin{
+						NodeInformerName: nodeInformer,
 					},
 				},
 			}
@@ -115,10 +115,10 @@ func Test_statesInformer_GetNodeSLO(t *testing.T) {
 			nodeSLOInformer := &nodeSLOInformer{
 				nodeSLO: tt.fields.nodeSLO,
 			}
-			s := &statesInformer{
+			s := &StatesInformerImpl{
 				states: &pluginState{
-					informerPlugins: map[pluginName]informerPlugin{
-						nodeSLOInformerName: nodeSLOInformer,
+					informerPlugins: map[pluginName]InformerPlugin{
+						NodeSLOInformerName: nodeSLOInformer,
 					},
 				},
 			}
@@ -161,10 +161,10 @@ func Test_statesInformer_GetNodeTopo(t *testing.T) {
 			nodeTopoInformer := &nodeTopoInformer{
 				nodeTopology: tt.fields.nodeTopo,
 			}
-			s := &statesInformer{
+			s := &StatesInformerImpl{
 				states: &pluginState{
-					informerPlugins: map[pluginName]informerPlugin{
-						nodeTopoInformerName: nodeTopoInformer,
+					informerPlugins: map[pluginName]InformerPlugin{
+						NodeTopoInformerName: nodeTopoInformer,
 					},
 				},
 			}
@@ -217,10 +217,10 @@ func Test_statesInformer_GetAllPods(t *testing.T) {
 			podsInformer := &podsInformer{
 				podMap: tt.fields.podMap,
 			}
-			s := &statesInformer{
+			s := &StatesInformerImpl{
 				states: &pluginState{
-					informerPlugins: map[pluginName]informerPlugin{
-						podsInformerName: podsInformer,
+					informerPlugins: map[pluginName]InformerPlugin{
+						PodsInformerName: podsInformer,
 					},
 				},
 			}
@@ -276,12 +276,11 @@ func Test_statesInformer_Run(t *testing.T) {
 			}).AnyTimes()
 			nodeName := tt.fields.node.Name
 			schedClient := &fakeschedv1alpha1.FakeSchedulingV1alpha1{}
-			si := NewStatesInformer(tt.fields.config, kubeClient, koordClient, topoClient, metricCache, nodeName, schedClient)
-			s := si.(*statesInformer)
+			s := NewStatesInformerImpl(tt.fields.config, kubeClient, koordClient, topoClient, metricCache, nodeName, schedClient)
 			// pods informer needs a fake kubelet stub
-			delete(s.states.informerPlugins, podsInformerName)
-			delete(s.states.informerPlugins, nodeTopoInformerName)
-			delete(s.states.informerPlugins, nodeMetricInformerName)
+			delete(s.states.informerPlugins, PodsInformerName)
+			delete(s.states.informerPlugins, NodeTopoInformerName)
+			delete(s.states.informerPlugins, NodeMetricInformerName)
 			stopChannel := make(chan struct{}, 1)
 			go wait.Until(func() {
 				if s.started.Load() {

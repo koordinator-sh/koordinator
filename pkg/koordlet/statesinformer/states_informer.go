@@ -39,21 +39,15 @@ import (
 )
 
 const (
-	HTTPScheme  = "http"
-	HTTPSScheme = "https"
+	HTTPScheme                          = "http"
+	HTTPSScheme                         = "https"
+	StatesInformerImplName informerName = "StatesInformerImpl"
 )
 
 type StatesInformer interface {
 	Run(stopCh <-chan struct{}) error
 	HasSynced() bool
-
-	GetNode() *corev1.Node
-	GetNodeSLO() *slov1alpha1.NodeSLO
-
-	GetAllPods() []*PodMeta
-
-	GetNodeTopo() *topov1alpha1.NodeResourceTopology
-
+	GetInformerPlugin(name pluginName) (InformerPlugin, error)
 	RegisterCallbacks(objType RegisterType, name, description string, callbackFn UpdateCbFn)
 }
 
@@ -70,12 +64,12 @@ type pluginOption struct {
 type pluginState struct {
 	metricCache     metriccache.MetricCache
 	callbackRunner  *callbackRunner
-	informerPlugins map[pluginName]informerPlugin
+	informerPlugins map[pluginName]InformerPlugin
 }
 
 type GetGPUDriverAndModelFunc func() (string, string)
 
-type statesInformer struct {
+type StatesInformerImpl struct {
 	// TODO refactor device as plugin
 	config       *Config
 	metricsCache metriccache.MetricCache
@@ -90,14 +84,14 @@ type statesInformer struct {
 	getGPUDriverAndModelFunc GetGPUDriverAndModelFunc
 }
 
-type informerPlugin interface {
+type InformerPlugin interface {
 	Setup(ctx *pluginOption, state *pluginState)
 	Start(stopCh <-chan struct{})
 	HasSynced() bool
 }
 
 // TODO merge all clients into one struct
-func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient topologyclientset.Interface, metricsCache metriccache.MetricCache, nodeName string, schedulingClient schedv1alpha1.SchedulingV1alpha1Interface) StatesInformer {
+func NewStatesInformerImpl(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient topologyclientset.Interface, metricsCache metriccache.MetricCache, nodeName string, schedulingClient schedv1alpha1.SchedulingV1alpha1Interface) *StatesInformerImpl {
 	opt := &pluginOption{
 		config:      config,
 		KubeClient:  kubeClient,
@@ -107,10 +101,10 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 	}
 	stat := &pluginState{
 		metricCache:     metricsCache,
-		informerPlugins: map[pluginName]informerPlugin{},
+		informerPlugins: map[pluginName]InformerPlugin{},
 		callbackRunner:  NewCallbackRunner(),
 	}
-	s := &statesInformer{
+	s := &StatesInformerImpl{
 		config:       config,
 		metricsCache: metricsCache,
 		deviceClient: schedulingClient.Devices(),
@@ -125,16 +119,16 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 	return s
 }
 
-func (s *statesInformer) setupPlugins() {
+func (s *StatesInformerImpl) setupPlugins() {
 	for name, plugin := range s.states.informerPlugins {
 		plugin.Setup(s.option, s.states)
 		klog.V(2).Infof("plugin %v has been setup", name)
 	}
 }
 
-func (s *statesInformer) Run(stopCh <-chan struct{}) error {
+func (s *StatesInformerImpl) Run(stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	klog.V(2).Infof("setup statesInformer")
+	klog.V(2).Infof("setup StatesInformerImpl")
 
 	klog.V(2).Infof("starting callback runner")
 	s.states.callbackRunner.Setup(s)
@@ -166,7 +160,7 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
-func (s *statesInformer) waitForSyncFunc() []cache.InformerSynced {
+func (s *StatesInformerImpl) waitForSyncFunc() []cache.InformerSynced {
 	waitInformersSynced := make([]cache.InformerSynced, 0, len(s.states.informerPlugins))
 	for _, p := range s.states.informerPlugins {
 		waitInformersSynced = append(waitInformersSynced, p.HasSynced)
@@ -174,14 +168,21 @@ func (s *statesInformer) waitForSyncFunc() []cache.InformerSynced {
 	return waitInformersSynced
 }
 
-func (s *statesInformer) startPlugins(stopCh <-chan struct{}) {
+func (s *StatesInformerImpl) startPlugins(stopCh <-chan struct{}) {
 	for name, p := range s.states.informerPlugins {
 		klog.V(4).Infof("starting informer plugin %v", name)
 		go p.Start(stopCh)
 	}
 }
 
-func (s *statesInformer) HasSynced() bool {
+func (s *StatesInformerImpl) GetInformerPlugin(name pluginName) (InformerPlugin, error) {
+	if plugin, ok := s.states.informerPlugins[name]; ok {
+		return plugin, nil
+	}
+	return nil, fmt.Errorf("plugin: %s not exist in states informer", name)
+}
+
+func (s *StatesInformerImpl) HasSynced() bool {
 	for _, p := range s.states.informerPlugins {
 		if !p.HasSynced() {
 			return false
@@ -190,8 +191,8 @@ func (s *statesInformer) HasSynced() bool {
 	return true
 }
 
-func (s *statesInformer) GetNode() *corev1.Node {
-	nodeInformerIf := s.states.informerPlugins[nodeInformerName]
+func (s *StatesInformerImpl) GetNode() *corev1.Node {
+	nodeInformerIf := s.states.informerPlugins[NodeInformerName]
 	nodeInformer, ok := nodeInformerIf.(*nodeInformer)
 	if !ok {
 		klog.Fatalf("node informer format error")
@@ -199,8 +200,8 @@ func (s *statesInformer) GetNode() *corev1.Node {
 	return nodeInformer.GetNode()
 }
 
-func (s *statesInformer) GetNodeSLO() *slov1alpha1.NodeSLO {
-	nodeSLOInformerIf := s.states.informerPlugins[nodeSLOInformerName]
+func (s *StatesInformerImpl) GetNodeSLO() *slov1alpha1.NodeSLO {
+	nodeSLOInformerIf := s.states.informerPlugins[NodeSLOInformerName]
 	nodeSLOInformer, ok := nodeSLOInformerIf.(*nodeSLOInformer)
 	if !ok {
 		klog.Fatalf("node slo informer format error")
@@ -208,8 +209,8 @@ func (s *statesInformer) GetNodeSLO() *slov1alpha1.NodeSLO {
 	return nodeSLOInformer.GetNodeSLO()
 }
 
-func (s *statesInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology {
-	nodeTopoInformerIf := s.states.informerPlugins[nodeTopoInformerName]
+func (s *StatesInformerImpl) GetNodeTopo() *topov1alpha1.NodeResourceTopology {
+	nodeTopoInformerIf := s.states.informerPlugins[NodeTopoInformerName]
 	nodeTopoInformer, ok := nodeTopoInformerIf.(*nodeTopoInformer)
 	if !ok {
 		klog.Fatalf("node topo informer format error")
@@ -217,8 +218,8 @@ func (s *statesInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology {
 	return nodeTopoInformer.GetNodeTopo()
 }
 
-func (s *statesInformer) GetAllPods() []*PodMeta {
-	podsInformerIf := s.states.informerPlugins[podsInformerName]
+func (s *StatesInformerImpl) GetAllPods() []*PodMeta {
+	podsInformerIf := s.states.informerPlugins[PodsInformerName]
 	podsInformer, ok := podsInformerIf.(*podsInformer)
 	if !ok {
 		klog.Fatalf("pods informer format error")
@@ -226,6 +227,6 @@ func (s *statesInformer) GetAllPods() []*PodMeta {
 	return podsInformer.GetAllPods()
 }
 
-func (s *statesInformer) RegisterCallbacks(rType RegisterType, name, description string, callbackFn UpdateCbFn) {
+func (s *StatesInformerImpl) RegisterCallbacks(rType RegisterType, name, description string, callbackFn UpdateCbFn) {
 	s.states.callbackRunner.RegisterCallbacks(rType, name, description, callbackFn)
 }

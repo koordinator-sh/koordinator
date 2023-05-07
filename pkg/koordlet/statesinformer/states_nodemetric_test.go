@@ -768,8 +768,8 @@ func Test_nodeMetricInformer_NewAndSetup(t *testing.T) {
 				},
 				state: &pluginState{
 					metricCache: mockmetriccache.NewMockMetricCache(ctrl),
-					informerPlugins: map[pluginName]informerPlugin{
-						podsInformerName: NewPodsInformer(),
+					informerPlugins: map[pluginName]InformerPlugin{
+						PodsInformerName: NewPodsInformer(),
 					},
 				},
 			},

@@ -41,7 +41,7 @@ type QoSManager interface {
 }
 
 func NewQosManager(cfg *config.Config, schema *apiruntime.Scheme, kubeClient kubernetes.Interface, nodeName string,
-	statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache) QoSManager {
+	statesInformer statesinformer.InformerGetter, metricCache metriccache.MetricCache) QoSManager {
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})

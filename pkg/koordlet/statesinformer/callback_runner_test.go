@@ -73,13 +73,13 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 					RegisterTypeAllPods:      {},
 					RegisterTypeNodeTopology: {},
 				},
-				statesInformer: &statesInformer{
+				statesInformer: &StatesInformerImpl{
 					states: &pluginState{
-						informerPlugins: map[pluginName]informerPlugin{
-							nodeSLOInformerName: &nodeSLOInformer{
+						informerPlugins: map[pluginName]InformerPlugin{
+							NodeSLOInformerName: &nodeSLOInformer{
 								nodeSLO: &slov1alpha1.NodeSLO{},
 							},
-							podsInformerName: &podsInformer{
+							PodsInformerName: &podsInformer{
 								podMap: map[string]*PodMeta{},
 							},
 						},
@@ -141,14 +141,14 @@ func Test_statesInformer_startCallbackRunners(t *testing.T) {
 					tt.args.objType: {},
 				},
 			}
-			si := &statesInformer{
+			si := &StatesInformerImpl{
 				states: &pluginState{
 					callbackRunner: cr,
-					informerPlugins: map[pluginName]informerPlugin{
-						nodeSLOInformerName: &nodeSLOInformer{
+					informerPlugins: map[pluginName]InformerPlugin{
+						NodeSLOInformerName: &nodeSLOInformer{
 							nodeSLO: tt.args.nodeSLO,
 						},
-						podsInformerName: &podsInformer{
+						PodsInformerName: &podsInformer{
 							podMap: map[string]*PodMeta{},
 						},
 					},

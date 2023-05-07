@@ -53,7 +53,7 @@ import (
 )
 
 const (
-	nodeTopoInformerName pluginName = "nodeTopoInformer"
+	NodeTopoInformerName pluginName = "nodeTopoInformer"
 )
 
 type nodeTopoInformer struct {
@@ -92,14 +92,14 @@ func (s *nodeTopoInformer) Setup(ctx *pluginOption, state *pluginState) {
 	s.nodeResourceTopologyInformer = newNodeResourceTopologyInformer(ctx.TopoClient, ctx.NodeName)
 	s.nodeResourceTopologyLister = topologylister.NewNodeResourceTopologyLister(s.nodeResourceTopologyInformer.GetIndexer())
 
-	nodeInformerIf := state.informerPlugins[nodeInformerName]
+	nodeInformerIf := state.informerPlugins[NodeInformerName]
 	nodeInformer, ok := nodeInformerIf.(*nodeInformer)
 	if !ok {
 		klog.Fatalf("node informer format error")
 	}
 	s.nodeInformer = nodeInformer
 
-	podsInformerIf := state.informerPlugins[podsInformerName]
+	podsInformerIf := state.informerPlugins[PodsInformerName]
 	podsInformer, ok := podsInformerIf.(*podsInformer)
 	if !ok {
 		klog.Fatalf("pods informer format error")
