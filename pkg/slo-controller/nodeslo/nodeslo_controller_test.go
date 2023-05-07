@@ -68,12 +68,12 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 	clientgoscheme.AddToScheme(scheme)
 	slov1alpha1.AddToScheme(scheme)
 	testingResourceThresholdStrategy := sloconfig.DefaultResourceThresholdStrategy()
-	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
+	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64(60)
 	testingResourceQOSStrategyOld := &slov1alpha1.ResourceQOSStrategy{
 		BEClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
 				CPUQOS: slov1alpha1.CPUQOS{
-					GroupIdentity: pointer.Int64Ptr(0),
+					GroupIdentity: pointer.Int64(0),
 				},
 			},
 		},
@@ -82,7 +82,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 		BEClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
 				CPUQOS: slov1alpha1.CPUQOS{
-					GroupIdentity: pointer.Int64Ptr(0),
+					GroupIdentity: pointer.Int64(0),
 				},
 			},
 		},
@@ -319,23 +319,23 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 		},
 	}
 	testingResourceThresholdStrategy := sloconfig.DefaultResourceThresholdStrategy()
-	testingResourceThresholdStrategy.Enable = pointer.BoolPtr(true)
-	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
+	testingResourceThresholdStrategy.Enable = pointer.Bool(true)
+	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64(60)
 	testingResourceQOSStrategy := &slov1alpha1.ResourceQOSStrategy{
 		BEClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
 				CPUQOS: slov1alpha1.CPUQOS{
-					GroupIdentity: pointer.Int64Ptr(0),
+					GroupIdentity: pointer.Int64(0),
 				},
 			},
 		},
 	}
 
 	testingCPUBurstStrategy := sloconfig.DefaultCPUBurstStrategy()
-	testingCPUBurstStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64Ptr(60)
+	testingCPUBurstStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64(60)
 
 	testingSystemStrategy := sloconfig.DefaultSystemStrategy()
-	testingSystemStrategy.MinFreeKbytesFactor = pointer.Int64Ptr(150)
+	testingSystemStrategy.MinFreeKbytesFactor = pointer.Int64(150)
 
 	testingExtensionsMap := *getDefaultExtensionStrategy()
 	testingExtensionsIfMap, err := getExtensionsIfMap(testingExtensionsMap)

@@ -63,7 +63,7 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testVar := pointer.BoolPtr(false)
+			testVar := pointer.Bool(false)
 			callbackFn := func(t RegisterType, obj interface{}, pods []*PodMeta) {
 				*testVar = true
 			}

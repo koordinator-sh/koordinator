@@ -117,9 +117,9 @@ func Test_genPodBurstConfigWithPlugin(t *testing.T) {
 			},
 			want: &slov1alpha1.CPUBurstConfig{
 				Policy:                     slov1alpha1.CPUBurstAuto,
-				CPUBurstPercent:            pointer.Int64Ptr(1000),
-				CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-				CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(-1),
+				CPUBurstPercent:            pointer.Int64(1000),
+				CFSQuotaBurstPercent:       pointer.Int64(300),
+				CFSQuotaBurstPeriodSeconds: pointer.Int64(-1),
 			},
 		},
 	}

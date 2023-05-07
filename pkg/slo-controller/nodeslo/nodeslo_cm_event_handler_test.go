@@ -62,21 +62,21 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 	}
 
 	expectTestingCfg1 := oldSLOCfg.DeepCopy()
-	expectTestingCfg1.ThresholdCfgMerged.ClusterStrategy.Enable = pointer.BoolPtr(true)
-	expectTestingCfg1.ThresholdCfgMerged.ClusterStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(60)
+	expectTestingCfg1.ThresholdCfgMerged.ClusterStrategy.Enable = pointer.Bool(true)
+	expectTestingCfg1.ThresholdCfgMerged.ClusterStrategy.CPUSuppressThresholdPercent = pointer.Int64(60)
 
 	expectTestingCfg1.ResourceQOSCfgMerged.ClusterStrategy = &slov1alpha1.ResourceQOSStrategy{
 		BEClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
 				CPUQOS: slov1alpha1.CPUQOS{
-					GroupIdentity: pointer.Int64Ptr(0),
+					GroupIdentity: pointer.Int64(0),
 				},
 			},
 		},
 	}
 
-	expectTestingCfg1.CPUBurstCfgMerged.ClusterStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64Ptr(60)
-	expectTestingCfg1.SystemCfgMerged.ClusterStrategy.MinFreeKbytesFactor = pointer.Int64Ptr(150)
+	expectTestingCfg1.CPUBurstCfgMerged.ClusterStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64(60)
+	expectTestingCfg1.SystemCfgMerged.ClusterStrategy.MinFreeKbytesFactor = pointer.Int64(150)
 
 	type fields struct {
 		oldCfg *sLOCfgCache

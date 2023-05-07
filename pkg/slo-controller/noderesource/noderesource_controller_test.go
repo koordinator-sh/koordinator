@@ -97,12 +97,12 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 			available: true,
 			cfg: extension.ColocationCfg{
 				ColocationStrategy: extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 			},
 		},
@@ -139,12 +139,12 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 			available: true,
 			cfg: extension.ColocationCfg{
 				ColocationStrategy: extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 			},
 		},
@@ -197,7 +197,7 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	assert.Equal(t, int64(65000), batchCPU)
 
 	// reset node resources
-	r.cfgCache.GetCfgCopy().Enable = pointer.BoolPtr(false)
+	r.cfgCache.GetCfgCopy().Enable = pointer.Bool(false)
 	result, err = r.Reconcile(ctx, nodeReq)
 	assert.NoError(t, err)
 	assert.Equal(t, false, result.Requeue)

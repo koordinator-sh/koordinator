@@ -1177,7 +1177,7 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		CgroupDir: "kubepods.slice/p0",
 	}
 	testQOSStrategy := sloconfig.DefaultResourceQOSStrategy()
-	testQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.BoolPtr(true)
+	testQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.Bool(true)
 
 	t.Run("test", func(t *testing.T) {
 		// initialization

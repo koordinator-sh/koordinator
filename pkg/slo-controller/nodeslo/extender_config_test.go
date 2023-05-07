@@ -103,7 +103,7 @@ func TestExtensionsCfgMap_DeepCopy(t *testing.T) {
 		TestBoolVal *bool
 	}
 	testExtensionCfg := extension.ExtensionCfg{ClusterStrategy: testExtStruct{
-		TestBoolVal: pointer.BoolPtr(true),
+		TestBoolVal: pointer.Bool(true),
 	}}
 	testingExtensionCfgMap := extension.ExtensionCfgMap{}
 	testingExtensionCfgMap.Object = map[string]extension.ExtensionCfg{

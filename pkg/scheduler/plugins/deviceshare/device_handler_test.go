@@ -217,7 +217,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
 							UUID:   string(uuid.NewUUID()),
-							Minor:  pointer.Int32Ptr(1),
+							Minor:  pointer.Int32(1),
 							Health: true,
 							Type:   schedulingv1alpha1.GPU,
 							Resources: corev1.ResourceList{
@@ -294,7 +294,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
 							UUID:  string(uuid.NewUUID()),
-							Minor: pointer.Int32Ptr(1),
+							Minor: pointer.Int32(1),
 							Type:  schedulingv1alpha1.GPU,
 							Resources: corev1.ResourceList{
 								apiext.ResourceGPUCore:        resource.MustParse("100"),
@@ -304,7 +304,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 						},
 						{
 							UUID:  string(uuid.NewUUID()),
-							Minor: pointer.Int32Ptr(1),
+							Minor: pointer.Int32(1),
 							Type:  schedulingv1alpha1.FPGA,
 							Resources: corev1.ResourceList{
 								apiext.ResourceFPGA: resource.MustParse("100"),
@@ -388,7 +388,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
 							UUID:   string(uuid.NewUUID()),
-							Minor:  pointer.Int32Ptr(1),
+							Minor:  pointer.Int32(1),
 							Health: true,
 							Type:   schedulingv1alpha1.GPU,
 							Resources: corev1.ResourceList{
@@ -504,7 +504,7 @@ func generateFakeDevice() *schedulingv1alpha1.Device {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   string(uuid.NewUUID()),
-					Minor:  pointer.Int32Ptr(1),
+					Minor:  pointer.Int32(1),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{
@@ -527,7 +527,7 @@ func generateFakeDeviceWithDeprecatedResourceNames() *schedulingv1alpha1.Device 
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   string(uuid.NewUUID()),
-					Minor:  pointer.Int32Ptr(1),
+					Minor:  pointer.Int32(1),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{
@@ -556,7 +556,7 @@ func generateMultipleFakeDevice() *schedulingv1alpha1.Device {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   string(uuid.NewUUID()),
-					Minor:  pointer.Int32Ptr(0),
+					Minor:  pointer.Int32(0),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{
@@ -567,7 +567,7 @@ func generateMultipleFakeDevice() *schedulingv1alpha1.Device {
 				},
 				{
 					UUID:   string(uuid.NewUUID()),
-					Minor:  pointer.Int32Ptr(1),
+					Minor:  pointer.Int32(1),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{

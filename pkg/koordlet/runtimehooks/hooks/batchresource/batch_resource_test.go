@@ -216,9 +216,9 @@ func Test_plugin_SetPodResources(t *testing.T) {
 				},
 				Response: protocol.PodResponse{
 					Resources: protocol.Resources{
-						CPUShares:   pointer.Int64Ptr(1024 * 500 / 1000),
-						CFSQuota:    pointer.Int64Ptr(-1),
-						MemoryLimit: pointer.Int64Ptr(2 * 1024 * 1024 * 1024),
+						CPUShares:   pointer.Int64(1024 * 500 / 1000),
+						CFSQuota:    pointer.Int64(-1),
+						MemoryLimit: pointer.Int64(2 * 1024 * 1024 * 1024),
 					},
 				},
 			},
@@ -255,9 +255,9 @@ func Test_plugin_SetPodResources(t *testing.T) {
 				},
 				Response: protocol.PodResponse{
 					Resources: protocol.Resources{
-						CPUShares:   pointer.Int64Ptr(1024 * 500 / 1000),
-						CFSQuota:    pointer.Int64Ptr(100000 * 500 / 1000),
-						MemoryLimit: pointer.Int64Ptr(2 * 1024 * 1024 * 1024),
+						CPUShares:   pointer.Int64(1024 * 500 / 1000),
+						CFSQuota:    pointer.Int64(100000 * 500 / 1000),
+						MemoryLimit: pointer.Int64(2 * 1024 * 1024 * 1024),
 					},
 				},
 			},
@@ -294,9 +294,9 @@ func Test_plugin_SetPodResources(t *testing.T) {
 				},
 				Response: protocol.PodResponse{
 					Resources: protocol.Resources{
-						CPUShares:   pointer.Int64Ptr(1024 * 500 / 1000),
-						CFSQuota:    pointer.Int64Ptr(100000 * 1500 / 1000),
-						MemoryLimit: pointer.Int64Ptr(4 * 1024 * 1024 * 1024),
+						CPUShares:   pointer.Int64(1024 * 500 / 1000),
+						CFSQuota:    pointer.Int64(100000 * 1500 / 1000),
+						MemoryLimit: pointer.Int64(4 * 1024 * 1024 * 1024),
 					},
 				},
 			},
@@ -333,9 +333,9 @@ func Test_plugin_SetPodResources(t *testing.T) {
 				},
 				Response: protocol.PodResponse{
 					Resources: protocol.Resources{
-						CPUShares:   pointer.Int64Ptr(1024 * 500 / 1000),
-						CFSQuota:    pointer.Int64Ptr(-1),
-						MemoryLimit: pointer.Int64Ptr(-1),
+						CPUShares:   pointer.Int64(1024 * 500 / 1000),
+						CFSQuota:    pointer.Int64(-1),
+						MemoryLimit: pointer.Int64(-1),
 					},
 				},
 			},
@@ -372,9 +372,9 @@ func Test_plugin_SetPodResources(t *testing.T) {
 				},
 				Response: protocol.PodResponse{
 					Resources: protocol.Resources{
-						CPUShares:   pointer.Int64Ptr(1000 * 1024 / 1000),
-						CFSQuota:    pointer.Int64Ptr(-1),
-						MemoryLimit: pointer.Int64Ptr(-1),
+						CPUShares:   pointer.Int64(1000 * 1024 / 1000),
+						CFSQuota:    pointer.Int64(-1),
+						MemoryLimit: pointer.Int64(-1),
 					},
 				},
 			},
@@ -528,9 +528,9 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 				},
 				Response: protocol.ContainerResponse{
 					Resources: protocol.Resources{
-						CPUShares:   pointer.Int64Ptr(1024 * 500 / 1000),
-						CFSQuota:    pointer.Int64Ptr(-1),
-						MemoryLimit: pointer.Int64Ptr(2 * 1024 * 1024 * 1024),
+						CPUShares:   pointer.Int64(1024 * 500 / 1000),
+						CFSQuota:    pointer.Int64(-1),
+						MemoryLimit: pointer.Int64(2 * 1024 * 1024 * 1024),
 					},
 				},
 			},
@@ -609,9 +609,9 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 				},
 				Response: protocol.ContainerResponse{
 					Resources: protocol.Resources{
-						CPUShares:   pointer.Int64Ptr(1024 * 500 / 1000),
-						CFSQuota:    pointer.Int64Ptr(100000 * 500 / 1000),
-						MemoryLimit: pointer.Int64Ptr(2 * 1024 * 1024 * 1024),
+						CPUShares:   pointer.Int64(1024 * 500 / 1000),
+						CFSQuota:    pointer.Int64(100000 * 500 / 1000),
+						MemoryLimit: pointer.Int64(2 * 1024 * 1024 * 1024),
 					},
 				},
 			},
@@ -690,9 +690,9 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 				},
 				Response: protocol.ContainerResponse{
 					Resources: protocol.Resources{
-						CPUShares:   pointer.Int64Ptr(2),
-						CFSQuota:    pointer.Int64Ptr(100000 * 1000 / 1000),
-						MemoryLimit: pointer.Int64Ptr(2 * 1024 * 1024 * 1024),
+						CPUShares:   pointer.Int64(2),
+						CFSQuota:    pointer.Int64(100000 * 1000 / 1000),
+						MemoryLimit: pointer.Int64(2 * 1024 * 1024 * 1024),
 					},
 				},
 			},

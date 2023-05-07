@@ -85,7 +85,7 @@ func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 		obj.FilterExpiredNodeMetrics = pointer.Bool(true)
 	}
 	if obj.NodeMetricExpirationSeconds == nil {
-		obj.NodeMetricExpirationSeconds = pointer.Int64Ptr(defaultNodeMetricExpirationSeconds)
+		obj.NodeMetricExpirationSeconds = pointer.Int64(defaultNodeMetricExpirationSeconds)
 	}
 	if len(obj.ResourceWeights) == 0 {
 		obj.ResourceWeights = defaultResourceWeights
@@ -155,6 +155,6 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 		}
 	}
 	if obj.ControllerWorkers == nil {
-		obj.ControllerWorkers = pointer.Int64Ptr(int64(defaultControllerWorkers))
+		obj.ControllerWorkers = pointer.Int64(int64(defaultControllerWorkers))
 	}
 }

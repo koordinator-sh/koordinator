@@ -82,7 +82,7 @@ func Test_reportGPUDevice(t *testing.T) {
 	expectedDevices := []schedulingv1alpha1.DeviceInfo{
 		{
 			UUID:   "1",
-			Minor:  pointer.Int32Ptr(0),
+			Minor:  pointer.Int32(0),
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -93,7 +93,7 @@ func Test_reportGPUDevice(t *testing.T) {
 		},
 		{
 			UUID:   "2",
-			Minor:  pointer.Int32Ptr(1),
+			Minor:  pointer.Int32(1),
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -119,7 +119,7 @@ func Test_reportGPUDevice(t *testing.T) {
 
 	expectedDevices = append(expectedDevices, schedulingv1alpha1.DeviceInfo{
 		UUID:   "3",
-		Minor:  pointer.Int32Ptr(2),
+		Minor:  pointer.Int32(2),
 		Type:   schedulingv1alpha1.GPU,
 		Health: true,
 		Resources: map[corev1.ResourceName]resource.Quantity{

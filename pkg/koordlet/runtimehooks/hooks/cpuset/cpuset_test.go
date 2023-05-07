@@ -430,7 +430,7 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 				},
 			},
 			wantErr:      false,
-			wantCPUQuota: pointer.Int64Ptr(-1),
+			wantCPUQuota: pointer.Int64(-1),
 		},
 		{
 			name: "not change cfs quota by pod allocated share pool",
@@ -560,7 +560,7 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 				},
 			},
 			wantErr:      false,
-			wantCPUQuota: pointer.Int64Ptr(-1),
+			wantCPUQuota: pointer.Int64(-1),
 		},
 		{
 			name: "not change cfs quota by pod allocated share pool",
