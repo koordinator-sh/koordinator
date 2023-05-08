@@ -190,7 +190,10 @@ func (c *ContainerContext) ReconcilerDone(executor resourceexecutor.ResourceUpda
 	c.injectForOrigin()
 }
 
+// Inject valid parameters in ContainerContext.Response.Resources,
+// such as CPUShares, CPUSet, CFSQuota, MemoryLimit...
 func (c *ContainerContext) injectForOrigin() {
+	// If CPUShares is not nil, set container cpu share
 	if c.Response.Resources.CPUShares != nil {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 			"set container cpu share to %v", *c.Response.Resources.CPUShares)
@@ -205,6 +208,7 @@ func (c *ContainerContext) injectForOrigin() {
 				"set container cpu share to %v", *c.Response.Resources.CPUShares).Do()
 		}
 	}
+	// If CPUSet is not nil and is not an empty string, set container cpuset
 	if c.Response.Resources.CPUSet != nil && *c.Response.Resources.CPUSet != "" {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message("set container cpuset to %v", *c.Response.Resources.CPUSet)
 		err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet, eventHelper, c.executor)
@@ -220,6 +224,7 @@ func (c *ContainerContext) injectForOrigin() {
 				*c.Response.Resources.CPUSet, c.Request.CgroupParent)
 		}
 	}
+	// If CFSQuota is not nil, set container cfs quota
 	if c.Response.Resources.CFSQuota != nil {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 			"set container cfs quota to %v", *c.Response.Resources.CFSQuota)
@@ -232,6 +237,7 @@ func (c *ContainerContext) injectForOrigin() {
 				*c.Response.Resources.CFSQuota, c.Request.CgroupParent)
 		}
 	}
+	// If MemoryLimit is not nil, set container memory limit
 	if c.Response.Resources.MemoryLimit != nil {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 			"set container memory limit to %v", *c.Response.Resources.MemoryLimit)
