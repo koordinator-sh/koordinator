@@ -70,7 +70,7 @@ func (b *bvtPlugin) SystemSupported() bool {
 			isBVTSupported, msg = bvtResource.IsSupported(util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed))
 		}
 		bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
-		b.sysSupported = pointer.BoolPtr(isBVTSupported || sysutil.FileExists(bvtConfigPath))
+		b.sysSupported = pointer.Bool(isBVTSupported || sysutil.FileExists(bvtConfigPath))
 		klog.Infof("update system supported info to %v for plugin %v, supported msg %s",
 			*b.sysSupported, name, msg)
 	}
@@ -80,7 +80,7 @@ func (b *bvtPlugin) SystemSupported() bool {
 func (b *bvtPlugin) hasKernelEnable() bool {
 	if b.hasKernelEnabled == nil {
 		bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
-		b.hasKernelEnabled = pointer.BoolPtr(sysutil.FileExists(bvtConfigPath))
+		b.hasKernelEnabled = pointer.Bool(sysutil.FileExists(bvtConfigPath))
 	}
 	return *b.hasKernelEnabled
 }
@@ -108,7 +108,7 @@ func (b *bvtPlugin) initialize() error {
 	if err != nil {
 		return fmt.Errorf("cannot enable kernel sysctl for bvt, err: %v", err)
 	}
-	b.kernelEnabled = pointer.BoolPtr(true)
+	b.kernelEnabled = pointer.Bool(true)
 	klog.V(4).Infof("hook plugin %s is successfully initialized", name)
 
 	return nil

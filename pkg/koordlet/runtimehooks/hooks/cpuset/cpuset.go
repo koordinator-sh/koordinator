@@ -140,7 +140,7 @@ func UnsetPodCPUQuota(proto protocol.HooksProtocol) error {
 	if needUnset, err := util.IsPodCfsQuotaNeedUnset(req.Annotations); err != nil {
 		return err
 	} else if needUnset {
-		podCtx.Response.Resources.CFSQuota = pointer.Int64Ptr(-1)
+		podCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
 		return nil
 	}
 
@@ -161,7 +161,7 @@ func UnsetContainerCPUQuota(proto protocol.HooksProtocol) error {
 	if needUnset, err := util.IsPodCfsQuotaNeedUnset(containerReq.PodAnnotations); err != nil {
 		return err
 	} else if needUnset {
-		containerCtx.Response.Resources.CFSQuota = pointer.Int64Ptr(-1)
+		containerCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
 		return nil
 	}
 

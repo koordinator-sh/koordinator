@@ -65,12 +65,12 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 		cfgCache: &FakeCfgCache{
 			cfg: extension.ColocationCfg{
 				ColocationStrategy: extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 			},
 		},
@@ -87,7 +87,7 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   "1",
-					Minor:  pointer.Int32Ptr(0),
+					Minor:  pointer.Int32(0),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -98,7 +98,7 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 				},
 				{
 					UUID:   "2",
-					Minor:  pointer.Int32Ptr(1),
+					Minor:  pointer.Int32(1),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -230,12 +230,12 @@ func Test_isGPUResourceNeedSync(t *testing.T) {
 	}
 	configf := &extension.ColocationCfg{
 		ColocationStrategy: extension.ColocationStrategy{
-			Enable:                        pointer.BoolPtr(true),
-			CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-			MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-			DegradeTimeMinutes:            pointer.Int64Ptr(15),
-			UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-			ResourceDiffThreshold:         pointer.Float64Ptr(0.2),
+			Enable:                        pointer.Bool(true),
+			CPUReclaimThresholdPercent:    pointer.Int64(65),
+			MemoryReclaimThresholdPercent: pointer.Int64(65),
+			DegradeTimeMinutes:            pointer.Int64(15),
+			UpdateTimeThresholdSeconds:    pointer.Int64(300),
+			ResourceDiffThreshold:         pointer.Float64(0.2),
 		},
 	}
 	for _, tt := range tests {

@@ -168,7 +168,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			name: "set guaranteed dir bvt and initialize kernel sysctl",
 			fields: fields{
 				rule:                         defaultRule,
-				systemSupported:              pointer.BoolPtr(true),
+				systemSupported:              pointer.Bool(true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 0,
 			},
@@ -189,7 +189,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			name: "set guaranteed bvt none while kernel sysctl changed",
 			fields: fields{
 				rule:                         noneRule,
-				systemSupported:              pointer.BoolPtr(true),
+				systemSupported:              pointer.Bool(true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 0,
 			},
@@ -210,7 +210,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			name: "set besteffort bvt while kernel sysctl not changed",
 			fields: fields{
 				rule:                         defaultRule,
-				systemSupported:              pointer.BoolPtr(true),
+				systemSupported:              pointer.Bool(true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 1,
 			},
@@ -231,7 +231,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			name: "abort to set guaranteed dir bvt since init failed",
 			fields: fields{
 				rule:            noneRule,
-				systemSupported: pointer.BoolPtr(true),
+				systemSupported: pointer.Bool(true),
 				hasKernelEnable: pointer.Bool(true),
 			},
 			args: args{
@@ -343,7 +343,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "set guaranteed dir bvt",
 			fields: fields{
 				rule:         defaultRule,
-				sysSupported: pointer.BoolPtr(true),
+				sysSupported: pointer.Bool(true),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSGuaranteed,
@@ -356,7 +356,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "set burstable dir bvt",
 			fields: fields{
 				rule:         defaultRule,
-				sysSupported: pointer.BoolPtr(true),
+				sysSupported: pointer.Bool(true),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSBurstable,
@@ -369,7 +369,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "set be dir bvt",
 			fields: fields{
 				rule:         defaultRule,
-				sysSupported: pointer.BoolPtr(true),
+				sysSupported: pointer.Bool(true),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSBestEffort,
@@ -382,7 +382,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "set be dir bvt but system not support",
 			fields: fields{
 				rule:         defaultRule,
-				sysSupported: pointer.BoolPtr(false),
+				sysSupported: pointer.Bool(false),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSBestEffort,
@@ -395,7 +395,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "set be dir bvt but rule is nil",
 			fields: fields{
 				rule:         nil,
-				sysSupported: pointer.BoolPtr(true),
+				sysSupported: pointer.Bool(true),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSBestEffort,
@@ -408,7 +408,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "set guaranteed dir bvt and initialize kernel sysctl",
 			fields: fields{
 				rule:                         defaultRule,
-				sysSupported:                 pointer.BoolPtr(true),
+				sysSupported:                 pointer.Bool(true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 0,
 			},
@@ -423,7 +423,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "set guaranteed bvt none while kernel sysctl changed",
 			fields: fields{
 				rule:                         noneRule,
-				sysSupported:                 pointer.BoolPtr(true),
+				sysSupported:                 pointer.Bool(true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 0,
 			},
@@ -438,7 +438,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "abort to set guaranteed dir bvt since init failed",
 			fields: fields{
 				rule:            noneRule,
-				sysSupported:    pointer.BoolPtr(true),
+				sysSupported:    pointer.Bool(true),
 				hasKernelEnable: pointer.Bool(true),
 			},
 			args: args{

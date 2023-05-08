@@ -31,22 +31,22 @@ import (
 func Test_mergeNodeSLOSpec(t *testing.T) {
 	testingCustomNodeSLOSpec := slov1alpha1.NodeSLOSpec{
 		ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
-			CPUSuppressThresholdPercent: pointer.Int64Ptr(80),
+			CPUSuppressThresholdPercent: pointer.Int64(80),
 		},
 		ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
 			LSRClass: sloconfig.NoneResourceQOS(apiext.QoSLSR),
 			LSClass:  sloconfig.NoneResourceQOS(apiext.QoSLS),
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
-					Enable: pointer.BoolPtr(true),
+					Enable: pointer.Bool(true),
 				},
 				MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-					Enable: pointer.BoolPtr(true),
+					Enable: pointer.Bool(true),
 				},
 				ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
-					Enable: pointer.BoolPtr(true),
+					Enable: pointer.Bool(true),
 					ResctrlQOS: slov1alpha1.ResctrlQOS{
-						CATRangeEndPercent: pointer.Int64Ptr(50),
+						CATRangeEndPercent: pointer.Int64(50),
 					},
 				},
 			},
@@ -56,7 +56,7 @@ func Test_mergeNodeSLOSpec(t *testing.T) {
 			SharePoolThresholdPercent: nil,
 		},
 		SystemStrategy: &slov1alpha1.SystemStrategy{
-			WatermarkScaleFactor: pointer.Int64Ptr(200),
+			WatermarkScaleFactor: pointer.Int64(200),
 		},
 		Extensions: &slov1alpha1.ExtensionsMap{},
 	}
@@ -113,31 +113,31 @@ func Test_mergeNodeSLOSpec(t *testing.T) {
 				nodeSLO: &slov1alpha1.NodeSLO{
 					Spec: slov1alpha1.NodeSLOSpec{
 						ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
-							CPUSuppressThresholdPercent: pointer.Int64Ptr(100),
-							MemoryEvictThresholdPercent: pointer.Int64Ptr(100),
+							CPUSuppressThresholdPercent: pointer.Int64(100),
+							MemoryEvictThresholdPercent: pointer.Int64(100),
 						},
 						ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
 							LSRClass: &slov1alpha1.ResourceQOS{
 								ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 									ResctrlQOS: slov1alpha1.ResctrlQOS{
-										CATRangeStartPercent: pointer.Int64Ptr(0),
-										CATRangeEndPercent:   pointer.Int64Ptr(100),
+										CATRangeStartPercent: pointer.Int64(0),
+										CATRangeEndPercent:   pointer.Int64(100),
 									},
 								},
 							},
 							LSClass: &slov1alpha1.ResourceQOS{
 								ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 									ResctrlQOS: slov1alpha1.ResctrlQOS{
-										CATRangeStartPercent: pointer.Int64Ptr(0),
-										CATRangeEndPercent:   pointer.Int64Ptr(100),
+										CATRangeStartPercent: pointer.Int64(0),
+										CATRangeEndPercent:   pointer.Int64(100),
 									},
 								},
 							},
 							BEClass: &slov1alpha1.ResourceQOS{
 								ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 									ResctrlQOS: slov1alpha1.ResctrlQOS{
-										CATRangeStartPercent: pointer.Int64Ptr(0),
-										CATRangeEndPercent:   pointer.Int64Ptr(40),
+										CATRangeStartPercent: pointer.Int64(0),
+										CATRangeEndPercent:   pointer.Int64(40),
 									},
 								},
 							},
@@ -164,16 +164,16 @@ func Test_createNodeSLO(t *testing.T) {
 		Spec: sloconfig.DefaultNodeSLOSpecConfig(),
 	}
 	testingNewNodeSLO.Spec.ResourceUsedThresholdWithBE = &slov1alpha1.ResourceThresholdStrategy{
-		Enable:                      pointer.BoolPtr(true),
-		CPUSuppressThresholdPercent: pointer.Int64Ptr(80),
+		Enable:                      pointer.Bool(true),
+		CPUSuppressThresholdPercent: pointer.Int64(80),
 	}
 
 	testingNewNodeSLO.Spec.ResourceQOSStrategy.BEClass = &slov1alpha1.ResourceQOS{
 		ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
-			Enable: pointer.BoolPtr(true),
+			Enable: pointer.Bool(true),
 			ResctrlQOS: slov1alpha1.ResctrlQOS{
-				CATRangeStartPercent: pointer.Int64Ptr(0),
-				CATRangeEndPercent:   pointer.Int64Ptr(20),
+				CATRangeStartPercent: pointer.Int64(0),
+				CATRangeEndPercent:   pointer.Int64(20),
 			},
 		},
 	}
@@ -181,14 +181,14 @@ func Test_createNodeSLO(t *testing.T) {
 	testingCreatedNodeSLO := &slov1alpha1.NodeSLO{
 		Spec: sloconfig.DefaultNodeSLOSpecConfig(),
 	}
-	testingCreatedNodeSLO.Spec.ResourceUsedThresholdWithBE.Enable = pointer.BoolPtr(true)
-	testingCreatedNodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent = pointer.Int64Ptr(80)
+	testingCreatedNodeSLO.Spec.ResourceUsedThresholdWithBE.Enable = pointer.Bool(true)
+	testingCreatedNodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent = pointer.Int64(80)
 	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.LSRClass = sloconfig.NoneResourceQOS(apiext.QoSLSR)
 	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.LSClass = sloconfig.NoneResourceQOS(apiext.QoSLS)
 	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass = sloconfig.NoneResourceQOS(apiext.QoSBE)
-	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.BoolPtr(true)
-	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeStartPercent = pointer.Int64Ptr(0)
-	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeEndPercent = pointer.Int64Ptr(20)
+	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.Bool(true)
+	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeStartPercent = pointer.Int64(0)
+	testingCreatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeEndPercent = pointer.Int64(20)
 
 	r := nodeSLOInformer{
 		nodeSLO:        nil,
@@ -203,16 +203,16 @@ func Test_updateNodeSLOSpec(t *testing.T) {
 	testingNewNodeSLO := &slov1alpha1.NodeSLO{
 		Spec: slov1alpha1.NodeSLOSpec{
 			ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
-				Enable:                      pointer.BoolPtr(true),
-				CPUSuppressThresholdPercent: pointer.Int64Ptr(80),
+				Enable:                      pointer.Bool(true),
+				CPUSuppressThresholdPercent: pointer.Int64(80),
 			},
 			ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
 				BEClass: &slov1alpha1.ResourceQOS{
 					ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
-						Enable: pointer.BoolPtr(true),
+						Enable: pointer.Bool(true),
 						ResctrlQOS: slov1alpha1.ResctrlQOS{
-							CATRangeStartPercent: pointer.Int64Ptr(0),
-							CATRangeEndPercent:   pointer.Int64Ptr(20),
+							CATRangeStartPercent: pointer.Int64(0),
+							CATRangeEndPercent:   pointer.Int64(20),
 						},
 					},
 				},
@@ -222,8 +222,8 @@ func Test_updateNodeSLOSpec(t *testing.T) {
 	testingUpdatedNodeSLO := &slov1alpha1.NodeSLO{
 		Spec: sloconfig.DefaultNodeSLOSpecConfig(),
 	}
-	testingUpdatedNodeSLO.Spec.ResourceUsedThresholdWithBE.Enable = pointer.BoolPtr(true)
-	testingUpdatedNodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent = pointer.Int64Ptr(80)
+	testingUpdatedNodeSLO.Spec.ResourceUsedThresholdWithBE.Enable = pointer.Bool(true)
+	testingUpdatedNodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent = pointer.Int64(80)
 	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.LSRClass.CPUQOS.CPUQOS = *sloconfig.NoneCPUQOS()
 	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.LSRClass.MemoryQOS.MemoryQOS = *sloconfig.NoneMemoryQOS()
 	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.LSRClass.ResctrlQOS.ResctrlQOS = *sloconfig.NoneResctrlQOS()
@@ -234,16 +234,16 @@ func Test_updateNodeSLOSpec(t *testing.T) {
 
 	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.CPUQOS.CPUQOS = *sloconfig.NoneCPUQOS()
 	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.MemoryQOS.MemoryQOS = *sloconfig.NoneMemoryQOS()
-	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.BoolPtr(true)
-	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeStartPercent = pointer.Int64Ptr(0)
-	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeEndPercent = pointer.Int64Ptr(20)
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.Bool(true)
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeStartPercent = pointer.Int64(0)
+	testingUpdatedNodeSLO.Spec.ResourceQOSStrategy.BEClass.ResctrlQOS.CATRangeEndPercent = pointer.Int64(20)
 
 	r := nodeSLOInformer{
 		nodeSLO: &slov1alpha1.NodeSLO{
 			Spec: slov1alpha1.NodeSLOSpec{
 				ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
-					CPUSuppressThresholdPercent: pointer.Int64Ptr(90),
-					MemoryEvictThresholdPercent: pointer.Int64Ptr(90),
+					CPUSuppressThresholdPercent: pointer.Int64(90),
+					MemoryEvictThresholdPercent: pointer.Int64(90),
 				},
 			},
 		},
@@ -257,18 +257,18 @@ func Test_updateNodeSLOSpec(t *testing.T) {
 func Test_mergeSLOSpecResourceUsedThresholdWithBE(t *testing.T) {
 	testingDefaultSpec := sloconfig.DefaultResourceThresholdStrategy()
 	testingNewSpec := &slov1alpha1.ResourceThresholdStrategy{
-		Enable:                      pointer.BoolPtr(true),
-		CPUSuppressThresholdPercent: pointer.Int64Ptr(80),
-		MemoryEvictThresholdPercent: pointer.Int64Ptr(75),
+		Enable:                      pointer.Bool(true),
+		CPUSuppressThresholdPercent: pointer.Int64(80),
+		MemoryEvictThresholdPercent: pointer.Int64(75),
 	}
 	testingNewSpec1 := &slov1alpha1.ResourceThresholdStrategy{
-		Enable:                      pointer.BoolPtr(true),
-		CPUSuppressThresholdPercent: pointer.Int64Ptr(80),
+		Enable:                      pointer.Bool(true),
+		CPUSuppressThresholdPercent: pointer.Int64(80),
 	}
 	testingMergedSpec := &slov1alpha1.ResourceThresholdStrategy{
-		Enable:                      pointer.BoolPtr(true),
-		CPUSuppressThresholdPercent: pointer.Int64Ptr(80),
-		MemoryEvictThresholdPercent: pointer.Int64Ptr(70),
+		Enable:                      pointer.Bool(true),
+		CPUSuppressThresholdPercent: pointer.Int64(80),
+		MemoryEvictThresholdPercent: pointer.Int64(70),
 		CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
 	}
 	type args struct {
@@ -303,9 +303,9 @@ func Test_mergeSLOSpecResourceUsedThresholdWithBE(t *testing.T) {
 				newSpec:     testingNewSpec,
 			},
 			want: &slov1alpha1.ResourceThresholdStrategy{
-				Enable:                      pointer.BoolPtr(true),
-				CPUSuppressThresholdPercent: pointer.Int64Ptr(80),
-				MemoryEvictThresholdPercent: pointer.Int64Ptr(75),
+				Enable:                      pointer.Bool(true),
+				CPUSuppressThresholdPercent: pointer.Int64(80),
+				MemoryEvictThresholdPercent: pointer.Int64(75),
 				CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
 			},
 		},
@@ -337,22 +337,22 @@ func Test_mergeSLOSpecResourceQOSStrategy(t *testing.T) {
 	testingDefaultSpec := sloconfig.DefaultResourceQOSStrategy()
 
 	testingNewSpec := testingDefaultSpec.DeepCopy()
-	testingNewSpec.BEClass.MemoryQOS.WmarkRatio = pointer.Int64Ptr(0)
+	testingNewSpec.BEClass.MemoryQOS.WmarkRatio = pointer.Int64(0)
 
 	testingNewSpec1 := &slov1alpha1.ResourceQOSStrategy{
 		BEClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					WmarkRatio: pointer.Int64Ptr(90),
+					WmarkRatio: pointer.Int64(90),
 				},
 			},
 		},
 	}
 
 	testingMergedSpec := testingDefaultSpec.DeepCopy()
-	testingMergedSpec.BEClass.MemoryQOS.Enable = pointer.BoolPtr(true)
-	testingMergedSpec.BEClass.MemoryQOS.WmarkRatio = pointer.Int64Ptr(90)
+	testingMergedSpec.BEClass.MemoryQOS.Enable = pointer.Bool(true)
+	testingMergedSpec.BEClass.MemoryQOS.WmarkRatio = pointer.Int64(90)
 
 	type args struct {
 		defaultSpec *slov1alpha1.ResourceQOSStrategy
@@ -416,9 +416,9 @@ func Test_mergeNoneResourceQOSIfDisabled(t *testing.T) {
 	testAllNone := sloconfig.NoneResourceQOSStrategy()
 
 	testLSMemQOSEnabled := testDefault.DeepCopy()
-	testLSMemQOSEnabled.LSClass.MemoryQOS.Enable = pointer.BoolPtr(true)
+	testLSMemQOSEnabled.LSClass.MemoryQOS.Enable = pointer.Bool(true)
 	testLSMemQOSEnabledResult := sloconfig.NoneResourceQOSStrategy()
-	testLSMemQOSEnabledResult.LSClass.MemoryQOS.Enable = pointer.BoolPtr(true)
+	testLSMemQOSEnabledResult.LSClass.MemoryQOS.Enable = pointer.Bool(true)
 	testLSMemQOSEnabledResult.LSClass.MemoryQOS.MemoryQOS = *sloconfig.DefaultMemoryQOS(apiext.QoSLS)
 
 	type args struct {

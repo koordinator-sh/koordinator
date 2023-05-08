@@ -34,14 +34,14 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg()
 	testingResourceThresholdCfg := &extension.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.BoolPtr(true),
-			CPUSuppressThresholdPercent: pointer.Int64Ptr(60),
+			Enable:                      pointer.Bool(true),
+			CPUSuppressThresholdPercent: pointer.Int64(60),
 		},
 	}
 	testingResourceThresholdCfg1 := &extension.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.BoolPtr(true),
-			CPUSuppressThresholdPercent: pointer.Int64Ptr(60),
+			Enable:                      pointer.Bool(true),
+			CPUSuppressThresholdPercent: pointer.Int64(60),
 		},
 		NodeStrategies: []extension.NodeResourceThresholdStrategy{
 			{
@@ -53,7 +53,7 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 					},
 				},
 				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
-					CPUSuppressThresholdPercent: pointer.Int64Ptr(50),
+					CPUSuppressThresholdPercent: pointer.Int64(50),
 				},
 			},
 		},
@@ -103,7 +103,7 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 				cfg: testingResourceThresholdCfg1,
 			},
 			want: &slov1alpha1.ResourceThresholdStrategy{
-				CPUSuppressThresholdPercent: pointer.Int64Ptr(50),
+				CPUSuppressThresholdPercent: pointer.Int64(50),
 			},
 		},
 	}
@@ -120,12 +120,12 @@ func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg()
 
 	oldSLOCfg := DefaultSLOCfg()
-	oldSLOCfg.ThresholdCfgMerged.ClusterStrategy.CPUSuppressThresholdPercent = pointer.Int64Ptr(30)
+	oldSLOCfg.ThresholdCfgMerged.ClusterStrategy.CPUSuppressThresholdPercent = pointer.Int64(30)
 
 	testingResourceThresholdCfg := &extension.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.BoolPtr(true),
-			CPUSuppressThresholdPercent: pointer.Int64Ptr(60),
+			Enable:                      pointer.Bool(true),
+			CPUSuppressThresholdPercent: pointer.Int64(60),
 		},
 	}
 	testingResourceThresholdCfgStr, _ := json.Marshal(testingResourceThresholdCfg)
@@ -136,8 +136,8 @@ func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 
 	testingResourceThresholdCfg1 := &extension.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.BoolPtr(true),
-			CPUSuppressThresholdPercent: pointer.Int64Ptr(60),
+			Enable:                      pointer.Bool(true),
+			CPUSuppressThresholdPercent: pointer.Int64(60),
 		},
 		NodeStrategies: []extension.NodeResourceThresholdStrategy{
 			{
@@ -149,7 +149,7 @@ func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 					},
 				},
 				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
-					CPUSuppressThresholdPercent: pointer.Int64Ptr(40),
+					CPUSuppressThresholdPercent: pointer.Int64(40),
 				},
 			},
 			{
@@ -161,7 +161,7 @@ func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 					},
 				},
 				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
-					CPUSuppressThresholdPercent: pointer.Int64Ptr(50),
+					CPUSuppressThresholdPercent: pointer.Int64(50),
 				},
 			},
 		},
@@ -193,8 +193,8 @@ func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 			ResourceThresholdStrategy: expectTestingResourceThresholdCfg1.ClusterStrategy.DeepCopy(),
 		},
 	}
-	expectTestingResourceThresholdCfg1.NodeStrategies[0].CPUSuppressThresholdPercent = pointer.Int64Ptr(40)
-	expectTestingResourceThresholdCfg1.NodeStrategies[1].CPUSuppressThresholdPercent = pointer.Int64Ptr(50)
+	expectTestingResourceThresholdCfg1.NodeStrategies[0].CPUSuppressThresholdPercent = pointer.Int64(40)
+	expectTestingResourceThresholdCfg1.NodeStrategies[1].CPUSuppressThresholdPercent = pointer.Int64(50)
 
 	type args struct {
 		configMap *corev1.ConfigMap
@@ -270,7 +270,7 @@ func Test_getResourceQOSSpec(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64Ptr(0),
+						GroupIdentity: pointer.Int64(0),
 					},
 				},
 			},
@@ -281,7 +281,7 @@ func Test_getResourceQOSSpec(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64Ptr(0),
+						GroupIdentity: pointer.Int64(0),
 					},
 				},
 			},
@@ -299,7 +299,7 @@ func Test_getResourceQOSSpec(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64Ptr(1),
+								GroupIdentity: pointer.Int64(1),
 							},
 						},
 					},
@@ -317,7 +317,7 @@ func Test_getResourceQOSSpec(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64Ptr(2),
+								GroupIdentity: pointer.Int64(2),
 							},
 						},
 					},
@@ -403,12 +403,12 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64Ptr(2),
+						GroupIdentity: pointer.Int64(2),
 					},
 				},
 				MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 					MemoryQOS: slov1alpha1.MemoryQOS{
-						MinLimitPercent: pointer.Int64Ptr(40),
+						MinLimitPercent: pointer.Int64(40),
 					},
 				},
 			},
@@ -420,7 +420,7 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64Ptr(0),
+						GroupIdentity: pointer.Int64(0),
 					},
 				},
 			},
@@ -434,7 +434,7 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64Ptr(0),
+						GroupIdentity: pointer.Int64(0),
 					},
 				},
 			},
@@ -452,7 +452,7 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64Ptr(0),
+								GroupIdentity: pointer.Int64(0),
 							},
 						},
 					},
@@ -470,7 +470,7 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64Ptr(-1),
+								GroupIdentity: pointer.Int64(-1),
 							},
 						},
 					},
@@ -480,8 +480,8 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 	}
 	testingResourceQOSCfgStr1, _ := json.Marshal(testingResourceQOSCfg1)
 	expectTestingResourceQOSCfg1 := testingResourceQOSCfg1.DeepCopy()
-	expectTestingResourceQOSCfg1.NodeStrategies[0].BEClass.CPUQOS.GroupIdentity = pointer.Int64Ptr(0)
-	expectTestingResourceQOSCfg1.NodeStrategies[1].BEClass.CPUQOS.GroupIdentity = pointer.Int64Ptr(-1)
+	expectTestingResourceQOSCfg1.NodeStrategies[0].BEClass.CPUQOS.GroupIdentity = pointer.Int64(0)
+	expectTestingResourceQOSCfg1.NodeStrategies[1].BEClass.CPUQOS.GroupIdentity = pointer.Int64(-1)
 
 	type args struct {
 		configMap *corev1.ConfigMap
@@ -557,14 +557,14 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 	testingCPUBurstCfg := &extension.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-				CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(120),
+				CFSQuotaBurstPeriodSeconds: pointer.Int64(120),
 			},
 		},
 	}
 	testingCPUBurstCfg1 := &extension.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-				CPUBurstPercent: pointer.Int64Ptr(200),
+				CPUBurstPercent: pointer.Int64(200),
 			},
 		},
 		NodeStrategies: []extension.NodeCPUBurstCfg{
@@ -578,7 +578,7 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 				},
 				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-						CPUBurstPercent: pointer.Int64Ptr(200),
+						CPUBurstPercent: pointer.Int64(200),
 					},
 				},
 			},
@@ -592,7 +592,7 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 				},
 				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-						CPUBurstPercent: pointer.Int64Ptr(100),
+						CPUBurstPercent: pointer.Int64(100),
 					},
 				},
 			},
@@ -659,12 +659,12 @@ func Test_calculateCPUBurstCfgMerged(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg()
 
 	oldSLOConfig := DefaultSLOCfg()
-	oldSLOConfig.CPUBurstCfgMerged.ClusterStrategy.CFSQuotaBurstPercent = pointer.Int64Ptr(30)
+	oldSLOConfig.CPUBurstCfgMerged.ClusterStrategy.CFSQuotaBurstPercent = pointer.Int64(30)
 
 	testingCfgClusterOnly := &extension.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-				CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(120),
+				CFSQuotaBurstPeriodSeconds: pointer.Int64(120),
 			},
 		},
 	}
@@ -686,7 +686,7 @@ func Test_calculateCPUBurstCfgMerged(t *testing.T) {
 				},
 				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-						CPUBurstPercent: pointer.Int64Ptr(100),
+						CPUBurstPercent: pointer.Int64(100),
 					},
 				},
 			},
@@ -700,7 +700,7 @@ func Test_calculateCPUBurstCfgMerged(t *testing.T) {
 				},
 				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-						CPUBurstPercent: pointer.Int64Ptr(200),
+						CPUBurstPercent: pointer.Int64(200),
 					},
 				},
 			},
@@ -809,12 +809,12 @@ func Test_getSystemConfigSpec(t *testing.T) {
 	defaultConfig := DefaultSLOCfg()
 	testingSystemConfig := &extension.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			MinFreeKbytesFactor: pointer.Int64Ptr(150),
+			MinFreeKbytesFactor: pointer.Int64(150),
 		},
 	}
 	testingSystemConfig1 := &extension.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			MinFreeKbytesFactor: pointer.Int64Ptr(150),
+			MinFreeKbytesFactor: pointer.Int64(150),
 		},
 		NodeStrategies: []extension.NodeSystemStrategy{
 			{
@@ -826,7 +826,7 @@ func Test_getSystemConfigSpec(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor: pointer.Int64Ptr(120),
+					MinFreeKbytesFactor: pointer.Int64(120),
 				},
 			},
 			{
@@ -838,7 +838,7 @@ func Test_getSystemConfigSpec(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor: pointer.Int64Ptr(130),
+					MinFreeKbytesFactor: pointer.Int64(130),
 				},
 			},
 		},
@@ -919,12 +919,12 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg()
 
 	oldSLOCfg := DefaultSLOCfg()
-	oldSLOCfg.SystemCfgMerged.ClusterStrategy.WatermarkScaleFactor = pointer.Int64Ptr(99)
+	oldSLOCfg.SystemCfgMerged.ClusterStrategy.WatermarkScaleFactor = pointer.Int64(99)
 
 	testingCfgOnliCluster := &extension.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			WatermarkScaleFactor: pointer.Int64Ptr(151),
-			MemcgReapBackGround:  pointer.Int64Ptr(1),
+			WatermarkScaleFactor: pointer.Int64(151),
+			MemcgReapBackGround:  pointer.Int64(1),
 		},
 	}
 	testingCfgOnliClusterStr, _ := json.Marshal(testingCfgOnliCluster)
@@ -934,7 +934,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 
 	testingSystemConfig1 := &extension.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			WatermarkScaleFactor: pointer.Int64Ptr(151),
+			WatermarkScaleFactor: pointer.Int64(151),
 		},
 		NodeStrategies: []extension.NodeSystemStrategy{
 			{
@@ -946,8 +946,8 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor: pointer.Int64Ptr(130),
-					MemcgReapBackGround: pointer.Int64Ptr(1),
+					MinFreeKbytesFactor: pointer.Int64(130),
+					MemcgReapBackGround: pointer.Int64(1),
 				},
 			},
 			{
@@ -959,8 +959,8 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor: pointer.Int64Ptr(140),
-					MemcgReapBackGround: pointer.Int64Ptr(0),
+					MinFreeKbytesFactor: pointer.Int64(140),
+					MemcgReapBackGround: pointer.Int64(0),
 				},
 			},
 		},
@@ -969,7 +969,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 	expectTestingSystemConfig1 := &extension.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
 			MinFreeKbytesFactor:  oldSLOCfg.SystemCfgMerged.ClusterStrategy.MinFreeKbytesFactor,
-			WatermarkScaleFactor: pointer.Int64Ptr(151),
+			WatermarkScaleFactor: pointer.Int64(151),
 			MemcgReapBackGround:  oldSLOCfg.SystemCfgMerged.ClusterStrategy.MemcgReapBackGround,
 		},
 		NodeStrategies: []extension.NodeSystemStrategy{
@@ -983,9 +983,9 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor:  pointer.Int64Ptr(130),
-					WatermarkScaleFactor: pointer.Int64Ptr(151),
-					MemcgReapBackGround:  pointer.Int64Ptr(1),
+					MinFreeKbytesFactor:  pointer.Int64(130),
+					WatermarkScaleFactor: pointer.Int64(151),
+					MemcgReapBackGround:  pointer.Int64(1),
 				},
 			},
 			{NodeCfgProfile: extension.NodeCfgProfile{
@@ -996,9 +996,9 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 				},
 			},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor:  pointer.Int64Ptr(140),
-					WatermarkScaleFactor: pointer.Int64Ptr(151),
-					MemcgReapBackGround:  pointer.Int64Ptr(0),
+					MinFreeKbytesFactor:  pointer.Int64(140),
+					WatermarkScaleFactor: pointer.Int64(151),
+					MemcgReapBackGround:  pointer.Int64(0),
 				},
 			},
 		},

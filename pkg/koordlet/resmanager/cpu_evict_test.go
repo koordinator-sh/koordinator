@@ -52,8 +52,8 @@ func Test_cpuEvict(t *testing.T) {}
 func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 
 	thresholdConfig := sloconfig.DefaultResourceThresholdStrategy()
-	thresholdConfig.CPUEvictBESatisfactionUpperPercent = pointer.Int64Ptr(40)
-	thresholdConfig.CPUEvictBESatisfactionLowerPercent = pointer.Int64Ptr(30)
+	thresholdConfig.CPUEvictBESatisfactionUpperPercent = pointer.Int64(40)
+	thresholdConfig.CPUEvictBESatisfactionLowerPercent = pointer.Int64(30)
 	collectResUsedIntervalSeconds := int64(1)
 	windowSize := int64(60)
 
@@ -204,7 +204,7 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 	}
 
 	thresholdConfig = thresholdConfig.DeepCopy()
-	thresholdConfig.CPUEvictBEUsageThresholdPercent = pointer.Int64Ptr(50)
+	thresholdConfig.CPUEvictBEUsageThresholdPercent = pointer.Int64(50)
 	tests = append(tests, []Test{
 		{
 			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgMetricQueryResult_cpuUsage_not_enough", *thresholdConfig.CPUEvictBEUsageThresholdPercent),
@@ -433,22 +433,22 @@ func Test_isSatisfactionConfigValid(t *testing.T) {
 		},
 		{
 			name:            "test_lowPercent_invalid",
-			thresholdConfig: slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64Ptr(0), CPUEvictBESatisfactionUpperPercent: pointer.Int64Ptr(50)},
+			thresholdConfig: slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64(0), CPUEvictBESatisfactionUpperPercent: pointer.Int64(50)},
 			expect:          false,
 		},
 		{
 			name:            "test_upperPercent_invalid",
-			thresholdConfig: slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64Ptr(30), CPUEvictBESatisfactionUpperPercent: pointer.Int64Ptr(100)},
+			thresholdConfig: slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64(30), CPUEvictBESatisfactionUpperPercent: pointer.Int64(100)},
 			expect:          false,
 		},
 		{
 			name:            "test_lowPercent>upperPercent",
-			thresholdConfig: slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64Ptr(40), CPUEvictBESatisfactionUpperPercent: pointer.Int64Ptr(30)},
+			thresholdConfig: slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64(40), CPUEvictBESatisfactionUpperPercent: pointer.Int64(30)},
 			expect:          false,
 		},
 		{
 			name:            "test_valid",
-			thresholdConfig: slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64Ptr(30), CPUEvictBESatisfactionUpperPercent: pointer.Int64Ptr(40)},
+			thresholdConfig: slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64(30), CPUEvictBESatisfactionUpperPercent: pointer.Int64(40)},
 			expect:          true,
 		},
 	}

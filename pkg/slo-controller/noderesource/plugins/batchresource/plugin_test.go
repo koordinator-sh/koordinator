@@ -184,12 +184,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory usage",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -216,12 +216,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory usage and reserve nothing from node.annotation",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -251,12 +251,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory usage and reserve specific cpus from node.annotation and left equal sys.used",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -288,12 +288,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory usage and reserve specific cpus from node.annotation and right equal sys.used",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -325,12 +325,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory usage and reserve cpus by quantity from node.annotation and right equal sys.used",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -362,12 +362,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory usage and reserve cpus by quantity and specific cores from node.annotation and right equal sys.used",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -400,12 +400,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory usage and reserve memory from node.annotation and right equal sys.used",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -437,12 +437,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory usage and reserve memory from node.annotation and left equal sys.used",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -474,12 +474,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory usage and reserve memory and cpu from node.annotation and left equal sys.used",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -514,12 +514,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory usage and reserve memory and cpu from node.annotation and right equal sys.used",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -554,12 +554,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory usage and reserve memory and specific cores from node.annotation and right equal sys.used",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -594,12 +594,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory request",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(80),
+					Enable:                        pointer.Bool(true),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					CPUReclaimThresholdPercent:    pointer.Int64(70),
+					MemoryReclaimThresholdPercent: pointer.Int64(80),
 					MemoryCalculatePolicy:         &memoryCalculateByReq,
 				},
 				node: &corev1.Node{
@@ -630,12 +630,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory request and reserve memory from node.annotation and left equal sys.used",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(80),
+					Enable:                        pointer.Bool(true),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					CPUReclaimThresholdPercent:    pointer.Int64(70),
+					MemoryReclaimThresholdPercent: pointer.Int64(80),
 					MemoryCalculatePolicy:         &memoryCalculateByReq,
 				},
 				node: &corev1.Node{
@@ -671,12 +671,12 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate with memory request and reserve memory from node.annotation and right equal sys.used",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(70),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(80),
+					Enable:                        pointer.Bool(true),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					CPUReclaimThresholdPercent:    pointer.Int64(70),
+					MemoryReclaimThresholdPercent: pointer.Int64(80),
 					MemoryCalculatePolicy:         &memoryCalculateByReq,
 				},
 				node: &corev1.Node{
@@ -763,8 +763,8 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 			},
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:             pointer.BoolPtr(true),
-					DegradeTimeMinutes: pointer.Int64Ptr(degradeTimeoutMinutes),
+					Enable:             pointer.Bool(true),
+					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
 				},
 				nodeMetric: &slov1alpha1.NodeMetric{
 					ObjectMeta: metav1.ObjectMeta{
@@ -798,8 +798,8 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 			},
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:             pointer.BoolPtr(true),
-					DegradeTimeMinutes: pointer.Int64Ptr(degradeTimeoutMinutes),
+					Enable:             pointer.Bool(true),
+					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
 				},
 				nodeMetric: &slov1alpha1.NodeMetric{
 					ObjectMeta: metav1.ObjectMeta{
@@ -921,12 +921,12 @@ func Test_getNodeReservation(t *testing.T) {
 			name: "get correct reserved node resource quantity",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 				node: &corev1.Node{
 					Status: makeNodeStat("100", "100Gi"),

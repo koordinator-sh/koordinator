@@ -90,7 +90,7 @@ func (c *SystemResource) WithValidator(validator ResourceValidator) Resource {
 }
 
 func (c *SystemResource) WithSupported(isSupported bool, msg string) Resource {
-	c.Supported = pointer.BoolPtr(isSupported)
+	c.Supported = pointer.Bool(isSupported)
 	c.SupportMsg = msg
 	return c
 }

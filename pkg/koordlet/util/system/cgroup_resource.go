@@ -377,7 +377,7 @@ func (c *CgroupResource) WithValidator(validator ResourceValidator) Resource {
 }
 
 func (c *CgroupResource) WithSupported(isSupported bool, msg string) Resource {
-	c.Supported = pointer.BoolPtr(isSupported)
+	c.Supported = pointer.Bool(isSupported)
 	c.SupportMsg = msg
 	return c
 }

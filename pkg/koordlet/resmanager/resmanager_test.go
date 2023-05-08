@@ -98,7 +98,7 @@ func Test_isFeatureDisabled(t *testing.T) {
 				nodeSLO: &slov1alpha1.NodeSLO{
 					Spec: slov1alpha1.NodeSLOSpec{
 						ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
-							Enable: pointer.BoolPtr(false),
+							Enable: pointer.Bool(false),
 						},
 					},
 				},
@@ -126,7 +126,7 @@ func Test_isFeatureDisabled(t *testing.T) {
 				nodeSLO: &slov1alpha1.NodeSLO{
 					Spec: slov1alpha1.NodeSLOSpec{
 						ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
-							Enable: pointer.BoolPtr(false),
+							Enable: pointer.Bool(false),
 						},
 					},
 				},

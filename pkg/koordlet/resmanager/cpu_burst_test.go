@@ -104,14 +104,14 @@ var (
 
 	defaultAutoBurstCfg = slov1alpha1.CPUBurstConfig{
 		Policy:                     slov1alpha1.CPUBurstAuto,
-		CPUBurstPercent:            pointer.Int64Ptr(1000),
-		CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-		CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(-1),
+		CPUBurstPercent:            pointer.Int64(1000),
+		CFSQuotaBurstPercent:       pointer.Int64(300),
+		CFSQuotaBurstPeriodSeconds: pointer.Int64(-1),
 	}
 
 	defaultAutoBurstStrategy = &slov1alpha1.CPUBurstStrategy{
 		CPUBurstConfig:            defaultAutoBurstCfg,
-		SharePoolThresholdPercent: pointer.Int64Ptr(50),
+		SharePoolThresholdPercent: pointer.Int64(50),
 	}
 )
 
@@ -479,16 +479,16 @@ func Test_genPodBurstConfig(t *testing.T) {
 				podCfg: nil,
 				nodeCfg: &slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent:            pointer.Int64Ptr(1000),
-					CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(600),
+					CPUBurstPercent:            pointer.Int64(1000),
+					CFSQuotaBurstPercent:       pointer.Int64(300),
+					CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
 				},
 			},
 			want: &slov1alpha1.CPUBurstConfig{
 				Policy:                     slov1alpha1.CPUBurstAuto,
-				CPUBurstPercent:            pointer.Int64Ptr(1000),
-				CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-				CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(600),
+				CPUBurstPercent:            pointer.Int64(1000),
+				CFSQuotaBurstPercent:       pointer.Int64(300),
+				CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
 			},
 		},
 		{
@@ -496,17 +496,17 @@ func Test_genPodBurstConfig(t *testing.T) {
 			args: args{
 				podCfg: &slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent:            pointer.Int64Ptr(1000),
-					CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(600),
+					CPUBurstPercent:            pointer.Int64(1000),
+					CFSQuotaBurstPercent:       pointer.Int64(300),
+					CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
 				},
 				nodeCfg: nil,
 			},
 			want: &slov1alpha1.CPUBurstConfig{
 				Policy:                     slov1alpha1.CPUBurstAuto,
-				CPUBurstPercent:            pointer.Int64Ptr(1000),
-				CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-				CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(600),
+				CPUBurstPercent:            pointer.Int64(1000),
+				CFSQuotaBurstPercent:       pointer.Int64(300),
+				CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
 			},
 		},
 		{
@@ -514,20 +514,20 @@ func Test_genPodBurstConfig(t *testing.T) {
 			args: args{
 				podCfg: &slov1alpha1.CPUBurstConfig{
 					Policy:          slov1alpha1.CPUBurstOnly,
-					CPUBurstPercent: pointer.Int64Ptr(500),
+					CPUBurstPercent: pointer.Int64(500),
 				},
 				nodeCfg: &slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent:            pointer.Int64Ptr(1000),
-					CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(600),
+					CPUBurstPercent:            pointer.Int64(1000),
+					CFSQuotaBurstPercent:       pointer.Int64(300),
+					CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
 				},
 			},
 			want: &slov1alpha1.CPUBurstConfig{
 				Policy:                     slov1alpha1.CPUBurstOnly,
-				CPUBurstPercent:            pointer.Int64Ptr(500),
-				CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-				CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(600),
+				CPUBurstPercent:            pointer.Int64(500),
+				CFSQuotaBurstPercent:       pointer.Int64(300),
+				CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
 			},
 		},
 	}
@@ -632,7 +632,7 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
 					Policy:          slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent: pointer.Int64Ptr(500),
+					CPUBurstPercent: pointer.Int64(500),
 				},
 			},
 			want: want{
@@ -669,7 +669,7 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
 					Policy:          slov1alpha1.CFSQuotaBurstOnly,
-					CPUBurstPercent: pointer.Int64Ptr(500),
+					CPUBurstPercent: pointer.Int64(500),
 				},
 			},
 			want: want{
@@ -803,9 +803,9 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstOnly,
-					CPUBurstPercent:            pointer.Int64Ptr(1000),
-					CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(-1),
+					CPUBurstPercent:            pointer.Int64(1000),
+					CFSQuotaBurstPercent:       pointer.Int64(300),
+					CFSQuotaBurstPeriodSeconds: pointer.Int64(-1),
 				},
 				nodeState: nodeBurstIdle,
 			},
@@ -952,9 +952,9 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent:            pointer.Int64Ptr(1000),
-					CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(0),
+					CPUBurstPercent:            pointer.Int64(1000),
+					CFSQuotaBurstPercent:       pointer.Int64(300),
+					CFSQuotaBurstPeriodSeconds: pointer.Int64(0),
 				},
 				nodeState: nodeBurstIdle,
 			},
@@ -993,9 +993,9 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent:            pointer.Int64Ptr(1000),
-					CFSQuotaBurstPercent:       pointer.Int64Ptr(90),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(-1),
+					CPUBurstPercent:            pointer.Int64(1000),
+					CFSQuotaBurstPercent:       pointer.Int64(90),
+					CFSQuotaBurstPeriodSeconds: pointer.Int64(-1),
 				},
 				nodeState: nodeBurstIdle,
 			},

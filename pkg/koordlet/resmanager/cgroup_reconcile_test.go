@@ -71,49 +71,49 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 	testingQOSStrategyBE := &slov1alpha1.ResourceQOSStrategy{
 		LSRClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(-25),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
 		LSClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(-25),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
 		BEClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(50),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(50),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
@@ -121,49 +121,49 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 	testingQOSStrategyLS := &slov1alpha1.ResourceQOSStrategy{
 		LSRClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(100),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(100),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(-25),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
 		LSClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(100),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(100),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(-25),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
 		BEClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(50),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(50),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
@@ -171,49 +171,49 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 	testingQOSStrategyLSR := &slov1alpha1.ResourceQOSStrategy{
 		LSRClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(100),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(100),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(-25),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
 		LSClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(-25),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
 		BEClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(50),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(50),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
@@ -221,49 +221,49 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 	testingQOSStrategyNone := &slov1alpha1.ResourceQOSStrategy{
 		LSRClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(-25),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
 		LSClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(-25),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
 		BEClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(50),
-					PriorityEnable:    pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(50),
+					PriorityEnable:    pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
 				},
 			},
 		},
@@ -292,31 +292,31 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 			qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 				LSRClass: &slov1alpha1.ResourceQOS{
 					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-						Enable: pointer.BoolPtr(true),
+						Enable: pointer.Bool(true),
 						MemoryQOS: slov1alpha1.MemoryQOS{
-							WmarkRatio:  pointer.Int64Ptr(101),
-							WmarkMinAdj: pointer.Int64Ptr(-51),
+							WmarkRatio:  pointer.Int64(101),
+							WmarkMinAdj: pointer.Int64(-51),
 						},
 					},
 				},
 				LSClass: &slov1alpha1.ResourceQOS{
 					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-						Enable: pointer.BoolPtr(true),
+						Enable: pointer.Bool(true),
 						MemoryQOS: slov1alpha1.MemoryQOS{
-							Priority:       pointer.Int64Ptr(6),
-							PriorityEnable: pointer.Int64Ptr(1),
+							Priority:       pointer.Int64(6),
+							PriorityEnable: pointer.Int64(1),
 						},
 					},
 				},
 				BEClass: &slov1alpha1.ResourceQOS{
 					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-						Enable: pointer.BoolPtr(true),
+						Enable: pointer.Bool(true),
 						MemoryQOS: slov1alpha1.MemoryQOS{
-							WmarkRatio:        pointer.Int64Ptr(-1),
-							WmarkScalePermill: pointer.Int64Ptr(20),
-							WmarkMinAdj:       pointer.Int64Ptr(53),
-							OomKillGroup:      pointer.Int64Ptr(1),
-							PriorityEnable:    pointer.Int64Ptr(1),
+							WmarkRatio:        pointer.Int64(-1),
+							WmarkScalePermill: pointer.Int64(20),
+							WmarkMinAdj:       pointer.Int64(53),
+							OomKillGroup:      pointer.Int64(1),
+							PriorityEnable:    pointer.Int64(1),
 						},
 					},
 				},
@@ -324,49 +324,49 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 			expect: &slov1alpha1.ResourceQOSStrategy{
 				LSRClass: &slov1alpha1.ResourceQOS{
 					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-						Enable: pointer.BoolPtr(true),
+						Enable: pointer.Bool(true),
 						MemoryQOS: slov1alpha1.MemoryQOS{
-							MinLimitPercent:   pointer.Int64Ptr(0),
-							LowLimitPercent:   pointer.Int64Ptr(0),
-							ThrottlingPercent: pointer.Int64Ptr(0),
-							WmarkRatio:        pointer.Int64Ptr(95),
-							WmarkScalePermill: pointer.Int64Ptr(20),
-							WmarkMinAdj:       pointer.Int64Ptr(0),
-							OomKillGroup:      pointer.Int64Ptr(0),
-							Priority:          pointer.Int64Ptr(0),
-							PriorityEnable:    pointer.Int64Ptr(0),
+							MinLimitPercent:   pointer.Int64(0),
+							LowLimitPercent:   pointer.Int64(0),
+							ThrottlingPercent: pointer.Int64(0),
+							WmarkRatio:        pointer.Int64(95),
+							WmarkScalePermill: pointer.Int64(20),
+							WmarkMinAdj:       pointer.Int64(0),
+							OomKillGroup:      pointer.Int64(0),
+							Priority:          pointer.Int64(0),
+							PriorityEnable:    pointer.Int64(0),
 						},
 					},
 				},
 				LSClass: &slov1alpha1.ResourceQOS{
 					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-						Enable: pointer.BoolPtr(true),
+						Enable: pointer.Bool(true),
 						MemoryQOS: slov1alpha1.MemoryQOS{
-							MinLimitPercent:   pointer.Int64Ptr(0),
-							LowLimitPercent:   pointer.Int64Ptr(0),
-							ThrottlingPercent: pointer.Int64Ptr(0),
-							WmarkRatio:        pointer.Int64Ptr(95),
-							WmarkScalePermill: pointer.Int64Ptr(20),
-							WmarkMinAdj:       pointer.Int64Ptr(0),
-							OomKillGroup:      pointer.Int64Ptr(0),
-							Priority:          pointer.Int64Ptr(6),
-							PriorityEnable:    pointer.Int64Ptr(1),
+							MinLimitPercent:   pointer.Int64(0),
+							LowLimitPercent:   pointer.Int64(0),
+							ThrottlingPercent: pointer.Int64(0),
+							WmarkRatio:        pointer.Int64(95),
+							WmarkScalePermill: pointer.Int64(20),
+							WmarkMinAdj:       pointer.Int64(0),
+							OomKillGroup:      pointer.Int64(0),
+							Priority:          pointer.Int64(6),
+							PriorityEnable:    pointer.Int64(1),
 						},
 					},
 				},
 				BEClass: &slov1alpha1.ResourceQOS{
 					MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-						Enable: pointer.BoolPtr(true),
+						Enable: pointer.Bool(true),
 						MemoryQOS: slov1alpha1.MemoryQOS{
-							MinLimitPercent:   pointer.Int64Ptr(0),
-							LowLimitPercent:   pointer.Int64Ptr(0),
-							ThrottlingPercent: pointer.Int64Ptr(0),
-							WmarkRatio:        pointer.Int64Ptr(80),
-							WmarkScalePermill: pointer.Int64Ptr(20),
-							WmarkMinAdj:       pointer.Int64Ptr(0),
-							OomKillGroup:      pointer.Int64Ptr(1),
-							Priority:          pointer.Int64Ptr(0),
-							PriorityEnable:    pointer.Int64Ptr(1),
+							MinLimitPercent:   pointer.Int64(0),
+							LowLimitPercent:   pointer.Int64(0),
+							ThrottlingPercent: pointer.Int64(0),
+							WmarkRatio:        pointer.Int64(80),
+							WmarkScalePermill: pointer.Int64(20),
+							WmarkMinAdj:       pointer.Int64(0),
+							OomKillGroup:      pointer.Int64(1),
+							Priority:          pointer.Int64(0),
+							PriorityEnable:    pointer.Int64(1),
 						},
 					},
 				},
@@ -458,23 +458,23 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 	testingPodBEWithMemQOS := createPodWithMemoryQOS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQOSConfig{
 		Policy: slov1alpha1.PodMemoryQOSPolicyAuto,
 		MemoryQOS: slov1alpha1.MemoryQOS{
-			MinLimitPercent:   pointer.Int64Ptr(100),
-			LowLimitPercent:   pointer.Int64Ptr(0),
-			ThrottlingPercent: pointer.Int64Ptr(80),
-			WmarkRatio:        pointer.Int64Ptr(95),
-			WmarkScalePermill: pointer.Int64Ptr(20),
-			WmarkMinAdj:       pointer.Int64Ptr(50),
+			MinLimitPercent:   pointer.Int64(100),
+			LowLimitPercent:   pointer.Int64(0),
+			ThrottlingPercent: pointer.Int64(80),
+			WmarkRatio:        pointer.Int64(95),
+			WmarkScalePermill: pointer.Int64(20),
+			WmarkMinAdj:       pointer.Int64(50),
 		},
 	})
 	testingPodBEWithMemQoS1 := createPodWithMemoryQOS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQOSConfig{
 		Policy: slov1alpha1.PodMemoryQOSPolicyAuto,
 		MemoryQOS: slov1alpha1.MemoryQOS{
-			MinLimitPercent:   pointer.Int64Ptr(50),
-			LowLimitPercent:   pointer.Int64Ptr(0),
-			ThrottlingPercent: pointer.Int64Ptr(40),
-			WmarkRatio:        pointer.Int64Ptr(95),
-			WmarkScalePermill: pointer.Int64Ptr(20),
-			WmarkMinAdj:       pointer.Int64Ptr(50),
+			MinLimitPercent:   pointer.Int64(50),
+			LowLimitPercent:   pointer.Int64(0),
+			ThrottlingPercent: pointer.Int64(40),
+			WmarkRatio:        pointer.Int64(95),
+			WmarkScalePermill: pointer.Int64(20),
+			WmarkMinAdj:       pointer.Int64(50),
 		},
 	})
 	podParentDirBE := testingPodBEWithMemQOS.CgroupDir
@@ -663,14 +663,14 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 					LSRClass: &slov1alpha1.ResourceQOS{},
 					LSClass: &slov1alpha1.ResourceQOS{
 						MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-							Enable: pointer.BoolPtr(false),
+							Enable: pointer.Bool(false),
 							MemoryQOS: slov1alpha1.MemoryQOS{
-								MinLimitPercent:   pointer.Int64Ptr(0),
-								LowLimitPercent:   pointer.Int64Ptr(0),
-								ThrottlingPercent: pointer.Int64Ptr(0),
-								WmarkRatio:        pointer.Int64Ptr(0),
-								WmarkScalePermill: pointer.Int64Ptr(50),
-								WmarkMinAdj:       pointer.Int64Ptr(0),
+								MinLimitPercent:   pointer.Int64(0),
+								LowLimitPercent:   pointer.Int64(0),
+								ThrottlingPercent: pointer.Int64(0),
+								WmarkRatio:        pointer.Int64(0),
+								WmarkScalePermill: pointer.Int64(50),
+								WmarkMinAdj:       pointer.Int64(0),
 							},
 						},
 					},
@@ -833,7 +833,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 	testingNodeNoneResourceQoS := sloconfig.NoneResourceQOSStrategy().BEClass
 	testingMemoryQoSEnableResourceQoS := sloconfig.DefaultResourceQOSStrategy().BEClass // qos enable
-	testingMemoryQoSEnableResourceQoS.MemoryQOS.Enable = pointer.BoolPtr(true)
+	testingMemoryQoSEnableResourceQoS.MemoryQOS.Enable = pointer.Bool(true)
 	testingMemoryQoSNoneResourceQoS := sloconfig.NoneResourceQOSStrategy().BEClass // qos disable
 	testingMemoryQoSNoneResourceQoS.MemoryQOS = sloconfig.NoneResourceQOSStrategy().BEClass.MemoryQOS
 	testingMemoryQoSNoneResourceQoS1 := sloconfig.DefaultResourceQOSStrategy().BEClass // qos partially disable
@@ -841,13 +841,13 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 	testingMemoryQoSAutoResourceQoS := sloconfig.NoneResourceQOSStrategy().BEClass
 	testingMemoryQoSAutoResourceQoS.MemoryQOS.MemoryQOS = *sloconfig.DefaultMemoryQOS(apiext.QoSBE)
 	testingMemoryQoSAutoResourceQoS1 := sloconfig.DefaultResourceQOSStrategy().BEClass
-	testingMemoryQoSAutoResourceQoS1.MemoryQOS.ThrottlingPercent = pointer.Int64Ptr(90)
+	testingMemoryQoSAutoResourceQoS1.MemoryQOS.ThrottlingPercent = pointer.Int64(90)
 	testingMemoryQoSAutoResourceQoS2 := &slov1alpha1.ResourceQOS{
 		MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 			MemoryQOS: *sloconfig.DefaultMemoryQOS(apiext.QoSBE),
 		},
 	}
-	testingMemoryQoSAutoResourceQoS2.MemoryQOS.ThrottlingPercent = pointer.Int64Ptr(90)
+	testingMemoryQoSAutoResourceQoS2.MemoryQOS.ThrottlingPercent = pointer.Int64(90)
 	type args struct {
 		pod *corev1.Pod
 		cfg *slov1alpha1.ResourceQOS
@@ -1023,7 +1023,7 @@ func Test_makeCgroupResources(t *testing.T) {
 			args: args{
 				parentDir: "burstable",
 				summary: &cgroupResourceSummary{
-					memoryWmarkRatio: pointer.Int64Ptr(90),
+					memoryWmarkRatio: pointer.Int64(90),
 				},
 			},
 			want: func() []resourceexecutor.ResourceUpdater {
@@ -1037,10 +1037,10 @@ func Test_makeCgroupResources(t *testing.T) {
 			args: args{
 				parentDir: "pod0",
 				summary: &cgroupResourceSummary{
-					memoryMin:              pointer.Int64Ptr(testingPodMemRequestLimitBytes),
-					memoryWmarkRatio:       pointer.Int64Ptr(95),
-					memoryWmarkScaleFactor: pointer.Int64Ptr(20),
-					memoryWmarkMinAdj:      pointer.Int64Ptr(-25),
+					memoryMin:              pointer.Int64(testingPodMemRequestLimitBytes),
+					memoryWmarkRatio:       pointer.Int64(95),
+					memoryWmarkScaleFactor: pointer.Int64(20),
+					memoryWmarkMinAdj:      pointer.Int64(-25),
 				},
 			},
 			want: func() []resourceexecutor.ResourceUpdater {
@@ -1057,10 +1057,10 @@ func Test_makeCgroupResources(t *testing.T) {
 			args: args{
 				parentDir: "pod0/container1",
 				summary: &cgroupResourceSummary{
-					memoryHigh:             pointer.Int64Ptr(testingPodMemRequestLimitBytes * 80 / 100),
-					memoryWmarkRatio:       pointer.Int64Ptr(95),
-					memoryWmarkScaleFactor: pointer.Int64Ptr(20),
-					memoryWmarkMinAdj:      pointer.Int64Ptr(50),
+					memoryHigh:             pointer.Int64(testingPodMemRequestLimitBytes * 80 / 100),
+					memoryWmarkRatio:       pointer.Int64(95),
+					memoryWmarkScaleFactor: pointer.Int64(20),
+					memoryWmarkMinAdj:      pointer.Int64(50),
 				},
 			},
 			want: func() []resourceexecutor.ResourceUpdater {
@@ -1080,10 +1080,10 @@ func Test_makeCgroupResources(t *testing.T) {
 			args: args{
 				parentDir: "pod1/container0",
 				summary: &cgroupResourceSummary{
-					memoryMin:              pointer.Int64Ptr(testingPodMemRequestLimitBytes),
-					memoryWmarkRatio:       pointer.Int64Ptr(95),
-					memoryWmarkScaleFactor: pointer.Int64Ptr(20),
-					memoryWmarkMinAdj:      pointer.Int64Ptr(-25),
+					memoryMin:              pointer.Int64(testingPodMemRequestLimitBytes),
+					memoryWmarkRatio:       pointer.Int64(95),
+					memoryWmarkScaleFactor: pointer.Int64(20),
+					memoryWmarkMinAdj:      pointer.Int64(-25),
 				},
 			},
 			want: func() []resourceexecutor.ResourceUpdater {
@@ -1180,49 +1180,49 @@ func defaultQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 	return &slov1alpha1.ResourceQOSStrategy{
 		LSRClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					PriorityEnable:    pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					PriorityEnable:    pointer.Int64(0),
 				},
 			},
 		},
 		LSClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					PriorityEnable:    pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					PriorityEnable:    pointer.Int64(0),
 				},
 			},
 		},
 		BEClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(80),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(0),
-					OomKillGroup:      pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(0),
-					PriorityEnable:    pointer.Int64Ptr(0),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(80),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(0),
+					OomKillGroup:      pointer.Int64(0),
+					Priority:          pointer.Int64(0),
+					PriorityEnable:    pointer.Int64(0),
 				},
 			},
 		},
@@ -1233,49 +1233,49 @@ func newValidQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 	return &slov1alpha1.ResourceQOSStrategy{
 		LSRClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(96),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					OomKillGroup:      pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(12),
-					PriorityEnable:    pointer.Int64Ptr(1),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(96),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(-25),
+					OomKillGroup:      pointer.Int64(0),
+					Priority:          pointer.Int64(12),
+					PriorityEnable:    pointer.Int64(1),
 				},
 			},
 		},
 		LSClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(95),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(-25),
-					OomKillGroup:      pointer.Int64Ptr(0),
-					Priority:          pointer.Int64Ptr(6),
-					PriorityEnable:    pointer.Int64Ptr(1),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(95),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(-25),
+					OomKillGroup:      pointer.Int64(0),
+					Priority:          pointer.Int64(6),
+					PriorityEnable:    pointer.Int64(1),
 				},
 			},
 		},
 		BEClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.BoolPtr(true),
+				Enable: pointer.Bool(true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64Ptr(0),
-					LowLimitPercent:   pointer.Int64Ptr(0),
-					ThrottlingPercent: pointer.Int64Ptr(0),
-					WmarkRatio:        pointer.Int64Ptr(85),
-					WmarkScalePermill: pointer.Int64Ptr(20),
-					WmarkMinAdj:       pointer.Int64Ptr(50),
-					OomKillGroup:      pointer.Int64Ptr(1),
-					Priority:          pointer.Int64Ptr(0),
-					PriorityEnable:    pointer.Int64Ptr(1),
+					MinLimitPercent:   pointer.Int64(0),
+					LowLimitPercent:   pointer.Int64(0),
+					ThrottlingPercent: pointer.Int64(0),
+					WmarkRatio:        pointer.Int64(85),
+					WmarkScalePermill: pointer.Int64(20),
+					WmarkMinAdj:       pointer.Int64(50),
+					OomKillGroup:      pointer.Int64(1),
+					Priority:          pointer.Int64(0),
+					PriorityEnable:    pointer.Int64(1),
 				},
 			},
 		},
@@ -1437,15 +1437,15 @@ func readMemFromCgroupFile(parentDir string, helper *system.FileTestUtil) *slov1
 	// testingPodMemRequestLimitBytes = 1073741824
 	minLimitPercent, _ := cgroupFileReadIntforTest(parentDir, system.MemoryMin)
 	if minLimitPercent != nil {
-		resourceQoS.MemoryQOS.MinLimitPercent = pointer.Int64Ptr((*minLimitPercent) * 100 / testingPodMemRequestLimitBytes)
+		resourceQoS.MemoryQOS.MinLimitPercent = pointer.Int64((*minLimitPercent) * 100 / testingPodMemRequestLimitBytes)
 	}
 	lowLimitPercent, _ := cgroupFileReadIntforTest(parentDir, system.MemoryLow)
 	if lowLimitPercent != nil {
-		resourceQoS.MemoryQOS.LowLimitPercent = pointer.Int64Ptr((*lowLimitPercent) * 100 / testingPodMemRequestLimitBytes)
+		resourceQoS.MemoryQOS.LowLimitPercent = pointer.Int64((*lowLimitPercent) * 100 / testingPodMemRequestLimitBytes)
 	}
 	throttlingPercent, _ := cgroupFileReadIntforTest(parentDir, system.MemoryHigh)
 	if throttlingPercent != nil {
-		resourceQoS.MemoryQOS.ThrottlingPercent = pointer.Int64Ptr(0) // assert test setting disabled
+		resourceQoS.MemoryQOS.ThrottlingPercent = pointer.Int64(0) // assert test setting disabled
 	}
 	// static resources
 	resourceQoS.MemoryQOS.WmarkRatio, _ = cgroupFileReadIntforTest(parentDir, system.MemoryWmarkRatio)
@@ -1457,7 +1457,7 @@ func readMemFromCgroupFile(parentDir string, helper *system.FileTestUtil) *slov1
 
 	// assume NONE cfg equals to disabled
 	memoryQoSDisabled := reflect.DeepEqual(sloconfig.NoneMemoryQOS(), &resourceQoS.MemoryQOS)
-	resourceQoS.MemoryQOS.Enable = pointer.BoolPtr(!memoryQoSDisabled)
+	resourceQoS.MemoryQOS.Enable = pointer.Bool(!memoryQoSDisabled)
 
 	return resourceQoS
 }

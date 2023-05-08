@@ -50,10 +50,10 @@ func DefaultNodeSLOSpecConfig() slov1alpha1.NodeSLOSpec {
 
 func DefaultResourceThresholdStrategy() *slov1alpha1.ResourceThresholdStrategy {
 	return &slov1alpha1.ResourceThresholdStrategy{
-		Enable:                      pointer.BoolPtr(false),
-		CPUSuppressThresholdPercent: pointer.Int64Ptr(65),
+		Enable:                      pointer.Bool(false),
+		CPUSuppressThresholdPercent: pointer.Int64(65),
 		CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
-		MemoryEvictThresholdPercent: pointer.Int64Ptr(70),
+		MemoryEvictThresholdPercent: pointer.Int64(70),
 	}
 }
 
@@ -62,15 +62,15 @@ func DefaultCPUQOS(qos apiext.QoSClass) *slov1alpha1.CPUQOS {
 	switch qos {
 	case apiext.QoSLSR:
 		cpuQOS = &slov1alpha1.CPUQOS{
-			GroupIdentity: pointer.Int64Ptr(2),
+			GroupIdentity: pointer.Int64(2),
 		}
 	case apiext.QoSLS:
 		cpuQOS = &slov1alpha1.CPUQOS{
-			GroupIdentity: pointer.Int64Ptr(2),
+			GroupIdentity: pointer.Int64(2),
 		}
 	case apiext.QoSBE:
 		cpuQOS = &slov1alpha1.CPUQOS{
-			GroupIdentity: pointer.Int64Ptr(-1),
+			GroupIdentity: pointer.Int64(-1),
 		}
 	default:
 		klog.Infof("cpu qos has no auto config for qos %s", qos)
@@ -84,21 +84,21 @@ func DefaultResctrlQOS(qos apiext.QoSClass) *slov1alpha1.ResctrlQOS {
 	switch qos {
 	case apiext.QoSLSR:
 		resctrlQOS = &slov1alpha1.ResctrlQOS{
-			CATRangeStartPercent: pointer.Int64Ptr(0),
-			CATRangeEndPercent:   pointer.Int64Ptr(100),
-			MBAPercent:           pointer.Int64Ptr(100),
+			CATRangeStartPercent: pointer.Int64(0),
+			CATRangeEndPercent:   pointer.Int64(100),
+			MBAPercent:           pointer.Int64(100),
 		}
 	case apiext.QoSLS:
 		resctrlQOS = &slov1alpha1.ResctrlQOS{
-			CATRangeStartPercent: pointer.Int64Ptr(0),
-			CATRangeEndPercent:   pointer.Int64Ptr(100),
-			MBAPercent:           pointer.Int64Ptr(100),
+			CATRangeStartPercent: pointer.Int64(0),
+			CATRangeEndPercent:   pointer.Int64(100),
+			MBAPercent:           pointer.Int64(100),
 		}
 	case apiext.QoSBE:
 		resctrlQOS = &slov1alpha1.ResctrlQOS{
-			CATRangeStartPercent: pointer.Int64Ptr(0),
-			CATRangeEndPercent:   pointer.Int64Ptr(30),
-			MBAPercent:           pointer.Int64Ptr(100),
+			CATRangeStartPercent: pointer.Int64(0),
+			CATRangeEndPercent:   pointer.Int64(30),
+			MBAPercent:           pointer.Int64(100),
 		}
 	default:
 		klog.Infof("resctrl qos has no auto config for qos %s", qos)
@@ -121,39 +121,39 @@ func DefaultMemoryQOS(qos apiext.QoSClass) *slov1alpha1.MemoryQOS {
 	switch qos {
 	case apiext.QoSLSR:
 		memoryQOS = &slov1alpha1.MemoryQOS{
-			MinLimitPercent:   pointer.Int64Ptr(0),
-			LowLimitPercent:   pointer.Int64Ptr(0),
-			ThrottlingPercent: pointer.Int64Ptr(0),
-			WmarkRatio:        pointer.Int64Ptr(95),
-			WmarkScalePermill: pointer.Int64Ptr(20),
-			WmarkMinAdj:       pointer.Int64Ptr(-25),
-			PriorityEnable:    pointer.Int64Ptr(0),
-			Priority:          pointer.Int64Ptr(0),
-			OomKillGroup:      pointer.Int64Ptr(0),
+			MinLimitPercent:   pointer.Int64(0),
+			LowLimitPercent:   pointer.Int64(0),
+			ThrottlingPercent: pointer.Int64(0),
+			WmarkRatio:        pointer.Int64(95),
+			WmarkScalePermill: pointer.Int64(20),
+			WmarkMinAdj:       pointer.Int64(-25),
+			PriorityEnable:    pointer.Int64(0),
+			Priority:          pointer.Int64(0),
+			OomKillGroup:      pointer.Int64(0),
 		}
 	case apiext.QoSLS:
 		memoryQOS = &slov1alpha1.MemoryQOS{
-			MinLimitPercent:   pointer.Int64Ptr(0),
-			LowLimitPercent:   pointer.Int64Ptr(0),
-			ThrottlingPercent: pointer.Int64Ptr(0),
-			WmarkRatio:        pointer.Int64Ptr(95),
-			WmarkScalePermill: pointer.Int64Ptr(20),
-			WmarkMinAdj:       pointer.Int64Ptr(-25),
-			PriorityEnable:    pointer.Int64Ptr(0),
-			Priority:          pointer.Int64Ptr(0),
-			OomKillGroup:      pointer.Int64Ptr(0),
+			MinLimitPercent:   pointer.Int64(0),
+			LowLimitPercent:   pointer.Int64(0),
+			ThrottlingPercent: pointer.Int64(0),
+			WmarkRatio:        pointer.Int64(95),
+			WmarkScalePermill: pointer.Int64(20),
+			WmarkMinAdj:       pointer.Int64(-25),
+			PriorityEnable:    pointer.Int64(0),
+			Priority:          pointer.Int64(0),
+			OomKillGroup:      pointer.Int64(0),
 		}
 	case apiext.QoSBE:
 		memoryQOS = &slov1alpha1.MemoryQOS{
-			MinLimitPercent:   pointer.Int64Ptr(0),
-			LowLimitPercent:   pointer.Int64Ptr(0),
-			ThrottlingPercent: pointer.Int64Ptr(0),
-			WmarkRatio:        pointer.Int64Ptr(95),
-			WmarkScalePermill: pointer.Int64Ptr(20),
-			WmarkMinAdj:       pointer.Int64Ptr(50),
-			PriorityEnable:    pointer.Int64Ptr(0),
-			Priority:          pointer.Int64Ptr(0),
-			OomKillGroup:      pointer.Int64Ptr(0),
+			MinLimitPercent:   pointer.Int64(0),
+			LowLimitPercent:   pointer.Int64(0),
+			ThrottlingPercent: pointer.Int64(0),
+			WmarkRatio:        pointer.Int64(95),
+			WmarkScalePermill: pointer.Int64(20),
+			WmarkMinAdj:       pointer.Int64(50),
+			PriorityEnable:    pointer.Int64(0),
+			Priority:          pointer.Int64(0),
+			OomKillGroup:      pointer.Int64(0),
 		}
 	default:
 		klog.V(5).Infof("memory qos has no auto config for qos %s", qos)
@@ -165,43 +165,43 @@ func DefaultResourceQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 	return &slov1alpha1.ResourceQOSStrategy{
 		LSRClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
-				Enable: pointer.BoolPtr(false),
+				Enable: pointer.Bool(false),
 				CPUQOS: *DefaultCPUQOS(apiext.QoSLSR),
 			},
 			ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
-				Enable:     pointer.BoolPtr(false),
+				Enable:     pointer.Bool(false),
 				ResctrlQOS: *DefaultResctrlQOS(apiext.QoSLSR),
 			},
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable:    pointer.BoolPtr(false),
+				Enable:    pointer.Bool(false),
 				MemoryQOS: *DefaultMemoryQOS(apiext.QoSLSR),
 			},
 		},
 		LSClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
-				Enable: pointer.BoolPtr(false),
+				Enable: pointer.Bool(false),
 				CPUQOS: *DefaultCPUQOS(apiext.QoSLS),
 			},
 			ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
-				Enable:     pointer.BoolPtr(false),
+				Enable:     pointer.Bool(false),
 				ResctrlQOS: *DefaultResctrlQOS(apiext.QoSLS),
 			},
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable:    pointer.BoolPtr(false),
+				Enable:    pointer.Bool(false),
 				MemoryQOS: *DefaultMemoryQOS(apiext.QoSLS),
 			},
 		},
 		BEClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
-				Enable: pointer.BoolPtr(false),
+				Enable: pointer.Bool(false),
 				CPUQOS: *DefaultCPUQOS(apiext.QoSBE),
 			},
 			ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
-				Enable:     pointer.BoolPtr(false),
+				Enable:     pointer.Bool(false),
 				ResctrlQOS: *DefaultResctrlQOS(apiext.QoSBE),
 			},
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable:    pointer.BoolPtr(false),
+				Enable:    pointer.Bool(false),
 				MemoryQOS: *DefaultMemoryQOS(apiext.QoSBE),
 			},
 		},
@@ -211,15 +211,15 @@ func DefaultResourceQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 func NoneResourceQOS(qos apiext.QoSClass) *slov1alpha1.ResourceQOS {
 	return &slov1alpha1.ResourceQOS{
 		CPUQOS: &slov1alpha1.CPUQOSCfg{
-			Enable: pointer.BoolPtr(false),
+			Enable: pointer.Bool(false),
 			CPUQOS: *NoneCPUQOS(),
 		},
 		ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
-			Enable:     pointer.BoolPtr(false),
+			Enable:     pointer.Bool(false),
 			ResctrlQOS: *NoneResctrlQOS(),
 		},
 		MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-			Enable:    pointer.BoolPtr(false),
+			Enable:    pointer.Bool(false),
 			MemoryQOS: *NoneMemoryQOS(),
 		},
 	}
@@ -233,24 +233,24 @@ func NoneCPUQOS() *slov1alpha1.CPUQOS {
 
 func NoneResctrlQOS() *slov1alpha1.ResctrlQOS {
 	return &slov1alpha1.ResctrlQOS{
-		CATRangeStartPercent: pointer.Int64Ptr(0),
-		CATRangeEndPercent:   pointer.Int64Ptr(100),
-		MBAPercent:           pointer.Int64Ptr(100),
+		CATRangeStartPercent: pointer.Int64(0),
+		CATRangeEndPercent:   pointer.Int64(100),
+		MBAPercent:           pointer.Int64(100),
 	}
 }
 
 // NoneMemoryQOS returns the all-disabled configuration for memory qos strategy.
 func NoneMemoryQOS() *slov1alpha1.MemoryQOS {
 	return &slov1alpha1.MemoryQOS{
-		MinLimitPercent:   pointer.Int64Ptr(0),
-		LowLimitPercent:   pointer.Int64Ptr(0),
-		ThrottlingPercent: pointer.Int64Ptr(0),
-		WmarkRatio:        pointer.Int64Ptr(0),
-		WmarkScalePermill: pointer.Int64Ptr(50),
-		WmarkMinAdj:       pointer.Int64Ptr(0),
-		PriorityEnable:    pointer.Int64Ptr(0),
-		Priority:          pointer.Int64Ptr(0),
-		OomKillGroup:      pointer.Int64Ptr(0),
+		MinLimitPercent:   pointer.Int64(0),
+		LowLimitPercent:   pointer.Int64(0),
+		ThrottlingPercent: pointer.Int64(0),
+		WmarkRatio:        pointer.Int64(0),
+		WmarkScalePermill: pointer.Int64(50),
+		WmarkMinAdj:       pointer.Int64(0),
+		PriorityEnable:    pointer.Int64(0),
+		Priority:          pointer.Int64(0),
+		OomKillGroup:      pointer.Int64(0),
 	}
 }
 
@@ -266,24 +266,24 @@ func NoneResourceQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 func DefaultCPUBurstStrategy() *slov1alpha1.CPUBurstStrategy {
 	return &slov1alpha1.CPUBurstStrategy{
 		CPUBurstConfig:            DefaultCPUBurstConfig(),
-		SharePoolThresholdPercent: pointer.Int64Ptr(50),
+		SharePoolThresholdPercent: pointer.Int64(50),
 	}
 }
 
 func DefaultCPUBurstConfig() slov1alpha1.CPUBurstConfig {
 	return slov1alpha1.CPUBurstConfig{
 		Policy:                     slov1alpha1.CPUBurstNone,
-		CPUBurstPercent:            pointer.Int64Ptr(1000),
-		CFSQuotaBurstPercent:       pointer.Int64Ptr(300),
-		CFSQuotaBurstPeriodSeconds: pointer.Int64Ptr(-1),
+		CPUBurstPercent:            pointer.Int64(1000),
+		CFSQuotaBurstPercent:       pointer.Int64(300),
+		CFSQuotaBurstPeriodSeconds: pointer.Int64(-1),
 	}
 }
 
 func DefaultSystemStrategy() *slov1alpha1.SystemStrategy {
 	return &slov1alpha1.SystemStrategy{
-		MinFreeKbytesFactor:  pointer.Int64Ptr(100), // 1 means 1/10000
-		WatermarkScaleFactor: pointer.Int64Ptr(150), // 1 means 1/10000
-		MemcgReapBackGround:  pointer.Int64Ptr(0),
+		MinFreeKbytesFactor:  pointer.Int64(100), // 1 means 1/10000
+		WatermarkScaleFactor: pointer.Int64(150), // 1 means 1/10000
+		MemcgReapBackGround:  pointer.Int64(0),
 	}
 }
 

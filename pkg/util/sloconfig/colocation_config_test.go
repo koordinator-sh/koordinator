@@ -49,7 +49,7 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 			args: args{
 				cfg: &extension.ColocationCfg{
 					ColocationStrategy: extension.ColocationStrategy{
-						Enable: pointer.BoolPtr(false),
+						Enable: pointer.Bool(false),
 					},
 				},
 			},
@@ -60,13 +60,13 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 			args: args{
 				cfg: &extension.ColocationCfg{
 					ColocationStrategy: extension.ColocationStrategy{
-						Enable: pointer.BoolPtr(false),
+						Enable: pointer.Bool(false),
 					},
 				},
 				node: &corev1.Node{},
 			},
 			want: &extension.ColocationStrategy{
-				Enable: pointer.BoolPtr(false),
+				Enable: pointer.Bool(false),
 			},
 		},
 		{
@@ -74,23 +74,23 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 			args: args{
 				cfg: &extension.ColocationCfg{
 					ColocationStrategy: extension.ColocationStrategy{
-						Enable:                        pointer.BoolPtr(false),
-						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-						DegradeTimeMinutes:            pointer.Int64Ptr(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+						Enable:                        pointer.Bool(false),
+						CPUReclaimThresholdPercent:    pointer.Int64(65),
+						MemoryReclaimThresholdPercent: pointer.Int64(65),
+						DegradeTimeMinutes:            pointer.Int64(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64(300),
+						ResourceDiffThreshold:         pointer.Float64(0.1),
 					},
 				},
 				node: &corev1.Node{},
 			},
 			want: &extension.ColocationStrategy{
-				Enable:                        pointer.BoolPtr(false),
-				CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-				MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-				DegradeTimeMinutes:            pointer.Int64Ptr(15),
-				UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-				ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+				Enable:                        pointer.Bool(false),
+				CPUReclaimThresholdPercent:    pointer.Int64(65),
+				MemoryReclaimThresholdPercent: pointer.Int64(65),
+				DegradeTimeMinutes:            pointer.Int64(15),
+				UpdateTimeThresholdSeconds:    pointer.Int64(300),
+				ResourceDiffThreshold:         pointer.Float64(0.1),
 			},
 		},
 		{
@@ -98,13 +98,13 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 			args: args{
 				cfg: &extension.ColocationCfg{
 					ColocationStrategy: extension.ColocationStrategy{
-						Enable:                        pointer.BoolPtr(false),
-						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+						Enable:                        pointer.Bool(false),
+						CPUReclaimThresholdPercent:    pointer.Int64(65),
+						MemoryReclaimThresholdPercent: pointer.Int64(65),
 						MemoryCalculatePolicy:         &memoryCalcPolicyByUsage,
-						DegradeTimeMinutes:            pointer.Int64Ptr(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+						DegradeTimeMinutes:            pointer.Int64(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64(300),
+						ResourceDiffThreshold:         pointer.Float64(0.1),
 					},
 					NodeConfigs: []extension.NodeColocationCfg{
 						{
@@ -116,7 +116,7 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 								},
 							},
 							ColocationStrategy: extension.ColocationStrategy{
-								Enable: pointer.BoolPtr(true),
+								Enable: pointer.Bool(true),
 							},
 						},
 					},
@@ -131,13 +131,13 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 				},
 			},
 			want: &extension.ColocationStrategy{
-				Enable:                        pointer.BoolPtr(true),
-				CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-				MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
+				Enable:                        pointer.Bool(true),
+				CPUReclaimThresholdPercent:    pointer.Int64(65),
+				MemoryReclaimThresholdPercent: pointer.Int64(65),
 				MemoryCalculatePolicy:         &memoryCalcPolicyByUsage,
-				DegradeTimeMinutes:            pointer.Int64Ptr(15),
-				UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-				ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+				DegradeTimeMinutes:            pointer.Int64(15),
+				UpdateTimeThresholdSeconds:    pointer.Int64(300),
+				ResourceDiffThreshold:         pointer.Float64(0.1),
 			},
 		},
 		{
@@ -155,7 +155,7 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 								},
 							},
 							ColocationStrategy: extension.ColocationStrategy{
-								Enable: pointer.BoolPtr(false),
+								Enable: pointer.Bool(false),
 							},
 						},
 						{
@@ -167,7 +167,7 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 								},
 							},
 							ColocationStrategy: extension.ColocationStrategy{
-								Enable: pointer.BoolPtr(true),
+								Enable: pointer.Bool(true),
 							},
 						},
 					},
@@ -182,16 +182,16 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 				},
 			},
 			want: &extension.ColocationStrategy{
-				Enable:                         pointer.BoolPtr(true),
-				MetricAggregateDurationSeconds: pointer.Int64Ptr(300),
-				MetricReportIntervalSeconds:    pointer.Int64Ptr(60),
+				Enable:                         pointer.Bool(true),
+				MetricAggregateDurationSeconds: pointer.Int64(300),
+				MetricReportIntervalSeconds:    pointer.Int64(60),
 				MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
-				CPUReclaimThresholdPercent:     pointer.Int64Ptr(60),
-				MemoryReclaimThresholdPercent:  pointer.Int64Ptr(65),
+				CPUReclaimThresholdPercent:     pointer.Int64(60),
+				MemoryReclaimThresholdPercent:  pointer.Int64(65),
 				MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
-				DegradeTimeMinutes:             pointer.Int64Ptr(15),
-				UpdateTimeThresholdSeconds:     pointer.Int64Ptr(300),
-				ResourceDiffThreshold:          pointer.Float64Ptr(0.1),
+				DegradeTimeMinutes:             pointer.Int64(15),
+				UpdateTimeThresholdSeconds:     pointer.Int64(300),
+				ResourceDiffThreshold:          pointer.Float64(0.1),
 			},
 		},
 		{
@@ -199,12 +199,12 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 			args: args{
 				cfg: &extension.ColocationCfg{
 					ColocationStrategy: extension.ColocationStrategy{
-						Enable:                        pointer.BoolPtr(false),
-						CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-						MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-						DegradeTimeMinutes:            pointer.Int64Ptr(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-						ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+						Enable:                        pointer.Bool(false),
+						CPUReclaimThresholdPercent:    pointer.Int64(65),
+						MemoryReclaimThresholdPercent: pointer.Int64(65),
+						DegradeTimeMinutes:            pointer.Int64(15),
+						UpdateTimeThresholdSeconds:    pointer.Int64(300),
+						ResourceDiffThreshold:         pointer.Float64(0.1),
 					},
 					NodeConfigs: []extension.NodeColocationCfg{
 						{
@@ -221,7 +221,7 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 								Name: "xxx-out-yyy",
 							},
 							ColocationStrategy: extension.ColocationStrategy{
-								Enable: pointer.BoolPtr(false),
+								Enable: pointer.Bool(false),
 							},
 						},
 						{
@@ -234,7 +234,7 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 								Name: "xxx-yyy",
 							},
 							ColocationStrategy: extension.ColocationStrategy{
-								Enable: pointer.BoolPtr(true),
+								Enable: pointer.Bool(true),
 							},
 						},
 					},
@@ -249,12 +249,12 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 				},
 			},
 			want: &extension.ColocationStrategy{
-				Enable:                        pointer.BoolPtr(true),
-				CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-				MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-				DegradeTimeMinutes:            pointer.Int64Ptr(15),
-				UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-				ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+				Enable:                        pointer.Bool(true),
+				CPUReclaimThresholdPercent:    pointer.Int64(65),
+				MemoryReclaimThresholdPercent: pointer.Int64(65),
+				DegradeTimeMinutes:            pointer.Int64(15),
+				UpdateTimeThresholdSeconds:    pointer.Int64(300),
+				ResourceDiffThreshold:         pointer.Float64(0.1),
 			},
 		},
 	}
@@ -284,7 +284,7 @@ func Test_IsColocationStrategyValid(t *testing.T) {
 			name: "partial strategy is valid",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable: pointer.BoolPtr(true),
+					Enable: pointer.Bool(true),
 				},
 			},
 			want: true,
@@ -293,10 +293,10 @@ func Test_IsColocationStrategyValid(t *testing.T) {
 			name: "partial strategy is valid 1",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                     pointer.BoolPtr(true),
-					DegradeTimeMinutes:         pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds: pointer.Int64Ptr(300),
-					ResourceDiffThreshold:      pointer.Float64Ptr(0.1),
+					Enable:                     pointer.Bool(true),
+					DegradeTimeMinutes:         pointer.Int64(15),
+					UpdateTimeThresholdSeconds: pointer.Int64(300),
+					ResourceDiffThreshold:      pointer.Float64(0.1),
 				},
 			},
 			want: true,
@@ -305,11 +305,11 @@ func Test_IsColocationStrategyValid(t *testing.T) {
 			name: "partial strategy is valid 2",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 			},
 			want: true,
@@ -318,11 +318,11 @@ func Test_IsColocationStrategyValid(t *testing.T) {
 			name: "partial strategy is valid 3",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
 				},
 			},
 			want: true,
@@ -331,12 +331,12 @@ func Test_IsColocationStrategyValid(t *testing.T) {
 			name: "default strategy is valid",
 			args: args{
 				strategy: &extension.ColocationStrategy{
-					Enable:                        pointer.BoolPtr(true),
-					CPUReclaimThresholdPercent:    pointer.Int64Ptr(65),
-					MemoryReclaimThresholdPercent: pointer.Int64Ptr(65),
-					DegradeTimeMinutes:            pointer.Int64Ptr(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64Ptr(300),
-					ResourceDiffThreshold:         pointer.Float64Ptr(0.1),
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
 				},
 			},
 			want: true,
@@ -381,7 +381,7 @@ func Test_IsNodeColocationCfgValid(t *testing.T) {
 						Name: "xxx-out-yyy",
 					},
 					ColocationStrategy: extension.ColocationStrategy{
-						Enable: pointer.BoolPtr(false),
+						Enable: pointer.Bool(false),
 					},
 				},
 			},
@@ -404,7 +404,7 @@ func Test_IsNodeColocationCfgValid(t *testing.T) {
 						Name: "xxx-in-yyy",
 					},
 					ColocationStrategy: extension.ColocationStrategy{
-						Enable: pointer.BoolPtr(false),
+						Enable: pointer.Bool(false),
 					},
 				},
 			},
@@ -440,7 +440,7 @@ func Test_IsNodeColocationCfgValid(t *testing.T) {
 						Name: "xxx-yyy",
 					},
 					ColocationStrategy: extension.ColocationStrategy{
-						Enable: pointer.BoolPtr(false),
+						Enable: pointer.Bool(false),
 					},
 				},
 			},

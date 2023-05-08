@@ -241,10 +241,10 @@ func (m *CgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 		}
 		if podCfg.MemoryQOS.MinLimitPercent != nil {
 			// assert no overflow for request < 1PiB
-			summary.memoryMin = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQOS.MinLimitPercent) / 100)
+			summary.memoryMin = pointer.Int64(memRequest * (*podCfg.MemoryQOS.MinLimitPercent) / 100)
 		}
 		if podCfg.MemoryQOS.LowLimitPercent != nil {
-			summary.memoryLow = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQOS.LowLimitPercent) / 100)
+			summary.memoryLow = pointer.Int64(memRequest * (*podCfg.MemoryQOS.LowLimitPercent) / 100)
 		}
 		// values improved: memory.low is no less than memory.min
 		if summary.memoryMin != nil && summary.memoryLow != nil && *summary.memoryLow > 0 &&
@@ -292,21 +292,21 @@ func (m *CgroupResourcesReconcile) calculateContainerResources(container *corev1
 		}
 		// memory.min, memory.low: if container's memory request is not set, just consider it as zero
 		if podCfg.MemoryQOS.MinLimitPercent != nil {
-			summary.memoryMin = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQOS.MinLimitPercent) / 100)
+			summary.memoryMin = pointer.Int64(memRequest * (*podCfg.MemoryQOS.MinLimitPercent) / 100)
 		}
 		if podCfg.MemoryQOS.LowLimitPercent != nil {
-			summary.memoryLow = pointer.Int64Ptr(memRequest * (*podCfg.MemoryQOS.LowLimitPercent) / 100)
+			summary.memoryLow = pointer.Int64(memRequest * (*podCfg.MemoryQOS.LowLimitPercent) / 100)
 		}
 		// memory.high: if container's memory throttling factor is set as zero, disable memory.high by set to maximal;
 		// else if factor is set while container's limit not set, set memory.high with node memory allocatable
 		if podCfg.MemoryQOS.ThrottlingPercent != nil {
 			if *podCfg.MemoryQOS.ThrottlingPercent == 0 { // reset to system default if set 0
-				summary.memoryHigh = pointer.Int64Ptr(math.MaxInt64) // writing MaxInt64 is equal to write "max"
+				summary.memoryHigh = pointer.Int64(math.MaxInt64) // writing MaxInt64 is equal to write "max"
 			} else if memLimit > 0 {
-				summary.memoryHigh = pointer.Int64Ptr(memLimit * (*podCfg.MemoryQOS.ThrottlingPercent) / 100)
+				summary.memoryHigh = pointer.Int64(memLimit * (*podCfg.MemoryQOS.ThrottlingPercent) / 100)
 			} else {
 				nodeLimit := node.Status.Allocatable.Memory().Value()
-				summary.memoryHigh = pointer.Int64Ptr(nodeLimit * (*podCfg.MemoryQOS.ThrottlingPercent) / 100)
+				summary.memoryHigh = pointer.Int64(nodeLimit * (*podCfg.MemoryQOS.ThrottlingPercent) / 100)
 			}
 		}
 		// values improved: memory.low is no less than memory.min
@@ -374,7 +374,7 @@ func (m *CgroupResourcesReconcile) mergePodResourceQoSForMemoryQoS(pod *corev1.P
 	// if policy is not default, replace memory qos config with the policy template
 	if policy == slov1alpha1.PodMemoryQOSPolicyNone { // fully disable memory qos for policy=None
 		cfg.MemoryQOS.MemoryQOS = *sloconfig.NoneMemoryQOS()
-		cfg.MemoryQOS.Enable = pointer.BoolPtr(false)
+		cfg.MemoryQOS.Enable = pointer.Bool(false)
 		return
 	} else if policy == slov1alpha1.PodMemoryQOSPolicyAuto { // qos=None would be set with kubeQoS for policy=Auto
 		cfg.MemoryQOS.MemoryQOS = getPodResourceQoSByQoSClass(pod, sloconfig.DefaultResourceQOSStrategy(), m.resmanager.config).MemoryQOS.MemoryQOS
@@ -410,14 +410,14 @@ func updateCgroupSummaryForQoS(summary *cgroupResourceSummary, pod *corev1.Pod, 
 	}
 	if podCfg.MemoryQOS.MinLimitPercent != nil {
 		if summary.memoryMin == nil {
-			summary.memoryMin = pointer.Int64Ptr(0)
+			summary.memoryMin = pointer.Int64(0)
 		}
 		// assert no overflow for req < 1PiB
 		*summary.memoryMin += memRequest * (*podCfg.MemoryQOS.MinLimitPercent) / 100
 	}
 	if podCfg.MemoryQOS.LowLimitPercent != nil {
 		if summary.memoryLow == nil {
-			summary.memoryLow = pointer.Int64Ptr(0)
+			summary.memoryLow = pointer.Int64(0)
 		}
 		*summary.memoryLow += memRequest * (*podCfg.MemoryQOS.LowLimitPercent) / 100
 	}
@@ -446,10 +446,10 @@ func completeCgroupSummaryForQoS(qosSummary map[corev1.PodQOSClass]*cgroupResour
 	}
 
 	if isMemMinGuaranteedEnabled {
-		qosSummary[corev1.PodQOSGuaranteed].memoryMin = pointer.Int64Ptr(memMinGuaranteed)
+		qosSummary[corev1.PodQOSGuaranteed].memoryMin = pointer.Int64(memMinGuaranteed)
 	}
 	if isMemLowGuaranteedEnabled {
-		qosSummary[corev1.PodQOSGuaranteed].memoryLow = pointer.Int64Ptr(memLowGuaranteed)
+		qosSummary[corev1.PodQOSGuaranteed].memoryLow = pointer.Int64(memLowGuaranteed)
 	}
 }
 

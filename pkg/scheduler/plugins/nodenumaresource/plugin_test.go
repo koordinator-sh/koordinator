@@ -207,7 +207,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32Ptr(extension.PriorityProdValueMax),
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -240,7 +240,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32Ptr(extension.PriorityProdValueMax),
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -270,7 +270,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32Ptr(extension.PriorityProdValueMax),
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -311,7 +311,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32Ptr(extension.PriorityBatchValueMin),
+					Priority: pointer.Int32(extension.PriorityBatchValueMin),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -341,7 +341,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32Ptr(extension.PriorityProdValueMax),
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
 				},
 			},
 			wantState: &preFilterState{
@@ -361,7 +361,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32Ptr(extension.PriorityProdValueMax),
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -388,7 +388,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32Ptr(extension.PriorityProdValueMax),
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
 				},
 			},
 			wantState: &preFilterState{

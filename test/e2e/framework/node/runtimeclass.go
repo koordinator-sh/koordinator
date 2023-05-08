@@ -50,7 +50,7 @@ func NewRuntimeClassPod(runtimeClassName string) *v1.Pod {
 				Command: []string{"true"},
 			}},
 			RestartPolicy:                v1.RestartPolicyNever,
-			AutomountServiceAccountToken: utilpointer.BoolPtr(false),
+			AutomountServiceAccountToken: utilpointer.Bool(false),
 		},
 	}
 }

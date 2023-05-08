@@ -88,12 +88,12 @@ func TestExtraFields_DeepCopy(t *testing.T) {
 			name: "deep copy struct",
 			in: extension.ExtraFields{
 				"test-ext-key": &testExtStruct{
-					TestBoolVal: pointer.BoolPtr(true),
+					TestBoolVal: pointer.Bool(true),
 				},
 			},
 			want: &extension.ExtraFields{
 				"test-ext-key": &testExtStruct{
-					TestBoolVal: pointer.BoolPtr(true),
+					TestBoolVal: pointer.Bool(true),
 				},
 			},
 		},

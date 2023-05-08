@@ -47,8 +47,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 
 	oldSpec := &slov1alpha1.NodeMetricSpec{
 		CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-			AggregateDurationSeconds: pointer.Int64Ptr(10),
-			ReportIntervalSeconds:    pointer.Int64Ptr(20),
+			AggregateDurationSeconds: pointer.Int64(10),
+			ReportIntervalSeconds:    pointer.Int64(20),
 		},
 	}
 
@@ -159,8 +159,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64Ptr(10),
-					ReportIntervalSeconds:    pointer.Int64Ptr(30),
+					AggregateDurationSeconds: pointer.Int64(10),
+					ReportIntervalSeconds:    pointer.Int64(30),
 					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 				},
 			},
@@ -212,7 +212,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64Ptr(20),
+					AggregateDurationSeconds: pointer.Int64(20),
 					ReportIntervalSeconds:    getDefaultSpec().CollectPolicy.ReportIntervalSeconds,
 					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 				},
@@ -246,7 +246,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64Ptr(30),
+					AggregateDurationSeconds: pointer.Int64(30),
 					ReportIntervalSeconds:    getDefaultSpec().CollectPolicy.ReportIntervalSeconds,
 					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 				},
@@ -281,8 +281,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64Ptr(10),
-					ReportIntervalSeconds:    pointer.Int64Ptr(50),
+					AggregateDurationSeconds: pointer.Int64(10),
+					ReportIntervalSeconds:    pointer.Int64(50),
 					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 				},
 			},
@@ -357,8 +357,8 @@ func TestNodeMetricReconciler_initNodeMetric(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64Ptr(10),
-					ReportIntervalSeconds:    pointer.Int64Ptr(20),
+					AggregateDurationSeconds: pointer.Int64(10),
+					ReportIntervalSeconds:    pointer.Int64(20),
 					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 				},
 			},
@@ -398,8 +398,8 @@ func TestNodeMetricReconciler_initNodeMetric(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64Ptr(10),
-					ReportIntervalSeconds:    pointer.Int64Ptr(20),
+					AggregateDurationSeconds: pointer.Int64(10),
+					ReportIntervalSeconds:    pointer.Int64(20),
 					NodeAggregatePolicy: &slov1alpha1.AggregatePolicy{
 						Durations: []metav1.Duration{
 							{Duration: 10 * time.Second},

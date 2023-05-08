@@ -87,7 +87,7 @@ func (m *qosManager) Run(stopCh <-chan struct{}) error {
 			MetricsQuery:   m.pluginCtx.MetricsQuery,
 		}
 		if extraConfig, found := m.cfg.PluginExtraConfigs[string(fg)]; found && extraConfig != "" {
-			pluginCtx.ExtraConfig = pointer.StringPtr(extraConfig)
+			pluginCtx.ExtraConfig = pointer.String(extraConfig)
 		}
 
 		pluginFactory, found := config.QoSPluginFactories[fg]

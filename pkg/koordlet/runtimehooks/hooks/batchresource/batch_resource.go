@@ -141,7 +141,7 @@ func (p *plugin) SetPodCPUShares(proto protocol.HooksProtocol) error {
 		cpuShares = sysutil.CPUSharesMinValue
 	}
 
-	podCtx.Response.Resources.CPUShares = pointer.Int64Ptr(cpuShares)
+	podCtx.Response.Resources.CPUShares = pointer.Int64(cpuShares)
 	return nil
 }
 
@@ -163,7 +163,7 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 
 	// if cfs quota is disabled, set as -1
 	if !p.getRule().getEnableCFSQuota() {
-		podCtx.Response.Resources.CFSQuota = pointer.Int64Ptr(-1)
+		podCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
 		klog.V(5).Infof("try to unset pod-level cfs quota since it is disabled in rule of plugin %v", name)
 		return nil
 	}
@@ -190,7 +190,7 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 		cfsQuota = sysutil.CFSQuotaMinValue
 	}
 
-	podCtx.Response.Resources.CFSQuota = pointer.Int64Ptr(cfsQuota)
+	podCtx.Response.Resources.CFSQuota = pointer.Int64(cfsQuota)
 	return nil
 }
 
@@ -225,7 +225,7 @@ func (p *plugin) SetPodMemoryLimit(proto protocol.HooksProtocol) error {
 		memoryLimit += containerLimit
 	}
 
-	podCtx.Response.Resources.MemoryLimit = pointer.Int64Ptr(memoryLimit)
+	podCtx.Response.Resources.MemoryLimit = pointer.Int64(memoryLimit)
 	return nil
 }
 
@@ -287,7 +287,7 @@ func (p *plugin) SetContainerCPUShares(proto protocol.HooksProtocol) error {
 		cpuShares = sysutil.CPUSharesMinValue
 	}
 
-	containerCtx.Response.Resources.CPUShares = pointer.Int64Ptr(cpuShares)
+	containerCtx.Response.Resources.CPUShares = pointer.Int64(cpuShares)
 	return nil
 }
 
@@ -309,7 +309,7 @@ func (p *plugin) SetContainerCFSQuota(proto protocol.HooksProtocol) error {
 
 	// if cfs quota is disabled, set as -1
 	if !p.getRule().getEnableCFSQuota() {
-		containerCtx.Response.Resources.CFSQuota = pointer.Int64Ptr(-1)
+		containerCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
 		klog.V(5).Infof("try to unset container-level cfs quota since it is disabled in rule of plugin %v", name)
 		return nil
 	}
@@ -328,7 +328,7 @@ func (p *plugin) SetContainerCFSQuota(proto protocol.HooksProtocol) error {
 		cfsQuota = sysutil.CFSQuotaMinValue
 	}
 
-	containerCtx.Response.Resources.CFSQuota = pointer.Int64Ptr(cfsQuota)
+	containerCtx.Response.Resources.CFSQuota = pointer.Int64(cfsQuota)
 	return nil
 }
 
@@ -359,7 +359,7 @@ func (p *plugin) SetContainerMemoryLimit(proto protocol.HooksProtocol) error {
 		memoryLimit = -1
 	}
 
-	containerCtx.Response.Resources.MemoryLimit = pointer.Int64Ptr(memoryLimit)
+	containerCtx.Response.Resources.MemoryLimit = pointer.Int64(memoryLimit)
 	return nil
 }
 

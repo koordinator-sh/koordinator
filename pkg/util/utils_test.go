@@ -57,7 +57,7 @@ func Test_MergeCfg(t *testing.T) {
 			name: "throw an error if the inputs' types are not the same",
 			args: args{
 				old: &TestingStruct{},
-				new: pointer.Int64Ptr(1),
+				new: pointer.Int64(1),
 			},
 			want:    nil,
 			wantErr: true,
@@ -89,14 +89,14 @@ func Test_MergeCfg(t *testing.T) {
 			name: "new is empty",
 			args: args{
 				old: &TestingStruct{
-					A: pointer.Int64Ptr(0),
-					B: pointer.Int64Ptr(1),
+					A: pointer.Int64(0),
+					B: pointer.Int64(1),
 				},
 				new: &TestingStruct{},
 			},
 			want: &TestingStruct{
-				A: pointer.Int64Ptr(0),
-				B: pointer.Int64Ptr(1),
+				A: pointer.Int64(0),
+				B: pointer.Int64(1),
 			},
 		},
 		{
@@ -104,11 +104,11 @@ func Test_MergeCfg(t *testing.T) {
 			args: args{
 				old: &TestingStruct{},
 				new: &TestingStruct{
-					B: pointer.Int64Ptr(1),
+					B: pointer.Int64(1),
 				},
 			},
 			want: &TestingStruct{
-				B: pointer.Int64Ptr(1),
+				B: pointer.Int64(1),
 			},
 		},
 		{
@@ -123,16 +123,16 @@ func Test_MergeCfg(t *testing.T) {
 			name: "new one overwrites the old one",
 			args: args{
 				old: &TestingStruct{
-					A: pointer.Int64Ptr(0),
-					B: pointer.Int64Ptr(1),
+					A: pointer.Int64(0),
+					B: pointer.Int64(1),
 				},
 				new: &TestingStruct{
-					B: pointer.Int64Ptr(2),
+					B: pointer.Int64(2),
 				},
 			},
 			want: &TestingStruct{
-				A: pointer.Int64Ptr(0),
-				B: pointer.Int64Ptr(2),
+				A: pointer.Int64(0),
+				B: pointer.Int64(2),
 			},
 		},
 	}

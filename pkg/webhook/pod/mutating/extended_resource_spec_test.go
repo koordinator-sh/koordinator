@@ -73,7 +73,7 @@ func TestExtendedResourceSpecMutatingPod(t *testing.T) {
 				},
 			},
 			SchedulerName:     "koordinator-scheduler",
-			Priority:          pointer.Int32Ptr(extension.PriorityBatchValueMax),
+			Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 			PriorityClassName: "koordinator-batch",
 		},
 	}
@@ -131,7 +131,7 @@ func TestExtendedResourceSpecMutatingPod(t *testing.T) {
 				},
 			},
 			SchedulerName:     "koordinator-scheduler",
-			Priority:          pointer.Int32Ptr(extension.PriorityBatchValueMax),
+			Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 			PriorityClassName: "koordinator-batch",
 		},
 	}

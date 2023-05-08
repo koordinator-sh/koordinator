@@ -79,7 +79,7 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			name:         "testInvalid",
 			initStrategy: defaultStrategy,
 			node:         getNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(-1), WatermarkScaleFactor: pointer.Int64Ptr(-1), MemcgReapBackGround: pointer.Int64Ptr(-1)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64(-1), WatermarkScaleFactor: pointer.Int64(-1), MemcgReapBackGround: pointer.Int64(-1)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: strconv.FormatInt(*defaultStrategy.WatermarkScaleFactor, 10),
@@ -90,7 +90,7 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			name:         "testTooSmall",
 			initStrategy: defaultStrategy,
 			node:         getNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(0), WatermarkScaleFactor: pointer.Int64Ptr(5), MemcgReapBackGround: pointer.Int64Ptr(-1)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64(0), WatermarkScaleFactor: pointer.Int64(5), MemcgReapBackGround: pointer.Int64(-1)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: "150",
@@ -101,7 +101,7 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			name:         "testValid",
 			initStrategy: defaultStrategy,
 			node:         getNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(88), WatermarkScaleFactor: pointer.Int64Ptr(99), MemcgReapBackGround: pointer.Int64Ptr(1)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64(88), WatermarkScaleFactor: pointer.Int64(99), MemcgReapBackGround: pointer.Int64(1)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024*88/10000, 10),
 				sysutil.WatermarkScaleFactor: "99",
@@ -112,7 +112,7 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			name:         "testToolarge",
 			initStrategy: defaultStrategy,
 			node:         getNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64Ptr(400), WatermarkScaleFactor: pointer.Int64Ptr(500), MemcgReapBackGround: pointer.Int64Ptr(2)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64(400), WatermarkScaleFactor: pointer.Int64(500), MemcgReapBackGround: pointer.Int64(2)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: "150",
