@@ -242,7 +242,7 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) err
 	reservation.Status.Allocated = actualAllocated
 	reservation.Status.CurrentOwners = actualOwners
 
-	if reservation.Spec.AllocateOnce {
+	if apiext.IsReservationAllocateOnce(reservation) {
 		reservationutil.SetReservationSucceeded(reservation)
 	}
 

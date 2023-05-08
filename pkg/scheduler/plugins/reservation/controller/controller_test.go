@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -226,7 +227,7 @@ func TestSyncStatus(t *testing.T) {
 			TTL: &metav1.Duration{
 				Duration: 1 * time.Minute,
 			},
-			AllocateOnce: true,
+			AllocateOnce: pointer.Bool(true),
 			Template:     &corev1.PodTemplateSpec{},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{

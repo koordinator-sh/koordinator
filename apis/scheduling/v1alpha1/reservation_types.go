@@ -61,7 +61,7 @@ type ReservationSpec struct {
 	// and are not allocatable to other owners anymore. Defaults to true.
 	// +kubebuilder:default=true
 	// +optional
-	AllocateOnce bool `json:"allocateOnce,omitempty"`
+	AllocateOnce *bool `json:"allocateOnce,omitempty"`
 }
 
 // ReservationTemplateSpec describes the data a Reservation should have when created from a template

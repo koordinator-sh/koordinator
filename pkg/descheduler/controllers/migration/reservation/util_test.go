@@ -60,7 +60,7 @@ func TestCreateOrUpdateReservationOptions(t *testing.T) {
 						},
 					},
 					Spec: sev1alpha1.ReservationSpec{
-						AllocateOnce: true,
+						AllocateOnce: pointer.Bool(true),
 						Owners: []sev1alpha1.ReservationOwner{
 							{
 								Controller: &sev1alpha1.ReservationControllerReference{
@@ -134,7 +134,7 @@ func TestCreateOrUpdateReservationOptions(t *testing.T) {
 						},
 					},
 					Spec: sev1alpha1.ReservationSpec{
-						AllocateOnce: true,
+						AllocateOnce: pointer.Bool(true),
 						Owners: []sev1alpha1.ReservationOwner{
 							{
 								Controller: &sev1alpha1.ReservationControllerReference{

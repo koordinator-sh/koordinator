@@ -21,6 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/pointer"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
@@ -66,4 +67,8 @@ func SetReservationAllocated(pod *corev1.Pod, r *schedulingv1alpha1.Reservation)
 	}
 	data, _ := json.Marshal(reservationAllocated) // assert no error
 	pod.Annotations[AnnotationReservationAllocated] = string(data)
+}
+
+func IsReservationAllocateOnce(r *schedulingv1alpha1.Reservation) bool {
+	return pointer.BoolDeref(r.Spec.AllocateOnce, true)
 }
