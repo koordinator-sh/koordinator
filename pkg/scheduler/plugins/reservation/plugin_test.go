@@ -39,6 +39,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -333,7 +334,7 @@ func TestFilter(t *testing.T) {
 			UID:  uuid.NewUUID(),
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
-			AllocateOnce: false,
+			AllocateOnce: pointer.Bool(false),
 			Owners:       owners,
 			Template: &corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{},
@@ -348,7 +349,7 @@ func TestFilter(t *testing.T) {
 			UID:  uuid.NewUUID(),
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
-			AllocateOnce: true,
+			AllocateOnce: pointer.Bool(true),
 			Owners:       owners,
 			Template: &corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{},
@@ -363,7 +364,7 @@ func TestFilter(t *testing.T) {
 			UID:  uuid.NewUUID(),
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
-			AllocateOnce: false,
+			AllocateOnce: pointer.Bool(false),
 			Owners:       owners,
 			Template: &corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{},
@@ -616,7 +617,7 @@ func TestFilterReservation(t *testing.T) {
 	allocateOnceAndAllocatedReservation := reservation2C4G.DeepCopy()
 	allocateOnceAndAllocatedReservation.Name = "allocateOnceAndAllocatedReservation"
 	allocateOnceAndAllocatedReservation.UID = uuid.NewUUID()
-	allocateOnceAndAllocatedReservation.Spec.AllocateOnce = true
+	allocateOnceAndAllocatedReservation.Spec.AllocateOnce = pointer.Bool(true)
 	reservationutil.SetReservationAvailable(allocateOnceAndAllocatedReservation, "test-node")
 	for i := range allocateOnceAndAllocatedReservation.Status.Conditions {
 		allocateOnceAndAllocatedReservation.Status.Conditions[i].LastProbeTime = metav1.Time{}
@@ -717,7 +718,7 @@ func TestFilterReservation(t *testing.T) {
 			}
 			for _, v := range tt.reservations {
 				pl.reservationCache.updateReservation(v)
-				if v.Spec.AllocateOnce && len(v.Status.Allocated) > 0 {
+				if apiext.IsReservationAllocateOnce(v) && len(v.Status.Allocated) > 0 {
 					pl.reservationCache.addPod(v.UID, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "allocated-pod", UID: uuid.NewUUID()}})
 				}
 				rInfo := pl.reservationCache.getReservationInfoByUID(v.UID)

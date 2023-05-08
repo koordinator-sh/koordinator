@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/utils/pointer"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -83,6 +84,7 @@ func TestBeforePreFilter(t *testing.T) {
 			Name: "unmatchedReservation",
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocateOnce: pointer.Bool(false),
 			Owners: []schedulingv1alpha1.ReservationOwner{
 				{
 					Object: &corev1.ObjectReference{

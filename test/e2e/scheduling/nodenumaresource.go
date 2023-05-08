@@ -304,7 +304,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 					},
 				},
 			}
-			reservation.Spec.AllocateOnce = false
+			reservation.Spec.AllocateOnce = pointer.Bool(false)
 			reservation, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
 			framework.ExpectNoError(err, "unable to create reservation")
 			reservation = waitingForReservationScheduled(f.KoordinatorClientSet, reservation)

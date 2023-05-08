@@ -29,6 +29,7 @@ import (
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -169,7 +170,7 @@ func (pl *Plugin) restoreMatchedReservations(cycleState *framework.CycleState, p
 	// we choose the instance with the earliest creation time.
 	var earliestReusableRInfo *reservationInfo
 	for _, v := range reservationInfos {
-		if !v.reservation.Spec.AllocateOnce {
+		if !extension.IsReservationAllocateOnce(v.reservation) {
 			if earliestReusableRInfo == nil ||
 				v.reservation.CreationTimestamp.Before(&earliestReusableRInfo.reservation.CreationTimestamp) {
 				earliestReusableRInfo = v
@@ -179,7 +180,7 @@ func (pl *Plugin) restoreMatchedReservations(cycleState *framework.CycleState, p
 	}
 
 	for _, rInfo := range reservationInfos {
-		if !rInfo.reservation.Spec.AllocateOnce && earliestReusableRInfo != nil && rInfo != earliestReusableRInfo {
+		if !extension.IsReservationAllocateOnce(rInfo.reservation) && earliestReusableRInfo != nil && rInfo != earliestReusableRInfo {
 			continue
 		}
 		if err := restoreReservedResources(pl.handle, cycleState, pod, rInfo, nodeInfo, podInfoMap, shouldRestoreStates); err != nil {
@@ -323,7 +324,7 @@ func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, err
 
 			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
 			// but in fact it can no longer be used for allocation. So it's better to skip first.
-			if rInfo.reservation.Spec.AllocateOnce && len(rInfo.pods) > 0 {
+			if extension.IsReservationAllocateOnce(rInfo.reservation) && len(rInfo.pods) > 0 {
 				continue
 			}
 

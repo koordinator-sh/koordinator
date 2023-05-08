@@ -197,8 +197,8 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 	}
 	rInfos := pl.reservationCache.listReservationInfosOnNode(node.Name)
 	for _, v := range rInfos {
-		if (reservation.Spec.AllocateOnce != v.reservation.Spec.AllocateOnce ||
-			!reservation.Spec.AllocateOnce == !v.reservation.Spec.AllocateOnce) &&
+		if (apiext.IsReservationAllocateOnce(reservation) != apiext.IsReservationAllocateOnce(v.reservation) ||
+			!apiext.IsReservationAllocateOnce(reservation) == !apiext.IsReservationAllocateOnce(v.reservation)) &&
 			reflect.DeepEqual(v.reservation.Spec.Owners, reservation.Spec.Owners) {
 			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonOnlyOneSameReusableReservationOnSameNode)
 		}
@@ -257,7 +257,7 @@ func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.C
 		return framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
 	}
 
-	if rInfo.reservation.Spec.AllocateOnce && len(rInfo.pods) > 0 {
+	if apiext.IsReservationAllocateOnce(rInfo.reservation) && len(rInfo.pods) > 0 {
 		return framework.AsStatus(fmt.Errorf("reservation has allocateOnce enabled and has already been allocated"))
 	}
 
