@@ -51,8 +51,6 @@ func init() {
 		Conf = NewHostModeConfig()
 		AgentMode = agentMode
 	}
-
-	initSupportConfigs()
 }
 
 func initSupportConfigs() {

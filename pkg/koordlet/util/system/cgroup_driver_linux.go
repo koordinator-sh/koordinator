@@ -135,7 +135,6 @@ func GuessCgroupDriverFromKubeletPort(port int) (CgroupDriverType, error) {
 
 // modify base: github.com/opencontainers/runc/libcontainer/cgroups/utils.go IsCgroup2UnifiedMode
 func IsUsingCgroupsV2() bool {
-
 	unifiedMountpoint := strings.TrimSuffix(Conf.CgroupRootDir, "/")
 
 	isUnifiedOnce.Do(func() {

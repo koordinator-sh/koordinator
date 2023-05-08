@@ -77,6 +77,8 @@ func NewFileTestUtil(t *testing.T) *FileTestUtil {
 	Conf.CgroupRootDir = tempDir
 	Conf.SysRootDir = tempDir
 
+	initSupportConfigs()
+
 	return &FileTestUtil{TempDir: tempDir, t: t}
 }
 
