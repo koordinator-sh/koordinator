@@ -29,10 +29,11 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 )
 
-func testTransformer(nodeInfo *framework.NodeInfo) {
+func testTransformer(nodeInfo *framework.NodeInfo) bool {
 	for k, v := range nodeInfo.Allocatable.ScalarResources {
 		nodeInfo.Allocatable.ScalarResources[k] = v * 2
 	}
+	return true
 }
 
 func setupTestNodeInfoTransformer() func() {
@@ -167,15 +168,11 @@ func TestTransformNodeInfos(t *testing.T) {
 	nodeInfo := framework.NewNodeInfo()
 	nodeInfo.SetNode(node)
 
-	originalNodeInfo := nodeInfo.Clone()
-	transformedNodeInfos := TransformNodeInfos([]*framework.NodeInfo{nodeInfo})
+	expected := nodeInfo.Clone()
+	TransformNodeInfos([]*framework.NodeInfo{nodeInfo})
 
-	assert.Equal(t, originalNodeInfo, nodeInfo)
-
-	clonedNodeInfo := nodeInfo.Clone()
-	testTransformer(clonedNodeInfo)
-	expectedNodeInfos := []*framework.NodeInfo{
-		clonedNodeInfo,
+	for k, v := range expected.Allocatable.ScalarResources {
+		expected.Allocatable.ScalarResources[k] = v * 2
 	}
-	assert.Equal(t, expectedNodeInfos, transformedNodeInfos)
+	assert.Equal(t, expected, nodeInfo)
 }

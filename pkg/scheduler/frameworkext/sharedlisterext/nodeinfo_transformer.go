@@ -20,7 +20,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-type NodeInfoTransformerFn func(nodeInfo *framework.NodeInfo)
+type NodeInfoTransformerFn func(nodeInfo *framework.NodeInfo) bool
 
 var nodeInfoTransformerFns []NodeInfoTransformerFn
 
@@ -28,23 +28,27 @@ func RegisterNodeInfoTransformer(fn NodeInfoTransformerFn) {
 	nodeInfoTransformerFns = append(nodeInfoTransformerFns, fn)
 }
 
-func TransformNodeInfos(nodeInfos []*framework.NodeInfo) (transformedNodeInfos []*framework.NodeInfo) {
+func TransformNodeInfos(nodeInfos []*framework.NodeInfo) bool {
+	updated := false
 	for _, nodeInfo := range nodeInfos {
-		n := TransformOneNodeInfo(nodeInfo)
-		transformedNodeInfos = append(transformedNodeInfos, n)
+		if TransformOneNodeInfo(nodeInfo) {
+			updated = true
+		}
 	}
-	return
+	return updated
 }
 
-func TransformOneNodeInfo(nodeInfo *framework.NodeInfo) (transformedNodeInfo *framework.NodeInfo) {
+func TransformOneNodeInfo(nodeInfo *framework.NodeInfo) bool {
 	node := nodeInfo.Node()
 	if node == nil || len(nodeInfoTransformerFns) == 0 {
-		return nodeInfo
+		return false
 	}
 
-	transformedNodeInfo = nodeInfo.Clone()
+	updated := false
 	for _, fn := range nodeInfoTransformerFns {
-		fn(transformedNodeInfo)
+		if fn(nodeInfo) {
+			updated = true
+		}
 	}
-	return transformedNodeInfo
+	return updated
 }

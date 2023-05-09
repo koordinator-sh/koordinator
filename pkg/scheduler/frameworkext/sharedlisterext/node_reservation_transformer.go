@@ -27,15 +27,12 @@ func init() {
 }
 
 // node.alloc = node.alloc - node.anno.reserved
-func nodeReservationTransformer(nodeInfo *framework.NodeInfo) {
-	if nodeInfo == nil || nodeInfo.Node() == nil {
-		return
-	}
-
+func nodeReservationTransformer(nodeInfo *framework.NodeInfo) bool {
 	node := nodeInfo.Node()
 	trimmedAllocatable, trimmed := util.TrimNodeAllocatableByNodeReservation(node)
-	if !trimmed {
-		return
+	if trimmed {
+		nodeInfo.Allocatable = framework.NewResource(trimmedAllocatable)
+		return true
 	}
-	nodeInfo.Allocatable = framework.NewResource(trimmedAllocatable)
+	return false
 }

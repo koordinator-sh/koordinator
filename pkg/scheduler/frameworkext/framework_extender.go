@@ -19,6 +19,8 @@ package frameworkext
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"unsafe"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -27,6 +29,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/sharedlisterext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -35,8 +38,7 @@ var _ FrameworkExtender = &frameworkExtenderImpl{}
 type frameworkExtenderImpl struct {
 	framework.Framework
 
-	temporarySnapshot                *TemporarySnapshot
-	sharedListerAdapter              SharedListerAdapter
+	snapshotGeneration               *int64
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 
@@ -52,14 +54,31 @@ type frameworkExtenderImpl struct {
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
+	snapshotGeneration := reflectSnapshotGeneration(fw.SnapshotSharedLister())
+
 	frameworkExtender := &frameworkExtenderImpl{
 		Framework:                        fw,
-		sharedListerAdapter:              f.SharedListerAdapter(),
+		snapshotGeneration:               snapshotGeneration,
 		koordinatorClientSet:             f.KoordinatorClientSet(),
 		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
 	}
 	frameworkExtender.updateTransformer(f.defaultTransformers...)
 	return frameworkExtender
+}
+
+func reflectSnapshotGeneration(lister framework.SharedLister) *int64 {
+	if lister == nil {
+		return nil
+	}
+
+	var snapshotGeneration *int64
+	val := reflect.ValueOf(lister)
+	val = reflect.Indirect(val)
+	generationField := val.FieldByName("generation")
+	if generationField.IsValid() {
+		snapshotGeneration = (*int64)(unsafe.Pointer(generationField.UnsafeAddr()))
+	}
+	return snapshotGeneration
 }
 
 func (ext *frameworkExtenderImpl) updateTransformer(transformers ...SchedulingTransformer) {
@@ -111,36 +130,22 @@ func (ext *frameworkExtenderImpl) KoordinatorSharedInformerFactory() koordinator
 	return ext.koordinatorSharedInformerFactory
 }
 
-func (ext *frameworkExtenderImpl) SnapshotSharedLister() framework.SharedLister {
-	if ext.temporarySnapshot == nil {
-		// Only test scenarios are encountered here.
-		sharedLister := ext.Framework.SnapshotSharedLister()
-		if ext.sharedListerAdapter != nil {
-			sharedLister = ext.sharedListerAdapter(sharedLister)
+func (ext *frameworkExtenderImpl) takeSnapshot() error {
+	nodeInfos, err := ext.Framework.SnapshotSharedLister().NodeInfos().List()
+	if err != nil {
+		return nil
+	}
+	if sharedlisterext.TransformNodeInfos(nodeInfos) {
+		if ext.snapshotGeneration != nil {
+			*ext.snapshotGeneration = 0
 		}
-		return sharedLister
 	}
-	return ext.temporarySnapshot
-}
-
-func (ext *frameworkExtenderImpl) takeTemporarySnapshot() error {
-	sharedLister := ext.Framework.SnapshotSharedLister()
-	if ext.sharedListerAdapter != nil {
-		sharedLister = ext.sharedListerAdapter(sharedLister)
-	}
-	if ext.temporarySnapshot == nil {
-		ext.temporarySnapshot = NewTemporarySnapshot()
-	}
-	return ext.temporarySnapshot.UpdateSnapshot(sharedLister)
+	return nil
 }
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
-	// Custom Transformers may need to modify NodeInfo, but modifying the snapshot data returned by framework.SnapshotSharedLister
-	// may cause abnormal scheduling behavior, for example, errors such as "no corresponding pod" may be encountered
-	// when Reservation returns data. The reason for this error is that these snapshot data may not be updated in full every time,
-	// so we need to clone a copy of the full snapshot data to ensure that this round of scheduling requirements are met.
-	err := ext.takeTemporarySnapshot()
+	err := ext.takeSnapshot()
 	if err != nil {
 		return framework.AsStatus(err)
 	}
@@ -150,6 +155,9 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		if transformed {
 			klog.V(5).InfoS("RunPreFilterPlugins transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
 			pod = newPod
+			if ext.snapshotGeneration != nil {
+				*ext.snapshotGeneration = 0
+			}
 		}
 	}
 

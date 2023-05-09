@@ -34,10 +34,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 )
 
-type fakeSharedLister struct {
-	framework.SharedLister
-}
-
 func TestExtenderFactory(t *testing.T) {
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(koordClientSet, 0)
@@ -45,9 +41,6 @@ func TestExtenderFactory(t *testing.T) {
 		WithServicesEngine(services.NewEngine(gin.New())),
 		WithKoordinatorClientSet(koordClientSet),
 		WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
-		WithSharedListerFactory(func(lister framework.SharedLister) framework.SharedLister {
-			return &fakeSharedLister{SharedLister: lister}
-		}),
 		WithDefaultTransformers(&TestTransformer{index: 1}),
 	)
 	assert.NoError(t, err)
@@ -79,12 +72,4 @@ func TestExtenderFactory(t *testing.T) {
 	assert.Len(t, impl.preFilterTransformers, 2)
 	assert.Len(t, impl.filterTransformers, 2)
 	assert.Len(t, impl.scoreTransformers, 2)
-	assert.NotNil(t, impl.sharedListerAdapter)
-	snapshot := extender.SnapshotSharedLister()
-	_, ok := snapshot.(*fakeSharedLister)
-	assert.True(t, ok)
-	assert.NoError(t, impl.takeTemporarySnapshot())
-	snapshot = extender.SnapshotSharedLister()
-	_, ok = snapshot.(*TemporarySnapshot)
-	assert.True(t, ok)
 }

@@ -37,7 +37,6 @@ type extendedHandleOptions struct {
 	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	sharedListerAdapter              SharedListerAdapter
 	defaultTransformers              []SchedulingTransformer
 }
 
@@ -61,12 +60,6 @@ func WithKoordinatorSharedInformerFactory(informerFactory koordinatorinformers.S
 	}
 }
 
-func WithSharedListerFactory(adapter SharedListerAdapter) Option {
-	return func(options *extendedHandleOptions) {
-		options.sharedListerAdapter = adapter
-	}
-}
-
 func WithDefaultTransformers(transformers ...SchedulingTransformer) Option {
 	return func(options *extendedHandleOptions) {
 		options.defaultTransformers = transformers
@@ -79,7 +72,6 @@ type FrameworkExtenderFactory struct {
 	defaultTransformers              []SchedulingTransformer
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	sharedListerAdapter              SharedListerAdapter
 	profiles                         map[string]FrameworkExtender
 }
 
@@ -99,7 +91,6 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		defaultTransformers:              handleOptions.defaultTransformers,
 		koordinatorClientSet:             handleOptions.koordinatorClientSet,
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
-		sharedListerAdapter:              handleOptions.sharedListerAdapter,
 		profiles:                         map[string]FrameworkExtender{},
 	}, nil
 }
@@ -127,10 +118,6 @@ func (f *FrameworkExtenderFactory) KoordinatorClientSet() koordinatorclientset.I
 
 func (f *FrameworkExtenderFactory) KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory {
 	return f.koordinatorSharedInformerFactory
-}
-
-func (f *FrameworkExtenderFactory) SharedListerAdapter() SharedListerAdapter {
-	return f.sharedListerAdapter
 }
 
 func (f *FrameworkExtenderFactory) Run() {

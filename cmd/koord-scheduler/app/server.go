@@ -61,7 +61,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/eventhandlers"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/sharedlisterext"
 	utilroutes "github.com/koordinator-sh/koordinator/pkg/util/routes"
 )
 
@@ -343,7 +342,6 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		frameworkext.WithServicesEngine(cc.ServicesEngine),
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
-		frameworkext.WithSharedListerFactory(sharedlisterext.NewSharedListerAdapter),
 		frameworkext.WithDefaultTransformers(frameworkext.DefaultTransformers...),
 	)
 	if err != nil {

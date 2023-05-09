@@ -66,7 +66,6 @@ var (
 
 	_ frameworkext.ControllerProvider      = &Plugin{}
 	_ frameworkext.PreFilterTransformer    = &Plugin{}
-	_ frameworkext.FilterTransformer       = &Plugin{}
 	_ frameworkext.ReservationNominator    = &Plugin{}
 	_ frameworkext.ReservationFilterPlugin = &Plugin{}
 	_ frameworkext.ReservationScorePlugin  = &Plugin{}
@@ -232,8 +231,6 @@ func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleSta
 				if err := nodeInfo.RemovePod(newReservePod); err == nil {
 					newReservePod.Spec.Priority = &maxPri
 					nodeInfo.AddPod(newReservePod)
-					// NOTE: To achieve incremental update with frameworkext.TemporarySnapshot, we need to set Generation to -1
-					nodeInfo.Generation = -1
 				}
 			}
 		}

@@ -29,13 +29,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/pointer"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	clientschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
 func Test_MergeCfg(t *testing.T) {
@@ -297,17 +295,16 @@ func (f *fakeReservationClientSet) Patch(ctx context.Context, name string, pt ty
 	return r, nil
 }
 
-type fakeExtendedHandle struct {
+type fakeClientSetHandle struct {
 	client      *kubefake.Clientset
 	koordClient *fakeReservationClientSet
-	frameworkext.ExtendedHandle
 }
 
-func (f *fakeExtendedHandle) ClientSet() clientset.Interface {
+func (f *fakeClientSetHandle) ClientSet() clientset.Interface {
 	return f.client
 }
 
-func (f *fakeExtendedHandle) KoordinatorClientSet() koordinatorclientset.Interface {
+func (f *fakeClientSetHandle) KoordinatorClientSet() koordinatorclientset.Interface {
 	return f.koordClient
 }
 
@@ -324,7 +321,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 		},
 	}
 	type fields struct {
-		handle      framework.Handle
+		handle      ClientSetHandle
 		annotations map[string]string
 	}
 	type args struct {
@@ -339,7 +336,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 		{
 			name: "nothing to patch for normal pod",
 			fields: fields{
-				handle: &fakeExtendedHandle{
+				handle: &fakeClientSetHandle{
 					client: kubefake.NewSimpleClientset(testNormalPod),
 				},
 			},
@@ -351,7 +348,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 		{
 			name: "patch successfully for normal pod",
 			fields: fields{
-				handle: &fakeExtendedHandle{
+				handle: &fakeClientSetHandle{
 					client: kubefake.NewSimpleClientset(testNormalPod),
 				},
 				annotations: map[string]string{
@@ -366,7 +363,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 		{
 			name: "nothing to patch for reserve pod",
 			fields: fields{
-				handle: &fakeExtendedHandle{
+				handle: &fakeClientSetHandle{
 					koordClient: &fakeReservationClientSet{},
 				},
 			},
@@ -378,7 +375,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 		{
 			name: "patch successfully for reserve pod",
 			fields: fields{
-				handle: &fakeExtendedHandle{
+				handle: &fakeClientSetHandle{
 					koordClient: &fakeReservationClientSet{
 						reservations: map[string]*schedulingv1alpha1.Reservation{
 							testR.Name: testR,
@@ -397,7 +394,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 		{
 			name: "patch error for reserve pod",
 			fields: fields{
-				handle: &fakeExtendedHandle{
+				handle: &fakeClientSetHandle{
 					koordClient: &fakeReservationClientSet{
 						reservations: map[string]*schedulingv1alpha1.Reservation{
 							testR.Name: testR,
@@ -419,7 +416,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 		{
 			name: "patch not found for reserve pod",
 			fields: fields{
-				handle: &fakeExtendedHandle{
+				handle: &fakeClientSetHandle{
 					koordClient: &fakeReservationClientSet{
 						reservations: map[string]*schedulingv1alpha1.Reservation{},
 					},
@@ -436,7 +433,7 @@ func TestPatch_PatchPodOrReservation(t *testing.T) {
 		{
 			name: "missing clientset for reserve pod",
 			fields: fields{
-				handle: &fakeExtendedHandle{},
+				handle: &fakeClientSetHandle{},
 				annotations: map[string]string{
 					"aaa": "bbb",
 				},
