@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/informers"
@@ -35,16 +36,15 @@ import (
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-func (pl *Plugin) BeforePreFilter(_ frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool) {
+func (pl *Plugin) BeforePreFilter(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, error) {
 	state, err := pl.prepareMatchReservationState(pod)
 	if err != nil {
-		klog.Warningf("BeforePreFilter failed to get matched reservations, err: %v", err)
-		return nil, false
+		return nil, false, err
 	}
 	cycleState.Write(stateKey, state)
 
 	klog.V(4).Infof("Pod %v has %d matched reservations and %d unmatched reservations before PreFilter", klog.KObj(pod), len(state.matched), len(state.unmatched))
-	return pod, len(state.matched) > 0 || len(state.unmatched) > 0
+	return pod, len(state.matched) > 0 || len(state.unmatched) > 0, nil
 }
 
 func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) error {
@@ -265,6 +265,12 @@ func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, err
 		return nil, fmt.Errorf("cannot list NodeInfo, err: %v", err)
 	}
 
+	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
+	if err != nil {
+		klog.ErrorS(err, "Failed to parse reservation affinity", "pod", klog.KObj(pod))
+		return nil, err
+	}
+
 	var lock sync.Mutex
 	state := &stateData{
 		matched:   map[string][]*reservationInfo{},
@@ -293,7 +299,7 @@ func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, err
 				continue
 			}
 
-			if !isReservedPod && reservationutil.MatchReservationOwners(pod, rInfo.reservation) {
+			if !isReservedPod && matchReservation(pod, node, rInfo.reservation, reservationAffinity) {
 				matched = append(matched, rInfo)
 			} else {
 				if len(rInfo.allocated) > 0 {
@@ -327,6 +333,32 @@ func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, err
 	}
 	pl.handle.Parallelizer().Until(context.TODO(), len(allNodes), processNode)
 	return state, nil
+}
+
+func matchReservation(pod *corev1.Pod, node *corev1.Node, reservation *schedulingv1alpha1.Reservation, reservationAffinity *reservationutil.RequiredReservationAffinity) bool {
+	if !reservationutil.MatchReservationOwners(pod, reservation) {
+		return false
+	}
+
+	if reservationAffinity != nil {
+		// NOTE: There are some special scenarios.
+		// For example, the AZ where the Pod wants to select the Reservation is cn-hangzhou, but the Reservation itself
+		// does not have this information, so it needs to perceive the label of the Node when Matching Affinity.
+		fakeNode := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   reservation.Name,
+				Labels: map[string]string{},
+			},
+		}
+		for k, v := range node.Labels {
+			fakeNode.Labels[k] = v
+		}
+		for k, v := range reservation.Labels {
+			fakeNode.Labels[k] = v
+		}
+		return reservationAffinity.Match(fakeNode)
+	}
+	return true
 }
 
 func genPVCRefKey(pvc *corev1.PersistentVolumeClaim) string {

@@ -47,6 +47,8 @@ const (
 	Name     = "Reservation"
 	stateKey = Name
 
+	// ErrReasonReservationAffinity is the reason for Pod's reservation affinity/selector not matching.
+	ErrReasonReservationAffinity = "node(s) no reservations match reservation affinity"
 	// ErrReasonNodeNotMatchReservation is the reason for node not matching which the reserve pod specifies.
 	ErrReasonNodeNotMatchReservation = "node(s) didn't match the nodeName specified by reservation"
 	// ErrReasonOnlyOneSameReusableReservationOnSameNode is the reason for only one same reusable reservation can be scheduled on a same node
@@ -162,6 +164,15 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 			return framework.NewStatus(framework.Error, err.Error())
 		}
 		return nil
+	}
+
+	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
+	if err != nil {
+		return framework.AsStatus(err)
+	}
+	state := getStateData(cycleState)
+	if reservationAffinity != nil && len(state.matched) == 0 {
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
 	}
 
 	klog.V(5).InfoS("Attempting to pre-filter pod for reservation state", "pod", klog.KObj(pod))

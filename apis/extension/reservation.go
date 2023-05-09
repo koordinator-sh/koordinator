@@ -34,11 +34,36 @@ const (
 
 	// AnnotationReservationAllocated represents the reservation allocated by the pod.
 	AnnotationReservationAllocated = SchedulingDomainPrefix + "/reservation-allocated"
+
+	// AnnotationReservationAffinity represents the constraints of Pod selection Reservation
+	AnnotationReservationAffinity = SchedulingDomainPrefix + "/reservation-affinity"
 )
 
 type ReservationAllocated struct {
 	Name string    `json:"name,omitempty"`
 	UID  types.UID `json:"uid,omitempty"`
+}
+
+// ReservationAffinity represents the constraints of Pod selection Reservation
+type ReservationAffinity struct {
+	// If the affinity requirements specified by this field are not met at
+	// scheduling time, the pod will not be scheduled onto the node.
+	// If the affinity requirements specified by this field cease to be met
+	// at some point during pod execution (e.g. due to an update), the system
+	// may or may not try to eventually evict the pod from its node.
+	RequiredDuringSchedulingIgnoredDuringExecution *ReservationAffinitySelector `json:"requiredDuringSchedulingIgnoredDuringExecution,omitempty"`
+	// ReservationSelector is a selector which must be true for the pod to fit on a reservation.
+	// Selector which must match a reservation's labels for the pod to be scheduled on that node.
+	ReservationSelector map[string]string `json:"reservationSelector,omitempty"`
+}
+
+// ReservationAffinitySelector represents the union of the results of one or more label queries
+// over a set of reservations; that is, it represents the OR of the selectors represented
+// by the reservation selector terms.
+type ReservationAffinitySelector struct {
+	// Required. A list of reservation selector terms. The terms are ORed.
+	// Reuse corev1.NodeSelectorTerm to avoid defining too many repeated definitions.
+	ReservationSelectorTerms []corev1.NodeSelectorTerm `json:"reservationSelectorTerms,omitempty"`
 }
 
 func GetReservationAllocated(pod *corev1.Pod) (*ReservationAllocated, error) {
@@ -71,4 +96,14 @@ func SetReservationAllocated(pod *corev1.Pod, r *schedulingv1alpha1.Reservation)
 
 func IsReservationAllocateOnce(r *schedulingv1alpha1.Reservation) bool {
 	return pointer.BoolDeref(r.Spec.AllocateOnce, true)
+}
+
+func GetReservationAffinity(annotations map[string]string) (*ReservationAffinity, error) {
+	var affinity ReservationAffinity
+	if s := annotations[AnnotationReservationAffinity]; s != "" {
+		if err := json.Unmarshal([]byte(s), &affinity); err != nil {
+			return nil, err
+		}
+	}
+	return &affinity, nil
 }

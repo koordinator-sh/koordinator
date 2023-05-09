@@ -56,7 +56,7 @@ type SchedulingTransformer interface {
 type PreFilterTransformer interface {
 	SchedulingTransformer
 	// BeforePreFilter If there is a change to the incoming Pod, it needs to be modified after DeepCopy and returned.
-	BeforePreFilter(handle ExtendedHandle, state *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool)
+	BeforePreFilter(handle ExtendedHandle, state *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, error)
 	// AfterPreFilter is executed after PreFilter.
 	// There is a chance to trigger the correction of the State data of each plugin after the PreFilter.
 	AfterPreFilter(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) error
