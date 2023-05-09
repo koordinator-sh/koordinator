@@ -18,18 +18,15 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
@@ -37,18 +34,15 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/cmd/koord-manager/extensions"
+	"github.com/koordinator-sh/koordinator/cmd/koord-manager/options"
 	extclient "github.com/koordinator-sh/koordinator/pkg/client"
 	"github.com/koordinator-sh/koordinator/pkg/features"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodeslo"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
@@ -81,16 +75,6 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-var (
-	controllerAddFuncs = map[string]func(manager.Manager) error{
-		nodemetric.Name:   nodemetric.Add,
-		noderesource.Name: noderesource.Add,
-		nodeslo.Name:      nodeslo.Add,
-	}
-
-	controllers = sets.StringKeySet(controllerAddFuncs).List()
-)
-
 func main() {
 	var metricsAddr, pprofAddr string
 	var healthProbeAddr string
@@ -108,11 +92,9 @@ func main() {
 	flag.BoolVar(&enablePprof, "enable-pprof", true, "Enable pprof for controller manager.")
 	flag.StringVar(&pprofAddr, "pprof-addr", ":8090", "The address the pprof binds to.")
 	flag.StringVar(&syncPeriodStr, "sync-period", "", "Determines the minimum frequency at which watched resources are reconciled.")
-	pflag.StringSliceVar(&controllers, "controllers", controllers, fmt.Sprintf("A list of controllers to enable. '*' enables all on-by-default controllers,"+
-		"'noderesource' enables the controller named 'noderesource', '-noderesource' disables the controller named 'noderesource'.\n"+
-		"All controllers: %s", strings.Join(controllers, ", ")))
+	opts := options.NewOptions()
+	opts.InitFlags(flag.CommandLine)
 	sloconfig.InitFlags(flag.CommandLine)
-
 	utilfeature.DefaultMutableFeatureGate.AddFlag(pflag.CommandLine)
 	klog.InitFlags(nil)
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
@@ -172,7 +154,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := setupControllersWithManager(mgr); err != nil {
+	if err := opts.ApplyTo(mgr); err != nil {
 		setupLog.Error(err, "unable to setup controllers")
 		os.Exit(1)
 	}
@@ -214,40 +196,6 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-}
-
-func isControllerEnabled(controllerName string, controllers []string) bool {
-	hasStar := false
-	for _, c := range controllers {
-		if c == controllerName {
-			return true
-		}
-		if c == "-"+controllerName {
-			return false
-		}
-		if c == "*" {
-			hasStar = true
-		}
-	}
-	return hasStar
-}
-
-func setupControllersWithManager(m manager.Manager) error {
-	for controllerName, addFn := range controllerAddFuncs {
-		if isControllerEnabled(controllerName, controllers) {
-			klog.Warningf("controller %q is disabled", controllerName)
-			continue
-		}
-
-		if err := addFn(m); err != nil {
-			klog.Errorf("Unable to create controller %s, err: %v", controllerName, err)
-			return err
-		} else {
-			klog.V(4).Infof("controller %q added", controllerName)
-		}
-	}
-
-	return nil
 }
 
 func setRestConfig(c *rest.Config) {
