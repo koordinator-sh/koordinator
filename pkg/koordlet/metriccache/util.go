@@ -38,6 +38,10 @@ func fieldAvgOfMetricList(metricsList interface{}, aggregateParam AggregateParam
 
 	for i := 0; i < metrics.Len(); i++ {
 		metricStruct := metrics.Index(i)
+		if metricStruct.Kind() == reflect.Ptr {
+			// convert to struct for list with ptr
+			metricStruct = metricStruct.Elem()
+		}
 		fieldValue := metricStruct.FieldByName(aggregateParam.ValueFieldName)
 		fieldType := fieldValue.Type().Kind()
 		if fieldType != reflect.Float32 && fieldType != reflect.Float64 {
@@ -69,6 +73,10 @@ func fieldPercentileOfMetricList(metricsList interface{}, aggregateParam Aggrega
 
 	for i := 0; i < metrics.Len(); i++ {
 		metricStruct := metrics.Index(i)
+		if metricStruct.Kind() == reflect.Ptr {
+			// convert to struct for list with ptr
+			metricStruct = metricStruct.Elem()
+		}
 		fieldValue := metricStruct.FieldByName(aggregateParam.ValueFieldName)
 		fieldType := fieldValue.Type().Kind()
 		if fieldType != reflect.Float32 && fieldType != reflect.Float64 {
@@ -104,6 +112,10 @@ func fieldLastOfMetricList(metricsList interface{}, aggregateParam AggregatePara
 
 	for i := 0; i < metrics.Len(); i++ {
 		metricStruct := metrics.Index(i)
+		if metricStruct.Kind() == reflect.Ptr {
+			// convert to struct for list with ptr
+			metricStruct = metricStruct.Elem()
+		}
 		fieldValue := metricStruct.FieldByName(aggregateParam.ValueFieldName)
 		if !fieldValue.IsValid() {
 			return 0, fmt.Errorf("fieldValue not Valid, metricStruct: %v ", metricStruct)
@@ -166,6 +178,10 @@ func fieldLastOfMetricListBool(metricsList interface{}, aggregateParam Aggregate
 
 	for i := 0; i < metrics.Len(); i++ {
 		metricStruct := metrics.Index(i)
+		if metricStruct.Kind() == reflect.Ptr {
+			// convert to struct for list with ptr
+			metricStruct = metricStruct.Elem()
+		}
 		fieldValue := metricStruct.FieldByName(aggregateParam.ValueFieldName)
 		if !fieldValue.IsValid() {
 			return false, fmt.Errorf("fieldValue not Valid, metricStruct: %v ", metricStruct)

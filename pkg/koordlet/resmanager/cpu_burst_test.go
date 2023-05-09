@@ -62,6 +62,11 @@ func newTestCPUBurst(r *resmanager) *CPUBurst {
 	}
 }
 
+type testThrottledMetrics struct {
+	count           int
+	aggregateValues map[metriccache.AggregationType]float64
+}
+
 type FakeRecorder struct {
 	eventReason string
 }
@@ -759,7 +764,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 		podCurCFSQuota       int64
 		containerCurCFSQuota map[string]int64
 		containerMetric      map[string]metriccache.ContainerResourceQueryResult
-		containerThrottled   map[string]metriccache.ContainerThrottledQueryResult
+		containersThrottled  map[string]testThrottledMetrics
 	}
 	type args struct {
 		burstCfg  slov1alpha1.CPUBurstConfig
@@ -796,8 +801,13 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerMetric: map[string]metriccache.ContainerResourceQueryResult{
 					testContainerName1: *genTestContainerResourceQueryResult(testContainerID1, 1500, 1000),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					testContainerName1: *genTestContainerThrottledQueryResult(testContainerID1, 0.5),
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
 				},
 			},
 			args: args{
@@ -837,8 +847,13 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerMetric: map[string]metriccache.ContainerResourceQueryResult{
 					testContainerName1: *genTestContainerResourceQueryResult(testContainerID1, 1500, 1000),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					testContainerName1: *genTestContainerThrottledQueryResult(testContainerID1, 0.5),
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
 				},
 			},
 			args: args{
@@ -852,6 +867,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				},
 			},
 		},
+
 		{
 			name: "scale-down-to-base-for-throttled-pod-on-overload-state",
 			fields: fields{
@@ -873,8 +889,13 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerMetric: map[string]metriccache.ContainerResourceQueryResult{
 					testContainerName1: *genTestContainerResourceQueryResult(testContainerID1, 1500, 1000),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					testContainerName1: *genTestContainerThrottledQueryResult(testContainerID1, 0.5),
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
 				},
 			},
 			args: args{
@@ -909,8 +930,13 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerMetric: map[string]metriccache.ContainerResourceQueryResult{
 					testContainerName1: *genTestContainerResourceQueryResult(testContainerID1, 1500, 1000),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					testContainerName1: *genTestContainerThrottledQueryResult(testContainerID1, 0.5),
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
 				},
 			},
 			args: args{
@@ -945,8 +971,13 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerMetric: map[string]metriccache.ContainerResourceQueryResult{
 					testContainerName1: *genTestContainerResourceQueryResult(testContainerID1, 1500, 1000),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					testContainerName1: *genTestContainerThrottledQueryResult(testContainerID1, 0.5),
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
 				},
 			},
 			args: args{
@@ -986,8 +1017,13 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerMetric: map[string]metriccache.ContainerResourceQueryResult{
 					testContainerName1: *genTestContainerResourceQueryResult(testContainerID1, 1500, 1000),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					testContainerName1: *genTestContainerThrottledQueryResult(testContainerID1, 0.5),
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
 				},
 			},
 			args: args{
@@ -1027,8 +1063,13 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerMetric: map[string]metriccache.ContainerResourceQueryResult{
 					testContainerName1: *genTestContainerResourceQueryResult(testContainerID1, 1500, 1000),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					testContainerName1: *genTestContainerThrottledQueryResult(testContainerID1, 0),
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0,
+						},
+					},
 				},
 			},
 			args: args{
@@ -1063,8 +1104,13 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerMetric: map[string]metriccache.ContainerResourceQueryResult{
 					testContainerName1: *genTestContainerResourceQueryResult(testContainerID1, 1500, 1000),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					testContainerName1: *genTestContainerThrottledQueryResult(testContainerID1, 0.5),
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
 				},
 			},
 			args: args{
@@ -1099,8 +1145,13 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerMetric: map[string]metriccache.ContainerResourceQueryResult{
 					testContainerName1: *genTestContainerResourceQueryResult(testContainerID1, 1500, 1000),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					testContainerName1: *genTestContainerThrottledQueryResult(testContainerID1, 0.5),
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
 				},
 			},
 			args: args{
@@ -1145,9 +1196,19 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 					testContainerName1: *genTestContainerResourceQueryResult(testContainerID1, 1500, 1000),
 					testContainerName2: *genTestContainerResourceQueryResult(testContainerID2, 1500, 1000),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					testContainerName1: *genTestContainerThrottledQueryResult(testContainerID1, 0.5),
-					testContainerName2: *genTestContainerThrottledQueryResult(testContainerID2, 0.5),
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
+					testContainerName2: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
 				},
 			},
 			args: args{
@@ -1190,9 +1251,19 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 					testContainerName1: *genTestContainerResourceQueryResult(testContainerID1, 1500, 1000),
 					testContainerName2: *genTestContainerResourceQueryResult(testContainerID2, 1500, 1000),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					testContainerName1: *genTestContainerThrottledQueryResult(testContainerID1, 0.5),
-					testContainerName2: *genTestContainerThrottledQueryResult(testContainerID2, 0.5),
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
+					testContainerName2: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
 				},
 			},
 			args: args{
@@ -1222,14 +1293,30 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			ctl := gomock.NewController(t)
 			mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
 
+			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
+			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
+
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
+			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
 			for _, containerMetric := range tt.fields.containerMetric {
 				mockMetricCache.EXPECT().GetContainerResourceMetric(&containerMetric.Metric.ContainerID,
 					gomock.Any()).Return(containerMetric).AnyTimes()
 			}
-			for _, containerMetric := range tt.fields.containerThrottled {
-				mockMetricCache.EXPECT().GetContainerThrottledMetric(&containerMetric.Metric.ContainerID,
-					gomock.Any()).Return(containerMetric).AnyTimes()
+			for containerID, containerMetric := range tt.fields.containersThrottled {
+				result := mock_metriccache.NewMockAggregateResult(ctl)
+				result.EXPECT().Count().Return(containerMetric.count).AnyTimes()
+				for aggregateType, value := range containerMetric.aggregateValues {
+					result.EXPECT().Value(aggregateType).Return(value, nil).AnyTimes()
+				}
+
+				queryMeta, err := metriccache.ContainerCPUThrottledMetric.BuildQueryMeta(
+					metriccache.MetricPropertiesFunc.Container(genTestContainerIDByName(containerID)))
+				assert.NoError(t, err)
+
+				mockResultFactory.EXPECT().New(queryMeta).Return(result).AnyTimes()
+				mockQuerier.EXPECT().Query(queryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
 			}
 
 			initPodCFSQuota(podMeta, tt.fields.podCurCFSQuota, testHelper)
@@ -1283,24 +1370,6 @@ func genTestContainerResourceQueryResult(containerID string, cpuMilliUsage,
 			},
 			MemoryUsed: metriccache.MemoryMetric{
 				MemoryWithoutCache: *resource.NewQuantity(memUsage, resource.BinarySI),
-			},
-		},
-	}
-}
-
-func genTestContainerThrottledQueryResult(containerID string,
-	throttledRatio float64) *metriccache.ContainerThrottledQueryResult {
-	return &metriccache.ContainerThrottledQueryResult{
-		QueryResult: metriccache.QueryResult{
-			AggregateInfo: &metriccache.AggregateInfo{
-				MetricsCount: 1,
-			},
-			Error: nil,
-		},
-		Metric: &metriccache.ContainerThrottledMetric{
-			ContainerID: containerID,
-			CPUThrottledMetric: &metriccache.CPUThrottledMetric{
-				ThrottledRatio: throttledRatio,
 			},
 		},
 	}
@@ -1476,7 +1545,7 @@ func TestCPUBurst_start(t *testing.T) {
 		podsCurCFSQuota      map[string]int64
 		containerCurCFSQuota map[string]int64
 		containerMetric      map[string]metriccache.ContainerResourceQueryResult
-		containerThrottled   map[string]metriccache.ContainerThrottledQueryResult
+		containersThrottled  map[string]testThrottledMetrics
 	}
 	type want struct {
 		podBurstVal          map[string]int64
@@ -1530,9 +1599,19 @@ func TestCPUBurst_start(t *testing.T) {
 					lsrContainerID: *genTestContainerResourceQueryResult(lsrContainerID, 6000, 6000),
 					lsContainerID:  *genTestContainerResourceQueryResult(lsContainerID, 150, 100),
 				},
-				containerThrottled: map[string]metriccache.ContainerThrottledQueryResult{
-					lsrContainerID: *genTestContainerThrottledQueryResult(lsrContainerID, 0),
-					lsContainerID:  *genTestContainerThrottledQueryResult(lsContainerID, 0.5),
+				containersThrottled: map[string]testThrottledMetrics{
+					lsrContainerID: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0,
+						},
+					},
+					lsContainerID: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
 				},
 			},
 			want: want{
@@ -1563,7 +1642,13 @@ func TestCPUBurst_start(t *testing.T) {
 			mockStatesInformer.EXPECT().GetAllPods().Return(getPodMetas(tt.fields.pods)).AnyTimes()
 			mockStatesInformer.EXPECT().GetNodeSLO().Return(tt.fields.nodeSLO).AnyTimes()
 
+			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
+			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
+
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
+			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
 			mockMetricCache.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(tt.fields.nodeMetric).AnyTimes()
 			for _, podMetric := range tt.fields.podsMetric {
 				mockMetricCache.EXPECT().GetPodResourceMetric(&podMetric.Metric.PodUID, gomock.Any()).Return(podMetric).AnyTimes()
@@ -1574,9 +1659,19 @@ func TestCPUBurst_start(t *testing.T) {
 				mockMetricCache.EXPECT().GetContainerResourceMetric(&containerMetric.Metric.ContainerID,
 					gomock.Any()).Return(containerMetric).AnyTimes()
 			}
-			for _, containerMetric := range tt.fields.containerThrottled {
-				mockMetricCache.EXPECT().GetContainerThrottledMetric(&containerMetric.Metric.ContainerID,
-					gomock.Any()).Return(containerMetric).AnyTimes()
+			for containerID, containerMetric := range tt.fields.containersThrottled {
+				result := mock_metriccache.NewMockAggregateResult(ctl)
+				result.EXPECT().Count().Return(containerMetric.count).AnyTimes()
+				for aggregateType, value := range containerMetric.aggregateValues {
+					result.EXPECT().Value(aggregateType).Return(value, nil).AnyTimes()
+				}
+
+				queryMeta, err := metriccache.ContainerCPUThrottledMetric.BuildQueryMeta(
+					metriccache.MetricPropertiesFunc.Container(containerID))
+				assert.NoError(t, err)
+
+				mockResultFactory.EXPECT().New(queryMeta).Return(result).AnyTimes()
+				mockQuerier.EXPECT().Query(queryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
 			}
 
 			fakeRecorder := &FakeRecorder{}

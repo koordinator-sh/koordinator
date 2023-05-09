@@ -32,6 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -42,7 +43,7 @@ const (
 type podThrottledCollector struct {
 	collectInterval time.Duration
 	started         *atomic.Bool
-	metricDB        metriccache.MetricCache
+	appendableDB    metriccache.Appendable
 	statesInformer  statesinformer.StatesInformer
 	cgroupReader    resourceexecutor.CgroupReader
 
@@ -55,7 +56,7 @@ func New(opt *framework.Options) framework.Collector {
 	return &podThrottledCollector{
 		collectInterval:           collectInterval,
 		started:                   atomic.NewBool(false),
-		metricDB:                  opt.MetricCache,
+		appendableDB:              opt.MetricCache,
 		statesInformer:            opt.StatesInformer,
 		cgroupReader:              opt.CgroupReader,
 		lastPodCPUThrottled:       gocache.New(collectInterval*framework.ContextExpiredRatio, framework.CleanupInterval),
@@ -84,6 +85,7 @@ func (p *podThrottledCollector) Started() bool {
 func (c *podThrottledCollector) collectPodThrottledInfo() {
 	klog.V(6).Info("start collectPodThrottledInfo")
 	podMetas := c.statesInformer.GetAllPods()
+	podAndContainerMetrics := make([]metriccache.MetricSample, 0)
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
@@ -111,25 +113,38 @@ func (c *podThrottledCollector) collectPodThrottledInfo() {
 
 		klog.V(6).Infof("collect pod %s/%s, uid %s throttled finished, metric %v",
 			meta.Pod.Namespace, meta.Pod.Name, meta.Pod.UID, cpuThrottledRatio)
-		podMetric := &metriccache.PodThrottledMetric{
-			PodUID: uid,
-			CPUThrottledMetric: &metriccache.CPUThrottledMetric{
-				ThrottledRatio: cpuThrottledRatio,
-			},
-		}
-		err = c.metricDB.InsertPodThrottledMetrics(collectTime, podMetric)
+
+		podMetric, err := metriccache.PodCPUThrottledMetric.GenerateSample(
+			metriccache.MetricPropertiesFunc.Pod(string(meta.Pod.UID)),
+			collectTime, cpuThrottledRatio)
 		if err != nil {
-			klog.Infof("insert pod %s/%s, uid %s cpu throttled metric failed, metric %v, err %v",
-				pod.Namespace, pod.Name, uid, podMetric, err)
+			klog.Warningf("generate pod %v throttled metrics failed, err %v", util.GetPodKey(meta.Pod), err)
+		} else {
+			podAndContainerMetrics = append(podAndContainerMetrics, podMetric)
 		}
-		c.collectContainerThrottledInfo(meta)
 	} // end for podMeta
+
+	for _, meta := range podMetas {
+		metrics := c.collectContainerThrottledInfo(meta)
+		podAndContainerMetrics = append(podAndContainerMetrics, metrics...)
+	}
+
+	appender := c.appendableDB.Appender()
+	if err := appender.Append(podAndContainerMetrics); err != nil {
+		klog.Warningf("append pods throttled metrics failed, reason: %v", err)
+		return
+	}
+	if err := appender.Commit(); err != nil {
+		klog.Warningf("append pods throttled metrics failed, reason: %v", err)
+		return
+	}
 	c.started.Store(true)
-	klog.Infof("collectPodThrottledInfo finished, pod num %d", len(podMetas))
+	klog.V(5).Infof("collectPodThrottledInfo finished, pod num %d", len(podMetas))
 }
 
-func (c *podThrottledCollector) collectContainerThrottledInfo(podMeta *statesinformer.PodMeta) {
+func (c *podThrottledCollector) collectContainerThrottledInfo(podMeta *statesinformer.PodMeta) []metriccache.MetricSample {
 	pod := podMeta.Pod
+	containersMetric := make([]metriccache.MetricSample, 0, len(pod.Status.ContainerStatuses))
 	for i := range pod.Status.ContainerStatuses {
 		collectTime := time.Now()
 		containerStat := &pod.Status.ContainerStatuses[i]
@@ -169,17 +184,14 @@ func (c *podThrottledCollector) collectContainerThrottledInfo(podMeta *statesinf
 		lastCPUThrottled := lastCPUThrottledValue.(*system.CPUStatRaw)
 		cpuThrottledRatio := system.CalcCPUThrottledRatio(currentCPUStat, lastCPUThrottled)
 
-		containerMetric := &metriccache.ContainerThrottledMetric{
-			ContainerID: containerStat.ContainerID,
-			CPUThrottledMetric: &metriccache.CPUThrottledMetric{
-				ThrottledRatio: cpuThrottledRatio,
-			},
-		}
-		err = c.metricDB.InsertContainerThrottledMetrics(collectTime, containerMetric)
+		containerMetric, err := metriccache.ContainerCPUThrottledMetric.GenerateSample(
+			metriccache.MetricPropertiesFunc.Container(containerStat.ContainerID),
+			collectTime, cpuThrottledRatio)
 		if err != nil {
-			klog.Warningf("insert container throttled metrics failed, err %v", err)
+			klog.Warningf("generate container throttled metrics failed, err %v", err)
+		} else {
+			containersMetric = append(containersMetric, containerMetric)
 		}
 	} // end for container status
-	klog.V(5).Infof("collectContainerThrottledInfo for pod %s/%s finished, container num %d",
-		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses))
+	return containersMetric
 }

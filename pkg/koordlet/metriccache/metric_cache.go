@@ -29,20 +29,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-type AggregationType string
-
-type AggregationFunc func(interface{}, AggregateParam) (float64, error)
-
-const (
-	AggregationTypeAVG   AggregationType = "avg"
-	AggregationTypeP99   AggregationType = "p99"
-	AggregationTypeP95   AggregationType = "P95"
-	AggregationTypeP90   AggregationType = "P90"
-	AggregationTypeP50   AggregationType = "p50"
-	AggregationTypeLast  AggregationType = "last"
-	AggregationTypeCount AggregationType = "count"
-)
-
 type InterferenceMetricName string
 
 const (
@@ -57,11 +43,6 @@ type QueryParam struct {
 	Aggregate AggregationType
 	Start     *time.Time
 	End       *time.Time
-}
-
-type AggregateParam struct {
-	ValueFieldName string
-	TimeFieldName  string
 }
 
 type AggregateInfo struct {
@@ -91,14 +72,14 @@ func (q *QueryParam) FillDefaultValue() {
 
 type MetricCache interface {
 	Run(stopCh <-chan struct{}) error
+	TSDBStorage
+
 	GetNodeResourceMetric(param *QueryParam) NodeResourceQueryResult
 	GetPodResourceMetric(podUID *string, param *QueryParam) PodResourceQueryResult
 	GetContainerResourceMetric(containerID *string, param *QueryParam) ContainerResourceQueryResult
 	GetNodeCPUInfo(param *QueryParam) (*NodeCPUInfo, error)
 	GetNodeLocalStorageInfo(param *QueryParam) (*NodeLocalStorageInfo, error)
 	GetBECPUResourceMetric(param *QueryParam) BECPUResourceQueryResult
-	GetPodThrottledMetric(podUID *string, param *QueryParam) PodThrottledQueryResult
-	GetContainerThrottledMetric(containerID *string, param *QueryParam) ContainerThrottledQueryResult
 	GetContainerInterferenceMetric(metricName InterferenceMetricName, podUID *string, containerID *string, param *QueryParam) ContainerInterferenceQueryResult
 	GetPodInterferenceMetric(metricName InterferenceMetricName, podUID *string, param *QueryParam) PodInterferenceQueryResult
 	InsertNodeResourceMetric(t time.Time, nodeResUsed *NodeResourceMetric) error
@@ -107,8 +88,6 @@ type MetricCache interface {
 	InsertNodeCPUInfo(info *NodeCPUInfo) error
 	InsertNodeLocalStorageInfo(info *NodeLocalStorageInfo) error
 	InsertBECPUResourceMetric(t time.Time, metric *BECPUResourceMetric) error
-	InsertPodThrottledMetrics(t time.Time, metric *PodThrottledMetric) error
-	InsertContainerThrottledMetrics(t time.Time, metric *ContainerThrottledMetric) error
 	InsertContainerInterferenceMetrics(t time.Time, metric *ContainerInterferenceMetric) error
 	InsertPodInterferenceMetrics(t time.Time, metric *PodInterferenceMetric) error
 }
@@ -116,6 +95,7 @@ type MetricCache interface {
 type metricCache struct {
 	config *Config
 	db     *storage
+	TSDBStorage
 }
 
 func NewMetricCache(cfg *Config) (MetricCache, error) {
@@ -123,9 +103,14 @@ func NewMetricCache(cfg *Config) (MetricCache, error) {
 	if err != nil {
 		return nil, err
 	}
+	tsdb, err := NewTSDBStorage(cfg)
+	if err != nil {
+		return nil, err
+	}
 	return &metricCache{
-		config: cfg,
-		db:     database,
+		config:      cfg,
+		db:          database,
+		TSDBStorage: tsdb,
 	}, nil
 }
 
@@ -907,32 +892,6 @@ func (m *metricCache) recycleDB() {
 		"containerThrottledResCount=%v, containerCPIResCount=%v, containerPSIResCount=%v, podPSIResCount=%v",
 		expiredTime, nodeResCount, podResCount, containerResCount, beCPUResCount, podThrottledResCount,
 		containerThrottledResCount, containerCPIResCount, containerPSIResCount, podPSIResCount)
-}
-
-func getAggregateFunc(aggregationType AggregationType) AggregationFunc {
-	switch aggregationType {
-	case AggregationTypeAVG:
-		return fieldAvgOfMetricList
-	case AggregationTypeP99:
-		return percentileFuncOfMetricList(0.99)
-	case AggregationTypeP95:
-		return percentileFuncOfMetricList(0.95)
-	case AggregationTypeP90:
-		return percentileFuncOfMetricList(0.9)
-	case AggregationTypeP50:
-		return percentileFuncOfMetricList(0.5)
-	case AggregationTypeLast:
-		return fieldLastOfMetricList
-	case AggregationTypeCount:
-		return fieldCountOfMetricList
-	default:
-		return fieldAvgOfMetricList
-	}
-}
-
-func count(metrics interface{}) (float64, error) {
-	aggregateFunc := getAggregateFunc(AggregationTypeCount)
-	return aggregateFunc(metrics, AggregateParam{})
 }
 
 type CPIMetric struct {

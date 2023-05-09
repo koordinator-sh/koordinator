@@ -107,23 +107,30 @@ func (r *resmanager) collectContainerResMetricLast(containerID *string) metricca
 	return queryResult
 }
 
-func (r *resmanager) collectContainerThrottledMetricLast(containerID *string) metriccache.ContainerThrottledQueryResult {
+func (r *resmanager) collectContainerThrottledMetric(containerID *string) (metriccache.AggregateResult, error) {
 	if containerID == nil {
-		return metriccache.ContainerThrottledQueryResult{
-			QueryResult: metriccache.QueryResult{Error: fmt.Errorf("container is nil")},
-		}
+		return nil, fmt.Errorf("container is nil")
 	}
-	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 5)
-	queryResult := r.metricCache.GetContainerThrottledMetric(containerID, queryParam)
-	if queryResult.Error != nil {
-		klog.V(5).Infof("get container %v throttled metric failed, error %v", *containerID, queryResult.Error)
-		return queryResult
+
+	queryEndTime := time.Now()
+	queryStartTime := queryEndTime.Add(-time.Duration(r.collectResUsedIntervalSeconds*5) * time.Second)
+	querier, err := r.metricCache.Querier(queryStartTime, queryEndTime)
+	if err != nil {
+		return nil, err
 	}
-	if queryResult.Metric == nil {
-		klog.V(5).Infof("container %v metric not exist", *containerID)
-		return queryResult
+
+	queryParam := metriccache.MetricPropertiesFunc.Container(*containerID)
+	queryMeta, err := metriccache.ContainerCPUThrottledMetric.BuildQueryMeta(queryParam)
+	if err != nil {
+		return nil, err
 	}
-	return queryResult
+
+	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
+	if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
+		return nil, err
+	}
+
+	return aggregateResult, nil
 }
 
 func generateQueryParamsAvg(windowSeconds int64) *metriccache.QueryParam {

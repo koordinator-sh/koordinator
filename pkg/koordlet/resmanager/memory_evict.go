@@ -65,7 +65,7 @@ func (m *MemoryEvictor) memoryEvict() {
 		klog.Errorf("failed to acquire memory eviction feature-gate, error: %v", err)
 		return
 	} else if disabled {
-		klog.Warningf("skip memory evict, disabled in NodeSLO")
+		klog.V(4).Infof("skip memory evict, disabled in NodeSLO")
 		return
 	}
 
