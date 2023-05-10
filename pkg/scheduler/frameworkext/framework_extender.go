@@ -46,11 +46,11 @@ type frameworkExtenderImpl struct {
 	filterTransformers    []FilterTransformer
 	scoreTransformers     []ScoreTransformer
 
-	reservationFilterPlugins       []ReservationFilterPlugin
-	reservationScorePlugins        []ReservationScorePlugin
-	reservationNominatorPlugins    []ReservationNominator
-	reservationPreBindPlugins      []ReservationPreBindPlugin
-	reservationPreFilterExtensions []ReservationPreFilterExtension
+	reservationFilterPlugins    []ReservationFilterPlugin
+	reservationScorePlugins     []ReservationScorePlugin
+	reservationNominatorPlugins []ReservationNominator
+	reservationPreBindPlugins   []ReservationPreBindPlugin
+	reservationRestorePlugins   []ReservationRestorePlugin
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -117,8 +117,8 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	if r, ok := pl.(ReservationPreBindPlugin); ok {
 		ext.reservationPreBindPlugins = append(ext.reservationPreBindPlugins, r)
 	}
-	if r, ok := pl.(ReservationPreFilterExtension); ok {
-		ext.reservationPreFilterExtensions = append(ext.reservationPreFilterExtensions, r)
+	if r, ok := pl.(ReservationRestorePlugin); ok {
+		ext.reservationRestorePlugins = append(ext.reservationRestorePlugins, r)
 	}
 }
 
@@ -267,27 +267,41 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 	return nil
 }
 
-// RunReservationPreFilterExtensionRemoveReservation restores the Reservation during PreFilter phase
-func (ext *frameworkExtenderImpl) RunReservationPreFilterExtensionRemoveReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeInfo *framework.NodeInfo) *framework.Status {
-	for _, pl := range ext.reservationPreFilterExtensions {
-		status := pl.RemoveReservation(ctx, cycleState, podToSchedule, reservation, nodeInfo)
+func (ext *frameworkExtenderImpl) RunReservationExtensionPreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+	for _, pl := range ext.reservationRestorePlugins {
+		status := pl.PreRestoreReservation(ctx, cycleState, pod)
 		if !status.IsSuccess() {
-			err := status.AsError()
-			klog.ErrorS(err, "Failed running RemoveReservation on plugin", "plugin", pl.Name(), "pod", klog.KObj(podToSchedule))
-			return framework.AsStatus(fmt.Errorf("running RemoveReservation on plugin %q: %w", pl.Name(), err))
+			klog.ErrorS(status.AsError(), "Failed running PreRestoreReservation on plugin", "plugin", pl.Name(), "pod", klog.KObj(pod))
+			return status
 		}
 	}
 	return nil
 }
 
-// RunReservationPreFilterExtensionAddPodInReservation restores Pod of the Reservation during PreFilter phase
-func (ext *frameworkExtenderImpl) RunReservationPreFilterExtensionAddPodInReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podToAdd *framework.PodInfo, reservation *schedulingv1alpha1.Reservation, nodeInfo *framework.NodeInfo) *framework.Status {
-	for _, pl := range ext.reservationPreFilterExtensions {
-		status := pl.AddPodInReservation(ctx, cycleState, podToSchedule, podToAdd, reservation, nodeInfo)
+// RunReservationExtensionRestoreReservation restores the Reservation during PreFilter phase
+func (ext *frameworkExtenderImpl) RunReservationExtensionRestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (PluginToReservationRestoreStates, *framework.Status) {
+	pluginToRestoreState := PluginToReservationRestoreStates{}
+	for _, pl := range ext.reservationRestorePlugins {
+		state, status := pl.RestoreReservation(ctx, cycleState, podToSchedule, matched, unmatched, nodeInfo)
 		if !status.IsSuccess() {
-			err := status.AsError()
-			klog.ErrorS(err, "Failed running AddPodInReservation on plugin", "plugin", pl.Name(), "pod", klog.KObj(podToSchedule))
-			return framework.AsStatus(fmt.Errorf("running AddPodInReservation on plugin %q: %w", pl.Name(), err))
+			klog.ErrorS(status.AsError(), "Failed running RestoreReservation on plugin", "plugin", pl.Name(), "pod", klog.KObj(podToSchedule))
+			return nil, status
+		}
+		pluginToRestoreState[pl.Name()] = state
+	}
+	return pluginToRestoreState, nil
+}
+
+func (ext *frameworkExtenderImpl) RunReservationExtensionFinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states PluginToNodeReservationRestoreStates) *framework.Status {
+	for _, pl := range ext.reservationRestorePlugins {
+		s, ok := states[pl.Name()]
+		if !ok {
+			continue
+		}
+		status := pl.FinalRestoreReservation(ctx, cycleState, pod, s)
+		if !status.IsSuccess() {
+			klog.ErrorS(status.AsError(), "Failed running FinalRestoreReservation on plugin", "plugin", pl.Name(), "pod", klog.KObj(pod))
+			return status
 		}
 	}
 	return nil

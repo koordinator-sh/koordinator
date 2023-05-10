@@ -725,7 +725,7 @@ func TestFilterReservation(t *testing.T) {
 			}
 
 			state := &stateData{
-				matched: map[string][]*frameworkext.ReservationInfo{},
+				nodeReservationStates: map[string]nodeReservationState{},
 			}
 			for _, v := range tt.reservations {
 				pl.reservationCache.updateReservation(v)
@@ -733,7 +733,10 @@ func TestFilterReservation(t *testing.T) {
 					pl.reservationCache.addPod(v.UID, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "allocated-pod", UID: uuid.NewUUID()}})
 				}
 				rInfo := pl.reservationCache.getReservationInfoByUID(v.UID)
-				state.matched[v.Status.NodeName] = append(state.matched[v.Status.NodeName], rInfo)
+				nodeRState := state.nodeReservationStates[v.Status.NodeName]
+				nodeRState.nodeName = v.Status.NodeName
+				nodeRState.matched = append(nodeRState.matched, rInfo)
+				state.nodeReservationStates[v.Status.NodeName] = nodeRState
 			}
 			cycleState.Write(stateKey, state)
 

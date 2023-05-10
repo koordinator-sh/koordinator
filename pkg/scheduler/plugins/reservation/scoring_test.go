@@ -203,14 +203,17 @@ func TestScore(t *testing.T) {
 
 			cycleState := framework.NewCycleState()
 			state := &stateData{
-				matched: map[string][]*frameworkext.ReservationInfo{},
+				nodeReservationStates: map[string]nodeReservationState{},
 			}
 			for _, reservation := range tt.reservations {
 				rInfo := frameworkext.NewReservationInfo(reservation)
 				if allocated := tt.allocated[reservation.UID]; len(allocated) > 0 {
 					rInfo.Allocated = allocated
 				}
-				state.matched[reservation.Status.NodeName] = append(state.matched[reservation.Status.NodeName], rInfo)
+				nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
+				nodeRState.nodeName = reservation.Status.NodeName
+				nodeRState.matched = append(nodeRState.matched, rInfo)
+				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
 				pl.reservationCache.updateReservation(reservation)
 			}
 			cycleState.Write(stateKey, state)
@@ -279,7 +282,7 @@ func TestScoreWithOrder(t *testing.T) {
 	pl := p.(*Plugin)
 
 	state := &stateData{
-		matched: map[string][]*frameworkext.ReservationInfo{},
+		nodeReservationStates: map[string]nodeReservationState{},
 	}
 
 	// add three Reservations to three node
@@ -287,7 +290,10 @@ func TestScoreWithOrder(t *testing.T) {
 		reservation := reservationTemplateFn(i + 1)
 		pl.reservationCache.updateReservation(reservation)
 		rInfo := pl.reservationCache.getReservationInfoByUID(reservation.UID)
-		state.matched[reservation.Status.NodeName] = append(state.matched[reservation.Status.NodeName], rInfo)
+		nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
+		nodeRState.nodeName = reservation.Status.NodeName
+		nodeRState.matched = append(nodeRState.matched, rInfo)
+		state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
 	}
 
 	// add Reservation with LabelReservationOrder
@@ -297,13 +303,16 @@ func TestScoreWithOrder(t *testing.T) {
 	}
 	pl.reservationCache.updateReservation(reservationWithOrder)
 	rInfo := pl.reservationCache.getReservationInfoByUID(reservationWithOrder.UID)
-	state.matched[reservationWithOrder.Status.NodeName] = append(state.matched[reservationWithOrder.Status.NodeName], rInfo)
+	nodeRState := state.nodeReservationStates[reservationWithOrder.Status.NodeName]
+	nodeRState.nodeName = reservationWithOrder.Status.NodeName
+	nodeRState.matched = append(nodeRState.matched, rInfo)
+	state.nodeReservationStates[reservationWithOrder.Status.NodeName] = nodeRState
 
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
 
 	var nodes []*corev1.Node
-	for nodeName := range state.matched {
+	for nodeName := range state.nodeReservationStates {
 		nodes = append(nodes, &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: nodeName,

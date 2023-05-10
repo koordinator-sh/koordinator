@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -84,8 +83,8 @@ var (
 	_ framework.ReservePlugin   = &Plugin{}
 	_ framework.PreBindPlugin   = &Plugin{}
 
-	_ frameworkext.ReservationPreFilterExtension = &Plugin{}
-	_ frameworkext.ReservationPreBindPlugin      = &Plugin{}
+	_ frameworkext.ReservationRestorePlugin = &Plugin{}
+	_ frameworkext.ReservationPreBindPlugin = &Plugin{}
 )
 
 type Plugin struct {
@@ -185,7 +184,6 @@ type preFilterState struct {
 	preferredCPUExclusivePolicy schedulingconfig.CPUExclusivePolicy
 	numCPUsNeeded               int
 	allocatedCPUs               cpuset.CPUSet
-	reservedCPUs                map[string]map[types.UID]cpuset.CPUSet
 }
 
 func (s *preFilterState) Clone() framework.StateData {
@@ -196,17 +194,6 @@ func (s *preFilterState) Clone() framework.StateData {
 		preferredCPUExclusivePolicy: s.preferredCPUExclusivePolicy,
 		numCPUsNeeded:               s.numCPUsNeeded,
 		allocatedCPUs:               s.allocatedCPUs.Clone(),
-	}
-	ns.reservedCPUs = map[string]map[types.UID]cpuset.CPUSet{}
-	for nodeName, reservedCPUs := range s.reservedCPUs {
-		reservedCPUsClone := ns.reservedCPUs[nodeName]
-		if reservedCPUsClone == nil {
-			reservedCPUsClone = map[types.UID]cpuset.CPUSet{}
-			ns.reservedCPUs[nodeName] = reservedCPUsClone
-		}
-		for reservationUID, cpuSet := range reservedCPUs {
-			reservedCPUsClone[reservationUID] = cpuSet.Clone()
-		}
 	}
 	return ns
 }
@@ -236,8 +223,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	state := &preFilterState{
-		skip:         true,
-		reservedCPUs: map[string]map[types.UID]cpuset.CPUSet{},
+		skip: true,
 	}
 	if AllowUseCPUSet(pod) {
 		preferredCPUBindPolicy := resourceSpec.PreferredCPUBindPolicy
@@ -267,65 +253,6 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 }
 
 func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
-	return nil
-}
-
-func (p *Plugin) RemoveReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeInfo *framework.NodeInfo) *framework.Status {
-	state, status := getPreFilterState(cycleState)
-	if !status.IsSuccess() {
-		return status
-	}
-	if state.skip {
-		return nil
-	}
-
-	allocatedCPUs, ok := p.cpuManager.GetAllocatedCPUSet(reservation.Status.NodeName, reservation.UID)
-	if !ok || allocatedCPUs.IsEmpty() {
-		return nil
-	}
-
-	klog.V(5).Infof("NodeNUMAResource.RemoveReservation: podToSchedule %v, reservation: %v on node %s, allocatedCPUs: %v",
-		klog.KObj(podToSchedule), klog.KObj(reservation), nodeInfo.Node().Name, allocatedCPUs)
-
-	reservedCPUsOnNode := state.reservedCPUs[reservation.Status.NodeName]
-	if reservedCPUsOnNode == nil {
-		reservedCPUsOnNode = map[types.UID]cpuset.CPUSet{}
-		state.reservedCPUs[reservation.Status.NodeName] = reservedCPUsOnNode
-	}
-	reservedCPUsOnNode[reservation.UID] = allocatedCPUs
-	return nil
-}
-
-func (p *Plugin) AddPodInReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, reservation *schedulingv1alpha1.Reservation, nodeInfo *framework.NodeInfo) *framework.Status {
-	state, status := getPreFilterState(cycleState)
-	if !status.IsSuccess() {
-		return status
-	}
-	if state.skip {
-		return nil
-	}
-
-	allocatedCPUs, ok := p.cpuManager.GetAllocatedCPUSet(podInfoToAdd.Pod.Spec.NodeName, podInfoToAdd.Pod.UID)
-	if !ok || allocatedCPUs.IsEmpty() {
-		return nil
-	}
-	klog.V(5).Infof("NodeNUMAResource.AddPodInReservation: podToSchedule %v, add podInfoToAdd %v reservation %v on node %s, allocatedCPUs: %v",
-		klog.KObj(podToSchedule), klog.KObj(podInfoToAdd.Pod), klog.KObj(reservation), nodeInfo.Node().Name, allocatedCPUs)
-
-	reservedCPUsOnNode := state.reservedCPUs[reservation.Status.NodeName]
-	if reservedCPUsOnNode != nil {
-		cpus := reservedCPUsOnNode[reservation.UID]
-		cpus = cpus.Difference(allocatedCPUs)
-		if !cpus.IsEmpty() {
-			reservedCPUsOnNode[reservation.UID] = cpus
-		} else {
-			delete(reservedCPUsOnNode, reservation.UID)
-			if len(reservedCPUsOnNode) == 0 {
-				delete(state.reservedCPUs, reservation.Status.NodeName)
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -392,10 +319,11 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	}
 
 	var score int64
-	reservedCPUs := state.reservedCPUs[nodeName]
-	if len(reservedCPUs) > 0 {
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	nodeReservationRestoreState := reservationRestoreState.getNodeState(nodeName)
+	if len(nodeReservationRestoreState.reservedCPUs) > 0 {
 		var maxScore int64
-		for _, cpus := range reservedCPUs {
+		for _, cpus := range nodeReservationRestoreState.reservedCPUs {
 			s := p.cpuManager.Score(node, state.numCPUsNeeded, preferredCPUBindPolicy, state.preferredCPUExclusivePolicy, cpus)
 			if s > maxScore {
 				maxScore = s
@@ -463,8 +391,9 @@ func (p *Plugin) getReservationReservedCPUs(cycleState *framework.CycleState, po
 	if allocatedCPUs.IsEmpty() {
 		return result, nil
 	}
-
-	reservedCPUs := state.reservedCPUs[node.Name][nominatedReservation.UID]
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	nodeReservationRestoreState := reservationRestoreState.getNodeState(node.Name)
+	reservedCPUs := nodeReservationRestoreState.reservedCPUs[nominatedReservation.UID]
 	if !reservedCPUs.IsEmpty() && !reservedCPUs.IsSubsetOf(allocatedCPUs) {
 		return result, fmt.Errorf("reservation reserved CPUs are invalid")
 	}
