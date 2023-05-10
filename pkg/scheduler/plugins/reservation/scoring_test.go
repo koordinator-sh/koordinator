@@ -32,6 +32,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -202,12 +203,12 @@ func TestScore(t *testing.T) {
 
 			cycleState := framework.NewCycleState()
 			state := &stateData{
-				matched: map[string][]*reservationInfo{},
+				matched: map[string][]*frameworkext.ReservationInfo{},
 			}
 			for _, reservation := range tt.reservations {
-				rInfo := newReservationInfo(reservation)
+				rInfo := frameworkext.NewReservationInfo(reservation)
 				if allocated := tt.allocated[reservation.UID]; len(allocated) > 0 {
-					rInfo.allocated = allocated
+					rInfo.Allocated = allocated
 				}
 				state.matched[reservation.Status.NodeName] = append(state.matched[reservation.Status.NodeName], rInfo)
 				pl.reservationCache.updateReservation(reservation)
@@ -278,7 +279,7 @@ func TestScoreWithOrder(t *testing.T) {
 	pl := p.(*Plugin)
 
 	state := &stateData{
-		matched: map[string][]*reservationInfo{},
+		matched: map[string][]*frameworkext.ReservationInfo{},
 	}
 
 	// add three Reservations to three node

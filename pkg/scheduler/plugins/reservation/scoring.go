@@ -30,6 +30,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -112,9 +113,9 @@ func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cy
 	state := getStateData(cycleState)
 	rOnNode := state.matched[nodeName]
 
-	var rInfo *reservationInfo
+	var rInfo *frameworkext.ReservationInfo
 	for _, v := range rOnNode {
-		if v.reservation.UID == reservation.UID {
+		if v.Reservation.UID == reservation.UID {
 			rInfo = v
 			break
 		}
@@ -126,11 +127,11 @@ func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cy
 	return scoreReservation(pod, rInfo), nil
 }
 
-func findMostPreferredReservationByOrder(rOnNode []*reservationInfo) (*schedulingv1alpha1.Reservation, int64) {
+func findMostPreferredReservationByOrder(rOnNode []*frameworkext.ReservationInfo) (*schedulingv1alpha1.Reservation, int64) {
 	var selectOrder int64 = math.MaxInt64
 	var highOrder *schedulingv1alpha1.Reservation
 	for _, rInfo := range rOnNode {
-		s := rInfo.reservation.Labels[apiext.LabelReservationOrder]
+		s := rInfo.Reservation.Labels[apiext.LabelReservationOrder]
 		if s == "" {
 			continue
 		}
@@ -141,20 +142,20 @@ func findMostPreferredReservationByOrder(rOnNode []*reservationInfo) (*schedulin
 		// The smaller the order value is, the reservation will be selected first
 		if order != 0 && selectOrder > order {
 			selectOrder = order
-			highOrder = rInfo.reservation
+			highOrder = rInfo.Reservation
 		}
 	}
 	return highOrder, selectOrder
 }
 
-func scoreReservation(pod *corev1.Pod, reservation *reservationInfo) int64 {
+func scoreReservation(pod *corev1.Pod, reservation *frameworkext.ReservationInfo) int64 {
 	// TODO(joseph): we should support zero-request pods
 	requested, _ := resourceapi.PodRequestsAndLimits(pod)
-	if allocated := reservation.allocated; allocated != nil {
+	if allocated := reservation.Allocated; allocated != nil {
 		// consider multi owners sharing one reservation
 		requested = quotav1.Add(requested, allocated)
 	}
-	resources := quotav1.RemoveZeros(reservation.allocatable)
+	resources := quotav1.RemoveZeros(reservation.Allocatable)
 
 	w := int64(len(resources))
 	if w <= 0 {

@@ -725,7 +725,7 @@ func TestFilterReservation(t *testing.T) {
 			}
 
 			state := &stateData{
-				matched: map[string][]*reservationInfo{},
+				matched: map[string][]*frameworkext.ReservationInfo{},
 			}
 			for _, v := range tt.reservations {
 				pl.reservationCache.updateReservation(v)
@@ -809,14 +809,14 @@ func TestReserve(t *testing.T) {
 		reservation     *schedulingv1alpha1.Reservation
 		wantReservation *schedulingv1alpha1.Reservation
 		wantStatus      *framework.Status
-		wantPods        map[types.UID]*podRequirement
+		wantPods        map[types.UID]*frameworkext.PodRequirement
 	}{
 		{
 			name:        "reserve pod",
 			pod:         reservationutil.NewReservePod(reservation),
 			reservation: reservation,
 			wantStatus:  nil,
-			wantPods:    map[types.UID]*podRequirement{},
+			wantPods:    map[types.UID]*frameworkext.PodRequirement{},
 		},
 		{
 			name:       "node without reservations",
@@ -829,12 +829,12 @@ func TestReserve(t *testing.T) {
 			reservation:     reservation2C4G,
 			wantStatus:      nil,
 			wantReservation: reservation2C4G,
-			wantPods: map[types.UID]*podRequirement{
+			wantPods: map[types.UID]*frameworkext.PodRequirement{
 				testPod.UID: {
-					namespace: testPod.Namespace,
-					name:      testPod.Name,
-					uid:       testPod.UID,
-					requests: corev1.ResourceList{
+					Namespace: testPod.Namespace,
+					Name:      testPod.Name,
+					UID:       testPod.UID,
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("2"),
 						corev1.ResourceMemory: resource.MustParse("4Gi"),
 					},
@@ -864,7 +864,7 @@ func TestReserve(t *testing.T) {
 			assert.Equal(t, tt.wantReservation, state.assumed)
 			if tt.reservation != nil {
 				rInfo := pl.reservationCache.getReservationInfoByUID(tt.reservation.UID)
-				assert.Equal(t, tt.wantPods, rInfo.pods)
+				assert.Equal(t, tt.wantPods, rInfo.Pods)
 			}
 		})
 	}
@@ -979,7 +979,7 @@ func TestUnreserve(t *testing.T) {
 				if reservationutil.IsReservePod(tt.pod) {
 					assert.Nil(t, rInfo)
 				} else {
-					assert.Equal(t, map[types.UID]*podRequirement{}, rInfo.pods)
+					assert.Equal(t, map[types.UID]*frameworkext.PodRequirement{}, rInfo.Pods)
 				}
 			}
 		})

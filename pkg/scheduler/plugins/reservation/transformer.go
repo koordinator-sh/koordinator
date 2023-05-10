@@ -85,9 +85,9 @@ func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *fram
 	return nil
 }
 
-func (pl *Plugin) restoreUnmatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*reservationInfo, shouldRestoreStates bool) error {
+func (pl *Plugin) restoreUnmatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*frameworkext.ReservationInfo, shouldRestoreStates bool) error {
 	for _, rInfo := range reservationInfos {
-		if len(rInfo.pods) == 0 {
+		if len(rInfo.Pods) == 0 {
 			continue
 		}
 
@@ -95,16 +95,16 @@ func (pl *Plugin) restoreUnmatchedReservations(cycleState *framework.CycleState,
 		// For example, on a 32C machine, ReservationA reserves 8C, and then PodA uses ReservationA to allocate 4C,
 		// then the record on NodeInfo is that 12C is allocated. But in fact it should be calculated according to 8C,
 		// so we need to return some resources.
-		reservePod := reservationutil.NewReservePod(rInfo.reservation)
+		reservePod := reservationutil.NewReservePod(rInfo.Reservation)
 		if err := nodeInfo.RemovePod(reservePod); err != nil {
-			klog.Errorf("Failed to remove reserve pod %v from node %v, err: %v", klog.KObj(rInfo.reservation), nodeInfo.Node().Name, err)
+			klog.Errorf("Failed to remove reserve pod %v from node %v, err: %v", klog.KObj(rInfo.Reservation), nodeInfo.Node().Name, err)
 			return err
 		}
 
 		for i := range reservePod.Spec.Containers {
 			reservePod.Spec.Containers[i].Resources.Requests = corev1.ResourceList{}
 		}
-		remainedResource := quotav1.SubtractWithNonNegativeResult(rInfo.allocatable, rInfo.allocated)
+		remainedResource := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, rInfo.Allocated)
 		if !quotav1.IsZero(remainedResource) {
 			reservePod.Spec.Containers = append(reservePod.Spec.Containers, corev1.Container{
 				Resources: corev1.ResourceRequirements{Requests: remainedResource},
@@ -123,7 +123,7 @@ func (pl *Plugin) restoreUnmatchedReservations(cycleState *framework.CycleState,
 	return nil
 }
 
-func (pl *Plugin) restoreMatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*reservationInfo, shouldRestoreStates bool) error {
+func (pl *Plugin) restoreMatchedReservations(cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, reservationInfos []*frameworkext.ReservationInfo, shouldRestoreStates bool) error {
 	podInfoMap := make(map[types.UID]*framework.PodInfo)
 	for _, podInfo := range nodeInfo.Pods {
 		if !reservationutil.IsReservePod(podInfo.Pod) {
@@ -135,11 +135,11 @@ func (pl *Plugin) restoreMatchedReservations(cycleState *framework.CycleState, p
 	// Although there is a Filter that can intercept Reservations of the same Owner, if the user creates
 	// multiple reusable Reservations that can be used by different Owners for the Pod and bypasses the Filter,
 	// we choose the instance with the earliest creation time.
-	var earliestReusableRInfo *reservationInfo
+	var earliestReusableRInfo *frameworkext.ReservationInfo
 	for _, v := range reservationInfos {
-		if !extension.IsReservationAllocateOnce(v.reservation) {
+		if !extension.IsReservationAllocateOnce(v.Reservation) {
 			if earliestReusableRInfo == nil ||
-				v.reservation.CreationTimestamp.Before(&earliestReusableRInfo.reservation.CreationTimestamp) {
+				v.Reservation.CreationTimestamp.Before(&earliestReusableRInfo.Reservation.CreationTimestamp) {
 				earliestReusableRInfo = v
 				break
 			}
@@ -147,7 +147,7 @@ func (pl *Plugin) restoreMatchedReservations(cycleState *framework.CycleState, p
 	}
 
 	for _, rInfo := range reservationInfos {
-		if !extension.IsReservationAllocateOnce(rInfo.reservation) && earliestReusableRInfo != nil && rInfo != earliestReusableRInfo {
+		if !extension.IsReservationAllocateOnce(rInfo.Reservation) && earliestReusableRInfo != nil && rInfo != earliestReusableRInfo {
 			continue
 		}
 		if err := restoreReservedResources(pl.handle, cycleState, pod, rInfo, nodeInfo, podInfoMap, shouldRestoreStates); err != nil {
@@ -157,13 +157,13 @@ func (pl *Plugin) restoreMatchedReservations(cycleState *framework.CycleState, p
 	return nil
 }
 
-func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, rInfo *reservationInfo, nodeInfo *framework.NodeInfo, podInfoMap map[types.UID]*framework.PodInfo, shouldRestoreStates bool) error {
-	reservePod := reservationutil.NewReservePod(rInfo.reservation)
+func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo, podInfoMap map[types.UID]*framework.PodInfo, shouldRestoreStates bool) error {
+	reservePod := reservationutil.NewReservePod(rInfo.Reservation)
 	reservePodInfo := framework.NewPodInfo(reservePod)
 
 	// Retain ports that are not used by other Pods. These ports need to be erased from NodeInfo.UsedPorts,
 	// otherwise it may cause Pod port conflicts
-	retainReservePodUnusedPorts(reservePod, rInfo.reservation, podInfoMap)
+	retainReservePodUnusedPorts(reservePod, rInfo.Reservation, podInfoMap)
 
 	// When AllocateOnce is disabled, some resources may have been allocated,
 	// and an additional resource record will be accumulated at this time.
@@ -194,14 +194,14 @@ func restoreReservedResources(handle frameworkext.ExtendedHandle, cycleState *fr
 	// We should find an appropriate time to return resources allocated by custom plugins held by Reservation,
 	// such as fine-grained CPUs(CPU Cores), Devices(e.g. GPU/RDMA/FPGA etc.).
 	if extender, ok := handle.(frameworkext.FrameworkExtender); ok {
-		status := extender.RunReservationPreFilterExtensionRemoveReservation(context.Background(), cycleState, pod, rInfo.reservation, nodeInfo)
+		status := extender.RunReservationPreFilterExtensionRemoveReservation(context.Background(), cycleState, pod, rInfo.Reservation, nodeInfo)
 		if !status.IsSuccess() {
 			return status.AsError()
 		}
 
-		for _, assignedPod := range rInfo.pods {
-			if assignedPodInfo, ok := podInfoMap[assignedPod.uid]; ok {
-				status := extender.RunReservationPreFilterExtensionAddPodInReservation(context.Background(), cycleState, pod, assignedPodInfo, rInfo.reservation, nodeInfo)
+		for _, assignedPod := range rInfo.Pods {
+			if assignedPodInfo, ok := podInfoMap[assignedPod.UID]; ok {
+				status := extender.RunReservationPreFilterExtensionAddPodInReservation(context.Background(), cycleState, pod, assignedPodInfo, rInfo.Reservation, nodeInfo)
 				if !status.IsSuccess() {
 					return status.AsError()
 				}
@@ -273,13 +273,13 @@ func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, err
 
 	var lock sync.Mutex
 	state := &stateData{
-		matched:   map[string][]*reservationInfo{},
-		unmatched: map[string][]*reservationInfo{},
+		matched:   map[string][]*frameworkext.ReservationInfo{},
+		unmatched: map[string][]*frameworkext.ReservationInfo{},
 	}
 
 	isReservedPod := reservationutil.IsReservePod(pod)
 	processNode := func(i int) {
-		var matched, unmatched []*reservationInfo
+		var matched, unmatched []*frameworkext.ReservationInfo
 		nodeInfo := allNodes[i]
 		node := nodeInfo.Node()
 		if node == nil {
@@ -289,24 +289,24 @@ func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, err
 
 		rOnNode := pl.reservationCache.listReservationInfosOnNode(node.Name)
 		for _, rInfo := range rOnNode {
-			if !reservationutil.IsReservationAvailable(rInfo.reservation) {
+			if !reservationutil.IsReservationAvailable(rInfo.Reservation) {
 				continue
 			}
 
 			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
 			// but in fact it can no longer be used for allocation. So it's better to skip first.
-			if extension.IsReservationAllocateOnce(rInfo.reservation) && len(rInfo.pods) > 0 {
+			if extension.IsReservationAllocateOnce(rInfo.Reservation) && len(rInfo.Pods) > 0 {
 				continue
 			}
 
-			if !isReservedPod && matchReservation(pod, node, rInfo.reservation, reservationAffinity) {
+			if !isReservedPod && matchReservation(pod, node, rInfo.Reservation, reservationAffinity) {
 				matched = append(matched, rInfo)
 			} else {
-				if len(rInfo.allocated) > 0 {
+				if len(rInfo.Allocated) > 0 {
 					unmatched = append(unmatched, rInfo)
 				}
 				if !isReservedPod {
-					klog.V(6).InfoS("got reservation on node does not match the pod", "reservation", klog.KObj(rInfo.reservation), "pod", klog.KObj(pod))
+					klog.V(6).InfoS("got reservation on node does not match the pod", "reservation", klog.KObj(rInfo.Reservation), "pod", klog.KObj(pod))
 				}
 			}
 		}
@@ -365,7 +365,7 @@ func genPVCRefKey(pvc *corev1.PersistentVolumeClaim) string {
 	return pvc.Namespace + "/" + pvc.Name
 }
 
-func restorePVCRefCounts(informerFactory informers.SharedInformerFactory, nodeInfo *framework.NodeInfo, pod *corev1.Pod, reservationInfos []*reservationInfo) {
+func restorePVCRefCounts(informerFactory informers.SharedInformerFactory, nodeInfo *framework.NodeInfo, pod *corev1.Pod, reservationInfos []*frameworkext.ReservationInfo) {
 	// VolumeRestrictions plugin will check PVCRefCounts in NodeInfo in BeforePreFilter phase.
 	// If the scheduling pod declare a PVC with ReadWriteOncePod access mode and the
 	// PVC has been used by other scheduled pod, the scheduling pod will be marked
@@ -374,7 +374,7 @@ func restorePVCRefCounts(informerFactory informers.SharedInformerFactory, nodeIn
 	// to schedule the real pod.
 	pvcLister := informerFactory.Core().V1().PersistentVolumeClaims().Lister()
 	for _, rInfo := range reservationInfos {
-		podSpecTemplate := rInfo.reservation.Spec.Template
+		podSpecTemplate := rInfo.Reservation.Spec.Template
 		for _, volume := range podSpecTemplate.Spec.Volumes {
 			if volume.PersistentVolumeClaim == nil {
 				continue
