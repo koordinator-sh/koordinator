@@ -191,7 +191,7 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, p
 	nd.lock.RLock()
 	defer nd.lock.RUnlock()
 
-	podAllocated := nd.getUsed(podInfoToAdd.Pod)
+	podAllocated := nd.getUsed(podInfoToAdd.Pod.Namespace, podInfoToAdd.Pod.Name)
 	if len(podAllocated) == 0 {
 		return nil
 	}
@@ -227,7 +227,7 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState
 	nd.lock.RLock()
 	defer nd.lock.RUnlock()
 
-	podAllocated := nd.getUsed(podInfoToRemove.Pod)
+	podAllocated := nd.getUsed(podInfoToRemove.Pod.Namespace, podInfoToRemove.Pod.Name)
 	if len(podAllocated) == 0 {
 		return nil
 	}
@@ -258,7 +258,7 @@ func (p *Plugin) RemoveReservation(ctx context.Context, cycleState *framework.Cy
 	defer nd.lock.RUnlock()
 
 	reservePod := reservationutil.NewReservePod(reservation)
-	reservationAllocated := nd.getUsed(reservePod)
+	reservationAllocated := nd.getUsed(reservePod.Namespace, reservePod.Name)
 	if len(reservationAllocated) == 0 {
 		return nil
 	}
@@ -297,7 +297,7 @@ func (p *Plugin) AddPodInReservation(ctx context.Context, cycleState *framework.
 	nd.lock.RLock()
 	defer nd.lock.RUnlock()
 
-	podAllocated := nd.getUsed(podInfoToAdd.Pod)
+	podAllocated := nd.getUsed(podInfoToAdd.Pod.Namespace, podInfoToAdd.Pod.Name)
 	if len(podAllocated) == 0 {
 		return nil
 	}
