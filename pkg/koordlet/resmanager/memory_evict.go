@@ -75,7 +75,7 @@ func (m *MemoryEvictor) memoryEvict() {
 		klog.Warningf("skip memory evict, threshold percent is nil")
 		return
 	} else if *thresholdPercent < 0 {
-		klog.Warningf("skip memory evict, threshold percent(%v) should greater than 0", thresholdPercent)
+		klog.Warningf("skip memory evict, threshold percent(%v) should greater than 0", *thresholdPercent)
 		return
 	}
 
@@ -87,7 +87,7 @@ func (m *MemoryEvictor) memoryEvict() {
 	}
 
 	if lowerPercent >= *thresholdPercent {
-		klog.Warningf("skip memory evict, lower percent(%v) should less than threshold percent(%v)", lowerPercent, thresholdPercent)
+		klog.Warningf("skip memory evict, lower percent(%v) should less than threshold percent(%v)", lowerPercent, *thresholdPercent)
 		return
 	}
 
@@ -111,7 +111,7 @@ func (m *MemoryEvictor) memoryEvict() {
 
 	nodeMemoryUsage := nodeMetric.MemoryUsed.MemoryWithoutCache.Value() * 100 / memoryCapacity
 	if nodeMemoryUsage < *thresholdPercent {
-		klog.V(5).Infof("skip memory evict, node memory usage(%v) is below threshold(%v)", nodeMemoryUsage, thresholdConfig)
+		klog.V(5).Infof("skip memory evict, node memory usage(%v) is below threshold(%v)", nodeMemoryUsage, *thresholdPercent)
 		return
 	}
 
