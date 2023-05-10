@@ -1691,7 +1691,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 								},
 							},
 							deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-							allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList),
+							allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources),
 						},
 					},
 				},
@@ -1868,7 +1868,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 								},
 							},
 							deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-							allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList),
+							allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources),
 						},
 					},
 				},
@@ -2064,7 +2064,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 									},
 								},
 							},
-							allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{},
+							allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
 						},
 					},
 				},
@@ -2138,7 +2138,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 									},
 								},
 							},
-							allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{},
+							allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
 						},
 					},
 				},
@@ -2414,7 +2414,7 @@ func Test_Plugin_Unreserve(t *testing.T) {
 									},
 								},
 							},
-							allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{
+							allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{
 								schedulingv1alpha1.GPU: {
 									namespacedName: {
 										0: corev1.ResourceList{
@@ -2520,7 +2520,7 @@ func Test_Plugin_Unreserve(t *testing.T) {
 							},
 						},
 						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{},
-						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{
+						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{
 							schedulingv1alpha1.GPU:  {},
 							schedulingv1alpha1.FPGA: {},
 							schedulingv1alpha1.RDMA: {},

@@ -43,7 +43,7 @@ func Test_newNodeDevice(t *testing.T) {
 		deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{},
 		deviceFree:  map[schedulingv1alpha1.DeviceType]deviceResources{},
 		deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-		allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList{},
+		allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
 	}
 	assert.Equal(t, expectNodeDevice, newNodeDevice())
 }
@@ -69,7 +69,7 @@ func Test_nodeDevice_getUsed(t *testing.T) {
 	}
 	nd := newNodeDevice()
 	nd.updateCacheUsed(allocations, pod, true)
-	used := nd.getUsed(pod)
+	used := nd.getUsed(pod.Namespace, pod.Name)
 	expectUsed := map[schedulingv1alpha1.DeviceType]deviceResources{
 		schedulingv1alpha1.GPU: {
 			1: corev1.ResourceList{
