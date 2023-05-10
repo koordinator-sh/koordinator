@@ -106,7 +106,8 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
-				TSDBPath: t.TempDir(),
+				TSDBPath:              t.TempDir(),
+				TSDBEnablePromMetrics: false,
 			})
 			assert.NoError(t, err)
 			defer func() {

@@ -229,7 +229,9 @@ func Test_podResourceCollector_Run(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	metricCache, _ := metriccache.NewMetricCache(metriccache.NewDefaultConfig())
+	metricCacheCfg := metriccache.NewDefaultConfig()
+	metricCacheCfg.TSDBEnablePromMetrics = false
+	metricCache, _ := metriccache.NewMetricCache(metricCacheCfg)
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()

@@ -44,6 +44,7 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 
 	cfg := metriccache.NewDefaultConfig()
 	cfg.TSDBPath = t.TempDir()
+	cfg.TSDBEnablePromMetrics = false
 	metricCache, err := metriccache.NewMetricCache(cfg)
 	assert.NoError(t, err)
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
@@ -308,7 +309,9 @@ func Test_beResourceColelctor_Run(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	metricCache, _ := metriccache.NewMetricCache(metriccache.NewDefaultConfig())
+	metricCacheCfg := metriccache.NewDefaultConfig()
+	metricCacheCfg.TSDBEnablePromMetrics = false
+	metricCache, _ := metriccache.NewMetricCache(metricCacheCfg)
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 	c := New(&framework.Options{
