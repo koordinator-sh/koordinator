@@ -17,6 +17,7 @@ limitations under the License.
 package reservation
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -136,7 +137,7 @@ func TestBeforePreFilter(t *testing.T) {
 	})
 
 	cycleState := framework.NewCycleState()
-	pl.BeforePreFilter(nil, cycleState, pod)
+	pl.BeforePreFilter(context.TODO(), cycleState, pod)
 	expectState := &stateData{
 		matched: map[string][]*frameworkext.ReservationInfo{
 			"test-node": {
@@ -385,8 +386,8 @@ func TestAfterPreFilter(t *testing.T) {
 		},
 	})
 
-	err = pl.AfterPreFilter(nil, cycleState, &corev1.Pod{})
-	assert.NoError(t, err)
+	status := pl.AfterPreFilter(context.TODO(), cycleState, &corev1.Pod{})
+	assert.True(t, status.IsSuccess())
 
 	nodeInfo, err = suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
 	assert.NoError(t, err)
