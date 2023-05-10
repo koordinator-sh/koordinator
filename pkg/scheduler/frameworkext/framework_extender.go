@@ -151,13 +151,13 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 	}
 
 	for _, transformer := range ext.preFilterTransformers {
-		newPod, transformed, err := transformer.BeforePreFilter(ext, cycleState, pod)
-		if err != nil {
-			klog.ErrorS(err, "Failed to BeforePreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
-			return framework.AsStatus(err)
+		newPod, transformed, status := transformer.BeforePreFilter(ctx, cycleState, pod)
+		if !status.IsSuccess() {
+			klog.ErrorS(status.AsError(), "Failed to run BeforePreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
+			return status
 		}
 		if transformed {
-			klog.V(5).InfoS("RunPreFilterPlugins transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
+			klog.V(5).InfoS("BeforePreFilter transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
 			pod = newPod
 			if ext.snapshotGeneration != nil {
 				*ext.snapshotGeneration = 0
@@ -171,8 +171,9 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 	}
 
 	for _, transformer := range ext.preFilterTransformers {
-		if err := transformer.AfterPreFilter(ext, cycleState, pod); err != nil {
-			return framework.AsStatus(err)
+		if status := transformer.AfterPreFilter(ctx, cycleState, pod); !status.IsSuccess() {
+			klog.ErrorS(status.AsError(), "Failed to run AfterPreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
+			return status
 		}
 	}
 	return nil
@@ -182,9 +183,13 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 // We don't transform RunFilterPlugins since framework's RunFilterPluginsWithNominatedPods just calls its RunFilterPlugins.
 func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	for _, transformer := range ext.filterTransformers {
-		newPod, newNodeInfo, transformed := transformer.BeforeFilter(ext, cycleState, pod, nodeInfo)
+		newPod, newNodeInfo, transformed, status := transformer.BeforeFilter(ctx, cycleState, pod, nodeInfo)
+		if !status.IsSuccess() {
+			klog.ErrorS(status.AsError(), "Failed to run BeforeFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
+			return status
+		}
 		if transformed {
-			klog.V(5).InfoS("RunFilterPluginsWithNominatedPods transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
+			klog.V(5).InfoS("BeforeFilter transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
 			pod = newPod
 			nodeInfo = newNodeInfo
 		}
@@ -198,9 +203,13 @@ func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.
 
 func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (framework.PluginToNodeScores, *framework.Status) {
 	for _, transformer := range ext.scoreTransformers {
-		newPod, newNodes, transformed := transformer.BeforeScore(ext, state, pod, nodes)
+		newPod, newNodes, transformed, status := transformer.BeforeScore(ctx, state, pod, nodes)
+		if !status.IsSuccess() {
+			klog.ErrorS(status.AsError(), "Failed to run BeforeScore", "pod", klog.KObj(pod), "plugin", transformer.Name())
+			return nil, status
+		}
 		if transformed {
-			klog.V(5).InfoS("RunScorePlugins transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
+			klog.V(5).InfoS("BeforeScore transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
 			pod = newPod
 			nodes = newNodes
 		}
@@ -289,7 +298,7 @@ func (ext *frameworkExtenderImpl) RunReservationFilterPlugins(ctx context.Contex
 	for _, pl := range ext.reservationFilterPlugins {
 		status := pl.FilterReservation(ctx, cycleState, pod, reservation, nodeName)
 		if !status.IsSuccess() {
-			klog.Infof("Failed to FilterReservation for Pod %q with Reservation %q on Node %q, failedPlugin: %s, reason: %s", klog.KObj(pod), klog.KObj(reservation), nodeName, status.FailedPlugin(), status.Message())
+			klog.Infof("Failed to FilterReservation for Pod %q with Reservation %q on Node %q, failedPlugin: %s, reason: %s", klog.KObj(pod), klog.KObj(reservation), nodeName, pl.Name(), status.Message())
 			return status
 		}
 	}

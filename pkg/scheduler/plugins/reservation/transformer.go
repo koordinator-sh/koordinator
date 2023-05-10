@@ -36,10 +36,10 @@ import (
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-func (pl *Plugin) BeforePreFilter(handle frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, error) {
-	state, err := pl.prepareMatchReservationState(pod)
+func (pl *Plugin) BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *framework.Status) {
+	state, err := pl.prepareMatchReservationState(ctx, pod)
 	if err != nil {
-		return nil, false, err
+		return nil, false, framework.AsStatus(err)
 	}
 	cycleState.Write(stateKey, state)
 
@@ -47,7 +47,7 @@ func (pl *Plugin) BeforePreFilter(handle frameworkext.ExtendedHandle, cycleState
 	return pod, len(state.matched) > 0 || len(state.unmatched) > 0, nil
 }
 
-func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) error {
+func (pl *Plugin) AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
 	state := getStateData(cycleState)
 	for nodeName, reservationInfos := range state.unmatched {
 		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
@@ -59,7 +59,7 @@ func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *fram
 		}
 
 		if err := pl.restoreUnmatchedReservations(cycleState, pod, nodeInfo, reservationInfos, true); err != nil {
-			return err
+			return framework.AsStatus(err)
 		}
 	}
 
@@ -77,7 +77,7 @@ func (pl *Plugin) AfterPreFilter(_ frameworkext.ExtendedHandle, cycleState *fram
 			// and each plugin is triggered to adjust its own StateData through RemovePod, RemoveReservation and AddPodInReservation,
 			// and adjust the state data related to Reservation and Pod
 			if err := pl.restoreMatchedReservations(cycleState, pod, nodeInfo, reservationInfos, true); err != nil {
-				return err
+				return framework.AsStatus(err)
 			}
 		}
 	}
@@ -259,7 +259,7 @@ func retainReservePodUnusedPorts(reservePod *corev1.Pod, reservation *scheduling
 	}
 }
 
-func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, error) {
+func (pl *Plugin) prepareMatchReservationState(ctx context.Context, pod *corev1.Pod) (*stateData, error) {
 	allNodes, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
 		return nil, fmt.Errorf("cannot list NodeInfo, err: %v", err)
@@ -331,7 +331,7 @@ func (pl *Plugin) prepareMatchReservationState(pod *corev1.Pod) (*stateData, err
 		restorePVCRefCounts(pl.handle.SharedInformerFactory(), nodeInfo, pod, matched)
 		klog.V(4).Infof("Pod %v has %d matched reservations before PreFilter, %d unmatched reservations on node %v", klog.KObj(pod), len(matched), len(unmatched), node.Name)
 	}
-	pl.handle.Parallelizer().Until(context.TODO(), len(allNodes), processNode)
+	pl.handle.Parallelizer().Until(ctx, len(allNodes), processNode)
 	return state, nil
 }
 

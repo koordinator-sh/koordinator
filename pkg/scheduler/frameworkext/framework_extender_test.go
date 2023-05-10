@@ -51,7 +51,7 @@ type TestTransformer struct {
 
 func (h *TestTransformer) Name() string { return "TestTransformer" }
 
-func (h *TestTransformer) BeforePreFilter(handle ExtendedHandle, state *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, error) {
+func (h *TestTransformer) BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *framework.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -59,7 +59,7 @@ func (h *TestTransformer) BeforePreFilter(handle ExtendedHandle, state *framewor
 	return pod, true, nil
 }
 
-func (h *TestTransformer) AfterPreFilter(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) error {
+func (h *TestTransformer) AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -67,20 +67,20 @@ func (h *TestTransformer) AfterPreFilter(handle ExtendedHandle, cycleState *fram
 	return nil
 }
 
-func (h *TestTransformer) BeforeFilter(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool) {
+func (h *TestTransformer) BeforeFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool, *framework.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations[fmt.Sprintf("BeforeFilter-%d", h.index)] = fmt.Sprintf("%d", h.index)
-	return pod, nodeInfo, true
+	return pod, nodeInfo, true, nil
 }
 
-func (h *TestTransformer) BeforeScore(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool) {
+func (h *TestTransformer) BeforeScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool, *framework.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations[fmt.Sprintf("BeforeScore-%d", h.index)] = fmt.Sprintf("%d", h.index)
-	return pod, nodes, true
+	return pod, nodes, true, nil
 }
 
 type testPreBindReservationState struct {

@@ -56,22 +56,22 @@ type SchedulingTransformer interface {
 type PreFilterTransformer interface {
 	SchedulingTransformer
 	// BeforePreFilter If there is a change to the incoming Pod, it needs to be modified after DeepCopy and returned.
-	BeforePreFilter(handle ExtendedHandle, state *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, error)
+	BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *framework.Status)
 	// AfterPreFilter is executed after PreFilter.
 	// There is a chance to trigger the correction of the State data of each plugin after the PreFilter.
-	AfterPreFilter(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod) error
+	AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status
 }
 
 // FilterTransformer is executed before Filter.
 type FilterTransformer interface {
 	SchedulingTransformer
-	BeforeFilter(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool)
+	BeforeFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool, *framework.Status)
 }
 
 // ScoreTransformer is executed before Score.
 type ScoreTransformer interface {
 	SchedulingTransformer
-	BeforeScore(handle ExtendedHandle, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool)
+	BeforeScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool, *framework.Status)
 }
 
 // ReservationPreFilterExtension is used to support the return of fine-grained resources
