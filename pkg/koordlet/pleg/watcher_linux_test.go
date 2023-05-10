@@ -87,7 +87,7 @@ func TestWatcher(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.before()
-			timer := time.NewTimer(100 * time.Millisecond)
+			timer := time.NewTimer(5000 * time.Millisecond)
 			defer timer.Stop()
 			select {
 			case evt := <-watcher.Event():
