@@ -106,7 +106,7 @@ func TestEventHandlerOnAdd(t *testing.T) {
 				assert.Nil(t, rInfo)
 			} else {
 				rInfo := cache.getReservationInfoByUID(tt.wantReservation.UID)
-				assert.Equal(t, tt.wantReservation, rInfo.reservation)
+				assert.Equal(t, tt.wantReservation, rInfo.Reservation)
 			}
 		})
 	}
@@ -201,7 +201,7 @@ func TestEventHandlerUpdate(t *testing.T) {
 				assert.Nil(t, rInfo)
 			} else {
 				rInfo := cache.getReservationInfoByUID(tt.wantReservation.UID)
-				assert.Equal(t, tt.wantReservation, rInfo.reservation)
+				assert.Equal(t, tt.wantReservation, rInfo.Reservation)
 			}
 		})
 	}

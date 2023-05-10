@@ -34,6 +34,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -137,12 +138,12 @@ func TestBeforePreFilter(t *testing.T) {
 	cycleState := framework.NewCycleState()
 	pl.BeforePreFilter(nil, cycleState, pod)
 	expectState := &stateData{
-		matched: map[string][]*reservationInfo{
+		matched: map[string][]*frameworkext.ReservationInfo{
 			"test-node": {
 				pl.reservationCache.getReservationInfoByUID(matchedReservation.UID),
 			},
 		},
-		unmatched: map[string][]*reservationInfo{
+		unmatched: map[string][]*frameworkext.ReservationInfo{
 			"test-node": {
 				pl.reservationCache.getReservationInfoByUID(unmatchedReservation.UID),
 			},
@@ -366,20 +367,20 @@ func TestAfterPreFilter(t *testing.T) {
 	pl.reservationCache.updateReservation(matchedReservation)
 
 	unmatchedRInfo := pl.reservationCache.getReservationInfoByUID(unmatchedReservation.UID)
-	unmatchedRInfo.allocated = corev1.ResourceList{
+	unmatchedRInfo.Allocated = corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("4"),
 		corev1.ResourceMemory: resource.MustParse("8Gi"),
 	}
-	unmatchedRInfo.pods[uuid.NewUUID()] = &podRequirement{}
+	unmatchedRInfo.Pods[uuid.NewUUID()] = &frameworkext.PodRequirement{}
 
 	matchRInfo := pl.reservationCache.getReservationInfoByUID(matchedReservation.UID)
 
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, &stateData{
-		matched: map[string][]*reservationInfo{
+		matched: map[string][]*frameworkext.ReservationInfo{
 			node.Name: {matchRInfo},
 		},
-		unmatched: map[string][]*reservationInfo{
+		unmatched: map[string][]*frameworkext.ReservationInfo{
 			node.Name: {unmatchedRInfo},
 		},
 	})
@@ -500,7 +501,7 @@ func Test_restorePVCRefCounts(t *testing.T) {
 	cache.updateReservation(reservation)
 	rInfo := cache.getReservationInfoByUID(reservation.UID)
 
-	restorePVCRefCounts(informerFactory, testNodeInfo, normalPod, []*reservationInfo{rInfo})
+	restorePVCRefCounts(informerFactory, testNodeInfo, normalPod, []*frameworkext.ReservationInfo{rInfo})
 	assert.Zero(t, testNodeInfo.PVCRefCounts["default/claim-with-rwop"])
 }
 

@@ -53,11 +53,11 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 
 	reservations := make([]*schedulingv1alpha1.Reservation, 0, len(rOnNode))
 	for _, rInfo := range rOnNode {
-		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo.reservation, nodeName)
+		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo.Reservation, nodeName)
 		if !status.IsSuccess() {
 			continue
 		}
-		reservations = append(reservations, rInfo.reservation)
+		reservations = append(reservations, rInfo.Reservation)
 	}
 	if len(reservations) == 0 {
 		return nil, nil

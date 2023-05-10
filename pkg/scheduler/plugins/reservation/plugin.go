@@ -123,8 +123,8 @@ func (pl *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 var _ framework.StateData = &stateData{}
 
 type stateData struct {
-	matched       map[string][]*reservationInfo
-	unmatched     map[string][]*reservationInfo
+	matched       map[string][]*frameworkext.ReservationInfo
+	unmatched     map[string][]*frameworkext.ReservationInfo
 	preferredNode string
 	assumed       *schedulingv1alpha1.Reservation
 }
@@ -207,9 +207,9 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 	}
 	rInfos := pl.reservationCache.listReservationInfosOnNode(node.Name)
 	for _, v := range rInfos {
-		if (apiext.IsReservationAllocateOnce(reservation) != apiext.IsReservationAllocateOnce(v.reservation) ||
-			!apiext.IsReservationAllocateOnce(reservation) == !apiext.IsReservationAllocateOnce(v.reservation)) &&
-			reflect.DeepEqual(v.reservation.Spec.Owners, reservation.Spec.Owners) {
+		if (apiext.IsReservationAllocateOnce(reservation) != apiext.IsReservationAllocateOnce(v.Reservation) ||
+			!apiext.IsReservationAllocateOnce(reservation) == !apiext.IsReservationAllocateOnce(v.Reservation)) &&
+			reflect.DeepEqual(v.Reservation.Spec.Owners, reservation.Spec.Owners) {
 			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonOnlyOneSameReusableReservationOnSameNode)
 		}
 	}
@@ -236,7 +236,7 @@ func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleSta
 		}
 		reservationInfos := pl.reservationCache.listReservationInfosOnNode(node.Name)
 		for _, rInfo := range reservationInfos {
-			newReservePod := reservationutil.NewReservePod(rInfo.reservation)
+			newReservePod := reservationutil.NewReservePod(rInfo.Reservation)
 			if corev1helpers.PodPriority(newReservePod) < corev1helpers.PodPriority(pod) {
 				maxPri := int32(math.MaxInt32)
 				if err := nodeInfo.RemovePod(newReservePod); err == nil {
@@ -253,9 +253,9 @@ func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.C
 	state := getStateData(cycleState)
 	rOnNode := state.matched[nodeName]
 
-	var rInfo *reservationInfo
+	var rInfo *frameworkext.ReservationInfo
 	for _, v := range rOnNode {
-		if v.reservation.UID == reservation.UID {
+		if v.Reservation.UID == reservation.UID {
 			rInfo = v
 			break
 		}
@@ -265,17 +265,17 @@ func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.C
 		return framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
 	}
 
-	if apiext.IsReservationAllocateOnce(rInfo.reservation) && len(rInfo.pods) > 0 {
+	if apiext.IsReservationAllocateOnce(rInfo.Reservation) && len(rInfo.Pods) > 0 {
 		return framework.AsStatus(fmt.Errorf("reservation has allocateOnce enabled and has already been allocated"))
 	}
 
 	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
-	resourceNames := quotav1.Intersection(rInfo.resourceNames, quotav1.ResourceNames(podRequests))
+	resourceNames := quotav1.Intersection(rInfo.ResourceNames, quotav1.ResourceNames(podRequests))
 	if len(resourceNames) == 0 {
 		return framework.AsStatus(fmt.Errorf("no intersection resources"))
 	}
 
-	remainedResource := quotav1.SubtractWithNonNegativeResult(rInfo.allocatable, rInfo.allocated)
+	remainedResource := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, rInfo.Allocated)
 	if quotav1.IsZero(quotav1.Mask(remainedResource, resourceNames)) {
 		return framework.AsStatus(fmt.Errorf("insufficient resources in reservation"))
 	}
