@@ -58,6 +58,8 @@ const (
 )
 
 var (
+	_ framework.EnqueueExtensions = &Plugin{}
+
 	_ framework.PreFilterPlugin  = &Plugin{}
 	_ framework.FilterPlugin     = &Plugin{}
 	_ framework.PostFilterPlugin = &Plugin{}
@@ -118,6 +120,15 @@ func (pl *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 		pl.handle.KoordinatorClientSet(),
 		1)
 	return []frameworkext.Controller{reservationController}, nil
+}
+
+func (pl *Plugin) EventsToRegister() []framework.ClusterEvent {
+	// To register a custom event, follow the naming convention at:
+	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
+	gvk := fmt.Sprintf("reservations.%v.%v", schedulingv1alpha1.GroupVersion.Version, schedulingv1alpha1.GroupVersion.Group)
+	return []framework.ClusterEvent{
+		{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete},
+	}
 }
 
 var _ framework.StateData = &stateData{}
