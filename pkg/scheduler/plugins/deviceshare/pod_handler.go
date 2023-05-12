@@ -27,6 +27,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -50,31 +51,20 @@ func (n *nodeDeviceCache) onPodAdd(obj interface{}) {
 		klog.Errorf("pod cache add failed to parse, obj %T", obj)
 		return
 	}
-
-	if pod.Spec.NodeName == "" {
-		return
-	}
-
-	devicesAllocation, err := apiext.GetDeviceAllocations(pod.Annotations)
-	if err != nil {
-		klog.Errorf("failed to get device allocation from pod %v, err: %v", klog.KObj(pod), err)
-		return
-	}
-	if len(devicesAllocation) == 0 {
-		return
-	}
-	transformDeviceAllocations(devicesAllocation)
-
-	info := n.getNodeDevice(pod.Spec.NodeName, true)
-
-	info.lock.Lock()
-	defer info.lock.Unlock()
-
-	info.updateCacheUsed(devicesAllocation, pod, true)
-	klog.V(5).InfoS("pod cache added", "pod", klog.KObj(pod))
+	n.updatePod(nil, pod)
 }
 
 func (n *nodeDeviceCache) onPodUpdate(oldObj, newObj interface{}) {
+	oldPod, ok := oldObj.(*corev1.Pod)
+	if !ok {
+		return
+	}
+
+	pod, ok := newObj.(*corev1.Pod)
+	if !ok {
+		return
+	}
+	n.updatePod(oldPod, pod)
 	return
 }
 
@@ -93,7 +83,59 @@ func (n *nodeDeviceCache) onPodDelete(obj interface{}) {
 	default:
 		return
 	}
+	n.deletePod(pod)
+}
 
+func (n *nodeDeviceCache) updatePod(oldPod *corev1.Pod, pod *corev1.Pod) {
+	if pod.Spec.NodeName == "" {
+		klog.V(5).InfoS("Pod missed nodeName", "pod", klog.KObj(pod))
+		return
+	}
+
+	if util.IsPodTerminated(pod) {
+		n.deletePod(pod)
+		return
+	}
+
+	allocations, err := apiext.GetDeviceAllocations(pod.Annotations)
+	if err != nil {
+		klog.ErrorS(err, "failed to get device allocations from new pod", "pod", klog.KObj(pod))
+		return
+	}
+	if len(allocations) != 0 {
+		transformDeviceAllocations(allocations)
+	}
+
+	var oldAllocations apiext.DeviceAllocations
+	if oldPod != nil {
+		oldAllocations, err = apiext.GetDeviceAllocations(oldPod.Annotations)
+		if err != nil {
+			klog.ErrorS(err, "failed to get device allocations from old pod", "pod", klog.KObj(oldPod))
+			return
+		}
+		if len(oldAllocations) != 0 {
+			transformDeviceAllocations(oldAllocations)
+		}
+	}
+
+	if len(oldAllocations) == 0 && len(allocations) == 0 {
+		return
+	}
+
+	info := n.getNodeDevice(pod.Spec.NodeName, true)
+	info.lock.Lock()
+	defer info.lock.Unlock()
+	if oldPod != nil && len(oldAllocations) > 0 {
+		info.updateCacheUsed(oldAllocations, oldPod, false)
+		klog.V(5).InfoS("remove old pod from nodeDevice cache on node", "pod", klog.KObj(pod), "node", oldPod.Spec.NodeName)
+	}
+	if len(allocations) > 0 {
+		info.updateCacheUsed(allocations, pod, true)
+		klog.V(5).InfoS("update pod in nodeDevice cache on node", "pod", klog.KObj(pod), "node", pod.Spec.NodeName)
+	}
+}
+
+func (n *nodeDeviceCache) deletePod(pod *corev1.Pod) {
 	if pod.Spec.NodeName == "" {
 		return
 	}
@@ -118,7 +160,7 @@ func (n *nodeDeviceCache) onPodDelete(obj interface{}) {
 	defer info.lock.Unlock()
 
 	info.updateCacheUsed(devicesAllocation, pod, false)
-	klog.V(5).InfoS("pod cache deleted", "pod", klog.KObj(pod))
+	klog.V(5).InfoS("pod has been deleted so remove pod from nodeDevice cache on node", "pod", klog.KObj(pod), "node", pod.Spec.NodeName)
 }
 
 func transformDeviceAllocations(deviceAllocations apiext.DeviceAllocations) {
