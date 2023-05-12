@@ -56,6 +56,8 @@ const (
 )
 
 var (
+	_ framework.EnqueueExtensions = &Plugin{}
+
 	_ framework.FilterPlugin  = &Plugin{}
 	_ framework.ScorePlugin   = &Plugin{}
 	_ framework.ReservePlugin = &Plugin{}
@@ -107,6 +109,15 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 }
 
 func (p *Plugin) Name() string { return Name }
+
+func (p *Plugin) EventsToRegister() []framework.ClusterEvent {
+	// To register a custom event, follow the naming convention at:
+	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
+	gvk := fmt.Sprintf("nodemetrics.%v.%v", slov1alpha1.GroupVersion.Version, slov1alpha1.GroupVersion.Group)
+	return []framework.ClusterEvent{
+		{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete},
+	}
+}
 
 func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	node := nodeInfo.Node()

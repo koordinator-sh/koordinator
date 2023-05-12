@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 
+	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -75,6 +76,8 @@ var (
 )
 
 var (
+	_ framework.EnqueueExtensions = &Plugin{}
+
 	_ framework.PreFilterPlugin = &Plugin{}
 	_ framework.FilterPlugin    = &Plugin{}
 	_ framework.ScorePlugin     = &Plugin{}
@@ -215,6 +218,15 @@ func getPreFilterState(cycleState *framework.CycleState) (*preFilterState, *fram
 	}
 	state := value.(*preFilterState)
 	return state, nil
+}
+
+func (p *Plugin) EventsToRegister() []framework.ClusterEvent {
+	// To register a custom event, follow the naming convention at:
+	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
+	gvk := fmt.Sprintf("noderesourcetopologies.%v.%v", nrtv1alpha1.SchemeGroupVersion.Version, nrtv1alpha1.SchemeGroupVersion.Group)
+	return []framework.ClusterEvent{
+		{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete},
+	}
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
