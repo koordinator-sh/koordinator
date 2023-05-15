@@ -31,6 +31,7 @@ import (
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -134,10 +135,14 @@ func (pl *Plugin) EventsToRegister() []framework.ClusterEvent {
 var _ framework.StateData = &stateData{}
 
 type stateData struct {
-	matched       map[string][]*frameworkext.ReservationInfo
-	unmatched     map[string][]*frameworkext.ReservationInfo
-	preferredNode string
-	assumed       *schedulingv1alpha1.Reservation
+	nodeReservationStates map[string]nodeReservationState
+	preferredNode         string
+	assumed               *schedulingv1alpha1.Reservation
+}
+
+type nodeReservationState struct {
+	nodeName string
+	matched  []*frameworkext.ReservationInfo
 }
 
 func (s *stateData) Clone() framework.StateData {
@@ -182,7 +187,7 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 		return framework.AsStatus(err)
 	}
 	state := getStateData(cycleState)
-	if reservationAffinity != nil && len(state.matched) == 0 {
+	if reservationAffinity != nil && len(state.nodeReservationStates) == 0 {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
 	}
 
@@ -247,12 +252,14 @@ func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleSta
 		}
 		reservationInfos := pl.reservationCache.listReservationInfosOnNode(node.Name)
 		for _, rInfo := range reservationInfos {
-			newReservePod := reservationutil.NewReservePod(rInfo.Reservation)
-			if corev1helpers.PodPriority(newReservePod) < corev1helpers.PodPriority(pod) {
-				maxPri := int32(math.MaxInt32)
-				if err := nodeInfo.RemovePod(newReservePod); err == nil {
-					newReservePod.Spec.Priority = &maxPri
-					nodeInfo.AddPod(newReservePod)
+			if reservationutil.PodPriority(rInfo.Reservation) >= corev1helpers.PodPriority(pod) {
+				continue
+			}
+			for _, podInfo := range nodeInfo.Pods {
+				if podInfo.Pod.UID == rInfo.Reservation.UID {
+					podInfo.Pod = podInfo.Pod.DeepCopy()
+					podInfo.Pod.Spec.Priority = pointer.Int32(math.MaxInt32)
+					break
 				}
 			}
 		}
@@ -262,10 +269,10 @@ func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleSta
 
 func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
 	state := getStateData(cycleState)
-	rOnNode := state.matched[nodeName]
+	reservationState := state.nodeReservationStates[nodeName]
 
 	var rInfo *frameworkext.ReservationInfo
-	for _, v := range rOnNode {
+	for _, v := range reservationState.matched {
 		if v.Reservation.UID == reservation.UID {
 			rInfo = v
 			break

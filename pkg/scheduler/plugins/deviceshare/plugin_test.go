@@ -302,7 +302,7 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	assert.Equal(t, expectPreemptible, state.preemptibleDevices)
 }
 
-func Test_Plugin_ReservationPreFilterExtension(t *testing.T) {
+func Test_Plugin_ReservationRestore(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
 	p, err := suit.proxyNew(&config.DeviceShareArgs{}, suit.Framework)
 	assert.NoError(t, err)
@@ -414,59 +414,39 @@ func Test_Plugin_ReservationPreFilterExtension(t *testing.T) {
 		},
 	})
 
-	status = pl.RemoveReservation(context.TODO(), cycleState, pod, reservation, nodeInfo)
+	status = pl.PreRestoreReservation(context.TODO(), cycleState, pod)
 	assert.True(t, status.IsSuccess())
 
-	expectReserved := map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
-		"test-node-1": {
-			reservation.UID: {
-				schedulingv1alpha1.GPU: {
-					1: {
-						apiext.ResourceGPUCore:        resource.MustParse("100"),
-						apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
-						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+	reservationInfo := frameworkext.NewReservationInfo(reservation)
+	reservationInfo.AddPod(allocatedPod)
+	nodeRestoreState, status := pl.RestoreReservation(context.TODO(), cycleState, pod, []*frameworkext.ReservationInfo{reservationInfo}, nil, nodeInfo)
+	assert.True(t, status.IsSuccess())
+	assert.NotNil(t, nodeRestoreState)
+	pl.FinalRestoreReservation(context.TODO(), cycleState, pod, frameworkext.NodeReservationRestoreStates{
+		"test-node-1": nodeRestoreState,
+	})
+
+	expectedRestoreState := &reservationRestoreStateData{
+		skip: false,
+		nodeToState: frameworkext.NodeReservationRestoreStates{
+			"test-node-1": &nodeReservationRestoreStateData{
+				reservedDevices: map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
+					reservation.UID: {
+						schedulingv1alpha1.GPU: {
+							1: {
+								apiext.ResourceGPUCore:        *resource.NewQuantity(50, resource.DecimalSI),
+								apiext.ResourceGPUMemory:      *resource.NewQuantity(4*1024*1024*1024, resource.BinarySI),
+								apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+							},
+						},
 					},
 				},
 			},
 		},
 	}
-	state, status := getPreFilterState(cycleState)
-	assert.True(t, status.IsSuccess())
-	assert.True(t, equality.Semantic.DeepEqual(expectReserved, state.reservedDevices))
 
-	status = pl.AddPodInReservation(context.TODO(), cycleState, pod, framework.NewPodInfo(allocatedPod), reservation, nodeInfo)
-	assert.True(t, status.IsSuccess())
-	expectReserved = map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
-		"test-node-1": {
-			reservation.UID: {
-				schedulingv1alpha1.GPU: {
-					1: {
-						apiext.ResourceGPUCore:        resource.MustParse("50"),
-						apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
-						apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
-					},
-				},
-			},
-		},
-	}
-	assert.True(t, equality.Semantic.DeepEqual(expectReserved, state.reservedDevices))
-
-	status = pl.AddPodInReservation(context.TODO(), cycleState, pod, framework.NewPodInfo(allocatedPod), reservation, nodeInfo)
-	assert.True(t, status.IsSuccess())
-	expectReserved = map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
-		"test-node-1": {
-			reservation.UID: {
-				schedulingv1alpha1.GPU: {
-					1: {
-						apiext.ResourceGPUCore:        resource.MustParse("0"),
-						apiext.ResourceGPUMemory:      resource.MustParse("0Gi"),
-						apiext.ResourceGPUMemoryRatio: resource.MustParse("0"),
-					},
-				},
-			},
-		},
-	}
-	assert.True(t, equality.Semantic.DeepEqual(expectReserved, state.reservedDevices))
+	state := getReservationRestoreState(cycleState)
+	assert.Equal(t, expectedRestoreState, state)
 }
 
 func Test_Plugin_PreFilter(t *testing.T) {
@@ -483,7 +463,6 @@ func Test_Plugin_PreFilter(t *testing.T) {
 				skip:               true,
 				podRequests:        make(corev1.ResourceList),
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
-				reservedDevices:    map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
 		{
@@ -563,7 +542,6 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
-				reservedDevices:    map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
 		{
@@ -594,7 +572,6 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					apiext.ResourceFPGA: resource.MustParse("100"),
 				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
-				reservedDevices:    map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
 		{
@@ -628,7 +605,6 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					apiext.ResourceRDMA:           resource.MustParse("100"),
 				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
-				reservedDevices:    map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
 	}
@@ -655,6 +631,7 @@ func Test_Plugin_Filter(t *testing.T) {
 	tests := []struct {
 		name            string
 		state           *preFilterState
+		reservedDevices map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources
 		pod             *corev1.Pod
 		nodeDeviceCache *nodeDeviceCache
 		nodeInfo        *framework.NodeInfo
@@ -1116,15 +1093,15 @@ func Test_Plugin_Filter(t *testing.T) {
 					apiext.ResourceGPUCore:        resource.MustParse("100"),
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
-				reservedDevices: map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
-					"test-node": {
-						uuid.NewUUID(): {
-							schedulingv1alpha1.GPU: {
-								0: corev1.ResourceList{
-									apiext.ResourceGPUCore:        resource.MustParse("100"),
-									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
-								},
+			},
+			reservedDevices: map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
+				"test-node": {
+					uuid.NewUUID(): {
+						schedulingv1alpha1.GPU: {
+							0: corev1.ResourceList{
+								apiext.ResourceGPUCore:        resource.MustParse("100"),
+								apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+								apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 							},
 						},
 					},
@@ -1175,15 +1152,15 @@ func Test_Plugin_Filter(t *testing.T) {
 					apiext.ResourceGPUCore:        resource.MustParse("100"),
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
-				reservedDevices: map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
-					"test-node": {
-						uuid.NewUUID(): {
-							schedulingv1alpha1.GPU: {
-								0: corev1.ResourceList{
-									apiext.ResourceGPUCore:        resource.MustParse("0"),
-									apiext.ResourceGPUMemoryRatio: resource.MustParse("0"),
-									apiext.ResourceGPUMemory:      resource.MustParse("0Gi"),
-								},
+			},
+			reservedDevices: map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
+				"test-node": {
+					uuid.NewUUID(): {
+						schedulingv1alpha1.GPU: {
+							0: corev1.ResourceList{
+								apiext.ResourceGPUCore:        resource.MustParse("0"),
+								apiext.ResourceGPUMemoryRatio: resource.MustParse("0"),
+								apiext.ResourceGPUMemory:      resource.MustParse("0Gi"),
 							},
 						},
 					},
@@ -1243,6 +1220,18 @@ func Test_Plugin_Filter(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
 				cycleState.Write(stateKey, tt.state)
+			}
+			if tt.reservedDevices != nil {
+				restoreState := &reservationRestoreStateData{
+					skip:        false,
+					nodeToState: frameworkext.NodeReservationRestoreStates{},
+				}
+				cycleState.Write(reservationRestoreStateKey, restoreState)
+				for nodeName, reserved := range tt.reservedDevices {
+					restoreState.nodeToState[nodeName] = &nodeReservationRestoreStateData{
+						reservedDevices: reserved,
+					}
+				}
 			}
 			status := p.Filter(context.TODO(), cycleState, tt.pod, tt.nodeInfo)
 			assert.Equal(t, tt.want, status)
@@ -1350,13 +1339,25 @@ func Test_Plugin_FilterReservation(t *testing.T) {
 		},
 	})
 
-	status = pl.RemoveReservation(context.TODO(), cycleState, pod, reservation, nodeInfo)
+	status = pl.PreRestoreReservation(context.TODO(), cycleState, pod)
+	assert.True(t, status.IsSuccess())
+	reservationInfo := frameworkext.NewReservationInfo(reservation)
+	nodeToState, status := pl.RestoreReservation(context.TODO(), cycleState, pod, []*frameworkext.ReservationInfo{reservationInfo}, nil, nodeInfo)
+	assert.True(t, status.IsSuccess())
+	status = pl.FinalRestoreReservation(context.TODO(), cycleState, pod, frameworkext.NodeReservationRestoreStates{
+		"test-node-1": nodeToState,
+	})
 	assert.True(t, status.IsSuccess())
 
 	status = pl.FilterReservation(context.TODO(), cycleState, pod, reservation, "test-node-1")
 	assert.True(t, status.IsSuccess())
 
-	status = pl.AddPodInReservation(context.TODO(), cycleState, pod, framework.NewPodInfo(allocatedPod), reservation, nodeInfo)
+	reservationInfo.AddPod(allocatedPod)
+	nodeToState, status = pl.RestoreReservation(context.TODO(), cycleState, pod, []*frameworkext.ReservationInfo{reservationInfo}, nil, nodeInfo)
+	assert.True(t, status.IsSuccess())
+	status = pl.FinalRestoreReservation(context.TODO(), cycleState, pod, frameworkext.NodeReservationRestoreStates{
+		"test-node-1": nodeToState,
+	})
 	assert.True(t, status.IsSuccess())
 
 	status = pl.FilterReservation(context.TODO(), cycleState, pod, reservation, "test-node-1")
@@ -2149,7 +2150,6 @@ func Test_Plugin_Reserve(t *testing.T) {
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
-					reservedDevices: map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				},
 				reservedDevices: map[schedulingv1alpha1.DeviceType]deviceResources{
 					schedulingv1alpha1.GPU: {
@@ -2188,9 +2188,16 @@ func Test_Plugin_Reserve(t *testing.T) {
 			}
 
 			if len(tt.args.reservedDevices) > 0 {
-				tt.args.state.reservedDevices[tt.args.nodeName] = map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
-					"1234567890": tt.args.reservedDevices,
-				}
+				cycleState.Write(reservationRestoreStateKey, &reservationRestoreStateData{
+					skip: false,
+					nodeToState: frameworkext.NodeReservationRestoreStates{
+						tt.args.nodeName: &nodeReservationRestoreStateData{
+							reservedDevices: map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
+								"1234567890": tt.args.reservedDevices,
+							},
+						},
+					},
+				})
 				reservation := &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						UID: "1234567890",

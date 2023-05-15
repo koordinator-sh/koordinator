@@ -44,18 +44,18 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	state := getStateData(cycleState)
-	if len(state.matched) == 0 {
+	if len(state.nodeReservationStates) == 0 {
 		return nil
 	}
 
 	nodeOrders := make([]int64, len(nodes))
 	pl.handle.Parallelizer().Until(ctx, len(nodes), func(piece int) {
 		node := nodes[piece]
-		rOnNode := state.matched[node.Name]
-		if len(rOnNode) == 0 {
+		reservationInfos := state.nodeReservationStates[node.Name].matched
+		if len(reservationInfos) == 0 {
 			return
 		}
-		_, order := findMostPreferredReservationByOrder(rOnNode)
+		_, order := findMostPreferredReservationByOrder(reservationInfos)
 		nodeOrders[piece] = order
 	})
 	var selectOrder int64 = math.MaxInt64
@@ -83,13 +83,13 @@ func (pl *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, p
 		return mostPreferredScore, nil
 	}
 
-	rOnNode := state.matched[nodeName]
-	if len(rOnNode) == 0 {
+	reservationInfos := state.nodeReservationStates[nodeName].matched
+	if len(reservationInfos) == 0 {
 		return framework.MinNodeScore, nil
 	}
 
 	var maxScore int64
-	for _, rInfo := range rOnNode {
+	for _, rInfo := range reservationInfos {
 		score := scoreReservation(pod, rInfo)
 		if score > maxScore {
 			maxScore = score
@@ -111,10 +111,10 @@ func (pl *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleStat
 
 func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) (int64, *framework.Status) {
 	state := getStateData(cycleState)
-	rOnNode := state.matched[nodeName]
+	reservationInfos := state.nodeReservationStates[nodeName].matched
 
 	var rInfo *frameworkext.ReservationInfo
-	for _, v := range rOnNode {
+	for _, v := range reservationInfos {
 		if v.Reservation.UID == reservation.UID {
 			rInfo = v
 			break

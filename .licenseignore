@@ -4,6 +4,7 @@ pkg/descheduler/controllers/migration/controllerfinder
 pkg/scheduler/frameworkext/temporary_snapshot.go
 pkg/scheduler/frameworkext/temporary_snapshot_test.go
 pkg/scheduler/plugins/coscheduling
+pkg/scheduler/plugins/reservation/error_channel.go
 pkg/koordlet/util/kubelet
 pkg/util/cpuset/cpuset.go
 pkg/util/cpuset/cpuset_test.go
