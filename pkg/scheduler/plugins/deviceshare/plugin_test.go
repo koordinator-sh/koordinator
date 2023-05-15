@@ -607,6 +607,34 @@ func Test_Plugin_PreFilter(t *testing.T) {
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
+		{
+			name: "skip zero requests",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPU: resource.MustParse("0"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantState: &preFilterState{
+				skip:               true,
+				podRequests:        corev1.ResourceList{},
+				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
