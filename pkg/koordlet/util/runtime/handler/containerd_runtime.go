@@ -33,11 +33,16 @@ import (
 )
 
 var (
-	ContainerdEndpoint1 = filepath.Join(system.Conf.VarRunRootDir, "containerd.sock")
-	ContainerdEndpoint2 = filepath.Join(system.Conf.VarRunRootDir, "containerd/containerd.sock")
-
 	GrpcDial = grpc.DialContext // for test
 )
+
+func GetContainerdEndpoint() string {
+	return filepath.Join(system.Conf.VarRunRootDir, "containerd/containerd.sock")
+}
+
+func GetContainerdEndpoint2() string {
+	return filepath.Join(system.Conf.VarRunRootDir, "containerd.sock")
+}
 
 type ContainerdRuntimeHandler struct {
 	runtimeServiceClient runtimeapi.RuntimeServiceClient

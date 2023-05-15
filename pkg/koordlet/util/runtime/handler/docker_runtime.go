@@ -31,11 +31,11 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
-var (
-	DockerEndpoint = filepath.Join(system.Conf.VarRunRootDir, "docker.sock")
-)
-
 var GetDockerClient = createDockerClient // for test
+
+func GetDockerEndpoint() string {
+	return filepath.Join(system.Conf.VarRunRootDir, "docker.sock")
+}
 
 type DockerRuntimeHandler struct {
 	dockerClient *dclient.Client
