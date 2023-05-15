@@ -20,7 +20,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 func Test_sortDeviceResourcesByMinor(t *testing.T) {
@@ -61,6 +65,103 @@ func Test_sortDeviceResourcesByMinor(t *testing.T) {
 				orders = append(orders, v.minor)
 			}
 			assert.Equal(t, tt.expectOrders, orders)
+		})
+	}
+}
+
+func Test_appendAllocatedByHints(t *testing.T) {
+	tests := []struct {
+		name      string
+		allocated map[schedulingv1alpha1.DeviceType]deviceResources
+		hints     map[schedulingv1alpha1.DeviceType]sets.Int
+		expect    map[schedulingv1alpha1.DeviceType]deviceResources
+	}{
+		{
+			name: "without hints",
+			allocated: map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: {
+					0: {},
+					1: {},
+					2: {},
+				},
+			},
+			hints:  nil,
+			expect: map[schedulingv1alpha1.DeviceType]deviceResources{},
+		},
+		{
+			name: "with hints",
+			allocated: map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: {
+					0: {
+						apiext.ResourceGPUCore: resource.MustParse("100"),
+					},
+					1: {
+						apiext.ResourceGPUCore: resource.MustParse("50"),
+					},
+					2: {
+						apiext.ResourceGPUCore: resource.MustParse("60"),
+					},
+				},
+			},
+			hints: map[schedulingv1alpha1.DeviceType]sets.Int{
+				schedulingv1alpha1.GPU: sets.NewInt(0, 1),
+			},
+			expect: map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: {
+					0: {
+						apiext.ResourceGPUCore: resource.MustParse("100"),
+					},
+					1: {
+						apiext.ResourceGPUCore: resource.MustParse("50"),
+					},
+				},
+			},
+		},
+		{
+			name: "with hints filter non-GPU devies",
+			allocated: map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: {
+					0: {
+						apiext.ResourceGPUCore: resource.MustParse("100"),
+					},
+					1: {
+						apiext.ResourceGPUCore: resource.MustParse("50"),
+					},
+					2: {
+						apiext.ResourceGPUCore: resource.MustParse("60"),
+					},
+				},
+				schedulingv1alpha1.RDMA: {
+					0: {
+						apiext.ResourceRDMA: resource.MustParse("100"),
+					},
+					1: {
+						apiext.ResourceRDMA: resource.MustParse("50"),
+					},
+					2: {
+						apiext.ResourceRDMA: resource.MustParse("60"),
+					},
+				},
+			},
+			hints: map[schedulingv1alpha1.DeviceType]sets.Int{
+				schedulingv1alpha1.GPU: sets.NewInt(0, 1),
+			},
+			expect: map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: {
+					0: {
+						apiext.ResourceGPUCore: resource.MustParse("100"),
+					},
+					1: {
+						apiext.ResourceGPUCore: resource.MustParse("50"),
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := appendAllocatedByHints(tt.hints, nil, tt.allocated)
+			assert.Equal(t, tt.expect, got)
 		})
 	}
 }
