@@ -38,7 +38,6 @@ type Config struct {
 	SysFSRootDir          string
 	ProcRootDir           string
 	VarRunRootDir         string
-	NodeNameOverride      string
 	RuntimeHooksConfigDir string
 
 	ContainerdEndPoint string
@@ -96,7 +95,6 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.VarRunRootDir, "var-run-root-dir", c.VarRunRootDir, "host /var/run dir in container")
 
 	fs.StringVar(&c.CgroupKubePath, "cgroup-kube-dir", c.CgroupKubePath, "Cgroup kube dir")
-	fs.StringVar(&c.NodeNameOverride, "node-name-override", c.NodeNameOverride, "If non-empty, will use this string as identification instead of the actual machine name. ")
 	fs.StringVar(&c.ContainerdEndPoint, "containerd-endpoint", c.ContainerdEndPoint, "containerd endPoint")
 	fs.StringVar(&c.DockerEndPoint, "docker-endpoint", c.DockerEndPoint, "docker endPoint")
 

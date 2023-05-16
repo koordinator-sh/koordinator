@@ -43,18 +43,27 @@ func Test_Docker_NewDockerRuntimeHandler(t *testing.T) {
 				Body:       io.NopCloser(bytes.NewReader([]byte(""))),
 			}, nil
 		}
-		return createDockerClient(newMockClient(ping), fmt.Sprintf("unix://%s", DockerEndpoint))
+		return createDockerClient(newMockClient(ping), fmt.Sprintf("unix://%s", GetDockerEndpoint()))
 	})
 	defer stubs.Reset()
 
 	helper := system.NewFileTestUtil(t)
-	helper.MkDirAll("/var/run")
+	defer helper.Cleanup()
+
 	system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/var/run")
 	helper.WriteFileContents("/var/run/docker.sock", "test")
-	DockerEndpoint = filepath.Join(system.Conf.VarRunRootDir, "docker.sock")
-
+	DockerEndpoint := GetDockerEndpoint()
 	unixEndPoint := fmt.Sprintf("unix://%s", DockerEndpoint)
 	dockerRuntime, err := NewDockerRuntimeHandler(unixEndPoint)
+	assert.NoError(t, err)
+	assert.NotNil(t, dockerRuntime)
+
+	// custom VarRunRootDir
+	system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/host-var-run")
+	helper.WriteFileContents("/host-var-run/docker.sock", "test1")
+	DockerEndpoint = GetDockerEndpoint()
+	unixEndPoint = fmt.Sprintf("unix://%s", DockerEndpoint)
+	dockerRuntime, err = NewDockerRuntimeHandler(unixEndPoint)
 	assert.NoError(t, err)
 	assert.NotNil(t, dockerRuntime)
 }
@@ -64,7 +73,7 @@ func Test_Docker_StopContainer(t *testing.T) {
 	helper.MkDirAll("/var/run")
 	helper.WriteFileContents("/var/run/docker.sock", "test")
 	system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/var/run")
-	DockerEndpoint = filepath.Join(system.Conf.VarRunRootDir, "docker.sock")
+	DockerEndpoint := GetDockerEndpoint()
 
 	// for a higher version of docker client like 20.10, client version cannot be omitted in request URL
 	expectedURL := "/v" + api.DefaultVersion + "/containers/test_stop_container/stop"
@@ -96,7 +105,7 @@ func Test_Docker_UpdateContainerResources(t *testing.T) {
 	helper.MkDirAll("/var/run")
 	helper.WriteFileContents("/var/run/docker.sock", "test")
 	system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/var/run")
-	DockerEndpoint = filepath.Join(system.Conf.VarRunRootDir, "docker.sock")
+	DockerEndpoint := GetDockerEndpoint()
 
 	// for a higher version of docker client like 20.10, client version cannot be omitted in request URL
 	expectedURL := "/v" + api.DefaultVersion + "/containers/test_update_container/update"

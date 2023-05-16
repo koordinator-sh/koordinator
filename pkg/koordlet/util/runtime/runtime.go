@@ -69,8 +69,8 @@ func getDockerHandler() (handler.ContainerRuntimeHandler, error) {
 }
 
 func getDockerEndpoint() (string, error) {
-	if isFile(handler.DockerEndpoint) {
-		return fmt.Sprintf("unix://%s", handler.DockerEndpoint), nil
+	if dockerEndpoint := handler.GetDockerEndpoint(); isFile(dockerEndpoint) {
+		return fmt.Sprintf("unix://%s", dockerEndpoint), nil
 	}
 	if len(system.Conf.DockerEndPoint) > 0 && isFile(system.Conf.DockerEndPoint) {
 		klog.Infof("find docker Endpoint : %v", system.Conf.DockerEndPoint)
@@ -100,12 +100,12 @@ func getContainerdHandler() (handler.ContainerRuntimeHandler, error) {
 }
 
 func getContainerdEndpoint() (string, error) {
-	if isFile(handler.ContainerdEndpoint1) {
-		return fmt.Sprintf("unix://%s", handler.ContainerdEndpoint1), nil
+	if containerdEndpoint := handler.GetContainerdEndpoint(); isFile(containerdEndpoint) {
+		return fmt.Sprintf("unix://%s", containerdEndpoint), nil
 	}
 
-	if isFile(handler.ContainerdEndpoint2) {
-		return fmt.Sprintf("unix://%s", handler.ContainerdEndpoint2), nil
+	if containerdEndpoint2 := handler.GetContainerdEndpoint2(); isFile(containerdEndpoint2) {
+		return fmt.Sprintf("unix://%s", containerdEndpoint2), nil
 	}
 
 	if len(system.Conf.ContainerdEndPoint) > 0 && isFile(system.Conf.ContainerdEndPoint) {
