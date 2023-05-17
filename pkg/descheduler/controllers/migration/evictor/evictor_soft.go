@@ -67,7 +67,7 @@ func (e *SoftEvictor) Evict(ctx context.Context, job *sev1alpha1.PodMigrationJob
 	newPod.Annotations[extension.AnnotationSoftEviction] = string(evictionSpecData)
 
 	return util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err1 := util.NewPatch().WithClientset(e.client).AddAnnotations(newPod.Annotations).PatchPod(ctx, pod)
+		_, err1 := util.NewPatch().WithClientset(e.client).PatchPod(ctx, pod, newPod)
 		return err1
 	})
 }

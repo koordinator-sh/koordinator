@@ -417,7 +417,7 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 
 	// patch pod or reservation (if the pod is a reserve pod) with new annotations
 	err := util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err1 := util.NewPatch().WithHandle(p.handle).AddAnnotations(metaObject.GetAnnotations()).Patch(ctx, originalObj.(metav1.Object))
+		_, err1 := util.NewPatch().WithHandle(p.handle).Patch(ctx, originalObj.(metav1.Object), metaObject)
 		return err1
 	})
 	if err != nil {

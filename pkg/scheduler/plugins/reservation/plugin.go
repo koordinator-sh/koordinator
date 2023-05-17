@@ -372,7 +372,7 @@ func (pl *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState,
 	newPod := pod.DeepCopy()
 	apiext.SetReservationAllocated(newPod, reservation)
 	err := util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err := util.NewPatch().WithClientset(pl.handle.ClientSet()).AddAnnotations(newPod.Annotations).PatchPod(ctx, pod)
+		_, err := util.NewPatch().WithClientset(pl.handle.ClientSet()).PatchPod(ctx, pod, newPod)
 		return err
 	})
 	if err != nil {
