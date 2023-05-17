@@ -156,20 +156,10 @@ func PatchReservation(ctx context.Context, clientset koordinatorclientset.Interf
 type Patch struct {
 	Clientset      clientset.Interface
 	KoordClientset koordinatorclientset.Interface
-
-	// patch data
-	// NOTE: add more fields if needed
-	LabelsAdd         map[string]string
-	AnnotationsAdd    map[string]string
-	LabelsRemove      []string
-	AnnotationsRemove []string
 }
 
 func NewPatch() *Patch {
-	return &Patch{
-		LabelsAdd:      map[string]string{},
-		AnnotationsAdd: map[string]string{},
-	}
+	return &Patch{}
 }
 
 type ClientSetHandle interface {
@@ -200,98 +190,38 @@ func (p *Patch) WithKoordinatorClientSet(cs koordinatorclientset.Interface) *Pat
 	return p
 }
 
-func (p *Patch) AddLabels(labels map[string]string) *Patch {
-	for k, v := range labels {
-		p.LabelsAdd[k] = v
-	}
-	return p
-}
-
-func (p *Patch) AddAnnotations(annotations map[string]string) *Patch {
-	for k, v := range annotations {
-		p.AnnotationsAdd[k] = v
-	}
-	return p
-}
-
-func (p *Patch) RemoveLabels(labelKeys []string) *Patch {
-	for _, key := range labelKeys {
-		p.LabelsRemove = append(p.LabelsRemove, key)
-	}
-	return p
-}
-
-func (p *Patch) RemoveAnnotations(annotationKeys []string) *Patch {
-	for _, key := range annotationKeys {
-		p.AnnotationsRemove = append(p.AnnotationsRemove, key)
-	}
-	return p
-}
-
-func (p *Patch) PatchPod(ctx context.Context, pod *corev1.Pod) (*corev1.Pod, error) {
+func (p *Patch) PatchPod(ctx context.Context, oldPod, newPod *corev1.Pod) (*corev1.Pod, error) {
 	if p.Clientset == nil || reflect.ValueOf(p.Clientset).IsNil() {
 		return nil, fmt.Errorf("missing clientset for pod")
 	}
 
-	newPod := pod.DeepCopy()
-	if newPod.Labels == nil {
-		newPod.Labels = map[string]string{}
-	}
-	for k, v := range p.LabelsAdd {
-		newPod.Labels[k] = v
-	}
-	for _, key := range p.LabelsRemove {
-		delete(newPod.Labels, key)
-	}
-	if newPod.Annotations == nil {
-		newPod.Annotations = map[string]string{}
-	}
-	for k, v := range p.AnnotationsAdd {
-		newPod.Annotations[k] = v
-	}
-	for _, key := range p.AnnotationsRemove {
-		delete(newPod.Annotations, key)
-	}
-
-	return PatchPod(ctx, p.Clientset, pod, newPod)
+	return PatchPod(ctx, p.Clientset, oldPod, newPod)
 }
 
-func (p *Patch) PatchReservation(ctx context.Context, r *schedulingv1alpha1.Reservation) (*schedulingv1alpha1.Reservation, error) {
+func (p *Patch) PatchReservation(ctx context.Context, originalReservation, newReservation *schedulingv1alpha1.Reservation) (*schedulingv1alpha1.Reservation, error) {
 	if p.KoordClientset == nil || reflect.ValueOf(p.KoordClientset).IsNil() {
 		return nil, fmt.Errorf("missing clientset for reservation")
 	}
 
-	newR := r.DeepCopy()
-	if newR.Labels == nil {
-		newR.Labels = map[string]string{}
-	}
-	for k, v := range p.LabelsAdd {
-		newR.Labels[k] = v
-	}
-	for _, key := range p.LabelsRemove {
-		delete(newR.Labels, key)
-	}
-	if newR.Annotations == nil {
-		newR.Annotations = map[string]string{}
-	}
-	for k, v := range p.AnnotationsAdd {
-		newR.Annotations[k] = v
-	}
-	for _, key := range p.AnnotationsRemove {
-		delete(newR.Annotations, key)
-	}
-
-	return PatchReservation(ctx, p.KoordClientset, r, newR)
+	return PatchReservation(ctx, p.KoordClientset, originalReservation, newReservation)
 }
 
 // Patch patches the obj (if the obj is not a reserve pod) or corresponding reservation object (if the
 // obj is a reserve pod) with the given patch data.
-func (p *Patch) Patch(ctx context.Context, obj metav1.Object) (metav1.Object, error) {
-	switch t := obj.(type) {
+func (p *Patch) Patch(ctx context.Context, originalObj, newObj metav1.Object) (metav1.Object, error) {
+	switch t := originalObj.(type) {
 	case *corev1.Pod:
-		return p.PatchPod(ctx, t)
+		newPod, _ := newObj.(*corev1.Pod)
+		if newPod == nil {
+			return nil, fmt.Errorf("the type of newObj is not the expected Pod type")
+		}
+		return p.PatchPod(ctx, t, newPod)
 	case *schedulingv1alpha1.Reservation:
-		return p.PatchReservation(ctx, t)
+		newReservation, _ := newObj.(*schedulingv1alpha1.Reservation)
+		if newReservation == nil {
+			return nil, fmt.Errorf("the type of newObj is not the expected Reservation type")
+		}
+		return p.PatchReservation(ctx, t, newReservation)
 	}
 	return nil, fmt.Errorf("unsupported Object")
 }
