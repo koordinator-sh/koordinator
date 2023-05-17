@@ -20,9 +20,9 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -36,7 +36,18 @@ type reservationRestoreStateData struct {
 }
 
 type nodeReservationRestoreStateData struct {
-	reservedDevices map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources
+	matched   []reservationAlloc
+	unmatched []reservationAlloc
+
+	mergedMatchedAllocatable map[schedulingv1alpha1.DeviceType]deviceResources
+	mergedUnmatchedUsed      map[schedulingv1alpha1.DeviceType]deviceResources
+}
+
+type reservationAlloc struct {
+	rInfo       *frameworkext.ReservationInfo
+	allocatable map[schedulingv1alpha1.DeviceType]deviceResources
+	allocated   map[schedulingv1alpha1.DeviceType]deviceResources
+	remained    map[schedulingv1alpha1.DeviceType]deviceResources
 }
 
 func getReservationRestoreState(cycleState *framework.CycleState) *reservationRestoreStateData {
@@ -66,6 +77,31 @@ func (s *reservationRestoreStateData) getNodeState(nodeName string) *nodeReserva
 	return ns
 }
 
+func (rs *nodeReservationRestoreStateData) mergeReservationAllocations() {
+	unmatched := rs.unmatched
+	if len(unmatched) > 0 {
+		mergedUnmatchedUsed := map[schedulingv1alpha1.DeviceType]deviceResources{}
+		for _, alloc := range unmatched {
+			used := subtractAllocated(copyDeviceResources(alloc.allocatable), alloc.remained)
+			mergedUnmatchedUsed = appendAllocated(mergedUnmatchedUsed, used)
+		}
+		rs.mergedUnmatchedUsed = mergedUnmatchedUsed
+	}
+
+	matched := rs.matched
+	if len(matched) > 0 {
+		mergedMatchedAllocatable := map[schedulingv1alpha1.DeviceType]deviceResources{}
+		mergedMatchedAllocated := map[schedulingv1alpha1.DeviceType]deviceResources{}
+		for _, alloc := range matched {
+			mergedMatchedAllocatable = appendAllocated(mergedMatchedAllocatable, alloc.allocatable)
+			mergedMatchedAllocated = appendAllocated(mergedMatchedAllocated, alloc.allocated)
+		}
+		rs.mergedMatchedAllocatable = mergedMatchedAllocatable
+	}
+
+	return
+}
+
 func (p *Plugin) PreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
 	skip, _, status := preparePod(pod)
 	if !status.IsSuccess() {
@@ -90,25 +126,44 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 	nd.lock.RLock()
 	defer nd.lock.RUnlock()
 
-	reservedDevices := map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{}
-	for _, rInfo := range matched {
-		namespacedName := reservationutil.GetReservationNamespacedName(rInfo.Reservation)
-		reserved := nd.getUsed(namespacedName.Namespace, namespacedName.Name)
-		if len(reserved) == 0 {
-			continue
+	filterFn := func(reservations []*frameworkext.ReservationInfo) []reservationAlloc {
+		if len(reservations) == 0 {
+			return nil
 		}
-		for _, pod := range rInfo.Pods {
-			podAllocated := nd.getUsed(pod.Namespace, pod.Name)
-			if len(podAllocated) == 0 {
+		result := make([]reservationAlloc, 0, len(reservations))
+		for _, rInfo := range reservations {
+			namespacedName := reservationutil.GetReservePodNamespacedName(rInfo.Reservation)
+			allocatable := nd.getUsed(namespacedName.Namespace, namespacedName.Name)
+			if len(allocatable) == 0 {
 				continue
 			}
-			subtractAllocated(reserved, podAllocated, false)
+			allocated := map[schedulingv1alpha1.DeviceType]deviceResources{}
+			for k := range allocatable {
+				allocated[k] = deviceResources{}
+			}
+			for _, podRequirement := range rInfo.Pods {
+				podAllocated := nd.getUsed(podRequirement.Namespace, podRequirement.Name)
+				if len(podAllocated) > 0 {
+					allocated = appendAllocatedIntersectionDeviceType(allocated, podAllocated)
+				}
+			}
+			result = append(result, reservationAlloc{
+				rInfo:       rInfo,
+				allocatable: allocatable,
+				allocated:   allocated,
+				remained:    subtractAllocated(copyDeviceResources(allocatable), allocated),
+			})
 		}
-		reservedDevices[rInfo.Reservation.UID] = reserved
+		return result
 	}
-	return &nodeReservationRestoreStateData{
-		reservedDevices: reservedDevices,
-	}, nil
+	filteredMatched := filterFn(matched)
+	filteredUnmatched := filterFn(unmatched)
+	s := &nodeReservationRestoreStateData{
+		matched:   filteredMatched,
+		unmatched: filteredUnmatched,
+	}
+	s.mergeReservationAllocations()
+	return s, nil
 }
 
 func (p *Plugin) FinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeToStates frameworkext.NodeReservationRestoreStates) *framework.Status {
@@ -118,4 +173,26 @@ func (p *Plugin) FinalRestoreReservation(ctx context.Context, cycleState *framew
 	}
 	state.nodeToState = nodeToStates
 	return nil
+}
+
+func (p *Plugin) tryAllocateFromReservation(state *preFilterState, nodeDeviceInfo *nodeDevice, nodeName string, pod *corev1.Pod, restoreState *nodeReservationRestoreStateData) (apiext.DeviceAllocations, error) {
+	matchedReservations := restoreState.matched
+	if len(matchedReservations) == 0 {
+		return nil, nil
+	}
+	for _, alloc := range matchedReservations {
+		rInfo := alloc.rInfo
+		preferred := newDeviceMinorMap(alloc.allocatable)
+		preemptible := appendAllocated(nil,
+			restoreState.mergedUnmatchedUsed,
+			restoreState.mergedMatchedAllocatable,
+			state.preemptibleDevices[nodeName],
+			state.preemptibleInRRs[nodeName][rInfo.Reservation.UID],
+		)
+		result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, nil, preferred, preemptible)
+		if len(result) > 0 && err == nil {
+			return result, nil
+		}
+	}
+	return nil, nil
 }
