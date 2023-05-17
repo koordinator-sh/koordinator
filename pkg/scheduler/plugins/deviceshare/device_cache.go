@@ -18,55 +18,18 @@ package deviceshare
 
 import (
 	"fmt"
-	"sort"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
-
-// deviceResources is used to present resources per device.
-// we use the minor of device as key
-// "0": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
-// "1": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
-type deviceResources map[int]corev1.ResourceList
-
-func (in deviceResources) DeepCopy() deviceResources {
-	if in == nil {
-		return nil
-	}
-	out := deviceResources{}
-	for k, v := range in {
-		out[k] = v.DeepCopy()
-	}
-	return out
-}
-
-type deviceResourceMinorPair struct {
-	minor     int
-	resources corev1.ResourceList
-}
-
-func sortDeviceResourcesByMinor(resources deviceResources) []deviceResourceMinorPair {
-	r := make([]deviceResourceMinorPair, 0, len(resources))
-	for k, v := range resources {
-		r = append(r, deviceResourceMinorPair{
-			minor:     k,
-			resources: v,
-		})
-	}
-	sort.Slice(r, func(i, j int) bool {
-		return r[i].minor < r[j].minor
-	})
-	return r
-}
 
 type nodeDevice struct {
 	lock        sync.RWMutex
@@ -296,7 +259,7 @@ func (n *nodeDevice) updateAllocateSet(deviceType schedulingv1alpha1.DeviceType,
 	}
 }
 
-func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
+func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, requiredDevices, preferredDevices map[schedulingv1alpha1.DeviceType]sets.Int, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
 	allocateResult := make(apiext.DeviceAllocations)
 
 	for deviceType := range DeviceResourceNames {
@@ -305,7 +268,7 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptib
 			if !hasDeviceResource(podRequest, deviceType) {
 				break
 			}
-			if err := n.tryAllocateDeviceByType(podRequest, deviceType, allocateResult, preemptibleDevices); err != nil {
+			if err := n.tryAllocateDeviceByType(podRequest, deviceType, requiredDevices[deviceType], preferredDevices[deviceType], allocateResult, preemptibleDevices); err != nil {
 				return nil, err
 			}
 		default:
@@ -316,7 +279,7 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptib
 	return allocateResult, nil
 }
 
-func (n *nodeDevice) tryAllocateDeviceByType(podRequest corev1.ResourceList, deviceType schedulingv1alpha1.DeviceType, allocateResult apiext.DeviceAllocations, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) error {
+func (n *nodeDevice) tryAllocateDeviceByType(podRequest corev1.ResourceList, deviceType schedulingv1alpha1.DeviceType, required, preferred sets.Int, allocateResult apiext.DeviceAllocations, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) error {
 	podRequest = quotav1.Mask(podRequest, DeviceResourceNames[deviceType])
 	nodeDeviceTotal := n.deviceTotal[deviceType]
 	if len(nodeDeviceTotal) == 0 {
@@ -347,8 +310,6 @@ func (n *nodeDevice) tryAllocateDeviceByType(podRequest corev1.ResourceList, dev
 			res := mergedFreeDevices[minor]
 			if res == nil {
 				mergedFreeDevices[minor] = v.DeepCopy()
-			} else {
-				util.AddResourceList(res, v)
 			}
 		}
 		freeDevices = mergedFreeDevices
@@ -389,10 +350,13 @@ func (n *nodeDevice) tryAllocateDeviceByType(podRequest corev1.ResourceList, dev
 	}
 
 	satisfiedDeviceCount := 0
-	orderedDeviceResources := sortDeviceResourcesByMinor(freeDevices)
+	orderedDeviceResources := sortDeviceResourcesByMinor(freeDevices, preferred)
 	for _, deviceResource := range orderedDeviceResources {
 		// Skip unhealthy Device instances with zero resources
 		if quotav1.IsZero(deviceResource.resources) {
+			continue
+		}
+		if len(required) > 0 && !required.Has(deviceResource.minor) {
 			continue
 		}
 		if satisfied, _ := quotav1.LessThanOrEqual(podRequestPerCard, deviceResource.resources); satisfied {

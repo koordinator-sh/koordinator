@@ -124,7 +124,7 @@ func IsReservePod(pod *corev1.Pod) bool {
 	return pod != nil && pod.Annotations != nil && pod.Annotations[AnnotationReservePod] == "true"
 }
 
-func GetReservationNamespacedName(r *schedulingv1alpha1.Reservation) types.NamespacedName {
+func GetReservePodNamespacedName(r *schedulingv1alpha1.Reservation) types.NamespacedName {
 	namespacedName := types.NamespacedName{
 		Name:      GetReservationKey(r),
 		Namespace: corev1.NamespaceDefault,
