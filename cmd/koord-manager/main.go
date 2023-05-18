@@ -25,20 +25,13 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
-	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/cmd/koord-manager/extensions"
 	"github.com/koordinator-sh/koordinator/cmd/koord-manager/options"
 	extclient "github.com/koordinator-sh/koordinator/pkg/client"
@@ -53,27 +46,11 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 
 	restConfigQPS   = flag.Int("rest-config-qps", 30, "QPS of rest config.")
 	restConfigBurst = flag.Int("rest-config-burst", 50, "Burst of rest config.")
 )
-
-func init() {
-	_ = clientgoscheme.AddToScheme(scheme)
-	_ = configv1alpha1.AddToScheme(clientgoscheme.Scheme)
-	_ = slov1alpha1.AddToScheme(clientgoscheme.Scheme)
-	_ = schedulingv1alpha1.AddToScheme(clientgoscheme.Scheme)
-
-	_ = configv1alpha1.AddToScheme(scheme)
-	_ = slov1alpha1.AddToScheme(scheme)
-	_ = schedulingv1alpha1.AddToScheme(scheme)
-	_ = v1alpha1.AddToScheme(scheme)
-
-	scheme.AddUnversionedTypes(metav1.SchemeGroupVersion, &metav1.UpdateOptions{}, &metav1.DeleteOptions{}, &metav1.CreateOptions{})
-	// +kubebuilder:scaffold:scheme
-}
 
 func main() {
 	var metricsAddr, pprofAddr string
@@ -132,7 +109,7 @@ func main() {
 		}
 	}
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:                     scheme,
+		Scheme:                     options.Scheme,
 		MetricsBindAddress:         metricsAddr,
 		HealthProbeBindAddress:     healthProbeAddr,
 		LeaderElection:             enableLeaderElection,

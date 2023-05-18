@@ -30,6 +30,7 @@ func Test_NewDsModeConfig(t *testing.T) {
 		SysRootDir:            "/host-sys/",
 		SysFSRootDir:          "/host-sys-fs/",
 		VarRunRootDir:         "/host-var-run/",
+		RunRootDir:            "/host-run/",
 		RuntimeHooksConfigDir: "/host-etc-hookserver/",
 	}
 	defaultConfig := NewDsModeConfig()
@@ -44,6 +45,7 @@ func Test_NewHostModeConfig(t *testing.T) {
 		SysRootDir:            "/sys/",
 		SysFSRootDir:          "/sys/fs/",
 		VarRunRootDir:         "/var/run/",
+		RunRootDir:            "/run/",
 		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
 	}
 	defaultConfig := NewHostModeConfig()
