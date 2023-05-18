@@ -31,6 +31,10 @@ import (
 // to facilitate plugins to access Koordinator's resources and states.
 type ExtendedHandle interface {
 	framework.Handle
+	// Scheduler return the scheduler adapter to support operating with cache and schedulingQueue.
+	// NOTE: Plugins do not acquire a dispatcher instance during plugin initialization,
+	// nor are they allowed to hold the object within the plugin object.
+	Scheduler() Scheduler
 	KoordinatorClientSet() koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory
 }
