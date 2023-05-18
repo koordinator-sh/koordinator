@@ -77,9 +77,6 @@ type Manager interface {
 type PodGroupManager struct {
 	// pgClient is a podGroup client
 	pgClient pgclientset.Interface
-	// scheduleTimeout is the default timeout for podgroup scheduling.
-	// If podgroup's scheduleTimeoutSeconds is set, it will be used.
-	scheduleTimeout *time.Duration
 	// pgLister is podgroup lister
 	pgLister pglister.PodGroupLister
 	// podLister is pod lister
@@ -110,6 +107,7 @@ func NewPodGroupManager(
 
 	podGroupEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    gangCache.onPodGroupAdd,
+		UpdateFunc: gangCache.onPodGroupUpdate,
 		DeleteFunc: gangCache.onPodGroupDelete,
 	}
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), pgSharedInformerFactory, pgInformer.Informer(), podGroupEventHandler)
