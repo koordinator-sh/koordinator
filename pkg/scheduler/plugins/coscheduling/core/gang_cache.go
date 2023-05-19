@@ -109,9 +109,6 @@ func (gangCache *GangCache) onPodAdd(obj interface{}) {
 	}
 }
 
-func (gangCache *GangCache) onPodUpdate(oldObj interface{}, newObj interface{}) {
-}
-
 func (gangCache *GangCache) onPodDelete(obj interface{}) {
 	pod, ok := obj.(*v1.Pod)
 	if !ok {
@@ -144,16 +141,25 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 	gangName := pg.Name
 
 	gangId := util.GetId(gangNamespace, gangName)
-	gang := gangCache.getGangFromCacheByGangId(gangId, false)
-	if gang == nil {
-		gang = gangCache.getGangFromCacheByGangId(gangId, true)
-		klog.Infof("Create gang by podGroup on add, gangName: %v", gangId)
-	}
-
+	gang := gangCache.getGangFromCacheByGangId(gangId, true)
 	gang.tryInitByPodGroup(pg, gangCache.pluginArgs)
 }
 
 func (gangCache *GangCache) onPodGroupUpdate(oldObj interface{}, newObj interface{}) {
+	pg, ok := newObj.(*v1alpha1.PodGroup)
+	if !ok {
+		return
+	}
+	gangNamespace := pg.Namespace
+	gangName := pg.Name
+
+	gangId := util.GetId(gangNamespace, gangName)
+	gang := gangCache.getGangFromCacheByGangId(gangId, false)
+	if gang == nil {
+		klog.Errorf("Gang object isn't exist when got Update Event")
+		return
+	}
+	gang.tryInitByPodGroup(pg, gangCache.pluginArgs)
 }
 
 func (gangCache *GangCache) onPodGroupDelete(obj interface{}) {

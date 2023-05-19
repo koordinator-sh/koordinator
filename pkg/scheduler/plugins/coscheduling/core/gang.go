@@ -170,9 +170,6 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.CoschedulingArgs) {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
-	if gang.HasGangInit {
-		return
-	}
 	minRequiredNumber := pg.Spec.MinMember
 	gang.MinRequiredNumber = int(minRequiredNumber)
 
