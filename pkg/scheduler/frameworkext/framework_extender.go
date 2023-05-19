@@ -38,6 +38,8 @@ var _ FrameworkExtender = &frameworkExtenderImpl{}
 type frameworkExtenderImpl struct {
 	framework.Framework
 
+	schedulerFn func() Scheduler
+
 	snapshotGeneration               *int64
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
@@ -56,8 +58,13 @@ type frameworkExtenderImpl struct {
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
 	snapshotGeneration := reflectSnapshotGeneration(fw.SnapshotSharedLister())
 
+	schedulerFn := func() Scheduler {
+		return f.Scheduler()
+	}
+
 	frameworkExtender := &frameworkExtenderImpl{
 		Framework:                        fw,
+		schedulerFn:                      schedulerFn,
 		snapshotGeneration:               snapshotGeneration,
 		koordinatorClientSet:             f.KoordinatorClientSet(),
 		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
@@ -128,6 +135,13 @@ func (ext *frameworkExtenderImpl) KoordinatorClientSet() koordinatorclientset.In
 
 func (ext *frameworkExtenderImpl) KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory {
 	return ext.koordinatorSharedInformerFactory
+}
+
+// Scheduler return the scheduler adapter to support operating with cache and schedulingQueue.
+// NOTE: Plugins do not acquire a dispatcher instance during plugin initialization,
+// nor are they allowed to hold the object within the plugin object.
+func (ext *frameworkExtenderImpl) Scheduler() Scheduler {
+	return ext.schedulerFn()
 }
 
 func (ext *frameworkExtenderImpl) takeSnapshot() error {
