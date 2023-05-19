@@ -49,7 +49,7 @@ func (o *Options) InitFlags(fs *flag.FlagSet) {
 
 func (o *Options) ApplyTo(m manager.Manager) error {
 	for controllerName, addFn := range o.ControllerAddFuncs {
-		if isControllerEnabled(controllerName, o.Controllers) {
+		if !isControllerEnabled(controllerName, o.Controllers) {
 			klog.Warningf("controller %q is disabled", controllerName)
 			continue
 		}
