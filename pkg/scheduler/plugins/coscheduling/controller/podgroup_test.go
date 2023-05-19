@@ -230,6 +230,13 @@ func TestFillGroupStatusOccupied(t *testing.T) {
 			groupPhase:           v1alpha1.PodGroupPending,
 			desiredGroupOccupied: []string{"default/new-occupied-1", "default/new-occupied-2"},
 		},
+		{
+			name:                 "minMember == 0",
+			pgName:               "pg",
+			minMember:            0,
+			groupPhase:           v1alpha1.PodGroupPending,
+			desiredGroupOccupied: []string{"test"},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
