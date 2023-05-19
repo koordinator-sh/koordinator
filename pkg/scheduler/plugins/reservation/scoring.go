@@ -29,7 +29,6 @@ import (
 	pluginhelper "k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -109,13 +108,13 @@ func (pl *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleStat
 	return pluginhelper.DefaultNormalizeScore(framework.MaxNodeScore, false, scores)
 }
 
-func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) (int64, *framework.Status) {
+func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) (int64, *framework.Status) {
 	state := getStateData(cycleState)
 	reservationInfos := state.nodeReservationStates[nodeName].matched
 
 	var rInfo *frameworkext.ReservationInfo
 	for _, v := range reservationInfos {
-		if v.Reservation.UID == reservation.UID {
+		if v.UID() == reservationInfo.UID() {
 			rInfo = v
 			break
 		}
@@ -127,11 +126,11 @@ func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cy
 	return scoreReservation(pod, rInfo), nil
 }
 
-func findMostPreferredReservationByOrder(rOnNode []*frameworkext.ReservationInfo) (*schedulingv1alpha1.Reservation, int64) {
+func findMostPreferredReservationByOrder(rOnNode []*frameworkext.ReservationInfo) (*frameworkext.ReservationInfo, int64) {
 	var selectOrder int64 = math.MaxInt64
-	var highOrder *schedulingv1alpha1.Reservation
+	var highOrder *frameworkext.ReservationInfo
 	for _, rInfo := range rOnNode {
-		s := rInfo.Reservation.Labels[apiext.LabelReservationOrder]
+		s := rInfo.GetObject().GetLabels()[apiext.LabelReservationOrder]
 		if s == "" {
 			continue
 		}
@@ -142,7 +141,7 @@ func findMostPreferredReservationByOrder(rOnNode []*frameworkext.ReservationInfo
 		// The smaller the order value is, the reservation will be selected first
 		if order != 0 && selectOrder > order {
 			selectOrder = order
-			highOrder = rInfo.Reservation
+			highOrder = rInfo
 		}
 	}
 	return highOrder, selectOrder

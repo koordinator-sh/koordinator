@@ -385,13 +385,13 @@ func (p *Plugin) getReservationReservedCPUs(cycleState *framework.CycleState, po
 		return result, nil
 	}
 
-	allocatedCPUs, _ := p.cpuManager.GetAllocatedCPUSet(node.Name, nominatedReservation.UID)
+	allocatedCPUs, _ := p.cpuManager.GetAllocatedCPUSet(node.Name, nominatedReservation.UID())
 	if allocatedCPUs.IsEmpty() {
 		return result, nil
 	}
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	nodeReservationRestoreState := reservationRestoreState.getNodeState(node.Name)
-	reservedCPUs := nodeReservationRestoreState.reservedCPUs[nominatedReservation.UID]
+	reservedCPUs := nodeReservationRestoreState.reservedCPUs[nominatedReservation.UID()]
 	if !reservedCPUs.IsEmpty() && !reservedCPUs.IsSubsetOf(allocatedCPUs) {
 		return result, fmt.Errorf("reservation reserved CPUs are invalid")
 	}

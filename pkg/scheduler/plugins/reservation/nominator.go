@@ -25,12 +25,11 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*schedulingv1alpha1.Reservation, *framework.Status) {
+func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*frameworkext.ReservationInfo, *framework.Status) {
 	if reservationutil.IsReservePod(pod) {
 		return nil, nil
 	}
@@ -51,13 +50,13 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 		return nil, framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
 	}
 
-	reservations := make([]*schedulingv1alpha1.Reservation, 0, len(reservationInfos))
+	reservations := make([]*frameworkext.ReservationInfo, 0, len(reservationInfos))
 	for _, rInfo := range reservationInfos {
-		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo.Reservation, nodeName)
+		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo, nodeName)
 		if !status.IsSuccess() {
 			continue
 		}
-		reservations = append(reservations, rInfo.Reservation)
+		reservations = append(reservations, rInfo)
 	}
 	if len(reservations) == 0 {
 		return nil, nil
@@ -73,13 +72,14 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 
 	highestScorer = nil
 	for _, v := range reservations {
-		if v.Name == reservationScoreList[0].Name {
+		if v.UID() == reservationScoreList[0].UID {
 			highestScorer = v
 			break
 		}
 	}
 	if highestScorer == nil {
-		return nil, framework.AsStatus(fmt.Errorf("missing the most suitable reservation %v(%v)", reservationScoreList[0].Name, highestScorer.UID))
+		return nil, framework.AsStatus(fmt.Errorf("missing the most suitable reservation %v(%v)",
+			klog.KRef(reservationScoreList[0].Namespace, reservationScoreList[0].Name), reservationScoreList[0].UID))
 	}
 	return highestScorer, nil
 }
@@ -89,7 +89,7 @@ func prioritizeReservations(
 	fwk frameworkext.FrameworkExtender,
 	state *framework.CycleState,
 	pod *corev1.Pod,
-	reservations []*schedulingv1alpha1.Reservation,
+	reservations []*frameworkext.ReservationInfo,
 	nodeName string,
 ) (frameworkext.ReservationScoreList, error) {
 	scoresMap, scoreStatus := fwk.RunReservationScorePlugins(ctx, state, pod, reservations, nodeName)
@@ -100,7 +100,7 @@ func prioritizeReservations(
 	if klog.V(5).Enabled() {
 		for plugin, reservationScoreList := range scoresMap {
 			for _, score := range reservationScoreList {
-				klog.InfoS("Plugin scored reservation for pod", "pod", klog.KObj(pod), "plugin", plugin, "reservation", score.Name, "score", score.Score)
+				klog.InfoS("Plugin scored reservation for pod", "pod", klog.KObj(pod), "plugin", plugin, "reservation", klog.KRef(score.Namespace, score.Name), "score", score.Score)
 			}
 		}
 	}
@@ -108,7 +108,13 @@ func prioritizeReservations(
 	// Summarize all scores.
 	result := make(frameworkext.ReservationScoreList, 0, len(reservations))
 	for i := range reservations {
-		result = append(result, frameworkext.ReservationScore{Name: reservations[i].Name, Score: 0})
+		rs := frameworkext.ReservationScore{
+			Name:      reservations[i].GetName(),
+			Namespace: reservations[i].GetNamespace(),
+			UID:       reservations[i].UID(),
+			Score:     0,
+		}
+		result = append(result, rs)
 		for j := range scoresMap {
 			result[i].Score += scoresMap[j][i].Score
 		}
@@ -116,7 +122,7 @@ func prioritizeReservations(
 
 	if klog.V(5).Enabled() {
 		for i := range result {
-			klog.InfoS("Calculated reservation's final score for pod", "pod", klog.KObj(pod), "reservation", result[i].Name, "score", result[i].Score)
+			klog.InfoS("Calculated reservation's final score for pod", "pod", klog.KObj(pod), "reservation", klog.KRef(result[i].Namespace, result[i].Name), "score", result[i].Score)
 		}
 	}
 	return result, nil

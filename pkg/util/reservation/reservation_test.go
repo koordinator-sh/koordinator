@@ -463,7 +463,7 @@ func Test_matchReservationOwners(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := MatchReservationOwners(tt.args.pod, tt.args.r)
+			got := MatchReservationOwners(tt.args.pod, tt.args.r.Spec.Owners)
 			assert.Equal(t, tt.want, got)
 		})
 	}

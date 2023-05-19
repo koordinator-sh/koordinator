@@ -137,14 +137,14 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 		}
 		result := make([]reservationAlloc, 0, len(reservations))
 		for _, rInfo := range reservations {
-			namespacedName := reservationutil.GetReservePodNamespacedName(rInfo.Reservation)
-			allocatable := nd.getUsed(namespacedName.Namespace, namespacedName.Name)
+			reservePod := rInfo.GetReservePod()
+			allocatable := nd.getUsed(reservePod.Namespace, reservePod.Name)
 			if len(allocatable) == 0 {
 				continue
 			}
 			minorHints := newDeviceMinorMap(allocatable)
 			var allocated map[schedulingv1alpha1.DeviceType]deviceResources
-			for _, podRequirement := range rInfo.Pods {
+			for _, podRequirement := range rInfo.AssignedPods {
 				podAllocated := nd.getUsed(podRequirement.Namespace, podRequirement.Name)
 				if len(podAllocated) > 0 {
 					allocated = appendAllocatedByHints(minorHints, allocated, podAllocated)
@@ -204,10 +204,10 @@ func (p *Plugin) tryAllocateFromReservation(
 
 	for _, alloc := range matchedReservations {
 		rInfo := alloc.rInfo
-		preemptibleInRR := state.preemptibleInRRs[nodeName][rInfo.Reservation.UID]
+		preemptibleInRR := state.preemptibleInRRs[nodeName][rInfo.UID()]
 		preferred := newDeviceMinorMap(alloc.allocatable)
 
-		allocatePolicy := rInfo.Reservation.Spec.AllocatePolicy
+		allocatePolicy := rInfo.GetAllocatePolicy()
 		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault {
 			//
 			// The Default Policy is a relax policy that allows Pods to be allocated from multiple Reservations
@@ -322,7 +322,7 @@ func (p *Plugin) allocateWithNominatedReservation(
 
 	allocIndex := -1
 	for i, v := range restoreState.matched {
-		if v.rInfo.Reservation.UID == reservation.UID {
+		if v.rInfo.UID() == reservation.UID() {
 			allocIndex = i
 			break
 		}

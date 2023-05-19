@@ -328,7 +328,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
 }
 
-func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
+func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) *framework.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -342,7 +342,7 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 
 	allocIndex := -1
 	for i, v := range restoreState.matched {
-		if v.rInfo.Reservation.UID == reservation.UID {
+		if v.rInfo.UID() == reservationInfo.UID() {
 			allocIndex = i
 			break
 		}

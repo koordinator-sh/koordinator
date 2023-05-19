@@ -76,13 +76,13 @@ func TestPodEventHandler(t *testing.T) {
 
 	handler.OnAdd(pod)
 	rInfo := handler.cache.getReservationInfoByUID(reservationUID)
-	assert.Empty(t, rInfo.Pods)
+	assert.Empty(t, rInfo.AssignedPods)
 
 	newPod := pod.DeepCopy()
 	apiext.SetReservationAllocated(newPod, reservation)
 	handler.OnUpdate(pod, newPod)
 	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
-	assert.Len(t, rInfo.Pods, 1)
+	assert.Len(t, rInfo.AssignedPods, 1)
 	expectPodRequirement := &frameworkext.PodRequirement{
 		Name:      pod.Name,
 		Namespace: pod.Namespace,
@@ -91,9 +91,9 @@ func TestPodEventHandler(t *testing.T) {
 			corev1.ResourceCPU: resource.MustParse("4"),
 		},
 	}
-	assert.Equal(t, expectPodRequirement, rInfo.Pods[pod.UID])
+	assert.Equal(t, expectPodRequirement, rInfo.AssignedPods[pod.UID])
 
 	handler.OnDelete(newPod)
 	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
-	assert.Empty(t, rInfo.Pods)
+	assert.Empty(t, rInfo.AssignedPods)
 }

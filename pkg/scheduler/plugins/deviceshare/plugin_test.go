@@ -1243,7 +1243,7 @@ func Test_Plugin_FilterReservation(t *testing.T) {
 	})
 	assert.True(t, status.IsSuccess())
 
-	status = pl.FilterReservation(context.TODO(), cycleState, pod, reservation, "test-node-1")
+	status = pl.FilterReservation(context.TODO(), cycleState, pod, reservationInfo, "test-node-1")
 	assert.True(t, status.IsSuccess())
 
 	allocatedPod := &corev1.Pod{
@@ -1256,7 +1256,7 @@ func Test_Plugin_FilterReservation(t *testing.T) {
 		},
 	}
 	nd.updateCacheUsed(allocations, allocatedPod, true)
-	reservationInfo.AddPod(allocatedPod)
+	reservationInfo.AddAssignedPod(allocatedPod)
 	nodeToState, status = pl.RestoreReservation(context.TODO(), cycleState, pod, []*frameworkext.ReservationInfo{reservationInfo}, nil, nodeInfo)
 	assert.True(t, status.IsSuccess())
 	status = pl.FinalRestoreReservation(context.TODO(), cycleState, pod, frameworkext.NodeReservationRestoreStates{
@@ -1264,7 +1264,7 @@ func Test_Plugin_FilterReservation(t *testing.T) {
 	})
 	assert.True(t, status.IsSuccess())
 
-	status = pl.FilterReservation(context.TODO(), cycleState, pod, reservation, "test-node-1")
+	status = pl.FilterReservation(context.TODO(), cycleState, pod, reservationInfo, "test-node-1")
 	assert.Equal(t, framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices), status)
 }
 
@@ -2123,7 +2123,8 @@ func Test_Plugin_Reserve(t *testing.T) {
 					},
 				}
 				cycleState.Write(reservationRestoreStateKey, restoreState)
-				frameworkext.SetNominatedReservation(cycleState, reservation)
+				rInfo := frameworkext.NewReservationInfo(reservation)
+				frameworkext.SetNominatedReservation(cycleState, rInfo)
 			}
 
 			status := p.Reserve(context.TODO(), cycleState, tt.args.pod, tt.args.nodeName)

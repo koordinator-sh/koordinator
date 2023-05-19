@@ -669,7 +669,8 @@ func TestFilterReservation(t *testing.T) {
 			}
 			cycleState.Write(stateKey, state)
 
-			status := pl.FilterReservation(context.TODO(), cycleState, pod, tt.targetReservation, "test-node")
+			rInfo := frameworkext.NewReservationInfo(tt.targetReservation)
+			status := pl.FilterReservation(context.TODO(), cycleState, pod, rInfo, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
 		})
 	}
@@ -790,13 +791,21 @@ func TestReserve(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
 
-			frameworkext.SetNominatedReservation(cycleState, tt.reservation)
+			var rInfo *frameworkext.ReservationInfo
+			if tt.reservation != nil {
+				rInfo = frameworkext.NewReservationInfo(tt.reservation)
+			}
+			frameworkext.SetNominatedReservation(cycleState, rInfo)
 			status := pl.Reserve(context.TODO(), cycleState, tt.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
-			assert.Equal(t, tt.wantReservation, state.assumed)
+			if tt.wantReservation == nil {
+				assert.Nil(t, state.assumed)
+			} else {
+				assert.Equal(t, tt.wantReservation, state.assumed.Reservation)
+			}
 			if tt.reservation != nil {
 				rInfo := pl.reservationCache.getReservationInfoByUID(tt.reservation.UID)
-				assert.Equal(t, tt.wantPods, rInfo.Pods)
+				assert.Equal(t, tt.wantPods, rInfo.AssignedPods)
 			}
 		})
 	}
@@ -902,7 +911,11 @@ func TestUnreserve(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
 
-			frameworkext.SetNominatedReservation(cycleState, tt.reservation)
+			var rInfo *frameworkext.ReservationInfo
+			if tt.reservation != nil {
+				rInfo = frameworkext.NewReservationInfo(tt.reservation)
+			}
+			frameworkext.SetNominatedReservation(cycleState, rInfo)
 			status := pl.Reserve(context.TODO(), cycleState, tt.pod, "test-node")
 			pl.Unreserve(context.TODO(), cycleState, tt.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
@@ -911,7 +924,7 @@ func TestUnreserve(t *testing.T) {
 				if reservationutil.IsReservePod(tt.pod) {
 					assert.Nil(t, rInfo)
 				} else {
-					assert.Equal(t, map[types.UID]*frameworkext.PodRequirement{}, rInfo.Pods)
+					assert.Equal(t, map[types.UID]*frameworkext.PodRequirement{}, rInfo.AssignedPods)
 				}
 			}
 		})
@@ -1005,8 +1018,12 @@ func TestPreBind(t *testing.T) {
 			suit.start()
 
 			cycleState := framework.NewCycleState()
+			var assumedRInfo *frameworkext.ReservationInfo
+			if tt.assumedReservation != nil {
+				assumedRInfo = frameworkext.NewReservationInfo(tt.assumedReservation)
+			}
 			cycleState.Write(stateKey, &stateData{
-				assumed: tt.assumedReservation,
+				assumed: assumedRInfo,
 			})
 			status := pl.PreBind(context.TODO(), cycleState, tt.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
