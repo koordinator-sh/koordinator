@@ -121,8 +121,12 @@ func (cache *reservationCache) updatePod(reservationUID types.UID, oldPod, newPo
 
 	rInfo := cache.reservationInfos[reservationUID]
 	if rInfo != nil {
-		rInfo.RemovePod(oldPod)
-		rInfo.AddPod(newPod)
+		if oldPod != nil {
+			rInfo.RemovePod(oldPod)
+		}
+		if newPod != nil {
+			rInfo.AddPod(newPod)
+		}
 	}
 }
 
