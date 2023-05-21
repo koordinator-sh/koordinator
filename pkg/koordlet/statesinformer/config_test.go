@@ -36,6 +36,8 @@ func TestNewDefaultConfig(t *testing.T) {
 				KubeletPreferredAddressType: string(corev1.NodeInternalIP),
 				KubeletSyncInterval:         10 * time.Second,
 				KubeletSyncTimeout:          3 * time.Second,
+				CRISyncInterval:             10 * time.Second,
+				CRISyncTimeout:              3 * time.Second,
 				InsecureKubeletTLS:          false,
 				KubeletReadOnlyPort:         10255,
 				NodeTopologySyncInterval:    3 * time.Second,
@@ -71,6 +73,8 @@ func TestConfig_InitFlags(t *testing.T) {
 		KubeletPreferredAddressType string
 		KubeletSyncInterval         time.Duration
 		KubeletSyncTimeout          time.Duration
+		CRISyncInterval             time.Duration
+		CRISyncTimeout              time.Duration
 		InsecureKubeletTLS          bool
 		KubeletReadOnlyPort         uint
 		NodeTopologySyncInterval    time.Duration
@@ -91,6 +95,8 @@ func TestConfig_InitFlags(t *testing.T) {
 				KubeletPreferredAddressType: "Hostname",
 				KubeletSyncInterval:         30 * time.Second,
 				KubeletSyncTimeout:          10 * time.Second,
+				CRISyncInterval:             30 * time.Second,
+				CRISyncTimeout:              10 * time.Second,
 				InsecureKubeletTLS:          true,
 				KubeletReadOnlyPort:         10258,
 				NodeTopologySyncInterval:    10 * time.Second,

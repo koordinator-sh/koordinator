@@ -38,7 +38,7 @@ type RuntimeHook interface {
 }
 
 type runtimeHook struct {
-	statesInformer statesinformer.InformerGetter
+	statesInformer statesinformer.StatesInformer
 	server         proxyserver.Server
 	reconciler     reconciler.Reconciler
 	executor       resourceexecutor.ResourceUpdateExecutor
@@ -62,7 +62,7 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
-func NewRuntimeHook(si statesinformer.InformerGetter, cfg *Config) (RuntimeHook, error) {
+func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook, error) {
 	failurePolicy, err := config.GetFailurePolicyType(cfg.RuntimeHooksFailurePolicy)
 	if err != nil {
 		return nil, err

@@ -45,7 +45,7 @@ type MetricsQuery interface {
 var _ MetricsQuery = &metricsQuery{}
 
 // NewMetricsQuery creates an instance which implements interface MetricsQuery.
-func NewMetricsQuery(metricCache metriccache.MetricCache, statesInformer statesinformer.InformerGetter) MetricsQuery {
+func NewMetricsQuery(metricCache metriccache.MetricCache, statesInformer statesinformer.StatesInformer) MetricsQuery {
 	return &metricsQuery{
 		metricCache:    metricCache,
 		statesInformer: statesInformer,
@@ -54,7 +54,7 @@ func NewMetricsQuery(metricCache metriccache.MetricCache, statesInformer statesi
 
 type metricsQuery struct {
 	metricCache    metriccache.MetricCache
-	statesInformer statesinformer.InformerGetter
+	statesInformer statesinformer.StatesInformer
 }
 
 // CollectNodeMetricsAvg impl plugins.MetricQuery interface.

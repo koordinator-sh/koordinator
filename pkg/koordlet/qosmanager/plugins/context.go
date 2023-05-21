@@ -25,7 +25,7 @@ import (
 
 type PluginContext struct {
 	K8sClient      k8s.K8sClient
-	StatesInformer statesinformer.InformerGetter
+	StatesInformer statesinformer.StatesInformer
 	MetricCache    metriccache.MetricCache
 	MetricsQuery   metricsquery.MetricsQuery
 	// Extra custom configuration for plugin.
