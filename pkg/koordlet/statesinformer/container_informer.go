@@ -70,6 +70,9 @@ func (c *containerInformer) Setup(ctx *pluginOption, states *pluginState) {
 func (c *containerInformer) Start(stopCh <-chan struct{}) {
 	klog.V(2).Infof("starting container informer")
 
+	if c.config.CRISyncInterval <= 0 {
+		return
+	}
 	var err error
 	var unixEndpoint string
 	unixEndpoint, err = runtime.GetContainerdEndpoint()

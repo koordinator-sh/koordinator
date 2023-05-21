@@ -79,7 +79,7 @@ func (r *metricsQuery) CollectNodeAndPodMetrics(queryParam *metriccache.QueryPar
 	nodeQueryResult := r.collectNodeMetric(queryParam)
 	nodeMetric := nodeQueryResult.Metric
 
-	podsMeta := r.statesInformer.GetInformer(statesinformer.StatesInformerName).GetAllPods()
+	podsMeta := r.statesInformer.(*statesinformer.StatesInformerImpl).GetAllPods()
 	podsMetrics := make([]*metriccache.PodResourceMetric, 0, len(podsMeta))
 	for _, podMeta := range podsMeta {
 		podQueryResult := r.CollectPodMetric(podMeta, queryParam)

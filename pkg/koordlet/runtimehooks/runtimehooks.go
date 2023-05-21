@@ -102,10 +102,10 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		executor:       e,
 	}
 	registerPlugins(newPluginOptions)
-	si.GetInformer(statesinformer.StatesInformerName).RegisterCallbacks(statesinformer.RegisterTypeNodeSLOSpec, "runtime-hooks-rule-node-slo",
+	si.RegisterCallbacks(statesinformer.RegisterTypeNodeSLOSpec, "runtime-hooks-rule-node-slo",
 		"Update hooks rule can run callbacks if NodeSLO spec update",
 		rule.UpdateRules)
-	si.GetInformer(statesinformer.ContainerInformerName).RegisterCallbacks(statesinformer.RegisterTypeNodeTopology, "runtime-hooks-rule-node-topo",
+	si.RegisterCallbacks(statesinformer.RegisterTypeNodeTopology, "runtime-hooks-rule-node-topo",
 		"Update hooks rule if NodeTopology infor update",
 		rule.UpdateRules)
 	if err := s.Setup(); err != nil {
