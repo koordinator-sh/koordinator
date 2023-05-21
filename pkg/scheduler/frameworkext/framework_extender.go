@@ -23,6 +23,7 @@ import (
 	"unsafe"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -53,6 +54,8 @@ type frameworkExtenderImpl struct {
 	reservationNominatorPlugins []ReservationNominator
 	reservationPreBindPlugins   []ReservationPreBindPlugin
 	reservationRestorePlugins   []ReservationRestorePlugin
+
+	preBindExtensionsPlugins map[string]PreBindExtensions
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -68,6 +71,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		snapshotGeneration:               snapshotGeneration,
 		koordinatorClientSet:             f.KoordinatorClientSet(),
 		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
+		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
 	}
 	frameworkExtender.updateTransformer(f.defaultTransformers...)
 	return frameworkExtender
@@ -126,6 +130,9 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	}
 	if r, ok := pl.(ReservationRestorePlugin); ok {
 		ext.reservationRestorePlugins = append(ext.reservationRestorePlugins, r)
+	}
+	if p, ok := pl.(PreBindExtensions); ok {
+		ext.preBindExtensionsPlugins[p.Name()] = p
 	}
 }
 
@@ -257,7 +264,13 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 // RunPreBindPlugins supports PreBindReservation for Reservation
 func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	if !reservationutil.IsReservePod(pod) {
-		return ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
+		original := pod
+		pod = pod.DeepCopy()
+		status := ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
+		if !status.IsSuccess() {
+			return status
+		}
+		return ext.runPreBindExtensionPlugins(ctx, state, original, pod)
 	}
 
 	reservationLister := ext.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
@@ -267,9 +280,9 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 		return framework.AsStatus(err)
 	}
 
+	original := reservation
 	reservation = reservation.DeepCopy()
 	reservation.Status.NodeName = nodeName
-
 	for _, pl := range ext.reservationPreBindPlugins {
 		status := pl.PreBindReservation(ctx, state, reservation, nodeName)
 		if !status.IsSuccess() {
@@ -277,6 +290,30 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 			klog.ErrorS(err, "Failed running ReservationPreBindPlugin plugin", "plugin", pl.Name(), "reservation", klog.KObj(reservation))
 			return framework.AsStatus(fmt.Errorf("running ReservationPreBindPlugin plugin %q: %w", pl.Name(), err))
 		}
+	}
+	return ext.runPreBindExtensionPlugins(ctx, state, original, reservation)
+}
+
+func (ext *frameworkExtenderImpl) runPreBindExtensionPlugins(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status {
+	plugins := ext.Framework.ListPlugins()
+	if plugins == nil {
+		return nil
+	}
+	for _, plugin := range plugins.PreBind.Enabled {
+		pl := ext.preBindExtensionsPlugins[plugin.Name]
+		if pl == nil {
+			continue
+		}
+		status := pl.ApplyPatch(ctx, cycleState, originalObj, modifiedObj)
+		if status != nil && status.Code() == framework.Skip {
+			continue
+		}
+		if !status.IsSuccess() {
+			err := status.AsError()
+			klog.ErrorS(err, "Failed running PreBindExtension plugin", "plugin", pl.Name(), "pod", klog.KObj(originalObj))
+			return framework.AsStatus(fmt.Errorf("running PreBindExtension plugin %q: %w", pl.Name(), err))
+		}
+		return status
 	}
 	return nil
 }

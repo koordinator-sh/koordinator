@@ -369,17 +369,7 @@ func (pl *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState,
 	reservation := state.assumed
 	klog.V(4).Infof("Attempting to pre-bind pod %v to node %v with reservation %v", klog.KObj(pod), nodeName, klog.KObj(reservation))
 
-	newPod := pod.DeepCopy()
-	apiext.SetReservationAllocated(newPod, reservation)
-	err := util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err := util.NewPatch().WithClientset(pl.handle.ClientSet()).PatchPod(ctx, pod, newPod)
-		return err
-	})
-	if err != nil {
-		klog.V(4).ErrorS(err, "Failed to patch pod for PreBind allocating reservation", "pod", klog.KObj(pod))
-		return framework.AsStatus(err)
-	}
-	klog.V(4).Infof("Successfully preBind pod %v with reservation %v on node %s", klog.KObj(pod), klog.KObj(reservation), nodeName)
+	apiext.SetReservationAllocated(pod, reservation)
 	return nil
 }
 

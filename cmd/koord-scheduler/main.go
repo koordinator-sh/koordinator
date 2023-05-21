@@ -28,6 +28,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/batchresource"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/compatibledefaultpreemption"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/defaultprebind"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/deviceshare"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware"
@@ -49,6 +50,7 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	deviceshare.Name:                 deviceshare.New,
 	elasticquota.Name:                elasticquota.New,
 	compatibledefaultpreemption.Name: compatibledefaultpreemption.New,
+	defaultprebind.Name:              defaultprebind.New,
 }
 
 func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {

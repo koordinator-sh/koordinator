@@ -1131,10 +1131,7 @@ func TestPlugin_PreBind(t *testing.T) {
 
 	s := plg.PreBind(context.TODO(), cycleState, pod, "test-node-1")
 	assert.True(t, s.IsSuccess())
-	podModified, status := suit.Handle.ClientSet().CoreV1().Pods("default").Get(context.TODO(), "test-pod-1", metav1.GetOptions{})
-	assert.Nil(t, status)
-	assert.NotNil(t, podModified)
-	resourceStatus, err := extension.GetResourceStatus(podModified.Annotations)
+	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
 	assert.NoError(t, err)
 	assert.NotNil(t, resourceStatus)
 	expectResourceStatus := &extension.ResourceStatus{
@@ -1178,17 +1175,14 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 
 	s := plg.PreBind(context.TODO(), cycleState, pod, "test-node-1")
 	assert.True(t, s.IsSuccess())
-	podModified, status := suit.Handle.ClientSet().CoreV1().Pods("default").Get(context.TODO(), "test-pod-1", metav1.GetOptions{})
-	assert.Nil(t, status)
-	assert.NotNil(t, podModified)
-	resourceStatus, err := extension.GetResourceStatus(podModified.Annotations)
+	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
 	assert.NoError(t, err)
 	assert.NotNil(t, resourceStatus)
 	expectResourceStatus := &extension.ResourceStatus{
 		CPUSet: "0-3",
 	}
 	assert.Equal(t, expectResourceStatus, resourceStatus)
-	resourceSpec, err := extension.GetResourceSpec(podModified.Annotations)
+	resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
 	assert.NoError(t, err)
 	assert.NotNil(t, resourceSpec)
 	expectedResourceSpec := &extension.ResourceSpec{
@@ -1231,10 +1225,7 @@ func TestPlugin_PreBindReservation(t *testing.T) {
 	s := plg.PreBindReservation(context.TODO(), cycleState, reservation, "test-node-1")
 	assert.True(t, s.IsSuccess())
 
-	gotReservation, status := suit.KoordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
-	assert.Nil(t, status)
-	assert.NotNil(t, gotReservation)
-	resourceStatus, err := extension.GetResourceStatus(gotReservation.Annotations)
+	resourceStatus, err := extension.GetResourceStatus(reservation.Annotations)
 	assert.NoError(t, err)
 	assert.NotNil(t, resourceStatus)
 	expectResourceStatus := &extension.ResourceStatus{

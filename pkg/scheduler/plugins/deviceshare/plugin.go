@@ -34,7 +34,6 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -446,7 +445,7 @@ func (p *Plugin) PreBindReservation(ctx context.Context, cycleState *framework.C
 	return p.preBindObject(ctx, cycleState, reservation, nodeName)
 }
 
-func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleState, object runtime.Object, nodeName string) *framework.Status {
+func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleState, object metav1.Object, nodeName string) *framework.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -455,32 +454,9 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		return nil
 	}
 
-	originalObj := object.DeepCopyObject()
-	metaObject := object.(metav1.Object)
-	if err := apiext.SetDeviceAllocations(metaObject, state.allocationResult); err != nil {
+	if err := apiext.SetDeviceAllocations(object, state.allocationResult); err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
 	}
-
-	// NOTE: APIServer won't allow the following modification. Error: pod updates may not change fields other than
-	// `spec.containers[*].image`, `spec.initContainers[*].image`, `spec.activeDeadlineSeconds`,
-	// `spec.tolerations` (only additions to existing tolerations) or `spec.terminationGracePeriodSeconds`
-
-	// podRequest := state.convertedDeviceResource
-	// if _, ok := allocResult[schedulingv1alpha1.GPU]; ok {
-	// 	patchContainerGPUResource(newPod, podRequest)
-	// }
-
-	// patch pod or reservation (if the pod is a reserve pod) with new annotations
-	err := util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err1 := util.NewPatch().WithHandle(p.handle).Patch(ctx, originalObj.(metav1.Object), metaObject)
-		return err1
-	})
-	if err != nil {
-		klog.V(3).ErrorS(err, "Failed to preBind %T with DeviceShare", object, klog.KObj(metaObject), "Devices", state.allocationResult, "node", nodeName)
-		return framework.NewStatus(framework.Error, err.Error())
-	}
-	klog.V(4).Infof("Successfully preBind %T %v", object, klog.KObj(metaObject))
-
 	return nil
 }
 

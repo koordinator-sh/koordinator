@@ -2686,6 +2686,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 	tests := []struct {
 		name       string
 		args       args
+		wantPod    *corev1.Pod
 		wantStatus *framework.Status
 	}{
 		{
@@ -2693,6 +2694,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 			args: args{
 				pod: &corev1.Pod{},
 			},
+			wantPod:    &corev1.Pod{},
 			wantStatus: framework.AsStatus(framework.ErrNotFound),
 		},
 		{
@@ -2703,11 +2705,12 @@ func Test_Plugin_PreBind(t *testing.T) {
 					skip: true,
 				},
 			},
+			wantPod: &corev1.Pod{},
 		},
 		{
 			name: "pre-bind successfully",
 			args: args{
-				pod: testPod,
+				pod: testPod.DeepCopy(),
 				state: &preFilterState{
 					skip: false,
 					allocationResult: apiext.DeviceAllocations{
@@ -2737,6 +2740,29 @@ func Test_Plugin_PreBind(t *testing.T) {
 					},
 				},
 			},
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+					Annotations: map[string]string{
+						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":0,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"16Gi","koordinator.sh/gpu-memory-ratio":"100"}},{"minor":1,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"16Gi","koordinator.sh/gpu-memory-ratio":"100"}}]}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPU: resource.MustParse("2"),
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -2758,6 +2784,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 			}
 			status := pl.(*Plugin).PreBind(context.TODO(), cycleState, tt.args.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
+			assert.Equal(t, tt.wantPod, tt.args.pod)
 		})
 	}
 }
@@ -2828,9 +2855,7 @@ func Test_Plugin_PreBindReservation(t *testing.T) {
 	status := pl.(*Plugin).PreBindReservation(context.TODO(), cycleState, reservation, "test-node")
 	assert.True(t, status.IsSuccess())
 
-	gotReservation, err := suit.koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
-	assert.NoError(t, err)
-	allocations, err := apiext.GetDeviceAllocations(gotReservation.Annotations)
+	allocations, err := apiext.GetDeviceAllocations(reservation.Annotations)
 	assert.NoError(t, err)
 	expectAllocations := apiext.DeviceAllocations{
 		schedulingv1alpha1.GPU: {
