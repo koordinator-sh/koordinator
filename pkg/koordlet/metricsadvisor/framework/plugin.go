@@ -38,7 +38,8 @@ type DeviceCollector interface {
 	Run(stopCh <-chan struct{})
 	Shutdown()
 	Started() bool
-	FillNodeMetric(nodeMetric *metriccache.NodeResourceMetric) error
+	Infos() metriccache.Devices
+	GetNodeMetric() ([]metriccache.MetricSample, error)
 	FillPodMetric(podMetric *metriccache.PodResourceMetric, podParentDir string, cs []corev1.ContainerStatus) error
 	FillContainerMetric(containerMetric *metriccache.ContainerResourceMetric, podParentDir string, c *corev1.ContainerStatus) error
 }

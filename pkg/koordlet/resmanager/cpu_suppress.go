@@ -108,11 +108,9 @@ func (r *CPUSuppress) writeBECgroupsCPUSet(paths []string, cpusetStr string, isR
 }
 
 // calculateBESuppressCPU calculates the quantity of cpuset cpus for suppressing be pods
-func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric *metriccache.NodeResourceMetric,
+func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeUsedCPU resource.Quantity,
 	podMetrics []*metriccache.PodResourceMetric, podMetas []*statesinformer.PodMeta, beCPUUsedThreshold int64) *resource.Quantity {
 	// node, nodeMetric, podMetric should not be nil
-	nodeUsedCPU := &nodeMetric.CPUUsed.CPUUsed
-
 	podAllUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
 	podNoneBEUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
 
@@ -271,14 +269,24 @@ func (r *CPUSuppress) suppressBECPU() {
 		return
 	}
 
-	nodeMetric, podMetrics := r.resmanager.collectNodeAndPodMetricLast()
-	if nodeMetric == nil || podMetrics == nil {
-		klog.Warningf("suppressBECPU failed, got nil node metric or nil pod metrics, nodeMetric %v, podMetrics %v",
-			nodeMetric, podMetrics)
+	podMetrics := r.resmanager.collectPodMetricLast()
+	if podMetrics == nil {
+		klog.Warningf("suppressBECPU failed, got nil node metric or nil pod metrics, podMetrics %v", podMetrics)
+		return
+	}
+	queryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
+	if err != nil {
+		klog.Warningf("build node query meta failed, error: %v", err)
+		return
+	}
+	value, err := r.resmanager.collectorNodeMetricLast(queryMeta)
+	if err != nil {
+		klog.Warningf("query node cpu metrics failed, error: %v", err)
 		return
 	}
 
-	suppressCPUQuantity := r.calculateBESuppressCPU(node, nodeMetric, podMetrics, podMetas,
+	nodeCPUsed := *resource.NewQuantity(int64(value), resource.DecimalSI)
+	suppressCPUQuantity := r.calculateBESuppressCPU(node, nodeCPUsed, podMetrics, podMetas,
 		*nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent)
 
 	// Step 2.

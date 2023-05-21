@@ -18,6 +18,7 @@ package statesinformer
 
 import (
 	"context"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -30,7 +31,6 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	schedulingfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 )
 
@@ -43,27 +43,12 @@ func Test_reportGPUDevice(t *testing.T) {
 	fakeClient := schedulingfake.NewSimpleClientset().SchedulingV1alpha1().Devices()
 	ctl := gomock.NewController(t)
 	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
-	fakeResult := metriccache.NodeResourceQueryResult{
-		Metric: &metriccache.NodeResourceMetric{
-			GPUs: []metriccache.GPUMetric{
-				{
-					DeviceUUID:  "1",
-					Minor:       0,
-					SMUtil:      80,
-					MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
-				},
-				{
-					DeviceUUID:  "2",
-					Minor:       1,
-					SMUtil:      40,
-					MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
-				},
-			},
-		},
+	var gpuDeviceInfo koordletutil.GPUDevices
+	gpuDeviceInfo = []koordletutil.GPUDeviceInfo{
+		{UUID: "1", Minor: 1, MemoryTotal: 8000},
+		{UUID: "2", Minor: 2, MemoryTotal: 10000},
 	}
-	mockMetricCache.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(fakeResult).AnyTimes()
+	mockMetricCache.EXPECT().Get(koordletutil.GPUDeviceType).Return(gpuDeviceInfo, true)
 	r := &statesInformer{
 		deviceClient: fakeClient,
 		metricsCache: mockMetricCache,
@@ -82,7 +67,7 @@ func Test_reportGPUDevice(t *testing.T) {
 	expectedDevices := []schedulingv1alpha1.DeviceInfo{
 		{
 			UUID:   "1",
-			Minor:  pointer.Int32(0),
+			Minor:  pointer.Int32(1),
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -93,7 +78,7 @@ func Test_reportGPUDevice(t *testing.T) {
 		},
 		{
 			UUID:   "2",
-			Minor:  pointer.Int32(1),
+			Minor:  pointer.Int32(2),
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -107,19 +92,18 @@ func Test_reportGPUDevice(t *testing.T) {
 	assert.Equal(t, nil, err)
 	assert.Equal(t, device.Spec.Devices, expectedDevices)
 
-	fakeResult.Metric.GPUs = append(fakeResult.Metric.GPUs, metriccache.GPUMetric{
-		DeviceUUID:  "3",
-		Minor:       2,
-		SMUtil:      40,
-		MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
-		MemoryTotal: *resource.NewQuantity(10000, resource.BinarySI),
+	gpuDeviceInfo = append(gpuDeviceInfo, koordletutil.GPUDeviceInfo{
+		UUID:        "3",
+		Minor:       3,
+		MemoryTotal: 10000,
 	})
-	mockMetricCache.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(fakeResult).AnyTimes()
+
+	mockMetricCache.EXPECT().Get(koordletutil.GPUDeviceType).Return(gpuDeviceInfo, true)
 	r.reportDevice()
 
 	expectedDevices = append(expectedDevices, schedulingv1alpha1.DeviceInfo{
 		UUID:   "3",
-		Minor:  pointer.Int32(2),
+		Minor:  pointer.Int32(3),
 		Type:   schedulingv1alpha1.GPU,
 		Health: true,
 		Resources: map[corev1.ResourceName]resource.Quantity{

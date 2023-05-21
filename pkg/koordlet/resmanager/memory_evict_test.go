@@ -23,6 +23,15 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler"
+	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
@@ -33,23 +42,13 @@ import (
 	"k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	critesting "k8s.io/cri-api/pkg/apis/testing"
 	"k8s.io/utils/pointer"
-
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
-	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler"
-	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
 
 func Test_memoryEvict(t *testing.T) {
 	type args struct {
 		name               string
 		node               *corev1.Node
-		nodeMetric         *metriccache.NodeResourceMetric
+		nodeMemUsed        resource.Quantity
 		podMetrics         []*metriccache.PodResourceMetric
 		pods               []*corev1.Pod
 		thresholdConfig    *slov1alpha1.ResourceThresholdStrategy
@@ -71,22 +70,14 @@ func Test_memoryEvict(t *testing.T) {
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{MemoryEvictThresholdPercent: pointer.Int64(80)},
 		},
 		{
-			name: "test_node_nil",
-			nodeMetric: &metriccache.NodeResourceMetric{
-				MemoryUsed: metriccache.MemoryMetric{
-					MemoryWithoutCache: resource.MustParse("115G"),
-				},
-			},
+			name:            "test_node_nil",
+			nodeMemUsed:     resource.MustParse("115G"),
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{MemoryEvictThresholdPercent: pointer.Int64(80)},
 		},
 		{
-			name: "test_node_memorycapacity_invalid",
-			node: getNode("80", "0"),
-			nodeMetric: &metriccache.NodeResourceMetric{
-				MemoryUsed: metriccache.MemoryMetric{
-					MemoryWithoutCache: resource.MustParse("115G"),
-				},
-			},
+			name:            "test_node_memorycapacity_invalid",
+			node:            getNode("80", "0"),
+			nodeMemUsed:     resource.MustParse("115G"),
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{MemoryEvictThresholdPercent: pointer.Int64(80)},
 		},
 		{
@@ -100,11 +91,7 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
-			nodeMetric: &metriccache.NodeResourceMetric{
-				MemoryUsed: metriccache.MemoryMetric{
-					MemoryWithoutCache: resource.MustParse("80G"),
-				},
-			},
+			nodeMemUsed: resource.MustParse("80G"),
 			podMetrics: []*metriccache.PodResourceMetric{
 				createPodResourceMetric("test_lsr_pod", "30G"),
 				createPodResourceMetric("test_ls_pod", "20G"),
@@ -138,11 +125,7 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
-			nodeMetric: &metriccache.NodeResourceMetric{
-				MemoryUsed: metriccache.MemoryMetric{
-					MemoryWithoutCache: resource.MustParse("115G"),
-				},
-			},
+			nodeMemUsed: resource.MustParse("115G"),
 			podMetrics: []*metriccache.PodResourceMetric{
 				createPodResourceMetric("test_lsr_pod", "40G"),
 				createPodResourceMetric("test_ls_pod", "30G"),
@@ -177,11 +160,7 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
-			nodeMetric: &metriccache.NodeResourceMetric{
-				MemoryUsed: metriccache.MemoryMetric{
-					MemoryWithoutCache: resource.MustParse("115G"),
-				},
-			},
+			nodeMemUsed: resource.MustParse("115G"),
 			podMetrics: []*metriccache.PodResourceMetric{
 				createPodResourceMetric("test_lsr_pod", "40G"),
 				createPodResourceMetric("test_ls_pod", "30G"),
@@ -216,11 +195,7 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
-			nodeMetric: &metriccache.NodeResourceMetric{
-				MemoryUsed: metriccache.MemoryMetric{
-					MemoryWithoutCache: resource.MustParse("115G"),
-				},
-			},
+			nodeMemUsed: resource.MustParse("115G"),
 			podMetrics: []*metriccache.PodResourceMetric{
 				createPodResourceMetric("test_lsr_pod", "40G"),
 				createPodResourceMetric("test_ls_pod", "30G"),
@@ -255,11 +230,7 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
-			nodeMetric: &metriccache.NodeResourceMetric{
-				MemoryUsed: metriccache.MemoryMetric{
-					MemoryWithoutCache: resource.MustParse("115G"),
-				},
-			},
+			nodeMemUsed: resource.MustParse("115G"),
 			podMetrics: []*metriccache.PodResourceMetric{
 				createPodResourceMetric("test_lsr_pod", "40G"),
 				createPodResourceMetric("test_ls_pod", "30G"),
@@ -295,11 +266,7 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
-			nodeMetric: &metriccache.NodeResourceMetric{
-				MemoryUsed: metriccache.MemoryMetric{
-					MemoryWithoutCache: resource.MustParse("115G"),
-				},
-			},
+			nodeMemUsed: resource.MustParse("115G"),
 			podMetrics: []*metriccache.PodResourceMetric{
 				createPodResourceMetric("test_lsr_pod", "40G"),
 				createPodResourceMetric("test_ls_pod", "30G"),
@@ -335,11 +302,7 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
-			nodeMetric: &metriccache.NodeResourceMetric{
-				MemoryUsed: metriccache.MemoryMetric{
-					MemoryWithoutCache: resource.MustParse("115G"),
-				},
-			},
+			nodeMemUsed: resource.MustParse("115G"),
 			podMetrics: []*metriccache.PodResourceMetric{
 				createPodResourceMetric("test_lsr_pod", "40G"),
 				createPodResourceMetric("test_ls_pod", "30G"),
@@ -370,15 +333,27 @@ func Test_memoryEvict(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctl := gomock.NewController(t)
 			defer ctl.Finish()
-
+			if tt.name == "test_memoryevict_MemoryEvictThresholdPercent_sort_by_priority_and_usage_82" {
+				t.Log("00000")
+			}
 			mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
 			mockStatesInformer.EXPECT().GetAllPods().Return(getPodMetas(tt.pods)).AnyTimes()
 			mockStatesInformer.EXPECT().GetNode().Return(tt.node).AnyTimes()
 			mockStatesInformer.EXPECT().GetNodeSLO().Return(getNodeSLOByThreshold(tt.thresholdConfig)).AnyTimes()
 
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
-			mockNodeQueryResult := metriccache.NodeResourceQueryResult{Metric: tt.nodeMetric}
-			mockMetricCache.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(mockNodeQueryResult).AnyTimes()
+			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
+			nodeMemQueryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
+			assert.NoError(t, err)
+			result := mock_metriccache.NewMockAggregateResult(ctl)
+			result.EXPECT().Value(gomock.Any()).Return(float64(tt.nodeMemUsed.Value()), nil).AnyTimes()
+			result.EXPECT().Count().Return(1).AnyTimes()
+			mockResultFactory.EXPECT().New(nodeMemQueryMeta).Return(result).AnyTimes()
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
+			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
+			mockQuerier.EXPECT().Query(nodeMemQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
 			for _, podMetric := range tt.podMetrics {
 				mockPodQueryResult := metriccache.PodResourceQueryResult{Metric: podMetric}
 				mockMetricCache.EXPECT().GetPodResourceMetric(&podMetric.PodUID, gomock.Any()).Return(mockPodQueryResult).AnyTimes()

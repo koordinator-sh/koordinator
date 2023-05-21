@@ -91,12 +91,7 @@ func (m *MemoryEvictor) memoryEvict() {
 		return
 	}
 
-	nodeMetric, podMetrics := m.resManager.collectNodeAndPodMetricLast()
-	if nodeMetric == nil {
-		klog.Warningf("skip memory evict, NodeMetric is nil")
-		return
-	}
-
+	podMetrics := m.resManager.collectPodMetricLast()
 	node := m.resManager.statesInformer.GetNode()
 	if node == nil {
 		klog.Warningf("skip memory evict, Node %v is nil", m.resManager.nodeName)
@@ -109,7 +104,18 @@ func (m *MemoryEvictor) memoryEvict() {
 		return
 	}
 
-	nodeMemoryUsage := nodeMetric.MemoryUsed.MemoryWithoutCache.Value() * 100 / memoryCapacity
+	queryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
+	if err != nil {
+		klog.Warningf("skip memory evict, get node query failed, error: %v", err)
+		return
+	}
+
+	nodeMemoryUsed, err := m.resManager.collectorNodeMetricLast(queryMeta)
+	if err != nil {
+		klog.Warningf("skip memory evict, get node metrics error: %v", err)
+		return
+	}
+	nodeMemoryUsage := int64(nodeMemoryUsed) * 100 / memoryCapacity
 	if nodeMemoryUsage < *thresholdPercent {
 		klog.V(5).Infof("skip memory evict, node memory usage(%v) is below threshold(%v)", nodeMemoryUsage, *thresholdPercent)
 		return
@@ -117,7 +123,7 @@ func (m *MemoryEvictor) memoryEvict() {
 
 	klog.Infof("node(%v) MemoryUsage(%v): %.2f, evictThresholdUsage: %.2f, evictLowerUsage: %.2f",
 		m.resManager.nodeName,
-		nodeMetric.MemoryUsed.MemoryWithoutCache.Value(),
+		nodeMemoryUsed,
 		float64(nodeMemoryUsage)/100,
 		float64(*thresholdPercent)/100,
 		float64(lowerPercent)/100,

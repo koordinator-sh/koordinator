@@ -51,6 +51,7 @@ type AggregateResult interface {
 	MetricResult
 	Count() int
 	Value(t AggregationType) (float64, error)
+	TimeRangeDuration() time.Duration
 }
 
 var _ AggregateResult = &aggregateResult{}
@@ -137,6 +138,14 @@ func (r *aggregateResult) Count() int {
 func (r *aggregateResult) Value(t AggregationType) (float64, error) {
 	aggregateFunc := getAggregateFunc(t)
 	return aggregateFunc(r.points, pointsDefaultAggregateParam)
+}
+
+// TimeRangeDuration returns the time duration of metric series
+func (r *aggregateResult) TimeRangeDuration() time.Duration {
+	if r != nil {
+		return r.metricsEnd.Sub(r.metricStart)
+	}
+	return time.Duration(0)
 }
 
 var pointsDefaultAggregateParam = AggregateParam{

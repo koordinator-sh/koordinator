@@ -73,8 +73,8 @@ func (q *QueryParam) FillDefaultValue() {
 type MetricCache interface {
 	Run(stopCh <-chan struct{}) error
 	TSDBStorage
+	KVStorage
 
-	GetNodeResourceMetric(param *QueryParam) NodeResourceQueryResult
 	GetPodResourceMetric(podUID *string, param *QueryParam) PodResourceQueryResult
 	GetContainerResourceMetric(containerID *string, param *QueryParam) ContainerResourceQueryResult
 	GetNodeCPUInfo(param *QueryParam) (*NodeCPUInfo, error)
@@ -96,6 +96,7 @@ type metricCache struct {
 	config *Config
 	db     *storage
 	TSDBStorage
+	KVStorage
 }
 
 func NewMetricCache(cfg *Config) (MetricCache, error) {
@@ -107,10 +108,12 @@ func NewMetricCache(cfg *Config) (MetricCache, error) {
 	if err != nil {
 		return nil, err
 	}
+	kvdb := NewMemoryStorage()
 	return &metricCache{
 		config:      cfg,
 		db:          database,
 		TSDBStorage: tsdb,
+		KVStorage:   kvdb,
 	}, nil
 }
 
@@ -122,72 +125,6 @@ func (m *metricCache) Run(stopCh <-chan struct{}) error {
 	}, time.Duration(m.config.MetricGCIntervalSeconds)*time.Second, stopCh)
 
 	return nil
-}
-
-func (m *metricCache) GetNodeResourceMetric(param *QueryParam) NodeResourceQueryResult {
-	result := NodeResourceQueryResult{}
-	if param == nil || param.Start == nil || param.End == nil {
-		result.Error = fmt.Errorf("node query parameters are illegal %v", param)
-		return result
-	}
-	metrics, err := m.db.GetNodeResourceMetric(param.Start, param.End)
-	if err != nil {
-		result.Error = fmt.Errorf("get node resource metric failed, query params %v, error %v", param, err)
-		return result
-	}
-	if len(metrics) == 0 {
-		result.Metric = &NodeResourceMetric{}
-		return result
-	}
-
-	aggregateFunc := getAggregateFunc(param.Aggregate)
-	cpuUsed, err := aggregateFunc(metrics, AggregateParam{ValueFieldName: "CPUUsedCores", TimeFieldName: "Timestamp"})
-	if err != nil {
-		result.Error = fmt.Errorf("get node aggregate CPUUsedCores failed, metrics %v, error %v", metrics, err)
-		return result
-	}
-	memoryUsed, err := aggregateFunc(metrics, AggregateParam{ValueFieldName: "MemoryUsedBytes", TimeFieldName: "Timestamp"})
-	if err != nil {
-		result.Error = fmt.Errorf("get node aggregate MemoryUsedBytes failed, metrics %v, error %v", metrics, err)
-		return result
-	}
-
-	// gpu metrics time series.
-	// m.GPUs is a slice.
-	gpuUsagesByTime := make([][]gpuResourceMetric, 0)
-	for _, m := range metrics {
-		if len(m.GPUs) == 0 {
-			continue
-		}
-		gpuUsagesByTime = append(gpuUsagesByTime, m.GPUs)
-	}
-
-	var aggregateGPUMetrics []GPUMetric
-	if len(gpuUsagesByTime) > 0 {
-		aggregateGPUMetrics, err = m.aggregateGPUUsages(gpuUsagesByTime, aggregateFunc)
-		if err != nil {
-			result.Error = fmt.Errorf("get node aggregate GPUMetric failed, metrics %v, error %v", metrics, err)
-			return result
-		}
-	}
-
-	result.AggregateInfo, err = generateMetricAggregateInfo(metrics)
-	if err != nil {
-		result.Error = err
-		return result
-	}
-
-	result.Metric = &NodeResourceMetric{
-		CPUUsed: CPUMetric{
-			CPUUsed: *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI),
-		},
-		MemoryUsed: MemoryMetric{
-			MemoryWithoutCache: *resource.NewQuantity(int64(memoryUsed), resource.BinarySI),
-		},
-		GPUs: aggregateGPUMetrics,
-	}
-
-	return result
 }
 
 func (m *metricCache) GetPodResourceMetric(podUID *string, param *QueryParam) PodResourceQueryResult {

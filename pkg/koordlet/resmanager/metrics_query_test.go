@@ -17,12 +17,12 @@ limitations under the License.
 package resmanager
 
 import (
-	"testing"
-	"time"
-
 	"github.com/golang/mock/gomock"
+	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"testing"
+	"time"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
@@ -30,127 +30,27 @@ import (
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 )
 
-func Test_collectNodeMetricsAvg(t *testing.T) {
-	now := time.Now()
-	timeNow = func() time.Time {
-		return now // Some time that you need
-	}
-	type nodeMetric struct {
-		timestamp   time.Time
-		nodeResUsed *metriccache.NodeResourceMetric
-	}
-	type args struct {
-		name             string
-		nodeMetrics      []*nodeMetric
-		windowSize       int64
-		expectNodeMetric *metriccache.NodeResourceMetric
-	}
-
-	tests := []args{
-		{
-			name:             "test no metrics in db",
-			windowSize:       4,
-			expectNodeMetric: &metriccache.NodeResourceMetric{},
-		},
-		{
-			name: "test windowSize < dataInterval",
-			nodeMetrics: []*nodeMetric{
-				{
-					timestamp: time.Now().Add(-3 * time.Second),
-					nodeResUsed: &metriccache.NodeResourceMetric{
-						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("14")},
-						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("60G")},
-					},
-				},
-				{
-					timestamp: time.Now().Add(-1 * time.Second),
-					nodeResUsed: &metriccache.NodeResourceMetric{
-						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("16")},
-						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("70G")},
-					},
-				},
-			},
-			windowSize:       1,
-			expectNodeMetric: &metriccache.NodeResourceMetric{},
-		},
-		{
-			name: "test windowSize > dataInterval",
-			nodeMetrics: []*nodeMetric{
-				{
-					timestamp: time.Now().Add(-7 * time.Second),
-					nodeResUsed: &metriccache.NodeResourceMetric{
-						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("10")},
-						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("40G")},
-					},
-				},
-				{
-					timestamp: time.Now().Add(-5 * time.Second),
-					nodeResUsed: &metriccache.NodeResourceMetric{
-						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("12")},
-						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("50G")},
-					},
-				},
-				{
-					timestamp: time.Now().Add(-3 * time.Second),
-					nodeResUsed: &metriccache.NodeResourceMetric{
-						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("14")},
-						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("60G")},
-					},
-				},
-				{
-					timestamp: time.Now().Add(-1 * time.Second),
-					nodeResUsed: &metriccache.NodeResourceMetric{
-						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("16")},
-						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("70G")},
-					},
-				},
-			},
-			windowSize: 4,
-			expectNodeMetric: &metriccache.NodeResourceMetric{
-				CPUUsed:    metriccache.CPUMetric{CPUUsed: *resource.NewMilliQuantity(15000, resource.DecimalSI)},
-				MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: *resource.NewQuantity(65000000000, resource.BinarySI)},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			metricCache, _ := metriccache.NewCacheNotShareMetricCache(&metriccache.Config{MetricGCIntervalSeconds: 1, MetricExpireSeconds: 1})
-			for _, nodeMetric := range tt.nodeMetrics {
-				_ = metricCache.InsertNodeResourceMetric(nodeMetric.timestamp, nodeMetric.nodeResUsed)
-			}
-			resmanager := &resmanager{metricCache: metricCache}
-			queryResult := resmanager.collectNodeMetricsAvg(tt.windowSize)
-			gotNodeMetric := queryResult.Metric
-			assert.Equal(t, tt.expectNodeMetric, gotNodeMetric)
-		})
-	}
-}
-
-func Test_collectNodeAndPodMetricLast(t *testing.T) {
+func Test_collectPodMetricLast(t *testing.T) {
 	now := time.Now()
 	timeNow = func() time.Time {
 		return now // Some time that you need
 	}
 	type metricInfos struct {
-		timestamp   time.Time
-		nodeResUsed *metriccache.NodeResourceMetric
-		podResUsed  *metriccache.PodResourceMetric
+		timestamp  time.Time
+		podResUsed *metriccache.PodResourceMetric
 	}
 	type args struct {
-		name             string
-		metricInfos      []*metricInfos
-		pod              *statesinformer.PodMeta
-		expectNodeMetric *metriccache.NodeResourceMetric
-		expectPodMetric  *metriccache.PodResourceMetric
+		name            string
+		metricInfos     []*metricInfos
+		pod             *statesinformer.PodMeta
+		expectPodMetric *metriccache.PodResourceMetric
 	}
 
 	tests := []args{
 		{
-			name:             "test no metrics in db",
-			pod:              &statesinformer.PodMeta{Pod: createTestPod(extension.QoSLSR, "test_pod")},
-			expectNodeMetric: &metriccache.NodeResourceMetric{},
-			expectPodMetric:  nil,
+			name:            "test no metrics in db",
+			pod:             &statesinformer.PodMeta{Pod: createTestPod(extension.QoSLSR, "test_pod")},
+			expectPodMetric: nil,
 		},
 		{
 			name: "test normal",
@@ -158,10 +58,6 @@ func Test_collectNodeAndPodMetricLast(t *testing.T) {
 			metricInfos: []*metricInfos{
 				{
 					timestamp: time.Now().Add(-3 * time.Second),
-					nodeResUsed: &metriccache.NodeResourceMetric{
-						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("14")},
-						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("60G")},
-					},
 					podResUsed: &metriccache.PodResourceMetric{
 						PodUID:     "test_pod",
 						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("14")},
@@ -170,20 +66,12 @@ func Test_collectNodeAndPodMetricLast(t *testing.T) {
 				},
 				{
 					timestamp: time.Now().Add(-1 * time.Second),
-					nodeResUsed: &metriccache.NodeResourceMetric{
-						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("16")},
-						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("70G")},
-					},
 					podResUsed: &metriccache.PodResourceMetric{
 						PodUID:     "test_pod",
 						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("16")},
 						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("70G")},
 					},
 				},
-			},
-			expectNodeMetric: &metriccache.NodeResourceMetric{
-				CPUUsed:    metriccache.CPUMetric{CPUUsed: *resource.NewMilliQuantity(16000, resource.DecimalSI)},
-				MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: *resource.NewQuantity(70000000000, resource.BinarySI)},
 			},
 			expectPodMetric: &metriccache.PodResourceMetric{
 				PodUID:     "test_pod",
@@ -197,7 +85,6 @@ func Test_collectNodeAndPodMetricLast(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			metricCache, _ := metriccache.NewCacheNotShareMetricCache(&metriccache.Config{MetricGCIntervalSeconds: 60, MetricExpireSeconds: 60})
 			for _, metricInfo := range tt.metricInfos {
-				_ = metricCache.InsertNodeResourceMetric(metricInfo.timestamp, metricInfo.nodeResUsed)
 				_ = metricCache.InsertPodResourceMetric(metricInfo.timestamp, metricInfo.podResUsed)
 			}
 
@@ -207,13 +94,99 @@ func Test_collectNodeAndPodMetricLast(t *testing.T) {
 			mockstatesinformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{tt.pod}).AnyTimes()
 
 			resmanager := &resmanager{metricCache: metricCache, statesInformer: mockstatesinformer, collectResUsedIntervalSeconds: 60}
-			gotNodeMetric, gotPodMetrics := resmanager.collectNodeAndPodMetricLast()
-			assert.Equal(t, tt.expectNodeMetric, gotNodeMetric)
+			gotPodMetrics := resmanager.collectPodMetricLast()
 			if tt.expectPodMetric == nil {
 				assert.True(t, len(gotPodMetrics) == 0)
 			} else {
 				assert.Equal(t, tt.expectPodMetric, gotPodMetrics[0])
 			}
+		})
+	}
+}
+
+func Test_resmanager_collectorNodeMetricLast(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	cpuQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
+	assert.NoError(t, err)
+	memQueryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
+	assert.NoError(t, err)
+
+	type fields struct {
+		metricCache func(ctrl *gomock.Controller) metriccache.MetricCache
+	}
+	type args struct {
+		queryMeta metriccache.MetricMeta
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    float64
+		wantErr bool
+	}{
+		{
+			name: "cpu query",
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mockMetricCache := mock_metriccache.NewMockMetricCache(ctrl)
+					mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctrl)
+					metriccache.DefaultAggregateResultFactory = mockResultFactory
+					mockQuerier := mock_metriccache.NewMockQuerier(ctrl)
+					mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+					cpuResult := mock_metriccache.NewMockAggregateResult(ctrl)
+					cpuResult.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(16), nil).AnyTimes()
+					cpuResult.EXPECT().Count().Return(1).AnyTimes()
+					mockResultFactory.EXPECT().New(cpuQueryMeta).Return(cpuResult).AnyTimes()
+					mockQuerier.EXPECT().Query(cpuQueryMeta, gomock.Any(), cpuResult).SetArg(2, *cpuResult).Return(nil).AnyTimes()
+
+					return mockMetricCache
+				},
+			},
+			args: args{
+				queryMeta: cpuQueryMeta,
+			},
+			want:    16,
+			wantErr: false,
+		},
+		{
+			name: "memory query",
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mockMetricCache := mock_metriccache.NewMockMetricCache(ctrl)
+					mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctrl)
+					metriccache.DefaultAggregateResultFactory = mockResultFactory
+					mockQuerier := mock_metriccache.NewMockQuerier(ctrl)
+					mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+					memResult := mock_metriccache.NewMockAggregateResult(ctrl)
+					memResult.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(10), nil).AnyTimes()
+					memResult.EXPECT().Count().Return(1).AnyTimes()
+					mockResultFactory.EXPECT().New(memQueryMeta).Return(memResult).AnyTimes()
+					mockQuerier.EXPECT().Query(memQueryMeta, gomock.Any(), memResult).SetArg(2, *memResult).Return(nil).AnyTimes()
+
+					return mockMetricCache
+				},
+			},
+			args: args{
+				queryMeta: memQueryMeta,
+			},
+			want:    10,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			r := &resmanager{metricCache: tt.fields.metricCache(ctrl), collectResUsedIntervalSeconds: 60}
+			got, err := r.collectorNodeMetricLast(tt.args.queryMeta)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.Equalf(t, tt.want, got, "collectorNodeMetricLast(%v)", tt.args.queryMeta)
 		})
 	}
 }
