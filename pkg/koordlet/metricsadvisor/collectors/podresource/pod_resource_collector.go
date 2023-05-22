@@ -17,6 +17,7 @@ limitations under the License.
 package podresource
 
 import (
+	"fmt"
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
@@ -32,6 +33,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -44,6 +46,7 @@ type podResourceCollector struct {
 	metricDB             metriccache.MetricCache
 	statesInformer       statesinformer.StatesInformer
 	cgroupReader         resourceexecutor.CgroupReader
+	podFilter            framework.PodFilter
 	lastPodCPUStat       *gocache.Cache
 	lastContainerCPUStat *gocache.Cache
 
@@ -52,16 +55,23 @@ type podResourceCollector struct {
 
 func New(opt *framework.Options) framework.Collector {
 	collectInterval := opt.Config.CollectResUsedInterval
+	podFilter := framework.DefaultPodFilter
+	if filter, ok := opt.PodFilters[CollectorName]; ok {
+		podFilter = filter
+	}
 	return &podResourceCollector{
 		collectInterval:      collectInterval,
 		started:              atomic.NewBool(false),
 		metricDB:             opt.MetricCache,
 		statesInformer:       opt.StatesInformer,
 		cgroupReader:         opt.CgroupReader,
+		podFilter:            podFilter,
 		lastPodCPUStat:       gocache.New(collectInterval*framework.ContextExpiredRatio, framework.CleanupInterval),
 		lastContainerCPUStat: gocache.New(collectInterval*framework.ContextExpiredRatio, framework.CleanupInterval),
 	}
 }
+
+var _ framework.PodCollector = &podResourceCollector{}
 
 func (p *podResourceCollector) Enabled() bool {
 	return true
@@ -86,12 +96,23 @@ func (p *podResourceCollector) Started() bool {
 	return p.started.Load()
 }
 
+func (p *podResourceCollector) FilterPod(meta *statesinformer.PodMeta) (bool, string) {
+	return p.podFilter.FilterPod(meta)
+}
+
 func (p *podResourceCollector) collectPodResUsed() {
 	klog.V(6).Info("start collectPodResUsed")
 	podMetas := p.statesInformer.GetAllPods()
+	count := 0
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
+		podKey := util.GetPodKey(pod)
+		if filtered, msg := p.FilterPod(meta); filtered {
+			klog.V(5).Infof("skip collect pod %s, reason: %s", podKey, msg)
+			continue
+		}
+
 		collectTime := time.Now()
 		podCgroupDir := meta.CgroupDir
 
@@ -100,11 +121,10 @@ func (p *podResourceCollector) collectPodResUsed() {
 		if err0 != nil || err1 != nil {
 			// higher verbosity for probably non-running pods
 			if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
-				klog.V(6).Infof("failed to collect non-running pod usage for %s/%s, CPU err: %s, Memory "+
-					"err: %s", pod.Namespace, pod.Name, err0, err1)
+				klog.V(6).Infof("failed to collect non-running pod usage for %s, CPU err: %s, Memory err: %s",
+					podKey, err0, err1)
 			} else {
-				klog.Warningf("failed to collect pod usage for %s/%s, CPU err: %s, Memory err: %s",
-					pod.Namespace, pod.Name, err0, err1)
+				klog.Warningf("failed to collect pod usage for %s, CPU err: %s, Memory err: %s", podKey, err0, err1)
 			}
 			continue
 		}
@@ -116,7 +136,7 @@ func (p *podResourceCollector) collectPodResUsed() {
 		}, gocache.DefaultExpiration)
 		klog.V(6).Infof("last pod cpu stat size in pod resource collector cache %v", p.lastPodCPUStat.ItemCount())
 		if !ok {
-			klog.Infof("ignore the first cpu stat collection for pod %s/%s", pod.Namespace, pod.Name)
+			klog.V(4).Infof("ignore the first cpu stat collection for pod %s", podKey)
 			continue
 		}
 		lastCPUStat := lastCPUStatValue.(framework.CPUStat)
@@ -138,42 +158,43 @@ func (p *podResourceCollector) collectPodResUsed() {
 		}
 		for deviceName, deviceCollector := range p.deviceCollectors {
 			if err := deviceCollector.FillPodMetric(&podMetric, meta.CgroupDir, pod.Status.ContainerStatuses); err != nil {
-				klog.Warningf("fill pod %s/%s/%s device usage failed for %v, error: %v",
-					pod.Namespace, pod.Name, deviceName, err)
+				klog.Warningf("fill pod %s device usage failed for %v, error: %v", podKey, deviceName, err)
 			}
 		}
 
-		klog.V(6).Infof("collect pod %s/%s, uid %s finished, metric %+v",
-			meta.Pod.Namespace, meta.Pod.Name, meta.Pod.UID, podMetric)
+		klog.V(6).Infof("collect pod %s, uid %s finished, metric %+v", podKey, pod.UID, podMetric)
 
 		if err := p.metricDB.InsertPodResourceMetric(collectTime, &podMetric); err != nil {
-			klog.Errorf("insert pod %s/%s, uid %s resource metric failed, metric %v, err %v",
-				pod.Namespace, pod.Name, uid, podMetric, err)
+			klog.Errorf("insert pod %s, uid %s resource metric failed, metric %+v, err %v",
+				podKey, uid, podMetric, err)
+		} else {
+			count++
 		}
 		p.collectContainerResUsed(meta)
 	}
 
 	// update collect time
 	p.started.Store(true)
-	klog.Infof("collectPodResUsed finished, pod num %d", len(podMetas))
+	klog.V(4).Infof("collectPodResUsed finished, pod num %d, collected %d", len(podMetas), count)
 }
 
 func (p *podResourceCollector) collectContainerResUsed(meta *statesinformer.PodMeta) {
 	klog.V(6).Infof("start collectContainerResUsed")
 	pod := meta.Pod
+	count := 0
 	for i := range pod.Status.ContainerStatuses {
 		containerStat := &pod.Status.ContainerStatuses[i]
+		containerKey := fmt.Sprintf("%s/%s/%s", pod.Namespace, pod.Name, containerStat.Name)
 		collectTime := time.Now()
 		if len(containerStat.ContainerID) == 0 {
-			klog.V(5).Infof("container %s/%s/%s id is empty, maybe not ready, skip this round",
-				pod.Namespace, pod.Name, containerStat.Name)
+			klog.V(5).Infof("container %s id is empty, maybe not ready, skip this round", containerKey)
 			continue
 		}
 
 		containerCgroupDir, err := koordletutil.GetContainerCgroupParentDir(meta.CgroupDir, containerStat)
 		if err != nil {
-			klog.V(4).Infof("failed to collect container usage for %s/%s/%s, cannot get container cgroup, err: %s",
-				pod.Namespace, pod.Name, containerStat.Name, err)
+			klog.V(4).Infof("failed to collect container usage for %s, cannot get container cgroup, err: %s",
+				containerKey, err)
 			continue
 		}
 
@@ -183,11 +204,11 @@ func (p *podResourceCollector) collectContainerResUsed(meta *statesinformer.PodM
 		if err0 != nil || err1 != nil {
 			// higher verbosity for probably non-running pods
 			if containerStat.State.Running == nil {
-				klog.V(6).Infof("failed to collect non-running container usage for %s/%s/%s, CPU err: %s, Memory err: %s",
-					pod.Namespace, pod.Name, containerStat.Name, err0, err1)
+				klog.V(6).Infof("failed to collect non-running container usage for %s, CPU err: %s, Memory err: %s",
+					containerKey, err0, err1)
 			} else {
-				klog.V(4).Infof("failed to collect container usage for %s/%s/%s, CPU err: %s, Memory err: %s",
-					pod.Namespace, pod.Name, containerStat.Name, err0, err1)
+				klog.V(4).Infof("failed to collect container usage for %s, CPU err: %s, Memory err: %s",
+					containerKey, err0, err1)
 			}
 			continue
 		}
@@ -199,8 +220,7 @@ func (p *podResourceCollector) collectContainerResUsed(meta *statesinformer.PodM
 		}, gocache.DefaultExpiration)
 		klog.V(6).Infof("last container cpu stat size in pod resource collector cache %v", p.lastPodCPUStat.ItemCount())
 		if !ok {
-			klog.V(5).Infof("ignore the first cpu stat collection for container %s/%s/%s",
-				pod.Namespace, pod.Name, containerStat.Name)
+			klog.V(5).Infof("ignore the first cpu stat collection for container %s", containerKey)
 			continue
 		}
 		lastCPUStat := lastCPUStatValue.(framework.CPUStat)
@@ -223,17 +243,17 @@ func (p *podResourceCollector) collectContainerResUsed(meta *statesinformer.PodM
 
 		for deviceName, deviceCollector := range p.deviceCollectors {
 			if err := deviceCollector.FillContainerMetric(&containerMetric, meta.CgroupDir, containerStat); err != nil {
-				klog.Warningf("fill container %s/%s/%s device usage failed for %v, error: %v",
-					pod.Namespace, pod.Name, containerStat.Name, deviceName, err)
+				klog.Warningf("fill container %s device usage failed for %v, error: %v", containerKey, deviceName, err)
 			}
 		}
 
-		klog.V(6).Infof("collect container %s/%s/%s, id %s finished, metric %+v",
-			meta.Pod.Namespace, meta.Pod.Name, containerStat.Name, meta.Pod.UID, containerMetric)
+		klog.V(6).Infof("collect container %s, id %s finished, metric %+v", containerKey, pod.UID, containerMetric)
 		if err := p.metricDB.InsertContainerResourceMetric(collectTime, &containerMetric); err != nil {
-			klog.Errorf("insert container resource metric error: %v", err)
+			klog.Errorf("insert container %s resource metric error: %v", containerKey, err)
+		} else {
+			count++
 		}
 	}
-	klog.V(5).Infof("collectContainerResUsed for pod %s/%s finished, container num %d",
-		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses))
+	klog.V(5).Infof("collectContainerResUsed for pod %s/%s finished, container num %d, collected %d",
+		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses), count)
 }

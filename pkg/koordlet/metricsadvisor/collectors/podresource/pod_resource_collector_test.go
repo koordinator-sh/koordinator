@@ -49,6 +49,7 @@ func Test_collector_collectPodResUsed(t *testing.T) {
 			UID:       "xxxxxxxx",
 		},
 		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
 			ContainerStatuses: []corev1.ContainerStatus{
 				{
 					Name:        "test-container",
@@ -60,7 +61,25 @@ func Test_collector_collectPodResUsed(t *testing.T) {
 			},
 		},
 	}
+	testFailedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-failed-pod",
+			Namespace: "test",
+			UID:       "yyyyyy",
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodFailed,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:        "test-container",
+					ContainerID: testContainerID,
+				},
+			},
+		},
+	}
 	type fields struct {
+		podFilterOption       framework.PodFilter
+		getPodMetas           []*statesinformer.PodMeta
 		initPodLastStat       func(lastState *gocache.Cache)
 		initContainerLastStat func(lastState *gocache.Cache)
 		SetSysUtil            func(helper *system.FileTestUtil)
@@ -77,6 +96,13 @@ func Test_collector_collectPodResUsed(t *testing.T) {
 		{
 			name: "cgroups v1",
 			fields: fields{
+				podFilterOption: framework.DefaultPodFilter,
+				getPodMetas: []*statesinformer.PodMeta{
+					{
+						CgroupDir: testPodMetaDir,
+						Pod:       testPod,
+					},
+				},
 				initPodLastStat: func(lastState *gocache.Cache) {
 					lastState.Set(string(testPod.UID), framework.CPUStat{
 						CPUUsage:  0,
@@ -124,6 +150,13 @@ total_unevictable 0
 		{
 			name: "cgroups v2",
 			fields: fields{
+				podFilterOption: framework.DefaultPodFilter,
+				getPodMetas: []*statesinformer.PodMeta{
+					{
+						CgroupDir: testPodMetaDir,
+						Pod:       testPod,
+					},
+				},
 				initPodLastStat: func(lastState *gocache.Cache) {
 					lastState.Set(string(testPod.UID), framework.CPUStat{
 						CPUUsage:  0,
@@ -179,6 +212,63 @@ unevictable 0
 				containerResourceMetric: true,
 			},
 		},
+		{
+			name: "cgroups v1, filter non-running pods",
+			fields: fields{
+				podFilterOption: &framework.TerminatedPodFilter{},
+				getPodMetas: []*statesinformer.PodMeta{
+					{
+						CgroupDir: testPodMetaDir,
+						Pod:       testPod,
+					},
+					{
+						Pod: testFailedPod,
+					},
+				},
+				initPodLastStat: func(lastState *gocache.Cache) {
+					lastState.Set(string(testPod.UID), framework.CPUStat{
+						CPUUsage:  0,
+						Timestamp: testNow.Add(-time.Second),
+					}, gocache.DefaultExpiration)
+				},
+				initContainerLastStat: func(lastState *gocache.Cache) {
+					lastState.Set(testContainerID, framework.CPUStat{
+						CPUUsage:  0,
+						Timestamp: testNow.Add(-time.Second),
+					}, gocache.DefaultExpiration)
+				},
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					helper.WriteCgroupFileContents(testPodParentDir, system.CPUAcctUsage, `
+1000000000
+`)
+					helper.WriteCgroupFileContents(testContainerParentDir, system.CPUAcctUsage, `
+1000000000
+`)
+					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, `
+total_cache 104857600
+total_rss 104857600
+total_inactive_anon 104857600
+total_active_anon 0
+total_inactive_file 104857600
+total_active_file 0
+total_unevictable 0
+`)
+					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, `
+total_cache 104857600
+total_rss 104857600
+total_inactive_anon 104857600
+total_active_anon 0
+total_inactive_file 104857600
+total_active_file 0
+total_unevictable 0
+`)
+				},
+			},
+			want: wantFields{
+				podResourceMetric:       true,
+				containerResourceMetric: true,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -194,10 +284,7 @@ unevictable 0
 			statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 			metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 			statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
-			statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{
-				CgroupDir: testPodMetaDir,
-				Pod:       testPod,
-			}}).Times(1)
+			statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).Times(1)
 
 			if tt.want.podResourceMetric {
 				metricCache.EXPECT().InsertPodResourceMetric(gomock.Any(), gomock.Not(nil)).Times(1)
@@ -213,6 +300,9 @@ unevictable 0
 				StatesInformer: statesInformer,
 				MetricCache:    metricCache,
 				CgroupReader:   resourceexecutor.NewCgroupReader(),
+				PodFilters: map[string]framework.PodFilter{
+					CollectorName: tt.fields.podFilterOption,
+				},
 			})
 			c := collector.(*podResourceCollector)
 			tt.fields.initPodLastStat(c.lastPodCPUStat)
