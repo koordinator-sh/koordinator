@@ -20,11 +20,13 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type podEventHandler struct {
@@ -45,14 +47,19 @@ func (h *podEventHandler) OnAdd(obj interface{}) {
 		return
 	}
 
-	reservationAllocated, err := apiext.GetReservationAllocated(pod)
-	if err != nil || reservationAllocated == nil || reservationAllocated.UID == "" {
-		return
-	}
-	h.cache.addPod(reservationAllocated.UID, pod)
+	h.updatePod(nil, pod)
 }
 
 func (h *podEventHandler) OnUpdate(oldObj, newObj interface{}) {
+	oldPod, ok := oldObj.(*corev1.Pod)
+	if !ok {
+		return
+	}
+	newPod, ok := newObj.(*corev1.Pod)
+	if !ok {
+		return
+	}
+	h.updatePod(oldPod, newPod)
 }
 
 func (h *podEventHandler) OnDelete(obj interface{}) {
@@ -66,7 +73,35 @@ func (h *podEventHandler) OnDelete(obj interface{}) {
 	if pod == nil {
 		return
 	}
+	h.deletePod(pod)
+}
 
+func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
+	if util.IsPodTerminated(newPod) {
+		h.deletePod(newPod)
+		return
+	}
+
+	var reservationUID types.UID
+	if oldPod != nil {
+		reservationAllocated, err := apiext.GetReservationAllocated(oldPod)
+		if err == nil && reservationAllocated != nil && reservationAllocated.UID != "" {
+			reservationUID = reservationAllocated.UID
+		}
+	}
+	if newPod != nil && reservationUID == "" {
+		reservationAllocated, err := apiext.GetReservationAllocated(newPod)
+		if err == nil && reservationAllocated != nil && reservationAllocated.UID != "" {
+			reservationUID = reservationAllocated.UID
+		}
+	}
+
+	if reservationUID != "" {
+		h.cache.updatePod(reservationUID, oldPod, newPod)
+	}
+}
+
+func (h *podEventHandler) deletePod(pod *corev1.Pod) {
 	reservationAllocated, err := apiext.GetReservationAllocated(pod)
 	if err != nil || reservationAllocated == nil || reservationAllocated.UID == "" {
 		return
