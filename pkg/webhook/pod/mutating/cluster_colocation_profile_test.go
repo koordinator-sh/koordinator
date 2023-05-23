@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -35,6 +36,14 @@ import (
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
+
+func SetRandIntnFnWhenTest(updatedRandIntnFn func(int) int) func() {
+	originalFn := randIntnFn
+	randIntnFn = updatedRandIntnFn
+	return func() {
+		randIntnFn = originalFn
+	}
+}
 
 func init() {
 	_ = configv1alpha1.AddToScheme(scheme.Scheme)
@@ -57,72 +66,12 @@ func newAdmissionRequest(op admissionv1.Operation, object, oldObject runtime.Raw
 }
 
 func TestClusterColocationProfileMutatingPod(t *testing.T) {
-	assert := assert.New(t)
-
-	client := fake.NewClientBuilder().Build()
-	decoder, _ := admission.NewDecoder(scheme.Scheme)
-	handler := &PodMutatingHandler{
-		Client:  client,
-		Decoder: decoder,
-	}
-
-	namespaceObj := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "default",
-			Labels: map[string]string{
-				"enable-koordinator-colocation": "true",
-			},
-		},
-	}
-	err := client.Create(context.TODO(), namespaceObj)
-	assert.NoError(err)
-
-	batchPriorityClass := &schedulingv1.PriorityClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "koordinator-batch",
-		},
-		Value: extension.PriorityBatchValueMax,
-	}
-	err = client.Create(context.TODO(), batchPriorityClass)
-	assert.NoError(err)
-
-	profile := &configv1alpha1.ClusterColocationProfile{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-profile",
-		},
-		Spec: configv1alpha1.ClusterColocationProfileSpec{
-			NamespaceSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"enable-koordinator-colocation": "true",
-				},
-			},
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"koordinator-colocation-pod": "true",
-				},
-			},
-			Labels: map[string]string{
-				"testLabelA": "valueA",
-			},
-			Annotations: map[string]string{
-				"testAnnotationA": "valueA",
-			},
-			SchedulerName:       "koordinator-scheduler",
-			QoSClass:            string(extension.QoSBE),
-			PriorityClassName:   "koordinator-batch",
-			KoordinatorPriority: pointer.Int32(1111),
-			Patch: runtime.RawExtension{
-				Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
-			},
-		},
-	}
-	err = client.Create(context.TODO(), profile)
-	assert.NoError(err)
-
 	testCases := []struct {
-		name     string
-		pod      *corev1.Pod
-		expected *corev1.Pod
+		name       string
+		pod        *corev1.Pod
+		expected   *corev1.Pod
+		percent    *int
+		randIntnFn func(int) int
 	}{
 		{
 			name: "mutating pod",
@@ -354,13 +303,501 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "mutating pod, percent 100",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+					Labels: map[string]string{
+						"koordinator-colocation-pod": "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "test-init-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+					SchedulerName: "nonExistSchedulerName",
+					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+				},
+			},
+			expected: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+					Labels: map[string]string{
+						"koordinator-colocation-pod": "true",
+						"testLabelA":                 "valueA",
+						"test-patch-label":           "patch-a",
+						extension.LabelPodQoS:        string(extension.QoSBE),
+						extension.LabelPodPriority:   "1111",
+					},
+					Annotations: map[string]string{
+						"testAnnotationA":       "valueA",
+						"test-patch-annotation": "patch-b",
+					},
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "test-init-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(500, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("1Gi"),
+								},
+								Requests: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(500, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+						extension.BatchMemory: resource.MustParse("2Gi"),
+					},
+					SchedulerName:     "koordinator-scheduler",
+					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					PriorityClassName: "koordinator-batch",
+				},
+			},
+			percent: pointer.Int(100),
+		},
+		{
+			name: "mutating pod, percent 0",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+					Labels: map[string]string{
+						"koordinator-colocation-pod": "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "test-init-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+					SchedulerName: "nonExistSchedulerName",
+					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+				},
+			},
+			expected: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+					Labels: map[string]string{
+						"koordinator-colocation-pod": "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "test-init-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(500, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("1Gi"),
+								},
+								Requests: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(500, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+						extension.BatchMemory: resource.MustParse("2Gi"),
+					},
+					SchedulerName: "nonExistSchedulerName",
+					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+				},
+			},
+			percent: pointer.Int(0),
+		},
+		{
+			name: "mutating pod, percent 50, rand=70",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+					Labels: map[string]string{
+						"koordinator-colocation-pod": "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "test-init-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+					SchedulerName: "nonExistSchedulerName",
+					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+				},
+			},
+			expected: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+					Labels: map[string]string{
+						"koordinator-colocation-pod": "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "test-init-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(500, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("1Gi"),
+								},
+								Requests: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(500, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+						extension.BatchMemory: resource.MustParse("2Gi"),
+					},
+					SchedulerName: "nonExistSchedulerName",
+					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+				},
+			},
+			percent: pointer.Int(50),
+			randIntnFn: func(i int) int {
+				return 70
+			},
+		},
+		{
+			name: "mutating pod, percent 50, rand=30",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+					Labels: map[string]string{
+						"koordinator-colocation-pod": "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "test-init-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+					SchedulerName: "nonExistSchedulerName",
+					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+				},
+			},
+			expected: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+					Labels: map[string]string{
+						"koordinator-colocation-pod": "true",
+						"testLabelA":                 "valueA",
+						"test-patch-label":           "patch-a",
+						extension.LabelPodQoS:        string(extension.QoSBE),
+						extension.LabelPodPriority:   "1111",
+					},
+					Annotations: map[string]string{
+						"testAnnotationA":       "valueA",
+						"test-patch-annotation": "patch-b",
+					},
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "test-init-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(500, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("1Gi"),
+								},
+								Requests: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(500, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+						extension.BatchMemory: resource.MustParse("2Gi"),
+					},
+					SchedulerName:     "koordinator-scheduler",
+					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					PriorityClassName: "koordinator-batch",
+				},
+			},
+			percent: pointer.Int(50),
+			randIntnFn: func(i int) int {
+				return 30
+			},
+		},
 	}
 
 	for _, tc := range testCases {
-		req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
-		err = handler.clusterColocationProfileMutatingPod(context.TODO(), req, tc.pod)
-		assert.NoError(err)
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
 
-		assert.Equal(tc.expected, tc.pod)
+			client := fake.NewClientBuilder().Build()
+			decoder, _ := admission.NewDecoder(scheme.Scheme)
+			handler := &PodMutatingHandler{
+				Client:  client,
+				Decoder: decoder,
+			}
+
+			namespaceObj := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "default",
+					Labels: map[string]string{
+						"enable-koordinator-colocation": "true",
+					},
+				},
+			}
+			err := client.Create(context.TODO(), namespaceObj)
+			assert.NoError(err)
+
+			batchPriorityClass := &schedulingv1.PriorityClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "koordinator-batch",
+				},
+				Value: extension.PriorityBatchValueMax,
+			}
+			err = client.Create(context.TODO(), batchPriorityClass)
+			assert.NoError(err)
+
+			profile := &configv1alpha1.ClusterColocationProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-profile",
+				},
+				Spec: configv1alpha1.ClusterColocationProfileSpec{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"enable-koordinator-colocation": "true",
+						},
+					},
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"koordinator-colocation-pod": "true",
+						},
+					},
+					Labels: map[string]string{
+						"testLabelA": "valueA",
+					},
+					Annotations: map[string]string{
+						"testAnnotationA": "valueA",
+					},
+					SchedulerName:       "koordinator-scheduler",
+					QoSClass:            string(extension.QoSBE),
+					PriorityClassName:   "koordinator-batch",
+					KoordinatorPriority: pointer.Int32(1111),
+					Patch: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
+					},
+				},
+			}
+			if tc.percent != nil {
+				s := intstr.FromInt(*tc.percent)
+				profile.Spec.Probability = &s
+			}
+			if tc.randIntnFn != nil {
+				defer SetRandIntnFnWhenTest(tc.randIntnFn)()
+			}
+			err = client.Create(context.TODO(), profile)
+			assert.NoError(err)
+
+			req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
+			err = handler.clusterColocationProfileMutatingPod(context.TODO(), req, tc.pod)
+			assert.NoError(err)
+
+			assert.Equal(tc.expected, tc.pod)
+		})
+
 	}
 }
