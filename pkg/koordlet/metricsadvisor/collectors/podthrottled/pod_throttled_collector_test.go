@@ -46,6 +46,7 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 			UID:       "test-pod-uid",
 		},
 		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
 			ContainerStatuses: []corev1.ContainerStatus{
 				{
 					Name:        "test-container",
@@ -57,7 +58,25 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 			},
 		},
 	}
+	testFailedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-failed-pod",
+			Namespace: "test",
+			UID:       "test-failed-pod-uid",
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodFailed,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:        "test-container",
+					ContainerID: testContainerID,
+				},
+			},
+		},
+	}
 	type fields struct {
+		podFilterOption       framework.PodFilter
+		getPodMetas           []*statesinformer.PodMeta
 		initPodLastStat       func(lastState *gocache.Cache)
 		initContainerLastStat func(lastState *gocache.Cache)
 		SetSysUtil            func(helper *system.FileTestUtil)
@@ -73,6 +92,47 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 		{
 			name: "cgroup v1 format",
 			fields: fields{
+				podFilterOption: framework.DefaultPodFilter,
+				getPodMetas: []*statesinformer.PodMeta{
+					{
+						CgroupDir: testPodMetaDir,
+						Pod:       testPod,
+					},
+				},
+				initPodLastStat: func(lastState *gocache.Cache) {
+					lastState.Set(string(testPod.UID), &system.CPUStatRaw{
+						NrPeriods:            0,
+						NrThrottled:          0,
+						ThrottledNanoSeconds: 0,
+					}, gocache.DefaultExpiration)
+				},
+				initContainerLastStat: func(lastState *gocache.Cache) {
+					lastState.Set(testContainerID, &system.CPUStatRaw{
+						NrPeriods:            0,
+						NrThrottled:          0,
+						ThrottledNanoSeconds: 0,
+					}, gocache.DefaultExpiration)
+				},
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					helper.WriteCgroupFileContents(testPodParentDir, system.CPUStat, "nr_periods 100\nnr_throttled 50\nthrottled_time 100000\n")
+					helper.WriteCgroupFileContents(testContainerParentDir, system.CPUStat, "nr_periods 100\nnr_throttled 50\nthrottled_time 100000\n")
+				},
+			},
+			args: args{},
+		},
+		{
+			name: "cgroup v1, filter terminated pods",
+			fields: fields{
+				podFilterOption: &framework.TerminatedPodFilter{},
+				getPodMetas: []*statesinformer.PodMeta{
+					{
+						CgroupDir: testPodMetaDir,
+						Pod:       testPod,
+					},
+					{
+						Pod: testFailedPod,
+					},
+				},
 				initPodLastStat: func(lastState *gocache.Cache) {
 					lastState.Set(string(testPod.UID), &system.CPUStatRaw{
 						NrPeriods:            0,
@@ -115,10 +175,7 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 			}()
 			statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 			statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
-			statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{
-				CgroupDir: testPodMetaDir,
-				Pod:       testPod,
-			}}).Times(1)
+			statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).Times(1)
 
 			collector := New(&framework.Options{
 				Config: &framework.Config{
@@ -127,6 +184,9 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 				StatesInformer: statesInformer,
 				MetricCache:    metricCache,
 				CgroupReader:   resourceexecutor.NewCgroupReader(),
+				PodFilters: map[string]framework.PodFilter{
+					CollectorName: tt.fields.podFilterOption,
+				},
 			})
 			c := collector.(*podThrottledCollector)
 			tt.fields.initPodLastStat(c.lastPodCPUThrottled)

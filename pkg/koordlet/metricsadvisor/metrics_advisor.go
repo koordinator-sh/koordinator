@@ -23,14 +23,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/beresource"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/nodecpuinfo"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/noderesource"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/nodestorageinfo"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/performance"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/podresource"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/podthrottled"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/devices/gpu"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -40,22 +32,6 @@ type MetricAdvisor interface {
 	Run(stopCh <-chan struct{}) error
 	HasSynced() bool
 }
-
-var (
-	devicePlugins = map[string]framework.DeviceFactory{
-		gpu.DeviceCollectorName: gpu.New,
-	}
-
-	collectorPlugins = map[string]framework.CollectorFactory{
-		noderesource.CollectorName:    noderesource.New,
-		beresource.CollectorName:      beresource.New,
-		nodecpuinfo.CollectorName:     nodecpuinfo.New,
-		nodestorageinfo.CollectorName: nodestorageinfo.New,
-		podresource.CollectorName:     podresource.New,
-		podthrottled.CollectorName:    podthrottled.New,
-		performance.CollectorName:     performance.New,
-	}
-)
 
 type metricAdvisor struct {
 	options *framework.Options
@@ -68,6 +44,7 @@ func NewMetricAdvisor(cfg *framework.Config, statesInformer statesinformer.State
 		StatesInformer: statesInformer,
 		MetricCache:    metricCache,
 		CgroupReader:   resourceexecutor.NewCgroupReader(),
+		PodFilters:     podFilters,
 	}
 	ctx := &framework.Context{
 		DeviceCollectors: make(map[string]framework.DeviceCollector, len(devicePlugins)),
