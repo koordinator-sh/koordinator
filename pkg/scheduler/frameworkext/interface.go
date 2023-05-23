@@ -20,6 +20,7 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -175,4 +176,12 @@ func GetNominatedReservation(cycleState *framework.CycleState) *schedulingv1alph
 type ReservationPreBindPlugin interface {
 	framework.Plugin
 	PreBindReservation(ctx context.Context, state *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status
+}
+
+// PreBindExtensions is an extension to PreBind, which supports converting multiple modifications to the same object into a Patch operation.
+// It supports configuring multiple plugin instances. A certain instance can be skipped if it does not need to be processed.
+// Once a plugin instance returns success or failure, the process ends.
+type PreBindExtensions interface {
+	framework.Plugin
+	ApplyPatch(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status
 }

@@ -101,15 +101,46 @@ func (h *TestTransformer) PreBindReservation(ctx context.Context, state *framewo
 }
 
 type fakePreBindPlugin struct {
-	err error
+	name string
+	err  error
+
+	skipApplyPatch    bool
+	appendAnnotations map[string]string
+	modifiedObj       metav1.Object
 }
 
-func (f fakePreBindPlugin) Name() string { return "fakePreBindPlugin" }
+func (f *fakePreBindPlugin) Name() string {
+	if f.name != "" {
+		return f.name
+	}
+	return "fakePreBindPlugin"
+}
 
-func (f fakePreBindPlugin) PreBind(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
+func (f *fakePreBindPlugin) PreBind(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
 	if f.err != nil {
 		return framework.AsStatus(f.err)
 	}
+	return nil
+}
+
+func (f *fakePreBindPlugin) ApplyPatch(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status {
+	if f.skipApplyPatch {
+		return framework.NewStatus(framework.Skip)
+	}
+	if f.err != nil {
+		return framework.AsStatus(f.err)
+	}
+	if f.appendAnnotations != nil {
+		annotations := modifiedObj.GetAnnotations()
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		for k, v := range f.appendAnnotations {
+			annotations[k] = v
+		}
+		modifiedObj.SetAnnotations(annotations)
+	}
+	f.modifiedObj = modifiedObj
 	return nil
 }
 
@@ -375,7 +406,7 @@ func TestPreBind(t *testing.T) {
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 				schedulertesting.RegisterPreBindPlugin("fakePreBindPlugin", func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
-					return fakePreBindPlugin{err: errors.New("failed")}, nil
+					return &fakePreBindPlugin{err: errors.New("failed")}, nil
 				}),
 			}
 			fh, err := schedulertesting.NewFramework(
@@ -412,6 +443,47 @@ func TestPreBind(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPreBindExtensionOrder(t *testing.T) {
+	preBindA := &fakePreBindPlugin{name: "fakePreBindPluginA", skipApplyPatch: true}
+	preBindB := &fakePreBindPlugin{name: "fakePreBindPluginB", appendAnnotations: map[string]string{"test": "2"}}
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		schedulertesting.RegisterPreBindPlugin(preBindA.Name(), func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+			return preBindA, nil
+		}),
+		schedulertesting.RegisterPreBindPlugin(preBindB.Name(), func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+			return preBindB, nil
+		}),
+	}
+	fh, err := schedulertesting.NewFramework(
+		registeredPlugins,
+		"koord-scheduler",
+	)
+	assert.NoError(t, err)
+
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extenderFactory, _ := NewFrameworkExtenderFactory(
+		WithKoordinatorClientSet(koordClientSet),
+		WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+
+	extender := NewFrameworkExtender(extenderFactory, fh)
+	impl := extender.(*frameworkExtenderImpl)
+	impl.updatePlugins(preBindA)
+	impl.updatePlugins(preBindB)
+
+	cycleState := framework.NewCycleState()
+
+	pod := &corev1.Pod{}
+
+	status := extender.RunPreBindPlugins(context.TODO(), cycleState, pod, "test-node-1")
+	assert.True(t, status.IsSuccess())
+	assert.Nil(t, preBindA.modifiedObj)
+	assert.Equal(t, map[string]string{"test": "2"}, preBindB.modifiedObj.GetAnnotations())
 }
 
 const fakeReservationRestoreStateKey = "fakeReservationRestoreState"

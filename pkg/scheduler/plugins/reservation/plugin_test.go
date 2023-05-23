@@ -1081,9 +1081,7 @@ func TestPreBind(t *testing.T) {
 			})
 			status := pl.PreBind(context.TODO(), cycleState, tt.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
-			pod, err := suit.fw.ClientSet().CoreV1().Pods(tt.pod.Namespace).Get(context.TODO(), tt.pod.Name, metav1.GetOptions{})
-			assert.NoError(t, err)
-			assert.Equal(t, tt.wantPod, pod)
+			assert.Equal(t, tt.wantPod, tt.pod)
 		})
 	}
 }
