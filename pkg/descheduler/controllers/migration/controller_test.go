@@ -2537,14 +2537,15 @@ func TestFilterObjectLimiter(t *testing.T) {
 
 func TestAllowAnnotatedPodMigrationJobPassFilter(t *testing.T) {
 	reconciler := newTestReconciler()
-	enter := false
+	enterNonRetryable := false
+	enterRetryable := false
 	reconciler.nonRetryablePodFilter = func(pod *corev1.Pod) bool {
-		enter = true
+		enterNonRetryable = true
 		return false
 	}
 	reconciler.retryablePodFilter = func(pod *corev1.Pod) bool {
-		enter = true
-		return false
+		enterRetryable = true
+		return true
 	}
 
 	job := &sev1alpha1.PodMigrationJob{
@@ -2582,7 +2583,8 @@ func TestAllowAnnotatedPodMigrationJobPassFilter(t *testing.T) {
 	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
 
 	result, err := reconciler.preparePendingJob(context.TODO(), job)
-	assert.False(t, enter)
+	assert.True(t, enterRetryable)
+	assert.False(t, enterNonRetryable)
 	assert.Nil(t, err)
 	assert.Equal(t, reconcile.Result{}, result)
 
