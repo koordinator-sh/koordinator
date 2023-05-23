@@ -28,6 +28,8 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func GetReservationNamespacedName(ref *corev1.ObjectReference) types.NamespacedName {
@@ -88,8 +90,16 @@ func CreateOrUpdateReservationOptions(job *sev1alpha1.PodMigrationJob, pod *core
 		job.Spec.TTL != nil && job.Spec.TTL.Duration > 0 {
 		reservationOptions.Template.Spec.TTL = job.Spec.TTL
 	}
-
 	appendSkipNodeAffinity(pod, reservationOptions)
+	if utilfeature.DefaultFeatureGate.Enabled(features.DisablePVCReservation) {
+		var volumes []corev1.Volume
+		for _, volume := range reservationOptions.Template.Spec.Template.Spec.Volumes {
+			if volume.PersistentVolumeClaim == nil && volume.Ephemeral == nil {
+				volumes = append(volumes, volume)
+			}
+		}
+		reservationOptions.Template.Spec.Template.Spec.Volumes = volumes
+	}
 	return reservationOptions
 }
 
