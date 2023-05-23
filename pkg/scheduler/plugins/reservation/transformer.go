@@ -26,11 +26,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
+	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -85,13 +87,6 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			return
 		}
 
-		podInfoMap := make(map[types.UID]*framework.PodInfo)
-		for _, podInfo := range nodeInfo.Pods {
-			if !reservationutil.IsReservePod(podInfo.Pod) {
-				podInfoMap[podInfo.Pod.UID] = podInfo
-			}
-		}
-
 		var unmatched, matched []*frameworkext.ReservationInfo
 		for _, rInfo := range rOnNode {
 			if !reservationutil.IsReservationAvailable(rInfo.Reservation) {
@@ -105,23 +100,49 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			}
 
 			if !isReservedPod && matchReservation(pod, node, rInfo.Reservation, reservationAffinity) {
-				if err = restoreMatchedReservation(nodeInfo, rInfo, podInfoMap); err != nil {
-					errCh.SendErrorWithCancel(err, cancel)
-					return
-				}
-
 				matched = append(matched, rInfo)
 
 			} else if len(rInfo.Pods) > 0 {
-				if err = restoreUnmatchedReservations(nodeInfo, rInfo); err != nil {
-					errCh.SendErrorWithCancel(err, cancel)
-					return
-				}
-
 				unmatched = append(unmatched, rInfo)
 				if !isReservedPod {
 					klog.V(6).InfoS("got reservation on node does not match the pod", "reservation", klog.KObj(rInfo.Reservation), "pod", klog.KObj(pod))
 				}
+			}
+		}
+		if len(matched) == 0 && len(unmatched) == 0 {
+			return
+		}
+
+		for _, rInfo := range unmatched {
+			if err = restoreUnmatchedReservations(nodeInfo, rInfo); err != nil {
+				errCh.SendErrorWithCancel(err, cancel)
+				return
+			}
+		}
+		// Save requested state after trimmed by unmatched to support reservation allocate policy.
+		podRequested := nodeInfo.Requested.Clone()
+
+		podInfoMap := make(map[types.UID]*framework.PodInfo)
+		for _, podInfo := range nodeInfo.Pods {
+			if !reservationutil.IsReservePod(podInfo.Pod) {
+				podInfoMap[podInfo.Pod.UID] = podInfo
+			}
+		}
+
+		var totalAligned, totalRestricted int
+		rAllocated := corev1.ResourceList{}
+		for _, rInfo := range matched {
+			if err = restoreMatchedReservation(nodeInfo, rInfo, podInfoMap); err != nil {
+				errCh.SendErrorWithCancel(err, cancel)
+				return
+			}
+
+			util.AddResourceList(rAllocated, rInfo.Allocated)
+			switch rInfo.Reservation.Spec.AllocatePolicy {
+			case schedulingv1alpha1.ReservationAllocatePolicyAligned:
+				totalAligned++
+			case schedulingv1alpha1.ReservationAllocatePolicyRestricted:
+				totalRestricted++
 			}
 		}
 
@@ -138,8 +159,12 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		if len(matched) > 0 || len(unmatched) > 0 {
 			index := atomic.AddInt32(&stateIndex, 1)
 			allNodeReservationStates[index-1] = &nodeReservationState{
-				nodeName: node.Name,
-				matched:  matched,
+				nodeName:        node.Name,
+				matched:         matched,
+				podRequested:    podRequested,
+				rAllocated:      framework.NewResource(rAllocated),
+				totalAligned:    totalAligned,
+				totalRestricted: totalRestricted,
 			}
 			allPluginToRestoreState[index-1] = pluginToRestoreState
 		}
@@ -153,10 +178,15 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 
 	allNodeReservationStates = allNodeReservationStates[:stateIndex]
 	allPluginToRestoreState = allPluginToRestoreState[:stateIndex]
-	pluginToNodeReservationRestoreState := frameworkext.PluginToNodeReservationRestoreStates{}
+
+	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+	podRequestResources := framework.NewResource(podRequests)
 	state := &stateData{
+		podRequests:           podRequests,
+		podRequestsResources:  podRequestResources,
 		nodeReservationStates: map[string]nodeReservationState{},
 	}
+	pluginToNodeReservationRestoreState := frameworkext.PluginToNodeReservationRestoreStates{}
 	for index, v := range allNodeReservationStates {
 		state.nodeReservationStates[v.nodeName] = *v
 		for pluginName, pluginState := range allPluginToRestoreState[index] {

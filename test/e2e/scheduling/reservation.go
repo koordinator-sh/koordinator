@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
@@ -453,6 +454,447 @@ var _ = SIGDescribe("Reservation", func() {
 				SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, pod))
+		})
+
+		framework.ConformanceIt(
+			"Create reservation with Restricted policy, reserves 4Core8Gi, "+
+				"and create 4 Pods try to allocate from reservation, but 2 Pods can allocate 2Core2Gi "+
+				"1 Pod can allocate 3Gi, 1 Pod failed with 2Gi",
+			func() {
+				ginkgo.By("Create reservation")
+				reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
+				framework.ExpectNoError(err, "unable to load reservation")
+
+				targetPodLabel := "test-reserve-policy"
+				reservation.Spec.AllocateOnce = pointer.Bool(false)
+				reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyRestricted
+				reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
+					{
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								targetPodLabel: "true",
+							},
+						},
+					},
+				}
+				reservation.Spec.Template.Spec.Containers = []corev1.Container{
+					{
+						Name: "main",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("4"),
+								corev1.ResourceMemory: resource.MustParse("8Gi"),
+							},
+						},
+					},
+				}
+
+				_, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+				framework.ExpectNoError(err, "unable to create reservation")
+
+				ginkgo.By("Wait for reservation scheduled")
+				reservation = waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
+
+				ginkgo.By("Create 2 pods allocated from reservation")
+				requests := corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("2Gi"),
+				}
+				rsConfig := pauseRSConfig{
+					Replicas: int32(2),
+					PodConfig: pausePodConfig{
+						Name:      targetPodLabel,
+						Namespace: f.Namespace.Name,
+						Labels: map[string]string{
+							"success":      "true",
+							targetPodLabel: "true",
+						},
+						Resources: &corev1.ResourceRequirements{
+							Limits:   requests,
+							Requests: requests,
+						},
+						SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
+					},
+				}
+				runPauseRS(f, rsConfig)
+
+				ginkgo.By("Create the third Pod also matched the reservation and allocate 3Gi")
+				runPausePod(f, pausePodConfig{
+					Name: string(uuid.NewUUID()),
+					Labels: map[string]string{
+						targetPodLabel: "true",
+					},
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("3Gi"),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("3Gi"),
+						},
+					},
+					NodeName:      reservation.Status.NodeName,
+					SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
+				})
+
+				ginkgo.By("Create the fourth Pod also matched the reservation and allocate 2Gi but failed")
+				pod := createPausePod(f, pausePodConfig{
+					Name: string(uuid.NewUUID()),
+					Labels: map[string]string{
+						targetPodLabel: "true",
+					},
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+					NodeName:      reservation.Status.NodeName,
+					SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
+				})
+
+				ginkgo.By("Wait for Pod schedule failed")
+				framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+					_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+					return scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse, nil
+				}))
+
+				podList, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).List(context.TODO(), metav1.ListOptions{})
+				framework.ExpectNoError(err)
+
+				ginkgo.By("Check pods and reservation status")
+				reservedCount := 0
+				podUsingReservations := make(map[types.UID]*corev1.Pod)
+				for i := range podList.Items {
+					pod := &podList.Items[i]
+					reservationAllocated, err := apiext.GetReservationAllocated(pod)
+					framework.ExpectNoError(err)
+					if reservationAllocated != nil {
+						gomega.Expect(reservationAllocated).Should(gomega.Equal(&apiext.ReservationAllocated{
+							Name: reservation.Name,
+							UID:  reservation.UID,
+						}), "pod is not using the expected reservation")
+						podDeviceAllocations, err := apiext.GetDeviceAllocations(pod.Annotations)
+						framework.ExpectNoError(err)
+						reservationDeviceAllocations, err := apiext.GetDeviceAllocations(reservation.Annotations)
+						framework.ExpectNoError(err)
+
+						for deviceType, allocations := range podDeviceAllocations {
+							for _, alloc := range allocations {
+								found := false
+								reservationAllocations := reservationDeviceAllocations[deviceType]
+								for _, reservationAlloc := range reservationAllocations {
+									if reservationAlloc.Minor == alloc.Minor {
+										if fit, _ := quotav1.LessThanOrEqual(alloc.Resources, reservationAlloc.Resources); fit {
+											found = true
+											break
+										}
+									}
+								}
+								gomega.Expect(found).Should(gomega.Equal(true), "unexpected device allocations")
+							}
+						}
+						reservedCount++
+						podUsingReservations[pod.UID] = pod
+					}
+				}
+				gomega.Expect(reservedCount).Should(gomega.Equal(3), "no pods using the expected reservation")
+
+				reservation, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
+				framework.ExpectNoError(err)
+				reservationRequests := reservationutil.ReservationRequests(reservation)
+				gomega.Expect(reservation.Status.Allocatable).Should(gomega.Equal(reservationRequests))
+
+				var totalRequests corev1.ResourceList
+				var currentOwners []corev1.ObjectReference
+				for _, pod := range podUsingReservations {
+					podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+					podRequests = quotav1.Mask(podRequests, quotav1.ResourceNames(reservation.Status.Allocatable))
+					totalRequests = quotav1.Add(totalRequests, podRequests)
+					currentOwners = append(currentOwners, corev1.ObjectReference{
+						Namespace: pod.Namespace,
+						Name:      pod.Name,
+						UID:       pod.UID,
+					})
+				}
+				sort.Slice(currentOwners, func(i, j int) bool {
+					return currentOwners[i].UID < currentOwners[j].UID
+				})
+
+				gomega.Expect(equality.Semantic.DeepEqual(reservation.Status.Allocated, totalRequests)).Should(gomega.Equal(true))
+				gomega.Expect(reservation.Status.CurrentOwners).Should(gomega.Equal(currentOwners), "reservation.status.currentOwners is not as expected")
+			},
+		)
+
+		framework.ConformanceIt(
+			"Create reservation with Aligned policy, reserves 4Core8Gi, "+
+				"and create 4 Pods try to allocate from reservation, but 2 Pods allocate 2Core2Gi from reservation "+
+				"1 Pod allocates 3Gi from reservation, 1 Pod allocates 2Gi from reservation and node",
+			func() {
+				ginkgo.By("Create reservation")
+				reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
+				framework.ExpectNoError(err, "unable to load reservation")
+
+				targetPodLabel := "test-reserve-policy"
+				reservation.Spec.AllocateOnce = pointer.Bool(false)
+				reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
+				reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
+					{
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								targetPodLabel: "true",
+							},
+						},
+					},
+				}
+				reservation.Spec.Template.Spec.Containers = []corev1.Container{
+					{
+						Name: "main",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("4"),
+								corev1.ResourceMemory: resource.MustParse("8Gi"),
+							},
+						},
+					},
+				}
+
+				_, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+				framework.ExpectNoError(err, "unable to create reservation")
+
+				ginkgo.By("Wait for reservation scheduled")
+				reservation = waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
+
+				ginkgo.By("Create 2 pods allocated from reservation")
+				requests := corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("2Gi"),
+				}
+				rsConfig := pauseRSConfig{
+					Replicas: int32(2),
+					PodConfig: pausePodConfig{
+						Name:      targetPodLabel,
+						Namespace: f.Namespace.Name,
+						Labels: map[string]string{
+							"success":      "true",
+							targetPodLabel: "true",
+						},
+						Resources: &corev1.ResourceRequirements{
+							Limits:   requests,
+							Requests: requests,
+						},
+						SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
+					},
+				}
+				runPauseRS(f, rsConfig)
+
+				ginkgo.By("Create the third Pod also matched the reservation and allocate 3Gi")
+				runPausePod(f, pausePodConfig{
+					Name: string(uuid.NewUUID()),
+					Labels: map[string]string{
+						targetPodLabel: "true",
+					},
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("3Gi"),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("3Gi"),
+						},
+					},
+					NodeName:      reservation.Status.NodeName,
+					SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
+				})
+
+				ginkgo.By("Create the fourth Pod also matched the reservation and allocate 2Gi but failed")
+				runPausePod(f, pausePodConfig{
+					Name: string(uuid.NewUUID()),
+					Labels: map[string]string{
+						targetPodLabel: "true",
+					},
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+					NodeName:      reservation.Status.NodeName,
+					SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
+				})
+
+				podList, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).List(context.TODO(), metav1.ListOptions{})
+				framework.ExpectNoError(err)
+
+				ginkgo.By("Check pods and reservation status, must has 4 pods allocate from reservation")
+				reservedCount := 0
+				podUsingReservations := make(map[types.UID]*corev1.Pod)
+				for i := range podList.Items {
+					pod := &podList.Items[i]
+					reservationAllocated, err := apiext.GetReservationAllocated(pod)
+					framework.ExpectNoError(err)
+					if reservationAllocated != nil {
+						gomega.Expect(reservationAllocated).Should(gomega.Equal(&apiext.ReservationAllocated{
+							Name: reservation.Name,
+							UID:  reservation.UID,
+						}), "pod is not using the expected reservation")
+						podDeviceAllocations, err := apiext.GetDeviceAllocations(pod.Annotations)
+						framework.ExpectNoError(err)
+						reservationDeviceAllocations, err := apiext.GetDeviceAllocations(reservation.Annotations)
+						framework.ExpectNoError(err)
+
+						for deviceType, allocations := range podDeviceAllocations {
+							for _, alloc := range allocations {
+								found := false
+								reservationAllocations := reservationDeviceAllocations[deviceType]
+								for _, reservationAlloc := range reservationAllocations {
+									if reservationAlloc.Minor == alloc.Minor {
+										if fit, _ := quotav1.LessThanOrEqual(alloc.Resources, reservationAlloc.Resources); fit {
+											found = true
+											break
+										}
+									}
+								}
+								gomega.Expect(found).Should(gomega.Equal(true), "unexpected device allocations")
+							}
+						}
+						reservedCount++
+						podUsingReservations[pod.UID] = pod
+					}
+				}
+				gomega.Expect(reservedCount).Should(gomega.Equal(4), "no pods using the expected reservation")
+
+				reservation, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
+				framework.ExpectNoError(err)
+				reservationRequests := reservationutil.ReservationRequests(reservation)
+				gomega.Expect(reservation.Status.Allocatable).Should(gomega.Equal(reservationRequests))
+
+				var totalRequests corev1.ResourceList
+				var currentOwners []corev1.ObjectReference
+				for _, pod := range podUsingReservations {
+					podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+					podRequests = quotav1.Mask(podRequests, quotav1.ResourceNames(reservation.Status.Allocatable))
+					totalRequests = quotav1.Add(totalRequests, podRequests)
+					currentOwners = append(currentOwners, corev1.ObjectReference{
+						Namespace: pod.Namespace,
+						Name:      pod.Name,
+						UID:       pod.UID,
+					})
+				}
+				sort.Slice(currentOwners, func(i, j int) bool {
+					return currentOwners[i].UID < currentOwners[j].UID
+				})
+
+				gomega.Expect(equality.Semantic.DeepEqual(reservation.Status.Allocated, totalRequests)).Should(gomega.Equal(true))
+				gomega.Expect(reservation.Status.CurrentOwners).Should(gomega.Equal(currentOwners), "reservation.status.currentOwners is not as expected")
+			},
+		)
+
+		ginkgo.Context("validates resource fit with Aligned Reservations", func() {
+			var testNodeName string
+			var fakeResourceName corev1.ResourceName = "koordinator.sh/fake-resource"
+
+			ginkgo.BeforeEach(func() {
+				ginkgo.By("Add fake resource")
+				// find a node which can run a pod:
+				testNodeName = GetNodeThatCanRunPod(f)
+
+				// Get node object:
+				node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), testNodeName, metav1.GetOptions{})
+				framework.ExpectNoError(err, "unable to get node object for node %v", testNodeName)
+
+				// update Node API object with a fake resource
+				nodeCopy := node.DeepCopy()
+				nodeCopy.ResourceVersion = "0"
+
+				nodeCopy.Status.Capacity[fakeResourceName] = resource.MustParse("1000")
+				nodeCopy.Status.Allocatable[fakeResourceName] = resource.MustParse("1000")
+				_, err = f.ClientSet.CoreV1().Nodes().UpdateStatus(context.TODO(), nodeCopy, metav1.UpdateOptions{})
+				framework.ExpectNoError(err, "unable to apply fake resource to %v", testNodeName)
+			})
+
+			ginkgo.AfterEach(func() {
+				ginkgo.By("Remove fake resource")
+				// remove fake resource:
+				if testNodeName != "" {
+					node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), testNodeName, metav1.GetOptions{})
+					framework.ExpectNoError(err, "unable to get node object for node %v", testNodeName)
+
+					nodeCopy := node.DeepCopy()
+					// force it to update
+					nodeCopy.ResourceVersion = "0"
+					delete(nodeCopy.Status.Capacity, fakeResourceName)
+					delete(nodeCopy.Status.Allocatable, fakeResourceName)
+					_, err = f.ClientSet.CoreV1().Nodes().UpdateStatus(context.TODO(), nodeCopy, metav1.UpdateOptions{})
+					framework.ExpectNoError(err, "unable to update node %v", testNodeName)
+				}
+			})
+
+			framework.ConformanceIt(
+				"Create a batch of small-sized Reservations that use the Aligned policy to fill up the machine. "+
+					"Pods that match the Reservation, but whose size is larger than the Reservation, expect allocation to fail.",
+				func() {
+					ginkgo.By("Create reservation")
+					reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
+					framework.ExpectNoError(err, "unable to load reservation")
+
+					targetPodLabel := "test-reserve-policy"
+					reservation.Spec.AllocateOnce = pointer.Bool(false)
+					reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
+					reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
+						{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									targetPodLabel: "true",
+								},
+							},
+						},
+					}
+					reservation.Spec.Template.Spec.Containers = []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									fakeResourceName: resource.MustParse("200"),
+								},
+							},
+						},
+					}
+					for i := 0; i < 5; i++ {
+						reservation.Name = fmt.Sprintf("reservation-%d", i)
+						_, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+						framework.ExpectNoError(err, "unable to create reservation")
+
+						ginkgo.By("Wait for reservation scheduled")
+						waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
+					}
+
+					ginkgo.By("Create 1 Pod matched the reservation but failed scheduling")
+					pod := createPausePod(f, pausePodConfig{
+						Name: string(uuid.NewUUID()),
+						Labels: map[string]string{
+							targetPodLabel: "true",
+						},
+						Resources: &corev1.ResourceRequirements{
+							Limits: corev1.ResourceList{
+								fakeResourceName: resource.MustParse("300"),
+							},
+							Requests: corev1.ResourceList{
+								fakeResourceName: resource.MustParse("300"),
+							},
+						},
+						NodeName:      reservation.Status.NodeName,
+						SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
+					})
+					ginkgo.By("Wait for Pod schedule failed")
+					framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+						_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+						return scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse, nil
+					}))
+				},
+			)
 		})
 
 		framework.ConformanceIt("validates PodAntiAffinity with reservation", func() {

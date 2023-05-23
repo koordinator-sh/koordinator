@@ -59,6 +59,13 @@ spec:
                   only available for the first owner who allocates successfully and
                   are not allocatable to other owners anymore. Defaults to true.
                 type: boolean
+              allocatePolicy:
+                description: AllocatePolicy represents the allocation policy of reserved
+                  resources that Reservation expects.
+                enum:
+                - Aligned
+                - Restricted
+                type: string
               expires:
                 description: Expired timestamp when the reservation is expected to
                   expire. If both `expires` and `ttl` are set, `expires` is checked
