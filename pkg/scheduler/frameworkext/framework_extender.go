@@ -38,6 +38,7 @@ var _ FrameworkExtender = &frameworkExtenderImpl{}
 
 type frameworkExtenderImpl struct {
 	framework.Framework
+	*errorHandlerDispatcher
 
 	schedulerFn func() Scheduler
 
@@ -67,6 +68,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 
 	frameworkExtender := &frameworkExtenderImpl{
 		Framework:                        fw,
+		errorHandlerDispatcher:           f.errorHandlerDispatcher,
 		schedulerFn:                      schedulerFn,
 		snapshotGeneration:               snapshotGeneration,
 		koordinatorClientSet:             f.KoordinatorClientSet(),

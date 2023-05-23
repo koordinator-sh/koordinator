@@ -399,7 +399,13 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	schedAdapter := frameworkExtenderFactory.Scheduler()
 
 	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, frameworkExtenderFactory.KoordinatorSharedInformerFactory())
-	eventhandlers.AddReservationErrorHandler(sched, schedAdapter, frameworkExtenderFactory.KoordinatorClientSet(), frameworkExtenderFactory.KoordinatorSharedInformerFactory())
+	reservationErrorHandler := eventhandlers.MakeReservationErrorHandler(
+		sched,
+		schedAdapter,
+		frameworkExtenderFactory.KoordinatorClientSet(),
+		frameworkExtenderFactory.KoordinatorSharedInformerFactory(),
+	)
+	frameworkExtenderFactory.RegisterErrorHandler(reservationErrorHandler)
 
 	return &cc, sched, frameworkExtenderFactory, nil
 }
