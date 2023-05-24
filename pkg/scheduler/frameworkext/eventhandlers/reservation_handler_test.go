@@ -28,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/apis/core/validation"
 	"k8s.io/kubernetes/pkg/scheduler"
@@ -45,15 +44,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
-
-type fakeExtendHandle struct {
-	frameworkext.ExtendedHandle
-	eventRecorder events.EventRecorder
-}
-
-func (h *fakeExtendHandle) EventRecorder() events.EventRecorder {
-	return h.eventRecorder
-}
 
 func TestAddReservationErrorHandler(t *testing.T) {
 	testNodeName := "test-node-0"
@@ -104,7 +94,7 @@ func TestAddReservationErrorHandler(t *testing.T) {
 				"default-scheduler": fh,
 			},
 		}
-		internalHandler := &fakeSchedulerInternalHandler{}
+		internalHandler := &frameworkext.FakeScheduler{}
 		koordClientSet := koordfake.NewSimpleClientset(testR)
 		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 
@@ -137,7 +127,7 @@ func TestAddReservationErrorHandler(t *testing.T) {
 func TestAddScheduleEventHandler(t *testing.T) {
 	t.Run("test not panic", func(t *testing.T) {
 		sched := &scheduler.Scheduler{}
-		internalHandler := &fakeSchedulerInternalHandler{}
+		internalHandler := &frameworkext.FakeScheduler{}
 		koordClientSet := koordfake.NewSimpleClientset()
 		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 		AddScheduleEventHandler(sched, internalHandler, koordSharedInformerFactory)
@@ -147,8 +137,8 @@ func TestAddScheduleEventHandler(t *testing.T) {
 func Test_addReservationToCache(t *testing.T) {
 	now := time.Now()
 	type args struct {
-		internalHandler SchedulerInternalHandler
-		obj             interface{}
+		sched frameworkext.Scheduler
+		obj   interface{}
 	}
 	tests := []struct {
 		name string
@@ -176,7 +166,7 @@ func Test_addReservationToCache(t *testing.T) {
 		{
 			name: "add reservation successfully",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				sched: &frameworkext.FakeScheduler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -199,7 +189,7 @@ func Test_addReservationToCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			addReservationToCache(nil, tt.args.internalHandler, tt.args.obj)
+			addReservationToCache(tt.args.sched, tt.args.obj)
 		})
 	}
 }
@@ -207,7 +197,7 @@ func Test_addReservationToCache(t *testing.T) {
 func Test_updateReservationInCache(t *testing.T) {
 	now := time.Now()
 	type args struct {
-		internalHandler SchedulerInternalHandler
+		internalHandler frameworkext.Scheduler
 		oldObj          interface{}
 		newObj          interface{}
 	}
@@ -248,7 +238,7 @@ func Test_updateReservationInCache(t *testing.T) {
 		{
 			name: "update reservation successfully",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				oldObj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -290,7 +280,7 @@ func Test_updateReservationInCache(t *testing.T) {
 		{
 			name: "update different reservations",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				oldObj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -332,7 +322,7 @@ func Test_updateReservationInCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			updateReservationInCache(nil, tt.args.internalHandler, tt.args.oldObj, tt.args.newObj)
+			updateReservationInCache(tt.args.internalHandler, tt.args.oldObj, tt.args.newObj)
 		})
 	}
 }
@@ -340,7 +330,7 @@ func Test_updateReservationInCache(t *testing.T) {
 func Test_deleteReservationFromCache(t *testing.T) {
 	now := time.Now()
 	type args struct {
-		internalHandler SchedulerInternalHandler
+		internalHandler frameworkext.Scheduler
 		obj             interface{}
 	}
 	tests := []struct {
@@ -369,7 +359,7 @@ func Test_deleteReservationFromCache(t *testing.T) {
 		{
 			name: "delete reservation successfully",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -392,7 +382,7 @@ func Test_deleteReservationFromCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			deleteReservationFromCache(nil, tt.args.internalHandler, tt.args.obj)
+			deleteReservationFromCache(tt.args.internalHandler, tt.args.obj)
 		})
 	}
 }
@@ -400,7 +390,7 @@ func Test_deleteReservationFromCache(t *testing.T) {
 func Test_addReservationToSchedulingQueue(t *testing.T) {
 	now := time.Now()
 	type args struct {
-		internalHandler SchedulerInternalHandler
+		internalHandler frameworkext.Scheduler
 		obj             interface{}
 	}
 	tests := []struct {
@@ -416,7 +406,7 @@ func Test_addReservationToSchedulingQueue(t *testing.T) {
 		{
 			name: "allow incomplete reservation, validate it in plugin",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -430,7 +420,7 @@ func Test_addReservationToSchedulingQueue(t *testing.T) {
 		{
 			name: "add reservation successfully",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -453,7 +443,7 @@ func Test_addReservationToSchedulingQueue(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			addReservationToSchedulingQueue(nil, tt.args.internalHandler, tt.args.obj)
+			addReservationToSchedulingQueue(tt.args.internalHandler, tt.args.obj)
 		})
 	}
 }
@@ -461,7 +451,7 @@ func Test_addReservationToSchedulingQueue(t *testing.T) {
 func Test_updateReservationInSchedulingQueue(t *testing.T) {
 	now := time.Now()
 	type args struct {
-		internalHandler SchedulerInternalHandler
+		internalHandler frameworkext.Scheduler
 		oldObj          interface{}
 		newObj          interface{}
 	}
@@ -479,7 +469,7 @@ func Test_updateReservationInSchedulingQueue(t *testing.T) {
 		{
 			name: "allow incomplete reservation, validate it in plugin",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				oldObj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -503,7 +493,7 @@ func Test_updateReservationInSchedulingQueue(t *testing.T) {
 		{
 			name: "update reservation successfully",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				oldObj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -545,7 +535,7 @@ func Test_updateReservationInSchedulingQueue(t *testing.T) {
 		{
 			name: "update new reservation successfully",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				oldObj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:            "r-0",
@@ -589,7 +579,7 @@ func Test_updateReservationInSchedulingQueue(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			updateReservationInSchedulingQueue(nil, tt.args.internalHandler, tt.args.oldObj, tt.args.newObj)
+			updateReservationInSchedulingQueue(tt.args.internalHandler, tt.args.oldObj, tt.args.newObj)
 		})
 	}
 }
@@ -597,7 +587,7 @@ func Test_updateReservationInSchedulingQueue(t *testing.T) {
 func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 	now := time.Now()
 	type args struct {
-		internalHandler SchedulerInternalHandler
+		internalHandler frameworkext.Scheduler
 		obj             interface{}
 	}
 	tests := []struct {
@@ -613,7 +603,7 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 		{
 			name: "allow incomplete reservation, validate it later",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -627,7 +617,7 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 		{
 			name: "delete reservation successfully",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -650,7 +640,7 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			deleteReservationFromSchedulingQueue(nil, tt.args.internalHandler, tt.args.obj)
+			deleteReservationFromSchedulingQueue(tt.args.internalHandler, tt.args.obj)
 		})
 	}
 }
@@ -658,7 +648,7 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 func Test_handleInactiveReservation(t *testing.T) {
 	now := time.Now()
 	type args struct {
-		internalHandler SchedulerInternalHandler
+		internalHandler frameworkext.Scheduler
 		obj             interface{}
 	}
 	tests := []struct {
@@ -674,7 +664,7 @@ func Test_handleInactiveReservation(t *testing.T) {
 		{
 			name: "allow incomplete reservation, validate it later",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -688,7 +678,7 @@ func Test_handleInactiveReservation(t *testing.T) {
 		{
 			name: "handle failed unscheduled reservation",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -714,7 +704,7 @@ func Test_handleInactiveReservation(t *testing.T) {
 		{
 			name: "handle failed scheduled reservation",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -741,7 +731,7 @@ func Test_handleInactiveReservation(t *testing.T) {
 		{
 			name: "handle succeeded reservation",
 			args: args{
-				internalHandler: &fakeSchedulerInternalHandler{},
+				internalHandler: &frameworkext.FakeScheduler{},
 				obj: &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "r-0",
@@ -768,7 +758,7 @@ func Test_handleInactiveReservation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handleInactiveReservation(nil, tt.args.internalHandler, tt.args.obj)
+			handleInactiveReservation(tt.args.internalHandler, tt.args.obj)
 		})
 	}
 }

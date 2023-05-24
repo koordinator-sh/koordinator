@@ -285,7 +285,7 @@ func (r *CPUSuppress) suppressBECPU() {
 		return
 	}
 
-	nodeCPUsed := *resource.NewQuantity(int64(value), resource.DecimalSI)
+	nodeCPUsed := *resource.NewMilliQuantity(int64(value*1000), resource.DecimalSI)
 	suppressCPUQuantity := r.calculateBESuppressCPU(node, nodeCPUsed, podMetrics, podMetas,
 		*nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent)
 

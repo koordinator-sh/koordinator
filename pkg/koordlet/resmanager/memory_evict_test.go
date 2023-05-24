@@ -23,15 +23,6 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
-	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler"
-	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
@@ -42,6 +33,16 @@ import (
 	"k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	critesting "k8s.io/cri-api/pkg/apis/testing"
 	"k8s.io/utils/pointer"
+
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler"
+	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
 
 func Test_memoryEvict(t *testing.T) {

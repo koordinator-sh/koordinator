@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -28,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
@@ -37,6 +39,10 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
+)
+
+var (
+	randIntnFn = rand.Intn
 )
 
 // +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
@@ -79,7 +85,15 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 	}
 
 	for _, profile := range matchedProfiles {
-		err := h.doMutateByColocationProfile(ctx, pod, profile)
+		skip, err := shouldSkipProfile(profile)
+		if err != nil {
+			return err
+		}
+		if skip {
+			klog.V(4).Infof("skip mutate Pod %s/%s by clusterColocationProfile %s", pod.Namespace, pod.Name, profile.Name)
+			continue
+		}
+		err = h.doMutateByColocationProfile(ctx, pod, profile)
 		if err != nil {
 			return err
 		}
@@ -123,6 +137,18 @@ func (h *PodMutatingHandler) matchObjectSelector(pod, oldPod *corev1.Pod, object
 		matched = selector.Matches(labels.Set(oldPod.Labels))
 	}
 	return matched, nil
+}
+
+func shouldSkipProfile(profile *configv1alpha1.ClusterColocationProfile) (bool, error) {
+	percent := 100
+	if profile.Spec.Probability != nil {
+		var err error
+		percent, err = intstr.GetScaledValueFromIntOrPercent(profile.Spec.Probability, 100, false)
+		if err != nil {
+			return false, err
+		}
+	}
+	return percent == 0 || (percent != 100 && randIntnFn(100) > percent), nil
 }
 
 func (h *PodMutatingHandler) doMutateByColocationProfile(ctx context.Context, pod *corev1.Pod, profile *configv1alpha1.ClusterColocationProfile) error {

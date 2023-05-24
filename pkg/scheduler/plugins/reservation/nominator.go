@@ -36,12 +36,12 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 	}
 
 	state := getStateData(cycleState)
-	rOnNode := state.matched[nodeName]
-	if len(rOnNode) == 0 {
+	reservationInfos := state.nodeReservationStates[nodeName].matched
+	if len(reservationInfos) == 0 {
 		return nil, nil
 	}
 
-	highestScorer, _ := findMostPreferredReservationByOrder(rOnNode)
+	highestScorer, _ := findMostPreferredReservationByOrder(reservationInfos)
 	if highestScorer != nil {
 		return highestScorer, nil
 	}
@@ -51,8 +51,8 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 		return nil, framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
 	}
 
-	reservations := make([]*schedulingv1alpha1.Reservation, 0, len(rOnNode))
-	for _, rInfo := range rOnNode {
+	reservations := make([]*schedulingv1alpha1.Reservation, 0, len(reservationInfos))
+	for _, rInfo := range reservationInfos {
 		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo.Reservation, nodeName)
 		if !status.IsSuccess() {
 			continue

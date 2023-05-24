@@ -22,13 +22,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	mock_client2 "github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler/mockclient"
-
 	"github.com/golang/mock/gomock"
 	"github.com/prashantv/gostub"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
+	mockclient "github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler/mockclient"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -39,13 +38,22 @@ func Test_NewContainerdRuntimeHandler(t *testing.T) {
 	defer stubs.Reset()
 
 	helper := system.NewFileTestUtil(t)
-	helper.MkDirAll("/var/run")
-	helper.WriteFileContents("/var/run/containerd.sock", "test")
-	system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/var/run")
-	ContainerdEndpoint1 = filepath.Join(system.Conf.VarRunRootDir, "containerd.sock")
+	defer helper.Cleanup()
 
+	helper.WriteFileContents("/var/run/containerd/containerd.sock", "test")
+	system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/var/run")
+	ContainerdEndpoint1 := GetContainerdEndpoint()
 	unixEndPoint := fmt.Sprintf("unix://%s", ContainerdEndpoint1)
 	containerdRuntime, err := NewContainerdRuntimeHandler(unixEndPoint)
+	assert.NoError(t, err)
+	assert.NotNil(t, containerdRuntime)
+
+	// custom VarRunRootDir
+	helper.WriteFileContents("/host-var-run/containerd/containerd.sock", "test1")
+	system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/host-var-run")
+	ContainerdEndpoint1 = GetContainerdEndpoint()
+	unixEndPoint = fmt.Sprintf("unix://%s", ContainerdEndpoint1)
+	containerdRuntime, err = NewContainerdRuntimeHandler(unixEndPoint)
 	assert.NoError(t, err)
 	assert.NotNil(t, containerdRuntime)
 }
@@ -75,10 +83,10 @@ func Test_Containerd_StopContainer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctl := gomock.NewController(t)
 			defer ctl.Finish()
-			mockRuntimeClient := mock_client2.NewMockRuntimeServiceClient(ctl)
+			mockRuntimeClient := mockclient.NewMockRuntimeServiceClient(ctl)
 			mockRuntimeClient.EXPECT().StopContainer(gomock.Any(), gomock.Any()).Return(nil, tt.runtimeError)
 
-			runtimeHandler := ContainerdRuntimeHandler{runtimeServiceClient: mockRuntimeClient, timeout: 1, endpoint: ContainerdEndpoint1}
+			runtimeHandler := ContainerdRuntimeHandler{runtimeServiceClient: mockRuntimeClient, timeout: 1, endpoint: GetContainerdEndpoint()}
 			gotErr := runtimeHandler.StopContainer(tt.containerId, 1)
 			assert.Equal(t, gotErr != nil, tt.expectError)
 
@@ -111,10 +119,10 @@ func Test_Containerd_UpdateContainerResources(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctl := gomock.NewController(t)
 			defer ctl.Finish()
-			mockRuntimeClient := mock_client2.NewMockRuntimeServiceClient(ctl)
+			mockRuntimeClient := mockclient.NewMockRuntimeServiceClient(ctl)
 			mockRuntimeClient.EXPECT().UpdateContainerResources(gomock.Any(), gomock.Any()).Return(nil, tt.runtimeError)
 
-			runtimeHandler := ContainerdRuntimeHandler{runtimeServiceClient: mockRuntimeClient, timeout: 1, endpoint: ContainerdEndpoint1}
+			runtimeHandler := ContainerdRuntimeHandler{runtimeServiceClient: mockRuntimeClient, timeout: 1, endpoint: GetContainerdEndpoint()}
 			gotErr := runtimeHandler.UpdateContainerResources(tt.containerId, UpdateOptions{})
 			assert.Equal(t, tt.expectError, gotErr != nil)
 		})

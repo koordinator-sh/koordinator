@@ -926,5 +926,40 @@ func TestGangCache_OnGangDelete(t *testing.T) {
 	cacheGang := cache.getGangFromCacheByGangId("default/gangb", false)
 	wantedGang.GangGroupId = util.GetGangGroupId(wantedGang.GangGroup)
 	assert.Equal(t, wantedGang, cacheGang)
+}
 
+func TestGangCache_onPodGroupUpdate(t *testing.T) {
+	pgClient := fakepgclientset.NewSimpleClientset()
+	preTimeNowFn := timeNowFn
+	defer func() {
+		timeNowFn = preTimeNowFn
+	}()
+	timeNowFn = fakeTimeNowFn
+
+	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
+	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
+	pglister := pgInformer.Lister()
+	cache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: time.Second}}, nil, pglister, pgClient)
+
+	// init gang
+	podGroup := &v1alpha1.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "ganga",
+		},
+		Spec: v1alpha1.PodGroupSpec{
+			MinMember: 2,
+		},
+	}
+	gangId := util.GetId("default", "ganga")
+	cache.onPodGroupAdd(podGroup)
+	gang := cache.getGangFromCacheByGangId(gangId, false)
+	assert.Equal(t, gang.MinRequiredNumber, int(podGroup.Spec.MinMember))
+
+	// update gang
+	newPodGroup := podGroup.DeepCopy()
+	newPodGroup.Spec.MinMember = 3
+	cache.onPodGroupUpdate(podGroup, newPodGroup)
+	gang = cache.getGangFromCacheByGangId(gangId, false)
+	assert.Equal(t, gang.MinRequiredNumber, int(newPodGroup.Spec.MinMember))
 }

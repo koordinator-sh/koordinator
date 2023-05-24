@@ -8,7 +8,7 @@ reviewers:
   - "@jasonliu747"
   - "@zwzhang0107"
 creation-date: 2022-06-09
-last-updated: 2023-05-09
+last-updated: 2023-05-18
 ---
 # Resource Reservation
 
@@ -32,6 +32,7 @@ last-updated: 2023-05-09
             - [Story 5](#story-5)
         - [API](#api)
             - [Reservation Affinity](#reservation-affinity)
+            - [Reservation Allocate Policy](#reservation-allocate-policy)
         - [Implementation Details](#implementation-details)
             - [Schedule Reservations](#schedule-reservations)
             - [Allocate Reserved Resources](#allocate-reserved-resources)
@@ -156,8 +157,29 @@ type ReservationSpec struct {
     // and are not allocatable to other owners anymore. Defaults to true.
     // +kubebuilder:default=true
     // +optional
-    AllocateOnce bool `json:"allocateOnce,omitempty"`
+    AllocateOnce *bool `json:"allocateOnce,omitempty"`
+    // AllocatePolicy represents the allocation policy of reserved resources that Reservation expects.
+    // +kubebuilder:validation:Enum=Aligned;Restricted
+    // +optional
+    AllocatePolicy ReservationAllocatePolicy `json:"allocatePolicy,omitempty"`
 }
+
+type ReservationAllocatePolicy string
+
+const (
+    // ReservationAllocatePolicyDefault means that there is no restriction on the policy of reserved resources,
+    // and allocated from the Reservation first, and if it is insufficient, it is allocated from the node.
+    ReservationAllocatePolicyDefault ReservationAllocatePolicy = ""
+    // ReservationAllocatePolicyAligned indicates that the Pod allocates resources from the Reservation first.
+    // If the remaining resources of the Reservation are insufficient, it can be allocated from the node,
+    // but it is required to strictly follow the resource specifications of the Pod.
+    // This can be used to avoid the problem that a Pod uses multiple Reservations at the same time.
+    ReservationAllocatePolicyAligned ReservationAllocatePolicy = "Aligned"
+    // ReservationAllocatePolicyRestricted means that the resources requested by the Pod overlap with the resources reserved by the Reservation,
+    // then these intersection resources can only be allocated from the Reservation, but other resources can be allocated from the node.
+    // ReservationAllocatePolicyRestricted includes the semantics of ReservationAllocatePolicyAligned.
+    ReservationAllocatePolicyRestricted ReservationAllocatePolicy = "Restricted"
+)
 
 // ReservationTemplateSpec describes the data a Reservation should have when created from a template
 type ReservationTemplateSpec struct {
@@ -272,26 +294,39 @@ The Annotation key is `scheduling.koordinator.sh/reservation-affinity`, and the 
 ```go
 // ReservationAffinity represents the constraints of Pod selection Reservation
 type ReservationAffinity struct {
-	// If the affinity requirements specified by this field are not met at
-	// scheduling time, the pod will not be scheduled onto the node.
-	// If the affinity requirements specified by this field cease to be met
-	// at some point during pod execution (e.g. due to an update), the system
-	// may or may not try to eventually evict the pod from its node.
-	RequiredDuringSchedulingIgnoredDuringExecution *ReservationAffinitySelector `json:"requiredDuringSchedulingIgnoredDuringExecution,omitempty"`
-	// ReservationSelector is a selector which must be true for the pod to fit on a reservation.
-	// Selector which must match a reservation's labels for the pod to be scheduled on that node.
-	ReservationSelector map[string]string `json:"reservationSelector,omitempty"`
+    // If the affinity requirements specified by this field are not met at
+    // scheduling time, the pod will not be scheduled onto the node.
+    // If the affinity requirements specified by this field cease to be met
+    // at some point during pod execution (e.g. due to an update), the system
+    // may or may not try to eventually evict the pod from its node.
+    RequiredDuringSchedulingIgnoredDuringExecution *ReservationAffinitySelector `json:"requiredDuringSchedulingIgnoredDuringExecution,omitempty"`
+    // ReservationSelector is a selector which must be true for the pod to fit on a reservation.
+    // Selector which must match a reservation's labels for the pod to be scheduled on that node.
+    ReservationSelector map[string]string `json:"reservationSelector,omitempty"`
 }
 
 // ReservationAffinitySelector represents the union of the results of one or more label queries
 // over a set of reservations; that is, it represents the OR of the selectors represented
 // by the reservation selector terms.
 type ReservationAffinitySelector struct {
-	// Required. A list of reservation selector terms. The terms are ORed.
-	// Reuse corev1.NodeSelectorTerm to avoid defining too many repeated definitions.
-	ReservationSelectorTerms []corev1.NodeSelectorTerm `json:"reservationSelectorTerms,omitempty"`
+    // Required. A list of reservation selector terms. The terms are ORed.
+    // Reuse corev1.NodeSelectorTerm to avoid defining too many repeated definitions.
+    ReservationSelectorTerms []corev1.NodeSelectorTerm `json:"reservationSelectorTerms,omitempty"`
 }
 ```
+
+#### Reservation Allocate Policy
+
+When the scheduler allocates resources reserved by a Reservation to a Pod, it is possible to jointly allocate resources from multiple Reservations. For example, Reservation A reserves 4000m of CPU, and Reservation B reserves 8Gi of memory. Both A and B can be used by Pod 1, so Pod 1 will use the resources of Reservation A and B at the same time during scheduling. Although the scheduler can ensure that the overall resources of the node will not be oversold, it will still be confusing from the perspective of Reservation, and although this scenario is rare, it has not considered abolishing support for this scenario.
+But at the same time, taking into account the resource boundaries between Reservations, the `AllocatePolicy` field is newly added to support `Aligned` and `Restricted` policies.
+
+- `Aligned` indicates that the Pod allocates resources from the Reservation first. If the remaining resources of the Reservation are insufficient, it can be allocated from the node, but it is required to strictly follow the resource specifications of the Pod. This can be used to avoid the problem that a Pod uses multiple Reservations at the same time.
+
+- `Restricted` means that the resources requested by the Pod overlap with the resources reserved by the Reservation, then these intersection resources can only be allocated from the Reservation, but other resources can be allocated from the node. Restricted includes the semantics of ReservationAllocatePolicyAligned.
+
+If a node has multiple Reservations with Aligned or Restricted policies, and these Reservations cannot satisfy the pod’s request at all during filtering, the node will be filtered out.
+
+The default policy (currently is none) cannot coexist with the policies Aligned and Restricted.
 
 ### Implementation Details
 
@@ -452,6 +487,7 @@ Reserving resources with [`pause` pods with very low assigned priority](https://
 - [X]  08/08/2022: Update allocateOnce API
 - [X]  25/03/2023: Update the API and E2E Tests
 - [X]  09/05/2023: Add Reservation Affinity API
+- [X]  18/05/2023: Add Reservation Allocate Policy API
 
 ## References
 

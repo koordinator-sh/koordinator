@@ -56,8 +56,19 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	WebhookFramework:              {Default: true, PreRelease: featuregate.Beta},
 }
 
+const (
+	DisablePVCReservation featuregate.Feature = "DisablePVCReservation"
+)
+
+var (
+	defaultDeschedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
+		DisablePVCReservation: {Default: false, PreRelease: featuregate.Beta},
+	}
+)
+
 func init() {
 	runtime.Must(utilfeature.DefaultMutableFeatureGate.Add(defaultFeatureGates))
+	runtime.Must(utilfeature.DefaultMutableFeatureGate.Add(defaultDeschedulerFeatureGates))
 }
 
 func SetDefaultFeatureGates() {

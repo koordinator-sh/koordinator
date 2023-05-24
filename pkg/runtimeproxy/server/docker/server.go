@@ -125,10 +125,11 @@ func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) er
 
 	// need to backup pod meta first
 	for _, s := range sandboxes {
+		labels, annos := splitLabelsAndAnnotations(s.Labels)
 		store.WritePodSandboxInfo(s.ID, &store.PodSandboxInfo{
 			PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
-				Labels:       s.Labels,
-				Annotations:  s.Labels,
+				Labels:       labels,
+				Annotations:  annos,
 				CgroupParent: s.ContainerJSON.HostConfig.CgroupParent,
 				PodMeta: &v1alpha1.PodSandboxMetadata{
 					Name: s.Name,
@@ -141,10 +142,11 @@ func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) er
 	}
 
 	for _, c := range containers {
+		_, annos := splitLabelsAndAnnotations(c.Labels)
 		cInfo := &store.ContainerInfo{
 			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
 				ContainerResources:   HostConfigToResource(c.ContainerJSON.HostConfig),
-				ContainerAnnotations: c.Labels,
+				ContainerAnnotations: annos,
 				ContainerMeta: &v1alpha1.ContainerMetadata{
 					Name: c.Name,
 					Id:   c.ID,

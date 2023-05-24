@@ -18,8 +18,9 @@ package statesinformer
 
 import (
 	"context"
-	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"testing"
+
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"

@@ -330,63 +330,6 @@ func TestFilter(t *testing.T) {
 		},
 	}
 
-	owners := []schedulingv1alpha1.ReservationOwner{
-		{
-			Object: &corev1.ObjectReference{
-				Namespace: "default",
-				Name:      "test",
-				UID:       "123456",
-			},
-		},
-	}
-	reusableReservationNotScheduled := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "reusableReservationNotScheduled",
-			UID:  uuid.NewUUID(),
-		},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			AllocateOnce: pointer.Bool(false),
-			Owners:       owners,
-			Template: &corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{},
-			},
-		},
-		Status: schedulingv1alpha1.ReservationStatus{},
-	}
-
-	allocateOnceReservationNotScheduled := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "allocateOnceReservationNotScheduled",
-			UID:  uuid.NewUUID(),
-		},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			AllocateOnce: pointer.Bool(true),
-			Owners:       owners,
-			Template: &corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{},
-			},
-		},
-		Status: schedulingv1alpha1.ReservationStatus{},
-	}
-
-	reusableReservationScheduled := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "reusableReservationScheduled",
-			UID:  uuid.NewUUID(),
-		},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			AllocateOnce: pointer.Bool(false),
-			Owners:       owners,
-			Template: &corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{},
-			},
-		},
-		Status: schedulingv1alpha1.ReservationStatus{
-			NodeName: testNode.Name,
-			Phase:    schedulingv1alpha1.ReservationAvailable,
-		},
-	}
-
 	tests := []struct {
 		name         string
 		pod          *corev1.Pod
@@ -434,20 +377,6 @@ func TestFilter(t *testing.T) {
 			reservations: []*schedulingv1alpha1.Reservation{reservationNotMatchedNode},
 			nodeInfo:     testNodeInfo,
 			want:         framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonNodeNotMatchReservation),
-		},
-		{
-			name:         "only one reusable reservation can be scheduled on a same node",
-			pod:          reservationutil.NewReservePod(reusableReservationNotScheduled),
-			reservations: []*schedulingv1alpha1.Reservation{reusableReservationNotScheduled, reusableReservationScheduled},
-			nodeInfo:     testNodeInfo,
-			want:         framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonOnlyOneSameReusableReservationOnSameNode),
-		},
-		{
-			name:         "reusable reservation with allocateOnce reservation cannot be scheduled on a same node",
-			pod:          reservationutil.NewReservePod(allocateOnceReservationNotScheduled),
-			reservations: []*schedulingv1alpha1.Reservation{allocateOnceReservationNotScheduled, reusableReservationScheduled},
-			nodeInfo:     testNodeInfo,
-			want:         framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonOnlyOneSameReusableReservationOnSameNode),
 		},
 	}
 	for _, tt := range tests {
@@ -725,7 +654,7 @@ func TestFilterReservation(t *testing.T) {
 			}
 
 			state := &stateData{
-				matched: map[string][]*frameworkext.ReservationInfo{},
+				nodeReservationStates: map[string]nodeReservationState{},
 			}
 			for _, v := range tt.reservations {
 				pl.reservationCache.updateReservation(v)
@@ -733,7 +662,10 @@ func TestFilterReservation(t *testing.T) {
 					pl.reservationCache.addPod(v.UID, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "allocated-pod", UID: uuid.NewUUID()}})
 				}
 				rInfo := pl.reservationCache.getReservationInfoByUID(v.UID)
-				state.matched[v.Status.NodeName] = append(state.matched[v.Status.NodeName], rInfo)
+				nodeRState := state.nodeReservationStates[v.Status.NodeName]
+				nodeRState.nodeName = v.Status.NodeName
+				nodeRState.matched = append(nodeRState.matched, rInfo)
+				state.nodeReservationStates[v.Status.NodeName] = nodeRState
 			}
 			cycleState.Write(stateKey, state)
 
@@ -1078,9 +1010,7 @@ func TestPreBind(t *testing.T) {
 			})
 			status := pl.PreBind(context.TODO(), cycleState, tt.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
-			pod, err := suit.fw.ClientSet().CoreV1().Pods(tt.pod.Namespace).Get(context.TODO(), tt.pod.Name, metav1.GetOptions{})
-			assert.NoError(t, err)
-			assert.Equal(t, tt.wantPod, pod)
+			assert.Equal(t, tt.wantPod, tt.pod)
 		})
 	}
 }

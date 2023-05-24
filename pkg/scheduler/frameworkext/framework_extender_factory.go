@@ -18,6 +18,7 @@ package frameworkext
 
 import (
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 
@@ -73,6 +74,7 @@ type FrameworkExtenderFactory struct {
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	profiles                         map[string]FrameworkExtender
+	scheduler                        Scheduler
 }
 
 func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, error) {
@@ -118,6 +120,19 @@ func (f *FrameworkExtenderFactory) KoordinatorClientSet() koordinatorclientset.I
 
 func (f *FrameworkExtenderFactory) KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory {
 	return f.koordinatorSharedInformerFactory
+}
+
+// Scheduler return the scheduler adapter to support operating with cache and schedulingQueue.
+// NOTE: Plugins do not acquire a dispatcher instance during plugin initialization,
+// nor are they allowed to hold the object within the plugin object.
+func (f *FrameworkExtenderFactory) Scheduler() Scheduler {
+	return f.scheduler
+}
+
+func (f *FrameworkExtenderFactory) InitScheduler(sched *scheduler.Scheduler) {
+	f.scheduler = &SchedulerAdapter{
+		Scheduler: sched,
+	}
 }
 
 func (f *FrameworkExtenderFactory) Run() {

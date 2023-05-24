@@ -218,14 +218,17 @@ func TestNominateReservation(t *testing.T) {
 			pl := plugin.(*Plugin)
 			cycleState := framework.NewCycleState()
 			state := &stateData{
-				matched: map[string][]*frameworkext.ReservationInfo{},
+				nodeReservationStates: map[string]nodeReservationState{},
 			}
 			for _, reservation := range tt.reservations {
 				rInfo := frameworkext.NewReservationInfo(reservation)
 				if allocated := tt.allocated[reservation.UID]; len(allocated) > 0 {
 					rInfo.Allocated = allocated
 				}
-				state.matched[reservation.Status.NodeName] = append(state.matched[reservation.Status.NodeName], rInfo)
+				nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
+				nodeRState.nodeName = reservation.Status.NodeName
+				nodeRState.matched = append(nodeRState.matched, rInfo)
+				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
 				pl.reservationCache.updateReservation(reservation)
 			}
 			cycleState.Write(stateKey, state)

@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"reflect"
 	"sync"
 	"time"
@@ -47,6 +46,7 @@ import (
 	clientsetv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	listerv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -415,7 +415,7 @@ func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam
 		return rl, time.Duration(0), nil
 	}
 
-	rl[corev1.ResourceCPU] = *resource.NewMilliQuantity(int64(cpuUsed), resource.DecimalSI)
+	rl[corev1.ResourceCPU] = *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI)
 	rl[corev1.ResourceMemory] = *resource.NewQuantity(int64(memUsed), resource.BinarySI)
 
 	return rl, cpuAggregateResult.TimeRangeDuration(), nil

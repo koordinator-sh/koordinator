@@ -32,10 +32,13 @@ type Collector interface {
 	Started() bool
 }
 
+type PodCollector interface {
+	Collector
+	PodFilter
+}
+
 type DeviceCollector interface {
-	Enabled() bool
-	Setup(s *Context)
-	Run(stopCh <-chan struct{})
+	Collector
 	Shutdown()
 	Started() bool
 	Infos() metriccache.Devices

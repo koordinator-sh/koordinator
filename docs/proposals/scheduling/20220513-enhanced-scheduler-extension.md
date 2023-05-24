@@ -7,7 +7,7 @@ reviewers:
   - "@saintube"
   - "@buptcozy"
 creation-date: 2022-05-13
-last-updated: 2023-05-10
+last-updated: 2023-05-11
 status: provisional
 ---
 
@@ -97,8 +97,10 @@ type FrameworkExtender interface {
     framework.Framework
     ExtendedHandle
 
-    RunReservationPreFilterExtensionRemoveReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeInfo *framework.NodeInfo) *framework.Status
-    RunReservationPreFilterExtensionAddPodInReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podToAdd *framework.PodInfo, reservation *schedulingv1alpha1.Reservation, nodeInfo *framework.NodeInfo) *framework.Status
+    RunReservationExtensionPreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status
+    RunReservationExtensionRestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (PluginToReservationRestoreStates, *framework.Status)
+    RunReservationExtensionFinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states PluginToNodeReservationRestoreStates) *framework.Status
+
 }
 
 type ExtendedHandle interface {
@@ -159,7 +161,7 @@ In order to solve these problems, we need to make some new extensions in the Sch
 
 We additionally take a snapshot of the data in the original framework.SharedLister before PreFilter. The purpose of this is to support the modification of NodeInfo in the subsequent resource return process of Reservation. Therefore, we define the function `SharedListerAdapter`, which supports the adaptation of the original framework.SharedLister, and can supplement or modify data in advance. And with the additional Snapshot mechanism, it ensures the consistency of subsequent data views.
 
-Some additional logic can be performed before and after the PreFilter. For example, before PreFilter, we need to modify PVCRefCounts in NodeInfo to remove the count occupied by the PVC held by Reservation, otherwise the VolumeRestrictions plugin will fail to verify in PreFilter. After PreFilter, we need to remove Reservation from NodeInfo, this is to return the resources held by Reservation, and we also need to trigger the update of CycleState inside each plugin to correct some data, such as InterPodAffinity/PodTopologySpread, etc.
+Some additional logic can be performed before and after the PreFilter. For example, before PreFilter, we need to modify PVCRefCounts in NodeInfo to remove the count occupied by the PVC held by Reservation, otherwise the VolumeRestrictions plugin will fail to verify in PreFilter.
 
 To solve these problems, we define the `Transformer` interface. The plugin can be implemented on demand, and the Pod or NodeInfo can be modified when the before or after PreFilter/Filter. Similar to the custom implementation method `RunScorePlugins` mentioned above, we can customize the implementation methods `RunPreFilterPlugins` and `RunFilterPluginsWithNominatedPods`. Before executing the real extension point logic, first execute the `Tranformer` interface and modify the Pod and NodeInfo. If necessary, you can modify the Pod or Node before executing the Score Extension Point by implementing ScoreTransformer.
 
@@ -167,7 +169,7 @@ Considering that there may be multiple different Transformers to modify the Pod 
 
 Here are some additional explanations for the scenarios in which these new extension points should be used. If you can complete the scheduling function through the extension points such as Filter/Score provided by the K8s Scheduling Framework without modifying the incoming NodeInfo/Pod and other objects, you do not need to use these new extension points.
 
-Plugins like NodeNUMAResource/DeviceShare will allocate fine-grained resources to Pods, such as CPU Cores, some resources of GPU devices, etc. If the Reservation preempts such resources, it means that when the Pod it belongs to needs such resources, it should be allocated from the Reservation first. To express the semantics behind this scenario, we define the `ReservationPreFilterExtension` interface. After executing PreFilter, Koordinator Scheduler will call to support this interface. Execute `RemoveReservation` first, then `AddPodInReservation`.
+Plugins like NodeNUMAResource/DeviceShare will allocate fine-grained resources to Pods, such as CPU Cores, some resources of GPU devices, etc. If the Reservation preempts such resources, it means that when the Pod it belongs to needs such resources, it should be allocated from the Reservation first. To express the semantics behind this scenario, we define the `ReservationRestorePlugin` interface. Koordinator Scheduler in BeforePreFilter phase calls the method `ReservationRestorePlugin.ResstoreReservation` to calc the state if restore the matched and unmatched reservations, and scheduler pass the results that merged by node to the plugin via the method `ReservationRestorePlugin.FinalRestoreReservation`.
 
 When the Pod is successfully scheduled and a node is selected, it will enter the Reserve stage. If the node has a Reservation that matches the Pod, a most suitable Reservation instance needs to be selected. The most suitable Reservation instance must be perceived by plugins such as NodeNUMAResources/DeviceShare to help such plugins prioritize allocation from the Reservation when allocating resources. Therefore, we define the `Reservation Nominator` interface, which is responsible for nominating the most appropriate Reservation instance after the node scores and before Reserve. When the `ReservationNominator` gives a Reservation instance, the corresponding Reservation will be put into the CycleState, and other plugins can read the Reservation from the CycleState.
 
@@ -211,16 +213,23 @@ type ScoreTransformer interface {
     BeforeScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool, *framework.Status)
 }
 
-// ReservationPreFilterExtension is used to support the return of fine-grained resources
+// PluginToReservationRestoreStates declares a map from plugin name to its ReservationRestoreState.
+type PluginToReservationRestoreStates map[string]interface{}
+
+// PluginToNodeReservationRestoreStates declares a map from plugin name to its NodeReservationRestoreStates.
+type PluginToNodeReservationRestoreStates map[string]NodeReservationRestoreStates
+
+// NodeReservationRestoreStates declares a map from plugin name to its ReservationRestoreState.
+type NodeReservationRestoreStates map[string]interface{}
+
+// ReservationRestorePlugin is used to support the return of fine-grained resources
 // held by Reservation, such as CPU Cores, GPU Devices, etc. During Pod scheduling, resources
 // held by these reservations need to be allocated first, otherwise resources will be wasted.
-// First, RemoveReservation will be called to return the resources held by the Reservation, and
-// then AddPodInReservation will be called to indicate that the Pod has used some resources of
-// the Reservation, and these resources can no longer be allocated.
-type ReservationPreFilterExtension interface {
+type ReservationRestorePlugin interface {
     framework.Plugin
-    RemoveReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeInfo *framework.NodeInfo) *framework.Status
-    AddPodInReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, reservation *schedulingv1alpha1.Reservation, nodeInfo *framework.NodeInfo) *framework.Status
+    PreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status
+    RestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status)
+    FinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states NodeReservationRestoreStates) *framework.Status
 }
 
 // ReservationFilterPlugin is an interface for Filter Reservation plugins.
@@ -387,3 +396,4 @@ The following are the specific scoring results:
 - 2022-11-11: Update overview image and add comment to Hook
 - 2023-03-18: Add new extension points and clarify existing framework extenders
 - 2023-05-10: Update transformer interface signature
+- 2023-05-11: Update ReservationRestorePlugin

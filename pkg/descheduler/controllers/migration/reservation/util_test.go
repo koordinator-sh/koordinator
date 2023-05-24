@@ -26,6 +26,8 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func TestCreateOrUpdateReservationOptions(t *testing.T) {
@@ -37,9 +39,10 @@ func TestCreateOrUpdateReservationOptions(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		pod         *corev1.Pod
-		wantOptions *sev1alpha1.PodMigrateReservationOptions
+		name                  string
+		pod                   *corev1.Pod
+		disablePVCReservation bool
+		wantOptions           *sev1alpha1.PodMigrateReservationOptions
 	}{
 		{
 			name: "skip current node",
@@ -179,9 +182,191 @@ func TestCreateOrUpdateReservationOptions(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "skip current node with existing node affinity, enable pvc reservation",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences,
+					Namespace:       "default",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []corev1.NodeSelectorRequirement{
+											{
+												Key:      "test",
+												Operator: corev1.NodeSelectorOpIn,
+												Values:   []string{"xxxx"},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{{
+						Name: "",
+						VolumeSource: corev1.VolumeSource{
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{},
+						},
+					}},
+				},
+			},
+			wantOptions: &sev1alpha1.PodMigrateReservationOptions{
+				Template: &sev1alpha1.ReservationTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							LabelCreatedBy: "koord-descheduler",
+						},
+					},
+					Spec: sev1alpha1.ReservationSpec{
+						AllocateOnce: pointer.Bool(true),
+						Owners: []sev1alpha1.ReservationOwner{
+							{
+								Controller: &sev1alpha1.ReservationControllerReference{
+									OwnerReference: ownerReferences[0],
+									Namespace:      "default",
+								},
+							},
+						},
+						Template: &corev1.PodTemplateSpec{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace:       "default",
+								OwnerReferences: ownerReferences,
+							},
+							Spec: corev1.PodSpec{
+								Affinity: &corev1.Affinity{
+									NodeAffinity: &corev1.NodeAffinity{
+										RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+											NodeSelectorTerms: []corev1.NodeSelectorTerm{
+												{
+													MatchExpressions: []corev1.NodeSelectorRequirement{
+														{
+															Key:      "test",
+															Operator: corev1.NodeSelectorOpIn,
+															Values:   []string{"xxxx"},
+														},
+													},
+													MatchFields: []corev1.NodeSelectorRequirement{
+														{
+															Key:      "metadata.name",
+															Operator: corev1.NodeSelectorOpNotIn,
+															Values:   []string{"test-node"},
+														},
+													},
+												},
+											},
+										},
+									},
+								},
+								Volumes: []corev1.Volume{{
+									Name: "",
+									VolumeSource: corev1.VolumeSource{
+										PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{},
+									},
+								}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "skip current node with existing node affinity, disable pvc reservation",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences,
+					Namespace:       "default",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []corev1.NodeSelectorRequirement{
+											{
+												Key:      "test",
+												Operator: corev1.NodeSelectorOpIn,
+												Values:   []string{"xxxx"},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{{
+						Name: "",
+						VolumeSource: corev1.VolumeSource{
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{},
+						},
+					}},
+				},
+			},
+			disablePVCReservation: true,
+			wantOptions: &sev1alpha1.PodMigrateReservationOptions{
+				Template: &sev1alpha1.ReservationTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							LabelCreatedBy: "koord-descheduler",
+						},
+					},
+					Spec: sev1alpha1.ReservationSpec{
+						AllocateOnce: pointer.Bool(true),
+						Owners: []sev1alpha1.ReservationOwner{
+							{
+								Controller: &sev1alpha1.ReservationControllerReference{
+									OwnerReference: ownerReferences[0],
+									Namespace:      "default",
+								},
+							},
+						},
+						Template: &corev1.PodTemplateSpec{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace:       "default",
+								OwnerReferences: ownerReferences,
+							},
+							Spec: corev1.PodSpec{
+								Affinity: &corev1.Affinity{
+									NodeAffinity: &corev1.NodeAffinity{
+										RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+											NodeSelectorTerms: []corev1.NodeSelectorTerm{
+												{
+													MatchExpressions: []corev1.NodeSelectorRequirement{
+														{
+															Key:      "test",
+															Operator: corev1.NodeSelectorOpIn,
+															Values:   []string{"xxxx"},
+														},
+													},
+													MatchFields: []corev1.NodeSelectorRequirement{
+														{
+															Key:      "metadata.name",
+															Operator: corev1.NodeSelectorOpNotIn,
+															Values:   []string{"test-node"},
+														},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate, features.DisablePVCReservation, tt.disablePVCReservation)()
 			job := &sev1alpha1.PodMigrationJob{}
 			got := CreateOrUpdateReservationOptions(job, tt.pod)
 			assert.True(t, got.Template.Labels[apiext.LabelReservationOrder] != "")

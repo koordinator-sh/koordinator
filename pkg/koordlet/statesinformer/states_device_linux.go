@@ -18,6 +18,10 @@ package statesinformer
 
 import (
 	"context"
+	"os"
+	"sort"
+	"strings"
+
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -25,9 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
-	"os"
-	"sort"
-	"strings"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"

@@ -156,7 +156,7 @@ func dockerStub() *gostub.Stubs {
 				Body:       io.NopCloser(bytes.NewReader(b)),
 			}, nil
 		}
-		endpoint := fmt.Sprintf("unix://%s", handler.DockerEndpoint)
+		endpoint := fmt.Sprintf("unix://%s", handler.GetDockerEndpoint())
 		client := &http.Client{
 			Transport: transportFunc(info),
 		}
@@ -166,9 +166,6 @@ func dockerStub() *gostub.Stubs {
 }
 
 func resetEndpoint() {
-	handler.DockerEndpoint = filepath.Join(system.Conf.VarRunRootDir, "docker.sock")
-	handler.ContainerdEndpoint1 = filepath.Join(system.Conf.VarRunRootDir, "containerd.sock")
-	handler.ContainerdEndpoint2 = filepath.Join(system.Conf.VarRunRootDir, "containerd/containerd.sock")
 	DockerHandler = nil
 	ContainerdHandler = nil
 }

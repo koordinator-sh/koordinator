@@ -19,12 +19,12 @@ package statesinformer
 import (
 	"context"
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/golang/mock/gomock"
 	faketopologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	clientsetv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -34,15 +34,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/pointer"
-	"testing"
-	"time"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
+	clientsetv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	fakeclientslov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1/fake"
 	listerv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mockmetriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
 var _ listerv1alpha1.NodeMetricLister = &fakeNodeMetricLister{}
@@ -157,7 +159,7 @@ func (c *fakeNodeMetricClient) UpdateStatus(ctx context.Context, nodeMetric *slo
 // check sync with single node metric in metric cache
 func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 	endTime := time.Now()
-	startTime := endTime.Add(-time.Duration(30 * time.Second))
+	startTime := endTime.Add(-30 * time.Second)
 
 	type fields struct {
 		nodeName         string
@@ -225,7 +227,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					duration := endTime.Sub(startTime)
 					cpuQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
 					assert.NoError(t, err)
-					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, cpuQueryMeta, 1000, duration)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, cpuQueryMeta, 1, duration)
 
 					memQueryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
 					assert.NoError(t, err)
@@ -467,31 +469,31 @@ func Test_nodeMetricInformer_collectNodeAggregateMetric(t *testing.T) {
 			fields: fields{
 				nodeResultAVG: slov1alpha1.ResourceMap{
 					ResourceList: v1.ResourceList{
-						v1.ResourceCPU:    *resource.NewMilliQuantity(1, resource.DecimalSI),
+						v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
 						v1.ResourceMemory: *resource.NewQuantity(1, resource.BinarySI),
 					},
 				},
 				nodeResultP50: slov1alpha1.ResourceMap{
 					ResourceList: v1.ResourceList{
-						v1.ResourceCPU:    *resource.NewMilliQuantity(2, resource.DecimalSI),
+						v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
 						v1.ResourceMemory: *resource.NewQuantity(2, resource.BinarySI),
 					},
 				},
 				nodeResultP90: slov1alpha1.ResourceMap{
 					ResourceList: v1.ResourceList{
-						v1.ResourceCPU:    *resource.NewMilliQuantity(3, resource.DecimalSI),
+						v1.ResourceCPU:    *resource.NewMilliQuantity(3000, resource.DecimalSI),
 						v1.ResourceMemory: *resource.NewQuantity(3, resource.BinarySI),
 					},
 				},
 				nodeResultP95: slov1alpha1.ResourceMap{
 					ResourceList: v1.ResourceList{
-						v1.ResourceCPU:    *resource.NewMilliQuantity(4, resource.DecimalSI),
+						v1.ResourceCPU:    *resource.NewMilliQuantity(4000, resource.DecimalSI),
 						v1.ResourceMemory: *resource.NewQuantity(4, resource.BinarySI),
 					},
 				},
 				nodeResultP99: slov1alpha1.ResourceMap{
 					ResourceList: v1.ResourceList{
-						v1.ResourceCPU:    *resource.NewMilliQuantity(5, resource.DecimalSI),
+						v1.ResourceCPU:    *resource.NewMilliQuantity(5000, resource.DecimalSI),
 						v1.ResourceMemory: *resource.NewQuantity(5, resource.BinarySI),
 					},
 				},
@@ -822,7 +824,7 @@ func Test_nodeMetricInformer_collectNodeMetric(t *testing.T) {
 				queryparam: metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
 			},
 			samples: samples{
-				CPUUsed: 2000,
+				CPUUsed: 2,
 				MemUsed: 10 * 1024 * 1024 * 1024,
 			},
 			want: v1.ResourceList{

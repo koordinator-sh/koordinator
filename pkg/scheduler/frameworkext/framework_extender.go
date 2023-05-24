@@ -23,6 +23,7 @@ import (
 	"unsafe"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -38,6 +39,8 @@ var _ FrameworkExtender = &frameworkExtenderImpl{}
 type frameworkExtenderImpl struct {
 	framework.Framework
 
+	schedulerFn func() Scheduler
+
 	snapshotGeneration               *int64
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
@@ -46,21 +49,29 @@ type frameworkExtenderImpl struct {
 	filterTransformers    []FilterTransformer
 	scoreTransformers     []ScoreTransformer
 
-	reservationFilterPlugins       []ReservationFilterPlugin
-	reservationScorePlugins        []ReservationScorePlugin
-	reservationNominatorPlugins    []ReservationNominator
-	reservationPreBindPlugins      []ReservationPreBindPlugin
-	reservationPreFilterExtensions []ReservationPreFilterExtension
+	reservationFilterPlugins    []ReservationFilterPlugin
+	reservationScorePlugins     []ReservationScorePlugin
+	reservationNominatorPlugins []ReservationNominator
+	reservationPreBindPlugins   []ReservationPreBindPlugin
+	reservationRestorePlugins   []ReservationRestorePlugin
+
+	preBindExtensionsPlugins map[string]PreBindExtensions
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
 	snapshotGeneration := reflectSnapshotGeneration(fw.SnapshotSharedLister())
 
+	schedulerFn := func() Scheduler {
+		return f.Scheduler()
+	}
+
 	frameworkExtender := &frameworkExtenderImpl{
 		Framework:                        fw,
+		schedulerFn:                      schedulerFn,
 		snapshotGeneration:               snapshotGeneration,
 		koordinatorClientSet:             f.KoordinatorClientSet(),
 		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
+		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
 	}
 	frameworkExtender.updateTransformer(f.defaultTransformers...)
 	return frameworkExtender
@@ -117,8 +128,11 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	if r, ok := pl.(ReservationPreBindPlugin); ok {
 		ext.reservationPreBindPlugins = append(ext.reservationPreBindPlugins, r)
 	}
-	if r, ok := pl.(ReservationPreFilterExtension); ok {
-		ext.reservationPreFilterExtensions = append(ext.reservationPreFilterExtensions, r)
+	if r, ok := pl.(ReservationRestorePlugin); ok {
+		ext.reservationRestorePlugins = append(ext.reservationRestorePlugins, r)
+	}
+	if p, ok := pl.(PreBindExtensions); ok {
+		ext.preBindExtensionsPlugins[p.Name()] = p
 	}
 }
 
@@ -128,6 +142,13 @@ func (ext *frameworkExtenderImpl) KoordinatorClientSet() koordinatorclientset.In
 
 func (ext *frameworkExtenderImpl) KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory {
 	return ext.koordinatorSharedInformerFactory
+}
+
+// Scheduler return the scheduler adapter to support operating with cache and schedulingQueue.
+// NOTE: Plugins do not acquire a dispatcher instance during plugin initialization,
+// nor are they allowed to hold the object within the plugin object.
+func (ext *frameworkExtenderImpl) Scheduler() Scheduler {
+	return ext.schedulerFn()
 }
 
 func (ext *frameworkExtenderImpl) takeSnapshot() error {
@@ -243,7 +264,13 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 // RunPreBindPlugins supports PreBindReservation for Reservation
 func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	if !reservationutil.IsReservePod(pod) {
-		return ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
+		original := pod
+		pod = pod.DeepCopy()
+		status := ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
+		if !status.IsSuccess() {
+			return status
+		}
+		return ext.runPreBindExtensionPlugins(ctx, state, original, pod)
 	}
 
 	reservationLister := ext.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
@@ -253,9 +280,9 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 		return framework.AsStatus(err)
 	}
 
+	original := reservation
 	reservation = reservation.DeepCopy()
 	reservation.Status.NodeName = nodeName
-
 	for _, pl := range ext.reservationPreBindPlugins {
 		status := pl.PreBindReservation(ctx, state, reservation, nodeName)
 		if !status.IsSuccess() {
@@ -264,30 +291,68 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 			return framework.AsStatus(fmt.Errorf("running ReservationPreBindPlugin plugin %q: %w", pl.Name(), err))
 		}
 	}
+	return ext.runPreBindExtensionPlugins(ctx, state, original, reservation)
+}
+
+func (ext *frameworkExtenderImpl) runPreBindExtensionPlugins(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status {
+	plugins := ext.Framework.ListPlugins()
+	if plugins == nil {
+		return nil
+	}
+	for _, plugin := range plugins.PreBind.Enabled {
+		pl := ext.preBindExtensionsPlugins[plugin.Name]
+		if pl == nil {
+			continue
+		}
+		status := pl.ApplyPatch(ctx, cycleState, originalObj, modifiedObj)
+		if status != nil && status.Code() == framework.Skip {
+			continue
+		}
+		if !status.IsSuccess() {
+			err := status.AsError()
+			klog.ErrorS(err, "Failed running PreBindExtension plugin", "plugin", pl.Name(), "pod", klog.KObj(originalObj))
+			return framework.AsStatus(fmt.Errorf("running PreBindExtension plugin %q: %w", pl.Name(), err))
+		}
+		return status
+	}
 	return nil
 }
 
-// RunReservationPreFilterExtensionRemoveReservation restores the Reservation during PreFilter phase
-func (ext *frameworkExtenderImpl) RunReservationPreFilterExtensionRemoveReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeInfo *framework.NodeInfo) *framework.Status {
-	for _, pl := range ext.reservationPreFilterExtensions {
-		status := pl.RemoveReservation(ctx, cycleState, podToSchedule, reservation, nodeInfo)
+func (ext *frameworkExtenderImpl) RunReservationExtensionPreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+	for _, pl := range ext.reservationRestorePlugins {
+		status := pl.PreRestoreReservation(ctx, cycleState, pod)
 		if !status.IsSuccess() {
-			err := status.AsError()
-			klog.ErrorS(err, "Failed running RemoveReservation on plugin", "plugin", pl.Name(), "pod", klog.KObj(podToSchedule))
-			return framework.AsStatus(fmt.Errorf("running RemoveReservation on plugin %q: %w", pl.Name(), err))
+			klog.ErrorS(status.AsError(), "Failed running PreRestoreReservation on plugin", "plugin", pl.Name(), "pod", klog.KObj(pod))
+			return status
 		}
 	}
 	return nil
 }
 
-// RunReservationPreFilterExtensionAddPodInReservation restores Pod of the Reservation during PreFilter phase
-func (ext *frameworkExtenderImpl) RunReservationPreFilterExtensionAddPodInReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podToAdd *framework.PodInfo, reservation *schedulingv1alpha1.Reservation, nodeInfo *framework.NodeInfo) *framework.Status {
-	for _, pl := range ext.reservationPreFilterExtensions {
-		status := pl.AddPodInReservation(ctx, cycleState, podToSchedule, podToAdd, reservation, nodeInfo)
+// RunReservationExtensionRestoreReservation restores the Reservation during PreFilter phase
+func (ext *frameworkExtenderImpl) RunReservationExtensionRestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (PluginToReservationRestoreStates, *framework.Status) {
+	pluginToRestoreState := PluginToReservationRestoreStates{}
+	for _, pl := range ext.reservationRestorePlugins {
+		state, status := pl.RestoreReservation(ctx, cycleState, podToSchedule, matched, unmatched, nodeInfo)
 		if !status.IsSuccess() {
-			err := status.AsError()
-			klog.ErrorS(err, "Failed running AddPodInReservation on plugin", "plugin", pl.Name(), "pod", klog.KObj(podToSchedule))
-			return framework.AsStatus(fmt.Errorf("running AddPodInReservation on plugin %q: %w", pl.Name(), err))
+			klog.ErrorS(status.AsError(), "Failed running RestoreReservation on plugin", "plugin", pl.Name(), "pod", klog.KObj(podToSchedule))
+			return nil, status
+		}
+		pluginToRestoreState[pl.Name()] = state
+	}
+	return pluginToRestoreState, nil
+}
+
+func (ext *frameworkExtenderImpl) RunReservationExtensionFinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states PluginToNodeReservationRestoreStates) *framework.Status {
+	for _, pl := range ext.reservationRestorePlugins {
+		s, ok := states[pl.Name()]
+		if !ok {
+			continue
+		}
+		status := pl.FinalRestoreReservation(ctx, cycleState, pod, s)
+		if !status.IsSuccess() {
+			klog.ErrorS(status.AsError(), "Failed running FinalRestoreReservation on plugin", "plugin", pl.Name(), "pod", klog.KObj(pod))
+			return status
 		}
 	}
 	return nil

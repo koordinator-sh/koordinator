@@ -38,7 +38,7 @@ type Config struct {
 	SysFSRootDir          string
 	ProcRootDir           string
 	VarRunRootDir         string
-	NodeNameOverride      string
+	RunRootDir            string
 	RuntimeHooksConfigDir string
 
 	ContainerdEndPoint string
@@ -67,6 +67,7 @@ func NewHostModeConfig() *Config {
 		SysRootDir:            "/sys/",
 		SysFSRootDir:          "/sys/fs/",
 		VarRunRootDir:         "/var/run/",
+		RunRootDir:            "/run/",
 		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
 	}
 }
@@ -80,6 +81,7 @@ func NewDsModeConfig() *Config {
 		SysRootDir:            "/host-sys/",
 		SysFSRootDir:          "/host-sys-fs/",
 		VarRunRootDir:         "/host-var-run/",
+		RunRootDir:            "/host-run/",
 		RuntimeHooksConfigDir: "/host-etc-hookserver/",
 	}
 }
@@ -94,9 +96,9 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.SysFSRootDir, "sys-fs-root-dir", c.SysFSRootDir, "host /sys/fs dir in container, used by resctrl fs")
 	fs.StringVar(&c.ProcRootDir, "proc-root-dir", c.ProcRootDir, "host /proc dir in container")
 	fs.StringVar(&c.VarRunRootDir, "var-run-root-dir", c.VarRunRootDir, "host /var/run dir in container")
+	fs.StringVar(&c.RunRootDir, "run-root-dir", c.RunRootDir, "host /run dir in container")
 
 	fs.StringVar(&c.CgroupKubePath, "cgroup-kube-dir", c.CgroupKubePath, "Cgroup kube dir")
-	fs.StringVar(&c.NodeNameOverride, "node-name-override", c.NodeNameOverride, "If non-empty, will use this string as identification instead of the actual machine name. ")
 	fs.StringVar(&c.ContainerdEndPoint, "containerd-endpoint", c.ContainerdEndPoint, "containerd endPoint")
 	fs.StringVar(&c.DockerEndPoint, "docker-endpoint", c.DockerEndPoint, "docker endPoint")
 

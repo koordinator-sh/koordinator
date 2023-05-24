@@ -18,62 +18,25 @@ package deviceshare
 
 import (
 	"fmt"
-	"sort"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
-
-// deviceResources is used to present resources per device.
-// we use the minor of device as key
-// "0": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
-// "1": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
-type deviceResources map[int]corev1.ResourceList
-
-func (in deviceResources) DeepCopy() deviceResources {
-	if in == nil {
-		return nil
-	}
-	out := deviceResources{}
-	for k, v := range in {
-		out[k] = v.DeepCopy()
-	}
-	return out
-}
-
-type deviceResourceMinorPair struct {
-	minor     int
-	resources corev1.ResourceList
-}
-
-func sortDeviceResourcesByMinor(resources deviceResources) []deviceResourceMinorPair {
-	r := make([]deviceResourceMinorPair, 0, len(resources))
-	for k, v := range resources {
-		r = append(r, deviceResourceMinorPair{
-			minor:     k,
-			resources: v,
-		})
-	}
-	sort.Slice(r, func(i, j int) bool {
-		return r[i].minor < r[j].minor
-	})
-	return r
-}
 
 type nodeDevice struct {
 	lock        sync.RWMutex
 	deviceTotal map[schedulingv1alpha1.DeviceType]deviceResources
 	deviceFree  map[schedulingv1alpha1.DeviceType]deviceResources
 	deviceUsed  map[schedulingv1alpha1.DeviceType]deviceResources
-	allocateSet map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList
+	allocateSet map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources
 }
 
 func newNodeDevice() *nodeDevice {
@@ -81,7 +44,7 @@ func newNodeDevice() *nodeDevice {
 		deviceTotal: make(map[schedulingv1alpha1.DeviceType]deviceResources),
 		deviceFree:  make(map[schedulingv1alpha1.DeviceType]deviceResources),
 		deviceUsed:  make(map[schedulingv1alpha1.DeviceType]deviceResources),
-		allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]map[int]corev1.ResourceList),
+		allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources),
 	}
 }
 
@@ -143,7 +106,7 @@ func (n *nodeDevice) resetDeviceTotal(resources map[schedulingv1alpha1.DeviceTyp
 func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations, pod *corev1.Pod, add bool) {
 	if len(deviceAllocations) > 0 {
 		for deviceType, allocations := range deviceAllocations {
-			if !n.isValid(deviceType, pod, add) {
+			if !n.isValid(deviceType, pod.Namespace, pod.Name, add) {
 				continue
 			}
 			n.updateDeviceUsed(deviceType, allocations, add)
@@ -153,10 +116,10 @@ func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations,
 	}
 }
 
-func (n *nodeDevice) getUsed(pod *corev1.Pod) map[schedulingv1alpha1.DeviceType]deviceResources {
+func (n *nodeDevice) getUsed(namespace, name string) map[schedulingv1alpha1.DeviceType]deviceResources {
 	podNamespacedName := types.NamespacedName{
-		Namespace: pod.Namespace,
-		Name:      pod.Name,
+		Namespace: namespace,
+		Name:      name,
 	}
 	allocations := map[schedulingv1alpha1.DeviceType]deviceResources{}
 	for deviceType, podAllocated := range n.allocateSet {
@@ -254,14 +217,14 @@ func (n *nodeDevice) updateDeviceUsed(deviceType schedulingv1alpha1.DeviceType, 
 	}
 }
 
-func (n *nodeDevice) isValid(deviceType schedulingv1alpha1.DeviceType, pod *corev1.Pod, add bool) bool {
+func (n *nodeDevice) isValid(deviceType schedulingv1alpha1.DeviceType, namespace string, name string, add bool) bool {
 	allocateSet := n.allocateSet[deviceType]
 	if allocateSet == nil {
-		allocateSet = make(map[types.NamespacedName]map[int]corev1.ResourceList)
+		allocateSet = make(map[types.NamespacedName]deviceResources)
 	}
 	n.allocateSet[deviceType] = allocateSet
 
-	podNamespacedName := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
+	podNamespacedName := types.NamespacedName{Namespace: namespace, Name: name}
 	if add {
 		if _, ok := allocateSet[podNamespacedName]; ok {
 			// for non-failover scenario, pod might already exist in cache after Reserve step.
@@ -283,19 +246,20 @@ func (n *nodeDevice) updateAllocateSet(deviceType schedulingv1alpha1.DeviceType,
 	}
 
 	if n.allocateSet[deviceType] == nil {
-		n.allocateSet[deviceType] = make(map[types.NamespacedName]map[int]corev1.ResourceList)
+		n.allocateSet[deviceType] = make(map[types.NamespacedName]deviceResources)
 	}
 	if add {
-		n.allocateSet[deviceType][podNamespacedName] = make(map[int]corev1.ResourceList)
+		resources := make(deviceResources)
 		for _, allocation := range allocations {
-			n.allocateSet[deviceType][podNamespacedName][int(allocation.Minor)] = allocation.Resources.DeepCopy()
+			resources[int(allocation.Minor)] = allocation.Resources.DeepCopy()
 		}
+		n.allocateSet[deviceType][podNamespacedName] = resources
 	} else {
 		delete(n.allocateSet[deviceType], podNamespacedName)
 	}
 }
 
-func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
+func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, required, preferred map[schedulingv1alpha1.DeviceType]sets.Int, requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
 	allocateResult := make(apiext.DeviceAllocations)
 
 	for deviceType := range DeviceResourceNames {
@@ -304,7 +268,16 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptib
 			if !hasDeviceResource(podRequest, deviceType) {
 				break
 			}
-			if err := n.tryAllocateDeviceByType(podRequest, deviceType, allocateResult, preemptibleDevices); err != nil {
+			err := n.tryAllocateDeviceByType(
+				podRequest,
+				deviceType,
+				required[deviceType],
+				preferred[deviceType],
+				allocateResult,
+				requiredDeviceResources[deviceType],
+				preemptibleDeviceResources[deviceType],
+			)
+			if err != nil {
 				return nil, err
 			}
 		default:
@@ -315,42 +288,26 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, preemptib
 	return allocateResult, nil
 }
 
-func (n *nodeDevice) tryAllocateDeviceByType(podRequest corev1.ResourceList, deviceType schedulingv1alpha1.DeviceType, allocateResult apiext.DeviceAllocations, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) error {
+func (n *nodeDevice) tryAllocateDeviceByType(
+	podRequest corev1.ResourceList,
+	deviceType schedulingv1alpha1.DeviceType,
+	required sets.Int,
+	preferred sets.Int,
+	allocateResult apiext.DeviceAllocations,
+	requiredDeviceResources deviceResources,
+	preemptibleDeviceResources deviceResources,
+) error {
 	podRequest = quotav1.Mask(podRequest, DeviceResourceNames[deviceType])
 	nodeDeviceTotal := n.deviceTotal[deviceType]
 	if len(nodeDeviceTotal) == 0 {
 		return fmt.Errorf("node does not have enough %v", deviceType)
 	}
 
-	// freeDevices is the rest of the whole machine, or is the rest of the reservation
-	freeDevices := n.deviceFree[deviceType]
-	deviceUsed := n.deviceUsed[deviceType]
-	// preemptible represent preemptible devices, which may be a complete device instance or part of an instance's resources
-	preemptible := preemptibleDevices[deviceType]
-	var mergedFreeDevices deviceResources
-	if len(preemptible) > 0 {
-		mergedFreeDevices = make(deviceResources)
-		for minor, v := range preemptible {
-			used := quotav1.SubtractWithNonNegativeResult(deviceUsed[minor], v)
-			remaining := quotav1.SubtractWithNonNegativeResult(nodeDeviceTotal[minor], used)
-			if !quotav1.IsZero(remaining) {
-				mergedFreeDevices[minor] = remaining
-			}
-		}
-	}
-
-	// The merging logic is executed only when there is a device that can be preempted,
-	// and the remaining idle devices are merged together to participate in the allocation
-	if len(mergedFreeDevices) > 0 {
-		for minor, v := range freeDevices {
-			res := mergedFreeDevices[minor]
-			if res == nil {
-				mergedFreeDevices[minor] = v.DeepCopy()
-			} else {
-				util.AddResourceList(res, v)
-			}
-		}
-		freeDevices = mergedFreeDevices
+	var freeDevices deviceResources
+	if len(requiredDeviceResources) > 0 {
+		freeDevices = requiredDeviceResources
+	} else {
+		freeDevices = n.calcFreeWithPreemptible(deviceType, preemptibleDeviceResources)
 	}
 
 	if deviceType == schedulingv1alpha1.GPU {
@@ -388,8 +345,11 @@ func (n *nodeDevice) tryAllocateDeviceByType(podRequest corev1.ResourceList, dev
 	}
 
 	satisfiedDeviceCount := 0
-	orderedDeviceResources := sortDeviceResourcesByMinor(freeDevices)
+	orderedDeviceResources := sortDeviceResourcesByMinor(freeDevices, preferred)
 	for _, deviceResource := range orderedDeviceResources {
+		if required.Len() > 0 && !required.Has(deviceResource.minor) {
+			continue
+		}
 		// Skip unhealthy Device instances with zero resources
 		if quotav1.IsZero(deviceResource.resources) {
 			continue
@@ -408,6 +368,36 @@ func (n *nodeDevice) tryAllocateDeviceByType(podRequest corev1.ResourceList, dev
 	}
 	klog.V(5).Infof("node resource does not satisfy pod's multiple %v request, expect %v, got %v", deviceType, deviceWanted, satisfiedDeviceCount)
 	return fmt.Errorf("node does not have enough %v", deviceType)
+}
+
+func (n *nodeDevice) calcFreeWithPreemptible(deviceType schedulingv1alpha1.DeviceType, preemptible deviceResources) deviceResources {
+	deviceFree := n.deviceFree[deviceType]
+	deviceUsed := n.deviceUsed[deviceType]
+	deviceTotal := n.deviceTotal[deviceType]
+	var mergedFreeDevices deviceResources
+	if len(preemptible) > 0 {
+		mergedFreeDevices = make(deviceResources)
+		for minor, v := range preemptible {
+			used := quotav1.SubtractWithNonNegativeResult(deviceUsed[minor], v)
+			remaining := quotav1.SubtractWithNonNegativeResult(deviceTotal[minor], used)
+			if !quotav1.IsZero(remaining) {
+				mergedFreeDevices[minor] = remaining
+			}
+		}
+	}
+
+	// The merging logic is executed only when there is a device that can be preempted,
+	// and the remaining idle devices are merged together to participate in the allocation
+	if len(mergedFreeDevices) > 0 {
+		for minor, v := range deviceFree {
+			res := mergedFreeDevices[minor]
+			if res == nil {
+				mergedFreeDevices[minor] = v.DeepCopy()
+			}
+		}
+		deviceFree = mergedFreeDevices
+	}
+	return deviceFree
 }
 
 type nodeDeviceCache struct {
