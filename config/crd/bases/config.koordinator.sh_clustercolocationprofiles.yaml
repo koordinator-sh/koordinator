@@ -119,6 +119,13 @@ spec:
                 - koord-batch
                 - koord-free
                 type: string
+              probability:
+                anyOf:
+                - type: integer
+                - type: string
+                description: Probability indicates profile will make effect with a
+                  probability.
+                x-kubernetes-int-or-string: true
               qosClass:
                 description: QoSClass describes the type of Koordinator QoS that the
                   Pod is running. The value will be injected into Pod as label koordinator.sh/qosClass.
