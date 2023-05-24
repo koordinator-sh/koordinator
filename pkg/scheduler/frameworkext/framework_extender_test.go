@@ -83,6 +83,22 @@ func (h *TestTransformer) BeforeScore(ctx context.Context, cycleState *framework
 	return pod, nodes, true, nil
 }
 
+func (h *TestTransformer) BeforeReserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*corev1.Pod, bool, *framework.Status) {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[fmt.Sprintf("BeforeReserve-%d", h.index)] = fmt.Sprintf("%d", h.index)
+	return pod, true, nil
+}
+
+func (h *TestTransformer) BeforeUnreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*corev1.Pod, bool, *framework.Status) {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[fmt.Sprintf("BeforeUnreserve-%d", h.index)] = fmt.Sprintf("%d", h.index)
+	return pod, true, nil
+}
+
 type testPreBindReservationState struct {
 	reservation *schedulingv1alpha1.Reservation
 }
@@ -370,6 +386,37 @@ func TestRunReservePluginsReserve(t *testing.T) {
 			assert.Equal(t, tt.wantReservation, reservation)
 		})
 	}
+}
+
+func TestReserveTransformer(t *testing.T) {
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+	fh, err := schedulertesting.NewFramework(
+		registeredPlugins,
+		"koord-scheduler",
+	)
+	assert.NoError(t, err)
+
+	testTransformers := []SchedulingTransformer{
+		&TestTransformer{index: 1},
+		&TestTransformer{index: 2},
+	}
+	extenderFactory, _ := NewFrameworkExtenderFactory(WithDefaultTransformers(testTransformers...))
+	extender := NewFrameworkExtender(extenderFactory, fh)
+	cycleState := framework.NewCycleState()
+	pod := &corev1.Pod{}
+	status := extender.RunReservePluginsReserve(context.TODO(), cycleState, pod, "test-node-1")
+	assert.True(t, status.IsSuccess())
+	extender.RunReservePluginsUnreserve(context.TODO(), cycleState, pod, "test-node-1")
+	expectedAnnotations := map[string]string{
+		"BeforeReserve-1":   "1",
+		"BeforeReserve-2":   "2",
+		"BeforeUnreserve-1": "1",
+		"BeforeUnreserve-2": "2",
+	}
+	assert.Equal(t, expectedAnnotations, pod.Annotations)
 }
 
 func TestPreBind(t *testing.T) {

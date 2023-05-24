@@ -81,6 +81,13 @@ type ScoreTransformer interface {
 	BeforeScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool, *framework.Status)
 }
 
+// ReserveTransformer is executed before Reserve and Unreserve
+type ReserveTransformer interface {
+	SchedulingTransformer
+	BeforeReserve(ctx context.Context, cycleState *framework.CycleState, assumedPod *corev1.Pod, nodeName string) (*corev1.Pod, bool, *framework.Status)
+	BeforeUnreserve(ctx context.Context, cycleState *framework.CycleState, assumedPod *corev1.Pod, nodeName string) (*corev1.Pod, bool, *framework.Status)
+}
+
 // PluginToReservationRestoreStates declares a map from plugin name to its ReservationRestoreState.
 type PluginToReservationRestoreStates map[string]interface{}
 

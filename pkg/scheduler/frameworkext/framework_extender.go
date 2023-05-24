@@ -49,6 +49,7 @@ type frameworkExtenderImpl struct {
 	preFilterTransformers []PreFilterTransformer
 	filterTransformers    []FilterTransformer
 	scoreTransformers     []ScoreTransformer
+	reserveTransformers   []ReserveTransformer
 
 	reservationFilterPlugins    []ReservationFilterPlugin
 	reservationScorePlugins     []ReservationScorePlugin
@@ -110,6 +111,11 @@ func (ext *frameworkExtenderImpl) updateTransformer(transformers ...SchedulingTr
 		if ok {
 			ext.scoreTransformers = append(ext.scoreTransformers, scoreTransformer)
 			klog.V(4).InfoS("framework extender got scheduling transformer registered", "score", scoreTransformer.Name())
+		}
+		reserveTransformer, ok := transformer.(ReserveTransformer)
+		if ok {
+			ext.reserveTransformers = append(ext.reserveTransformers, reserveTransformer)
+			klog.V(4).InfoS("framework extender got scheduling transformer registered", "reserve", reserveTransformer.Name())
 		}
 	}
 }
@@ -260,7 +266,35 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 			break
 		}
 	}
+
+	for _, transformer := range ext.reserveTransformers {
+		newPod, transformed, status := transformer.BeforeReserve(ctx, cycleState, pod, nodeName)
+		if !status.IsSuccess() {
+			klog.ErrorS(status.AsError(), "Failed to run BeforeReserve", "pod", klog.KObj(pod), "plugin", transformer.Name())
+			return status
+		}
+		if transformed {
+			klog.V(5).InfoS("BeforeReserve transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
+			pod = newPod
+		}
+	}
+
 	return ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
+}
+
+func (ext *frameworkExtenderImpl) RunReservePluginsUnreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
+	for _, transformer := range ext.reserveTransformers {
+		newPod, transformed, status := transformer.BeforeUnreserve(ctx, cycleState, pod, nodeName)
+		if !status.IsSuccess() {
+			klog.ErrorS(status.AsError(), "Failed to run BeforeUnreserve", "pod", klog.KObj(pod), "plugin", transformer.Name())
+			return
+		}
+		if transformed {
+			klog.V(5).InfoS("BeforeUnreserve transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
+			pod = newPod
+		}
+	}
+	ext.Framework.RunReservePluginsUnreserve(ctx, cycleState, pod, nodeName)
 }
 
 // RunPreBindPlugins supports PreBindReservation for Reservation
