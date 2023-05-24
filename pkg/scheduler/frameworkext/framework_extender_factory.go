@@ -75,6 +75,7 @@ type FrameworkExtenderFactory struct {
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	profiles                         map[string]FrameworkExtender
 	scheduler                        Scheduler
+	*errorHandlerDispatcher
 }
 
 func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, error) {
@@ -94,6 +95,7 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		koordinatorClientSet:             handleOptions.koordinatorClientSet,
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
 		profiles:                         map[string]FrameworkExtender{},
+		errorHandlerDispatcher:           newErrorHandlerDispatcher(),
 	}, nil
 }
 
@@ -133,6 +135,8 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched *scheduler.Scheduler) {
 	f.scheduler = &SchedulerAdapter{
 		Scheduler: sched,
 	}
+	f.errorHandlerDispatcher.setDefaultHandler(sched.Error)
+	sched.Error = f.errorHandlerDispatcher.Error
 }
 
 func (f *FrameworkExtenderFactory) Run() {

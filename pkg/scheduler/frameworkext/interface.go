@@ -38,6 +38,7 @@ type ExtendedHandle interface {
 	Scheduler() Scheduler
 	KoordinatorClientSet() koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory
+	RegisterErrorHandler(handler ErrorHandler)
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.

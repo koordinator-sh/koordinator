@@ -98,7 +98,7 @@ func TestAddReservationErrorHandler(t *testing.T) {
 		koordClientSet := koordfake.NewSimpleClientset(testR)
 		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 
-		AddReservationErrorHandler(sched, internalHandler, koordClientSet, koordSharedInformerFactory)
+		handler := MakeReservationErrorHandler(sched, internalHandler, koordClientSet, koordSharedInformerFactory)
 
 		koordSharedInformerFactory.Start(nil)
 		koordSharedInformerFactory.WaitForCacheSync(nil)
@@ -108,7 +108,7 @@ func TestAddReservationErrorHandler(t *testing.T) {
 		}
 
 		expectedErr := errors.New(strings.Repeat("test error", validation.NoteLengthLimit))
-		sched.Error(queuedPodInfo, expectedErr)
+		handler(queuedPodInfo, expectedErr)
 
 		r, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), testR.Name, metav1.GetOptions{})
 		assert.NoError(t, err)
