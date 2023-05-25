@@ -34,8 +34,10 @@ type SchedulerCache interface {
 	AddPod(pod *corev1.Pod) error
 	UpdatePod(oldPod, newPod *corev1.Pod) error
 	RemovePod(pod *corev1.Pod) error
+	AssumePod(pod *corev1.Pod) error
 	IsAssumedPod(pod *corev1.Pod) (bool, error)
 	GetPod(pod *corev1.Pod) (*corev1.Pod, error)
+	ForgetPod(pod *corev1.Pod) error
 }
 
 type SchedulingQueue interface {
@@ -132,12 +134,20 @@ func (f *FakeScheduler) RemovePod(pod *corev1.Pod) error {
 	return nil
 }
 
+func (f *FakeScheduler) AssumePod(pod *corev1.Pod) error {
+	return nil
+}
+
 func (f *FakeScheduler) IsAssumedPod(pod *corev1.Pod) (bool, error) {
 	return false, nil
 }
 
 func (f *FakeScheduler) GetPod(pod *corev1.Pod) (*corev1.Pod, error) {
 	return nil, nil
+}
+
+func (f *FakeScheduler) ForgetPod(pod *corev1.Pod) error {
+	return nil
 }
 
 func (f *FakeQueue) Add(pod *corev1.Pod) error {
