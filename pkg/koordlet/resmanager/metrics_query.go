@@ -23,7 +23,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
 var (
@@ -52,59 +51,68 @@ func (r *resmanager) collectorNodeMetrics(start, end time.Time, queryMeta metric
 	return aggregateResult, nil
 }
 
-// query data for 2 * collectResUsedIntervalSeconds
-func (r *resmanager) collectPodMetricLast() []*metriccache.PodResourceMetric {
+func (r *resmanager) collectAllPodMetricsLast(metricResource metriccache.MetricResource) map[string]float64 {
 	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
-	return r.collectPodMetrics(queryParam)
+	return r.collectAllPodMetrics(*queryParam, metricResource)
 }
 
-func (r *resmanager) collectPodMetrics(queryParam *metriccache.QueryParam) []*metriccache.PodResourceMetric {
+func (r *resmanager) collectAllPodMetrics(queryParam metriccache.QueryParam, metricResource metriccache.MetricResource) map[string]float64 {
 	podsMeta := r.statesInformer.GetAllPods()
-	podsMetrics := make([]*metriccache.PodResourceMetric, 0, len(podsMeta))
+	podsMetrics := make(map[string]float64)
 	for _, podMeta := range podsMeta {
-		podQueryResult := r.collectPodMetric(podMeta, queryParam)
-		podMetric := podQueryResult.Metric
-		if podMetric != nil {
-			podsMetrics = append(podsMetrics, podMetric)
+		queryMeta, err := metricResource.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(podMeta.Pod.UID)))
+		if err != nil {
+			klog.Warningf("build pod %s/%s query meta failed, kind: %s, error: %v", podMeta.Pod.Namespace, podMeta.Pod.Name, queryMeta.GetKind(), err)
+			continue
 		}
+		podQueryResult, err := r.collectPodMetric(queryMeta, *queryParam.Start, *queryParam.End)
+		if err != nil {
+			klog.Warningf("query pod %s/%s metric failed, kind: %s, error: %v", podMeta.Pod.Namespace, podMeta.Pod.Name, queryMeta.GetKind(), err)
+			continue
+		}
+		value, err := podQueryResult.Value(queryParam.Aggregate)
+		if err != nil {
+			klog.Warningf("aggregate pod %s/%s metric failed, kind: %s, error: %v", podMeta.Pod.Namespace, podMeta.Pod.Name, queryMeta.GetKind(), err)
+			continue
+		}
+		podsMetrics[string(podMeta.Pod.UID)] = value
+
 	}
 	return podsMetrics
 }
 
-func (r *resmanager) collectPodMetric(podMeta *statesinformer.PodMeta, queryParam *metriccache.QueryParam) metriccache.PodResourceQueryResult {
-	if podMeta == nil || podMeta.Pod == nil {
-		return metriccache.PodResourceQueryResult{QueryResult: metriccache.QueryResult{Error: fmt.Errorf("pod is nil")}}
+func (r *resmanager) collectPodMetricLast(queryMeta metriccache.MetricMeta) (float64, error) {
+	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
+	result, err := r.collectPodMetric(queryMeta, *queryParam.Start, *queryParam.End)
+	if err != nil {
+		return 0, err
 	}
-	podUID := string(podMeta.Pod.UID)
-	queryResult := r.metricCache.GetPodResourceMetric(&podUID, queryParam)
-	if queryResult.Error != nil {
-		klog.V(5).Infof("get pod %v resource metric failed, error %v", podUID, queryResult.Error)
-		return queryResult
-	}
-	if queryResult.Metric == nil {
-		klog.V(5).Infof("pod %v metric not exist", podUID)
-		return queryResult
-	}
-	return queryResult
+	return result.Value(queryParam.Aggregate)
 }
 
-func (r *resmanager) collectContainerResMetricLast(containerID *string) metriccache.ContainerResourceQueryResult {
-	if containerID == nil {
-		return metriccache.ContainerResourceQueryResult{
-			QueryResult: metriccache.QueryResult{Error: fmt.Errorf("container is nil")},
-		}
+func (r *resmanager) collectPodMetric(queryMeta metriccache.MetricMeta, start, end time.Time) (metriccache.AggregateResult, error) {
+	querier, err := r.metricCache.Querier(start, end)
+	if err != nil {
+		return nil, err
 	}
+	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
+	if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
+		return nil, err
+	}
+	return aggregateResult, nil
+}
+
+func (r *resmanager) collectContainerResMetricLast(queryMeta metriccache.MetricMeta) (float64, error) {
 	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
-	queryResult := r.metricCache.GetContainerResourceMetric(containerID, queryParam)
-	if queryResult.Error != nil {
-		klog.Warningf("get container %v resource metric failed, error %v", containerID, queryResult.Error)
-		return queryResult
+	querier, err := r.metricCache.Querier(*queryParam.Start, *queryParam.End)
+	if err != nil {
+		return 0, err
 	}
-	if queryResult.Metric == nil {
-		klog.Warningf("container %v metric not exist", containerID)
-		return queryResult
+	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
+	if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
+		return 0, err
 	}
-	return queryResult
+	return aggregateResult.Value(queryParam.Aggregate)
 }
 
 func (r *resmanager) collectContainerThrottledMetric(containerID *string) (metriccache.AggregateResult, error) {

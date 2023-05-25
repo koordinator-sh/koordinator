@@ -75,16 +75,11 @@ type MetricCache interface {
 	TSDBStorage
 	KVStorage
 
-	GetPodResourceMetric(podUID *string, param *QueryParam) PodResourceQueryResult
-	GetContainerResourceMetric(containerID *string, param *QueryParam) ContainerResourceQueryResult
 	GetNodeCPUInfo(param *QueryParam) (*NodeCPUInfo, error)
 	GetNodeLocalStorageInfo(param *QueryParam) (*NodeLocalStorageInfo, error)
 	GetBECPUResourceMetric(param *QueryParam) BECPUResourceQueryResult
 	GetContainerInterferenceMetric(metricName InterferenceMetricName, podUID *string, containerID *string, param *QueryParam) ContainerInterferenceQueryResult
 	GetPodInterferenceMetric(metricName InterferenceMetricName, podUID *string, param *QueryParam) PodInterferenceQueryResult
-	InsertNodeResourceMetric(t time.Time, nodeResUsed *NodeResourceMetric) error
-	InsertPodResourceMetric(t time.Time, podResUsed *PodResourceMetric) error
-	InsertContainerResourceMetric(t time.Time, containerResUsed *ContainerResourceMetric) error
 	InsertNodeCPUInfo(info *NodeCPUInfo) error
 	InsertNodeLocalStorageInfo(info *NodeLocalStorageInfo) error
 	InsertBECPUResourceMetric(t time.Time, metric *BECPUResourceMetric) error
@@ -125,146 +120,6 @@ func (m *metricCache) Run(stopCh <-chan struct{}) error {
 	}, time.Duration(m.config.MetricGCIntervalSeconds)*time.Second, stopCh)
 
 	return nil
-}
-
-func (m *metricCache) GetPodResourceMetric(podUID *string, param *QueryParam) PodResourceQueryResult {
-	result := PodResourceQueryResult{}
-	if podUID == nil || param == nil || param.Start == nil || param.End == nil {
-		result.Error = fmt.Errorf("pod %v query parameters are illegal %v", podUID, param)
-		return result
-	}
-	metrics, err := m.db.GetPodResourceMetric(podUID, param.Start, param.End)
-	if err != nil {
-		result.Error = fmt.Errorf("get pod %v resource metric failed, query params %v, error %v", *podUID, param, err)
-		return result
-	}
-	if len(metrics) == 0 {
-		result.Error = fmt.Errorf("get pod %v resource metric not exist, query params %v", *podUID, param)
-		return result
-	}
-
-	aggregateFunc := getAggregateFunc(param.Aggregate)
-	cpuUsed, err := aggregateFunc(metrics, AggregateParam{ValueFieldName: "CPUUsedCores", TimeFieldName: "Timestamp"})
-	if err != nil {
-		result.Error = fmt.Errorf("get pod %v aggregate CPUUsedCores failed, metrics %v, error %v",
-			*podUID, metrics, err)
-		return result
-	}
-	memoryUsed, err := aggregateFunc(metrics, AggregateParam{ValueFieldName: "MemoryUsedBytes", TimeFieldName: "Timestamp"})
-	if err != nil {
-		result.Error = fmt.Errorf("get pod %v aggregate MemoryUsedBytes failed, metrics %v, error %v",
-			*podUID, metrics, err)
-		return result
-	}
-
-	// gpu metrics time series.
-	// m.GPUs is a slice.
-	gpuUsagesByTime := make([][]gpuResourceMetric, 0)
-	for _, m := range metrics {
-		if len(m.GPUs) == 0 {
-			continue
-		}
-		gpuUsagesByTime = append(gpuUsagesByTime, m.GPUs)
-	}
-
-	var aggregateGPUMetrics []GPUMetric
-	if len(gpuUsagesByTime) > 0 {
-		aggregateGPUMetrics, err = m.aggregateGPUUsages(gpuUsagesByTime, aggregateFunc)
-		if err != nil {
-			result.Error = fmt.Errorf("get pod aggregate GPUMetric failed, metrics %v, error %v", metrics, err)
-			return result
-		}
-	}
-
-	count, err := count(metrics)
-	if err != nil {
-		result.Error = fmt.Errorf("get node aggregate count failed, metrics %v, error %v", metrics, err)
-		return result
-	}
-
-	result.AggregateInfo = &AggregateInfo{MetricsCount: int64(count)}
-	result.Metric = &PodResourceMetric{
-		PodUID: *podUID,
-		CPUUsed: CPUMetric{
-			CPUUsed: *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI),
-		},
-		MemoryUsed: MemoryMetric{
-			MemoryWithoutCache: *resource.NewQuantity(int64(memoryUsed), resource.BinarySI),
-		},
-		GPUs: aggregateGPUMetrics,
-	}
-
-	return result
-}
-
-func (m *metricCache) GetContainerResourceMetric(containerID *string, param *QueryParam) ContainerResourceQueryResult {
-	result := ContainerResourceQueryResult{}
-	if containerID == nil || param == nil || param.Start == nil || param.End == nil {
-		result.Error = fmt.Errorf("container %v query parameters are illegal %v", containerID, param)
-		return result
-	}
-	metrics, err := m.db.GetContainerResourceMetric(containerID, param.Start, param.End)
-	if err != nil {
-		result.Error = fmt.Errorf("get container %v resource metric failed, query params %v, error %v",
-			containerID, param, err)
-		return result
-	}
-	if len(metrics) == 0 {
-		result.Error = fmt.Errorf("get container %v resource metric not exist, query params %v", containerID, param)
-		return result
-	}
-
-	aggregateFunc := getAggregateFunc(param.Aggregate)
-	cpuUsed, err := aggregateFunc(metrics, AggregateParam{ValueFieldName: "CPUUsedCores", TimeFieldName: "Timestamp"})
-	if err != nil {
-		result.Error = fmt.Errorf("get container %v aggregate CPUUsedCores failed, metrics %v, error %v",
-			containerID, metrics, err)
-		return result
-	}
-	memoryUsed, err := aggregateFunc(metrics, AggregateParam{ValueFieldName: "MemoryUsedBytes", TimeFieldName: "Timestamp"})
-	if err != nil {
-		result.Error = fmt.Errorf("get container %v aggregate MemoryUsedBytes failed, metrics %v, error %v",
-			containerID, metrics, err)
-		return result
-	}
-
-	count, err := count(metrics)
-	if err != nil {
-		result.Error = fmt.Errorf("get container aggregate count failed, metrics %v, error %v", metrics, err)
-		return result
-	}
-
-	// gpu metrics time series.
-	// m.GPUs is a slice.
-	gpuUsagesByTime := make([][]gpuResourceMetric, 0)
-	for _, m := range metrics {
-		if len(m.GPUs) == 0 {
-			continue
-		}
-		gpuUsagesByTime = append(gpuUsagesByTime, m.GPUs)
-	}
-
-	var aggregateGPUMetrics []GPUMetric
-	if len(gpuUsagesByTime) > 0 {
-		aggregateGPUMetrics, err = m.aggregateGPUUsages(gpuUsagesByTime, aggregateFunc)
-		if err != nil {
-			result.Error = fmt.Errorf("get container aggregate GPUMetric failed, metrics %v, error %v", metrics, err)
-			return result
-		}
-	}
-
-	result.AggregateInfo = &AggregateInfo{MetricsCount: int64(count)}
-	result.Metric = &ContainerResourceMetric{
-		ContainerID: *containerID,
-		CPUUsed: CPUMetric{
-			CPUUsed: *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI),
-		},
-		MemoryUsed: MemoryMetric{
-			MemoryWithoutCache: *resource.NewQuantity(int64(memoryUsed), resource.BinarySI),
-		},
-		GPUs: aggregateGPUMetrics,
-	}
-	return result
 }
 
 func (m *metricCache) GetBECPUResourceMetric(param *QueryParam) BECPUResourceQueryResult {
@@ -606,73 +461,6 @@ func aggregatePSI(metrics interface{}, aggregateFunc AggregationFunc) (interface
 		CPUFullSupported: cpuFullSupported,
 	}
 	return metricValue, nil
-}
-
-func (m *metricCache) InsertNodeResourceMetric(t time.Time, nodeResUsed *NodeResourceMetric) error {
-	gpuUsages := make([]gpuResourceMetric, len(nodeResUsed.GPUs))
-	for idx, usage := range nodeResUsed.GPUs {
-		gpuUsages[idx] = gpuResourceMetric{
-			DeviceUUID:  usage.DeviceUUID,
-			Minor:       usage.Minor,
-			SMUtil:      float64(usage.SMUtil),
-			MemoryUsed:  float64(usage.MemoryUsed.Value()),
-			MemoryTotal: float64(usage.MemoryTotal.Value()),
-			Timestamp:   t,
-		}
-	}
-
-	dbItem := &nodeResourceMetric{
-		CPUUsedCores:    float64(nodeResUsed.CPUUsed.CPUUsed.MilliValue()) / 1000,
-		MemoryUsedBytes: float64(nodeResUsed.MemoryUsed.MemoryWithoutCache.Value()),
-		GPUs:            gpuUsages,
-		Timestamp:       t,
-	}
-	return m.db.InsertNodeResourceMetric(dbItem)
-}
-
-func (m *metricCache) InsertPodResourceMetric(t time.Time, podResUsed *PodResourceMetric) error {
-	gpuUsages := make([]gpuResourceMetric, len(podResUsed.GPUs))
-	for idx, usage := range podResUsed.GPUs {
-		gpuUsages[idx] = gpuResourceMetric{
-			DeviceUUID:  usage.DeviceUUID,
-			Minor:       usage.Minor,
-			SMUtil:      float64(usage.SMUtil),
-			MemoryUsed:  float64(usage.MemoryUsed.Value()),
-			MemoryTotal: float64(usage.MemoryTotal.Value()),
-			Timestamp:   t,
-		}
-	}
-
-	dbItem := &podResourceMetric{
-		PodUID:          podResUsed.PodUID,
-		CPUUsedCores:    float64(podResUsed.CPUUsed.CPUUsed.MilliValue()) / 1000,
-		MemoryUsedBytes: float64(podResUsed.MemoryUsed.MemoryWithoutCache.Value()),
-		GPUs:            gpuUsages,
-		Timestamp:       t,
-	}
-	return m.db.InsertPodResourceMetric(dbItem)
-}
-
-func (m *metricCache) InsertContainerResourceMetric(t time.Time, containerResUsed *ContainerResourceMetric) error {
-	gpuUsages := make([]gpuResourceMetric, len(containerResUsed.GPUs))
-	for idx, usage := range containerResUsed.GPUs {
-		gpuUsages[idx] = gpuResourceMetric{
-			DeviceUUID:  usage.DeviceUUID,
-			Minor:       usage.Minor,
-			SMUtil:      float64(usage.SMUtil),
-			MemoryUsed:  float64(usage.MemoryUsed.Value()),
-			MemoryTotal: float64(usage.MemoryTotal.Value()),
-			Timestamp:   t,
-		}
-	}
-	dbItem := &containerResourceMetric{
-		ContainerID:     containerResUsed.ContainerID,
-		CPUUsedCores:    float64(containerResUsed.CPUUsed.CPUUsed.MilliValue()) / 1000,
-		MemoryUsedBytes: float64(containerResUsed.MemoryUsed.MemoryWithoutCache.Value()),
-		GPUs:            gpuUsages,
-		Timestamp:       t,
-	}
-	return m.db.InsertContainerResourceMetric(dbItem)
 }
 
 func (m *metricCache) InsertBECPUResourceMetric(t time.Time, metric *BECPUResourceMetric) error {

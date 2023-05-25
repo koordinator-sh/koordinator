@@ -69,18 +69,34 @@ const (
 
 // MetricPropertiesFunc is a collection of functions generating metric property k-v, for metric sample generation and query
 var MetricPropertiesFunc = struct {
-	Pod       func(string) map[MetricProperty]string
-	Container func(string) map[MetricProperty]string
-	GPU       func(string, string) map[MetricProperty]string
+	Pod          func(string) map[MetricProperty]string
+	PodGPU       func(string, string, string) map[MetricProperty]string
+	Container    func(string) map[MetricProperty]string
+	ContainerGPU func(string, string, string) map[MetricProperty]string
+	GPU          func(string, string) map[MetricProperty]string
 }{
 	Pod: func(podUID string) map[MetricProperty]string {
 		return map[MetricProperty]string{
 			MetricPropertyPodUID: podUID,
 		}
 	},
+	PodGPU: func(podUID, minor, uuid string) map[MetricProperty]string {
+		return map[MetricProperty]string{
+			MetricPropertyPodUID:        podUID,
+			MetricPropertyGPUMinor:      minor,
+			MetricPropertyGPUDeviceUUID: uuid,
+		}
+	},
 	Container: func(containerID string) map[MetricProperty]string {
 		return map[MetricProperty]string{
 			MetricPropertyContainerID: containerID,
+		}
+	},
+	ContainerGPU: func(containerID, minor, uuid string) map[MetricProperty]string {
+		return map[MetricProperty]string{
+			MetricPropertyContainerID:   containerID,
+			MetricPropertyGPUMinor:      minor,
+			MetricPropertyGPUDeviceUUID: uuid,
 		}
 	},
 	GPU: func(minor, uuid string) map[MetricProperty]string {

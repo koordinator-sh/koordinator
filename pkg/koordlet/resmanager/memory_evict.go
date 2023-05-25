@@ -40,8 +40,8 @@ type MemoryEvictor struct {
 }
 
 type podInfo struct {
-	pod       *corev1.Pod
-	podMetric *metriccache.PodResourceMetric
+	pod     *corev1.Pod
+	memUsed float64
 }
 
 func NewMemoryEvictor(mgr *resmanager) *MemoryEvictor {
@@ -91,7 +91,7 @@ func (m *MemoryEvictor) memoryEvict() {
 		return
 	}
 
-	podMetrics := m.resManager.collectPodMetricLast()
+	podMetrics := m.resManager.collectAllPodMetricsLast(metriccache.PodMemUsageMetric)
 	node := m.resManager.statesInformer.GetNode()
 	if node == nil {
 		klog.Warningf("skip memory evict, Node %v is nil", m.resManager.nodeName)
@@ -133,7 +133,7 @@ func (m *MemoryEvictor) memoryEvict() {
 	m.killAndEvictBEPods(node, podMetrics, memoryNeedRelease)
 }
 
-func (m *MemoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics []*metriccache.PodResourceMetric, memoryNeedRelease int64) {
+func (m *MemoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics map[string]float64, memoryNeedRelease int64) {
 	bePodInfos := m.getSortedBEPodInfos(podMetrics)
 	message := fmt.Sprintf("killAndEvictBEPods for node(%v), need to release memory: %v", m.resManager.nodeName, memoryNeedRelease)
 	memoryReleased := int64(0)
@@ -147,8 +147,8 @@ func (m *MemoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics []*metr
 		killMsg := fmt.Sprintf("%v, kill pod: %v", message, bePod.pod.Name)
 		killContainers(bePod.pod, killMsg)
 		killedPods = append(killedPods, bePod.pod)
-		if bePod.podMetric != nil {
-			memoryReleased += bePod.podMetric.MemoryUsed.MemoryWithoutCache.Value()
+		if bePod.memUsed != 0 {
+			memoryReleased += int64(bePod.memUsed)
 		}
 	}
 
@@ -158,19 +158,15 @@ func (m *MemoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics []*metr
 	klog.Infof("killAndEvictBEPods completed, memoryNeedRelease(%v) memoryReleased(%v)", memoryNeedRelease, memoryReleased)
 }
 
-func (m *MemoryEvictor) getSortedBEPodInfos(podMetrics []*metriccache.PodResourceMetric) []*podInfo {
-	podMetricMap := make(map[string]*metriccache.PodResourceMetric, len(podMetrics))
-	for _, podMetric := range podMetrics {
-		podMetricMap[podMetric.PodUID] = podMetric
-	}
+func (m *MemoryEvictor) getSortedBEPodInfos(podMetricMap map[string]float64) []*podInfo {
 
 	var bePodInfos []*podInfo
 	for _, podMeta := range m.resManager.statesInformer.GetAllPods() {
 		pod := podMeta.Pod
 		if extension.GetPodQoSClass(pod) == extension.QoSBE {
 			info := &podInfo{
-				pod:       pod,
-				podMetric: podMetricMap[string(pod.UID)],
+				pod:     pod,
+				memUsed: podMetricMap[string(pod.UID)],
 			}
 			bePodInfos = append(bePodInfos, info)
 		}
@@ -182,12 +178,14 @@ func (m *MemoryEvictor) getSortedBEPodInfos(podMetrics []*metriccache.PodResourc
 		if bePodInfos[i].pod.Spec.Priority != nil && bePodInfos[j].pod.Spec.Priority != nil && *bePodInfos[i].pod.Spec.Priority != *bePodInfos[j].pod.Spec.Priority {
 			return *bePodInfos[i].pod.Spec.Priority < *bePodInfos[j].pod.Spec.Priority
 		}
-		if bePodInfos[i].podMetric != nil && bePodInfos[j].podMetric != nil {
-			return bePodInfos[i].podMetric.MemoryUsed.MemoryWithoutCache.Value() > bePodInfos[j].podMetric.MemoryUsed.MemoryWithoutCache.Value()
-		} else if bePodInfos[i].podMetric == nil && bePodInfos[j].podMetric == nil {
+		if bePodInfos[i].memUsed != 0 && bePodInfos[j].memUsed != 0 {
+			//return bePodInfos[i].podMetric.MemoryUsed.MemoryWithoutCache.Value() > bePodInfos[j].podMetric.MemoryUsed.MemoryWithoutCache.Value()
+			return bePodInfos[i].memUsed > bePodInfos[j].memUsed
+		} else if bePodInfos[i].memUsed == 0 && bePodInfos[j].memUsed == 0 {
+
 			return bePodInfos[i].pod.Name > bePodInfos[j].pod.Name
 		}
-		return bePodInfos[j].podMetric == nil
+		return bePodInfos[j].memUsed == 0
 	})
 
 	return bePodInfos

@@ -323,9 +323,18 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		AggregatedNodeUsages: r.collectNodeAggregateMetric(endTime, spec.CollectPolicy.NodeAggregatePolicy),
 	}
 
+	var gpus koordletutil.GPUDevices
+	value, ok := r.metricCache.Get(koordletutil.GPUDeviceType)
+	if ok {
+		gpus, ok = value.(koordletutil.GPUDevices)
+		if !ok {
+			klog.Errorf("value type error, expect: %T, got %T", koordletutil.GPUDevices{}, value)
+		}
+	}
+
 	podsMeta := r.podsInformer.GetAllPods()
 	podsMetricInfo := make([]*slov1alpha1.PodMetricInfo, 0, len(podsMeta))
-	podQueryParam := &metriccache.QueryParam{
+	podQueryParam := metriccache.QueryParam{
 		Aggregate: metriccache.AggregationTypeAVG,
 		Start:     &startTime,
 		End:       &endTime,
@@ -334,6 +343,9 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		podMetric := r.collectPodMetric(podMeta, podQueryParam)
 		if podMetric != nil {
 			r.fillExtensionMap(podMetric, podMeta.Pod)
+			if len(gpus) > 0 {
+				r.fillGPUMetrics(podQueryParam, podMetric, string(podMeta.Pod.UID), gpus)
+			}
 			podsMetricInfo = append(podsMetricInfo, podMetric)
 		}
 	}
@@ -434,6 +446,9 @@ func (r *nodeMetricInformer) collectNodeGPUMetric(queryparam metriccache.QueryPa
 		if err != nil {
 			return result, err
 		}
+		if gpuCoreUsageAggregateResult.Count() == 0 {
+			continue
+		}
 		coreUsage, err := gpuCoreUsageAggregateResult.Value(queryparam.Aggregate)
 		if err != nil {
 			return result, err
@@ -441,6 +456,9 @@ func (r *nodeMetricInformer) collectNodeGPUMetric(queryparam metriccache.QueryPa
 		gpuMemUsedAggregateResult, err := doQuery(querier, metriccache.NodeGPUMemUsageMetric, metriccache.MetricPropertiesFunc.GPU(fmt.Sprintf("%d", gpu.Minor), gpu.UUID))
 		if err != nil {
 			return result, err
+		}
+		if gpuMemUsedAggregateResult.Count() == 0 {
+			continue
 		}
 		memUsage, err := gpuMemUsedAggregateResult.Value(queryparam.Aggregate)
 		if err != nil {
@@ -485,25 +503,106 @@ func (r *nodeMetricInformer) collectNodeAggregateMetric(endTime time.Time, aggre
 	return aggregateUsages
 }
 
-func (r *nodeMetricInformer) collectPodMetric(podMeta *PodMeta, queryParam *metriccache.QueryParam) *slov1alpha1.PodMetricInfo {
+func (r *nodeMetricInformer) collectPodMetric(podMeta *PodMeta, queryParam metriccache.QueryParam) *slov1alpha1.PodMetricInfo {
 	if podMeta == nil || podMeta.Pod == nil {
 		return nil
 	}
 	podUID := string(podMeta.Pod.UID)
-	queryResult := r.metricCache.GetPodResourceMetric(&podUID, queryParam)
-	if queryResult.Error != nil {
-		klog.Warningf("get pod %v resource metric failed, error %v", podUID, queryResult.Error)
+
+	querier, err := r.metricCache.Querier(*queryParam.Start, *queryParam.End)
+	if err != nil {
+		klog.Warningf("failed to get querier for pod %s/%s, error %v", podMeta.Pod.Namespace, podMeta.Pod.Name, err)
 		return nil
 	}
-	if queryResult.Metric == nil {
-		klog.Warningf("pod %v metric not exist", podUID)
+
+	cpuAggregateResult, err := doQuery(querier, metriccache.PodCPUUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
+	if err != nil {
 		return nil
 	}
-	return &slov1alpha1.PodMetricInfo{
+	cpuUsed, err := cpuAggregateResult.Value(queryParam.Aggregate)
+	if err != nil {
+		return nil
+	}
+
+	memAggregateResult, err := doQuery(querier, metriccache.PodMemUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
+	if err != nil {
+		return nil
+	}
+
+	memUsed, err := memAggregateResult.Value(queryParam.Aggregate)
+	if err != nil {
+		return nil
+	}
+	rtn := &slov1alpha1.PodMetricInfo{
 		Namespace: podMeta.Pod.Namespace,
 		Name:      podMeta.Pod.Name,
-		PodUsage:  *convertPodMetricToResourceMap(queryResult.Metric),
+		PodUsage: slov1alpha1.ResourceMap{
+			ResourceList: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memUsed), resource.BinarySI),
+			},
+		},
 	}
+	return rtn
+}
+
+func (r *nodeMetricInformer) collectPodGPUMetric(queryparam metriccache.QueryParam, uid string, gpus koordletutil.GPUDevices) ([]schedulingv1alpha1.DeviceInfo, error) {
+	result := make([]schedulingv1alpha1.DeviceInfo, 0)
+	querier, err := r.metricCache.Querier(*queryparam.Start, *queryparam.End)
+	if err != nil {
+		klog.Warningf("get query failed, error %v", err)
+		return nil, nil
+	}
+	for _, gpu := range gpus {
+		properties := metriccache.MetricPropertiesFunc.PodGPU(uid, fmt.Sprintf("%d", gpu.Minor), gpu.UUID)
+		gpuCoreUsageAggregateResult, err := doQuery(querier, metriccache.PodGPUCoreUsageMetric, properties)
+		if err != nil {
+			return result, err
+		}
+		if gpuCoreUsageAggregateResult.Count() == 0 {
+			continue
+		}
+		coreUsage, err := gpuCoreUsageAggregateResult.Value(queryparam.Aggregate)
+		if err != nil {
+			return result, err
+		}
+		gpuMemUsedAggregateResult, err := doQuery(querier, metriccache.PodGPUMemUsageMetric, properties)
+		if err != nil {
+			return result, err
+		}
+		if gpuMemUsedAggregateResult.Count() == 0 {
+			continue
+		}
+		memUsage, err := gpuMemUsedAggregateResult.Value(queryparam.Aggregate)
+		if err != nil {
+			return result, err
+		}
+		memoryRatioRaw := 100 * memUsage / float64(gpu.MemoryTotal)
+		minor := gpu.Minor
+		result = append(result, schedulingv1alpha1.DeviceInfo{
+			UUID:  gpu.UUID,
+			Minor: pointer.Int32(minor),
+			Type:  schedulingv1alpha1.GPU,
+			// TODO: how to check the health status of GPU
+			Resources: map[corev1.ResourceName]resource.Quantity{
+				apiext.ResourceGPUCore:        *resource.NewQuantity(int64(coreUsage), resource.DecimalSI),
+				apiext.ResourceGPUMemory:      *resource.NewQuantity(int64(memUsage), resource.BinarySI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(int64(memoryRatioRaw), resource.DecimalSI),
+			},
+		})
+	}
+
+	return result, nil
+}
+
+func (r *nodeMetricInformer) fillGPUMetrics(queryparam metriccache.QueryParam, info *slov1alpha1.PodMetricInfo, uid string, gpus koordletutil.GPUDevices) {
+	podGPUMetrics, err := r.collectPodGPUMetric(queryparam, uid, gpus)
+	if err != nil {
+		klog.Warningf("collect pod UID(%s) gpu metric failed, error: %v", uid, err)
+		return
+	}
+
+	info.PodUsage.Devices = podGPUMetrics
 }
 
 const (
@@ -537,34 +636,6 @@ func (su *statusUpdater) updateStatus(nodeMetric *slov1alpha1.NodeMetric, newSta
 	_, err := su.nodeMetricClient.UpdateStatus(context.TODO(), newNodeMetric, metav1.UpdateOptions{})
 	su.previousTimestamp = time.Now()
 	return err
-}
-
-func convertPodMetricToResourceMap(podMetric *metriccache.PodResourceMetric) *slov1alpha1.ResourceMap {
-	var deviceInfos []schedulingv1alpha1.DeviceInfo
-	if len(podMetric.GPUs) > 0 {
-		for _, gpu := range podMetric.GPUs {
-			memoryRatioRaw := 100 * float64(gpu.MemoryUsed.Value()) / float64(gpu.MemoryTotal.Value())
-			gpuInfo := schedulingv1alpha1.DeviceInfo{
-				UUID:  gpu.DeviceUUID,
-				Minor: &gpu.Minor,
-				Type:  schedulingv1alpha1.GPU,
-				// TODO: how to check the health status of GPU
-				Resources: map[corev1.ResourceName]resource.Quantity{
-					apiext.ResourceGPUCore:        *resource.NewQuantity(int64(gpu.SMUtil), resource.DecimalSI),
-					apiext.ResourceGPUMemory:      gpu.MemoryUsed,
-					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(int64(memoryRatioRaw), resource.DecimalSI),
-				},
-			}
-			deviceInfos = append(deviceInfos, gpuInfo)
-		}
-	}
-	return &slov1alpha1.ResourceMap{
-		ResourceList: corev1.ResourceList{
-			corev1.ResourceCPU:    podMetric.CPUUsed.CPUUsed,
-			corev1.ResourceMemory: podMetric.MemoryUsed.MemoryWithoutCache,
-		},
-		Devices: deviceInfos,
-	}
 }
 
 func doQuery(querier metriccache.Querier, resource metriccache.MetricResource, properties map[metriccache.MetricProperty]string) (metriccache.AggregateResult, error) {
