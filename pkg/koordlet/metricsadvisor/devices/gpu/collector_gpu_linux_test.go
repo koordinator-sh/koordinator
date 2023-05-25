@@ -20,8 +20,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+
+	"github.com/stretchr/testify/assert"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -32,6 +37,7 @@ import (
 )
 
 func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
+	collectTime := time.Now()
 	type fields struct {
 		deviceCount      int
 		devices          []*device
@@ -40,7 +46,7 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 	tests := []struct {
 		name   string
 		fields fields
-		want   []metriccache.GPUMetric
+		want   []metriccache.MetricSample
 	}{
 		{
 			name: "single device",
@@ -53,14 +59,21 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 					122: {{SMUtil: 70, MemoryUsed: 1500}},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					DeviceUUID:  "test-device1",
-					Minor:       0,
-					SMUtil:      70,
-					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.NodeGPUCoreUsageMetric,
+					"0",
+					"test-device1",
+					collectTime,
+					70,
+				),
+				buildMetricSample(
+					metriccache.NodeGPUMemUsageMetric,
+					"0",
+					"test-device1",
+					collectTime,
+					1500,
+				),
 			},
 		},
 		{
@@ -76,21 +89,35 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 					222: {nil, {SMUtil: 50, MemoryUsed: 1000}},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					DeviceUUID:  "test-device1",
-					Minor:       0,
-					SMUtil:      70,
-					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
-				},
-				{
-					DeviceUUID:  "test-device2",
-					Minor:       1,
-					SMUtil:      50,
-					MemoryUsed:  *resource.NewQuantity(1000, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(9000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.NodeGPUCoreUsageMetric,
+					"0",
+					"test-device1",
+					collectTime,
+					70,
+				),
+				buildMetricSample(
+					metriccache.NodeGPUMemUsageMetric,
+					"0",
+					"test-device1",
+					collectTime,
+					1500,
+				),
+				buildMetricSample(
+					metriccache.NodeGPUCoreUsageMetric,
+					"1",
+					"test-device2",
+					collectTime,
+					50,
+				),
+				buildMetricSample(
+					metriccache.NodeGPUMemUsageMetric,
+					"1",
+					"test-device2",
+					collectTime,
+					1000,
+				),
 			},
 		},
 		{
@@ -106,34 +133,48 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 					222: {{SMUtil: 20, MemoryUsed: 1000}, {SMUtil: 50, MemoryUsed: 1000}},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					DeviceUUID:  "test-device1",
-					Minor:       0,
-					SMUtil:      90,
-					MemoryUsed:  *resource.NewQuantity(2500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(8000, resource.BinarySI),
-				},
-				{
-					DeviceUUID:  "test-device2",
-					Minor:       1,
-					SMUtil:      80,
-					MemoryUsed:  *resource.NewQuantity(2000, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(9000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.NodeGPUCoreUsageMetric,
+					"0",
+					"test-device1",
+					collectTime,
+					90,
+				),
+				buildMetricSample(
+					metriccache.NodeGPUMemUsageMetric,
+					"0",
+					"test-device1",
+					collectTime,
+					2500,
+				),
+				buildMetricSample(
+					metriccache.NodeGPUCoreUsageMetric,
+					"1",
+					"test-device2",
+					collectTime,
+					80,
+				),
+				buildMetricSample(
+					metriccache.NodeGPUMemUsageMetric,
+					"1",
+					"test-device2",
+					collectTime,
+					2000,
+				),
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gpuDeviceManager{
+				collectTime:      collectTime,
 				deviceCount:      tt.fields.deviceCount,
 				devices:          tt.fields.devices,
 				processesMetrics: tt.fields.processesMetrics,
 			}
-			if got := g.getNodeGPUUsage(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("gpuUsageDetailRecord.GetNodeGPUUsage() = %v, want %v", got, tt.want)
-			}
+			got := g.getNodeGPUUsage()
+			assert.Equal(t, got, tt.want)
 		})
 	}
 }
@@ -635,4 +676,98 @@ func writeCgroupContent(filePath string, content []byte) error {
 		return err
 	}
 	return os.WriteFile(filePath, content, 0655)
+}
+
+func Test_buildMetricSample(t *testing.T) {
+	collectTime := time.Now()
+	type args struct {
+		mr    metriccache.MetricResource
+		minor string
+		uuid  string
+		t     time.Time
+		val   float64
+	}
+	tests := []struct {
+		name string
+		args args
+		want metriccache.MetricSample
+	}{
+		{
+			name: "GPUCore",
+			args: args{
+				mr:    metriccache.NodeGPUCoreUsageMetric,
+				minor: "1",
+				uuid:  "test1",
+				t:     collectTime,
+				val:   95,
+			},
+		},
+		{
+			name: "GPUMem",
+			args: args{
+				mr:    metriccache.NodeGPUMemUsageMetric,
+				minor: "1",
+				uuid:  "test1",
+				t:     collectTime,
+				val:   1200,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metricSample, err := tt.args.mr.GenerateSample(
+				metriccache.MetricPropertiesFunc.GPU(tt.args.minor, tt.args.uuid),
+				collectTime,
+				tt.args.val,
+			)
+			assert.NoError(t, err)
+			tt.want = metricSample
+			assert.Equalf(t, tt.want, buildMetricSample(tt.args.mr, tt.args.minor, tt.args.uuid, tt.args.t, tt.args.val), "buildMetricSample(%v, %v, %v, %v, %v)", tt.args.mr, tt.args.minor, tt.args.uuid, tt.args.t, tt.args.val)
+		})
+	}
+}
+
+func Test_gpuDeviceManager_deviceInfos(t *testing.T) {
+	type fields struct {
+		deviceCount int
+		devices     []*device
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   metriccache.Devices
+	}{
+		{
+			name: "empty device",
+			fields: fields{
+				deviceCount: 0,
+				devices:     nil,
+			},
+			want: util.GPUDevices{},
+		},
+		{
+			name: "device",
+			fields: fields{
+				deviceCount: 2,
+				devices: []*device{
+					{DeviceUUID: "1", Minor: 1, MemoryTotal: 2000},
+					{DeviceUUID: "2", Minor: 2, MemoryTotal: 3000},
+				},
+			},
+			want: util.GPUDevices{
+				util.GPUDeviceInfo{UUID: "1", Minor: 1, MemoryTotal: 2000},
+				util.GPUDeviceInfo{UUID: "2", Minor: 2, MemoryTotal: 3000},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &gpuDeviceManager{
+				RWMutex:     sync.RWMutex{},
+				deviceCount: tt.fields.deviceCount,
+				devices:     tt.fields.devices,
+			}
+			assert.Equalf(t, tt.want, g.deviceInfos(), "deviceInfos()")
+		})
+	}
 }

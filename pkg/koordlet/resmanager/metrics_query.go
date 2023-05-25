@@ -30,22 +30,35 @@ var (
 	timeNow = time.Now
 )
 
-func (r *resmanager) collectNodeMetricsAvg(windowSeconds int64) metriccache.NodeResourceQueryResult {
-	queryParam := generateQueryParamsAvg(windowSeconds)
-	return r.collectNodeMetric(queryParam)
+func (r *resmanager) collectorNodeMetricLast(queryMeta metriccache.MetricMeta) (float64, error) {
+	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
+	result, err := r.collectorNodeMetrics(*queryParam.Start, *queryParam.End, queryMeta)
+	if err != nil {
+		return 0, err
+	}
+	return result.Value(queryParam.Aggregate)
+}
+
+func (r *resmanager) collectorNodeMetrics(start, end time.Time, queryMeta metriccache.MetricMeta) (metriccache.AggregateResult, error) {
+	querier, err := r.metricCache.Querier(start, end)
+	if err != nil {
+		return nil, err
+	}
+
+	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
+	if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
+		return nil, err
+	}
+	return aggregateResult, nil
 }
 
 // query data for 2 * collectResUsedIntervalSeconds
-func (r *resmanager) collectNodeAndPodMetricLast() (*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
+func (r *resmanager) collectPodMetricLast() []*metriccache.PodResourceMetric {
 	queryParam := generateQueryParamsLast(r.collectResUsedIntervalSeconds * 2)
-	return r.collectNodeAndPodMetrics(queryParam)
+	return r.collectPodMetrics(queryParam)
 }
 
-func (r *resmanager) collectNodeAndPodMetrics(queryParam *metriccache.QueryParam) (*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
-	// collect node's and all pods' metrics with the same query param
-	nodeQueryResult := r.collectNodeMetric(queryParam)
-	nodeMetric := nodeQueryResult.Metric
-
+func (r *resmanager) collectPodMetrics(queryParam *metriccache.QueryParam) []*metriccache.PodResourceMetric {
 	podsMeta := r.statesInformer.GetAllPods()
 	podsMetrics := make([]*metriccache.PodResourceMetric, 0, len(podsMeta))
 	for _, podMeta := range podsMeta {
@@ -55,20 +68,7 @@ func (r *resmanager) collectNodeAndPodMetrics(queryParam *metriccache.QueryParam
 			podsMetrics = append(podsMetrics, podMetric)
 		}
 	}
-	return nodeMetric, podsMetrics
-}
-
-func (r *resmanager) collectNodeMetric(queryParam *metriccache.QueryParam) metriccache.NodeResourceQueryResult {
-	queryResult := r.metricCache.GetNodeResourceMetric(queryParam)
-	if queryResult.Error != nil {
-		klog.Warningf("get node resource metric failed, error %v", queryResult.Error)
-		return queryResult
-	}
-	if queryResult.Metric == nil {
-		klog.Warningf("node metric not exist")
-		return queryResult
-	}
-	return queryResult
+	return podsMetrics
 }
 
 func (r *resmanager) collectPodMetric(podMeta *statesinformer.PodMeta, queryParam *metriccache.QueryParam) metriccache.PodResourceQueryResult {

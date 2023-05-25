@@ -130,13 +130,21 @@ func (g *gpuDeviceManager) initGPUData() error {
 	return nil
 }
 
-func (g *gpuDeviceManager) getNodeGPUUsage() []metriccache.GPUMetric {
+func (g *gpuDeviceManager) deviceInfos() metriccache.Devices {
+	g.RLock()
+	defer g.RUnlock()
+	gpuDevices := util.GPUDevices{}
+	for _, device := range g.devices {
+		gpuDevices = append(gpuDevices, util.GPUDeviceInfo{UUID: device.DeviceUUID, Minor: device.Minor, MemoryTotal: device.MemoryTotal})
+	}
+
+	return gpuDevices
+}
+
+func (g *gpuDeviceManager) getNodeGPUUsage() []metriccache.MetricSample {
 	g.RLock()
 	defer g.RUnlock()
 	tmp := make([]rawGPUMetric, g.deviceCount)
-	for i := 0; i < g.deviceCount; i++ {
-		tmp[i] = rawGPUMetric{}
-	}
 	for _, p := range g.processesMetrics {
 		for idx := 0; idx < g.deviceCount; idx++ {
 			if m := p[uint32(idx)]; m != nil {
@@ -145,17 +153,32 @@ func (g *gpuDeviceManager) getNodeGPUUsage() []metriccache.GPUMetric {
 			}
 		}
 	}
-	rtn := make([]metriccache.GPUMetric, g.deviceCount)
-	for i := 0; i < g.deviceCount; i++ {
-		rtn[i] = metriccache.GPUMetric{
-			DeviceUUID:  g.devices[i].DeviceUUID,
-			Minor:       g.devices[i].Minor,
-			SMUtil:      tmp[i].SMUtil,
-			MemoryUsed:  *resource.NewQuantity(int64(tmp[i].MemoryUsed), resource.BinarySI),
-			MemoryTotal: *resource.NewQuantity(int64(g.devices[i].MemoryTotal), resource.BinarySI),
+
+	gpuMetrics := make([]metriccache.MetricSample, 0)
+	for idx, r := range tmp {
+		gpuCoreMetric := buildMetricSample(
+			metriccache.NodeGPUCoreUsageMetric,
+			fmt.Sprintf("%d", g.devices[idx].Minor),
+			g.devices[idx].DeviceUUID,
+			g.collectTime,
+			float64(r.SMUtil),
+		)
+		if gpuCoreMetric != nil {
+			gpuMetrics = append(gpuMetrics, gpuCoreMetric)
+		}
+		gpuMemUsedMetric := buildMetricSample(
+			metriccache.NodeGPUMemUsageMetric,
+			fmt.Sprintf("%d", g.devices[idx].Minor),
+			g.devices[idx].DeviceUUID,
+			g.collectTime,
+			float64(r.MemoryUsed),
+		)
+		if gpuMemUsedMetric != nil {
+			gpuMetrics = append(gpuMetrics, gpuMemUsedMetric)
 		}
 	}
-	return rtn
+
+	return gpuMetrics
 }
 
 func (g *gpuDeviceManager) getTotalGPUUsageOfPIDs(pids []uint32) []metriccache.GPUMetric {
@@ -279,4 +302,13 @@ func (g *gpuDeviceManager) collectGPUUsage() {
 
 func (g *gpuDeviceManager) started() bool {
 	return g.start.Load()
+}
+
+func buildMetricSample(mr metriccache.MetricResource, minor, uuid string, t time.Time, val float64) metriccache.MetricSample {
+	m, err := mr.GenerateSample(metriccache.MetricPropertiesFunc.GPU(minor, uuid), t, val)
+	if err != nil {
+		klog.Errorf("GenerateSample(%v) error: %v", mr, err)
+		return nil
+	}
+	return m
 }

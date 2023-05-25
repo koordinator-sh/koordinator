@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -40,6 +39,7 @@ const (
 type nodeResourceCollector struct {
 	collectInterval time.Duration
 	started         *atomic.Bool
+	appendableDB    metriccache.Appendable
 	metricDB        metriccache.MetricCache
 
 	lastNodeCPUStat *framework.CPUStat
@@ -51,6 +51,7 @@ func New(opt *framework.Options) framework.Collector {
 	return &nodeResourceCollector{
 		collectInterval: opt.Config.CollectResUsedInterval,
 		started:         atomic.NewBool(false),
+		appendableDB:    opt.MetricCache,
 		metricDB:        opt.MetricCache,
 	}
 }
@@ -80,12 +81,20 @@ func (n *nodeResourceCollector) Started() bool {
 
 func (n *nodeResourceCollector) collectNodeResUsed() {
 	klog.V(6).Info("collectNodeResUsed start")
+	nodeMetrics := make([]metriccache.MetricSample, 0)
 	collectTime := time.Now()
 	currentCPUTick, err0 := koordletutil.GetCPUStatUsageTicks()
 	memUsageValue, err1 := koordletutil.GetMemInfoUsageKB()
 	if err0 != nil || err1 != nil {
 		klog.Warningf("failed to collect node usage, CPU err: %s, Memory err: %s", err0, err1)
 		return
+	}
+	memUsageMetrics, err := metriccache.NodeMemoryUsageMetric.GenerateSample(nil, collectTime, float64(memUsageValue))
+	if err != nil {
+		klog.Warningf("generate node cpu metrics failed, err %v", err)
+		return
+	} else {
+		nodeMetrics = append(nodeMetrics, memUsageMetrics)
 	}
 	lastCPUStat := n.lastNodeCPUStat
 	n.lastNodeCPUStat = &framework.CPUStat{
@@ -99,31 +108,37 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	// 1 jiffies could be 10ms
 	// NOTICE: do subtraction and division first to avoid overflow
 	cpuUsageValue := float64(currentCPUTick-lastCPUStat.CPUTick) / system.GetPeriodTicks(lastCPUStat.Timestamp, collectTime)
-
-	nodeMetric := metriccache.NodeResourceMetric{
-		CPUUsed: metriccache.CPUMetric{
-			// 1.0 CPU = 1000 Milli-CPU
-			CPUUsed: *resource.NewMilliQuantity(int64(cpuUsageValue*1000), resource.DecimalSI),
-		},
-		MemoryUsed: metriccache.MemoryMetric{
-			// 1.0 kB Memory = 1024 B
-			MemoryWithoutCache: *resource.NewQuantity(memUsageValue*1024, resource.BinarySI),
-		},
+	cpuUsageMetrics, err := metriccache.NodeCPUUsageMetric.GenerateSample(nil, collectTime, cpuUsageValue)
+	if err != nil {
+		klog.Warningf("generate node cpu metrics failed, err %v", err)
+		return
+	} else {
+		nodeMetrics = append(nodeMetrics, cpuUsageMetrics)
 	}
 
-	for deviceName, deviceCollector := range n.deviceCollectors {
-		if err := deviceCollector.FillNodeMetric(&nodeMetric); err != nil {
-			klog.Warningf("fill node device usage failed for %v, error: %v", deviceName, err)
+	for _, deviceCollector := range n.deviceCollectors {
+		if metrics, _ := deviceCollector.GetNodeMetric(); metrics != nil {
+			nodeMetrics = append(nodeMetrics, metrics...)
+		}
+		if info := deviceCollector.Infos(); info != nil {
+			n.metricDB.Set(koordletutil.GPUDeviceType, info)
 		}
 	}
 
-	if err := n.metricDB.InsertNodeResourceMetric(collectTime, &nodeMetric); err != nil {
-		klog.Errorf("insert node resource metric error: %v", err)
+	appender := n.appendableDB.Appender()
+	if err := appender.Append(nodeMetrics); err != nil {
+		klog.ErrorS(err, "Append node metrics error")
+		return
+	}
+
+	if err := appender.Commit(); err != nil {
+		klog.Warningf("Commit node metrics failed, reason: %v", err)
+		return
 	}
 
 	// update collect time
 	n.started.Store(true)
 	metrics.RecordNodeUsedCPU(cpuUsageValue) // in cpu cores
 
-	klog.Infof("collectNodeResUsed finished %+v", nodeMetric)
+	klog.Infof("collectNodeResUsed finished %+v", nodeMetrics)
 }

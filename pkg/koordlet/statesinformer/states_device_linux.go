@@ -21,7 +21,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	corev1 "k8s.io/api/core/v1"
@@ -33,19 +32,9 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	koordletuti "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
-
-func generateQueryParam() *metriccache.QueryParam {
-	end := time.Now()
-	start := end.Add(-time.Duration(60) * time.Second)
-	return &metriccache.QueryParam{
-		Aggregate: metriccache.AggregationTypeLast,
-		Start:     &start,
-		End:       &end,
-	}
-}
 
 func (s *statesInformer) reportDevice() {
 	node := s.GetNode()
@@ -152,33 +141,35 @@ func (s *statesInformer) updateDevice(device *schedulingv1alpha1.Device) error {
 }
 
 func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
-	queryParam := generateQueryParam()
-	nodeResource := s.metricsCache.GetNodeResourceMetric(queryParam)
-	if nodeResource.Error != nil {
-		klog.Errorf("failed to get node resource metric, err: %v", nodeResource.Error)
+	//queryParam := generateQueryParam()
+	gpuDeviceInfo, exist := s.metricsCache.Get(koordletuti.GPUDeviceType)
+	if !exist {
+		klog.Error("gpu device not exist")
 		return nil
 	}
-	if len(nodeResource.Metric.GPUs) == 0 {
-		klog.V(5).Info("no gpu device found")
+	gpus, ok := gpuDeviceInfo.(koordletuti.GPUDevices)
+	if !ok {
+		klog.Errorf("value type error, expect: %T, got %T", koordletuti.GPUDevices{}, gpuDeviceInfo)
 		return nil
 	}
+
 	var deviceInfos []schedulingv1alpha1.DeviceInfo
-	for i := range nodeResource.Metric.GPUs {
-		gpu := nodeResource.Metric.GPUs[i]
+	for idx := range gpus {
+		gpu := gpus[idx]
 		health := true
 		s.gpuMutex.RLock()
-		if _, ok := s.unhealthyGPU[gpu.DeviceUUID]; ok {
+		if _, ok := s.unhealthyGPU[gpu.UUID]; ok {
 			health = false
 		}
 		s.gpuMutex.RUnlock()
 		deviceInfos = append(deviceInfos, schedulingv1alpha1.DeviceInfo{
-			UUID:   gpu.DeviceUUID,
+			UUID:   gpu.UUID,
 			Minor:  &gpu.Minor,
 			Type:   schedulingv1alpha1.GPU,
 			Health: health,
 			Resources: map[corev1.ResourceName]resource.Quantity{
 				extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-				extension.ResourceGPUMemory:      gpu.MemoryTotal,
+				extension.ResourceGPUMemory:      *resource.NewQuantity(int64(gpu.MemoryTotal), resource.BinarySI),
 				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 			},
 		})

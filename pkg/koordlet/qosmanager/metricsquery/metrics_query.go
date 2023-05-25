@@ -31,14 +31,6 @@ var (
 )
 
 type MetricsQuery interface {
-	CollectNodeAndPodMetricLast(collectResUsedIntervalSeconds int64) (
-		*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric)
-
-	CollectNodeMetricsAvg(windowSeconds int64) metriccache.NodeResourceQueryResult
-
-	CollectNodeAndPodMetrics(queryParam *metriccache.QueryParam) (
-		*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric)
-
 	CollectContainerResMetricLast(containerID *string, collectResUsedIntervalSeconds int64) metriccache.ContainerResourceQueryResult
 
 	CollectPodMetric(podMeta *statesinformer.PodMeta, queryParam *metriccache.QueryParam) metriccache.PodResourceQueryResult
@@ -57,53 +49,6 @@ func NewMetricsQuery(metricCache metriccache.MetricCache, statesInformer statesi
 type metricsQuery struct {
 	metricCache    metriccache.MetricCache
 	statesInformer statesinformer.StatesInformer
-}
-
-// CollectNodeMetricsAvg impl plugins.MetricQuery interface.
-func (r *metricsQuery) CollectNodeMetricsAvg(windowSeconds int64) metriccache.NodeResourceQueryResult {
-	queryParam := GenerateQueryParamsAvg(windowSeconds)
-	return r.collectNodeMetric(queryParam)
-}
-
-// CollectNodeAndPodMetricLast impl plugins.MetricQuery interface.
-func (r *metricsQuery) CollectNodeAndPodMetricLast(collectResUsedIntervalSeconds int64) (
-	*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
-
-	queryParam := GenerateQueryParamsLast(collectResUsedIntervalSeconds * 2)
-	return r.CollectNodeAndPodMetrics(queryParam)
-}
-
-// CollectNodeAndPodMetrics impl plugins.MetricQuery interface.
-func (r *metricsQuery) CollectNodeAndPodMetrics(queryParam *metriccache.QueryParam) (
-	*metriccache.NodeResourceMetric, []*metriccache.PodResourceMetric) {
-
-	// collect node's and all pods' metrics with the same query param
-	nodeQueryResult := r.collectNodeMetric(queryParam)
-	nodeMetric := nodeQueryResult.Metric
-
-	podsMeta := r.statesInformer.GetAllPods()
-	podsMetrics := make([]*metriccache.PodResourceMetric, 0, len(podsMeta))
-	for _, podMeta := range podsMeta {
-		podQueryResult := r.CollectPodMetric(podMeta, queryParam)
-		podMetric := podQueryResult.Metric
-		if podMetric != nil {
-			podsMetrics = append(podsMetrics, podMetric)
-		}
-	}
-	return nodeMetric, podsMetrics
-}
-
-func (r *metricsQuery) collectNodeMetric(queryParam *metriccache.QueryParam) metriccache.NodeResourceQueryResult {
-	queryResult := r.metricCache.GetNodeResourceMetric(queryParam)
-	if queryResult.Error != nil {
-		klog.Warningf("get node resource metric failed, error %v", queryResult.Error)
-		return queryResult
-	}
-	if queryResult.Metric == nil {
-		klog.Warningf("node metric not exist")
-		return queryResult
-	}
-	return queryResult
 }
 
 func (r *metricsQuery) CollectPodMetric(podMeta *statesinformer.PodMeta,

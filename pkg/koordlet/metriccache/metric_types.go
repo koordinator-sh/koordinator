@@ -71,6 +71,7 @@ const (
 var MetricPropertiesFunc = struct {
 	Pod       func(string) map[MetricProperty]string
 	Container func(string) map[MetricProperty]string
+	GPU       func(string, string) map[MetricProperty]string
 }{
 	Pod: func(podUID string) map[MetricProperty]string {
 		return map[MetricProperty]string{
@@ -80,6 +81,12 @@ var MetricPropertiesFunc = struct {
 	Container: func(containerID string) map[MetricProperty]string {
 		return map[MetricProperty]string{
 			MetricPropertyContainerID: containerID,
+		}
+	},
+	GPU: func(minor, uuid string) map[MetricProperty]string {
+		return map[MetricProperty]string{
+			MetricPropertyGPUMinor:      minor,
+			MetricPropertyGPUDeviceUUID: uuid,
 		}
 	},
 }
