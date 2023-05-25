@@ -361,8 +361,11 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	allocateResult, err := p.tryAllocateFromReservation(state, restoreState, restoreState.matched[allocIndex:allocIndex+1], nodeDeviceInfo, nodeName, pod, preemptible, true)
-	if len(allocateResult) == 0 || err != nil {
+	allocateResult, status := p.tryAllocateFromReservation(state, restoreState, restoreState.matched[allocIndex:allocIndex+1], nodeDeviceInfo, nodeName, pod, preemptible, true)
+	if !status.IsSuccess() {
+		return status
+	}
+	if len(allocateResult) == 0 {
 		return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
 	}
 	return nil
