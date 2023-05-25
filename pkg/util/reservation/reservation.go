@@ -278,10 +278,13 @@ func SetReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string)
 }
 
 func ReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceList {
-	requests, _ := resource.PodRequestsAndLimits(&corev1.Pod{
-		Spec: r.Spec.Template.Spec,
-	})
-	return requests
+	if r.Spec.Template != nil {
+		requests, _ := resource.PodRequestsAndLimits(&corev1.Pod{
+			Spec: r.Spec.Template.Spec,
+		})
+		return requests
+	}
+	return nil
 }
 
 func ReservePorts(r *schedulingv1alpha1.Reservation) framework.HostPortInfo {
@@ -297,10 +300,10 @@ func ReservePorts(r *schedulingv1alpha1.Reservation) framework.HostPortInfo {
 // MatchReservationOwners checks if the scheduling pod matches the reservation's owner spec.
 // `reservation.spec.owners` defines the DNF (disjunctive normal form) of ObjectReference, ControllerReference
 // (extended), LabelSelector, which means multiple selectors are firstly ANDed and secondly ORed.
-func MatchReservationOwners(pod *corev1.Pod, r *schedulingv1alpha1.Reservation) bool {
+func MatchReservationOwners(pod *corev1.Pod, owners []schedulingv1alpha1.ReservationOwner) bool {
 	// assert pod != nil && r != nil
 	// Owners == nil matches nothing, while Owners = [{}] matches everything
-	for _, owner := range r.Spec.Owners {
+	for _, owner := range owners {
 		if MatchObjectRef(pod, owner.Object) &&
 			MatchReservationControllerReference(pod, owner.Controller) &&
 			matchLabelSelector(pod, owner.LabelSelector) {

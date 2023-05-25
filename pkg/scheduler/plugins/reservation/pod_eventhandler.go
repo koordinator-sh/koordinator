@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
@@ -99,6 +100,17 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 	if reservationUID != "" {
 		h.cache.updatePod(reservationUID, oldPod, newPod)
 	}
+
+	if newPod != nil && apiext.IsReservationOperatingMode(newPod) {
+		if newPod.Spec.NodeName == "" {
+			return
+		}
+		currentOwner, err := apiext.GetReservationCurrentOwner(newPod.Annotations)
+		if err != nil {
+			klog.ErrorS(err, "Invalid reservation current owner in Pod", "pod", klog.KObj(newPod))
+		}
+		h.cache.updateReservationOperatingPod(newPod, currentOwner)
+	}
 }
 
 func (h *podEventHandler) deletePod(pod *corev1.Pod) {
@@ -107,4 +119,8 @@ func (h *podEventHandler) deletePod(pod *corev1.Pod) {
 		return
 	}
 	h.cache.deletePod(reservationAllocated.UID, pod)
+
+	if apiext.IsReservationOperatingMode(pod) {
+		h.cache.deleteReservationOperatingPod(pod)
+	}
 }

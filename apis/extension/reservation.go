@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
 
@@ -82,13 +83,13 @@ func GetReservationAllocated(pod *corev1.Pod) (*ReservationAllocated, error) {
 	return reservationAllocated, nil
 }
 
-func SetReservationAllocated(pod *corev1.Pod, r *schedulingv1alpha1.Reservation) {
+func SetReservationAllocated(pod *corev1.Pod, r metav1.Object) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 	reservationAllocated := &ReservationAllocated{
-		Name: r.Name,
-		UID:  r.UID,
+		Name: r.GetName(),
+		UID:  r.GetUID(),
 	}
 	data, _ := json.Marshal(reservationAllocated) // assert no error
 	pod.Annotations[AnnotationReservationAllocated] = string(data)

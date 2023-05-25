@@ -91,12 +91,12 @@ func (t *testPreBindReservationState) Clone() framework.StateData {
 	return t
 }
 
-func (h *TestTransformer) PreBindReservation(ctx context.Context, state *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
+func (h *TestTransformer) PreBindReservation(ctx context.Context, cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
 	if reservation.Annotations == nil {
 		reservation.Annotations = map[string]string{}
 	}
 	reservation.Annotations[fmt.Sprintf("PreBindReservation-%d", h.index)] = fmt.Sprintf("%d", h.index)
-	state.Write("test-preBind-reservation", &testPreBindReservationState{reservation: reservation})
+	cycleState.Write("test-preBind-reservation", &testPreBindReservationState{reservation: reservation})
 	return nil
 }
 
@@ -155,13 +155,13 @@ func (c fakeNodeInfoLister) NodeInfos() framework.NodeInfoLister {
 var _ ReservationNominator = &fakeReservationNominator{}
 
 type fakeReservationNominator struct {
-	reservation *schedulingv1alpha1.Reservation
+	reservation *ReservationInfo
 	err         error
 }
 
 func (f fakeReservationNominator) Name() string { return "fakeReservationNominator" }
 
-func (f fakeReservationNominator) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*schedulingv1alpha1.Reservation, *framework.Status) {
+func (f fakeReservationNominator) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *framework.Status) {
 	if f.err != nil {
 		return nil, framework.AsStatus(f.err)
 	}
@@ -303,20 +303,21 @@ func TestRunReservePluginsReserve(t *testing.T) {
 			Name: "fake-reservation",
 		},
 	}
+	reservationInfo := NewReservationInfo(reservation)
 	tests := []struct {
 		name            string
 		nominators      []ReservationNominator
-		wantReservation *schedulingv1alpha1.Reservation
+		wantReservation *ReservationInfo
 		wantStatus      bool
 	}{
 		{
 			name: "nominate reservation",
 			nominators: []ReservationNominator{
 				fakeReservationNominator{
-					reservation: reservation,
+					reservation: reservationInfo,
 				},
 			},
-			wantReservation: reservation,
+			wantReservation: reservationInfo,
 			wantStatus:      true,
 		},
 		{
@@ -329,10 +330,10 @@ func TestRunReservePluginsReserve(t *testing.T) {
 			nominators: []ReservationNominator{
 				fakeReservationNominator{},
 				fakeReservationNominator{
-					reservation: reservation,
+					reservation: reservationInfo,
 				},
 			},
-			wantReservation: reservation,
+			wantReservation: reservationInfo,
 			wantStatus:      true,
 		},
 		{
@@ -631,11 +632,11 @@ type fakeReservationFilterPlugin struct {
 
 func (f *fakeReservationFilterPlugin) Name() string { return "fakeReservationFilterPlugin" }
 
-func (f *fakeReservationFilterPlugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
-	if reservation.Annotations == nil {
-		reservation.Annotations = map[string]string{}
+func (f *fakeReservationFilterPlugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status {
+	if reservationInfo.Reservation.Annotations == nil {
+		reservationInfo.Reservation.Annotations = map[string]string{}
 	}
-	reservation.Annotations[fmt.Sprintf("reservationFilterPlugin-%d", f.index)] = fmt.Sprintf("%d", f.index)
+	reservationInfo.Reservation.Annotations[fmt.Sprintf("reservationFilterPlugin-%d", f.index)] = fmt.Sprintf("%d", f.index)
 	if f.err != nil {
 		return framework.AsStatus(f.err)
 	}
@@ -706,9 +707,10 @@ func TestReservationFilterPlugin(t *testing.T) {
 
 			cycleState := framework.NewCycleState()
 
-			status := extender.RunReservationFilterPlugins(context.TODO(), cycleState, &corev1.Pod{}, tt.reservation, "test-node-1")
+			reservationInfo := NewReservationInfo(tt.reservation)
+			status := extender.RunReservationFilterPlugins(context.TODO(), cycleState, &corev1.Pod{}, reservationInfo, "test-node-1")
 			assert.Equal(t, tt.wantStatus, status.IsSuccess())
-			assert.Equal(t, tt.wantAnnotations, tt.reservation.Annotations)
+			assert.Equal(t, tt.wantAnnotations, reservationInfo.Reservation.Annotations)
 		})
 	}
 }
@@ -721,7 +723,7 @@ type fakeReservationScorePlugin struct {
 
 func (f *fakeReservationScorePlugin) Name() string { return f.name }
 
-func (f *fakeReservationScorePlugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) (int64, *framework.Status) {
+func (f *fakeReservationScorePlugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) (int64, *framework.Status) {
 	var status *framework.Status
 	if f.err != nil {
 		status = framework.AsStatus(f.err)
@@ -790,7 +792,12 @@ func TestReservationScorePlugin(t *testing.T) {
 
 			cycleState := framework.NewCycleState()
 
-			pluginToReservationScores, status := extender.RunReservationScorePlugins(context.TODO(), cycleState, &corev1.Pod{}, tt.reservations, "test-node-1")
+			var rInfos []*ReservationInfo
+			for _, v := range tt.reservations {
+				rInfos = append(rInfos, NewReservationInfo(v))
+			}
+
+			pluginToReservationScores, status := extender.RunReservationScorePlugins(context.TODO(), cycleState, &corev1.Pod{}, rInfos, "test-node-1")
 			assert.Equal(t, tt.wantStatus, status.IsSuccess())
 			assert.Equal(t, tt.wantScores, pluginToReservationScores)
 		})

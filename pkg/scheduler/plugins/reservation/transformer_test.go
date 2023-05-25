@@ -420,7 +420,8 @@ func Test_matchReservation(t *testing.T) {
 			}
 			reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(tt.pod)
 			assert.NoError(t, err)
-			got := matchReservation(tt.pod, &corev1.Node{}, tt.reservation, reservationAffinity)
+			rInfo := frameworkext.NewReservationInfo(tt.reservation)
+			got := matchReservation(tt.pod, &corev1.Node{}, rInfo, reservationAffinity)
 			assert.Equal(t, tt.want, got)
 		})
 	}

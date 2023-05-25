@@ -152,7 +152,7 @@ func Test_Plugin_ReservationRestore(t *testing.T) {
 	assert.True(t, status.IsSuccess())
 
 	reservationInfo := frameworkext.NewReservationInfo(reservation)
-	reservationInfo.AddPod(allocatedPod)
+	reservationInfo.AddAssignedPod(allocatedPod)
 	nodeRestoreState, status := pl.RestoreReservation(context.TODO(), cycleState, pod, []*frameworkext.ReservationInfo{reservationInfo}, nil, nodeInfo)
 	assert.True(t, status.IsSuccess())
 	assert.NotNil(t, nodeRestoreState)

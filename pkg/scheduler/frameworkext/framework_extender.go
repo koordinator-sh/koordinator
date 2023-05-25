@@ -27,7 +27,6 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/sharedlisterext"
@@ -361,11 +360,11 @@ func (ext *frameworkExtenderImpl) RunReservationExtensionFinalRestoreReservation
 }
 
 // RunReservationFilterPlugins determines whether the Reservation can participate in the Reserve
-func (ext *frameworkExtenderImpl) RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
+func (ext *frameworkExtenderImpl) RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status {
 	for _, pl := range ext.reservationFilterPlugins {
-		status := pl.FilterReservation(ctx, cycleState, pod, reservation, nodeName)
+		status := pl.FilterReservation(ctx, cycleState, pod, reservationInfo, nodeName)
 		if !status.IsSuccess() {
-			klog.Infof("Failed to FilterReservation for Pod %q with Reservation %q on Node %q, failedPlugin: %s, reason: %s", klog.KObj(pod), klog.KObj(reservation), nodeName, pl.Name(), status.Message())
+			klog.Infof("Failed to FilterReservation for Pod %q with Reservation %q on Node %q, failedPlugin: %s, reason: %s", klog.KObj(pod), klog.KObj(reservationInfo), nodeName, pl.Name(), status.Message())
 			return status
 		}
 	}
@@ -373,25 +372,27 @@ func (ext *frameworkExtenderImpl) RunReservationFilterPlugins(ctx context.Contex
 }
 
 // RunReservationScorePlugins ranks the Reservations
-func (ext *frameworkExtenderImpl) RunReservationScorePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservations []*schedulingv1alpha1.Reservation, nodeName string) (ps PluginToReservationScores, status *framework.Status) {
-	if len(reservations) == 0 {
+func (ext *frameworkExtenderImpl) RunReservationScorePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfos []*ReservationInfo, nodeName string) (ps PluginToReservationScores, status *framework.Status) {
+	if len(reservationInfos) == 0 {
 		return
 	}
 	pluginToReservationScores := make(PluginToReservationScores, len(ext.reservationScorePlugins))
 	for _, pl := range ext.reservationScorePlugins {
-		pluginToReservationScores[pl.Name()] = make(ReservationScoreList, len(reservations))
+		pluginToReservationScores[pl.Name()] = make(ReservationScoreList, len(reservationInfos))
 	}
 
 	for _, pl := range ext.reservationScorePlugins {
-		for index, reservation := range reservations {
-			s, status := pl.ScoreReservation(ctx, cycleState, pod, reservation, nodeName)
+		for index, rInfo := range reservationInfos {
+			s, status := pl.ScoreReservation(ctx, cycleState, pod, rInfo, nodeName)
 			if !status.IsSuccess() {
 				err := fmt.Errorf("plugin %q failed with: %w", pl.Name(), status.AsError())
 				return nil, framework.AsStatus(err)
 			}
 			pluginToReservationScores[pl.Name()][index] = ReservationScore{
-				Name:  reservation.Name,
-				Score: s,
+				Name:      rInfo.GetName(),
+				Namespace: rInfo.GetNamespace(),
+				UID:       rInfo.UID(),
+				Score:     s,
 			}
 		}
 	}
