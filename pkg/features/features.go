@@ -42,18 +42,22 @@ const (
 	// ConfigMapValidatingWebhook enables validating webhook for configmap Creation or updates
 	ConfigMapValidatingWebhook featuregate.Feature = "ConfigMapValidatingWebhook"
 
+	// ColocationProfileSkipMutatingResources config whether to update resourceName according to priority by default
+	ColocationProfileSkipMutatingResources featuregate.Feature = "ColocationProfileSkipMutatingResources"
+
 	// WebhookFramework enables webhook framework
 	WebhookFramework featuregate.Feature = "WebhookFramework"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-	PodMutatingWebhook:            {Default: true, PreRelease: featuregate.Beta},
-	PodValidatingWebhook:          {Default: true, PreRelease: featuregate.Beta},
-	ElasticQuotaMutatingWebhook:   {Default: true, PreRelease: featuregate.Beta},
-	ElasticQuotaValidatingWebhook: {Default: true, PreRelease: featuregate.Beta},
-	NodeValidatingWebhook:         {Default: false, PreRelease: featuregate.Alpha},
-	ConfigMapValidatingWebhook:    {Default: false, PreRelease: featuregate.Alpha},
-	WebhookFramework:              {Default: true, PreRelease: featuregate.Beta},
+	PodMutatingWebhook:                     {Default: true, PreRelease: featuregate.Beta},
+	PodValidatingWebhook:                   {Default: true, PreRelease: featuregate.Beta},
+	ElasticQuotaMutatingWebhook:            {Default: true, PreRelease: featuregate.Beta},
+	ElasticQuotaValidatingWebhook:          {Default: true, PreRelease: featuregate.Beta},
+	NodeValidatingWebhook:                  {Default: false, PreRelease: featuregate.Alpha},
+	ConfigMapValidatingWebhook:             {Default: false, PreRelease: featuregate.Alpha},
+	WebhookFramework:                       {Default: true, PreRelease: featuregate.Beta},
+	ColocationProfileSkipMutatingResources: {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (

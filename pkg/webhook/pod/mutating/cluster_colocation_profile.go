@@ -37,8 +37,10 @@ import (
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 var (
@@ -83,8 +85,11 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 	if len(matchedProfiles) == 0 {
 		return nil
 	}
-
+	skipUpdateResourceFromProfile := false
 	for _, profile := range matchedProfiles {
+		if extension.ShouldSkipUpdateResource(profile) {
+			skipUpdateResourceFromProfile = true
+		}
 		skip, err := shouldSkipProfile(profile)
 		if err != nil {
 			return err
@@ -99,12 +104,10 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 		}
 		klog.V(4).Infof("mutate Pod %s/%s by clusterColocationProfile %s", pod.Namespace, pod.Name, profile.Name)
 	}
-
-	if err = h.mutatePodResourceSpec(pod); err != nil {
-		return err
+	if skipUpdateResourceFromProfile || utilfeature.DefaultFeatureGate.Enabled(features.ColocationProfileSkipMutatingResources) {
+		return nil
 	}
-
-	return nil
+	return h.mutatePodResourceSpec(pod)
 }
 
 func (h *PodMutatingHandler) matchNamespaceSelector(ctx context.Context, namespaceName string, namespaceSelector *metav1.LabelSelector) (bool, error) {
