@@ -113,11 +113,6 @@ spec:
                   PriorityClassName, priority value in PriorityClassName and KoordinatorPriority
                   will affect the scheduling, preemption and other behaviors of Koordinator
                   system.
-                enum:
-                - koord-prod
-                - koord-mid
-                - koord-batch
-                - koord-free
                 type: string
               probability:
                 anyOf:
