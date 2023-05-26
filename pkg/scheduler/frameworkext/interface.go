@@ -40,6 +40,8 @@ type ExtendedHandle interface {
 	KoordinatorClientSet() koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory
 	RegisterErrorHandler(handler ErrorHandler)
+	RegisterForgetPodHandler(handler ForgetPodHandler)
+	ForgetPod(pod *corev1.Pod) error
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.
@@ -189,3 +191,5 @@ type PreBindExtensions interface {
 	framework.Plugin
 	ApplyPatch(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status
 }
+
+type ForgetPodHandler func(pod *corev1.Pod)
