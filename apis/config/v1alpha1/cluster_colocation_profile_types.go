@@ -55,7 +55,6 @@ type ClusterColocationProfileSpec struct {
 	// The PriorityClassName, priority value in PriorityClassName and
 	// KoordinatorPriority will affect the scheduling, preemption and
 	// other behaviors of Koordinator system.
-	// +kubebuilder:validation:Enum=koord-prod;koord-mid;koord-batch;koord-free
 	// +optional
 	PriorityClassName string `json:"priorityClassName"`
 
