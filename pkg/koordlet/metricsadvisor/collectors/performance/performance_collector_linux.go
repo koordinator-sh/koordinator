@@ -38,6 +38,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	tools "github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type performanceCollector struct {
@@ -99,59 +100,50 @@ func (p *performanceCollector) collectContainerCPI() {
 			containerStatusesMap[containerStat] = meta
 		}
 	}
-	// get container CPI collectors for each container
-	collectors := sync.Map{}
+	metricsChan := make(chan metriccache.MetricSample, len(containerStatusesMap)*2)
+	pciMetrics := make([]metriccache.MetricSample, 0)
+	// get container PCI Metric
+	go p.getContainerPCIMetrics(containerStatusesMap, metricsChan)
+
+	for item := range metricsChan {
+		pciMetrics = append(pciMetrics, item)
+	}
+	// save container PCI metric to tsdb
+	p.saveMetric(pciMetrics)
+
+	p.started.Store(true)
+	klog.V(5).Infof("collectContainerCPI for time window %s finished at %s, container num %d",
+		timeWindow, time.Now(), len(containerStatusesMap))
+}
+
+func (p *performanceCollector) getContainerPCIMetrics(containerStatusesMap map[*corev1.ContainerStatus]*statesinformer.PodMeta, metricsChan chan<- metriccache.MetricSample) {
+	defer close(metricsChan)
+
 	var wg sync.WaitGroup
 	wg.Add(len(containerStatusesMap))
 	nodeCpuInfo, err := p.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
+	metrics.ResetContainerCPI()
 	if err != nil {
 		klog.Errorf("failed to get node cpu info : %v", err)
 		return
 	}
 	cpuNumber := nodeCpuInfo.TotalInfo.NumberCPUs
+
+	collectTime := time.Now()
+	// get container CPI collectors for each container
 	for containerStatus, parentPod := range containerStatusesMap {
-		go func(status *corev1.ContainerStatus, parent string) {
+		go func(status *corev1.ContainerStatus, podMeta *statesinformer.PodMeta, c chan<- metriccache.MetricSample) {
 			defer wg.Done()
-			collectorOnSingleContainer, err := p.getAndStartCollectorOnSingleContainer(parent, status, cpuNumber)
+			collectorOnSingleContainer, err := p.getAndStartCollectorOnSingleContainer(podMeta.CgroupDir, status, cpuNumber)
 			if err != nil {
 				return
 			}
-			collectors.Store(status, collectorOnSingleContainer)
-		}(containerStatus, parentPod.CgroupDir)
+			time.Sleep(p.collectTimeWindowDuration)
+			// get single container cpi metrics
+			p.profilePerfOnSingleContainer(status, collectorOnSingleContainer, podMeta.Pod, collectTime, metricsChan)
+		}(containerStatus, parentPod, metricsChan)
 	}
 	wg.Wait()
-
-	time.Sleep(p.collectTimeWindowDuration)
-
-	// collect cpi, psi for each container at the same time
-	var wg1 sync.WaitGroup
-	wg1.Add(len(containerStatusesMap))
-	metrics.ResetContainerCPI()
-	for containerStatus, podMeta := range containerStatusesMap {
-		pod := podMeta.Pod
-		go func(status *corev1.ContainerStatus, pod *corev1.Pod) {
-			defer wg1.Done()
-			// collect container cpi
-			oneCollector, ok := collectors.Load(status)
-			if !ok {
-				return
-			}
-			perfCollector, ok := oneCollector.(*perf.PerfCollector)
-			if !ok {
-				klog.Errorf("PerfCollector type convert failed")
-				return
-			}
-			p.profilePerfOnSingleContainer(status, perfCollector, pod)
-			err1 := perfCollector.CleanUp()
-			if err1 != nil {
-				klog.Errorf("PerfCollector cleanup err : %v", err1)
-			}
-		}(containerStatus, pod)
-	}
-	wg1.Wait()
-	p.started.Store(true)
-	klog.V(5).Infof("collectContainerCPI for time window %s finished at %s, container num %d",
-		timeWindow, time.Now(), len(containerStatusesMap))
 }
 
 func (p *performanceCollector) getAndStartCollectorOnSingleContainer(podParentCgroupDir string, containerStatus *corev1.ContainerStatus, number int32) (*perf.PerfCollector, error) {
@@ -163,27 +155,31 @@ func (p *performanceCollector) getAndStartCollectorOnSingleContainer(podParentCg
 	return perfCollector, nil
 }
 
-func (p *performanceCollector) profilePerfOnSingleContainer(containerStatus *corev1.ContainerStatus, collector *perf.PerfCollector, pod *corev1.Pod) {
-	collectTime := time.Now()
-	cycles, instructions, err := util.GetContainerCyclesAndInstructions(collector)
+func (p *performanceCollector) profilePerfOnSingleContainer(status *corev1.ContainerStatus, collectorOnSingleContainer *perf.PerfCollector, pod *corev1.Pod, collectTime time.Time, metricsChan chan<- metriccache.MetricSample) {
+
+	cycles, instructions, err := util.GetContainerCyclesAndInstructions(collectorOnSingleContainer)
 	if err != nil {
-		klog.Errorf("collect container %s cpi err: %v", containerStatus.Name, err)
+		klog.Errorf("collect container %s cpi err: %v", status.Name, err)
 		return
 	}
-	containerCpiMetric := &metriccache.ContainerInterferenceMetric{
-		MetricName:  metriccache.MetricNameContainerCPI,
-		PodUID:      string(pod.UID),
-		ContainerID: containerStatus.ContainerID,
-		MetricValue: &metriccache.CPIMetric{
-			Cycles:       cycles,
-			Instructions: instructions,
-		},
+
+	pciCycle, err01 := metriccache.ContainerCPI.GenerateSample(metriccache.MetricPropertiesFunc.ContainerCPI(string(pod.GetUID()), status.ContainerID, string(metriccache.CPIResourceCycle)), collectTime, float64(cycles))
+	pciInstruction, err02 := metriccache.ContainerCPI.GenerateSample(metriccache.MetricPropertiesFunc.ContainerCPI(string(pod.GetUID()), status.ContainerID, string(metriccache.CPIResourceInstruction)), collectTime, float64(instructions))
+
+	if err01 != nil || err02 != nil {
+		klog.Warningf("failed to collect Container PCI, Cycle err: %s, Instruction err: %s", err01, err02)
+		return
 	}
-	err = p.metricCache.InsertContainerInterferenceMetrics(collectTime, containerCpiMetric)
-	if err != nil {
-		klog.Errorf("insert container cpi metrics failed, err %v", err)
+
+	metricsChan <- pciCycle
+	metricsChan <- pciInstruction
+
+	err1 := collectorOnSingleContainer.CleanUp()
+	if err1 != nil {
+		klog.Errorf("collectorOnSingleContainer cleanup err : %v", err1)
 	}
-	metrics.RecordContainerCPI(containerStatus, pod, float64(cycles), float64(instructions))
+
+	metrics.RecordContainerCPI(status, pod, float64(cycles), float64(instructions))
 }
 
 func (p *performanceCollector) collectContainerPSI() {
@@ -198,25 +194,43 @@ func (p *performanceCollector) collectContainerPSI() {
 			containerStatusesMap[containerStat] = meta
 		}
 	}
-	var wg sync.WaitGroup
-	wg.Add(len(containerStatusesMap))
-	metrics.ResetContainerPSI()
-	for containerStatus, podMeta := range containerStatusesMap {
-		pod := podMeta.Pod
-		cgroupDir := podMeta.CgroupDir
-		go func(parentDir string, status *corev1.ContainerStatus, pod *corev1.Pod) {
-			defer wg.Done()
-			p.collectSingleContainerPSI(parentDir, status, pod)
-		}(cgroupDir, containerStatus, pod)
+
+	metricsChan := make(chan metriccache.MetricSample, len(containerStatusesMap)*2)
+	psiMetrics := make([]metriccache.MetricSample, 0)
+
+	go p.getContainerPSIMetrics(containerStatusesMap, metricsChan)
+
+	for item := range metricsChan {
+		psiMetrics = append(psiMetrics, item)
 	}
-	wg.Wait()
+
+	// save container's psi metrics to tsdb
+	p.saveMetric(psiMetrics)
+
 	p.started.Store(true)
 	klog.V(5).Infof("collectContainerPSI for time window %s finished at %s, container num %d",
 		timeWindow, time.Now(), len(containerStatusesMap))
 }
 
-func (p *performanceCollector) collectSingleContainerPSI(podParentCgroupDir string, containerStatus *corev1.ContainerStatus, pod *corev1.Pod) {
+func (p *performanceCollector) getContainerPSIMetrics(containerStatusesMap map[*corev1.ContainerStatus]*statesinformer.PodMeta, metricChan chan<- metriccache.MetricSample) {
+	defer close(metricChan)
+
+	var wg sync.WaitGroup
+	wg.Add(len(containerStatusesMap))
+	metrics.ResetContainerPSI()
 	collectTime := time.Now()
+	for containerStatus, podMeta := range containerStatusesMap {
+		pod := podMeta.Pod
+		cgroupDir := podMeta.CgroupDir
+		go func(parentDir string, status *corev1.ContainerStatus, pod *corev1.Pod) {
+			defer wg.Done()
+			p.collectSingleContainerPSI(parentDir, status, pod, collectTime, metricChan)
+		}(cgroupDir, containerStatus, pod)
+	}
+	wg.Wait()
+}
+
+func (p *performanceCollector) collectSingleContainerPSI(podParentCgroupDir string, containerStatus *corev1.ContainerStatus, pod *corev1.Pod, collectTime time.Time, metricChan chan<- metriccache.MetricSample) {
 	containerPath, err := util.GetContainerCgroupParentDir(podParentCgroupDir, containerStatus)
 	if err != nil {
 		klog.Errorf("failed to get container path for container %v/%v/%v cgroup path failed, error: %v", pod.Namespace, pod.Name, containerStatus.Name, err)
@@ -227,24 +241,40 @@ func (p *performanceCollector) collectSingleContainerPSI(podParentCgroupDir stri
 		klog.Errorf("collect container %s psi err: %v", containerStatus.Name, err)
 		return
 	}
-	containerPsiMetric := &metriccache.ContainerInterferenceMetric{
-		MetricName:  metriccache.MetricNameContainerPSI,
-		PodUID:      string(pod.UID),
-		ContainerID: containerStatus.ContainerID,
-		MetricValue: &metriccache.PSIMetric{
-			SomeCPUAvg10:     containerPSI.CPU.Some.Avg10,
-			SomeMemAvg10:     containerPSI.Mem.Some.Avg10,
-			SomeIOAvg10:      containerPSI.IO.Some.Avg10,
-			FullCPUAvg10:     containerPSI.CPU.Full.Avg10,
-			FullMemAvg10:     containerPSI.Mem.Full.Avg10,
-			FullIOAvg10:      containerPSI.IO.Full.Avg10,
-			CPUFullSupported: containerPSI.CPU.FullSupported,
-		},
+
+	cpuSomeAvg10, err01 := metriccache.ContainerPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.ContainerPSI(string(pod.GetUID()), containerStatus.ContainerID, string(metriccache.PSIResourceCPU), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeSome)), collectTime, containerPSI.CPU.Some.Avg10)
+	memSomeAvg10, err02 := metriccache.ContainerPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.ContainerPSI(string(pod.GetUID()), containerStatus.ContainerID, string(metriccache.PSIResourceMem), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeSome)), collectTime, containerPSI.Mem.Some.Avg10)
+	ioSomeAvg10, err03 := metriccache.ContainerPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.ContainerPSI(string(pod.GetUID()), containerStatus.ContainerID, string(metriccache.PSIResourceIO), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeSome)), collectTime, containerPSI.IO.Some.Avg10)
+
+	cpuFullAvg10, err04 := metriccache.ContainerPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.ContainerPSI(string(pod.GetUID()), containerStatus.ContainerID, string(metriccache.PSIResourceCPU), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeFull)), collectTime, containerPSI.CPU.Full.Avg10)
+	memFullAvg10, err05 := metriccache.ContainerPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.ContainerPSI(string(pod.GetUID()), containerStatus.ContainerID, string(metriccache.PSIResourceMem), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeFull)), collectTime, containerPSI.Mem.Full.Avg10)
+	ioFullAvg10, err06 := metriccache.ContainerPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.ContainerPSI(string(pod.GetUID()), containerStatus.ContainerID, string(metriccache.PSIResourceIO), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeFull)), collectTime, containerPSI.IO.Full.Avg10)
+
+	cpuFullSupported, err07 := metriccache.ContainerPSICPUFullSupportedMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.PodContainer(string(pod.GetUID()), containerStatus.ContainerID), collectTime, tools.BoolToFloat64(containerPSI.CPU.FullSupported))
+
+	if err01 != nil || err02 != nil || err03 != nil || err04 != nil || err05 != nil ||
+		err06 != nil || err07 != nil {
+		klog.Warningf(
+			"failed to collect Container %s/%s/%s PSI failed, cpuSomeAvg10 err: %s, memSomeAvg10 err: %s, ioSomeAvg10 err: %s, cpuFullAvg10 err: %s, memFullAvg10 err: %s, ioFullAvg10 err: %s, cpuFullSupported err: %s",
+			pod.GetNamespace(), pod.GetName(), containerStatus.Name, err02, err03, err04, err05, err06, err07)
+		return
 	}
-	err = p.metricCache.InsertContainerInterferenceMetrics(collectTime, containerPsiMetric)
-	if err != nil {
-		klog.Errorf("insert container psi metrics failed, err %v", err)
-	}
+
+	metricChan <- cpuSomeAvg10
+	metricChan <- memSomeAvg10
+	metricChan <- ioSomeAvg10
+	metricChan <- cpuFullAvg10
+	metricChan <- memFullAvg10
+	metricChan <- ioFullAvg10
+	metricChan <- cpuFullSupported
+
 	metrics.RecordContainerPSI(containerStatus, pod, containerPSI)
 }
 
@@ -252,47 +282,81 @@ func (p *performanceCollector) collectPodPSI() {
 	klog.V(6).Infof("start collectPodPSI")
 	timeWindow := time.Now()
 	podMetas := p.statesInformer.GetAllPods()
-	var wg sync.WaitGroup
-	wg.Add(len(podMetas))
 	metrics.ResetPodPSI()
-	for _, meta := range podMetas {
-		pod := meta.Pod
-		podCgroupDir := meta.CgroupDir
-		go func(pod *corev1.Pod, podCgroupDir string) {
-			defer wg.Done()
-			p.collectSinglePodPSI(pod, podCgroupDir)
-		}(pod, podCgroupDir)
+
+	metricChan := make(chan metriccache.MetricSample, len(podMetas)*2)
+	psiMetrics := make([]metriccache.MetricSample, 0)
+
+	go p.getPodPSIMetrics(podMetas, metricChan)
+	for item := range metricChan {
+		psiMetrics = append(psiMetrics, item)
 	}
-	wg.Wait()
+
+	// save pod psi metrics to tsdb
+	p.saveMetric(psiMetrics)
+
 	p.started.Store(true)
 	klog.V(5).Infof("collectPodPSI for time window %s finished at %s, pod num %d",
 		timeWindow, time.Now(), len(podMetas))
 }
 
-func (p *performanceCollector) collectSinglePodPSI(pod *corev1.Pod, podCgroupDir string) {
+func (p *performanceCollector) getPodPSIMetrics(podMetas []*statesinformer.PodMeta, metricChan chan<- metriccache.MetricSample) {
+	defer close(metricChan)
+
+	var wg sync.WaitGroup
+	wg.Add(len(podMetas))
+	metrics.ResetPodPSI()
 	collectTime := time.Now()
+	for _, meta := range podMetas {
+		pod := meta.Pod
+		podCgroupDir := meta.CgroupDir
+		go func(pod *corev1.Pod, podCgroupDir string, collectTime time.Time, metricChan chan<- metriccache.MetricSample) {
+			defer wg.Done()
+			p.collectSinglePodPSI(pod, podCgroupDir, collectTime, metricChan)
+		}(pod, podCgroupDir, collectTime, metricChan)
+	}
+	wg.Wait()
+}
+
+func (p *performanceCollector) collectSinglePodPSI(pod *corev1.Pod, podCgroupDir string, collectTime time.Time, metricChan chan<- metriccache.MetricSample) {
 	podPSI, err := p.cgroupReader.ReadPSI(podCgroupDir)
 	if err != nil {
 		klog.Errorf("collect pod %v/%v psi err: %v", pod.Namespace, pod.Name, err)
 		return
 	}
-	podPsiMetric := &metriccache.PodInterferenceMetric{
-		MetricName: metriccache.MetricNamePodPSI,
-		PodUID:     string(pod.UID),
-		MetricValue: &metriccache.PSIMetric{
-			SomeCPUAvg10:     podPSI.CPU.Some.Avg10,
-			SomeMemAvg10:     podPSI.Mem.Some.Avg10,
-			SomeIOAvg10:      podPSI.IO.Some.Avg10,
-			FullCPUAvg10:     podPSI.CPU.Full.Avg10,
-			FullMemAvg10:     podPSI.Mem.Full.Avg10,
-			FullIOAvg10:      podPSI.IO.Full.Avg10,
-			CPUFullSupported: podPSI.CPU.FullSupported,
-		},
+
+	cpuSomeAvg10, err01 := metriccache.PodPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.PodPSI(string(pod.GetUID()), string(metriccache.PSIResourceCPU), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeSome)), collectTime, podPSI.CPU.Some.Avg10)
+	memSomeAvg10, err02 := metriccache.PodPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.PodPSI(string(pod.GetUID()), string(metriccache.PSIResourceMem), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeSome)), collectTime, podPSI.Mem.Some.Avg10)
+	ioSomeAvg10, err03 := metriccache.PodPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.PodPSI(string(pod.GetUID()), string(metriccache.PSIResourceIO), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeSome)), collectTime, podPSI.IO.Some.Avg10)
+
+	cpuFullAvg10, err04 := metriccache.PodPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.PodPSI(string(pod.GetUID()), string(metriccache.PSIResourceCPU), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeFull)), collectTime, podPSI.CPU.Full.Avg10)
+	memFullAvg10, err05 := metriccache.PodPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.PodPSI(string(pod.GetUID()), string(metriccache.PSIResourceMem), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeFull)), collectTime, podPSI.Mem.Full.Avg10)
+	ioFullAvg10, err06 := metriccache.PodPSIMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.PodPSI(string(pod.GetUID()), string(metriccache.PSIResourceIO), string(metriccache.PSIPrecision10), string(metriccache.PSIDegreeFull)), collectTime, podPSI.IO.Full.Avg10)
+	cpuFullSupported, err07 := metriccache.PodPSICPUFullSupportedMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.Pod(string(pod.GetUID())), collectTime, tools.BoolToFloat64(podPSI.CPU.FullSupported))
+
+	if err01 != nil || err02 != nil || err03 != nil || err04 != nil || err05 != nil ||
+		err06 != nil || err07 != nil {
+		klog.Warningf(
+			"failed to collect pod %s/%s PSI, cpuSomeAvg10 err: %s, memSomeAvg10 err: %s, ioSomeAvg10 err: %s, cpuFullAvg10 err: %s, memFullAvg10 err: %s, ioFullAvg10 err: %s, cpuFullSupported err: %s",
+			pod.GetNamespace(), pod.GetName(), err02, err03, err04, err05, err06, err07)
+		return
 	}
-	err = p.metricCache.InsertPodInterferenceMetrics(collectTime, podPsiMetric)
-	if err != nil {
-		klog.Errorf("insert pod psi metrics failed, err %v", err)
-	}
+
+	metricChan <- cpuSomeAvg10
+	metricChan <- memSomeAvg10
+	metricChan <- ioSomeAvg10
+	metricChan <- cpuFullAvg10
+	metricChan <- memFullAvg10
+	metricChan <- ioFullAvg10
+	metricChan <- cpuFullSupported
+
 	metrics.RecordPodPSI(pod, podPSI)
 }
 
@@ -313,4 +377,23 @@ func (p *performanceCollector) collectPSI(stopCh <-chan struct{}) {
 		p.collectContainerPSI()
 		p.collectPodPSI()
 	}, p.psiCollectInterval, stopCh)
+}
+
+func (p *performanceCollector) saveMetric(samples []metriccache.MetricSample) error {
+	if len(samples) == 0 {
+		return nil
+	}
+
+	appender := p.metricCache.Appender()
+	if err := appender.Append(samples); err != nil {
+		klog.ErrorS(err, "Append container metrics error")
+		return err
+	}
+
+	if err := appender.Commit(); err != nil {
+		klog.ErrorS(err, "Commit container metrics failed")
+		return err
+	}
+
+	return nil
 }
