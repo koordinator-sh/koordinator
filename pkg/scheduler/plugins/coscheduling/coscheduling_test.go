@@ -44,21 +44,42 @@ import (
 	fakepgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
+	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
 // gang test used
 type PodGroupClientSetAndHandle struct {
-	framework.Handle
+	frameworkext.ExtendedHandle
 	pgclientset.Interface
+
+	koordInformerFactory koordinatorinformers.SharedInformerFactory
+}
+
+func (h *PodGroupClientSetAndHandle) KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory {
+	return h.koordInformerFactory
 }
 
 func GangPluginFactoryProxy(clientSet pgclientset.Interface, factoryFn frameworkruntime.PluginFactory, plugin *framework.Plugin) frameworkruntime.PluginFactory {
 	return func(args apiruntime.Object, handle framework.Handle) (framework.Plugin, error) {
-		var err error
-		*plugin, err = factoryFn(args, PodGroupClientSetAndHandle{Handle: handle, Interface: clientSet})
+		koordClient := koordfake.NewSimpleClientset()
+		koordInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClient, 0)
+		extenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
+			frameworkext.WithKoordinatorClientSet(koordClient),
+			frameworkext.WithKoordinatorSharedInformerFactory(koordInformerFactory))
+		if err != nil {
+			return nil, err
+		}
+		extender := extenderFactory.NewFrameworkExtender(handle.(framework.Framework))
+		*plugin, err = factoryFn(args, &PodGroupClientSetAndHandle{
+			ExtendedHandle:       extender,
+			Interface:            clientSet,
+			koordInformerFactory: koordInformerFactory,
+		})
 		return *plugin, err
 	}
 }
