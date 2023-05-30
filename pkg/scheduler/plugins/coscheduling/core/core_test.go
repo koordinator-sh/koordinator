@@ -36,6 +36,8 @@ import (
 	pginformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
+	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
@@ -52,7 +54,13 @@ func NewManagerForTest() *Mgr {
 
 	podClient := clientsetfake.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(podClient, 0)
-	pgManager := NewPodGroupManager(pgClient, pgInformerFactory, informerFactory, &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: 300 * time.Second}})
+
+	koordClient := koordfake.NewSimpleClientset()
+	koordInformerFactory := koordinformers.NewSharedInformerFactory(koordClient, 0)
+
+	args := &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: 300 * time.Second}}
+
+	pgManager := NewPodGroupManager(args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
 	return &Mgr{
 		pgMgr:      pgManager,
 		pgInformer: pgInformer,
