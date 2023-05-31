@@ -273,8 +273,13 @@ func TestPreFilter(t *testing.T) {
 
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
-			cycleState := framework.NewCycleState()
 
+			reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(tt.pod)
+			assert.NoError(t, err)
+			cycleState := framework.NewCycleState()
+			cycleState.Write(stateKey, &stateData{
+				hasAffinity: reservationAffinity != nil,
+			})
 			got := pl.PreFilter(context.TODO(), cycleState, tt.pod)
 			assert.Equal(t, tt.want, got)
 		})
@@ -330,11 +335,36 @@ func TestFilter(t *testing.T) {
 		},
 	}
 
+	alignedReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "aligned-reservation-1"},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyAligned,
+			Template:       &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			NodeName: testNode.Name,
+		},
+	}
+
+	restrictedReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "restricted-reservation-1"},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			Template:       &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
+			NodeName: testNode.Name,
+		},
+	}
+
 	tests := []struct {
 		name         string
 		pod          *corev1.Pod
 		reservations []*schedulingv1alpha1.Reservation
 		nodeInfo     *framework.NodeInfo
+		stateData    *stateData
 		want         *framework.Status
 	}{
 		{
@@ -378,6 +408,71 @@ func TestFilter(t *testing.T) {
 			nodeInfo:     testNodeInfo,
 			want:         framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonNodeNotMatchReservation),
 		},
+		{
+			name: "ReservationAllocatePolicyDefault cannot coexist with Aligned policy",
+			pod:  reservationutil.NewReservePod(reservation),
+			reservations: []*schedulingv1alpha1.Reservation{
+				reservation,
+				alignedReservation,
+			},
+			nodeInfo: testNodeInfo,
+			want:     framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAllocatePolicyConflict),
+		},
+		{
+			name: "ReservationAllocatePolicyDefault cannot coexist with Restricted policy",
+			pod:  reservationutil.NewReservePod(reservation),
+			reservations: []*schedulingv1alpha1.Reservation{
+				reservation,
+				restrictedReservation,
+			},
+			nodeInfo: testNodeInfo,
+			want:     framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAllocatePolicyConflict),
+		},
+		{
+			name: "Aligned policy can coexist with Restricted policy",
+			pod:  reservationutil.NewReservePod(alignedReservation),
+			reservations: []*schedulingv1alpha1.Reservation{
+				alignedReservation,
+				restrictedReservation,
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
+		},
+		{
+			name: "Restricted policy can coexist with Aligned policy",
+			pod:  reservationutil.NewReservePod(restrictedReservation),
+			reservations: []*schedulingv1alpha1.Reservation{
+				alignedReservation,
+				restrictedReservation,
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
+		},
+		{
+			name:     "normal pod has reservation affinity but no matched reservation",
+			pod:      &corev1.Pod{},
+			nodeInfo: testNodeInfo,
+			stateData: &stateData{
+				hasAffinity: true,
+			},
+			want: framework.NewStatus(framework.Unschedulable, ErrReasonReservationAffinity),
+		},
+		{
+			name:     "normal pod has reservation affinity and filter successfully",
+			pod:      &corev1.Pod{},
+			nodeInfo: testNodeInfo,
+			stateData: &stateData{
+				hasAffinity: true,
+				nodeReservationStates: map[string]nodeReservationState{
+					testNode.Name: {
+						matched: []*frameworkext.ReservationInfo{
+							frameworkext.NewReservationInfo(reservation),
+						},
+					},
+				},
+			},
+			want: nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -392,8 +487,225 @@ func TestFilter(t *testing.T) {
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
 			cycleState := framework.NewCycleState()
+			if tt.stateData != nil {
+				cycleState.Write(stateKey, tt.stateData)
+			}
 			got := pl.Filter(context.TODO(), cycleState, tt.pod, tt.nodeInfo)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_filterWithReservations(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("32Gi"),
+				corev1.ResourcePods:   resource.MustParse("100"),
+			},
+		},
+	}
+	tests := []struct {
+		name       string
+		stateData  *stateData
+		wantStatus *framework.Status
+	}{
+		{
+			name: "filter aligned reservation with nodeInfo",
+			stateData: &stateData{
+				podRequests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("8"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				nodeReservationStates: map[string]nodeReservationState{
+					node.Name: {
+						podRequested: &framework.Resource{
+							MilliCPU: 30 * 1000,
+							Memory:   24 * 1024 * 1024 * 1024,
+						},
+						rAllocated: &framework.Resource{
+							MilliCPU: 0,
+						},
+						totalAligned: 1,
+						matched: []*frameworkext.ReservationInfo{
+							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "test-r",
+								},
+								Spec: schedulingv1alpha1.ReservationSpec{
+									AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyAligned,
+									Template: &corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Resources: corev1.ResourceRequirements{
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU: resource.MustParse("6"),
+														},
+													},
+												},
+											},
+										},
+									},
+								},
+							}),
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "failed to filter aligned reservation with nodeInfo",
+			stateData: &stateData{
+				podRequests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("8"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				nodeReservationStates: map[string]nodeReservationState{
+					node.Name: {
+						podRequested: &framework.Resource{
+							MilliCPU: 32 * 1000, // no remaining resources
+							Memory:   24 * 1024 * 1024 * 1024,
+						},
+						rAllocated: &framework.Resource{
+							MilliCPU: 0,
+						},
+						totalAligned: 1,
+						matched: []*frameworkext.ReservationInfo{
+							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "test-r",
+								},
+								Spec: schedulingv1alpha1.ReservationSpec{
+									AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyAligned,
+									Template: &corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Resources: corev1.ResourceRequirements{
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU: resource.MustParse("6"),
+														},
+													},
+												},
+											},
+										},
+									},
+								},
+							}),
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonReservationInsufficientResources),
+		},
+		{
+			name: "filter restricted reservation with nodeInfo",
+			stateData: &stateData{
+				podRequests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("6"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				nodeReservationStates: map[string]nodeReservationState{
+					node.Name: {
+						podRequested: &framework.Resource{
+							MilliCPU: 30 * 1000,
+							Memory:   24 * 1024 * 1024 * 1024,
+						},
+						rAllocated: &framework.Resource{
+							MilliCPU: 0,
+						},
+						totalRestricted: 1,
+						matched: []*frameworkext.ReservationInfo{
+							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "test-r",
+								},
+								Spec: schedulingv1alpha1.ReservationSpec{
+									AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+									Template: &corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Resources: corev1.ResourceRequirements{
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU: resource.MustParse("6"),
+														},
+													},
+												},
+											},
+										},
+									},
+								},
+							}),
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "failed to filter restricted reservation with nodeInfo",
+			stateData: &stateData{
+				podRequests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("8"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				nodeReservationStates: map[string]nodeReservationState{
+					node.Name: {
+						podRequested: &framework.Resource{
+							MilliCPU: 30 * 1000,
+							Memory:   24 * 1024 * 1024 * 1024,
+						},
+						rAllocated: &framework.Resource{
+							MilliCPU: 0,
+						},
+						totalRestricted: 1,
+						matched: []*frameworkext.ReservationInfo{
+							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "test-r",
+								},
+								Spec: schedulingv1alpha1.ReservationSpec{
+									AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+									Template: &corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Resources: corev1.ResourceRequirements{
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU: resource.MustParse("6"),
+														},
+													},
+												},
+											},
+										},
+									},
+								},
+							}),
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonReservationInsufficientResources),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pl := &Plugin{}
+			cycleState := framework.NewCycleState()
+			resources := framework.NewResource(tt.stateData.podRequests)
+			tt.stateData.podRequestsResources = resources
+			cycleState.Write(stateKey, tt.stateData)
+			nodeInfo := framework.NewNodeInfo()
+			nodeInfo.SetNode(node)
+			got := pl.filterWithReservations(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo)
+			assert.Equal(t, tt.wantStatus, got)
 		})
 	}
 }
