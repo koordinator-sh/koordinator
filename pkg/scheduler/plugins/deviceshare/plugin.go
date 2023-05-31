@@ -24,7 +24,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
@@ -34,7 +33,6 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -308,26 +306,29 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
 	}
 
-	nodeDeviceInfo.lock.RLock()
-	defer nodeDeviceInfo.lock.RUnlock()
-
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	restoreState := reservationRestoreState.getNodeState(node.Name)
+	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[node.Name])
 
-	allocateResult, err := p.tryAllocateFromReservation(state, nodeDeviceInfo, node.Name, pod, restoreState)
-	if len(allocateResult) > 0 && err == nil {
+	nodeDeviceInfo.lock.RLock()
+	defer nodeDeviceInfo.lock.RUnlock()
+	allocateResult, status := p.tryAllocateFromReservation(state, restoreState, restoreState.matched, nodeDeviceInfo, node.Name, pod, preemptible, false)
+	if !status.IsSuccess() {
+		return status
+	}
+	if len(allocateResult) > 0 {
 		return nil
 	}
 
-	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, restoreState.mergedMatchedAllocatable, state.preemptibleDevices[node.Name])
-	allocateResult, err = p.allocator.Allocate(node.Name, pod, state.podRequests, nodeDeviceInfo, nil, nil, preemptible)
+	preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
+	allocateResult, err := p.allocator.Allocate(node.Name, pod, state.podRequests, nodeDeviceInfo, nil, nil, nil, preemptible)
 	if len(allocateResult) > 0 && err == nil {
 		return nil
 	}
 	return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
 }
 
-func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
+func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) *framework.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -336,23 +337,35 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 		return nil
 	}
 
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	restoreState := reservationRestoreState.getNodeState(nodeName)
+
+	allocIndex := -1
+	for i, v := range restoreState.matched {
+		if v.rInfo.UID() == reservationInfo.UID() {
+			allocIndex = i
+			break
+		}
+	}
+	if allocIndex == -1 {
+		return framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information in deviceShare"))
+	}
+
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
 	if nodeDeviceInfo == nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
 	}
 
+	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeName])
+
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	reservationRestoreState := getReservationRestoreState(cycleState)
-	restoreState := reservationRestoreState.getNodeState(nodeName)
-
-	namespacedName := reservationutil.GetReservePodNamespacedName(reservation)
-	allocatable := nodeDeviceInfo.getUsed(namespacedName.Namespace, namespacedName.Name)
-	requiredDevices := newDeviceMinorMap(allocatable)
-	allocatable = appendAllocated(nil, restoreState.mergedUnmatchedUsed, restoreState.mergedMatchedAllocatable)
-	allocateResult, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, requiredDevices, nil, allocatable)
-	if len(allocateResult) == 0 || err != nil {
+	allocateResult, status := p.tryAllocateFromReservation(state, restoreState, restoreState.matched[allocIndex:allocIndex+1], nodeDeviceInfo, nodeName, pod, preemptible, true)
+	if !status.IsSuccess() {
+		return status
+	}
+	if len(allocateResult) == 0 {
 		return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
 	}
 	return nil
@@ -372,49 +385,29 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
 	}
 
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	restoreState := reservationRestoreState.getNodeState(nodeName)
+	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeName])
+
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 
-	reservationRestoreState := getReservationRestoreState(cycleState)
-	restoreState := reservationRestoreState.getNodeState(nodeName)
-
-	var allocateResult apiext.DeviceAllocations
-	var err error
-	preemptible, preferred := p.getReservationReservedDevices(cycleState, state, pod, nodeDeviceInfo, nodeName)
-	if len(preferred) > 0 {
-		preemptible = appendAllocated(nil, preemptible, restoreState.mergedUnmatchedUsed, restoreState.mergedMatchedAllocatable, state.preemptibleDevices[nodeName])
-		allocateResult, err = p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, nil, preferred, preemptible)
-	} else {
-		allocateResult, err = p.tryAllocateFromReservation(state, nodeDeviceInfo, nodeName, pod, restoreState)
-		if err != nil {
-			return framework.AsStatus(err)
-		}
-		if len(allocateResult) == 0 {
-			preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, restoreState.mergedMatchedAllocatable, state.preemptibleDevices[nodeName])
-			allocateResult, err = p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, nil, nil, preemptible)
-		}
+	result, status := p.allocateWithNominatedReservation(
+		cycleState, state, restoreState, nodeDeviceInfo, nodeName, pod, preemptible)
+	if !status.IsSuccess() {
+		return status
 	}
-	if err != nil || len(allocateResult) == 0 {
+	var err error
+	if len(result) == 0 {
+		preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
+		result, err = p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, nil, nil, nil, preemptible)
+	}
+	if err != nil || len(result) == 0 {
 		return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
 	}
-	p.allocator.Reserve(pod, nodeDeviceInfo, allocateResult)
-	state.allocationResult = allocateResult
+	p.allocator.Reserve(pod, nodeDeviceInfo, result)
+	state.allocationResult = result
 	return nil
-}
-
-func (p *Plugin) getReservationReservedDevices(cycleState *framework.CycleState, state *preFilterState, pod *corev1.Pod, nodeDeviceInfo *nodeDevice, nodeName string) (map[schedulingv1alpha1.DeviceType]deviceResources, map[schedulingv1alpha1.DeviceType]sets.Int) {
-	if reservationutil.IsReservePod(pod) {
-		return nil, nil
-	}
-
-	reservation := frameworkext.GetNominatedReservation(cycleState)
-	if reservation == nil {
-		return nil, nil
-	}
-
-	namespacedName := reservationutil.GetReservePodNamespacedName(reservation)
-	reservedDevices := nodeDeviceInfo.getUsed(namespacedName.Namespace, namespacedName.Name)
-	return copyDeviceResources(state.preemptibleInRRs[nodeName][reservation.UID]), newDeviceMinorMap(reservedDevices)
 }
 
 func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
@@ -446,7 +439,7 @@ func (p *Plugin) PreBindReservation(ctx context.Context, cycleState *framework.C
 	return p.preBindObject(ctx, cycleState, reservation, nodeName)
 }
 
-func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleState, object runtime.Object, nodeName string) *framework.Status {
+func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleState, object metav1.Object, nodeName string) *framework.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -455,32 +448,9 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		return nil
 	}
 
-	originalObj := object.DeepCopyObject()
-	metaObject := object.(metav1.Object)
-	if err := apiext.SetDeviceAllocations(metaObject, state.allocationResult); err != nil {
+	if err := apiext.SetDeviceAllocations(object, state.allocationResult); err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
 	}
-
-	// NOTE: APIServer won't allow the following modification. Error: pod updates may not change fields other than
-	// `spec.containers[*].image`, `spec.initContainers[*].image`, `spec.activeDeadlineSeconds`,
-	// `spec.tolerations` (only additions to existing tolerations) or `spec.terminationGracePeriodSeconds`
-
-	// podRequest := state.convertedDeviceResource
-	// if _, ok := allocResult[schedulingv1alpha1.GPU]; ok {
-	// 	patchContainerGPUResource(newPod, podRequest)
-	// }
-
-	// patch pod or reservation (if the pod is a reserve pod) with new annotations
-	err := util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err1 := util.NewPatch().WithHandle(p.handle).Patch(ctx, originalObj.(metav1.Object), metaObject)
-		return err1
-	})
-	if err != nil {
-		klog.V(3).ErrorS(err, "Failed to preBind %T with DeviceShare", object, klog.KObj(metaObject), "Devices", state.allocationResult, "node", nodeName)
-		return framework.NewStatus(framework.Error, err.Error())
-	}
-	klog.V(4).Infof("Successfully preBind %T %v", object, klog.KObj(metaObject))
-
 	return nil
 }
 

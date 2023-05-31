@@ -193,15 +193,15 @@ func readCgroupAndParseInt32Slice(parentDir string, r sysutil.Resource) ([]int32
 
 func IsCgroupPathExist(parentDir string, r sysutil.Resource) (bool, string) {
 	filePath := r.Path(parentDir)
-	cgroupPath := filepath.Dir(filePath)
-	pathexists, _ := sysutil.PathExists(cgroupPath)
-	if !pathexists {
-		klog.V(5).Infof("cgroup directory not exist, path: %v", cgroupPath)
-		return false, "cgroup path err"
+	cgroupDir := filepath.Dir(filePath)
+	dirExists, _ := sysutil.PathExists(cgroupDir)
+	if !dirExists {
+		klog.V(5).Infof("cgroup directory not exist, path: %v", cgroupDir)
+		return false, "cgroup dir not exist"
 	}
-	fileexists, _ := sysutil.PathExists(filePath)
-	if !fileexists && pathexists {
-		return false, "cgroup file err"
+	fileExists, _ := sysutil.PathExists(filePath)
+	if !fileExists {
+		return false, "cgroup file not exist"
 	}
 	return true, ""
 }

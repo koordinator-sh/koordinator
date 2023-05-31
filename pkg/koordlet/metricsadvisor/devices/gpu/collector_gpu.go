@@ -67,12 +67,12 @@ func (g *gpuCollector) Started() bool {
 	return g.gpuDeviceManager.started()
 }
 
-func (g *gpuCollector) FillNodeMetric(nodeMetric *metriccache.NodeResourceMetric) error {
-	nodeGPUUsage := g.gpuDeviceManager.getNodeGPUUsage()
-	if nodeGPUUsage != nil {
-		nodeMetric.GPUs = nodeGPUUsage
-	}
-	return nil
+func (g *gpuCollector) Infos() metriccache.Devices {
+	return g.gpuDeviceManager.deviceInfos()
+}
+
+func (g *gpuCollector) GetNodeMetric() ([]metriccache.MetricSample, error) {
+	return g.gpuDeviceManager.getNodeGPUUsage(), nil
 }
 
 func (g *gpuCollector) FillPodMetric(podMetric *metriccache.PodResourceMetric, podParentDir string,
@@ -95,8 +95,9 @@ func (g *gpuCollector) FillContainerMetric(containerMetric *metriccache.Containe
 
 type GPUDeviceManager interface {
 	started() bool
+	deviceInfos() metriccache.Devices
 	collectGPUUsage()
-	getNodeGPUUsage() []metriccache.GPUMetric
+	getNodeGPUUsage() []metriccache.MetricSample
 	getPodGPUUsage(podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.GPUMetric, error)
 	getContainerGPUUsage(podParentDir string, c *corev1.ContainerStatus) ([]metriccache.GPUMetric, error)
 	shutdown() error
@@ -108,9 +109,13 @@ func (d *dummyDeviceManager) started() bool {
 	return true
 }
 
+func (d *dummyDeviceManager) deviceInfos() metriccache.Devices {
+	return nil
+}
+
 func (d *dummyDeviceManager) collectGPUUsage() {}
 
-func (d *dummyDeviceManager) getNodeGPUUsage() []metriccache.GPUMetric {
+func (d *dummyDeviceManager) getNodeGPUUsage() []metriccache.MetricSample {
 	return nil
 }
 

@@ -293,8 +293,18 @@ func TestRestoreReservation(t *testing.T) {
 
 	matchRInfo := pl.reservationCache.getReservationInfoByUID(matchedReservation.UID)
 	expectedStat := &stateData{
+		podRequests:          corev1.ResourceList{},
+		podRequestsResources: framework.NewResource(nil),
 		nodeReservationStates: map[string]nodeReservationState{
-			node.Name: {nodeName: node.Name, matched: []*frameworkext.ReservationInfo{matchRInfo}},
+			node.Name: {
+				nodeName: node.Name,
+				matched:  []*frameworkext.ReservationInfo{matchRInfo},
+				podRequested: &framework.Resource{
+					MilliCPU: 28000,
+					Memory:   60129542144,
+				},
+				rAllocated: framework.NewResource(nil),
+			},
 		},
 	}
 	assert.Equal(t, expectedStat, getStateData(cycleState))
@@ -410,7 +420,8 @@ func Test_matchReservation(t *testing.T) {
 			}
 			reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(tt.pod)
 			assert.NoError(t, err)
-			got := matchReservation(tt.pod, &corev1.Node{}, tt.reservation, reservationAffinity)
+			rInfo := frameworkext.NewReservationInfo(tt.reservation)
+			got := matchReservation(tt.pod, &corev1.Node{}, rInfo, reservationAffinity)
 			assert.Equal(t, tt.want, got)
 		})
 	}

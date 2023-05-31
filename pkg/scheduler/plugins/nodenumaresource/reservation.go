@@ -82,12 +82,12 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 	nodeName := nodeInfo.Node().Name
 	reservedCPUs := map[types.UID]cpuset.CPUSet{}
 	for _, rInfo := range matched {
-		allocatedCPUs, ok := p.cpuManager.GetAllocatedCPUSet(nodeName, rInfo.Reservation.UID)
+		allocatedCPUs, ok := p.cpuManager.GetAllocatedCPUSet(nodeName, rInfo.UID())
 		if !ok || allocatedCPUs.IsEmpty() {
 			continue
 		}
 
-		for _, pod := range rInfo.Pods {
+		for _, pod := range rInfo.AssignedPods {
 			podCPUs, ok := p.cpuManager.GetAllocatedCPUSet(nodeName, pod.UID)
 			if !ok || podCPUs.IsEmpty() {
 				continue
@@ -97,9 +97,9 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 		}
 
 		if !allocatedCPUs.IsEmpty() {
-			reservedCPUs[rInfo.Reservation.UID] = allocatedCPUs
+			reservedCPUs[rInfo.UID()] = allocatedCPUs
 		} else {
-			delete(reservedCPUs, rInfo.Reservation.UID)
+			delete(reservedCPUs, rInfo.UID())
 		}
 	}
 

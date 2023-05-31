@@ -91,25 +91,56 @@ func (t *testPreBindReservationState) Clone() framework.StateData {
 	return t
 }
 
-func (h *TestTransformer) PreBindReservation(ctx context.Context, state *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
+func (h *TestTransformer) PreBindReservation(ctx context.Context, cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
 	if reservation.Annotations == nil {
 		reservation.Annotations = map[string]string{}
 	}
 	reservation.Annotations[fmt.Sprintf("PreBindReservation-%d", h.index)] = fmt.Sprintf("%d", h.index)
-	state.Write("test-preBind-reservation", &testPreBindReservationState{reservation: reservation})
+	cycleState.Write("test-preBind-reservation", &testPreBindReservationState{reservation: reservation})
 	return nil
 }
 
 type fakePreBindPlugin struct {
-	err error
+	name string
+	err  error
+
+	skipApplyPatch    bool
+	appendAnnotations map[string]string
+	modifiedObj       metav1.Object
 }
 
-func (f fakePreBindPlugin) Name() string { return "fakePreBindPlugin" }
+func (f *fakePreBindPlugin) Name() string {
+	if f.name != "" {
+		return f.name
+	}
+	return "fakePreBindPlugin"
+}
 
-func (f fakePreBindPlugin) PreBind(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
+func (f *fakePreBindPlugin) PreBind(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
 	if f.err != nil {
 		return framework.AsStatus(f.err)
 	}
+	return nil
+}
+
+func (f *fakePreBindPlugin) ApplyPatch(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status {
+	if f.skipApplyPatch {
+		return framework.NewStatus(framework.Skip)
+	}
+	if f.err != nil {
+		return framework.AsStatus(f.err)
+	}
+	if f.appendAnnotations != nil {
+		annotations := modifiedObj.GetAnnotations()
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		for k, v := range f.appendAnnotations {
+			annotations[k] = v
+		}
+		modifiedObj.SetAnnotations(annotations)
+	}
+	f.modifiedObj = modifiedObj
 	return nil
 }
 
@@ -124,13 +155,13 @@ func (c fakeNodeInfoLister) NodeInfos() framework.NodeInfoLister {
 var _ ReservationNominator = &fakeReservationNominator{}
 
 type fakeReservationNominator struct {
-	reservation *schedulingv1alpha1.Reservation
+	reservation *ReservationInfo
 	err         error
 }
 
 func (f fakeReservationNominator) Name() string { return "fakeReservationNominator" }
 
-func (f fakeReservationNominator) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*schedulingv1alpha1.Reservation, *framework.Status) {
+func (f fakeReservationNominator) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *framework.Status) {
 	if f.err != nil {
 		return nil, framework.AsStatus(f.err)
 	}
@@ -272,20 +303,21 @@ func TestRunReservePluginsReserve(t *testing.T) {
 			Name: "fake-reservation",
 		},
 	}
+	reservationInfo := NewReservationInfo(reservation)
 	tests := []struct {
 		name            string
 		nominators      []ReservationNominator
-		wantReservation *schedulingv1alpha1.Reservation
+		wantReservation *ReservationInfo
 		wantStatus      bool
 	}{
 		{
 			name: "nominate reservation",
 			nominators: []ReservationNominator{
 				fakeReservationNominator{
-					reservation: reservation,
+					reservation: reservationInfo,
 				},
 			},
-			wantReservation: reservation,
+			wantReservation: reservationInfo,
 			wantStatus:      true,
 		},
 		{
@@ -298,10 +330,10 @@ func TestRunReservePluginsReserve(t *testing.T) {
 			nominators: []ReservationNominator{
 				fakeReservationNominator{},
 				fakeReservationNominator{
-					reservation: reservation,
+					reservation: reservationInfo,
 				},
 			},
-			wantReservation: reservation,
+			wantReservation: reservationInfo,
 			wantStatus:      true,
 		},
 		{
@@ -375,7 +407,7 @@ func TestPreBind(t *testing.T) {
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 				schedulertesting.RegisterPreBindPlugin("fakePreBindPlugin", func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
-					return fakePreBindPlugin{err: errors.New("failed")}, nil
+					return &fakePreBindPlugin{err: errors.New("failed")}, nil
 				}),
 			}
 			fh, err := schedulertesting.NewFramework(
@@ -412,6 +444,47 @@ func TestPreBind(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPreBindExtensionOrder(t *testing.T) {
+	preBindA := &fakePreBindPlugin{name: "fakePreBindPluginA", skipApplyPatch: true}
+	preBindB := &fakePreBindPlugin{name: "fakePreBindPluginB", appendAnnotations: map[string]string{"test": "2"}}
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		schedulertesting.RegisterPreBindPlugin(preBindA.Name(), func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+			return preBindA, nil
+		}),
+		schedulertesting.RegisterPreBindPlugin(preBindB.Name(), func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+			return preBindB, nil
+		}),
+	}
+	fh, err := schedulertesting.NewFramework(
+		registeredPlugins,
+		"koord-scheduler",
+	)
+	assert.NoError(t, err)
+
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extenderFactory, _ := NewFrameworkExtenderFactory(
+		WithKoordinatorClientSet(koordClientSet),
+		WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+
+	extender := NewFrameworkExtender(extenderFactory, fh)
+	impl := extender.(*frameworkExtenderImpl)
+	impl.updatePlugins(preBindA)
+	impl.updatePlugins(preBindB)
+
+	cycleState := framework.NewCycleState()
+
+	pod := &corev1.Pod{}
+
+	status := extender.RunPreBindPlugins(context.TODO(), cycleState, pod, "test-node-1")
+	assert.True(t, status.IsSuccess())
+	assert.Nil(t, preBindA.modifiedObj)
+	assert.Equal(t, map[string]string{"test": "2"}, preBindB.modifiedObj.GetAnnotations())
 }
 
 const fakeReservationRestoreStateKey = "fakeReservationRestoreState"
@@ -559,11 +632,11 @@ type fakeReservationFilterPlugin struct {
 
 func (f *fakeReservationFilterPlugin) Name() string { return "fakeReservationFilterPlugin" }
 
-func (f *fakeReservationFilterPlugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
-	if reservation.Annotations == nil {
-		reservation.Annotations = map[string]string{}
+func (f *fakeReservationFilterPlugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status {
+	if reservationInfo.Reservation.Annotations == nil {
+		reservationInfo.Reservation.Annotations = map[string]string{}
 	}
-	reservation.Annotations[fmt.Sprintf("reservationFilterPlugin-%d", f.index)] = fmt.Sprintf("%d", f.index)
+	reservationInfo.Reservation.Annotations[fmt.Sprintf("reservationFilterPlugin-%d", f.index)] = fmt.Sprintf("%d", f.index)
 	if f.err != nil {
 		return framework.AsStatus(f.err)
 	}
@@ -634,9 +707,10 @@ func TestReservationFilterPlugin(t *testing.T) {
 
 			cycleState := framework.NewCycleState()
 
-			status := extender.RunReservationFilterPlugins(context.TODO(), cycleState, &corev1.Pod{}, tt.reservation, "test-node-1")
+			reservationInfo := NewReservationInfo(tt.reservation)
+			status := extender.RunReservationFilterPlugins(context.TODO(), cycleState, &corev1.Pod{}, reservationInfo, "test-node-1")
 			assert.Equal(t, tt.wantStatus, status.IsSuccess())
-			assert.Equal(t, tt.wantAnnotations, tt.reservation.Annotations)
+			assert.Equal(t, tt.wantAnnotations, reservationInfo.Reservation.Annotations)
 		})
 	}
 }
@@ -649,7 +723,7 @@ type fakeReservationScorePlugin struct {
 
 func (f *fakeReservationScorePlugin) Name() string { return f.name }
 
-func (f *fakeReservationScorePlugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) (int64, *framework.Status) {
+func (f *fakeReservationScorePlugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) (int64, *framework.Status) {
 	var status *framework.Status
 	if f.err != nil {
 		status = framework.AsStatus(f.err)
@@ -718,7 +792,12 @@ func TestReservationScorePlugin(t *testing.T) {
 
 			cycleState := framework.NewCycleState()
 
-			pluginToReservationScores, status := extender.RunReservationScorePlugins(context.TODO(), cycleState, &corev1.Pod{}, tt.reservations, "test-node-1")
+			var rInfos []*ReservationInfo
+			for _, v := range tt.reservations {
+				rInfos = append(rInfos, NewReservationInfo(v))
+			}
+
+			pluginToReservationScores, status := extender.RunReservationScorePlugins(context.TODO(), cycleState, &corev1.Pod{}, rInfos, "test-node-1")
 			assert.Equal(t, tt.wantStatus, status.IsSuccess())
 			assert.Equal(t, tt.wantScores, pluginToReservationScores)
 		})

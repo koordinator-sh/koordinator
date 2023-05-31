@@ -36,6 +36,8 @@ import (
 	pgfake "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	schedinformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 
+	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
+	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 )
@@ -230,6 +232,13 @@ func TestFillGroupStatusOccupied(t *testing.T) {
 			groupPhase:           v1alpha1.PodGroupPending,
 			desiredGroupOccupied: []string{"default/new-occupied-1", "default/new-occupied-2"},
 		},
+		{
+			name:                 "minMember == 0",
+			pgName:               "pg",
+			minMember:            0,
+			groupPhase:           v1alpha1.PodGroupPending,
+			desiredGroupOccupied: []string{"test"},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -270,7 +279,11 @@ func setUp(ctx context.Context, podNames []string, pgName string, podPhase v1.Po
 	podInformer := informerFactory.Core().V1().Pods()
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 
-	pgMgr := core.NewPodGroupManager(pgClient, pgInformerFactory, informerFactory, &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: time.Second}})
+	koordClient := koordfake.NewSimpleClientset()
+	koordInformerFactory := koordinformers.NewSharedInformerFactory(koordClient, 0)
+
+	args := &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: time.Second}}
+	pgMgr := core.NewPodGroupManager(args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
 	ctrl := NewPodGroupController(pgInformer, podInformer, pgClient, pgMgr, 1)
 	return ctrl, kubeClient, pgClient
 }

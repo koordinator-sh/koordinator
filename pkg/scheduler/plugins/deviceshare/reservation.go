@@ -18,8 +18,11 @@ package deviceshare
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -40,6 +43,7 @@ type nodeReservationRestoreStateData struct {
 	unmatched []reservationAlloc
 
 	mergedMatchedAllocatable map[schedulingv1alpha1.DeviceType]deviceResources
+	mergedMatchedAllocated   map[schedulingv1alpha1.DeviceType]deviceResources
 	mergedUnmatchedUsed      map[schedulingv1alpha1.DeviceType]deviceResources
 }
 
@@ -97,6 +101,7 @@ func (rs *nodeReservationRestoreStateData) mergeReservationAllocations() {
 			mergedMatchedAllocated = appendAllocated(mergedMatchedAllocated, alloc.allocated)
 		}
 		rs.mergedMatchedAllocatable = mergedMatchedAllocatable
+		rs.mergedMatchedAllocated = mergedMatchedAllocated
 	}
 
 	return
@@ -132,19 +137,17 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 		}
 		result := make([]reservationAlloc, 0, len(reservations))
 		for _, rInfo := range reservations {
-			namespacedName := reservationutil.GetReservePodNamespacedName(rInfo.Reservation)
-			allocatable := nd.getUsed(namespacedName.Namespace, namespacedName.Name)
+			reservePod := rInfo.GetReservePod()
+			allocatable := nd.getUsed(reservePod.Namespace, reservePod.Name)
 			if len(allocatable) == 0 {
 				continue
 			}
-			allocated := map[schedulingv1alpha1.DeviceType]deviceResources{}
-			for k := range allocatable {
-				allocated[k] = deviceResources{}
-			}
-			for _, podRequirement := range rInfo.Pods {
+			minorHints := newDeviceMinorMap(allocatable)
+			var allocated map[schedulingv1alpha1.DeviceType]deviceResources
+			for _, podRequirement := range rInfo.AssignedPods {
 				podAllocated := nd.getUsed(podRequirement.Namespace, podRequirement.Name)
 				if len(podAllocated) > 0 {
-					allocated = appendAllocatedIntersectionDeviceType(allocated, podAllocated)
+					allocated = appendAllocatedByHints(minorHints, allocated, podAllocated)
 				}
 			}
 			result = append(result, reservationAlloc{
@@ -175,24 +178,168 @@ func (p *Plugin) FinalRestoreReservation(ctx context.Context, cycleState *framew
 	return nil
 }
 
-func (p *Plugin) tryAllocateFromReservation(state *preFilterState, nodeDeviceInfo *nodeDevice, nodeName string, pod *corev1.Pod, restoreState *nodeReservationRestoreStateData) (apiext.DeviceAllocations, error) {
-	matchedReservations := restoreState.matched
+func (p *Plugin) tryAllocateFromReservation(
+	state *preFilterState,
+	restoreState *nodeReservationRestoreStateData,
+	matchedReservations []reservationAlloc,
+	nodeDeviceInfo *nodeDevice,
+	nodeName string,
+	pod *corev1.Pod,
+	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
+	requiredFromReservation bool,
+) (apiext.DeviceAllocations, *framework.Status) {
 	if len(matchedReservations) == 0 {
 		return nil, nil
 	}
+
+	var (
+		totalAligned           int
+		totalRestricted        int
+		insufficientAligned    int
+		insufficientRestricted int
+
+		preemptibleForDefault map[schedulingv1alpha1.DeviceType]deviceResources
+		preemptibleForAligned map[schedulingv1alpha1.DeviceType]deviceResources
+	)
+
 	for _, alloc := range matchedReservations {
 		rInfo := alloc.rInfo
+		preemptibleInRR := state.preemptibleInRRs[nodeName][rInfo.UID()]
 		preferred := newDeviceMinorMap(alloc.allocatable)
-		preemptible := appendAllocated(nil,
-			restoreState.mergedUnmatchedUsed,
-			restoreState.mergedMatchedAllocatable,
-			state.preemptibleDevices[nodeName],
-			state.preemptibleInRRs[nodeName][rInfo.Reservation.UID],
-		)
-		result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, nil, preferred, preemptible)
-		if len(result) > 0 && err == nil {
-			return result, nil
+
+		allocatePolicy := rInfo.GetAllocatePolicy()
+		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault {
+			//
+			// The Default Policy is a relax policy that allows Pods to be allocated from multiple Reservations
+			// and the remaining resources of the node.
+			// The formula for calculating the remaining amount per device instance in this scenario is as follows:
+			// basicPreemptible = sum(allocated(unmatched reservations)) + preemptible(node)
+			// free = total - (used - basicPreemptible - sum(allocatable(matched reservations)) - preemptible(currentReservation))
+			//
+			if preemptibleForDefault == nil {
+				preemptibleForDefault = appendAllocated(nil, basicPreemptible, restoreState.mergedMatchedAllocatable)
+			}
+			preemptible := appendAllocated(nil, preemptibleForDefault, preemptibleInRR)
+			var required map[schedulingv1alpha1.DeviceType]sets.Int
+			if requiredFromReservation {
+				required = preferred
+			}
+			result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, required, preferred, nil, preemptible)
+			if len(result) > 0 && err == nil {
+				return result, nil
+			}
+			continue
+		}
+
+		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyAligned {
+			totalAligned++
+		} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
+			totalRestricted++
+		}
+
+		//
+		// The Aligned and Restricted Policies only allow Pods to be allocated from current Reservation
+		// and the remaining resources of the node.
+		// And the Restricted policy requires that if the device resources requested by the Pod overlap with
+		// the device resources reserved by the current Reservation, such devices can only be allocated from the current Reservation.
+		// The formula for calculating the remaining amount per device instance in this scenario is as follows:
+		// basicPreemptible = sum(allocated(unmatched reservations)) + preemptible(node)
+		// free = total - (used - basicPreemptible - sum(allocated(matched reservations)) - sum(remained(currentReservation)) - preemptible(currentReservation))
+		//
+		if preemptibleForAligned == nil {
+			preemptibleForAligned = appendAllocated(nil, basicPreemptible, restoreState.mergedMatchedAllocated)
+		}
+		preemptible := appendAllocated(nil, preemptibleForAligned, alloc.remained, preemptibleInRR)
+		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyAligned {
+			result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, preferred, preferred, nil, preemptible)
+			if len(result) > 0 && err == nil {
+				return result, nil
+			}
+			insufficientAligned++
+		} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
+			result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, preferred, preferred, nil, preemptible)
+			nodeFits := len(result) > 0 && err == nil
+			if nodeFits {
+				//
+				// It is necessary to check separately whether the remaining resources of the device instance
+				// reserved by the Restricted Reservation meet the requirements of the Pod, to ensure that
+				// the intersecting resources do not exceed the reserved range of the Restricted Reservation.
+				//
+				requiredDeviceResources := calcRequiredDeviceResources(&alloc, preemptibleInRR)
+				result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, preferred, preferred, requiredDeviceResources, preemptible)
+				if len(result) > 0 && err == nil {
+					return result, nil
+				}
+			}
+			insufficientRestricted++
 		}
 	}
+	if (totalAligned > 0 && totalAligned == insufficientAligned) ||
+		(totalRestricted > 0 && totalRestricted == insufficientRestricted) {
+		return nil, framework.NewStatus(framework.Unschedulable, "node(s) reservations insufficient devices")
+	}
 	return nil, nil
+}
+
+func calcRequiredDeviceResources(alloc *reservationAlloc, preemptibleInRR map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
+	var required map[schedulingv1alpha1.DeviceType]deviceResources
+	minorHints := newDeviceMinorMap(alloc.allocatable)
+	required = appendAllocatedByHints(minorHints, required, alloc.remained, preemptibleInRR)
+	if len(required) == 0 {
+		// required is empty to indicate that there are no resources left.
+		// A valid object must be constructed with no remaining capacity.
+		if required == nil {
+			required = map[schedulingv1alpha1.DeviceType]deviceResources{}
+		}
+		for deviceType, minors := range minorHints {
+			resources := deviceResources{}
+			for minor := range minors.UnsortedList() {
+				resources[minor] = corev1.ResourceList{}
+			}
+			required[deviceType] = resources
+		}
+	}
+	return required
+}
+
+func (p *Plugin) allocateWithNominatedReservation(
+	cycleState *framework.CycleState,
+	state *preFilterState,
+	restoreState *nodeReservationRestoreStateData,
+	nodeDeviceInfo *nodeDevice,
+	nodeName string,
+	pod *corev1.Pod,
+	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
+) (apiext.DeviceAllocations, *framework.Status) {
+	if reservationutil.IsReservePod(pod) {
+		return nil, nil
+	}
+
+	reservation := frameworkext.GetNominatedReservation(cycleState)
+	if reservation == nil {
+		return nil, nil
+	}
+
+	allocIndex := -1
+	for i, v := range restoreState.matched {
+		if v.rInfo.UID() == reservation.UID() {
+			allocIndex = i
+			break
+		}
+	}
+	if allocIndex == -1 {
+		return nil, framework.AsStatus(fmt.Errorf("missing nominated reservation %v", klog.KObj(reservation)))
+	}
+
+	result, status := p.tryAllocateFromReservation(
+		state,
+		restoreState,
+		restoreState.matched[allocIndex:allocIndex+1],
+		nodeDeviceInfo,
+		nodeName,
+		pod,
+		basicPreemptible,
+		false,
+	)
+	return result, status
 }

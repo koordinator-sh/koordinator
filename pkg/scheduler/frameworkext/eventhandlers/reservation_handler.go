@@ -42,21 +42,19 @@ import (
 // Register schedulingv1alpha1 scheme to report event
 var _ = schedulingv1alpha1.AddToScheme(scheme.Scheme)
 
-func AddReservationErrorHandler(
+func MakeReservationErrorHandler(
 	sched *scheduler.Scheduler,
 	schedAdapter frameworkext.Scheduler,
 	koordClientSet koordclientset.Interface,
 	koordSharedInformerFactory koordinatorinformers.SharedInformerFactory,
-) {
-	defaultErrorFn := sched.Error
+) frameworkext.ErrorHandler {
 	reservationLister := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 	reservationErrorFn := makeReservationErrorFunc(schedAdapter, reservationLister)
-	sched.Error = func(podInfo *framework.QueuedPodInfo, schedulingErr error) {
+	return func(podInfo *framework.QueuedPodInfo, schedulingErr error) bool {
 		pod := podInfo.Pod
 		// if the pod is not a reserve pod, use the default error handler
 		if !reservationutil.IsReservePod(pod) {
-			defaultErrorFn(podInfo, schedulingErr)
-			return
+			return false
 		}
 
 		reservationErrorFn(podInfo, schedulingErr)
@@ -64,19 +62,20 @@ func AddReservationErrorHandler(
 		rName := reservationutil.GetReservationNameFromReservePod(pod)
 		r, err := reservationLister.Get(rName)
 		if err != nil {
-			return
+			return true
 		}
 
 		fwk, ok := sched.Profiles[pod.Spec.SchedulerName]
 		if !ok {
 			klog.Errorf("profile not found for scheduler name %q", pod.Spec.SchedulerName)
-			return
+			return true
 		}
 
 		msg := truncateMessage(schedulingErr.Error())
 		fwk.EventRecorder().Eventf(r, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
 
 		updateReservationStatus(koordClientSet, reservationLister, rName, schedulingErr)
+		return true
 	}
 }
 

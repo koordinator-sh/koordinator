@@ -286,7 +286,7 @@ func TestNewCPUBurst(t *testing.T) {
 
 func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 	type fields struct {
-		nodeMetric  metriccache.NodeResourceQueryResult
+		nodeCPUUsed *resource.Quantity
 		podsMetric  map[string]metriccache.PodResourceQueryResult
 		nodeCPUInfo *metriccache.NodeCPUInfo
 	}
@@ -303,10 +303,7 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 		{
 			name: "get-unknown-status-because-of-nil-node-metric",
 			fields: fields{
-				nodeMetric: metriccache.NodeResourceQueryResult{
-					QueryResult: metriccache.QueryResult{},
-					Metric:      nil,
-				},
+				nodeCPUUsed: nil,
 				podsMetric:  nil,
 				nodeCPUInfo: testNodeInfo,
 			},
@@ -319,15 +316,7 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 		{
 			name: "get-unknown-status-because-of-lack-node-info",
 			fields: fields{
-				nodeMetric: metriccache.NodeResourceQueryResult{
-					QueryResult: metriccache.QueryResult{},
-					Metric: &metriccache.NodeResourceMetric{
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: *resource.NewQuantity(6, resource.DecimalSI),
-						},
-						MemoryUsed: metriccache.MemoryMetric{},
-					},
-				},
+				nodeCPUUsed: resource.NewQuantity(6, resource.DecimalSI),
 				podsMetric:  nil,
 				nodeCPUInfo: nil,
 			},
@@ -341,15 +330,7 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 			// share-pool=16-8(LSR.Req)=8, share-pool-usage=10-7(LSR.Usage)=3; share-pool-usage-ratio=3/8; threshold = 50%
 			name: "get-idle-status-with-lsr-pod",
 			fields: fields{
-				nodeMetric: metriccache.NodeResourceQueryResult{
-					QueryResult: metriccache.QueryResult{},
-					Metric: &metriccache.NodeResourceMetric{
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: *resource.NewQuantity(10, resource.DecimalSI),
-						},
-						MemoryUsed: metriccache.MemoryMetric{},
-					},
-				},
+				nodeCPUUsed: resource.NewQuantity(10, resource.DecimalSI),
 				podsMetric: map[string]metriccache.PodResourceQueryResult{
 					"lsr-pod-1": *newPodUsage("lsr-pod-1", 7000, 7000),
 					"ls-pod-2":  *newPodUsage("ls-pod-2", 200, 200),
@@ -369,15 +350,7 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 			// share-pool=16-8(LSR.Req)=8, share-pool-usage=10-5(LSR.Usage)=5; share-pool-usage-ratio=5/8; threshold = 50%
 			name: "get-overload-status-with-lsr-pod",
 			fields: fields{
-				nodeMetric: metriccache.NodeResourceQueryResult{
-					QueryResult: metriccache.QueryResult{},
-					Metric: &metriccache.NodeResourceMetric{
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: *resource.NewQuantity(10, resource.DecimalSI),
-						},
-						MemoryUsed: metriccache.MemoryMetric{},
-					},
-				},
+				nodeCPUUsed: resource.NewQuantity(10, resource.DecimalSI),
 				podsMetric: map[string]metriccache.PodResourceQueryResult{
 					"lsr-pod-1": *newPodUsage("lsr-pod-1", 5000, 5000),
 					"ls-pod-2":  *newPodUsage("ls-pod-2", 3000, 3000),
@@ -397,15 +370,7 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 			// share-pool=16-8(LSR.Req)=8, share-pool-usage=10-6.25(LSR.Usage)=3.75; share-pool-usage-ratio=3.75/8; threshold = 50%
 			name: "get-cooling-status-with-lsr-pod",
 			fields: fields{
-				nodeMetric: metriccache.NodeResourceQueryResult{
-					QueryResult: metriccache.QueryResult{},
-					Metric: &metriccache.NodeResourceMetric{
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: *resource.NewQuantity(10, resource.DecimalSI),
-						},
-						MemoryUsed: metriccache.MemoryMetric{},
-					},
-				},
+				nodeCPUUsed: resource.NewQuantity(10, resource.DecimalSI),
 				podsMetric: map[string]metriccache.PodResourceQueryResult{
 					"lsr-pod-1": *newPodUsage("lsr-pod-1", 6250, 6250),
 					"ls-pod-2":  *newPodUsage("ls-pod-2", 1000, 1000),
@@ -430,7 +395,23 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 			mockstatesinformer.EXPECT().GetAllPods().Return(getPodMetas(tt.args.pods)).AnyTimes()
 
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
-			mockMetricCache.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(tt.fields.nodeMetric).AnyTimes()
+
+			mockAggregateResult := mock_metriccache.NewMockAggregateResult(ctl)
+			if tt.fields.nodeCPUUsed == nil {
+				mockAggregateResult.EXPECT().Count().Return(0).AnyTimes()
+			} else {
+				mockAggregateResult.EXPECT().Count().Return(1).AnyTimes()
+				mockAggregateResult.EXPECT().Value(gomock.Any()).Return(float64(tt.fields.nodeCPUUsed.Value()), nil).AnyTimes()
+			}
+
+			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
+			mockResultFactory.EXPECT().New(gomock.Any()).Return(mockAggregateResult).AnyTimes()
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
+
+			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
+			mockQuerier.EXPECT().Query(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
 			for _, podMetric := range tt.fields.podsMetric {
 				mockMetricCache.EXPECT().GetPodResourceMetric(&podMetric.Metric.PodUID, gomock.Any()).Return(podMetric).AnyTimes()
 			}
@@ -1537,7 +1518,7 @@ func TestCPUBurst_start(t *testing.T) {
 	lsrContainerID := genTestDefaultContainerIDByPod(lsrPodName)
 	lsContainerID := genTestDefaultContainerIDByPod(lsPodName)
 	type fields struct {
-		nodeMetric           metriccache.NodeResourceQueryResult
+		nodeCPUUsed          *resource.Quantity
 		podsMetric           map[string]metriccache.PodResourceQueryResult
 		nodeCPUInfo          *metriccache.NodeCPUInfo
 		pods                 []*corev1.Pod
@@ -1561,15 +1542,7 @@ func TestCPUBurst_start(t *testing.T) {
 		{
 			name: "scale-up-for-normal-pod",
 			fields: fields{
-				nodeMetric: metriccache.NodeResourceQueryResult{
-					QueryResult: metriccache.QueryResult{},
-					Metric: &metriccache.NodeResourceMetric{
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: *resource.NewQuantity(10, resource.DecimalSI),
-						},
-						MemoryUsed: metriccache.MemoryMetric{},
-					},
-				},
+				nodeCPUUsed: resource.NewQuantity(10, resource.DecimalSI),
 				podsMetric: map[string]metriccache.PodResourceQueryResult{
 					lsrPodName: *newPodUsage(lsrPodName, 7000, 7000),
 					lsPodName:  *newPodUsage(lsPodName, 200, 200),
@@ -1646,10 +1619,18 @@ func TestCPUBurst_start(t *testing.T) {
 			metriccache.DefaultAggregateResultFactory = mockResultFactory
 			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
 
+			nodeCPUAggregateResult := mock_metriccache.NewMockAggregateResult(ctl)
+			nodeCPUAggregateResult.EXPECT().Value(gomock.Any()).Return(float64(tt.fields.nodeCPUUsed.Value()), nil).AnyTimes()
+			nodeCPUAggregateResult.EXPECT().Count().Return(1).AnyTimes()
+
+			nodeCPUQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
+			assert.NoError(t, err)
+			mockResultFactory.EXPECT().New(nodeCPUQueryMeta).Return(nodeCPUAggregateResult).AnyTimes()
+			mockQuerier.EXPECT().Query(nodeCPUQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *nodeCPUAggregateResult).Return(nil).AnyTimes()
+
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
 			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
 
-			mockMetricCache.EXPECT().GetNodeResourceMetric(gomock.Any()).Return(tt.fields.nodeMetric).AnyTimes()
 			for _, podMetric := range tt.fields.podsMetric {
 				mockMetricCache.EXPECT().GetPodResourceMetric(&podMetric.Metric.PodUID, gomock.Any()).Return(podMetric).AnyTimes()
 			}

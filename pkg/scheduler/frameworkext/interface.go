@@ -20,6 +20,8 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -37,6 +39,9 @@ type ExtendedHandle interface {
 	Scheduler() Scheduler
 	KoordinatorClientSet() koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory
+	RegisterErrorHandler(handler ErrorHandler)
+	RegisterForgetPodHandler(handler ForgetPodHandler)
+	ForgetPod(pod *corev1.Pod) error
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.
@@ -48,8 +53,8 @@ type FrameworkExtender interface {
 	RunReservationExtensionRestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (PluginToReservationRestoreStates, *framework.Status)
 	RunReservationExtensionFinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states PluginToNodeReservationRestoreStates) *framework.Status
 
-	RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status
-	RunReservationScorePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservations []*schedulingv1alpha1.Reservation, nodeName string) (PluginToReservationScores, *framework.Status)
+	RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status
+	RunReservationScorePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfos []*ReservationInfo, nodeName string) (PluginToReservationScores, *framework.Status)
 }
 
 // SchedulingTransformer is the parent type for all the custom transformer plugins.
@@ -102,7 +107,7 @@ type ReservationRestorePlugin interface {
 // These plugins will be called during the Reserve phase to determine whether the Reservation can participate in the Reserve
 type ReservationFilterPlugin interface {
 	framework.Plugin
-	FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status
+	FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status
 }
 
 // ReservationNominator nominates a more suitable Reservation in the Reserve stage and Pod will bind this Reservation.
@@ -111,7 +116,7 @@ type ReservationFilterPlugin interface {
 // and locate the previously returned reusable resources for Pod allocation.
 type ReservationNominator interface {
 	framework.Plugin
-	NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*schedulingv1alpha1.Reservation, *framework.Status)
+	NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *framework.Status)
 }
 
 const (
@@ -127,8 +132,10 @@ type ReservationScoreList []ReservationScore
 
 // ReservationScore is a struct with reservation name and score.
 type ReservationScore struct {
-	Name  string
-	Score int64
+	Name      string
+	Namespace string
+	UID       types.UID
+	Score     int64
 }
 
 // PluginToReservationScores declares a map from plugin name to its ReservationScoreList.
@@ -138,34 +145,34 @@ type PluginToReservationScores map[string]ReservationScoreList
 // reservations that passed the reserve phase.
 type ReservationScorePlugin interface {
 	framework.Plugin
-	ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, nodeName string) (int64, *framework.Status)
+	ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) (int64, *framework.Status)
 }
 
 var (
 	nominatedReservationKey framework.StateKey = "koordinator.sh/nominated-reservation"
 )
 
-// nominatedReservationState saves the reservation nominated by ReservationNominator
+// nominatedReservationState saves the reservationInfo nominated by ReservationNominator
 type nominatedReservationState struct {
-	reservation *schedulingv1alpha1.Reservation
+	reservationInfo *ReservationInfo
 }
 
 func (r *nominatedReservationState) Clone() framework.StateData {
 	return r
 }
 
-func SetNominatedReservation(cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation) {
-	if reservation != nil {
-		cycleState.Write(nominatedReservationKey, &nominatedReservationState{reservation: reservation})
+func SetNominatedReservation(cycleState *framework.CycleState, reservationInfo *ReservationInfo) {
+	if reservationInfo != nil {
+		cycleState.Write(nominatedReservationKey, &nominatedReservationState{reservationInfo: reservationInfo})
 	}
 }
 
-func GetNominatedReservation(cycleState *framework.CycleState) *schedulingv1alpha1.Reservation {
+func GetNominatedReservation(cycleState *framework.CycleState) *ReservationInfo {
 	state, err := cycleState.Read(nominatedReservationKey)
 	if err != nil {
 		return nil
 	}
-	return state.(*nominatedReservationState).reservation
+	return state.(*nominatedReservationState).reservationInfo
 }
 
 // ReservationPreBindPlugin performs special binding logic specifically for Reservation in the PreBind phase.
@@ -174,5 +181,15 @@ func GetNominatedReservation(cycleState *framework.CycleState) *schedulingv1alph
 // In addition, implementing this interface can clearly indicate that the plugin supports Reservation.
 type ReservationPreBindPlugin interface {
 	framework.Plugin
-	PreBindReservation(ctx context.Context, state *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status
+	PreBindReservation(ctx context.Context, cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status
 }
+
+// PreBindExtensions is an extension to PreBind, which supports converting multiple modifications to the same object into a Patch operation.
+// It supports configuring multiple plugin instances. A certain instance can be skipped if it does not need to be processed.
+// Once a plugin instance returns success or failure, the process ends.
+type PreBindExtensions interface {
+	framework.Plugin
+	ApplyPatch(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status
+}
+
+type ForgetPodHandler func(pod *corev1.Pod)

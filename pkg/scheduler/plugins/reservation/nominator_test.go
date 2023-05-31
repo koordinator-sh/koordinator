@@ -232,8 +232,12 @@ func TestNominateReservation(t *testing.T) {
 				pl.reservationCache.updateReservation(reservation)
 			}
 			cycleState.Write(stateKey, state)
-			reservation, status := pl.NominateReservation(context.TODO(), cycleState, tt.pod, "test-node")
-			assert.Equal(t, tt.wantReservation, reservation)
+			nominateRInfo, status := pl.NominateReservation(context.TODO(), cycleState, tt.pod, "test-node")
+			if tt.wantReservation == nil {
+				assert.Nil(t, nominateRInfo)
+			} else {
+				assert.Equal(t, tt.wantReservation, nominateRInfo.Reservation)
+			}
 			assert.Equal(t, tt.wantStatus, status.IsSuccess())
 		})
 	}

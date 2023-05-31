@@ -26,11 +26,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
+	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -85,6 +86,41 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			return
 		}
 
+		var unmatched, matched []*frameworkext.ReservationInfo
+		for _, rInfo := range rOnNode {
+			if !rInfo.IsAvailable() {
+				continue
+			}
+
+			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
+			// but in fact it can no longer be used for allocation. So it's better to skip first.
+			if rInfo.IsAllocateOnce() && len(rInfo.AssignedPods) > 0 {
+				continue
+			}
+
+			if !isReservedPod && matchReservation(pod, node, rInfo, reservationAffinity) {
+				matched = append(matched, rInfo)
+
+			} else if len(rInfo.AssignedPods) > 0 {
+				unmatched = append(unmatched, rInfo)
+				if !isReservedPod {
+					klog.V(6).InfoS("got reservation on node does not match the pod", "reservation", klog.KObj(rInfo), "pod", klog.KObj(pod))
+				}
+			}
+		}
+		if len(matched) == 0 && len(unmatched) == 0 {
+			return
+		}
+
+		for _, rInfo := range unmatched {
+			if err = restoreUnmatchedReservations(nodeInfo, rInfo); err != nil {
+				errCh.SendErrorWithCancel(err, cancel)
+				return
+			}
+		}
+		// Save requested state after trimmed by unmatched to support reservation allocate policy.
+		podRequested := nodeInfo.Requested.Clone()
+
 		podInfoMap := make(map[types.UID]*framework.PodInfo)
 		for _, podInfo := range nodeInfo.Pods {
 			if !reservationutil.IsReservePod(podInfo.Pod) {
@@ -92,36 +128,20 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			}
 		}
 
-		var unmatched, matched []*frameworkext.ReservationInfo
-		for _, rInfo := range rOnNode {
-			if !reservationutil.IsReservationAvailable(rInfo.Reservation) {
-				continue
+		var totalAligned, totalRestricted int
+		rAllocated := corev1.ResourceList{}
+		for _, rInfo := range matched {
+			if err = restoreMatchedReservation(nodeInfo, rInfo, podInfoMap); err != nil {
+				errCh.SendErrorWithCancel(err, cancel)
+				return
 			}
 
-			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
-			// but in fact it can no longer be used for allocation. So it's better to skip first.
-			if extension.IsReservationAllocateOnce(rInfo.Reservation) && len(rInfo.Pods) > 0 {
-				continue
-			}
-
-			if !isReservedPod && matchReservation(pod, node, rInfo.Reservation, reservationAffinity) {
-				if err = restoreMatchedReservation(nodeInfo, rInfo, podInfoMap); err != nil {
-					errCh.SendErrorWithCancel(err, cancel)
-					return
-				}
-
-				matched = append(matched, rInfo)
-
-			} else if len(rInfo.Pods) > 0 {
-				if err = restoreUnmatchedReservations(nodeInfo, rInfo); err != nil {
-					errCh.SendErrorWithCancel(err, cancel)
-					return
-				}
-
-				unmatched = append(unmatched, rInfo)
-				if !isReservedPod {
-					klog.V(6).InfoS("got reservation on node does not match the pod", "reservation", klog.KObj(rInfo.Reservation), "pod", klog.KObj(pod))
-				}
+			util.AddResourceList(rAllocated, rInfo.Allocated)
+			switch rInfo.GetAllocatePolicy() {
+			case schedulingv1alpha1.ReservationAllocatePolicyAligned:
+				totalAligned++
+			case schedulingv1alpha1.ReservationAllocatePolicyRestricted:
+				totalRestricted++
 			}
 		}
 
@@ -138,8 +158,12 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		if len(matched) > 0 || len(unmatched) > 0 {
 			index := atomic.AddInt32(&stateIndex, 1)
 			allNodeReservationStates[index-1] = &nodeReservationState{
-				nodeName: node.Name,
-				matched:  matched,
+				nodeName:        node.Name,
+				matched:         matched,
+				podRequested:    podRequested,
+				rAllocated:      framework.NewResource(rAllocated),
+				totalAligned:    totalAligned,
+				totalRestricted: totalRestricted,
 			}
 			allPluginToRestoreState[index-1] = pluginToRestoreState
 		}
@@ -153,10 +177,16 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 
 	allNodeReservationStates = allNodeReservationStates[:stateIndex]
 	allPluginToRestoreState = allPluginToRestoreState[:stateIndex]
-	pluginToNodeReservationRestoreState := frameworkext.PluginToNodeReservationRestoreStates{}
+
+	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+	podRequestResources := framework.NewResource(podRequests)
 	state := &stateData{
+		hasAffinity:           reservationAffinity != nil,
+		podRequests:           podRequests,
+		podRequestsResources:  podRequestResources,
 		nodeReservationStates: map[string]nodeReservationState{},
 	}
+	pluginToNodeReservationRestoreState := frameworkext.PluginToNodeReservationRestoreStates{}
 	for index, v := range allNodeReservationStates {
 		state.nodeReservationStates[v.nodeName] = *v
 		for pluginName, pluginState := range allPluginToRestoreState[index] {
@@ -186,11 +216,11 @@ func (pl *Plugin) AfterPreFilter(ctx context.Context, cycleState *framework.Cycl
 }
 
 func restoreMatchedReservation(nodeInfo *framework.NodeInfo, rInfo *frameworkext.ReservationInfo, podInfoMap map[types.UID]*framework.PodInfo) error {
-	reservePod := reservationutil.NewReservePod(rInfo.Reservation)
+	reservePod := rInfo.GetReservePod()
 
 	// Retain ports that are not used by other Pods. These ports need to be erased from NodeInfo.UsedPorts,
 	// otherwise it may cause Pod port conflicts
-	retainReservePodUnusedPorts(reservePod, rInfo.Reservation, podInfoMap)
+	reservePod = retainReservePodUnusedPorts(reservePod, podInfoMap)
 
 	// When AllocateOnce is disabled, some resources may have been allocated,
 	// and an additional resource record will be accumulated at this time.
@@ -210,9 +240,9 @@ func restoreUnmatchedReservations(nodeInfo *framework.NodeInfo, rInfo *framework
 	// For example, on a 32C machine, ReservationA reserves 8C, and then PodA uses ReservationA to allocate 4C,
 	// then the record on NodeInfo is that 12C is allocated. But in fact it should be calculated according to 8C,
 	// so we need to return some resources.
-	reservePod := reservationutil.NewReservePod(rInfo.Reservation)
+	reservePod := rInfo.GetReservePod().DeepCopy()
 	if err := nodeInfo.RemovePod(reservePod); err != nil {
-		klog.Errorf("Failed to remove reserve pod %v from node %v, err: %v", klog.KObj(rInfo.Reservation), nodeInfo.Node().Name, err)
+		klog.Errorf("Failed to remove reserve pod %v from node %v, err: %v", klog.KObj(rInfo), nodeInfo.Node().Name, err)
 		return err
 	}
 	occupyUnallocatedResources(rInfo, reservePod, nodeInfo)
@@ -220,7 +250,7 @@ func restoreUnmatchedReservations(nodeInfo *framework.NodeInfo, rInfo *framework
 }
 
 func occupyUnallocatedResources(rInfo *frameworkext.ReservationInfo, reservePod *corev1.Pod, nodeInfo *framework.NodeInfo) {
-	if len(rInfo.Pods) == 0 {
+	if len(rInfo.AssignedPods) == 0 {
 		nodeInfo.AddPod(reservePod)
 	} else {
 		for i := range reservePod.Spec.Containers {
@@ -236,18 +266,16 @@ func occupyUnallocatedResources(rInfo *frameworkext.ReservationInfo, reservePod 
 	}
 }
 
-func retainReservePodUnusedPorts(reservePod *corev1.Pod, reservation *schedulingv1alpha1.Reservation, podInfoMap map[types.UID]*framework.PodInfo) {
-	port := reservationutil.ReservePorts(reservation)
-	if len(port) == 0 {
-		return
-	}
-
+func retainReservePodUnusedPorts(reservePod *corev1.Pod, podInfoMap map[types.UID]*framework.PodInfo) *corev1.Pod {
 	// TODO(joseph): maybe we can record allocated Ports by Pods in Reservation.Status
 	portReserved := framework.HostPortInfo{}
-	for ip, protocolPortMap := range port {
-		for protocolPort := range protocolPortMap {
-			portReserved.Add(ip, protocolPort.Protocol, protocolPort.Port)
+	for _, container := range reservePod.Spec.Containers {
+		for _, podPort := range container.Ports {
+			portReserved.Add(podPort.HostIP, string(podPort.Protocol), podPort.HostPort)
 		}
+	}
+	if len(portReserved) == 0 {
+		return reservePod
 	}
 
 	removed := false
@@ -262,9 +290,10 @@ func retainReservePodUnusedPorts(reservePod *corev1.Pod, reservation *scheduling
 		}
 	}
 	if !removed {
-		return
+		return reservePod
 	}
 
+	reservePod = reservePod.DeepCopy()
 	for i := range reservePod.Spec.Containers {
 		container := &reservePod.Spec.Containers[i]
 		if len(container.Ports) > 0 {
@@ -282,10 +311,11 @@ func retainReservePodUnusedPorts(reservePod *corev1.Pod, reservation *scheduling
 			})
 		}
 	}
+	return reservePod
 }
 
-func matchReservation(pod *corev1.Pod, node *corev1.Node, reservation *schedulingv1alpha1.Reservation, reservationAffinity *reservationutil.RequiredReservationAffinity) bool {
-	if !reservationutil.MatchReservationOwners(pod, reservation) {
+func matchReservation(pod *corev1.Pod, node *corev1.Node, reservation *frameworkext.ReservationInfo, reservationAffinity *reservationutil.RequiredReservationAffinity) bool {
+	if !reservationutil.MatchReservationOwners(pod, reservation.GetPodOwners()) {
 		return false
 	}
 
@@ -295,14 +325,14 @@ func matchReservation(pod *corev1.Pod, node *corev1.Node, reservation *schedulin
 		// does not have this information, so it needs to perceive the label of the Node when Matching Affinity.
 		fakeNode := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:   reservation.Name,
+				Name:   reservation.GetName(),
 				Labels: map[string]string{},
 			},
 		}
 		for k, v := range node.Labels {
 			fakeNode.Labels[k] = v
 		}
-		for k, v := range reservation.Labels {
+		for k, v := range reservation.GetObject().GetLabels() {
 			fakeNode.Labels[k] = v
 		}
 		return reservationAffinity.Match(fakeNode)

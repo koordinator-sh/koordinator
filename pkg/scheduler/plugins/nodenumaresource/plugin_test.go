@@ -1028,12 +1028,14 @@ func TestPlugin_Reserve(t *testing.T) {
 				cycleState.Write(stateKey, tt.state)
 				if len(tt.reservedCPUs) > 0 {
 					for reservationUID := range tt.reservedCPUs {
-						frameworkext.SetNominatedReservation(cycleState, &schedulingv1alpha1.Reservation{
+						reservation := &schedulingv1alpha1.Reservation{
 							ObjectMeta: metav1.ObjectMeta{
 								UID:  reservationUID,
 								Name: "test-reservation",
 							},
-						})
+						}
+						rInfo := frameworkext.NewReservationInfo(reservation)
+						frameworkext.SetNominatedReservation(cycleState, rInfo)
 					}
 					cycleState.Write(reservationRestoreStateKey, &reservationRestoreStateData{
 						skip: false,
@@ -1131,10 +1133,7 @@ func TestPlugin_PreBind(t *testing.T) {
 
 	s := plg.PreBind(context.TODO(), cycleState, pod, "test-node-1")
 	assert.True(t, s.IsSuccess())
-	podModified, status := suit.Handle.ClientSet().CoreV1().Pods("default").Get(context.TODO(), "test-pod-1", metav1.GetOptions{})
-	assert.Nil(t, status)
-	assert.NotNil(t, podModified)
-	resourceStatus, err := extension.GetResourceStatus(podModified.Annotations)
+	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
 	assert.NoError(t, err)
 	assert.NotNil(t, resourceStatus)
 	expectResourceStatus := &extension.ResourceStatus{
@@ -1178,17 +1177,14 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 
 	s := plg.PreBind(context.TODO(), cycleState, pod, "test-node-1")
 	assert.True(t, s.IsSuccess())
-	podModified, status := suit.Handle.ClientSet().CoreV1().Pods("default").Get(context.TODO(), "test-pod-1", metav1.GetOptions{})
-	assert.Nil(t, status)
-	assert.NotNil(t, podModified)
-	resourceStatus, err := extension.GetResourceStatus(podModified.Annotations)
+	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
 	assert.NoError(t, err)
 	assert.NotNil(t, resourceStatus)
 	expectResourceStatus := &extension.ResourceStatus{
 		CPUSet: "0-3",
 	}
 	assert.Equal(t, expectResourceStatus, resourceStatus)
-	resourceSpec, err := extension.GetResourceSpec(podModified.Annotations)
+	resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
 	assert.NoError(t, err)
 	assert.NotNil(t, resourceSpec)
 	expectedResourceSpec := &extension.ResourceSpec{
@@ -1231,10 +1227,7 @@ func TestPlugin_PreBindReservation(t *testing.T) {
 	s := plg.PreBindReservation(context.TODO(), cycleState, reservation, "test-node-1")
 	assert.True(t, s.IsSuccess())
 
-	gotReservation, status := suit.KoordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
-	assert.Nil(t, status)
-	assert.NotNil(t, gotReservation)
-	resourceStatus, err := extension.GetResourceStatus(gotReservation.Annotations)
+	resourceStatus, err := extension.GetResourceStatus(reservation.Annotations)
 	assert.NoError(t, err)
 	assert.NotNil(t, resourceStatus)
 	expectResourceStatus := &extension.ResourceStatus{
@@ -1308,7 +1301,7 @@ func TestRestoreReservation(t *testing.T) {
 	nodeInfo.SetNode(node)
 
 	rInfo := frameworkext.NewReservationInfo(reservation)
-	rInfo.AddPod(podA)
+	rInfo.AddAssignedPod(podA)
 
 	testPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1336,7 +1329,7 @@ func TestRestoreReservation(t *testing.T) {
 	assert.True(t, status.IsSuccess())
 	assert.Equal(t, cpuset.NewCPUSet(8, 9), nodeReservationState.(*nodeReservationRestoreStateData).reservedCPUs[reservation.UID])
 
-	rInfo.AddPod(podB)
+	rInfo.AddAssignedPod(podB)
 	nodeReservationState, status = pl.RestoreReservation(context.TODO(), cycleState, testPod, []*frameworkext.ReservationInfo{rInfo}, nil, nodeInfo)
 	assert.True(t, status.IsSuccess())
 	assert.Nil(t, nodeReservationState)

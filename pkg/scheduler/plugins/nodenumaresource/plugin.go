@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -34,7 +33,6 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -387,13 +385,13 @@ func (p *Plugin) getReservationReservedCPUs(cycleState *framework.CycleState, po
 		return result, nil
 	}
 
-	allocatedCPUs, _ := p.cpuManager.GetAllocatedCPUSet(node.Name, nominatedReservation.UID)
+	allocatedCPUs, _ := p.cpuManager.GetAllocatedCPUSet(node.Name, nominatedReservation.UID())
 	if allocatedCPUs.IsEmpty() {
 		return result, nil
 	}
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	nodeReservationRestoreState := reservationRestoreState.getNodeState(node.Name)
-	reservedCPUs := nodeReservationRestoreState.reservedCPUs[nominatedReservation.UID]
+	reservedCPUs := nodeReservationRestoreState.reservedCPUs[nominatedReservation.UID()]
 	if !reservedCPUs.IsEmpty() && !reservedCPUs.IsSubsetOf(allocatedCPUs) {
 		return result, fmt.Errorf("reservation reserved CPUs are invalid")
 	}
@@ -419,7 +417,7 @@ func (p *Plugin) PreBindReservation(ctx context.Context, cycleState *framework.C
 	return p.preBindObject(ctx, cycleState, reservation, nodeName)
 }
 
-func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleState, object runtime.Object, nodeName string) *framework.Status {
+func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleState, object metav1.Object, nodeName string) *framework.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -432,10 +430,7 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		return nil
 	}
 
-	originalObj := object
-	object = object.DeepCopyObject()
-	metaObject := object.(metav1.Object)
-	annotations := metaObject.GetAnnotations()
+	annotations := object.GetAnnotations()
 	// Write back ResourceSpec annotation if LSR Pod hasn't specified CPUBindPolicy
 	if state.resourceSpec.PreferredCPUBindPolicy == "" ||
 		state.resourceSpec.PreferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault ||
@@ -451,25 +446,13 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 			annotations = make(map[string]string)
 		}
 		annotations[extension.AnnotationResourceSpec] = string(resourceSpecData)
-		metaObject.SetAnnotations(annotations)
+		object.SetAnnotations(annotations)
 	}
 
 	resourceStatus := &extension.ResourceStatus{CPUSet: state.allocatedCPUs.String()}
-	if err := SetResourceStatus(metaObject, resourceStatus); err != nil {
+	if err := SetResourceStatus(object, resourceStatus); err != nil {
 		return framework.AsStatus(err)
 	}
-
-	// patch pod or reservation (if the pod is a reserve pod) with new annotations
-	err := util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err1 := util.NewPatch().WithHandle(p.handle).Patch(ctx, originalObj.(metav1.Object), metaObject)
-		return err1
-	})
-	if err != nil {
-		klog.V(3).ErrorS(err, "Failed to preBind %T with CPUSet", object, klog.KObj(metaObject), "CPUSet", state.allocatedCPUs, "node", nodeName)
-		return framework.NewStatus(framework.Error, err.Error())
-	}
-
-	klog.V(4).Infof("Successfully preBind %T %v with CPUSet %s", object, klog.KObj(metaObject), state.allocatedCPUs)
 	return nil
 }
 

@@ -46,6 +46,7 @@ type podThrottledCollector struct {
 	appendableDB    metriccache.Appendable
 	statesInformer  statesinformer.StatesInformer
 	cgroupReader    resourceexecutor.CgroupReader
+	podFilter       framework.PodFilter
 
 	lastPodCPUThrottled       *gocache.Cache
 	lastContainerCPUThrottled *gocache.Cache
@@ -53,33 +54,44 @@ type podThrottledCollector struct {
 
 func New(opt *framework.Options) framework.Collector {
 	collectInterval := opt.Config.CollectResUsedInterval
+	podFilter := framework.DefaultPodFilter
+	if filter, ok := opt.PodFilters[CollectorName]; ok {
+		podFilter = filter
+	}
 	return &podThrottledCollector{
 		collectInterval:           collectInterval,
 		started:                   atomic.NewBool(false),
 		appendableDB:              opt.MetricCache,
 		statesInformer:            opt.StatesInformer,
 		cgroupReader:              opt.CgroupReader,
+		podFilter:                 podFilter,
 		lastPodCPUThrottled:       gocache.New(collectInterval*framework.ContextExpiredRatio, framework.CleanupInterval),
 		lastContainerCPUThrottled: gocache.New(collectInterval*framework.ContextExpiredRatio, framework.CleanupInterval),
 	}
 }
 
-func (p *podThrottledCollector) Enabled() bool {
+var _ framework.PodCollector = &podThrottledCollector{}
+
+func (c *podThrottledCollector) Enabled() bool {
 	return true
 }
 
-func (p *podThrottledCollector) Setup(c *framework.Context) {}
+func (c *podThrottledCollector) Setup(ctx *framework.Context) {}
 
-func (p *podThrottledCollector) Run(stopCh <-chan struct{}) {
-	if !cache.WaitForCacheSync(stopCh, p.statesInformer.HasSynced) {
+func (c *podThrottledCollector) Run(stopCh <-chan struct{}) {
+	if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
 		// Koordlet exit because of statesInformer sync failed.
 		klog.Fatalf("timed out waiting for states informer caches to sync")
 	}
-	go wait.Until(p.collectPodThrottledInfo, p.collectInterval, stopCh)
+	go wait.Until(c.collectPodThrottledInfo, c.collectInterval, stopCh)
 }
 
-func (p *podThrottledCollector) Started() bool {
-	return p.started.Load()
+func (c *podThrottledCollector) Started() bool {
+	return c.started.Load()
+}
+
+func (c *podThrottledCollector) FilterPod(meta *statesinformer.PodMeta) (bool, string) {
+	return c.podFilter.FilterPod(meta)
 }
 
 func (c *podThrottledCollector) collectPodThrottledInfo() {
@@ -89,6 +101,11 @@ func (c *podThrottledCollector) collectPodThrottledInfo() {
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
+		if filtered, msg := c.FilterPod(meta); filtered {
+			klog.V(5).Infof("skip collect pod %s/%s, reason: %s", pod.Namespace, pod.Name, msg)
+			continue
+		}
+
 		collectTime := time.Now()
 		podCgroupDir := meta.CgroupDir
 		currentCPUStat, err := c.cgroupReader.ReadCPUStat(podCgroupDir)

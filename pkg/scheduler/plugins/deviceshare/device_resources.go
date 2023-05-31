@@ -44,11 +44,14 @@ func (r deviceResources) DeepCopy() deviceResources {
 	return out
 }
 
-func (r deviceResources) append(in deviceResources) {
+func (r deviceResources) append(in deviceResources, hintMinors sets.Int) {
 	if r == nil {
 		return
 	}
 	for minor, resources := range in {
+		if hintMinors.Len() > 0 && !hintMinors.Has(minor) {
+			continue
+		}
 		device, ok := r[minor]
 		if !ok {
 			r[minor] = resources.DeepCopy()
@@ -86,8 +89,8 @@ func copyDeviceResources(m map[schedulingv1alpha1.DeviceType]deviceResources) ma
 	return r
 }
 
-func subtractAllocated(m, podAllocated map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
-	for deviceType, devicesResources := range podAllocated {
+func subtractAllocated(m, allocated map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
+	for deviceType, devicesResources := range allocated {
 		ra := m[deviceType]
 		if len(ra) == 0 {
 			continue
@@ -100,17 +103,17 @@ func subtractAllocated(m, podAllocated map[schedulingv1alpha1.DeviceType]deviceR
 	return m
 }
 
-func appendAllocated(m map[schedulingv1alpha1.DeviceType]deviceResources, podAllocatedList ...map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
+func appendAllocated(m map[schedulingv1alpha1.DeviceType]deviceResources, allocatedList ...map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
 	if m == nil {
 		m = map[schedulingv1alpha1.DeviceType]deviceResources{}
 	}
-	for _, allocated := range podAllocatedList {
+	for _, allocated := range allocatedList {
 		for deviceType, deviceResources := range allocated {
 			devices := m[deviceType]
 			if devices == nil {
 				m[deviceType] = deviceResources.DeepCopy()
 			} else {
-				devices.append(deviceResources)
+				devices.append(deviceResources, nil)
 			}
 		}
 	}
@@ -118,13 +121,24 @@ func appendAllocated(m map[schedulingv1alpha1.DeviceType]deviceResources, podAll
 	return m
 }
 
-func appendAllocatedIntersectionDeviceType(m, podAllocated map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
+func appendAllocatedByHints(hints map[schedulingv1alpha1.DeviceType]sets.Int, m map[schedulingv1alpha1.DeviceType]deviceResources, allocatedList ...map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
 	if m == nil {
 		m = map[schedulingv1alpha1.DeviceType]deviceResources{}
 	}
-	for deviceType, deviceResources := range podAllocated {
-		devices := m[deviceType]
-		devices.append(deviceResources)
+	for hintDeviceType, hintMinors := range hints {
+		for _, allocated := range allocatedList {
+			for deviceType, resources := range allocated {
+				if deviceType != hintDeviceType {
+					continue
+				}
+				devices := m[deviceType]
+				if devices == nil {
+					devices = deviceResources{}
+					m[deviceType] = devices
+				}
+				devices.append(resources, hintMinors)
+			}
+		}
 	}
 	return m
 }

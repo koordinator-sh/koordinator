@@ -32,13 +32,17 @@ type Collector interface {
 	Started() bool
 }
 
+type PodCollector interface {
+	Collector
+	PodFilter
+}
+
 type DeviceCollector interface {
-	Enabled() bool
-	Setup(s *Context)
-	Run(stopCh <-chan struct{})
+	Collector
 	Shutdown()
 	Started() bool
-	FillNodeMetric(nodeMetric *metriccache.NodeResourceMetric) error
+	Infos() metriccache.Devices
+	GetNodeMetric() ([]metriccache.MetricSample, error)
 	FillPodMetric(podMetric *metriccache.PodResourceMetric, podParentDir string, cs []corev1.ContainerStatus) error
 	FillContainerMetric(containerMetric *metriccache.ContainerResourceMetric, podParentDir string, c *corev1.ContainerStatus) error
 }

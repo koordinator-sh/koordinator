@@ -235,25 +235,39 @@ func (b *CPUBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 	podsMeta []*statesinformer.PodMeta) nodeStateForBurst {
 	overloadMetricDurationSeconds := util.MinInt64(int64(b.resmanager.config.ReconcileIntervalSeconds*5), 10)
 	queryParam := generateQueryParamsAvg(overloadMetricDurationSeconds)
-	nodeMetric, podsMetric := b.resmanager.collectNodeAndPodMetrics(queryParam)
-	if nodeMetric == nil {
-		klog.Warningf("node metric is nil during handle cfs burst scale down")
+
+	queryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
+	if err != nil {
+		klog.Warningf("get node metric queryMeta failed, error: %v", err)
 		return nodeBurstUnknown
 	}
+	queryResult, err := b.resmanager.collectorNodeMetrics(*queryParam.Start, *queryParam.End, queryMeta)
+	if err != nil {
+		klog.Warningf("get node cpu metric failed, error: %v", err)
+		return nodeBurstUnknown
+	}
+	if queryResult.Count() == 0 {
+		klog.Warning("node metric is empty during handle cfs burst scale down")
+		return nodeBurstUnknown
+	}
+	nodeCPUUsed, err := queryResult.Value(queryParam.Aggregate)
+	if err != nil {
+		klog.Warningf("get node cpu metric failed, error: %v", err)
+	}
+
 	nodeCPUInfo, err := b.resmanager.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
 	if err != nil || nodeCPUInfo == nil {
 		klog.Warningf("get node cpu info failed, detail %v, error %v", nodeCPUInfo, err)
 		return nodeBurstUnknown
 	}
-
+	podsMetric := b.resmanager.collectPodMetrics(queryParam)
 	podMetricMap := make(map[string]*metriccache.PodResourceMetric)
 	for _, podMetric := range podsMetric {
 		podMetricMap[podMetric.PodUID] = podMetric
 	}
 
 	nodeCPUCoresTotal := len(nodeCPUInfo.ProcessorInfos)
-	nodeCPUCoresUsage := float64(nodeMetric.CPUUsed.CPUUsed.MilliValue()) / 1000
-
+	nodeCPUCoresUsage := nodeCPUUsed
 	// calculate cpu share pool info; for conservative reason, include system usage in share pool
 	sharePoolCPUCoresTotal := float64(nodeCPUCoresTotal)
 	sharePoolCPUCoresUsage := nodeCPUCoresUsage

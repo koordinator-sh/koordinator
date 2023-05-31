@@ -22,6 +22,9 @@ var (
 	// define all kinds of MetricResource
 	NodeCPUUsageMetric          = defaultMetricFactory.New(NodeMetricCPUUsage)
 	NodeMemoryUsageMetric       = defaultMetricFactory.New(NodeMetricMemoryUsage)
+	NodeGPUCoreUsageMetric      = defaultMetricFactory.New(NodeMetricGPUCoreUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	NodeGPUMemUsageMetric       = defaultMetricFactory.New(NodeMetricGPUMemUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	NodeGPUTotalMetric          = defaultMetricFactory.New(NodeMetricGPUMemTotal).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
 	PodCPUUsageMetric           = defaultMetricFactory.New(PodMetricCPUUsage).withPropertySchema(MetricPropertyPodUID)
 	PodCPUThrottledMetric       = defaultMetricFactory.New(PodMetricCPUThrottled).withPropertySchema(MetricPropertyPodUID)
 	ContainerCPUUsageMetric     = defaultMetricFactory.New(ContainerMetricCPUUsage).withPropertySchema(MetricPropertyContainerID)

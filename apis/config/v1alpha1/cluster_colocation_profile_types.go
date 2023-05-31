@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -38,6 +39,10 @@ type ClusterColocationProfileSpec struct {
 	// +optional
 	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 
+	// Probability indicates profile will make effect with a probability.
+	// +optional
+	Probability *intstr.IntOrString `json:"probability,omitempty"`
+
 	// QoSClass describes the type of Koordinator QoS that the Pod is running.
 	// The value will be injected into Pod as label koordinator.sh/qosClass.
 	// Options are LSE/LSR/LS/BE/SYSTEM.
@@ -50,7 +55,6 @@ type ClusterColocationProfileSpec struct {
 	// The PriorityClassName, priority value in PriorityClassName and
 	// KoordinatorPriority will affect the scheduling, preemption and
 	// other behaviors of Koordinator system.
-	// +kubebuilder:validation:Enum=koord-prod;koord-mid;koord-batch;koord-free
 	// +optional
 	PriorityClassName string `json:"priorityClassName"`
 

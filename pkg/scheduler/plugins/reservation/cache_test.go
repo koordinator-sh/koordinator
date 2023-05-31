@@ -30,6 +30,7 @@ import (
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 func TestCacheUpdateReservation(t *testing.T) {
@@ -73,6 +74,7 @@ func TestCacheUpdateReservation(t *testing.T) {
 	rInfo := reservationInfos[0]
 	expectReservationInfo := &frameworkext.ReservationInfo{
 		Reservation: reservation,
+		Pod:         reservationutil.NewReservePod(reservation),
 		ResourceNames: []corev1.ResourceName{
 			corev1.ResourceCPU,
 			corev1.ResourceMemory,
@@ -81,8 +83,8 @@ func TestCacheUpdateReservation(t *testing.T) {
 			corev1.ResourceCPU:    resource.MustParse("4"),
 			corev1.ResourceMemory: resource.MustParse("4Gi"),
 		},
-		Allocated: nil,
-		Pods:      map[types.UID]*frameworkext.PodRequirement{},
+		Allocated:    nil,
+		AssignedPods: map[types.UID]*frameworkext.PodRequirement{},
 	}
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 		return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
@@ -142,6 +144,7 @@ func TestCacheDeleteReservation(t *testing.T) {
 
 	expectReservationInfo := &frameworkext.ReservationInfo{
 		Reservation: reservation,
+		Pod:         reservationutil.NewReservePod(reservation),
 		ResourceNames: []corev1.ResourceName{
 			corev1.ResourceCPU,
 			corev1.ResourceMemory,
@@ -150,8 +153,8 @@ func TestCacheDeleteReservation(t *testing.T) {
 			corev1.ResourceCPU:    resource.MustParse("4"),
 			corev1.ResourceMemory: resource.MustParse("4Gi"),
 		},
-		Allocated: nil,
-		Pods:      map[types.UID]*frameworkext.PodRequirement{},
+		Allocated:    nil,
+		AssignedPods: map[types.UID]*frameworkext.PodRequirement{},
 	}
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 		return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
@@ -231,6 +234,7 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 	})
 	expectReservationInfo := &frameworkext.ReservationInfo{
 		Reservation: reservation,
+		Pod:         reservationutil.NewReservePod(reservation),
 		ResourceNames: []corev1.ResourceName{
 			corev1.ResourceCPU,
 			corev1.ResourceMemory,
@@ -243,7 +247,7 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 			corev1.ResourceCPU:    resource.MustParse("2000m"),
 			corev1.ResourceMemory: resource.MustParse("2Gi"),
 		},
-		Pods: map[types.UID]*frameworkext.PodRequirement{
+		AssignedPods: map[types.UID]*frameworkext.PodRequirement{
 			pod.UID: {
 				Namespace: pod.Namespace,
 				Name:      pod.Name,
@@ -277,6 +281,6 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 		corev1.ResourceCPU:    resource.MustParse("0"),
 		corev1.ResourceMemory: resource.MustParse("0"),
 	}
-	expectReservationInfo.Pods = map[types.UID]*frameworkext.PodRequirement{}
+	expectReservationInfo.AssignedPods = map[types.UID]*frameworkext.PodRequirement{}
 	assert.Equal(t, expectReservationInfo, rInfo)
 }

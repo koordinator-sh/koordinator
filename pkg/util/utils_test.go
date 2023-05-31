@@ -17,23 +17,14 @@ limitations under the License.
 package util
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clientset "k8s.io/client-go/kubernetes"
-	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/pointer"
-
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
-	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 )
 
 func Test_MergeCfg(t *testing.T) {
@@ -265,184 +256,5 @@ func Test_GeneratePodPatch(t *testing.T) {
 	annotation, _ := metadata["annotations"].(map[string]interface{})
 	if fmt.Sprint(annotation) != fmt.Sprint(patchAnnotation) {
 		t.Errorf("expect patchBytes: %q, got: %q", patchAnnotation, annotation)
-	}
-}
-
-type fakeClientSetHandle struct {
-	client      *kubefake.Clientset
-	koordClient *koordfake.Clientset
-}
-
-func (f *fakeClientSetHandle) ClientSet() clientset.Interface {
-	return f.client
-}
-
-func (f *fakeClientSetHandle) KoordinatorClientSet() koordinatorclientset.Interface {
-	return f.koordClient
-}
-
-func TestPatch_PatchPodOrReservation(t *testing.T) {
-	resources := corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse("4"),
-		corev1.ResourceMemory: resource.MustParse("8Gi"),
-	}
-	addedResources := corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse("4"),
-		corev1.ResourceMemory: resource.MustParse("8Gi"),
-		apiext.ResourceGPU:    resource.MustParse("100"),
-	}
-	testNormalPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-pod-1",
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name: "main",
-					Resources: corev1.ResourceRequirements{
-						Requests: resources,
-						Limits:   resources,
-					},
-				},
-			},
-		},
-	}
-	testR := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-reservation-0",
-			UID:  "123456",
-		},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Template: &corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-pod-1",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "main",
-							Resources: corev1.ResourceRequirements{
-								Requests: resources,
-								Limits:   resources,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	tests := []struct {
-		name           string
-		pod            *corev1.Pod
-		newPod         *corev1.Pod
-		reservation    *schedulingv1alpha1.Reservation
-		newReservation *schedulingv1alpha1.Reservation
-		wantErr        bool
-	}{
-		{
-			name:    "nothing to patch for normal pod",
-			pod:     testNormalPod,
-			newPod:  testNormalPod,
-			wantErr: false,
-		},
-		{
-			name: "patch successfully for normal pod",
-			pod:  testNormalPod,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-pod-1",
-					Annotations: map[string]string{
-						"test": "123",
-					},
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "main",
-							Resources: corev1.ResourceRequirements{
-								Requests: addedResources,
-								Limits:   addedResources,
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name:  "test-env",
-									Value: "123",
-								},
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name:           "nothing to patch for reservation",
-			reservation:    testR,
-			newReservation: testR,
-			wantErr:        false,
-		},
-		{
-			name:        "patch successfully for reservation",
-			reservation: testR,
-			newReservation: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-reservation-0",
-					UID:  "123456",
-					Annotations: map[string]string{
-						"test": "123",
-					},
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod-1",
-							Annotations: map[string]string{
-								"test": "456",
-							},
-						},
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
-								{
-									Name: "main",
-									Resources: corev1.ResourceRequirements{
-										Requests: addedResources,
-										Limits:   addedResources,
-									},
-									Env: []corev1.EnvVar{
-										{
-											Name:  "test-env",
-											Value: "123",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			handle := &fakeClientSetHandle{
-				client:      kubefake.NewSimpleClientset(),
-				koordClient: koordfake.NewSimpleClientset(),
-			}
-			if tt.pod != nil {
-				_, err := handle.client.CoreV1().Pods(tt.pod.Namespace).Create(context.TODO(), tt.pod, metav1.CreateOptions{})
-				assert.NoError(t, err)
-				patched, gotErr := NewPatch().WithHandle(handle).Patch(context.TODO(), tt.pod, tt.newPod)
-				assert.Equal(t, tt.wantErr, gotErr != nil)
-				assert.Equal(t, tt.newPod, patched)
-			}
-			if tt.reservation != nil {
-				_, err := handle.koordClient.SchedulingV1alpha1().Reservations().Create(context.TODO(), tt.reservation, metav1.CreateOptions{})
-				assert.NoError(t, err)
-				patched, gotErr := NewPatch().WithHandle(handle).Patch(context.TODO(), tt.reservation, tt.newReservation)
-				assert.Equal(t, tt.wantErr, gotErr != nil)
-				assert.Equal(t, tt.newReservation, patched)
-			}
-		})
 	}
 }

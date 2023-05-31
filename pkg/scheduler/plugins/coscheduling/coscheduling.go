@@ -35,6 +35,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
@@ -80,7 +81,10 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 
-	pgMgr := core.NewPodGroupManager(pgClient, pgInformerFactory, handle.SharedInformerFactory(), args)
+	informerFactory := handle.SharedInformerFactory()
+	extendedHandle := handle.(frameworkext.ExtendedHandle)
+	koordInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
+	pgMgr := core.NewPodGroupManager(args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
 	plugin := &Coscheduling{
 		args:             args,
 		frameworkHandler: handle,

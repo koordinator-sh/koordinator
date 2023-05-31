@@ -39,9 +39,11 @@ import (
 	pglister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 type Status string
@@ -90,10 +92,11 @@ type PodGroupManager struct {
 
 // NewPodGroupManager creates a new operation object.
 func NewPodGroupManager(
+	args *config.CoschedulingArgs,
 	pgClient pgclientset.Interface,
 	pgSharedInformerFactory pgformers.SharedInformerFactory,
 	sharedInformerFactory informers.SharedInformerFactory,
-	args *config.CoschedulingArgs,
+	koordSharedInformerFactory koordinatorinformers.SharedInformerFactory,
 ) *PodGroupManager {
 	pgInformer := pgSharedInformerFactory.Scheduling().V1alpha1().PodGroups()
 	podInformer := sharedInformerFactory.Core().V1().Pods()
@@ -117,6 +120,9 @@ func NewPodGroupManager(
 		DeleteFunc: gangCache.onPodDelete,
 	}
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, podInformer.Informer(), podEventHandler)
+	reservationInformer := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations()
+	reservationEventHandler := reservationutil.NewReservationToPodEventHandler(podEventHandler)
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordSharedInformerFactory, reservationInformer.Informer(), reservationEventHandler)
 	return pgMgr
 }
 
