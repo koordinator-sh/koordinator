@@ -302,7 +302,7 @@ func NewMergeableCgroupUpdaterIfCPUSetLooser(resourceType sysutil.ResourceType, 
 }
 
 // NewDetailCgroupUpdater returns a new *CgroupResourceUpdater according to the given Resource, which is generally used
-// for backwards compatibility. It it not guaranteed for updating successfully since it does not retrieve from the
+// for backwards compatibility. It is not guaranteed for updating successfully since it does not retrieve from the
 // known cgroup resources.
 func NewDetailCgroupUpdater(resource sysutil.Resource, parentDir string, value string, updateFunc UpdateFunc, e *audit.EventHelper) (ResourceUpdater, error) {
 	return &CgroupResourceUpdater{
@@ -458,6 +458,10 @@ func MergeConditionIfCPUSetIsLooser(oldValue, newValue string) (string, bool, er
 		return newValue, false, fmt.Errorf("old value is not valid cpuset, err: %v", err)
 	}
 
+	// no need to merge if new cpuset is equal to old
+	if v.Equals(old) {
+		return newValue, false, nil
+	}
 	// no need to merge if new cpuset is a subset of the old
 	if v.IsSubsetOf(old) {
 		return newValue, false, nil
@@ -499,10 +503,10 @@ func BlkIOUpdateFunc(resource ResourceUpdater) error {
 	return cgroupBlkIOFileWriteIfDifferent(info.parentDir, info.file, info.Value())
 }
 
-// resourceType sysutil.ResourceType, parentDir string, value string, updateFunc UpdateFunc
 func NewBlkIOResourceUpdater(resourceType sysutil.ResourceType, parentDir string, value string, e *audit.EventHelper) (ResourceUpdater, error) {
 	return NewCgroupUpdater(resourceType, parentDir, value, BlkIOUpdateFunc, e)
 }
+
 func cgroupBlkIOFileWriteIfDifferent(cgroupTaskDir string, file sysutil.Resource, value string) error {
 	var needUpdate bool
 	currentValue, currentErr := cgroupFileRead(cgroupTaskDir, file)

@@ -53,9 +53,16 @@ func TestResourceUpdateExecutor_Update(t *testing.T) {
 	assert.NoError(t, err)
 	testUpdater1, err := DefaultCgroupUpdaterFactory.New(sysutil.MemoryLimitName, "test", "1048576", &audit.EventHelper{})
 	assert.NoError(t, err)
+	testUpdater2, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUSetCPUSName, "test", "0-31", &audit.EventHelper{})
+	assert.NoError(t, err)
+	testUpdater3, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUSharesName, "test", "1024", &audit.EventHelper{})
+	assert.NoError(t, err)
+	testInvalidUpdater, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUSetCPUSName, "test", "invalid content", &audit.EventHelper{})
+	assert.NoError(t, err)
 	type fields struct {
-		notStarted bool
-		updateErr  bool
+		notStarted   bool
+		pathNotExist bool
+		config       *Config
 	}
 	type args struct {
 		isCacheable bool
@@ -93,35 +100,58 @@ func TestResourceUpdateExecutor_Update(t *testing.T) {
 			},
 			args: args{
 				isCacheable: true,
-				resource:    testUpdater1,
+				resource:    testUpdater2,
 			},
 			want:    false,
 			wantErr: true,
 		},
 		{
-			name: "update error",
-			fields: fields{
-				updateErr: true,
-			},
+			name: "cacheable update error",
 			args: args{
 				isCacheable: true,
-				resource:    testUpdater1,
+				resource:    testInvalidUpdater,
 			},
 			want:    false,
 			wantErr: true,
+		},
+		{
+			name: "ignore update error for path not exist",
+			fields: fields{
+				pathNotExist: true,
+			},
+			args: args{
+				isCacheable: false,
+				resource:    testUpdater3,
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "ignore cacheable update error for path not exist",
+			fields: fields{
+				pathNotExist: true,
+			},
+			args: args{
+				isCacheable: true,
+				resource:    testUpdater3,
+			},
+			want:    false,
+			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := sysutil.NewFileTestUtil(t)
 			defer helper.Cleanup()
-			if !tt.fields.updateErr { // make update non-exist file error
+			if !tt.fields.pathNotExist { // prepare test file
 				helper.WriteFileContents(tt.args.resource.Path(), "")
 			}
-
 			e := &ResourceUpdateExecutorImpl{
 				ResourceCache: cache.NewCacheDefault(),
 				Config:        NewDefaultConfig(),
+			}
+			if tt.fields.config != nil {
+				e.Config = tt.fields.config
 			}
 			if !tt.fields.notStarted {
 				stop := make(chan struct{})
@@ -134,7 +164,7 @@ func TestResourceUpdateExecutor_Update(t *testing.T) {
 
 			got, gotErr := e.Update(tt.args.isCacheable, tt.args.resource)
 			assert.Equal(t, tt.want, got)
-			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 		})
 	}
 }

@@ -95,6 +95,7 @@ func Test_bvtPlugin_systemSupported(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
 			defer testHelper.Cleanup()
 			testHelper.SetCgroupsV2(tt.fields.UseCgroupsV2)
+			testHelper.SetValidateResource(false)
 			if tt.fields.initPath != nil {
 				initCPUBvt(*tt.fields.initPath, 0, testHelper)
 			}

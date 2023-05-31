@@ -32,17 +32,12 @@ func Test_NewDefaultConfig(t *testing.T) {
 }
 
 func Test_InitFlags(t *testing.T) {
-	cmdArgs := []string{
-		"",
-		"--resource-force-update-seconds=120",
-	}
-	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
-
 	type fields struct {
 		ResourceForceUpdateSeconds int
 	}
 	type args struct {
-		fs *flag.FlagSet
+		fs      *flag.FlagSet
+		cmdArgs []string
 	}
 	tests := []struct {
 		name   string
@@ -54,18 +49,38 @@ func Test_InitFlags(t *testing.T) {
 			fields: fields{
 				ResourceForceUpdateSeconds: 120,
 			},
-			args: args{fs: fs},
+			args: args{
+				fs: flag.NewFlagSet("", flag.ExitOnError),
+				cmdArgs: []string{
+					"",
+					"--resource-force-update-seconds=120",
+				},
+			},
+		},
+		{
+			name: "not default 1",
+			fields: fields{
+				ResourceForceUpdateSeconds: 90,
+			},
+			args: args{
+				fs: flag.NewFlagSet("", flag.ExitOnError),
+				cmdArgs: []string{
+					"",
+					"--resource-force-update-seconds=90",
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw := &Config{
+			want := &Config{
 				ResourceForceUpdateSeconds: tt.fields.ResourceForceUpdateSeconds,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)
-			tt.args.fs.Parse(cmdArgs[1:])
-			assert.Equal(t, raw, c)
+			err := tt.args.fs.Parse(tt.args.cmdArgs[1:])
+			assert.NoError(t, err, err)
+			assert.Equal(t, want, c)
 		})
 	}
 }
