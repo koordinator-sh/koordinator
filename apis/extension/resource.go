@@ -38,6 +38,7 @@ const (
 
 const (
 	LabelGPUModel         string = NodeDomainPrefix + "/gpu-model"
+	LabelGPUModelSeries   string = NodeDomainPrefix + "/gpu-model-series"
 	LabelGPUDriverVersion string = NodeDomainPrefix + "/gpu-driver-version"
 )
 
