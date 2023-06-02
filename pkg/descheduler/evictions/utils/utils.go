@@ -49,6 +49,7 @@ func SupportEviction(client clientset.Interface) (groupVersion string, err error
 			foundPolicyGroup = true
 			preferredGroupVersion = serverGroup.PreferredVersion.GroupVersion
 			if preferredGroupVersion == EvictionGroupName+"/v1beta1" {
+				groupVersion = preferredGroupVersion
 				return
 			}
 		}
