@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -227,5 +228,11 @@ func TestQueryNodeReservations(t *testing.T) {
 			},
 		},
 	}
+	sort.Slice(expectedReservations.Items, func(i, j int) bool {
+		return expectedReservations.Items[i].UID < expectedReservations.Items[j].UID
+	})
+	sort.Slice(reservations.Items, func(i, j int) bool {
+		return reservations.Items[i].UID < reservations.Items[j].UID
+	})
 	assert.Equal(t, expectedReservations, reservations)
 }
