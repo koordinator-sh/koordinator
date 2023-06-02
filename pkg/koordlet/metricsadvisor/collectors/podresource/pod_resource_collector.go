@@ -23,7 +23,6 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -43,7 +42,7 @@ const (
 type podResourceCollector struct {
 	collectInterval      time.Duration
 	started              *atomic.Bool
-	metricDB             metriccache.MetricCache
+	appendableDB         metriccache.Appendable
 	statesInformer       statesinformer.StatesInformer
 	cgroupReader         resourceexecutor.CgroupReader
 	podFilter            framework.PodFilter
@@ -62,7 +61,7 @@ func New(opt *framework.Options) framework.Collector {
 	return &podResourceCollector{
 		collectInterval:      collectInterval,
 		started:              atomic.NewBool(false),
-		metricDB:             opt.MetricCache,
+		appendableDB:         opt.MetricCache,
 		statesInformer:       opt.StatesInformer,
 		cgroupReader:         opt.CgroupReader,
 		podFilter:            podFilter,
@@ -104,6 +103,7 @@ func (p *podResourceCollector) collectPodResUsed() {
 	klog.V(6).Info("start collectPodResUsed")
 	podMetas := p.statesInformer.GetAllPods()
 	count := 0
+	metrics := make([]metriccache.MetricSample, 0)
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
@@ -143,34 +143,46 @@ func (p *podResourceCollector) collectPodResUsed() {
 		// do subtraction and division first to avoid overflow
 		cpuUsageValue := float64(currentCPUUsage-lastCPUStat.CPUUsage) / float64(collectTime.Sub(lastCPUStat.Timestamp))
 
-		memUsageValue := memStat.Usage()
-
-		podMetric := metriccache.PodResourceMetric{
-			PodUID: uid,
-			CPUUsed: metriccache.CPUMetric{
-				// 1.0 CPU = 1000 Milli-CPU
-				CPUUsed: *resource.NewMilliQuantity(int64(cpuUsageValue*1000), resource.DecimalSI),
-			},
-			MemoryUsed: metriccache.MemoryMetric{
-				// 1.0 kB Memory = 1024 B
-				MemoryWithoutCache: *resource.NewQuantity(memUsageValue, resource.BinarySI),
-			},
+		cpuUsageMetric, err := metriccache.PodCPUUsageMetric.GenerateSample(
+			metriccache.MetricPropertiesFunc.Pod(uid), collectTime, cpuUsageValue)
+		if err != nil {
+			klog.V(4).Infof("failed to generate pod cpu metrics for pod %s, err %v", podKey, err)
+			continue
 		}
+
+		memUsageValue := memStat.Usage()
+		memUsageMetric, err := metriccache.PodMemUsageMetric.GenerateSample(
+			metriccache.MetricPropertiesFunc.Pod(uid), collectTime, float64(memUsageValue))
+		if err != nil {
+			klog.V(4).Infof("failed to generate pod mem metrics for pod %s , err %v", podKey, err)
+			return
+		}
+
+		metrics = append(metrics, cpuUsageMetric, memUsageMetric)
 		for deviceName, deviceCollector := range p.deviceCollectors {
-			if err := deviceCollector.FillPodMetric(&podMetric, meta.CgroupDir, pod.Status.ContainerStatuses); err != nil {
-				klog.Warningf("fill pod %s device usage failed for %v, error: %v", podKey, deviceName, err)
+			if deviceMetrics, err := deviceCollector.GetPodMetric(uid, meta.CgroupDir, pod.Status.ContainerStatuses); err != nil {
+				klog.V(4).Infof("get pod %s device usage failed for %v, error: %v", podKey, deviceName, err)
+			} else if len(metrics) > 0 {
+				metrics = append(metrics, deviceMetrics...)
 			}
 		}
 
-		klog.V(6).Infof("collect pod %s, uid %s finished, metric %+v", podKey, pod.UID, podMetric)
+		klog.V(6).Infof("collect pod %s, uid %s finished, metric %+v", podKey, pod.UID, metrics)
 
-		if err := p.metricDB.InsertPodResourceMetric(collectTime, &podMetric); err != nil {
-			klog.Errorf("insert pod %s, uid %s resource metric failed, metric %+v, err %v",
-				podKey, uid, podMetric, err)
-		} else {
-			count++
-		}
-		p.collectContainerResUsed(meta)
+		count++
+		containerMetrics := p.collectContainerResUsed(meta)
+		metrics = append(metrics, containerMetrics...)
+	}
+
+	appender := p.appendableDB.Appender()
+	if err := appender.Append(metrics); err != nil {
+		klog.Warningf("Append pod metrics error: %v", err)
+		return
+	}
+
+	if err := appender.Commit(); err != nil {
+		klog.Warningf("Commit pod metrics failed, error: %v", err)
+		return
 	}
 
 	// update collect time
@@ -178,10 +190,11 @@ func (p *podResourceCollector) collectPodResUsed() {
 	klog.V(4).Infof("collectPodResUsed finished, pod num %d, collected %d", len(podMetas), count)
 }
 
-func (p *podResourceCollector) collectContainerResUsed(meta *statesinformer.PodMeta) {
+func (p *podResourceCollector) collectContainerResUsed(meta *statesinformer.PodMeta) []metriccache.MetricSample {
 	klog.V(6).Infof("start collectContainerResUsed")
 	pod := meta.Pod
 	count := 0
+	containerMetrics := make([]metriccache.MetricSample, 0)
 	for i := range pod.Status.ContainerStatuses {
 		containerStat := &pod.Status.ContainerStatuses[i]
 		containerKey := fmt.Sprintf("%s/%s/%s", pod.Namespace, pod.Name, containerStat.Name)
@@ -227,33 +240,31 @@ func (p *podResourceCollector) collectContainerResUsed(meta *statesinformer.PodM
 		// do subtraction and division first to avoid overflow
 		cpuUsageValue := float64(currentCPUUsage-lastCPUStat.CPUUsage) / float64(collectTime.Sub(lastCPUStat.Timestamp))
 
-		memUsageValue := memStat.Usage()
+		cpuUsageMetric, cpuErr := metriccache.ContainerCPUUsageMetric.GenerateSample(
+			metriccache.MetricPropertiesFunc.Container(containerStat.ContainerID), collectTime, cpuUsageValue)
 
-		containerMetric := metriccache.ContainerResourceMetric{
-			ContainerID: containerStat.ContainerID,
-			CPUUsed: metriccache.CPUMetric{
-				// 1.0 CPU = 1000 Milli-CPU
-				CPUUsed: *resource.NewMilliQuantity(int64(cpuUsageValue*1000), resource.DecimalSI),
-			},
-			MemoryUsed: metriccache.MemoryMetric{
-				// 1.0 kB Memory = 1024 B
-				MemoryWithoutCache: *resource.NewQuantity(memUsageValue, resource.BinarySI),
-			},
+		memUsageValue := memStat.Usage()
+		memUsageMetric, memErr := metriccache.ContainerMemUsageMetric.GenerateSample(
+			metriccache.MetricPropertiesFunc.Container(containerStat.ContainerID), collectTime, float64(memUsageValue))
+		if cpuErr != nil || memErr != nil {
+			klog.Warningf("generate container %s metrics failed, cpu: %v, mem:%v", containerKey, cpuErr, memErr)
+			continue
 		}
 
+		containerMetrics = append(containerMetrics, cpuUsageMetric, memUsageMetric)
+
 		for deviceName, deviceCollector := range p.deviceCollectors {
-			if err := deviceCollector.FillContainerMetric(&containerMetric, meta.CgroupDir, containerStat); err != nil {
-				klog.Warningf("fill container %s device usage failed for %v, error: %v", containerKey, deviceName, err)
+			if metrics, err := deviceCollector.GetContainerMetric(containerStat.ContainerID, meta.CgroupDir, containerStat); err != nil {
+				klog.Warningf("get container %s device usage failed for %v, error: %v", containerKey, deviceName, err)
+			} else {
+				containerMetrics = append(containerMetrics, metrics...)
 			}
 		}
 
-		klog.V(6).Infof("collect container %s, id %s finished, metric %+v", containerKey, pod.UID, containerMetric)
-		if err := p.metricDB.InsertContainerResourceMetric(collectTime, &containerMetric); err != nil {
-			klog.Errorf("insert container %s resource metric error: %v", containerKey, err)
-		} else {
-			count++
-		}
+		klog.V(6).Infof("collect container %s, id %s finished, metric %+v", containerKey, pod.UID, containerMetrics)
+		count++
 	}
 	klog.V(5).Infof("collectContainerResUsed for pod %s/%s finished, container num %d, collected %d",
 		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses), count)
+	return containerMetrics
 }

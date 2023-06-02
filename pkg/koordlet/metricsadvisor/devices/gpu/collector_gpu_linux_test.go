@@ -29,7 +29,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
@@ -62,15 +61,13 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 			want: []metriccache.MetricSample{
 				buildMetricSample(
 					metriccache.NodeGPUCoreUsageMetric,
-					"0",
-					"test-device1",
+					metriccache.MetricPropertiesFunc.GPU("0", "test-device1"),
 					collectTime,
 					70,
 				),
 				buildMetricSample(
 					metriccache.NodeGPUMemUsageMetric,
-					"0",
-					"test-device1",
+					metriccache.MetricPropertiesFunc.GPU("0", "test-device1"),
 					collectTime,
 					1500,
 				),
@@ -92,29 +89,25 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 			want: []metriccache.MetricSample{
 				buildMetricSample(
 					metriccache.NodeGPUCoreUsageMetric,
-					"0",
-					"test-device1",
+					metriccache.MetricPropertiesFunc.GPU("0", "test-device1"),
 					collectTime,
 					70,
 				),
 				buildMetricSample(
 					metriccache.NodeGPUMemUsageMetric,
-					"0",
-					"test-device1",
+					metriccache.MetricPropertiesFunc.GPU("0", "test-device1"),
 					collectTime,
 					1500,
 				),
 				buildMetricSample(
 					metriccache.NodeGPUCoreUsageMetric,
-					"1",
-					"test-device2",
+					metriccache.MetricPropertiesFunc.GPU("1", "test-device2"),
 					collectTime,
 					50,
 				),
 				buildMetricSample(
 					metriccache.NodeGPUMemUsageMetric,
-					"1",
-					"test-device2",
+					metriccache.MetricPropertiesFunc.GPU("1", "test-device2"),
 					collectTime,
 					1000,
 				),
@@ -136,29 +129,25 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 			want: []metriccache.MetricSample{
 				buildMetricSample(
 					metriccache.NodeGPUCoreUsageMetric,
-					"0",
-					"test-device1",
+					metriccache.MetricPropertiesFunc.GPU("0", "test-device1"),
 					collectTime,
 					90,
 				),
 				buildMetricSample(
 					metriccache.NodeGPUMemUsageMetric,
-					"0",
-					"test-device1",
+					metriccache.MetricPropertiesFunc.GPU("0", "test-device1"),
 					collectTime,
 					2500,
 				),
 				buildMetricSample(
 					metriccache.NodeGPUCoreUsageMetric,
-					"1",
-					"test-device2",
+					metriccache.MetricPropertiesFunc.GPU("1", "test-device2"),
 					collectTime,
 					80,
 				),
 				buildMetricSample(
 					metriccache.NodeGPUMemUsageMetric,
-					"1",
-					"test-device2",
+					metriccache.MetricPropertiesFunc.GPU("1", "test-device2"),
 					collectTime,
 					2000,
 				),
@@ -179,25 +168,30 @@ func Test_gpuUsageDetailRecord_GetNodeGPUUsage(t *testing.T) {
 	}
 }
 
-func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
+func Test_gpuUsageDetailRecord_getPodOrContinerTotalGPUUsageOfPIDs(t *testing.T) {
+	collectTime := time.Now()
 	type fields struct {
 		deviceCount      int
 		devices          []*device
 		processesMetrics map[uint32][]*rawGPUMetric
 	}
 	type args struct {
-		pids []uint32
+		id      string
+		isPodID bool
+		pids    []uint32
 	}
 	tests := []struct {
 		name   string
 		fields fields
 		args   args
-		want   []metriccache.GPUMetric
+		want   []metriccache.MetricSample
 	}{
 		{
 			name: "single device",
 			args: args{
-				pids: []uint32{122},
+				id:      "test-pod",
+				isPodID: true,
+				pids:    []uint32{122},
 			},
 			fields: fields{
 				deviceCount: 1,
@@ -209,20 +203,27 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 					123: {{SMUtil: 20, MemoryUsed: 1000}},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					DeviceUUID:  "test-device1",
-					Minor:       0,
-					SMUtil:      70,
-					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.PodGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "0", "test-device1"),
+					collectTime,
+					70,
+				),
+				buildMetricSample(
+					metriccache.PodGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "0", "test-device1"),
+					collectTime,
+					1500,
+				),
 			},
 		},
 		{
 			name: "multiple device",
 			args: args{
-				pids: []uint32{122, 222},
+				id:      "test-pod",
+				isPodID: true,
+				pids:    []uint32{122, 222},
 			},
 			fields: fields{
 				deviceCount: 2,
@@ -235,27 +236,39 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 					222: {nil, {SMUtil: 50, MemoryUsed: 1000}},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					DeviceUUID:  "test-device1",
-					Minor:       0,
-					SMUtil:      70,
-					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
-				},
-				{
-					DeviceUUID:  "test-device2",
-					Minor:       1,
-					SMUtil:      50,
-					MemoryUsed:  *resource.NewQuantity(1000, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.PodGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "0", "test-device1"),
+					collectTime,
+					70,
+				),
+				buildMetricSample(
+					metriccache.PodGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "0", "test-device1"),
+					collectTime,
+					1500,
+				),
+				buildMetricSample(
+					metriccache.PodGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "1", "test-device2"),
+					collectTime,
+					50,
+				),
+				buildMetricSample(
+					metriccache.PodGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "1", "test-device2"),
+					collectTime,
+					1000,
+				),
 			},
 		},
 		{
 			name: "multiple device-1",
 			args: args{
-				pids: []uint32{122},
+				id:      "test-pod",
+				isPodID: true,
+				pids:    []uint32{122},
 			},
 			fields: fields{
 				deviceCount: 2,
@@ -268,20 +281,27 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 					222: {nil, {SMUtil: 50, MemoryUsed: 1000}},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					DeviceUUID:  "test-device1",
-					Minor:       0,
-					SMUtil:      70,
-					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.PodGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "0", "test-device1"),
+					collectTime,
+					70,
+				),
+				buildMetricSample(
+					metriccache.PodGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "0", "test-device1"),
+					collectTime,
+					1500,
+				),
 			},
 		},
 		{
 			name: "multiple device and multiple processes",
 			args: args{
-				pids: []uint32{122, 222},
+				id:      "test-pod",
+				isPodID: true,
+				pids:    []uint32{122, 222},
 			},
 			fields: fields{
 				deviceCount: 2,
@@ -294,39 +314,50 @@ func Test_gpuUsageDetailRecord_GetPIDsTotalGPUUsage(t *testing.T) {
 					222: {{SMUtil: 10, MemoryUsed: 1000}, {SMUtil: 40, MemoryUsed: 3000}},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					DeviceUUID:  "test-device1",
-					Minor:       0,
-					SMUtil:      80,
-					MemoryUsed:  *resource.NewQuantity(2500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
-				},
-				{
-					DeviceUUID:  "test-device2",
-					Minor:       1,
-					SMUtil:      90,
-					MemoryUsed:  *resource.NewQuantity(4000, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.PodGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "0", "test-device1"),
+					collectTime,
+					80,
+				),
+				buildMetricSample(
+					metriccache.PodGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "0", "test-device1"),
+					collectTime,
+					2500,
+				),
+				buildMetricSample(
+					metriccache.PodGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "1", "test-device2"),
+					collectTime,
+					90,
+				),
+				buildMetricSample(
+					metriccache.PodGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-pod", "1", "test-device2"),
+					collectTime,
+					4000,
+				),
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &gpuDeviceManager{
+				collectTime:      collectTime,
 				deviceCount:      tt.fields.deviceCount,
 				devices:          tt.fields.devices,
 				processesMetrics: tt.fields.processesMetrics,
 			}
-			if got := g.getTotalGPUUsageOfPIDs(tt.args.pids); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("gpuUsageDetailRecord.GetPIDsTotalGPUUsage() = %v, want %v", got, tt.want)
-			}
+			got := g.getPodOrContinerTotalGPUUsageOfPIDs(tt.args.id, tt.args.isPodID, tt.args.pids)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
 func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
+	collectTime := time.Now()
 	helper := system.NewFileTestUtil(t)
 	defer helper.Cleanup()
 	helper.SetCgroupsV2(false)
@@ -352,19 +383,21 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 	}
 	type args struct {
 		podParentDir string
+		uid          string
 		cs           []corev1.ContainerStatus
 	}
 	tests := []struct {
 		name    string
 		fields  fields
 		args    args
-		want    []metriccache.GPUMetric
+		want    []metriccache.MetricSample
 		wantErr bool
 	}{
 		{
 			name: "multiple processes and multiple device",
 			fields: fields{
 				gpuDeviceManager: &gpuDeviceManager{
+					collectTime: collectTime,
 					deviceCount: 2,
 					devices: []*device{
 						{Minor: 0, DeviceUUID: "12", MemoryTotal: 14000},
@@ -378,6 +411,7 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 			},
 			args: args{
 				podParentDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				uid:          "test-1",
 				cs: []corev1.ContainerStatus{
 					{
 						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
@@ -397,21 +431,31 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 					},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					Minor:       0,
-					DeviceUUID:  "12",
-					SMUtil:      80,
-					MemoryUsed:  *resource.NewQuantity(2500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
-				},
-				{
-					Minor:       1,
-					DeviceUUID:  "23",
-					SMUtil:      90,
-					MemoryUsed:  *resource.NewQuantity(4000, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.PodGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-1", "0", "12"),
+					collectTime,
+					80,
+				),
+				buildMetricSample(
+					metriccache.PodGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-1", "0", "12"),
+					collectTime,
+					2500,
+				),
+				buildMetricSample(
+					metriccache.PodGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-1", "1", "23"),
+					collectTime,
+					90,
+				),
+				buildMetricSample(
+					metriccache.PodGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-1", "1", "23"),
+					collectTime,
+					4000,
+				),
 			},
 			wantErr: false,
 		},
@@ -419,6 +463,7 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 			name: "multiple processes",
 			fields: fields{
 				gpuDeviceManager: &gpuDeviceManager{
+					collectTime: collectTime,
 					deviceCount: 2,
 					devices: []*device{
 						{Minor: 0, DeviceUUID: "12", MemoryTotal: 14000},
@@ -432,6 +477,7 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 			},
 			args: args{
 				podParentDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				uid:          "test-1",
 				cs: []corev1.ContainerStatus{
 					{
 						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
@@ -451,21 +497,31 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 					},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					Minor:       0,
-					DeviceUUID:  "12",
-					SMUtil:      70,
-					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
-				},
-				{
-					Minor:       1,
-					DeviceUUID:  "23",
-					SMUtil:      40,
-					MemoryUsed:  *resource.NewQuantity(3000, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.PodGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-1", "0", "12"),
+					collectTime,
+					70,
+				),
+				buildMetricSample(
+					metriccache.PodGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-1", "0", "12"),
+					collectTime,
+					1500,
+				),
+				buildMetricSample(
+					metriccache.PodGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-1", "1", "23"),
+					collectTime,
+					40,
+				),
+				buildMetricSample(
+					metriccache.PodGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-1", "1", "23"),
+					collectTime,
+					3000,
+				),
 			},
 			wantErr: false,
 		},
@@ -474,6 +530,7 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 			name: "single processes",
 			fields: fields{
 				gpuDeviceManager: &gpuDeviceManager{
+					collectTime: collectTime,
 					deviceCount: 2,
 					devices: []*device{
 						{Minor: 0, DeviceUUID: "12", MemoryTotal: 14000},
@@ -487,6 +544,7 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 			},
 			args: args{
 				podParentDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				uid:          "test-1",
 				cs: []corev1.ContainerStatus{
 					{
 						ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
@@ -506,14 +564,19 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 					},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					Minor:       1,
-					DeviceUUID:  "23",
-					SMUtil:      90,
-					MemoryUsed:  *resource.NewQuantity(4500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.PodGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-1", "1", "23"),
+					collectTime,
+					90,
+				),
+				buildMetricSample(
+					metriccache.PodGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.PodGPU("test-1", "1", "23"),
+					collectTime,
+					4500,
+				),
 			},
 			wantErr: false,
 		},
@@ -521,7 +584,7 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := tt.fields.gpuDeviceManager
-			got, err := g.getPodGPUUsage(tt.args.podParentDir, tt.args.cs)
+			got, err := g.getPodGPUUsage(tt.args.uid, tt.args.podParentDir, tt.args.cs)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("gpuDeviceManager.getPodGPUUsage() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -533,6 +596,7 @@ func Test_gpuDeviceManager_getPodGPUUsage(t *testing.T) {
 	}
 }
 func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
+	collectTime := time.Now()
 	helper := system.NewFileTestUtil(t)
 	defer helper.Cleanup()
 	helper.SetCgroupsV2(false)
@@ -558,19 +622,21 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 	}
 	type args struct {
 		podParentDir string
+		containerID  string
 		c            *corev1.ContainerStatus
 	}
 	tests := []struct {
 		name    string
 		fields  fields
 		args    args
-		want    []metriccache.GPUMetric
+		want    []metriccache.MetricSample
 		wantErr bool
 	}{
 		{
 			name: "multiple processes and multiple device",
 			fields: fields{
 				gpuDeviceManager: &gpuDeviceManager{
+					collectTime: collectTime,
 					deviceCount: 2,
 					devices: []*device{
 						{Minor: 0, DeviceUUID: "12", MemoryTotal: 14000},
@@ -584,6 +650,7 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 			},
 			args: args{
 				podParentDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				containerID:  "test-1",
 				c: &corev1.ContainerStatus{
 					ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4abaf",
 					State: corev1.ContainerState{
@@ -593,20 +660,31 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 					},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					Minor: 0, DeviceUUID: "12",
-					SMUtil:      80,
-					MemoryUsed:  *resource.NewQuantity(2500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
-				},
-				{
-					Minor:       1,
-					DeviceUUID:  "23",
-					SMUtil:      90,
-					MemoryUsed:  *resource.NewQuantity(4000, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.ContainerGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.ContainerGPU("test-1", "0", "12"),
+					collectTime,
+					80,
+				),
+				buildMetricSample(
+					metriccache.ContainerGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.ContainerGPU("test-1", "0", "12"),
+					collectTime,
+					2500,
+				),
+				buildMetricSample(
+					metriccache.ContainerGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.ContainerGPU("test-1", "1", "23"),
+					collectTime,
+					90,
+				),
+				buildMetricSample(
+					metriccache.ContainerGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.ContainerGPU("test-1", "1", "23"),
+					collectTime,
+					4000,
+				),
 			},
 			wantErr: false,
 		},
@@ -614,6 +692,7 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 			name: "single processes and multiple device",
 			fields: fields{
 				gpuDeviceManager: &gpuDeviceManager{
+					collectTime: collectTime,
 					deviceCount: 2,
 					devices: []*device{
 						{Minor: 0, DeviceUUID: "12", MemoryTotal: 14000},
@@ -627,6 +706,7 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 			},
 			args: args{
 				podParentDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6553a60b_2b97_442a_b6da_a5704d81dd98.slice/",
+				containerID:  "test-1",
 				c: &corev1.ContainerStatus{
 					ContainerID: "docker://703b1b4e811f56673d68f9531204e5dd4963e734e2929a7056fd5f33fde4acff",
 					State: corev1.ContainerState{
@@ -636,21 +716,31 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 					},
 				},
 			},
-			want: []metriccache.GPUMetric{
-				{
-					Minor:       0,
-					DeviceUUID:  "12",
-					SMUtil:      70,
-					MemoryUsed:  *resource.NewQuantity(1500, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(14000, resource.BinarySI),
-				},
-				{
-					Minor:       1,
-					DeviceUUID:  "23",
-					SMUtil:      50,
-					MemoryUsed:  *resource.NewQuantity(1000, resource.BinarySI),
-					MemoryTotal: *resource.NewQuantity(24000, resource.BinarySI),
-				},
+			want: []metriccache.MetricSample{
+				buildMetricSample(
+					metriccache.ContainerGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.ContainerGPU("test-1", "0", "12"),
+					collectTime,
+					70,
+				),
+				buildMetricSample(
+					metriccache.ContainerGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.ContainerGPU("test-1", "0", "12"),
+					collectTime,
+					1500,
+				),
+				buildMetricSample(
+					metriccache.ContainerGPUCoreUsageMetric,
+					metriccache.MetricPropertiesFunc.ContainerGPU("test-1", "1", "23"),
+					collectTime,
+					50,
+				),
+				buildMetricSample(
+					metriccache.ContainerGPUMemUsageMetric,
+					metriccache.MetricPropertiesFunc.ContainerGPU("test-1", "1", "23"),
+					collectTime,
+					1000,
+				),
 			},
 			wantErr: false,
 		},
@@ -658,14 +748,12 @@ func Test_gpuDeviceManager_getContainerGPUUsage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := tt.fields.gpuDeviceManager
-			got, err := g.getContainerGPUUsage(tt.args.podParentDir, tt.args.c)
+			got, err := g.getContainerGPUUsage(tt.args.containerID, tt.args.podParentDir, tt.args.c)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("gpuDeviceManager.getContainerGPUUsage() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("gpuDeviceManager.getContainerGPUUsage() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -722,7 +810,7 @@ func Test_buildMetricSample(t *testing.T) {
 			)
 			assert.NoError(t, err)
 			tt.want = metricSample
-			assert.Equalf(t, tt.want, buildMetricSample(tt.args.mr, tt.args.minor, tt.args.uuid, tt.args.t, tt.args.val), "buildMetricSample(%v, %v, %v, %v, %v)", tt.args.mr, tt.args.minor, tt.args.uuid, tt.args.t, tt.args.val)
+			assert.Equalf(t, tt.want, buildMetricSample(tt.args.mr, metriccache.MetricPropertiesFunc.GPU(tt.args.minor, tt.args.uuid), tt.args.t, tt.args.val), "buildMetricSample(%v, %v, %v, %v, %v)", tt.args.mr, tt.args.minor, tt.args.uuid, tt.args.t, tt.args.val)
 		})
 	}
 }

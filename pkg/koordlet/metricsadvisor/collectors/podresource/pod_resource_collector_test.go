@@ -28,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -281,17 +280,17 @@ total_unevictable 0
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
+			metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+				TSDBPath:              t.TempDir(),
+				TSDBEnablePromMetrics: false,
+			})
+			assert.NoError(t, err)
+			defer func() {
+				metricCache.Close()
+			}()
 			statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
-			metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 			statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 			statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).Times(1)
-
-			if tt.want.podResourceMetric {
-				metricCache.EXPECT().InsertPodResourceMetric(gomock.Any(), gomock.Not(nil)).Times(1)
-			}
-			if tt.want.containerResourceMetric {
-				metricCache.EXPECT().InsertContainerResourceMetric(gomock.Any(), gomock.Not(nil)).Times(1)
-			}
 
 			collector := New(&framework.Options{
 				Config: &framework.Config{

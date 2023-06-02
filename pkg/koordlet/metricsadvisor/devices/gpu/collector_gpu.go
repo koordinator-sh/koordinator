@@ -75,22 +75,12 @@ func (g *gpuCollector) GetNodeMetric() ([]metriccache.MetricSample, error) {
 	return g.gpuDeviceManager.getNodeGPUUsage(), nil
 }
 
-func (g *gpuCollector) FillPodMetric(podMetric *metriccache.PodResourceMetric, podParentDir string,
-	cs []corev1.ContainerStatus) error {
-	podGPUUsage, err := g.gpuDeviceManager.getPodGPUUsage(podParentDir, cs)
-	if err == nil && podGPUUsage != nil {
-		podMetric.GPUs = podGPUUsage
-	}
-	return err
+func (g *gpuCollector) GetPodMetric(uid, podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.MetricSample, error) {
+	return g.gpuDeviceManager.getPodGPUUsage(uid, podParentDir, cs)
 }
 
-func (g *gpuCollector) FillContainerMetric(containerMetric *metriccache.ContainerResourceMetric, podParentDir string,
-	c *corev1.ContainerStatus) error {
-	containerGPUUsage, err := g.gpuDeviceManager.getContainerGPUUsage(podParentDir, c)
-	if err == nil && containerGPUUsage != nil {
-		containerMetric.GPUs = containerGPUUsage
-	}
-	return err
+func (g *gpuCollector) GetContainerMetric(ContainerID, podParentDir string, c *corev1.ContainerStatus) ([]metriccache.MetricSample, error) {
+	return g.gpuDeviceManager.getContainerGPUUsage(ContainerID, podParentDir, c)
 }
 
 type GPUDeviceManager interface {
@@ -98,8 +88,8 @@ type GPUDeviceManager interface {
 	deviceInfos() metriccache.Devices
 	collectGPUUsage()
 	getNodeGPUUsage() []metriccache.MetricSample
-	getPodGPUUsage(podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.GPUMetric, error)
-	getContainerGPUUsage(podParentDir string, c *corev1.ContainerStatus) ([]metriccache.GPUMetric, error)
+	getPodGPUUsage(uid, podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.MetricSample, error)
+	getContainerGPUUsage(containerID, podParentDir string, c *corev1.ContainerStatus) ([]metriccache.MetricSample, error)
 	shutdown() error
 }
 
@@ -119,11 +109,11 @@ func (d *dummyDeviceManager) getNodeGPUUsage() []metriccache.MetricSample {
 	return nil
 }
 
-func (d *dummyDeviceManager) getPodGPUUsage(podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.GPUMetric, error) {
+func (d *dummyDeviceManager) getPodGPUUsage(uid, podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.MetricSample, error) {
 	return nil, nil
 }
 
-func (d *dummyDeviceManager) getContainerGPUUsage(podParentDir string, c *corev1.ContainerStatus) ([]metriccache.GPUMetric, error) {
+func (d *dummyDeviceManager) getContainerGPUUsage(containerID, podParentDir string, c *corev1.ContainerStatus) ([]metriccache.MetricSample, error) {
 	return nil, nil
 }
 

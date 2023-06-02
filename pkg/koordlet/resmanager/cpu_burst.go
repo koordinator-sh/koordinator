@@ -260,11 +260,7 @@ func (b *CPUBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 		klog.Warningf("get node cpu info failed, detail %v, error %v", nodeCPUInfo, err)
 		return nodeBurstUnknown
 	}
-	podsMetric := b.resmanager.collectPodMetrics(queryParam)
-	podMetricMap := make(map[string]*metriccache.PodResourceMetric)
-	for _, podMetric := range podsMetric {
-		podMetricMap[podMetric.PodUID] = podMetric
-	}
+	podMetricMap := b.resmanager.collectAllPodMetrics(*queryParam, metriccache.PodCPUUsageMetric)
 
 	nodeCPUCoresTotal := len(nodeCPUInfo.ProcessorInfos)
 	nodeCPUCoresUsage := nodeCPUUsed
@@ -281,11 +277,11 @@ func (b *CPUBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 
 		// exclude LSR and BE pod cpu usage from cpu share pool
 		podMetric, exist := podMetricMap[string(podMeta.Pod.UID)]
-		if !exist || podMetric == nil {
+		if !exist {
 			continue
 		}
 		if podQOS == apiext.QoSLSR || podQOS == apiext.QoSBE {
-			sharePoolCPUCoresUsage -= float64(podMetric.CPUUsed.CPUUsed.MilliValue()) / 1000
+			sharePoolCPUCoresUsage -= podMetric
 		}
 	} // end for podsMeta
 
@@ -409,13 +405,17 @@ func (b *CPUBurst) cfsBurstAllowedByLimiter(burstCfg *slov1alpha1.CPUBurstConfig
 
 	containerCPULimit := float64(util.GetContainerMilliCPULimit(container)) / 1000
 	containerCPUUsage := containerCPULimit
-	containerRes := b.resmanager.collectContainerResMetricLast(containerID)
-	if containerRes.Error != nil {
-		klog.Warningf("failed to get container %v resource metric, error %v", *containerID, containerRes.Error)
-	} else if containerRes.Metric == nil || containerRes.AggregateInfo == nil {
-		klog.Warningf("container %v resource metric is nil, detail %v", *containerID, containerRes)
+
+	querMeta, err := metriccache.ContainerCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Container(*containerID))
+	if err != nil {
+		klog.Warningf("get container %s metric queryMeta failed, error: %v", *containerID, err)
 	} else {
-		containerCPUUsage = float64(containerRes.Metric.CPUUsed.CPUUsed.MilliValue()) / 1000
+		queryContainerCPUUsage, err := b.resmanager.collectContainerResMetricLast(querMeta)
+		if err != nil {
+			klog.Warningf("query container %s metric failed, error: %v", *containerID, err)
+		} else {
+			containerCPUUsage = queryContainerCPUUsage
+		}
 	}
 
 	limiter, exist := b.containerLimiter[*containerID]

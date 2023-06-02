@@ -278,21 +278,26 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 }
 
 func Test_getPodEvictInfoAndSort(t *testing.T) {
+	type podMetricSample struct {
+		UID     string
+		CPUUsed float64
+	}
+
 	tests := []struct {
 		name       string
-		podMetrics []*metriccache.PodResourceMetric
+		podMetrics []podMetricSample
 		pods       []*corev1.Pod
 		beMetric   metriccache.BECPUResourceMetric
 		expect     []*podEvictCPUInfo
 	}{
 		{
 			name: "test_sort",
-			podMetrics: []*metriccache.PodResourceMetric{
-				mockPodResourceMetricByCPU("pod_lsr", 12*1000),
-				mockPodResourceMetricByCPU("pod_ls", 12*1000),
-				mockPodResourceMetricByCPU("pod_be_1_priority100", 3*1000),
-				mockPodResourceMetricByCPU("pod_be_2_priority100", 4*1000),
-				mockPodResourceMetricByCPU("pod_be_3_priority10", 4*1000),
+			podMetrics: []podMetricSample{
+				{UID: "pod_lsr", CPUUsed: 12},
+				{UID: "pod_ls", CPUUsed: 12},
+				{UID: "pod_be_1_priority100", CPUUsed: 3},
+				{UID: "pod_be_2_priority100", CPUUsed: 4},
+				{UID: "pod_be_3_priority10", CPUUsed: 4},
 			},
 			pods: []*corev1.Pod{
 				mockNonBEPodForCPUEvict("pod_lsr", apiext.QoSLSR, 16*1000),
@@ -337,11 +342,16 @@ func Test_getPodEvictInfoAndSort(t *testing.T) {
 			mockStatesInformer.EXPECT().GetAllPods().Return(getPodMetas(tt.pods)).AnyTimes()
 
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
-			for _, podMetric := range tt.podMetrics {
-				mockPodQueryResult := metriccache.PodResourceQueryResult{Metric: podMetric}
-				mockMetricCache.EXPECT().GetPodResourceMetric(&podMetric.PodUID, gomock.Any()).Return(mockPodQueryResult).AnyTimes()
-			}
+			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
+			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
+			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
 
+			for _, podMetric := range tt.podMetrics {
+				podQueryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(podMetric.UID))
+				assert.NoError(t, err)
+				buildMockQueryResult(ctl, mockQuerier, mockResultFactory, podQueryMeta, podMetric.CPUUsed)
+			}
 			resmanager := &resmanager{statesInformer: mockStatesInformer, metricCache: mockMetricCache}
 			cpuEvictor := NewCPUEvictor(resmanager)
 			got := cpuEvictor.getPodEvictInfoAndSort(&tt.beMetric)
@@ -533,9 +543,11 @@ func mockBECPUResourceQueryResult(metric *metriccache.BECPUResourceMetric, aggre
 	return metriccache.BECPUResourceQueryResult{Metric: metric, QueryResult: metriccache.QueryResult{AggregateInfo: aggregateInfo, Error: error}}
 }
 
-func mockPodResourceMetricByCPU(podUID string, cpuUsage int64) *metriccache.PodResourceMetric {
-	return &metriccache.PodResourceMetric{
-		PodUID:  podUID,
-		CPUUsed: metriccache.CPUMetric{CPUUsed: *resource.NewMilliQuantity(cpuUsage, resource.DecimalSI)},
-	}
+func buildMockQueryResult(ctrl *gomock.Controller, querier *mock_metriccache.MockQuerier, factory *mock_metriccache.MockAggregateResultFactory,
+	queryMeta metriccache.MetricMeta, value float64) {
+	result := mock_metriccache.NewMockAggregateResult(ctrl)
+	result.EXPECT().Value(gomock.Any()).Return(value, nil).AnyTimes()
+	result.EXPECT().Count().Return(1).AnyTimes()
+	factory.EXPECT().New(queryMeta).Return(result).AnyTimes()
+	querier.EXPECT().Query(queryMeta, gomock.Any(), result).SetArg(2, *result).Return(nil).AnyTimes()
 }

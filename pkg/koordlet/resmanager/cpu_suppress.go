@@ -108,27 +108,28 @@ func (r *CPUSuppress) writeBECgroupsCPUSet(paths []string, cpusetStr string, isR
 }
 
 // calculateBESuppressCPU calculates the quantity of cpuset cpus for suppressing be pods
-func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeUsedCPU resource.Quantity,
-	podMetrics []*metriccache.PodResourceMetric, podMetas []*statesinformer.PodMeta, beCPUUsedThreshold int64) *resource.Quantity {
+func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric float64,
+	podMetrics map[string]float64, podMetas []*statesinformer.PodMeta, beCPUUsedThreshold int64) *resource.Quantity {
 	// node, nodeMetric, podMetric should not be nil
 	podAllUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
 	podNoneBEUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
+	nodeUsedCPU := *resource.NewMilliQuantity(int64(nodeMetric*1000), resource.DecimalSI)
 
 	podMetaMap := map[string]*statesinformer.PodMeta{}
 	for _, podMeta := range podMetas {
 		podMetaMap[string(podMeta.Pod.UID)] = podMeta
 	}
 
-	for _, podMetric := range podMetrics {
-		podAllUsedCPU.Add(*getPodMetricCPUUsage(podMetric))
+	for podUID, podMetric := range podMetrics {
+		podAllUsedCPU.Add(*resource.NewMilliQuantity(int64(podMetric*1000), resource.DecimalSI))
 
-		podMeta, ok := podMetaMap[podMetric.PodUID]
+		podMeta, ok := podMetaMap[podUID]
 		if !ok {
-			klog.Warningf("podMetric not included in the podMetas %v", podMetric.PodUID)
+			klog.Warningf("podMetric not included in the podMetas %v", podUID)
 		}
 		if !ok || (apiext.GetPodQoSClass(podMeta.Pod) != apiext.QoSBE && util.GetKubeQosClass(podMeta.Pod) != corev1.PodQOSBestEffort) {
 			// NOTE: consider non-BE pods and podMeta-missing pods as LS
-			podNoneBEUsedCPU.Add(*getPodMetricCPUUsage(podMetric))
+			podNoneBEUsedCPU.Add(*resource.NewMilliQuantity(int64(podMetric*1000), resource.DecimalSI))
 		}
 	}
 
@@ -269,7 +270,7 @@ func (r *CPUSuppress) suppressBECPU() {
 		return
 	}
 
-	podMetrics := r.resmanager.collectPodMetricLast()
+	podMetrics := r.resmanager.collectAllPodMetricsLast(metriccache.PodCPUUsageMetric)
 	if podMetrics == nil {
 		klog.Warningf("suppressBECPU failed, got nil node metric or nil pod metrics, podMetrics %v", podMetrics)
 		return
@@ -285,8 +286,7 @@ func (r *CPUSuppress) suppressBECPU() {
 		return
 	}
 
-	nodeCPUsed := *resource.NewMilliQuantity(int64(value*1000), resource.DecimalSI)
-	suppressCPUQuantity := r.calculateBESuppressCPU(node, nodeCPUsed, podMetrics, podMetas,
+	suppressCPUQuantity := r.calculateBESuppressCPU(node, value, podMetrics, podMetas,
 		*nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent)
 
 	// Step 2.
@@ -541,12 +541,6 @@ func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
 	}
 	klog.V(5).Infof("successfully recover bestEffort cfsQuota, isUpdated %v", isUpdated)
 	r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyRecovered
-}
-
-// getPodMetricCPUUsage gets pod usage cpu from the PodResourceMetric
-func getPodMetricCPUUsage(info *metriccache.PodResourceMetric) *resource.Quantity {
-	cpuQuant := info.CPUUsed.CPUUsed
-	return resource.NewMilliQuantity(cpuQuant.MilliValue(), cpuQuant.Format)
 }
 
 // calculateBESuppressPolicy calculates the be cpu suppress policy with cpuset cpus number and node cpu info
