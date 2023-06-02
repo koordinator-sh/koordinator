@@ -38,6 +38,7 @@ func SupportEviction(client clientset.Interface) (groupVersion string, err error
 	)
 
 	discoveryClient := client.Discovery()
+
 	serverGroups, err = discoveryClient.ServerGroups()
 	if serverGroups == nil || err != nil {
 		return
@@ -47,13 +48,14 @@ func SupportEviction(client clientset.Interface) (groupVersion string, err error
 		if serverGroup.Name == EvictionGroupName {
 			foundPolicyGroup = true
 			preferredGroupVersion = serverGroup.PreferredVersion.GroupVersion
-			break
+			if preferredGroupVersion == EvictionGroupName+"/v1beta1" {
+				return
+			}
 		}
 	}
 	if !foundPolicyGroup {
 		return
 	}
-
 	resourceList, err = discoveryClient.ServerResourcesForGroupVersion("v1")
 	if err != nil {
 		return
