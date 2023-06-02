@@ -97,3 +97,70 @@ func TestPodEventHandler(t *testing.T) {
 	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
 	assert.Empty(t, rInfo.AssignedPods)
 }
+
+func TestPodEventHandlerWithOperatingPod(t *testing.T) {
+	handler := &podEventHandler{
+		cache: newReservationCache(nil),
+	}
+	reservationUID := uuid.NewUUID()
+	reservationName := "test-reservation"
+	operatingReservationPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: reservationName,
+			UID:  reservationUID,
+			Labels: map[string]string{
+				apiext.LabelPodOperatingMode: string(apiext.ReservationPodOperatingMode),
+			},
+			Annotations: map[string]string{},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	}
+	handler.OnAdd(operatingReservationPod)
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "main",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+				},
+			},
+		},
+	}
+	handler.OnAdd(pod)
+	rInfo := handler.cache.getReservationInfoByUID(operatingReservationPod.UID)
+	assert.NotNil(t, rInfo)
+
+	p := operatingReservationPod.DeepCopy()
+	err := apiext.SetReservationCurrentOwner(p.Annotations, &corev1.ObjectReference{
+		Name:      pod.Name,
+		Namespace: pod.Namespace,
+		UID:       pod.UID,
+	})
+	assert.NoError(t, err)
+	handler.OnUpdate(operatingReservationPod, p)
+	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Len(t, rInfo.AssignedPods, 1)
+	expectPodRequirement := &frameworkext.PodRequirement{
+		Name:      pod.Name,
+		Namespace: pod.Namespace,
+		UID:       pod.UID,
+		Requests:  corev1.ResourceList{},
+	}
+	assert.Equal(t, expectPodRequirement, rInfo.AssignedPods[pod.UID])
+
+	handler.OnDelete(operatingReservationPod)
+	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Nil(t, rInfo)
+}

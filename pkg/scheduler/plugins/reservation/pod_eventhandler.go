@@ -115,10 +115,9 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 
 func (h *podEventHandler) deletePod(pod *corev1.Pod) {
 	reservationAllocated, err := apiext.GetReservationAllocated(pod)
-	if err != nil || reservationAllocated == nil || reservationAllocated.UID == "" {
-		return
+	if err == nil && reservationAllocated != nil && reservationAllocated.UID != "" {
+		h.cache.deletePod(reservationAllocated.UID, pod)
 	}
-	h.cache.deletePod(reservationAllocated.UID, pod)
 
 	if apiext.IsReservationOperatingMode(pod) {
 		h.cache.deleteReservationOperatingPod(pod)
