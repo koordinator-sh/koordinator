@@ -47,8 +47,8 @@ var (
 )
 
 func GuessCgroupDriverFromCgroupName() CgroupDriverType {
-	systemdKubepodDirExists := FileExists(filepath.Join(Conf.CgroupRootDir, "cpu", KubeRootNameSystemd))
-	cgroupfsKubepodDirExists := FileExists(filepath.Join(Conf.CgroupRootDir, "cpu", KubeRootNameCgroupfs))
+	systemdKubepodDirExists := FileExists(filepath.Join(GetRootCgroupSubfsDir(CgroupCPUDir), KubeRootNameSystemd))
+	cgroupfsKubepodDirExists := FileExists(filepath.Join(GetRootCgroupSubfsDir(CgroupCPUDir), KubeRootNameCgroupfs))
 	if systemdKubepodDirExists != cgroupfsKubepodDirExists {
 		if systemdKubepodDirExists {
 			return Systemd
@@ -59,7 +59,7 @@ func GuessCgroupDriverFromCgroupName() CgroupDriverType {
 	return ""
 }
 
-// Guess Kubelet's cgroup driver from kubelet port.
+// GuessCgroupDriverFromKubeletPort guesses Kubelet's cgroup driver from kubelet port.
 // 1. use KubeletPortToPid to get kubelet pid.
 // 2. If '--cgroup-driver' in args, that's it.
 //    else if '--config' not in args, is default driver('cgroupfs').
@@ -133,6 +133,7 @@ func GuessCgroupDriverFromKubeletPort(port int) (CgroupDriverType, error) {
 	return kubeletDefaultCgroupDriver, nil
 }
 
+// IsUsingCgroupsV2 checks once if the CGroup V2 is in use.
 // modify base: github.com/opencontainers/runc/libcontainer/cgroups/utils.go IsCgroup2UnifiedMode
 func IsUsingCgroupsV2() bool {
 	unifiedMountpoint := strings.TrimSuffix(Conf.CgroupRootDir, "/")

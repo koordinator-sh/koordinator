@@ -192,7 +192,7 @@ var cgroupPathFormatterInCgroupfs = formatter{
 	},
 }
 
-// default use Systemd cgroup path format
+// CgroupPathFormatter uses the Systemd cgroup driver by default.
 var CgroupPathFormatter = cgroupPathFormatterInSystemd
 
 func SetupCgroupPathFormatter(driver CgroupDriverType) {

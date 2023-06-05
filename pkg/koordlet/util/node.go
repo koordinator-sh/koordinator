@@ -34,13 +34,6 @@ const (
 	ContainerCgroupPathRelativeDepth = 2
 )
 
-func GetRootCgroupSubfsDir(subfs string) string {
-	if system.GetCurrentCgroupVersion() == system.CgroupVersionV2 {
-		return filepath.Join(system.Conf.CgroupRootDir)
-	}
-	return filepath.Join(system.Conf.CgroupRootDir, subfs)
-}
-
 // GetRootCgroupCPUSetDir gets the cpuset parent directory of the specified podQos' root cgroup
 // @output /sys/fs/cgroup/cpuset/kubepods.slice/kubepods-besteffort.slice
 func GetRootCgroupCPUSetDir(qosClass corev1.PodQOSClass) string {
@@ -71,7 +64,7 @@ func GetBECgroupCurCPUSet() ([]int32, error) {
 func GetBECPUSetPathsByMaxDepth(relativeDepth int) ([]string, error) {
 	// walk from root path to lower nodes
 	rootCgroupPath := GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
-	rootCPUSetSubfsPath := GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
+	rootCPUSetSubfsPath := system.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
 	_, err := os.Stat(rootCgroupPath)
 	if err != nil {
 		// make sure the rootCgroupPath is available
@@ -101,7 +94,7 @@ func GetBECPUSetPathsByMaxDepth(relativeDepth int) ([]string, error) {
 // GetBECPUSetPathsByTargetDepth only gets the be containers' cpuset groups' paths
 func GetBECPUSetPathsByTargetDepth(relativeDepth int) ([]string, error) {
 	rootCgroupPath := GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
-	rootCPUSetSubfsPath := GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
+	rootCPUSetSubfsPath := system.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
 	_, err := os.Stat(rootCgroupPath)
 	if err != nil {
 		// make sure the rootCgroupPath is available

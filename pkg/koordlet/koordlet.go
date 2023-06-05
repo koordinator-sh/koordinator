@@ -73,11 +73,11 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	if len(nodeName) == 0 {
 		return nil, fmt.Errorf("failed to new daemon: NODE_NAME env is empty")
 	}
-	klog.Infof("NODE_NAME is %v,start time %v", nodeName, float64(time.Now().Unix()))
+	klog.Infof("NODE_NAME is %v, start time %v", nodeName, float64(time.Now().Unix()))
 	metrics.RecordKoordletStartTime(nodeName, float64(time.Now().Unix()))
 
-	klog.Infof("sysconf: %+v,agentMode:%v", system.Conf, system.AgentMode)
-	klog.Infof("kernel version INFO : %+v", system.HostSystemInfo)
+	klog.Infof("sysconf: %+v, agentMode: %v", system.Conf, system.AgentMode)
+	klog.Infof("kernel version INFO: %+v", system.HostSystemInfo)
 
 	kubeClient := clientset.NewForConfigOrDie(config.KubeRestConf)
 	crdClient := clientsetbeta1.NewForConfigOrDie(config.KubeRestConf)
@@ -103,7 +103,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 		node, err := kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, v1.GetOptions{})
 		if err != nil || node == nil {
-			klog.Error("Can't get node")
+			klog.Errorf("Can't get node, err: %v", err)
 			return false, nil
 		}
 

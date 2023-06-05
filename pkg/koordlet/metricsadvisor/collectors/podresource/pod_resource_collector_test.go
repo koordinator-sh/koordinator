@@ -315,12 +315,16 @@ total_unevictable 0
 }
 
 func Test_podResourceCollector_Run(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	metricCacheCfg := metriccache.NewDefaultConfig()
 	metricCacheCfg.TSDBEnablePromMetrics = false
-	metricCache, _ := metriccache.NewMetricCache(metricCacheCfg)
+	metricCacheCfg.TSDBPath = helper.TempDir
+	metricCache, err := metriccache.NewMetricCache(metricCacheCfg)
+	assert.NoError(t, err)
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
@@ -338,6 +342,6 @@ func Test_podResourceCollector_Run(t *testing.T) {
 	assert.NotPanics(t, func() {
 		stopCh := make(chan struct{}, 1)
 		collector.Run(stopCh)
-		stopCh <- struct{}{}
+		close(stopCh)
 	})
 }

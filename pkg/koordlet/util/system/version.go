@@ -40,14 +40,14 @@ func isAnolisOS() bool {
 }
 
 func isSupportBvtOrWmarRatio() bool {
-	bvtFilePath := filepath.Join(Conf.CgroupRootDir, CgroupCPUDir, CPUBVTWarpNsName)
+	bvtFilePath := filepath.Join(GetRootCgroupSubfsDir(CgroupCPUDir), CPUBVTWarpNsName)
 	exists, err := PathExists(bvtFilePath)
 	klog.V(2).Infof("[%v] PathExists exists %v, err: %v", bvtFilePath, exists, err)
 	if err == nil && exists {
 		return true
 	}
 
-	wmarkRatioPath := filepath.Join(Conf.CgroupRootDir, CgroupMemDir, "*", MemoryWmarkRatioName)
+	wmarkRatioPath := filepath.Join(GetRootCgroupSubfsDir(CgroupMemDir), "*", MemoryWmarkRatioName)
 	matches, err := filepath.Glob(wmarkRatioPath)
 	klog.V(2).Infof("[%v] PathExists wmark_ratio exists %v, err: %v", wmarkRatioPath, matches, err)
 	if err == nil && len(matches) > 0 {
