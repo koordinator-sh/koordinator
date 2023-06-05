@@ -77,6 +77,7 @@ type Manager interface {
 
 // PodGroupManager defines the scheduling operation called
 type PodGroupManager struct {
+	args *config.CoschedulingArgs
 	// pgClient is a podGroup client
 	pgClient pgclientset.Interface
 	// pgLister is podgroup lister
@@ -102,6 +103,7 @@ func NewPodGroupManager(
 	podInformer := sharedInformerFactory.Core().V1().Pods()
 	gangCache := NewGangCache(args, podInformer.Lister(), pgInformer.Lister(), pgClient)
 	pgMgr := &PodGroupManager{
+		args:      args,
 		pgClient:  pgClient,
 		pgLister:  pgInformer.Lister(),
 		podLister: podInformer.Lister(),
@@ -227,6 +229,10 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	if gang.getChildrenNum() < gang.getGangMinNum() {
 		return fmt.Errorf("gang child pod not collect enough, gangName: %v, podName: %v", gang.Name,
 			util.GetId(pod.Namespace, pod.Name))
+	}
+
+	if pgMgr.args != nil && pgMgr.args.SkipCheckScheduleCycle {
+		return nil
 	}
 
 	// first try update the global cycle of gang

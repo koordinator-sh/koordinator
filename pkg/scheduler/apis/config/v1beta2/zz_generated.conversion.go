@@ -127,6 +127,9 @@ func RegisterConversions(s *runtime.Scheme) error {
 func autoConvert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(in *CoschedulingArgs, out *config.CoschedulingArgs, s conversion.Scope) error {
 	out.DefaultTimeout = (*v1.Duration)(unsafe.Pointer(in.DefaultTimeout))
 	out.ControllerWorkers = (*int64)(unsafe.Pointer(in.ControllerWorkers))
+	if err := v1.Convert_Pointer_bool_To_bool(&in.SkipCheckScheduleCycle, &out.SkipCheckScheduleCycle, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -138,6 +141,9 @@ func Convert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(in *Coschedulin
 func autoConvert_config_CoschedulingArgs_To_v1beta2_CoschedulingArgs(in *config.CoschedulingArgs, out *CoschedulingArgs, s conversion.Scope) error {
 	out.DefaultTimeout = (*v1.Duration)(unsafe.Pointer(in.DefaultTimeout))
 	out.ControllerWorkers = (*int64)(unsafe.Pointer(in.ControllerWorkers))
+	if err := v1.Convert_bool_To_Pointer_bool(&in.SkipCheckScheduleCycle, &out.SkipCheckScheduleCycle, s); err != nil {
+		return err
+	}
 	return nil
 }
 

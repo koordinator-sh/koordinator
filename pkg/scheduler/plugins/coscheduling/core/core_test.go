@@ -106,6 +106,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 		// next tow are set before test pod run
 		shouldSetValidToFalse         bool
 		shouldSetCycleEqualWithGlobal bool
+		shouldSkipCheckScheduleCycle  bool
 	}{
 		{
 			name:                 "pod does not belong to any gang",
@@ -192,6 +193,24 @@ func TestPlugin_PreFilter(t *testing.T) {
 			shouldSetValidToFalse:      true,
 		},
 		{
+			name: "pods count equal with minMember,is StrictMode, disable check scheduleCycle even if the gang's scheduleCycle is not valid",
+			pod:  st.MakePod().Name("pod7").UID("pod7").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangd").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod7-1").UID("pod7-1").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangd").Obj(),
+				st.MakePod().Name("pod7-2").UID("pod7-2").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangd").Obj(),
+				st.MakePod().Name("pod7-3").UID("pod7-3").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangd").Obj(),
+			},
+			pgs:                   makePg("gangd", "ganga_ns", 4, &gangACreatedTime, nil),
+			expectedScheduleCycle: 1,
+			expectedChildCycleMap: map[string]int{
+				"ganga_ns/pod7": 1,
+			},
+			expectedScheduleCycleValid:   false,
+			expectedErrorMessage:         "",
+			shouldSetValidToFalse:        true,
+			shouldSkipCheckScheduleCycle: true,
+		},
+		{
 			name: "pods count equal with minMember,is StrictMode,scheduleCycle valid,but childrenNum is not reach to total num",
 			pod:  st.MakePod().Name("pod8").UID("pod8").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gange").Obj(),
 			pods: []*corev1.Pod{
@@ -267,6 +286,12 @@ func TestPlugin_PreFilter(t *testing.T) {
 			if tt.resourceSatisfied {
 				gang.setResourceSatisfied()
 			}
+			if tt.shouldSkipCheckScheduleCycle {
+				mgr.args.SkipCheckScheduleCycle = true
+				defer func() {
+					mgr.args.SkipCheckScheduleCycle = false
+				}()
+			}
 			// run the case
 			err := mgr.PreFilter(ctx, tt.pod)
 			var returnMessage string
@@ -277,7 +302,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			}
 			// assert
 			assert.Equal(t, tt.expectedErrorMessage, returnMessage)
-			if gang != nil && !tt.isNonStrictMode {
+			if gang != nil && !tt.isNonStrictMode && !tt.shouldSkipCheckScheduleCycle {
 				assert.Equal(t, tt.expectedScheduleCycle, gang.getScheduleCycle())
 				assert.Equal(t, tt.expectedScheduleCycleValid, gang.isScheduleCycleValid())
 				assert.Equal(t, tt.expectedChildCycleMap, gang.ChildrenScheduleRoundMap)
