@@ -54,8 +54,8 @@ func init() {
 }
 
 func initSupportConfigs() {
-	HostSystemInfo = collectVersionInfo()
 	initCgroupsVersion()
+	HostSystemInfo = collectVersionInfo()
 	_, _ = IsSupportResctrl()
 }
 

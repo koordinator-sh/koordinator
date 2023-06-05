@@ -38,7 +38,9 @@ import (
 )
 
 func Test_collectBECPUResourceMetric(t *testing.T) {
-	system.UseCgroupsV2 = false
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	helper.SetCgroupsV2(false)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -65,7 +67,6 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 
 	// prepare BECPUUsageCores data,expect 4 cores usage
 	collector.lastBECPUStat = &framework.CPUStat{CPUUsage: 12000000000000, Timestamp: time.Now().Add(-1 * time.Second)}
-	helper := system.NewFileTestUtil(t)
 	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, "12004000000000")
 
 	// prepare limit data,expect 8 cores limit
@@ -305,13 +306,17 @@ func mockLSPod() *corev1.Pod {
 	}
 }
 
-func Test_beResourceColelctor_Run(t *testing.T) {
+func Test_beResourceCollector_Run(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	metricCacheCfg := metriccache.NewDefaultConfig()
 	metricCacheCfg.TSDBEnablePromMetrics = false
-	metricCache, _ := metriccache.NewMetricCache(metricCacheCfg)
+	metricCacheCfg.TSDBPath = helper.TempDir
+	metricCache, err := metriccache.NewMetricCache(metricCacheCfg)
+	assert.NoError(t, err)
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 	c := New(&framework.Options{
@@ -325,9 +330,9 @@ func Test_beResourceColelctor_Run(t *testing.T) {
 	collector.Setup(&framework.Context{})
 	assert.True(t, collector.Enabled())
 	assert.True(t, collector.Started())
+	stopCh := make(chan struct{})
+	defer close(stopCh)
 	assert.NotPanics(t, func() {
-		stopCh := make(chan struct{}, 1)
 		collector.Run(stopCh)
-		stopCh <- struct{}{}
 	})
 }
