@@ -218,11 +218,19 @@ func Test_validateGPURequest(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "valid gpu request 1",
+			name: "valid gpu request 2",
 			podRequest: corev1.ResourceList{
 				apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 			},
 			want:    NvidiaGPUExist,
+			wantErr: false,
+		},
+		{
+			name: "valid hygon duc request 2",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceHygonDCU: resource.MustParse("2"),
+			},
+			want:    HygonDCUExist,
 			wantErr: false,
 		},
 		{
@@ -359,6 +367,19 @@ func Test_convertGPUResource(t *testing.T) {
 					apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 				},
 				gpuCombination: NvidiaGPUExist,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+			},
+		},
+		{
+			name: "hygonDCUExist",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceHygonDCU: resource.MustParse("2"),
+				},
+				gpuCombination: HygonDCUExist,
 			},
 			want: corev1.ResourceList{
 				apiext.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
