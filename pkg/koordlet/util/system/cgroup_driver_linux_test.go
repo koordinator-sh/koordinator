@@ -29,9 +29,10 @@ import (
 
 func Test_GuessCgroupDriverFromCgroupName(t *testing.T) {
 	tests := []struct {
-		name     string
-		envSetup func(cgroupRoot string)
-		want     CgroupDriverType
+		name       string
+		envSetup   func(cgroupRoot string)
+		isCgroupV2 bool
+		want       CgroupDriverType
 	}{
 		{
 			name: "'kubepods' and 'kubepods.slice' both exist",
@@ -60,16 +61,29 @@ func Test_GuessCgroupDriverFromCgroupName(t *testing.T) {
 			},
 			want: Cgroupfs,
 		},
+		{
+			name: "'kubepods' exist on cgroup v2",
+			envSetup: func(cgroupRoot string) {
+				os.MkdirAll(filepath.Join(cgroupRoot, "kubepods"), 0755)
+			},
+			isCgroupV2: true,
+			want:       Cgroupfs,
+		},
+		{
+			name: "'kubepods.slice' exist on cgroup v2",
+			envSetup: func(cgroupRoot string) {
+				os.MkdirAll(filepath.Join(cgroupRoot, "kubepods.slice"), 0755)
+			},
+			isCgroupV2: true,
+			want:       Systemd,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpCgroupRoot := t.TempDir()
-			os.MkdirAll(tmpCgroupRoot, 0555)
-
-			Conf = &Config{
-				CgroupRootDir: tmpCgroupRoot,
-			}
-
+			helper := NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.SetCgroupsV2(tt.isCgroupV2)
+			tmpCgroupRoot := helper.TempDir
 			tt.envSetup(tmpCgroupRoot)
 			got := GuessCgroupDriverFromCgroupName()
 			assert.Equal(t, tt.want, got)

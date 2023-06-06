@@ -101,34 +101,50 @@ const (
 
 // MetricPropertiesFunc is a collection of functions generating metric property k-v, for metric sample generation and query
 var MetricPropertiesFunc = struct {
-	Pod          func(string) map[MetricProperty]string
-	Container    func(string) map[MetricProperty]string
-	GPU          func(string, string) map[MetricProperty]string
-	PodContainer func(string, string) map[MetricProperty]string
-	ContainerCPI func(string, string, string) map[MetricProperty]string
-	PodPSI       func(string, string, string, string) map[MetricProperty]string
-	ContainerPSI func(string, string, string, string, string) map[MetricProperty]string
+	Pod                 func(string) map[MetricProperty]string
+	Container           func(string) map[MetricProperty]string
+	GPU                 func(string, string) map[MetricProperty]string
+	PSICPUFullSupported func(string, string) map[MetricProperty]string
+	ContainerCPI        func(string, string, string) map[MetricProperty]string
+	PodPSI              func(string, string, string, string) map[MetricProperty]string
+	ContainerPSI        func(string, string, string, string, string) map[MetricProperty]string
+	PodGPU              func(string, string, string) map[MetricProperty]string
+	ContainerGPU        func(string, string, string) map[MetricProperty]string
 }{
 	Pod: func(podUID string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyPodUID: podUID}
 	},
+	PodGPU: func(podUID, minor, uuid string) map[MetricProperty]string {
+		return map[MetricProperty]string{
+			MetricPropertyPodUID:        podUID,
+			MetricPropertyGPUMinor:      minor,
+			MetricPropertyGPUDeviceUUID: uuid,
+		}
+	},
 	Container: func(containerID string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyContainerID: containerID}
+	},
+	ContainerGPU: func(containerID, minor, uuid string) map[MetricProperty]string {
+		return map[MetricProperty]string{
+			MetricPropertyContainerID:   containerID,
+			MetricPropertyGPUMinor:      minor,
+			MetricPropertyGPUDeviceUUID: uuid,
+		}
 	},
 	GPU: func(minor, uuid string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyGPUMinor: minor, MetricPropertyGPUDeviceUUID: uuid}
 	},
-	PodContainer: func(podUID, containerID string) map[MetricProperty]string {
+	PSICPUFullSupported: func(podUID, containerID string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyPodUID: podUID, MetricPropertyContainerID: containerID}
 	},
-	ContainerCPI: func(podUID, containerID, cPIResource string) map[MetricProperty]string {
-		return map[MetricProperty]string{MetricPropertyPodUID: podUID, MetricPropertyContainerID: containerID, MetricPropertyCPIResource: cPIResource}
+	ContainerCPI: func(podUID, containerID, cpiResource string) map[MetricProperty]string {
+		return map[MetricProperty]string{MetricPropertyPodUID: podUID, MetricPropertyContainerID: containerID, MetricPropertyCPIResource: cpiResource}
 	},
-	PodPSI: func(podUID, pSIResource, pSIPrecision, pSIDegree string) map[MetricProperty]string {
-		return map[MetricProperty]string{MetricPropertyPodUID: podUID, MetricPropertyPSIResource: pSIResource, MetricPropertyPSIPrecision: pSIPrecision, MetricPropertyPSIDegree: pSIDegree}
+	PodPSI: func(podUID, psiResource, psiPrecision, psiDegree string) map[MetricProperty]string {
+		return map[MetricProperty]string{MetricPropertyPodUID: podUID, MetricPropertyPSIResource: psiResource, MetricPropertyPSIPrecision: psiPrecision, MetricPropertyPSIDegree: psiDegree}
 	},
-	ContainerPSI: func(podUID, containerID, pSIResource, pSIPrecision, pSIDegree string) map[MetricProperty]string {
-		return map[MetricProperty]string{MetricPropertyPodUID: podUID, MetricPropertyContainerID: containerID, MetricPropertyPSIResource: pSIResource, MetricPropertyPSIPrecision: pSIPrecision, MetricPropertyPSIDegree: pSIDegree}
+	ContainerPSI: func(podUID, containerID, psiResource, psiPrecision, psiDegree string) map[MetricProperty]string {
+		return map[MetricProperty]string{MetricPropertyPodUID: podUID, MetricPropertyContainerID: containerID, MetricPropertyPSIResource: psiResource, MetricPropertyPSIPrecision: psiPrecision, MetricPropertyPSIDegree: psiDegree}
 	},
 }
 

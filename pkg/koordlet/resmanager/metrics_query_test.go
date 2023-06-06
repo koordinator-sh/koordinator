@@ -17,12 +17,12 @@ limitations under the License.
 package resmanager
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
@@ -31,76 +31,103 @@ import (
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 )
 
-func Test_collectPodMetricLast(t *testing.T) {
+func Test_collectAllPodMetricsLast(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 	now := time.Now()
 	timeNow = func() time.Time {
 		return now // Some time that you need
 	}
-	type metricInfos struct {
-		timestamp  time.Time
-		podResUsed *metriccache.PodResourceMetric
+	type fields struct {
+		metricCache func(ctrl *gomock.Controller) metriccache.MetricCache
 	}
 	type args struct {
 		name            string
-		metricInfos     []*metricInfos
+		fields          fields
+		metricResource  metriccache.MetricResource
 		pod             *statesinformer.PodMeta
-		expectPodMetric *metriccache.PodResourceMetric
+		expectPodMetric map[string]float64
 	}
 
 	tests := []args{
 		{
-			name:            "test no metrics in db",
+			name: "test no metrics in db",
+			fields: fields{metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+				mockMetricCache := mock_metriccache.NewMockMetricCache(ctrl)
+				mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctrl)
+				metriccache.DefaultAggregateResultFactory = mockResultFactory
+				mockQuerier := mock_metriccache.NewMockQuerier(ctrl)
+				mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+				cpuResult := mock_metriccache.NewMockAggregateResult(ctrl)
+				cpuResult.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(0), errors.New("empty value")).AnyTimes()
+				cpuResult.EXPECT().Count().Return(0).AnyTimes()
+				mockResultFactory.EXPECT().New(gomock.Any()).Return(cpuResult).AnyTimes()
+				mockQuerier.EXPECT().Query(gomock.Any(), gomock.Any(), cpuResult).SetArg(2, *cpuResult).Return(nil).AnyTimes()
+				return mockMetricCache
+			}},
+			metricResource:  metriccache.PodCPUUsageMetric,
 			pod:             &statesinformer.PodMeta{Pod: createTestPod(extension.QoSLSR, "test_pod")},
-			expectPodMetric: nil,
+			expectPodMetric: map[string]float64{},
 		},
 		{
-			name: "test normal",
+			name: "cpu test",
 			pod:  &statesinformer.PodMeta{Pod: createTestPod(extension.QoSLSR, "test_pod")},
-			metricInfos: []*metricInfos{
-				{
-					timestamp: time.Now().Add(-3 * time.Second),
-					podResUsed: &metriccache.PodResourceMetric{
-						PodUID:     "test_pod",
-						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("14")},
-						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("60G")},
-					},
-				},
-				{
-					timestamp: time.Now().Add(-1 * time.Second),
-					podResUsed: &metriccache.PodResourceMetric{
-						PodUID:     "test_pod",
-						CPUUsed:    metriccache.CPUMetric{CPUUsed: resource.MustParse("16")},
-						MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse("70G")},
-					},
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mockMetricCache := mock_metriccache.NewMockMetricCache(ctrl)
+					mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctrl)
+					metriccache.DefaultAggregateResultFactory = mockResultFactory
+					mockQuerier := mock_metriccache.NewMockQuerier(ctrl)
+					mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+					cpuResult := mock_metriccache.NewMockAggregateResult(ctrl)
+					cpuResult.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(16), nil).AnyTimes()
+					cpuResult.EXPECT().Count().Return(1).AnyTimes()
+					cpuQueryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod("test_pod"))
+					assert.NoError(t, err)
+					mockResultFactory.EXPECT().New(cpuQueryMeta).Return(cpuResult).AnyTimes()
+					mockQuerier.EXPECT().Query(cpuQueryMeta, gomock.Any(), cpuResult).SetArg(2, *cpuResult).Return(nil).AnyTimes()
+					return mockMetricCache
 				},
 			},
-			expectPodMetric: &metriccache.PodResourceMetric{
-				PodUID:     "test_pod",
-				CPUUsed:    metriccache.CPUMetric{CPUUsed: *resource.NewMilliQuantity(16000, resource.DecimalSI)},
-				MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: *resource.NewQuantity(70000000000, resource.BinarySI)},
+			metricResource:  metriccache.PodCPUUsageMetric,
+			expectPodMetric: map[string]float64{"test_pod": 16},
+		},
+		{
+			name: "memory test",
+			pod:  &statesinformer.PodMeta{Pod: createTestPod(extension.QoSLSR, "test_pod")},
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mockMetricCache := mock_metriccache.NewMockMetricCache(ctrl)
+					mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctrl)
+					metriccache.DefaultAggregateResultFactory = mockResultFactory
+					mockQuerier := mock_metriccache.NewMockQuerier(ctrl)
+					mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+					memResult := mock_metriccache.NewMockAggregateResult(ctrl)
+					memResult.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(70000000000), nil).AnyTimes()
+					memResult.EXPECT().Count().Return(1).AnyTimes()
+					memQueryMeta, err := metriccache.PodMemUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod("test_pod"))
+					assert.NoError(t, err)
+					mockResultFactory.EXPECT().New(memQueryMeta).Return(memResult).AnyTimes()
+					mockQuerier.EXPECT().Query(memQueryMeta, gomock.Any(), memResult).SetArg(2, *memResult).Return(nil).AnyTimes()
+					return mockMetricCache
+				},
 			},
+			metricResource:  metriccache.PodMemUsageMetric,
+			expectPodMetric: map[string]float64{"test_pod": 70000000000},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			metricCache, _ := metriccache.NewCacheNotShareMetricCache(&metriccache.Config{MetricGCIntervalSeconds: 60, MetricExpireSeconds: 60})
-			for _, metricInfo := range tt.metricInfos {
-				_ = metricCache.InsertPodResourceMetric(metricInfo.timestamp, metricInfo.podResUsed)
-			}
-
-			ctl := gomock.NewController(t)
-			defer ctl.Finish()
-			mockstatesinformer := mock_statesinformer.NewMockStatesInformer(ctl)
+			mockstatesinformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 			mockstatesinformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{tt.pod}).AnyTimes()
 
-			resmanager := &resmanager{metricCache: metricCache, statesInformer: mockstatesinformer, collectResUsedIntervalSeconds: 60}
-			gotPodMetrics := resmanager.collectPodMetricLast()
-			if tt.expectPodMetric == nil {
-				assert.True(t, len(gotPodMetrics) == 0)
-			} else {
-				assert.Equal(t, tt.expectPodMetric, gotPodMetrics[0])
-			}
+			resmanager := &resmanager{metricCache: tt.fields.metricCache(ctrl), statesInformer: mockstatesinformer, collectResUsedIntervalSeconds: 60}
+			gotPodMetrics := resmanager.collectAllPodMetricsLast(tt.metricResource)
+			assert.Equal(t, tt.expectPodMetric, gotPodMetrics)
 		})
 	}
 }

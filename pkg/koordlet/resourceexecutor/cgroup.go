@@ -56,6 +56,8 @@ func cgroupFileWriteIfDifferent(cgroupTaskDir string, r sysutil.Resource, value 
 	if currentErr != nil {
 		return false, currentErr
 	}
+	// FIXME(saintube): Instead of handling cpuset resource in writing function, we should use a updater and do
+	//  MergeUpdate in resourceexecutor's LeveledUpdateBatch.
 	if r.ResourceType() == sysutil.CPUSetCPUSName && cpuset.IsEqualStrCpus(currentValue, value) {
 		return false, nil
 	}

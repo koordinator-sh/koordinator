@@ -183,10 +183,12 @@ func (c *CPUEvictor) getPodEvictInfoAndSort(beMetric *metriccache.BECPUResourceM
 		if apiext.GetPodQoSClass(pod) == apiext.QoSBE {
 
 			bePodInfo := &podEvictCPUInfo{pod: podMeta.Pod}
-			podQueryResult := c.resmanager.collectPodMetric(podMeta, generateQueryParamsLast(c.resmanager.collectResUsedIntervalSeconds*2))
-			podMetric := podQueryResult.Metric
-			if podQueryResult.Error == nil && podMetric != nil {
-				bePodInfo.milliUsedCores = podMetric.CPUUsed.CPUUsed.MilliValue()
+			queryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(pod.UID)))
+			if err == nil {
+				result, err := c.resmanager.collectPodMetricLast(queryMeta)
+				if err == nil {
+					bePodInfo.milliUsedCores = int64(result * 1000)
+				}
 			}
 
 			milliRequestSum := int64(0)

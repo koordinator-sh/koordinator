@@ -39,9 +39,11 @@ import (
 	pglister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 type Status string
@@ -75,6 +77,7 @@ type Manager interface {
 
 // PodGroupManager defines the scheduling operation called
 type PodGroupManager struct {
+	args *config.CoschedulingArgs
 	// pgClient is a podGroup client
 	pgClient pgclientset.Interface
 	// pgLister is podgroup lister
@@ -90,15 +93,17 @@ type PodGroupManager struct {
 
 // NewPodGroupManager creates a new operation object.
 func NewPodGroupManager(
+	args *config.CoschedulingArgs,
 	pgClient pgclientset.Interface,
 	pgSharedInformerFactory pgformers.SharedInformerFactory,
 	sharedInformerFactory informers.SharedInformerFactory,
-	args *config.CoschedulingArgs,
+	koordSharedInformerFactory koordinatorinformers.SharedInformerFactory,
 ) *PodGroupManager {
 	pgInformer := pgSharedInformerFactory.Scheduling().V1alpha1().PodGroups()
 	podInformer := sharedInformerFactory.Core().V1().Pods()
 	gangCache := NewGangCache(args, podInformer.Lister(), pgInformer.Lister(), pgClient)
 	pgMgr := &PodGroupManager{
+		args:      args,
 		pgClient:  pgClient,
 		pgLister:  pgInformer.Lister(),
 		podLister: podInformer.Lister(),
@@ -117,6 +122,9 @@ func NewPodGroupManager(
 		DeleteFunc: gangCache.onPodDelete,
 	}
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, podInformer.Informer(), podEventHandler)
+	reservationInformer := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations()
+	reservationEventHandler := reservationutil.NewReservationToPodEventHandler(podEventHandler)
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordSharedInformerFactory, reservationInformer.Informer(), reservationEventHandler)
 	return pgMgr
 }
 
@@ -221,6 +229,10 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	if gang.getChildrenNum() < gang.getGangMinNum() {
 		return fmt.Errorf("gang child pod not collect enough, gangName: %v, podName: %v", gang.Name,
 			util.GetId(pod.Namespace, pod.Name))
+	}
+
+	if pgMgr.args != nil && pgMgr.args.SkipCheckScheduleCycle {
+		return nil
 	}
 
 	// first try update the global cycle of gang

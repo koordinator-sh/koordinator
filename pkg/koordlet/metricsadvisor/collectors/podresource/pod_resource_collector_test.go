@@ -28,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -281,17 +280,17 @@ total_unevictable 0
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
+			metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+				TSDBPath:              t.TempDir(),
+				TSDBEnablePromMetrics: false,
+			})
+			assert.NoError(t, err)
+			defer func() {
+				metricCache.Close()
+			}()
 			statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
-			metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 			statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 			statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).Times(1)
-
-			if tt.want.podResourceMetric {
-				metricCache.EXPECT().InsertPodResourceMetric(gomock.Any(), gomock.Not(nil)).Times(1)
-			}
-			if tt.want.containerResourceMetric {
-				metricCache.EXPECT().InsertContainerResourceMetric(gomock.Any(), gomock.Not(nil)).Times(1)
-			}
 
 			collector := New(&framework.Options{
 				Config: &framework.Config{
@@ -316,12 +315,16 @@ total_unevictable 0
 }
 
 func Test_podResourceCollector_Run(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	metricCacheCfg := metriccache.NewDefaultConfig()
 	metricCacheCfg.TSDBEnablePromMetrics = false
-	metricCache, _ := metriccache.NewMetricCache(metricCacheCfg)
+	metricCacheCfg.TSDBPath = helper.TempDir
+	metricCache, err := metriccache.NewMetricCache(metricCacheCfg)
+	assert.NoError(t, err)
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
@@ -339,6 +342,6 @@ func Test_podResourceCollector_Run(t *testing.T) {
 	assert.NotPanics(t, func() {
 		stopCh := make(chan struct{}, 1)
 		collector.Run(stopCh)
-		stopCh <- struct{}{}
+		close(stopCh)
 	})
 }

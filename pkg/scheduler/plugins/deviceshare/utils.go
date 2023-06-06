@@ -30,6 +30,7 @@ import (
 
 const (
 	NvidiaGPUExist = 1 << iota
+	HygonDCUExist
 	KoordGPUExist
 	GPUCoreExist
 	GPUMemoryExist
@@ -37,7 +38,7 @@ const (
 )
 
 var DeviceResourceNames = map[schedulingv1alpha1.DeviceType][]corev1.ResourceName{
-	schedulingv1alpha1.GPU:  {apiext.ResourceNvidiaGPU, apiext.ResourceGPU, apiext.ResourceGPUCore, apiext.ResourceGPUMemory, apiext.ResourceGPUMemoryRatio},
+	schedulingv1alpha1.GPU:  {apiext.ResourceNvidiaGPU, apiext.ResourceHygonDCU, apiext.ResourceGPU, apiext.ResourceGPUCore, apiext.ResourceGPUMemory, apiext.ResourceGPUMemoryRatio},
 	schedulingv1alpha1.RDMA: {apiext.ResourceRDMA},
 	schedulingv1alpha1.FPGA: {apiext.ResourceFPGA},
 }
@@ -88,6 +89,9 @@ var ValidateGPURequest = func(podRequest corev1.ResourceList) (uint, error) {
 	if _, exist := podRequest[apiext.ResourceNvidiaGPU]; exist {
 		gpuCombination |= NvidiaGPUExist
 	}
+	if _, exist := podRequest[apiext.ResourceHygonDCU]; exist {
+		gpuCombination |= HygonDCUExist
+	}
 	if koordGPU, exist := podRequest[apiext.ResourceGPU]; exist {
 		if koordGPU.Value() > 100 && koordGPU.Value()%100 != 0 {
 			return gpuCombination, fmt.Errorf("failed to validate %v: %v", apiext.ResourceGPU, koordGPU.Value())
@@ -111,10 +115,11 @@ var ValidateGPURequest = func(podRequest corev1.ResourceList) (uint, error) {
 		gpuCombination |= GPUMemoryRatioExist
 	}
 
-	if gpuCombination == (NvidiaGPUExist) ||
-		gpuCombination == (KoordGPUExist) ||
-		gpuCombination == (GPUCoreExist|GPUMemoryExist) ||
-		gpuCombination == (GPUCoreExist|GPUMemoryRatioExist) {
+	if gpuCombination == NvidiaGPUExist ||
+		gpuCombination == HygonDCUExist ||
+		gpuCombination == KoordGPUExist ||
+		gpuCombination == GPUCoreExist|GPUMemoryExist ||
+		gpuCombination == GPUCoreExist|GPUMemoryRatioExist {
 		return gpuCombination, nil
 	}
 
@@ -176,6 +181,12 @@ var ConvertGPUResource = func(podRequest corev1.ResourceList, combination uint) 
 		return corev1.ResourceList{
 			apiext.ResourceGPUCore:        *resource.NewQuantity(nvidiaGpu.Value()*100, resource.DecimalSI),
 			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(nvidiaGpu.Value()*100, resource.DecimalSI),
+		}
+	case HygonDCUExist:
+		hygonDCU := podRequest[apiext.ResourceHygonDCU]
+		return corev1.ResourceList{
+			apiext.ResourceGPUCore:        *resource.NewQuantity(hygonDCU.Value()*100, resource.DecimalSI),
+			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(hygonDCU.Value()*100, resource.DecimalSI),
 		}
 	}
 	return nil

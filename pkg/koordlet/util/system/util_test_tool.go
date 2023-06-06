@@ -58,6 +58,8 @@ var (
 type FileTestUtil struct {
 	// Temporary directory to store mock cgroup filesystem.
 	TempDir string
+	// whether to validate when writing cgroups resources
+	ValidateResource bool
 
 	t *testing.T
 }
@@ -79,7 +81,11 @@ func NewFileTestUtil(t *testing.T) *FileTestUtil {
 
 	initSupportConfigs()
 
-	return &FileTestUtil{TempDir: tempDir, t: t}
+	return &FileTestUtil{
+		TempDir:          tempDir,
+		ValidateResource: true,
+		t:                t,
+	}
 }
 
 func (c *FileTestUtil) Cleanup() {
@@ -101,7 +107,11 @@ func (c *FileTestUtil) SetAnolisOSResourcesSupported(supported bool) {
 }
 
 func (c *FileTestUtil) SetCgroupsV2(useCgroupsV2 bool) {
-	UseCgroupsV2 = useCgroupsV2
+	UseCgroupsV2.Store(useCgroupsV2)
+}
+
+func (c *FileTestUtil) SetValidateResource(enabled bool) {
+	c.ValidateResource = enabled
 }
 
 // if dir contain TempDir, mkdir direct, else join with TempDir and mkdir
@@ -213,13 +223,15 @@ func (c *FileTestUtil) WriteCgroupFileContents(taskDir string, r Resource, conte
 		c.CreateCgroupFile(taskDir, r)
 	}
 
-	if supported, msg := r.IsSupported(taskDir); !supported {
-		err := ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
-		c.t.Fatal(err)
-	}
-	if valid, msg := r.IsValid(contents); !valid {
-		err := fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), contents, msg)
-		c.t.Fatal(err)
+	if c.ValidateResource {
+		if supported, msg := r.IsSupported(taskDir); !supported {
+			err := ResourceUnsupportedErr(fmt.Sprintf("write cgroup %s failed, msg: %s", r.ResourceType(), msg))
+			c.t.Fatal(err)
+		}
+		if valid, msg := r.IsValid(contents); !valid {
+			err := fmt.Errorf("write cgroup %s failed, value[%v] not valid, msg: %s", r.ResourceType(), contents, msg)
+			c.t.Fatal(err)
+		}
 	}
 	filePath = r.Path(taskDir)
 	klog.V(5).Infof("write %s [%s]", filePath, contents)

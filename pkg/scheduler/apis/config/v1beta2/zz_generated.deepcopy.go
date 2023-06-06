@@ -42,6 +42,11 @@ func (in *CoschedulingArgs) DeepCopyInto(out *CoschedulingArgs) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.SkipCheckScheduleCycle != nil {
+		in, out := &in.SkipCheckScheduleCycle, &out.SkipCheckScheduleCycle
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 

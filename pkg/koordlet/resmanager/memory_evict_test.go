@@ -46,11 +46,16 @@ import (
 )
 
 func Test_memoryEvict(t *testing.T) {
+
+	type podMemSample struct {
+		UID     string
+		MemUsed resource.Quantity
+	}
 	type args struct {
 		name               string
 		node               *corev1.Node
 		nodeMemUsed        resource.Quantity
-		podMetrics         []*metriccache.PodResourceMetric
+		podMetrics         []podMemSample
 		pods               []*corev1.Pod
 		thresholdConfig    *slov1alpha1.ResourceThresholdStrategy
 		expectEvictPods    []*corev1.Pod
@@ -93,13 +98,13 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
 			nodeMemUsed: resource.MustParse("80G"),
-			podMetrics: []*metriccache.PodResourceMetric{
-				createPodResourceMetric("test_lsr_pod", "30G"),
-				createPodResourceMetric("test_ls_pod", "20G"),
-				createPodResourceMetric("test_noqos_pod", "10G"),
-				createPodResourceMetric("test_be_pod_priority100_1", "4G"),
-				createPodResourceMetric("test_be_pod_priority100_2", "8G"),
-				createPodResourceMetric("test_be_pod_priority120", "8G"),
+			podMetrics: []podMemSample{
+				{UID: "test_lsr_pod", MemUsed: resource.MustParse("30G")},
+				{UID: "test_ls_pod", MemUsed: resource.MustParse("20G")},
+				{UID: "test_noqos_pod", MemUsed: resource.MustParse("10G")},
+				{UID: "test_be_pod_priority100_1", MemUsed: resource.MustParse("4G")},
+				{UID: "test_be_pod_priority100_2", MemUsed: resource.MustParse("8G")},
+				{UID: "test_be_pod_priority120", MemUsed: resource.MustParse("8G")},
 			},
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 				Enable:                      pointer.Bool(true),
@@ -127,13 +132,13 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
 			nodeMemUsed: resource.MustParse("115G"),
-			podMetrics: []*metriccache.PodResourceMetric{
-				createPodResourceMetric("test_lsr_pod", "40G"),
-				createPodResourceMetric("test_ls_pod", "30G"),
-				createPodResourceMetric("test_noqos_pod", "10G"),
-				createPodResourceMetric("test_be_pod_priority100_1", "5G"),
-				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
-				createPodResourceMetric("test_be_pod_priority120", "10G"),
+			podMetrics: []podMemSample{
+				{UID: "test_lsr_pod", MemUsed: resource.MustParse("40G")},
+				{UID: "test_ls_pod", MemUsed: resource.MustParse("30G")},
+				{UID: "test_noqos_pod", MemUsed: resource.MustParse("10G")},
+				{UID: "test_be_pod_priority100_1", MemUsed: resource.MustParse("5G")},
+				{UID: "test_be_pod_priority100_2", MemUsed: resource.MustParse("20G")},
+				{UID: "test_be_pod_priority120", MemUsed: resource.MustParse("10G")},
 			},
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 				Enable:                      pointer.Bool(true),
@@ -162,13 +167,13 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
 			nodeMemUsed: resource.MustParse("115G"),
-			podMetrics: []*metriccache.PodResourceMetric{
-				createPodResourceMetric("test_lsr_pod", "40G"),
-				createPodResourceMetric("test_ls_pod", "30G"),
-				createPodResourceMetric("test_noqos_pod", "10G"),
-				createPodResourceMetric("test_be_pod_priority100_1", "5G"),  // evict
-				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
-				createPodResourceMetric("test_be_pod_priority120", "10G"),
+			podMetrics: []podMemSample{
+				{UID: "test_lsr_pod", MemUsed: resource.MustParse("40G")},
+				{UID: "test_ls_pod", MemUsed: resource.MustParse("30G")},
+				{UID: "test_noqos_pod", MemUsed: resource.MustParse("10G")},
+				{UID: "test_be_pod_priority100_1", MemUsed: resource.MustParse("5G")},
+				{UID: "test_be_pod_priority100_2", MemUsed: resource.MustParse("20G")},
+				{UID: "test_be_pod_priority120", MemUsed: resource.MustParse("10G")},
 			},
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 				Enable:                      pointer.Bool(true),
@@ -197,13 +202,13 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
 			nodeMemUsed: resource.MustParse("115G"),
-			podMetrics: []*metriccache.PodResourceMetric{
-				createPodResourceMetric("test_lsr_pod", "40G"),
-				createPodResourceMetric("test_ls_pod", "30G"),
-				createPodResourceMetric("test_noqos_pod", "10G"),
-				createPodResourceMetric("test_be_pod_priority100_1", "5G"),  // evict
-				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
-				createPodResourceMetric("test_be_pod_priority120", "10G"),   // evict
+			podMetrics: []podMemSample{
+				{UID: "test_lsr_pod", MemUsed: resource.MustParse("40G")},
+				{UID: "test_ls_pod", MemUsed: resource.MustParse("30G")},
+				{UID: "test_noqos_pod", MemUsed: resource.MustParse("10G")},
+				{UID: "test_be_pod_priority100_1", MemUsed: resource.MustParse("5G")},
+				{UID: "test_be_pod_priority100_2", MemUsed: resource.MustParse("20G")},
+				{UID: "test_be_pod_priority120", MemUsed: resource.MustParse("10G")},
 			},
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 				Enable:                      pointer.Bool(true),
@@ -232,13 +237,13 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
 			nodeMemUsed: resource.MustParse("115G"),
-			podMetrics: []*metriccache.PodResourceMetric{
-				createPodResourceMetric("test_lsr_pod", "40G"),
-				createPodResourceMetric("test_ls_pod", "30G"),
-				createPodResourceMetric("test_noqos_pod", "10G"),
-				createPodResourceMetric("test_be_pod_priority100_1", "5G"),
-				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
-				createPodResourceMetric("test_be_pod_priority120", "10G"),
+			podMetrics: []podMemSample{
+				{UID: "test_lsr_pod", MemUsed: resource.MustParse("40G")},
+				{UID: "test_ls_pod", MemUsed: resource.MustParse("30G")},
+				{UID: "test_noqos_pod", MemUsed: resource.MustParse("10G")},
+				{UID: "test_be_pod_priority100_1", MemUsed: resource.MustParse("5G")},
+				{UID: "test_be_pod_priority100_2", MemUsed: resource.MustParse("20G")},
+				{UID: "test_be_pod_priority120", MemUsed: resource.MustParse("10G")},
 			},
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 				Enable:                      pointer.Bool(true),
@@ -268,13 +273,13 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
 			nodeMemUsed: resource.MustParse("115G"),
-			podMetrics: []*metriccache.PodResourceMetric{
-				createPodResourceMetric("test_lsr_pod", "40G"),
-				createPodResourceMetric("test_ls_pod", "30G"),
-				createPodResourceMetric("test_noqos_pod", "10G"),
-				createPodResourceMetric("test_be_pod_priority100_1", "5G"),  // evict
-				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
-				createPodResourceMetric("test_be_pod_priority120", "10G"),
+			podMetrics: []podMemSample{
+				{UID: "test_lsr_pod", MemUsed: resource.MustParse("40G")},
+				{UID: "test_ls_pod", MemUsed: resource.MustParse("30G")},
+				{UID: "test_noqos_pod", MemUsed: resource.MustParse("10G")},
+				{UID: "test_be_pod_priority100_1", MemUsed: resource.MustParse("5G")},
+				{UID: "test_be_pod_priority100_2", MemUsed: resource.MustParse("20G")},
+				{UID: "test_be_pod_priority120", MemUsed: resource.MustParse("10G")},
 			},
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 				Enable:                      pointer.Bool(true),
@@ -304,13 +309,13 @@ func Test_memoryEvict(t *testing.T) {
 				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
 			},
 			nodeMemUsed: resource.MustParse("115G"),
-			podMetrics: []*metriccache.PodResourceMetric{
-				createPodResourceMetric("test_lsr_pod", "40G"),
-				createPodResourceMetric("test_ls_pod", "30G"),
-				createPodResourceMetric("test_noqos_pod", "10G"),
-				createPodResourceMetric("test_be_pod_priority100_1", "5G"),  // evict
-				createPodResourceMetric("test_be_pod_priority100_2", "20G"), // evict
-				createPodResourceMetric("test_be_pod_priority120", "10G"),   // evict
+			podMetrics: []podMemSample{
+				{UID: "test_lsr_pod", MemUsed: resource.MustParse("40G")},
+				{UID: "test_ls_pod", MemUsed: resource.MustParse("30G")},
+				{UID: "test_noqos_pod", MemUsed: resource.MustParse("10G")},
+				{UID: "test_be_pod_priority100_1", MemUsed: resource.MustParse("5G")},
+				{UID: "test_be_pod_priority100_2", MemUsed: resource.MustParse("20G")},
+				{UID: "test_be_pod_priority120", MemUsed: resource.MustParse("10G")},
 			},
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 				Enable:                      pointer.Bool(true),
@@ -356,8 +361,15 @@ func Test_memoryEvict(t *testing.T) {
 			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
 
 			for _, podMetric := range tt.podMetrics {
-				mockPodQueryResult := metriccache.PodResourceQueryResult{Metric: podMetric}
-				mockMetricCache.EXPECT().GetPodResourceMetric(&podMetric.PodUID, gomock.Any()).Return(mockPodQueryResult).AnyTimes()
+				result := mock_metriccache.NewMockAggregateResult(ctl)
+				result.EXPECT().Value(gomock.Any()).Return(float64(podMetric.MemUsed.Value()), nil).AnyTimes()
+				result.EXPECT().Count().Return(1).AnyTimes()
+				podQueryMeta, err := metriccache.PodMemUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(podMetric.UID))
+				assert.NoError(t, err)
+				mockResultFactory.EXPECT().New(podQueryMeta).Return(result).AnyTimes()
+				mockQuerier.EXPECT().Query(podQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+				//mockPodQueryResult := metriccache.PodResourceQueryResult{Metric: podMetric}
+				//mockMetricCache.EXPECT().GetPodResourceMetric(&podMetric.PodUID, gomock.Any()).Return(mockPodQueryResult).AnyTimes()
 			}
 
 			fakeRecorder := &FakeRecorder{}
@@ -441,12 +453,5 @@ func createMemoryEvictTestPod(name string, qosClass apiext.QoSClass, priority in
 				},
 			},
 		},
-	}
-}
-
-func createPodResourceMetric(podUID string, memoryUsage string) *metriccache.PodResourceMetric {
-	return &metriccache.PodResourceMetric{
-		PodUID:     podUID,
-		MemoryUsed: metriccache.MemoryMetric{MemoryWithoutCache: resource.MustParse(memoryUsage)},
 	}
 }

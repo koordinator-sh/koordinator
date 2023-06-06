@@ -55,6 +55,8 @@ const (
 	ErrReasonReservationAllocatePolicyConflict = "node(s) reservation allocate policy conflict"
 	// ErrReasonReservationInactive is the reason for the reservation is failed/succeeded and should not be used.
 	ErrReasonReservationInactive = "reservation is not active"
+	// ErrReasonReservationInsufficientResources is the reason for the reservation's resources are insufficient.
+	ErrReasonReservationInsufficientResources = "node(s) reservations insufficient resources"
 )
 
 var (
@@ -134,6 +136,7 @@ func (pl *Plugin) EventsToRegister() []framework.ClusterEvent {
 var _ framework.StateData = &stateData{}
 
 type stateData struct {
+	hasAffinity          bool
 	podRequests          corev1.ResourceList
 	podRequestsResources *framework.Resource
 
@@ -193,12 +196,8 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 		return nil
 	}
 
-	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
-	if err != nil {
-		return framework.AsStatus(err)
-	}
 	state := getStateData(cycleState)
-	if reservationAffinity != nil && len(state.nodeReservationStates) == 0 {
+	if state.hasAffinity && len(state.nodeReservationStates) == 0 {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
 	}
 
@@ -261,6 +260,9 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 	nodeRState := state.nodeReservationStates[node.Name]
 	matchedReservations := nodeRState.matched
 	if len(matchedReservations) == 0 {
+		if state.hasAffinity {
+			return framework.NewStatus(framework.Unschedulable, ErrReasonReservationAffinity)
+		}
 		return nil
 	}
 
@@ -287,7 +289,7 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 	}
 	if (nodeRState.totalAligned > 0 && nodeRState.totalAligned == insufficientAligned) ||
 		(nodeRState.totalRestricted > 0 && nodeRState.totalRestricted == insufficientRestricted) {
-		return framework.NewStatus(framework.Unschedulable, "node(s) no reservations satisfied resources")
+		return framework.NewStatus(framework.Unschedulable, ErrReasonReservationInsufficientResources)
 	}
 	return nil
 }

@@ -19,6 +19,7 @@ package system
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -201,4 +202,11 @@ func CalcCPUThrottledRatio(curPoint, prePoint *CPUStatRaw) float64 {
 		throttledRatio = float64(deltaThrottled) / float64(deltaPeriod)
 	}
 	return throttledRatio
+}
+
+func GetRootCgroupSubfsDir(subfs string) string {
+	if GetCurrentCgroupVersion() == CgroupVersionV2 {
+		return filepath.Join(Conf.CgroupRootDir)
+	}
+	return filepath.Join(Conf.CgroupRootDir, subfs)
 }

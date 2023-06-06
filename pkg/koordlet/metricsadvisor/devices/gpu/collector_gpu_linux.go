@@ -26,7 +26,6 @@ import (
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
@@ -156,10 +155,10 @@ func (g *gpuDeviceManager) getNodeGPUUsage() []metriccache.MetricSample {
 
 	gpuMetrics := make([]metriccache.MetricSample, 0)
 	for idx, r := range tmp {
+		properties := metriccache.MetricPropertiesFunc.GPU(fmt.Sprintf("%d", g.devices[idx].Minor), g.devices[idx].DeviceUUID)
 		gpuCoreMetric := buildMetricSample(
 			metriccache.NodeGPUCoreUsageMetric,
-			fmt.Sprintf("%d", g.devices[idx].Minor),
-			g.devices[idx].DeviceUUID,
+			properties,
 			g.collectTime,
 			float64(r.SMUtil),
 		)
@@ -168,8 +167,7 @@ func (g *gpuDeviceManager) getNodeGPUUsage() []metriccache.MetricSample {
 		}
 		gpuMemUsedMetric := buildMetricSample(
 			metriccache.NodeGPUMemUsageMetric,
-			fmt.Sprintf("%d", g.devices[idx].Minor),
-			g.devices[idx].DeviceUUID,
+			properties,
 			g.collectTime,
 			float64(r.MemoryUsed),
 		)
@@ -181,7 +179,21 @@ func (g *gpuDeviceManager) getNodeGPUUsage() []metriccache.MetricSample {
 	return gpuMetrics
 }
 
-func (g *gpuDeviceManager) getTotalGPUUsageOfPIDs(pids []uint32) []metriccache.GPUMetric {
+func (g *gpuDeviceManager) getPodOrContinerTotalGPUUsageOfPIDs(id string, isPodID bool, pids []uint32) []metriccache.MetricSample {
+	if id == "" {
+		klog.Warning("id is empty")
+		return nil
+	}
+	var coreUsageResource, memUsageResource metriccache.MetricResource
+	var properties map[metriccache.MetricProperty]string
+	if isPodID {
+		coreUsageResource = metriccache.PodGPUCoreUsageMetric
+		memUsageResource = metriccache.PodGPUMemUsageMetric
+	} else {
+		coreUsageResource = metriccache.ContainerGPUCoreUsageMetric
+		memUsageResource = metriccache.ContainerGPUMemUsageMetric
+	}
+
 	g.RLock()
 	defer g.RUnlock()
 	tmp := make(map[int]*rawGPUMetric)
@@ -202,22 +214,38 @@ func (g *gpuDeviceManager) getTotalGPUUsageOfPIDs(pids []uint32) []metriccache.G
 	if len(tmp) == 0 {
 		return nil
 	}
-	rtn := make([]metriccache.GPUMetric, 0)
-	for i := 0; i < g.deviceCount; i++ {
-		if value, ok := tmp[i]; ok {
-			rtn = append(rtn, metriccache.GPUMetric{
-				DeviceUUID:  g.devices[i].DeviceUUID,
-				Minor:       g.devices[i].Minor,
-				SMUtil:      value.SMUtil,
-				MemoryUsed:  *resource.NewQuantity(int64(value.MemoryUsed), resource.BinarySI),
-				MemoryTotal: *resource.NewQuantity(int64(g.devices[i].MemoryTotal), resource.BinarySI),
-			})
+	rtn := make([]metriccache.MetricSample, 0)
+	for idx := 0; idx < g.deviceCount; idx++ {
+		if value, ok := tmp[idx]; ok {
+			if isPodID {
+				properties = metriccache.MetricPropertiesFunc.PodGPU(id, fmt.Sprintf("%d", g.devices[idx].Minor), g.devices[idx].DeviceUUID)
+			} else {
+				properties = metriccache.MetricPropertiesFunc.ContainerGPU(id, fmt.Sprintf("%d", g.devices[idx].Minor), g.devices[idx].DeviceUUID)
+			}
+			gpuCoreMetric := buildMetricSample(
+				coreUsageResource,
+				properties,
+				g.collectTime,
+				float64(value.SMUtil),
+			)
+			if gpuCoreMetric != nil {
+				rtn = append(rtn, gpuCoreMetric)
+			}
+			gpuMemUsedMetric := buildMetricSample(
+				memUsageResource,
+				properties,
+				g.collectTime,
+				float64(value.MemoryUsed),
+			)
+			if gpuMemUsedMetric != nil {
+				rtn = append(rtn, gpuMemUsedMetric)
+			}
 		}
 	}
 	return rtn
 }
 
-func (g *gpuDeviceManager) getPodGPUUsage(podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.GPUMetric, error) {
+func (g *gpuDeviceManager) getPodGPUUsage(uid, podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.MetricSample, error) {
 	runningContainer := make([]corev1.ContainerStatus, 0)
 	for _, c := range cs {
 		if c.State.Running == nil {
@@ -233,10 +261,10 @@ func (g *gpuDeviceManager) getPodGPUUsage(podParentDir string, cs []corev1.Conta
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pid, error: %v", err)
 	}
-	return g.getTotalGPUUsageOfPIDs(pids), nil
+	return g.getPodOrContinerTotalGPUUsageOfPIDs(uid, true, pids), nil
 }
 
-func (g *gpuDeviceManager) getContainerGPUUsage(podParentDir string, c *corev1.ContainerStatus) ([]metriccache.GPUMetric, error) {
+func (g *gpuDeviceManager) getContainerGPUUsage(containerID, podParentDir string, c *corev1.ContainerStatus) ([]metriccache.MetricSample, error) {
 	if c.State.Running == nil {
 		klog.V(5).Infof("non-running container %s", c.ContainerID)
 		return nil, nil
@@ -245,7 +273,7 @@ func (g *gpuDeviceManager) getContainerGPUUsage(podParentDir string, c *corev1.C
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pid, error: %v", err)
 	}
-	return g.getTotalGPUUsageOfPIDs(currentPIDs), nil
+	return g.getPodOrContinerTotalGPUUsageOfPIDs(containerID, false, currentPIDs), nil
 }
 
 func (g *gpuDeviceManager) collectGPUUsage() {
@@ -304,8 +332,8 @@ func (g *gpuDeviceManager) started() bool {
 	return g.start.Load()
 }
 
-func buildMetricSample(mr metriccache.MetricResource, minor, uuid string, t time.Time, val float64) metriccache.MetricSample {
-	m, err := mr.GenerateSample(metriccache.MetricPropertiesFunc.GPU(minor, uuid), t, val)
+func buildMetricSample(mr metriccache.MetricResource, properties map[metriccache.MetricProperty]string, t time.Time, val float64) metriccache.MetricSample {
+	m, err := mr.GenerateSample(properties, t, val)
 	if err != nil {
 		klog.Errorf("GenerateSample(%v) error: %v", mr, err)
 		return nil

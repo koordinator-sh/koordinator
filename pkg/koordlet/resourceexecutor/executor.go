@@ -75,7 +75,7 @@ func (e *ResourceUpdateExecutorImpl) Update(cacheable bool, resource ResourceUpd
 // UpdateBatch updates a batch of resources with the given cacheable attribute.
 // TODO: merge and resolve conflicts of batch updates from multiple callers.
 func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...ResourceUpdater) {
-	failures, unsupported := 0, 0
+	failures := 0
 	if cacheable {
 		if !e.gcStarted {
 			klog.Error("failed to cacheable update resources, err: cache GC is not started")
@@ -84,38 +84,30 @@ func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...Res
 
 		for _, updater := range updaters {
 			isUpdated, err := e.updateByCache(updater)
-			if err != nil && sysutil.IsResourceUnsupportedErr(err) {
-				unsupported++
-				klog.V(5).Infof("failed to cacheable update unsupported resource %s to %v, isUpdated %v, err: %v",
-					updater.Key(), updater.Value(), isUpdated, err)
-				continue
-			} else if err != nil {
+			if err != nil {
 				failures++
 				klog.V(4).Infof("failed to cacheable update resource %s to %v, isUpdated %v, err: %v",
 					updater.Key(), updater.Value(), isUpdated, err)
 				continue
 			}
+
 			klog.V(5).Infof("successfully cacheable update resource %s to %v, isUpdated %v",
 				updater.Key(), updater.Value(), isUpdated)
 		}
 	} else {
 		for _, updater := range updaters {
 			err := e.update(updater)
-			if err != nil && sysutil.IsResourceUnsupportedErr(err) {
-				unsupported++
-				klog.V(5).Infof("failed to update unsupported resource %s to %v, err: %v",
-					updater.Key(), updater.Value(), err)
-				continue
-			} else if err != nil {
+			if err != nil {
 				failures++
 				klog.V(4).Infof("failed to update resource %s to %v, err: %v", updater.Key(), updater.Value(), err)
 				continue
 			}
+
 			klog.V(5).Infof("successfully update resource %s to %v", updater.Key(), updater.Value())
 		}
 	}
-	klog.V(6).Infof("finished batch updating resources, isCacheable %v, total %v, failures %v, unsupported %v",
-		cacheable, len(updaters), failures, unsupported)
+	klog.V(6).Infof("finished batch updating resources, isCacheable %v, total %v, failures %v",
+		cacheable, len(updaters), failures)
 }
 
 func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(updaters [][]ResourceUpdater) {
@@ -135,14 +127,17 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(updaters [][]ResourceUpd
 			}
 
 			mergedUpdater, err := updater.MergeUpdate()
-			if err != nil && (sysutil.IsResourceUnsupportedErr(err) || IsCgroupDirErr(err)) {
-				klog.V(5).Infof("failed merge update resource %s, err: %v", updater.Key(), err)
-				continue
-			} else if err != nil {
-				klog.V(4).Infof("failed merge update resource %s, err: %v", updater.Key(), err)
+			if err != nil && e.isUpdateErrIgnored(err) {
+				klog.V(5).Infof("failed to merge update resource %s to %v, ignored err: %v",
+					updater.Key(), updater.Value(), err)
 				continue
 			}
-			klog.V(6).Infof("successfully merge update resource %s to %v", updater.Key(), updater.Value())
+			if err != nil {
+				klog.V(4).Infof("failed to merge update resource %s to %v, err: %v",
+					updater.Key(), updater.Value(), err)
+				continue
+			}
+			klog.V(5).Infof("successfully merge update resource %s to %v", updater.Key(), updater.Value())
 
 			if mergedUpdater == nil {
 				skipMerge[updater.Key()] = true
@@ -171,10 +166,7 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(updaters [][]ResourceUpd
 				continue
 			}
 			err = updater.update()
-			if err != nil && (sysutil.IsResourceUnsupportedErr(err) || IsCgroupDirErr(err)) {
-				klog.V(5).Infof("failed update resource %s, err: %v", updater.Key(), err)
-				continue
-			} else if err != nil {
+			if err != nil {
 				klog.V(4).Infof("failed update resource %s, err: %v", updater.Key(), err)
 				continue
 			}
@@ -194,10 +186,14 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(updaters [][]ResourceUpd
 // TODO: run single executor when the qos manager starts.
 func (e *ResourceUpdateExecutorImpl) Run(stopCh <-chan struct{}) {
 	e.onceRun.Do(func() {
-		_ = e.ResourceCache.Run(stopCh)
-		klog.V(4).Info("starting ResourceUpdateExecutor successfully")
-		e.gcStarted = true
+		e.run(stopCh)
 	})
+}
+
+func (e *ResourceUpdateExecutorImpl) run(stopCh <-chan struct{}) {
+	_ = e.ResourceCache.Run(stopCh)
+	klog.V(4).Info("starting ResourceUpdateExecutor successfully")
+	e.gcStarted = true
 }
 
 func (e *ResourceUpdateExecutorImpl) needUpdate(updater ResourceUpdater) bool {
@@ -222,8 +218,12 @@ func (e *ResourceUpdateExecutorImpl) needUpdate(updater ResourceUpdater) bool {
 
 func (e *ResourceUpdateExecutorImpl) update(updater ResourceUpdater) error {
 	err := updater.update()
+	if err != nil && e.isUpdateErrIgnored(err) {
+		klog.V(5).Infof("failed to update resource %s to %v, ignored err: %v", updater.Key(), updater.Value(), err)
+		return nil
+	}
 	if err != nil {
-		klog.V(4).Infof("failed to update resource %s to %v, err: %v", updater.Key(), updater.Value(), err)
+		klog.V(5).Infof("failed to update resource %s to %v, err: %v", updater.Key(), updater.Value(), err)
 		return err
 	}
 	klog.V(6).Infof("successfully update resource %s to %v", updater.Key(), updater.Value())
@@ -233,6 +233,10 @@ func (e *ResourceUpdateExecutorImpl) update(updater ResourceUpdater) error {
 func (e *ResourceUpdateExecutorImpl) updateByCache(updater ResourceUpdater) (bool, error) {
 	if e.needUpdate(updater) {
 		err := updater.update()
+		if err != nil && e.isUpdateErrIgnored(err) {
+			klog.V(5).Infof("failed to cacheable update resource %s to %v, ignored err: %v", updater.Key(), updater.Value(), err)
+			return false, nil
+		}
 		if err != nil {
 			klog.V(5).Infof("failed to cacheable update resource %s to %v, err: %v", updater.Key(), updater.Value(), err)
 			return false, err
@@ -247,4 +251,19 @@ func (e *ResourceUpdateExecutorImpl) updateByCache(updater ResourceUpdater) (boo
 		return true, nil
 	}
 	return false, nil
+}
+
+func (e *ResourceUpdateExecutorImpl) isUpdateErrIgnored(err error) bool {
+	if err == nil {
+		return true
+	}
+	if sysutil.IsResourceUnsupportedErr(err) {
+		klog.V(6).Infof("update resource failed, ignored unsupported err: %v", err)
+		return true
+	}
+	if IsCgroupDirErr(err) {
+		klog.V(6).Infof("update resource failed, ignored cgroup not exist err: %v", err)
+		return true
+	}
+	return false
 }

@@ -38,6 +38,7 @@ var _ FrameworkExtender = &frameworkExtenderImpl{}
 type frameworkExtenderImpl struct {
 	framework.Framework
 	*errorHandlerDispatcher
+	forgetPodHandlers []ForgetPodHandler
 
 	schedulerFn func() Scheduler
 
@@ -259,6 +260,7 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 			break
 		}
 	}
+
 	return ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
 }
 
@@ -415,4 +417,18 @@ func (ext *frameworkExtenderImpl) RunReservationScorePlugins(ctx context.Context
 	}
 
 	return pluginToReservationScores, nil
+}
+
+func (ext *frameworkExtenderImpl) RegisterForgetPodHandler(handler ForgetPodHandler) {
+	ext.forgetPodHandlers = append(ext.forgetPodHandlers, handler)
+}
+
+func (ext *frameworkExtenderImpl) ForgetPod(pod *corev1.Pod) error {
+	if err := ext.Scheduler().GetCache().ForgetPod(pod); err != nil {
+		return err
+	}
+	for _, handler := range ext.forgetPodHandlers {
+		handler(pod)
+	}
+	return nil
 }

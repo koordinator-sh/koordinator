@@ -17,10 +17,7 @@ limitations under the License.
 package metricsquery
 
 import (
-	"fmt"
 	"time"
-
-	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -31,9 +28,6 @@ var (
 )
 
 type MetricsQuery interface {
-	CollectContainerResMetricLast(containerID *string, collectResUsedIntervalSeconds int64) metriccache.ContainerResourceQueryResult
-
-	CollectPodMetric(podMeta *statesinformer.PodMeta, queryParam *metriccache.QueryParam) metriccache.PodResourceQueryResult
 }
 
 var _ MetricsQuery = &metricsQuery{}
@@ -49,45 +43,6 @@ func NewMetricsQuery(metricCache metriccache.MetricCache, statesInformer statesi
 type metricsQuery struct {
 	metricCache    metriccache.MetricCache
 	statesInformer statesinformer.StatesInformer
-}
-
-func (r *metricsQuery) CollectPodMetric(podMeta *statesinformer.PodMeta,
-	queryParam *metriccache.QueryParam) metriccache.PodResourceQueryResult {
-
-	if podMeta == nil || podMeta.Pod == nil {
-		return metriccache.PodResourceQueryResult{QueryResult: metriccache.QueryResult{Error: fmt.Errorf("pod is nil")}}
-	}
-	podUID := string(podMeta.Pod.UID)
-	queryResult := r.metricCache.GetPodResourceMetric(&podUID, queryParam)
-	if queryResult.Error != nil {
-		klog.Warningf("get pod %v resource metric failed, error %v", podUID, queryResult.Error)
-		return queryResult
-	}
-	if queryResult.Metric == nil {
-		klog.Warningf("pod %v metric not exist", podUID)
-		return queryResult
-	}
-	return queryResult
-}
-
-// CollectContainerResMetricLast creates an instance which implements interface MetricsQuery.
-func (r *metricsQuery) CollectContainerResMetricLast(containerID *string, collectResUsedIntervalSeconds int64) metriccache.ContainerResourceQueryResult {
-	if containerID == nil {
-		return metriccache.ContainerResourceQueryResult{
-			QueryResult: metriccache.QueryResult{Error: fmt.Errorf("container is nil")},
-		}
-	}
-	queryParam := GenerateQueryParamsLast(collectResUsedIntervalSeconds * 2)
-	queryResult := r.metricCache.GetContainerResourceMetric(containerID, queryParam)
-	if queryResult.Error != nil {
-		klog.Warningf("get container %v resource metric failed, error %v", containerID, queryResult.Error)
-		return queryResult
-	}
-	if queryResult.Metric == nil {
-		klog.Warningf("container %v metric not exist", containerID)
-		return queryResult
-	}
-	return queryResult
 }
 
 func GenerateQueryParamsAvg(windowSeconds int64) *metriccache.QueryParam {

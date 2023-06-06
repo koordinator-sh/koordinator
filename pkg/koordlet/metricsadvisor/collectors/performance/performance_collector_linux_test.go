@@ -21,7 +21,6 @@ import (
 	"os"
 	"path"
 	"testing"
-	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -239,10 +238,8 @@ func Test_profilePerfOnSingleContainer(t *testing.T) {
 			UID:       "test01",
 		},
 	}
-	collectTime := time.Now()
-	ch := make(chan metriccache.MetricSample, 4)
 	assert.NotPanics(t, func() {
-		c.profilePerfOnSingleContainer(containerStatus, perfCollector, testingPod, collectTime, ch)
+		c.profilePerfOnSingleContainer(containerStatus, perfCollector, testingPod)
 	})
 }
 

@@ -19,6 +19,8 @@ package system
 import (
 	"flag"
 	"os"
+
+	"go.uber.org/atomic"
 )
 
 const (
@@ -29,7 +31,7 @@ const (
 var Conf = NewDsModeConfig()
 var AgentMode = DS_MODE
 
-var UseCgroupsV2 bool
+var UseCgroupsV2 = atomic.NewBool(false)
 
 type Config struct {
 	CgroupRootDir         string
@@ -54,8 +56,8 @@ func init() {
 }
 
 func initSupportConfigs() {
-	HostSystemInfo = collectVersionInfo()
 	initCgroupsVersion()
+	HostSystemInfo = collectVersionInfo()
 	_, _ = IsSupportResctrl()
 }
 

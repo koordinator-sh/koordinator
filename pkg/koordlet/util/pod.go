@@ -44,10 +44,11 @@ func GetPIDsInPod(podParentDir string, cs []corev1.ContainerStatus) ([]uint32, e
 	return pids, nil
 }
 
-// list all dirs of pod cgroup(cpuset), exclude containers' dir, get sandbox hash id from the remaining dir
+// GetPodSandboxContainerID lists all dirs of pod cgroup(cpuset), exclude containers' dir, get sandbox hash id from the
+// remaining dir.
 // e.g. return "containerd://91cf0413ee0e6745335e9043b261a829ce07d28a5a66b5ec39b06811ef75a1ff"
 func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
-	cpuSetCgroupRootDir := GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
+	cpuSetCgroupRootDir := system.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
 	podCgroupDir := GetPodCgroupParentDir(pod)
 	podCPUSetCgroupRootDir := filepath.Join(cpuSetCgroupRootDir, podCgroupDir)
 

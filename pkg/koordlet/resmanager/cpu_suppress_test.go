@@ -76,10 +76,14 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			{CPUID: 15, CoreID: 7, SocketID: 3, NodeID: 1},
 		},
 	}
+	type podMetricSample struct {
+		UID     string
+		CPUUsed resource.Quantity
+	}
 	type args struct {
 		node            *corev1.Node
 		nodeCPUUsed     *resource.Quantity
-		podMetrics      []*metriccache.PodResourceMetric
+		podMetrics      []podMetricSample
 		podMetas        []*statesinformer.PodMeta
 		thresholdConfig *slov1alpha1.ResourceThresholdStrategy
 		nodeCPUSet      string
@@ -99,7 +103,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			args: args{
 				node:          &corev1.Node{},
 				nodeCPUUsed:   nil,
-				podMetrics:    []*metriccache.PodResourceMetric{},
+				podMetrics:    []podMetricSample{},
 				podMetas:      []*statesinformer.PodMeta{},
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "0-9",
@@ -134,25 +138,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 					},
 				},
 				nodeCPUUsed: resource.NewQuantity(12, resource.DecimalSI),
-				podMetrics: []*metriccache.PodResourceMetric{
-					{
-						PodUID: "ls-pod",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("8"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("10G"),
-						},
-					},
-					{
-						PodUID: "be-pod",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("4"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("4G"),
-						},
-					},
+				podMetrics: []podMetricSample{
+					{UID: "ls-pod", CPUUsed: resource.MustParse("8")},
+					{UID: "be-pod", CPUUsed: resource.MustParse("4")},
 				},
 				podMetas: []*statesinformer.PodMeta{
 					{
@@ -220,25 +208,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 					},
 				},
 				nodeCPUUsed: resource.NewQuantity(12, resource.DecimalSI),
-				podMetrics: []*metriccache.PodResourceMetric{
-					{
-						PodUID: "ls-pod",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("8"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("10G"),
-						},
-					},
-					{
-						PodUID: "be-pod",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("2"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("4G"),
-						},
-					},
+				podMetrics: []podMetricSample{
+					{UID: "ls-pod", CPUUsed: resource.MustParse("8")},
+					{UID: "be-pod", CPUUsed: resource.MustParse("2")},
 				},
 				podMetas: []*statesinformer.PodMeta{
 					{
@@ -337,25 +309,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 					},
 				},
 				nodeCPUUsed: resource.NewQuantity(12, resource.DecimalSI),
-				podMetrics: []*metriccache.PodResourceMetric{
-					{
-						PodUID: "ls-pod",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("8"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("10G"),
-						},
-					},
-					{
-						PodUID: "be-pod",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("2"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("4G"),
-						},
-					},
+				podMetrics: []podMetricSample{
+					{UID: "ls-pod", CPUUsed: resource.MustParse("8")},
+					{UID: "be-pod", CPUUsed: resource.MustParse("2")},
 				},
 				podMetas: []*statesinformer.PodMeta{
 					{
@@ -454,25 +410,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 					},
 				},
 				nodeCPUUsed: resource.NewQuantity(12, resource.DecimalSI),
-				podMetrics: []*metriccache.PodResourceMetric{
-					{
-						PodUID: "ls-pod",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("8"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("10G"),
-						},
-					},
-					{
-						PodUID: "be-pod",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("2"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("4G"),
-						},
-					},
+				podMetrics: []podMetricSample{
+					{UID: "ls-pod", CPUUsed: resource.MustParse("8")},
+					{UID: "be-pod", CPUUsed: resource.MustParse("2")},
 				},
 				podMetas: []*statesinformer.PodMeta{
 					{
@@ -567,28 +507,28 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			// prepareData: mockMetricCache pods node beMetrics(AVG,current)
 			mockMetricCache := mockmetriccache.NewMockMetricCache(ctl)
 			mockMetricCache.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(nodeCPUInfo, nil).AnyTimes()
-			for _, podMetric := range tt.args.podMetrics {
-				mockPodQueryResult := metriccache.PodResourceQueryResult{Metric: podMetric}
-				mockMetricCache.EXPECT().GetPodResourceMetric(&podMetric.PodUID, gomock.Any()).Return(mockPodQueryResult).AnyTimes()
-			}
-
 			mockResultFactory := mockmetriccache.NewMockAggregateResultFactory(ctl)
-			nodeCPUQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
-			assert.NoError(t, err)
-			result := mockmetriccache.NewMockAggregateResult(ctl)
-			if tt.args.nodeCPUUsed == nil {
-				result.EXPECT().Count().Return(0).AnyTimes()
-			} else {
-				result.EXPECT().Count().Return(1).AnyTimes()
-				result.EXPECT().Value(gomock.Any()).Return(float64(tt.args.nodeCPUUsed.Value()), nil).AnyTimes()
-			}
-
-			mockResultFactory.EXPECT().New(nodeCPUQueryMeta).Return(result).AnyTimes()
 			metriccache.DefaultAggregateResultFactory = mockResultFactory
 			mockQuerier := mockmetriccache.NewMockQuerier(ctl)
-			mockQuerier.EXPECT().Query(nodeCPUQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
 			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
 
+			nodeResult := mockmetriccache.NewMockAggregateResult(ctl)
+			if tt.args.nodeCPUUsed == nil {
+				nodeResult.EXPECT().Count().Return(0).AnyTimes()
+			} else {
+				nodeResult.EXPECT().Count().Return(1).AnyTimes()
+				nodeResult.EXPECT().Value(gomock.Any()).Return(float64(tt.args.nodeCPUUsed.Value()), nil).AnyTimes()
+			}
+			nodeCPUQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
+			assert.NoError(t, err)
+			mockResultFactory.EXPECT().New(nodeCPUQueryMeta).Return(nodeResult).AnyTimes()
+			mockQuerier.EXPECT().Query(nodeCPUQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *nodeResult).Return(nil).AnyTimes()
+
+			for _, podMetric := range tt.args.podMetrics {
+				podQueryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(podMetric.UID))
+				assert.NoError(t, err)
+				buildMockQueryResult(ctl, mockQuerier, mockResultFactory, podQueryMeta, float64(podMetric.CPUUsed.Value()))
+			}
 			// prepare testing files
 			helper := system.NewFileTestUtil(t)
 			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), system.CPUSet, tt.args.nodeCPUSet)
@@ -643,8 +583,8 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 	type args struct {
 		node               *corev1.Node
-		nodeUsedCPU        resource.Quantity
-		podMetrics         []*metriccache.PodResourceMetric
+		nodeUsedCPU        float64
+		podMetrics         map[string]float64
 		podMetas           []*statesinformer.PodMeta
 		beCPUUsedThreshold int64
 	}
@@ -657,8 +597,8 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 			name: "does not panic on empty (non-nil) input",
 			args: args{
 				node:               &corev1.Node{},
-				nodeUsedCPU:        resource.Quantity{},
-				podMetrics:         []*metriccache.PodResourceMetric{},
+				nodeUsedCPU:        0,
+				podMetrics:         map[string]float64{},
 				podMetas:           []*statesinformer.PodMeta{},
 				beCPUUsedThreshold: 70,
 			},
@@ -682,27 +622,8 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 						},
 					},
 				},
-				nodeUsedCPU: resource.MustParse("11"),
-				podMetrics: []*metriccache.PodResourceMetric{
-					{
-						PodUID: "abc",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("8"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("10G"),
-						},
-					},
-					{
-						PodUID: "def",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("4"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("4G"),
-						},
-					},
-				},
+				nodeUsedCPU: 11,
+				podMetrics:  map[string]float64{"abc": 8, "def": 4},
 				podMetas: []*statesinformer.PodMeta{
 					{
 						Pod: &corev1.Pod{
@@ -758,27 +679,8 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 						},
 					},
 				},
-				nodeUsedCPU: resource.MustParse("12"),
-				podMetrics: []*metriccache.PodResourceMetric{
-					{
-						PodUID: "abc",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("8"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("10G"),
-						},
-					},
-					{
-						PodUID: "def",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("2"),
-						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: resource.MustParse("4G"),
-						},
-					},
-				},
+				nodeUsedCPU: 12,
+				podMetrics:  map[string]float64{"abc": 8, "def": 2},
 				podMetas: []*statesinformer.PodMeta{
 					{
 						Pod: &corev1.Pod{

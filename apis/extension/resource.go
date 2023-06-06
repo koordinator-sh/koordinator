@@ -28,6 +28,7 @@ const (
 	BatchMemory corev1.ResourceName = ResourceDomainPrefix + "batch-memory"
 
 	ResourceNvidiaGPU      corev1.ResourceName = "nvidia.com/gpu"
+	ResourceHygonDCU       corev1.ResourceName = "dcu.com/gpu"
 	ResourceRDMA           corev1.ResourceName = DomainPrefix + "rdma"
 	ResourceFPGA           corev1.ResourceName = DomainPrefix + "fpga"
 	ResourceGPU            corev1.ResourceName = DomainPrefix + "gpu"

@@ -181,6 +181,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
 	podRequestResources := framework.NewResource(podRequests)
 	state := &stateData{
+		hasAffinity:           reservationAffinity != nil,
 		podRequests:           podRequests,
 		podRequestsResources:  podRequestResources,
 		nodeReservationStates: map[string]nodeReservationState{},

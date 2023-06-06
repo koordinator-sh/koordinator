@@ -35,6 +35,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
@@ -80,7 +81,10 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 
-	pgMgr := core.NewPodGroupManager(pgClient, pgInformerFactory, handle.SharedInformerFactory(), args)
+	informerFactory := handle.SharedInformerFactory()
+	extendedHandle := handle.(frameworkext.ExtendedHandle)
+	koordInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
+	pgMgr := core.NewPodGroupManager(args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
 	plugin := &Coscheduling{
 		args:             args,
 		frameworkHandler: handle,
@@ -108,8 +112,9 @@ func (cs *Coscheduling) Name() string {
 
 // Less is sorting pods in the scheduling queue in the following order.
 // Firstly, compare the priorities of the two pods, the higher priority (if pod's priority is equal,then compare their KoordinatorPriority at labels )is at the front of the queue,
-// Secondly, compare creationTimestamp of two pods, if pod belongs to a Gang, then we compare creationTimestamp of the Gang, the one created first will be at the front of the queue.
-// Finally, compare pod's namespace, if pod belongs to a Gang, then we compare Gang name.
+// Secondly, compare Gang group ID of the two pods, pods that NOT belong to a Gang will have higher priority than pods that belongs to a Gang,
+// Thirdly, compare the creationTimestamp of two pods, if pod belongs to a Gang, then we compare creationTimestamp of the Gang, the one created first will be at the front of the queue
+// Finally, compare pod's namespaced name.
 func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 	prio1 := corev1helpers.PodPriority(podInfo1.Pod)
 	prio2 := corev1helpers.PodPriority(podInfo2.Pod)

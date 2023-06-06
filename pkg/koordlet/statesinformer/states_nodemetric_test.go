@@ -256,33 +256,31 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					assert.NoError(t, err)
 					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, gpu2Mem, 50, endTime.Sub(startTime))
 
-					mockMetricCache.EXPECT().GetPodResourceMetric(gomock.Any(), gomock.Any()).Return(metriccache.PodResourceQueryResult{
-						Metric: &metriccache.PodResourceMetric{
-							PodUID: "test-pod",
-							CPUUsed: metriccache.CPUMetric{
-								CPUUsed: resource.MustParse("1000"),
-							},
-							MemoryUsed: metriccache.MemoryMetric{
-								MemoryWithoutCache: *resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
-							},
-							GPUs: []metriccache.GPUMetric{
-								{
-									DeviceUUID:  "1",
-									Minor:       0,
-									SMUtil:      80,
-									MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
-									MemoryTotal: *resource.NewQuantity(100, resource.BinarySI),
-								},
-								{
-									DeviceUUID:  "2",
-									Minor:       1,
-									SMUtil:      40,
-									MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
-									MemoryTotal: *resource.NewQuantity(200, resource.BinarySI),
-								},
-							},
-						},
-					}).AnyTimes()
+					podCPUQueryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod("test-pod"))
+					assert.NoError(t, err)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, podCPUQueryMeta, 1, duration)
+
+					podMemQueryMeta, err := metriccache.PodMemUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod("test-pod"))
+					assert.NoError(t, err)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, podMemQueryMeta, 1*1024*1024*1024, duration)
+
+					podGPU1Core, err := metriccache.PodGPUCoreUsageMetric.BuildQueryMeta(
+						metriccache.MetricPropertiesFunc.PodGPU("test-pod", "0", "1"))
+					assert.NoError(t, err)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, podGPU1Core, 80, endTime.Sub(startTime))
+					podGPU1Mem, err := metriccache.PodGPUMemUsageMetric.BuildQueryMeta(
+						metriccache.MetricPropertiesFunc.PodGPU("test-pod", "0", "1"))
+					assert.NoError(t, err)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, podGPU1Mem, 30, endTime.Sub(startTime))
+
+					podGPU2Core, err := metriccache.PodGPUCoreUsageMetric.BuildQueryMeta(
+						metriccache.MetricPropertiesFunc.PodGPU("test-pod", "1", "2"))
+					assert.NoError(t, err)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, podGPU2Core, 40, endTime.Sub(startTime))
+					podGPU2Mem, err := metriccache.PodGPUMemUsageMetric.BuildQueryMeta(
+						metriccache.MetricPropertiesFunc.PodGPU("test-pod", "1", "2"))
+					assert.NoError(t, err)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, podGPU2Mem, 50, endTime.Sub(startTime))
 					return mockMetricCache
 				},
 				podsInformer: &podsInformer{
@@ -338,31 +336,24 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 				{
 					Name:      "test-pod",
 					Namespace: "default",
-					PodUsage: *convertPodMetricToResourceMap(&metriccache.PodResourceMetric{
-						PodUID: "test-pod",
-						CPUUsed: metriccache.CPUMetric{
-							CPUUsed: resource.MustParse("1000"),
+					PodUsage: slov1alpha1.ResourceMap{
+						ResourceList: v1.ResourceList{
+							v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+							v1.ResourceMemory: *resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
 						},
-						MemoryUsed: metriccache.MemoryMetric{
-							MemoryWithoutCache: *resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
+						Devices: []schedulingv1alpha1.DeviceInfo{
+							{UUID: "1", Minor: pointer.Int32(0), Type: schedulingv1alpha1.GPU, Resources: map[v1.ResourceName]resource.Quantity{
+								apiext.ResourceGPUCore:        *resource.NewQuantity(80, resource.DecimalSI),
+								apiext.ResourceGPUMemory:      *resource.NewQuantity(30, resource.BinarySI),
+								apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(30, resource.DecimalSI),
+							}},
+							{UUID: "2", Minor: pointer.Int32(1), Type: schedulingv1alpha1.GPU, Resources: map[v1.ResourceName]resource.Quantity{
+								apiext.ResourceGPUCore:        *resource.NewQuantity(40, resource.DecimalSI),
+								apiext.ResourceGPUMemory:      *resource.NewQuantity(50, resource.BinarySI),
+								apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(25, resource.DecimalSI),
+							}},
 						},
-						GPUs: []metriccache.GPUMetric{
-							{
-								DeviceUUID:  "1",
-								Minor:       0,
-								SMUtil:      80,
-								MemoryUsed:  *resource.NewQuantity(30, resource.BinarySI),
-								MemoryTotal: *resource.NewQuantity(100, resource.BinarySI),
-							},
-							{
-								DeviceUUID:  "2",
-								Minor:       1,
-								SMUtil:      40,
-								MemoryUsed:  *resource.NewQuantity(50, resource.BinarySI),
-								MemoryTotal: *resource.NewQuantity(200, resource.BinarySI),
-							},
-						},
-					}),
+					},
 				},
 			},
 			wantErr: false,
@@ -391,7 +382,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					memQueryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
 					assert.NoError(t, err)
 					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, 1*1024*1024*1024, endTime.Sub(startTime))
-					c.EXPECT().Get(gomock.Any()).Return(nil, false)
+					c.EXPECT().Get(gomock.Any()).Return(nil, false).AnyTimes()
 					return c
 				},
 				podsInformer: NewPodsInformer(),
