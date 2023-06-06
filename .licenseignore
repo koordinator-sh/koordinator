@@ -9,6 +9,12 @@ pkg/koordlet/util/kubelet
 pkg/util/cpuset/cpuset.go
 pkg/util/cpuset/cpuset_test.go
 pkg/util/parallelize/parallelism.go
+pkg/yarn/apis/auth/auth.go
+pkg/yarn/apis/proto
+pkg/yarn/apis/security
+pkg/yarn/client/ipc/client.go
+pkg/yarn/config/configuration.go
+pkg/yarn/config/yarn_configuration.go
 test/e2e/common
 test/e2e/framework
 test/e2e/generated
