@@ -107,7 +107,7 @@ func (c *FileTestUtil) SetAnolisOSResourcesSupported(supported bool) {
 }
 
 func (c *FileTestUtil) SetCgroupsV2(useCgroupsV2 bool) {
-	UseCgroupsV2 = useCgroupsV2
+	UseCgroupsV2.Store(useCgroupsV2)
 }
 
 func (c *FileTestUtil) SetValidateResource(enabled bool) {

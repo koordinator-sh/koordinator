@@ -84,7 +84,7 @@ func (r *CgroupResourceRegistryImpl) Get(v CgroupVersion, key ResourceType) (Res
 }
 
 func GetCurrentCgroupVersion() CgroupVersion {
-	if UseCgroupsV2 {
+	if UseCgroupsV2.Load() {
 		return CgroupVersionV2
 	}
 	return CgroupVersionV1

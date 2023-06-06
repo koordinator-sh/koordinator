@@ -187,7 +187,7 @@ func (b *beResourceCollector) getBECPUUsageCores() (*resource.Quantity, error) {
 		return nil, nil
 	}
 
-	// NOTICE: do subtraction and division first to avoid overflow
+	// NOTE: do subtraction and division first to avoid overflow
 	cpuUsageValue := float64(currentCPUUsage-lastCPUStat.CPUUsage) / float64(collectTime.Sub(lastCPUStat.Timestamp))
 	// 1.0 CPU = 1000 Milli-CPU
 	cpuUsageCores := resource.NewMilliQuantity(int64(cpuUsageValue*1000), resource.DecimalSI)
