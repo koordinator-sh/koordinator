@@ -326,7 +326,7 @@ func updateReservationInCache(sched frameworkext.Scheduler, oldObj, newObj inter
 	if err := sched.GetCache().UpdatePod(oldReservePod, newReservePod); err != nil {
 		klog.Errorf("scheduler cache UpdatePod failed for reservation, old %s, new %s, err: %v", klog.KObj(oldR), klog.KObj(newR), err)
 	}
-	sched.GetSchedulingQueue().AssignedPodUpdated(newReservePod)
+	sched.GetSchedulingQueue().AssignedPodAdded(newReservePod)
 }
 
 func deleteReservationFromCache(sched frameworkext.Scheduler, obj interface{}) {
