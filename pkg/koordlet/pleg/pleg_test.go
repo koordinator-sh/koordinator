@@ -270,11 +270,9 @@ func Test_getWatchCgroupPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			oldUseCgroupV2 := system.UseCgroupsV2
-			system.UseCgroupsV2 = tt.fields.UseCgroupsV2
-			defer func() {
-				system.UseCgroupsV2 = oldUseCgroupV2
-			}()
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.SetCgroupsV2(tt.fields.UseCgroupsV2)
 
 			got := getWatchCgroupPath(tt.args.cgroupRootDir, tt.args.qosClass)
 			assert.Equal(t, tt.want, got)

@@ -34,7 +34,7 @@ type CPUStatV2Raw struct {
 }
 
 func initCgroupsVersion() {
-	UseCgroupsV2 = IsUsingCgroupsV2()
+	UseCgroupsV2.Store(IsUsingCgroupsV2())
 }
 
 func ParseCPUCFSQuotaV2(content string) (int64, error) {
