@@ -122,6 +122,9 @@ type ReservationStatus struct {
 	// Resource allocated by current owners.
 	// +optional
 	Allocated corev1.ResourceList `json:"allocated,omitempty"`
+	// Ports allocated by current owners.
+	// +optional
+	AllocatedPorts []corev1.ContainerPort `json:"allocatedPorts,omitempty"`
 }
 
 // ReservationOwner indicates the owner specification which can allocate reserved resources.
