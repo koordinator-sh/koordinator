@@ -744,6 +744,7 @@ func TestPostFilter(t *testing.T) {
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
 			NodeName: "node1",
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 		},
 	}
 	tests := []struct {

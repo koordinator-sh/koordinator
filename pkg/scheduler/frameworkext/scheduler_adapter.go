@@ -110,59 +110,105 @@ func (q *queueAdapter) MoveAllToActiveOrBackoffQueue(event framework.ClusterEven
 var _ Scheduler = &FakeScheduler{}
 var _ SchedulingQueue = &FakeQueue{}
 
-type FakeScheduler struct{}
+type FakeScheduler struct {
+	Pods       map[string]*corev1.Pod
+	AssumedPod map[string]*corev1.Pod
+	Queue      *FakeQueue
+}
 
-type FakeQueue struct{}
+func NewFakeScheduler() *FakeScheduler {
+	return &FakeScheduler{
+		Pods:       map[string]*corev1.Pod{},
+		AssumedPod: map[string]*corev1.Pod{},
+		Queue: &FakeQueue{
+			Pods:                map[string]*corev1.Pod{},
+			UnschedulablePods:   map[string]*corev1.Pod{},
+			AssignedPods:        map[string]*corev1.Pod{},
+			AssignedUpdatedPods: map[string]*corev1.Pod{},
+		},
+	}
+}
+
+type FakeQueue struct {
+	Pods                map[string]*corev1.Pod
+	UnschedulablePods   map[string]*corev1.Pod
+	AssignedPods        map[string]*corev1.Pod
+	AssignedUpdatedPods map[string]*corev1.Pod
+}
 
 func (f *FakeScheduler) GetCache() SchedulerCache {
 	return f
 }
 
 func (f *FakeScheduler) GetSchedulingQueue() SchedulingQueue {
-	return &FakeQueue{}
+	return f.Queue
 }
 
 func (f *FakeScheduler) AddPod(pod *corev1.Pod) error {
+	key, _ := framework.GetPodKey(pod)
+	f.Pods[key] = pod
+	delete(f.AssumedPod, key)
 	return nil
 }
 
 func (f *FakeScheduler) UpdatePod(oldPod, newPod *corev1.Pod) error {
+	key, _ := framework.GetPodKey(newPod)
+	f.Pods[key] = newPod
 	return nil
 }
 
 func (f *FakeScheduler) RemovePod(pod *corev1.Pod) error {
+	key, _ := framework.GetPodKey(pod)
+	delete(f.Pods, key)
 	return nil
 }
 
 func (f *FakeScheduler) AssumePod(pod *corev1.Pod) error {
+	key, _ := framework.GetPodKey(pod)
+	f.AssumedPod[key] = pod
 	return nil
 }
 
 func (f *FakeScheduler) IsAssumedPod(pod *corev1.Pod) (bool, error) {
-	return false, nil
+	key, _ := framework.GetPodKey(pod)
+	_, ok := f.AssumedPod[key]
+	return ok, nil
 }
 
 func (f *FakeScheduler) GetPod(pod *corev1.Pod) (*corev1.Pod, error) {
-	return nil, nil
+	key, _ := framework.GetPodKey(pod)
+	p := f.Pods[key]
+	return p, nil
 }
 
 func (f *FakeScheduler) ForgetPod(pod *corev1.Pod) error {
+	key, _ := framework.GetPodKey(pod)
+	delete(f.AssumedPod, key)
 	return nil
 }
 
 func (f *FakeQueue) Add(pod *corev1.Pod) error {
+	key, _ := framework.GetPodKey(pod)
+	f.Pods[key] = pod
 	return nil
 }
 
 func (f *FakeQueue) Update(oldPod, newPod *corev1.Pod) error {
+	key, _ := framework.GetPodKey(newPod)
+	f.Pods[key] = newPod
 	return nil
 }
 
 func (f *FakeQueue) Delete(pod *corev1.Pod) error {
+	key, _ := framework.GetPodKey(pod)
+	delete(f.Pods, key)
+	delete(f.UnschedulablePods, key)
 	return nil
 }
 
 func (f *FakeQueue) AddUnschedulableIfNotPresent(pod *framework.QueuedPodInfo, podSchedulingCycle int64) error {
+	key, _ := framework.GetPodKey(pod.Pod)
+	f.UnschedulablePods[key] = pod.Pod
 	return nil
 }
 
@@ -171,9 +217,13 @@ func (f *FakeQueue) SchedulingCycle() int64 {
 }
 
 func (f *FakeQueue) AssignedPodAdded(pod *corev1.Pod) {
+	key, _ := framework.GetPodKey(pod)
+	f.AssignedPods[key] = pod
 }
 
 func (f *FakeQueue) AssignedPodUpdated(pod *corev1.Pod) {
+	key, _ := framework.GetPodKey(pod)
+	f.AssignedUpdatedPods[key] = pod
 }
 
 func (f *FakeQueue) MoveAllToActiveOrBackoffQueue(event framework.ClusterEvent) {

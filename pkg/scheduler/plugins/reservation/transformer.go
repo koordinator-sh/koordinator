@@ -81,7 +81,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			return
 		}
 
-		rOnNode := pl.reservationCache.listReservationInfosOnNode(node.Name)
+		rOnNode := pl.reservationCache.listAvailableReservationInfosOnNode(node.Name)
 		if len(rOnNode) == 0 {
 			return
 		}
