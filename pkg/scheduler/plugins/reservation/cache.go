@@ -17,6 +17,7 @@ limitations under the License.
 package reservation
 
 import (
+	"fmt"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -129,22 +130,27 @@ func (cache *reservationCache) deleteReservationOperatingPod(pod *corev1.Pod) {
 	cache.deleteReservationOnNode(pod.Spec.NodeName, pod.UID)
 }
 
-func (cache *reservationCache) assumePod(reservationUID types.UID, pod *corev1.Pod) {
-	cache.addPod(reservationUID, pod)
+func (cache *reservationCache) assumePod(reservationUID types.UID, pod *corev1.Pod) error {
+	return cache.addPod(reservationUID, pod)
 }
 
 func (cache *reservationCache) forgetPod(reservationUID types.UID, pod *corev1.Pod) {
 	cache.deletePod(reservationUID, pod)
 }
 
-func (cache *reservationCache) addPod(reservationUID types.UID, pod *corev1.Pod) {
+func (cache *reservationCache) addPod(reservationUID types.UID, pod *corev1.Pod) error {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
 
 	rInfo := cache.reservationInfos[reservationUID]
-	if rInfo != nil {
-		rInfo.AddAssignedPod(pod)
+	if rInfo == nil {
+		return fmt.Errorf("cannot find target reservation")
 	}
+	if rInfo.IsTerminating() {
+		return fmt.Errorf("target reservation is terminating")
+	}
+	rInfo.AddAssignedPod(pod)
+	return nil
 }
 
 func (cache *reservationCache) updatePod(reservationUID types.UID, oldPod, newPod *corev1.Pod) {
