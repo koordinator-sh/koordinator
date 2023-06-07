@@ -3,14 +3,16 @@ package server
 import (
 	"context"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/koordinator-sh/koordinator/pkg/yarn/copilot/nm"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/klog/v2"
 	"net"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/yarn/copilot/nm"
 )
 
 type YarnCopilotServer struct {

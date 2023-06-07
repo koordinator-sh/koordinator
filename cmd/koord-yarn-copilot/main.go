@@ -2,11 +2,13 @@ package main
 
 import (
 	"flag"
+
+	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+
 	"github.com/koordinator-sh/koordinator/cmd/koord-yarn-copilot/options"
 	"github.com/koordinator-sh/koordinator/pkg/yarn/copilot/nm"
 	"github.com/koordinator-sh/koordinator/pkg/yarn/copilot/server"
-	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 )
 
 func main() {

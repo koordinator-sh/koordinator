@@ -2,9 +2,6 @@ package nm
 
 import (
 	"fmt"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	"github.com/koordinator-sh/koordinator/pkg/yarn/copilot/utils"
-	"k8s.io/klog/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,8 +9,12 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
 	"github.com/opencontainers/runc/libcontainer/cgroups"
+	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	"github.com/koordinator-sh/koordinator/pkg/yarn/copilot/utils"
 )
 
 type NodeMangerOperator struct {
