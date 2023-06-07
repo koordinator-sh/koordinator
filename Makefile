@@ -13,6 +13,7 @@ KOORDLET_IMG ?= "${REG}/${REG_NS}/koordlet:${GIT_BRANCH}-${GIT_COMMIT_ID}"
 KOORD_MANAGER_IMG ?= "${REG}/${REG_NS}/koord-manager:${GIT_BRANCH}-${GIT_COMMIT_ID}"
 KOORD_SCHEDULER_IMG ?= "${REG}/${REG_NS}/koord-scheduler:${GIT_BRANCH}-${GIT_COMMIT_ID}"
 KOORD_DESCHEDULER_IMG ?= "${REG}/${REG_NS}/koord-descheduler:${GIT_BRANCH}-${GIT_COMMIT_ID}"
+KOORD_YARN_COPILOT_IMG ?= "${REG}/${REG_NS}/koord-yarn-copilot:${GIT_BRANCH}-${GIT_COMMIT_ID}"
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.22
@@ -99,7 +100,7 @@ fast-test: envtest ## Run tests fast.
 ##@ Build
 
 .PHONY: build
-build: build-koordlet build-koord-manager build-koord-scheduler build-koord-descheduler build-koord-runtime-proxy
+build: build-koordlet build-koord-manager build-koord-scheduler build-koord-descheduler build-koord-runtime-proxy build-yarn-copilot
 
 .PHONY: build-koordlet
 build-koordlet: ## Build koordlet binary.
@@ -121,8 +122,12 @@ build-koord-descheduler: ## Build koord-descheduler binary.
 build-koord-runtime-proxy: ## Build koord-runtime-proxy binary.
 	go build -o bin/koord-runtime-proxy cmd/koord-runtime-proxy/main.go
 
+.PHONY: build-yarn-copilot
+build-yarn-copilot: ## Build yarn-copilot binary.
+	go build -o bin/yarn-copilot cmd/koord-yarn-copilot/main.go
+
 .PHONY: docker-build
-docker-build: test docker-build-koordlet docker-build-koord-manager docker-build-koord-scheduler docker-build-koord-descheduler
+docker-build: test docker-build-koordlet docker-build-koord-manager docker-build-koord-scheduler docker-build-koord-descheduler docker-build-koord-yarn-copilot
 
 .PHONY: docker-build-koordlet
 docker-build-koordlet: ## Build docker image with the koordlet.
@@ -140,8 +145,12 @@ docker-build-koord-scheduler: ## Build docker image with the scheduler.
 docker-build-koord-descheduler: ## Build docker image with the descheduler.
 	docker build --pull -t ${KOORD_DESCHEDULER_IMG} -f docker/koord-descheduler.dockerfile .
 
+.PHONY: docker-build-koord-yarn-copilot
+docker-build-koord-yarn-copilot:
+	docker build --pull -t ${KOORD_DESCHEDULER_IMG} -f docker/koord-yarn-copilot.dockerfile .
+
 .PHONY: docker-push
-docker-push: docker-push-koordlet docker-push-koord-manager docker-push-koord-scheduler docker-push-koord-descheduler
+docker-push: docker-push-koordlet docker-push-koord-manager docker-push-koord-scheduler docker-push-koord-descheduler docker-push-koord-yarn-copilot
 
 .PHONY: docker-push-koordlet
 docker-push-koordlet: ## Push docker image with the koordlet.
@@ -170,6 +179,13 @@ ifneq ($(REG_USER), "")
 	docker login -u $(REG_USER) -p $(REG_PWD) ${REG}
 endif
 	docker push ${KOORD_DESCHEDULER_IMG}
+
+.PHONY: docker-push-koord-yarn-copilot
+docker-push-koord-yarn-copilot: ## Push docker image with the descheduler.
+ifneq ($(REG_USER), "")
+	docker login -u $(REG_USER) -p $(REG_PWD) ${REG}
+endif
+	docker push ${KOORD_YARN_COPILOT_IMG}
 
 ##@ Deployment
 
