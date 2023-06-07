@@ -19,3 +19,4 @@ test/e2e/testing-manifests
 test/e2e/e2e.go
 test/e2e/e2e_test.go
 test/e2e/suites.go
+pkg/util/histogram
