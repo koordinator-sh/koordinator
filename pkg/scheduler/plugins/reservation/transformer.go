@@ -98,7 +98,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 				continue
 			}
 
-			if !isReservedPod && matchReservation(pod, node, rInfo, reservationAffinity) {
+			if !isReservedPod && !rInfo.IsTerminating() && matchReservation(pod, node, rInfo, reservationAffinity) {
 				matched = append(matched, rInfo)
 
 			} else if len(rInfo.AssignedPods) > 0 {

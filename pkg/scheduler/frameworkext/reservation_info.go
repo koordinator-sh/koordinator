@@ -23,6 +23,7 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
+	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -168,10 +169,14 @@ func (ri *ReservationInfo) IsAvailable() bool {
 	if ri.Reservation != nil {
 		return reservationutil.IsReservationAvailable(ri.Reservation)
 	}
-	if ri.Pod != nil {
+	if ri.Pod != nil && ri.Pod.Status.Phase == corev1.PodRunning && k8spodutil.IsPodReady(ri.Pod) {
 		return true
 	}
 	return false
+}
+
+func (ri *ReservationInfo) IsTerminating() bool {
+	return !ri.GetObject().GetDeletionTimestamp().IsZero()
 }
 
 func (ri *ReservationInfo) Clone() *ReservationInfo {

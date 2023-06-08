@@ -420,15 +420,15 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		return nil
 	}
 
-	// NOTE: Having entered the Reserve stage means that the Pod scheduling is successful,
-	// even though the associated Reservation may have expired, but in fact the real impact
-	// will not be encountered until the next round of scheduling.
-	assumed := nominatedReservation.Clone()
-	pl.reservationCache.assumePod(assumed.UID(), pod)
+	err := pl.reservationCache.assumePod(nominatedReservation.UID(), pod)
+	if err != nil {
+		klog.ErrorS(err, "Failed to assume pod in reservationCache", "pod", klog.KObj(pod), "reservation", klog.KObj(nominatedReservation))
+		return framework.AsStatus(err)
+	}
 
 	state := getStateData(cycleState)
-	state.assumed = assumed
-	klog.V(4).InfoS("Reserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(assumed))
+	state.assumed = nominatedReservation.Clone()
+	klog.V(4).InfoS("Reserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(nominatedReservation))
 	return nil
 }
 
