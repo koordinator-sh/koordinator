@@ -220,7 +220,9 @@ func restoreMatchedReservation(nodeInfo *framework.NodeInfo, rInfo *frameworkext
 
 	// Retain ports that are not used by other Pods. These ports need to be erased from NodeInfo.UsedPorts,
 	// otherwise it may cause Pod port conflicts
-	reservePod = retainReservePodUnusedPorts(reservePod, podInfoMap)
+	allocatablePorts := util.CloneHostPorts(rInfo.AllocatablePorts)
+	util.RemoveHostPorts(allocatablePorts, rInfo.AllocatedPorts)
+	util.ResetHostPorts(reservePod, allocatablePorts)
 
 	// When AllocateOnce is disabled, some resources may have been allocated,
 	// and an additional resource record will be accumulated at this time.
@@ -264,54 +266,6 @@ func occupyUnallocatedResources(rInfo *frameworkext.ReservationInfo, reservePod 
 		}
 		nodeInfo.AddPod(reservePod)
 	}
-}
-
-func retainReservePodUnusedPorts(reservePod *corev1.Pod, podInfoMap map[types.UID]*framework.PodInfo) *corev1.Pod {
-	// TODO(joseph): maybe we can record allocated Ports by Pods in Reservation.Status
-	portReserved := framework.HostPortInfo{}
-	for _, container := range reservePod.Spec.Containers {
-		for _, podPort := range container.Ports {
-			portReserved.Add(podPort.HostIP, string(podPort.Protocol), podPort.HostPort)
-		}
-	}
-	if len(portReserved) == 0 {
-		return reservePod
-	}
-
-	removed := false
-	for _, assignedPodInfo := range podInfoMap {
-		for i := range assignedPodInfo.Pod.Spec.Containers {
-			container := &assignedPodInfo.Pod.Spec.Containers[i]
-			for j := range container.Ports {
-				podPort := &container.Ports[j]
-				portReserved.Remove(podPort.HostIP, string(podPort.Protocol), podPort.HostPort)
-				removed = true
-			}
-		}
-	}
-	if !removed {
-		return reservePod
-	}
-
-	reservePod = reservePod.DeepCopy()
-	for i := range reservePod.Spec.Containers {
-		container := &reservePod.Spec.Containers[i]
-		if len(container.Ports) > 0 {
-			container.Ports = nil
-		}
-	}
-
-	container := &reservePod.Spec.Containers[0]
-	for ip, protocolPortMap := range portReserved {
-		for ports := range protocolPortMap {
-			container.Ports = append(container.Ports, corev1.ContainerPort{
-				HostPort: ports.Port,
-				Protocol: corev1.Protocol(ports.Protocol),
-				HostIP:   ip,
-			})
-		}
-	}
-	return reservePod
 }
 
 func matchReservation(pod *corev1.Pod, node *corev1.Node, reservation *frameworkext.ReservationInfo, reservationAffinity *reservationutil.RequiredReservationAffinity) bool {

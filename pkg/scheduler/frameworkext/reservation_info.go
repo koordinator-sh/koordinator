@@ -25,19 +25,23 @@ import (
 	"k8s.io/klog/v2"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 type ReservationInfo struct {
-	Reservation   *schedulingv1alpha1.Reservation
-	Pod           *corev1.Pod
-	ResourceNames []corev1.ResourceName
-	Allocatable   corev1.ResourceList
-	Allocated     corev1.ResourceList
-	AssignedPods  map[types.UID]*PodRequirement
+	Reservation      *schedulingv1alpha1.Reservation
+	Pod              *corev1.Pod
+	ResourceNames    []corev1.ResourceName
+	Allocatable      corev1.ResourceList
+	Allocated        corev1.ResourceList
+	AllocatablePorts framework.HostPortInfo
+	AllocatedPorts   framework.HostPortInfo
+	AssignedPods     map[types.UID]*PodRequirement
 }
 
 type PodRequirement struct {
@@ -45,18 +49,43 @@ type PodRequirement struct {
 	Name      string
 	UID       types.UID
 	Requests  corev1.ResourceList
+	Ports     framework.HostPortInfo
+}
+
+func NewPodRequirement(pod *corev1.Pod) *PodRequirement {
+	requests, _ := resource.PodRequestsAndLimits(pod)
+	ports := util.RequestedHostPorts(pod)
+	return &PodRequirement{
+		Namespace: pod.Namespace,
+		Name:      pod.Name,
+		UID:       pod.UID,
+		Requests:  requests,
+		Ports:     ports,
+	}
+}
+
+func (p *PodRequirement) Clone() *PodRequirement {
+	return &PodRequirement{
+		Namespace: p.Namespace,
+		Name:      p.Name,
+		UID:       p.UID,
+		Requests:  p.Requests.DeepCopy(),
+		Ports:     util.CloneHostPorts(p.Ports),
+	}
 }
 
 func NewReservationInfo(r *schedulingv1alpha1.Reservation) *ReservationInfo {
 	allocatable := reservationutil.ReservationRequests(r)
 	resourceNames := quotav1.ResourceNames(allocatable)
+	reservedPod := reservationutil.NewReservePod(r)
 
 	return &ReservationInfo{
-		Reservation:   r.DeepCopy(),
-		Pod:           reservationutil.NewReservePod(r),
-		ResourceNames: resourceNames,
-		Allocatable:   allocatable,
-		AssignedPods:  map[types.UID]*PodRequirement{},
+		Reservation:      r.DeepCopy(),
+		Pod:              reservedPod,
+		ResourceNames:    resourceNames,
+		Allocatable:      allocatable,
+		AllocatablePorts: util.RequestedHostPorts(reservedPod),
+		AssignedPods:     map[types.UID]*PodRequirement{},
 	}
 }
 
@@ -65,10 +94,11 @@ func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
 	resourceNames := quotav1.ResourceNames(allocatable)
 
 	return &ReservationInfo{
-		Pod:           pod,
-		ResourceNames: resourceNames,
-		Allocatable:   allocatable,
-		AssignedPods:  map[types.UID]*PodRequirement{},
+		Pod:              pod,
+		ResourceNames:    resourceNames,
+		Allocatable:      allocatable,
+		AllocatablePorts: util.RequestedHostPorts(pod),
+		AssignedPods:     map[types.UID]*PodRequirement{},
 	}
 }
 
@@ -187,12 +217,7 @@ func (ri *ReservationInfo) Clone() *ReservationInfo {
 
 	pods := map[types.UID]*PodRequirement{}
 	for k, v := range ri.AssignedPods {
-		pods[k] = &PodRequirement{
-			Namespace: v.Namespace,
-			Name:      v.Name,
-			UID:       v.UID,
-			Requests:  v.Requests.DeepCopy(),
-		}
+		pods[k] = v.Clone()
 	}
 
 	var reservation *schedulingv1alpha1.Reservation
@@ -201,12 +226,14 @@ func (ri *ReservationInfo) Clone() *ReservationInfo {
 	}
 
 	return &ReservationInfo{
-		Reservation:   reservation,
-		Pod:           ri.Pod.DeepCopy(),
-		ResourceNames: resourceNames,
-		Allocatable:   ri.Allocatable.DeepCopy(),
-		Allocated:     ri.Allocated.DeepCopy(),
-		AssignedPods:  pods,
+		Reservation:      reservation,
+		Pod:              ri.Pod.DeepCopy(),
+		ResourceNames:    resourceNames,
+		Allocatable:      ri.Allocatable.DeepCopy(),
+		Allocated:        ri.Allocated.DeepCopy(),
+		AllocatablePorts: util.CloneHostPorts(ri.AllocatablePorts),
+		AllocatedPorts:   util.CloneHostPorts(ri.AllocatedPorts),
+		AssignedPods:     pods,
 	}
 }
 
@@ -214,6 +241,7 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 	ri.Reservation = r.DeepCopy()
 	ri.Pod = reservationutil.NewReservePod(r)
 	ri.Allocatable = reservationutil.ReservationRequests(r)
+	ri.AllocatablePorts = util.RequestedHostPorts(ri.Pod)
 	ri.ResourceNames = quotav1.ResourceNames(ri.Allocatable)
 	ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
 }
@@ -221,19 +249,16 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 	ri.Pod = pod.DeepCopy()
 	ri.Allocatable, _ = resource.PodRequestsAndLimits(pod)
+	ri.AllocatablePorts = util.RequestedHostPorts(pod)
 	ri.ResourceNames = quotav1.ResourceNames(ri.Allocatable)
 	ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
 }
 
 func (ri *ReservationInfo) AddAssignedPod(pod *corev1.Pod) {
-	requests, _ := resource.PodRequestsAndLimits(pod)
-	ri.Allocated = quotav1.Add(ri.Allocated, quotav1.Mask(requests, ri.ResourceNames))
-	ri.AssignedPods[pod.UID] = &PodRequirement{
-		Namespace: pod.Namespace,
-		Name:      pod.Name,
-		UID:       pod.UID,
-		Requests:  requests,
-	}
+	requirement := NewPodRequirement(pod)
+	ri.Allocated = quotav1.Add(ri.Allocated, quotav1.Mask(requirement.Requests, ri.ResourceNames))
+	ri.AllocatedPorts = util.AppendHostPorts(ri.AllocatedPorts, requirement.Ports)
+	ri.AssignedPods[pod.UID] = requirement
 }
 
 func (ri *ReservationInfo) RemoveAssignedPod(pod *corev1.Pod) {
@@ -241,6 +266,10 @@ func (ri *ReservationInfo) RemoveAssignedPod(pod *corev1.Pod) {
 		if len(requirement.Requests) > 0 {
 			ri.Allocated = quotav1.SubtractWithNonNegativeResult(ri.Allocated, quotav1.Mask(requirement.Requests, ri.ResourceNames))
 		}
+		if len(requirement.Ports) > 0 {
+			util.RemoveHostPorts(ri.AllocatedPorts, requirement.Ports)
+		}
+
 		delete(ri.AssignedPods, pod.UID)
 	}
 }

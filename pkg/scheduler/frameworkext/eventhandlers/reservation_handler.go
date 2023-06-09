@@ -356,10 +356,24 @@ func deleteReservationFromCache(sched frameworkext.Scheduler, obj interface{}) {
 	}
 
 	reservePod := reservationutil.NewReservePod(r)
-	if err := sched.GetCache().RemovePod(reservePod); err != nil {
-		klog.Errorf("scheduler cache RemovePod failed for reservation, reservation %s, err: %v", klog.KObj(r), err)
+	if _, err = sched.GetCache().GetPod(reservePod); err == nil {
+		if len(rInfo.AllocatedPorts) > 0 {
+			allocatablePorts := util.RequestedHostPorts(reservePod)
+			util.RemoveHostPorts(allocatablePorts, rInfo.AllocatedPorts)
+			util.ResetHostPorts(reservePod, allocatablePorts)
+
+			// The Pod status in the Cache must be refreshed once to ensure that subsequent deletions are valid.
+			if err := sched.GetCache().UpdatePod(reservePod, reservePod); err != nil {
+				klog.Errorf("scheduler cache UpdatePod failed for reservation in delete stage, obj %s, err: %v", klog.KObj(r), err)
+			}
+		}
+
+		if err := sched.GetCache().RemovePod(reservePod); err != nil {
+			klog.Errorf("scheduler cache RemovePod failed for reservation, reservation %s, err: %v", klog.KObj(r), err)
+		}
+
+		sched.GetSchedulingQueue().MoveAllToActiveOrBackoffQueue(frameworkext.AssignedPodDelete)
 	}
-	sched.GetSchedulingQueue().MoveAllToActiveOrBackoffQueue(frameworkext.AssignedPodDelete)
 }
 
 func addReservationToSchedulingQueue(sched frameworkext.Scheduler, obj interface{}) {
