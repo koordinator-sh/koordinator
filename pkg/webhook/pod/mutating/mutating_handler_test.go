@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"gomodules.xyz/jsonpatch/v2"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -115,5 +117,87 @@ func TestMutatingHandler(t *testing.T) {
 				t.Errorf("unexpected code, got %v expected %v", response.AdmissionResponse.Result.Code, tc.code)
 			}
 		})
+	}
+}
+
+func TestCustomMutatingFunc(t *testing.T) {
+	testCases := []struct {
+		name             string
+		request          admission.Request
+		mutatingFunc     mutatingPodFunc
+		expectedResponse admission.Response
+	}{
+		{
+			name: "no mutating plugin, mutating pod",
+			request: admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Resource:  gvr("pods"),
+					Operation: admissionv1.Create,
+					Object: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"pod1"}}`),
+					},
+				},
+			},
+			mutatingFunc: nil,
+			expectedResponse: admission.Response{
+				Patches: nil,
+				AdmissionResponse: admissionv1.AdmissionResponse{
+					Allowed: true,
+					Result: &metav1.Status{
+						Code: 200,
+					},
+				},
+			},
+		},
+		{
+			name: "mutating namespace, mutating pod",
+			request: admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Resource:  gvr("pods"),
+					Operation: admissionv1.Create,
+					Object: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"pod1"},"spec":{"containers":[]},"status":{}}`),
+					},
+				},
+			},
+			mutatingFunc: func(h *PodMutatingHandler, ctx context.Context, req admission.Request, pod *corev1.Pod) error {
+				pod.Namespace = "mutating-namespace"
+				return nil
+			},
+			expectedResponse: admission.Response{
+				Patches: []jsonpatch.JsonPatchOperation{
+					{Operation: "add", Path: "/metadata/namespace", Value: "mutating-namespace"},
+				},
+				AdmissionResponse: admissionv1.AdmissionResponse{
+					Allowed: true,
+					Result: &metav1.Status{
+						Code: 200,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			if tc.mutatingFunc != nil {
+				customMutatingPodFuncs["mutating-namespace"] = tc.mutatingFunc
+			}
+
+			client := fake.NewClientBuilder().Build()
+			decoder, _ := admission.NewDecoder(scheme.Scheme)
+			handler := &PodMutatingHandler{
+				Client:  client,
+				Decoder: decoder,
+			}
+			response := handler.Handle(context.TODO(), tc.request)
+			if len(response.Patches) != 0 {
+				response.Patches = []jsonpatch.JsonPatchOperation{response.Patches[0]}
+			}
+			assert.Equal(tc.expectedResponse.Patches, response.Patches)
+
+		})
+
 	}
 }

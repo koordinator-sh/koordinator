@@ -75,6 +75,13 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
+	for mutatingPodName, mutatingPod := range customMutatingPodFuncs {
+		if err = mutatingPod(h, ctx, req, obj); err != nil {
+			klog.Errorf("Failed to mutating Pod %s/%s by %s, err: %v", obj.Namespace, obj.Name, mutatingPodName, err)
+			return admission.Errored(http.StatusInternalServerError, err)
+		}
+	}
+
 	if reflect.DeepEqual(obj, clone) {
 		return admission.Allowed("")
 	}
