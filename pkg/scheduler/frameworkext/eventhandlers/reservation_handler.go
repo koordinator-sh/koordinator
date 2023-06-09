@@ -228,7 +228,7 @@ func unscheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter
 				updateReservationInSchedulingQueue(schedAdapter, oldObj, newObj)
 			},
 			DeleteFunc: func(obj interface{}) {
-				deleteReservationFromSchedulingQueue(schedAdapter, obj)
+				deleteReservationFromSchedulingQueue(sched, schedAdapter, obj)
 			},
 		},
 	}
@@ -418,7 +418,7 @@ func updateReservationInSchedulingQueue(sched frameworkext.Scheduler, oldObj, ne
 	}
 }
 
-func deleteReservationFromSchedulingQueue(sched frameworkext.Scheduler, obj interface{}) {
+func deleteReservationFromSchedulingQueue(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, obj interface{}) {
 	r := toReservation(obj)
 	if r == nil {
 		klog.Errorf("deleteReservationFromSchedulingQueue failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
@@ -427,11 +427,13 @@ func deleteReservationFromSchedulingQueue(sched frameworkext.Scheduler, obj inte
 	klog.V(3).InfoS("Delete event for unscheduled reservation", "reservation", klog.KObj(r))
 
 	reservePod := reservationutil.NewReservePod(r)
-	if err := sched.GetSchedulingQueue().Delete(reservePod); err != nil {
+	if err := schedAdapter.GetSchedulingQueue().Delete(reservePod); err != nil {
 		klog.Errorf("failed to delete reserve pod in scheduling queue, reservation %s, err: %v", klog.KObj(r), err)
 	}
-	// Currently, reservations do not support waiting
-	// fwk.RejectWaitingPod(reservePod.UID)
+	fwk := sched.Profiles[reservePod.Spec.SchedulerName]
+	if fwk != nil {
+		fwk.RejectWaitingPod(reservePod.UID)
+	}
 }
 
 func isResponsibleForReservation(profiles profile.Map, r *schedulingv1alpha1.Reservation) bool {
