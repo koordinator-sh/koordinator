@@ -102,6 +102,11 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	registerReservationEventHandler(cache, koordSharedInformerFactory)
 	registerPodEventHandler(cache, sharedInformerFactory)
 
+	// TODO(joseph): Considering the amount of changed code,
+	// temporarily use global variable to store ReservationCache instance,
+	// and then refactor to separate ReservationCache later.
+	SetReservationCache(cache)
+
 	p := &Plugin{
 		handle:           extendedHandle,
 		args:             pluginArgs,
@@ -235,7 +240,7 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 			allocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
 		}
 
-		rInfos := pl.reservationCache.listReservationInfosOnNode(node.Name)
+		rInfos := pl.reservationCache.listAvailableReservationInfosOnNode(node.Name)
 		for _, v := range rInfos {
 			// ReservationAllocatePolicyDefault cannot coexist with other allocate policies
 			if (allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
@@ -347,7 +352,7 @@ func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleSta
 		if node == nil {
 			return
 		}
-		reservationInfos := pl.reservationCache.listReservationInfosOnNode(node.Name)
+		reservationInfos := pl.reservationCache.listAvailableReservationInfosOnNode(node.Name)
 		for _, rInfo := range reservationInfos {
 			// Pods whose operating mode is Reservation can still be preempted.
 			if apiext.IsReservationOperatingMode(rInfo.GetReservePod()) {

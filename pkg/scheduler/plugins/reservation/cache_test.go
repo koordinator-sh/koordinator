@@ -58,6 +58,7 @@ func TestCacheUpdateReservation(t *testing.T) {
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
 			NodeName: "test-node-1",
+			Phase:    schedulingv1alpha1.ReservationAvailable,
 			Allocatable: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("4"),
 				corev1.ResourceMemory: resource.MustParse("4Gi"),
@@ -69,7 +70,7 @@ func TestCacheUpdateReservation(t *testing.T) {
 		},
 	}
 	cache.updateReservation(reservation)
-	reservationInfos := cache.listReservationInfosOnNode(reservation.Status.NodeName)
+	reservationInfos := cache.listAvailableReservationInfosOnNode(reservation.Status.NodeName)
 	assert.Len(t, reservationInfos, 1)
 	rInfo := reservationInfos[0]
 	expectReservationInfo := &frameworkext.ReservationInfo{
@@ -92,7 +93,7 @@ func TestCacheUpdateReservation(t *testing.T) {
 	assert.Equal(t, expectReservationInfo, rInfo)
 
 	cache.updateReservation(reservation)
-	reservationInfos = cache.listReservationInfosOnNode(reservation.Status.NodeName)
+	reservationInfos = cache.listAvailableReservationInfosOnNode(reservation.Status.NodeName)
 	assert.Len(t, reservationInfos, 1)
 	rInfo = reservationInfos[0]
 	expectReservationInfo.Allocated = corev1.ResourceList{}
@@ -161,7 +162,7 @@ func TestCacheDeleteReservation(t *testing.T) {
 	})
 	assert.Equal(t, expectReservationInfo, rInfo)
 
-	cache.deleteReservation(reservation)
+	cache.DeleteReservation(reservation)
 	rInfo = cache.getReservationInfoByUID(reservation.UID)
 	assert.Nil(t, rInfo)
 }

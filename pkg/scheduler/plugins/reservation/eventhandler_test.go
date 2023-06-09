@@ -170,25 +170,25 @@ func TestEventHandlerUpdate(t *testing.T) {
 			name:            "active to failed",
 			oldReservation:  activeReservation,
 			newReservation:  failedReservation,
-			wantReservation: nil,
+			wantReservation: failedReservation,
 		},
 		{
 			name:            "active to succeeded",
 			oldReservation:  activeReservation,
 			newReservation:  succeededReservation,
-			wantReservation: nil,
+			wantReservation: succeededReservation,
 		},
 		{
 			name:            "pending to failed",
 			oldReservation:  pendingReservation,
 			newReservation:  failedReservation,
-			wantReservation: nil,
+			wantReservation: failedReservation,
 		},
 		{
 			name:            "pending to succeeded",
 			oldReservation:  pendingReservation,
 			newReservation:  succeededReservation,
-			wantReservation: nil,
+			wantReservation: succeededReservation,
 		},
 	}
 	for _, tt := range tests {
@@ -245,5 +245,6 @@ func TestEventHandlerDelete(t *testing.T) {
 	assert.NotNil(t, rInfo)
 	eh.OnDelete(activeReservation)
 	rInfo = cache.getReservationInfoByUID(activeReservation.UID)
-	assert.Nil(t, rInfo)
+	assert.NotNil(t, rInfo)
+	assert.False(t, rInfo.IsAvailable())
 }

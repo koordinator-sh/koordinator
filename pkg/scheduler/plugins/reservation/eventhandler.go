@@ -61,10 +61,8 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 		return
 	}
 
-	if reservationutil.IsReservationActive(newR) {
+	if reservationutil.IsReservationActive(newR) || reservationutil.IsReservationFailed(newR) || reservationutil.IsReservationSucceeded(newR) {
 		h.cache.updateReservation(newR)
-	} else if reservationutil.IsReservationFailed(newR) || reservationutil.IsReservationSucceeded(newR) {
-		h.cache.deleteReservation(newR)
 	}
 	klog.V(5).InfoS("reservation cache update", "reservation", klog.KObj(newR))
 }
@@ -84,6 +82,15 @@ func (h *reservationEventHandler) OnDelete(obj interface{}) {
 		klog.V(4).InfoS("reservation cache delete failed to parse, obj %T", obj)
 		return
 	}
-	h.cache.deleteReservation(r)
+
+	// Here it is only marked that ReservationInfo is unavailable,
+	// and the real deletion operation is executed in deleteReservationFromCache(pkg/scheduler/frameworkext/eventhandlers/reservation_handler.go).
+	// This ensures that the Reserve Pod and the resources it holds are deleted correctly.
+	if reservationutil.IsReservationAvailable(r) {
+		klog.V(4).InfoS("Reservation has been deleted but it's still available, mark it as Failed", "reservation", klog.KObj(r))
+		r = r.DeepCopy()
+		r.Status.Phase = schedulingv1alpha1.ReservationFailed
+	}
+	h.cache.updateReservation(r)
 	klog.V(5).InfoS("reservation cache delete", "reservation", klog.KObj(r))
 }

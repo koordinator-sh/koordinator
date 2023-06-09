@@ -52,7 +52,7 @@ type NodeReservations struct {
 func (pl *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
 	group.GET("/nodeReservations/:nodeName", func(c *gin.Context) {
 		nodeName := c.Param("nodeName")
-		rInfos := pl.reservationCache.listReservationInfosOnNode(nodeName)
+		rInfos := pl.reservationCache.listAvailableReservationInfosOnNode(nodeName)
 		if len(rInfos) == 0 {
 			c.JSON(http.StatusOK, &NodeReservations{Items: []ReservationItem{}})
 			return
