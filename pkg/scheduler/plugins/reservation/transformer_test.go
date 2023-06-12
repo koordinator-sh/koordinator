@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/pointer"
@@ -295,6 +296,8 @@ func TestRestoreReservation(t *testing.T) {
 	expectedStat := &stateData{
 		podRequests:          corev1.ResourceList{},
 		podRequestsResources: framework.NewResource(nil),
+		preemptible:          map[string]corev1.ResourceList{},
+		preemptibleInRRs:     map[string]map[types.UID]corev1.ResourceList{},
 		nodeReservationStates: map[string]nodeReservationState{
 			node.Name: {
 				nodeName: node.Name,

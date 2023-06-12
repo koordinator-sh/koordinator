@@ -184,6 +184,8 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		hasAffinity:           reservationAffinity != nil,
 		podRequests:           podRequests,
 		podRequestsResources:  podRequestResources,
+		preemptible:           map[string]corev1.ResourceList{},
+		preemptibleInRRs:      map[string]map[types.UID]corev1.ResourceList{},
 		nodeReservationStates: map[string]nodeReservationState{},
 	}
 	pluginToNodeReservationRestoreState := frameworkext.PluginToNodeReservationRestoreStates{}
