@@ -18,9 +18,11 @@ package options
 
 import (
 	"fmt"
+	"net/http"
 	"sort"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -29,7 +31,42 @@ import (
 
 type fakeManager struct {
 	manager.Manager
-	ControllerAdded []string
+	ControllerAdded     []string
+	MetricsExtraHandler map[string]http.Handler
+}
+
+func newFakeManager() *fakeManager {
+	return &fakeManager{}
+}
+
+func (c *fakeManager) AddMetricsExtraHandler(path string, handler http.Handler) error {
+	if c.MetricsExtraHandler == nil {
+		c.MetricsExtraHandler = map[string]http.Handler{}
+	}
+	c.MetricsExtraHandler[path] = handler
+	return nil
+}
+
+func (c *fakeManager) EqualMetricsExtraHandler(extraHandler map[string]http.Handler) bool {
+	if extraHandler == nil && c.MetricsExtraHandler == nil {
+		return true
+	}
+	if extraHandler == nil || c.MetricsExtraHandler == nil {
+		return false
+	}
+	for p := range extraHandler {
+		_, ok := c.MetricsExtraHandler[p]
+		if !ok {
+			return false
+		}
+	}
+	for p := range c.MetricsExtraHandler {
+		_, ok := extraHandler[p]
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 type fakeController struct {
@@ -54,12 +91,16 @@ func TestOptions(t *testing.T) {
 		args := []string{
 			"",
 			"--controllers=noderesource,nodemetric",
+			"--enable-prom-metrics=true",
+			"--metrics-handler-path=/test-metrics",
 		}
 		opt.InitFlags(nil)
 		pflag.NewFlagSet(args[0], pflag.ExitOnError)
 		err := pflag.CommandLine.Parse(args[1:])
 		assert.NoError(t, err)
 		assert.Equal(t, []string{"noderesource", "nodemetric"}, opt.Controllers)
+		assert.Equal(t, true, opt.EnablePromMetrics)
+		assert.Equal(t, "/test-metrics", opt.MetricsHandlerPath)
 	})
 }
 
@@ -71,13 +112,20 @@ func TestOptionsApplyTo(t *testing.T) {
 		ControllerName: "b",
 	}
 	type args struct {
-		controllersToAdd []string
-		controllers      map[string]func(manager.Manager) error
+		controllersToAdd   []string
+		controllers        map[string]func(manager.Manager) error
+		enablePromMetrics  bool
+		metricsHandlerPath string
+	}
+	type wants struct {
+		ControllerAdded     []string
+		MetricsExtraHandler map[string]http.Handler
 	}
 	tests := []struct {
-		name string
-		args args
-		want []string
+		name    string
+		args    args
+		want    wants
+		wantErr bool
 	}{
 		{
 			name: "add each controllers",
@@ -88,7 +136,9 @@ func TestOptionsApplyTo(t *testing.T) {
 					"b": controllerB.Add,
 				},
 			},
-			want: []string{"a", "b"},
+			want: wants{
+				ControllerAdded: []string{"a", "b"},
+			},
 		},
 		{
 			name: "add all controllers",
@@ -99,7 +149,9 @@ func TestOptionsApplyTo(t *testing.T) {
 					"b": controllerB.Add,
 				},
 			},
-			want: []string{"a", "b"},
+			want: wants{
+				ControllerAdded: []string{"a", "b"},
+			},
 		},
 		{
 			name: "add some controllers",
@@ -110,7 +162,29 @@ func TestOptionsApplyTo(t *testing.T) {
 					"b": controllerB.Add,
 				},
 			},
-			want: []string{"b"},
+			want: wants{
+				ControllerAdded: []string{"b"},
+			},
+		},
+		{
+			name: "skip register metrics handler",
+			args: args{
+				enablePromMetrics:  false,
+				metricsHandlerPath: "/test-path",
+			},
+			want: wants{},
+		},
+		{
+			name: "register a prom metrics handler",
+			args: args{
+				enablePromMetrics:  true,
+				metricsHandlerPath: "/test-path",
+			},
+			want: wants{
+				MetricsExtraHandler: map[string]http.Handler{
+					"/test-path": promhttp.Handler(),
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -118,13 +192,16 @@ func TestOptionsApplyTo(t *testing.T) {
 			opt := &Options{
 				Controllers:        tt.args.controllersToAdd,
 				ControllerAddFuncs: tt.args.controllers,
+				EnablePromMetrics:  tt.args.enablePromMetrics,
+				MetricsHandlerPath: tt.args.metricsHandlerPath,
 			}
 
-			mgr := &fakeManager{}
+			mgr := newFakeManager()
 			err := opt.ApplyTo(mgr)
 			assert.NoError(t, err)
 			sort.Strings(mgr.ControllerAdded)
-			assert.Equal(t, tt.want, mgr.ControllerAdded)
+			assert.Equal(t, tt.want.ControllerAdded, mgr.ControllerAdded)
+			assert.True(t, mgr.EqualMetricsExtraHandler(tt.want.MetricsExtraHandler))
 		})
 	}
 }

@@ -21,21 +21,31 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
+const (
+	defaultMetricsHandlerPath = "/default-metrics"
+)
+
 type Options struct {
 	ControllerAddFuncs map[string]func(manager.Manager) error
 	Controllers        []string
+
+	EnablePromMetrics  bool
+	MetricsHandlerPath string
 }
 
 func NewOptions() *Options {
 	return &Options{
 		ControllerAddFuncs: controllerAddFuncs,
 		Controllers:        sets.StringKeySet(controllerAddFuncs).List(),
+		EnablePromMetrics:  true,
+		MetricsHandlerPath: defaultMetricsHandlerPath,
 	}
 }
 
@@ -45,9 +55,22 @@ func (o *Options) InitFlags(fs *flag.FlagSet) {
 		"'-controllers=noderesource' means only the 'noderesource' controller is enabled. "+
 		"'-controllers=*,-noderesource' means all controllers except the 'noderesource' controller are enabled.\n"+
 		"All controllers: %s", strings.Join(o.Controllers, ", ")))
+	pflag.BoolVar(&o.EnablePromMetrics, "enable-prom-metrics", o.EnablePromMetrics,
+		"Enable prometheus metrics for controller manager.")
+	pflag.StringVar(&o.MetricsHandlerPath, "metrics-handler-path", o.MetricsHandlerPath,
+		"The path of the prometheus metrics handler.")
 }
 
 func (o *Options) ApplyTo(m manager.Manager) error {
+	if o.EnablePromMetrics {
+		if err := m.AddMetricsExtraHandler(o.MetricsHandlerPath, promhttp.Handler()); err != nil {
+			klog.Errorf("Unable to add metrics handler on path %s, err: %v", o.MetricsHandlerPath, err)
+			return err
+		}
+	} else {
+		klog.V(4).Infof("prom metrics handler is disabled")
+	}
+
 	for controllerName, addFn := range o.ControllerAddFuncs {
 		if !isControllerEnabled(controllerName, o.Controllers) {
 			klog.Warningf("controller %q is disabled", controllerName)
