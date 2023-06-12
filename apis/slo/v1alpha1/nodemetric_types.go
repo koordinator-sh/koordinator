@@ -42,7 +42,7 @@ type NodeMetricInfo struct {
 	// SystemUsage is the resource usage of daemon processes and OS kernel, calculated by `NodeUsage - sum(podUsage)`
 	SystemUsage ResourceMap `json:"systemUsage,omitempty"`
 	// AggregatedSystemUsages will report only if there are enough samples
-	// Deleted pods will be excludes during aggregation
+	// Deleted pods will be excluded during aggregation
 	AggregatedSystemUsages []AggregatedUsage `json:"aggregatedSystemUsages,omitempty"`
 }
 

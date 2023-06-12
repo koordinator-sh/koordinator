@@ -199,13 +199,22 @@ type ColocationStrategy struct {
 	MetricAggregateDurationSeconds *int64                       `json:"metricAggregateDurationSeconds,omitempty" validate:"omitempty,min=1"`
 	MetricReportIntervalSeconds    *int64                       `json:"metricReportIntervalSeconds,omitempty" validate:"omitempty,min=1"`
 	MetricAggregatePolicy          *slov1alpha1.AggregatePolicy `json:"metricAggregatePolicy,omitempty"`
-	CPUReclaimThresholdPercent     *int64                       `json:"cpuReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
-	MemoryReclaimThresholdPercent  *int64                       `json:"memoryReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
-	MemoryCalculatePolicy          *CalculatePolicy             `json:"memoryCalculatePolicy,omitempty"`
-	DegradeTimeMinutes             *int64                       `json:"degradeTimeMinutes,omitempty" validate:"omitempty,min=1"`
-	UpdateTimeThresholdSeconds     *int64                       `json:"updateTimeThresholdSeconds,omitempty" validate:"omitempty,min=1"`
-	ResourceDiffThreshold          *float64                     `json:"resourceDiffThreshold,omitempty" validate:"omitempty,gt=0,max=1"`
-	ColocationStrategyExtender     `json:",inline"`             // for third-party extension
+
+	CPUReclaimThresholdPercent    *int64           `json:"cpuReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	MemoryReclaimThresholdPercent *int64           `json:"memoryReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	MemoryCalculatePolicy         *CalculatePolicy `json:"memoryCalculatePolicy,omitempty"`
+	DegradeTimeMinutes            *int64           `json:"degradeTimeMinutes,omitempty" validate:"omitempty,min=1"`
+	UpdateTimeThresholdSeconds    *int64           `json:"updateTimeThresholdSeconds,omitempty" validate:"omitempty,min=1"`
+	ResourceDiffThreshold         *float64         `json:"resourceDiffThreshold,omitempty" validate:"omitempty,gt=0,max=1"`
+
+	// MidCPUThresholdPercent defines the maximum percentage of the Mid-tier cpu resource dividing the node allocatable.
+	// MidCPUAllocatable <= NodeCPUAllocatable * MidCPUThresholdPercent / 100.
+	MidCPUThresholdPercent *int64 `json:"midCPUThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// MidMemoryThresholdPercent defines the maximum percentage of the Mid-tier memory resource dividing the node allocatable.
+	// MidMemoryAllocatable <= NodeMemoryAllocatable * MidMemoryThresholdPercent / 100.
+	MidMemoryThresholdPercent *int64 `json:"midMemoryThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+
+	ColocationStrategyExtender `json:",inline"` // for third-party extension
 }
 
 /*

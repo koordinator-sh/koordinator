@@ -121,7 +121,7 @@ spec:
                     type: array
                   aggregatedSystemUsages:
                     description: AggregatedSystemUsages will report only if there
-                      are enough samples Deleted pods will be excludes during aggregation
+                      are enough samples Deleted pods will be excluded during aggregation
                     items:
                       properties:
                         duration:
