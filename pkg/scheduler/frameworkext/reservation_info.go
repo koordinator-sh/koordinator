@@ -215,6 +215,11 @@ func (ri *ReservationInfo) IsAvailable() bool {
 	return false
 }
 
+func (ri *ReservationInfo) IsUnschedulable() bool {
+	isUnschedulable := ri.Reservation != nil && ri.Reservation.Spec.Unschedulable
+	return isUnschedulable || ri.IsTerminating()
+}
+
 func (ri *ReservationInfo) IsTerminating() bool {
 	return !ri.GetObject().GetDeletionTimestamp().IsZero()
 }
