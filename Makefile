@@ -147,7 +147,7 @@ docker-build-koord-descheduler: ## Build docker image with the descheduler.
 
 .PHONY: docker-build-koord-yarn-copilot
 docker-build-koord-yarn-copilot:
-	docker build --pull -t ${KOORD_DESCHEDULER_IMG} -f docker/koord-yarn-copilot.dockerfile .
+	docker build --pull -t ${KOORD_YARN_COPILOT_IMG} -f docker/koord-yarn-copilot.dockerfile .
 
 .PHONY: docker-push
 docker-push: docker-push-koordlet docker-push-koord-manager docker-push-koord-scheduler docker-push-koord-descheduler docker-push-koord-yarn-copilot

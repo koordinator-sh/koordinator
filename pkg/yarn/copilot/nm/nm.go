@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -35,7 +36,7 @@ func NewNodeMangerOperator(cgroupRoot string, cgroupPath string, syncMemoryCgrou
 		return nil, err
 	}
 	cli := resty.New()
-	cli.HostURL = endpoint
+	cli.SetBaseURL(fmt.Sprintf("http://%s", endpoint))
 	return &NodeMangerOperator{
 		CgroupRoot:       cgroupRoot,
 		CgroupPath:       cgroupPath,
@@ -48,6 +49,7 @@ func NewNodeMangerOperator(cgroupRoot string, cgroupPath string, syncMemoryCgrou
 }
 
 func (n *NodeMangerOperator) Run(stop <-chan struct{}) error {
+	klog.Infof("Run node manager operator")
 	if n.SyncMemoryCgroup {
 		return n.syncMemoryCgroup(stop)
 	}
@@ -55,9 +57,11 @@ func (n *NodeMangerOperator) Run(stop <-chan struct{}) error {
 }
 
 func (n *NodeMangerOperator) syncMemoryCgroup(stop <-chan struct{}) error {
-	if err := n.containerWatch.AddWatch(filepath.Join(n.CgroupRoot, system.CgroupCPUDir, n.CgroupPath)); err != nil {
+	cpuDir := filepath.Join(n.CgroupRoot, system.CgroupCPUDir, n.CgroupPath)
+	if err := n.containerWatch.AddWatch(cpuDir); err != nil {
 		return err
 	}
+	klog.Infof("watch dir %s", cpuDir)
 	if err := n.ensureMemoryCgroupDir(); err != nil {
 		return err
 	}
@@ -73,11 +77,40 @@ func (n *NodeMangerOperator) syncMemoryCgroup(stop <-chan struct{}) error {
 				klog.V(5).Infof("skip %v unknown event", event.Name)
 			}
 		case <-n.ticker.C:
+			n.syncNoneProcCgroup()
 			n.syncAllCgroup()
 		case <-stop:
 			return nil
 		}
 	}
+}
+
+func (n *NodeMangerOperator) syncNoneProcCgroup() {
+	klog.V(5).Info("syncNoneProcCgroup")
+	cpuPath := n.GenerateCgroupFullPath(system.CgroupCPUDir)
+	filepath.Walk(cpuPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			klog.Warningf("ignore file %s error:%s", path, err.Error())
+			return err
+		}
+		if info.IsDir() && path != cpuPath {
+			read, err := system.CommonFileRead(filepath.Join(path, system.CPUProcsName))
+			if err != nil {
+				klog.Error(err)
+				return filepath.SkipDir
+			}
+			if len(read) != 0 {
+				return filepath.SkipDir
+			}
+			klog.V(5).Infof("detect anomaly cgroup path: %s, try to remove", path)
+			if err = os.RemoveAll(path); err != nil {
+				klog.Error(err)
+				return filepath.SkipDir
+			}
+			return filepath.SkipDir
+		}
+		return nil
+	})
 }
 
 func (n *NodeMangerOperator) syncAllCgroup() {
@@ -108,6 +141,7 @@ func (n *NodeMangerOperator) syncAllCgroup() {
 }
 
 func (n *NodeMangerOperator) removeMemoryCgroup(fileName string) {
+	klog.V(5).Infof("receive file delete event %s", fileName)
 	basename := filepath.Base(fileName)
 	if !strings.HasPrefix(basename, "container_") {
 		klog.V(5).Infof("skip file %s, which is not a yarn container file", basename)
@@ -122,6 +156,7 @@ func (n *NodeMangerOperator) removeMemoryCgroup(fileName string) {
 }
 
 func (n *NodeMangerOperator) createMemoryCgroup(fileName string) {
+	klog.V(5).Infof("receive file create event %s", fileName)
 	basename := filepath.Base(fileName)
 	if !strings.HasPrefix(basename, "container_") {
 		klog.V(5).Infof("skip file %s, which is not a yarn container file", basename)
@@ -144,12 +179,24 @@ func (n *NodeMangerOperator) createMemoryCgroup(fileName string) {
 		return
 	}
 	klog.V(5).Infof("yarn container dir %v created, sync pid", memCgroupPath)
+	container, err := n.GetContainer(basename)
+	if err != nil {
+		klog.Error(err)
+		return
+	}
+	memLimit := container.TotalMemoryNeededMB * 1024 * 1024
+	_, err = system.CommonFileWriteIfDifferent(filepath.Join(memCgroupPath, system.MemoryLimitName), strconv.Itoa(memLimit))
+	if err != nil {
+		klog.Error(err)
+		return
+	}
+	klog.V(5).Infof("set memory %s limit_in_bytes as %d", memCgroupPath, memLimit)
 }
 
 func (n *NodeMangerOperator) ensureMemoryCgroupDir() error {
 	memoryDir := filepath.Join(n.CgroupRoot, system.CgroupMemDir, n.CgroupPath)
 	_, err := os.Open(memoryDir)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if err == nil {
@@ -231,4 +278,8 @@ func (n *NodeMangerOperator) GetContainer(containerID string) (*YarnContainer, e
 
 func (n *NodeMangerOperator) GenerateCgroupPath(containerID string) string {
 	return filepath.Join(n.CgroupPath, containerID)
+}
+
+func (n *NodeMangerOperator) GenerateCgroupFullPath(cgroupSubSystem string) string {
+	return filepath.Join(n.CgroupRoot, cgroupSubSystem, n.CgroupPath)
 }
