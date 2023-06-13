@@ -92,10 +92,12 @@ func FindSupportedEvictVersion(client kubernetes.Interface) (groupVersion string
 	}
 	for _, resource := range resourceList.APIResources {
 		if resource.Name == EvictionSubResourceName && resource.Kind == EvictionKind {
-			groupVersion = preferredVersion
+			// compatible with k8s v1.21.x no policy/v1/eviction
+			groupVersion = resource.Version
 			return
 		}
 	}
 
+	groupVersion = preferredVersion
 	return
 }
