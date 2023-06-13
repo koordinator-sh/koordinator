@@ -290,10 +290,14 @@ func (r *CPUSuppress) suppressBECPU() {
 		*nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent)
 
 	// Step 2.
-	nodeCPUInfo, err := r.resmanager.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
-	if err != nil {
-		klog.Warningf("suppressBECPU failed to get nodeCPUInfo from metriccache, err: %s", err)
+	nodeCPUInfoRaw, exist := r.resmanager.metricCache.Get(metriccache.NodeCPUInfoKey)
+	if !exist {
+		klog.Warning("suppressBECPU failed to get nodeCPUInfo from metriccache: not exist")
 		return
+	}
+	nodeCPUInfo, ok := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
+	if !ok {
+		klog.Fatalf("type error, expect %T， but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
 	}
 	if nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy == slov1alpha1.CPUCfsQuotaPolicy {
 		r.adjustByCfsQuota(suppressCPUQuantity, node)
@@ -404,9 +408,14 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 
 func (r *CPUSuppress) recoverCPUSetIfNeed(maxDepth int) {
 	var cpus []int
-	nodeInfo, err := r.resmanager.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
-	if err != nil {
+	nodeCPUInfoRaw, exist := r.resmanager.metricCache.Get(metriccache.NodeCPUInfoKey)
+	if !exist {
+		klog.Warning("get node cpu info failed : not exist")
 		return
+	}
+	nodeInfo, ok := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
+	if !ok {
+		klog.Fatalf("type error, expect %T， but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
 	}
 	for _, p := range nodeInfo.ProcessorInfos {
 		cpus = append(cpus, int(p.CPUID))

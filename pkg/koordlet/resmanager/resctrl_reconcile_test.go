@@ -17,7 +17,6 @@ limitations under the License.
 package resmanager
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1078,10 +1077,10 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 		defer ctrl.Finish()
 
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
-		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(&metriccache.NodeCPUInfo{
+		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
 			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
-		}, nil).Times(3)
+		}, true).Times(3)
 		rm := &resmanager{
 			metricCache: metricCache,
 		}
@@ -1114,30 +1113,30 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 		system.Conf.SysFSRootDir = validSysFSRootDir
 
 		// log error for invalid l3 number
-		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(&metriccache.NodeCPUInfo{
+		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
 			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: -1},
-		}, nil).Times(1)
+		}, true).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for invalid l3 cbm
-		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(&metriccache.NodeCPUInfo{
+		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "invalid"},
 			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
-		}, nil).Times(1)
+		}, true).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
-		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(&metriccache.NodeCPUInfo{
+		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: ""},
 			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
-		}, nil).Times(1)
+		}, true).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for invalid nodeCPUInfo
-		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(nil, nil)
+		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(nil, false)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for get nodeCPUInfo failed
-		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(nil, fmt.Errorf("error"))
+		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(nil, false)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 	})
 }
@@ -1305,7 +1304,7 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 		statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{testingPodMeta}).AnyTimes()
 		statesInformer.EXPECT().GetNodeSLO().Return(testingNodeSLO).AnyTimes()
-		metricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(testingNodeCPUInfo, nil).AnyTimes()
+		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(testingNodeCPUInfo, true).AnyTimes()
 		rm := &resmanager{
 			statesInformer: statesInformer,
 			metricCache:    metricCache,

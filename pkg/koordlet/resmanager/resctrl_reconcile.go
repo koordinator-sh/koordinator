@@ -316,10 +316,15 @@ func (r *ResctrlReconcile) reconcileCatResctrlPolicy(qosStrategy *slov1alpha1.Re
 	// 3. apply the policies onto resctrl groups
 
 	// read cat l3 cbm
-	nodeCPUInfo, err := r.resManager.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
-	if err != nil {
-		klog.Warningf("failed to get nodeCPUInfo, err: %v", err)
+
+	nodeCPUInfoRaw, exist := r.resManager.metricCache.Get(metriccache.NodeCPUInfoKey)
+	if !exist {
+		klog.Warning("failed to get nodeCPUInfo, not exist")
 		return
+	}
+	nodeCPUInfo, ok := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
+	if !ok {
+		klog.Fatalf("type error, expect %T， but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
 	}
 	if nodeCPUInfo == nil {
 		klog.Warning("failed to get nodeCPUInfo, the value is nil")

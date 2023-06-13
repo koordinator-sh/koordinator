@@ -22,61 +22,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
-type CPUMetric struct {
-	CPUUsed resource.Quantity
-}
-
-type GPUMetric struct {
-	Minor       int32             // index starting from 0
-	DeviceUUID  string            // device UUID
-	SMUtil      uint32            // current utilization rate for the device
-	MemoryUsed  resource.Quantity // used memory on the device, in bytes
-	MemoryTotal resource.Quantity // total memory on device, in bytes
-}
-
-type MemoryMetric struct {
-	MemoryWithoutCache resource.Quantity
-}
-
-type CPUThrottledMetric struct {
-	ThrottledRatio float64
-}
-
-type NodeResourceMetric struct {
-	CPUUsed    CPUMetric
-	MemoryUsed MemoryMetric
-	GPUs       []GPUMetric
-}
-
-type NodeResourceQueryResult struct {
-	QueryResult
-	Metric *NodeResourceMetric
-}
-
-type PodResourceMetric struct {
-	PodUID     string
-	CPUUsed    CPUMetric
-	MemoryUsed MemoryMetric
-	GPUs       []GPUMetric
-}
-
-type PodResourceQueryResult struct {
-	QueryResult
-	Metric *PodResourceMetric
-}
-
-type ContainerResourceMetric struct {
-	ContainerID string
-	CPUUsed     CPUMetric
-	MemoryUsed  MemoryMetric
-	GPUs        []GPUMetric
-}
-
-type ContainerResourceQueryResult struct {
-	QueryResult
-	Metric *ContainerResourceMetric
-}
-
 type NodeCPUInfo util.LocalCPUInfo
 
 type NodeLocalStorageInfo util.LocalStorageInfo
@@ -92,47 +37,4 @@ type BECPUResourceMetric struct {
 type BECPUResourceQueryResult struct {
 	QueryResult
 	Metric *BECPUResourceMetric
-}
-
-type PodThrottledMetric struct {
-	PodUID             string
-	CPUThrottledMetric *CPUThrottledMetric
-}
-
-type ContainerThrottledMetric struct {
-	ContainerID        string
-	CPUThrottledMetric *CPUThrottledMetric
-}
-
-type PodThrottledQueryResult struct {
-	QueryResult
-	Metric *PodThrottledMetric
-}
-
-type ContainerThrottledQueryResult struct {
-	QueryResult
-	Metric *ContainerThrottledMetric
-}
-
-type ContainerInterferenceMetric struct {
-	MetricName  InterferenceMetricName
-	PodUID      string
-	ContainerID string
-	MetricValue interface{}
-}
-
-type PodInterferenceMetric struct {
-	MetricName  InterferenceMetricName
-	PodUID      string
-	MetricValue interface{}
-}
-
-type ContainerInterferenceQueryResult struct {
-	QueryResult
-	Metric *ContainerInterferenceMetric
-}
-
-type PodInterferenceQueryResult struct {
-	QueryResult
-	Metric *PodInterferenceMetric
 }

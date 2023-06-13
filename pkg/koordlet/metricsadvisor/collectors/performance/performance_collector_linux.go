@@ -104,12 +104,16 @@ func (p *performanceCollector) collectContainerCPI() {
 	collectors := sync.Map{}
 	var wg sync.WaitGroup
 	wg.Add(len(containerStatusesMap))
-	nodeCpuInfo, err := p.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
-	if err != nil {
-		klog.Errorf("failed to get node cpu info : %v", err)
+	nodeCPUInfoRaw, exist := p.metricCache.Get(metriccache.NodeCPUInfoKey)
+	if !exist {
+		klog.Error("failed to get node cpu info : not exist")
 		return
 	}
-	cpuNumber := nodeCpuInfo.TotalInfo.NumberCPUs
+	nodeCPUInfo, ok := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
+	if !ok {
+		klog.Fatalf("type error, expect %T， but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
+	}
+	cpuNumber := nodeCPUInfo.TotalInfo.NumberCPUs
 	for containerStatus, parentPod := range containerStatusesMap {
 		go func(status *corev1.ContainerStatus, parent string) {
 			defer wg.Done()
