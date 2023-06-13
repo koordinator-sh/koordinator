@@ -35,4 +35,13 @@ var (
 	ContainerGPUCoreUsageMetric = defaultMetricFactory.New(ContainerMetricGPUCoreUsage).withPropertySchema(MetricPropertyContainerID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
 	ContainerGPUMemUsageMetric  = defaultMetricFactory.New(ContainerMetricGPUMemUsage).withPropertySchema(MetricPropertyContainerID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
 	ContainerCPUThrottledMetric = defaultMetricFactory.New(ContainerMetricCPUThrottled).withPropertySchema(MetricPropertyContainerID)
+
+	// CPI
+	ContainerCPI = defaultMetricFactory.New(ContainerMetricCPI).withPropertySchema(MetricPropertyPodUID, MetricPropertyContainerID, MetricPropertyCPIResource)
+
+	// PSI
+	ContainerPSIMetric                 = defaultMetricFactory.New(ContainerMetricPSI).withPropertySchema(MetricPropertyPodUID, MetricPropertyContainerID, MetricPropertyPSIResource, MetricPropertyPSIPrecision, MetricPropertyPSIDegree)
+	ContainerPSICPUFullSupportedMetric = defaultMetricFactory.New(ContainerMetricPSICPUFullSupported).withPropertySchema(MetricPropertyPodUID, MetricPropertyContainerID)
+	PodPSIMetric                       = defaultMetricFactory.New(PodMetricPSI).withPropertySchema(MetricPropertyPodUID, MetricPropertyPSIResource, MetricPropertyPSIPrecision, MetricPropertyPSIDegree)
+	PodPSICPUFullSupportedMetric       = defaultMetricFactory.New(PodMetricPSICPUFullSupported).withPropertySchema(MetricPropertyPodUID)
 )

@@ -88,6 +88,10 @@ func Test_collectContainerCPI(t *testing.T) {
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, nil).AnyTimes()
+	appender := mockmetriccache.NewMockAppender(ctrl)
+	mockMetricCache.EXPECT().Appender().Return(appender).AnyTimes()
+	appender.EXPECT().Append(gomock.Any()).Return(nil).AnyTimes()
+	appender.EXPECT().Commit().Return(nil).AnyTimes()
 
 	collector := New(&framework.Options{
 		Config:         framework.NewDefaultConfig(),
@@ -111,6 +115,10 @@ func Test_collectContainerCPI_cpuInfoErr(t *testing.T) {
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, fmt.Errorf("cpu_error")).AnyTimes()
+	appender := mockmetriccache.NewMockAppender(ctrl)
+	mockMetricCache.EXPECT().Appender().Return(appender).AnyTimes()
+	appender.EXPECT().Append(gomock.Any()).Return(nil).AnyTimes()
+	appender.EXPECT().Commit().Return(nil).AnyTimes()
 
 	collector := New(&framework.Options{
 		Config:         framework.NewDefaultConfig(),
@@ -136,6 +144,10 @@ func Test_collectContainerCPI_mockPod(t *testing.T) {
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{pod}).AnyTimes()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
 	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, nil).AnyTimes()
+	appender := mockmetriccache.NewMockAppender(ctrl)
+	mockMetricCache.EXPECT().Appender().Return(appender).AnyTimes()
+	appender.EXPECT().Append(gomock.Any()).Return(nil).AnyTimes()
+	appender.EXPECT().Commit().Return(nil).AnyTimes()
 
 	collector := New(&framework.Options{
 		Config:         framework.NewDefaultConfig(),
@@ -381,11 +393,12 @@ func mockLSPod() *corev1.Pod {
 }
 
 // @podParentDir kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/
-// @return {
-//    CPU: /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.pressure
-//    Mem: /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.pressure
-//    IO:  /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/io.pressure
-//  }
+//
+//	@return {
+//	   CPU: /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/cpu.pressure
+//	   Mem: /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/memory.pressure
+//	   IO:  /sys/fs/cgroup/cpu/kubepods.slice/kubepods-burstable.slice/kubepods-pod7712555c_ce62_454a_9e18_9ff0217b8941.slice/io.pressure
+//	 }
 func getPodCgroupCPUAcctPSIPath(podParentDir string) resourceexecutor.PSIPath {
 	return resourceexecutor.PSIPath{
 		CPU: system.GetCgroupFilePath(podParentDir, system.CPUAcctCPUPressure),
