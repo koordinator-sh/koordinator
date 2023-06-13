@@ -224,10 +224,6 @@ unevictable 0
 						},
 					},
 				}}}).AnyTimes()
-			metricCache.EXPECT().InsertNodeResourceMetric(gomock.Any(), gomock.Any()).AnyTimes()
-			metricCache.EXPECT().InsertPodResourceMetric(gomock.Any(), gomock.Any()).AnyTimes()
-			metricCache.EXPECT().InsertContainerResourceMetric(gomock.Any(), gomock.Any()).AnyTimes()
-			metricCache.EXPECT().InsertNodeCPUInfo(gomock.Any()).AnyTimes()
 			statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 
 			stopCh := make(chan struct{}, 1)

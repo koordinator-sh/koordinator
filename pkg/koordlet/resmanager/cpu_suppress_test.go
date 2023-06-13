@@ -506,7 +506,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 
 			// prepareData: mockMetricCache pods node beMetrics(AVG,current)
 			mockMetricCache := mockmetriccache.NewMockMetricCache(ctl)
-			mockMetricCache.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(nodeCPUInfo, nil).AnyTimes()
+			mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(nodeCPUInfo, true).AnyTimes()
 			mockResultFactory := mockmetriccache.NewMockAggregateResultFactory(ctl)
 			metriccache.DefaultAggregateResultFactory = mockResultFactory
 			mockQuerier := mockmetriccache.NewMockQuerier(ctl)
@@ -868,7 +868,7 @@ func Test_cpuSuppress_recoverCPUSetIfNeed(t *testing.T) {
 			mockStatesInformer := mockstatesinformer.NewMockStatesInformer(ctl)
 			mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{Pod: lsePod}}).AnyTimes()
 			mockStatesInformer.EXPECT().GetNodeTopo().Return(tt.args.nodeTopo).AnyTimes()
-			mockMetricCache.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(&mockNodeInfo, nil).AnyTimes()
+			mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&mockNodeInfo, true).AnyTimes()
 			r := &resmanager{
 				statesInformer: mockStatesInformer,
 				metricCache:    mockMetricCache,
@@ -1736,7 +1736,7 @@ func TestCPUSuppress_applyBESuppressCPUSet(t *testing.T) {
 			si.EXPECT().GetNodeTopo().Return(nodeTopo).AnyTimes()
 			si.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
 			mc := mockmetriccache.NewMockMetricCache(ctl)
-			mc.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(mockNodeInfo, nil).AnyTimes()
+			mc.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(mockNodeInfo, true).AnyTimes()
 			r := newTestCPUSuppress(&resmanager{
 				statesInformer: si,
 				metricCache:    mc,

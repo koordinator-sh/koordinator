@@ -81,12 +81,13 @@ func (b *BlkIOReconcile) RunInit(stopCh <-chan struct{}) error {
 func (b *BlkIOReconcile) reconcile() {
 	klog.V(4).Infof("%s: start to reconcile", BlkIOReconcileName)
 	// get node local storage info
-	var err error
-	b.storageInfo, err = b.resmanager.metricCache.GetNodeLocalStorageInfo(&metriccache.QueryParam{})
-	if err != nil {
-		klog.Errorf("%s: fail to get node local storage info: %s", BlkIOReconcileName, err.Error())
+	storageInfoRaw, exist := b.resmanager.metricCache.Get(metriccache.NodeLocalStorageInfoKey)
+	if !exist {
+		klog.Errorf("%s: fail to get node local storage info not exist", BlkIOReconcileName)
 		return
 	}
+	storageInfo := storageInfoRaw.(*metriccache.NodeLocalStorageInfo)
+	b.storageInfo = storageInfo
 	// get nodeslo
 	nodeSLO := b.resmanager.getNodeSLOCopy()
 	if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil {

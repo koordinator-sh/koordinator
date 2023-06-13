@@ -155,3 +155,10 @@ func PatchReservation(ctx context.Context, clientset koordinatorclientset.Interf
 func GetNamespacedName(namespace, name string) string {
 	return fmt.Sprintf("%s/%s", namespace, name)
 }
+
+func BoolToFloat64(b bool) float64 {
+	if b {
+		return 1.0
+	}
+	return 0.0
+}
