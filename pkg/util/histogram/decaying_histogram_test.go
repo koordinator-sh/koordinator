@@ -137,7 +137,7 @@ func TestDecayingHistogramSaveToCheckpoint(t *testing.T) {
 	d.AddSample(2, 1, startTime.Add(time.Hour*100))
 	assert.NotEqual(t, d.referenceTimestamp, time.Time{})
 
-	checkpoint, err := d.SaveToChekpoint()
+	checkpoint, err := d.SaveToCheckpoint()
 	assert.NoError(t, err)
 	assert.Equal(t, checkpoint.ReferenceTimestamp, d.referenceTimestamp)
 	// Just check that buckets are not empty, actual testing of bucketing

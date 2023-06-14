@@ -116,8 +116,8 @@ func (h *decayingHistogram) decayFactor(timestamp time.Time) float64 {
 	return math.Exp2(float64(timestamp.Sub(h.referenceTimestamp)) / float64(h.halfLife))
 }
 
-func (h *decayingHistogram) SaveToChekpoint() (*HistogramCheckpoint, error) {
-	checkpoint, err := h.histogram.SaveToChekpoint()
+func (h *decayingHistogram) SaveToCheckpoint() (*HistogramCheckpoint, error) {
+	checkpoint, err := h.histogram.SaveToCheckpoint()
 	if err != nil {
 		return checkpoint, err
 	}
