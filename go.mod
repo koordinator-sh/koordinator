@@ -14,12 +14,13 @@ require (
 	github.com/go-playground/validator/v10 v10.10.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/golang/mock v1.6.0
-	github.com/golang/protobuf v1.5.2
+	github.com/golang/protobuf v1.5.3
 	github.com/google/go-cmp v0.5.9
 	github.com/google/uuid v1.3.0
 	github.com/hodgesds/perf-utils v0.5.1
 	github.com/jedib0t/go-pretty/v6 v6.4.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.1
+	github.com/koordinator-sh/goyarn v0.0.0-20230606122331-7ebe7c1b1e29
 	github.com/mohae/deepcopy v0.0.0-20170603005431-491d3605edfb
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.19.0
@@ -165,6 +166,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
+	github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect

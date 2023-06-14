@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	"github.com/spf13/pflag"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
@@ -35,7 +34,7 @@ type Options struct {
 func NewOptions() *Options {
 	return &Options{
 		ControllerAddFuncs: controllerAddFuncs,
-		Controllers:        sets.StringKeySet(controllerAddFuncs).List(),
+		Controllers:        controllerAddDefault,
 	}
 }
 

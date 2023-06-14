@@ -22,10 +22,18 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodeslo"
+	yarnnoderes "github.com/koordinator-sh/koordinator/pkg/yarn/controller/noderesource"
 )
 
 var controllerAddFuncs = map[string]func(manager.Manager) error{
 	nodemetric.Name:   nodemetric.Add,
 	noderesource.Name: noderesource.Add,
 	nodeslo.Name:      nodeslo.Add,
+	yarnnoderes.Name:  yarnnoderes.Add,
+}
+
+var controllerAddDefault = []string{
+	nodemetric.Name,
+	noderesource.Name,
+	nodeslo.Name,
 }
