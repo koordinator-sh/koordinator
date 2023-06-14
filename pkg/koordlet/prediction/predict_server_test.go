@@ -288,6 +288,7 @@ func TestDoCheckpoint(t *testing.T) {
 		checkpointer: &mockCheckpointer{},
 	}
 	predictServer.hasSynced.Store(true)
+
 	predictServer.doCheckpoint()
 
 	model1 := predictServer.models[UIDType("model1")]
@@ -375,6 +376,7 @@ func TestDoCheckpoint_CheckpointInterval(t *testing.T) {
 		checkpointer: &mockCheckpointer{},
 	}
 	predictServer.hasSynced.Store(true)
+
 	predictServer.doCheckpoint()
 
 	newTime := now.Add(DefaultModelCheckpointInterval / 2)
@@ -447,6 +449,7 @@ func TestDoCheckpoint_RestoreModels(t *testing.T) {
 		checkpointer: NewFileCheckpointer(tempDir),
 	}
 	predictServer.hasSynced.Store(true)
+
 	predictServer.doCheckpoint()
 
 	// clear the models in memory and restore it
