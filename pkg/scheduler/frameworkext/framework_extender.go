@@ -153,22 +153,25 @@ func (ext *frameworkExtenderImpl) Scheduler() Scheduler {
 	return ext.schedulerFn()
 }
 
-func (ext *frameworkExtenderImpl) takeSnapshot() error {
+func (ext *frameworkExtenderImpl) takeSnapshot(ctx context.Context) error {
 	nodeInfos, err := ext.Framework.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
 		return nil
 	}
-	if sharedlisterext.TransformNodeInfos(nodeInfos) {
-		if ext.snapshotGeneration != nil {
-			*ext.snapshotGeneration = 0
+	ext.Framework.Parallelizer().Until(ctx, len(nodeInfos), func(piece int) {
+		nodeInfo := nodeInfos[piece]
+		if sharedlisterext.TransformNodeInfos([]*framework.NodeInfo{nodeInfo}) {
+			if ext.snapshotGeneration != nil {
+				*ext.snapshotGeneration = 0
+			}
 		}
-	}
+	})
 	return nil
 }
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
-	err := ext.takeSnapshot()
+	err := ext.takeSnapshot(ctx)
 	if err != nil {
 		return framework.AsStatus(err)
 	}
