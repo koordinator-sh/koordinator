@@ -9,7 +9,7 @@ reviewers:
   - "@saintube"
   - "@hormes"
 creation-date: 2023-06-08
-last-updated: 2023-06-14
+last-updated: 2023-06-15
 ---
 
 # NRI Mode Resource Management
@@ -38,6 +38,7 @@ Table of Contents
             * [Non-Functional Requirements](#non-functional-requirements)
         * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
         * [Risks and Mitigations](#risks-and-mitigations)
+    * [Alternatives](#Alternatives)
     * [Upgrade Strategy](#upgrade-strategy)
         * [Test Plan [optional]](#test-plan-optional)
     * [Implementation History](#implementation-history)
@@ -162,15 +163,24 @@ func (c *ContainerContext) NriDone() (*api.ContainerAdjustment, []*api.Container
 ### Risks and Mitigations
 
 ## Alternatives
-Currently, NRI implement the same functionality as RuntimeProxy. RuntimeProxy can hijack CRI requests from kubelet for pods and then apply resource policies. However, RuntimeProxy need to configure and restart kubelet.
-- RuntimeProxy
+There are several approaches to extending the Kubernetes CRI (Container Runtime Interface) to manage container resources such as `standalone` and `proxy`. Under `standalone` running mode, resource isolation parameters will be injected asynchronously. Under `proxy` running mode, proxy can hijack CRI requests from kubelet for pods and then apply resource policies in time. However, `proxy` mode needs to configure and restart kubelet.
 
-  kubelet -- CRI Request -> CRI Proxy -- CRI Request (hooked) -> CRI Runtime -- OCI Spec -> OCI compatible runtime -> containers
+- Standalone
 
-![RuntimeProxy.png](../images/RuntimeProxy.png)
+  - kubelet -- CRI Request -> CRI Runtime -- OCI Spec -> OCI compatible runtime -> containers
+  - kubelet -> Node Agent -> CRI Runtime / containers
+
+![standalone.png](../images/standalone.png)
+
+- Proxy
+
+  - kubelet -- CRI Request -> CRI Proxy -- CRI Request (hooked) -> CRI Runtime -- OCI Spec -> OCI compatible runtime -> containers
+
+![proxy.png](../images/proxy.png)
+
 - NRI
 
-  kubelet -- CRI Request -> CRI Runtime -- OCI Spec --> OCI compatible runtime -> containers  
+  - kubelet -- CRI Request -> CRI Runtime -- OCI Spec --> OCI compatible runtime -> containers  
   &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; $\searrow$ &emsp; $\nearrow$  
   &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;Koordlet NRI plugin
 
