@@ -40,7 +40,6 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
-	evictutils "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions/utils"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/kubernetes/defaultevictor"
 	frameworkruntime "github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
@@ -63,8 +62,8 @@ func setupFakeDiscoveryWithPolicyResource(fake *coretesting.Fake) {
 				GroupVersion: policy.SchemeGroupVersion.String(),
 				APIResources: []metav1.APIResource{
 					{
-						Name: evictutils.EvictionSubResouceName,
-						Kind: evictutils.EvictionKind,
+						Name: util.EvictionSubResourceName,
+						Kind: util.EvictionKind,
 					},
 				},
 			},
@@ -77,8 +76,8 @@ func setupFakeDiscoveryWithPolicyResource(fake *coretesting.Fake) {
 				GroupVersion: "v1",
 				APIResources: []metav1.APIResource{
 					{
-						Name: evictutils.EvictionSubResouceName,
-						Kind: evictutils.EvictionKind,
+						Name: util.EvictionSubResourceName,
+						Kind: util.EvictionKind,
 					},
 				},
 			},
