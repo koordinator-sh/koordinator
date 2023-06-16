@@ -18,7 +18,6 @@ package reservation
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 
 	corev1 "k8s.io/api/core/v1"
@@ -45,11 +44,6 @@ func (pl *Plugin) BeforePreFilter(ctx context.Context, cycleState *framework.Cyc
 }
 
 func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*stateData, bool, error) {
-	allNodes, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
-	if err != nil {
-		return nil, false, fmt.Errorf("cannot list NodeInfo, err: %v", err)
-	}
-
 	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 	if err != nil {
 		klog.ErrorS(err, "Failed to parse reservation affinity", "pod", klog.KObj(pod))
@@ -57,6 +51,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	}
 
 	var stateIndex int32
+	allNodes := pl.reservationCache.listAllNodes()
 	allNodeReservationStates := make([]*nodeReservationState, len(allNodes))
 	allPluginToRestoreState := make([]frameworkext.PluginToReservationRestoreStates, len(allNodes))
 
@@ -74,7 +69,11 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	}
 
 	processNode := func(i int) {
-		nodeInfo := allNodes[i]
+		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(allNodes[i])
+		if err != nil {
+			errCh.SendErrorWithCancel(err, cancel)
+			return
+		}
 		node := nodeInfo.Node()
 		if node == nil {
 			klog.V(4).InfoS("BeforePreFilter failed to get node", "pod", klog.KObj(pod), "nodeInfo", nodeInfo)

@@ -64,6 +64,9 @@ func GetNodeReservationFromAnnotation(anno map[string]string) corev1.ResourceLis
 		klog.ErrorS(err, "Failed to apiext.GetNodeReservation")
 		return nil
 	}
+	if reservation == nil {
+		return nil
+	}
 	resources, err := GetNodeReservationResources(reservation)
 	if err != nil {
 		klog.ErrorS(err, "Failed to GetNodeReservationResources")
@@ -75,7 +78,7 @@ func GetNodeReservationFromAnnotation(anno map[string]string) corev1.ResourceLis
 func GetNodeReservationResources(reservation *apiext.NodeReservation) (corev1.ResourceList, error) {
 	var resourceList corev1.ResourceList
 	if reservation.Resources != nil {
-		resourceList = reservation.Resources.DeepCopy()
+		resourceList = reservation.Resources
 	}
 	if reservation.ReservedCPUs != "" {
 		cpus, err := cpuset.Parse(reservation.ReservedCPUs)
@@ -92,9 +95,12 @@ func GetNodeReservationResources(reservation *apiext.NodeReservation) (corev1.Re
 }
 
 func TrimNodeAllocatableByNodeReservation(node *corev1.Node) (trimmedAllocatable corev1.ResourceList, trimmed bool) {
-	trimmedAllocatable = node.Status.Allocatable.DeepCopy()
+	trimmedAllocatable = node.Status.Allocatable
 	reservation, err := apiext.GetNodeReservation(node.Annotations)
 	if err != nil {
+		return
+	}
+	if reservation == nil {
 		return
 	}
 	shouldTrim := reservation.ApplyPolicy == "" || reservation.ApplyPolicy == apiext.NodeReservationApplyPolicyDefault

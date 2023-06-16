@@ -57,19 +57,23 @@ const (
 )
 
 func GetNodeReservation(annotations map[string]string) (*NodeReservation, error) {
-	reservation := &NodeReservation{}
 	if s := annotations[AnnotationNodeReservation]; s != "" {
+		reservation := &NodeReservation{}
 		if err := json.Unmarshal([]byte(s), &reservation); err != nil {
 			return nil, err
 		}
+		return reservation, nil
 	}
-	return reservation, nil
+	return nil, nil
 }
 
 func GetReservedCPUs(annotations map[string]string) (reservedCPUs string, numReservedCPUs int) {
 	reservation, err := GetNodeReservation(annotations)
 	if err != nil {
 		klog.ErrorS(err, "failed to GetNodeReservation")
+		return
+	}
+	if reservation == nil {
 		return
 	}
 

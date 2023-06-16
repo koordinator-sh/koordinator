@@ -45,7 +45,7 @@ var DeviceResourceNames = map[schedulingv1alpha1.DeviceType][]corev1.ResourceNam
 
 func hasDeviceResource(podRequest corev1.ResourceList, deviceType schedulingv1alpha1.DeviceType) bool {
 	if podRequest == nil || len(podRequest) == 0 {
-		klog.Warningf("skip checking hasDeviceResource, because pod request is empty")
+		klog.V(5).Infof("skip checking hasDeviceResource, because pod request is empty")
 		return false
 	}
 	for _, resourceName := range DeviceResourceNames[deviceType] {
