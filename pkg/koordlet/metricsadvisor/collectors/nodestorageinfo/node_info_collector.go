@@ -36,14 +36,14 @@ const (
 
 type nodeInfoCollector struct {
 	collectInterval time.Duration
-	metricDB        metriccache.MetricCache
+	storage         metriccache.KVStorage
 	started         *atomic.Bool
 }
 
 func New(opt *framework.Options) framework.Collector {
 	return &nodeInfoCollector{
 		collectInterval: opt.Config.CollectNodeStorageInfoInterval,
-		metricDB:        opt.MetricCache,
+		storage:         opt.MetricCache,
 		started:         atomic.NewBool(false),
 	}
 }
@@ -81,10 +81,7 @@ func (n *nodeInfoCollector) collectNodeLocalStorageInfo() {
 	nodeLocalStorageInfo.MPDiskMap = localStorageInfo.MPDiskMap
 
 	klog.V(6).Infof("collect node local storage info finished, nodeCPUInfo %v", localStorageInfo)
-	if err = n.metricDB.InsertNodeLocalStorageInfo(nodeLocalStorageInfo); err != nil {
-		klog.Errorf("insert node local storage info error: %v", err)
-	}
-
+	n.storage.Set(metriccache.NodeLocalStorageInfoKey, nodeLocalStorageInfo)
 	n.started.Store(true)
 	metrics.RecordCollectNodeLocalStorageInfoStatus(nil)
 }

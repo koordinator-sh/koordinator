@@ -19,6 +19,7 @@ package statesinformer
 import (
 	"context"
 	"encoding/json"
+	rawerrors "errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -605,12 +606,16 @@ func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.
 }
 
 func (s *nodeTopoInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extension.CPUTopology, map[int32]*extension.CPUInfo, error) {
-	nodeCPUInfo, err := s.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
-	if err != nil {
-		klog.V(4).Infof("failed to get node cpu info")
-		return nil, nil, nil, err
-	}
 
+	nodeCPUInfoRaw, exist := s.metricCache.Get(metriccache.NodeCPUInfoKey)
+	if !exist {
+		klog.Warning("failed to get node cpu info : not exist")
+		return nil, nil, nil, rawerrors.New("node cpu info not exist")
+	}
+	nodeCPUInfo, ok := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
+	if !ok {
+		klog.Fatalf("type error, expect %T， but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
+	}
 	cpus := make(map[int32]*extension.CPUInfo)
 	cpuTopology := &extension.CPUTopology{}
 	for _, cpu := range nodeCPUInfo.ProcessorInfos {

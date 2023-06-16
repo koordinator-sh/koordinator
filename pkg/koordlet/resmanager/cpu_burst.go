@@ -255,9 +255,14 @@ func (b *CPUBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 		klog.Warningf("get node cpu metric failed, error: %v", err)
 	}
 
-	nodeCPUInfo, err := b.resmanager.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
-	if err != nil || nodeCPUInfo == nil {
-		klog.Warningf("get node cpu info failed, detail %v, error %v", nodeCPUInfo, err)
+	nodeCPUInfoRaw, exist := b.resmanager.metricCache.Get(metriccache.NodeCPUInfoKey)
+	if !exist {
+		klog.Warning("get node cpu info failed : not exist")
+		return nodeBurstUnknown
+	}
+	nodeCPUInfo := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
+	if nodeCPUInfo == nil {
+		klog.Warning("get node cpu info failed : value is nil")
 		return nodeBurstUnknown
 	}
 	podMetricMap := b.resmanager.collectAllPodMetrics(*queryParam, metriccache.PodCPUUsageMetric)
