@@ -340,14 +340,17 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		End:       &endTime,
 	}
 	for _, podMeta := range podsMeta {
-		podMetric := r.collectPodMetric(podMeta, podQueryParam)
-		if podMetric != nil {
-			r.fillExtensionMap(podMetric, podMeta.Pod)
-			if len(gpus) > 0 {
-				r.fillGPUMetrics(podQueryParam, podMetric, string(podMeta.Pod.UID), gpus)
-			}
-			podsMetricInfo = append(podsMetricInfo, podMetric)
+		podMetric, err := r.collectPodMetric(podMeta, podQueryParam)
+		if err != nil {
+			klog.Warningf("query pod metric failed, pod %s/%s, error %v", genPodMetaKey(podMeta), err)
+			continue
 		}
+
+		r.fillExtensionMap(podMetric, podMeta.Pod)
+		if len(gpus) > 0 {
+			r.fillGPUMetrics(podQueryParam, podMetric, string(podMeta.Pod.UID), gpus)
+		}
+		podsMetricInfo = append(podsMetricInfo, podMetric)
 	}
 
 	return nodeMetricInfo, podsMetricInfo
@@ -355,6 +358,7 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 
 func (r *nodeMetricInformer) queryNodeMetric(start time.Time, end time.Time, aggregateType metriccache.AggregationType,
 	coldStartFilter bool) slov1alpha1.ResourceMap {
+	rm := slov1alpha1.ResourceMap{}
 
 	queryParam := metriccache.QueryParam{
 		Start:     &start,
@@ -363,22 +367,21 @@ func (r *nodeMetricInformer) queryNodeMetric(start time.Time, end time.Time, agg
 	}
 	cpuAndMem, duration, err := r.collectNodeMetric(queryParam)
 	if err != nil {
-		klog.Warningf("get query failed, error %v", err)
-		return slov1alpha1.ResourceMap{}
+		klog.Warningf("query node metric failed, error %v", err)
+		return rm
 	}
 
 	if coldStartFilter && metricsInColdStart(start, end, duration) {
 		klog.V(4).Infof("metrics is in cold start, no need to report, current result sample duration %v",
 			duration.String())
-		return slov1alpha1.ResourceMap{}
+		return rm
 	}
 
-	rm := slov1alpha1.ResourceMap{
-		ResourceList: cpuAndMem,
-	}
+	rm.ResourceList = cpuAndMem
+
 	value, exist := r.metricCache.Get(koordletutil.GPUDeviceType)
 	if !exist {
-		klog.Warningf("get node device info failed, error: %v", err)
+		klog.V(5).Infof("got no device info on node, skip node gpu metric collection")
 		return rm
 	}
 	gpus, ok := value.(koordletutil.GPUDevices)
@@ -402,44 +405,43 @@ func metricsInColdStart(queryStart, queryEnd time.Time, duration time.Duration) 
 
 func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam) (corev1.ResourceList, time.Duration, error) {
 	rl := corev1.ResourceList{}
-	queryer, err := r.metricCache.Querier(*queryparam.Start, *queryparam.End)
+	querier, err := r.metricCache.Querier(*queryparam.Start, *queryparam.End)
 	if err != nil {
-		klog.Warningf("get query failed, error %v", err)
-		return rl, time.Duration(0), nil
+		klog.V(5).Infof("get node metric querier failed, error %v", err)
+		return rl, 0, err
 	}
 
-	cpuAggregateResult, err := doQuery(queryer, metriccache.NodeCPUUsageMetric, nil)
+	cpuAggregateResult, err := doQuery(querier, metriccache.NodeCPUUsageMetric, nil)
 	if err != nil {
-		return rl, time.Duration(0), nil
+		return rl, 0, err
 	}
 	cpuUsed, err := cpuAggregateResult.Value(queryparam.Aggregate)
 	if err != nil {
-		return rl, time.Duration(0), nil
+		return rl, 0, err
 	}
 
-	memAggregateResult, err := doQuery(queryer, metriccache.NodeMemoryUsageMetric, nil)
+	memAggregateResult, err := doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
 	if err != nil {
-		return rl, time.Duration(0), nil
+		return rl, 0, err
 	}
 
 	memUsed, err := memAggregateResult.Value(queryparam.Aggregate)
 	if err != nil {
-		return rl, time.Duration(0), nil
+		return rl, 0, err
 	}
 
 	rl[corev1.ResourceCPU] = *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI)
 	rl[corev1.ResourceMemory] = *resource.NewQuantity(int64(memUsed), resource.BinarySI)
 
 	return rl, cpuAggregateResult.TimeRangeDuration(), nil
-
 }
 
 func (r *nodeMetricInformer) collectNodeGPUMetric(queryparam metriccache.QueryParam, gpus koordletutil.GPUDevices) ([]schedulingv1alpha1.DeviceInfo, error) {
 	result := make([]schedulingv1alpha1.DeviceInfo, 0)
 	querier, err := r.metricCache.Querier(*queryparam.Start, *queryparam.End)
 	if err != nil {
-		klog.Warningf("get query failed, error %v", err)
-		return nil, nil
+		klog.V(5).Infof("get node gpu metric querier failed, error %v", err)
+		return nil, err
 	}
 	for _, gpu := range gpus {
 		gpuCoreUsageAggregateResult, err := doQuery(querier, metriccache.NodeGPUCoreUsageMetric, metriccache.MetricPropertiesFunc.GPU(fmt.Sprintf("%d", gpu.Minor), gpu.UUID))
@@ -483,7 +485,7 @@ func (r *nodeMetricInformer) collectNodeGPUMetric(queryparam metriccache.QueryPa
 }
 
 func (r *nodeMetricInformer) collectNodeAggregateMetric(endTime time.Time, aggregatePolicy *slov1alpha1.AggregatePolicy) []slov1alpha1.AggregatedUsage {
-	aggregateUsages := []slov1alpha1.AggregatedUsage{}
+	var aggregateUsages []slov1alpha1.AggregatedUsage
 	if aggregatePolicy == nil {
 		return aggregateUsages
 	}
@@ -503,35 +505,35 @@ func (r *nodeMetricInformer) collectNodeAggregateMetric(endTime time.Time, aggre
 	return aggregateUsages
 }
 
-func (r *nodeMetricInformer) collectPodMetric(podMeta *PodMeta, queryParam metriccache.QueryParam) *slov1alpha1.PodMetricInfo {
+func (r *nodeMetricInformer) collectPodMetric(podMeta *PodMeta, queryParam metriccache.QueryParam) (*slov1alpha1.PodMetricInfo, error) {
 	if podMeta == nil || podMeta.Pod == nil {
-		return nil
+		return nil, fmt.Errorf("invalid pod meta %v", podMeta)
 	}
 	podUID := string(podMeta.Pod.UID)
 
 	querier, err := r.metricCache.Querier(*queryParam.Start, *queryParam.End)
 	if err != nil {
-		klog.Warningf("failed to get querier for pod %s/%s, error %v", podMeta.Pod.Namespace, podMeta.Pod.Name, err)
-		return nil
+		klog.V(5).Infof("failed to get querier for pod %s/%s, error %v", podMeta.Pod.Namespace, podMeta.Pod.Name, err)
+		return nil, err
 	}
 
 	cpuAggregateResult, err := doQuery(querier, metriccache.PodCPUUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	cpuUsed, err := cpuAggregateResult.Value(queryParam.Aggregate)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	memAggregateResult, err := doQuery(querier, metriccache.PodMemUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	memUsed, err := memAggregateResult.Value(queryParam.Aggregate)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	rtn := &slov1alpha1.PodMetricInfo{
 		Namespace: podMeta.Pod.Namespace,
@@ -543,15 +545,15 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *PodMeta, queryParam metri
 			},
 		},
 	}
-	return rtn
+	return rtn, nil
 }
 
 func (r *nodeMetricInformer) collectPodGPUMetric(queryparam metriccache.QueryParam, uid string, gpus koordletutil.GPUDevices) ([]schedulingv1alpha1.DeviceInfo, error) {
 	result := make([]schedulingv1alpha1.DeviceInfo, 0)
 	querier, err := r.metricCache.Querier(*queryparam.Start, *queryparam.End)
 	if err != nil {
-		klog.Warningf("get query failed, error %v", err)
-		return nil, nil
+		klog.V(5).Infof("get pod gpu metric querier failed, error %v", err)
+		return nil, err
 	}
 	for _, gpu := range gpus {
 		properties := metriccache.MetricPropertiesFunc.PodGPU(uid, fmt.Sprintf("%d", gpu.Minor), gpu.UUID)
@@ -626,8 +628,7 @@ func newStatusUpdater(nodeMetricClient clientsetv1alpha1.NodeMetricInterface) *s
 
 func (su *statusUpdater) updateStatus(nodeMetric *slov1alpha1.NodeMetric, newStatus *slov1alpha1.NodeMetricStatus) error {
 	if !su.rateLimiter.Allow() {
-		msg := fmt.Sprintf("Updating status is limited qps=%v burst=%v", statusUpdateQPS, statusUpdateBurst)
-		return fmt.Errorf(msg)
+		return fmt.Errorf("updating status is limited qps=%v burst=%v", statusUpdateQPS, statusUpdateBurst)
 	}
 
 	newNodeMetric := nodeMetric.DeepCopy()
@@ -645,7 +646,7 @@ func doQuery(querier metriccache.Querier, resource metriccache.MetricResource, p
 	}
 
 	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
-	if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
+	if err = querier.Query(queryMeta, nil, aggregateResult); err != nil {
 		return nil, err
 	}
 
