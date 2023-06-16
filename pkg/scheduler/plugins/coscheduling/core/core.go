@@ -119,6 +119,7 @@ func NewPodGroupManager(
 
 	podEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    gangCache.onPodAdd,
+		UpdateFunc: gangCache.onPodUpdate,
 		DeleteFunc: gangCache.onPodDelete,
 	}
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, podInformer.Informer(), podEventHandler)
