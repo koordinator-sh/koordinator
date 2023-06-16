@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
@@ -856,11 +857,22 @@ func Test_updateReservationInSchedulingQueue(t *testing.T) {
 	}
 }
 
+var _ framework.PermitPlugin = &fakePermitPlugin{}
+
+type fakePermitPlugin struct{}
+
+func (f *fakePermitPlugin) Name() string { return "fakePermitPlugin" }
+
+func (f *fakePermitPlugin) Permit(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) (*framework.Status, time.Duration) {
+	return framework.NewStatus(framework.Wait), 30 * time.Second
+}
+
 func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
-		name string
-		obj  *schedulingv1alpha1.Reservation
+		name    string
+		obj     *schedulingv1alpha1.Reservation
+		waiting bool
 	}{
 		{
 			name: "allow incomplete reservation, validate it later",
@@ -893,14 +905,75 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "delete permitted reservation successfully",
+			obj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "r-0",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+			},
+			waiting: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sched := frameworkext.NewFakeScheduler()
-			addReservationToSchedulingQueue(sched, tt.obj)
-			assert.NotNil(t, sched.Queue.Pods[string(tt.obj.UID)])
-			deleteReservationFromSchedulingQueue(sched, tt.obj)
-			assert.Nil(t, sched.Queue.Pods[string(tt.obj.UID)])
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				schedulertesting.RegisterPermitPlugin("fakePermitPlugin", func(_ runtime.Object, f framework.Handle) (framework.Plugin, error) {
+					return &fakePermitPlugin{}, nil
+				}),
+			}
+			fh, err := schedulertesting.NewFramework(registeredPlugins, corev1.DefaultSchedulerName)
+			assert.NoError(t, err)
+
+			sched := &scheduler.Scheduler{
+				Profiles: profile.Map{
+					corev1.DefaultSchedulerName: fh,
+				},
+			}
+
+			reservePod := reservationutil.NewReservePod(tt.obj)
+			cycleState := framework.NewCycleState()
+			rejected := make(chan bool, 1)
+			if tt.waiting {
+				status := fh.RunPermitPlugins(context.TODO(), cycleState, reservePod, "test-node")
+				assert.True(t, status.IsSuccess() || status.Code() == framework.Wait)
+				hasWaitingPod := false
+				fh.IterateOverWaitingPods(func(pod framework.WaitingPod) {
+					if pod.GetPod() != nil && pod.GetPod().UID == reservePod.UID {
+						hasWaitingPod = true
+					}
+				})
+				assert.True(t, hasWaitingPod)
+				go func() {
+					fh.WaitOnPermit(context.TODO(), reservePod)
+					rejected <- true
+				}()
+			}
+
+			schedAdapter := frameworkext.NewFakeScheduler()
+			addReservationToSchedulingQueue(schedAdapter, tt.obj)
+			assert.NotNil(t, schedAdapter.Queue.Pods[string(tt.obj.UID)])
+			deleteReservationFromSchedulingQueue(sched, schedAdapter, tt.obj)
+			assert.Nil(t, schedAdapter.Queue.Pods[string(tt.obj.UID)])
+
+			if tt.waiting {
+				hasRejected := <-rejected
+				assert.True(t, hasRejected)
+			}
 		})
 	}
 }
