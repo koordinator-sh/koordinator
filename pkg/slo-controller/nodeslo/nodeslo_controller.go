@@ -26,8 +26,10 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -203,7 +205,7 @@ func (r *NodeSLOReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	configMapCacheHandler := NewSLOCfgHandlerForConfigMapEvent(r.Client, DefaultSLOCfg(), r.Recorder)
 	r.sloCfgCache = configMapCacheHandler
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&slov1alpha1.NodeSLO{}).
+		For(&slov1alpha1.NodeSLO{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&source.Kind{Type: &corev1.Node{}}, &nodemetric.EnqueueRequestForNode{
 			Client: r.Client,
 		}).

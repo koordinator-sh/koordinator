@@ -27,8 +27,10 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -179,7 +181,7 @@ func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *sloconfig.NewDefaultColocationCfg(), r.Recorder)
 	r.cfgCache = handler
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&slov1alpha1.NodeMetric{}).
+		For(&slov1alpha1.NodeMetric{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&source.Kind{Type: &corev1.Node{}}, &EnqueueRequestForNode{}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler).
 		Named(Name).
