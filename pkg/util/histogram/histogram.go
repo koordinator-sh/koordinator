@@ -61,10 +61,10 @@ type Histogram interface {
 	// Returns a human-readable text description of the histogram.
 	String() string
 
-	// SaveToChekpoint returns a representation of the histogram as a
+	// SaveToCheckpoint returns a representation of the histogram as a
 	// HistogramCheckpoint. During conversion buckets with small weights
 	// can be omitted.
-	SaveToChekpoint() (*HistogramCheckpoint, error)
+	SaveToCheckpoint() (*HistogramCheckpoint, error)
 
 	// LoadFromCheckpoint loads data from the checkpoint into the histogram
 	// by appending samples.
@@ -220,7 +220,7 @@ func (h *histogram) updateMinAndMaxBucket() {
 	}
 }
 
-func (h *histogram) SaveToChekpoint() (*HistogramCheckpoint, error) {
+func (h *histogram) SaveToCheckpoint() (*HistogramCheckpoint, error) {
 	result := HistogramCheckpoint{
 		BucketWeights: make(map[int]uint32),
 	}
