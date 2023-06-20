@@ -165,6 +165,8 @@ func (c *ContainerContext) NriDone() (*api.ContainerAdjustment, []*api.Container
 ## Alternatives
 There are several approaches to extending the Kubernetes CRI (Container Runtime Interface) to manage container resources such as `standalone` and `proxy`. Under `standalone` running mode, resource isolation parameters will be injected asynchronously. Under `proxy` running mode, proxy can hijack CRI requests from kubelet for pods and then apply resource policies in time. However, `proxy` mode needs to configure and restart kubelet.
 
+There are a little difference in execution timing between `NRI` and `proxy` modes. Hook points (execution timing) are not exactly same. `proxy` mode will handle events before sending to containerd, containerd could do nothing before calling koordlet hooks. However, `NRI` mode will handle these events after containerd gets the CRI requests and calls specific functions (e.g. RunPodSanbox). So, under `NRI` running mode, containerd may already do something before calling NRI plugin (koordlet hooks). For example, in RunPodSanbox, containerd setup pod network first and then call NRI plugin (koordlet hooks).
+
 - Standalone
 
   - kubelet -- CRI Request -> CRI Runtime -- OCI Spec -> OCI compatible runtime -> containers
