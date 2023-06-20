@@ -114,6 +114,9 @@ const (
 	//
 	// BlkIOReconcile enables block I/O QoS feature of koordlet.
 	BlkIOReconcile featuregate.Feature = "BlkIOReconcile"
+
+	// NetQOSManager enable manage net bandwidth on the local host.
+	NetQOSManager featuregate.Feature = "NetQOSManager"
 )
 
 func init() {
@@ -139,6 +142,7 @@ var (
 		CPICollector:           {Default: false, PreRelease: featuregate.Alpha},
 		PSICollector:           {Default: false, PreRelease: featuregate.Alpha},
 		BlkIOReconcile:         {Default: false, PreRelease: featuregate.Alpha},
+		NetQOSManager:          {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 

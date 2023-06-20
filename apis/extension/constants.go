@@ -28,6 +28,7 @@ const (
 	NodeDomainPrefix = "node.koordinator.sh"
 
 	LabelPodQoS      = DomainPrefix + "qosClass"
+	LabelPodNetQoS   = DomainPrefix + "netQoSClass"
 	LabelPodPriority = DomainPrefix + "priority"
 
 	LabelManagedBy = "app.kubernetes.io/managed-by"

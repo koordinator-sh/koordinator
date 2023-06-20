@@ -162,6 +162,9 @@ func (r *resmanager) Run(stopCh <-chan struct{}) error {
 	blkioReconcile := NewBlkIOReconcile(r)
 	util.RunFeatureWithInit(func() error { return blkioReconcile.RunInit(stopCh) }, blkioReconcile.reconcile, []featuregate.Feature{features.BlkIOReconcile}, r.config.ReconcileIntervalSeconds, stopCh)
 
+	netQOSManger := NewNetQosManager(r)
+	util.RunFeature(netQOSManger.Reconcile, []featuregate.Feature{features.NetQOSManager}, r.config.ReconcileIntervalSeconds, stopCh)
+
 	klog.Infof("start resmanager extensions")
 	plugins.SetupPlugins(r.kubeClient, r.metricCache, r.statesInformer)
 	utilruntime.Must(plugins.StartPlugins(r.config.QOSExtensionCfg, stopCh))
