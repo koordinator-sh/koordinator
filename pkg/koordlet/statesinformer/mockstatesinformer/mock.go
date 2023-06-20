@@ -28,6 +28,7 @@ import (
 	v1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	v1alpha10 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	statesinformerimpl "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -202,7 +203,7 @@ func (mr *MockinformerPluginMockRecorder) HasSynced() *gomock.Call {
 }
 
 // Setup mocks base method.
-func (m *MockinformerPlugin) Setup(ctx *statesinformer.PluginOption, state *statesinformer.PluginState) {
+func (m *MockinformerPlugin) Setup(ctx *statesinformerimpl.PluginOption, state *statesinformerimpl.PluginState) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Setup", ctx, state)
 }

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package statesinformer
+package impl
 
 import (
 	"sync"
@@ -31,6 +31,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -44,7 +45,7 @@ type podsInformer struct {
 	config *Config
 
 	podRWMutex     sync.RWMutex
-	podMap         map[string]*PodMeta
+	podMap         map[string]*statesinformer.PodMeta
 	podUpdatedTime time.Time
 	podHasSynced   *atomic.Bool
 
@@ -65,7 +66,7 @@ func NewPodsInformer() *podsInformer {
 	}
 
 	podsInformer := &podsInformer{
-		podMap:       map[string]*PodMeta{},
+		podMap:       map[string]*statesinformer.PodMeta{},
 		podHasSynced: atomic.NewBool(false),
 		pleg:         p,
 		podCreated:   make(chan string, 1),
@@ -130,10 +131,10 @@ func (s *podsInformer) HasSynced() bool {
 	return synced
 }
 
-func (s *podsInformer) GetAllPods() []*PodMeta {
+func (s *podsInformer) GetAllPods() []*statesinformer.PodMeta {
 	s.podRWMutex.RLock()
 	defer s.podRWMutex.RUnlock()
-	pods := make([]*PodMeta, 0, len(s.podMap))
+	pods := make([]*statesinformer.PodMeta, 0, len(s.podMap))
 	for _, pod := range s.podMap {
 		pods = append(pods, pod.DeepCopy())
 	}
@@ -148,11 +149,11 @@ func (s *podsInformer) syncPods() error {
 		klog.Warningf("get pods from kubelet failed, err: %v", err)
 		return err
 	}
-	newPodMap := make(map[string]*PodMeta, len(podList.Items))
+	newPodMap := make(map[string]*statesinformer.PodMeta, len(podList.Items))
 	// reset pod container metrics
 	resetPodMetrics()
 	for _, pod := range podList.Items {
-		podMeta := &PodMeta{
+		podMeta := &statesinformer.PodMeta{
 			Pod:       pod.DeepCopy(),
 			CgroupDir: genPodCgroupParentDir(&pod),
 		}
@@ -164,7 +165,7 @@ func (s *podsInformer) syncPods() error {
 	s.podHasSynced.Store(true)
 	s.podUpdatedTime = time.Now()
 	klog.Infof("get pods success, len %d, time %s", len(s.podMap), s.podUpdatedTime.String())
-	s.callbackRunner.SendCallback(RegisterTypeAllPods)
+	s.callbackRunner.SendCallback(statesinformer.RegisterTypeAllPods)
 	return nil
 }
 
@@ -240,7 +241,7 @@ func genPodCgroupParentDir(pod *corev1.Pod) string {
 	return koordletutil.GetPodCgroupParentDir(pod)
 }
 
-func genPodMetaKey(podMeta *PodMeta) string {
+func genPodMetaKey(podMeta *statesinformer.PodMeta) string {
 	if podMeta == nil || podMeta.Pod == nil {
 		return ""
 	}
@@ -252,7 +253,7 @@ func resetPodMetrics() {
 	metrics.ResetContainerResourceLimits()
 }
 
-func recordPodResourceMetrics(podMeta *PodMeta) {
+func recordPodResourceMetrics(podMeta *statesinformer.PodMeta) {
 	if podMeta == nil || podMeta.Pod == nil {
 		klog.V(5).Infof("failed to record pod resources metric, pod is invalid: %v", podMeta)
 		return

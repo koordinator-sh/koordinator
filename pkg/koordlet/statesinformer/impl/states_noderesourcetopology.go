@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package statesinformer
+package impl
 
 import (
 	"context"
@@ -47,6 +47,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/kubelet"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -382,7 +383,7 @@ func (s *nodeTopoInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInf
 		return nil, err
 	}
 
-	pods := make(map[types.UID]*PodMeta)
+	pods := make(map[types.UID]*statesinformer.PodMeta)
 	managedPods := make(map[types.UID]struct{})
 	for _, podMeta := range s.podsInformer.GetAllPods() {
 		pods[podMeta.Pod.UID] = podMeta
@@ -637,7 +638,7 @@ func (s *nodeTopoInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extensio
 func (s *nodeTopoInformer) updateNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
 	s.setNodeTopo(newTopo)
 	klog.V(5).Infof("local node topology info updated %v", newTopo)
-	s.callbackRunner.SendCallback(RegisterTypeNodeTopology)
+	s.callbackRunner.SendCallback(statesinformer.RegisterTypeNodeTopology)
 }
 
 func (s *nodeTopoInformer) setNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package statesinformer
+package impl
 
 import (
 	"context"
@@ -31,6 +31,7 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
@@ -104,7 +105,7 @@ func (s *nodeSLOInformer) HasSynced() bool {
 
 func (s *nodeSLOInformer) updateNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	s.setNodeSLOSpec(nodeSLO)
-	s.callbackRunner.SendCallback(RegisterTypeNodeSLOSpec)
+	s.callbackRunner.SendCallback(statesinformer.RegisterTypeNodeSLOSpec)
 }
 
 func (s *nodeSLOInformer) setNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {

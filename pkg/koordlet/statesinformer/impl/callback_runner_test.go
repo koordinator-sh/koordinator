@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package statesinformer
+package impl
 
 import (
 	"testing"
@@ -24,11 +24,12 @@ import (
 	"k8s.io/utils/pointer"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
 func TestRegisterCallbacksAndRun(t *testing.T) {
 	type args struct {
-		objType     RegisterType
+		objType     statesinformer.RegisterType
 		name        string
 		description string
 	}
@@ -39,7 +40,7 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 		{
 			name: "register RegisterTypeNodeSLOSpec and run",
 			args: args{
-				objType:     RegisterTypeNodeSLOSpec,
+				objType:     statesinformer.RegisterTypeNodeSLOSpec,
 				name:        "set-bool-var",
 				description: "set test bool var as true",
 			},
@@ -47,7 +48,7 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 		{
 			name: "register RegisterTypeAllPods and run",
 			args: args{
-				objType:     RegisterTypeAllPods,
+				objType:     statesinformer.RegisterTypeAllPods,
 				name:        "set-bool-var",
 				description: "set test bool var as true",
 			},
@@ -55,7 +56,7 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 		{
 			name: "register RegisterTypeNodeSLOSpec and run",
 			args: args{
-				objType:     RegisterTypeNodeSLOSpec,
+				objType:     statesinformer.RegisterTypeNodeSLOSpec,
 				name:        "set-bool-var",
 				description: "set test bool var as true",
 			},
@@ -64,14 +65,14 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testVar := pointer.Bool(false)
-			callbackFn := func(t RegisterType, obj interface{}, pods []*PodMeta) {
+			callbackFn := func(t statesinformer.RegisterType, obj interface{}, pods []*statesinformer.PodMeta) {
 				*testVar = true
 			}
 			si := &callbackRunner{
-				stateUpdateCallbacks: map[RegisterType][]updateCallback{
-					RegisterTypeNodeSLOSpec:  {},
-					RegisterTypeAllPods:      {},
-					RegisterTypeNodeTopology: {},
+				stateUpdateCallbacks: map[statesinformer.RegisterType][]updateCallback{
+					statesinformer.RegisterTypeNodeSLOSpec:  {},
+					statesinformer.RegisterTypeAllPods:      {},
+					statesinformer.RegisterTypeNodeTopology: {},
 				},
 				statesInformer: &statesInformer{
 					states: &PluginState{
@@ -80,7 +81,7 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 								nodeSLO: &slov1alpha1.NodeSLO{},
 							},
 							podsInformerName: &podsInformer{
-								podMap: map[string]*PodMeta{},
+								podMap: map[string]*statesinformer.PodMeta{},
 							},
 						},
 					},
@@ -105,11 +106,11 @@ func Test_statesInformer_startCallbackRunners(t *testing.T) {
 	}
 	stopCh := make(chan struct{}, 1)
 	type args struct {
-		objType     RegisterType
+		objType     statesinformer.RegisterType
 		nodeSLO     *slov1alpha1.NodeSLO
 		name        string
 		description string
-		fn          UpdateCbFn
+		fn          statesinformer.UpdateCbFn
 	}
 	tests := []struct {
 		name       string
@@ -119,11 +120,11 @@ func Test_statesInformer_startCallbackRunners(t *testing.T) {
 		{
 			name: "callback get nodeslo label",
 			args: args{
-				objType:     RegisterTypeNodeSLOSpec,
+				objType:     statesinformer.RegisterTypeNodeSLOSpec,
 				nodeSLO:     nodeSLO,
 				name:        "get value from node slo label",
 				description: "get value from node slo label",
-				fn: func(t RegisterType, obj interface{}, pods []*PodMeta) {
+				fn: func(t statesinformer.RegisterType, obj interface{}, pods []*statesinformer.PodMeta) {
 					output <- nodeSLO.Labels["test-label-key"]
 					stopCh <- struct{}{}
 				},
@@ -134,10 +135,10 @@ func Test_statesInformer_startCallbackRunners(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cr := &callbackRunner{
-				callbackChans: map[RegisterType]chan UpdateCbCtx{
+				callbackChans: map[statesinformer.RegisterType]chan UpdateCbCtx{
 					tt.args.objType: make(chan UpdateCbCtx, 1),
 				},
-				stateUpdateCallbacks: map[RegisterType][]updateCallback{
+				stateUpdateCallbacks: map[statesinformer.RegisterType][]updateCallback{
 					tt.args.objType: {},
 				},
 			}
@@ -149,7 +150,7 @@ func Test_statesInformer_startCallbackRunners(t *testing.T) {
 							nodeSLO: tt.args.nodeSLO,
 						},
 						podsInformerName: &podsInformer{
-							podMap: map[string]*PodMeta{},
+							podMap: map[string]*statesinformer.PodMeta{},
 						},
 					},
 				},

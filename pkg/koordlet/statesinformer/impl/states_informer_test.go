@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package statesinformer
+package impl
 
 import (
 	"context"
@@ -34,6 +34,7 @@ import (
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	fakeschedv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1/fake"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
 func Test_statesInformer_GetNode(t *testing.T) {
@@ -176,17 +177,17 @@ func Test_statesInformer_GetNodeTopo(t *testing.T) {
 
 func Test_statesInformer_GetAllPods(t *testing.T) {
 	type fields struct {
-		podMap map[string]*PodMeta
+		podMap map[string]*statesinformer.PodMeta
 	}
 	tests := []struct {
 		name   string
 		fields fields
-		want   []*PodMeta
+		want   []*statesinformer.PodMeta
 	}{
 		{
 			name: "get all pods",
 			fields: fields{
-				podMap: map[string]*PodMeta{
+				podMap: map[string]*statesinformer.PodMeta{
 					"test-pod": {
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
@@ -198,7 +199,7 @@ func Test_statesInformer_GetAllPods(t *testing.T) {
 					},
 				},
 			},
-			want: []*PodMeta{
+			want: []*statesinformer.PodMeta{
 				{
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{

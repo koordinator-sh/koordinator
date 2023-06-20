@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package statesinformer
+package impl
 
 import (
 	"context"
@@ -44,6 +44,7 @@ import (
 	listerv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mockmetriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
@@ -284,7 +285,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					return mockMetricCache
 				},
 				podsInformer: &podsInformer{
-					podMap: map[string]*PodMeta{
+					podMap: map[string]*statesinformer.PodMeta{
 						"default/test-pod": {
 							Pod: &v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{

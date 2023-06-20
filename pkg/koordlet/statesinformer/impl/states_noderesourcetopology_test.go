@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package statesinformer
+package impl
 
 import (
 	"context"
@@ -44,6 +44,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -135,7 +136,7 @@ func Test_nodeResourceTopology_NewAndSetup(t *testing.T) {
 func Test_calGuaranteedCpu(t *testing.T) {
 	testCases := []struct {
 		name              string
-		podMap            map[string]*PodMeta
+		podMap            map[string]*statesinformer.PodMeta
 		checkpointContent string
 		expectedError     bool
 		expectedPodAllocs []extension.PodCPUAlloc
@@ -211,7 +212,7 @@ func Test_calGuaranteedCpu(t *testing.T) {
 				    },
 				    "checksum": 962272150
 				}`,
-			podMap: map[string]*PodMeta{
+			podMap: map[string]*statesinformer.PodMeta{
 				"pod": {
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -331,7 +332,7 @@ func Test_reportNodeTopology(t *testing.T) {
 		},
 	}
 
-	mockPodMeta := map[string]*PodMeta{
+	mockPodMeta := map[string]*statesinformer.PodMeta{
 		"pod1": {
 			Pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{

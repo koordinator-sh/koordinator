@@ -38,7 +38,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	statesinformerimpl "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -53,7 +53,7 @@ type Configuration struct {
 	ConfigMapName      string
 	ConfigMapNamesapce string
 	KubeRestConf       *rest.Config
-	StatesInformerConf *statesinformer.Config
+	StatesInformerConf *statesinformerimpl.Config
 	CollectorConf      *maframework.Config
 	MetricCacheConf    *metriccache.Config
 	ResManagerConf     *resmanager.Config
@@ -67,7 +67,7 @@ func NewConfiguration() *Configuration {
 	return &Configuration{
 		ConfigMapName:      DefaultKoordletConfigMapName,
 		ConfigMapNamesapce: DefaultKoordletConfigMapNamespace,
-		StatesInformerConf: statesinformer.NewDefaultConfig(),
+		StatesInformerConf: statesinformerimpl.NewDefaultConfig(),
 		CollectorConf:      maframework.NewDefaultConfig(),
 		MetricCacheConf:    metriccache.NewDefaultConfig(),
 		ResManagerConf:     resmanager.NewDefaultConfig(),

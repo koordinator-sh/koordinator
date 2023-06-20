@@ -14,60 +14,39 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package statesinformer
+package impl
 
 import (
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
-
-type RegisterType int64
-
-const (
-	RegisterTypeNodeSLOSpec RegisterType = iota
-	RegisterTypeAllPods
-	RegisterTypeNodeTopology
-)
-
-func (r RegisterType) String() string {
-	switch r {
-	case RegisterTypeNodeSLOSpec:
-		return "RegisterTypeNodeSLOSpec"
-	case RegisterTypeAllPods:
-		return "RegisterTypeAllPods"
-	case RegisterTypeNodeTopology:
-		return "RegisterTypeNodeTopology"
-
-	default:
-		return "RegisterTypeUnknown"
-	}
-}
 
 type updateCallback struct {
 	name        string
 	description string
-	fn          UpdateCbFn
+	fn          statesinformer.UpdateCbFn
 }
 
 type UpdateCbCtx struct{}
-type UpdateCbFn func(t RegisterType, obj interface{}, pods []*PodMeta)
 
 type callbackRunner struct {
-	callbackChans        map[RegisterType]chan UpdateCbCtx
-	stateUpdateCallbacks map[RegisterType][]updateCallback
+	callbackChans        map[statesinformer.RegisterType]chan UpdateCbCtx
+	stateUpdateCallbacks map[statesinformer.RegisterType][]updateCallback
 	statesInformer       StatesInformer
 }
 
 func NewCallbackRunner() *callbackRunner {
 	c := &callbackRunner{}
-	c.callbackChans = map[RegisterType]chan UpdateCbCtx{
-		RegisterTypeNodeSLOSpec:  make(chan UpdateCbCtx, 1),
-		RegisterTypeAllPods:      make(chan UpdateCbCtx, 1),
-		RegisterTypeNodeTopology: make(chan UpdateCbCtx, 1),
+	c.callbackChans = map[statesinformer.RegisterType]chan UpdateCbCtx{
+		statesinformer.RegisterTypeNodeSLOSpec:  make(chan UpdateCbCtx, 1),
+		statesinformer.RegisterTypeAllPods:      make(chan UpdateCbCtx, 1),
+		statesinformer.RegisterTypeNodeTopology: make(chan UpdateCbCtx, 1),
 	}
-	c.stateUpdateCallbacks = map[RegisterType][]updateCallback{
-		RegisterTypeNodeSLOSpec:  {},
-		RegisterTypeAllPods:      {},
-		RegisterTypeNodeTopology: {},
+	c.stateUpdateCallbacks = map[statesinformer.RegisterType][]updateCallback{
+		statesinformer.RegisterTypeNodeSLOSpec:  {},
+		statesinformer.RegisterTypeAllPods:      {},
+		statesinformer.RegisterTypeNodeTopology: {},
 	}
 	return c
 }
@@ -76,7 +55,7 @@ func (c *callbackRunner) Setup(s StatesInformer) {
 	c.statesInformer = s
 }
 
-func (s *callbackRunner) RegisterCallbacks(rType RegisterType, name, description string, callbackFn UpdateCbFn) {
+func (s *callbackRunner) RegisterCallbacks(rType statesinformer.RegisterType, name, description string, callbackFn statesinformer.UpdateCbFn) {
 	callbacks, legal := s.stateUpdateCallbacks[rType]
 	if !legal {
 		klog.Fatalf("states informer callback register with type %v is illegal", rType.String())
@@ -95,7 +74,7 @@ func (s *callbackRunner) RegisterCallbacks(rType RegisterType, name, description
 	klog.V(1).Infof("states informer callback %s has registered for type %v", name, rType.String())
 }
 
-func (s *callbackRunner) SendCallback(objType RegisterType) {
+func (s *callbackRunner) SendCallback(objType statesinformer.RegisterType) {
 	if _, exist := s.callbackChans[objType]; exist {
 		select {
 		case s.callbackChans[objType] <- struct{}{}:
@@ -108,7 +87,7 @@ func (s *callbackRunner) SendCallback(objType RegisterType) {
 	}
 }
 
-func (s *callbackRunner) runCallbacks(objType RegisterType, obj interface{}) {
+func (s *callbackRunner) runCallbacks(objType statesinformer.RegisterType, obj interface{}) {
 	callbacks, exist := s.stateUpdateCallbacks[objType]
 	if !exist {
 		klog.Errorf("states informer callbacks type %v not exist", objType.String())
@@ -143,17 +122,17 @@ func (s *callbackRunner) Start(stopCh <-chan struct{}) {
 	}
 }
 
-func (s *callbackRunner) getObjByType(objType RegisterType, cbCtx UpdateCbCtx) interface{} {
+func (s *callbackRunner) getObjByType(objType statesinformer.RegisterType, cbCtx UpdateCbCtx) interface{} {
 	switch objType {
-	case RegisterTypeNodeSLOSpec:
+	case statesinformer.RegisterTypeNodeSLOSpec:
 		nodeSLO := s.statesInformer.GetNodeSLO()
 		if nodeSLO != nil {
 			return &nodeSLO.Spec
 		}
 		return nil
-	case RegisterTypeAllPods:
+	case statesinformer.RegisterTypeAllPods:
 		return &struct{}{}
-	case RegisterTypeNodeTopology:
+	case statesinformer.RegisterTypeNodeTopology:
 		return s.statesInformer.GetNodeTopo()
 	}
 	return nil

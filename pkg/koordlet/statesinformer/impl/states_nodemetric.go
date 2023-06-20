@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package statesinformer
+package impl
 
 import (
 	"context"
@@ -46,6 +46,7 @@ import (
 	clientsetv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	listerv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -505,7 +506,7 @@ func (r *nodeMetricInformer) collectNodeAggregateMetric(endTime time.Time, aggre
 	return aggregateUsages
 }
 
-func (r *nodeMetricInformer) collectPodMetric(podMeta *PodMeta, queryParam metriccache.QueryParam) (*slov1alpha1.PodMetricInfo, error) {
+func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, queryParam metriccache.QueryParam) (*slov1alpha1.PodMetricInfo, error) {
 	if podMeta == nil || podMeta.Pod == nil {
 		return nil, fmt.Errorf("invalid pod meta %v", podMeta)
 	}
