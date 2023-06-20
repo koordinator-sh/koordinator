@@ -466,10 +466,28 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60,\"metricReportIntervalSeconds\":20," +
-						"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
-						"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"nodeConfigs\":[{\"nodeSelector\":" +
-						"{\"matchLabels\":{\"xxx\":\"yyy\"}},\"enable\":true}]}",
+					extension.ColocationConfigKey: `
+{
+    "enable": true,
+    "metricAggregateDurationSeconds": 60,
+    "metricReportIntervalSeconds": 20,
+    "cpuReclaimThresholdPercent": 70,
+    "memoryReclaimThresholdPercent": 80,
+    "updateTimeThresholdSeconds": 300,
+    "degradeTimeMinutes": 5,
+    "resourceDiffThreshold": 0.1,
+    "midCPUThresholdPercent": 45,
+    "midMemoryThresholdPercent": 65,
+    "nodeConfigs": [{
+        "nodeSelector": {
+            "matchLabels": {
+                "xxx": "yyy"
+            }
+        },
+        "enable": true
+    }]
+}
+`,
 				},
 			}},
 			wantChanged: true,
@@ -486,6 +504,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						DegradeTimeMinutes:             pointer.Int64(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
+						MidCPUThresholdPercent:         pointer.Int64(45),
+						MidMemoryThresholdPercent:      pointer.Int64(65),
 					},
 					NodeConfigs: []extension.NodeColocationCfg{
 						{
@@ -507,6 +527,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								DegradeTimeMinutes:             pointer.Int64(5),
 								UpdateTimeThresholdSeconds:     pointer.Int64(300),
 								ResourceDiffThreshold:          pointer.Float64(0.1),
+								MidCPUThresholdPercent:         pointer.Int64(45),
+								MidMemoryThresholdPercent:      pointer.Int64(65),
 							},
 						},
 					},

@@ -19,6 +19,7 @@ package noderesource
 import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/batchresource"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/midresource"
 )
 
 // NOTE: functions in this file can be overwritten for extension
@@ -33,14 +34,17 @@ func init() {
 var (
 	// NodeSyncPlugin implements the check of resource updating.
 	nodePreparePlugins = []framework.NodePreparePlugin{
+		&midresource.Plugin{},
 		&batchresource.Plugin{},
 	}
 	// NodePreparePlugin implements node resource preparing for the calculated results.
 	nodeSyncPlugins = []framework.NodeSyncPlugin{
+		&midresource.Plugin{},
 		&batchresource.Plugin{},
 	}
 	// ResourceCalculatePlugin implements resource counting and overcommitment algorithms.
 	resourceCalculatePlugins = []framework.ResourceCalculatePlugin{
+		&midresource.Plugin{},
 		&batchresource.Plugin{},
 	}
 )
