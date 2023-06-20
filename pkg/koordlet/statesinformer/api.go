@@ -16,7 +16,12 @@ limitations under the License.
 
 package statesinformer
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+)
 
 type PodMeta struct {
 	Pod       *corev1.Pod
@@ -28,4 +33,43 @@ func (in *PodMeta) DeepCopy() *PodMeta {
 	out.Pod = in.Pod.DeepCopy()
 	out.CgroupDir = in.CgroupDir
 	return out
+}
+
+type RegisterType int64
+
+const (
+	RegisterTypeNodeSLOSpec RegisterType = iota
+	RegisterTypeAllPods
+	RegisterTypeNodeTopology
+)
+
+func (r RegisterType) String() string {
+	switch r {
+	case RegisterTypeNodeSLOSpec:
+		return "RegisterTypeNodeSLOSpec"
+	case RegisterTypeAllPods:
+		return "RegisterTypeAllPods"
+	case RegisterTypeNodeTopology:
+		return "RegisterTypeNodeTopology"
+
+	default:
+		return "RegisterTypeUnknown"
+	}
+}
+
+type UpdateCbFn func(t RegisterType, obj interface{}, pods []*PodMeta)
+type StatesInformer interface {
+	Run(stopCh <-chan struct{}) error
+	HasSynced() bool
+
+	GetNode() *corev1.Node
+	GetNodeSLO() *slov1alpha1.NodeSLO
+
+	GetAllPods() []*PodMeta
+
+	GetNodeTopo() *topov1alpha1.NodeResourceTopology
+
+	GetVolumeName(pvcNamespace, pvcName string) string
+
+	RegisterCallbacks(objType RegisterType, name, description string, callbackFn UpdateCbFn)
 }

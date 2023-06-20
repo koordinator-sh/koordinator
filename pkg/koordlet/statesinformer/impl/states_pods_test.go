@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package statesinformer
+package impl
 
 import (
 	"errors"
@@ -36,6 +36,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -416,7 +417,7 @@ func Test_recordPodResourceMetrics(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		arg  *PodMeta
+		arg  *statesinformer.PodMeta
 	}{
 		{
 			name: "pod meta is invalid",
@@ -424,17 +425,17 @@ func Test_recordPodResourceMetrics(t *testing.T) {
 		},
 		{
 			name: "pod meta is invalid 1",
-			arg:  &PodMeta{},
+			arg:  &statesinformer.PodMeta{},
 		},
 		{
 			name: "record a normally pod",
-			arg: &PodMeta{
+			arg: &statesinformer.PodMeta{
 				Pod: testingPod,
 			},
 		},
 		{
 			name: "record a batch pod",
-			arg: &PodMeta{
+			arg: &statesinformer.PodMeta{
 				Pod: testingBatchPod,
 			},
 		},

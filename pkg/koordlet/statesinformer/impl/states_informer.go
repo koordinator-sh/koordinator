@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package statesinformer
+package impl
 
 import (
 	"fmt"
@@ -36,6 +36,7 @@ import (
 	schedv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
 const (
@@ -50,13 +51,13 @@ type StatesInformer interface {
 	GetNode() *corev1.Node
 	GetNodeSLO() *slov1alpha1.NodeSLO
 
-	GetAllPods() []*PodMeta
+	GetAllPods() []*statesinformer.PodMeta
 
 	GetNodeTopo() *topov1alpha1.NodeResourceTopology
 
 	GetVolumeName(pvcNamespace, pvcName string) string
 
-	RegisterCallbacks(objType RegisterType, name, description string, callbackFn UpdateCbFn)
+	RegisterCallbacks(objType statesinformer.RegisterType, name, description string, callbackFn statesinformer.UpdateCbFn)
 }
 
 type PluginName string
@@ -226,7 +227,7 @@ func (s *statesInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology {
 	return nodeTopoInformer.GetNodeTopo()
 }
 
-func (s *statesInformer) GetAllPods() []*PodMeta {
+func (s *statesInformer) GetAllPods() []*statesinformer.PodMeta {
 	podsInformerIf := s.states.informerPlugins[podsInformerName]
 	podsInformer, ok := podsInformerIf.(*podsInformer)
 	if !ok {
@@ -245,6 +246,6 @@ func (s *statesInformer) GetVolumeName(pvcNamespace, pvcName string) string {
 	return pvcInformer.GetVolumeName(pvcNamespace, pvcName)
 }
 
-func (s *statesInformer) RegisterCallbacks(rType RegisterType, name, description string, callbackFn UpdateCbFn) {
+func (s *statesInformer) RegisterCallbacks(rType statesinformer.RegisterType, name, description string, callbackFn statesinformer.UpdateCbFn) {
 	s.states.callbackRunner.RegisterCallbacks(rType, name, description, callbackFn)
 }
