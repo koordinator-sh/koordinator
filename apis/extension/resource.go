@@ -26,6 +26,8 @@ import (
 const (
 	BatchCPU    corev1.ResourceName = ResourceDomainPrefix + "batch-cpu"
 	BatchMemory corev1.ResourceName = ResourceDomainPrefix + "batch-memory"
+	MidCPU      corev1.ResourceName = ResourceDomainPrefix + "mid-cpu"
+	MidMemory   corev1.ResourceName = ResourceDomainPrefix + "mid-memory"
 
 	ResourceNvidiaGPU      corev1.ResourceName = "nvidia.com/gpu"
 	ResourceHygonDCU       corev1.ResourceName = "dcu.com/gpu"
@@ -61,6 +63,10 @@ var (
 		PriorityBatch: {
 			corev1.ResourceCPU:    BatchCPU,
 			corev1.ResourceMemory: BatchMemory,
+		},
+		PriorityMid: {
+			corev1.ResourceCPU:    MidCPU,
+			corev1.ResourceMemory: MidMemory,
 		},
 	}
 )
