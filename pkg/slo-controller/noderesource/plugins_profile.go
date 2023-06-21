@@ -28,20 +28,23 @@ func init() {
 	// NOTE: plugins run in order of the registration.
 	framework.RegisterNodePrepareExtender(nodePreparePlugins...)
 	framework.RegisterNodeSyncExtender(nodeSyncPlugins...)
+	framework.RegisterNodeMetaSyncExtender(nodeMetaSyncPlugins...)
 	framework.RegisterResourceCalculateExtender(resourceCalculatePlugins...)
 }
 
 var (
-	// NodeSyncPlugin implements the check of resource updating.
+	// NodePreparePlugin implements node resource preparing for the calculated results.
 	nodePreparePlugins = []framework.NodePreparePlugin{
 		&midresource.Plugin{},
 		&batchresource.Plugin{},
 	}
-	// NodePreparePlugin implements node resource preparing for the calculated results.
+	// NodeSyncPlugin implements the check of resource updating.
 	nodeSyncPlugins = []framework.NodeSyncPlugin{
 		&midresource.Plugin{},
 		&batchresource.Plugin{},
 	}
+	// NodeMetaSyncPlugin implements the check of node meta updating.
+	nodeMetaSyncPlugins = []framework.NodeMetaSyncPlugin{}
 	// ResourceCalculatePlugin implements resource counting and overcommitment algorithms.
 	resourceCalculatePlugins = []framework.ResourceCalculatePlugin{
 		&midresource.Plugin{},

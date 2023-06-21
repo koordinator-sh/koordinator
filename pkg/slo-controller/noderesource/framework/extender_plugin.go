@@ -26,6 +26,7 @@ import (
 var (
 	globalNodePrepareExtender       = NewRegistry("NodePrepare")
 	globalNodeSyncExtender          = NewRegistry("NodeSync")
+	globalNodeMetaSyncExtender      = NewRegistry("NodeMetaSync")
 	globalResourceCalculateExtender = NewRegistry("ResourceCalculate")
 )
 
@@ -97,6 +98,39 @@ func RunNodeSyncExtenders(strategy *extension.ColocationStrategy, oldNode, newNo
 		} else {
 			klog.V(6).InfoS("run node sync plugin, no need to sync", "plugin", plugin.Name(),
 				"node", newNode.Name)
+		}
+	}
+	return false
+}
+
+type NodeMetaSyncPlugin interface {
+	Plugin
+	NeedSyncMeta(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string)
+}
+
+func RegisterNodeMetaSyncExtender(plugins ...NodeMetaSyncPlugin) {
+	ps := make([]Plugin, len(plugins))
+	for i := range plugins {
+		ps[i] = plugins[i]
+	}
+	globalNodeMetaSyncExtender.MustRegister(ps...)
+}
+
+func UnregisterNodeMetaSyncExtender(name string) {
+	globalNodeMetaSyncExtender.Unregister(name)
+}
+
+func RunNodeMetaSyncExtenders(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) bool {
+	for _, p := range globalNodeMetaSyncExtender.GetAll() {
+		plugin := p.(NodeMetaSyncPlugin)
+		needSync, msg := plugin.NeedSyncMeta(strategy, oldNode, newNode)
+		if needSync {
+			klog.V(4).InfoS("run node meta sync plugin, need sync", "plugin", plugin.Name(),
+				"node", newNode.Name, "message", msg)
+			return true
+		} else {
+			klog.V(6).InfoS("run node meta sync plugin, no need to sync",
+				"plugin", plugin.Name(), "node", newNode.Name)
 		}
 	}
 	return false

@@ -20,23 +20,27 @@ import (
 	"sync"
 	"time"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 type NodeResource struct {
-	Resources map[corev1.ResourceName]*resource.Quantity `json:"resources,omitempty"`
-	Messages  map[corev1.ResourceName]string             `json:"messages,omitempty"`
-	Resets    map[corev1.ResourceName]bool               `json:"resets,omitempty"`
+	Resources   map[corev1.ResourceName]*resource.Quantity `json:"resources,omitempty"`
+	Labels      map[string]string                          `json:"labels,omitempty"`
+	Annotations map[string]string                          `json:"annotations,omitempty"`
+	Messages    map[corev1.ResourceName]string             `json:"messages,omitempty"`
+	Resets      map[corev1.ResourceName]bool               `json:"resets,omitempty"`
 }
 
 func NewNodeResource(items ...ResourceItem) *NodeResource {
 	nr := &NodeResource{
-		Resources: map[corev1.ResourceName]*resource.Quantity{},
-		Messages:  map[corev1.ResourceName]string{},
-		Resets:    map[corev1.ResourceName]bool{},
+		Resources:   map[corev1.ResourceName]*resource.Quantity{},
+		Labels:      map[string]string{},
+		Annotations: map[string]string{},
+		Messages:    map[corev1.ResourceName]string{},
+		Resets:      map[corev1.ResourceName]bool{},
 	}
 	if len(items) > 0 {
 		nr.Set(items...)
@@ -48,6 +52,12 @@ func (nr *NodeResource) Set(items ...ResourceItem) {
 	for _, item := range items {
 		nr.Resources[item.Name] = item.Quantity
 		nr.Resets[item.Name] = item.Reset
+		for k, v := range item.Labels {
+			nr.Labels[k] = v
+		}
+		for k, v := range item.Annotations {
+			nr.Annotations[k] = v
+		}
 		if len(item.Message) > 0 { // omit empty message
 			nr.Messages[item.Name] = item.Message
 		}
@@ -69,6 +79,12 @@ func (nr *NodeResource) Delete(items ...ResourceItem) {
 		delete(nr.Resources, item.Name)
 		delete(nr.Messages, item.Name)
 		delete(nr.Resets, item.Name)
+		for k := range item.Labels {
+			delete(nr.Labels, k)
+		}
+		for k := range item.Annotations {
+			delete(nr.Annotations, k)
+		}
 	}
 }
 
@@ -77,10 +93,12 @@ func (nr *NodeResource) Get(name corev1.ResourceName) *resource.Quantity {
 }
 
 type ResourceItem struct {
-	Name     corev1.ResourceName `json:"name,omitempty"`
-	Quantity *resource.Quantity  `json:"quantity,omitempty"`
-	Message  string              `json:"message,omitempty"` // the message about the resource calculation
-	Reset    bool                `json:"reset,omitempty"`   // whether to reset the resource or not
+	Name        corev1.ResourceName `json:"name,omitempty"`
+	Quantity    *resource.Quantity  `json:"quantity,omitempty"`
+	Labels      map[string]string   `json:"labels,omitempty"`
+	Annotations map[string]string   `json:"annotations,omitempty"`
+	Message     string              `json:"message,omitempty"` // the message about the resource calculation
+	Reset       bool                `json:"reset,omitempty"`   // whether to reset the resource or not
 }
 
 type ResourceMetrics struct {

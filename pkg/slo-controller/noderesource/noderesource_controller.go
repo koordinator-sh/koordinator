@@ -44,7 +44,7 @@ const (
 )
 
 type NodeResourceReconciler struct {
-	client.Client
+	Client          client.Client
 	Recorder        record.EventRecorder
 	Scheme          *runtime.Scheme
 	Clock           clock.Clock
