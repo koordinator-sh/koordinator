@@ -274,18 +274,18 @@ func (b *CPUBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 	sharePoolCPUCoresUsage := nodeCPUCoresUsage
 	for _, podMeta := range podsMeta {
 		podQOS := apiext.GetPodQoSClass(podMeta.Pod)
-		// exclude LSR pod cpu from cpu share pool
-		if podQOS == apiext.QoSLSR {
+		// exclude LSE/LSR pod cpu from cpu share pool
+		if podQOS == apiext.QoSLSE || podQOS == apiext.QoSLSR {
 			podRequest := util.GetPodRequest(podMeta.Pod)
 			sharePoolCPUCoresTotal -= float64(podRequest.Cpu().MilliValue()) / 1000
 		}
 
-		// exclude LSR and BE pod cpu usage from cpu share pool
+		// exclude LSE/LSR/BE pod cpu usage from cpu share pool
 		podMetric, exist := podMetricMap[string(podMeta.Pod.UID)]
 		if !exist {
 			continue
 		}
-		if podQOS == apiext.QoSLSR || podQOS == apiext.QoSBE {
+		if podQOS == apiext.QoSLSE || podQOS == apiext.QoSLSR || podQOS == apiext.QoSBE {
 			sharePoolCPUCoresUsage -= podMetric
 		}
 	} // end for podsMeta
