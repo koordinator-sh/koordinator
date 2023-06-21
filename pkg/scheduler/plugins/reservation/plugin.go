@@ -372,7 +372,8 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
 		}
 
-		if preemptible := state.preemptible[node.Name]; len(preemptible) > 0 {
+		if len(state.preemptible[node.Name]) > 0 || len(state.preemptibleInRRs[node.Name]) > 0 {
+			preemptible := state.preemptible[node.Name]
 			preemptibleResource := framework.NewResource(preemptible)
 			nodeFits := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, nil, preemptibleResource)
 			if !nodeFits {
