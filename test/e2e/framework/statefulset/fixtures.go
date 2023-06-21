@@ -30,9 +30,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/util/podutils"
-	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
+	imageutils "github.com/koordinator-sh/koordinator/test/utils/image"
 )
 
 // NewStatefulSet creates a new Webserver StatefulSet for testing. The StatefulSet is named name, is in namespace ns,
@@ -119,7 +119,7 @@ func hasPauseProbe(pod *v1.Pod) bool {
 }
 
 var pauseProbe = &v1.Probe{
-	Handler: v1.Handler{
+	ProbeHandler: v1.ProbeHandler{
 		Exec: &v1.ExecAction{Command: []string{"test", "-f", "/data/statefulset-continue"}},
 	},
 	PeriodSeconds:    1,

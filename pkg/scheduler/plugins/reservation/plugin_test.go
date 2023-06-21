@@ -280,7 +280,7 @@ func TestPreFilter(t *testing.T) {
 			cycleState.Write(stateKey, &stateData{
 				hasAffinity: reservationAffinity != nil,
 			})
-			got := pl.PreFilter(context.TODO(), cycleState, tt.pod)
+			_, got := pl.PreFilter(context.TODO(), cycleState, tt.pod)
 			assert.Equal(t, tt.want, got)
 		})
 	}

@@ -180,6 +180,10 @@ func (o *Options) ApplyTo(c *deschedulerappconfig.Config) error {
 	if len(o.ConfigFile) == 0 {
 		o.ApplyLeaderElectionTo(o.ComponentConfig)
 		c.ComponentConfig = *o.ComponentConfig
+		// use the loaded config file only, with the exception of --address and --port.
+		if err := o.CombinedInsecureServing.ApplyTo(c, &c.ComponentConfig); err != nil {
+			return err
+		}
 	} else {
 		cfg, err := loadConfigFromFile(o.ConfigFile)
 		if err != nil {

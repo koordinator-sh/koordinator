@@ -32,6 +32,8 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
@@ -163,12 +165,12 @@ func (g *Plugin) Name() string {
 	return Name
 }
 
-func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	quotaName := g.getPodAssociateQuotaName(pod)
 	g.groupQuotaManager.RefreshRuntime(quotaName)
 	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(quotaName)
 	if quotaInfo == nil {
-		return framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))
+		return nil, framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))
 	}
 	state := g.snapshotPostFilterState(quotaInfo, cycleState)
 
@@ -177,16 +179,16 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	used := quotav1.Add(podRequest, state.used)
 
 	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.runtime); !isLessEqual {
-		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
+		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v",
 			quotaName, printResourceList(state.runtime), printResourceList(state.used), printResourceList(podRequest), exceedDimensions))
 	}
 
 	if *g.pluginArgs.EnableCheckParentQuota {
-		return g.checkQuotaRecursive(quotaName, []string{quotaName}, podRequest)
+		return nil, g.checkQuotaRecursive(quotaName, []string{quotaName}, podRequest)
 	}
 
-	return framework.NewStatus(framework.Success, "")
+	return nil, framework.NewStatus(framework.Success, "")
 }
 
 func (g *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
@@ -234,18 +236,25 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 }
 
 // PostFilter modify the defaultPreemption, only allow pods in the same quota can preempt others.
-func (g *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod,
-	filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	nnn, status := g.preempt(ctx, state, pod, filteredNodeStatusMap)
-	if !status.IsSuccess() {
-		return nil, status
-	}
-	// This happens when the pod is not eligible for preemption or extenders filtered all candidates.
-	if nnn == "" {
-		return nil, framework.NewStatus(framework.Unschedulable)
+func (g *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+	defer func() {
+		metrics.PreemptionAttempts.Inc()
+	}()
+
+	pe := preemption.Evaluator{
+		PluginName: Name,
+		Handler:    g.handle,
+		PodLister:  g.podLister,
+		PdbLister:  g.pdbLister,
+		State:      state,
+		Interface:  g,
 	}
 
-	return &framework.PostFilterResult{NominatedNodeName: nnn}, framework.NewStatus(framework.Success)
+	result, status := pe.Preempt(ctx, pod, filteredNodeStatusMap)
+	if status.Message() != "" {
+		return result, framework.NewStatus(status.Code(), "preemption: "+status.Message())
+	}
+	return result, status
 }
 
 func (g *Plugin) Reserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {

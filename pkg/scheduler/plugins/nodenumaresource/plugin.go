@@ -214,10 +214,10 @@ func (p *Plugin) EventsToRegister() []framework.ClusterEvent {
 	}
 }
 
-func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	resourceSpec, err := GetResourceSpec(pod.Annotations)
 	if err != nil {
-		return framework.NewStatus(framework.Error, err.Error())
+		return nil, framework.NewStatus(framework.Error, err.Error())
 	}
 
 	state := &preFilterState{
@@ -233,7 +233,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 			requests, _ := resourceapi.PodRequestsAndLimits(pod)
 			requestedCPU := requests.Cpu().MilliValue()
 			if requestedCPU%1000 != 0 {
-				return framework.NewStatus(framework.Error, "the requested CPUs must be integer")
+				return nil, framework.NewStatus(framework.Error, "the requested CPUs must be integer")
 			}
 
 			if requestedCPU > 0 {
@@ -247,7 +247,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	cycleState.Write(stateKey, state)
-	return nil
+	return nil, nil
 }
 
 func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {

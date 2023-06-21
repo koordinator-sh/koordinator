@@ -26,13 +26,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	gocmp "github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -44,14 +42,10 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
-	extenderv1 "k8s.io/kube-scheduler/extender/v1"
 	resourcehelper "k8s.io/kubernetes/pkg/api/v1/resource"
 	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
-	plfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
@@ -231,9 +225,6 @@ func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1
 		},
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		schedulertesting.RegisterPluginAsExtensions(noderesources.FitName, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
-			return noderesources.NewFit(plArgs, fh, plfeature.Features{})
-		}, "Filter", "PreFilter"),
 		schedulertesting.RegisterPreFilterPlugin(Name, proxyNew),
 	}
 
@@ -784,7 +775,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 		name           string
 		pod            *corev1.Pod
 		quotaInfo      *core.QuotaInfo
-		expectedStatus framework.Status
+		expectedStatus *framework.Status
 		checkParent    bool
 	}{
 		{
@@ -797,7 +788,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(0).Mem(20).GPU(10).Obj(),
 				},
 			},
-			expectedStatus: *framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
+			expectedStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 				"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [cpu]",
 				extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(0).Mem(20).GPU(10).Obj()),
 				printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()))),
@@ -812,7 +803,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
 				},
 			},
-			expectedStatus: *framework.NewStatus(framework.Success, ""),
+			expectedStatus: framework.NewStatus(framework.Success, ""),
 		},
 		{
 			name: "value not enough",
@@ -824,7 +815,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(1).Mem(2).Obj(),
 				},
 			},
-			expectedStatus: *framework.NewStatus(framework.Unschedulable,
+			expectedStatus: framework.NewStatus(framework.Unschedulable,
 				fmt.Sprintf("Insufficient quotas, "+
 					"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [memory]",
 					extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(1).Mem(2).Obj()),
@@ -840,7 +831,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
 				},
 			},
-			expectedStatus: *framework.NewStatus(framework.Success, ""),
+			expectedStatus: framework.NewStatus(framework.Success, ""),
 		},
 	}
 	for _, tt := range test {
@@ -854,7 +845,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			qi.UnLock()
 			state := framework.NewCycleState()
 			ctx := context.TODO()
-			status := *gp.PreFilter(ctx, state, tt.pod)
+			_, status := gp.PreFilter(ctx, state, tt.pod)
 			assert.Equal(t, status, tt.expectedStatus)
 		})
 	}
@@ -1099,199 +1090,6 @@ func TestPlugin_RemovePod(t *testing.T) {
 	}
 }
 
-var (
-	lowPriority, midPriority, highPriority = int32(0), int32(100), int32(1000)
-)
-
-func TestPlugin_DryRunPreemption(t *testing.T) {
-	res := map[corev1.ResourceName]string{corev1.ResourceMemory: "150"}
-	tests := []struct {
-		name            string
-		args            *config.ElasticQuotaArgs
-		pod             *corev1.Pod
-		pods            []*corev1.Pod
-		nodes           []*corev1.Node
-		quotaInfos      []*core.QuotaInfo
-		clusterResource corev1.ResourceList
-		nodesStatuses   framework.NodeToStatusMap
-		want            []defaultpreemption.Candidate
-	}{
-		{
-			name: "in same quota preemption",
-			pod:  makePod("t1-p", "ns1", 50, 0, 0, highPriority, "", "t1-p"),
-			pods: []*corev1.Pod{
-				makePod("t1-p1", "ns1", 50, 0, 0, midPriority, "t1-p1", "node-a"),
-				makePod("t1-p2", "ns2", 50, 0, 0, midPriority, "t1-p2", "node-a"),
-				makePod("t1-p3", "ns2", 50, 0, 0, midPriority, "t1-p3", "node-a"),
-			},
-			nodes: []*corev1.Node{
-				schedulertesting.MakeNode().Name("node-a").Capacity(res).Obj(),
-			},
-			nodesStatuses: framework.NodeToStatusMap{
-				"node-a": framework.NewStatus(framework.Unschedulable),
-			},
-			want: []defaultpreemption.Candidate{
-				&candidate{
-					victims: &extenderv1.Victims{
-						Pods: []*corev1.Pod{
-							makePod("t1-p1", "ns1", 50, 0, 0, midPriority, "t1-p1", "node-a"),
-						},
-						NumPDBViolations: 0,
-					},
-					name: "node-a",
-				},
-			},
-			quotaInfos: []*core.QuotaInfo{
-				{
-					Name:       "ns1",
-					ParentName: extension.RootQuotaName,
-					PodCache:   make(map[string]*core.PodInfo),
-				},
-				{
-					Name:       "ns2",
-					ParentName: extension.RootQuotaName,
-					PodCache:   make(map[string]*core.PodInfo),
-				},
-			},
-			clusterResource: createResourceList(0, 400),
-		},
-		{
-			name: "preempt same quotaGroup, although its priority is higher than others",
-			pod:  makePod("t1-p", "ns1", 50, 0, 0, highPriority, "", "t1-p"),
-			pods: []*corev1.Pod{
-				makePod("t1-p1", "ns1", 50, 0, 0, midPriority, "t1-p1", "node-a"),
-				makePod("t1-p2", "ns2", 50, 0, 0, lowPriority, "t1-p2", "node-a"),
-				makePod("t1-p3", "ns2", 50, 0, 0, lowPriority, "t1-p3", "node-a"),
-			},
-			nodes: []*corev1.Node{
-				schedulertesting.MakeNode().Name("node-a").Capacity(res).Obj(),
-			},
-			nodesStatuses: framework.NodeToStatusMap{
-				"node-a": framework.NewStatus(framework.Unschedulable),
-			},
-			want: []defaultpreemption.Candidate{
-				&candidate{
-					victims: &extenderv1.Victims{
-						Pods: []*corev1.Pod{
-							makePod("t1-p1", "ns1", 50, 0, 0, midPriority, "t1-p1", "node-a"),
-						},
-						NumPDBViolations: 0,
-					},
-					name: "node-a",
-				},
-			},
-			quotaInfos: []*core.QuotaInfo{
-				{
-					Name:       "ns1",
-					ParentName: extension.RootQuotaName,
-					PodCache:   make(map[string]*core.PodInfo),
-				},
-				{
-					Name:       "ns2",
-					ParentName: extension.RootQuotaName,
-					PodCache:   make(map[string]*core.PodInfo),
-				},
-			},
-			clusterResource: createResourceList(0, 400),
-		},
-		{
-			name: "preempt same quotaGroup, quota not enough",
-			pod:  makePod("t1-p", "ns1", 50, 0, 0, highPriority, "", "t1-p"),
-			pods: []*corev1.Pod{
-				makePod("t1-p1", "ns1", 50, 0, 0, midPriority, "t1-p1", "node-a"),
-				makePod("t1-p2", "ns2", 50, 0, 0, lowPriority, "t1-p2", "node-a"),
-			},
-			nodes: []*corev1.Node{
-				schedulertesting.MakeNode().Name("node-a").Capacity(res).Obj(),
-			},
-			nodesStatuses: framework.NodeToStatusMap{
-				"node-a": framework.NewStatus(framework.Unschedulable),
-			},
-			want: []defaultpreemption.Candidate{
-				&candidate{
-					victims: &extenderv1.Victims{
-						Pods: []*corev1.Pod{
-							makePod("t1-p1", "ns1", 50, 0, 0, midPriority, "t1-p1", "node-a"),
-						},
-						NumPDBViolations: 0,
-					},
-					name: "node-a",
-				},
-			},
-			quotaInfos: []*core.QuotaInfo{
-				{
-					Name:       "ns1",
-					ParentName: extension.RootQuotaName,
-					PodCache:   make(map[string]*core.PodInfo),
-				},
-				{
-					Name:       "ns2",
-					ParentName: extension.RootQuotaName,
-					PodCache:   make(map[string]*core.PodInfo),
-				},
-			},
-			clusterResource: createResourceList(0, 100),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuitWithPod(t, tt.nodes, tt.pods)
-			pl := suit.plugin.(*Plugin)
-			gqm := pl.groupQuotaManager
-			state := framework.NewCycleState()
-			ctx := context.Background()
-
-			gqm.UpdateClusterTotalResource(tt.clusterResource)
-			for _, quota := range tt.quotaInfos {
-				q := CreateQuota2(quota.Name, quota.ParentName, 1000, 1000, 0, 0, 1000, 1000, false)
-				pl.OnQuotaAdd(q)
-			}
-			for _, pod := range tt.pods {
-				pod.Labels = make(map[string]string)
-				pod.Labels[extension.LabelQuotaName] = pod.Namespace
-				pl.OnPodAdd(pod)
-				pl.groupQuotaManager.UpdatePodIsAssigned(pod.Namespace, pod, true)
-			}
-			tt.pod.Labels = make(map[string]string)
-			tt.pod.Labels[extension.LabelQuotaName] = tt.pod.Namespace
-
-			// Some tests rely on PreFilter plugin to compute its CycleState.
-			suit.Framework.RunPreFilterPlugins(ctx, state, tt.pod)
-
-			quotaName := pl.getPodAssociateQuotaName(tt.pod)
-			pl.groupQuotaManager.UpdatePodIsAssigned(quotaName, tt.pod, true)
-			pl.groupQuotaManager.RefreshRuntime(tt.pod.Namespace)
-			quotaInfo := pl.groupQuotaManager.GetQuotaInfoByName(quotaName)
-			pl.snapshotPostFilterState(quotaInfo, state)
-
-			got, status := pl.findCandidates(ctx, state, tt.pod, tt.nodesStatuses)
-			if !status.IsSuccess() {
-				t.Fatalf("unexpected error during FindCandidates(): %v", status)
-			}
-
-			// Sort the values (inner victims) and the candidate itself (by its NominatedNodeName).
-			for i := range got {
-				victims := got[i].Victims().Pods
-				sort.Slice(victims, func(i, j int) bool {
-					return victims[i].Name < victims[j].Name
-				})
-			}
-			sort.Slice(got, func(i, j int) bool {
-				return got[i].Name() < got[j].Name()
-			})
-
-			for _, victim := range tt.want {
-				victim.Victims().Pods[0].Labels = make(map[string]string)
-				victim.Victims().Pods[0].Labels[extension.LabelQuotaName] = victim.Victims().Pods[0].Namespace
-			}
-			if diff := gocmp.Diff(tt.want, got, gocmp.AllowUnexported(candidate{})); diff != "" {
-				t.Errorf("Unexpected candidates (-want, +got): %s", diff)
-			}
-		})
-	}
-}
-
 func TestPlugin_createDefaultQuotaIfNotPresent(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
 	eq, _ := suit.client.SchedulingV1alpha1().ElasticQuotas(suit.elasticQuotaArgs.QuotaGroupNamespace).Get(context.TODO(), extension.DefaultQuotaName, metav1.GetOptions{})
@@ -1306,21 +1104,6 @@ func TestPlugin_createSystemQuotaIfNotPresent(t *testing.T) {
 	if !quotav1.Equals(eq.Spec.Max, suit.elasticQuotaArgs.SystemQuotaGroupMax) {
 		t.Errorf("error")
 	}
-}
-
-func makePod(podName string, namespace string, memReq int64, cpuReq int64, gpuReq int64, priority int32, uid string, nodeName string) *corev1.Pod {
-	pause := imageutils.GetPauseImageName()
-	pod := schedulertesting.MakePod().Namespace(namespace).Name(podName).Container(pause).
-		Priority(priority).Node(nodeName).UID(uid).ZeroTerminationGracePeriod().Obj()
-	pod.Spec.Containers[0].Resources = corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: *resource.NewQuantity(memReq, resource.DecimalSI),
-			corev1.ResourceCPU:    *resource.NewMilliQuantity(cpuReq, resource.DecimalSI),
-			"nvidia.com/gpu":      *resource.NewQuantity(gpuReq, resource.DecimalSI),
-		},
-	}
-	pod.Status.Phase = corev1.PodRunning
-	return pod
 }
 
 func makePod2(podName string, request corev1.ResourceList) *corev1.Pod {
@@ -1438,9 +1221,9 @@ func (npm *nominatedPodMap) DeleteNominatedPodIfExists(pod *corev1.Pod) {
 // This is called during the preemption process after a node is nominated to run
 // the pod. We update the structure before sending a request to update the pod
 // object to avoid races with the following scheduling cycles.
-func (npm *nominatedPodMap) AddNominatedPod(pi *framework.PodInfo, nodeName string) {
+func (npm *nominatedPodMap) AddNominatedPod(pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
 	npm.Lock()
-	npm.add(pi, nodeName)
+	npm.add(pi, nominatingInfo.NominatedNodeName)
 	npm.Unlock()
 }
 

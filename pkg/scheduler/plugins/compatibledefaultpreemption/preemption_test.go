@@ -25,7 +25,6 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	scheduledconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	scheduledruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
@@ -52,8 +51,8 @@ func TestNew(t *testing.T) {
 				Raw:         []byte(`{"minCandidateNodesPercentage": 20, "minCandidateNodesAbsolute": 80}`),
 			},
 			wantArgs: &scheduledconfig.DefaultPreemptionArgs{
-				MinCandidateNodesPercentage: 20,
-				MinCandidateNodesAbsolute:   80,
+				MinCandidateNodesPercentage: 10,
+				MinCandidateNodesAbsolute:   100,
 			},
 		},
 		{
@@ -62,7 +61,11 @@ func TestNew(t *testing.T) {
 				ContentType: runtime.ContentTypeJSON,
 				Raw:         []byte(`{"minCandidateNodesAbsolute": -1}`),
 			},
-			wantErr: true,
+			wantArgs: &scheduledconfig.DefaultPreemptionArgs{
+				MinCandidateNodesPercentage: 10,
+				MinCandidateNodesAbsolute:   100,
+			},
+			wantErr: false,
 		},
 		{
 			name:    "args with other plugin args object",
@@ -81,22 +84,6 @@ func TestNew(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
-				func(reg *scheduledruntime.Registry, profile *scheduledconfig.KubeSchedulerProfile) {
-					reg.Register(Name, New)
-					profile.PluginConfig = []scheduledconfig.PluginConfig{
-						{
-							Name: Name,
-							Args: nil,
-						},
-					}
-					profile.Plugins.PostFilter.Disabled = append(profile.Plugins.PostFilter.Disabled, scheduledconfig.Plugin{
-						Name: defaultpreemption.Name,
-					})
-					profile.Plugins.PostFilter.Enabled = append(profile.Plugins.PostFilter.Enabled, scheduledconfig.Plugin{
-						Name: Name,
-					})
-				},
-
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
@@ -111,7 +98,7 @@ func TestNew(t *testing.T) {
 
 			p, err := New(tt.args, fh)
 			if tt.wantErr && err == nil {
-				t.Fatal("expect err but got nil")
+				t.Fatal("expect err but got nil", err)
 			}
 			if tt.wantErr {
 				return

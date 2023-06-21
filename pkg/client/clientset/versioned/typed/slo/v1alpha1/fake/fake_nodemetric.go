@@ -110,7 +110,7 @@ func (c *FakeNodeMetrics) UpdateStatus(ctx context.Context, nodeMetric *v1alpha1
 // Delete takes name of the nodeMetric and deletes it. Returns an error if one occurs.
 func (c *FakeNodeMetrics) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(nodemetricsResource, name), &v1alpha1.NodeMetric{})
+		Invokes(testing.NewRootDeleteActionWithOptions(nodemetricsResource, name, opts), &v1alpha1.NodeMetric{})
 	return err
 }
 

@@ -198,7 +198,8 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 			)
 			assert.NoError(t, err)
 			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
-			assert.Equal(t, tt.want, frameworkExtender.RunPreFilterPlugins(context.TODO(), framework.NewCycleState(), tt.pod))
+			_, status := frameworkExtender.RunPreFilterPlugins(context.TODO(), framework.NewCycleState(), tt.pod)
+			assert.Equal(t, tt.want, status)
 			expectedAnnotations := map[string]string{
 				"BeforePreFilter-1": "1",
 				"AfterPreFilter-1":  "1",

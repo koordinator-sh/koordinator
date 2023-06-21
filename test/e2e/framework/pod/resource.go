@@ -35,9 +35,9 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubectl/pkg/util/podutils"
 	testutils "k8s.io/kubernetes/test/utils"
-	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	e2elog "github.com/koordinator-sh/koordinator/test/e2e/framework/log"
+	imageutils "github.com/koordinator-sh/koordinator/test/utils/image"
 )
 
 // errPodCompleted is returned by PodRunning or PodContainerRunning to indicate that

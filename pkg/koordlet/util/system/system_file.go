@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
+	utilsysctl "k8s.io/component-helpers/node/util/sysctl"
 	"k8s.io/klog/v2"
-	utilsysctl "k8s.io/kubernetes/pkg/util/sysctl"
 )
 
 const (

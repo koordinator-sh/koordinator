@@ -170,17 +170,17 @@ func (ext *frameworkExtenderImpl) takeSnapshot(ctx context.Context) error {
 }
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
-func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	err := ext.takeSnapshot(ctx)
 	if err != nil {
-		return framework.AsStatus(err)
+		return nil, framework.AsStatus(err)
 	}
 
 	for _, transformer := range ext.preFilterTransformers {
 		newPod, transformed, status := transformer.BeforePreFilter(ctx, cycleState, pod)
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run BeforePreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
-			return status
+			return nil, status
 		}
 		if transformed {
 			klog.V(5).InfoS("BeforePreFilter transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
@@ -191,18 +191,18 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		}
 	}
 
-	status := ext.Framework.RunPreFilterPlugins(ctx, cycleState, pod)
+	result, status := ext.Framework.RunPreFilterPlugins(ctx, cycleState, pod)
 	if !status.IsSuccess() {
-		return status
+		return result, status
 	}
 
 	for _, transformer := range ext.preFilterTransformers {
 		if status := transformer.AfterPreFilter(ctx, cycleState, pod); !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run AfterPreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
-			return status
+			return nil, status
 		}
 	}
-	return nil
+	return result, nil
 }
 
 // RunFilterPluginsWithNominatedPods transforms the Filter phase of framework with filter transformers.

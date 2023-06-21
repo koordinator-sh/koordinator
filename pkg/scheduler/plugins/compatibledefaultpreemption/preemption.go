@@ -60,7 +60,6 @@ func New(dpArgs runtime.Object, fh framework.Handle) (framework.Plugin, error) {
 
 	fts := plfeature.Features{
 		EnablePodAffinityNamespaceSelector: feature.DefaultFeatureGate.Enabled(features.PodAffinityNamespaceSelector),
-		EnablePodOverhead:                  feature.DefaultFeatureGate.Enabled(features.PodOverhead),
 		EnableReadWriteOncePod:             feature.DefaultFeatureGate.Enabled(features.ReadWriteOncePod),
 		EnablePodDisruptionBudget:          false, // kube version <= 1.20 disable the feature
 	}

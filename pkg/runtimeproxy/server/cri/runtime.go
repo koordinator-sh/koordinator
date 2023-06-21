@@ -156,3 +156,11 @@ func (c *RuntimeManagerCriServer) PortForward(ctx context.Context, in *runtimeap
 func (c *RuntimeManagerCriServer) UpdateRuntimeConfig(ctx context.Context, in *runtimeapi.UpdateRuntimeConfigRequest) (*runtimeapi.UpdateRuntimeConfigResponse, error) {
 	return c.backendRuntimeServiceClient.UpdateRuntimeConfig(ctx, in)
 }
+
+func (c *RuntimeManagerCriServer) PodSandboxStats(ctx context.Context, in *runtimeapi.PodSandboxStatsRequest) (*runtimeapi.PodSandboxStatsResponse, error) {
+	return c.backendRuntimeServiceClient.PodSandboxStats(ctx, in)
+}
+
+func (c *RuntimeManagerCriServer) ListPodSandboxStats(ctx context.Context, in *runtimeapi.ListPodSandboxStatsRequest) (*runtimeapi.ListPodSandboxStatsResponse, error) {
+	return c.backendRuntimeServiceClient.ListPodSandboxStats(ctx, in)
+}

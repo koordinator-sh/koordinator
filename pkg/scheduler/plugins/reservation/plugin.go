@@ -214,7 +214,7 @@ func getStateData(cycleState *framework.CycleState) *stateData {
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.
 // Also do validations in this phase.
-func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	if reservationutil.IsReservePod(pod) {
 		// validate reserve pod and reservation
 		klog.V(4).InfoS("Attempting to pre-filter reserve pod", "pod", klog.KObj(pod))
@@ -224,22 +224,22 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 			if errors.IsNotFound(err) {
 				klog.V(3).InfoS("skip the pre-filter for reservation since the object is not found", "pod", klog.KObj(pod), "reservation", rName)
 			}
-			return framework.NewStatus(framework.Error, "cannot get reservation, err: "+err.Error())
+			return nil, framework.NewStatus(framework.Error, "cannot get reservation, err: "+err.Error())
 		}
 		err = reservationutil.ValidateReservation(r)
 		if err != nil {
-			return framework.NewStatus(framework.Error, err.Error())
+			return nil, framework.NewStatus(framework.Error, err.Error())
 		}
-		return nil
+		return nil, nil
 	}
 
 	state := getStateData(cycleState)
 	if state.hasAffinity && len(state.nodeReservationStates) == 0 {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
 	}
 
 	klog.V(5).InfoS("Attempting to pre-filter pod for reservation state", "pod", klog.KObj(pod))
-	return nil
+	return nil, nil
 }
 
 func (pl *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
