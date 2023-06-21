@@ -46,6 +46,7 @@ import (
 	clientsetv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	listerv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -92,8 +93,9 @@ type nodeMetricInformer struct {
 	eventRecorder      record.EventRecorder
 	statusUpdater      *statusUpdater
 
-	podsInformer *podsInformer
-	metricCache  metriccache.MetricCache
+	podsInformer     *podsInformer
+	metricCache      metriccache.MetricCache
+	predictorFactory prediction.PredictorFactory
 
 	rwMutex    sync.RWMutex
 	nodeMetric *slov1alpha1.NodeMetric
@@ -134,6 +136,7 @@ func (r *nodeMetricInformer) Setup(ctx *PluginOption, state *PluginState) {
 		klog.Fatalf("pods informer format error")
 	}
 	r.podsInformer = podsInformer
+	r.predictorFactory = state.predictorFactory
 
 	r.nodeMetricInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -234,16 +237,17 @@ func (r *nodeMetricInformer) sync() {
 		return
 	}
 
-	nodeMetricInfo, podMetricInfo := r.collectMetric()
+	nodeMetricInfo, podMetricInfo, prodReclaimableMetric := r.collectMetric()
 	if nodeMetricInfo == nil {
 		klog.Warningf("node metric is not ready, skip this round.")
 		return
 	}
 
 	newStatus := &slov1alpha1.NodeMetricStatus{
-		UpdateTime: &metav1.Time{Time: time.Now()},
-		NodeMetric: nodeMetricInfo,
-		PodsMetric: podMetricInfo,
+		UpdateTime:            &metav1.Time{Time: time.Now()},
+		NodeMetric:            nodeMetricInfo,
+		PodsMetric:            podMetricInfo,
+		ProdReclaimableMetric: prodReclaimableMetric,
 	}
 	retErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		nodeMetric, err := r.nodeMetricLister.Get(r.nodeName)
@@ -314,7 +318,7 @@ func (r *nodeMetricInformer) generateQueryDuration() (start time.Time, end time.
 	return
 }
 
-func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*slov1alpha1.PodMetricInfo) {
+func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*slov1alpha1.PodMetricInfo, *slov1alpha1.ReclaimableMetric) {
 	spec := r.getNodeMetricSpec()
 	endTime := time.Now()
 	startTime := endTime.Add(-time.Duration(*spec.CollectPolicy.AggregateDurationSeconds) * time.Second)
@@ -340,7 +344,9 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		Start:     &startTime,
 		End:       &endTime,
 	}
+	prodPredictor := r.predictorFactory.New(prediction.ProdReclaimablePredictor)
 	for _, podMeta := range podsMeta {
+		prodPredictor.AddPod(podMeta.Pod)
 		podMetric, err := r.collectPodMetric(podMeta, podQueryParam)
 		if err != nil {
 			klog.Warningf("query pod metric failed, pod %s/%s, error %v", genPodMetaKey(podMeta), err)
@@ -353,8 +359,14 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		}
 		podsMetricInfo = append(podsMetricInfo, podMetric)
 	}
+	prodReclaimable := &slov1alpha1.ReclaimableMetric{}
+	if p, err := prodPredictor.GetResult(); err != nil {
+		klog.Errorf("failed to get prediction, err %v", err)
+	} else {
+		prodReclaimable.Resource = slov1alpha1.ResourceMap{ResourceList: p}
+	}
 
-	return nodeMetricInfo, podsMetricInfo
+	return nodeMetricInfo, podsMetricInfo, prodReclaimable
 }
 
 func (r *nodeMetricInformer) queryNodeMetric(start time.Time, end time.Time, aggregateType metriccache.AggregationType,

@@ -72,6 +72,7 @@ weights over time periods. PredictServer is responsible for storing the intermed
 the model and recovering when the process restarts.
 */
 type PredictServer interface {
+	Setup(statesinformer.StatesInformer, metriccache.MetricCache) error
 	Run(stopCh <-chan struct{}) error
 	HasSynced() bool
 	GetPrediction(MetricDesc) (Result, error)
@@ -99,17 +100,20 @@ type peakPredictServer struct {
 	checkpointer Checkpointer
 }
 
-func NewPeakPredictServer(statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache, options Options) PredictServer {
+func NewPeakPredictServer(cfg *Config) PredictServer {
 	return &peakPredictServer{
-		informer:     NewInformer(statesInformer),
-		metricServer: NewMetricServer(metricCache),
-
 		uidGenerator: &generator{},
 		models:       make(map[UIDType]*PredictModel),
 		clock:        clock.RealClock{},
 		hasSynced:    &atomic.Bool{},
-		checkpointer: NewFileCheckpointer(options.Filepath),
+		checkpointer: NewFileCheckpointer(cfg.PredictionCheckpointFilepath),
 	}
+}
+
+func (p *peakPredictServer) Setup(statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache) error {
+	p.informer = NewInformer(statesInformer)
+	p.metricServer = NewMetricServer(metricCache)
+	return nil
 }
 
 func (p *peakPredictServer) Run(stopCh <-chan struct{}) error {

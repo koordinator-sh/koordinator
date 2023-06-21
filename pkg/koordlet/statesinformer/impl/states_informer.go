@@ -36,6 +36,7 @@ import (
 	schedv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
@@ -71,9 +72,10 @@ type PluginOption struct {
 }
 
 type PluginState struct {
-	metricCache     metriccache.MetricCache
-	callbackRunner  *callbackRunner
-	informerPlugins map[PluginName]informerPlugin
+	metricCache      metriccache.MetricCache
+	callbackRunner   *callbackRunner
+	informerPlugins  map[PluginName]informerPlugin
+	predictorFactory prediction.PredictorFactory
 }
 
 type GetGPUDriverAndModelFunc func() (string, string)
@@ -100,7 +102,8 @@ type informerPlugin interface {
 }
 
 // TODO merge all clients into one struct
-func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient topologyclientset.Interface, metricsCache metriccache.MetricCache, nodeName string, schedulingClient schedv1alpha1.SchedulingV1alpha1Interface) StatesInformer {
+func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient topologyclientset.Interface,
+	metricsCache metriccache.MetricCache, nodeName string, schedulingClient schedv1alpha1.SchedulingV1alpha1Interface, predictorFactory prediction.PredictorFactory) StatesInformer {
 	opt := &PluginOption{
 		config:      config,
 		KubeClient:  kubeClient,
@@ -109,9 +112,10 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 		NodeName:    nodeName,
 	}
 	stat := &PluginState{
-		metricCache:     metricsCache,
-		informerPlugins: map[PluginName]informerPlugin{},
-		callbackRunner:  NewCallbackRunner(),
+		metricCache:      metricsCache,
+		informerPlugins:  map[PluginName]informerPlugin{},
+		callbackRunner:   NewCallbackRunner(),
+		predictorFactory: predictorFactory,
 	}
 	s := &statesInformer{
 		config:       config,

@@ -34,6 +34,7 @@ import (
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	fakeschedv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1/fake"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
@@ -281,7 +282,7 @@ func Test_statesInformer_Run(t *testing.T) {
 			//}).AnyTimes()
 			nodeName := tt.fields.node.Name
 			schedClient := &fakeschedv1alpha1.FakeSchedulingV1alpha1{}
-			si := NewStatesInformer(tt.fields.config, kubeClient, koordClient, topoClient, metricCache, nodeName, schedClient)
+			si := NewStatesInformer(tt.fields.config, kubeClient, koordClient, topoClient, metricCache, nodeName, schedClient, prediction.NewEmptyPredictorFactory())
 			s := si.(*statesInformer)
 			s.states.informerPlugins = tt.fields.pluginRegistry
 			stopChannel := make(chan struct{}, 1)

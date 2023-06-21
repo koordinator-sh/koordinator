@@ -34,6 +34,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	maframework "github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	qosmanagerconfig "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/config"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -60,7 +61,9 @@ type Configuration struct {
 	QosManagerConf     *qosmanagerconfig.Config
 	RuntimeHookConf    *runtimehooks.Config
 	AuditConf          *audit.Config
-	FeatureGates       map[string]bool
+	PredictionConf     *prediction.Config
+
+	FeatureGates map[string]bool
 }
 
 func NewConfiguration() *Configuration {
@@ -74,6 +77,7 @@ func NewConfiguration() *Configuration {
 		QosManagerConf:     qosmanagerconfig.NewDefaultConfig(),
 		RuntimeHookConf:    runtimehooks.NewDefaultConfig(),
 		AuditConf:          audit.NewDefaultConfig(),
+		PredictionConf:     prediction.NewDefaultConfig(),
 	}
 }
 
@@ -87,6 +91,7 @@ func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 	c.ResManagerConf.InitFlags(fs)
 	c.RuntimeHookConf.InitFlags(fs)
 	c.AuditConf.InitFlags(fs)
+	c.PredictionConf.InitFlags(fs)
 	resourceexecutor.Conf.InitFlags(fs)
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "feature-gates", "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 		"Options are:\n"+strings.Join(features.DefaultKoordletFeatureGate.KnownFeatures(), "\n"))
