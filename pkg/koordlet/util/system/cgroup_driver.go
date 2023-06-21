@@ -193,7 +193,19 @@ var cgroupPathFormatterInCgroupfs = formatter{
 }
 
 // CgroupPathFormatter uses the Systemd cgroup driver by default.
-var CgroupPathFormatter = cgroupPathFormatterInSystemd
+var CgroupPathFormatter = GetCgroupFormatter()
+
+func GetCgroupPathFormatter(driver CgroupDriverType) formatter {
+	switch driver {
+	case Systemd:
+		return cgroupPathFormatterInSystemd
+	case Cgroupfs:
+		return cgroupPathFormatterInCgroupfs
+	default:
+		klog.Warningf("cgroup driver formatter not supported: '%s'", string(driver))
+		return cgroupPathFormatterInSystemd
+	}
+}
 
 func SetupCgroupPathFormatter(driver CgroupDriverType) {
 	switch driver {

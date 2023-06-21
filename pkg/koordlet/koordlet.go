@@ -17,16 +17,13 @@ limitations under the License.
 package agent
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
@@ -91,37 +88,6 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	}
 
 	statesInformer := statesinformerimpl.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, nodeName, schedulingClient)
-
-	// setup cgroup path formatter from cgroup driver type
-	var detectCgroupDriver system.CgroupDriverType
-	if pollErr := wait.PollImmediate(time.Second*10, time.Minute, func() (bool, error) {
-		driver := system.GuessCgroupDriverFromCgroupName()
-		if driver.Validate() {
-			detectCgroupDriver = driver
-			return true, nil
-		}
-		klog.Infof("can not detect cgroup driver from 'kubepods' cgroup name")
-
-		node, err := kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, v1.GetOptions{})
-		if err != nil || node == nil {
-			klog.Errorf("Can't get node, err: %v", err)
-			return false, nil
-		}
-
-		port := int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
-		if driver, err := system.GuessCgroupDriverFromKubeletPort(port); err == nil && driver.Validate() {
-			detectCgroupDriver = driver
-			return true, nil
-		} else {
-			klog.Errorf("guess kubelet cgroup driver failed, retry...: %v", err)
-			return false, nil
-		}
-	}); pollErr != nil {
-		return nil, fmt.Errorf("can not detect kubelet cgroup driver: %v", pollErr)
-	}
-	system.SetupCgroupPathFormatter(detectCgroupDriver)
-	klog.Infof("Node %s use '%s' as cgroup driver", nodeName, string(detectCgroupDriver))
-
 	collectorService := metricsadvisor.NewMetricAdvisor(config.CollectorConf, statesInformer, metricCache)
 
 	evictVersion, err := util.FindSupportedEvictVersion(kubeClient)
