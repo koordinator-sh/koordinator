@@ -26,7 +26,6 @@ import (
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/batchresource"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/compatibledefaultpreemption"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/defaultprebind"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/deviceshare"
@@ -42,15 +41,14 @@ import (
 )
 
 var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
-	loadaware.Name:                   loadaware.New,
-	nodenumaresource.Name:            nodenumaresource.New,
-	reservation.Name:                 reservation.New,
-	batchresource.Name:               batchresource.New,
-	coscheduling.Name:                coscheduling.New,
-	deviceshare.Name:                 deviceshare.New,
-	elasticquota.Name:                elasticquota.New,
-	compatibledefaultpreemption.Name: compatibledefaultpreemption.New,
-	defaultprebind.Name:              defaultprebind.New,
+	loadaware.Name:        loadaware.New,
+	nodenumaresource.Name: nodenumaresource.New,
+	reservation.Name:      reservation.New,
+	batchresource.Name:    batchresource.New,
+	coscheduling.Name:     coscheduling.New,
+	deviceshare.Name:      deviceshare.New,
+	elasticquota.Name:     elasticquota.New,
+	defaultprebind.Name:   defaultprebind.New,
 }
 
 func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {

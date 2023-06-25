@@ -19,13 +19,17 @@ package frameworkext
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	policyv1 "k8s.io/api/policy/v1"
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
 	storagev1beta1 "k8s.io/api/storage/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -115,6 +119,144 @@ func TestCustomDisableCSIStorageCapacityInformer(t *testing.T) {
 	informerFactory.WaitForCacheSync(nil)
 
 	got, err := capacityLister.CSIStorageCapacities(storageCapacity.Namespace).Get(storageCapacity.Name)
+	assert.True(t, errors.IsNotFound(err))
+	assert.Nil(t, got)
+}
+
+func TestCustomPodDisruptionBudgetInformer(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.CompatiblePodDisruptionBudget, true)()
+
+	fakeClient := kubefake.NewSimpleClientset()
+	now := time.Now()
+	pdb := &policyv1beta1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+		},
+		Spec: policyv1beta1.PodDisruptionBudgetSpec{
+			MinAvailable: intstr.ValueOrDefault(nil, intstr.FromInt(10)),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test": "true",
+				},
+			},
+			MaxUnavailable: intstr.ValueOrDefault(nil, intstr.FromInt(1)),
+		},
+		Status: policyv1beta1.PodDisruptionBudgetStatus{
+			ObservedGeneration: 1,
+			DisruptedPods: map[string]metav1.Time{
+				"123456": {Time: now},
+			},
+			DisruptionsAllowed: 1,
+			CurrentHealthy:     2,
+			DesiredHealthy:     3,
+			ExpectedPods:       4,
+			Conditions: []metav1.Condition{
+				{
+					Type:   policyv1beta1.DisruptionAllowedCondition,
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+	_, err := fakeClient.PolicyV1beta1().PodDisruptionBudgets(pdb.Namespace).Create(context.TODO(), pdb, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	SetupCustomInformers(informerFactory)
+
+	v1PDBLister := informerFactory.Policy().V1().PodDisruptionBudgets().Lister()
+	assert.NotNil(t, v1PDBLister)
+
+	informerFactory.Start(nil)
+	informerFactory.WaitForCacheSync(nil)
+
+	got, err := v1PDBLister.PodDisruptionBudgets(pdb.Namespace).Get(pdb.Name)
+	assert.NoError(t, err)
+
+	expected := &policyv1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+		},
+		Spec: policyv1.PodDisruptionBudgetSpec{
+			MinAvailable: intstr.ValueOrDefault(nil, intstr.FromInt(10)),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test": "true",
+				},
+			},
+			MaxUnavailable: intstr.ValueOrDefault(nil, intstr.FromInt(1)),
+		},
+		Status: policyv1.PodDisruptionBudgetStatus{
+			ObservedGeneration: 1,
+			DisruptedPods: map[string]metav1.Time{
+				"123456": {Time: now},
+			},
+			DisruptionsAllowed: 1,
+			CurrentHealthy:     2,
+			DesiredHealthy:     3,
+			ExpectedPods:       4,
+			Conditions: []metav1.Condition{
+				{
+					Type:   policyv1beta1.DisruptionAllowedCondition,
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+	assert.Equal(t, expected, got)
+}
+
+func TestCustomDisablePodDisruptionBudgetInformer(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DisablePodDisruptionBudgetInformer, true)()
+
+	fakeClient := kubefake.NewSimpleClientset()
+	now := time.Now()
+	pdb := &policyv1beta1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+		},
+		Spec: policyv1beta1.PodDisruptionBudgetSpec{
+			MinAvailable: intstr.ValueOrDefault(nil, intstr.FromInt(10)),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test": "true",
+				},
+			},
+			MaxUnavailable: intstr.ValueOrDefault(nil, intstr.FromInt(1)),
+		},
+		Status: policyv1beta1.PodDisruptionBudgetStatus{
+			ObservedGeneration: 1,
+			DisruptedPods: map[string]metav1.Time{
+				"123456": {Time: now},
+			},
+			DisruptionsAllowed: 1,
+			CurrentHealthy:     2,
+			DesiredHealthy:     3,
+			ExpectedPods:       4,
+			Conditions: []metav1.Condition{
+				{
+					Type:   policyv1beta1.DisruptionAllowedCondition,
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+	_, err := fakeClient.PolicyV1beta1().PodDisruptionBudgets(pdb.Namespace).Create(context.TODO(), pdb, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	SetupCustomInformers(informerFactory)
+
+	v1PDBLister := informerFactory.Policy().V1().PodDisruptionBudgets().Lister()
+	assert.NotNil(t, v1PDBLister)
+
+	informerFactory.Start(nil)
+	informerFactory.WaitForCacheSync(nil)
+
+	got, err := v1PDBLister.PodDisruptionBudgets(pdb.Namespace).Get(pdb.Name)
 	assert.True(t, errors.IsNotFound(err))
 	assert.Nil(t, got)
 }

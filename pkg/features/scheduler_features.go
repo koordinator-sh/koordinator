@@ -37,11 +37,27 @@ const (
 	// DisableCSIStorageCapacityInformer is used to disable CSIStorageCapacity informer
 	// Versions below k8s v1.22 need to enable the FeatureGate
 	DisableCSIStorageCapacityInformer featuregate.Feature = "DisableCSIStorageCapacityInformer"
+
+	// owner: @joseph
+	// alpha: v0.1
+	//
+	// CompatiblePodDisruptionBudget is used to set a custom PodDisruptionBudget informer to
+	// be compatible with clusters that do not support v1.PodDisruptionBudget.
+	// Versions below k8s v1.22 need to enable the FeatureGate
+	CompatiblePodDisruptionBudget featuregate.Feature = "CompatiblePodDisruptionBudget"
+
+	// owner: @joseph
+	// alpha: v0.1
+	//
+	// DisablePodDisruptionBudgetInformer is used to disable PodDisruptionBudget informer
+	DisablePodDisruptionBudgetInformer featuregate.Feature = "DisablePodDisruptionBudgetInformer"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-	CompatibleCSIStorageCapacity:      {Default: false, PreRelease: featuregate.Alpha},
-	DisableCSIStorageCapacityInformer: {Default: false, PreRelease: featuregate.Alpha},
+	CompatibleCSIStorageCapacity:       {Default: false, PreRelease: featuregate.Alpha},
+	DisableCSIStorageCapacityInformer:  {Default: false, PreRelease: featuregate.Alpha},
+	CompatiblePodDisruptionBudget:      {Default: false, PreRelease: featuregate.Alpha},
+	DisablePodDisruptionBudgetInformer: {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {
