@@ -163,7 +163,7 @@ func TestBlkIOReconcile_reconcile(t *testing.T) {
 
 		b := NewBlkIOReconcile(rm)
 		stop := make(chan struct{})
-		defer func() { stop <- struct{}{} }()
+		defer func() { close(stop) }()
 
 		b.executor = &resourceexecutor.ResourceUpdateExecutorImpl{
 			Config:        resourceexecutor.NewDefaultConfig(),

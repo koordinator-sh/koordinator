@@ -435,7 +435,7 @@ func Test_calculateAndUpdateResources(t *testing.T) {
 			stop := make(chan struct{})
 			err := reconciler.RunInit(stop)
 			assert.NoError(t, err)
-			defer func() { stop <- struct{}{} }()
+			defer func() { close(stop) }()
 
 			helper := system.NewFileTestUtil(t)
 			helper.SetAnolisOSResourcesSupported(true)
@@ -820,7 +820,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			stop := make(chan struct{})
 			err := m.RunInit(stop)
 			assert.NoError(t, err)
-			defer func() { stop <- struct{}{} }()
+			defer func() { close(stop) }()
 
 			got, got1, got2 := m.calculateResources(tt.args.nodeCfg, tt.args.node, tt.args.podMetas)
 			assertCgroupResourceEqual(t, tt.want, got)

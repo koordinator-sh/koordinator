@@ -19,12 +19,26 @@ package config
 import (
 	"flag"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConfiguration_InitFlags(t *testing.T) {
 	t.Run("ensure not panic", func(t *testing.T) {
+		cmdArgs := []string{
+			"",
+			"--configmap-name=koordlet-config",
+			"--configmap-namespace=kube-system",
+			"--cgroup-root-dir=/host-cgroup/",
+			"--reconcile-interval-seconds=5",
+		}
+		fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 		cfg := NewConfiguration()
-		cfg.InitFlags(flag.CommandLine)
-		flag.Parse()
+		assert.NotPanics(t, func() {
+			cfg.InitFlags(fs)
+		})
+		err := fs.Parse(cmdArgs[1:])
+		assert.NoError(t, err)
+		assert.Equal(t, "kube-system", cfg.ConfigMapNamesapce)
 	})
 }

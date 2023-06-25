@@ -391,7 +391,7 @@ func Test_killAndEvictBEPodsRelease(t *testing.T) {
 	resmanager := &resmanager{eventRecorder: fakeRecorder, kubeClient: client, podsEvicted: cache.NewCacheDefault(), config: NewDefaultConfig(), evictVersion: policyv1beta1.SchemeGroupVersion.Version}
 	stop := make(chan struct{})
 	_ = resmanager.podsEvicted.Run(stop)
-	defer func() { stop <- struct{}{} }()
+	defer func() { close(stop) }()
 
 	node := getNode("100", "500G")
 	runtime.DockerHandler = handler.NewFakeRuntimeHandler()

@@ -685,7 +685,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 			stop := make(chan struct{})
 			err := r.RunInit(stop)
 			assert.NoError(t, err)
-			defer func() { stop <- struct{}{} }()
+			defer func() { close(stop) }()
 
 			if tt.field.invalidPath {
 				system.Conf.SysFSRootDir = "invalidPath"
@@ -915,7 +915,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			stop := make(chan struct{})
 			err := r.RunInit(stop)
 			assert.NoError(t, err)
-			defer func() { stop <- struct{}{} }()
+			defer func() { close(stop) }()
 
 			if tt.field.invalidPath {
 				system.Conf.SysFSRootDir = "invalidPath"
@@ -1011,7 +1011,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 			r := newTestResctrlReconcile(&resmanager{})
 			stop := make(chan struct{})
 			r.RunInit(stop)
-			defer func() { stop <- struct{}{} }()
+			defer func() { close(stop) }()
 
 			err := r.calculateAndApplyCatL3GroupTasks(tt.args.group, tt.args.taskIds)
 			assert.Equal(t, tt.wantErr, err != nil, err)
@@ -1087,7 +1087,7 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 		r := newTestResctrlReconcile(rm)
 		stop := make(chan struct{})
 		r.RunInit(stop)
-		defer func() { stop <- struct{}{} }()
+		defer func() { close(stop) }()
 
 		// reconcile and check if the result is correct
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
@@ -1190,7 +1190,7 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		r := newTestResctrlReconcile(rm)
 		stop := make(chan struct{})
 		r.RunInit(stop)
-		defer func() { stop <- struct{}{} }()
+		defer func() { close(stop) }()
 
 		statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{testingPodMeta}).MaxTimes(2)
 
@@ -1326,7 +1326,7 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 		r := NewResctrlReconcile(rm)
 		stop := make(chan struct{})
 		r.RunInit(stop)
-		defer func() { stop <- struct{}{} }()
+		defer func() { close(stop) }()
 
 		cpuInfoContents := "flags		: fpu vme de pse cat_l3 mba"
 		helper.WriteProcSubFileContents("cpuinfo", cpuInfoContents)

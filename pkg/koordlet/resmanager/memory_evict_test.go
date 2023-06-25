@@ -385,7 +385,7 @@ func Test_memoryEvict(t *testing.T) {
 			}
 			stop := make(chan struct{})
 			_ = resmanager.podsEvicted.Run(stop)
-			defer func() { stop <- struct{}{} }()
+			defer func() { close(stop) }()
 
 			runtime.DockerHandler = handler.NewFakeRuntimeHandler()
 

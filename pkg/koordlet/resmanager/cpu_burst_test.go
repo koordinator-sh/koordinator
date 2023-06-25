@@ -695,7 +695,7 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 
 			stop := make(chan struct{})
 			b.init(stop)
-			defer func() { stop <- struct{}{} }()
+			defer func() { close(stop) }()
 
 			podMeta := createPodMetaByResource(tt.fields.podName, tt.fields.containerRes)
 
@@ -1256,7 +1256,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
 
 			stop := make(chan struct{})
-			defer func() { stop <- struct{}{} }()
+			defer func() { close(stop) }()
 
 			podMeta := createPodMetaByResource(tt.fields.podName, tt.fields.containerRes)
 
@@ -1639,7 +1639,7 @@ func TestCPUBurst_start(t *testing.T) {
 			b := newTestCPUBurst(r)
 			stop := make(chan struct{})
 			b.init(stop)
-			defer func() { stop <- struct{}{} }()
+			defer func() { close(stop) }()
 
 			for _, podMeta := range podMetas {
 				podCurCFSQuota := tt.fields.podsCurCFSQuota[podMeta.Pod.Name]

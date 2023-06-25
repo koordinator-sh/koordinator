@@ -34,6 +34,14 @@ func Test_NewDefaultConfig(t *testing.T) {
 
 func Test_InitFlags(t *testing.T) {
 	cfg := NewDefaultConfig()
-	cfg.InitFlags(flag.CommandLine)
-	flag.Parse()
+	cmdArgs := []string{
+		"",
+		"--qos-plugins=",
+	}
+	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
+	assert.NotPanics(t, func() {
+		cfg.InitFlags(fs)
+	})
+	err := fs.Parse(cmdArgs[1:])
+	assert.NoError(t, err)
 }

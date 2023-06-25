@@ -41,7 +41,16 @@ func Test_NewDefaultConfig(t *testing.T) {
 }
 
 func Test_InitFlags(t *testing.T) {
+	cmdArgs := []string{
+		"",
+		"--runtime-hooks-failure-policy=Fail",
+	}
+	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 	cfg := NewDefaultConfig()
-	cfg.InitFlags(flag.CommandLine)
-	flag.Parse()
+	assert.NotPanics(t, func() {
+		cfg.InitFlags(fs)
+	})
+	err := fs.Parse(cmdArgs[1:])
+	assert.NoError(t, err)
+	assert.Equal(t, "Fail", cfg.RuntimeHooksFailurePolicy)
 }

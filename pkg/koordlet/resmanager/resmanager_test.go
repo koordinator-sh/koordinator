@@ -159,7 +159,7 @@ func Test_EvictPodsIfNotEvicted(t *testing.T) {
 	stop := make(chan struct{})
 	err := r.podsEvicted.Run(stop)
 	assert.NoError(t, err)
-	defer func() { stop <- struct{}{} }()
+	defer func() { close(stop) }()
 
 	// create pod
 	_, err = client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
