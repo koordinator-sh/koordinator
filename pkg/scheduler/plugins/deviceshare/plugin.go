@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -159,30 +158,17 @@ func preparePod(pod *corev1.Pod) (skip bool, requests corev1.ResourceList, statu
 	skip = true
 	requests = corev1.ResourceList{}
 
-	for deviceType := range DeviceResourceNames {
-		switch deviceType {
-		case schedulingv1alpha1.GPU:
-			if !hasDeviceResource(podRequests, deviceType) {
-				break
-			}
-			combination, err := ValidateGPURequest(podRequests)
-			if err != nil {
-				return false, nil, framework.NewStatus(framework.Error, err.Error())
-			}
-			requests = quotav1.Add(requests, ConvertGPUResource(podRequests, combination))
-			skip = false
-		case schedulingv1alpha1.RDMA, schedulingv1alpha1.FPGA:
-			if !hasDeviceResource(podRequests, deviceType) {
-				break
-			}
-			if err := validateCommonDeviceRequest(podRequests, deviceType); err != nil {
-				return false, nil, framework.NewStatus(framework.Error, err.Error())
-			}
-			requests = quotav1.Add(requests, convertCommonDeviceResource(podRequests, deviceType))
-			skip = false
-		default:
-			klog.Warningf("device type %v is not supported yet, pod: %v", deviceType, klog.KObj(pod))
+	for _, supportedResourceNames := range DeviceResourceNames {
+		deviceRequest := quotav1.Mask(podRequests, supportedResourceNames)
+		if quotav1.IsZero(deviceRequest) {
+			continue
 		}
+		combination, err := ValidateDeviceRequest(deviceRequest)
+		if err != nil {
+			return false, nil, framework.NewStatus(framework.Error, err.Error())
+		}
+		requests = quotav1.Add(requests, ConvertDeviceRequest(deviceRequest, combination))
+		skip = false
 	}
 	return
 }

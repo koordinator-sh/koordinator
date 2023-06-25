@@ -262,14 +262,15 @@ func (n *nodeDevice) updateAllocateSet(deviceType schedulingv1alpha1.DeviceType,
 func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, required, preferred map[schedulingv1alpha1.DeviceType]sets.Int, requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
 	allocateResult := make(apiext.DeviceAllocations)
 
-	for deviceType := range DeviceResourceNames {
+	for deviceType, supportedResourceNames := range DeviceResourceNames {
 		switch deviceType {
 		case schedulingv1alpha1.GPU, schedulingv1alpha1.RDMA, schedulingv1alpha1.FPGA:
-			if !hasDeviceResource(podRequest, deviceType) {
+			deviceRequest := quotav1.Mask(podRequest, supportedResourceNames)
+			if quotav1.IsZero(deviceRequest) {
 				break
 			}
 			err := n.tryAllocateDeviceByType(
-				podRequest,
+				deviceRequest,
 				deviceType,
 				required[deviceType],
 				preferred[deviceType],
@@ -297,7 +298,6 @@ func (n *nodeDevice) tryAllocateDeviceByType(
 	requiredDeviceResources deviceResources,
 	preemptibleDeviceResources deviceResources,
 ) error {
-	podRequest = quotav1.Mask(podRequest, DeviceResourceNames[deviceType])
 	nodeDeviceTotal := n.deviceTotal[deviceType]
 	if len(nodeDeviceTotal) == 0 {
 		return fmt.Errorf("node does not have enough %v", deviceType)

@@ -22,152 +22,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
-func Test_hasDeviceResource(t *testing.T) {
-	type args struct {
-		podRequest corev1.ResourceList
-		deviceType schedulingv1alpha1.DeviceType
-	}
-	tests := []struct {
-		name string
-		args args
-		want bool
-	}{
-		{
-			name: "empty pod request",
-			args: args{
-				podRequest: corev1.ResourceList{},
-				deviceType: schedulingv1alpha1.RDMA,
-			},
-			want: false,
-		},
-		{
-			name: "no device resource",
-			args: args{
-				podRequest: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("10"),
-					corev1.ResourceMemory: resource.MustParse("200"),
-				},
-				deviceType: schedulingv1alpha1.GPU,
-			},
-			want: false,
-		},
-		{
-			name: "no match device resource",
-			args: args{
-				podRequest: corev1.ResourceList{
-					corev1.ResourceCPU:     resource.MustParse("10"),
-					corev1.ResourceMemory:  resource.MustParse("200"),
-					apiext.ResourceGPUCore: resource.MustParse("50"),
-				},
-				deviceType: schedulingv1alpha1.FPGA,
-			},
-			want: false,
-		},
-		{
-			name: "has match device resource",
-			args: args{
-				podRequest: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("10"),
-					corev1.ResourceMemory: resource.MustParse("200"),
-					apiext.ResourceRDMA:   resource.MustParse("50"),
-				},
-				deviceType: schedulingv1alpha1.RDMA,
-			},
-			want: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := hasDeviceResource(tt.args.podRequest, tt.args.deviceType)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func Test_validateCommonDeviceRequest(t *testing.T) {
-	type args struct {
-		podRequest corev1.ResourceList
-		deviceType schedulingv1alpha1.DeviceType
-	}
-	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-	}{
-		{
-			name: "empty pod request",
-			args: args{
-				podRequest: corev1.ResourceList{},
-				deviceType: schedulingv1alpha1.FPGA,
-			},
-			wantErr: true,
-		},
-		{
-			name: "invalid fpga request",
-			args: args{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceFPGA: resource.MustParse("201"),
-				},
-				deviceType: schedulingv1alpha1.FPGA,
-			},
-			wantErr: true,
-		},
-		{
-			name: "valid fpga request",
-			args: args{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceFPGA: resource.MustParse("50"),
-				},
-				deviceType: schedulingv1alpha1.FPGA,
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid rdma request",
-			args: args{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceRDMA: resource.MustParse("201"),
-				},
-				deviceType: schedulingv1alpha1.RDMA,
-			},
-			wantErr: true,
-		},
-		{
-			name: "valid rdma request",
-			args: args{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceRDMA: resource.MustParse("50"),
-				},
-				deviceType: schedulingv1alpha1.RDMA,
-			},
-			wantErr: false,
-		},
-		{
-			name: "not common device type",
-			args: args{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceNvidiaGPU: resource.MustParse("2"),
-				},
-				deviceType: schedulingv1alpha1.GPU,
-			},
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateCommonDeviceRequest(tt.args.podRequest, tt.args.deviceType)
-			assert.Equal(t, tt.wantErr, err != nil)
-		})
-	}
-}
-
-func Test_validateGPURequest(t *testing.T) {
+func TestValidateDeviceRequest(t *testing.T) {
 	tests := []struct {
 		name       string
 		podRequest corev1.ResourceList
@@ -222,7 +82,7 @@ func Test_validateGPURequest(t *testing.T) {
 			podRequest: corev1.ResourceList{
 				apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 			},
-			want:    NvidiaGPUExist,
+			want:    NvidiaGPU,
 			wantErr: false,
 		},
 		{
@@ -230,7 +90,7 @@ func Test_validateGPURequest(t *testing.T) {
 			podRequest: corev1.ResourceList{
 				apiext.ResourceHygonDCU: resource.MustParse("2"),
 			},
-			want:    HygonDCUExist,
+			want:    HygonDCU,
 			wantErr: false,
 		},
 		{
@@ -238,7 +98,7 @@ func Test_validateGPURequest(t *testing.T) {
 			podRequest: corev1.ResourceList{
 				apiext.ResourceGPU: resource.MustParse("200"),
 			},
-			want:    KoordGPUExist,
+			want:    KoordGPU,
 			wantErr: false,
 		},
 		{
@@ -247,7 +107,7 @@ func Test_validateGPURequest(t *testing.T) {
 				apiext.ResourceGPUCore:   resource.MustParse("200"),
 				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
 			},
-			want:    GPUCoreExist | GPUMemoryExist,
+			want:    GPUCore | GPUMemory,
 			wantErr: false,
 		},
 		{
@@ -256,13 +116,45 @@ func Test_validateGPURequest(t *testing.T) {
 				apiext.ResourceGPUCore:        resource.MustParse("200"),
 				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
 			},
-			want:    GPUCoreExist | GPUMemoryRatioExist,
+			want:    GPUCore | GPUMemoryRatio,
+			wantErr: false,
+		},
+		{
+			name: "invalid fpga request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceFPGA: resource.MustParse("201"),
+			},
+			want:    FPGA,
+			wantErr: true,
+		},
+		{
+			name: "valid fpga request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceFPGA: resource.MustParse("50"),
+			},
+			want:    FPGA,
+			wantErr: false,
+		},
+		{
+			name: "invalid rdma request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceRDMA: resource.MustParse("201"),
+			},
+			want:    RDMA,
+			wantErr: true,
+		},
+		{
+			name: "valid rdma request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceRDMA: resource.MustParse("50"),
+			},
+			want:    RDMA,
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ValidateGPURequest(tt.podRequest)
+			got, err := ValidateDeviceRequest(tt.podRequest)
 			assert.Equal(t, tt.wantErr, err != nil)
 			if !tt.wantErr {
 				assert.Equal(t, tt.want, got)
@@ -271,10 +163,10 @@ func Test_validateGPURequest(t *testing.T) {
 	}
 }
 
-func Test_convertCommonDeviceResource(t *testing.T) {
+func TestConvertDeviceRequest(t *testing.T) {
 	type args struct {
-		podRequest corev1.ResourceList
-		deviceType schedulingv1alpha1.DeviceType
+		podRequest  corev1.ResourceList
+		combination uint
 	}
 	tests := []struct {
 		name string
@@ -284,20 +176,87 @@ func Test_convertCommonDeviceResource(t *testing.T) {
 		{
 			name: "empty pod request",
 			args: args{
-				podRequest: nil,
-				deviceType: "",
+				podRequest:  nil,
+				combination: 0,
 			},
 			want: nil,
 		},
 		{
-			name: "non common device",
+			name: "invalid combination",
 			args: args{
 				podRequest: corev1.ResourceList{
 					apiext.ResourceNvidiaGPU: resource.MustParse("2"),
 				},
-				deviceType: schedulingv1alpha1.GPU,
+				combination: GPUCore | GPUMemory | GPUMemoryRatio,
 			},
 			want: nil,
+		},
+		{
+			name: "nvidiaGPU",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceNvidiaGPU: resource.MustParse("2"),
+				},
+				combination: NvidiaGPU,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+			},
+		},
+		{
+			name: "hygonDCU",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceHygonDCU: resource.MustParse("2"),
+				},
+				combination: HygonDCU,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+			},
+		},
+		{
+			name: "koordGPU",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceGPU: resource.MustParse("50"),
+				},
+				combination: KoordGPU,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			},
+		},
+		{
+			name: "gpuCore | gpuMemoryRatio",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("50"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+				},
+				combination: GPUCore | GPUMemoryRatio,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			},
+		},
+		{
+			name: "gpuCore | gpuMemory",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceGPUCore:   resource.MustParse("50"),
+					apiext.ResourceGPUMemory: resource.MustParse("32Gi"),
+				},
+				combination: GPUCore | GPUMemory,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("50"),
+				apiext.ResourceGPUMemory: resource.MustParse("32Gi"),
+			},
 		},
 		{
 			name: "rdma",
@@ -305,7 +264,7 @@ func Test_convertCommonDeviceResource(t *testing.T) {
 				podRequest: corev1.ResourceList{
 					apiext.ResourceRDMA: resource.MustParse("80"),
 				},
-				deviceType: schedulingv1alpha1.RDMA,
+				combination: RDMA,
 			},
 			want: corev1.ResourceList{
 				apiext.ResourceRDMA: resource.MustParse("80"),
@@ -317,7 +276,7 @@ func Test_convertCommonDeviceResource(t *testing.T) {
 				podRequest: corev1.ResourceList{
 					apiext.ResourceFPGA: resource.MustParse("80"),
 				},
-				deviceType: schedulingv1alpha1.FPGA,
+				combination: FPGA,
 			},
 			want: corev1.ResourceList{
 				apiext.ResourceFPGA: resource.MustParse("80"),
@@ -326,111 +285,7 @@ func Test_convertCommonDeviceResource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := convertCommonDeviceResource(tt.args.podRequest, tt.args.deviceType)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func Test_convertGPUResource(t *testing.T) {
-	type args struct {
-		podRequest     corev1.ResourceList
-		gpuCombination uint
-	}
-	tests := []struct {
-		name string
-		args args
-		want corev1.ResourceList
-	}{
-		{
-			name: "empty pod request",
-			args: args{
-				podRequest:     nil,
-				gpuCombination: 0,
-			},
-			want: nil,
-		},
-		{
-			name: "invalid combination",
-			args: args{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceNvidiaGPU: resource.MustParse("2"),
-				},
-				gpuCombination: GPUCoreExist | GPUMemoryExist | GPUMemoryRatioExist,
-			},
-			want: nil,
-		},
-		{
-			name: "nvidiaGpuExist",
-			args: args{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceNvidiaGPU: resource.MustParse("2"),
-				},
-				gpuCombination: NvidiaGPUExist,
-			},
-			want: corev1.ResourceList{
-				apiext.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
-				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
-			},
-		},
-		{
-			name: "hygonDCUExist",
-			args: args{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceHygonDCU: resource.MustParse("2"),
-				},
-				gpuCombination: HygonDCUExist,
-			},
-			want: corev1.ResourceList{
-				apiext.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
-				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
-			},
-		},
-		{
-			name: "koordGpuExist",
-			args: args{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceGPU: resource.MustParse("50"),
-				},
-				gpuCombination: KoordGPUExist,
-			},
-			want: corev1.ResourceList{
-				apiext.ResourceGPUCore:        resource.MustParse("50"),
-				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
-			},
-		},
-		{
-			name: "gpuCoreExist | gpuMemoryRatioExist",
-			args: args{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("50"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
-				},
-				gpuCombination: GPUCoreExist | GPUMemoryRatioExist,
-			},
-			want: corev1.ResourceList{
-				apiext.ResourceGPUCore:        resource.MustParse("50"),
-				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
-			},
-		},
-		{
-			name: "gpuCoreExist | gpuMemoryExist",
-			args: args{
-				podRequest: corev1.ResourceList{
-					apiext.ResourceGPUCore:   resource.MustParse("50"),
-					apiext.ResourceGPUMemory: resource.MustParse("32Gi"),
-				},
-				gpuCombination: GPUCoreExist | GPUMemoryExist,
-			},
-			want: corev1.ResourceList{
-				apiext.ResourceGPUCore:   resource.MustParse("50"),
-				apiext.ResourceGPUMemory: resource.MustParse("32Gi"),
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ConvertGPUResource(tt.args.podRequest, tt.args.gpuCombination)
+			got := ConvertDeviceRequest(tt.args.podRequest, tt.args.combination)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -555,127 +410,6 @@ func Test_memBytesToRatio(t *testing.T) {
 	expectRatio := *resource.NewQuantity(50, resource.DecimalSI)
 	newRatio := memBytesToRatio(currentBytes, totalMemory)
 	assert.Equal(t, expectRatio, newRatio)
-}
-
-func Test_patchContainerGPUResource(t *testing.T) {
-	tests := []struct {
-		name            string
-		pod             *corev1.Pod
-		gpuContainerNum int
-		podRequest      corev1.ResourceList
-	}{
-		{
-			name: "request nvidia gpu 1",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "123456789",
-					Namespace: "default",
-					Name:      "test",
-				},
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									apiext.ResourceNvidiaGPU: resource.MustParse("2"),
-								},
-							},
-						},
-					},
-				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
-				},
-			},
-			gpuContainerNum: 0,
-			podRequest: corev1.ResourceList{
-				apiext.ResourceNvidiaGPU:      resource.MustParse("2"),
-				apiext.ResourceGPUCore:        resource.MustParse("200"),
-				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
-				apiext.ResourceGPUMemory:      resource.MustParse("64Gi"),
-			},
-		},
-		{
-			name: "request nvidia gpu 2",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "123456789",
-					Namespace: "default",
-					Name:      "test",
-				},
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-						},
-						{
-							Name: "test-container-b",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									apiext.ResourceNvidiaGPU: resource.MustParse("2"),
-								},
-							},
-						},
-					},
-				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
-				},
-			},
-			gpuContainerNum: 1,
-			podRequest: corev1.ResourceList{
-				apiext.ResourceNvidiaGPU:      resource.MustParse("2"),
-				apiext.ResourceGPUCore:        resource.MustParse("200"),
-				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
-				apiext.ResourceGPUMemory:      resource.MustParse("64Gi"),
-			},
-		},
-		{
-			name: "request nvidia gpu",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "123456789",
-					Namespace: "default",
-					Name:      "test",
-				},
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									apiext.ResourceNvidiaGPU: resource.MustParse("2"),
-								},
-							},
-						},
-						{
-							Name: "test-container-b",
-						},
-					},
-				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
-				},
-			},
-			gpuContainerNum: 0,
-			podRequest: corev1.ResourceList{
-				apiext.ResourceNvidiaGPU:      resource.MustParse("2"),
-				apiext.ResourceGPUCore:        resource.MustParse("200"),
-				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
-				apiext.ResourceGPUMemory:      resource.MustParse("64Gi"),
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			patchContainerGPUResource(tt.pod, tt.podRequest)
-			assert.Equal(t, tt.pod.Spec.Containers[tt.gpuContainerNum].Resources.Requests, tt.podRequest)
-		})
-	}
 }
 
 func Test_fillGPUTotalMem(t *testing.T) {
