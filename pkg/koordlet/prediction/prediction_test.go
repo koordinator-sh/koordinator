@@ -19,13 +19,49 @@ package prediction
 import (
 	"testing"
 
-	"github.com/golang/mock/gomock"
+	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 )
+
+type mockStatesInformer struct {
+	node *v1.Node
+	pods []*statesinformer.PodMeta
+}
+
+func (m *mockStatesInformer) Run(stopCh <-chan struct{}) error {
+	return nil
+}
+
+func (m *mockStatesInformer) HasSynced() bool {
+	return true
+}
+
+func (m *mockStatesInformer) GetNode() *v1.Node {
+	return m.node
+}
+func (m *mockStatesInformer) GetNodeSLO() *slov1alpha1.NodeSLO {
+	return nil
+}
+
+func (m *mockStatesInformer) GetAllPods() []*statesinformer.PodMeta {
+	return m.pods
+}
+
+func (m *mockStatesInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology {
+	return nil
+
+}
+
+func (m *mockStatesInformer) GetVolumeName(pvcNamespace, pvcName string) string {
+	return ""
+}
+
+func (m *mockStatesInformer) RegisterCallbacks(objType statesinformer.RegisterType, name, description string, callbackFn statesinformer.UpdateCbFn) {
+}
 
 func TestInformer(t *testing.T) {
 	pod1 := &v1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod1"}}
@@ -43,11 +79,10 @@ func TestInformer(t *testing.T) {
 			Pod: pod3,
 		},
 	}
-	ctl := gomock.NewController(t)
-	mockstatesinformer := mock_statesinformer.NewMockStatesInformer(ctl)
-	mockstatesinformer.EXPECT().GetAllPods().Return(podMetaList).AnyTimes()
-	mockstatesinformer.EXPECT().GetNode().Return(node).AnyTimes()
-	mockstatesinformer.EXPECT().HasSynced().Return(true).AnyTimes()
+	mockstatesinformer := &mockStatesInformer{
+		node: node,
+		pods: podMetaList,
+	}
 
 	informer := NewInformer(mockstatesinformer)
 

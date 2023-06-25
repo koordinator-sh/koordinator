@@ -44,6 +44,7 @@ import (
 	listerv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mockmetriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
@@ -422,6 +423,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 				podsInformer:     tt.fields.podsInformer,
 				nodeMetricLister: tt.fields.nodeMetricLister,
 				statusUpdater:    newStatusUpdater(tt.fields.nodeMetricClient),
+				predictorFactory: prediction.NewEmptyPredictorFactory(),
 			}
 
 			r.sync()

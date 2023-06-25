@@ -165,12 +165,11 @@ func TestPredictServerMainLoop(t *testing.T) {
 	metricServer.PodUsage[UIDType(pods[0].UID)] = podUsage{PodCPUUsage: 1, PodMemoryUsage: 128 * 1024 * 1024}
 	metricServer.PodUsage[UIDType(pods[1].UID)] = podUsage{PodCPUUsage: 3, PodMemoryUsage: 128 * 1024 * 1024}
 
-	peakPrediction := NewPeakPredictServer(nil, nil, Options{})
+	peakPrediction := NewPeakPredictServer(&Config{})
 	peakPrediction.(*peakPredictServer).informer = informer
 	peakPrediction.(*peakPredictServer).metricServer = metricServer
 
 	stopCh := make(chan struct{})
-	go peakPrediction.Run(stopCh)
 	defer close(stopCh)
 
 	peakPrediction.(*peakPredictServer).training()
@@ -208,6 +207,49 @@ func TestPredictServerMainLoop(t *testing.T) {
 	}
 }
 
+func TestPredictServerStop(t *testing.T) {
+	informer := &mockInformer{}
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node1",
+			UID:  "node1",
+		},
+		Spec: v1.NodeSpec{},
+	}
+	informer.Node = node
+
+	pods := []*v1.Pod{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod1",
+				UID:       "pod1",
+			},
+		},
+	}
+	informer.Pods = pods
+
+	metricServer := &mockMetricServer{}
+
+	peakPrediction := NewPeakPredictServer(&Config{})
+	peakPrediction.(*peakPredictServer).informer = informer
+	peakPrediction.(*peakPredictServer).metricServer = metricServer
+
+	exitedCh := make(chan struct{})
+	stopCh := make(chan struct{})
+	go func() {
+		peakPrediction.Run(stopCh)
+		close(exitedCh)
+	}()
+	close(stopCh)
+	select {
+	case <-exitedCh:
+		return
+	case <-time.After(time.Second):
+		t.Errorf("failed to wait Run loop to exited")
+	}
+}
+
 func TestPredictServerGCOldModels(t *testing.T) {
 	informer := &mockInformer{}
 	node := &v1.Node{
@@ -227,7 +269,7 @@ func TestPredictServerGCOldModels(t *testing.T) {
 	metricServer.NodeMemoryUsage = float64(nodeMemoryUsed.Value())
 
 	mockClock := clock.NewFakeClock(time.Now())
-	peakPrediction := NewPeakPredictServer(nil, nil, Options{})
+	peakPrediction := NewPeakPredictServer(&Config{})
 	peakPrediction.(*peakPredictServer).informer = informer
 	peakPrediction.(*peakPredictServer).metricServer = metricServer
 	peakPrediction.(*peakPredictServer).clock = mockClock

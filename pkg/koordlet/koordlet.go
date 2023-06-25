@@ -35,6 +35,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
@@ -63,6 +64,7 @@ type daemon struct {
 	resManager     resmanager.ResManager
 	qosManager     qosmanager.QoSManager
 	runtimeHook    runtimehooks.RuntimeHook
+	predictServer  prediction.PredictServer
 }
 
 func NewDaemon(config *config.Configuration) (Daemon, error) {
@@ -86,8 +88,10 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	predictServer := prediction.NewPeakPredictServer(config.PredictionConf)
+	predictorFactory := prediction.NewPredictorFactory(predictServer, config.PredictionConf.PredictionColdStartDuration)
 
-	statesInformer := statesinformerimpl.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, nodeName, schedulingClient)
+	statesInformer := statesinformerimpl.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, nodeName, schedulingClient, predictorFactory)
 	collectorService := metricsadvisor.NewMetricAdvisor(config.CollectorConf, statesInformer, metricCache)
 
 	evictVersion, err := util.FindSupportedEvictVersion(kubeClient)
@@ -111,6 +115,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		resManager:     resManagerService,
 		qosManager:     qosManager,
 		runtimeHook:    runtimeHook,
+		predictServer:  predictServer,
 	}
 
 	return d, nil
@@ -141,6 +146,13 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 	go func() {
 		if err := d.metricAdvisor.Run(stopCh); err != nil {
 			klog.Fatalf("Unable to run the metric advisor: ", err)
+		}
+	}()
+
+	// start predict server
+	go func() {
+		if err := d.predictServer.Run(stopCh); err != nil {
+			klog.Fatalf("Unable to run the predict server: ", err)
 		}
 	}()
 
