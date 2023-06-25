@@ -152,7 +152,6 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 
 func preparePod(pod *corev1.Pod) (skip bool, requests corev1.ResourceList, status *framework.Status) {
 	podRequests, _ := resource.PodRequestsAndLimits(pod)
-	podRequests = apiext.TransformDeprecatedDeviceResources(podRequests)
 	podRequests = quotav1.RemoveZeros(podRequests)
 
 	skip = true

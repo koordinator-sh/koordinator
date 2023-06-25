@@ -30,6 +30,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
 )
 
 func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
@@ -39,16 +40,6 @@ func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
 		deviceCache *nodeDeviceCache
 		wantCache   map[string]*nodeDevice
 	}{
-		{
-			name:      "invalid object",
-			device:    &corev1.Pod{},
-			wantCache: map[string]*nodeDevice{},
-		},
-		{
-			name:      "nil device",
-			device:    &schedulingv1alpha1.Device{},
-			wantCache: map[string]*nodeDevice{},
-		},
 		{
 			name:      "normal case 1",
 			device:    generateFakeDevice(),
@@ -183,11 +174,14 @@ func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			obj, err := transformer.TransformDevice(tt.device)
+			assert.NoError(t, err)
+			device := obj.(*schedulingv1alpha1.Device)
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
 				deviceCache = newNodeDeviceCache()
 			}
-			deviceCache.onDeviceAdd(tt.device)
+			deviceCache.onDeviceAdd(device)
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
 		})
 	}
@@ -201,11 +195,6 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 		deviceCache *nodeDeviceCache
 		wantCache   map[string]*nodeDevice
 	}{
-		{
-			name:      "invalid object",
-			oldDevice: &corev1.Pod{},
-			wantCache: map[string]*nodeDevice{},
-		},
 		{
 			name:      "normal case 1",
 			oldDevice: generateFakeDevice(),
@@ -437,11 +426,16 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			oldObj, err := transformer.TransformDevice(tt.oldDevice)
+			assert.NoError(t, err)
+			newObj, err := transformer.TransformDevice(tt.newDevice)
+			assert.NoError(t, err)
+
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
 				deviceCache = newNodeDeviceCache()
 			}
-			deviceCache.onDeviceUpdate(tt.oldDevice, tt.newDevice)
+			deviceCache.onDeviceUpdate(oldObj.(*schedulingv1alpha1.Device), newObj.(*schedulingv1alpha1.Device))
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
 		})
 	}

@@ -22,7 +22,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func (g *Plugin) OnNodeAdd(obj interface{}) {
@@ -37,7 +36,6 @@ func (g *Plugin) OnNodeAdd(obj interface{}) {
 	}
 
 	node = core.RunDecorateNode(node)
-	allocatable, _ := util.TrimNodeAllocatableByNodeReservation(node)
 
 	g.nodeResourceMapLock.Lock()
 	defer g.nodeResourceMapLock.Unlock()
@@ -46,7 +44,7 @@ func (g *Plugin) OnNodeAdd(obj interface{}) {
 		return
 	}
 	g.nodeResourceMap[node.Name] = struct{}{}
-	g.groupQuotaManager.UpdateClusterTotalResource(allocatable)
+	g.groupQuotaManager.UpdateClusterTotalResource(node.Status.Allocatable)
 	klog.V(5).Infof("OnNodeAddFunc success %v", node.Name)
 }
 
@@ -72,9 +70,9 @@ func (g *Plugin) OnNodeUpdate(oldObj, newObj interface{}) {
 	}
 
 	oldNode = core.RunDecorateNode(oldNode)
-	oldNodeAllocatable, _ := util.TrimNodeAllocatableByNodeReservation(oldNode)
+	oldNodeAllocatable := oldNode.Status.Allocatable
 	newNode = core.RunDecorateNode(newNode)
-	newNodeAllocatable, _ := util.TrimNodeAllocatableByNodeReservation(newNode)
+	newNodeAllocatable := newNode.Status.Allocatable
 	if quotav1.Equals(oldNodeAllocatable, newNodeAllocatable) {
 		return
 	}
@@ -99,8 +97,7 @@ func (g *Plugin) OnNodeDelete(obj interface{}) {
 	}
 
 	node = core.RunDecorateNode(node)
-	allocatable, _ := util.TrimNodeAllocatableByNodeReservation(node)
-	delta := quotav1.Subtract(corev1.ResourceList{}, allocatable)
+	delta := quotav1.Subtract(corev1.ResourceList{}, node.Status.Allocatable)
 	g.groupQuotaManager.UpdateClusterTotalResource(delta)
 	delete(g.nodeResourceMap, node.Name)
 	klog.V(5).Infof("OnNodeDeleteFunc success:%v [%v]", node.Name, delta)

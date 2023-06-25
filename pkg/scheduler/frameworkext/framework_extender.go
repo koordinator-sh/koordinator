@@ -29,7 +29,6 @@ import (
 
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/sharedlisterext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -153,29 +152,8 @@ func (ext *frameworkExtenderImpl) Scheduler() Scheduler {
 	return ext.schedulerFn()
 }
 
-func (ext *frameworkExtenderImpl) takeSnapshot(ctx context.Context) error {
-	nodeInfos, err := ext.Framework.SnapshotSharedLister().NodeInfos().List()
-	if err != nil {
-		return nil
-	}
-	ext.Framework.Parallelizer().Until(ctx, len(nodeInfos), func(piece int) {
-		nodeInfo := nodeInfos[piece]
-		if sharedlisterext.TransformNodeInfos([]*framework.NodeInfo{nodeInfo}) {
-			if ext.snapshotGeneration != nil {
-				*ext.snapshotGeneration = 0
-			}
-		}
-	})
-	return nil
-}
-
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	err := ext.takeSnapshot(ctx)
-	if err != nil {
-		return nil, framework.AsStatus(err)
-	}
-
 	for _, transformer := range ext.preFilterTransformers {
 		newPod, transformed, status := transformer.BeforePreFilter(ctx, cycleState, pod)
 		if !status.IsSuccess() {

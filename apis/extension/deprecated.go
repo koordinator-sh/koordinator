@@ -45,24 +45,16 @@ const (
 	DeprecatedGPUModel string = ResourceDomainPrefix + "gpu-model"
 )
 
-var deprecatedDeviceResourceNameMapper = map[corev1.ResourceName]corev1.ResourceName{
+var DeprecatedBatchResourcesMapper = map[corev1.ResourceName]corev1.ResourceName{
+	KoordBatchCPU:    BatchCPU,
+	KoordBatchMemory: BatchMemory,
+}
+
+var DeprecatedDeviceResourcesMapper = map[corev1.ResourceName]corev1.ResourceName{
 	DeprecatedKoordRDMA:      ResourceRDMA,
 	DeprecatedKoordFPGA:      ResourceFPGA,
 	DeprecatedKoordGPU:       ResourceGPU,
 	DeprecatedGPUCore:        ResourceGPUCore,
 	DeprecatedGPUMemory:      ResourceGPUMemory,
 	DeprecatedGPUMemoryRatio: ResourceGPUMemoryRatio,
-}
-
-func TransformDeprecatedDeviceResources(resList corev1.ResourceList) corev1.ResourceList {
-	r := make(corev1.ResourceList, len(resList))
-	for k, v := range resList {
-		newResName := deprecatedDeviceResourceNameMapper[k]
-		if newResName != "" {
-			r[newResName] = v
-		} else {
-			r[k] = v
-		}
-	}
-	return r
 }

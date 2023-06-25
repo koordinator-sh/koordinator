@@ -60,6 +60,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
 	frameworkruntime "github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
+	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
 )
 
 // Option configures a framework.Registry.
@@ -268,6 +269,9 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	// Get the completed config
 	cc := c.Complete()
+
+	transformer.InstallPodTransformer(cc.InformerFactory.Core().V1().Pods().Informer())
+	transformer.InstallNodeTransformer(cc.InformerFactory.Core().V1().Nodes().Informer())
 
 	deschedulercontrollersoptions.Manager = cc.Manager
 	ctrl.SetLogger(klogr.New())
