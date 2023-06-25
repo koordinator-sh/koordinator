@@ -30,3 +30,7 @@ func GuessCgroupDriverFromKubeletPort(int) (CgroupDriverType, error) {
 func IsUsingCgroupsV2() bool {
 	return false
 }
+
+func GetCgroupFormatter() formatter {
+	return cgroupPathFormatterInSystemd
+}
