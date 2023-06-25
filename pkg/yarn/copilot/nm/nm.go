@@ -58,11 +58,17 @@ func (n *NodeMangerOperator) Run(stop <-chan struct{}) error {
 
 func (n *NodeMangerOperator) syncMemoryCgroup(stop <-chan struct{}) error {
 	cpuDir := filepath.Join(n.CgroupRoot, system.CgroupCPUDir, n.CgroupPath)
+	if err := n.ensureCgroupDir(cpuDir); err != nil {
+		klog.Error(err)
+		return err
+	}
 	if err := n.containerWatch.AddWatch(cpuDir); err != nil {
 		return err
 	}
 	klog.Infof("watch dir %s", cpuDir)
-	if err := n.ensureMemoryCgroupDir(); err != nil {
+	memoryDir := filepath.Join(n.CgroupRoot, system.CgroupMemDir, n.CgroupPath)
+	if err := n.ensureCgroupDir(memoryDir); err != nil {
+		klog.Error(err)
 		return err
 	}
 	for {
@@ -168,16 +174,18 @@ func (n *NodeMangerOperator) createMemoryCgroup(fileName string) {
 		return
 	}
 	cpuCgroupPath := filepath.Join(n.CgroupRoot, system.CgroupCPUDir, n.CgroupPath, basename)
-	read, err := system.CommonFileRead(filepath.Join(cpuCgroupPath, system.CPUProcsName))
+	pids, err := cgroups.GetPids(cpuCgroupPath)
 	if err != nil {
 		klog.Error(err)
 		return
 	}
-	_, err = system.CommonFileWriteIfDifferent(filepath.Join(memCgroupPath, system.CPUProcsName), read)
-	if err != nil {
-		klog.Error(err)
-		return
+	for _, pid := range pids {
+		if err := system.CommonFileWrite(filepath.Join(memCgroupPath, system.CPUProcsName), strconv.Itoa(pid)); err != nil {
+			klog.Error(err)
+			return
+		}
 	}
+
 	klog.V(5).Infof("yarn container dir %v created, sync pid", memCgroupPath)
 	container, err := n.GetContainer(basename)
 	if err != nil {
@@ -193,16 +201,16 @@ func (n *NodeMangerOperator) createMemoryCgroup(fileName string) {
 	klog.V(5).Infof("set memory %s limit_in_bytes as %d", memCgroupPath, memLimit)
 }
 
-func (n *NodeMangerOperator) ensureMemoryCgroupDir() error {
-	memoryDir := filepath.Join(n.CgroupRoot, system.CgroupMemDir, n.CgroupPath)
-	_, err := os.Open(memoryDir)
+func (n *NodeMangerOperator) ensureCgroupDir(dir string) error {
+	klog.V(5).Infof("ensure cgroup dir %s", dir)
+	_, err := os.Open(dir)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if err == nil {
 		return nil
 	}
-	return os.MkdirAll(memoryDir, 0644)
+	return os.MkdirAll(dir, 0777)
 }
 
 // KillContainer kill process group for target container
