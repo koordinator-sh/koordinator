@@ -81,6 +81,7 @@ func Test_RegisterAlreadyExistNodePrepareExtender(t *testing.T) {
 
 var _ NodePreparePlugin = (*testNodeResourcePlugin)(nil)
 var _ NodeSyncPlugin = (*testNodeResourcePlugin)(nil)
+var _ NodeMetaSyncPlugin = (*testNodeResourcePlugin)(nil)
 var _ ResourceCalculatePlugin = (*testNodeResourcePlugin)(nil)
 
 type testNodeResourcePlugin struct{}
@@ -95,6 +96,10 @@ func (p *testNodeResourcePlugin) Execute(strategy *extension.ColocationStrategy,
 
 func (p *testNodeResourcePlugin) NeedSync(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
 	return true, "always sync"
+}
+
+func (p *testNodeResourcePlugin) NeedSyncMeta(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
+	return true, "always sync meta"
 }
 
 func (p *testNodeResourcePlugin) Reset(node *corev1.Node, msg string) []ResourceItem {
@@ -128,6 +133,22 @@ func TestNodeSyncPlugin(t *testing.T) {
 
 		assert.NotPanics(t, func() {
 			UnregisterNodeSyncExtender(plugin.Name())
+		}, "unregistered")
+	})
+}
+
+func TestNodeMetaSyncPlugin(t *testing.T) {
+	t.Run("node sync extender", func(t *testing.T) {
+		plugin := &testNodeResourcePlugin{}
+		startedSize := globalNodeMetaSyncExtender.Size()
+		RegisterNodeMetaSyncExtender(plugin)
+		assert.Equal(t, startedSize+1, globalNodeMetaSyncExtender.Size())
+
+		RegisterNodeMetaSyncExtender(plugin)
+		assert.Equal(t, startedSize+1, globalNodeMetaSyncExtender.Size(), "register duplicated")
+
+		assert.NotPanics(t, func() {
+			UnregisterNodeMetaSyncExtender(plugin.Name())
 		}, "unregistered")
 	})
 }

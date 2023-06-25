@@ -18,6 +18,7 @@ package noderesource
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -53,6 +54,43 @@ func (f *FakeCfgCache) IsCfgAvailable() bool {
 
 func (f *FakeCfgCache) IsErrorStatus() bool {
 	return f.errorStatus
+}
+
+var _ framework.NodeMetaSyncPlugin = (*fakeNodeMetaSyncPlugin)(nil)
+
+type fakeNodeMetaSyncPlugin struct {
+	CheckLabels []string
+	AlwaysSync  bool
+}
+
+func (p *fakeNodeMetaSyncPlugin) Name() string {
+	return "fakeNodeMetaSyncPlugin"
+}
+
+func (p *fakeNodeMetaSyncPlugin) NeedSyncMeta(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
+	if p.AlwaysSync {
+		return true, "always sync"
+	}
+	if oldNode.Labels == nil && newNode.Labels == nil {
+		return false, "node has no label"
+	}
+	if oldNode.Labels == nil || newNode.Labels == nil {
+		return true, "consider different when only one node has labels"
+	}
+	for _, k := range p.CheckLabels {
+		oldV, oldOK := oldNode.Labels[k]
+		if !oldOK {
+			return true, fmt.Sprintf("old node label %s is not found", k)
+		}
+		newV, newOK := newNode.Labels[k]
+		if !newOK {
+			return true, fmt.Sprintf("new node label %s is not found", k)
+		}
+		if oldV != newV {
+			return true, fmt.Sprintf("node label %s is different", k)
+		}
+	}
+	return false, ""
 }
 
 func Test_calculateNodeResource(t *testing.T) {
@@ -1148,9 +1186,10 @@ func Test_updateNodeResource(t *testing.T) {
 		},
 	}
 	type fields struct {
-		Client      client.Client
-		config      *extension.ColocationCfg
-		SyncContext *framework.SyncContext
+		Client                    client.Client
+		config                    *extension.ColocationCfg
+		SyncContext               *framework.SyncContext
+		prepareNodeMetaSyncPlugin []framework.NodeMetaSyncPlugin
 	}
 	type args struct {
 		oldNode *corev1.Node
@@ -1614,6 +1653,78 @@ func Test_updateNodeResource(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "update node meta",
+			fields: fields{
+				Client: fake.NewClientBuilder().WithRuntimeObjects(&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
+						},
+						Capacity: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
+						},
+					},
+				}).Build(),
+				config: enabledCfg,
+				SyncContext: framework.NewSyncContext().WithContext(
+					map[string]time.Time{"/test-node0": time.Now()},
+				),
+				prepareNodeMetaSyncPlugin: []framework.NodeMetaSyncPlugin{
+					&fakeNodeMetaSyncPlugin{
+						AlwaysSync: true,
+					},
+				},
+			},
+			args: args{
+				oldNode: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
+						},
+						Capacity: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
+						},
+					},
+				},
+				nr: framework.NewNodeResource([]framework.ResourceItem{
+					{
+						Name:     extension.BatchCPU,
+						Quantity: resource.NewQuantity(20, resource.DecimalSI),
+					},
+					{
+						Name:     extension.BatchMemory,
+						Quantity: resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
+					},
+				}...),
+			},
+			want: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node0",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						extension.BatchCPU:    resource.MustParse("20"),
+						extension.BatchMemory: resource.MustParse("40G"),
+					},
+					Capacity: corev1.ResourceList{
+						extension.BatchCPU:    resource.MustParse("20"),
+						extension.BatchMemory: resource.MustParse("40G"),
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1626,6 +1737,15 @@ func Test_updateNodeResource(t *testing.T) {
 				Clock:           clock.RealClock{},
 			}
 			oldNodeCopy := tt.args.oldNode.DeepCopy()
+			if len(tt.fields.prepareNodeMetaSyncPlugin) > 0 {
+				framework.RegisterNodeMetaSyncExtender(tt.fields.prepareNodeMetaSyncPlugin...)
+				defer func() {
+					for _, p := range tt.fields.prepareNodeMetaSyncPlugin {
+						framework.UnregisterNodeMetaSyncExtender(p.Name())
+					}
+				}()
+			}
+
 			got := r.updateNodeResource(tt.args.oldNode, tt.args.nr)
 			assert.Equal(t, tt.wantErr, got != nil, got)
 			if !tt.wantErr {
@@ -1647,7 +1767,8 @@ func Test_updateNodeResource(t *testing.T) {
 
 func Test_isNodeResourceSyncNeeded(t *testing.T) {
 	type fields struct {
-		SyncContext *framework.SyncContext
+		SyncContext               *framework.SyncContext
+		prepareNodeMetaSyncPlugin []framework.NodeMetaSyncPlugin
 	}
 	type args struct {
 		strategy *extension.ColocationStrategy
@@ -1659,13 +1780,14 @@ func Test_isNodeResourceSyncNeeded(t *testing.T) {
 		fields fields
 		args   args
 		want   bool
-		want1  string
+		want1  bool
 	}{
 		{
 			name:   "cannot update an invalid new node",
 			fields: fields{SyncContext: &framework.SyncContext{}},
 			args:   args{strategy: &extension.ColocationStrategy{}},
 			want:   false,
+			want1:  false,
 		},
 		{
 			name: "needSync for expired node resource",
@@ -1714,7 +1836,8 @@ func Test_isNodeResourceSyncNeeded(t *testing.T) {
 					},
 				},
 			},
-			want: true,
+			want:  true,
+			want1: false,
 		},
 		{
 			name: "needSync for cpu diff larger than 0.1",
@@ -1763,7 +1886,8 @@ func Test_isNodeResourceSyncNeeded(t *testing.T) {
 					},
 				},
 			},
-			want: true,
+			want:  true,
+			want1: false,
 		},
 		{
 			name: "needSync for cpu diff larger than 0.1",
@@ -1812,7 +1936,8 @@ func Test_isNodeResourceSyncNeeded(t *testing.T) {
 					},
 				},
 			},
-			want: true,
+			want:  true,
+			want1: false,
 		},
 		{
 			name: "no need to sync, everything's ok.",
@@ -1862,7 +1987,70 @@ func Test_isNodeResourceSyncNeeded(t *testing.T) {
 					},
 				},
 			},
-			want: false,
+			want:  false,
+			want1: false,
+		},
+		{
+			name: "need to sync meta",
+			fields: fields{
+				SyncContext: framework.NewSyncContext().WithContext(
+					map[string]time.Time{"/test-node0": time.Now()},
+				),
+				prepareNodeMetaSyncPlugin: []framework.NodeMetaSyncPlugin{
+					&fakeNodeMetaSyncPlugin{
+						CheckLabels: []string{"expect-to-change-label"},
+					},
+				},
+			},
+			args: args{
+				strategy: &extension.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+				},
+				oldNode: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+						Labels: map[string]string{
+							"expect-to-change-label": "xxx",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
+						},
+						Capacity: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
+						},
+					},
+				},
+				newNode: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+						Labels: map[string]string{
+							"test-label":             "test",
+							"expect-to-change-label": "yyy",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
+						},
+						Capacity: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("20"),
+							extension.BatchMemory: resource.MustParse("40G"),
+						},
+					},
+				},
+			},
+			want:  false,
+			want1: true,
 		},
 	}
 	for _, tt := range tests {
@@ -1872,8 +2060,18 @@ func Test_isNodeResourceSyncNeeded(t *testing.T) {
 				NodeSyncContext: tt.fields.SyncContext,
 				Clock:           clock.RealClock{},
 			}
-			got := r.isNodeResourceSyncNeeded(tt.args.strategy, tt.args.oldNode, tt.args.newNode)
+			if len(tt.fields.prepareNodeMetaSyncPlugin) > 0 {
+				framework.RegisterNodeMetaSyncExtender(tt.fields.prepareNodeMetaSyncPlugin...)
+				defer func() {
+					for _, p := range tt.fields.prepareNodeMetaSyncPlugin {
+						framework.UnregisterNodeMetaSyncExtender(p.Name())
+					}
+				}()
+			}
+
+			got, got1 := r.isNodeResourceSyncNeeded(tt.args.strategy, tt.args.oldNode, tt.args.newNode)
 			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want1, got1)
 		})
 	}
 }
