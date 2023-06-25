@@ -22,9 +22,9 @@ import (
 	"text/template"
 
 	"k8s.io/apimachinery/pkg/util/sets"
-	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
+	imageutils "github.com/koordinator-sh/koordinator/test/utils/image"
 )
 
 // TODO: Cleanup this file.

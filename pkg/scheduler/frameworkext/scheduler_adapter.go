@@ -58,7 +58,7 @@ type SchedulerAdapter struct {
 }
 
 func (s *SchedulerAdapter) GetCache() SchedulerCache {
-	return s.Scheduler.SchedulerCache
+	return s.Scheduler.Cache
 }
 
 func (s *SchedulerAdapter) GetSchedulingQueue() SchedulingQueue {

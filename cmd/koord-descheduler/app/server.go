@@ -106,7 +106,7 @@ func NewDeschedulerCommand(registryOptions ...Option) *cobra.Command {
 func runCommand(cmd *cobra.Command, opts *options.Options, registryOptions ...Option) error {
 	// Activate logging as soon as possible, after that
 	// show flags with the final logging configuration.
-	if err := opts.Logs.Validate(); err != nil {
+	if err := opts.Logs.ValidateAndApply(nil); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
@@ -169,7 +169,7 @@ func Run(ctx context.Context, cc *deschedulerappconfig.CompletedConfig, desched 
 	if cc.SecureServing != nil {
 		handler := buildHandlerChain(newHealthzAndMetricsHandler(&cc.ComponentConfig, checks...))
 		// TODO: handle stoppedCh and listenerStoppedCh returned by c.SecureServing.Serve
-		if _, err := cc.SecureServing.Serve(handler, 0, ctx.Done()); err != nil {
+		if _, _, err := cc.SecureServing.Serve(handler, 0, ctx.Done()); err != nil {
 			// fail early for secure handlers, removing the old error loop from above
 			return fmt.Errorf("failed to start secure server: %v", err)
 		}

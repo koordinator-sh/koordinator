@@ -135,7 +135,7 @@ func (p *Plugin) EventsToRegister() []framework.ClusterEvent {
 	}
 }
 
-func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	state := &preFilterState{
 		skip:               true,
 		preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
@@ -145,10 +145,10 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	var status *framework.Status
 	state.skip, state.podRequests, status = preparePod(pod)
 	if !status.IsSuccess() {
-		return status
+		return nil, status
 	}
 	cycleState.Write(stateKey, state)
-	return nil
+	return nil, nil
 }
 
 func preparePod(pod *corev1.Pod) (skip bool, requests corev1.ResourceList, status *framework.Status) {

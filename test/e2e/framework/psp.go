@@ -31,7 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/authentication/serviceaccount"
 	clientset "k8s.io/client-go/kubernetes"
-	imageutils "k8s.io/kubernetes/test/utils/image"
+
+	imageutils "github.com/koordinator-sh/koordinator/test/utils/image"
 
 	"github.com/onsi/ginkgo"
 

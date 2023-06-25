@@ -24,7 +24,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/apimachinery/pkg/util/wait"
-	_ "k8s.io/component-base/logs"
+	"k8s.io/component-base/logs"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 
@@ -38,6 +38,7 @@ import (
 func main() {
 	cfg := config.NewConfiguration()
 	cfg.InitFlags(flag.CommandLine)
+	logs.AddGoFlags(flag.CommandLine)
 	flag.Parse()
 
 	go wait.Forever(klog.Flush, 5*time.Second)

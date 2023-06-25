@@ -219,7 +219,7 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 			},
 		},
 	}
-	status := pl.PreFilter(context.TODO(), cycleState, pod)
+	_, status := pl.PreFilter(context.TODO(), cycleState, pod)
 	assert.True(t, status.IsSuccess())
 
 	pl.nodeDeviceCache.updateNodeDevice("test-node-1", &schedulingv1alpha1.Device{
@@ -499,7 +499,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Plugin{}
 			cycleState := framework.NewCycleState()
-			status := p.PreFilter(context.TODO(), cycleState, tt.pod)
+			_, status := p.PreFilter(context.TODO(), cycleState, tt.pod)
 			assert.Equal(t, tt.wantStatus, status)
 			state, _ := getPreFilterState(cycleState)
 			assert.Equal(t, tt.wantState, state)
@@ -1169,7 +1169,7 @@ func Test_Plugin_FilterReservation(t *testing.T) {
 			},
 		},
 	}
-	status := pl.PreFilter(context.TODO(), cycleState, pod)
+	_, status := pl.PreFilter(context.TODO(), cycleState, pod)
 	assert.True(t, status.IsSuccess())
 
 	pl.nodeDeviceCache.updateNodeDevice("test-node-1", &schedulingv1alpha1.Device{

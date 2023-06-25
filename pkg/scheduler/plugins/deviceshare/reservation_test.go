@@ -61,7 +61,7 @@ func Test_Plugin_ReservationRestore(t *testing.T) {
 			},
 		},
 	}
-	status := pl.PreFilter(context.TODO(), cycleState, pod)
+	_, status := pl.PreFilter(context.TODO(), cycleState, pod)
 	assert.True(t, status.IsSuccess())
 
 	pl.nodeDeviceCache.updateNodeDevice("test-node-1", &schedulingv1alpha1.Device{
