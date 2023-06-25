@@ -34,7 +34,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
@@ -158,23 +157,9 @@ func Test_New(t *testing.T) {
 	)
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
-	deviceSharePluginConfig := schedulerconfig.PluginConfig{
-		Name: Name,
-		Args: &config.DeviceShareArgs{},
-	}
-
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
-		func(reg *runtime.Registry, profile *schedulerconfig.KubeSchedulerProfile) {
-			profile.PluginConfig = []schedulerconfig.PluginConfig{
-				deviceSharePluginConfig,
-			}
-		},
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		schedulertesting.RegisterPreFilterPlugin(Name, proxyNew),
-		schedulertesting.RegisterFilterPlugin(Name, proxyNew),
-		schedulertesting.RegisterReservePlugin(Name, proxyNew),
-		schedulertesting.RegisterPreBindPlugin(Name, proxyNew),
 	}
 
 	cs := kubefake.NewSimpleClientset()

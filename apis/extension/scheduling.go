@@ -137,7 +137,7 @@ type DeviceAllocation struct {
 	Extension json.RawMessage     `json:"extension,omitempty"`
 }
 
-var GetDeviceAllocations = func(podAnnotations map[string]string) (DeviceAllocations, error) {
+func GetDeviceAllocations(podAnnotations map[string]string) (DeviceAllocations, error) {
 	deviceAllocations := DeviceAllocations{}
 	data, ok := podAnnotations[AnnotationDeviceAllocated]
 	if !ok {
