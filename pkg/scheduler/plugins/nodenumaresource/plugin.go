@@ -57,22 +57,6 @@ const (
 )
 
 var (
-	GetResourceSpec   = extension.GetResourceSpec
-	GetResourceStatus = extension.GetResourceStatus
-	SetResourceStatus = extension.SetResourceStatus
-	GetPodQoSClass    = extension.GetPodQoSClass
-	GetPriorityClass  = extension.GetPriorityClass
-	AllowUseCPUSet    = func(pod *corev1.Pod) bool {
-		if pod == nil {
-			return false
-		}
-		qosClass := GetPodQoSClass(pod)
-		priorityClass := GetPriorityClass(pod)
-		return (qosClass == extension.QoSLSE || qosClass == extension.QoSLSR) && priorityClass == extension.PriorityProd
-	}
-)
-
-var (
 	_ framework.EnqueueExtensions = &Plugin{}
 
 	_ framework.PreFilterPlugin = &Plugin{}
@@ -95,20 +79,13 @@ type Plugin struct {
 type Option func(*pluginOptions)
 
 type pluginOptions struct {
-	topologyManager    CPUTopologyManager
-	customSyncTopology bool
-	cpuManager         CPUManager
+	topologyManager CPUTopologyManager
+	cpuManager      CPUManager
 }
 
 func WithCPUTopologyManager(topologyManager CPUTopologyManager) Option {
 	return func(opts *pluginOptions) {
 		opts.topologyManager = topologyManager
-	}
-}
-
-func WithCustomSyncTopology(customSyncTopology bool) Option {
-	return func(options *pluginOptions) {
-		options.customSyncTopology = customSyncTopology
 	}
 }
 
@@ -138,10 +115,8 @@ func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option
 		options.cpuManager = NewCPUManager(handle, defaultNUMAAllocateStrategy, options.topologyManager)
 	}
 
-	if !options.customSyncTopology {
-		if err := registerNodeResourceTopologyEventHandler(handle, options.topologyManager); err != nil {
-			return nil, err
-		}
+	if err := registerNodeResourceTopologyEventHandler(handle, options.topologyManager); err != nil {
+		return nil, err
 	}
 	registerPodEventHandler(handle, options.cpuManager)
 
@@ -215,7 +190,7 @@ func (p *Plugin) EventsToRegister() []framework.ClusterEvent {
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	resourceSpec, err := GetResourceSpec(pod.Annotations)
+	resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
 	if err != nil {
 		return nil, framework.NewStatus(framework.Error, err.Error())
 	}
@@ -224,7 +199,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		skip: true,
 	}
 	if AllowUseCPUSet(pod) {
-		preferredCPUBindPolicy := resourceSpec.PreferredCPUBindPolicy
+		preferredCPUBindPolicy := schedulingconfig.CPUBindPolicy(resourceSpec.PreferredCPUBindPolicy)
 		if preferredCPUBindPolicy == "" || preferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault {
 			preferredCPUBindPolicy = p.pluginArgs.DefaultCPUBindPolicy
 		}
@@ -248,6 +223,15 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 
 	cycleState.Write(stateKey, state)
 	return nil, nil
+}
+
+func AllowUseCPUSet(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	qosClass := extension.GetPodQoSClass(pod)
+	priorityClass := extension.GetPriorityClass(pod)
+	return (qosClass == extension.QoSLSE || qosClass == extension.QoSLSR) && priorityClass == extension.PriorityProd
 }
 
 func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
@@ -432,11 +416,12 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 
 	annotations := object.GetAnnotations()
 	// Write back ResourceSpec annotation if LSR Pod hasn't specified CPUBindPolicy
-	if state.resourceSpec.PreferredCPUBindPolicy == "" ||
-		state.resourceSpec.PreferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault ||
-		state.resourceSpec.PreferredCPUBindPolicy != state.preferredCPUBindPolicy {
+	preferredCPUBindPolicy := schedulingconfig.CPUBindPolicy(state.resourceSpec.PreferredCPUBindPolicy)
+	if preferredCPUBindPolicy == "" ||
+		preferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault ||
+		preferredCPUBindPolicy != state.preferredCPUBindPolicy {
 		resourceSpec := &extension.ResourceSpec{
-			PreferredCPUBindPolicy: state.preferredCPUBindPolicy,
+			PreferredCPUBindPolicy: extension.CPUBindPolicy(state.preferredCPUBindPolicy),
 		}
 		resourceSpecData, err := json.Marshal(resourceSpec)
 		if err != nil {
@@ -450,7 +435,7 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 	}
 
 	resourceStatus := &extension.ResourceStatus{CPUSet: state.allocatedCPUs.String()}
-	if err := SetResourceStatus(object, resourceStatus); err != nil {
+	if err := extension.SetResourceStatus(object, resourceStatus); err != nil {
 		return framework.AsStatus(err)
 	}
 	return nil

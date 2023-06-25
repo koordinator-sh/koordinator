@@ -24,7 +24,6 @@ package v1beta2
 import (
 	unsafe "unsafe"
 
-	extension "github.com/koordinator-sh/koordinator/apis/extension"
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	config "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	corev1 "k8s.io/api/core/v1"
@@ -297,7 +296,9 @@ func Convert_config_LoadAwareSchedulingArgs_To_v1beta2_LoadAwareSchedulingArgs(i
 }
 
 func autoConvert_v1beta2_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(in *NodeNUMAResourceArgs, out *config.NodeNUMAResourceArgs, s conversion.Scope) error {
-	out.DefaultCPUBindPolicy = extension.CPUBindPolicy(in.DefaultCPUBindPolicy)
+	if err := v1.Convert_Pointer_string_To_string(&in.DefaultCPUBindPolicy, &out.DefaultCPUBindPolicy, s); err != nil {
+		return err
+	}
 	out.ScoringStrategy = (*config.ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
 	return nil
 }
@@ -308,7 +309,9 @@ func Convert_v1beta2_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(in *Nod
 }
 
 func autoConvert_config_NodeNUMAResourceArgs_To_v1beta2_NodeNUMAResourceArgs(in *config.NodeNUMAResourceArgs, out *NodeNUMAResourceArgs, s conversion.Scope) error {
-	out.DefaultCPUBindPolicy = extension.CPUBindPolicy(in.DefaultCPUBindPolicy)
+	if err := v1.Convert_string_To_Pointer_string(&in.DefaultCPUBindPolicy, &out.DefaultCPUBindPolicy, s); err != nil {
+		return err
+	}
 	out.ScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
 	return nil
 }

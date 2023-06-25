@@ -23,6 +23,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -99,7 +100,7 @@ func (c *podEventHandler) updatePod(oldPod, pod *corev1.Pod) {
 		return
 	}
 
-	resourceStatus, err := GetResourceStatus(pod.Annotations)
+	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
 	if err != nil {
 		return
 	}
@@ -108,7 +109,7 @@ func (c *podEventHandler) updatePod(oldPod, pod *corev1.Pod) {
 		return
 	}
 
-	resourceSpec, err := GetResourceSpec(pod.Annotations)
+	resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
 	if err != nil {
 		return
 	}
@@ -121,7 +122,7 @@ func (c *podEventHandler) deletePod(pod *corev1.Pod) {
 		return
 	}
 
-	resourceStatus, err := GetResourceStatus(pod.Annotations)
+	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
 	if err != nil {
 		return
 	}

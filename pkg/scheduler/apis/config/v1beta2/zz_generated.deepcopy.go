@@ -262,6 +262,11 @@ func (in *LoadAwareSchedulingArgs) DeepCopyObject() runtime.Object {
 func (in *NodeNUMAResourceArgs) DeepCopyInto(out *NodeNUMAResourceArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
+	if in.DefaultCPUBindPolicy != nil {
+		in, out := &in.DefaultCPUBindPolicy, &out.DefaultCPUBindPolicy
+		*out = new(string)
+		**out = **in
+	}
 	if in.ScoringStrategy != nil {
 		in, out := &in.ScoringStrategy, &out.ScoringStrategy
 		*out = new(ScoringStrategy)

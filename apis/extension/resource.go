@@ -149,6 +149,20 @@ func GetResourceSpec(annotations map[string]string) (*ResourceSpec, error) {
 	return resourceSpec, nil
 }
 
+func SetResourceSpec(obj metav1.Object, spec *ResourceSpec) error {
+	data, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[AnnotationResourceSpec] = string(data)
+	obj.SetAnnotations(annotations)
+	return nil
+}
+
 // GetResourceStatus parses ResourceStatus from annotations
 func GetResourceStatus(annotations map[string]string) (*ResourceStatus, error) {
 	resourceStatus := &ResourceStatus{}

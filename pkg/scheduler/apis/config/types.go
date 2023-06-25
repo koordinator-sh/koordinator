@@ -108,17 +108,17 @@ type NodeNUMAResourceArgs struct {
 }
 
 // CPUBindPolicy defines the CPU binding policy
-type CPUBindPolicy = extension.CPUBindPolicy
+type CPUBindPolicy = string
 
 const (
 	// CPUBindPolicyDefault performs the default bind policy that specified in koord-scheduler configuration
-	CPUBindPolicyDefault CPUBindPolicy = extension.CPUBindPolicyDefault
+	CPUBindPolicyDefault = CPUBindPolicy(extension.CPUBindPolicyDefault)
 	// CPUBindPolicyFullPCPUs favor cpuset allocation that pack in few physical cores
-	CPUBindPolicyFullPCPUs CPUBindPolicy = extension.CPUBindPolicyFullPCPUs
+	CPUBindPolicyFullPCPUs = CPUBindPolicy(extension.CPUBindPolicyFullPCPUs)
 	// CPUBindPolicySpreadByPCPUs favor cpuset allocation that evenly allocate logical cpus across physical cores
-	CPUBindPolicySpreadByPCPUs CPUBindPolicy = extension.CPUBindPolicySpreadByPCPUs
+	CPUBindPolicySpreadByPCPUs = CPUBindPolicy(extension.CPUBindPolicySpreadByPCPUs)
 	// CPUBindPolicyConstrainedBurst constrains the CPU Shared Pool range of the Burstable Pod
-	CPUBindPolicyConstrainedBurst CPUBindPolicy = extension.CPUBindPolicyConstrainedBurst
+	CPUBindPolicyConstrainedBurst = CPUBindPolicy(extension.CPUBindPolicyConstrainedBurst)
 )
 
 type CPUExclusivePolicy = extension.CPUExclusivePolicy
