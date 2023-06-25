@@ -33,6 +33,10 @@ const (
 	PriorityNone  PriorityClass = ""
 )
 
+var (
+	DefaultPriorityClass = PriorityNone
+)
+
 // Define Koordinator priority as a variable value to support customizing different priority ranges
 var (
 	PriorityProdValueMax int32 = 9999
@@ -71,7 +75,7 @@ func getPriorityClassByPriority(priority *int32) PriorityClass {
 		return PriorityFree
 	}
 
-	return PriorityNone
+	return DefaultPriorityClass
 }
 
 // GetPodSubPriority get pod's sub-priority in Koordinator from label
