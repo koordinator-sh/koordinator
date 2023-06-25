@@ -716,6 +716,47 @@ func Test_filterWithReservations(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
+			name: "filter non-reservations with preemption but no preemptible resources",
+			stateData: &stateData{
+				podRequestsResources: &framework.Resource{
+					MilliCPU: 4 * 1000,
+				},
+				preemptible: map[string]corev1.ResourceList{},
+				nodeReservationStates: map[string]nodeReservationState{
+					node.Name: {
+						podRequested: &framework.Resource{
+							MilliCPU: 32 * 1000,
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "filter non-reservations with preemption but no preemptible resources and have preemptibleInRR",
+			stateData: &stateData{
+				podRequestsResources: &framework.Resource{
+					MilliCPU: 4 * 1000,
+				},
+				preemptible: map[string]corev1.ResourceList{},
+				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
+					node.Name: {
+						"123456": {
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+				},
+				nodeReservationStates: map[string]nodeReservationState{
+					node.Name: {
+						podRequested: &framework.Resource{
+							MilliCPU: 32 * 1000,
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonPreemptionFailed),
+		},
+		{
 			name: "filter non-reservations with preemption",
 			stateData: &stateData{
 				podRequestsResources: &framework.Resource{
