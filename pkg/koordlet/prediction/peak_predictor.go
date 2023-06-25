@@ -46,15 +46,17 @@ type Predictor interface {
 }
 
 type predictorFactory struct {
-	predictServer     PredictServer
-	coldStartDuration time.Duration
+	predictServer       PredictServer
+	coldStartDuration   time.Duration
+	safetyMarginPercent int
 }
 
 // NewPredictorFactory creates a new instance of PredictorFactory.
-func NewPredictorFactory(predictServer PredictServer, coldStartDuration time.Duration) PredictorFactory {
+func NewPredictorFactory(predictServer PredictServer, coldStartDuration time.Duration, safetyMarginPercent int) PredictorFactory {
 	return &predictorFactory{
-		predictServer:     predictServer,
-		coldStartDuration: coldStartDuration,
+		predictServer:       predictServer,
+		coldStartDuration:   coldStartDuration,
+		safetyMarginPercent: safetyMarginPercent,
 	}
 }
 
@@ -63,10 +65,11 @@ func (f *predictorFactory) New(t PredictorType) Predictor {
 	switch t {
 	case ProdReclaimablePredictor:
 		return &prodReclaimablePredictor{
-			predictServer:     f.predictServer,
-			coldStartDuration: f.coldStartDuration,
-			reclaimable:       util.NewZeroResourceList(),
-			pods:              make(map[string]bool),
+			predictServer:       f.predictServer,
+			coldStartDuration:   f.coldStartDuration,
+			safetyMarginPercent: f.safetyMarginPercent,
+			reclaimable:         util.NewZeroResourceList(),
+			pods:                make(map[string]bool),
 		}
 	default:
 		return &emptyPredictor{}
@@ -98,8 +101,9 @@ func (f *emptyPredictorFactory) New(t PredictorType) Predictor {
 }
 
 type prodReclaimablePredictor struct {
-	predictServer     PredictServer
-	coldStartDuration time.Duration
+	predictServer       PredictServer
+	coldStartDuration   time.Duration
+	safetyMarginPercent int
 
 	reclaimable v1.ResourceList
 	pods        map[string]bool
@@ -137,12 +141,13 @@ func (p *prodReclaimablePredictor) AddPod(pod *v1.Pod) error {
 	reclaimableCPUMilli := int64(0)
 	reclaimableMemoryBytes := int64(0)
 
+	ratioAfterSafetyMargin := float64(100+p.safetyMarginPercent) / 100
 	if p95CPU, ok := p95Resources[v1.ResourceCPU]; ok {
-		peakCPU := util.MultiplyMilliQuant(p95CPU, 1.1)
+		peakCPU := util.MultiplyMilliQuant(p95CPU, ratioAfterSafetyMargin)
 		reclaimableCPUMilli = podCPURequest.MilliValue() - peakCPU.MilliValue()
 	}
 	if p98Memory, ok := p98Resources[v1.ResourceMemory]; ok {
-		peakMemory := util.MultiplyQuant(p98Memory, 1.1)
+		peakMemory := util.MultiplyQuant(p98Memory, ratioAfterSafetyMargin)
 		reclaimableMemoryBytes = podMemoryRequest.Value() - peakMemory.Value()
 	}
 

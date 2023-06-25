@@ -109,19 +109,21 @@ type MetricServer interface {
 	GetNodeMetric(desc MetricDesc, m MetricKey) (float64, error)
 }
 
-func NewMetricServer(metricCache metriccache.MetricCache) MetricServer {
+func NewMetricServer(metricCache metriccache.MetricCache, dataInterval time.Duration) MetricServer {
 	return &metricServer{
-		metricCache: metricCache,
+		dataInterval: dataInterval,
+		metricCache:  metricCache,
 	}
 }
 
 type metricServer struct {
-	metricCache metriccache.MetricCache
+	metricCache  metriccache.MetricCache
+	dataInterval time.Duration
 }
 
 func (ms *metricServer) GetPodMetric(desc MetricDesc, m MetricKey) (float64, error) {
 	now := time.Now()
-	start := now.Add(-DefaultTrainingInterval)
+	start := now.Add(-ms.dataInterval)
 	querier, err := ms.metricCache.Querier(start, now)
 	if err != nil {
 		return 0, err
@@ -152,7 +154,7 @@ func (ms *metricServer) GetPodMetric(desc MetricDesc, m MetricKey) (float64, err
 
 func (ms *metricServer) GetNodeMetric(desc MetricDesc, m MetricKey) (float64, error) {
 	now := time.Now()
-	start := now.Add(-DefaultTrainingInterval)
+	start := now.Add(-ms.dataInterval)
 	querier, err := ms.metricCache.Querier(start, now)
 	if err != nil {
 		return 0, err

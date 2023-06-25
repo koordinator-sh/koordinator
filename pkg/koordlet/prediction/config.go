@@ -22,18 +22,39 @@ import (
 )
 
 type Config struct {
-	PredictionCheckpointFilepath string
-	PredictionColdStartDuration  time.Duration
+	CheckpointFilepath           string
+	ColdStartDuration            time.Duration
+	SafetyMarginPercent          int
+	MemoryHistogramDecayHalfLife time.Duration
+	CPUHistogramDecayHalfLife    time.Duration
+	TrainingInterval             time.Duration
+	ModelExpirationDuration      time.Duration
+	ModelCheckpointInterval      time.Duration
+	ModelCheckpointMaxPerStep    int
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
-		PredictionCheckpointFilepath: "/prediction-checkpoints",
-		PredictionColdStartDuration:  24 * time.Hour,
+		CheckpointFilepath:           "/prediction-checkpoints",
+		ColdStartDuration:            24 * time.Hour,
+		SafetyMarginPercent:          10,
+		MemoryHistogramDecayHalfLife: 24 * time.Hour,
+		CPUHistogramDecayHalfLife:    12 * time.Hour,
+		TrainingInterval:             time.Minute,
+		ModelExpirationDuration:      30 * time.Minute,
+		ModelCheckpointInterval:      10 * time.Minute,
+		ModelCheckpointMaxPerStep:    12,
 	}
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
-	fs.StringVar(&c.PredictionCheckpointFilepath, "prediction-checkpoint-filepath", c.PredictionCheckpointFilepath, "The filepath is used to store the checkpoints of the prediction system's state.")
-	fs.DurationVar(&c.PredictionColdStartDuration, "prediction-cold-start-duration", c.PredictionColdStartDuration, "Cold start refers to the period of time after a Pod starts and enters into a stable state")
+	fs.StringVar(&c.CheckpointFilepath, "prediction-checkpoint-filepath", c.CheckpointFilepath, "The filepath is used to store the checkpoints of the prediction system's state.")
+	fs.DurationVar(&c.ColdStartDuration, "prediction-cold-start-duration", c.ColdStartDuration, "Cold start refers to the period of time after a Pod starts and enters into a stable state")
+	fs.IntVar(&c.SafetyMarginPercent, "prediction-safety-margin-percent", c.SafetyMarginPercent, "The redundancy preserved above peak prediction")
+	fs.DurationVar(&c.MemoryHistogramDecayHalfLife, "prediction-memory-histogram-decay-halflife", c.MemoryHistogramDecayHalfLife, "Half-life, the older the data, the lower the weight")
+	fs.DurationVar(&c.CPUHistogramDecayHalfLife, "prediction-cpu-histogram-decay-halflife", c.CPUHistogramDecayHalfLife, "Half-life, the older the data, the lower the weight")
+	fs.DurationVar(&c.TrainingInterval, "prediction-training-interval", c.TrainingInterval, "Period of prediction model update")
+	fs.DurationVar(&c.ModelExpirationDuration, "prediction-model-expiration-duration", c.ModelExpirationDuration, "Expiration of prediction model without updated")
+	fs.DurationVar(&c.ModelCheckpointInterval, "prediction-model-checkpoint-interval", c.ModelCheckpointInterval, "Interval of prediction model take checkpoint")
+	fs.IntVar(&c.ModelCheckpointMaxPerStep, "prediction-model-checkpoint-max-per-step", c.ModelCheckpointMaxPerStep, "The maximum number of prediction models saved at a time")
 }
