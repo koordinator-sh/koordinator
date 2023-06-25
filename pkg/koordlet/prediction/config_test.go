@@ -35,15 +35,15 @@ func TestInitFlags(t *testing.T) {
 	// Test case 1: Check if the PredictionCheckpointFilepath flag is set correctly
 	expectedCheckpointFilepath := "/prediction-checkpoints"
 	fs.Set("prediction-checkpoint-filepath", expectedCheckpointFilepath)
-	if config.PredictionCheckpointFilepath != expectedCheckpointFilepath {
-		t.Errorf("Expected PredictionCheckpointFilepath: %s, but got: %s", expectedCheckpointFilepath, config.PredictionCheckpointFilepath)
+	if config.CheckpointFilepath != expectedCheckpointFilepath {
+		t.Errorf("Expected PredictionCheckpointFilepath: %s, but got: %s", expectedCheckpointFilepath, config.CheckpointFilepath)
 	}
 
 	// Test case 2: Check if the PredictionColdStartDuration flag is set correctly
 	expectedColdStartDuration := 24 * time.Hour
 	fs.Set("prediction-cold-start-duration", "24h")
-	if config.PredictionColdStartDuration != expectedColdStartDuration {
-		t.Errorf("Expected PredictionColdStartDuration: %s, but got: %s", expectedColdStartDuration, config.PredictionColdStartDuration)
+	if config.ColdStartDuration != expectedColdStartDuration {
+		t.Errorf("Expected PredictionColdStartDuration: %s, but got: %s", expectedColdStartDuration, config.ColdStartDuration)
 	}
 }
 
@@ -53,13 +53,13 @@ func TestNewDefaultConfig(t *testing.T) {
 
 	// Test if the PredictionCheckpointFilepath is set to the default value
 	expectedCheckpointFilepath := "/prediction-checkpoints"
-	if config.PredictionCheckpointFilepath != expectedCheckpointFilepath {
-		t.Errorf("Expected default PredictionCheckpointFilepath: %s, but got: %s", expectedCheckpointFilepath, config.PredictionCheckpointFilepath)
+	if config.CheckpointFilepath != expectedCheckpointFilepath {
+		t.Errorf("Expected default PredictionCheckpointFilepath: %s, but got: %s", expectedCheckpointFilepath, config.CheckpointFilepath)
 	}
 
 	// Test if the PredictionColdStartDuration is set to the default value
 	expectedColdStartDuration := 24 * time.Hour
-	if config.PredictionColdStartDuration != expectedColdStartDuration {
-		t.Errorf("Expected default PredictionColdStartDuration: %s, but got: %s", expectedColdStartDuration, config.PredictionColdStartDuration)
+	if config.ColdStartDuration != expectedColdStartDuration {
+		t.Errorf("Expected default PredictionColdStartDuration: %s, but got: %s", expectedColdStartDuration, config.ColdStartDuration)
 	}
 }

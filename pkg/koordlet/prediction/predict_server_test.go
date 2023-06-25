@@ -38,18 +38,20 @@ func deltaPer(a, b float64) float64 {
 }
 
 func TestDefaultHistogram(t *testing.T) {
+	peakPrediction := NewPeakPredictServer(NewDefaultConfig())
+
 	testCases := []struct {
 		hist     histogram.Histogram
 		minValue float64
 		maxValue float64
 	}{
 		{
-			hist:     defaultCPUHistogram(),
+			hist:     peakPrediction.(*peakPredictServer).defaultCPUHistogram(),
 			minValue: 0.05,
 			maxValue: 1024,
 		},
 		{
-			hist:     defaultMemoryHistogram(),
+			hist:     peakPrediction.(*peakPredictServer).defaultMemoryHistogram(),
 			minValue: 10 << 20,
 			maxValue: 1 << 31,
 		},
@@ -165,7 +167,7 @@ func TestPredictServerMainLoop(t *testing.T) {
 	metricServer.PodUsage[UIDType(pods[0].UID)] = podUsage{PodCPUUsage: 1, PodMemoryUsage: 128 * 1024 * 1024}
 	metricServer.PodUsage[UIDType(pods[1].UID)] = podUsage{PodCPUUsage: 3, PodMemoryUsage: 128 * 1024 * 1024}
 
-	peakPrediction := NewPeakPredictServer(&Config{})
+	peakPrediction := NewPeakPredictServer(NewDefaultConfig())
 	peakPrediction.(*peakPredictServer).informer = informer
 	peakPrediction.(*peakPredictServer).metricServer = metricServer
 
@@ -231,7 +233,7 @@ func TestPredictServerStop(t *testing.T) {
 
 	metricServer := &mockMetricServer{}
 
-	peakPrediction := NewPeakPredictServer(&Config{})
+	peakPrediction := NewPeakPredictServer(NewDefaultConfig())
 	peakPrediction.(*peakPredictServer).informer = informer
 	peakPrediction.(*peakPredictServer).metricServer = metricServer
 
@@ -269,7 +271,7 @@ func TestPredictServerGCOldModels(t *testing.T) {
 	metricServer.NodeMemoryUsage = float64(nodeMemoryUsed.Value())
 
 	mockClock := clock.NewFakeClock(time.Now())
-	peakPrediction := NewPeakPredictServer(&Config{})
+	peakPrediction := NewPeakPredictServer(NewDefaultConfig())
 	peakPrediction.(*peakPredictServer).informer = informer
 	peakPrediction.(*peakPredictServer).metricServer = metricServer
 	peakPrediction.(*peakPredictServer).clock = mockClock
@@ -279,7 +281,7 @@ func TestPredictServerGCOldModels(t *testing.T) {
 	if modelSize != 1 {
 		t.Errorf("unexpected modelSize, expected 1 actual %v", modelSize)
 	}
-	mockClock.Step(DefaultModelExpirationTime)
+	mockClock.Step(peakPrediction.(*peakPredictServer).cfg.ModelExpirationDuration)
 	mockClock.Step(time.Minute)
 	peakPrediction.(*peakPredictServer).gcModels()
 
@@ -312,6 +314,7 @@ func (ckpt *mockCheckpointer) Restore() ([]*ModelCheckpoint, error) {
 func TestDoCheckpoint(t *testing.T) {
 	now := time.Now()
 	predictServer := &peakPredictServer{
+		cfg:          NewDefaultConfig(),
 		hasSynced:    &atomic.Bool{},
 		informer:     &mockInformer{},
 		metricServer: &mockMetricServer{},
@@ -339,18 +342,12 @@ func TestDoCheckpoint(t *testing.T) {
 	assert.Equal(t, now, model2.LastCheckpointed)
 }
 
-func temporarySetInt(v *int, target int) func() {
-	old := *v
-	*v = target
-
-	return func() {
-		*v = old
-	}
-}
-
 func TestDoCheckpoint_MaxPerStep(t *testing.T) {
 	now := time.Now()
+	cfg := NewDefaultConfig()
+	cfg.ModelCheckpointMaxPerStep = 1
 	predictServer := &peakPredictServer{
+		cfg:          cfg,
 		hasSynced:    &atomic.Bool{},
 		informer:     &mockInformer{},
 		metricServer: &mockMetricServer{},
@@ -374,8 +371,6 @@ func TestDoCheckpoint_MaxPerStep(t *testing.T) {
 	}
 	predictServer.hasSynced.Store(true)
 
-	defer temporarySetInt(&DefaultModelCheckpointMaxPerStep, 1)()
-
 	predictServer.doCheckpoint()
 	updatedModelCount := countModelsCheckpointAtTime(predictServer.models, now)
 	assert.Equal(t, 1, updatedModelCount)
@@ -395,6 +390,7 @@ func TestDoCheckpoint_CheckpointInterval(t *testing.T) {
 	now := time.Now()
 	mockClock := clock.NewFakeClock(now)
 	predictServer := &peakPredictServer{
+		cfg:          NewDefaultConfig(),
 		hasSynced:    &atomic.Bool{},
 		informer:     &mockInformer{},
 		metricServer: &mockMetricServer{},
@@ -419,13 +415,13 @@ func TestDoCheckpoint_CheckpointInterval(t *testing.T) {
 	predictServer.hasSynced.Store(true)
 	predictServer.doCheckpoint()
 
-	newTime := now.Add(DefaultModelCheckpointInterval / 2)
+	newTime := now.Add(predictServer.cfg.ModelCheckpointInterval / 2)
 	mockClock.SetTime(newTime)
 	predictServer.doCheckpoint()
 	updatedModelCount := countModelsCheckpointAtTime(predictServer.models, newTime)
 	assert.Equal(t, 0, updatedModelCount)
 
-	newTime = now.Add(DefaultModelCheckpointInterval + time.Minute)
+	newTime = now.Add(predictServer.cfg.ModelCheckpointInterval + time.Minute)
 	mockClock.SetTime(newTime)
 	predictServer.doCheckpoint()
 	updatedModelCount = countModelsCheckpointAtTime(predictServer.models, newTime)
@@ -465,8 +461,10 @@ func TestDoCheckpoint_RestoreModels(t *testing.T) {
 			},
 		},
 	}
-	defer temporarySetInt(&DefaultModelCheckpointMaxPerStep, 5)()
+	cfg := NewDefaultConfig()
+	cfg.ModelCheckpointMaxPerStep = 5
 	predictServer := &peakPredictServer{
+		cfg:          cfg,
 		hasSynced:    &atomic.Bool{},
 		informer:     &mockInformer{Pods: pods, Node: node},
 		metricServer: &mockMetricServer{},

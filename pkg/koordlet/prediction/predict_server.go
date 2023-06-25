@@ -44,18 +44,6 @@ var (
 	epsilon = 0.001 * MinSampleWeight
 	// DefaultHistogramBucketSizeGrowth is the default value for histogramBucketSizeGrowth.
 	DefaultHistogramBucketSizeGrowth = 0.05
-	// DefaultMemoryHistogramDecayHalfLife is the default value for MemoryHistogramDecayHalfLife.
-	DefaultMemoryHistogramDecayHalfLife = time.Hour * 24
-	// DefaultCPUHistogramDecayHalfLife is the default value for CPUHistogramDecayHalfLife.
-	DefaultCPUHistogramDecayHalfLife = time.Hour * 12
-	// DefaultTrainingInterval is the default interval at which the model runs.
-	DefaultTrainingInterval = time.Minute
-	// DefaultModelExpirationTime is the default value for model expiration. Models that
-	// are not updated after this time will be GC.
-	DefaultModelExpirationTime = time.Minute * 30
-	// DefaultModelCheckPointInterval is the default value for model checkpoint.
-	DefaultModelCheckpointInterval   = time.Minute * 10
-	DefaultModelCheckpointMaxPerStep = 12
 )
 
 /*
@@ -88,6 +76,7 @@ type PredictModel struct {
 }
 
 type peakPredictServer struct {
+	cfg          *Config
 	informer     Informer
 	metricServer MetricServer
 
@@ -102,17 +91,18 @@ type peakPredictServer struct {
 
 func NewPeakPredictServer(cfg *Config) PredictServer {
 	return &peakPredictServer{
+		cfg:          cfg,
 		uidGenerator: &generator{},
 		models:       make(map[UIDType]*PredictModel),
 		clock:        clock.RealClock{},
 		hasSynced:    &atomic.Bool{},
-		checkpointer: NewFileCheckpointer(cfg.PredictionCheckpointFilepath),
+		checkpointer: NewFileCheckpointer(cfg.CheckpointFilepath),
 	}
 }
 
 func (p *peakPredictServer) Setup(statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache) error {
 	p.informer = NewInformer(statesInformer)
-	p.metricServer = NewMetricServer(metricCache)
+	p.metricServer = NewMetricServer(metricCache, p.cfg.TrainingInterval)
 	return nil
 }
 
@@ -132,7 +122,7 @@ func (p *peakPredictServer) Run(stopCh <-chan struct{}) error {
 		}
 	}
 
-	go wait.Until(p.training, DefaultTrainingInterval, stopCh)
+	go wait.Until(p.training, p.cfg.TrainingInterval, stopCh)
 	go wait.Until(p.gcModels, time.Minute, stopCh)
 	go wait.Until(p.doCheckpoint, time.Minute, stopCh)
 	<-stopCh
@@ -179,21 +169,21 @@ func (p *peakPredictServer) training() {
 }
 
 // From 0.05 to 1024 cores, maintain the bucket of the CPU histogram at a rate of 5%
-func defaultCPUHistogram() histogram.Histogram {
+func (p *peakPredictServer) defaultCPUHistogram() histogram.Histogram {
 	options, err := histogram.NewExponentialHistogramOptions(1024, 0.025, 1.+DefaultHistogramBucketSizeGrowth, epsilon)
 	if err != nil {
 		klog.Fatal("failed to create CPU HistogramOptions")
 	}
-	return histogram.NewDecayingHistogram(options, DefaultCPUHistogramDecayHalfLife)
+	return histogram.NewDecayingHistogram(options, p.cfg.CPUHistogramDecayHalfLife)
 }
 
 // From 10M to 2T, maintain the bucket of the Memory histogram at a rate of 5%
-func defaultMemoryHistogram() histogram.Histogram {
+func (p *peakPredictServer) defaultMemoryHistogram() histogram.Histogram {
 	options, err := histogram.NewExponentialHistogramOptions(1<<31, 5<<20, 1.+DefaultHistogramBucketSizeGrowth, epsilon)
 	if err != nil {
 		klog.Fatal("failed to create Memory HistogramOptions")
 	}
-	return histogram.NewDecayingHistogram(options, DefaultMemoryHistogramDecayHalfLife)
+	return histogram.NewDecayingHistogram(options, p.cfg.MemoryHistogramDecayHalfLife)
 }
 
 func (p *peakPredictServer) updateMode(uid UIDType, cpu, memory float64) {
@@ -202,8 +192,8 @@ func (p *peakPredictServer) updateMode(uid UIDType, cpu, memory float64) {
 	model, ok := p.models[uid]
 	if !ok {
 		model = &PredictModel{
-			CPU:    defaultCPUHistogram(),
-			Memory: defaultMemoryHistogram(),
+			CPU:    p.defaultCPUHistogram(),
+			Memory: p.defaultMemoryHistogram(),
 		}
 		p.models[uid] = model
 	}
@@ -261,7 +251,7 @@ func (p *peakPredictServer) gcModels() {
 	tobeRemovedModels := make([]UIDType, 0)
 	p.modelsLock.Lock()
 	for uid, model := range p.models {
-		if p.clock.Since(model.LastUpdated) > DefaultModelExpirationTime {
+		if p.clock.Since(model.LastUpdated) > p.cfg.ModelExpirationDuration {
 			delete(p.models, uid)
 			klog.InfoS("gc model", "uid", uid)
 			tobeRemovedModels = append(tobeRemovedModels, uid)
@@ -304,10 +294,10 @@ func (p *peakPredictServer) doCheckpoint() {
 
 	checkpointModelsCount := 0
 	for _, pair := range pairs {
-		if checkpointModelsCount >= DefaultModelCheckpointMaxPerStep {
+		if checkpointModelsCount >= p.cfg.ModelCheckpointMaxPerStep {
 			break
 		}
-		if p.clock.Since(pair.Model.LastCheckpointed) < DefaultModelCheckpointInterval {
+		if p.clock.Since(pair.Model.LastCheckpointed) < p.cfg.ModelCheckpointInterval {
 			break
 		}
 		ckpt := ModelCheckpoint{
@@ -354,8 +344,8 @@ func (p *peakPredictServer) restoreModels() (unknownUIDs []UIDType) {
 		}
 
 		model := &PredictModel{
-			CPU:         defaultCPUHistogram(),
-			Memory:      defaultMemoryHistogram(),
+			CPU:         p.defaultCPUHistogram(),
+			Memory:      p.defaultMemoryHistogram(),
 			LastUpdated: checkpoint.LastUpdated.Time,
 		}
 		if err := model.CPU.LoadFromCheckpoint(checkpoint.CPU); err != nil {

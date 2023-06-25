@@ -61,7 +61,7 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 	predictServer := &mockPredictServer{}
 	coldStartDuration := time.Hour
 
-	factory := NewPredictorFactory(predictServer, coldStartDuration)
+	factory := NewPredictorFactory(predictServer, coldStartDuration, 10)
 	predictor := factory.New(ProdReclaimablePredictor)
 
 	pod1 := &v1.Pod{
