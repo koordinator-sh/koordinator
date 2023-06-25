@@ -34,12 +34,12 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
-	evictutils "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions/utils"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/metrics"
 	nodeutil "github.com/koordinator-sh/koordinator/pkg/descheduler/node"
 	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -164,7 +164,7 @@ func (pe *PodEvictor) Evict(ctx context.Context, pod *corev1.Pod, opts framework
 
 func EvictPod(ctx context.Context, client clientset.Interface, pod *corev1.Pod, policyGroupVersion string, deleteOptions *metav1.DeleteOptions) error {
 	var err error
-	if policyGroupVersion == evictutils.EvictionGroupName+"/v1beta1" {
+	if policyGroupVersion == util.EvictionGroupName+"/v1beta1" {
 		eviction := &policyv1beta1.Eviction{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      pod.Name,

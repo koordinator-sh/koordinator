@@ -25,7 +25,7 @@ import (
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
-	evictutils "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions/utils"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func init() {
@@ -42,7 +42,7 @@ type NativeEvictor struct {
 }
 
 func NewNativeEvictor(client kubernetes.Interface) (Interface, error) {
-	policyGroupVersion, err := evictutils.SupportEviction(client)
+	policyGroupVersion, err := util.SupportEviction(client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch eviction groupVersion: %v", err)
 	}
