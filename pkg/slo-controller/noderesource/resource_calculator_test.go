@@ -136,6 +136,16 @@ func Test_calculateNodeResource(t *testing.T) {
 					Quantity: resource.NewScaledQuantity(6, 9),
 					Message:  "batchAllocatable[Mem(GB)]:6 = nodeAllocatable:40 - nodeReservation:14 - systemUsage:0 - podLSUsed:20",
 				},
+				{
+					Name:    extension.MidCPU,
+					Reset:   true,
+					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+				},
+				{
+					Name:    extension.MidMemory,
+					Reset:   true,
+					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+				},
 			}...),
 		},
 		{
@@ -326,6 +336,16 @@ func Test_calculateNodeResource(t *testing.T) {
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
 					Message:  "batchAllocatable[Mem(GB)]:33 = nodeAllocatable:120 - nodeReservation:42 - systemUsage:12 - podLSUsed:33",
+				},
+				{
+					Name:    extension.MidCPU,
+					Reset:   true,
+					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+				},
+				{
+					Name:    extension.MidMemory,
+					Reset:   true,
+					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
 				},
 			}...),
 		},
@@ -521,6 +541,16 @@ func Test_calculateNodeResource(t *testing.T) {
 					Quantity: resource.NewScaledQuantity(39, 9),
 					Message:  "batchAllocatable[Mem(GB)]:39 = nodeAllocatable:120 - nodeReservation:36 - systemUsage:12 - podLSUsed:33",
 				},
+				{
+					Name:    extension.MidCPU,
+					Reset:   true,
+					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+				},
+				{
+					Name:    extension.MidMemory,
+					Reset:   true,
+					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+				},
 			}...),
 		},
 		{
@@ -715,6 +745,225 @@ func Test_calculateNodeResource(t *testing.T) {
 					Quantity: resource.NewScaledQuantity(36, 9),
 					Message:  "batchAllocatable[Mem(GB)]:36 = nodeAllocatable:120 - nodeReservation:24 - podLSRequest:60",
 				},
+				{
+					Name:    extension.MidCPU,
+					Reset:   true,
+					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+				},
+				{
+					Name:    extension.MidMemory,
+					Reset:   true,
+					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+				},
+			}...),
+		},
+		{
+			name: "calculate normal result correctly with node prediction",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("120G"),
+						},
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("120G"),
+						},
+					},
+				},
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podA",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSLS),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("20"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("20"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podB",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName:   "test-node1",
+								Containers: []corev1.Container{{}},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podC",
+								Namespace: "test",
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+										},
+									}, {
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodPending,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podD",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("10G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("10G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodSucceeded,
+							},
+						},
+					},
+				},
+				nodeMetric: &slov1alpha1.NodeMetric{
+					Status: slov1alpha1.NodeMetricStatus{
+						UpdateTime: &metav1.Time{Time: time.Now()},
+						NodeMetric: &slov1alpha1.NodeMetricInfo{
+							NodeUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("50"),
+									corev1.ResourceMemory: resource.MustParse("55G"),
+								},
+							},
+						},
+						PodsMetric: []*slov1alpha1.PodMetricInfo{
+							{
+								Namespace: "test",
+								Name:      "podA",
+								PodUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("11"),
+										corev1.ResourceMemory: resource.MustParse("11G"),
+									},
+								},
+							}, {
+								Namespace: "test",
+								Name:      "podB",
+								PodUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("10"),
+										corev1.ResourceMemory: resource.MustParse("10G"),
+									},
+								},
+							},
+							{
+								Namespace: "test",
+								Name:      "podC",
+								PodUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("22"),
+										corev1.ResourceMemory: resource.MustParse("22G"),
+									},
+								},
+							},
+						},
+						ProdReclaimableMetric: &slov1alpha1.ReclaimableMetric{
+							Resource: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("10"),
+									corev1.ResourceMemory: resource.MustParse("20G"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: framework.NewNodeResource([]framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeAllocatable:100000 - nodeReservation:35000 - systemUsage:7000 - podLSUsed:33000",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(33, 9),
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeAllocatable:120 - nodeReservation:42 - systemUsage:12 - podLSUsed:33",
+				},
+				{
+					Name:     extension.MidCPU,
+					Quantity: resource.NewQuantity(10000, resource.DecimalSI),
+					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:10000)",
+				},
+				{
+					Name:     extension.MidMemory,
+					Quantity: resource.NewQuantity(20000000000, resource.BinarySI),
+					Message:  "midAllocatable[Memory(byte)]:19531250Ki = min(nodeAllocatable:120G * thresholdRatio:1, ProdReclaimable:20G)",
+				},
 			}...),
 		},
 	}
@@ -779,8 +1028,20 @@ func Test_calculateNodeResource(t *testing.T) {
 				},
 			}}
 			got := r.calculateNodeResource(tt.args.node, tt.args.nodeMetric, tt.args.podList)
-			assert.Equal(t, tt.want.Resources[extension.BatchCPU].Value(), got.Resources[extension.BatchCPU].Value())
-			assert.Equal(t, tt.want.Resources[extension.BatchMemory].Value(), got.Resources[extension.BatchMemory].Value())
+			for _, resourceName := range []corev1.ResourceName{
+				extension.BatchCPU,
+				extension.BatchMemory,
+				extension.MidCPU,
+				extension.MidMemory,
+			} {
+				v, ok := tt.want.Resources[resourceName]
+				if !ok || v == nil {
+					assert.Nil(t, got.Resources[resourceName], resourceName)
+				} else {
+					assert.NotNil(t, got.Resources[resourceName], resourceName)
+					assert.Equal(t, tt.want.Resources[resourceName].Value(), got.Resources[resourceName].Value(), resourceName)
+				}
+			}
 			assert.Equal(t, tt.want.Messages, got.Messages)
 			assert.Equal(t, tt.want.Resets, got.Resets)
 		})

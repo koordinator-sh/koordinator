@@ -89,13 +89,17 @@ func (r *NodeResourceReconciler) updateNodeResource(node *corev1.Node, nr *frame
 
 		nodeCopy = nodeCopy.DeepCopy() // avoid overwriting the cache
 		r.prepareNodeResource(strategy, nodeCopy, nr)
+		klog.V(6).InfoS("try to update node status", "node", nodeCopy.Name,
+			"detail", util.DumpJSON(nodeCopy.Status))
 
 		if err := r.Client.Status().Update(context.TODO(), nodeCopy); err != nil {
-			klog.ErrorS(err, "failed to update node status", "node", nodeCopy.Name)
+			klog.ErrorS(err, "failed to update node status", "node", nodeCopy.Name,
+				"node resource", util.DumpJSON(nr))
 			return err
 		}
 		r.NodeSyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), r.Clock.Now())
-		klog.V(5).InfoS("update node successfully", "node", nodeCopy.Name, "detail", nodeCopy)
+		klog.V(4).InfoS("update node successfully", "node", nodeCopy.Name,
+			"node resource", util.DumpJSON(nr))
 		return nil
 	})
 }
