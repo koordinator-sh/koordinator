@@ -17,12 +17,18 @@ limitations under the License.
 package options
 
 import (
+	"flag"
+
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodeslo"
 )
+
+var controllerInitFlags = map[string]func(*flag.FlagSet){
+	noderesource.Name: noderesource.InitFlags,
+}
 
 var controllerAddFuncs = map[string]func(manager.Manager) error{
 	nodemetric.Name:   nodemetric.Add,

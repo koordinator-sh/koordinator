@@ -38,6 +38,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 )
 
+func init() {
+	addPlugins(framework.AllPass)
+}
+
 type FakeCfgCache struct {
 	cfg         extension.ColocationCfg
 	available   bool
@@ -1005,6 +1009,7 @@ func Test_calculateNodeResource(t *testing.T) {
 			}...),
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			memoryCalculateByReq := extension.CalculateByPodRequest
@@ -1738,7 +1743,7 @@ func Test_updateNodeResource(t *testing.T) {
 			}
 			oldNodeCopy := tt.args.oldNode.DeepCopy()
 			if len(tt.fields.prepareNodeMetaSyncPlugin) > 0 {
-				framework.RegisterNodeMetaSyncExtender(tt.fields.prepareNodeMetaSyncPlugin...)
+				framework.RegisterNodeMetaSyncExtender(framework.AllPass, tt.fields.prepareNodeMetaSyncPlugin...)
 				defer func() {
 					for _, p := range tt.fields.prepareNodeMetaSyncPlugin {
 						framework.UnregisterNodeMetaSyncExtender(p.Name())
@@ -2061,7 +2066,7 @@ func Test_isNodeResourceSyncNeeded(t *testing.T) {
 				Clock:           clock.RealClock{},
 			}
 			if len(tt.fields.prepareNodeMetaSyncPlugin) > 0 {
-				framework.RegisterNodeMetaSyncExtender(tt.fields.prepareNodeMetaSyncPlugin...)
+				framework.RegisterNodeMetaSyncExtender(framework.AllPass, tt.fields.prepareNodeMetaSyncPlugin...)
 				defer func() {
 					for _, p := range tt.fields.prepareNodeMetaSyncPlugin {
 						framework.UnregisterNodeMetaSyncExtender(p.Name())
