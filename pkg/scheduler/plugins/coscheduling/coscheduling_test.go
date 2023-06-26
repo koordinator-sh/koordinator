@@ -512,6 +512,14 @@ func TestPostFilter(t *testing.T) {
 			resourceSatisfied: true,
 		},
 		{
+			name:              "gangA is resourceSatisfied but matchPolicy is only-waiting, reject the gang",
+			pod:               st.MakePod().Name("pod1").Namespace("gangC_ns").UID("pod1").Label(v1alpha1.PodGroupLabel, "gangC").Obj(),
+			pg:                makePg("gangC", "gangC_ns", 1, &gangCreatedTime, nil),
+			expectedEmptyMsg:  false,
+			resourceSatisfied: true,
+			annotations:       map[string]string{extension.AnnotationGangMatchPolicy: extension.GangMatchPolicyOnlyWaiting},
+		},
+		{
 			name:             "resource not Satisfied,but gangB is NonStrictMode,do not reject the gang",
 			pod:              st.MakePod().Name("pod2").Namespace("gangB_ns").UID("pod2").Label(v1alpha1.PodGroupLabel, "gangB").Obj(),
 			pg:               makePg("gangB", "gangB_ns", 4, &gangCreatedTime, nil),
@@ -649,6 +657,19 @@ func TestPermit(t *testing.T) {
 		},
 		{
 			name: "pod4 belongs to gangA that gangA has resourceSatisfied",
+			pod:  st.MakePod().Name("pod4").UID("pod4").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod4-1").UID("pod4-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
+				st.MakePod().Name("pod4-2").UID("pod4-2").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
+			},
+			needInWaitingPods: true,
+			waitingGangMap: map[string]bool{
+				"gangA_ns/ganga": true,
+			},
+			want: framework.Success,
+		},
+		{
+			name: "pod4 belongs to gangA that gangA has resourceSatisfied, but gangA matchPolicy is not once-satisfied",
 			pod:  st.MakePod().Name("pod4").UID("pod4").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
 			pods: []*corev1.Pod{
 				st.MakePod().Name("pod4-1").UID("pod4-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),

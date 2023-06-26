@@ -97,6 +97,7 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 		ScheduleCycle:            1,
 		ChildrenScheduleRoundMap: map[string]int{},
 		GangFrom:                 core.GangFromPodAnnotation,
+		GangMatchPolicy:          extension.GangMatchPolicyOnceSatisfied,
 		HasGangInit:              true,
 	}
 	{

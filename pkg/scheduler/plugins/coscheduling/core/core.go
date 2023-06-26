@@ -160,11 +160,17 @@ func (pgMgr *PodGroupManager) IsGangMinSatisfied(pod *corev1.Pod) bool {
 		return false
 	}
 
-	if gang.isGangOnceResourceSatisfied() {
-		return true
+	switch gang.getGangMatchPolicy() {
+	case extension.GangMatchPolicyOnlyWaiting:
+		return gang.getGangMinNum() <= gang.getGangWaitingPods()
+	case extension.GangMatchPolicyWaitingAndRunning:
+		return gang.getGangMinNum() <= gang.getGangAssumedPods()
+	default:
+		if gang.isGangOnceResourceSatisfied() {
+			return true
+		}
+		return gang.getGangMinNum() <= gang.getGangAssumedPods()
 	}
-
-	return gang.MinRequiredNumber <= gang.getGangAssumedPods()
 }
 
 // ActivateSiblings stashes the pods belonging to the same PodGroup of the given pod
@@ -222,7 +228,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 			util.GetId(pod.Namespace, pod.Name))
 	}
 	// resourceSatisfied means pod will directly pass the PreFilter
-	if gang.OnceResourceSatisfied {
+	if gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied() {
 		return nil
 	}
 
@@ -268,7 +274,7 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, pod *corev1.Pod, h
 		klog.InfoS("Pod does not belong to any gang", "pod", klog.KObj(pod))
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "can not find gang")
 	}
-	if gang.isGangOnceResourceSatisfied() {
+	if gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied() {
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "")
 	}
 
@@ -329,7 +335,7 @@ func (pgMgr *PodGroupManager) Unreserve(ctx context.Context, state *framework.Cy
 	// first delete the pod from gang's waitingFroBindChildren map
 	gang.delAssumedPod(pod)
 
-	if !gang.isGangOnceResourceSatisfied() && gang.getGangMode() == extension.GangModeStrict {
+	if !(gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied()) && gang.getGangMode() == extension.GangModeStrict {
 		pgMgr.rejectGangGroupById(pluginName, gang.Name, handle)
 	}
 }
