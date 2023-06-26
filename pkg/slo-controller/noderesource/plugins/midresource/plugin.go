@@ -77,8 +77,8 @@ func (p *Plugin) Reset(node *corev1.Node, message string) []framework.ResourceIt
 	return items
 }
 
-// Calculate calculates Batch resources using the formula below:
-// Node.Total - Node.Reserved - System.Used - Pod(non-BE).Used, System.Used = Node.Used - Pod(All).Used.
+// Calculate calculates Mid resources using the formula below:
+// min(ProdReclaimable, NodeAllocable * MidThresholdRatio).
 func (p *Plugin) Calculate(strategy *extension.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	metrics *framework.ResourceMetrics) ([]framework.ResourceItem, error) {
 	if strategy == nil || node == nil || node.Status.Allocatable == nil || podList == nil ||
@@ -143,7 +143,7 @@ func (p *Plugin) calculate(strategy *extension.ColocationStrategy, node *corev1.
 			node.Name, allocatableMilliCPU)
 		allocatableMilliCPU = 0
 	}
-	cpu := resource.NewQuantity(allocatableMilliCPU, resource.DecimalSI)
+	cpuInMilliCores := resource.NewQuantity(allocatableMilliCPU, resource.DecimalSI)
 
 	memThresholdRatio := 1.0
 	if strategy != nil && strategy.MidMemoryThresholdPercent != nil {
@@ -160,14 +160,14 @@ func (p *Plugin) calculate(strategy *extension.ColocationStrategy, node *corev1.
 	memory := resource.NewQuantity(allocatableMemory, resource.BinarySI)
 
 	klog.V(6).Infof("calculated mid allocatable for node %s, cpu(milli-core) %v, memory(byte) %v",
-		node.Name, cpu.String(), memory.String())
+		node.Name, cpuInMilliCores.String(), memory.String())
 
 	return []framework.ResourceItem{
 		{
 			Name:     extension.MidCPU,
-			Quantity: cpu, // in milli-cores
+			Quantity: cpuInMilliCores, // in milli-cores
 			Message: fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeAllocatable:%v * thresholdRatio:%v, ProdReclaimable:%v)",
-				cpu.Value(), nodeAllocatable.Cpu().MilliValue(), cpuThresholdRatio, prodReclaimable.Cpu().MilliValue()),
+				cpuInMilliCores.Value(), nodeAllocatable.Cpu().MilliValue(), cpuThresholdRatio, prodReclaimable.Cpu().MilliValue()),
 		},
 		{
 			Name:     extension.MidMemory,

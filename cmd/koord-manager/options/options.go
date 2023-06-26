@@ -28,14 +28,16 @@ import (
 )
 
 type Options struct {
-	ControllerAddFuncs map[string]func(manager.Manager) error
-	Controllers        []string
+	ControllerAddFuncs  map[string]func(manager.Manager) error
+	Controllers         []string
+	ControllerInitFlags map[string]func(*flag.FlagSet)
 }
 
 func NewOptions() *Options {
 	return &Options{
-		ControllerAddFuncs: controllerAddFuncs,
-		Controllers:        sets.StringKeySet(controllerAddFuncs).List(),
+		ControllerInitFlags: controllerInitFlags,
+		ControllerAddFuncs:  controllerAddFuncs,
+		Controllers:         sets.StringKeySet(controllerAddFuncs).List(),
 	}
 }
 
@@ -45,6 +47,9 @@ func (o *Options) InitFlags(fs *flag.FlagSet) {
 		"'-controllers=noderesource' means only the 'noderesource' controller is enabled. "+
 		"'-controllers=*,-noderesource' means all controllers except the 'noderesource' controller are enabled.\n"+
 		"All controllers: %s", strings.Join(o.Controllers, ", ")))
+	for _, initFlagsFn := range o.ControllerInitFlags {
+		initFlagsFn(fs)
+	}
 }
 
 func (o *Options) ApplyTo(m manager.Manager) error {
