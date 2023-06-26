@@ -87,13 +87,14 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	// get the accumulated cpu ticks
 	currentCPUTick, err0 := koordletutil.GetCPUStatUsageTicks()
 	// NOTE: The collected memory usage is in kilobytes not bytes.
-	memUsageValue, err1 := koordletutil.GetMemInfoUsageKB()
+	memUsageKB, err1 := koordletutil.GetMemInfoUsageKB()
 	if err0 != nil || err1 != nil {
 		klog.Warningf("failed to collect node usage, CPU err: %s, Memory err: %s", err0, err1)
 		return
 	}
 
-	memUsageMetrics, err := metriccache.NodeMemoryUsageMetric.GenerateSample(nil, collectTime, 1024*float64(memUsageValue))
+	memUsageValue := 1024 * float64(memUsageKB)
+	memUsageMetrics, err := metriccache.NodeMemoryUsageMetric.GenerateSample(nil, collectTime, memUsageValue)
 	if err != nil {
 		klog.Warningf("generate node cpu metrics failed, err %v", err)
 		return
@@ -143,5 +144,6 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	n.started.Store(true)
 	metrics.RecordNodeUsedCPU(cpuUsageValue) // in cpu cores
 
-	klog.V(4).Infof("collectNodeResUsed finished %+v", nodeMetrics)
+	klog.V(4).Infof("collectNodeResUsed finished, count %v, cpu[%v], mem[%v]",
+		len(nodeMetrics), cpuUsageValue, memUsageValue)
 }

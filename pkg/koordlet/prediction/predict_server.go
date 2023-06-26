@@ -33,6 +33,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/histogram"
 )
 
@@ -141,12 +142,12 @@ func (p *peakPredictServer) training() {
 		uid := p.uidGenerator.Pod(pod)
 		lastCPUUsage, err := p.metricServer.GetPodMetric(MetricDesc{UID: uid}, CPUUsage)
 		if err != nil {
-			klog.Warning("failed to query pod cpu metric", err)
+			klog.Warningf("failed to query pod cpu metric, pod %s, err: %s", util.GetPodKey(pod), err)
 			continue
 		}
 		lastMemoryUsage, err := p.metricServer.GetPodMetric(MetricDesc{UID: uid}, MemoryUsage)
 		if err != nil {
-			klog.Warning("failed to query pod memory metric", err)
+			klog.Warningf("failed to query pod memory metric, pod %s, err: %s", util.GetPodKey(pod), err)
 			continue
 		}
 
@@ -160,7 +161,7 @@ func (p *peakPredictServer) training() {
 	lastNodeCPUUsage, errCPU := p.metricServer.GetNodeMetric(MetricDesc{UID: nodeUID}, CPUUsage)
 	lastNodeMemoryUsage, errMem := p.metricServer.GetNodeMetric(MetricDesc{UID: nodeUID}, MemoryUsage)
 	if errCPU != nil || errMem != nil {
-		klog.Warning("failed to query node cpu and memory metric", errCPU, errMem)
+		klog.Warningf("failed to query node cpu and memory metric, CPU err: %s, Memory err: %s", errCPU, errMem)
 	} else {
 		p.updateMode(nodeUID, lastNodeCPUUsage, lastNodeMemoryUsage)
 	}
@@ -311,7 +312,7 @@ func (p *peakPredictServer) doCheckpoint() {
 
 		err := p.checkpointer.Save(ckpt)
 		if err != nil {
-			klog.Errorf("save checkpoint uid %v failed", pair.UID)
+			klog.Errorf("save checkpoint uid %v failed, err: %s", pair.UID, err)
 		} else {
 			klog.InfoS("save checkpoint", "uid", pair.UID)
 		}
