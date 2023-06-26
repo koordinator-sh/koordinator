@@ -94,9 +94,8 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 			continue
 		}
 		hasGPUDevice = true
-		resources := extension.TransformDeprecatedDeviceResources(device.Resources)
-		util.AddResourceList(gpuResources, resources)
-		totalKoordGPU.Add(resources[extension.ResourceGPUCore])
+		util.AddResourceList(gpuResources, device.Resources)
+		totalKoordGPU.Add(device.Resources[extension.ResourceGPUCore])
 	}
 	gpuResources[extension.ResourceGPU] = *totalKoordGPU
 

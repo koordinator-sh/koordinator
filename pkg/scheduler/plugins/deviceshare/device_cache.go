@@ -455,7 +455,7 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 			klog.Errorf("Find device unhealthy, nodeName:%v, deviceType:%v, minor:%v",
 				nodeName, deviceInfo.Type, deviceInfo.Minor)
 		} else {
-			resources := apiext.TransformDeprecatedDeviceResources(deviceInfo.Resources)
+			resources := deviceInfo.Resources
 			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = resources
 			klog.V(5).Infof("Find device resource update, nodeName:%v, deviceType:%v, minor:%v, res:%v",
 				nodeName, deviceInfo.Type, deviceInfo.Minor, resources)

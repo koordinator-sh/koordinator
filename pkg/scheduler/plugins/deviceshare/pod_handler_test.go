@@ -30,6 +30,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
 )
 
 func Test_nodeDeviceCache_onPodAdd(t *testing.T) {
@@ -43,11 +44,6 @@ func Test_nodeDeviceCache_onPodAdd(t *testing.T) {
 		deviceCache *nodeDeviceCache
 		wantCache   map[string]*nodeDevice
 	}{
-		{
-			name:      "object is not pod",
-			pod:       &corev1.Node{},
-			wantCache: map[string]*nodeDevice{},
-		},
 		{
 			name: "pod node not exist in cache",
 			pod: &corev1.Pod{
@@ -350,11 +346,14 @@ func Test_nodeDeviceCache_onPodAdd(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			obj, err := transformer.TransformPod(tt.pod)
+			assert.NoError(t, err)
+			pod := obj.(*corev1.Pod)
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
 				deviceCache = newNodeDeviceCache()
 			}
-			deviceCache.onPodAdd(tt.pod)
+			deviceCache.onPodAdd(pod)
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
 		})
 	}

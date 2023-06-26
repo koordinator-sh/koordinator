@@ -102,9 +102,6 @@ func (n *nodeDeviceCache) updatePod(oldPod *corev1.Pod, pod *corev1.Pod) {
 		klog.ErrorS(err, "failed to get device allocations from new pod", "pod", klog.KObj(pod))
 		return
 	}
-	if len(allocations) != 0 {
-		transformDeviceAllocations(allocations)
-	}
 
 	var oldAllocations apiext.DeviceAllocations
 	if oldPod != nil {
@@ -112,9 +109,6 @@ func (n *nodeDeviceCache) updatePod(oldPod *corev1.Pod, pod *corev1.Pod) {
 		if err != nil {
 			klog.ErrorS(err, "failed to get device allocations from old pod", "pod", klog.KObj(oldPod))
 			return
-		}
-		if len(oldAllocations) != 0 {
-			transformDeviceAllocations(oldAllocations)
 		}
 	}
 
@@ -148,7 +142,6 @@ func (n *nodeDeviceCache) deletePod(pod *corev1.Pod) {
 	if len(devicesAllocation) == 0 {
 		return
 	}
-	transformDeviceAllocations(devicesAllocation)
 
 	info := n.getNodeDevice(pod.Spec.NodeName, false)
 	if info == nil {
@@ -161,12 +154,4 @@ func (n *nodeDeviceCache) deletePod(pod *corev1.Pod) {
 
 	info.updateCacheUsed(devicesAllocation, pod, false)
 	klog.V(5).InfoS("pod has been deleted so remove pod from nodeDevice cache on node", "pod", klog.KObj(pod), "node", pod.Spec.NodeName)
-}
-
-func transformDeviceAllocations(deviceAllocations apiext.DeviceAllocations) {
-	for _, allocations := range deviceAllocations {
-		for _, v := range allocations {
-			v.Resources = apiext.TransformDeprecatedDeviceResources(v.Resources)
-		}
-	}
 }
