@@ -173,6 +173,14 @@ func (n *NodeMangerOperator) createMemoryCgroup(fileName string) {
 		klog.Error("fail to create memory dir: %s, error: %s", memCgroupPath, err.Error())
 		return
 	}
+	if _, err := system.CommonFileWriteIfDifferent(filepath.Join(memCgroupPath, system.MemoryMoveChargeAtImmigrateName), "3"); err != nil {
+		klog.Error(err)
+		return
+	}
+	if _, err := system.CommonFileWriteIfDifferent(filepath.Join(memCgroupPath, system.MemoryOomGroupName), "1"); err != nil {
+		klog.Error(err)
+		return
+	}
 	cpuCgroupPath := filepath.Join(n.CgroupRoot, system.CgroupCPUDir, n.CgroupPath, basename)
 	pids, err := cgroups.GetPids(cpuCgroupPath)
 	if err != nil {

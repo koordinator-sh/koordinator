@@ -143,21 +143,22 @@ const (
 	CPUAcctMemoryPressureName = "memory.pressure"
 	CPUAcctIOPressureName     = "io.pressure"
 
-	MemoryLimitName            = "memory.limit_in_bytes"
-	MemoryUsageName            = "memory.usage_in_bytes"
-	MemoryStatName             = "memory.stat"
-	MemoryNumaStatName         = "memory.numa_stat"
-	MemoryWmarkRatioName       = "memory.wmark_ratio"
-	MemoryWmarkScaleFactorName = "memory.wmark_scale_factor"
-	MemoryWmarkMinAdjName      = "memory.wmark_min_adj"
-	MemoryMinName              = "memory.min"  // anolis os or cgroups-v2
-	MemoryLowName              = "memory.low"  // anolis os or cgroups-v2
-	MemoryHighName             = "memory.high" // anolis os or cgroups-v2
-	MemoryMaxName              = "memory.max"
-	MemoryCurrentName          = "memory.current"
-	MemoryPriorityName         = "memory.priority"
-	MemoryUsePriorityOomName   = "memory.use_priority_oom"
-	MemoryOomGroupName         = "memory.oom.group"
+	MemoryLimitName                 = "memory.limit_in_bytes"
+	MemoryUsageName                 = "memory.usage_in_bytes"
+	MemoryStatName                  = "memory.stat"
+	MemoryNumaStatName              = "memory.numa_stat"
+	MemoryWmarkRatioName            = "memory.wmark_ratio"
+	MemoryWmarkScaleFactorName      = "memory.wmark_scale_factor"
+	MemoryWmarkMinAdjName           = "memory.wmark_min_adj"
+	MemoryMinName                   = "memory.min"  // anolis os or cgroups-v2
+	MemoryLowName                   = "memory.low"  // anolis os or cgroups-v2
+	MemoryHighName                  = "memory.high" // anolis os or cgroups-v2
+	MemoryMaxName                   = "memory.max"
+	MemoryCurrentName               = "memory.current"
+	MemoryPriorityName              = "memory.priority"
+	MemoryUsePriorityOomName        = "memory.use_priority_oom"
+	MemoryOomGroupName              = "memory.oom.group"
+	MemoryMoveChargeAtImmigrateName = "memory.move_charge_at_immigrate"
 
 	BlkioTRIopsName   = "blkio.throttle.read_iops_device"
 	BlkioTRBpsName    = "blkio.throttle.read_bps_device"
