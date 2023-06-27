@@ -111,6 +111,12 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			return
 		}
 
+		if err := extender.Scheduler().GetCache().InvalidNodeInfo(node.Name); err != nil {
+			klog.ErrorS(err, "Failed to InvalidNodeInfo", "node", node.Name)
+			errCh.SendErrorWithCancel(err, cancel)
+			return
+		}
+
 		for _, rInfo := range unmatched {
 			if err = restoreUnmatchedReservations(nodeInfo, rInfo); err != nil {
 				errCh.SendErrorWithCancel(err, cancel)

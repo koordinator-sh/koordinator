@@ -19,6 +19,7 @@ package eventhandlers
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,7 @@ import (
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	"k8s.io/utils/pointer"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -251,6 +253,9 @@ func Test_addReservationToCache(t *testing.T) {
 			wantPod := tt.wantPod
 			if tt.wantPodFromObj {
 				wantPod = reservationutil.NewReservePod(tt.obj)
+				if wantPod.Spec.NodeName != "" {
+					wantPod.Spec.Priority = pointer.Int32(math.MaxInt32)
+				}
 			}
 			assert.Equal(t, wantPod, pod)
 		})
@@ -547,6 +552,9 @@ func Test_updateReservationInCache(t *testing.T) {
 			wantPod := tt.wantPod
 			if tt.wantPodFromObj {
 				wantPod = reservationutil.NewReservePod(tt.newObj)
+				if wantPod.Spec.NodeName != "" {
+					wantPod.Spec.Priority = pointer.Int32(math.MaxInt32)
+				}
 			}
 			assert.Equal(t, wantPod, pod)
 		})

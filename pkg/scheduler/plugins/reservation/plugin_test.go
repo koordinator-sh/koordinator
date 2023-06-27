@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"testing"
 	"time"
 
@@ -132,6 +131,7 @@ func newPluginTestSuitWith(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Nod
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 	)
+	extenderFactory.InitScheduler(frameworkext.NewFakeScheduler())
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
@@ -1412,7 +1412,6 @@ func TestPreFilterExtensionRemovePod(t *testing.T) {
 }
 
 func TestPostFilter(t *testing.T) {
-	highPriority := int32(math.MaxInt32)
 	reservePod := testGetReservePod(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:  "reserve-pod-0",
@@ -1422,39 +1421,10 @@ func TestPostFilter(t *testing.T) {
 			NodeName: "node1",
 		},
 	})
-	r := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{
-			UID:  "reserve-pod-0",
-			Name: "reserve-pod-0",
-		},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Template: &corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "reserve-pod-0",
-				},
-			},
-			Owners: []schedulingv1alpha1.ReservationOwner{
-				{
-					Object: &corev1.ObjectReference{
-						Kind: "Pod",
-						Name: "test-pod-0",
-					},
-				},
-			},
-			TTL: &metav1.Duration{Duration: 30 * time.Minute},
-		},
-		Status: schedulingv1alpha1.ReservationStatus{
-			NodeName: "node1",
-			Phase:    schedulingv1alpha1.ReservationAvailable,
-		},
-	}
 	tests := []struct {
-		name           string
-		pod            *corev1.Pod
-		reservation    *schedulingv1alpha1.Reservation
-		wantResult     *framework.PostFilterResult
-		wantStatus     *framework.Status
-		changePriority bool
+		name       string
+		pod        *corev1.Pod
+		wantStatus *framework.Status
 	}{
 		{
 			name: "not reserve pod",
@@ -1463,30 +1433,12 @@ func TestPostFilter(t *testing.T) {
 					Name: "not-reserve",
 				},
 			},
-			wantResult: nil,
 			wantStatus: framework.NewStatus(framework.Unschedulable),
 		},
 		{
-			name:        "reserve pod",
-			pod:         reservePod,
-			reservation: r,
-			wantResult:  nil,
-			wantStatus:  framework.NewStatus(framework.Error),
-		},
-		{
-			name: "not reserve pod, and its priority is higher than the reserve",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "not-reserve",
-				},
-				Spec: corev1.PodSpec{
-					Priority: &highPriority,
-				},
-			},
-			reservation:    r,
-			wantResult:     nil,
-			wantStatus:     framework.NewStatus(framework.Unschedulable),
-			changePriority: true,
+			name:       "reserve pod",
+			pod:        reservePod,
+			wantStatus: framework.NewStatus(framework.Error),
 		},
 	}
 	for _, tt := range tests {
@@ -1495,22 +1447,9 @@ func TestPostFilter(t *testing.T) {
 			p, err := suit.pluginFactory()
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
-			if tt.reservation != nil {
-				pl.reservationCache.updateReservation(tt.reservation)
-			}
-
 			gotResult, status := pl.PostFilter(context.TODO(), nil, tt.pod, nil)
-			assert.Equal(t, tt.wantResult, gotResult)
+			assert.Nil(t, gotResult)
 			assert.Equal(t, tt.wantStatus, status)
-			if tt.changePriority {
-				nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get("node1")
-				assert.NoError(t, err)
-				for _, p := range nodeInfo.Pods {
-					if reservationutil.IsReservePod(p.Pod) {
-						assert.Equal(t, int32(math.MaxInt32), *p.Pod.Spec.Priority)
-					}
-				}
-			}
 		})
 	}
 }

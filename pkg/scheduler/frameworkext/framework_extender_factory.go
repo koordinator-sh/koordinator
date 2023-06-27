@@ -131,10 +131,11 @@ func (f *FrameworkExtenderFactory) Scheduler() Scheduler {
 	return f.scheduler
 }
 
-func (f *FrameworkExtenderFactory) InitScheduler(sched *scheduler.Scheduler) {
-	f.scheduler = &SchedulerAdapter{
-		Scheduler: sched,
-	}
+func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
+	f.scheduler = sched
+}
+
+func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Scheduler) {
 	f.errorHandlerDispatcher.setDefaultHandler(sched.Error)
 	sched.Error = f.errorHandlerDispatcher.Error
 }

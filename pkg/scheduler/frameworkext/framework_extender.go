@@ -19,8 +19,6 @@ package frameworkext
 import (
 	"context"
 	"fmt"
-	"reflect"
-	"unsafe"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,7 +39,6 @@ type frameworkExtenderImpl struct {
 
 	schedulerFn func() Scheduler
 
-	snapshotGeneration               *int64
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 
@@ -59,8 +56,6 @@ type frameworkExtenderImpl struct {
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
-	snapshotGeneration := reflectSnapshotGeneration(fw.SnapshotSharedLister())
-
 	schedulerFn := func() Scheduler {
 		return f.Scheduler()
 	}
@@ -69,28 +64,12 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		Framework:                        fw,
 		errorHandlerDispatcher:           f.errorHandlerDispatcher,
 		schedulerFn:                      schedulerFn,
-		snapshotGeneration:               snapshotGeneration,
 		koordinatorClientSet:             f.KoordinatorClientSet(),
 		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
 		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
 	}
 	frameworkExtender.updateTransformer(f.defaultTransformers...)
 	return frameworkExtender
-}
-
-func reflectSnapshotGeneration(lister framework.SharedLister) *int64 {
-	if lister == nil {
-		return nil
-	}
-
-	var snapshotGeneration *int64
-	val := reflect.ValueOf(lister)
-	val = reflect.Indirect(val)
-	generationField := val.FieldByName("generation")
-	if generationField.IsValid() {
-		snapshotGeneration = (*int64)(unsafe.Pointer(generationField.UnsafeAddr()))
-	}
-	return snapshotGeneration
 }
 
 func (ext *frameworkExtenderImpl) updateTransformer(transformers ...SchedulingTransformer) {
@@ -163,9 +142,6 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		if transformed {
 			klog.V(5).InfoS("BeforePreFilter transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
 			pod = newPod
-			if ext.snapshotGeneration != nil {
-				*ext.snapshotGeneration = 0
-			}
 		}
 	}
 
