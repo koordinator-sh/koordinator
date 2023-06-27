@@ -30,7 +30,6 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
 )
 
 func Test_nodeDeviceCache_onPodAdd(t *testing.T) {
@@ -236,124 +235,14 @@ func Test_nodeDeviceCache_onPodAdd(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "device allocation annotation with deprecated resource names",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "123456789",
-					Namespace: "default",
-					Name:      "test",
-					Annotations: map[string]string{
-						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"kubernetes.io/gpu-core":"60","kubernetes.io/gpu-memory":"8Gi","kubernetes.io/gpu-memory-ratio":"50"}}]}`,
-					},
-				},
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									//lint:ignore SA1019 Device extension resource names should use the prefix `koordinator.sh`
-									//nolint: staticcheck
-									apiext.DeprecatedGPUCore: resource.MustParse("60"),
-									//lint:ignore SA1019 Device extension resource names should use the prefix `koordinator.sh`
-									//nolint: staticcheck
-									apiext.DeprecatedGPUMemoryRatio: resource.MustParse("50"),
-									//lint:ignore SA1019 Device extension resource names should use the prefix `koordinator.sh`
-									//nolint: staticcheck
-									apiext.DeprecatedGPUMemory: resource.MustParse("8Gi"),
-								},
-							},
-						},
-					},
-				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
-				},
-			},
-			deviceCache: &nodeDeviceCache{
-				nodeDeviceInfos: map[string]*nodeDevice{
-					"test-node": {
-						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
-							schedulingv1alpha1.GPU: {
-								1: corev1.ResourceList{
-									apiext.ResourceGPUCore:        resource.MustParse("100"),
-									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
-								},
-							},
-						},
-						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
-							schedulingv1alpha1.GPU: {
-								1: corev1.ResourceList{
-									apiext.ResourceGPUCore:        resource.MustParse("100"),
-									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
-								},
-							},
-						},
-						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
-							schedulingv1alpha1.GPU: {},
-						},
-						allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources),
-					},
-				},
-			},
-			wantCache: map[string]*nodeDevice{
-				"test-node": {
-					deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
-						schedulingv1alpha1.GPU: {
-							1: corev1.ResourceList{
-								apiext.ResourceGPUCore:        *resource.NewQuantity(40, resource.DecimalSI),
-								apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
-								apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
-							},
-						},
-					},
-					deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
-						schedulingv1alpha1.GPU: {
-							1: corev1.ResourceList{
-								apiext.ResourceGPUCore:        resource.MustParse("100"),
-								apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-								apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
-							},
-						},
-					},
-					deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
-						schedulingv1alpha1.GPU: {
-							1: corev1.ResourceList{
-								apiext.ResourceGPUCore:        resource.MustParse("60"),
-								apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
-								apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
-							},
-						},
-					},
-					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{
-						schedulingv1alpha1.GPU: {
-							podNamespacedName: {
-								1: corev1.ResourceList{
-									apiext.ResourceGPUCore:        resource.MustParse("60"),
-									apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
-									apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			obj, err := transformer.TransformPod(tt.pod)
-			assert.NoError(t, err)
-			pod := obj.(*corev1.Pod)
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
 				deviceCache = newNodeDeviceCache()
 			}
-			deviceCache.onPodAdd(pod)
+			deviceCache.onPodAdd(tt.pod)
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
 		})
 	}
