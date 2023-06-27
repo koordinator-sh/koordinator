@@ -30,7 +30,6 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
 )
 
 func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
@@ -140,48 +139,14 @@ func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
 				},
 			},
 		},
-		{
-			name:   "deprecated resource names",
-			device: generateFakeDeviceWithDeprecatedResourceNames(),
-			deviceCache: &nodeDeviceCache{
-				nodeDeviceInfos: map[string]*nodeDevice{
-					"test-node-1": {
-						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
-							schedulingv1alpha1.GPU: {
-								0: corev1.ResourceList{
-									apiext.ResourceGPUCore:        resource.MustParse("100"),
-									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
-								},
-							},
-						},
-						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
-							schedulingv1alpha1.GPU: {
-								0: corev1.ResourceList{
-									apiext.ResourceGPUCore:        resource.MustParse("100"),
-									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
-								},
-							},
-						},
-						deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
-					},
-				},
-			},
-			wantCache: generateFakeNodeDeviceInfos(),
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			obj, err := transformer.TransformDevice(tt.device)
-			assert.NoError(t, err)
-			device := obj.(*schedulingv1alpha1.Device)
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
 				deviceCache = newNodeDeviceCache()
 			}
-			deviceCache.onDeviceAdd(device)
+			deviceCache.onDeviceAdd(tt.device)
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
 		})
 	}
@@ -366,76 +331,14 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 				},
 			},
 		},
-		{
-			name:      "deprecated resource names",
-			oldDevice: generateFakeDeviceWithDeprecatedResourceNames(),
-			newDevice: &schedulingv1alpha1.Device{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node-1",
-				},
-				Spec: schedulingv1alpha1.DeviceSpec{
-					Devices: []schedulingv1alpha1.DeviceInfo{
-						{
-							UUID:   string(uuid.NewUUID()),
-							Minor:  pointer.Int32(1),
-							Health: true,
-							Type:   schedulingv1alpha1.GPU,
-							Resources: corev1.ResourceList{
-								//lint:ignore SA1019 Device extension resource names should use the prefix `koordinator.sh`
-								//nolint: staticcheck
-								apiext.DeprecatedGPUCore: resource.MustParse("100"),
-								//lint:ignore SA1019 Device extension resource names should use the prefix `koordinator.sh`
-								//nolint: staticcheck
-								apiext.DeprecatedGPUMemoryRatio: resource.MustParse("100"),
-								//lint:ignore SA1019 Device extension resource names should use the prefix `koordinator.sh`
-								//nolint: staticcheck
-								apiext.DeprecatedGPUMemory: resource.MustParse("32Gi"),
-							},
-						},
-					},
-				},
-			},
-			deviceCache: &nodeDeviceCache{
-				nodeDeviceInfos: generateFakeNodeDeviceInfos(),
-			},
-			wantCache: map[string]*nodeDevice{
-				"test-node-1": {
-					deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
-						schedulingv1alpha1.GPU: {
-							1: corev1.ResourceList{
-								apiext.ResourceGPUCore:        resource.MustParse("100"),
-								apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-								apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
-							},
-						},
-					},
-					deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
-						schedulingv1alpha1.GPU: {
-							1: corev1.ResourceList{
-								apiext.ResourceGPUCore:        resource.MustParse("100"),
-								apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-								apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
-							},
-						},
-					},
-					deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
-				},
-			},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			oldObj, err := transformer.TransformDevice(tt.oldDevice)
-			assert.NoError(t, err)
-			newObj, err := transformer.TransformDevice(tt.newDevice)
-			assert.NoError(t, err)
-
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
 				deviceCache = newNodeDeviceCache()
 			}
-			deviceCache.onDeviceUpdate(oldObj.(*schedulingv1alpha1.Device), newObj.(*schedulingv1alpha1.Device))
+			deviceCache.onDeviceUpdate(tt.oldDevice, tt.newDevice)
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
 		})
 	}
@@ -505,35 +408,6 @@ func generateFakeDevice() *schedulingv1alpha1.Device {
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 						apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
-					},
-				},
-			},
-		},
-	}
-}
-
-func generateFakeDeviceWithDeprecatedResourceNames() *schedulingv1alpha1.Device {
-	return &schedulingv1alpha1.Device{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-node-1",
-		},
-		Spec: schedulingv1alpha1.DeviceSpec{
-			Devices: []schedulingv1alpha1.DeviceInfo{
-				{
-					UUID:   string(uuid.NewUUID()),
-					Minor:  pointer.Int32(1),
-					Health: true,
-					Type:   schedulingv1alpha1.GPU,
-					Resources: corev1.ResourceList{
-						//lint:ignore SA1019 Device extension resource names should use the prefix `koordinator.sh`
-						//nolint: staticcheck
-						apiext.DeprecatedGPUCore: resource.MustParse("100"),
-						//lint:ignore SA1019 Device extension resource names should use the prefix `koordinator.sh`
-						//nolint: staticcheck
-						apiext.DeprecatedGPUMemoryRatio: resource.MustParse("100"),
-						//lint:ignore SA1019 Device extension resource names should use the prefix `koordinator.sh`
-						//nolint: staticcheck
-						apiext.DeprecatedGPUMemory: resource.MustParse("16Gi"),
 					},
 				},
 			},
