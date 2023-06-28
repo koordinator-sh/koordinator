@@ -53,7 +53,7 @@ func (e *DefaultEstimator) Name() string {
 	return defaultEstimatorName
 }
 
-func (e *DefaultEstimator) Estimate(pod *corev1.Pod) (map[corev1.ResourceName]int64, error) {
+func (e *DefaultEstimator) EstimatePod(pod *corev1.Pod) (map[corev1.ResourceName]int64, error) {
 	return estimatedPodUsed(pod, e.resourceWeights, e.scalingFactors), nil
 }
 
@@ -104,4 +104,8 @@ func estimatedUsedByResource(requests, limits corev1.ResourceList, resourceName 
 		}
 	}
 	return estimatedUsed
+}
+
+func (e *DefaultEstimator) EstimateNode(node *corev1.Node) (corev1.ResourceList, error) {
+	return node.Status.Allocatable, nil
 }

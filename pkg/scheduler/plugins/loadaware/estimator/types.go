@@ -31,7 +31,8 @@ var Estimators = map[string]FactoryFn{
 
 type Estimator interface {
 	Name() string
-	Estimate(pod *corev1.Pod) (map[corev1.ResourceName]int64, error)
+	EstimatePod(pod *corev1.Pod) (map[corev1.ResourceName]int64, error)
+	EstimateNode(node *corev1.Node) (corev1.ResourceList, error)
 }
 
 func NewEstimator(args *config.LoadAwareSchedulingArgs, handle framework.Handle) (Estimator, error) {
