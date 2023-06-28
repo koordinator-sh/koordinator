@@ -196,6 +196,38 @@ func TestDefaultEstimatorEstimatePod(t *testing.T) {
 				corev1.ResourceMemory: 6012954214, // 5.6Gi
 			},
 		},
+		{
+			name: "estimate pod only has request",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			scalarFactors: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    80,
+				corev1.ResourceMemory: 80,
+			},
+			want: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    3200,
+				corev1.ResourceMemory: 6871947674,
+			},
+		},
 	}
 
 	for _, tt := range tests {

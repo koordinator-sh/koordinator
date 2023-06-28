@@ -94,13 +94,13 @@ func estimatedUsedByResource(requests, limits corev1.ResourceList, resourceName 
 	switch resourceName {
 	case corev1.ResourceCPU:
 		estimatedUsed = int64(math.Round(float64(quantity.MilliValue()) * float64(scalingFactor) / 100))
-		if estimatedUsed > limitQuantity.MilliValue() {
-			estimatedUsed = limitQuantity.MilliValue()
+		if limit := limitQuantity.MilliValue(); limit > 0 && estimatedUsed > limit {
+			estimatedUsed = limit
 		}
 	default:
 		estimatedUsed = int64(math.Round(float64(quantity.Value()) * float64(scalingFactor) / 100))
-		if estimatedUsed > limitQuantity.Value() {
-			estimatedUsed = limitQuantity.Value()
+		if limit := limitQuantity.Value(); limit > 0 && estimatedUsed > limit {
+			estimatedUsed = limit
 		}
 	}
 	return estimatedUsed
