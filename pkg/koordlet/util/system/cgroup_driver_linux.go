@@ -22,24 +22,17 @@ package system
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
-
-	"golang.org/x/sys/unix"
 
 	"github.com/opencontainers/runc/libcontainer/userns"
 	"github.com/spf13/pflag"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
-	clientset "k8s.io/client-go/kubernetes"
+	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 const (
@@ -50,49 +43,6 @@ var (
 	isUnifiedOnce sync.Once
 	isUnified     bool
 )
-
-func GetCgroupFormatter() formatter {
-	klog.Infoln("start to get cgroup driver formatter...")
-	// setup cgroup path formatter from cgroup driver type
-	var detectCgroupDriver CgroupDriverType
-	nodeName := os.Getenv("NODE_NAME")
-	if pollErr := wait.PollImmediate(time.Second*10, time.Minute, func() (bool, error) {
-		driver := GuessCgroupDriverFromCgroupName()
-		if driver.Validate() {
-			detectCgroupDriver = driver
-			return true, nil
-		}
-		klog.Infof("can not detect cgroup driver from 'kubepods' cgroup name")
-
-		cfg, err := config.GetConfig()
-		if err != nil {
-			klog.Errorf("failed to get rest config.err=%v", err)
-			return false, nil
-		}
-		kubeClient := clientset.NewForConfigOrDie(cfg)
-		node, err := kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
-		if err != nil || node == nil {
-			klog.Errorf("Can't get node, err: %v", err)
-			return false, nil
-		}
-
-		port := int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
-		if driver, err := GuessCgroupDriverFromKubeletPort(port); err == nil && driver.Validate() {
-			detectCgroupDriver = driver
-			return true, nil
-		} else {
-			klog.Errorf("guess kubelet cgroup driver failed, retry...: %v", err)
-			return false, nil
-		}
-	}); pollErr != nil {
-		klog.Errorf("can not detect kubelet cgroup driver: %v", pollErr)
-		return cgroupPathFormatterInSystemd
-	}
-
-	klog.Infof("Node %s use '%s' as cgroup driver", nodeName, string(detectCgroupDriver))
-
-	return GetCgroupPathFormatter(detectCgroupDriver)
-}
 
 func GuessCgroupDriverFromCgroupName() CgroupDriverType {
 	systemdKubepodDirExists := FileExists(filepath.Join(GetRootCgroupSubfsDir(CgroupCPUDir), KubeRootNameSystemd))
@@ -108,12 +58,12 @@ func GuessCgroupDriverFromCgroupName() CgroupDriverType {
 }
 
 // GuessCgroupDriverFromKubeletPort guesses Kubelet's cgroup driver from kubelet port.
-// 1. use KubeletPortToPid to get kubelet pid.
-// 2. If '--cgroup-driver' in args, that's it.
-//    else if '--config' not in args, is default driver('cgroupfs').
-//    else go to step-3.
-// 3. If kubelet config is relative path, join with /proc/${pidof kubelet}/cwd.
-//    search 'cgroupDriver:' in kubelet config file, that's it.
+//  1. use KubeletPortToPid to get kubelet pid.
+//  2. If '--cgroup-driver' in args, that's it.
+//     else if '--config' not in args, is default driver('cgroupfs').
+//     else go to step-3.
+//  3. If kubelet config is relative path, join with /proc/${pidof kubelet}/cwd.
+//     search 'cgroupDriver:' in kubelet config file, that's it.
 func GuessCgroupDriverFromKubeletPort(port int) (CgroupDriverType, error) {
 	kubeletPid, err := KubeletPortToPid(port)
 	if err != nil {

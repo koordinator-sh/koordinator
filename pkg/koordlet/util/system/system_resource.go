@@ -55,6 +55,7 @@ type SystemResource struct {
 	Supported      *bool
 	SupportMsg     string
 	CheckSupported func(r Resource, dynamicPath string) (isSupported bool, msg string)
+	CheckOnce      bool
 }
 
 func (c *SystemResource) ResourceType() ResourceType {
@@ -73,7 +74,12 @@ func (c *SystemResource) IsSupported(dynamicPath string) (bool, string) {
 		if c.CheckSupported == nil {
 			return false, "unknown support status"
 		}
-		return c.CheckSupported(c, dynamicPath)
+		isSupported, msg := c.CheckSupported(c, dynamicPath)
+		if c.CheckOnce {
+			c.Supported = &isSupported
+			c.SupportMsg = msg
+		}
+		return isSupported, msg
 	}
 	return *c.Supported, c.SupportMsg
 }
@@ -99,6 +105,11 @@ func (c *SystemResource) WithSupported(isSupported bool, msg string) Resource {
 func (c *SystemResource) WithCheckSupported(checkSupportedFn func(r Resource, parentDir string) (isSupported bool, msg string)) Resource {
 	c.Supported = nil
 	c.CheckSupported = checkSupportedFn
+	return c
+}
+
+func (c *SystemResource) WithCheckOnce(isCheckOnce bool) Resource {
+	c.CheckOnce = isCheckOnce
 	return c
 }
 

@@ -94,7 +94,7 @@ func Test_GuessCgroupDriverFromCgroupName(t *testing.T) {
 func TestGetCgroupFormatter(t *testing.T) {
 	tests := []struct {
 		name       string
-		want       formatter
+		want       Formatter
 		preHandle  func(cgroupRootDir string)
 		isCgroupV2 bool
 	}{
