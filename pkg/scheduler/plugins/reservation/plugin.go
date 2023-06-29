@@ -19,7 +19,6 @@ package reservation
 import (
 	"context"
 	"fmt"
-	"math"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -27,11 +26,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -490,35 +487,6 @@ func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleSta
 		// return err to stop default preemption
 		return nil, framework.NewStatus(framework.Error)
 	}
-
-	allNodes, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
-	if err != nil {
-		return nil, framework.AsStatus(err)
-	}
-	pl.handle.Parallelizer().Until(ctx, len(allNodes), func(piece int) {
-		nodeInfo := allNodes[piece]
-		node := nodeInfo.Node()
-		if node == nil {
-			return
-		}
-		reservationInfos := pl.reservationCache.listAvailableReservationInfosOnNode(node.Name)
-		for _, rInfo := range reservationInfos {
-			// Pods whose operating mode is Reservation can still be preempted.
-			if apiext.IsReservationOperatingMode(rInfo.GetReservePod()) {
-				continue
-			}
-			if rInfo.GetPriority() >= corev1helpers.PodPriority(pod) {
-				continue
-			}
-			for _, podInfo := range nodeInfo.Pods {
-				if podInfo.Pod.UID == rInfo.UID() {
-					podInfo.Pod = podInfo.Pod.DeepCopy()
-					podInfo.Pod.Spec.Priority = pointer.Int32(math.MaxInt32)
-					break
-				}
-			}
-		}
-	})
 	return nil, framework.NewStatus(framework.Unschedulable)
 }
 

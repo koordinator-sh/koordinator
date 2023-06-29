@@ -409,7 +409,8 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		}
 	}
 
-	frameworkExtenderFactory.InitScheduler(sched)
+	frameworkExtenderFactory.InterceptSchedulerError(sched)
+	frameworkExtenderFactory.InitScheduler(&frameworkext.SchedulerAdapter{Scheduler: sched})
 	schedAdapter := frameworkExtenderFactory.Scheduler()
 
 	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, frameworkExtenderFactory.KoordinatorSharedInformerFactory())
