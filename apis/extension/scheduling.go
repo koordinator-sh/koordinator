@@ -65,6 +65,13 @@ const (
 
 	GangModeStrict    = "Strict"
 	GangModeNonStrict = "NonStrict"
+
+	// AnnotationGangMatchPolicy defines the Gang Scheduling operation of taking which status pod into account
+	// Support GangMatchPolicyOnlyWaiting, GangMatchPolicyWaitingAndRunning, GangMatchPolicyOnceSatisfied, default is GangMatchPolicyOnceSatisfied
+	AnnotationGangMatchPolicy        = AnnotationGangPrefix + "/match-policy"
+	GangMatchPolicyOnlyWaiting       = "only-waiting"
+	GangMatchPolicyWaitingAndRunning = "waiting-and-running"
+	GangMatchPolicyOnceSatisfied     = "once-satisfied"
 )
 
 const (
@@ -176,4 +183,8 @@ var GetMinNum = func(pod *corev1.Pod) (int, error) {
 
 var GetGangName = func(pod *corev1.Pod) string {
 	return pod.Annotations[AnnotationGangName]
+}
+
+var GetGangMatchPolicy = func(pod *corev1.Pod) string {
+	return pod.Annotations[AnnotationGangMatchPolicy]
 }

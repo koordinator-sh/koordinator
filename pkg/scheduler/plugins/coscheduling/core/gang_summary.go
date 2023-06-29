@@ -11,6 +11,7 @@ type GangSummary struct {
 	WaitTime                 time.Duration  `json:"waitTime"`
 	CreateTime               time.Time      `json:"createTime"`
 	Mode                     string         `json:"mode"`
+	GangMatchPolicy          string         `json:"gangMatchPolicy"`
 	MinRequiredNumber        int            `json:"minRequiredNumber"`
 	TotalChildrenNum         int            `json:"totalChildrenNum"`
 	GangGroup                []string       `json:"gangGroup"`
@@ -44,6 +45,7 @@ func (gang *Gang) GetGangSummary() *GangSummary {
 	gangSummary.WaitTime = gang.WaitTime
 	gangSummary.CreateTime = gang.CreateTime
 	gangSummary.Mode = gang.Mode
+	gangSummary.GangMatchPolicy = gang.GangMatchPolicy
 	gangSummary.MinRequiredNumber = gang.MinRequiredNumber
 	gangSummary.TotalChildrenNum = gang.TotalChildrenNum
 	gangSummary.OnceResourceSatisfied = gang.OnceResourceSatisfied

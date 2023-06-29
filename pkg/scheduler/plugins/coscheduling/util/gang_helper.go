@@ -67,6 +67,14 @@ func GetGangMinNumFromPod(pod *v1.Pod) (minNum int, err error) {
 	return 0, errors.New("missing min available")
 }
 
+func GetGangMatchPolicyByPod(pod *v1.Pod) string {
+	if pod == nil {
+		return ""
+	}
+
+	return extension.GetGangMatchPolicy(pod)
+}
+
 func IsPodNeedGang(pod *v1.Pod) bool {
 	return GetGangNameByPod(pod) != ""
 }
