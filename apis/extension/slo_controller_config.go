@@ -166,6 +166,51 @@ const (
 	CalculateByPodRequest CalculatePolicy = "request"
 )
 
+// ProdOvercommitPolicy determines how the Prod overcommitment take effect on resource allocatable.
+type ProdOvercommitPolicy string
+
+const (
+	// ProdOvercommitPolicyNone indicates that the Prod overcommitment is fully-disabled. The manager does nothing on
+	// the prod resource allocatable, neither updating the allocatable resource on node nor calculating the result.
+	ProdOvercommitPolicyNone ProdOvercommitPolicy = "none"
+	// ProdOvercommitPolicyDryRun indicates that the Prod overcommitment is dry-run. The manager calculates the prod
+	// resource allocatable and recording the result internally, but not updates the allocatable resource on node.
+	ProdOvercommitPolicyDryRun ProdOvercommitPolicy = "dryRun"
+	// ProdOvercommitPolicyStatic indicates that the Prod overcommitment is enabled but using a static ratio of
+	// overcommitment. The manager updates the prod allocatable according to a fixed rate of the node allocatable,
+	// instead of using the calculated result with node metrics.
+	ProdOvercommitPolicyStatic ProdOvercommitPolicy = "static"
+	// ProdOvercommitPolicyAuto indicates that the Prod overcommitment is fully-enabled. The manager calculates the prod
+	// resource allocatable with node metrics, and updates the allocatable resource on node automatically.
+	ProdOvercommitPolicyAuto ProdOvercommitPolicy = "auto"
+)
+
+// ProdOvercommitStrategy defines the strategy of Prod resource overcommitment.
+// +k8s:deepcopy-gen=true
+type ProdOvercommitStrategy struct {
+	// ProdOvercommitPolicy specifies the policy for Prod overcommitment.
+	// If not set, the policy `none` is used.
+	ProdOvercommitPolicy *ProdOvercommitPolicy `json:"prodOvercommitPolicy,omitempty"`
+	// ProdCPUOvercommitDefaultPercent is the default cpu ratio which the prod resource will reset to it when the
+	// overcommit policy is set to `static` or the node metrics is expired.
+	ProdCPUOvercommitDefaultPercent *int64 `json:"prodCPUOvercommitDefaultPercent,omitempty" validate:"omitempty,min=0"`
+	// ProdCPUOvercommitMaxPercent indicates the maximum ratio of prod overcommit CPU resource dividing node allocatable.
+	// If the calculated prod allocatable is larger than the maximum allocatable, the manager updates with the maximal.
+	ProdCPUOvercommitMaxPercent *int64 `json:"prodCPUOvercommitMaxPercent,omitempty" validate:"omitempty,min=0"`
+	// ProdCPUOvercommitMinPercent indicates the minimum ratio of prod overcommit CPU resource dividing node allocatable.
+	// If the calculated prod allocatable is less than the minimum allocatable, the manager updates with the minimal.
+	ProdCPUOvercommitMinPercent *int64 `json:"prodCPUOvercommitMinPercent,omitempty" validate:"omitempty,min=0"`
+	// ProdMemoryOvercommitDefaultPercent is the default memory ratio which the prod resource will reset to it when the
+	// overcommit policy is set to `static` or the node metrics is expired.
+	ProdMemoryOvercommitDefaultPercent *int64 `json:"prodMemoryOvercommitDefaultPercent,omitempty" validate:"omitempty,min=0"`
+	// ProdMemoryOvercommitMaxPercent indicates the maximum ratio of prod overcommit memory resource dividing node allocatable.
+	// If the calculated prod allocatable is larger than the maximum allocatable, the manager updates with the maximal.
+	ProdMemoryOvercommitMaxPercent *int64 `json:"prodMemoryOvercommitMaxPercent,omitempty" validate:"omitempty,min=0"`
+	// ProdMemoryOvercommitMinPercent indicates the minimum ratio of prod overcommit CPU resource dividing node allocatable.
+	// If the calculated prod allocatable is less than the minimum allocatable, the manager updates with the minimal.
+	ProdMemoryOvercommitMinPercent *int64 `json:"prodMemoryOvercommitMinPercent,omitempty" validate:"omitempty,min=0"`
+}
+
 // +k8s:deepcopy-gen=true
 type ColocationStrategyExtender struct {
 	Extensions ExtraFields `json:"extensions,omitempty"`
@@ -213,6 +258,9 @@ type ColocationStrategy struct {
 	// MidMemoryThresholdPercent defines the maximum percentage of the Mid-tier memory resource dividing the node allocatable.
 	// MidMemoryAllocatable <= NodeMemoryAllocatable * MidMemoryThresholdPercent / 100.
 	MidMemoryThresholdPercent *int64 `json:"midMemoryThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+
+	// ProdOvercommitStrategy specifies the strategy for Prod overcommitment.
+	ProdOvercommitStrategy `json:",inline"`
 
 	ColocationStrategyExtender `json:",inline"` // for third-party extension
 }
