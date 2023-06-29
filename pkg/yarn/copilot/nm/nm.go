@@ -14,6 +14,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/yarn/copilot/utils"
 )
@@ -25,18 +26,20 @@ type NodeMangerOperator struct {
 	SyncMemoryCgroup bool
 
 	containerWatch pleg.Watcher
+	nmPodWatcher   *NMPodWatcher
 	NMEndpoint     string //localhost:8042
 	client         *resty.Client
 	ticker         *time.Ticker
 }
 
-func NewNodeMangerOperator(cgroupRoot string, cgroupPath string, syncMemoryCgroup bool, endpoint string, syncPeriod time.Duration) (*NodeMangerOperator, error) {
+func NewNodeMangerOperator(cgroupRoot string, cgroupPath string, syncMemoryCgroup bool, endpoint string, syncPeriod time.Duration, kubelet statesinformer.KubeletStub) (*NodeMangerOperator, error) {
 	watcher, err := pleg.NewWatcher()
 	if err != nil {
 		return nil, err
 	}
 	cli := resty.New()
 	cli.SetBaseURL(fmt.Sprintf("http://%s", endpoint))
+	w := NewNMPodWater(kubelet)
 	return &NodeMangerOperator{
 		CgroupRoot:       cgroupRoot,
 		CgroupPath:       cgroupPath,
@@ -44,6 +47,7 @@ func NewNodeMangerOperator(cgroupRoot string, cgroupPath string, syncMemoryCgrou
 		containerWatch:   watcher,
 		NMEndpoint:       endpoint,
 		client:           cli,
+		nmPodWatcher:     w,
 		ticker:           time.NewTicker(syncPeriod),
 	}, nil
 }
@@ -117,6 +121,17 @@ func (n *NodeMangerOperator) syncNoneProcCgroup() {
 		}
 		return nil
 	})
+}
+
+func (n *NodeMangerOperator) syncNMEndpoint() {
+	endpoint, exist, err := n.nmPodWatcher.GetNMPodEndpoint()
+	if err != nil {
+		klog.Error(err)
+		return
+	}
+	if exist {
+		n.client.SetBaseURL(fmt.Sprintf("http://%s", endpoint))
+	}
 }
 
 func (n *NodeMangerOperator) syncAllCgroup() {

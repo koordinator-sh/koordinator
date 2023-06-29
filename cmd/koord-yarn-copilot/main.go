@@ -3,11 +3,13 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-yarn-copilot/options"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/yarn/copilot/nm"
 	"github.com/koordinator-sh/koordinator/pkg/yarn/copilot/server"
 )
@@ -32,8 +34,8 @@ func main() {
 		klog.Infof("args: %s = %s", f.Name, f.Value)
 	})
 	stopCtx := signals.SetupSignalHandler()
-
-	operator, err := nm.NewNodeMangerOperator(conf.CgroupRootDir, conf.YarnContainerCgroupPath, conf.SyncMemoryCgroup, conf.NodeMangerEndpoint, conf.SyncCgroupPeriod)
+	kubelet, _ := statesinformer.NewKubeletStub("127.0.0.1", 10255, "http", time.Second*5, nil)
+	operator, err := nm.NewNodeMangerOperator(conf.CgroupRootDir, conf.YarnContainerCgroupPath, conf.SyncMemoryCgroup, conf.NodeMangerEndpoint, conf.SyncCgroupPeriod, kubelet)
 	if err != nil {
 		klog.Fatal(err)
 	}
