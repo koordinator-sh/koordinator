@@ -1,6 +1,3 @@
-//go:build !linux
-// +build !linux
-
 /*
 Copyright 2022 The Koordinator Authors.
 
@@ -17,16 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package system
+package agent
 
-func GuessCgroupDriverFromCgroupName() CgroupDriverType {
-	return ""
-}
+import (
+	"testing"
 
-func GuessCgroupDriverFromKubeletPort(int) (CgroupDriverType, error) {
-	return kubeletDefaultCgroupDriver, nil
-}
+	"github.com/stretchr/testify/assert"
 
-func IsUsingCgroupsV2() bool {
-	return false
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/config"
+)
+
+func TestNewDaemon(t *testing.T) {
+	cfg := config.NewConfiguration()
+	assert.NotPanics(t, func() {
+		d, err := NewDaemon(cfg)
+		assert.Nil(t, d)
+		assert.Error(t, err)
+	})
 }

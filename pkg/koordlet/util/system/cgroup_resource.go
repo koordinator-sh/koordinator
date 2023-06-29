@@ -207,29 +207,29 @@ var (
 
 	CPUAcctStat           = DefaultFactory.New(CPUAcctStatName, CgroupCPUAcctDir)
 	CPUAcctUsage          = DefaultFactory.New(CPUAcctUsageName, CgroupCPUAcctDir)
-	CPUAcctCPUPressure    = DefaultFactory.New(CPUAcctCPUPressureName, CgroupCPUAcctDir).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctCPUPressureName, CgroupCPUAcctDir))
-	CPUAcctMemoryPressure = DefaultFactory.New(CPUAcctMemoryPressureName, CgroupCPUAcctDir).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctMemoryPressureName, CgroupCPUAcctDir))
-	CPUAcctIOPressure     = DefaultFactory.New(CPUAcctIOPressureName, CgroupCPUAcctDir).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctIOPressureName, CgroupCPUAcctDir))
+	CPUAcctCPUPressure    = DefaultFactory.New(CPUAcctCPUPressureName, CgroupCPUAcctDir).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	CPUAcctMemoryPressure = DefaultFactory.New(CPUAcctMemoryPressureName, CgroupCPUAcctDir).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	CPUAcctIOPressure     = DefaultFactory.New(CPUAcctIOPressureName, CgroupCPUAcctDir).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 
 	MemoryLimit            = DefaultFactory.New(MemoryLimitName, CgroupMemDir)
 	MemoryUsage            = DefaultFactory.New(MemoryUsageName, CgroupMemDir)
 	MemoryStat             = DefaultFactory.New(MemoryStatName, CgroupMemDir)
 	MemoryNumaStat         = DefaultFactory.New(MemoryNumaStatName, CgroupMemDir)
-	MemoryWmarkRatio       = DefaultFactory.New(MemoryWmarkRatioName, CgroupMemDir).WithValidator(MemoryWmarkRatioValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryWmarkRatioName, CgroupMemDir))
-	MemoryWmarkScaleFactor = DefaultFactory.New(MemoryWmarkScaleFactorName, CgroupMemDir).WithValidator(MemoryWmarkScaleFactorFileNameValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryWmarkScaleFactorName, CgroupMemDir))
-	MemoryWmarkMinAdj      = DefaultFactory.New(MemoryWmarkMinAdjName, CgroupMemDir).WithValidator(MemoryWmarkMinAdjValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryWmarkMinAdjName, CgroupMemDir))
-	MemoryMin              = DefaultFactory.New(MemoryMinName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithSupported(SupportedIfFileExistsInKubepods(MemoryMinName, CgroupMemDir))
-	MemoryLow              = DefaultFactory.New(MemoryLowName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithSupported(SupportedIfFileExistsInKubepods(MemoryLowName, CgroupMemDir))
-	MemoryHigh             = DefaultFactory.New(MemoryHighName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithSupported(SupportedIfFileExistsInKubepods(MemoryHighName, CgroupMemDir))
-	MemoryPriority         = DefaultFactory.New(MemoryPriorityName, CgroupMemDir).WithValidator(MemoryPriorityValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryPriorityName, CgroupMemDir))
-	MemoryUsePriorityOom   = DefaultFactory.New(MemoryUsePriorityOomName, CgroupMemDir).WithValidator(MemoryUsePriorityOomValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryUsePriorityOomName, CgroupMemDir))
-	MemoryOomGroup         = DefaultFactory.New(MemoryOomGroupName, CgroupMemDir).WithValidator(MemoryOomGroupValidator).WithSupported(SupportedIfFileExistsInKubepods(MemoryOomGroupName, CgroupMemDir))
+	MemoryWmarkRatio       = DefaultFactory.New(MemoryWmarkRatioName, CgroupMemDir).WithValidator(MemoryWmarkRatioValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryWmarkScaleFactor = DefaultFactory.New(MemoryWmarkScaleFactorName, CgroupMemDir).WithValidator(MemoryWmarkScaleFactorFileNameValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryWmarkMinAdj      = DefaultFactory.New(MemoryWmarkMinAdjName, CgroupMemDir).WithValidator(MemoryWmarkMinAdjValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryMin              = DefaultFactory.New(MemoryMinName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryLow              = DefaultFactory.New(MemoryLowName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryHigh             = DefaultFactory.New(MemoryHighName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryPriority         = DefaultFactory.New(MemoryPriorityName, CgroupMemDir).WithValidator(MemoryPriorityValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryUsePriorityOom   = DefaultFactory.New(MemoryUsePriorityOomName, CgroupMemDir).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryOomGroup         = DefaultFactory.New(MemoryOomGroupName, CgroupMemDir).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 
-	BlkioReadIops  = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir).WithValidator(BlkioTRIopsValidator).WithSupported(SupportedIfFileExistsInKubepods(BlkioTRIopsName, CgroupBlkioDir))
-	BlkioReadBps   = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir).WithValidator(BlkioTRBpsValidator).WithSupported(SupportedIfFileExistsInKubepods(BlkioTRBpsName, CgroupBlkioDir))
-	BlkioWriteIops = DefaultFactory.New(BlkioTWIopsName, CgroupBlkioDir).WithValidator(BlkioTWIopsValidator).WithSupported(SupportedIfFileExistsInKubepods(BlkioTWIopsName, CgroupBlkioDir))
-	BlkioWriteBps  = DefaultFactory.New(BlkioTWBpsName, CgroupBlkioDir).WithValidator(BlkioTWBpsValidator).WithSupported(SupportedIfFileExistsInKubepods(BlkioTWBpsName, CgroupBlkioDir))
-	BlkioIOWeight  = DefaultFactory.New(BlkioIOWeightName, CgroupBlkioDir).WithValidator(BlkioIOWeightValidator).WithSupported(SupportedIfFileExistsInKubepods(BlkioIOWeightName, CgroupBlkioDir))
+	BlkioReadIops  = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir).WithValidator(BlkioTRIopsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	BlkioReadBps   = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir).WithValidator(BlkioTRBpsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	BlkioWriteIops = DefaultFactory.New(BlkioTWIopsName, CgroupBlkioDir).WithValidator(BlkioTWIopsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	BlkioWriteBps  = DefaultFactory.New(BlkioTWBpsName, CgroupBlkioDir).WithValidator(BlkioTWBpsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	BlkioIOWeight  = DefaultFactory.New(BlkioIOWeightName, CgroupBlkioDir).WithValidator(BlkioIOWeightValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	BlkioIOQoS     = DefaultFactory.New(BlkioIOQoSName, CgroupBlkioDir).WithValidator(BlkioIOQoSValidator).WithSupported(SupportedIfFileExistsInRootCgroup(BlkioIOQoSName, CgroupBlkioDir))
 
 	knownCgroupResources = []Resource{
@@ -275,9 +275,9 @@ var (
 	CPUAcctStatV2  = DefaultFactory.NewV2(CPUAcctStatName, CPUStatName)
 	CPUAcctUsageV2 = DefaultFactory.NewV2(CPUAcctUsageName, CPUStatName)
 
-	CPUAcctCPUPressureV2    = DefaultFactory.NewV2(CPUAcctCPUPressureName, CPUAcctCPUPressureName).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctCPUPressureName, ""))
-	CPUAcctMemoryPressureV2 = DefaultFactory.NewV2(CPUAcctMemoryPressureName, CPUAcctMemoryPressureName).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctMemoryPressureName, ""))
-	CPUAcctIOPressureV2     = DefaultFactory.NewV2(CPUAcctIOPressureName, CPUAcctIOPressureName).WithSupported(SupportedIfFileExistsInKubepods(CPUAcctIOPressureName, ""))
+	CPUAcctCPUPressureV2    = DefaultFactory.NewV2(CPUAcctCPUPressureName, CPUAcctCPUPressureName).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	CPUAcctMemoryPressureV2 = DefaultFactory.NewV2(CPUAcctMemoryPressureName, CPUAcctMemoryPressureName).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	CPUAcctIOPressureV2     = DefaultFactory.NewV2(CPUAcctIOPressureName, CPUAcctIOPressureName).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 
 	CPUSetV2                 = DefaultFactory.NewV2(CPUSetCPUSName, CPUSetCPUSName).WithValidator(CPUSetCPUSValidator)
 	CPUSetEffectiveV2        = DefaultFactory.NewV2(CPUSetCPUSEffectiveName, CPUSetCPUSEffectiveName) // TODO: unify the R/W
@@ -338,6 +338,7 @@ type CgroupResource struct {
 	Supported      *bool
 	SupportMsg     string
 	CheckSupported func(r Resource, parentDir string) (isSupported bool, msg string)
+	CheckOnce      bool
 	Validator      ResourceValidator
 	CgroupVersion  CgroupVersion
 }
@@ -359,7 +360,12 @@ func (c *CgroupResource) IsSupported(parentDir string) (bool, string) {
 		if c.CheckSupported == nil {
 			return false, "unknown support status"
 		}
-		return c.CheckSupported(c, parentDir)
+		isSupported, msg := c.CheckSupported(c, parentDir)
+		if c.CheckOnce {
+			c.Supported = &isSupported
+			c.SupportMsg = msg
+		}
+		return isSupported, msg
 	}
 	return *c.Supported, c.SupportMsg
 }
@@ -379,6 +385,11 @@ func (c *CgroupResource) WithValidator(validator ResourceValidator) Resource {
 func (c *CgroupResource) WithSupported(isSupported bool, msg string) Resource {
 	c.Supported = pointer.Bool(isSupported)
 	c.SupportMsg = msg
+	return c
+}
+
+func (c *CgroupResource) WithCheckOnce(isCheckOnce bool) Resource {
+	c.CheckOnce = isCheckOnce
 	return c
 }
 

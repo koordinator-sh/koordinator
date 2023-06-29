@@ -92,6 +92,10 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	predictorFactory := prediction.NewPredictorFactory(predictServer, config.PredictionConf.ColdStartDuration, config.PredictionConf.SafetyMarginPercent)
 
 	statesInformer := statesinformerimpl.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, nodeName, schedulingClient, predictorFactory)
+
+	detectCgroupDriver := system.DetectCgroupDriver()
+	system.SetupCgroupPathFormatter(detectCgroupDriver)
+
 	collectorService := metricsadvisor.NewMetricAdvisor(config.CollectorConf, statesInformer, metricCache)
 
 	evictVersion, err := util.FindSupportedEvictVersion(kubeClient)
