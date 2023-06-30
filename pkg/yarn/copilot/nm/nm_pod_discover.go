@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	COMPONENT_LABEL_KEY              = "app.kubernetes.io/component"
-	NODEMANAGER_COMPONENT_LABEL_NAME = "node-manager"
+	ComponentLabelKey             = "app.kubernetes.io/component"
+	NodeManagerComponentLabelName = "node-manager"
 )
 
 type NMPodWatcher struct {
@@ -25,13 +25,13 @@ func (n *NMPodWatcher) GetNMPodEndpoint() (string, bool, error) {
 		return "", false, err
 	}
 	for _, pod := range pods.Items {
-		if pod.Labels[COMPONENT_LABEL_KEY] != NODEMANAGER_COMPONENT_LABEL_NAME {
+		if pod.Labels[ComponentLabelKey] != NodeManagerComponentLabelName {
 			continue
 		}
 		if pod.Spec.HostNetwork == true {
 			return "localhost:8042", true, nil
 		}
-		return fmt.Sprintf(pod.Status.PodIP), true, nil
+		return fmt.Sprintf("%s:8042", pod.Status.PodIP), true, nil
 	}
 	return "", false, nil
 }
