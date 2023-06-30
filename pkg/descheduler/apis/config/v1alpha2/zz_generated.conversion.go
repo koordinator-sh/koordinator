@@ -433,6 +433,7 @@ func autoConvert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerA
 	out.MaxMigratingPerNamespace = (*int32)(unsafe.Pointer(in.MaxMigratingPerNamespace))
 	out.MaxMigratingPerWorkload = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigratingPerWorkload))
 	out.MaxUnavailablePerWorkload = (*intstr.IntOrString)(unsafe.Pointer(in.MaxUnavailablePerWorkload))
+	out.SkipCheckExpectedReplicas = (*bool)(unsafe.Pointer(in.SkipCheckExpectedReplicas))
 	out.ObjectLimiters = *(*config.ObjectLimiterMap)(unsafe.Pointer(&in.ObjectLimiters))
 	out.DefaultJobMode = in.DefaultJobMode
 	if err := v1.Convert_Pointer_v1_Duration_To_v1_Duration(&in.DefaultJobTTL, &out.DefaultJobTTL, s); err != nil {
@@ -470,6 +471,7 @@ func autoConvert_config_MigrationControllerArgs_To_v1alpha2_MigrationControllerA
 	out.MaxMigratingPerNamespace = (*int32)(unsafe.Pointer(in.MaxMigratingPerNamespace))
 	out.MaxMigratingPerWorkload = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigratingPerWorkload))
 	out.MaxUnavailablePerWorkload = (*intstr.IntOrString)(unsafe.Pointer(in.MaxUnavailablePerWorkload))
+	out.SkipCheckExpectedReplicas = (*bool)(unsafe.Pointer(in.SkipCheckExpectedReplicas))
 	out.ObjectLimiters = *(*ObjectLimiterMap)(unsafe.Pointer(&in.ObjectLimiters))
 	out.DefaultJobMode = in.DefaultJobMode
 	if err := v1.Convert_v1_Duration_To_Pointer_v1_Duration(&in.DefaultJobTTL, &out.DefaultJobTTL, s); err != nil {
