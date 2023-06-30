@@ -30,6 +30,7 @@ type NodeMangerOperator struct {
 	NMEndpoint     string //localhost:8042
 	client         *resty.Client
 	ticker         *time.Ticker
+	nmTicker       *time.Ticker
 }
 
 func NewNodeMangerOperator(cgroupRoot string, cgroupPath string, syncMemoryCgroup bool, endpoint string, syncPeriod time.Duration, kubelet statesinformer.KubeletStub) (*NodeMangerOperator, error) {
@@ -49,6 +50,7 @@ func NewNodeMangerOperator(cgroupRoot string, cgroupPath string, syncMemoryCgrou
 		client:           cli,
 		nmPodWatcher:     w,
 		ticker:           time.NewTicker(syncPeriod),
+		nmTicker:         time.NewTicker(time.Second),
 	}, nil
 }
 
@@ -89,6 +91,8 @@ func (n *NodeMangerOperator) syncMemoryCgroup(stop <-chan struct{}) error {
 		case <-n.ticker.C:
 			n.syncNoneProcCgroup()
 			n.syncAllCgroup()
+		case <-n.nmTicker.C:
+			n.syncNMEndpoint()
 		case <-stop:
 			return nil
 		}
