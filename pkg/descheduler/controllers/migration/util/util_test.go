@@ -284,6 +284,27 @@ func TestGetMaxUnavailable(t *testing.T) {
 			},
 			want: 6,
 		},
+		{
+			name:         "case5",
+			replicas:     6,
+			intOrPercent: nil,
+			want:         2,
+		},
+		{
+			name:     "case6",
+			replicas: 50,
+			intOrPercent: &intstr.IntOrString{
+				Type:   intstr.String,
+				StrVal: "0%",
+			},
+			want: 5,
+		},
+		{
+			name:         "case7",
+			replicas:     6,
+			intOrPercent: &intstr.IntOrString{},
+			want:         2,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
