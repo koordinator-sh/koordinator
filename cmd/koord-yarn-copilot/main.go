@@ -15,22 +15,25 @@ import (
 )
 
 func main() {
+	f := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	conf := options.NewConfiguration()
-	klog.InitFlags(flag.CommandLine)
-	flag.StringVar(&conf.ServerEndpoint, "server-endpoint", conf.ServerEndpoint, "yarn copilot server endpoint.")
-	flag.StringVar(&conf.YarnContainerCgroupPath, "yarn-container-cgroup-path", conf.YarnContainerCgroupPath, "yarn container cgroup path.")
-	flag.StringVar(&conf.NodeMangerEndpoint, "node-manager-endpoint", conf.NodeMangerEndpoint, "node manger endpoint")
-	flag.BoolVar(&conf.SyncMemoryCgroup, "sync-memory-cgroup", conf.SyncMemoryCgroup, "true to sync cpu cgroup info to memory, used for hadoop 2.x")
-	flag.DurationVar(&conf.SyncCgroupPeriod, "sync-cgroup-period", conf.SyncCgroupPeriod, "period of resync all cpu/memory cgroup")
-	flag.StringVar(&conf.CgroupRootDir, "cgroup-root-dir", conf.CgroupRootDir, "cgroup root directory")
-	help := flag.Bool("help", false, "help information")
+	klog.InitFlags(f)
+	f.StringVar(&conf.ServerEndpoint, "server-endpoint", conf.ServerEndpoint, "yarn copilot server endpoint.")
+	f.StringVar(&conf.YarnContainerCgroupPath, "yarn-container-cgroup-path", conf.YarnContainerCgroupPath, "yarn container cgroup path.")
+	f.StringVar(&conf.NodeMangerEndpoint, "node-manager-endpoint", conf.NodeMangerEndpoint, "node manger endpoint")
+	f.BoolVar(&conf.SyncMemoryCgroup, "sync-memory-cgroup", conf.SyncMemoryCgroup, "true to sync cpu cgroup info to memory, used for hadoop 2.x")
+	f.DurationVar(&conf.SyncCgroupPeriod, "sync-cgroup-period", conf.SyncCgroupPeriod, "period of resync all cpu/memory cgroup")
+	f.StringVar(&conf.CgroupRootDir, "cgroup-root-dir", conf.CgroupRootDir, "cgroup root directory")
+	help := f.Bool("help", false, "help information")
 
-	flag.Parse()
+	if err := f.Parse(os.Args[1:]); err != nil {
+		klog.Fatal(err)
+	}
 	if *help {
-		flag.Usage()
+		f.Usage()
 		os.Exit(0)
 	}
-	flag.VisitAll(func(f *flag.Flag) {
+	f.VisitAll(func(f *flag.Flag) {
 		klog.Infof("args: %s = %s", f.Name, f.Value)
 	})
 	stopCtx := signals.SetupSignalHandler()
