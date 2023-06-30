@@ -90,7 +90,7 @@ type PluginSet struct {
 
 type Plugin struct {
 	// Name defines the name of plugin
-	Name string `json:"name"`
+	Name string
 }
 
 type PluginConfig struct {

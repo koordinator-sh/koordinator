@@ -192,7 +192,7 @@ type CoschedulingArgs struct {
 	ControllerWorkers *int64 `json:"controllerWorkers,omitempty"`
 	// Skip check schedule cycle
 	// default is false
-	SkipCheckScheduleCycle *bool `json:"SkipCheckScheduleCycle,omitempty"`
+	SkipCheckScheduleCycle *bool `json:"skipCheckScheduleCycle,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
