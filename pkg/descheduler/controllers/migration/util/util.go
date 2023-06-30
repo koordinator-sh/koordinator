@@ -78,7 +78,11 @@ func IsMigratePendingPod(reservationObj reservation.Object) bool {
 }
 
 func GetMaxUnavailable(replicas int, intOrPercent *intstr.IntOrString) (int, error) {
-	if intOrPercent == nil || intOrPercent.IntValue() == 0 {
+	maxUnavailable, err := intstr.GetScaledValueFromIntOrPercent(intOrPercent, replicas, false)
+	if err != nil {
+		return 0, err
+	}
+	if maxUnavailable == 0 {
 		if replicas > 10 {
 			s := intstr.FromString("10%")
 			intOrPercent = &s
@@ -89,10 +93,11 @@ func GetMaxUnavailable(replicas int, intOrPercent *intstr.IntOrString) (int, err
 			s := intstr.FromInt(1)
 			intOrPercent = &s
 		}
-	}
-	maxUnavailable, err := intstr.GetScaledValueFromIntOrPercent(intOrPercent, replicas, false)
-	if err != nil {
-		return 0, err
+	} else {
+		maxUnavailable, err = intstr.GetScaledValueFromIntOrPercent(intOrPercent, replicas, false)
+		if err != nil {
+			return 0, err
+		}
 	}
 	if maxUnavailable > replicas {
 		maxUnavailable = replicas
