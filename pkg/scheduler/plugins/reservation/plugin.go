@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
@@ -230,13 +231,20 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 		return nil, nil
 	}
 
+	var preResult *framework.PreFilterResult
 	state := getStateData(cycleState)
-	if state.hasAffinity && len(state.nodeReservationStates) == 0 {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
+	if state.hasAffinity {
+		if len(state.nodeReservationStates) == 0 {
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
+		}
+		preResult = &framework.PreFilterResult{
+			NodeNames: sets.NewString(),
+		}
+		for nodeName := range state.nodeReservationStates {
+			preResult.NodeNames.Insert(nodeName)
+		}
 	}
-
-	klog.V(5).InfoS("Attempting to pre-filter pod for reservation state", "pod", klog.KObj(pod))
-	return nil, nil
+	return preResult, nil
 }
 
 func (pl *Plugin) PreFilterExtensions() framework.PreFilterExtensions {

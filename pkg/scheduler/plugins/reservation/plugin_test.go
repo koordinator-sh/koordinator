@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -217,10 +218,12 @@ func TestPreFilter(t *testing.T) {
 	missTemplateReservation.Spec.Template = nil
 
 	tests := []struct {
-		name        string
-		pod         *corev1.Pod
-		reservation *schedulingv1alpha1.Reservation
-		want        *framework.Status
+		name                  string
+		pod                   *corev1.Pod
+		reservation           *schedulingv1alpha1.Reservation
+		nodeReservationStates map[string]nodeReservationState
+		wantStatus            *framework.Status
+		wantPreRes            *framework.PreFilterResult
 	}{
 		{
 			name: "skip for non-reserve pod",
@@ -229,25 +232,29 @@ func TestPreFilter(t *testing.T) {
 					Name: "not-reserve",
 				},
 			},
-			want: nil,
+			wantStatus: nil,
+			wantPreRes: nil,
 		},
 		{
 			name: "get reservation error",
 			pod:  reservePod,
-			want: framework.NewStatus(framework.Error, fmt.Sprintf("cannot get reservation, err: %v",
+			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("cannot get reservation, err: %v",
 				apierrors.NewNotFound(schedulingv1alpha1.Resource("reservation"), reservePod.Name))),
+			wantPreRes: nil,
 		},
 		{
 			name:        "failed to validate reservation",
 			pod:         reservePod,
 			reservation: missTemplateReservation,
-			want:        framework.NewStatus(framework.Error, "the reservation misses the template spec"),
+			wantStatus:  framework.NewStatus(framework.Error, "the reservation misses the template spec"),
+			wantPreRes:  nil,
 		},
 		{
 			name:        "validate reservation successfully",
 			pod:         reservePod,
 			reservation: r,
-			want:        nil,
+			wantStatus:  nil,
+			wantPreRes:  nil,
 		},
 		{
 			name: "failed to reservation affinity",
@@ -258,7 +265,25 @@ func TestPreFilter(t *testing.T) {
 					},
 				},
 			},
-			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity),
+			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity),
+			wantPreRes: nil,
+		},
+		{
+			name: "reservation affinity",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationReservationAffinity: `{"reservationSelector": {"reservation-type": "test"}}`,
+					},
+				},
+			},
+			nodeReservationStates: map[string]nodeReservationState{
+				"test-node-1": {},
+			},
+			wantStatus: nil,
+			wantPreRes: &framework.PreFilterResult{
+				NodeNames: sets.NewString("test-node-1"),
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -278,10 +303,12 @@ func TestPreFilter(t *testing.T) {
 			assert.NoError(t, err)
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, &stateData{
-				hasAffinity: reservationAffinity != nil,
+				hasAffinity:           reservationAffinity != nil,
+				nodeReservationStates: tt.nodeReservationStates,
 			})
-			_, got := pl.PreFilter(context.TODO(), cycleState, tt.pod)
-			assert.Equal(t, tt.want, got)
+			preRes, got := pl.PreFilter(context.TODO(), cycleState, tt.pod)
+			assert.Equal(t, tt.wantStatus, got)
+			assert.Equal(t, tt.wantPreRes, preRes)
 		})
 	}
 }
