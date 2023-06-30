@@ -133,6 +133,10 @@ func (n *NodeMangerOperator) syncNMEndpoint() {
 		klog.Error(err)
 		return
 	}
+	if n.NMEndpoint == endpoint {
+		return
+	}
+	n.NMEndpoint = endpoint
 	klog.V(5).Infof("found endpoint %s", endpoint)
 	if exist {
 		n.client.SetBaseURL(fmt.Sprintf("http://%s", endpoint))
