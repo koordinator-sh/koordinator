@@ -32,47 +32,47 @@ type LoadAwareSchedulingArgs struct {
 	metav1.TypeMeta
 
 	// FilterExpiredNodeMetrics indicates whether to filter nodes where koordlet fails to update NodeMetric.
-	FilterExpiredNodeMetrics *bool `json:"filterExpiredNodeMetrics,omitempty"`
+	FilterExpiredNodeMetrics *bool
 	// NodeMetricExpirationSeconds indicates the NodeMetric expiration in seconds.
 	// When NodeMetrics expired, the node is considered abnormal.
 	// Default is 180 seconds.
-	NodeMetricExpirationSeconds *int64 `json:"nodeMetricExpirationSeconds,omitempty"`
+	NodeMetricExpirationSeconds *int64
 	// ResourceWeights indicates the weights of resources.
 	// The weights of CPU and Memory are both 1 by default.
-	ResourceWeights map[corev1.ResourceName]int64 `json:"resourceWeights,omitempty"`
+	ResourceWeights map[corev1.ResourceName]int64
 	// UsageThresholds indicates the resource utilization threshold of the whole machine.
 	// The default for CPU is 65%, and the default for memory is 95%.
-	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
+	UsageThresholds map[corev1.ResourceName]int64
 	// ProdUsageThresholds indicates the resource utilization threshold of Prod Pods compared to the whole machine.
 	// Not enabled by default
-	ProdUsageThresholds map[corev1.ResourceName]int64 `json:"prodUsageThresholds,omitempty"`
+	ProdUsageThresholds map[corev1.ResourceName]int64
 	// ScoreAccordingProdUsage controls whether to score according to the utilization of Prod Pod
-	ScoreAccordingProdUsage bool `json:"scoreAccordingProdUsage,omitempty"`
+	ScoreAccordingProdUsage bool
 	// Estimator indicates the expected Estimator to use
-	Estimator string `json:"estimator,omitempty"`
+	Estimator string
 	// EstimatedScalingFactors indicates the factor when estimating resource usage.
 	// The default value of CPU is 85%, and the default value of Memory is 70%.
-	EstimatedScalingFactors map[corev1.ResourceName]int64 `json:"estimatedScalingFactors,omitempty"`
+	EstimatedScalingFactors map[corev1.ResourceName]int64
 	// Aggregated supports resource utilization filtering and scoring based on percentile statistics
-	Aggregated *LoadAwareSchedulingAggregatedArgs `json:"aggregated,omitempty"`
+	Aggregated *LoadAwareSchedulingAggregatedArgs
 }
 
 type LoadAwareSchedulingAggregatedArgs struct {
 	// UsageThresholds indicates the resource utilization threshold of the machine based on percentile statistics
-	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
+	UsageThresholds map[corev1.ResourceName]int64
 	// UsageAggregationType indicates the percentile type of the machine's utilization when filtering
 	// If enabled, only one of the slov1alpha1.AggregationType definitions can be used.
-	UsageAggregationType slov1alpha1.AggregationType `json:"usageAggregationType,omitempty"`
+	UsageAggregationType slov1alpha1.AggregationType
 	// UsageAggregatedDuration indicates the statistical period of the percentile of the machine's utilization when filtering
 	// If no specific period is set, the maximum period recorded by NodeMetrics will be used by default.
-	UsageAggregatedDuration metav1.Duration `json:"usageAggregatedDuration,omitempty"`
+	UsageAggregatedDuration metav1.Duration
 
 	// ScoreAggregationType indicates the percentile type of the machine's utilization when scoring
 	// If enabled, only one of the slov1alpha1.AggregationType definitions can be used.
-	ScoreAggregationType slov1alpha1.AggregationType `json:"scoreAggregationType,omitempty"`
+	ScoreAggregationType slov1alpha1.AggregationType
 	// ScoreAggregatedDuration indicates the statistical period of the percentile of Prod Pod's utilization when scoring
 	// If no specific period is set, the maximum period recorded by NodeMetrics will be used by default.
-	ScoreAggregatedDuration metav1.Duration `json:"scoreAggregatedDuration,omitempty"`
+	ScoreAggregatedDuration metav1.Duration
 }
 
 // ScoringStrategyType is a "string" type.
@@ -103,8 +103,8 @@ type ScoringStrategy struct {
 type NodeNUMAResourceArgs struct {
 	metav1.TypeMeta
 
-	DefaultCPUBindPolicy CPUBindPolicy    `json:"defaultCPUBindPolicy,omitempty"`
-	ScoringStrategy      *ScoringStrategy `json:"scoringStrategy,omitempty"`
+	DefaultCPUBindPolicy CPUBindPolicy
+	ScoringStrategy      *ScoringStrategy
 }
 
 // CPUBindPolicy defines the CPU binding policy
@@ -151,7 +151,7 @@ type ReservationArgs struct {
 	metav1.TypeMeta
 
 	// EnablePreemption indicates whether to enable preemption for reservations.
-	EnablePreemption *bool `json:"enablePreemption,omitempty"`
+	EnablePreemption *bool
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -161,25 +161,25 @@ type ElasticQuotaArgs struct {
 	metav1.TypeMeta
 
 	// DelayEvictTime is the duration to handle the jitter of used and runtime
-	DelayEvictTime *metav1.Duration `json:"delayEvictTime,omitempty"`
+	DelayEvictTime *metav1.Duration
 
 	// RevokePodInterval is the interval to check quotaGroup's used and runtime
-	RevokePodInterval *metav1.Duration `json:"revokePodInterval,omitempty"`
+	RevokePodInterval *metav1.Duration
 
 	// DefaultQuotaGroupMax limit the maxQuota of DefaultQuotaGroup
-	DefaultQuotaGroupMax corev1.ResourceList `json:"defaultQuotaGroupMax,omitempty"`
+	DefaultQuotaGroupMax corev1.ResourceList
 
 	// SystemQuotaGroupMax limit the maxQuota of SystemQuotaGroup
-	SystemQuotaGroupMax corev1.ResourceList `json:"systemQuotaGroupMax,omitempty"`
+	SystemQuotaGroupMax corev1.ResourceList
 
 	// QuotaGroupNamespace is the namespace of the DefaultQuotaGroup/SystemQuotaGroup
-	QuotaGroupNamespace string `json:"quotaGroupNamespace,omitempty"`
+	QuotaGroupNamespace string
 
 	// MonitorAllQuotas monitor the quotaGroups' used and runtime Quota to revoke pods
-	MonitorAllQuotas *bool `json:"monitorAllQuotas,omitempty"`
+	MonitorAllQuotas *bool
 
 	// EnableCheckParentQuota check parentQuotaGroups' used and runtime Quota in PreFilter
-	EnableCheckParentQuota *bool `json:"enableCheckParentQuota,omitempty"`
+	EnableCheckParentQuota *bool
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -190,13 +190,13 @@ type CoschedulingArgs struct {
 
 	// DefaultTimeout is the default gang's waiting time in Permit stage
 	// default is 600 seconds
-	DefaultTimeout *metav1.Duration `json:"defaultTimeout,omitempty"`
+	DefaultTimeout *metav1.Duration
 	// Workers number of controller
 	// default is 1
-	ControllerWorkers *int64 `json:"controllerWorkers,omitempty"`
+	ControllerWorkers *int64
 	// Skip check schedule cycle
 	// default is false
-	SkipCheckScheduleCycle bool `json:"SkipCheckScheduleCycle,omitempty"`
+	SkipCheckScheduleCycle bool
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -206,5 +206,5 @@ type DeviceShareArgs struct {
 	metav1.TypeMeta
 
 	// Allocator indicates the expected allocator to use
-	Allocator string `json:"allocator,omitempty"`
+	Allocator string
 }
