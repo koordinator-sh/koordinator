@@ -67,6 +67,8 @@ var ValidDeviceResourceCombinations = map[uint]bool{
 	NvidiaGPU:                true,
 	HygonDCU:                 true,
 	KoordGPU:                 true,
+	GPUMemory:                true,
+	GPUMemoryRatio:           true,
 	GPUCore | GPUMemory:      true,
 	GPUCore | GPUMemoryRatio: true,
 	FPGA:                     true,
@@ -82,6 +84,16 @@ var DeviceResourceValidators = map[corev1.ResourceName]func(q resource.Quantity)
 }
 
 var ResourceCombinationsMapper = map[uint]func(podRequest corev1.ResourceList) corev1.ResourceList{
+	GPUMemory: func(podRequest corev1.ResourceList) corev1.ResourceList {
+		return corev1.ResourceList{
+			apiext.ResourceGPUMemory: podRequest[apiext.ResourceGPUMemory],
+		}
+	},
+	GPUMemoryRatio: func(podRequest corev1.ResourceList) corev1.ResourceList {
+		return corev1.ResourceList{
+			apiext.ResourceGPUMemoryRatio: podRequest[apiext.ResourceGPUMemoryRatio],
+		}
+	},
 	GPUCore | GPUMemory: func(podRequest corev1.ResourceList) corev1.ResourceList {
 		return corev1.ResourceList{
 			apiext.ResourceGPUCore:   podRequest[apiext.ResourceGPUCore],
@@ -101,10 +113,10 @@ var ResourceCombinationsMapper = map[uint]func(podRequest corev1.ResourceList) c
 		}
 	},
 	NvidiaGPU: func(podRequest corev1.ResourceList) corev1.ResourceList {
-		nvidiaGpu := podRequest[apiext.ResourceNvidiaGPU]
+		nvidiaGPU := podRequest[apiext.ResourceNvidiaGPU]
 		return corev1.ResourceList{
-			apiext.ResourceGPUCore:        *resource.NewQuantity(nvidiaGpu.Value()*100, resource.DecimalSI),
-			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(nvidiaGpu.Value()*100, resource.DecimalSI),
+			apiext.ResourceGPUCore:        *resource.NewQuantity(nvidiaGPU.Value()*100, resource.DecimalSI),
+			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(nvidiaGPU.Value()*100, resource.DecimalSI),
 		}
 	},
 	HygonDCU: func(podRequest corev1.ResourceList) corev1.ResourceList {
@@ -146,12 +158,12 @@ func ValidateDeviceRequest(podRequest corev1.ResourceList) (uint, error) {
 
 		validator := DeviceResourceValidators[resourceName]
 		if validator != nil && !validator(quantity) {
-			return combination, fmt.Errorf("failed to validate %v: %v", resourceName, quantity.String())
+			return combination, fmt.Errorf("invalid resource unit %v: %v", resourceName, quantity.String())
 		}
 	}
 
 	if valid := ValidDeviceResourceCombinations[combination]; !valid {
-		return combination, fmt.Errorf("request is not valid, current combination: %v", quotav1.ResourceNames(podRequest))
+		return combination, fmt.Errorf("invalid resource device requests: %v", quotav1.ResourceNames(podRequest))
 	}
 	return combination, nil
 }
@@ -175,8 +187,8 @@ func isPodRequestsMultipleDevice(podRequest corev1.ResourceList, deviceType sche
 	}
 	switch deviceType {
 	case schedulingv1alpha1.GPU:
-		gpuCore := podRequest[apiext.ResourceGPUCore]
-		return gpuCore.Value() > 100 && gpuCore.Value()%100 == 0
+		memoryRatio := podRequest[apiext.ResourceGPUMemoryRatio]
+		return memoryRatio.Value() > 100 && memoryRatio.Value()%100 == 0
 	case schedulingv1alpha1.RDMA:
 		rdma := podRequest[apiext.ResourceRDMA]
 		return rdma.Value() > 100 && rdma.Value()%100 == 0
@@ -188,35 +200,34 @@ func isPodRequestsMultipleDevice(podRequest corev1.ResourceList, deviceType sche
 	}
 }
 
-func memRatioToBytes(ratio, totalMemory resource.Quantity) resource.Quantity {
+func memoryRatioToBytes(ratio, totalMemory resource.Quantity) resource.Quantity {
 	return *resource.NewQuantity(ratio.Value()*totalMemory.Value()/100, resource.BinarySI)
 }
 
-func memBytesToRatio(bytes, totalMemory resource.Quantity) resource.Quantity {
+func memoryBytesToRatio(bytes, totalMemory resource.Quantity) resource.Quantity {
 	return *resource.NewQuantity(int64(float64(bytes.Value())/float64(totalMemory.Value())*100), resource.DecimalSI)
 }
 
 func fillGPUTotalMem(nodeDeviceTotal deviceResources, podRequest corev1.ResourceList) error {
 	// nodeDeviceTotal uses the minor of GPU as key. However, under certain circumstances,
 	// minor 0 might not exist. We need to iterate the cache once to find the active minor.
-	activeMinor := -1
-	for i, resources := range nodeDeviceTotal {
-		if len(resources) == 0 {
-			continue
+	var total corev1.ResourceList
+	for _, resources := range nodeDeviceTotal {
+		if len(resources) > 0 && !quotav1.IsZero(resources) {
+			total = resources
+			break
 		}
-		activeMinor = i
-		break
 	}
-	if activeMinor == -1 {
+	if total == nil {
 		return fmt.Errorf("cannot find sastisfied GPU resources")
 	}
 
 	// a node can only contain one type of GPU, so each of them has the same total memory.
 	if gpuMem, ok := podRequest[apiext.ResourceGPUMemory]; ok {
-		podRequest[apiext.ResourceGPUMemoryRatio] = memBytesToRatio(gpuMem, nodeDeviceTotal[activeMinor][apiext.ResourceGPUMemory])
+		podRequest[apiext.ResourceGPUMemoryRatio] = memoryBytesToRatio(gpuMem, total[apiext.ResourceGPUMemory])
 	} else {
 		gpuMemRatio := podRequest[apiext.ResourceGPUMemoryRatio]
-		podRequest[apiext.ResourceGPUMemory] = memRatioToBytes(gpuMemRatio, nodeDeviceTotal[activeMinor][apiext.ResourceGPUMemory])
+		podRequest[apiext.ResourceGPUMemory] = memoryRatioToBytes(gpuMemRatio, total[apiext.ResourceGPUMemory])
 	}
 	return nil
 }
