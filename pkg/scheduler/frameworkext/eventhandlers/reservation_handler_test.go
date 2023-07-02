@@ -243,7 +243,7 @@ func Test_addReservationToCache(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sched := frameworkext.NewFakeScheduler()
-			addReservationToCache(sched, tt.obj)
+			addReservationToSchedulerCache(sched, tt.obj)
 			pod, err := sched.GetPod(&corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					UID: tt.obj.GetUID(),
@@ -542,7 +542,7 @@ func Test_updateReservationInCache(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			reservation.SetReservationCache(&fakeReservationCache{})
 			sched := frameworkext.NewFakeScheduler()
-			updateReservationInCache(sched, tt.oldObj, tt.newObj)
+			updateReservationInSchedulerCache(sched, tt.oldObj, tt.newObj)
 			pod, err := sched.GetPod(&corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					UID: tt.newObj.GetUID(),
@@ -665,7 +665,7 @@ func Test_deleteReservationFromCache(t *testing.T) {
 			if reservationutil.ValidateReservation(tt.obj) == nil {
 				sched.AddPod(reservationutil.NewReservePod(tt.obj))
 			}
-			deleteReservationFromCache(sched, tt.obj)
+			deleteReservationFromSchedulerCache(sched, tt.obj)
 			pod, err := sched.GetPod(&corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					UID: tt.obj.GetUID(),

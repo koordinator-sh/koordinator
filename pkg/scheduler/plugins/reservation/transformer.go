@@ -71,7 +71,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	processNode := func(i int) {
 		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(allNodes[i])
 		if err != nil {
-			errCh.SendErrorWithCancel(err, cancel)
+			klog.Warningf("Failed to get NodeInfo of %s during reservation's BeforePreFilter, err: %v", allNodes[i], err)
 			return
 		}
 		node := nodeInfo.Node()
