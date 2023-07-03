@@ -47,8 +47,8 @@ func (h *reservationEventHandler) OnAdd(obj interface{}) {
 	}
 	if reservationutil.IsReservationActive(r) {
 		h.cache.updateReservation(r)
+		klog.V(4).InfoS("add reservation into reservationCache", "reservation", klog.KObj(r))
 	}
-	klog.V(5).InfoS("reservation cache add", "reservation", klog.KObj(r))
 }
 
 func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
@@ -63,8 +63,8 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 
 	if reservationutil.IsReservationActive(newR) || reservationutil.IsReservationFailed(newR) || reservationutil.IsReservationSucceeded(newR) {
 		h.cache.updateReservation(newR)
+		klog.V(4).InfoS("update reservation into reservationCache", "reservation", klog.KObj(newR))
 	}
-	klog.V(5).InfoS("reservation cache update", "reservation", klog.KObj(newR))
 }
 
 func (h *reservationEventHandler) OnDelete(obj interface{}) {
@@ -91,6 +91,6 @@ func (h *reservationEventHandler) OnDelete(obj interface{}) {
 		r = r.DeepCopy()
 		r.Status.Phase = schedulingv1alpha1.ReservationFailed
 	}
-	h.cache.updateReservation(r)
-	klog.V(5).InfoS("reservation cache delete", "reservation", klog.KObj(r))
+	h.cache.updateReservationIfExists(r)
+	klog.V(4).InfoS("got delete reservation event but just update it if exists", "reservation", klog.KObj(r))
 }

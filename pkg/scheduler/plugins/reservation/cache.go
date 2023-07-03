@@ -114,6 +114,18 @@ func (cache *reservationCache) updateReservation(newR *schedulingv1alpha1.Reserv
 	}
 }
 
+func (cache *reservationCache) updateReservationIfExists(newR *schedulingv1alpha1.Reservation) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	rInfo := cache.reservationInfos[newR.UID]
+	if rInfo != nil {
+		rInfo.UpdateReservation(newR)
+		if newR.Status.NodeName != "" {
+			cache.updateReservationsOnNode(newR.Status.NodeName, newR.UID)
+		}
+	}
+}
+
 func (cache *reservationCache) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()

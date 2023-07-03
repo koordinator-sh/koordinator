@@ -190,13 +190,13 @@ func AddScheduleEventHandler(sched *scheduler.Scheduler, schedAdapter frameworke
 	// scheduled reservations for pod cache
 	reservationInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			addReservationToCache(schedAdapter, obj)
+			addReservationToSchedulerCache(schedAdapter, obj)
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			updateReservationInCache(schedAdapter, oldObj, newObj)
+			updateReservationInSchedulerCache(schedAdapter, oldObj, newObj)
 		},
 		DeleteFunc: func(obj interface{}) {
-			deleteReservationFromCache(schedAdapter, obj)
+			deleteReservationFromSchedulerCache(schedAdapter, obj)
 		},
 	})
 	// unscheduled & non-failed reservations for scheduling queue
@@ -237,49 +237,53 @@ func unscheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter
 }
 
 func toReservation(obj interface{}) *schedulingv1alpha1.Reservation {
-	var reservation *schedulingv1alpha1.Reservation
+	var r *schedulingv1alpha1.Reservation
 	switch t := obj.(type) {
 	case *schedulingv1alpha1.Reservation:
-		reservation = t
+		r = t
 	case cache.DeletedFinalStateUnknown:
-		reservation, _ = t.Obj.(*schedulingv1alpha1.Reservation)
+		r, _ = t.Obj.(*schedulingv1alpha1.Reservation)
 	}
-	return reservation
+	return r
 }
 
-func addReservationToCache(sched frameworkext.Scheduler, obj interface{}) {
+func addReservationToSchedulerCache(sched frameworkext.Scheduler, obj interface{}) {
 	r := toReservation(obj)
 	if r == nil {
-		klog.Errorf("addReservationToCache failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
+		klog.Errorf("addReservationToSchedulerCache failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
 		return
 	}
 	if !reservationutil.IsReservationAvailable(r) {
 		return
 	}
 
+	klog.V(3).InfoS("Try to add reservation into SchedulerCache",
+		"reservation", klog.KObj(r), "reservationUID", r.UID, "node", reservationutil.GetReservationNodeName(r))
+
 	// only add valid reservation into cache
 	err := reservationutil.ValidateReservation(r)
 	if err != nil {
-		klog.Errorf("addReservationToCache failed, invalid reservation, err: %v", err)
+		klog.ErrorS(err, "Failed to add reservation into SchedulerCache, invalid reservation", "reservation", klog.KObj(r))
 		return
 	}
-	klog.V(3).InfoS("Add event for scheduled reservation", "reservation", klog.KObj(r))
 
 	// update pod cache and trigger pod assigned event for scheduling queue
 	reservePod := reservationutil.NewReservePod(r)
 	// Forces priority to be set to maximum to prevent preemption.
 	reservePod.Spec.Priority = pointer.Int32(math.MaxInt32)
 	if err = sched.GetCache().AddPod(reservePod); err != nil {
-		klog.Errorf("scheduler cache AddPod failed for reservation, reservation %s, err: %v", klog.KObj(reservePod), err)
+		klog.ErrorS(err, "Failed to add reservation into SchedulerCache", "reservation", klog.KObj(reservePod))
+	} else {
+		klog.V(4).InfoS("Successfully add reservation into SchedulerCache", "reservation", klog.KObj(r))
 	}
 	sched.GetSchedulingQueue().AssignedPodAdded(reservePod)
 }
 
-func updateReservationInCache(sched frameworkext.Scheduler, oldObj, newObj interface{}) {
+func updateReservationInSchedulerCache(sched frameworkext.Scheduler, oldObj, newObj interface{}) {
 	oldR := toReservation(oldObj)
 	newR := toReservation(newObj)
 	if oldR == nil || newR == nil {
-		klog.Errorf("updateReservationInCache failed, cannot convert object to *schedulingv1alpha1.Reservation, old %T, new %T", oldObj, newObj)
+		klog.Errorf("updateReservationInSchedulerCache failed, cannot convert object to *schedulingv1alpha1.Reservation, old %T, new %T", oldObj, newObj)
 		return
 	}
 
@@ -290,20 +294,20 @@ func updateReservationInCache(sched frameworkext.Scheduler, oldObj, newObj inter
 	// A delete event followed by an immediate add event may be merged into a update event.
 	// In this case, we should invalidate the old object, and then add the new object.
 	if oldR.UID != newR.UID {
-		deleteReservationFromCache(sched, oldObj)
-		addReservationToCache(sched, newObj)
+		deleteReservationFromSchedulerCache(sched, oldObj)
+		addReservationToSchedulerCache(sched, newObj)
 		return
 	}
 
 	// Pending to Available
 	if !reservationutil.IsReservationAvailable(oldR) && reservationutil.IsReservationAvailable(newR) {
-		addReservationToCache(sched, newR)
+		addReservationToSchedulerCache(sched, newR)
 		return
 	}
 
 	// Available to Succeeded or Failed
 	if reservationutil.IsReservationAvailable(oldR) && !reservationutil.IsReservationAvailable(newR) {
-		deleteReservationFromCache(sched, newR)
+		deleteReservationFromSchedulerCache(sched, newR)
 		return
 	}
 
@@ -312,17 +316,19 @@ func updateReservationInCache(sched frameworkext.Scheduler, oldObj, newObj inter
 		return
 	}
 
+	klog.V(4).InfoS("Try to update reservation into SchedulerCache",
+		"reservation", klog.KObj(newR), "reservationUID", newR.UID, "node", reservationutil.GetReservationNodeName(newR))
+
 	// nodeName update of the same reservations is not allowed and may corrupt the cache
 	if reservationutil.GetReservationNodeName(oldR) != reservationutil.GetReservationNodeName(newR) {
-		klog.Errorf("updateReservationInCache failed, update on existing nodeName is forbidden, old %s, new %s",
-			reservationutil.GetReservationNodeName(oldR), reservationutil.GetReservationNodeName(newR))
+		klog.Errorf("It is not allowed to update the Reservation.Status.NodeName of an already allocated reservation, reservation: %s", newR.Name)
 		return
 	}
 
 	// update pod cache and trigger pod assigned event for scheduling queue
 	err := reservationutil.ValidateReservation(newR)
 	if err != nil {
-		klog.Errorf("updateReservationInCache failed, invalid reservation, err: %v", err)
+		klog.ErrorS(err, "Failed to update reservation into SchedulerCache, invalid reservation", "reservation", klog.KObj(newR))
 		return
 	}
 	oldReservePod := reservationutil.NewReservePod(oldR)
@@ -331,27 +337,31 @@ func updateReservationInCache(sched frameworkext.Scheduler, oldObj, newObj inter
 	oldReservePod.Spec.Priority = pointer.Int32(math.MaxInt32)
 	newReservePod.Spec.Priority = pointer.Int32(math.MaxInt32)
 	if err := sched.GetCache().UpdatePod(oldReservePod, newReservePod); err != nil {
-		klog.Errorf("scheduler cache UpdatePod failed for reservation, old %s, new %s, err: %v", klog.KObj(oldR), klog.KObj(newR), err)
+		klog.ErrorS(err, "Failed to update reservation into SchedulerCache", "reservation", klog.KObj(newR))
+	} else {
+		klog.V(4).InfoS("Successfully update reservation into SchedulerCache", "reservation", klog.KObj(newR))
 	}
 	sched.GetSchedulingQueue().AssignedPodUpdated(newReservePod)
 }
 
-func deleteReservationFromCache(sched frameworkext.Scheduler, obj interface{}) {
+func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, obj interface{}) {
 	r := toReservation(obj)
 	if r == nil {
-		klog.Errorf("deleteReservationFromCache failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
+		klog.Errorf("deleteReservationFromSchedulerCache failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
 		return
 	}
-	klog.V(3).InfoS("Delete event for scheduled reservation", "reservation", klog.KObj(r))
 
 	if r.Status.NodeName == "" {
 		return
 	}
 
+	klog.V(4).InfoS("Try to delete reservation from SchedulerCache",
+		"reservation", klog.KObj(r), "reservationUID", r.UID, "node", reservationutil.GetReservationNodeName(r))
+
 	// delete pod cache and trigger pod deleted event for scheduling queue
 	err := reservationutil.ValidateReservation(r)
 	if err != nil {
-		klog.Errorf("deleteReservationFromCache failed, invalid reservation, err: %v", err)
+		klog.ErrorS(err, "Failed to delete reservation from SchedulerCache, invalid reservation", "reservation", klog.KObj(r))
 		return
 	}
 
@@ -360,6 +370,8 @@ func deleteReservationFromCache(sched frameworkext.Scheduler, obj interface{}) {
 	if rInfo == nil {
 		klog.Warningf("The impossible happened. Missing ReservationInfo in ReservationCache, reservation: %v", klog.KObj(r))
 		return
+	} else {
+		klog.V(4).InfoS("Successfully delete reservation from ReservationCache", "reservation", klog.KObj(r))
 	}
 
 	reservePod := reservationutil.NewReservePod(r)
@@ -373,12 +385,14 @@ func deleteReservationFromCache(sched frameworkext.Scheduler, obj interface{}) {
 
 			// The Pod status in the Cache must be refreshed once to ensure that subsequent deletions are valid.
 			if err := sched.GetCache().UpdatePod(reservePod, reservePod); err != nil {
-				klog.Errorf("scheduler cache UpdatePod failed for reservation in delete stage, obj %s, err: %v", klog.KObj(r), err)
+				klog.ErrorS(err, "Failed update reservation into SchedulerCache in delete stage", "reservation", klog.KObj(r))
 			}
 		}
 
 		if err := sched.GetCache().RemovePod(reservePod); err != nil {
-			klog.Errorf("scheduler cache RemovePod failed for reservation, reservation %s, err: %v", klog.KObj(r), err)
+			klog.ErrorS(err, "Failed to remove reservation from SchedulerCache", "reservation", klog.KObj(r))
+		} else {
+			klog.V(4).InfoS("Successfully delete reservation from SchedulerCache", "reservation", klog.KObj(r))
 		}
 
 		sched.GetSchedulingQueue().MoveAllToActiveOrBackoffQueue(frameworkext.AssignedPodDelete)
