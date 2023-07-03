@@ -35,6 +35,7 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
@@ -72,6 +73,7 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, node); err != nil {
 		if !errors.IsNotFound(err) {
+			metrics.RecordNodeMetricReconcileCount(false, "reconcileNodeGetError")
 			klog.Errorf("failed to find node %v, error: %v", nodeName, err)
 			return ctrl.Result{Requeue: true}, err
 		}
@@ -80,6 +82,7 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, nodeMetric); err != nil {
 		if !errors.IsNotFound(err) {
+			metrics.RecordNodeMetricReconcileCount(false, "reconcileNodeMetricGetError")
 			klog.Errorf("failed to find nodeMetric %v, error: %v", nodeMetricName, err)
 			return ctrl.Result{Requeue: true}, err
 		}
@@ -96,8 +99,10 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			if errors.IsNotFound(err) {
 				return ctrl.Result{}, nil
 			}
+			metrics.RecordNodeMetricReconcileCount(false, "deleteNodeMetric")
 			return ctrl.Result{Requeue: true}, err
 		}
+		metrics.RecordNodeMetricReconcileCount(true, "deleteNodeMetric")
 		return ctrl.Result{}, nil
 	} else if !nodeMetricExist {
 		// if nodeExist && !nodeMetricExist, create an empty NodeMetric CR.
@@ -106,9 +111,11 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			return ctrl.Result{Requeue: true}, err
 		}
 		if err := r.Client.Create(context.TODO(), nodeMetric); err != nil {
+			metrics.RecordNodeMetricReconcileCount(false, "createNodeMetric")
 			klog.Errorf("failed to create nodeMetric %v, error: %v", nodeMetricName, err)
 			return ctrl.Result{Requeue: true}, err
 		}
+		metrics.RecordNodeMetricReconcileCount(true, "createNodeMetric")
 	} else {
 		// update nodeMetric spec if both exists
 		nodeMetricSpec, err := r.getNodeMetricSpec(node, &nodeMetric.Spec)
@@ -120,9 +127,11 @@ func (r *NodeMetricReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			nodeMetric.Spec = *nodeMetricSpec
 			err = r.Client.Update(context.TODO(), nodeMetric)
 			if err != nil {
+				metrics.RecordNodeMetricReconcileCount(false, "updateNodeMetric")
 				klog.Errorf("failed to update nodeMetric %v, error: %v", nodeMetricName, err)
 				return ctrl.Result{Requeue: true}, err
 			}
+			metrics.RecordNodeMetricReconcileCount(true, "updateNodeMetric")
 		}
 	}
 
@@ -148,8 +157,10 @@ func (r *NodeMetricReconciler) getNodeMetricSpec(node *corev1.Node, oldSpec *slo
 
 	nodeMetricCollectPolicy, err := getNodeMetricCollectPolicy(mergedStrategy)
 	if err != nil {
+		metrics.RecordNodeMetricSpecParseCount(false, "getNodeMetricCollectPolicy")
 		klog.Warningf("getNodeMetricSpec(): failed to get nodeMetricCollectPolicy for node %s, set the default error: %v", node.Name, err)
 	} else {
+		metrics.RecordNodeMetricSpecParseCount(true, "getNodeMetricCollectPolicy")
 		nodeMetricSpec.CollectPolicy = nodeMetricCollectPolicy
 	}
 

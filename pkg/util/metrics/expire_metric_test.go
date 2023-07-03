@@ -26,18 +26,20 @@ import (
 	"k8s.io/apimachinery/pkg/util/rand"
 )
 
-type metric struct {
+type testMetric struct {
 	labels     prometheus.Labels
 	value      float64
 	updateTime int64
 }
 
+const testSubsystem = "test"
+
 func Test_GCGaugeVec_WithSet(t *testing.T) {
 	metricName := "test_gauge"
 	vec := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
+		Subsystem: testSubsystem,
 		Name:      metricName,
-	}, []string{NodeKey, PodName, PodNamespace})
+	}, []string{"node", "pod_name", "pod_namespace"})
 
 	testDefaultGaugeVec := NewGCGaugeVec(metricName, vec)
 	assert.Equal(t, vec, testDefaultGaugeVec.GetGaugeVec())
@@ -48,29 +50,29 @@ func Test_GCGaugeVec_WithSet(t *testing.T) {
 	testGaugeVec := newGCGaugeVec(metricName, vec, testMetricGC)
 
 	//add metric1
-	pod1Labels := prometheus.Labels{NodeKey: "node1", PodName: "pod1", PodNamespace: "ns1"}
+	pod1Labels := prometheus.Labels{"node": "node1", "pod_name": "pod1", "pod_namespace": "ns1"}
 	testGaugeVec.WithSet(pod1Labels, 1)
-	metrics := collectMetrics(vec)
-	assert.Equal(t, 1, len(metrics), "checkMetricsNum")
+	ms := collectMetrics(vec)
+	assert.Equal(t, 1, len(ms), "checkMetricsNum")
 
 	//add metric2
-	pod2Labels := prometheus.Labels{NodeKey: "node2", PodName: "pod2", PodNamespace: "ns2"}
+	pod2Labels := prometheus.Labels{"node": "node2", "pod_name": "pod2", "pod_namespace": "ns2"}
 	testGaugeVec.WithSet(pod2Labels, 2)
-	metrics = collectMetrics(vec)
-	assert.Equal(t, 2, len(metrics), "checkMetricsNum")
+	ms = collectMetrics(vec)
+	assert.Equal(t, 2, len(ms), "checkMetricsNum")
 
 	//update metric1
 	testGaugeVec.WithSet(pod1Labels, 3)
-	metrics = collectMetrics(vec)
-	assert.Equal(t, 2, len(metrics), "checkMetricsNum")
+	ms = collectMetrics(vec)
+	assert.Equal(t, 2, len(ms), "checkMetricsNum")
 }
 
 func Test_GCCounterVec_WithInc(t *testing.T) {
 	metricName := "test_counter"
 	vec := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Subsystem: KoordletSubsystem,
+		Subsystem: testSubsystem,
 		Name:      metricName,
-	}, []string{NodeKey, PodName, PodNamespace})
+	}, []string{"node", "pod_name", "pod_namespace"})
 
 	testDefaultGaugeVec := NewGCCounterVec(metricName, vec)
 	assert.Equal(t, vec, testDefaultGaugeVec.GetCounterVec())
@@ -81,21 +83,21 @@ func Test_GCCounterVec_WithInc(t *testing.T) {
 	testCounterVec := newGCCounterVec(metricName, vec, testMetricGC)
 
 	//add metric1
-	pod1Labels := prometheus.Labels{NodeKey: "node1", PodName: "pod1", PodNamespace: "ns1"}
+	pod1Labels := prometheus.Labels{"node": "node1", "pod_name": "pod1", "pod_namespace": "ns1"}
 	testCounterVec.WithInc(pod1Labels)
-	metrics := collectMetrics(vec)
-	assert.Equal(t, 1, len(metrics), "checkMetricsNum")
+	ms := collectMetrics(vec)
+	assert.Equal(t, 1, len(ms), "checkMetricsNum")
 
 	//add metric2
-	pod2Labels := prometheus.Labels{NodeKey: "node2", PodName: "pod2", PodNamespace: "ns2"}
+	pod2Labels := prometheus.Labels{"node": "node2", "pod_name": "pod2", "pod_namespace": "ns2"}
 	testCounterVec.WithInc(pod2Labels)
-	metrics = collectMetrics(vec)
-	assert.Equal(t, 2, len(metrics), "checkMetricsNum")
+	ms = collectMetrics(vec)
+	assert.Equal(t, 2, len(ms), "checkMetricsNum")
 
 	//update metric1
 	testCounterVec.WithInc(pod1Labels)
-	metrics = collectMetrics(vec)
-	assert.Equal(t, 2, len(metrics), "checkMetricsNum")
+	ms = collectMetrics(vec)
+	assert.Equal(t, 2, len(ms), "checkMetricsNum")
 }
 
 func Test_MetricGC_GC(t *testing.T) {
@@ -104,19 +106,19 @@ func Test_MetricGC_GC(t *testing.T) {
 
 	metricName := "test_gauge"
 	gaugeVec := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
+		Subsystem: testSubsystem,
 		Name:      metricName,
-	}, []string{NodeKey, PodName, PodNamespace})
+	}, []string{"node", "pod_name", "pod_namespace"})
 	gcGaugeVec := newGCGaugeVec(metricName, gaugeVec, testMetricGC)
 
 	// metric should not expire
-	metrics := generatePodMetrics(10, time.Now().Unix())
-	for _, m := range metrics {
+	ms := generatePodMetrics(10, time.Now().Unix())
+	for _, m := range ms {
 		gcGaugeVec.WithSet(m.labels, m.value)
 	}
 	gotMetrics := collectMetrics(gaugeVec)
-	assert.Equal(t, len(metrics), len(gotMetrics), "checkMetricsNum")
-	assert.Equal(t, len(metrics), testMetricGC.statusLen(), "checkStatusNum")
+	assert.Equal(t, len(ms), len(gotMetrics), "checkMetricsNum")
+	assert.Equal(t, len(ms), testMetricGC.statusLen(), "checkStatusNum")
 
 	// metric should expire
 	metricsUpdate := generatePodMetrics(5, time.Now().Unix()-int64(DefaultExpireTime/time.Second))
@@ -130,15 +132,15 @@ func Test_MetricGC_GC(t *testing.T) {
 	assert.Equal(t, len(metricsUpdate), testMetricGC.statusLen(), "checkStatusNum")
 }
 
-func generatePodMetrics(num int, baseUpdateTime int64) []metric {
-	var metrics []metric
+func generatePodMetrics(num int, baseUpdateTime int64) []testMetric {
+	var ms []testMetric
 	for i := 0; i < num; i++ {
 		iStr := strconv.Itoa(i)
-		metrics = append(metrics, metric{labels: prometheus.Labels{NodeKey: "node" + iStr, PodName: "pod" + iStr, PodNamespace: "ns" + iStr},
+		ms = append(ms, testMetric{labels: prometheus.Labels{"node": "node" + iStr, "pod_name": "pod" + iStr, "pod_namespace": "ns" + iStr},
 			value:      1,
 			updateTime: baseUpdateTime - rand.Int63nRange(1, 100)})
 	}
-	return metrics
+	return ms
 }
 
 func collectMetrics(vec prometheus.Collector) []prometheus.Metric {
@@ -147,14 +149,14 @@ func collectMetrics(vec prometheus.Collector) []prometheus.Metric {
 		vec.Collect(metricsCh)
 		close(metricsCh)
 	}()
-	var metrics []prometheus.Metric
+	var ms []prometheus.Metric
 	for {
 		select {
 		case metric, ok := <-metricsCh:
 			if !ok {
-				return metrics
+				return ms
 			}
-			metrics = append(metrics, metric)
+			ms = append(ms, metric)
 		}
 	}
 }

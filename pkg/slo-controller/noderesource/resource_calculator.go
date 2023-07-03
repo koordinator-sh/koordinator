@@ -30,6 +30,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
@@ -109,9 +110,11 @@ func (r *NodeResourceReconciler) updateNodeStatus(node *corev1.Node, strategy *e
 	nodeCopy := &corev1.Node{}
 	if err := r.Client.Get(context.TODO(), types.NamespacedName{Name: node.Name}, nodeCopy); err != nil {
 		if errors.IsNotFound(err) {
+			metrics.RecordNodeResourceReconcileCount(false, "updateNodeNotFound")
 			klog.V(4).InfoS("aborted to update node", "node", nodeCopy.Name, "err", err)
 			return nil
 		}
+		metrics.RecordNodeResourceReconcileCount(false, "updateNodeGetError")
 		klog.ErrorS(err, "failed to get node", "node", node.Name)
 		return err
 	}
@@ -120,10 +123,12 @@ func (r *NodeResourceReconciler) updateNodeStatus(node *corev1.Node, strategy *e
 	r.prepareNodeResource(strategy, nodeCopy, nr)
 
 	if err := r.Client.Status().Update(context.TODO(), nodeCopy); err != nil {
+		metrics.RecordNodeResourceReconcileCount(false, "updateNodeStatus")
 		klog.ErrorS(err, "failed to update node status", "node", nodeCopy.Name)
 		return err
 	}
 	r.NodeSyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), r.Clock.Now())
+	metrics.RecordNodeResourceReconcileCount(true, "updateNodeStatus")
 	klog.V(5).InfoS("update node successfully", "node", nodeCopy.Name, "detail", nodeCopy)
 	return nil
 }
@@ -132,9 +137,11 @@ func (r *NodeResourceReconciler) updateNodeMeta(node *corev1.Node, strategy *ext
 	nodeCopy := &corev1.Node{}
 	if err := r.Client.Get(context.TODO(), types.NamespacedName{Name: node.Name}, nodeCopy); err != nil {
 		if errors.IsNotFound(err) {
+			metrics.RecordNodeResourceReconcileCount(false, "updateNodeMetaNotFound")
 			klog.V(4).InfoS("aborted to update node", "node", nodeCopy.Name, "err", err)
 			return nil
 		}
+		metrics.RecordNodeResourceReconcileCount(false, "updateNodeMetaGetError")
 		klog.ErrorS(err, "failed to get node", "node", node.Name)
 		return err
 	}
@@ -144,11 +151,13 @@ func (r *NodeResourceReconciler) updateNodeMeta(node *corev1.Node, strategy *ext
 
 	patch := client.StrategicMergeFrom(nodeCopy)
 	if err := r.Client.Patch(context.Background(), nodeCopy, patch); err != nil {
+		metrics.RecordNodeResourceReconcileCount(false, "patchNodeMeta")
 		klog.V(4).InfoS("failed to patch node meta for node resource",
 			"node", nodeCopy.Name, "err", err)
 		return err
 	}
 
+	metrics.RecordNodeResourceReconcileCount(true, "patchNodeMeta")
 	klog.V(5).InfoS("successfully patched node meta for node resource",
 		"node", nodeCopy.Name, "patch", patch)
 	return nil
@@ -158,10 +167,12 @@ func (r *NodeResourceReconciler) updateNodeMeta(node *corev1.Node, strategy *ext
 func (r *NodeResourceReconciler) updateNodeExtensions(node *corev1.Node, nodeMetric *slov1alpha1.NodeMetric, podList *corev1.PodList) error {
 	// update device resources
 	if err := r.updateDeviceResources(node); err != nil {
+		metrics.RecordNodeResourceReconcileCount(false, "updateDeviceResources")
 		klog.V(4).InfoS("failed to update device resources for node", "node", node.Name,
 			"err", err)
 		return err
 	}
+	metrics.RecordNodeResourceReconcileCount(true, "updateDeviceResources")
 
 	return nil
 }

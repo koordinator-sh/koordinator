@@ -26,6 +26,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 )
 
 var (
@@ -69,6 +70,7 @@ func getExtensionsConfigSpec(node *corev1.Node, cfgMap *extension.ExtensionCfgMa
 	for name, extender := range globalNodeSLOMergedExtender {
 		extKey, extStrategy, err := extender.GetNodeSLOExtension(node, cfgMap)
 		if err != nil {
+			metrics.RecordNodeSLOSpecParseCount(false, "getNodeSLOExtension")
 			klog.Warningf("run get nodeSLO extender %v failed, error %v", name, err)
 			continue
 		}
@@ -79,6 +81,7 @@ func getExtensionsConfigSpec(node *corev1.Node, cfgMap *extension.ExtensionCfgMa
 			extMap.Object = make(map[string]interface{})
 		}
 		extMap.Object[extKey] = extStrategy
+		metrics.RecordNodeSLOSpecParseCount(true, "getNodeSLOExtension")
 		klog.V(5).Infof("run get nodeSLO extender %v success, extMap %v", name, extMap)
 	}
 	return &extMap
