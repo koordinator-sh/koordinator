@@ -120,6 +120,22 @@ func TestValidateDeviceRequest(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid gpu request 5",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+			},
+			want:    GPUMemoryRatio,
+			wantErr: false,
+		},
+		{
+			name: "valid gpu request 7",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
+			},
+			want:    GPUMemory,
+			wantErr: false,
+		},
+		{
 			name: "invalid fpga request",
 			podRequest: corev1.ResourceList{
 				apiext.ResourceFPGA: resource.MustParse("201"),
@@ -313,7 +329,7 @@ func Test_isMultipleCommonDevicePod(t *testing.T) {
 			name: "non common device",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.ResourceGPUCore: resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 				},
 				deviceType: schedulingv1alpha1.GPU,
 			},
@@ -371,7 +387,7 @@ func Test_isMultipleCommonDevicePod(t *testing.T) {
 			name: "single gpu",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.ResourceGPUCore: resource.MustParse("80"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("80"),
 				},
 				deviceType: schedulingv1alpha1.GPU,
 			},
@@ -381,7 +397,7 @@ func Test_isMultipleCommonDevicePod(t *testing.T) {
 			name: "multiple gpu",
 			args: args{
 				podRequest: corev1.ResourceList{
-					apiext.ResourceGPUCore: resource.MustParse("200"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
 				},
 				deviceType: schedulingv1alpha1.GPU,
 			},
@@ -396,19 +412,19 @@ func Test_isMultipleCommonDevicePod(t *testing.T) {
 	}
 }
 
-func Test_memRatioToBytes(t *testing.T) {
+func Test_memoryRatioToBytes(t *testing.T) {
 	currentRatio := resource.MustParse("50")
 	totalMemory := resource.MustParse("64Gi")
 	expectBytes := resource.MustParse("32Gi")
-	newBytes := memRatioToBytes(currentRatio, totalMemory)
+	newBytes := memoryRatioToBytes(currentRatio, totalMemory)
 	assert.Equal(t, expectBytes, newBytes)
 }
 
-func Test_memBytesToRatio(t *testing.T) {
+func Test_memoryBytesToRatio(t *testing.T) {
 	currentBytes := resource.MustParse("32Gi")
 	totalMemory := resource.MustParse("64Gi")
 	expectRatio := *resource.NewQuantity(50, resource.DecimalSI)
-	newRatio := memBytesToRatio(currentBytes, totalMemory)
+	newRatio := memoryBytesToRatio(currentBytes, totalMemory)
 	assert.Equal(t, expectRatio, newRatio)
 }
 

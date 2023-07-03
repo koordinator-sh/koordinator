@@ -263,26 +263,21 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, required,
 	allocateResult := make(apiext.DeviceAllocations)
 
 	for deviceType, supportedResourceNames := range DeviceResourceNames {
-		switch deviceType {
-		case schedulingv1alpha1.GPU, schedulingv1alpha1.RDMA, schedulingv1alpha1.FPGA:
-			deviceRequest := quotav1.Mask(podRequest, supportedResourceNames)
-			if quotav1.IsZero(deviceRequest) {
-				break
-			}
-			err := n.tryAllocateDeviceByType(
-				deviceRequest,
-				deviceType,
-				required[deviceType],
-				preferred[deviceType],
-				allocateResult,
-				requiredDeviceResources[deviceType],
-				preemptibleDeviceResources[deviceType],
-			)
-			if err != nil {
-				return nil, err
-			}
-		default:
-			klog.Warningf("device type %v is not supported yet", deviceType)
+		deviceRequest := quotav1.Mask(podRequest, supportedResourceNames)
+		if quotav1.IsZero(deviceRequest) {
+			continue
+		}
+		err := n.tryAllocateDeviceByType(
+			deviceRequest,
+			deviceType,
+			required[deviceType],
+			preferred[deviceType],
+			allocateResult,
+			requiredDeviceResources[deviceType],
+			preemptibleDeviceResources[deviceType],
+		)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -322,12 +317,12 @@ func (n *nodeDevice) tryAllocateDeviceByType(
 	if isPodRequestsMultipleDevice(podRequest, deviceType) {
 		switch deviceType {
 		case schedulingv1alpha1.GPU:
-			gpuCore, gpuMem, gpuMemRatio := podRequest[apiext.ResourceGPUCore], podRequest[apiext.ResourceGPUMemory], podRequest[apiext.ResourceGPUMemoryRatio]
-			deviceWanted = gpuCore.Value() / 100
+			gpuCore, gpuMem, gpuMemoryRatio := podRequest[apiext.ResourceGPUCore], podRequest[apiext.ResourceGPUMemory], podRequest[apiext.ResourceGPUMemoryRatio]
+			deviceWanted = gpuMemoryRatio.Value() / 100
 			podRequestPerCard = corev1.ResourceList{
 				apiext.ResourceGPUCore:        *resource.NewQuantity(gpuCore.Value()/deviceWanted, resource.DecimalSI),
 				apiext.ResourceGPUMemory:      *resource.NewQuantity(gpuMem.Value()/deviceWanted, resource.BinarySI),
-				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(gpuMemRatio.Value()/deviceWanted, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(gpuMemoryRatio.Value()/deviceWanted, resource.DecimalSI),
 			}
 		case schedulingv1alpha1.RDMA:
 			commonDevice := podRequest[apiext.ResourceRDMA]

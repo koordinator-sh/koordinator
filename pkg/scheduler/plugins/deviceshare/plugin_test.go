@@ -306,30 +306,6 @@ func Test_Plugin_PreFilter(t *testing.T) {
 			},
 		},
 		{
-			name: "pod has invalid gpu request",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "123456789",
-					Namespace: "default",
-					Name:      "test",
-				},
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									apiext.ResourceGPU: resource.MustParse("101"),
-								},
-							},
-						},
-					},
-				},
-			},
-			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("failed to validate %v: 101", apiext.ResourceGPU)),
-		},
-		{
 			name: "pod has invalid fpga request",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -351,10 +327,82 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("failed to validate %v: 101", apiext.ResourceFPGA)),
+			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("invalid resource unit %v: 101", apiext.ResourceFPGA)),
 		},
 		{
-			name: "pod has valid gpu request",
+			name: "pod has invalid gpu request 1",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPU: resource.MustParse("101"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("invalid resource unit %v: 101", apiext.ResourceGPU)),
+		},
+		{
+			name: "pod has invalid gpu request 2",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPUCore: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("invalid resource device requests: [%s]", apiext.ResourceGPUCore)),
+		},
+		{
+			name: "pod has invalid gpu request 3",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("101"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("invalid resource unit %v: 101", apiext.ResourceGPUMemoryRatio)),
+		},
+		{
+			name: "pod has valid gpu request 1",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:       "123456789",
@@ -369,6 +417,134 @@ func Test_Plugin_PreFilter(t *testing.T) {
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantState: &preFilterState{
+				skip: false,
+				podRequests: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+				},
+				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
+			},
+		},
+		{
+			name: "pod has valid gpu request 2",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantState: &preFilterState{
+				skip: false,
+				podRequests: corev1.ResourceList{
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+				},
+				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
+			},
+		},
+		{
+			name: "pod has valid gpu request 3",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantState: &preFilterState{
+				skip: false,
+				podRequests: corev1.ResourceList{
+					apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+				},
+				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
+			},
+		},
+		{
+			name: "pod has valid gpu request 4",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPUCore:   resource.MustParse("100"),
+									apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantState: &preFilterState{
+				skip: false,
+				podRequests: corev1.ResourceList{
+					apiext.ResourceGPUCore:   resource.MustParse("100"),
+					apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+				},
+				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
+			},
+		},
+		{
+			name: "pod has valid gpu request 5",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 								},
 							},
 						},
@@ -851,6 +1027,116 @@ func Test_Plugin_Filter(t *testing.T) {
 				podRequests: corev1.ResourceList{
 					apiext.ResourceGPUCore:        resource.MustParse("100"),
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+				},
+			},
+			pod: &corev1.Pod{},
+			nodeDeviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("25"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+								},
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("75"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
+		},
+		{
+			name: "sufficient device resource 5",
+			state: &preFilterState{
+				skip: false,
+				podRequests: corev1.ResourceList{
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+				},
+			},
+			pod: &corev1.Pod{},
+			nodeDeviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("25"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+								},
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("75"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
+		},
+		{
+			name: "sufficient device resource 6",
+			state: &preFilterState{
+				skip: false,
+				podRequests: corev1.ResourceList{
+					apiext.ResourceGPUMemory: resource.MustParse("16Gi"),
 				},
 			},
 			pod: &corev1.Pod{},
@@ -1922,6 +2208,176 @@ func Test_Plugin_Reserve(t *testing.T) {
 			},
 		},
 		{
+			name: "sufficient device resource 3",
+			args: args{
+				nodeDeviceCache: &nodeDeviceCache{
+					nodeDeviceInfos: map[string]*nodeDevice{
+						"test-node": {
+							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+							deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
+							allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources),
+						},
+					},
+				},
+				pod: &corev1.Pod{},
+				state: &preFilterState{
+					skip: false,
+					podRequests: corev1.ResourceList{
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
+				nodeName: "test-node",
+			},
+			wants: wants{
+				nodeDeviceCache: &nodeDeviceCache{
+					nodeDeviceInfos: map[string]*nodeDevice{
+						"test-node": {
+							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("0"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("0"),
+										apiext.ResourceGPUMemory:      resource.MustParse("0"),
+									},
+								},
+							},
+							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: {
+						{
+							Minor: 0,
+							Resources: corev1.ResourceList{
+								apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+								apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "sufficient device resource 4",
+			args: args{
+				nodeDeviceCache: &nodeDeviceCache{
+					nodeDeviceInfos: map[string]*nodeDevice{
+						"test-node": {
+							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+							deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
+							allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources),
+						},
+					},
+				},
+				pod: &corev1.Pod{},
+				state: &preFilterState{
+					skip: false,
+					podRequests: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("16Gi"),
+					},
+				},
+				nodeName: "test-node",
+			},
+			wants: wants{
+				nodeDeviceCache: &nodeDeviceCache{
+					nodeDeviceInfos: map[string]*nodeDevice{
+						"test-node": {
+							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("0"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("0"),
+										apiext.ResourceGPUMemory:      resource.MustParse("0"),
+									},
+								},
+							},
+							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: {
+						{
+							Minor: 0,
+							Resources: corev1.ResourceList{
+								apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+								apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "reserve from preemptible",
 			args: args{
 				nodeDeviceCache: &nodeDeviceCache{
@@ -2117,7 +2573,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 			if tt.wants.allocationResult != nil {
 				sortDeviceAllocations(tt.wants.allocationResult)
 				sortDeviceAllocations(tt.args.state.allocationResult)
-				assert.Equal(t, tt.wants.allocationResult, tt.args.state.allocationResult)
+				assert.True(t, equality.Semantic.DeepEqual(tt.wants.allocationResult, tt.args.state.allocationResult))
 			}
 		})
 	}
