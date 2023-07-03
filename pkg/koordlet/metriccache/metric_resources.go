@@ -44,4 +44,7 @@ var (
 	ContainerPSICPUFullSupportedMetric = defaultMetricFactory.New(ContainerMetricPSICPUFullSupported).withPropertySchema(MetricPropertyPodUID, MetricPropertyContainerID)
 	PodPSIMetric                       = defaultMetricFactory.New(PodMetricPSI).withPropertySchema(MetricPropertyPodUID, MetricPropertyPSIResource, MetricPropertyPSIPrecision, MetricPropertyPSIDegree)
 	PodPSICPUFullSupportedMetric       = defaultMetricFactory.New(PodMetricPSICPUFullSupported).withPropertySchema(MetricPropertyPodUID)
+
+	// BE
+	NodeBEMetric = defaultMetricFactory.New(NodeMetricBE).withPropertySchema(MetricPropertyBEResource, MetricPropertyBEAllocation)
 )

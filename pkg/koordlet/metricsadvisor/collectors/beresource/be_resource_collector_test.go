@@ -53,7 +53,7 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	collector := beResourceCollector{
 		collectInterval: 0,
 		started:         atomic.NewBool(true),
-		metricDB:        metricCache,
+		metricCache:     metricCache,
 		statesInformer:  mockStatesInformer,
 		cgroupReader:    resourceexecutor.NewCgroupReader(),
 		lastBECPUStat:   &framework.CPUStat{},
@@ -84,7 +84,7 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 		End:       &now,
 	}
 
-	got := collector.metricDB.GetBECPUResourceMetric(params)
+	got := collector.metricCache.GetBECPUResourceMetric(params)
 	gotMetric := got.Metric
 
 	assert.Equal(t, int64(1500), gotMetric.CPURequest.MilliValue(), "checkRequest")
@@ -92,33 +92,34 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	assert.Equal(t, int64(8), gotMetric.CPURealLimit.Value(), "checkLimit")
 }
 
-func Test_getBECPUUsageCores(t *testing.T) {
+func Test_getBECPUUsageMilliCores(t *testing.T) {
 	tests := []struct {
-		name                  string
-		cpuacctUsage          string
-		lastBeCPUStat         *framework.CPUStat
-		expectCPUUsedCores    *resource.Quantity
-		expectCurrentCPUUsage uint64
-		expectNil             bool
-		expectError           bool
+		name                    string
+		cpuacctUsage            string
+		lastBeCPUStat           *framework.CPUStat
+		expectCPUUsedMilliCores int64
+		expectCurrentCPUUsage   uint64
+		expectNil               bool
+		expectError             bool
 	}{
 		{
-			name:                  "test_get_first_time",
-			cpuacctUsage:          "12000000000000\n",
-			lastBeCPUStat:         nil,
-			expectCPUUsedCores:    nil,
-			expectCurrentCPUUsage: 12000000000000,
-			expectNil:             true,
-			expectError:           false,
+			name:                    "test_get_first_time",
+			cpuacctUsage:            "12000000000000\n",
+			lastBeCPUStat:           nil,
+			expectCPUUsedMilliCores: int64(0),
+			expectCurrentCPUUsage:   12000000000000,
+			expectNil:               true,
+			expectError:             false,
 		},
 		{
-			name:                  "test_get_correct",
-			cpuacctUsage:          "12004000000000\n",
-			lastBeCPUStat:         &framework.CPUStat{CPUUsage: 12000000000000},
-			expectCPUUsedCores:    resource.NewQuantity(4, resource.DecimalSI),
-			expectCurrentCPUUsage: 12004000000000,
-			expectNil:             false,
-			expectError:           false,
+			name:          "test_get_correct",
+			cpuacctUsage:  "12004000000000\n",
+			lastBeCPUStat: &framework.CPUStat{CPUUsage: 12000000000000},
+			// expectCPUUsedCores:    resource.NewQuantity(4, resource.DecimalSI),
+			expectCPUUsedMilliCores: 4000,
+			expectCurrentCPUUsage:   12004000000000,
+			expectNil:               false,
+			expectError:             false,
 		},
 	}
 
@@ -138,10 +139,10 @@ func Test_getBECPUUsageCores(t *testing.T) {
 				collector.lastBECPUStat.Timestamp = time.Now().Add(-1 * time.Second)
 			}
 
-			gotCPUUsedCores, gotErr := collector.getBECPUUsageCores()
+			gotCPUUsedMilliCores, gotErr := collector.getBECPUUsageMilliCores()
 			assert.Equal(t, tt.expectError, gotErr != nil, "checkError")
 			if !tt.expectNil {
-				assert.Equal(t, tt.expectCPUUsedCores.Value(), gotCPUUsedCores.Value(), "checkCPU")
+				assert.Equal(t, tt.expectCPUUsedMilliCores, gotCPUUsedMilliCores, "checkCPU")
 			}
 			assert.Equal(t, tt.expectCurrentCPUUsage, collector.lastBECPUStat.CPUUsage, "checkCPUUsage")
 		})
@@ -209,7 +210,7 @@ func Test_getBECPURealMilliLimit(t *testing.T) {
 	}
 }
 
-func Test_getBECPURequestSum(t *testing.T) {
+func Test_getBECPURequestMilliSum(t *testing.T) {
 	ctl := gomock.NewController(t)
 	defer ctl.Finish()
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
@@ -224,8 +225,8 @@ func Test_getBECPURequestSum(t *testing.T) {
 		started:         atomic.NewBool(true),
 		statesInformer:  mockStatesInformer,
 	}
-	beRequest := c.getBECPURequestSum()
-	assert.Equal(t, int64(1500), beRequest.MilliValue())
+	beRequest := c.getBECPURequestMilliSum()
+	assert.Equal(t, int64(1500), beRequest)
 }
 
 func mockBEPod() *corev1.Pod {
