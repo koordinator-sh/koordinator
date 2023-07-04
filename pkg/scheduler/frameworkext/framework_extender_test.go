@@ -40,16 +40,26 @@ import (
 )
 
 var (
+	_ framework.PreFilterPlugin = &TestTransformer{}
+	_ framework.FilterPlugin    = &TestTransformer{}
+	_ framework.ScorePlugin     = &TestTransformer{}
+
 	_ PreFilterTransformer = &TestTransformer{}
 	_ FilterTransformer    = &TestTransformer{}
 	_ ScoreTransformer     = &TestTransformer{}
 )
 
 type TestTransformer struct {
+	name  string
 	index int
 }
 
-func (h *TestTransformer) Name() string { return "TestTransformer" }
+func (h *TestTransformer) Name() string {
+	if h.name != "" {
+		return h.name
+	}
+	return "TestTransformer"
+}
 
 func (h *TestTransformer) BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *framework.Status) {
 	if pod.Annotations == nil {
@@ -57,6 +67,14 @@ func (h *TestTransformer) BeforePreFilter(ctx context.Context, cycleState *frame
 	}
 	pod.Annotations[fmt.Sprintf("BeforePreFilter-%d", h.index)] = fmt.Sprintf("%d", h.index)
 	return pod, true, nil
+}
+
+func (h *TestTransformer) PreFilter(ctx context.Context, state *framework.CycleState, p *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	return nil, nil
+}
+
+func (h *TestTransformer) PreFilterExtensions() framework.PreFilterExtensions {
+	return nil
 }
 
 func (h *TestTransformer) AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
@@ -75,12 +93,24 @@ func (h *TestTransformer) BeforeFilter(ctx context.Context, cycleState *framewor
 	return pod, nodeInfo, true, nil
 }
 
+func (h *TestTransformer) Filter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+	return nil
+}
+
 func (h *TestTransformer) BeforeScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool, *framework.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations[fmt.Sprintf("BeforeScore-%d", h.index)] = fmt.Sprintf("%d", h.index)
 	return pod, nodes, true, nil
+}
+
+func (h *TestTransformer) Score(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) (int64, *framework.Status) {
+	return 0, nil
+}
+
+func (h *TestTransformer) ScoreExtensions() framework.ScoreExtensions {
+	return nil
 }
 
 type testPreBindReservationState struct {
@@ -182,14 +212,16 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testTransformers := []SchedulingTransformer{
-				&TestTransformer{index: 1},
-				&TestTransformer{index: 2},
-			}
-			extenderFactory, _ := NewFrameworkExtenderFactory(WithDefaultTransformers(testTransformers...))
+			extenderFactory, _ := NewFrameworkExtenderFactory()
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				schedulertesting.RegisterPreFilterPlugin("T1", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+					return &TestTransformer{name: "T1", index: 1}, nil
+				})),
+				schedulertesting.RegisterPreFilterPlugin("T2", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+					return &TestTransformer{name: "T2", index: 2}, nil
+				})),
 			}
 			fh, err := schedulertesting.NewFramework(
 				registeredPlugins,
@@ -198,6 +230,7 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 			)
 			assert.NoError(t, err)
 			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
+			frameworkExtender.SetConfiguredPlugins(fh.ListPlugins())
 			_, status := frameworkExtender.RunPreFilterPlugins(context.TODO(), framework.NewCycleState(), tt.pod)
 			assert.Equal(t, tt.want, status)
 			expectedAnnotations := map[string]string{
@@ -227,14 +260,16 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedPods(t *testing.T) 
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testTransformers := []SchedulingTransformer{
-				&TestTransformer{index: 1},
-				&TestTransformer{index: 2},
-			}
-			extenderFactory, _ := NewFrameworkExtenderFactory(WithDefaultTransformers(testTransformers...))
+			extenderFactory, _ := NewFrameworkExtenderFactory()
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				schedulertesting.RegisterFilterPlugin("T1", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+					return &TestTransformer{name: "T1", index: 1}, nil
+				})),
+				schedulertesting.RegisterFilterPlugin("T2", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+					return &TestTransformer{name: "T2", index: 2}, nil
+				})),
 			}
 			fh, err := schedulertesting.NewFramework(
 				registeredPlugins,
@@ -242,6 +277,7 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedPods(t *testing.T) 
 			)
 			assert.NoError(t, err)
 			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
+			frameworkExtender.SetConfiguredPlugins(fh.ListPlugins())
 			assert.Equal(t, tt.want, frameworkExtender.RunFilterPluginsWithNominatedPods(context.TODO(), framework.NewCycleState(), tt.pod, tt.nodeInfo))
 			assert.Len(t, tt.pod.Annotations, 2)
 			expectedAnnotations := map[string]string{
@@ -262,23 +298,28 @@ func Test_frameworkExtenderImpl_RunScorePlugins(t *testing.T) {
 		wantStatus *framework.Status
 	}{
 		{
-			name:       "normal RunScorePlugins",
-			pod:        &corev1.Pod{},
-			nodes:      []*corev1.Node{{}},
-			wantScore:  framework.PluginToNodeScores{},
+			name:  "normal RunScorePlugins",
+			pod:   &corev1.Pod{},
+			nodes: []*corev1.Node{{}},
+			wantScore: framework.PluginToNodeScores{
+				"T1": {{Name: "", Score: 0}},
+				"T2": {{Name: "", Score: 0}},
+			},
 			wantStatus: nil,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testTransformers := []SchedulingTransformer{
-				&TestTransformer{index: 1},
-				&TestTransformer{index: 2},
-			}
-			extenderFactory, _ := NewFrameworkExtenderFactory(WithDefaultTransformers(testTransformers...))
+			extenderFactory, _ := NewFrameworkExtenderFactory()
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				schedulertesting.RegisterScorePlugin("T1", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+					return &TestTransformer{name: "T1", index: 1}, nil
+				}), 1),
+				schedulertesting.RegisterScorePlugin("T2", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+					return &TestTransformer{name: "T2", index: 2}, nil
+				}), 1),
 			}
 			fh, err := schedulertesting.NewFramework(
 				registeredPlugins,
@@ -286,6 +327,7 @@ func Test_frameworkExtenderImpl_RunScorePlugins(t *testing.T) {
 			)
 			assert.NoError(t, err)
 			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
+			frameworkExtender.SetConfiguredPlugins(fh.ListPlugins())
 			score, status := frameworkExtender.RunScorePlugins(context.TODO(), framework.NewCycleState(), tt.pod, tt.nodes)
 			assert.Equal(t, tt.wantScore, score)
 			assert.Equal(t, tt.wantStatus, status)
@@ -430,6 +472,7 @@ func TestPreBind(t *testing.T) {
 			koordSharedInformerFactory.WaitForCacheSync(nil)
 
 			extender := NewFrameworkExtender(extenderFactory, fh)
+			extender.SetConfiguredPlugins(fh.ListPlugins())
 			impl := extender.(*frameworkExtenderImpl)
 			impl.updatePlugins(&TestTransformer{index: 1})
 			impl.updatePlugins(&TestTransformer{index: 2})
@@ -474,6 +517,7 @@ func TestPreBindExtensionOrder(t *testing.T) {
 	)
 
 	extender := NewFrameworkExtender(extenderFactory, fh)
+	extender.SetConfiguredPlugins(fh.ListPlugins())
 	impl := extender.(*frameworkExtenderImpl)
 	impl.updatePlugins(preBindA)
 	impl.updatePlugins(preBindB)

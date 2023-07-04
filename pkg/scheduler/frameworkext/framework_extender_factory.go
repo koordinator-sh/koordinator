@@ -28,17 +28,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 )
 
-var DefaultTransformers []SchedulingTransformer
-
-func RegisterDefaultTransformers(transformers ...SchedulingTransformer) {
-	DefaultTransformers = append(DefaultTransformers, transformers...)
-}
-
 type extendedHandleOptions struct {
 	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	defaultTransformers              []SchedulingTransformer
 }
 
 type Option func(*extendedHandleOptions)
@@ -61,16 +54,9 @@ func WithKoordinatorSharedInformerFactory(informerFactory koordinatorinformers.S
 	}
 }
 
-func WithDefaultTransformers(transformers ...SchedulingTransformer) Option {
-	return func(options *extendedHandleOptions) {
-		options.defaultTransformers = transformers
-	}
-}
-
 type FrameworkExtenderFactory struct {
 	controllerMaps                   *ControllersMap
 	servicesEngine                   *services.Engine
-	defaultTransformers              []SchedulingTransformer
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	profiles                         map[string]FrameworkExtender
@@ -91,7 +77,6 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 	return &FrameworkExtenderFactory{
 		controllerMaps:                   NewControllersMap(),
 		servicesEngine:                   handleOptions.servicesEngine,
-		defaultTransformers:              handleOptions.defaultTransformers,
 		koordinatorClientSet:             handleOptions.koordinatorClientSet,
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
 		profiles:                         map[string]FrameworkExtender{},

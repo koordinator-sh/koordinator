@@ -41,7 +41,6 @@ func TestExtenderFactory(t *testing.T) {
 		WithServicesEngine(services.NewEngine(gin.New())),
 		WithKoordinatorClientSet(koordClientSet),
 		WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
-		WithDefaultTransformers(&TestTransformer{index: 1}),
 	)
 	assert.NoError(t, err)
 	assert.NotNil(t, factory)
@@ -49,7 +48,7 @@ func TestExtenderFactory(t *testing.T) {
 	assert.Equal(t, koordSharedInformerFactory, factory.KoordinatorSharedInformerFactory())
 
 	proxyNew := PluginFactoryProxy(factory, func(args runtime.Object, f framework.Handle) (framework.Plugin, error) {
-		return &TestTransformer{index: 2}, nil
+		return &TestTransformer{index: 1}, nil
 	})
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
@@ -69,7 +68,7 @@ func TestExtenderFactory(t *testing.T) {
 	extender := factory.GetExtender("koord-scheduler")
 	assert.NotNil(t, extender)
 	impl := extender.(*frameworkExtenderImpl)
-	assert.Len(t, impl.preFilterTransformers, 2)
-	assert.Len(t, impl.filterTransformers, 2)
-	assert.Len(t, impl.scoreTransformers, 2)
+	assert.Len(t, impl.preFilterTransformers, 1)
+	assert.Len(t, impl.filterTransformers, 1)
+	assert.Len(t, impl.scoreTransformers, 1)
 }
