@@ -146,5 +146,7 @@ func (s *ScaleMinQuotaManager) getScaledMinQuota(newTotalRes v1.ResourceList, pa
 			newMinQuota[resourceDimension] = createQuantity(newMinQuotaValue, resourceDimension)
 		}
 	}
+	klog.V(5).Infof("GetScaleMinQuota, parQuota: %v, subQuota: %v, needScaleDimensions: %v, totalRes: %v, newMinQuota:%v",
+		parQuotaName, subQuotaName, needScaleDimensions, newTotalRes, newMinQuota)
 	return true, newMinQuota
 }
