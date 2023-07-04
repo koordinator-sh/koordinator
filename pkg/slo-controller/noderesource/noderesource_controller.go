@@ -133,20 +133,20 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 }
 
 func InitFlags(fs *flag.FlagSet) {
-	pflag.StringSliceVar(&NodeResourcePlugins, "noderesourceplugins", NodeResourcePlugins, fmt.Sprintf("A list of noderesource plugins to enable. "+
-		"'-noderesourceplugins=*' enables all plugins. "+
-		"'-noderesourceplugins=BatchResource' means only the 'BatchResource' plugin is enabled. "+
-		"'-noderesourceplugins=*,-BatchResource' means all plugins except the 'BatchResource' plugin are enabled.\n"+
+	pflag.StringSliceVar(&NodeResourcePlugins, "noderesource-plugins", NodeResourcePlugins, fmt.Sprintf("A list of noderesource plugins to enable. "+
+		"'-noderesource-plugins=*' enables all plugins. "+
+		"'-noderesource-plugins=BatchResource' means only the 'BatchResource' plugin is enabled. "+
+		"'-noderesource-plugins=*,-BatchResource' means all plugins except the 'BatchResource' plugin are enabled.\n"+
 		"All plugins: %s", strings.Join(NodeResourcePlugins, ", ")))
 }
 
 func isPluginEnabled(pluginName string) bool {
 	hasStar := false
 	for _, p := range NodeResourcePlugins {
-		if p == Name {
+		if p == pluginName {
 			return true
 		}
-		if p == "-"+Name {
+		if p == "-"+pluginName {
 			return false
 		}
 		if p == "*" {

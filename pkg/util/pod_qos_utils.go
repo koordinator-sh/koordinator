@@ -42,6 +42,8 @@ func IsPodCPUBurstable(pod *corev1.Pod) bool {
 	return qosClass != apiext.QoSLSR && qosClass != apiext.QoSLSE && qosClass != apiext.QoSBE
 }
 
+// GetKubeQosClass gets the Kubernetes QOSClass for the pod.
+// DEPRECATED: use extension.GetKubeQosClass instead.
 func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
 	qosClass := pod.Status.QOSClass
 	if len(qosClass) <= 0 {
