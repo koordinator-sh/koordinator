@@ -21,6 +21,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 )
 
 var (
@@ -63,9 +64,11 @@ func RunNodePrepareExtenders(strategy *extension.ColocationStrategy, node *corev
 	for _, p := range globalNodePrepareExtender.GetAll() {
 		plugin := p.(NodePreparePlugin)
 		if err := plugin.Execute(strategy, node, nr); err != nil {
+			metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), false, "NodePrepare")
 			klog.ErrorS(err, "run node prepare plugin failed", "plugin", plugin.Name(),
 				"node", node.Name)
 		} else {
+			metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), true, "NodePrepare")
 			klog.V(5).InfoS("run node prepare plugin successfully", "plugin", plugin.Name(),
 				"node", node.Name)
 		}
@@ -101,6 +104,7 @@ func RunNodeSyncExtenders(strategy *extension.ColocationStrategy, oldNode, newNo
 	for _, p := range globalNodeSyncExtender.GetAll() {
 		plugin := p.(NodeSyncPlugin)
 		needSync, msg := plugin.NeedSync(strategy, oldNode, newNode)
+		metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), true, "NodeSync")
 		if needSync {
 			klog.V(4).InfoS("run node sync plugin, need sync", "plugin", plugin.Name(),
 				"node", newNode.Name, "message", msg)
@@ -136,6 +140,7 @@ func RunNodeMetaSyncExtenders(strategy *extension.ColocationStrategy, oldNode, n
 	for _, p := range globalNodeMetaSyncExtender.GetAll() {
 		plugin := p.(NodeMetaSyncPlugin)
 		needSync, msg := plugin.NeedSyncMeta(strategy, oldNode, newNode)
+		metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), true, "NodeSyncMeta")
 		if needSync {
 			klog.V(4).InfoS("run node meta sync plugin, need sync", "plugin", plugin.Name(),
 				"node", newNode.Name, "message", msg)
@@ -158,6 +163,7 @@ func RunResourceResetExtenders(nr *NodeResource, node *corev1.Node, message stri
 		plugin := p.(ResourceCalculatePlugin)
 		resourceItems := plugin.Reset(node, message)
 		nr.Set(resourceItems...)
+		metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), true, "ResourceReset")
 		klog.V(5).InfoS("run resource reset plugin successfully", "plugin", plugin.Name(),
 			"node", node.Name, "resource items", resourceItems, "message", message)
 	}
@@ -186,15 +192,17 @@ func UnregisterResourceCalculateExtender(name string) {
 }
 
 func RunResourceCalculateExtenders(nr *NodeResource, strategy *extension.ColocationStrategy, node *corev1.Node,
-	podList *corev1.PodList, metrics *ResourceMetrics) {
+	podList *corev1.PodList, resourceMetrics *ResourceMetrics) {
 	for _, p := range globalResourceCalculateExtender.GetAll() {
 		plugin := p.(ResourceCalculatePlugin)
-		resourceItems, err := plugin.Calculate(strategy, node, podList, metrics)
+		resourceItems, err := plugin.Calculate(strategy, node, podList, resourceMetrics)
 		if err != nil {
+			metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), false, "ResourceCalculate")
 			klog.ErrorS(err, "run resource calculate plugin failed", "plugin", plugin.Name(),
 				"node", node.Name)
 		} else {
 			nr.Set(resourceItems...)
+			metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), true, "ResourceCalculate")
 			klog.V(5).InfoS("run resource calculate plugin successfully",
 				"plugin", plugin.Name(), "node", node.Name, "resource items", resourceItems)
 		}

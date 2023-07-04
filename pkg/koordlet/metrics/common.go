@@ -18,6 +18,8 @@ package metrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/koordinator-sh/koordinator/pkg/util/metrics"
 )
 
 var (
@@ -45,7 +47,7 @@ var (
 		Help:      "Number of eviction launched by koordlet",
 	}, []string{NodeKey, EvictionReasonKey})
 
-	PodEvictionDetail = NewGCCounterVec("pod_eviction_detail", prometheus.NewCounterVec(prometheus.CounterOpts{
+	PodEvictionDetail = metrics.NewGCCounterVec("pod_eviction_detail", prometheus.NewCounterVec(prometheus.CounterOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "pod_eviction_detail",
 		Help:      "evict detail launched by koordlet",

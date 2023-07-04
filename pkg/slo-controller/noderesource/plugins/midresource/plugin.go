@@ -27,6 +27,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -124,9 +125,9 @@ func (p *Plugin) degradeCalculate(node *corev1.Node, message string) []framework
 }
 
 func (p *Plugin) calculate(strategy *extension.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
-	metrics *framework.ResourceMetrics) []framework.ResourceItem {
+	resourceMetrics *framework.ResourceMetrics) []framework.ResourceItem {
 	// MidAllocatable := min(NodeAllocatable * thresholdRatio, ProdReclaimable)
-	prodReclaimable := metrics.NodeMetric.Status.ProdReclaimableMetric.Resource
+	prodReclaimable := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric.Resource
 	allocatableMilliCPU := prodReclaimable.Cpu().MilliValue()
 	allocatableMemory := prodReclaimable.Memory().Value()
 
@@ -159,6 +160,8 @@ func (p *Plugin) calculate(strategy *extension.ColocationStrategy, node *corev1.
 	}
 	memory := resource.NewQuantity(allocatableMemory, resource.BinarySI)
 
+	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidCPU), metrics.UnitInteger, float64(cpuInMilliCores.MilliValue())/1000)
+	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidMemory), metrics.UnitByte, float64(memory.Value()))
 	klog.V(6).Infof("calculated mid allocatable for node %s, cpu(milli-core) %v, memory(byte) %v",
 		node.Name, cpuInMilliCores.String(), memory.String())
 
