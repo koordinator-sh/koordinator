@@ -90,3 +90,68 @@ func Test_GuessCgroupDriverFromCgroupName(t *testing.T) {
 		})
 	}
 }
+
+func TestGetCgroupFormatter(t *testing.T) {
+	tests := []struct {
+		name       string
+		want       Formatter
+		preHandle  func(cgroupRootDir string)
+		isCgroupV2 bool
+	}{
+		{
+			name:      "neither kubepods nor kubepods.slice exists",
+			want:      cgroupPathFormatterInSystemd,
+			preHandle: func(cgroupRootDir string) {},
+		},
+		{
+			name: "only have kubepods dir",
+			want: cgroupPathFormatterInCgroupfs,
+			preHandle: func(cgroupRootDir string) {
+				os.MkdirAll(filepath.Join(cgroupRootDir, "cpu", "kubepods"), 0755)
+			},
+		},
+		{
+			name: "only have kubepods.slice dir",
+			want: cgroupPathFormatterInSystemd,
+			preHandle: func(cgroupRootDir string) {
+				os.MkdirAll(filepath.Join(cgroupRootDir, "cpu", "kubepods.slice"), 0755)
+			},
+		},
+		{
+			name: "both kubepods and kubepods.slice exists",
+			want: cgroupPathFormatterInSystemd,
+			preHandle: func(cgroupRootDir string) {
+				os.MkdirAll(filepath.Join(cgroupRootDir, "cpu", "kubepods"), 0755)
+				os.MkdirAll(filepath.Join(cgroupRootDir, "cpu", "kubepods.slice"), 0755)
+			},
+		},
+		{
+			name: "only have kubepods dir in cgroupv2",
+			want: cgroupPathFormatterInCgroupfs,
+			preHandle: func(cgroupRootDir string) {
+				os.MkdirAll(filepath.Join(cgroupRootDir, "kubepods"), 0755)
+			},
+			isCgroupV2: true,
+		},
+		{
+			name: "only have kubepods.slice dir in cgroupv2",
+			want: cgroupPathFormatterInSystemd,
+			preHandle: func(cgroupRootDir string) {
+				os.MkdirAll(filepath.Join(cgroupRootDir, "kubepods.slice"), 0755)
+			},
+			isCgroupV2: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.SetCgroupsV2(tt.isCgroupV2)
+			tmpCgroupRoot := helper.TempDir
+			tt.preHandle(tmpCgroupRoot)
+
+			got := GetCgroupFormatter()
+			assert.Equal(t, tt.want.ParentDir, got.ParentDir)
+		})
+	}
+}

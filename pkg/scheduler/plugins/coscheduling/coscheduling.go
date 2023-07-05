@@ -159,14 +159,14 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 // ii.Check whether the Gang has been timeout(check the pod's annotation,later introduced at Permit section) or is inited, and reject the pod if positive.
 // iii.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative.
 // iv.Try update scheduleCycle, scheduleCycleValid, childrenScheduleRoundMap as mentioned above.
-func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) *framework.Status {
+func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	// If PreFilter fails, return framework.Error to avoid
 	// any preemption attempts.
 	if err := cs.pgMgr.PreFilter(ctx, pod); err != nil {
 		klog.ErrorS(err, "PreFilter failed", "pod", klog.KObj(pod))
-		return framework.AsStatus(err)
+		return nil, framework.AsStatus(err)
 	}
-	return framework.NewStatus(framework.Success, "")
+	return nil, framework.NewStatus(framework.Success, "")
 }
 
 // PostFilter

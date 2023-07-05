@@ -36,14 +36,14 @@ const (
 // TODO more ut is needed for this plugin
 type nodeInfoCollector struct {
 	collectInterval time.Duration
-	metricDB        metriccache.MetricCache
+	storage         metriccache.KVStorage
 	started         *atomic.Bool
 }
 
 func New(opt *framework.Options) framework.Collector {
 	return &nodeInfoCollector{
 		collectInterval: opt.Config.CollectNodeCPUInfoInterval,
-		metricDB:        opt.MetricCache,
+		storage:         opt.MetricCache,
 		started:         atomic.NewBool(false),
 	}
 }
@@ -78,10 +78,7 @@ func (n *nodeInfoCollector) collectNodeCPUInfo() {
 		TotalInfo:      localCPUInfo.TotalInfo,
 	}
 	klog.V(6).Infof("collect cpu info finished, nodeCPUInfo %v", nodeCPUInfo)
-	if err = n.metricDB.InsertNodeCPUInfo(nodeCPUInfo); err != nil {
-		klog.Errorf("insert node cpu info error: %v", err)
-	}
-
+	n.storage.Set(metriccache.NodeCPUInfoKey, nodeCPUInfo)
 	n.started.Store(true)
 	klog.Infof("collectNodeCPUInfo finished, cpu info: processors %v", len(nodeCPUInfo.ProcessorInfos))
 	metrics.RecordCollectNodeCPUInfoStatus(nil)

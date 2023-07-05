@@ -262,26 +262,22 @@ func (n *nodeDevice) updateAllocateSet(deviceType schedulingv1alpha1.DeviceType,
 func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, required, preferred map[schedulingv1alpha1.DeviceType]sets.Int, requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
 	allocateResult := make(apiext.DeviceAllocations)
 
-	for deviceType := range DeviceResourceNames {
-		switch deviceType {
-		case schedulingv1alpha1.GPU, schedulingv1alpha1.RDMA, schedulingv1alpha1.FPGA:
-			if !hasDeviceResource(podRequest, deviceType) {
-				break
-			}
-			err := n.tryAllocateDeviceByType(
-				podRequest,
-				deviceType,
-				required[deviceType],
-				preferred[deviceType],
-				allocateResult,
-				requiredDeviceResources[deviceType],
-				preemptibleDeviceResources[deviceType],
-			)
-			if err != nil {
-				return nil, err
-			}
-		default:
-			klog.Warningf("device type %v is not supported yet", deviceType)
+	for deviceType, supportedResourceNames := range DeviceResourceNames {
+		deviceRequest := quotav1.Mask(podRequest, supportedResourceNames)
+		if quotav1.IsZero(deviceRequest) {
+			continue
+		}
+		err := n.tryAllocateDeviceByType(
+			deviceRequest,
+			deviceType,
+			required[deviceType],
+			preferred[deviceType],
+			allocateResult,
+			requiredDeviceResources[deviceType],
+			preemptibleDeviceResources[deviceType],
+		)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -297,7 +293,6 @@ func (n *nodeDevice) tryAllocateDeviceByType(
 	requiredDeviceResources deviceResources,
 	preemptibleDeviceResources deviceResources,
 ) error {
-	podRequest = quotav1.Mask(podRequest, DeviceResourceNames[deviceType])
 	nodeDeviceTotal := n.deviceTotal[deviceType]
 	if len(nodeDeviceTotal) == 0 {
 		return fmt.Errorf("node does not have enough %v", deviceType)
@@ -322,12 +317,12 @@ func (n *nodeDevice) tryAllocateDeviceByType(
 	if isPodRequestsMultipleDevice(podRequest, deviceType) {
 		switch deviceType {
 		case schedulingv1alpha1.GPU:
-			gpuCore, gpuMem, gpuMemRatio := podRequest[apiext.ResourceGPUCore], podRequest[apiext.ResourceGPUMemory], podRequest[apiext.ResourceGPUMemoryRatio]
-			deviceWanted = gpuCore.Value() / 100
+			gpuCore, gpuMem, gpuMemoryRatio := podRequest[apiext.ResourceGPUCore], podRequest[apiext.ResourceGPUMemory], podRequest[apiext.ResourceGPUMemoryRatio]
+			deviceWanted = gpuMemoryRatio.Value() / 100
 			podRequestPerCard = corev1.ResourceList{
 				apiext.ResourceGPUCore:        *resource.NewQuantity(gpuCore.Value()/deviceWanted, resource.DecimalSI),
 				apiext.ResourceGPUMemory:      *resource.NewQuantity(gpuMem.Value()/deviceWanted, resource.BinarySI),
-				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(gpuMemRatio.Value()/deviceWanted, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(gpuMemoryRatio.Value()/deviceWanted, resource.DecimalSI),
 			}
 		case schedulingv1alpha1.RDMA:
 			commonDevice := podRequest[apiext.ResourceRDMA]
@@ -455,7 +450,7 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 			klog.Errorf("Find device unhealthy, nodeName:%v, deviceType:%v, minor:%v",
 				nodeName, deviceInfo.Type, deviceInfo.Minor)
 		} else {
-			resources := apiext.TransformDeprecatedDeviceResources(deviceInfo.Resources)
+			resources := deviceInfo.Resources
 			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = resources
 			klog.V(5).Infof("Find device resource update, nodeName:%v, deviceType:%v, minor:%v, res:%v",
 				nodeName, deviceInfo.Type, deviceInfo.Minor, resources)

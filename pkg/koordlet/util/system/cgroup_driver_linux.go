@@ -29,11 +29,9 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/opencontainers/runc/libcontainer/userns"
-
 	"github.com/spf13/pflag"
+	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 )
 
@@ -60,12 +58,12 @@ func GuessCgroupDriverFromCgroupName() CgroupDriverType {
 }
 
 // GuessCgroupDriverFromKubeletPort guesses Kubelet's cgroup driver from kubelet port.
-// 1. use KubeletPortToPid to get kubelet pid.
-// 2. If '--cgroup-driver' in args, that's it.
-//    else if '--config' not in args, is default driver('cgroupfs').
-//    else go to step-3.
-// 3. If kubelet config is relative path, join with /proc/${pidof kubelet}/cwd.
-//    search 'cgroupDriver:' in kubelet config file, that's it.
+//  1. use KubeletPortToPid to get kubelet pid.
+//  2. If '--cgroup-driver' in args, that's it.
+//     else if '--config' not in args, is default driver('cgroupfs').
+//     else go to step-3.
+//  3. If kubelet config is relative path, join with /proc/${pidof kubelet}/cwd.
+//     search 'cgroupDriver:' in kubelet config file, that's it.
 func GuessCgroupDriverFromKubeletPort(port int) (CgroupDriverType, error) {
 	kubeletPid, err := KubeletPortToPid(port)
 	if err != nil {

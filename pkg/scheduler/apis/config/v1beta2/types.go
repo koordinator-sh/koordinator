@@ -99,22 +99,22 @@ type ScoringStrategy struct {
 type NodeNUMAResourceArgs struct {
 	metav1.TypeMeta
 
-	DefaultCPUBindPolicy CPUBindPolicy    `json:"defaultCPUBindPolicy,omitempty"`
+	DefaultCPUBindPolicy *CPUBindPolicy   `json:"defaultCPUBindPolicy,omitempty"`
 	ScoringStrategy      *ScoringStrategy `json:"scoringStrategy,omitempty"`
 }
 
 // CPUBindPolicy defines the CPU binding policy
-type CPUBindPolicy = extension.CPUBindPolicy
+type CPUBindPolicy = string
 
 const (
 	// CPUBindPolicyDefault performs the default bind policy that specified in koord-scheduler configuration
-	CPUBindPolicyDefault CPUBindPolicy = extension.CPUBindPolicyDefault
+	CPUBindPolicyDefault = CPUBindPolicy(extension.CPUBindPolicyDefault)
 	// CPUBindPolicyFullPCPUs favor cpuset allocation that pack in few physical cores
-	CPUBindPolicyFullPCPUs CPUBindPolicy = extension.CPUBindPolicyFullPCPUs
+	CPUBindPolicyFullPCPUs = CPUBindPolicy(extension.CPUBindPolicyFullPCPUs)
 	// CPUBindPolicySpreadByPCPUs favor cpuset allocation that evenly allocate logical cpus across physical cores
-	CPUBindPolicySpreadByPCPUs CPUBindPolicy = extension.CPUBindPolicySpreadByPCPUs
+	CPUBindPolicySpreadByPCPUs = CPUBindPolicy(extension.CPUBindPolicySpreadByPCPUs)
 	// CPUBindPolicyConstrainedBurst constrains the CPU Shared Pool range of the Burstable Pod
-	CPUBindPolicyConstrainedBurst CPUBindPolicy = extension.CPUBindPolicyConstrainedBurst
+	CPUBindPolicyConstrainedBurst = CPUBindPolicy(extension.CPUBindPolicyConstrainedBurst)
 )
 
 type CPUExclusivePolicy = extension.CPUExclusivePolicy
@@ -192,7 +192,7 @@ type CoschedulingArgs struct {
 	ControllerWorkers *int64 `json:"controllerWorkers,omitempty"`
 	// Skip check schedule cycle
 	// default is false
-	SkipCheckScheduleCycle *bool `json:"SkipCheckScheduleCycle,omitempty"`
+	SkipCheckScheduleCycle *bool `json:"skipCheckScheduleCycle,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

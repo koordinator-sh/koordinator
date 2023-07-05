@@ -30,7 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 	critesting "k8s.io/cri-api/pkg/apis/testing"
 	"k8s.io/utils/pointer"
 
@@ -58,17 +58,15 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 	windowSize := int64(60)
 
 	type queryResult struct {
-		count        int64
+		count        int
 		cpuRealLimit float64
 		cpuUsed      float64
 		cpuRequest   float64
 	}
 
 	type Test struct {
-		name            string
-		thresholdConfig *slov1alpha1.ResourceThresholdStrategy
-		// avgMetricQueryResult     metriccache.BECPUResourceQueryResult
-		// currentMetricQueryResult metriccache.BECPUResourceQueryResult
+		name                     string
+		thresholdConfig          *slov1alpha1.ResourceThresholdStrategy
 		avgMetricQueryResult     queryResult
 		currentMetricQueryResult queryResult
 		expectRelease            int64
@@ -100,7 +98,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            "test_avgMetricQueryResult_aggregateInfo_nil",
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(&metriccache.BECPUResourceMetric{}, nil, nil),
 			avgMetricQueryResult: queryResult{
 				count:        0,
 				cpuRealLimit: 0,
@@ -112,7 +109,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            "test_avgMetricQueryResult_count_not_enough",
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(&metriccache.BECPUResourceMetric{}, &metriccache.AggregateInfo{MetricsCount: 10}, nil),
 			avgMetricQueryResult: queryResult{
 				count:        10,
 				cpuRealLimit: 0,
@@ -124,9 +120,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            "test_avgMetricQueryResult_CPURealLimit_zero",
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{CPUUsed: *resource.NewQuantity(20, resource.DecimalSI)},
-			// 	&metriccache.AggregateInfo{MetricsCount: 59}, nil),
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 0,
@@ -138,11 +131,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            "test_avgMetricQueryResult_cpuUsage_not_enough",
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewQuantity(20, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewQuantity(10, resource.DecimalSI)},
-			// 	&metriccache.AggregateInfo{MetricsCount: 59}, nil),
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 20000,
@@ -154,11 +142,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            "test_avgMetricQueryResult_cpuRequest_zero",
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewQuantity(20, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewQuantity(19, resource.DecimalSI)},
-			// 	&metriccache.AggregateInfo{MetricsCount: 59}, nil),
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 20000,
@@ -170,12 +153,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            "test_avgMetricQueryResult_ResourceSatisfaction_enough",
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewQuantity(20, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewQuantity(19, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewQuantity(40, resource.DecimalSI)},
-			// 	&metriccache.AggregateInfo{MetricsCount: 59}, nil),
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 20000,
@@ -187,13 +164,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            "test_avgMetricQueryResult_need_release_but_currentMetricQueryResult_invalid",
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewMilliQuantity(10*1000, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewMilliQuantity(9500, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewMilliQuantity(50*1000, resource.DecimalSI)},
-			// 	&metriccache.AggregateInfo{MetricsCount: 59}, nil),
-			// currentMetricQueryResult: mockBECPUResourceQueryResult(nil, nil, fmt.Errorf("error")),
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 10 * 1000,
@@ -201,7 +171,7 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 				cpuRequest:   50 * 1000,
 			},
 			currentMetricQueryResult: queryResult{
-				count:        0,
+				count:        1,
 				cpuRealLimit: 0,
 				cpuUsed:      0,
 				cpuRequest:   0,
@@ -211,19 +181,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            "test_avgMetricQueryResult_need_release_but_currentMetricQueryResult_cpuUsage_not_enough",
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewMilliQuantity(10*1000, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewMilliQuantity(9500, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewMilliQuantity(50*1000, resource.DecimalSI)},
-			// 	&metriccache.AggregateInfo{MetricsCount: 59}, nil),
-
-			// currentMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewMilliQuantity(10*1000, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewMilliQuantity(5*1000, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewMilliQuantity(50*1000, resource.DecimalSI)},
-			// 	nil, nil),
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 10 * 1000,
@@ -241,19 +198,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            "test_avgRelease>currentRelease",
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewMilliQuantity(10*1000, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewMilliQuantity(9500, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewMilliQuantity(50*1000, resource.DecimalSI)},
-			// 	&metriccache.AggregateInfo{MetricsCount: 59}, nil),
-
-			// currentMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewMilliQuantity(14*1000, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewMilliQuantity(13*1000, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewMilliQuantity(50*1000, resource.DecimalSI)},
-			// 	nil, nil),
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 10 * 1000,
@@ -271,19 +215,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            "test_avgRelease<currentRelease",
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewMilliQuantity(13*1000, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewMilliQuantity(12*1000, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewMilliQuantity(50*1000, resource.DecimalSI)},
-			// 	&metriccache.AggregateInfo{MetricsCount: 59}, nil),
-
-			// currentMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewMilliQuantity(11*1000, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewMilliQuantity(10*1000, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewMilliQuantity(50*1000, resource.DecimalSI)},
-			// 	nil, nil),
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 13 * 1000,
@@ -306,11 +237,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgMetricQueryResult_cpuUsage_not_enough", *thresholdConfig.CPUEvictBEUsageThresholdPercent),
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewQuantity(20, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewQuantity(9, resource.DecimalSI)},
-			// 	&metriccache.AggregateInfo{MetricsCount: 59}, nil),
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 20 * 1000,
@@ -321,19 +247,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgMetricQueryResult_need_release_but_currentMetricQueryResult_cpuUsage_not_enough", *thresholdConfig.CPUEvictBEUsageThresholdPercent),
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewMilliQuantity(10*1000, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewMilliQuantity(6*1000, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewMilliQuantity(50*1000, resource.DecimalSI)},
-			// 	&metriccache.AggregateInfo{MetricsCount: 59}, nil),
-
-			// currentMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewMilliQuantity(10*1000, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewMilliQuantity(4*1000, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewMilliQuantity(50*1000, resource.DecimalSI)},
-			// 	nil, nil),
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 10 * 1000,
@@ -351,19 +264,6 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		{
 			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgRelease>currentRelease", *thresholdConfig.CPUEvictBEUsageThresholdPercent),
 			thresholdConfig: thresholdConfig,
-			// avgMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewMilliQuantity(10*1000, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewMilliQuantity(6*1000, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewMilliQuantity(50*1000, resource.DecimalSI)},
-			// 	&metriccache.AggregateInfo{MetricsCount: 59}, nil),
-
-			// currentMetricQueryResult: mockBECPUResourceQueryResult(
-			// 	&metriccache.BECPUResourceMetric{
-			// 		CPURealLimit: *resource.NewMilliQuantity(14*1000, resource.DecimalSI),
-			// 		CPUUsed:      *resource.NewMilliQuantity(8*1000, resource.DecimalSI),
-			// 		CPURequest:   *resource.NewMilliQuantity(50*1000, resource.DecimalSI)},
-			// 	nil, nil),
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 10 * 1000,
@@ -389,40 +289,44 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
 			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
 			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
 			beUsage := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationUsage))
 			beRequest := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRequest))
 			beLimit := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRealLimit))
 
 			beUsageQueryMeta, err := metriccache.NodeBEMetric.BuildQueryMeta(beUsage)
 			assert.NoError(t, err)
-			buildMockQueryResultAndCount(ctl, mockQuerier, mockResultFactory, beUsageQueryMeta, tt.avgMetricQueryResult.cpuUsed, tt.avgMetricQueryResult.count)
 			beRequestQueryMeta, err := metriccache.NodeBEMetric.BuildQueryMeta(beRequest)
 			assert.NoError(t, err)
-			buildMockQueryResultAndCount(ctl, mockQuerier, mockResultFactory, beRequestQueryMeta, tt.avgMetricQueryResult.cpuUsed, tt.avgMetricQueryResult.count)
 			beLimitQueryMeta, err := metriccache.NodeBEMetric.BuildQueryMeta(beLimit)
 			assert.NoError(t, err)
-			buildMockQueryResultAndCount(ctl, mockQuerier, mockResultFactory, beLimitQueryMeta, tt.avgMetricQueryResult.cpuUsed, tt.avgMetricQueryResult.count)
 
-			if tt.currentMetricQueryResult.count > 0 {
-				buildMockQueryResultAndCount(ctl, mockQuerier, mockResultFactory, beUsageQueryMeta, tt.currentMetricQueryResult.cpuUsed, tt.currentMetricQueryResult.count)
-				buildMockQueryResultAndCount(ctl, mockQuerier, mockResultFactory, beRequestQueryMeta, tt.currentMetricQueryResult.cpuRequest, tt.currentMetricQueryResult.count)
-				buildMockQueryResultAndCount(ctl, mockQuerier, mockResultFactory, beLimitQueryMeta, tt.currentMetricQueryResult.cpuRealLimit, tt.currentMetricQueryResult.count)
+			// mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+			result := buildMockQueryResultAndCount(ctl, mockQuerier, mockResultFactory, beUsageQueryMeta)
+			result.EXPECT().Value(metriccache.AggregationTypeAVG).Return(tt.avgMetricQueryResult.cpuUsed, nil).Times(1)
+			result.EXPECT().Count().Return(tt.avgMetricQueryResult.count).Times(1)
+			if tt.avgMetricQueryResult.count >= 59 && tt.currentMetricQueryResult.count > 0 {
+				result.EXPECT().Value(metriccache.AggregationTypeLast).Return(tt.currentMetricQueryResult.cpuUsed, nil).Times(1)
+				result.EXPECT().Count().Return(tt.currentMetricQueryResult.count).Times(1)
 			}
-
-			// mockMetricCache.EXPECT().GetBECPUResourceMetric(gomock.Any()).DoAndReturn(func(param *metriccache.QueryParam) metriccache.BECPUResourceQueryResult {
-			// 	if param.Aggregate == metriccache.AggregationTypeLast {
-			// 		return tt.currentMetricQueryResult
-			// 	}
-			// 	return tt.avgMetricQueryResult
-			// }).AnyTimes()
-
+			result = buildMockQueryResultAndCount(ctl, mockQuerier, mockResultFactory, beRequestQueryMeta)
+			result.EXPECT().Value(metriccache.AggregationTypeAVG).Return(tt.avgMetricQueryResult.cpuRequest, nil).Times(1)
+			result.EXPECT().Count().Return(tt.avgMetricQueryResult.count).Times(1)
+			if tt.avgMetricQueryResult.count >= 59 && tt.currentMetricQueryResult.count > 0 {
+				result.EXPECT().Value(metriccache.AggregationTypeLast).Return(tt.currentMetricQueryResult.cpuRequest, nil).Times(1)
+				result.EXPECT().Count().Return(tt.currentMetricQueryResult.count).Times(1)
+			}
+			result = buildMockQueryResultAndCount(ctl, mockQuerier, mockResultFactory, beLimitQueryMeta)
+			result.EXPECT().Value(metriccache.AggregationTypeAVG).Return(tt.avgMetricQueryResult.cpuRealLimit, nil).Times(1)
+			result.EXPECT().Count().Return(tt.avgMetricQueryResult.count).Times(1)
+			if tt.avgMetricQueryResult.count >= 59 && tt.currentMetricQueryResult.count > 0 {
+				result.EXPECT().Value(metriccache.AggregationTypeLast).Return(tt.currentMetricQueryResult.cpuRealLimit, nil).Times(1)
+				result.EXPECT().Count().Return(tt.currentMetricQueryResult.count).Times(1)
+			}
 			resmanager := &resmanager{metricCache: mockMetricCache, collectResUsedIntervalSeconds: collectResUsedIntervalSeconds}
 			cpuEvictor := CPUEvictor{resmanager: resmanager}
 			gotRelease := cpuEvictor.calculateMilliRelease(tt.thresholdConfig, windowSize)
 			assert.Equal(t, tt.expectRelease, gotRelease, "checkRelease")
-			// if tt.expectRelease > 0 {
-			// 	assert.Equal(t, tt.currentMetricQueryResult.Metric, gotCurrentMetricQueryResult)
-			// }
 		})
 	}
 }
@@ -554,7 +458,7 @@ func Test_killAndEvictBEPodsRelease(t *testing.T) {
 			_, containerId, _ := util.ParseContainerId(containerStatus.ContainerID)
 			fakeContainer := &critesting.FakeContainer{
 				SandboxID:       string(pod.UID),
-				ContainerStatus: v1alpha2.ContainerStatus{Id: containerId},
+				ContainerStatus: runtimeapi.ContainerStatus{Id: containerId},
 			}
 			containers = append(containers, fakeContainer)
 		}
@@ -689,10 +593,6 @@ func mockNonBEPodForCPUEvict(name string, qosClass apiext.QoSClass, request int6
 	}
 }
 
-func mockBECPUResourceQueryResult(metric *metriccache.BECPUResourceMetric, aggregateInfo *metriccache.AggregateInfo, error error) metriccache.BECPUResourceQueryResult {
-	return metriccache.BECPUResourceQueryResult{Metric: metric, QueryResult: metriccache.QueryResult{AggregateInfo: aggregateInfo, Error: error}}
-}
-
 func buildMockQueryResult(ctrl *gomock.Controller, querier *mock_metriccache.MockQuerier, factory *mock_metriccache.MockAggregateResultFactory,
 	queryMeta metriccache.MetricMeta, value float64) {
 	result := mock_metriccache.NewMockAggregateResult(ctrl)
@@ -703,10 +603,10 @@ func buildMockQueryResult(ctrl *gomock.Controller, querier *mock_metriccache.Moc
 }
 
 func buildMockQueryResultAndCount(ctrl *gomock.Controller, querier *mock_metriccache.MockQuerier, factory *mock_metriccache.MockAggregateResultFactory,
-	queryMeta metriccache.MetricMeta, value float64, count int64) {
+	queryMeta metriccache.MetricMeta) *mock_metriccache.MockAggregateResult {
 	result := mock_metriccache.NewMockAggregateResult(ctrl)
-	result.EXPECT().Value(gomock.Any()).Return(value, nil).AnyTimes()
-	result.EXPECT().Count().Return(count).AnyTimes()
 	factory.EXPECT().New(queryMeta).Return(result).AnyTimes()
 	querier.EXPECT().Query(queryMeta, gomock.Any(), result).SetArg(2, *result).Return(nil).AnyTimes()
+
+	return result
 }

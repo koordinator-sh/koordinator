@@ -29,9 +29,9 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/v1alpha2"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
-	evictutils "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions/utils"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/kubernetes/adaptor"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -79,7 +79,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, err
 	}
 
-	policyGroupVersion, err := evictutils.SupportEviction(handle.ClientSet())
+	policyGroupVersion, err := util.SupportEviction(handle.ClientSet())
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch eviction groupVersion: %v", err)
 	}

@@ -97,48 +97,6 @@ func (c *CPUEvictor) cpuEvict() {
 	klog.V(5).Info("cpu evict process finished.")
 }
 
-// func (c *CPUEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, windowSeconds int64) (*metriccache.BECPUResourceMetric, int64) {
-// 	// Step1: Calculate release resource by BECPUResourceMetric in window
-	// avgBECPUQueryResult := c.resmanager.metricCache.GetBECPUResourceMetric(generateQueryParamsAvg(windowSeconds))
-// 	if !isAvgQueryResultValid(avgBECPUQueryResult, windowSeconds, c.resmanager.collectResUsedIntervalSeconds) {
-// 		return nil, 0
-// 	}
-
-// 	if !isBECPUUsageHighEnough(avgBECPUQueryResult.Metric, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,avg cpuUsage not Enough! metric: %+v", avgBECPUQueryResult.Metric)
-// 		return nil, 0
-// 	}
-
-// 	milliRelease := calculateResourceMilliToRelease(avgBECPUQueryResult.Metric, thresholdConfig)
-// 	if milliRelease <= 0 {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,releaseByAvg: %d", milliRelease)
-// 		return nil, 0
-// 	}
-
-// 	// Step2: Calculate release resource current
-// 	currentBECPUQueryResult := c.resmanager.metricCache.GetBECPUResourceMetric(generateQueryParamsLast(c.resmanager.collectResUsedIntervalSeconds * 2))
-// 	if !isQueryResultValid(currentBECPUQueryResult) {
-// 		return nil, 0
-// 	}
-
-// 	if !isBECPUUsageHighEnough(currentBECPUQueryResult.Metric, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,current cpuUsage not Enough! metric: %+v", currentBECPUQueryResult.Metric)
-// 		return nil, 0
-// 	}
-
-// 	milliReleaseByCurrent := calculateResourceMilliToRelease(currentBECPUQueryResult.Metric, thresholdConfig)
-// 	if milliReleaseByCurrent <= 0 {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,releaseByCurrent: %d", milliReleaseByCurrent)
-// 		return nil, 0
-// 	}
-
-// 	// Step3：release = min(releaseByAvg,releaseByCurrent)
-// 	if milliReleaseByCurrent < milliRelease {
-// 		milliRelease = milliReleaseByCurrent
-// 	}
-// 	return currentBECPUQueryResult.Metric, milliRelease
-// }
-
 func (c *CPUEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, windowSeconds int64) int64 {
 	// Step1: Calculate release resource by BECPUResourceMetric in window
 	queryparam := generateQueryParamsAvg(windowSeconds)
@@ -216,7 +174,7 @@ func isAvgQueryResultValid(windowSeconds, collectIntervalSeconds, count int64) b
 }
 
 func isBECPUUsageHighEnough(beCPUUsage, beCPURequest, beCPULimit float64, thresholdPercent *int64) bool {
-	if beCPUUsage == 0 {
+	if beCPULimit == 0 {
 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! CPURealLimit is zero!")
 		return false
 	}
@@ -334,74 +292,6 @@ func (c *CPUEvictor) getPodEvictInfoAndSort() []*podEvictCPUInfo {
 	})
 	return bePodInfos
 }
-
-// func calculateResourceMilliToRelease(metric *metriccache.BECPUResourceMetric, thresholdConfig *slov1alpha1.ResourceThresholdStrategy) int64 {
-// 	if metric.CPURequest.IsZero() {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! be pods requests is zero!")
-// 		return 0
-// 	}
-
-// 	satisfactionRate := float64(metric.CPURealLimit.MilliValue()) / float64(metric.CPURequest.MilliValue())
-// 	if satisfactionRate > float64(*thresholdConfig.CPUEvictBESatisfactionLowerPercent)/100 {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! satisfactionRate(%.2f) and lowPercent(%f)", satisfactionRate, float64(*thresholdConfig.CPUEvictBESatisfactionLowerPercent))
-// 		return 0
-// 	}
-
-// 	rateGap := float64(*thresholdConfig.CPUEvictBESatisfactionUpperPercent)/100 - satisfactionRate
-// 	if rateGap <= 0 {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! satisfactionRate(%.2f) > upperPercent(%f)", satisfactionRate, float64(*thresholdConfig.CPUEvictBESatisfactionUpperPercent))
-// 		return 0
-// 	}
-
-// 	milliRelease := float64(metric.CPURequest.MilliValue()) * rateGap
-// 	return int64(milliRelease)
-// }
-
-// func isBECPUUsageHighEnough(metric *metriccache.BECPUResourceMetric, thresholdPercent *int64) bool {
-// 	if metric.CPURealLimit.IsZero() {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! CPURealLimit is zero!")
-// 		return false
-// 	}
-// 	if metric.CPURealLimit.MilliValue() < 1000 {
-// 		return true
-// 	}
-// 	cpuUsage := float64(metric.CPUUsed.MilliValue()) / float64(metric.CPURealLimit.MilliValue())
-// 	if thresholdPercent == nil {
-// 		thresholdPercent = pointer.Int64(beCPUUsageThresholdPercent)
-// 	}
-// 	if cpuUsage < float64(*thresholdPercent)/100 {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! cpuUsage(%.2f) and thresholdPercent %d!", cpuUsage, *thresholdPercent)
-// 		return false
-// 	}
-// 	return true
-// }
-
-// func isAvgQueryResultValid(avgQueryResult metriccache.BECPUResourceQueryResult, windowSeconds, collectIntervalSeconds int64) bool {
-// 	if !isQueryResultValid(avgQueryResult) {
-// 		return false
-// 	}
-// 	if avgQueryResult.AggregateInfo == nil {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, AggregateInfo is nil!windowSize: %v, collectInterval: %v", windowSeconds, collectIntervalSeconds)
-// 		return false
-// 	}
-// 	if avgQueryResult.AggregateInfo.MetricsCount*collectIntervalSeconds < windowSeconds/3 {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, metricsCount(%d) not enough!windowSize: %v, collectInterval: %v", avgQueryResult.AggregateInfo.MetricsCount, windowSeconds, collectIntervalSeconds)
-// 		return false
-// 	}
-// 	return true
-// }
-
-// func isQueryResultValid(queryResult metriccache.BECPUResourceQueryResult) bool {
-// 	if queryResult.Error != nil {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,queryResult error: %v", queryResult.Error)
-// 		return false
-// 	}
-// 	if queryResult.Metric == nil {
-// 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, queryResult metric(%+v) is nil!", queryResult.Metric)
-// 		return false
-// 	}
-// 	return true
-// }
 
 func isSatisfactionConfigValid(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) bool {
 	lowPercent := thresholdConfig.CPUEvictBESatisfactionLowerPercent

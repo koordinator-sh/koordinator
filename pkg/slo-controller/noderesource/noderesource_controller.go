@@ -18,7 +18,11 @@ package noderesource
 
 import (
 	"context"
+	"flag"
+	"fmt"
+	"strings"
 
+	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/fields"
@@ -43,8 +47,12 @@ const (
 	disableInConfig string = "DisableInConfig"
 )
 
+var (
+	NodeResourcePlugins []string
+)
+
 type NodeResourceReconciler struct {
-	client.Client
+	Client          client.Client
 	Recorder        record.EventRecorder
 	Scheme          *runtime.Scheme
 	Clock           clock.Clock
@@ -121,7 +129,34 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{}, nil
 }
 
+func InitFlags(fs *flag.FlagSet) {
+	pflag.StringSliceVar(&NodeResourcePlugins, "noderesourceplugins", NodeResourcePlugins, fmt.Sprintf("A list of noderesource plugins to enable. "+
+		"'-noderesourceplugins=*' enables all plugins. "+
+		"'-noderesourceplugins=BatchResource' means only the 'BatchResource' plugin is enabled. "+
+		"'-noderesourceplugins=*,-BatchResource' means all plugins except the 'BatchResource' plugin are enabled.\n"+
+		"All plugins: %s", strings.Join(NodeResourcePlugins, ", ")))
+}
+
+func isPluginEnabled(pluginName string) bool {
+	hasStar := false
+	for _, p := range NodeResourcePlugins {
+		if p == Name {
+			return true
+		}
+		if p == "-"+Name {
+			return false
+		}
+		if p == "*" {
+			hasStar = true
+		}
+	}
+	return hasStar
+}
+
 func Add(mgr ctrl.Manager) error {
+	// init plugins for NodeResource
+	addPlugins(isPluginEnabled)
+
 	reconciler := &NodeResourceReconciler{
 		Recorder:        mgr.GetEventRecorderFor("noderesource-controller"),
 		Client:          mgr.GetClient(),

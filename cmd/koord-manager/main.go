@@ -115,7 +115,7 @@ func main() {
 		LeaderElection:             enableLeaderElection,
 		LeaderElectionID:           "koordinator-manager",
 		LeaderElectionNamespace:    leaderElectionNamespace,
-		LeaderElectionResourceLock: resourcelock.ConfigMapsResourceLock,
+		LeaderElectionResourceLock: resourcelock.ConfigMapsLeasesResourceLock,
 		Namespace:                  namespace,
 		SyncPeriod:                 syncPeriod,
 		NewClient:                  utilclient.NewClient,

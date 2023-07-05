@@ -30,7 +30,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 )
 
-func TestDefaultEstimator(t *testing.T) {
+func TestDefaultEstimatorEstimatePod(t *testing.T) {
 	tests := []struct {
 		name          string
 		pod           *corev1.Pod
@@ -196,6 +196,38 @@ func TestDefaultEstimator(t *testing.T) {
 				corev1.ResourceMemory: 6012954214, // 5.6Gi
 			},
 		},
+		{
+			name: "estimate pod only has request",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			scalarFactors: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    80,
+				corev1.ResourceMemory: 80,
+			},
+			want: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    3200,
+				corev1.ResourceMemory: 6871947674,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -211,7 +243,46 @@ func TestDefaultEstimator(t *testing.T) {
 			assert.NotNil(t, estimator)
 			assert.Equal(t, defaultEstimatorName, estimator.Name())
 
-			got, err := estimator.Estimate(tt.pod)
+			got, err := estimator.EstimatePod(tt.pod)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestDefaultEstimatorEstimateNode(t *testing.T) {
+	tests := []struct {
+		name string
+		node *corev1.Node
+		want corev1.ResourceList
+	}{
+		{
+			name: "estimate empty pod",
+			node: &corev1.Node{
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("32"),
+					},
+				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("32"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var v1beta2args v1beta2.LoadAwareSchedulingArgs
+			v1beta2.SetDefaults_LoadAwareSchedulingArgs(&v1beta2args)
+			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
+			err := v1beta2.Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta2args, &loadAwareSchedulingArgs, nil)
+			assert.NoError(t, err)
+			estimator, err := NewDefaultEstimator(&loadAwareSchedulingArgs, nil)
+			assert.NoError(t, err)
+			assert.NotNil(t, estimator)
+
+			got, err := estimator.EstimateNode(tt.node)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 		})

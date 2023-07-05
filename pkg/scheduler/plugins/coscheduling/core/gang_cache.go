@@ -24,11 +24,11 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-
 	pglister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
+	koordutil "github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type GangCache struct {
@@ -107,6 +107,24 @@ func (gangCache *GangCache) onPodAdd(obj interface{}) {
 		gang.addBoundPod(pod)
 		gang.setResourceSatisfied()
 	}
+}
+
+func (gangCache *GangCache) onPodUpdate(oldObj, newObj interface{}) {
+	pod, ok := newObj.(*v1.Pod)
+	if !ok {
+		return
+	}
+
+	gangName := util.GetGangNameByPod(pod)
+	if gangName == "" {
+		return
+	}
+
+	if koordutil.IsPodTerminated(pod) {
+		return
+	}
+
+	gangCache.onPodAdd(newObj)
 }
 
 func (gangCache *GangCache) onPodDelete(obj interface{}) {

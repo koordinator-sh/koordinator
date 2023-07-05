@@ -104,7 +104,7 @@ func listRegisteredServices(e *gin.Engine) gin.HandlerFunc {
 func queryNodeInfo(sched *scheduler.Scheduler) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		nodeName := context.Param("nodeName")
-		dump := sched.SchedulerCache.Dump()
+		dump := sched.Cache.Dump()
 		nodeInfo := dump.Nodes[nodeName]
 		if nodeInfo == nil || nodeInfo.Node() == nil {
 			ResponseErrorMessage(context, http.StatusNotFound, "cannot find node %s", nodeName)

@@ -159,6 +159,10 @@ func (r *ResctrlResource) WithCheckSupported(checkSupportedFn func(r Resource, p
 	return r
 }
 
+func (r *ResctrlResource) WithCheckOnce(isCheckOnce bool) Resource {
+	return r
+}
+
 func NewCommonResctrlResource(filename string, subdir string) Resource {
 	return &ResctrlResource{
 		Type:           ResourceType(filename),

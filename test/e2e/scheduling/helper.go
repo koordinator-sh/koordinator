@@ -28,7 +28,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
-	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -37,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
 	e2epod "github.com/koordinator-sh/koordinator/test/e2e/framework/pod"
 	e2ereplicaset "github.com/koordinator-sh/koordinator/test/e2e/framework/replicaset"
+	imageutils "github.com/koordinator-sh/koordinator/test/utils/image"
 )
 
 type pausePodConfig struct {

@@ -19,6 +19,9 @@ package util
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	"k8s.io/apimachinery/pkg/api/errors"
 
 	policyv1 "k8s.io/api/policy/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
@@ -61,41 +64,60 @@ func EvictPodByVersion(ctx context.Context, kubernetes kubernetes.Interface, nam
 	return fmt.Errorf("not support evict version, %s", evictVersion)
 }
 
-func FindSupportedEvictVersion(client kubernetes.Interface) (groupVersion string, err error) {
+func FindSupportedEvictVersion(client kubernetes.Interface) (version string, err error) {
 	var (
-		serverGroups     *metav1.APIGroupList
-		resourceList     *metav1.APIResourceList
-		foundPolicyGroup bool
-		preferredVersion string
+		groupVersion string
 	)
+	groupVersion, err = SupportEviction(client)
+	if err != nil {
+		return
+	}
+	if groupVersion == "" || !strings.Contains(groupVersion, "/") {
+		return
+	}
+	version = strings.Split(groupVersion, "/")[1]
+	return
+}
 
+func SupportEviction(client kubernetes.Interface) (string, error) {
+	var (
+		serverGroups          *metav1.APIGroupList
+		resourceList          *metav1.APIResourceList
+		foundPolicyGroup      bool
+		preferredGroupVersion string
+		groupVersion          string
+		err                   error
+	)
 	discoveryClient := client.Discovery()
 	serverGroups, err = discoveryClient.ServerGroups()
 	if serverGroups == nil || err != nil {
-		return
+		return groupVersion, err
 	}
 
 	for _, serverGroup := range serverGroups.Groups {
 		if serverGroup.Name == EvictionGroupName {
 			foundPolicyGroup = true
-			preferredVersion = serverGroup.PreferredVersion.Version
+			preferredGroupVersion = serverGroup.PreferredVersion.GroupVersion
 			break
 		}
 	}
 	if !foundPolicyGroup {
-		return
+		return groupVersion, err
 	}
 
 	resourceList, err = discoveryClient.ServerResourcesForGroupVersion("v1")
 	if err != nil {
-		return
+		if errors.IsNotFound(err) {
+			return groupVersion, nil
+		}
+		return groupVersion, err
 	}
 	for _, resource := range resourceList.APIResources {
 		if resource.Name == EvictionSubResourceName && resource.Kind == EvictionKind {
-			groupVersion = preferredVersion
-			return
+			groupVersion = resource.Group + "/" + resource.Version
+			return groupVersion, err
 		}
 	}
-
-	return
+	groupVersion = preferredGroupVersion
+	return groupVersion, err
 }

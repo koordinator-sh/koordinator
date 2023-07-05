@@ -78,6 +78,10 @@ type MigrationControllerArgs struct {
 	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
 	MaxUnavailablePerWorkload *intstr.IntOrString
 
+	// SkipCheckExpectedReplicas if enabled, it will allow eviction expectedReplicas equals maxUnavailable or maxMigrating.
+	// Default is false
+	SkipCheckExpectedReplicas *bool
+
 	// ObjectLimiters control the frequency of migration/eviction to make it smoother,
 	// and also protect Pods of the same class from being evicted frequently.
 	// e.g. limiting the frequency of Pods of the same workload being evicted.

@@ -135,7 +135,7 @@ func TestHistogramMerge(t *testing.T) {
 
 func TestHistogramSaveToCheckpointEmpty(t *testing.T) {
 	h := NewHistogram(testHistogramOptions)
-	s, err := h.SaveToChekpoint()
+	s, err := h.SaveToCheckpoint()
 	assert.NoError(t, err)
 	assert.Equal(t, 0., s.TotalWeight)
 	assert.Len(t, s.BucketWeights, 0)
@@ -144,7 +144,7 @@ func TestHistogramSaveToCheckpointEmpty(t *testing.T) {
 func TestHistogramSaveToCheckpoint(t *testing.T) {
 	h := NewHistogram(testHistogramOptions)
 	h.AddSample(1, 1, anyTime)
-	s, err := h.SaveToChekpoint()
+	s, err := h.SaveToCheckpoint()
 	assert.NoError(t, err)
 	bucket := testHistogramOptions.FindBucket(1)
 	assert.Equal(t, 1., s.TotalWeight)
@@ -167,7 +167,7 @@ func TestHistogramSaveToCheckpointDropsRelativelySmallValues(t *testing.T) {
 	assert.NotEqualf(t, bucket1, bucket2, "For this test %v and %v have to be stored in different buckets", v1, v2)
 	assert.True(t, w1 < (w2/float64(MaxCheckpointWeight))/2, "w1 to be omitted has to be less than (0.5*w2)/MaxCheckpointWeight")
 
-	s, err := h.SaveToChekpoint()
+	s, err := h.SaveToCheckpoint()
 	assert.NoError(t, err)
 
 	assert.Equal(t, 100001. /*w1+w2*/, s.TotalWeight)
@@ -194,7 +194,7 @@ func TestHistogramSaveToCheckpointForMultipleValues(t *testing.T) {
 
 	assert.Truef(t, areUnique(bucket1, bucket2, bucket3), "For this test values %v have to be stored in different buckets", []float64{v1, v2, v3})
 
-	s, err := h.SaveToChekpoint()
+	s, err := h.SaveToCheckpoint()
 	assert.NoError(t, err)
 	assert.Equal(t, 10051. /*w1 + w2 + w3*/, s.TotalWeight)
 	assert.Len(t, s.BucketWeights, 3)

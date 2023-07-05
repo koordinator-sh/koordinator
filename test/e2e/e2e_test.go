@@ -34,12 +34,12 @@ import (
 	// "github.com/onsi/ginkgo"
 
 	"k8s.io/component-base/version"
-	"k8s.io/kubernetes/test/utils/image"
 
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
 	"github.com/koordinator-sh/koordinator/test/e2e/framework/config"
 	"github.com/koordinator-sh/koordinator/test/e2e/framework/testfiles"
 	e2etestingmanifests "github.com/koordinator-sh/koordinator/test/e2e/testing-manifests"
+	"github.com/koordinator-sh/koordinator/test/utils/image"
 
 	// test sources
 	_ "github.com/koordinator-sh/koordinator/test/e2e/scheduling"

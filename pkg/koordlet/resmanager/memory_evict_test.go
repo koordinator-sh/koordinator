@@ -30,7 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 	critesting "k8s.io/cri-api/pkg/apis/testing"
 	"k8s.io/utils/pointer"
 
@@ -397,7 +397,7 @@ func Test_memoryEvict(t *testing.T) {
 					_, containerId, _ := util.ParseContainerId(containerStatus.ContainerID)
 					fakeContainer := &critesting.FakeContainer{
 						SandboxID:       string(pod.UID),
-						ContainerStatus: v1alpha2.ContainerStatus{Id: containerId},
+						ContainerStatus: runtimeapi.ContainerStatus{Id: containerId},
 					}
 					containers = append(containers, fakeContainer)
 				}

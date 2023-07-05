@@ -61,6 +61,12 @@ type Gang struct {
 	// once this variable is set true, it is irreversible.
 	OnceResourceSatisfied bool
 
+	// only-waiting, only consider waiting pods
+	// waiting-and-running, consider waiting and running pods
+	// waiting-running-succeed, consider waiting, running and succeed pods
+	// once-satisfied, once gang is satisfied, no need to consider any status pods
+	GangMatchPolicy string
+
 	// if the podGroup should be passed at PreFilter stage(Strict-Mode)
 	ScheduleCycleValid bool
 	// these fields used to count the cycle
@@ -86,6 +92,7 @@ func NewGang(gangName string) *Gang {
 		GangGroupId:              gangName,
 		GangGroup:                []string{gangName},
 		Mode:                     extension.GangModeStrict,
+		GangMatchPolicy:          extension.GangMatchPolicyOnceSatisfied,
 		Children:                 make(map[string]*v1.Pod),
 		WaitingForBindChildren:   make(map[string]*v1.Pod),
 		BoundChildren:            make(map[string]*v1.Pod),
@@ -130,6 +137,15 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 		mode = extension.GangModeStrict
 	}
 	gang.Mode = mode
+
+	matchPolicy := util.GetGangMatchPolicyByPod(pod)
+	if matchPolicy != extension.GangMatchPolicyOnlyWaiting && mode != extension.GangMatchPolicyWaitingAndRunning &&
+		mode != extension.GangMatchPolicyOnceSatisfied {
+		klog.Errorf("pod's annotation AnnotationGangMatchPolicy illegal, gangName: %v, value: %v",
+			gang.Name, matchPolicy)
+		matchPolicy = extension.GangMatchPolicyOnceSatisfied
+	}
+	gang.GangMatchPolicy = matchPolicy
 
 	// here we assume that Coscheduling's CreateTime equal with the pod's CreateTime
 	gang.CreateTime = pod.CreationTimestamp.Time
@@ -192,6 +208,15 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 		mode = extension.GangModeStrict
 	}
 	gang.Mode = mode
+
+	matchPolicy := pg.Annotations[extension.AnnotationGangMatchPolicy]
+	if matchPolicy != extension.GangMatchPolicyOnlyWaiting && mode != extension.GangMatchPolicyWaitingAndRunning &&
+		mode != extension.GangMatchPolicyOnceSatisfied {
+		klog.Errorf("pod's annotation AnnotationGangMatchPolicy illegal, gangName: %v, value: %v",
+			gang.Name, matchPolicy)
+		matchPolicy = extension.GangMatchPolicyOnceSatisfied
+	}
+	gang.GangMatchPolicy = matchPolicy
 
 	// here we assume that Coscheduling's CreateTime equal with the podGroup CRD CreateTime
 	gang.CreateTime = pg.CreationTimestamp.Time
@@ -283,11 +308,25 @@ func (gang *Gang) getGangMode() string {
 	return gang.Mode
 }
 
+func (gang *Gang) getGangMatchPolicy() string {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+
+	return gang.GangMatchPolicy
+}
+
 func (gang *Gang) getGangAssumedPods() int {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 
 	return len(gang.WaitingForBindChildren) + len(gang.BoundChildren)
+}
+
+func (gang *Gang) getGangWaitingPods() int {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+
+	return len(gang.WaitingForBindChildren)
 }
 
 func (gang *Gang) getScheduleCycle() int {
@@ -450,5 +489,13 @@ func (gang *Gang) isGangValidForPermit() bool {
 		klog.Infof("isGangValidForPermit find gang hasn't inited ,gang: %v", gang.Name)
 		return false
 	}
-	return len(gang.WaitingForBindChildren) >= gang.MinRequiredNumber || gang.OnceResourceSatisfied == true
+
+	switch gang.GangMatchPolicy {
+	case extension.GangMatchPolicyOnlyWaiting:
+		return len(gang.WaitingForBindChildren) >= gang.MinRequiredNumber
+	case extension.GangMatchPolicyWaitingAndRunning:
+		return len(gang.WaitingForBindChildren)+len(gang.BoundChildren) >= gang.MinRequiredNumber
+	default:
+		return len(gang.WaitingForBindChildren) >= gang.MinRequiredNumber || gang.OnceResourceSatisfied == true
+	}
 }

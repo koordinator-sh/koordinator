@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	corev1listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -44,6 +45,7 @@ const (
 	ErrReasonNodeMetricExpired              = "node(s) nodeMetric expired"
 	ErrReasonUsageExceedThreshold           = "node(s) %s usage exceed threshold"
 	ErrReasonAggregatedUsageExceedThreshold = "node(s) %s aggregated usage exceed threshold"
+	ErrReasonFailedEstimatePod
 )
 
 const (
@@ -186,7 +188,12 @@ func (p *Plugin) filterNodeUsage(node *corev1.Node, nodeMetric *slov1alpha1.Node
 		if threshold == 0 {
 			continue
 		}
-		total := node.Status.Allocatable[resourceName]
+		allocatable, err := p.estimator.EstimateNode(node)
+		if err != nil {
+			klog.ErrorS(err, "Failed to EstimateNode", "node", node.Name)
+			return nil
+		}
+		total := allocatable[resourceName]
 		if total.IsZero() {
 			continue
 		}
@@ -230,7 +237,12 @@ func (p *Plugin) filterProdUsage(node *corev1.Node, nodeMetric *slov1alpha1.Node
 		if threshold == 0 {
 			continue
 		}
-		total := node.Status.Allocatable[resourceName]
+		allocatable, err := p.estimator.EstimateNode(node)
+		if err != nil {
+			klog.ErrorS(err, "Failed to EstimateNode", "node", node.Name)
+			return nil
+		}
+		total := allocatable[resourceName]
 		if total.IsZero() {
 			continue
 		}
@@ -281,7 +293,7 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 	prodPod := extension.GetPriorityClass(pod) == extension.PriorityProd && p.args.ScoreAccordingProdUsage
 	podMetrics := buildPodMetricMap(p.podLister, nodeMetric, prodPod)
 
-	estimatedUsed, err := p.estimator.Estimate(pod)
+	estimatedUsed, err := p.estimator.EstimatePod(pod)
 	if err != nil {
 		return 0, nil
 	}
@@ -316,7 +328,11 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 		}
 	}
 
-	score := loadAwareSchedulingScorer(p.args.ResourceWeights, estimatedUsed, node.Status.Allocatable)
+	allocatable, err := p.estimator.EstimateNode(node)
+	if err != nil {
+		return 0, nil
+	}
+	score := loadAwareSchedulingScorer(p.args.ResourceWeights, estimatedUsed, allocatable)
 	return score, nil
 }
 
@@ -342,7 +358,7 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 			stillInTheReportInterval(assignInfo.timestamp, nodeMetricUpdateTime, nodeMetricReportInterval) ||
 			(scoreWithAggregation(p.args.Aggregated) &&
 				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) {
-			estimated, err := p.estimator.Estimate(assignInfo.pod)
+			estimated, err := p.estimator.EstimatePod(assignInfo.pod)
 			if err != nil {
 				continue
 			}

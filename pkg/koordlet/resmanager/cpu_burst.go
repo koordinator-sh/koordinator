@@ -255,9 +255,14 @@ func (b *CPUBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 		klog.Warningf("get node cpu metric failed, error: %v", err)
 	}
 
-	nodeCPUInfo, err := b.resmanager.metricCache.GetNodeCPUInfo(&metriccache.QueryParam{})
-	if err != nil || nodeCPUInfo == nil {
-		klog.Warningf("get node cpu info failed, detail %v, error %v", nodeCPUInfo, err)
+	nodeCPUInfoRaw, exist := b.resmanager.metricCache.Get(metriccache.NodeCPUInfoKey)
+	if !exist {
+		klog.Warning("get node cpu info failed : not exist")
+		return nodeBurstUnknown
+	}
+	nodeCPUInfo := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
+	if nodeCPUInfo == nil {
+		klog.Warning("get node cpu info failed : value is nil")
 		return nodeBurstUnknown
 	}
 	podMetricMap := b.resmanager.collectAllPodMetrics(*queryParam, metriccache.PodCPUUsageMetric)
@@ -269,18 +274,18 @@ func (b *CPUBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 	sharePoolCPUCoresUsage := nodeCPUCoresUsage
 	for _, podMeta := range podsMeta {
 		podQOS := apiext.GetPodQoSClass(podMeta.Pod)
-		// exclude LSR pod cpu from cpu share pool
-		if podQOS == apiext.QoSLSR {
+		// exclude LSE/LSR pod cpu from cpu share pool
+		if podQOS == apiext.QoSLSE || podQOS == apiext.QoSLSR {
 			podRequest := util.GetPodRequest(podMeta.Pod)
 			sharePoolCPUCoresTotal -= float64(podRequest.Cpu().MilliValue()) / 1000
 		}
 
-		// exclude LSR and BE pod cpu usage from cpu share pool
+		// exclude LSE/LSR/BE pod cpu usage from cpu share pool
 		podMetric, exist := podMetricMap[string(podMeta.Pod.UID)]
 		if !exist {
 			continue
 		}
-		if podQOS == apiext.QoSLSR || podQOS == apiext.QoSBE {
+		if podQOS == apiext.QoSLSE || podQOS == apiext.QoSLSR || podQOS == apiext.QoSBE {
 			sharePoolCPUCoresUsage -= podMetric
 		}
 	} // end for podsMeta

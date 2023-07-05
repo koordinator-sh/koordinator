@@ -83,19 +83,24 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	klog.V(6).Info("collectNodeResUsed start")
 	nodeMetrics := make([]metriccache.MetricSample, 0)
 	collectTime := time.Now()
+
+	// get the accumulated cpu ticks
 	currentCPUTick, err0 := koordletutil.GetCPUStatUsageTicks()
-	memUsageValue, err1 := koordletutil.GetMemInfoUsageKB()
+	// NOTE: The collected memory usage is in kilobytes not bytes.
+	memUsageKB, err1 := koordletutil.GetMemInfoUsageKB()
 	if err0 != nil || err1 != nil {
 		klog.Warningf("failed to collect node usage, CPU err: %s, Memory err: %s", err0, err1)
 		return
 	}
-	memUsageMetrics, err := metriccache.NodeMemoryUsageMetric.GenerateSample(nil, collectTime, float64(memUsageValue))
+
+	memUsageValue := 1024 * float64(memUsageKB)
+	memUsageMetrics, err := metriccache.NodeMemoryUsageMetric.GenerateSample(nil, collectTime, memUsageValue)
 	if err != nil {
 		klog.Warningf("generate node cpu metrics failed, err %v", err)
 		return
-	} else {
-		nodeMetrics = append(nodeMetrics, memUsageMetrics)
 	}
+	nodeMetrics = append(nodeMetrics, memUsageMetrics)
+
 	lastCPUStat := n.lastNodeCPUStat
 	n.lastNodeCPUStat = &framework.CPUStat{
 		CPUTick:   currentCPUTick,
@@ -105,20 +110,19 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 		klog.V(6).Infof("ignore the first cpu stat collection")
 		return
 	}
-	// 1 jiffies could be 10ms
-	// NOTICE: do subtraction and division first to avoid overflow
+	// 1 jiffy can be 10ms by default.
+	// NOTE: do subtraction and division first to avoid overflow
 	cpuUsageValue := float64(currentCPUTick-lastCPUStat.CPUTick) / system.GetPeriodTicks(lastCPUStat.Timestamp, collectTime)
 	cpuUsageMetrics, err := metriccache.NodeCPUUsageMetric.GenerateSample(nil, collectTime, cpuUsageValue)
 	if err != nil {
 		klog.Warningf("generate node cpu metrics failed, err %v", err)
 		return
-	} else {
-		nodeMetrics = append(nodeMetrics, cpuUsageMetrics)
 	}
+	nodeMetrics = append(nodeMetrics, cpuUsageMetrics)
 
 	for _, deviceCollector := range n.deviceCollectors {
-		if metrics, _ := deviceCollector.GetNodeMetric(); metrics != nil {
-			nodeMetrics = append(nodeMetrics, metrics...)
+		if metric, _ := deviceCollector.GetNodeMetric(); metric != nil {
+			nodeMetrics = append(nodeMetrics, metric...)
 		}
 		if info := deviceCollector.Infos(); info != nil {
 			n.metricDB.Set(koordletutil.GPUDeviceType, info)
@@ -140,5 +144,6 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	n.started.Store(true)
 	metrics.RecordNodeUsedCPU(cpuUsageValue) // in cpu cores
 
-	klog.Infof("collectNodeResUsed finished %+v", nodeMetrics)
+	klog.V(4).Infof("collectNodeResUsed finished, count %v, cpu[%v], mem[%v]",
+		len(nodeMetrics), cpuUsageValue, memUsageValue)
 }

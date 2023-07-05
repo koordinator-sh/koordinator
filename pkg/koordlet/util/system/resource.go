@@ -22,7 +22,6 @@ import (
 	"strconv"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -46,6 +45,8 @@ type Resource interface {
 	WithSupported(supported bool, msg string) Resource
 	// WithCheckSupported sets the check function for the Supported status of given resource and parent directory.
 	WithCheckSupported(checkSupportedFn func(r Resource, dynamicPath string) (isSupported bool, msg string)) Resource
+	// WithCheckOnce sets the check function only checking once and then use the result as the Supported status.
+	WithCheckOnce(isCheckOnce bool) Resource
 }
 
 func GetDefaultResourceType(subfs string, filename string) ResourceType {
@@ -72,6 +73,18 @@ func IsResourceUnsupportedErr(err error) bool {
 	return strings.HasPrefix(err.Error(), ErrResourceUnsupportedPrefix)
 }
 
+func SupportedIfFileExistsInKubepods(r Resource, _ string) (bool, string) {
+	p := r.Path(CgroupPathFormatter.ParentDir)
+	exists, err := PathExists(p)
+	if err != nil {
+		return false, fmt.Sprintf("cannot check if %s exists in kubepods cgroup, err: %v", r.ResourceType(), err)
+	}
+	if !exists {
+		return false, "file not exist in kubepods cgroup"
+	}
+	return true, ""
+}
+
 func SupportedIfFileExists(r Resource, dynamicPath string) (bool, string) {
 	exists, err := PathExists(r.Path(dynamicPath))
 	if err != nil {
@@ -90,17 +103,6 @@ func SupportedIfFileExistsInRootCgroup(filename string, subfs string) (bool, str
 	}
 	if !exists {
 		return false, "file not exist in root cgroup"
-	}
-	return true, ""
-}
-
-func SupportedIfFileExistsInKubepods(filename string, subfs string) (bool, string) {
-	exists, err := PathExists(filepath.Join(Conf.CgroupRootDir, subfs, CgroupPathFormatter.ParentDir, CgroupPathFormatter.QOSDirFn(corev1.PodQOSGuaranteed), filename))
-	if err != nil {
-		return false, fmt.Sprintf("cannot check if %s exists in kubepods cgroup, err: %v", filename, err)
-	}
-	if !exists {
-		return false, "file not exist in kubepods cgroup"
 	}
 	return true, ""
 }

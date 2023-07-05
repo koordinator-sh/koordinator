@@ -268,6 +268,11 @@ func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 		*out = new(intstr.IntOrString)
 		**out = **in
 	}
+	if in.SkipCheckExpectedReplicas != nil {
+		in, out := &in.SkipCheckExpectedReplicas, &out.SkipCheckExpectedReplicas
+		*out = new(bool)
+		**out = **in
+	}
 	if in.ObjectLimiters != nil {
 		in, out := &in.ObjectLimiters, &out.ObjectLimiters
 		*out = make(ObjectLimiterMap, len(*in))

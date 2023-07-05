@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	apiserver "k8s.io/apiserver/pkg/server"
 	schedulerappconfig "k8s.io/kubernetes/cmd/kube-scheduler/app/config"
 
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
@@ -27,6 +28,7 @@ import (
 // Config has all the context to run a Scheduler
 type Config struct {
 	*schedulerappconfig.Config
+	InsecureServing                  *apiserver.DeprecatedInsecureServingInfo // nil will disable serving on an insecure port
 	ServicesEngine                   *services.Engine
 	KoordinatorClient                koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory

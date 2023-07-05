@@ -26,6 +26,7 @@ import (
 var (
 	globalNodePrepareExtender       = NewRegistry("NodePrepare")
 	globalNodeSyncExtender          = NewRegistry("NodeSync")
+	globalNodeMetaSyncExtender      = NewRegistry("NodeMetaSync")
 	globalResourceCalculateExtender = NewRegistry("ResourceCalculate")
 )
 
@@ -42,10 +43,18 @@ type NodePreparePlugin interface {
 	Execute(strategy *extension.ColocationStrategy, node *corev1.Node, nr *NodeResource) error
 }
 
-func RegisterNodePrepareExtender(plugins ...NodePreparePlugin) {
-	ps := make([]Plugin, len(plugins))
+type FilterFn func(string) bool
+
+var AllPass = func(string) bool {
+	return true
+}
+
+func RegisterNodePrepareExtender(filter FilterFn, plugins ...NodePreparePlugin) {
+	ps := make([]Plugin, 0, len(plugins))
 	for i := range plugins {
-		ps[i] = plugins[i]
+		if filter(plugins[i].Name()) {
+			ps = append(ps, plugins[i])
+		}
 	}
 	globalNodePrepareExtender.MustRegister(ps...)
 }
@@ -74,10 +83,12 @@ type NodeSyncPlugin interface {
 	NeedSync(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string)
 }
 
-func RegisterNodeSyncExtender(plugins ...NodeSyncPlugin) {
-	ps := make([]Plugin, len(plugins))
+func RegisterNodeSyncExtender(filter FilterFn, plugins ...NodeSyncPlugin) {
+	ps := make([]Plugin, 0, len(plugins))
 	for i := range plugins {
-		ps[i] = plugins[i]
+		if filter(plugins[i].Name()) {
+			ps = append(ps, plugins[i])
+		}
 	}
 	globalNodeSyncExtender.MustRegister(ps...)
 }
@@ -97,6 +108,41 @@ func RunNodeSyncExtenders(strategy *extension.ColocationStrategy, oldNode, newNo
 		} else {
 			klog.V(6).InfoS("run node sync plugin, no need to sync", "plugin", plugin.Name(),
 				"node", newNode.Name)
+		}
+	}
+	return false
+}
+
+type NodeMetaSyncPlugin interface {
+	Plugin
+	NeedSyncMeta(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string)
+}
+
+func RegisterNodeMetaSyncExtender(filter FilterFn, plugins ...NodeMetaSyncPlugin) {
+	ps := make([]Plugin, 0, len(plugins))
+	for i := range plugins {
+		if filter(plugins[i].Name()) {
+			ps = append(ps, plugins[i])
+		}
+	}
+	globalNodeMetaSyncExtender.MustRegister(ps...)
+}
+
+func UnregisterNodeMetaSyncExtender(name string) {
+	globalNodeMetaSyncExtender.Unregister(name)
+}
+
+func RunNodeMetaSyncExtenders(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) bool {
+	for _, p := range globalNodeMetaSyncExtender.GetAll() {
+		plugin := p.(NodeMetaSyncPlugin)
+		needSync, msg := plugin.NeedSyncMeta(strategy, oldNode, newNode)
+		if needSync {
+			klog.V(4).InfoS("run node meta sync plugin, need sync", "plugin", plugin.Name(),
+				"node", newNode.Name, "message", msg)
+			return true
+		} else {
+			klog.V(6).InfoS("run node meta sync plugin, no need to sync",
+				"plugin", plugin.Name(), "node", newNode.Name)
 		}
 	}
 	return false
@@ -125,10 +171,12 @@ type ResourceCalculatePlugin interface {
 	Calculate(strategy *extension.ColocationStrategy, node *corev1.Node, podList *corev1.PodList, metrics *ResourceMetrics) ([]ResourceItem, error)
 }
 
-func RegisterResourceCalculateExtender(plugins ...ResourceCalculatePlugin) {
-	ps := make([]Plugin, len(plugins))
+func RegisterResourceCalculateExtender(filter FilterFn, plugins ...ResourceCalculatePlugin) {
+	ps := make([]Plugin, 0, len(plugins))
 	for i := range plugins {
-		ps[i] = plugins[i]
+		if filter(plugins[i].Name()) {
+			ps = append(ps, plugins[i])
+		}
 	}
 	globalResourceCalculateExtender.MustRegister(ps...)
 }

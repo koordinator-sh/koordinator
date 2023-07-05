@@ -17,7 +17,6 @@ limitations under the License.
 package performance
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"testing"
@@ -87,7 +86,8 @@ func Test_collectContainerCPI(t *testing.T) {
 	cpuInfo := mockNodeCPUInfo()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
-	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, nil).AnyTimes()
+
+	mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(cpuInfo, true).AnyTimes()
 	appender := mockmetriccache.NewMockAppender(ctrl)
 	mockMetricCache.EXPECT().Appender().Return(appender).AnyTimes()
 	appender.EXPECT().Append(gomock.Any()).Return(nil).AnyTimes()
@@ -114,7 +114,7 @@ func Test_collectContainerCPI_cpuInfoErr(t *testing.T) {
 	cpuInfo := mockNodeCPUInfo()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
-	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, fmt.Errorf("cpu_error")).AnyTimes()
+	mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(cpuInfo, false).AnyTimes()
 	appender := mockmetriccache.NewMockAppender(ctrl)
 	mockMetricCache.EXPECT().Appender().Return(appender).AnyTimes()
 	appender.EXPECT().Append(gomock.Any()).Return(nil).AnyTimes()
@@ -143,7 +143,7 @@ func Test_collectContainerCPI_mockPod(t *testing.T) {
 	mockLSPod()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{pod}).AnyTimes()
 	mockStatesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{}).AnyTimes()
-	mockMetricCache.EXPECT().GetNodeCPUInfo(&metriccache.QueryParam{}).Return(cpuInfo, nil).AnyTimes()
+	mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(cpuInfo, true).AnyTimes()
 	appender := mockmetriccache.NewMockAppender(ctrl)
 	mockMetricCache.EXPECT().Appender().Return(appender).AnyTimes()
 	appender.EXPECT().Append(gomock.Any()).Return(nil).AnyTimes()

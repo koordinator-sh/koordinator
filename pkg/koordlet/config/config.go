@@ -34,11 +34,12 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	maframework "github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	qosmanagerconfig "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/config"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	statesinformerimpl "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -53,27 +54,30 @@ type Configuration struct {
 	ConfigMapName      string
 	ConfigMapNamesapce string
 	KubeRestConf       *rest.Config
-	StatesInformerConf *statesinformer.Config
+	StatesInformerConf *statesinformerimpl.Config
 	CollectorConf      *maframework.Config
 	MetricCacheConf    *metriccache.Config
 	ResManagerConf     *resmanager.Config
 	QosManagerConf     *qosmanagerconfig.Config
 	RuntimeHookConf    *runtimehooks.Config
 	AuditConf          *audit.Config
-	FeatureGates       map[string]bool
+	PredictionConf     *prediction.Config
+
+	FeatureGates map[string]bool
 }
 
 func NewConfiguration() *Configuration {
 	return &Configuration{
 		ConfigMapName:      DefaultKoordletConfigMapName,
 		ConfigMapNamesapce: DefaultKoordletConfigMapNamespace,
-		StatesInformerConf: statesinformer.NewDefaultConfig(),
+		StatesInformerConf: statesinformerimpl.NewDefaultConfig(),
 		CollectorConf:      maframework.NewDefaultConfig(),
 		MetricCacheConf:    metriccache.NewDefaultConfig(),
 		ResManagerConf:     resmanager.NewDefaultConfig(),
 		QosManagerConf:     qosmanagerconfig.NewDefaultConfig(),
 		RuntimeHookConf:    runtimehooks.NewDefaultConfig(),
 		AuditConf:          audit.NewDefaultConfig(),
+		PredictionConf:     prediction.NewDefaultConfig(),
 	}
 }
 
@@ -87,6 +91,7 @@ func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 	c.ResManagerConf.InitFlags(fs)
 	c.RuntimeHookConf.InitFlags(fs)
 	c.AuditConf.InitFlags(fs)
+	c.PredictionConf.InitFlags(fs)
 	resourceexecutor.Conf.InitFlags(fs)
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "feature-gates", "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 		"Options are:\n"+strings.Join(features.DefaultKoordletFeatureGate.KnownFeatures(), "\n"))

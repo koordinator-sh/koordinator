@@ -110,7 +110,7 @@ func (c *FakeClusterColocationProfiles) UpdateStatus(ctx context.Context, cluste
 // Delete takes name of the clusterColocationProfile and deletes it. Returns an error if one occurs.
 func (c *FakeClusterColocationProfiles) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(clustercolocationprofilesResource, name), &v1alpha1.ClusterColocationProfile{})
+		Invokes(testing.NewRootDeleteActionWithOptions(clustercolocationprofilesResource, name, opts), &v1alpha1.ClusterColocationProfile{})
 	return err
 }
 

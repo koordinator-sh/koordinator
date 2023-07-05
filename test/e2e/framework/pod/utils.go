@@ -20,7 +20,8 @@ import (
 	"flag"
 
 	v1 "k8s.io/api/core/v1"
-	imageutils "k8s.io/kubernetes/test/utils/image"
+
+	imageutils "github.com/koordinator-sh/koordinator/test/utils/image"
 )
 
 // NodeOSDistroIs returns true if the distro is the same as `--node-os-distro`

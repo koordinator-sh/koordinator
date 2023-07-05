@@ -53,7 +53,7 @@ func SetReservationCache(cache ReservationCache) {
 
 type reservationCache struct {
 	reservationLister  schedulinglister.ReservationLister
-	lock               sync.Mutex
+	lock               sync.RWMutex
 	reservationInfos   map[types.UID]*frameworkext.ReservationInfo
 	reservationsOnNode map[string]map[types.UID]struct{}
 }
@@ -111,6 +111,18 @@ func (cache *reservationCache) updateReservation(newR *schedulingv1alpha1.Reserv
 	}
 	if newR.Status.NodeName != "" {
 		cache.updateReservationsOnNode(newR.Status.NodeName, newR.UID)
+	}
+}
+
+func (cache *reservationCache) updateReservationIfExists(newR *schedulingv1alpha1.Reservation) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	rInfo := cache.reservationInfos[newR.UID]
+	if rInfo != nil {
+		rInfo.UpdateReservation(newR)
+		if newR.Status.NodeName != "" {
+			cache.updateReservationsOnNode(newR.Status.NodeName, newR.UID)
+		}
 	}
 }
 
@@ -211,8 +223,8 @@ func (cache *reservationCache) getReservationInfo(name string) *frameworkext.Res
 }
 
 func (cache *reservationCache) getReservationInfoByUID(uid types.UID) *frameworkext.ReservationInfo {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
 	rInfo := cache.reservationInfos[uid]
 	if rInfo != nil {
 		return rInfo.Clone()
@@ -221,8 +233,8 @@ func (cache *reservationCache) getReservationInfoByUID(uid types.UID) *framework
 }
 
 func (cache *reservationCache) listAvailableReservationInfosOnNode(nodeName string) []*frameworkext.ReservationInfo {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
 	rOnNode := cache.reservationsOnNode[nodeName]
 	if len(rOnNode) == 0 {
 		return nil
@@ -235,4 +247,17 @@ func (cache *reservationCache) listAvailableReservationInfosOnNode(nodeName stri
 		}
 	}
 	return result
+}
+
+func (cache *reservationCache) listAllNodes() []string {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	if len(cache.reservationsOnNode) == 0 {
+		return nil
+	}
+	nodes := make([]string, 0, len(cache.reservationsOnNode))
+	for k := range cache.reservationsOnNode {
+		nodes = append(nodes, k)
+	}
+	return nodes
 }

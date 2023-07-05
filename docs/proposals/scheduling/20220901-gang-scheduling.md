@@ -112,12 +112,30 @@ which allow user to bundle different Gangs together.
 It should be noted that, if the resource accumulation conditions of Gang are met, then some pods failed in the process of binding,
 or some bound pods are preempted\rescheduled, should the constraints of Gang still be effective in the process of resource reallocation? 
 Because the initial purpose of Gang is to require pods to be pulled up at the same time, if some pods have been pulled up, 
-then the subsequent Gang behavior is meaningless. Therefore, when once Gang has been satisfied, all subsequent resource allocations 
-are no longer constrained by Gang rules, and their performance is similar to ordinary pod.
+then the subsequent Gang behavior is meaningless. Therefore, once Gang has been satisfied and its match policy is once-satisfied, all 
+subsequent resource allocations are no longer constrained by Gang rules, and their performance is similar to ordinary pod.
 
 As mentioned above, `WaitTime` is the max wait time since first pod comes to permit stage. If `WaitTime` is timeout, 
 scheduler will roll back all assumed pods, update each pod's annotation with `gang.scheduling.koordinator.sh/timeout=true`, and
 won't schedule these pods anymore. User should pay attention to this status and delete pods timely.
+
+#### Gang Match Policy
+When using Gang scheduling, you can expand the logic of determining whether gang is satisfied by `match-policy`. 
+
+In some specific scenarios, the completed task Pod may not exist. At this time, it is impossible to count the number of completed tasks. In this
+case, once Gang has been satisfied,  all subsequent resource allocations are no longer constrained by Gang rules, which is called `once-satisfied`,
+the default gang 'match-policy'.
+
+For GPU topology, all the tasks need to be scheduled at the same time to ensure the best performance, so the gang only consider the 
+number of pods waiting on permit is larger than the min-available, which is called `only-waiting`. What's more, if the workload support
+failover, but workload controller can't persist the new gangName or support reconstruct all pods at one-time, `only-waiting` can
+help.
+
+For tasks of elastic training, the new workers' arrival is random, so the gang only consider the sum of running pods and waiting pods 
+is larger than the min-available, which is called `waiting-and-running`. For example, if the gang's total number is 5, min available is 3 and
+there are 3 pods running at first. When two of the three pods completed, here comes the fourth pod, the fourth pod will be scheduled and bound 
+if the `match-policy` is `once-satisfied`. If the `match-policy` is `waiting-and-running`, the fourth pod will keep pending, since there are
+only 2 pods' status is `waiting-and-running` which is smaller than min-available.
 
 ### API
 #### Definition
@@ -147,8 +165,9 @@ Pod should use `pod-group.scheduling.sigs.k8s.io` in label to associate with `Po
 Also, we introduce some optional definitions as below:
 ```yaml
 gang.scheduling.koordinator.sh/total-number
-gang.scheduling.koordinator.sh/mode        
+gang.scheduling.koordinator.sh/mode    
 gang.scheduling.koordinator.sh/groups
+gang.scheduling.koordinator.sh/match-policy
 ```
 - `gang.scheduling.koordinator.sh/name` indicates the gang's name, it should be emphasized that the name should be in the form of RFC 1123 
 
@@ -160,8 +179,10 @@ find more detail in `Data-Structure` chapter. Default equals to `gang.scheduling
 - `gang.scheduling.koordinator.sh/groups` describes GangGroups. Default is empty, which means don't need to form a `GangGroup` with others,
 and the gangs in one gangGroup can from different namespaces.
 
-`gang.scheduling.koordinator.sh/total-number`, `gang.scheduling.koordinator.sh/mode`, `gang.scheduling.koordinator.sh/gang-groups` should be found in
-`PodGroup`'s annotation if needed.
+- `gang.scheduling.koordinator.sh/match-policy` determines `only-waiting`, `waiting-and-running` or `once-satisfied`. Default is `once-satisfied`.
+
+`gang.scheduling.koordinator.sh/total-number`, `gang.scheduling.koordinator.sh/mode`, `gang.scheduling.koordinator.sh/gang-groups`,
+`gang.scheduling.koordinator.sh/match-policy` should be found in `PodGroup`'s annotation if needed.
 
 ##### Example
 When user apply a basic gang, the example is as follows:
@@ -193,6 +214,7 @@ metadata:
     gang.scheduling.koordinator.sh/total-number: 5
     gang.scheduling.koordinator.sh/mode: Strict
     gang.scheduling.koordinator.sh/groups: ["namespaceA/gang-a", "namespaceB/gang-b"]
+    gang.scheduling.koordinator.sh/match-policy: only-waiting
 spec:
   minMember: 5
   minResources:
@@ -221,6 +243,7 @@ gang.scheduling.koordinator.sh/waiting-time
 gang.scheduling.koordinator.sh/total-number
 gang.scheduling.koordinator.sh/mode        
 gang.scheduling.koordinator.sh/groups
+gang.scheduling.koordinator.sh/match-policy
 ```
 
 - `gang.scheduling.koordinator.sh/waiting-time` represents max wait time since first pod comes to permit stage. Default is a global config.
@@ -231,6 +254,8 @@ find more detail in `Data-Structure` chapter. Default equals to `gang.scheduling
 - `gang.scheduling.koordinator.sh/mode` determines `Strict` or `NonStrict`. Default is `Strict`.
 
 - `gang.scheduling.koordinator.sh/groups` describes GangGroups. Default is empty, which means don't need to form a `GangGroup` with others.
+
+- `gang.scheduling.koordinator.sh/match-policy` determines `only-waiting`, `waiting-and-running` or `once-satisfied`. Default is `once-satisfied`.
 
 It should be noted that, the annotation mode's parameter will overwrite CRD's mode if both exist.
 And gangGroup should be announced with " gangNamespace" + "/" + "gangName "
@@ -254,6 +279,7 @@ metadata:
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5
      gang.scheduling.koordinator.sh/mode: Strict
+     gang.scheduling.koordinator.sh/match-policy: only-waiting
      gang.scheduling.koordinator.sh/groups: ["namespaceA/gang-a", "namespaceB/gang-b"]
 metadata:
    annotations:
@@ -262,6 +288,7 @@ metadata:
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5
      gang.scheduling.koordinator.sh/mode: Strict
+     gang.scheduling.koordinator.sh/match-policy: only-waiting
      gang.scheduling.koordinator.sh/groups: ["namespaceA/gang-a", "namespaceB/gang-b"]
 ```
 
@@ -275,6 +302,7 @@ metadata:
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5
      gang.scheduling.koordinator.sh/mode: Strict
+    gang.scheduling.koordinator.sh/match-policy: only-waiting
      gang.scheduling.koordinator.sh/groups: ""
 metadata:
    annotations:
@@ -283,6 +311,7 @@ metadata:
      gang.scheduling.koordinator.sh/min-available: 5
      gang.scheduling.koordinator.sh/total-number: 5
      gang.scheduling.koordinator.sh/mode: Strict
+     gang.scheduling.koordinator.sh/match-policy: only-waiting
      gang.scheduling.koordinator.sh/groups: ""
 ```
 
@@ -314,7 +343,7 @@ type QueueSortPlugin interface{
 type Gang struct {
     Name                         string                
     WaitTime                     time.Duration                       
-    Mode                         string                 //Strict or NonStrict
+    Mode                         string                 //Strict or NonStrict 
     GangGroup                    []string               
     MinRequiredNumber            int                    
     TotalChildrenNum             int

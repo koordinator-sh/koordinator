@@ -400,7 +400,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			suit.start()
 
 			cycleState := framework.NewCycleState()
-			if got := p.(framework.PreFilterPlugin).PreFilter(context.TODO(), cycleState, tt.pod); !reflect.DeepEqual(got, tt.want) {
+			if _, got := p.(framework.PreFilterPlugin).PreFilter(context.TODO(), cycleState, tt.pod); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("PreFilter() = %v, want %v", got, tt.want)
 			}
 			if !tt.want.IsSuccess() {

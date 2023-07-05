@@ -18,6 +18,8 @@ package frameworkext
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
@@ -38,6 +40,7 @@ type SchedulerCache interface {
 	IsAssumedPod(pod *corev1.Pod) (bool, error)
 	GetPod(pod *corev1.Pod) (*corev1.Pod, error)
 	ForgetPod(pod *corev1.Pod) error
+	InvalidNodeInfo(nodeName string) error
 }
 
 type SchedulingQueue interface {
@@ -58,7 +61,7 @@ type SchedulerAdapter struct {
 }
 
 func (s *SchedulerAdapter) GetCache() SchedulerCache {
-	return s.Scheduler.SchedulerCache
+	return &cacheAdapter{scheduler: s.Scheduler}
 }
 
 func (s *SchedulerAdapter) GetSchedulingQueue() SchedulingQueue {
@@ -67,6 +70,58 @@ func (s *SchedulerAdapter) GetSchedulingQueue() SchedulingQueue {
 
 func (s *SchedulerAdapter) MoveAllToActiveOrBackoffQueue(event framework.ClusterEvent) {
 	s.Scheduler.SchedulingQueue.MoveAllToActiveOrBackoffQueue(event, nil)
+}
+
+var _ SchedulerCache = &cacheAdapter{}
+
+type cacheAdapter struct {
+	scheduler *scheduler.Scheduler
+}
+
+func (c *cacheAdapter) AddPod(pod *corev1.Pod) error {
+	return c.scheduler.Cache.AddPod(pod)
+}
+
+func (c *cacheAdapter) UpdatePod(oldPod, newPod *corev1.Pod) error {
+	return c.scheduler.Cache.UpdatePod(oldPod, newPod)
+}
+func (c *cacheAdapter) RemovePod(pod *corev1.Pod) error {
+	return c.scheduler.Cache.RemovePod(pod)
+
+}
+func (c *cacheAdapter) AssumePod(pod *corev1.Pod) error {
+	return c.scheduler.Cache.AssumePod(pod)
+}
+
+func (c *cacheAdapter) IsAssumedPod(pod *corev1.Pod) (bool, error) {
+	return c.scheduler.Cache.IsAssumedPod(pod)
+}
+
+func (c *cacheAdapter) GetPod(pod *corev1.Pod) (*corev1.Pod, error) {
+	return c.scheduler.Cache.GetPod(pod)
+}
+
+func (c *cacheAdapter) ForgetPod(pod *corev1.Pod) error {
+	return c.scheduler.Cache.ForgetPod(pod)
+}
+
+func (c *cacheAdapter) InvalidNodeInfo(nodeName string) error {
+	uid := uuid.NewUUID()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      string(uid),
+			Namespace: "default",
+			UID:       uid,
+		},
+		Spec: corev1.PodSpec{
+			NodeName: nodeName,
+		},
+	}
+	err := c.scheduler.Cache.AddPod(pod)
+	if err != nil {
+		return err
+	}
+	return c.scheduler.Cache.RemovePod(pod)
 }
 
 var _ SchedulingQueue = &queueAdapter{}
@@ -184,6 +239,10 @@ func (f *FakeScheduler) GetPod(pod *corev1.Pod) (*corev1.Pod, error) {
 func (f *FakeScheduler) ForgetPod(pod *corev1.Pod) error {
 	key, _ := framework.GetPodKey(pod)
 	delete(f.AssumedPod, key)
+	return nil
+}
+
+func (f *FakeScheduler) InvalidNodeInfo(nodeName string) error {
 	return nil
 }
 

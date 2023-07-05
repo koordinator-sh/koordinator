@@ -19,6 +19,7 @@ package options
 import (
 	"github.com/gin-gonic/gin"
 	"k8s.io/apimachinery/pkg/runtime"
+	apiserveroptions "k8s.io/apiserver/pkg/server/options"
 	scheduleroptions "k8s.io/kubernetes/cmd/kube-scheduler/app/options"
 
 	schedulerappconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
@@ -30,13 +31,27 @@ import (
 // Options has all the params needed to run a Scheduler
 type Options struct {
 	*scheduleroptions.Options
+	CombinedInsecureServing *CombinedInsecureServingOptions
 }
 
 // NewOptions returns default scheduler app options.
 func NewOptions() *Options {
-	return &Options{
+	options := &Options{
 		Options: scheduleroptions.NewOptions(),
+		CombinedInsecureServing: &CombinedInsecureServingOptions{
+			Healthz: (&apiserveroptions.DeprecatedInsecureServingOptions{
+				BindNetwork: "tcp",
+			}).WithLoopback(),
+		},
 	}
+	options.CombinedInsecureServing.AddFlags(options.Flags.FlagSet("insecure serving"))
+	return options
+}
+
+func (o *Options) Validate() []error {
+	errs := o.Options.Validate()
+	errs = append(errs, o.CombinedInsecureServing.Validate()...)
+	return errs
 }
 
 // Config return a scheduler config object
@@ -56,10 +71,16 @@ func (o *Options) Config() (*schedulerappconfig.Config, error) {
 	}
 	koordinatorSharedInformerFactory := koordinatorinformers.NewSharedInformerFactoryWithOptions(koordinatorClient, 0)
 
-	return &schedulerappconfig.Config{
+	appConfig := &schedulerappconfig.Config{
 		Config:                           config,
 		ServicesEngine:                   services.NewEngine(gin.New()),
 		KoordinatorClient:                koordinatorClient,
 		KoordinatorSharedInformerFactory: koordinatorSharedInformerFactory,
-	}, nil
+	}
+
+	if err := o.CombinedInsecureServing.ApplyTo(appConfig, &config.ComponentConfig); err != nil {
+		return nil, err
+	}
+
+	return appConfig, nil
 }

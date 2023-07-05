@@ -321,9 +321,12 @@ func TestPermit(t *testing.T) {
 		pod           *corev1.Pod
 		pgs           []*v1alpha1.PodGroup
 		pods          []*corev1.Pod
+		runningPods   []*corev1.Pod
 		wantStatus    Status
 		wantWaittime  time.Duration
 		needGangGroup bool
+		onceSatisfy   bool
+		matchPolicy   string
 		groupInfo     string
 	}{
 		{
@@ -347,6 +350,59 @@ func TestPermit(t *testing.T) {
 			pgs:          []*v1alpha1.PodGroup{makePg("gangA", "gangA_ns", 3, &gangACreatedTime, nil)},
 			wantStatus:   Wait,
 			wantWaittime: 10 * time.Second,
+		},
+		{
+			name: "pod3 belongs to gangA that doesn't have enough assumed pods, but once satisfied",
+			pod:  st.MakePod().Name("pod3").UID("pod3").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			},
+			pgs:          []*v1alpha1.PodGroup{makePg("gangA", "gangA_ns", 3, &gangACreatedTime, nil)},
+			onceSatisfy:  true,
+			wantStatus:   Success,
+			wantWaittime: 0,
+		},
+		{
+			name: "pod3 belongs to gangA that doesn't have enough assumed pods, once satisfied, but matchPolicy not once satisfied",
+			pod:  st.MakePod().Name("pod3").UID("pod3").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			},
+			pgs:          []*v1alpha1.PodGroup{makePg("gangA", "gangA_ns", 3, &gangACreatedTime, nil)},
+			onceSatisfy:  true,
+			matchPolicy:  extension.GangMatchPolicyOnlyWaiting,
+			wantStatus:   Wait,
+			wantWaittime: 10 * time.Second,
+		},
+		{
+			name: "pod3 belongs to gangA that doesn't have enough assumed pods, but with Running pods is enough, matchPolicy waiting-and-running",
+			pod:  st.MakePod().Name("pod3").UID("pod3").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			},
+			runningPods: []*corev1.Pod{
+				st.MakePod().Name("pod3-2").UID("pod3-2").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			},
+			pgs:          []*v1alpha1.PodGroup{makePg("gangA", "gangA_ns", 3, &gangACreatedTime, nil)},
+			onceSatisfy:  true,
+			matchPolicy:  extension.GangMatchPolicyOnlyWaiting,
+			wantStatus:   Wait,
+			wantWaittime: 10 * time.Second,
+		},
+		{
+			name: "pod3 belongs to gangA that doesn't have enough assumed pods, but with Running pods is enough, matchPolicy waiting-and-running",
+			pod:  st.MakePod().Name("pod3").UID("pod3").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			},
+			runningPods: []*corev1.Pod{
+				st.MakePod().Name("pod3-2").UID("pod3-2").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			},
+			pgs:          []*v1alpha1.PodGroup{makePg("gangA", "gangA_ns", 3, &gangACreatedTime, nil)},
+			onceSatisfy:  true,
+			matchPolicy:  extension.GangMatchPolicyWaitingAndRunning,
+			wantStatus:   Success,
+			wantWaittime: 0,
 		},
 		{
 			name: "pod4 belongs to gangB that gangA has resourceSatisfied",
@@ -407,12 +463,22 @@ func TestPermit(t *testing.T) {
 					pg.Annotations[extension.AnnotationGangGroups] = tt.groupInfo
 				}
 				mgr.cache.onPodGroupAdd(pg)
+				gangId := util.GetId(pg.Namespace, pg.Name)
+				gang := mgr.cache.getGangFromCacheByGangId(gangId, false)
+				gang.lock.Lock()
+				gang.OnceResourceSatisfied = tt.onceSatisfy
+				gang.GangMatchPolicy = tt.matchPolicy
+				gang.lock.Unlock()
 			}
 			ctx := context.TODO()
 			// create  pods
 			for _, pod := range tt.pods {
 				mgr.cache.onPodAdd(pod)
 				mgr.Permit(ctx, pod)
+			}
+			for _, pod := range tt.runningPods {
+				mgr.cache.onPodAdd(pod)
+				mgr.PostBind(ctx, pod, "tmp")
 			}
 			mgr.cache.onPodAdd(tt.pod)
 			timeout, status := mgr.Permit(ctx, tt.pod)

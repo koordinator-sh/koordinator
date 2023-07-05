@@ -42,7 +42,7 @@ type NodeMetricInfo struct {
 	// SystemUsage is the resource usage of daemon processes and OS kernel, calculated by `NodeUsage - sum(podUsage)`
 	SystemUsage ResourceMap `json:"systemUsage,omitempty"`
 	// AggregatedSystemUsages will report only if there are enough samples
-	// Deleted pods will be excludes during aggregation
+	// Deleted pods will be excluded during aggregation
 	AggregatedSystemUsages []AggregatedUsage `json:"aggregatedSystemUsages,omitempty"`
 }
 
@@ -79,6 +79,12 @@ type AggregatePolicy struct {
 	Durations []metav1.Duration `json:"durations,omitempty"`
 }
 
+// ReclaimableMetric defines the reclaimable metric of resource priority
+type ReclaimableMetric struct {
+	// Resource is the resource usage of the prediction
+	Resource ResourceMap `json:"resource,omitempty"`
+}
+
 // NodeMetricStatus defines the observed state of NodeMetric
 type NodeMetricStatus struct {
 	// UpdateTime is the last time this NodeMetric was updated.
@@ -89,6 +95,9 @@ type NodeMetricStatus struct {
 
 	// PodsMetric contains the metrics for pods belong to this node.
 	PodsMetric []*PodMetricInfo `json:"podsMetric,omitempty"`
+
+	// ProdReclaimableMetric is the indicator statistics of Prod type resources reclaimable
+	ProdReclaimableMetric *ReclaimableMetric `json:"prodReclaimableMetric,omitempty"`
 }
 
 // +genclient

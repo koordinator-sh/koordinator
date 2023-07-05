@@ -404,7 +404,7 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 				assert.NoError(t, err)
 				buildMockQueryResult(ctl, mockQuerier, mockResultFactory, podQueryMeta, podMetric.CPUUsed)
 			}
-			mockMetricCache.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(tt.fields.nodeCPUInfo, nil).AnyTimes()
+			mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(tt.fields.nodeCPUInfo, true).AnyTimes()
 
 			fakeRecorder := &FakeRecorder{}
 			client := clientsetfake.NewSimpleClientset()
@@ -1327,27 +1327,6 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 	}
 }
 
-func genTestContainerResourceQueryResult(containerID string, cpuMilliUsage,
-	memUsage int64) *metriccache.ContainerResourceQueryResult {
-	return &metriccache.ContainerResourceQueryResult{
-		QueryResult: metriccache.QueryResult{
-			AggregateInfo: &metriccache.AggregateInfo{
-				MetricsCount: 1,
-			},
-			Error: nil,
-		},
-		Metric: &metriccache.ContainerResourceMetric{
-			ContainerID: containerID,
-			CPUUsed: metriccache.CPUMetric{
-				CPUUsed: *resource.NewMilliQuantity(cpuMilliUsage, resource.DecimalSI),
-			},
-			MemoryUsed: metriccache.MemoryMetric{
-				MemoryWithoutCache: *resource.NewQuantity(memUsage, resource.BinarySI),
-			},
-		},
-	}
-}
-
 func Test_burstLimiter_Allow(t *testing.T) {
 	type fields struct {
 		burstPeriodSec    int64
@@ -1522,7 +1501,6 @@ func TestCPUBurst_start(t *testing.T) {
 		nodeSLO              *slov1alpha1.NodeSLO
 		podsCurCFSQuota      map[string]int64
 		containerCurCFSQuota map[string]int64
-		containerMetric      map[string]metriccache.ContainerResourceQueryResult
 		containersThrottled  map[string]testThrottledMetrics
 	}
 	type want struct {
@@ -1564,10 +1542,6 @@ func TestCPUBurst_start(t *testing.T) {
 				containerCurCFSQuota: map[string]int64{
 					lsrContainerName: -1,
 					lsContainerName:  2 * system.CFSBasePeriodValue,
-				},
-				containerMetric: map[string]metriccache.ContainerResourceQueryResult{
-					lsrContainerID: *genTestContainerResourceQueryResult(lsrContainerID, 6000, 6000),
-					lsContainerID:  *genTestContainerResourceQueryResult(lsContainerID, 150, 100),
 				},
 				containersThrottled: map[string]testThrottledMetrics{
 					lsrContainerID: {
@@ -1633,12 +1607,8 @@ func TestCPUBurst_start(t *testing.T) {
 				assert.NoError(t, err)
 				buildMockQueryResult(ctl, mockQuerier, mockResultFactory, queryMeta, podMetric.CPUUsed)
 			}
-			mockMetricCache.EXPECT().GetNodeCPUInfo(gomock.Any()).Return(tt.fields.nodeCPUInfo, nil).AnyTimes()
 
-			for _, containerMetric := range tt.fields.containerMetric {
-				mockMetricCache.EXPECT().GetContainerResourceMetric(&containerMetric.Metric.ContainerID,
-					gomock.Any()).Return(containerMetric).AnyTimes()
-			}
+			mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(tt.fields.nodeCPUInfo, true).AnyTimes()
 			for containerID, containerMetric := range tt.fields.containersThrottled {
 				result := mock_metriccache.NewMockAggregateResult(ctl)
 				result.EXPECT().Count().Return(containerMetric.count).AnyTimes()

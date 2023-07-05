@@ -119,7 +119,7 @@ func TestBlkIOReconcile_reconcile(t *testing.T) {
 		statesInformer.EXPECT().GetVolumeName("default", PVCName).Return(PVName).AnyTimes()
 
 		mockMetricCache := mock_metriccache.NewMockMetricCache(ctrl)
-		mockMetricCache.EXPECT().GetNodeLocalStorageInfo(gomock.Any()).Return(localStorageInfo, nil).AnyTimes()
+		mockMetricCache.EXPECT().Get(metriccache.NodeLocalStorageInfoKey).Return(localStorageInfo, true).AnyTimes()
 
 		rm := &resmanager{
 			metricCache:    mockMetricCache,

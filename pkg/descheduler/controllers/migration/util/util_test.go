@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -235,6 +236,82 @@ func TestFilterPodWithMaxEvictionCost(t *testing.T) {
 					},
 				},
 			})
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestGetMaxUnavailable(t *testing.T) {
+	tests := []struct {
+		name         string
+		replicas     int
+		intOrPercent *intstr.IntOrString
+		want         int
+	}{
+		{
+			name:     "case1",
+			replicas: 6,
+			intOrPercent: &intstr.IntOrString{
+				Type:   intstr.String,
+				StrVal: "80%",
+			},
+			want: 4,
+		},
+		{
+			name:     "case2",
+			replicas: 6,
+			intOrPercent: &intstr.IntOrString{
+				Type:   intstr.String,
+				StrVal: "150%",
+			},
+			want: 6,
+		},
+		{
+			name:     "case3",
+			replicas: 6,
+			intOrPercent: &intstr.IntOrString{
+				Type:   intstr.Int,
+				IntVal: 5,
+			},
+			want: 5,
+		},
+		{
+			name:     "case4",
+			replicas: 6,
+			intOrPercent: &intstr.IntOrString{
+				Type:   intstr.Int,
+				IntVal: 7,
+			},
+			want: 6,
+		},
+		{
+			name:         "case5",
+			replicas:     6,
+			intOrPercent: nil,
+			want:         2,
+		},
+		{
+			name:     "case6",
+			replicas: 50,
+			intOrPercent: &intstr.IntOrString{
+				Type:   intstr.String,
+				StrVal: "0%",
+			},
+			want: 5,
+		},
+		{
+			name:         "case7",
+			replicas:     6,
+			intOrPercent: &intstr.IntOrString{},
+			want:         2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetMaxUnavailable(tt.replicas, tt.intOrPercent)
+			if err != nil {
+				t.Errorf("GetMaxUnavailable: %v", err)
+			}
 			assert.Equal(t, tt.want, got)
 		})
 	}

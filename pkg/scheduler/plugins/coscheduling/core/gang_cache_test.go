@@ -98,6 +98,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					ScheduleCycleValid: true,
 					ScheduleCycle:      1,
 					GangFrom:           GangFromPodAnnotation,
+					GangMatchPolicy:    extension.GangMatchPolicyOnceSatisfied,
 					HasGangInit:        false,
 					Children: map[string]*corev1.Pod{
 						"default/crdPod": {
@@ -160,6 +161,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					GangGroup:         []string{"default/ganga", "default/gangb"},
 					HasGangInit:       true,
 					GangFrom:          GangFromPodAnnotation,
+					GangMatchPolicy:   extension.GangMatchPolicyOnceSatisfied,
 					Children: map[string]*corev1.Pod{
 						"default/pod1": {
 							ObjectMeta: metav1.ObjectMeta{
@@ -261,6 +263,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					GangGroup:         []string{"default/ganga"},
 					HasGangInit:       true,
 					GangFrom:          GangFromPodAnnotation,
+					GangMatchPolicy:   extension.GangMatchPolicyOnceSatisfied,
 					Children: map[string]*corev1.Pod{
 						"default/pod1": {
 							ObjectMeta: metav1.ObjectMeta{
@@ -359,6 +362,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					GangGroupId:       "default/gangb",
 					HasGangInit:       true,
 					GangFrom:          GangFromPodAnnotation,
+					GangMatchPolicy:   extension.GangMatchPolicyOnceSatisfied,
 					Children: map[string]*corev1.Pod{
 						"default/pod3": {
 							ObjectMeta: metav1.ObjectMeta{
@@ -435,6 +439,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					GangGroup:         []string{"default/gangc"},
 					HasGangInit:       true,
 					GangFrom:          GangFromPodAnnotation,
+					GangMatchPolicy:   extension.GangMatchPolicyOnceSatisfied,
 					Children: map[string]*corev1.Pod{
 						"default/pod5": {
 							ObjectMeta: metav1.ObjectMeta{
@@ -466,6 +471,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					GangGroup:         []string{"default/gangd"},
 					HasGangInit:       true,
 					GangFrom:          GangFromPodAnnotation,
+					GangMatchPolicy:   extension.GangMatchPolicyOnceSatisfied,
 					Children: map[string]*corev1.Pod{
 						"default/pod6": {
 							ObjectMeta: metav1.ObjectMeta{
@@ -505,6 +511,150 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 			gangCache := NewGangCache(defaultArgs, nil, pglister, pgClientSet)
 			for _, pod := range tt.pods {
 				gangCache.onPodAdd(pod)
+			}
+			for k, v := range tt.wantCache {
+				if !v.HasGangInit {
+					continue
+				}
+				tt.wantCache[k].GangGroupId = util.GetGangGroupId(v.GangGroup)
+			}
+			assert.Equal(t, tt.wantCache, gangCache.gangItems)
+		})
+	}
+}
+
+func TestGangCache_OnPodUpdate(t *testing.T) {
+	defaultArgs := getTestDefaultCoschedulingArgs(t)
+	tests := []struct {
+		name      string
+		pods      []*corev1.Pod
+		wantCache map[string]*Gang
+	}{
+		{
+			name:      "add invalid pod",
+			pods:      []*corev1.Pod{{}},
+			wantCache: map[string]*Gang{},
+		},
+		{
+			name: "add pod announcing Gang in Annotation way",
+			pods: []*corev1.Pod{
+				// pod1 announce GangA
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "pod1",
+						Annotations: map[string]string{
+							extension.AnnotationGangName:     "ganga",
+							extension.AnnotationGangMinNum:   "2",
+							extension.AnnotationGangWaitTime: "30s",
+							extension.AnnotationGangMode:     extension.GangModeNonStrict,
+							extension.AnnotationGangGroups:   "[\"default/ganga\",\"default/gangb\"]",
+						},
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "nba",
+					},
+				},
+				// pod2 also announce GangA but with different annotations after pod1's announcing
+				// so gangA in cache should only be created with pod1's Annotations
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "pod2",
+						Annotations: map[string]string{
+							extension.AnnotationGangName:     "ganga",
+							extension.AnnotationGangMinNum:   "7",
+							extension.AnnotationGangWaitTime: "3000s",
+							extension.AnnotationGangGroups:   "[\"default/gangc\",\"default/gangd\"]",
+						},
+					},
+				},
+			},
+			wantCache: map[string]*Gang{
+				"default/ganga": {
+					Name:              "default/ganga",
+					WaitTime:          30 * time.Second,
+					CreateTime:        fakeTimeNowFn(),
+					Mode:              extension.GangModeNonStrict,
+					GangMatchPolicy:   extension.GangMatchPolicyOnceSatisfied,
+					MinRequiredNumber: 2,
+					TotalChildrenNum:  2,
+					GangGroup:         []string{"default/ganga", "default/gangb"},
+					HasGangInit:       true,
+					GangFrom:          GangFromPodAnnotation,
+					Children: map[string]*corev1.Pod{
+						"default/pod1": {
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: "default",
+								Name:      "pod1",
+								Annotations: map[string]string{
+									extension.AnnotationGangName:     "ganga",
+									extension.AnnotationGangMinNum:   "2",
+									extension.AnnotationGangWaitTime: "30s",
+									extension.AnnotationGangMode:     extension.GangModeNonStrict,
+									extension.AnnotationGangGroups:   "[\"default/ganga\",\"default/gangb\"]",
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "nba",
+							},
+						},
+						"default/pod2": {
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: "default",
+								Name:      "pod2",
+								Annotations: map[string]string{
+									extension.AnnotationGangName:     "ganga",
+									extension.AnnotationGangMinNum:   "7",
+									extension.AnnotationGangWaitTime: "3000s",
+									extension.AnnotationGangGroups:   "[\"default/gangc\",\"default/gangd\"]",
+								},
+							},
+						},
+					},
+					WaitingForBindChildren: map[string]*corev1.Pod{},
+					BoundChildren: map[string]*corev1.Pod{
+						"default/pod1": {
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: "default",
+								Name:      "pod1",
+								Annotations: map[string]string{
+									extension.AnnotationGangName:     "ganga",
+									extension.AnnotationGangMinNum:   "2",
+									extension.AnnotationGangWaitTime: "30s",
+									extension.AnnotationGangMode:     extension.GangModeNonStrict,
+									extension.AnnotationGangGroups:   "[\"default/ganga\",\"default/gangb\"]",
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "nba",
+							},
+						},
+					},
+					ScheduleCycleValid:       true,
+					ScheduleCycle:            1,
+					OnceResourceSatisfied:    true,
+					ChildrenScheduleRoundMap: map[string]int{},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			preTimeNowFn := timeNowFn
+			defer func() {
+				timeNowFn = preTimeNowFn
+			}()
+			timeNowFn = fakeTimeNowFn
+			pgClientSet := fakepgclientset.NewSimpleClientset()
+			pgInformerFactory := pgformers.NewSharedInformerFactory(pgClientSet, 0)
+			pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
+			pglister := pgInformer.Lister()
+
+			gangCache := NewGangCache(defaultArgs, nil, pglister, pgClientSet)
+			for _, pod := range tt.pods {
+				gangCache.onPodUpdate(pod, pod)
 			}
 			for k, v := range tt.wantCache {
 				if !v.HasGangInit {
@@ -624,6 +774,7 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 					GangGroupId:              "default/gangB",
 					HasGangInit:              true,
 					GangFrom:                 GangFromPodGroupCrd,
+					GangMatchPolicy:          extension.GangMatchPolicyOnceSatisfied,
 					Children:                 map[string]*corev1.Pod{},
 					WaitingForBindChildren:   map[string]*corev1.Pod{},
 					BoundChildren:            map[string]*corev1.Pod{},
@@ -751,6 +902,7 @@ func TestGangCache_OnPodGroupAdd(t *testing.T) {
 					GangGroup:                []string{"default/gangA", "default/gangB"},
 					HasGangInit:              true,
 					GangFrom:                 GangFromPodGroupCrd,
+					GangMatchPolicy:          extension.GangMatchPolicyOnceSatisfied,
 					Children:                 map[string]*corev1.Pod{},
 					WaitingForBindChildren:   map[string]*corev1.Pod{},
 					BoundChildren:            map[string]*corev1.Pod{},
@@ -791,6 +943,7 @@ func TestGangCache_OnPodGroupAdd(t *testing.T) {
 					GangGroupId:              "default/gangA",
 					HasGangInit:              true,
 					GangFrom:                 GangFromPodGroupCrd,
+					GangMatchPolicy:          extension.GangMatchPolicyOnceSatisfied,
 					Children:                 map[string]*corev1.Pod{},
 					WaitingForBindChildren:   map[string]*corev1.Pod{},
 					BoundChildren:            map[string]*corev1.Pod{},
@@ -881,6 +1034,7 @@ func TestGangCache_OnGangDelete(t *testing.T) {
 		GangGroup:         []string{"default/gangA", "default/gangB"},
 		HasGangInit:       true,
 		GangFrom:          GangFromPodAnnotation,
+		GangMatchPolicy:   extension.GangMatchPolicyOnceSatisfied,
 		Children: map[string]*corev1.Pod{
 			"default/pod1": {
 				ObjectMeta: metav1.ObjectMeta{

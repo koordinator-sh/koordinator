@@ -19,28 +19,41 @@ package noderesource
 import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/batchresource"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/midresource"
 )
 
 // NOTE: functions in this file can be overwritten for extension
 
 func init() {
+	// set default plugins
+	NodeResourcePlugins = append(NodeResourcePlugins, midresource.PluginName)
+	NodeResourcePlugins = append(NodeResourcePlugins, batchresource.PluginName)
+}
+
+func addPlugins(filter func(string) bool) {
 	// NOTE: plugins run in order of the registration.
-	framework.RegisterNodePrepareExtender(nodePreparePlugins...)
-	framework.RegisterNodeSyncExtender(nodeSyncPlugins...)
-	framework.RegisterResourceCalculateExtender(resourceCalculatePlugins...)
+	framework.RegisterNodePrepareExtender(filter, nodePreparePlugins...)
+	framework.RegisterNodeSyncExtender(filter, nodeSyncPlugins...)
+	framework.RegisterNodeMetaSyncExtender(filter, nodeMetaSyncPlugins...)
+	framework.RegisterResourceCalculateExtender(filter, resourceCalculatePlugins...)
 }
 
 var (
-	// NodeSyncPlugin implements the check of resource updating.
-	nodePreparePlugins = []framework.NodePreparePlugin{
-		&batchresource.Plugin{},
-	}
 	// NodePreparePlugin implements node resource preparing for the calculated results.
-	nodeSyncPlugins = []framework.NodeSyncPlugin{
+	nodePreparePlugins = []framework.NodePreparePlugin{
+		&midresource.Plugin{},
 		&batchresource.Plugin{},
 	}
+	// NodeSyncPlugin implements the check of resource updating.
+	nodeSyncPlugins = []framework.NodeSyncPlugin{
+		&midresource.Plugin{},
+		&batchresource.Plugin{},
+	}
+	// NodeMetaSyncPlugin implements the check of node meta updating.
+	nodeMetaSyncPlugins = []framework.NodeMetaSyncPlugin{}
 	// ResourceCalculatePlugin implements resource counting and overcommitment algorithms.
 	resourceCalculatePlugins = []framework.ResourceCalculatePlugin{
+		&midresource.Plugin{},
 		&batchresource.Plugin{},
 	}
 )

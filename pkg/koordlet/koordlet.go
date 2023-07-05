@@ -17,16 +17,13 @@ limitations under the License.
 package agent
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
@@ -38,10 +35,12 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	statesinformerimpl "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -65,6 +64,7 @@ type daemon struct {
 	resManager     resmanager.ResManager
 	qosManager     qosmanager.QoSManager
 	runtimeHook    runtimehooks.RuntimeHook
+	predictServer  prediction.PredictServer
 }
 
 func NewDaemon(config *config.Configuration) (Daemon, error) {
@@ -88,38 +88,13 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	predictServer := prediction.NewPeakPredictServer(config.PredictionConf)
+	predictorFactory := prediction.NewPredictorFactory(predictServer, config.PredictionConf.ColdStartDuration, config.PredictionConf.SafetyMarginPercent)
 
-	statesInformer := statesinformer.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, nodeName, schedulingClient)
+	statesInformer := statesinformerimpl.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, nodeName, schedulingClient, predictorFactory)
 
-	// setup cgroup path formatter from cgroup driver type
-	var detectCgroupDriver system.CgroupDriverType
-	if pollErr := wait.PollImmediate(time.Second*10, time.Minute, func() (bool, error) {
-		driver := system.GuessCgroupDriverFromCgroupName()
-		if driver.Validate() {
-			detectCgroupDriver = driver
-			return true, nil
-		}
-		klog.Infof("can not detect cgroup driver from 'kubepods' cgroup name")
-
-		node, err := kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, v1.GetOptions{})
-		if err != nil || node == nil {
-			klog.Errorf("Can't get node, err: %v", err)
-			return false, nil
-		}
-
-		port := int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
-		if driver, err := system.GuessCgroupDriverFromKubeletPort(port); err == nil && driver.Validate() {
-			detectCgroupDriver = driver
-			return true, nil
-		} else {
-			klog.Errorf("guess kubelet cgroup driver failed, retry...: %v", err)
-			return false, nil
-		}
-	}); pollErr != nil {
-		return nil, fmt.Errorf("can not detect kubelet cgroup driver: %v", pollErr)
-	}
+	detectCgroupDriver := system.DetectCgroupDriver()
 	system.SetupCgroupPathFormatter(detectCgroupDriver)
-	klog.Infof("Node %s use '%s' as cgroup driver", nodeName, string(detectCgroupDriver))
 
 	collectorService := metricsadvisor.NewMetricAdvisor(config.CollectorConf, statesInformer, metricCache)
 
@@ -144,6 +119,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		resManager:     resManagerService,
 		qosManager:     qosManager,
 		runtimeHook:    runtimeHook,
+		predictServer:  predictServer,
 	}
 
 	return d, nil
@@ -155,50 +131,60 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 
 	go func() {
 		if err := d.metricCache.Run(stopCh); err != nil {
-			klog.Fatalf("Unable to run the metric cache: ", err)
+			klog.Fatal("Unable to run the metric cache: ", err)
 		}
 	}()
 
 	// start states informer
 	go func() {
 		if err := d.statesInformer.Run(stopCh); err != nil {
-			klog.Fatalf("Unable to run the states informer: ", err)
+			klog.Fatal("Unable to run the states informer: ", err)
 		}
 	}()
 	// wait for metric advisor sync
 	if !cache.WaitForCacheSync(stopCh, d.statesInformer.HasSynced) {
-		klog.Fatalf("time out waiting for states informer to sync")
+		klog.Fatal("time out waiting for states informer to sync")
 	}
 
 	// start metric advisor
 	go func() {
 		if err := d.metricAdvisor.Run(stopCh); err != nil {
-			klog.Fatalf("Unable to run the metric advisor: ", err)
+			klog.Fatal("Unable to run the metric advisor: ", err)
 		}
 	}()
 
 	// wait for metric advisor sync
 	if !cache.WaitForCacheSync(stopCh, d.metricAdvisor.HasSynced) {
-		klog.Fatalf("time out waiting for metric advisor to sync")
+		klog.Fatal("time out waiting for metric advisor to sync")
 	}
+
+	// start predict server
+	go func() {
+		if err := d.predictServer.Setup(d.statesInformer, d.metricCache); err != nil {
+			klog.Fatal("Unable to setup the predict server: ", err)
+		}
+		if err := d.predictServer.Run(stopCh); err != nil {
+			klog.Fatal("Unable to run the predict server: ", err)
+		}
+	}()
 
 	// start resmanager
 	go func() {
 		if err := d.resManager.Run(stopCh); err != nil {
-			klog.Fatalf("Unable to run the resManager: ", err)
+			klog.Fatal("Unable to run the resManager: ", err)
 		}
 	}()
 
 	// start QoS Manager
 	go func() {
 		if err := d.qosManager.Run(stopCh); err != nil {
-			klog.Fatalf("Unable to run the QoSManager: ", err)
+			klog.Fatal("Unable to run the QoSManager: ", err)
 		}
 	}()
 
 	go func() {
 		if err := d.runtimeHook.Run(stopCh); err != nil {
-			klog.Fatalf("Unable to run the runtimeHook: ", err)
+			klog.Fatal("Unable to run the runtimeHook: ", err)
 		}
 	}()
 

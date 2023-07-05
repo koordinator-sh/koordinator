@@ -18,10 +18,6 @@ package metriccache
 
 import "sync"
 
-const (
-	GPUDeviceKey = "GPU"
-)
-
 type KVStorage interface {
 	Get(key interface{}) (interface{}, bool)
 	Set(key, value interface{})

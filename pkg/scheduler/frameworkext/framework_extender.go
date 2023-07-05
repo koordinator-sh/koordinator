@@ -19,8 +19,6 @@ package frameworkext
 import (
 	"context"
 	"fmt"
-	"reflect"
-	"unsafe"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,7 +27,6 @@ import (
 
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/sharedlisterext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -42,7 +39,6 @@ type frameworkExtenderImpl struct {
 
 	schedulerFn func() Scheduler
 
-	snapshotGeneration               *int64
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 
@@ -60,8 +56,6 @@ type frameworkExtenderImpl struct {
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
-	snapshotGeneration := reflectSnapshotGeneration(fw.SnapshotSharedLister())
-
 	schedulerFn := func() Scheduler {
 		return f.Scheduler()
 	}
@@ -70,28 +64,12 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		Framework:                        fw,
 		errorHandlerDispatcher:           f.errorHandlerDispatcher,
 		schedulerFn:                      schedulerFn,
-		snapshotGeneration:               snapshotGeneration,
 		koordinatorClientSet:             f.KoordinatorClientSet(),
 		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
 		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
 	}
 	frameworkExtender.updateTransformer(f.defaultTransformers...)
 	return frameworkExtender
-}
-
-func reflectSnapshotGeneration(lister framework.SharedLister) *int64 {
-	if lister == nil {
-		return nil
-	}
-
-	var snapshotGeneration *int64
-	val := reflect.ValueOf(lister)
-	val = reflect.Indirect(val)
-	generationField := val.FieldByName("generation")
-	if generationField.IsValid() {
-		snapshotGeneration = (*int64)(unsafe.Pointer(generationField.UnsafeAddr()))
-	}
-	return snapshotGeneration
 }
 
 func (ext *frameworkExtenderImpl) updateTransformer(transformers ...SchedulingTransformer) {
@@ -153,53 +131,32 @@ func (ext *frameworkExtenderImpl) Scheduler() Scheduler {
 	return ext.schedulerFn()
 }
 
-func (ext *frameworkExtenderImpl) takeSnapshot() error {
-	nodeInfos, err := ext.Framework.SnapshotSharedLister().NodeInfos().List()
-	if err != nil {
-		return nil
-	}
-	if sharedlisterext.TransformNodeInfos(nodeInfos) {
-		if ext.snapshotGeneration != nil {
-			*ext.snapshotGeneration = 0
-		}
-	}
-	return nil
-}
-
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
-func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
-	err := ext.takeSnapshot()
-	if err != nil {
-		return framework.AsStatus(err)
-	}
-
+func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	for _, transformer := range ext.preFilterTransformers {
 		newPod, transformed, status := transformer.BeforePreFilter(ctx, cycleState, pod)
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run BeforePreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
-			return status
+			return nil, status
 		}
 		if transformed {
 			klog.V(5).InfoS("BeforePreFilter transformed", "transformer", transformer.Name(), "pod", klog.KObj(pod))
 			pod = newPod
-			if ext.snapshotGeneration != nil {
-				*ext.snapshotGeneration = 0
-			}
 		}
 	}
 
-	status := ext.Framework.RunPreFilterPlugins(ctx, cycleState, pod)
+	result, status := ext.Framework.RunPreFilterPlugins(ctx, cycleState, pod)
 	if !status.IsSuccess() {
-		return status
+		return result, status
 	}
 
 	for _, transformer := range ext.preFilterTransformers {
 		if status := transformer.AfterPreFilter(ctx, cycleState, pod); !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run AfterPreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
-			return status
+			return nil, status
 		}
 	}
-	return nil
+	return result, nil
 }
 
 // RunFilterPluginsWithNominatedPods transforms the Filter phase of framework with filter transformers.

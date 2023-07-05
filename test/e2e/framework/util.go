@@ -62,7 +62,6 @@ import (
 	watchtools "k8s.io/client-go/tools/watch"
 	"k8s.io/component-base/featuregate"
 	testutils "k8s.io/kubernetes/test/utils"
-	imageutils "k8s.io/kubernetes/test/utils/image"
 	uexec "k8s.io/utils/exec"
 
 	// TODO: Remove the following imports (ref: https://github.com/kubernetes/kubernetes/issues/81245)
@@ -70,6 +69,7 @@ import (
 	e2emetrics "github.com/koordinator-sh/koordinator/test/e2e/framework/metrics"
 	e2enode "github.com/koordinator-sh/koordinator/test/e2e/framework/node"
 	e2epod "github.com/koordinator-sh/koordinator/test/e2e/framework/pod"
+	imageutils "github.com/koordinator-sh/koordinator/test/utils/image"
 )
 
 const (
