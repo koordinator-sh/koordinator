@@ -236,3 +236,17 @@ func killContainers(pod *corev1.Pod, message string) {
 		}
 	}
 }
+
+func doQuery(querier metriccache.Querier, resource metriccache.MetricResource, properties map[metriccache.MetricProperty]string) (metriccache.AggregateResult, error) {
+	queryMeta, err := resource.BuildQueryMeta(properties)
+	if err != nil {
+		return nil, err
+	}
+
+	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
+	if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
+		return nil, err
+	}
+
+	return aggregateResult, nil
+}

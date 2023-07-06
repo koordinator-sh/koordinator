@@ -66,7 +66,6 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 
 	// prepare BECPUUsageCores data,expect 4 cores usage
-	collector.lastBECPUStat = &framework.CPUStat{CPUUsage: 12000000000000, Timestamp: time.Now().Add(-1 * time.Second)}
 	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, "12004000000000")
 
 	// prepare limit data,expect 8 cores limit
@@ -74,9 +73,55 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, "800000")
 	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, "100000")
 
+	collector.lastBECPUStat = &framework.CPUStat{CPUUsage: 12000000000000, Timestamp: time.Now().Add(-1 * time.Second)}
+
 	assert.NotPanics(t, func() {
 		collector.collectBECPUResourceMetric()
 	})
+
+	oldStartTime := time.Unix(0, 0)
+	now := time.Now()
+	querier, err := collector.metricCache.Querier(oldStartTime, now)
+	assert.NoError(t, err)
+
+	beCPUUsageProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationUsage))
+	beCPURequestProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRequest))
+	beCPURealLimitProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRealLimit))
+
+	beCPUUsageQueryMeta, err := metriccache.NodeBEMetric.BuildQueryMeta(beCPUUsageProperties)
+	assert.NoError(t, err)
+	beCPURequestQueryMeta, err := metriccache.NodeBEMetric.BuildQueryMeta(beCPURequestProperties)
+	assert.NoError(t, err)
+	beCPURealLimitQueryMeta, err := metriccache.NodeBEMetric.BuildQueryMeta(beCPURealLimitProperties)
+	assert.NoError(t, err)
+
+	beCPUUsageAggregateResult := metriccache.DefaultAggregateResultFactory.New(beCPUUsageQueryMeta)
+	if err := querier.Query(beCPUUsageQueryMeta, nil, beCPUUsageAggregateResult); err != nil {
+		assert.NoError(t, err)
+	}
+
+	beCPURequeestAggregateResult := metriccache.DefaultAggregateResultFactory.New(beCPURequestQueryMeta)
+	if err := querier.Query(beCPURequestQueryMeta, nil, beCPURequeestAggregateResult); err != nil {
+		assert.NoError(t, err)
+	}
+
+	beCPURealLimitAggregateResult := metriccache.DefaultAggregateResultFactory.New(beCPURealLimitQueryMeta)
+	if err := querier.Query(beCPURealLimitQueryMeta, nil, beCPURealLimitAggregateResult); err != nil {
+		assert.NoError(t, err)
+	}
+
+	// BECPUUsage
+	currentBECPUMilliUsage, err := beCPUUsageAggregateResult.Value(metriccache.AggregationTypeLast)
+	assert.NoError(t, err)
+	assert.Equal(t, float64(4*1000), currentBECPUMilliUsage, "checkRequest")
+	// BECPURequest
+	currentBECPUMilliRequest, _ := beCPURequeestAggregateResult.Value(metriccache.AggregationTypeLast)
+	assert.NoError(t, err)
+	assert.Equal(t, float64(1500), currentBECPUMilliRequest, "checkUsage")
+	// BECPULimit
+	currentBECPUMilliRealLimit, _ := beCPURealLimitAggregateResult.Value(metriccache.AggregationTypeLast)
+	assert.NoError(t, err)
+	assert.Equal(t, float64(8*1000), currentBECPUMilliRealLimit, "checkLimit")
 }
 
 func Test_getBECPUUsageMilliCores(t *testing.T) {
@@ -212,7 +257,7 @@ func Test_getBECPURequestMilliSum(t *testing.T) {
 		started:         atomic.NewBool(true),
 		statesInformer:  mockStatesInformer,
 	}
-	beRequest := c.getBECPURequestMilliSum()
+	beRequest := c.getBECPURequestMilliCores()
 	assert.Equal(t, int64(1500), beRequest)
 }
 

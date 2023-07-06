@@ -30,8 +30,7 @@ func RegisterDecorator(decorator Decorator) {
 
 // Decorator can decorate the Node, Pod and ElasticQuota as needed
 // e.g: If you want to append some additional resources into Node, Pod and ElasticQuota
-//
-//	such as GPU Resources or modify Spec by GPU model, you can implement the Decorator.
+//  such as GPU Resources or modify Spec by GPU model, you can implement the Decorator.
 type Decorator interface {
 	Init(handle framework.Handle) error
 	DecorateNode(node *corev1.Node) *corev1.Node

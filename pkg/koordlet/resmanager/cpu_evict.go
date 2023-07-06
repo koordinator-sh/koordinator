@@ -18,6 +18,7 @@ package resmanager
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -106,22 +107,25 @@ func (c *CPUEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 		return 0
 	}
 	// BECPUUsage
-	avgBECPUUsage, count := getBECPUMetric(metriccache.BEResouceAllocationUsage, querier, queryparam.Aggregate)
+	avgBECPUMilliUsage, count01 := getBECPUMetric(metriccache.BEResouceAllocationUsage, querier, queryparam.Aggregate)
 	// BECPURequest
-	avgBECPURequest, _ := getBECPUMetric(metriccache.BEResouceAllocationRequest, querier, queryparam.Aggregate)
+	avgBECPUMilliRequest, count02 := getBECPUMetric(metriccache.BEResouceAllocationRequest, querier, queryparam.Aggregate)
 	// BECPULimit
-	avgBECPULimit, _ := getBECPUMetric(metriccache.BEResouceAllocationRealLimit, querier, queryparam.Aggregate)
+	avgBECPUMilliRealLimit, count03 := getBECPUMetric(metriccache.BEResouceAllocationRealLimit, querier, queryparam.Aggregate)
+
+	// get min count
+	count := minInt64(count01, count02, count03)
 
 	if !isAvgQueryResultValid(windowSeconds, c.resmanager.collectResUsedIntervalSeconds, count) {
 		return 0
 	}
 
-	if !isBECPUUsageHighEnough(avgBECPUUsage, avgBECPURequest, avgBECPULimit, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,current cpuUsage not Enough! metric(BECPUUsage, BECPURequest, BECPULimit): %s, %s, %s", avgBECPUUsage, avgBECPURequest, avgBECPULimit)
+	if !isBECPUUsageHighEnough(avgBECPUMilliUsage, avgBECPUMilliRequest, avgBECPUMilliRealLimit, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
+		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,current cpuUsage not Enough! metric(BECPUUsage, BECPURequest, BECPULimit): %s, %s, %s", avgBECPUMilliUsage, avgBECPUMilliRequest, avgBECPUMilliRealLimit)
 		return 0
 	}
 
-	milliRelease := calculateResourceMilliToRelease(avgBECPURequest, avgBECPULimit, thresholdConfig)
+	milliRelease := calculateResourceMilliToRelease(avgBECPUMilliRequest, avgBECPUMilliRealLimit, thresholdConfig)
 	if milliRelease <= 0 {
 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,releaseByAvg: %d", milliRelease)
 		return 0
@@ -135,31 +139,31 @@ func (c *CPUEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 		return 0
 	}
 	// BECPUUsage
-	currentBECPUUsage, _ := getBECPUMetric(metriccache.BEResouceAllocationUsage, querier, queryparam.Aggregate)
+	currentBECPUMilliUsage, _ := getBECPUMetric(metriccache.BEResouceAllocationUsage, querier, queryparam.Aggregate)
 	// BECPURequest
-	currentBECPURequest, _ := getBECPUMetric(metriccache.BEResouceAllocationRequest, querier, queryparam.Aggregate)
+	currentBECPUMilliRequest, _ := getBECPUMetric(metriccache.BEResouceAllocationRequest, querier, queryparam.Aggregate)
 	// BECPULimit
-	currentBECPULimit, _ := getBECPUMetric(metriccache.BEResouceAllocationRealLimit, querier, queryparam.Aggregate)
+	currentBECPUMilliRealLimit, _ := getBECPUMetric(metriccache.BEResouceAllocationRealLimit, querier, queryparam.Aggregate)
 
-	if !isBECPUUsageHighEnough(currentBECPUUsage, currentBECPURequest, currentBECPULimit, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,current cpuUsage not Enough! metric(BECPUUsage, BECPURequest, BECPULimit): %s, %s, %s", currentBECPUUsage, currentBECPURequest, currentBECPULimit)
+	if !isBECPUUsageHighEnough(currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliRealLimit, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
+		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,current cpuUsage not Enough! metric(BECPUUsage, BECPURequest, BECPULimit): %s, %s, %s", currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliRealLimit)
 		return 0
 	}
 
 	// Requests and limits do not change frequently.
 	// If the current request and limit are equal to the average request and limit within the window period, there is no need to recalculate.
-	if currentBECPURequest != avgBECPURequest || currentBECPULimit != avgBECPULimit {
-		milliReleaseByCurrent := calculateResourceMilliToRelease(currentBECPURequest, currentBECPULimit, thresholdConfig)
-		if milliReleaseByCurrent <= 0 {
-			klog.Warningf("cpuEvict by ResourceSatisfaction skipped,releaseByCurrent: %d", milliReleaseByCurrent)
-			return 0
-		}
-		// Step3：release = min(releaseByAvg,releaseByCurrent)
-		if milliReleaseByCurrent < milliRelease {
-			milliRelease = milliReleaseByCurrent
-		}
-	} else {
+	if currentBECPUMilliUsage == avgBECPUMilliRequest && currentBECPUMilliRealLimit == avgBECPUMilliRealLimit {
 		return milliRelease
+	}
+	milliReleaseByCurrent := calculateResourceMilliToRelease(currentBECPUMilliRequest, currentBECPUMilliRealLimit, thresholdConfig)
+	if milliReleaseByCurrent <= 0 {
+		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,releaseByCurrent: %d", milliReleaseByCurrent)
+		return 0
+	}
+
+	// Step3：release = min(releaseByAvg,releaseByCurrent)
+	if milliReleaseByCurrent < milliRelease {
+		milliRelease = milliReleaseByCurrent
 	}
 
 	return milliRelease
@@ -173,15 +177,15 @@ func isAvgQueryResultValid(windowSeconds, collectIntervalSeconds, count int64) b
 	return true
 }
 
-func isBECPUUsageHighEnough(beCPUUsage, beCPURequest, beCPULimit float64, thresholdPercent *int64) bool {
-	if beCPULimit == 0 {
+func isBECPUUsageHighEnough(beCPUMilliUsage, beCPUMilliRequest, beCPUMilliRealLimit float64, thresholdPercent *int64) bool {
+	if beCPUMilliRealLimit == 0 {
 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! CPURealLimit is zero!")
 		return false
 	}
-	if beCPUUsage < 1000 {
+	if beCPUMilliUsage < 1000 {
 		return true
 	}
-	cpuUsage := beCPUUsage / beCPULimit
+	cpuUsage := beCPUMilliUsage / beCPUMilliRealLimit
 	if thresholdPercent == nil {
 		thresholdPercent = pointer.Int64(beCPUUsageThresholdPercent)
 	}
@@ -192,13 +196,13 @@ func isBECPUUsageHighEnough(beCPUUsage, beCPURequest, beCPULimit float64, thresh
 	return true
 }
 
-func calculateResourceMilliToRelease(beCPURequest, beCPULimit float64, thresholdConfig *slov1alpha1.ResourceThresholdStrategy) int64 {
-	if beCPURequest == 0 {
+func calculateResourceMilliToRelease(beCPUMilliRequest, beCPUMilliRealLimit float64, thresholdConfig *slov1alpha1.ResourceThresholdStrategy) int64 {
+	if beCPUMilliRequest == 0 {
 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! be pods requests is zero!")
 		return 0
 	}
 
-	satisfactionRate := beCPULimit / beCPURequest
+	satisfactionRate := beCPUMilliRealLimit / beCPUMilliRequest
 	if satisfactionRate > float64(*thresholdConfig.CPUEvictBESatisfactionLowerPercent)/100 {
 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! satisfactionRate(%.2f) and lowPercent(%f)", satisfactionRate, float64(*thresholdConfig.CPUEvictBESatisfactionLowerPercent))
 		return 0
@@ -210,7 +214,7 @@ func calculateResourceMilliToRelease(beCPURequest, beCPULimit float64, threshold
 		return 0
 	}
 
-	milliRelease := beCPURequest * rateGap
+	milliRelease := beCPUMilliRequest * rateGap
 	return int64(milliRelease)
 }
 
@@ -344,16 +348,14 @@ func getBECPUMetric(resouceAllocation metriccache.MetricPropertyValue, querier m
 
 }
 
-func doQuery(querier metriccache.Querier, resource metriccache.MetricResource, properties map[metriccache.MetricProperty]string) (metriccache.AggregateResult, error) {
-	queryMeta, err := resource.BuildQueryMeta(properties)
-	if err != nil {
-		return nil, err
+func minInt64(num ...int64) int64 {
+	min := int64(math.MaxInt64)
+
+	for _, n := range num {
+		if n < min {
+			min = n
+		}
 	}
 
-	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
-	if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
-		return nil, err
-	}
-
-	return aggregateResult, nil
+	return min
 }
