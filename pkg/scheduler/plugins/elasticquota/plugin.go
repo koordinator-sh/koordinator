@@ -258,12 +258,14 @@ func (g *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 }
 
 func (g *Plugin) Reserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
+	p = core.RunDecoratePod(p)
 	quotaName := g.getPodAssociateQuotaName(p)
 	g.groupQuotaManager.ReservePod(quotaName, p)
 	return framework.NewStatus(framework.Success, "")
 }
 
 func (g *Plugin) Unreserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) {
+	p = core.RunDecoratePod(p)
 	quotaName := g.getPodAssociateQuotaName(p)
 	g.groupQuotaManager.UnreservePod(quotaName, p)
 }

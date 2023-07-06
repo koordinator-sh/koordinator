@@ -86,11 +86,11 @@ const (
 // ScoringStrategy define ScoringStrategyType for the plugin
 type ScoringStrategy struct {
 	// Type selects which strategy to run.
-	Type ScoringStrategyType
+	Type ScoringStrategyType `json:"type,omitempty"`
 
 	// Resources a list of pairs <resource, weight> to be considered while scoring
 	// allowed weights start from 1.
-	Resources []schedconfig.ResourceSpec
+	Resources []schedconfig.ResourceSpec `json:"resources,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

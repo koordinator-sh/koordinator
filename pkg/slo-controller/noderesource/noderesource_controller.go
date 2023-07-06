@@ -37,6 +37,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
@@ -78,9 +79,11 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, node); err != nil {
 		if errors.IsNotFound(err) {
 			// skip non-existing node and return no error to forget the request
+			metrics.RecordNodeResourceReconcileCount(false, "reconcileNodeNotFound")
 			klog.V(3).InfoS("skip for node not found", "node", req.Name)
 			return ctrl.Result{}, nil
 		}
+		metrics.RecordNodeResourceReconcileCount(false, "reconcileNodeGetError")
 		klog.ErrorS(err, "failed to get node", "node", req.Name)
 		return ctrl.Result{Requeue: true}, err
 	}

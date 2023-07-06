@@ -28,6 +28,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -80,13 +81,13 @@ func (p *Plugin) Reset(node *corev1.Node, message string) []framework.ResourceIt
 // Calculate calculates Batch resources using the formula below:
 // Node.Total - Node.Reserved - System.Used - Pod(non-BE).Used, System.Used = Node.Used - Pod(All).Used.
 func (p *Plugin) Calculate(strategy *extension.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
-	metrics *framework.ResourceMetrics) ([]framework.ResourceItem, error) {
-	if strategy == nil || node == nil || podList == nil || metrics == nil || metrics.NodeMetric == nil {
+	resourceMetrics *framework.ResourceMetrics) ([]framework.ResourceItem, error) {
+	if strategy == nil || node == nil || podList == nil || resourceMetrics == nil || resourceMetrics.NodeMetric == nil {
 		return nil, fmt.Errorf("missing essential arguments")
 	}
 
 	// if the node metric is abnormal, do degraded calculation
-	if p.isDegradeNeeded(strategy, metrics.NodeMetric, node) {
+	if p.isDegradeNeeded(strategy, resourceMetrics.NodeMetric, node) {
 		klog.InfoS("node need degradation, reset node resources", "node", node.Name)
 		return p.degradeCalculate(node,
 			"degrade node resource because of abnormal nodeMetric, reason: degradedByBatchResource"), nil
@@ -98,7 +99,7 @@ func (p *Plugin) Calculate(strategy *extension.ColocationStrategy, node *corev1.
 	// pod(All).Used = pod(LS).Used + pod(BE).Used
 	podAllUsed := util.NewZeroResourceList()
 
-	nodeMetric := metrics.NodeMetric
+	nodeMetric := resourceMetrics.NodeMetric
 	podMetricMap := make(map[string]*slov1alpha1.PodMetricInfo)
 	for _, podMetric := range nodeMetric.Status.PodsMetric {
 		podMetricMap[util.GetPodMetricKey(podMetric)] = podMetric
@@ -145,6 +146,9 @@ func (p *Plugin) Calculate(strategy *extension.ColocationStrategy, node *corev1.
 	batchAllocatable, cpuMsg, memMsg := calculateBatchResourceByPolicy(strategy, node, nodeAllocatable,
 		nodeReservation, systemUsed,
 		podLSRequest, podLSUsed)
+
+	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchCPU), metrics.UnitInteger, float64(batchAllocatable.Cpu().MilliValue())/1000)
+	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchMemory), metrics.UnitByte, float64(batchAllocatable.Memory().Value()))
 	klog.V(6).InfoS("calculate batch resource for node", "node", node.Name, "batch resource",
 		batchAllocatable, "cpu", cpuMsg, "memory", memMsg)
 
