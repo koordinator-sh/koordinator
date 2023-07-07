@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
+	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
@@ -37,14 +38,15 @@ type frameworkExtenderImpl struct {
 	*errorHandlerDispatcher
 	forgetPodHandlers []ForgetPodHandler
 
-	schedulerFn func() Scheduler
+	schedulerFn       func() Scheduler
+	configuredPlugins *schedconfig.Plugins
 
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 
-	preFilterTransformers []PreFilterTransformer
-	filterTransformers    []FilterTransformer
-	scoreTransformers     []ScoreTransformer
+	preFilterTransformers map[string]PreFilterTransformer
+	filterTransformers    map[string]FilterTransformer
+	scoreTransformers     map[string]ScoreTransformer
 
 	reservationFilterPlugins    []ReservationFilterPlugin
 	reservationScorePlugins     []ReservationScorePlugin
@@ -66,9 +68,11 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		schedulerFn:                      schedulerFn,
 		koordinatorClientSet:             f.KoordinatorClientSet(),
 		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
+		preFilterTransformers:            map[string]PreFilterTransformer{},
+		filterTransformers:               map[string]FilterTransformer{},
+		scoreTransformers:                map[string]ScoreTransformer{},
 		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
 	}
-	frameworkExtender.updateTransformer(f.defaultTransformers...)
 	return frameworkExtender
 }
 
@@ -76,17 +80,17 @@ func (ext *frameworkExtenderImpl) updateTransformer(transformers ...SchedulingTr
 	for _, transformer := range transformers {
 		preFilterTransformer, ok := transformer.(PreFilterTransformer)
 		if ok {
-			ext.preFilterTransformers = append(ext.preFilterTransformers, preFilterTransformer)
+			ext.preFilterTransformers[transformer.Name()] = preFilterTransformer
 			klog.V(4).InfoS("framework extender got scheduling transformer registered", "preFilter", preFilterTransformer.Name())
 		}
 		filterTransformer, ok := transformer.(FilterTransformer)
 		if ok {
-			ext.filterTransformers = append(ext.filterTransformers, filterTransformer)
+			ext.filterTransformers[transformer.Name()] = filterTransformer
 			klog.V(4).InfoS("framework extender got scheduling transformer registered", "filter", filterTransformer.Name())
 		}
 		scoreTransformer, ok := transformer.(ScoreTransformer)
 		if ok {
-			ext.scoreTransformers = append(ext.scoreTransformers, scoreTransformer)
+			ext.scoreTransformers[transformer.Name()] = scoreTransformer
 			klog.V(4).InfoS("framework extender got scheduling transformer registered", "score", scoreTransformer.Name())
 		}
 	}
@@ -116,6 +120,10 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	}
 }
 
+func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plugins) {
+	ext.configuredPlugins = plugins
+}
+
 func (ext *frameworkExtenderImpl) KoordinatorClientSet() koordinatorclientset.Interface {
 	return ext.koordinatorClientSet
 }
@@ -133,7 +141,11 @@ func (ext *frameworkExtenderImpl) Scheduler() Scheduler {
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	for _, transformer := range ext.preFilterTransformers {
+	for _, pl := range ext.configuredPlugins.PreFilter.Enabled {
+		transformer := ext.preFilterTransformers[pl.Name]
+		if transformer == nil {
+			continue
+		}
 		newPod, transformed, status := transformer.BeforePreFilter(ctx, cycleState, pod)
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run BeforePreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
@@ -150,7 +162,11 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		return result, status
 	}
 
-	for _, transformer := range ext.preFilterTransformers {
+	for _, pl := range ext.configuredPlugins.PreFilter.Enabled {
+		transformer := ext.preFilterTransformers[pl.Name]
+		if transformer == nil {
+			continue
+		}
 		if status := transformer.AfterPreFilter(ctx, cycleState, pod); !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run AfterPreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status
@@ -162,7 +178,11 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 // RunFilterPluginsWithNominatedPods transforms the Filter phase of framework with filter transformers.
 // We don't transform RunFilterPlugins since framework's RunFilterPluginsWithNominatedPods just calls its RunFilterPlugins.
 func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
-	for _, transformer := range ext.filterTransformers {
+	for _, pl := range ext.configuredPlugins.Filter.Enabled {
+		transformer := ext.filterTransformers[pl.Name]
+		if transformer == nil {
+			continue
+		}
 		newPod, newNodeInfo, transformed, status := transformer.BeforeFilter(ctx, cycleState, pod, nodeInfo)
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run BeforeFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
@@ -182,7 +202,11 @@ func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.
 }
 
 func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (framework.PluginToNodeScores, *framework.Status) {
-	for _, transformer := range ext.scoreTransformers {
+	for _, pl := range ext.configuredPlugins.Score.Enabled {
+		transformer := ext.scoreTransformers[pl.Name]
+		if transformer == nil {
+			continue
+		}
 		newPod, newNodes, transformed, status := transformer.BeforeScore(ctx, state, pod, nodes)
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run BeforeScore", "pod", klog.KObj(pod), "plugin", transformer.Name())
@@ -255,10 +279,7 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 }
 
 func (ext *frameworkExtenderImpl) runPreBindExtensionPlugins(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status {
-	plugins := ext.Framework.ListPlugins()
-	if plugins == nil {
-		return nil
-	}
+	plugins := ext.configuredPlugins
 	for _, plugin := range plugins.PreBind.Enabled {
 		pl := ext.preBindExtensionsPlugins[plugin.Name]
 		if pl == nil {

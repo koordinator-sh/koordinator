@@ -358,7 +358,6 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		frameworkext.WithServicesEngine(cc.ServicesEngine),
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
-		frameworkext.WithDefaultTransformers(frameworkext.DefaultTransformers...),
 	)
 	if err != nil {
 		return nil, nil, nil, err
@@ -402,9 +401,10 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	}
 
 	// extend framework to hook run plugin functions
-	for k := range sched.Profiles {
+	for k, fwk := range sched.Profiles {
 		extender := frameworkExtenderFactory.GetExtender(k)
 		if extender != nil {
+			extender.SetConfiguredPlugins(fwk.ListPlugins())
 			sched.Profiles[k] = extender
 		}
 	}
