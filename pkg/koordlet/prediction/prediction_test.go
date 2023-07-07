@@ -103,15 +103,14 @@ func TestInformer(t *testing.T) {
 func TestUIDGenerator(t *testing.T) {
 	generator := &generator{}
 	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod1"}}
-	node := &v1.Node{ObjectMeta: metav1.ObjectMeta{UID: "node1"}}
 
 	podUID := generator.Pod(pod)
 	if podUID != "pod1" {
 		t.Errorf("Expected pod UID to be 'pod1', got '%s'", podUID)
 	}
 
-	nodeUID := generator.Node(node)
-	if nodeUID != "node1" {
+	nodeUID := generator.Node()
+	if nodeUID != DefaultNodeID {
 		t.Errorf("Expected node UID to be 'node1', got '%s'", nodeUID)
 	}
 }

@@ -46,6 +46,7 @@ import (
 	clientsetv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	listerv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
@@ -346,11 +347,15 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 	}
 	prodPredictor := r.predictorFactory.New(prediction.ProdReclaimablePredictor)
 	for _, podMeta := range podsMeta {
-		prodPredictor.AddPod(podMeta.Pod)
 		podMetric, err := r.collectPodMetric(podMeta, podQueryParam)
 		if err != nil {
 			klog.Warningf("query pod metric failed, pod %s/%s, error %v", genPodMetaKey(podMeta), err)
 			continue
+		}
+		// predict pods which have valid metrics; ignore prediction failures
+		err = prodPredictor.AddPod(podMeta.Pod)
+		if err != nil {
+			klog.V(4).Infof("predictor add pod aborted, pod %s/%s, error %v", genPodMetaKey(podMeta), err)
 		}
 
 		r.fillExtensionMap(podMetric, podMeta.Pod)
@@ -362,8 +367,12 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 	prodReclaimable := &slov1alpha1.ReclaimableMetric{}
 	if p, err := prodPredictor.GetResult(); err != nil {
 		klog.Errorf("failed to get prediction, err %v", err)
+		metrics.RecordNodeResourcePriorityReclaimable(string(corev1.ResourceCPU), metrics.UnitCore, string(apiext.PriorityProd), 0)
+		metrics.RecordNodeResourcePriorityReclaimable(string(corev1.ResourceMemory), metrics.UnitByte, string(apiext.PriorityProd), 0)
 	} else {
 		prodReclaimable.Resource = slov1alpha1.ResourceMap{ResourceList: p}
+		metrics.RecordNodeResourcePriorityReclaimable(string(corev1.ResourceCPU), metrics.UnitCore, string(apiext.PriorityProd), float64(p.Cpu().MilliValue())/1000)
+		metrics.RecordNodeResourcePriorityReclaimable(string(corev1.ResourceMemory), metrics.UnitByte, string(apiext.PriorityProd), float64(p.Memory().Value()))
 	}
 
 	return nodeMetricInfo, podsMetricInfo, prodReclaimable

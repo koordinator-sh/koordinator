@@ -18,6 +18,7 @@ package prediction
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -138,6 +140,8 @@ func (p *peakPredictServer) training() {
 	// get pod metrics
 	// 1. list pods, update models
 	pods := p.informer.ListPods()
+	// count the node-level usages of different priority classes and system
+	nodeItemsMetric := NewNodeItemUsage()
 	for _, pod := range pods {
 		uid := p.uidGenerator.Pod(pod)
 		lastCPUUsage, err := p.metricServer.GetPodMetric(MetricDesc{UID: uid}, CPUUsage)
@@ -151,20 +155,50 @@ func (p *peakPredictServer) training() {
 			continue
 		}
 
-		// update the model
-		p.updateMode(uid, lastCPUUsage, lastMemoryUsage)
+		// update the pod model
+		p.updateModel(uid, lastCPUUsage, lastMemoryUsage)
+
+		// update the node priority metric
+		priorityItemID := string(extension.GetPodPriorityClassWithDefault(pod))
+		nodeItemsMetric.AddMetric(priorityItemID, lastCPUUsage, lastMemoryUsage)
+
+		// count all pods metric
+		nodeItemsMetric.AddMetric(AllPodsItemID, lastCPUUsage, lastMemoryUsage)
 	}
 
 	// 2. get node, update models
-	node := p.informer.GetNode()
-	nodeUID := p.uidGenerator.Node(node)
+	nodeUID := p.uidGenerator.Node()
 	lastNodeCPUUsage, errCPU := p.metricServer.GetNodeMetric(MetricDesc{UID: nodeUID}, CPUUsage)
 	lastNodeMemoryUsage, errMem := p.metricServer.GetNodeMetric(MetricDesc{UID: nodeUID}, MemoryUsage)
 	if errCPU != nil || errMem != nil {
 		klog.Warningf("failed to query node cpu and memory metric, CPU err: %s, Memory err: %s", errCPU, errMem)
 	} else {
-		p.updateMode(nodeUID, lastNodeCPUUsage, lastNodeMemoryUsage)
+		p.updateModel(nodeUID, lastNodeCPUUsage, lastNodeMemoryUsage)
 	}
+
+	// 3. update node priority models
+	for _, priorityClass := range extension.KnownPriorityClasses {
+		itemID := string(priorityClass)
+		priorityUID := p.uidGenerator.NodeItem(itemID)
+		metric, ok := nodeItemsMetric.GetMetric(itemID)
+		if ok {
+			p.updateModel(priorityUID, metric.LastCPUUsage, metric.LastMemoryUsage)
+		} else {
+			// reset the priority usage
+			p.updateModel(priorityUID, 0, 0)
+		}
+	}
+
+	// 4. update system model
+	sysCPUUsage := lastNodeCPUUsage
+	sysMemoryUsage := lastNodeMemoryUsage
+	allPodsMetric, ok := nodeItemsMetric.GetMetric(AllPodsItemID)
+	if ok {
+		sysCPUUsage = math.Max(sysCPUUsage-allPodsMetric.LastCPUUsage, 0)
+		sysMemoryUsage = math.Max(sysMemoryUsage-allPodsMetric.LastMemoryUsage, 0)
+	}
+	systemUID := p.uidGenerator.NodeItem(SystemItemID)
+	p.updateModel(systemUID, sysCPUUsage, sysMemoryUsage)
 
 	p.hasSynced.Store(true)
 }
@@ -187,7 +221,7 @@ func (p *peakPredictServer) defaultMemoryHistogram() histogram.Histogram {
 	return histogram.NewDecayingHistogram(options, p.cfg.MemoryHistogramDecayHalfLife)
 }
 
-func (p *peakPredictServer) updateMode(uid UIDType, cpu, memory float64) {
+func (p *peakPredictServer) updateModel(uid UIDType, cpu, memory float64) {
 	p.modelsLock.Lock()
 	defer p.modelsLock.Unlock()
 	model, ok := p.models[uid]
@@ -212,7 +246,7 @@ func (p *peakPredictServer) GetPrediction(metric MetricDesc) (Result, error) {
 	defer p.modelsLock.Unlock()
 	model, ok := p.models[metric.UID]
 	if !ok {
-		return Result{}, fmt.Errorf("UID %v node found in predict server", metric.UID)
+		return Result{}, fmt.Errorf("UID %v not found in predict server", metric.UID)
 	}
 	model.Lock.Lock()
 	defer model.Lock.Unlock()
@@ -362,4 +396,41 @@ func (p *peakPredictServer) restoreModels() (unknownUIDs []UIDType) {
 	}
 
 	return unknownUIDs
+}
+
+type PredictMetric struct {
+	LastCPUUsage    float64
+	LastMemoryUsage float64
+}
+
+type NodeItemsUsage struct {
+	// MetricMap maps an item to its predict metric.
+	// e.g.
+	//      PriorityProd -> {6.2 cores, 20 GiB}
+	//      sys          -> {0.1 cores, 4 GiB}
+	MetricMap map[string]*PredictMetric
+}
+
+func NewNodeItemUsage() *NodeItemsUsage {
+	return &NodeItemsUsage{
+		MetricMap: map[string]*PredictMetric{},
+	}
+}
+
+func (m *NodeItemsUsage) AddMetric(itemID string, cpuUsage, memoryUsage float64) {
+	itemMetric, ok := m.MetricMap[itemID]
+	if ok {
+		itemMetric.LastCPUUsage += cpuUsage
+		itemMetric.LastMemoryUsage += memoryUsage
+	} else {
+		m.MetricMap[itemID] = &PredictMetric{
+			LastCPUUsage:    cpuUsage,
+			LastMemoryUsage: memoryUsage,
+		}
+	}
+}
+
+func (m *NodeItemsUsage) GetMetric(itemID string) (*PredictMetric, bool) {
+	itemMetric, ok := m.MetricMap[itemID]
+	return itemMetric, ok
 }

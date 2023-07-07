@@ -19,6 +19,7 @@ package util
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 )
 
 func NewZeroResourceList() corev1.ResourceList {
@@ -42,6 +43,50 @@ func MultiplyQuant(quant resource.Quantity, factor float64) resource.Quantity {
 	newValue := int64(float64(value) * factor)
 	newQuant := resource.NewQuantity(newValue, quant.Format)
 	return *newQuant
+}
+
+// MinResourceList returns the result of Min(a, b) for each named resource, corresponding to the quotav1.Max().
+// It should be semantically equivalent to the result of `quotav1.Subtract(quotav1.Add(a, b), quotav1.Max(a, b))`.
+//
+// e.g.
+//
+//	a = {"cpu": "10", "memory": "20Gi"}, b = {"cpu": "6", "memory": "24Gi", "nvidia.com/gpu": "2"}
+//	=> {"cpu": "6", "memory": "20Gi"}
+func MinResourceList(a corev1.ResourceList, b corev1.ResourceList) corev1.ResourceList {
+	result := corev1.ResourceList{}
+	for key, value := range a {
+		other, found := b[key]
+		if !found {
+			continue
+		}
+		if value.Cmp(other) >= 0 {
+			result[key] = other.DeepCopy()
+		} else {
+			result[key] = value.DeepCopy()
+		}
+	}
+	return result
+}
+
+// IsResourceListEqualValue checks if the two resource lists are numerically equivalent.
+// NOTE: Resource name with a zero value will be ignored in comparison.
+// e.g. a = {"cpu": "10", "memory": "0"}, b = {"cpu": "10"} => true
+func IsResourceListEqualValue(a, b corev1.ResourceList) bool {
+	a = quotav1.RemoveZeros(a)
+	b = quotav1.RemoveZeros(b)
+	if len(a) != len(b) { // different number of no-zero resources
+		return false
+	}
+	for key, value := range a {
+		other, found := b[key]
+		if !found { // different resource names since all zero values have been dropped
+			return false
+		}
+		if value.Cmp(other) != 0 { // different values
+			return false
+		}
+	}
+	return true
 }
 
 // IsResourceDiff returns whether the new resource has big enough difference with the old one or not
