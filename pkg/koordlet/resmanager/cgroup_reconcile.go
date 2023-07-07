@@ -552,7 +552,7 @@ func getPodResourceQoSByQoSClass(pod *corev1.Pod, strategy *slov1alpha1.Resource
 		return nil
 	}
 	var resourceQoS *slov1alpha1.ResourceQOS
-	podQoS := apiext.GetPodQoSClass(pod)
+	podQoS := apiext.GetPodQoSClassWithDefault(pod)
 	switch podQoS {
 	case apiext.QoSLSR:
 		resourceQoS = strategy.LSRClass
@@ -561,10 +561,7 @@ func getPodResourceQoSByQoSClass(pod *corev1.Pod, strategy *slov1alpha1.Resource
 	case apiext.QoSBE:
 		resourceQoS = strategy.BEClass
 	default:
-		// qos=None pods uses config mapped from kubeQoS
-		resourceQoS = getKubeQoSResourceQoSByQoSClass(util.GetKubeQosClass(pod), strategy, config)
-		klog.V(6).Infof("get pod ResourceQOS according to kubeQoS for QoS=None pods, pod %s, "+
-			"resourceQoS %v", util.GetPodKey(pod), util.DumpJSON(resourceQoS))
+		// should never reach here
 	}
 	return resourceQoS
 }

@@ -16,9 +16,43 @@ limitations under the License.
 
 package extension
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
+)
 
 // NOTE: functions in this file can be overwritten for extension
+
+// QoSClassForGuaranteed indicates the QoSClass which a Guaranteed Pod without a koordinator QoSClass specified should
+// be regarded by default.
+// TODO: add component options to customize it.
+var QoSClassForGuaranteed = QoSLSR
+
+// GetPodQoSClassWithDefault gets the pod's QoSClass with the default config.
+func GetPodQoSClassWithDefault(pod *corev1.Pod) QoSClass {
+	qosClass := GetPodQoSClass(pod)
+	if qosClass != QoSNone {
+		return qosClass
+	}
+
+	return GetPodQoSClassWithKubeQoS(GetKubeQosClass(pod))
+}
+
+// GetPodQoSClassWithKubeQoS returns the default QoSClass according to its kubernetes QoSClass when the pod does not
+// specify a koordinator QoSClass explicitly.
+// https://koordinator.sh/docs/architecture/qos#koordinator-qos-vs-kubernetes-qos
+func GetPodQoSClassWithKubeQoS(kubeQOS corev1.PodQOSClass) QoSClass {
+	switch kubeQOS {
+	case corev1.PodQOSGuaranteed:
+		return QoSClassForGuaranteed
+	case corev1.PodQOSBurstable:
+		return QoSLS
+	case corev1.PodQOSBestEffort:
+		return QoSBE
+	}
+	// should never reach here
+	return QoSNone
+}
 
 func GetPodQoSClass(pod *corev1.Pod) QoSClass {
 	if pod == nil || pod.Labels == nil {
@@ -33,4 +67,12 @@ func GetQoSClassByAttrs(labels, annotations map[string]string) QoSClass {
 		return GetPodQoSClassByName(q)
 	}
 	return QoSNone
+}
+
+func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
+	qosClass := pod.Status.QOSClass
+	if len(qosClass) > 0 {
+		return qosClass
+	}
+	return v1qos.GetPodQOS(pod)
 }

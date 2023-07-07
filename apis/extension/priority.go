@@ -33,10 +33,6 @@ const (
 	PriorityNone  PriorityClass = ""
 )
 
-var (
-	DefaultPriorityClass = PriorityNone
-)
-
 // Define Koordinator priority as a variable value to support customizing different priority ranges
 var (
 	PriorityProdValueMax int32 = 9999
