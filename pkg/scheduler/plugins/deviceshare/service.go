@@ -26,14 +26,14 @@ import (
 
 var _ services.APIServiceProvider = &Plugin{}
 
-func (p *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
+func (pl *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
 	group.GET("/nodeDeviceSummaries", func(c *gin.Context) {
-		allNodeDeviceSummary := p.getAllNodeDeviceSummary()
+		allNodeDeviceSummary := pl.getAllNodeDeviceSummary()
 		c.JSON(http.StatusOK, allNodeDeviceSummary)
 	})
 	group.GET("/nodeDeviceSummaries/:name", func(c *gin.Context) {
 		nodeName := c.Param("name")
-		nodeDeviceSummary, exist := p.getNodeDeviceSummary(nodeName)
+		nodeDeviceSummary, exist := pl.getNodeDeviceSummary(nodeName)
 		if !exist {
 			services.ResponseErrorMessage(c, http.StatusNotFound, "cannot find node %s", nodeName)
 			return

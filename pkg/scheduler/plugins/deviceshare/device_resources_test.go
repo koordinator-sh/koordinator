@@ -59,7 +59,15 @@ func Test_sortDeviceResourcesByMinor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := sortDeviceResourcesByMinor(tt.resources, sets.NewInt(tt.preferred...))
+			var r []deviceResourceMinorPair
+			for minor, resources := range tt.resources {
+				r = append(r, deviceResourceMinorPair{
+					minor:     minor,
+					resources: resources,
+					score:     0,
+				})
+			}
+			got := sortDeviceResourcesByMinor(r, sets.NewInt(tt.preferred...))
 			var orders []int
 			for _, v := range got {
 				orders = append(orders, v.minor)

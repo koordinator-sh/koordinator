@@ -25,6 +25,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/utils/pointer"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 var (
@@ -156,5 +158,20 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	}
 	if obj.ControllerWorkers == nil {
 		obj.ControllerWorkers = pointer.Int64(int64(defaultControllerWorkers))
+	}
+}
+
+func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
+	if obj.ScoringStrategy == nil {
+		obj.ScoringStrategy = &ScoringStrategy{
+			// By default, LeastAllocate is used to ensure high availability of applications
+			Type: LeastAllocated,
+			Resources: []schedconfig.ResourceSpec{
+				{
+					Name:   string(extension.ResourceGPUMemoryRatio),
+					Weight: 1,
+				},
+			},
+		}
 	}
 }

@@ -259,7 +259,12 @@ func (n *nodeDevice) updateAllocateSet(deviceType schedulingv1alpha1.DeviceType,
 	}
 }
 
-func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, required, preferred map[schedulingv1alpha1.DeviceType]sets.Int, requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
+func (n *nodeDevice) tryAllocateDevice(
+	podRequest corev1.ResourceList,
+	required, preferred map[schedulingv1alpha1.DeviceType]sets.Int,
+	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
+	allocationScorer *resourceAllocationScorer,
+) (apiext.DeviceAllocations, error) {
 	allocateResult := make(apiext.DeviceAllocations)
 
 	for deviceType, supportedResourceNames := range DeviceResourceNames {
@@ -267,7 +272,7 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, required,
 		if quotav1.IsZero(deviceRequest) {
 			continue
 		}
-		err := n.tryAllocateDeviceByType(
+		err := n.tryAllocateByDeviceType(
 			deviceRequest,
 			deviceType,
 			required[deviceType],
@@ -275,6 +280,7 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, required,
 			allocateResult,
 			requiredDeviceResources[deviceType],
 			preemptibleDeviceResources[deviceType],
+			allocationScorer,
 		)
 		if err != nil {
 			return nil, err
@@ -284,7 +290,7 @@ func (n *nodeDevice) tryAllocateDevice(podRequest corev1.ResourceList, required,
 	return allocateResult, nil
 }
 
-func (n *nodeDevice) tryAllocateDeviceByType(
+func (n *nodeDevice) tryAllocateByDeviceType(
 	podRequest corev1.ResourceList,
 	deviceType schedulingv1alpha1.DeviceType,
 	required sets.Int,
@@ -292,6 +298,7 @@ func (n *nodeDevice) tryAllocateDeviceByType(
 	allocateResult apiext.DeviceAllocations,
 	requiredDeviceResources deviceResources,
 	preemptibleDeviceResources deviceResources,
+	allocationScorer *resourceAllocationScorer,
 ) error {
 	nodeDeviceTotal := n.deviceTotal[deviceType]
 	if len(nodeDeviceTotal) == 0 {
@@ -340,7 +347,8 @@ func (n *nodeDevice) tryAllocateDeviceByType(
 	}
 
 	satisfiedDeviceCount := 0
-	orderedDeviceResources := sortDeviceResourcesByMinor(freeDevices, preferred)
+	orderedDeviceResources := scoreDevices(podRequestPerCard, nodeDeviceTotal, freeDevices, allocationScorer)
+	orderedDeviceResources = sortDeviceResourcesByMinor(orderedDeviceResources, preferred)
 	for _, deviceResource := range orderedDeviceResources {
 		if required.Len() > 0 && !required.Has(deviceResource.minor) {
 			continue
@@ -363,6 +371,62 @@ func (n *nodeDevice) tryAllocateDeviceByType(
 	}
 	klog.V(5).Infof("node resource does not satisfy pod's multiple %v request, expect %v, got %v", deviceType, deviceWanted, satisfiedDeviceCount)
 	return fmt.Errorf("node does not have enough %v", deviceType)
+}
+
+func (n *nodeDevice) score(
+	podRequest corev1.ResourceList,
+	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
+	allocationScorer *resourceAllocationScorer,
+) (int64, error) {
+	var scores int64
+	for deviceType, supportedResourceNames := range DeviceResourceNames {
+		deviceRequest := quotav1.Mask(podRequest, supportedResourceNames)
+		if quotav1.IsZero(deviceRequest) {
+			continue
+		}
+		scoreByDeviceType, err := n.scoreByDeviceType(
+			deviceRequest,
+			deviceType,
+			requiredDeviceResources[deviceType],
+			preemptibleDeviceResources[deviceType],
+			allocationScorer,
+		)
+		if err != nil {
+			return 0, err
+		}
+		scores += scoreByDeviceType
+	}
+
+	return scores, nil
+}
+
+func (n *nodeDevice) scoreByDeviceType(
+	podRequest corev1.ResourceList,
+	deviceType schedulingv1alpha1.DeviceType,
+	requiredDeviceResources deviceResources,
+	preemptibleDeviceResources deviceResources,
+	allocationScorer *resourceAllocationScorer,
+) (int64, error) {
+	nodeDeviceTotal := n.deviceTotal[deviceType]
+	if len(nodeDeviceTotal) == 0 {
+		return 0, fmt.Errorf("node does not have enough %v", deviceType)
+	}
+
+	var freeDevices deviceResources
+	if len(requiredDeviceResources) > 0 {
+		freeDevices = requiredDeviceResources
+	} else {
+		freeDevices = n.calcFreeWithPreemptible(deviceType, preemptibleDeviceResources)
+	}
+
+	if deviceType == schedulingv1alpha1.GPU {
+		if err := fillGPUTotalMem(nodeDeviceTotal, podRequest); err != nil {
+			return 0, err
+		}
+	}
+
+	score := allocationScorer.scoreNode(podRequest, nodeDeviceTotal, freeDevices)
+	return score, nil
 }
 
 func (n *nodeDevice) calcFreeWithPreemptible(deviceType schedulingv1alpha1.DeviceType, preemptible deviceResources) deviceResources {

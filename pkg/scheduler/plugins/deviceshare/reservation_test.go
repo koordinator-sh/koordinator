@@ -31,14 +31,13 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 func Test_Plugin_ReservationRestore(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(&config.DeviceShareArgs{}, suit.Framework)
+	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
 
@@ -664,6 +663,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				&corev1.Pod{},
 				basicPreemptible,
 				tt.requiredFromReservation,
+				nil,
 			)
 			assert.Equal(t, tt.wantStatus, status)
 			assert.Equal(t, tt.wantResult, result)

@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
@@ -127,4 +128,27 @@ func ValidateCoschedulingArgs(coeSchedulingArgs *config.CoschedulingArgs) error 
 		return fmt.Errorf("coeSchedulingArgs ControllerWorkers invalid")
 	}
 	return nil
+}
+
+func validateResources(resources []schedconfig.ResourceSpec, p *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+	for i, resource := range resources {
+		if resource.Weight <= 0 || resource.Weight > 100 {
+			msg := fmt.Sprintf("resource weight of %v not in valid range (0, 100]", resource.Name)
+			allErrs = append(allErrs, field.Invalid(p.Index(i).Child("weight"), resource.Weight, msg))
+		}
+	}
+	return allErrs
+}
+
+func ValidateDeviceShareArgs(path *field.Path, args *config.DeviceShareArgs) error {
+	var allErrs field.ErrorList
+	if args.ScoringStrategy != nil {
+		allErrs = append(allErrs, validateResources(args.ScoringStrategy.Resources, path.Child("resources"))...)
+	}
+
+	if len(allErrs) == 0 {
+		return nil
+	}
+	return allErrs.ToAggregate()
 }
