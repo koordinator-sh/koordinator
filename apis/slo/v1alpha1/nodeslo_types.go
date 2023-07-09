@@ -36,7 +36,7 @@ type MemoryQOS struct {
 	// 1. `memory.min` := spec.requests.memory * minLimitFactor / 100 (use 0 if requests.memory is not set)
 	// 2. `memory.low` := spec.requests.memory * lowLimitFactor / 100 (use 0 if requests.memory is not set)
 	// 3. `memory.limit_in_bytes` := spec.limits.memory (set $node.allocatable.memory if limits.memory is not set)
-	// 4. `memory.high` := memory.limit_in_bytes * throttlingFactor / 100 (use "max" if memory.high <= memory.min)
+	// 4. `memory.high` := floor[(spec.requests.memory + throttlingFactor / 100 * (memory.limit_in_bytes or node allocatable memory - spec.requests.memory))/pageSize] * pageSize
 	// MinLimitPercent specifies the minLimitFactor percentage to calculate `memory.min`, which protects memory
 	// from global reclamation when memory usage does not exceed the min limit.
 	// Close: 0.
