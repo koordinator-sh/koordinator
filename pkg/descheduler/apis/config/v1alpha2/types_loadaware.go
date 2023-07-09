@@ -73,6 +73,35 @@ type LowNodeLoadArgs struct {
 	// the default is 5 consecutive times exceeding HighThresholds,
 	// it is determined that the node is abnormal, and the Pods need to be migrated to reduce the load.
 	AnomalyCondition *LoadAnomalyCondition `json:"anomalyCondition,omitempty"`
+
+	// NodePools supports multiple different types of batch nodes to configure different strategies
+	NodePools []LowNodeLoadNodePool `json:"nodePools,omitempty"`
+}
+
+type LowNodeLoadNodePool struct {
+	// Name represents the name of pool
+	Name string `json:"name,omitempty"`
+	// NodeSelector selects the nodes that matched labelSelector
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+	// If UseDeviationThresholds is set to `true`, the thresholds are considered as percentage deviations from mean resource usage.
+	// `LowThresholds` will be deducted from the mean among all nodes and `HighThresholds` will be added to the mean.
+	// A resource consumption above (resp. below) this window is considered as overutilization (resp. underutilization).
+	UseDeviationThresholds bool `json:"useDeviationThresholds,omitempty"`
+
+	// HighThresholds defines the target usage threshold of resources
+	HighThresholds ResourceThresholds `json:"highThresholds,omitempty"`
+
+	// LowThresholds defines the low usage threshold of resources
+	LowThresholds ResourceThresholds `json:"lowThresholds,omitempty"`
+
+	// ResourceWeights indicates the weights of resources.
+	// The weights of resources are both 1 by default.
+	ResourceWeights map[corev1.ResourceName]int64 `json:"resourceWeights,omitempty"`
+
+	// AnomalyCondition indicates the node load anomaly thresholds,
+	// the default is 5 consecutive times exceeding HighThresholds,
+	// it is determined that the node is abnormal, and the Pods need to be migrated to reduce the load.
+	AnomalyCondition *LoadAnomalyCondition `json:"anomalyCondition,omitempty"`
 }
 
 type LowNodeLoadPodSelector struct {

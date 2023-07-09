@@ -34,12 +34,6 @@ func ValidateLowLoadUtilizationArgs(path *field.Path, args *deschedulerconfig.Lo
 		allErrs = append(allErrs, field.Invalid(path.Child("evictableNamespaces"), args.EvictableNamespaces, "only one of Include/Exclude namespaces can be set"))
 	}
 
-	if args.NodeSelector != nil {
-		if _, err := metav1.LabelSelectorAsSelector(args.NodeSelector); err != nil {
-			allErrs = append(allErrs, field.Invalid(path.Child("nodeSelector"), args.NodeSelector, err.Error()))
-		}
-	}
-
 	for i, v := range args.PodSelectors {
 		if v.Selector != nil {
 			if _, err := metav1.LabelSelectorAsSelector(v.Selector); err != nil {
@@ -48,23 +42,32 @@ func ValidateLowLoadUtilizationArgs(path *field.Path, args *deschedulerconfig.Lo
 		}
 	}
 
-	for resourceName, percentage := range args.HighThresholds {
-		if percentage < 0 {
-			allErrs = append(allErrs, field.Invalid(path.Child("highThresholds").Key(string(resourceName)), percentage, "percentage must be greater than or equal to 0"))
+	for i, nodePool := range args.NodePools {
+		nodePoolPath := path.Child("nodePools").Index(i)
+		if nodePool.NodeSelector != nil {
+			if _, err := metav1.LabelSelectorAsSelector(nodePool.NodeSelector); err != nil {
+				allErrs = append(allErrs, field.Invalid(nodePoolPath.Child("nodeSelector"), nodePool.NodeSelector, err.Error()))
+			}
 		}
-	}
-	for resourceName, percentage := range args.LowThresholds {
-		if percentage < 0 {
-			allErrs = append(allErrs, field.Invalid(path.Child("lowThresholds").Key(string(resourceName)), percentage, "percentage must be greater than or equal to 0"))
-		}
-		if highPercentage, ok := args.HighThresholds[resourceName]; ok && percentage > highPercentage {
-			allErrs = append(allErrs, field.Invalid(path.Child("lowThresholds").Key(string(resourceName)), percentage, "low percentage must be less than or equal to highThresholds"))
-		}
-	}
 
-	if args.AnomalyCondition.ConsecutiveAbnormalities <= 0 {
-		fieldPath := path.Child("anomalyDetectionThresholds").Child("consecutiveAbnormalities")
-		allErrs = append(allErrs, field.Invalid(fieldPath, args.AnomalyCondition.ConsecutiveAbnormalities, "consecutiveAbnormalities must be greater than 0"))
+		for resourceName, percentage := range nodePool.HighThresholds {
+			if percentage < 0 {
+				allErrs = append(allErrs, field.Invalid(nodePoolPath.Child("highThresholds").Key(string(resourceName)), percentage, "percentage must be greater than or equal to 0"))
+			}
+		}
+		for resourceName, percentage := range nodePool.LowThresholds {
+			if percentage < 0 {
+				allErrs = append(allErrs, field.Invalid(nodePoolPath.Child("lowThresholds").Key(string(resourceName)), percentage, "percentage must be greater than or equal to 0"))
+			}
+			if highPercentage, ok := nodePool.HighThresholds[resourceName]; ok && percentage > highPercentage {
+				allErrs = append(allErrs, field.Invalid(nodePoolPath.Child("lowThresholds").Key(string(resourceName)), percentage, "low percentage must be less than or equal to highThresholds"))
+			}
+		}
+
+		if nodePool.AnomalyCondition.ConsecutiveAbnormalities <= 0 {
+			fieldPath := nodePoolPath.Child("anomalyDetectionThresholds").Child("consecutiveAbnormalities")
+			allErrs = append(allErrs, field.Invalid(fieldPath, nodePool.AnomalyCondition.ConsecutiveAbnormalities, "consecutiveAbnormalities must be greater than 0"))
+		}
 	}
 
 	if len(allErrs) == 0 {
