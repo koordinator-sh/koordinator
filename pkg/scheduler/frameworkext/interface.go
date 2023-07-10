@@ -157,25 +157,29 @@ var (
 
 // nominatedReservationState saves the reservationInfo nominated by ReservationNominator
 type nominatedReservationState struct {
-	reservationInfo *ReservationInfo
+	reservationInfos map[string]*ReservationInfo
 }
 
 func (r *nominatedReservationState) Clone() framework.StateData {
 	return r
 }
 
-func SetNominatedReservation(cycleState *framework.CycleState, reservationInfo *ReservationInfo) {
-	if reservationInfo != nil {
-		cycleState.Write(nominatedReservationKey, &nominatedReservationState{reservationInfo: reservationInfo})
+func SetNominatedReservation(cycleState *framework.CycleState, reservationInfos map[string]*ReservationInfo) {
+	if len(reservationInfos) == 0 {
+		return
 	}
+	cycleState.Write(nominatedReservationKey, &nominatedReservationState{
+		reservationInfos: reservationInfos,
+	})
 }
 
-func GetNominatedReservation(cycleState *framework.CycleState) *ReservationInfo {
+func GetNominatedReservation(cycleState *framework.CycleState, nodeName string) *ReservationInfo {
 	state, err := cycleState.Read(nominatedReservationKey)
 	if err != nil {
 		return nil
 	}
-	return state.(*nominatedReservationState).reservationInfo
+	nominatedState := state.(*nominatedReservationState)
+	return nominatedState.reservationInfos[nodeName]
 }
 
 // ReservationPreBindPlugin performs special binding logic specifically for Reservation in the PreBind phase.

@@ -113,7 +113,20 @@ func TestNominateReservation(t *testing.T) {
 		},
 		{
 			name: "preferred reservation",
-			pod:  &corev1.Pod{},
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
 			reservations: []*schedulingv1alpha1.Reservation{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -123,7 +136,20 @@ func TestNominateReservation(t *testing.T) {
 						},
 					},
 					Spec: schedulingv1alpha1.ReservationSpec{
-						Template: &corev1.PodTemplateSpec{},
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("2"),
+												corev1.ResourceMemory: resource.MustParse("4Gi"),
+											},
+										},
+									},
+								},
+							},
+						},
 					},
 					Status: schedulingv1alpha1.ReservationStatus{
 						NodeName: "test-node",
@@ -134,7 +160,20 @@ func TestNominateReservation(t *testing.T) {
 						Name: "normal-reservation",
 					},
 					Spec: schedulingv1alpha1.ReservationSpec{
-						Template: &corev1.PodTemplateSpec{},
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("2"),
+												corev1.ResourceMemory: resource.MustParse("4Gi"),
+											},
+										},
+									},
+								},
+							},
+						},
 					},
 					Status: schedulingv1alpha1.ReservationStatus{
 						NodeName: "test-node",
@@ -149,7 +188,20 @@ func TestNominateReservation(t *testing.T) {
 					},
 				},
 				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{},
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Resources: corev1.ResourceRequirements{
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("2"),
+											corev1.ResourceMemory: resource.MustParse("4Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
 				},
 				Status: schedulingv1alpha1.ReservationStatus{
 					NodeName: "test-node",

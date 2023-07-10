@@ -40,11 +40,6 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 		return nil, nil
 	}
 
-	highestScorer, _ := findMostPreferredReservationByOrder(reservationInfos)
-	if highestScorer != nil {
-		return highestScorer, nil
-	}
-
 	extender, ok := pl.handle.(frameworkext.FrameworkExtender)
 	if !ok {
 		return nil, framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
@@ -62,6 +57,11 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 		return nil, nil
 	}
 
+	nominated, _ := findMostPreferredReservationByOrder(reservations)
+	if nominated != nil {
+		return nominated, nil
+	}
+
 	reservationScoreList, err := prioritizeReservations(ctx, extender, cycleState, pod, reservations, nodeName)
 	if err != nil {
 		return nil, framework.AsStatus(err)
@@ -70,18 +70,18 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 		return reservationScoreList[i].Score > reservationScoreList[j].Score
 	})
 
-	highestScorer = nil
+	nominated = nil
 	for _, v := range reservations {
 		if v.UID() == reservationScoreList[0].UID {
-			highestScorer = v
+			nominated = v
 			break
 		}
 	}
-	if highestScorer == nil {
+	if nominated == nil {
 		return nil, framework.AsStatus(fmt.Errorf("missing the most suitable reservation %v(%v)",
 			klog.KRef(reservationScoreList[0].Namespace, reservationScoreList[0].Name), reservationScoreList[0].UID))
 	}
-	return highestScorer, nil
+	return nominated, nil
 }
 
 func prioritizeReservations(

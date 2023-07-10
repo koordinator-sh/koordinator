@@ -300,21 +300,11 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, nil
 	}
 
-	var score int64
-	reservationRestoreState := getReservationRestoreState(cycleState)
-	nodeReservationRestoreState := reservationRestoreState.getNodeState(nodeName)
-	if len(nodeReservationRestoreState.reservedCPUs) > 0 {
-		var maxScore int64
-		for _, cpus := range nodeReservationRestoreState.reservedCPUs {
-			s := p.cpuManager.Score(node, state.numCPUsNeeded, preferredCPUBindPolicy, state.preferredCPUExclusivePolicy, cpus)
-			if s > maxScore {
-				maxScore = s
-			}
-		}
-		score = maxScore
-	} else {
-		score = p.cpuManager.Score(node, state.numCPUsNeeded, preferredCPUBindPolicy, state.preferredCPUExclusivePolicy, cpuset.NewCPUSet())
+	reservationReservedCPUs, err := p.getReservationReservedCPUs(cycleState, pod, node)
+	if err != nil {
+		return 0, framework.AsStatus(err)
 	}
+	score := p.cpuManager.Score(node, state.numCPUsNeeded, preferredCPUBindPolicy, state.preferredCPUExclusivePolicy, reservationReservedCPUs)
 	return score, nil
 }
 
@@ -345,7 +335,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return framework.AsStatus(err)
 	}
 
-	reservationReservedCPUs, err := p.getReservationReservedCPUs(cycleState, pod, node, state)
+	reservationReservedCPUs, err := p.getReservationReservedCPUs(cycleState, pod, node)
 	if err != nil {
 		return framework.AsStatus(err)
 	}
@@ -359,12 +349,12 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	return nil
 }
 
-func (p *Plugin) getReservationReservedCPUs(cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node, state *preFilterState) (cpuset.CPUSet, error) {
+func (p *Plugin) getReservationReservedCPUs(cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) (cpuset.CPUSet, error) {
 	var result cpuset.CPUSet
 	if reservationutil.IsReservePod(pod) {
 		return result, nil
 	}
-	nominatedReservation := frameworkext.GetNominatedReservation(cycleState)
+	nominatedReservation := frameworkext.GetNominatedReservation(cycleState, node.Name)
 	if nominatedReservation == nil {
 		return result, nil
 	}

@@ -315,7 +315,7 @@ func (p *Plugin) allocateWithNominatedReservation(
 		return nil, nil
 	}
 
-	reservation := frameworkext.GetNominatedReservation(cycleState)
+	reservation := frameworkext.GetNominatedReservation(cycleState, nodeName)
 	if reservation == nil {
 		return nil, nil
 	}

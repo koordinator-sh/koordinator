@@ -48,11 +48,10 @@ type frameworkExtenderImpl struct {
 	filterTransformers    map[string]FilterTransformer
 	scoreTransformers     map[string]ScoreTransformer
 
-	reservationFilterPlugins    []ReservationFilterPlugin
-	reservationScorePlugins     []ReservationScorePlugin
-	reservationNominatorPlugins []ReservationNominator
-	reservationPreBindPlugins   []ReservationPreBindPlugin
-	reservationRestorePlugins   []ReservationRestorePlugin
+	reservationFilterPlugins  []ReservationFilterPlugin
+	reservationScorePlugins   []ReservationScorePlugin
+	reservationPreBindPlugins []ReservationPreBindPlugin
+	reservationRestorePlugins []ReservationRestorePlugin
 
 	preBindExtensionsPlugins map[string]PreBindExtensions
 }
@@ -105,9 +104,6 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	}
 	if r, ok := pl.(ReservationScorePlugin); ok {
 		ext.reservationScorePlugins = append(ext.reservationScorePlugins, r)
-	}
-	if r, ok := pl.(ReservationNominator); ok {
-		ext.reservationNominatorPlugins = append(ext.reservationNominatorPlugins, r)
 	}
 	if r, ok := pl.(ReservationPreBindPlugin); ok {
 		ext.reservationPreBindPlugins = append(ext.reservationPreBindPlugins, r)
@@ -225,26 +221,6 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *fr
 	return pluginToNodeScores, status
 }
 
-// RunReservePluginsReserve supports trying to obtain the most suitable Reservation on the current node during the Reserve phase
-func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
-	if reservationutil.IsReservePod(pod) {
-		return ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
-	}
-
-	for _, pl := range ext.reservationNominatorPlugins {
-		reservation, status := pl.NominateReservation(ctx, cycleState, pod, nodeName)
-		if !status.IsSuccess() {
-			return status
-		}
-		if reservation != nil {
-			SetNominatedReservation(cycleState, reservation)
-			break
-		}
-	}
-
-	return ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
-}
-
 // RunPreBindPlugins supports PreBindReservation for Reservation
 func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	if !reservationutil.IsReservePod(pod) {
@@ -344,7 +320,9 @@ func (ext *frameworkExtenderImpl) RunReservationFilterPlugins(ctx context.Contex
 	for _, pl := range ext.reservationFilterPlugins {
 		status := pl.FilterReservation(ctx, cycleState, pod, reservationInfo, nodeName)
 		if !status.IsSuccess() {
-			klog.Infof("Failed to FilterReservation for Pod %q with Reservation %q on Node %q, failedPlugin: %s, reason: %s", klog.KObj(pod), klog.KObj(reservationInfo), nodeName, pl.Name(), status.Message())
+			if debugFilterFailure {
+				klog.Infof("Failed to FilterReservation for Pod %q with Reservation %q on Node %q, failedPlugin: %s, reason: %s", klog.KObj(pod), klog.KObj(reservationInfo), nodeName, pl.Name(), status.Message())
+			}
 			return status
 		}
 	}

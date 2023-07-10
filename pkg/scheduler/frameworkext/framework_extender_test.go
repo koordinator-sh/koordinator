@@ -182,22 +182,6 @@ func (c fakeNodeInfoLister) NodeInfos() framework.NodeInfoLister {
 	return c
 }
 
-var _ ReservationNominator = &fakeReservationNominator{}
-
-type fakeReservationNominator struct {
-	reservation *ReservationInfo
-	err         error
-}
-
-func (f fakeReservationNominator) Name() string { return "fakeReservationNominator" }
-
-func (f fakeReservationNominator) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *framework.Status) {
-	if f.err != nil {
-		return nil, framework.AsStatus(f.err)
-	}
-	return f.reservation, nil
-}
-
 func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 	tests := []struct {
 		name string
@@ -336,82 +320,6 @@ func Test_frameworkExtenderImpl_RunScorePlugins(t *testing.T) {
 				"BeforeScore-2": "2",
 			}
 			assert.Equal(t, expectedAnnotations, tt.pod.Annotations)
-		})
-	}
-}
-
-func TestRunReservePluginsReserve(t *testing.T) {
-	reservation := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "fake-reservation",
-		},
-	}
-	reservationInfo := NewReservationInfo(reservation)
-	tests := []struct {
-		name            string
-		nominators      []ReservationNominator
-		wantReservation *ReservationInfo
-		wantStatus      bool
-	}{
-		{
-			name: "nominate reservation",
-			nominators: []ReservationNominator{
-				fakeReservationNominator{
-					reservation: reservationInfo,
-				},
-			},
-			wantReservation: reservationInfo,
-			wantStatus:      true,
-		},
-		{
-			name:            "no nominator",
-			wantReservation: nil,
-			wantStatus:      true,
-		},
-		{
-			name: "multi nominators",
-			nominators: []ReservationNominator{
-				fakeReservationNominator{},
-				fakeReservationNominator{
-					reservation: reservationInfo,
-				},
-			},
-			wantReservation: reservationInfo,
-			wantStatus:      true,
-		},
-		{
-			name: "error nominator",
-			nominators: []ReservationNominator{
-				fakeReservationNominator{
-					err: fmt.Errorf("fail"),
-				},
-			},
-			wantStatus: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			registeredPlugins := []schedulertesting.RegisterPluginFunc{
-				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-			}
-			fh, err := schedulertesting.NewFramework(
-				registeredPlugins,
-				"koord-scheduler",
-			)
-			assert.NoError(t, err)
-
-			extenderFactory, _ := NewFrameworkExtenderFactory()
-			extender := NewFrameworkExtender(extenderFactory, fh)
-			impl := extender.(*frameworkExtenderImpl)
-			for _, v := range tt.nominators {
-				impl.updatePlugins(v)
-			}
-			cycleState := framework.NewCycleState()
-			status := extender.RunReservePluginsReserve(context.TODO(), cycleState, &corev1.Pod{}, "test-node-1")
-			assert.Equal(t, tt.wantStatus, status.IsSuccess())
-			reservation := GetNominatedReservation(cycleState)
-			assert.Equal(t, tt.wantReservation, reservation)
 		})
 	}
 }
