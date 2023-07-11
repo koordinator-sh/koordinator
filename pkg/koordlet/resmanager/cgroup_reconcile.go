@@ -303,10 +303,10 @@ func (m *CgroupResourcesReconcile) calculateContainerResources(container *corev1
 			if *podCfg.MemoryQOS.ThrottlingPercent == 0 { // reset to system default if set 0
 				summary.memoryHigh = pointer.Int64(math.MaxInt64) // writing MaxInt64 is equal to write "max"
 			} else if memLimit > 0 {
-				summary.memoryHigh = pointer.Int64(memLimit * (*podCfg.MemoryQOS.ThrottlingPercent) / 100)
+				summary.memoryHigh = pointer.Int64(((memRequest + (memLimit-memRequest)*(*podCfg.MemoryQOS.ThrottlingPercent)/100) / system.PageSize) * system.PageSize)
 			} else {
 				nodeLimit := node.Status.Allocatable.Memory().Value()
-				summary.memoryHigh = pointer.Int64(nodeLimit * (*podCfg.MemoryQOS.ThrottlingPercent) / 100)
+				summary.memoryHigh = pointer.Int64(((memRequest + (nodeLimit-memRequest)*(*podCfg.MemoryQOS.ThrottlingPercent)/100) / system.PageSize) * system.PageSize)
 			}
 		}
 		// values improved: memory.low is no less than memory.min

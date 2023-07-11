@@ -637,7 +637,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			want2: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirBE, "0", true),
-				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE, strconv.FormatInt(((testingPodMemRequestLimitBytes*80/100)/system.PageSize)*system.PageSize, 10), true),
 				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirBE, "95", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirBE, "20", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirBE, "50", false),
@@ -728,9 +728,10 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirLS1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirLS1, "50", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirLS1, "0", false),
+
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirBE, "0", true),
-				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE, strconv.FormatInt(testingPodMemRequestLimitBytes*80/100, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE, strconv.FormatInt(((testingPodMemRequestLimitBytes*80/100)/system.PageSize)*system.PageSize, 10), true),
 				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirBE, "95", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirBE, "20", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirBE, "50", false),
@@ -791,7 +792,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			want2: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirBE, "0", true),
-				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE, strconv.FormatInt(testingPodMemRequestLimitBytes*40/100, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE, strconv.FormatInt(((testingPodMemRequestLimitBytes*40/100)/system.PageSize)*system.PageSize, 10), true),
 				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirBE, "95", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirBE, "20", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirBE, "50", false),
@@ -800,7 +801,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE1, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirBE1, "0", true),
-				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE1, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE1, strconv.FormatInt(((testingPodMemRequestLimitBytes)/system.PageSize)*system.PageSize, 10), true),
 				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirBE1, "95", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirBE1, "20", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirBE1, "50", false),

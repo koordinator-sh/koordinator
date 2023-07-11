@@ -21,12 +21,14 @@ import (
 	"os"
 	"path"
 	"strings"
+	"syscall"
 
 	"k8s.io/klog/v2"
 )
 
 var (
 	CommonRootDir = "" // for uni-test
+	PageSize      = int64(syscall.Getpagesize())
 )
 
 func CommonFileRead(file string) (string, error) {
