@@ -47,6 +47,10 @@ spec:
                         from 0
                       format: int32
                       type: integer
+                    moduleID:
+                      description: ModuleID represents the physical id of Device
+                      format: int32
+                      type: integer
                     resources:
                       additionalProperties:
                         anyOf:

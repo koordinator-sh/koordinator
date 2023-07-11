@@ -90,6 +90,11 @@ spec:
                                         of Device, starting from 0
                                       format: int32
                                       type: integer
+                                    moduleID:
+                                      description: ModuleID represents the physical
+                                        id of Device
+                                      format: int32
+                                      type: integer
                                     resources:
                                       additionalProperties:
                                         anyOf:
@@ -144,6 +149,11 @@ spec:
                                         of Device, starting from 0
                                       format: int32
                                       type: integer
+                                    moduleID:
+                                      description: ModuleID represents the physical
+                                        id of Device
+                                      format: int32
+                                      type: integer
                                     resources:
                                       additionalProperties:
                                         anyOf:
@@ -191,6 +201,11 @@ spec:
                                 starting from 0
                               format: int32
                               type: integer
+                            moduleID:
+                              description: ModuleID represents the physical id of
+                                Device
+                              format: int32
+                              type: integer
                             resources:
                               additionalProperties:
                                 anyOf:
@@ -234,6 +249,11 @@ spec:
                             minor:
                               description: Minor represents the Minor number of Device,
                                 starting from 0
+                              format: int32
+                              type: integer
+                            moduleID:
+                              description: ModuleID represents the physical id of
+                                Device
                               format: int32
                               type: integer
                             resources:
@@ -293,6 +313,11 @@ spec:
                                   Device, starting from 0
                                 format: int32
                                 type: integer
+                              moduleID:
+                                description: ModuleID represents the physical id of
+                                  Device
+                                format: int32
+                                type: integer
                               resources:
                                 additionalProperties:
                                   anyOf:
@@ -341,6 +366,11 @@ spec:
                             minor:
                               description: Minor represents the Minor number of Device,
                                 starting from 0
+                              format: int32
+                              type: integer
+                            moduleID:
+                              description: ModuleID represents the physical id of
+                                Device
                               format: int32
                               type: integer
                             resources:

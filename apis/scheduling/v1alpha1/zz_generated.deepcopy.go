@@ -104,6 +104,11 @@ func (in *DeviceInfo) DeepCopyInto(out *DeviceInfo) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.ModuleID != nil {
+		in, out := &in.ModuleID, &out.ModuleID
+		*out = new(int32)
+		**out = **in
+	}
 	if in.Resources != nil {
 		in, out := &in.Resources, &out.Resources
 		*out = make(v1.ResourceList, len(*in))
