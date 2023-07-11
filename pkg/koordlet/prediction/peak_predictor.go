@@ -23,6 +23,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -111,6 +112,11 @@ type prodReclaimablePredictor struct {
 
 // AddPod adds a pod to the predictor for resource prediction.
 func (p *prodReclaimablePredictor) AddPod(pod *v1.Pod) error {
+	// prodReclaimablePredictor process only PriorityProd pods.
+	if extension.GetPodPriorityClassWithDefault(pod) != extension.PriorityProd {
+		return nil
+	}
+
 	if p.pods[string(pod.UID)] {
 		return fmt.Errorf("Pod %v already exists", pod.UID)
 	} else {
