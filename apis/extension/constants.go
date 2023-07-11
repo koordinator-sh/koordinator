@@ -29,6 +29,10 @@ const (
 
 	LabelPodQoS      = DomainPrefix + "qosClass"
 	LabelPodPriority = DomainPrefix + "priority"
+	// LabelPodPriorityClass is used to revise those Pods that are already running and have Priority set, so that
+	// Koordinator can be smoothly deployed to the running cluster. If you don't have a running Pod with
+	// PriorityClass set, don't set this field specifically.
+	LabelPodPriorityClass = DomainPrefix + "priority-class"
 
 	LabelManagedBy = "app.kubernetes.io/managed-by"
 )

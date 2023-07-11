@@ -48,8 +48,25 @@ var (
 	PriorityFreeValueMin int32 = 3000
 )
 
+func GetPodPriorityClassByName(priorityClass string) PriorityClass {
+	p := PriorityClass(priorityClass)
+
+	switch p {
+	case PriorityProd, PriorityMid, PriorityBatch, PriorityFree:
+		return p
+	}
+
+	return PriorityNone
+}
+
 func GetPriorityClass(pod *corev1.Pod) PriorityClass {
-	if pod == nil || pod.Spec.Priority == nil {
+	if pod == nil {
+		return PriorityNone
+	}
+	if p, ok := pod.Labels[LabelPodPriorityClass]; ok {
+		return GetPodPriorityClassByName(p)
+	}
+	if pod.Spec.Priority == nil {
 		return PriorityNone
 	}
 	return getPriorityClassByPriority(pod.Spec.Priority)
