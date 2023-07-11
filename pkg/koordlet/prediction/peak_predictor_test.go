@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
@@ -63,6 +64,8 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 
 	factory := NewPredictorFactory(predictServer, coldStartDuration, 10)
 	predictor := factory.New(ProdReclaimablePredictor)
+	priority := extension.PriorityProdValueMin
+	priorityBatch := extension.PriorityBatchValueMin
 
 	pod1 := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -70,6 +73,7 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 			CreationTimestamp: metav1.Time{Time: time.Now().Add(-time.Minute)},
 		},
 		Spec: v1.PodSpec{
+			Priority: &priority,
 			Containers: []v1.Container{
 				{
 					Resources: v1.ResourceRequirements{
@@ -89,6 +93,7 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 			CreationTimestamp: metav1.Time{Time: time.Now().Add(-2 * time.Hour)},
 		},
 		Spec: v1.PodSpec{
+			Priority: &priority,
 			Containers: []v1.Container{
 				{
 					Resources: v1.ResourceRequirements{
@@ -109,6 +114,27 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 			DeletionTimestamp: &metav1.Time{Time: time.Now()},
 		},
 		Spec: v1.PodSpec{
+			Priority: &priority,
+			Containers: []v1.Container{
+				{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+							v1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	pod4 := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:               "pod-4-uid",
+			CreationTimestamp: metav1.Time{Time: time.Now().Add(-2 * time.Hour)},
+		},
+		Spec: v1.PodSpec{
+			Priority: &priorityBatch,
 			Containers: []v1.Container{
 				{
 					Resources: v1.ResourceRequirements{
@@ -129,6 +155,9 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 	assert.NoError(t, err)
 
 	err = predictor.AddPod(pod3)
+	assert.NoError(t, err)
+
+	err = predictor.AddPod(pod4)
 	assert.NoError(t, err)
 
 	result, err := predictor.GetResult()
