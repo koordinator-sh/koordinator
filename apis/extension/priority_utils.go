@@ -34,6 +34,8 @@ func GetPodPriorityClassWithDefault(pod *corev1.Pod) PriorityClass {
 
 // GetPodPriorityClassWithQoS returns the default PriorityClass according to its QoSClass when the pod does not specify
 // a PriorityClass explicitly.
+// Note that this is only a derivation of the default value, and the reverse is not true. For example, PriorityMid
+// can also be combined with QoSLS.
 func GetPodPriorityClassWithQoS(qos QoSClass) PriorityClass {
 	switch qos {
 	case QoSSystem, QoSLSE, QoSLSR, QoSLS:
