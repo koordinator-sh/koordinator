@@ -242,7 +242,7 @@ func Test_evictPod_policy_v1beta1(t *testing.T) {
 	assert.NotNil(t, existPod, "pod exist in k8s!", err)
 
 	// evict success
-	r.evictPod(pod, node, "evict pod first", "")
+	r.evictPod(pod, "evict pod first", "")
 	getEvictObject, err := client.Tracker().Get(podsResource, pod.Namespace, pod.Name)
 	assert.NoError(t, err)
 	assert.NotNil(t, getEvictObject, "evictPod Fail", err)
@@ -278,7 +278,7 @@ func Test_evictPod_policy_v1(t *testing.T) {
 	assert.NotNil(t, existPod, "pod exist in k8s!", err)
 
 	// evict success
-	r.evictPod(pod, node, "evict pod first", "")
+	r.evictPod(pod, "evict pod first", "")
 	getEvictObject, err := client.Tracker().Get(podsResource, pod.Namespace, pod.Name)
 	assert.NoError(t, err)
 	assert.NotNil(t, getEvictObject, "evictPod Fail", err)
@@ -311,7 +311,7 @@ func Test_evictPod_policy_none(t *testing.T) {
 	assert.NotNil(t, existPod, "pod exist in k8s!", err)
 
 	// evict success
-	evicted := r.evictPod(pod, node, "evict pod first", "")
+	evicted := r.evictPod(pod, "evict pod first", "")
 	assert.False(t, evicted, "pod evicted", err)
 }
 
