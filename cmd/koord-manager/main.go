@@ -57,6 +57,7 @@ func main() {
 	var healthProbeAddr string
 	var enableLeaderElection, enablePprof bool
 	var leaderElectionNamespace string
+	var leaderElectResourceLock string
 	var namespace string
 	var syncPeriodStr string
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
@@ -64,6 +65,8 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", true, "Whether you need to enable leader election.")
 	flag.StringVar(&leaderElectionNamespace, "leader-election-namespace", "koordinator-system",
 		"This determines the namespace in which the leader election configmap will be created, it will use in-cluster namespace if empty.")
+	flag.StringVar(&leaderElectResourceLock, "leader-elect-resource-lock", resourcelock.ConfigMapsLeasesResourceLock,
+		"The leader election resource lock for controller manager. e.g. 'leases', 'configmaps', 'endpoints', 'endpointsleases', 'configmapsleases'")
 	flag.StringVar(&namespace, "namespace", "",
 		"Namespace if specified restricts the manager's cache to watch objects in the desired namespace. Defaults to all namespaces.")
 	flag.BoolVar(&enablePprof, "enable-pprof", true, "Enable pprof for controller manager.")
@@ -115,7 +118,7 @@ func main() {
 		LeaderElection:             enableLeaderElection,
 		LeaderElectionID:           "koordinator-manager",
 		LeaderElectionNamespace:    leaderElectionNamespace,
-		LeaderElectionResourceLock: resourcelock.ConfigMapsLeasesResourceLock,
+		LeaderElectionResourceLock: leaderElectResourceLock,
 		Namespace:                  namespace,
 		SyncPeriod:                 syncPeriod,
 		NewClient:                  utilclient.NewClient,
