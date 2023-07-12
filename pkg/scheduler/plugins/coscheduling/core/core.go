@@ -32,10 +32,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
+	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 	pglister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -63,7 +62,7 @@ type Manager interface {
 	PreFilter(context.Context, *corev1.Pod) error
 	Permit(context.Context, *corev1.Pod) (time.Duration, Status)
 	PostBind(context.Context, *corev1.Pod, string)
-	PostFilter(context.Context, *corev1.Pod, framework.Handle, string) (*framework.PostFilterResult, *framework.Status)
+	PostFilter(context.Context, *corev1.Pod, framework.Handle, string, framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status)
 	GetCreatTime(*framework.QueuedPodInfo) time.Time
 	GetGroupId(*corev1.Pod) (string, error)
 	GetAllPodsFromGang(string) []*corev1.Pod
@@ -188,16 +187,21 @@ func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework
 		if groupGang == nil {
 			continue
 		}
-		toActivePods = append(toActivePods, groupGang.getChildrenFromGang()...)
+		pods := groupGang.getChildrenFromGang()
+		for i := range pods {
+			if pods[i].UID != pod.UID {
+				toActivePods = append(toActivePods, pods[i])
+			}
+		}
 	}
 
 	if len(toActivePods) != 0 {
 		if c, err := state.Read(framework.PodsToActivateKey); err == nil {
 			if s, ok := c.(*framework.PodsToActivate); ok {
 				s.Lock()
-				for _, pod := range toActivePods {
-					namespacedName := util.GetId(pod.Namespace, pod.Name)
-					s.Map[namespacedName] = pod
+				for _, siblingPod := range toActivePods {
+					namespacedName := util.GetId(siblingPod.Namespace, siblingPod.Name)
+					s.Map[namespacedName] = siblingPod
 					klog.InfoS("ActivateSiblings add pod's key to PodsToActivate map", "pod", namespacedName)
 				}
 				s.Unlock()
@@ -265,27 +269,36 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 // PostFilter
 // i. If strict-mode, we will set scheduleCycleValid to false and release all assumed pods.
 // ii. If non-strict mode, we will do nothing.
-func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, pod *corev1.Pod, handle framework.Handle, pluginName string) (*framework.PostFilterResult, *framework.Status) {
+func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, pod *corev1.Pod, handle framework.Handle, pluginName string, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 	if !util.IsPodNeedGang(pod) {
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "")
 	}
 	gang := pgMgr.GetGangByPod(pod)
 	if gang == nil {
-		klog.InfoS("Pod does not belong to any gang", "pod", klog.KObj(pod))
-		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "can not find gang")
+		message := fmt.Sprintf("Pod %q cannot find Gang %q", klog.KObj(pod), util.GetGangNameByPod(pod))
+		klog.Warningf(message)
+		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, message)
 	}
 	if gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied() {
-		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "")
+		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
 
 	if gang.getGangMode() == extension.GangModeStrict {
-		pgMgr.rejectGangGroupById(pluginName, gang.Name, handle)
+		nodeInfos, _ := handle.SnapshotSharedLister().NodeInfos().List()
+		fitErr := &framework.FitError{
+			Pod:         pod,
+			NumAllNodes: len(nodeInfos),
+			Diagnosis: framework.Diagnosis{
+				NodeToStatusMap: filteredNodeStatusMap,
+			},
+		}
+		message := fmt.Sprintf("Gang %q gets rejected due to member Pod %q is unschedulable with reason %q", gang.Name, pod.Name, fitErr)
+		pgMgr.rejectGangGroupById(handle, pluginName, gang.Name, message)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
-			fmt.Sprintf("Gang: %v gets rejected this cycle due to Pod: %v is unschedulable even after "+
-				"PostFilter in StrictMode", gang.Name, pod.Name))
+			fmt.Sprintf("Gang %q gets rejected due to pod is unschedulable", gang.Name))
 	}
 
-	return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "")
+	return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 }
 
 // Permit
@@ -298,7 +311,7 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) (time
 	gang := pgMgr.GetGangByPod(pod)
 
 	if gang == nil {
-		klog.InfoS("Pod does not belong to any gang", "pod", klog.KObj(pod))
+		klog.Warningf("Pod %q missing Gang", klog.KObj(pod))
 		return 0, PodGroupNotFound
 	}
 	// first add pod to the gang's WaitingPodsMap
@@ -329,18 +342,20 @@ func (pgMgr *PodGroupManager) Unreserve(ctx context.Context, state *framework.Cy
 	}
 	gang := pgMgr.GetGangByPod(pod)
 	if gang == nil {
-		klog.InfoS("Pod does not belong to any gang", "pod", klog.KObj(pod))
+		klog.Warningf("Pod %q missing Gang", klog.KObj(pod))
 		return
 	}
 	// first delete the pod from gang's waitingFroBindChildren map
 	gang.delAssumedPod(pod)
 
-	if !(gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied()) && gang.getGangMode() == extension.GangModeStrict {
-		pgMgr.rejectGangGroupById(pluginName, gang.Name, handle)
+	if !(gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied()) &&
+		gang.getGangMode() == extension.GangModeStrict {
+		message := fmt.Sprintf("Gang %q gets rejected due to Pod %q in Unreserve", gang.Name, pod.Name)
+		pgMgr.rejectGangGroupById(handle, pluginName, gang.Name, message)
 	}
 }
 
-func (pgMgr *PodGroupManager) rejectGangGroupById(pluginName, gangId string, handle framework.Handle) {
+func (pgMgr *PodGroupManager) rejectGangGroupById(handle framework.Handle, pluginName, gangId, message string) {
 	gang := pgMgr.cache.getGangFromCacheByGangId(gangId, false)
 	if gang == nil {
 		return
@@ -352,11 +367,11 @@ func (pgMgr *PodGroupManager) rejectGangGroupById(pluginName, gangId string, han
 
 	if handle != nil {
 		handle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-			waitingGangId := util.GetId(waitingPod.GetPod().Namespace,
-				util.GetGangNameByPod(waitingPod.GetPod()))
+			waitingGangId := util.GetId(waitingPod.GetPod().Namespace, util.GetGangNameByPod(waitingPod.GetPod()))
 			if gangSet.Has(waitingGangId) {
-				klog.V(1).InfoS("ganggroup rejects the pod", "gang", waitingGangId, "pod", klog.KObj(waitingPod.GetPod()))
-				waitingPod.Reject(pluginName, "gang rejection by another ganggroup")
+				klog.V(1).InfoS("GangGroup gets rejected due to member Gang is unschedulable",
+					"gang", gangId, "waitingGang", waitingGangId, "waitingPod", klog.KObj(waitingPod.GetPod()))
+				waitingPod.Reject(pluginName, message)
 			}
 		})
 	}
@@ -375,7 +390,7 @@ func (pgMgr *PodGroupManager) PostBind(ctx context.Context, pod *corev1.Pod, nod
 	}
 	gang := pgMgr.GetGangByPod(pod)
 	if gang == nil {
-		klog.InfoS("Pod does not belong to any gang", "pod", klog.KObj(pod))
+		klog.Warningf("Pod %q missing Gang", klog.KObj(pod))
 		return
 	}
 	// first update gang in cache
@@ -463,15 +478,14 @@ func (pgMgr *PodGroupManager) GetPodGroup(pod *corev1.Pod) (string, *v1alpha1.Po
 func (pgMgr *PodGroupManager) AllowGangGroup(pod *corev1.Pod, handle framework.Handle, pluginName string) {
 	gang := pgMgr.GetGangByPod(pod)
 	if gang == nil {
-		klog.InfoS("Pod does not belong to any gang", "pod", klog.KObj(pod))
+		klog.Warningf("Pod %q missing Gang", klog.KObj(pod))
 		return
 	}
 
 	gangSlices := gang.getGangGroup()
 
 	handle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-		podGangId := util.GetId(waitingPod.GetPod().Namespace,
-			util.GetGangNameByPod(waitingPod.GetPod()))
+		podGangId := util.GetId(waitingPod.GetPod().Namespace, util.GetGangNameByPod(waitingPod.GetPod()))
 		for _, gangIdTmp := range gangSlices {
 			if podGangId == gangIdTmp {
 				klog.InfoS("Permit allows pod from gang", "gang", podGangId, "pod", klog.KObj(waitingPod.GetPod()))
