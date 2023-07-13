@@ -31,12 +31,16 @@ func init() {
 	prometheus.MustRegister(PSICollectors...)
 	prometheus.MustRegister(CPUSuppressCollector...)
 	prometheus.MustRegister(CPUBurstCollector...)
+	prometheus.MustRegister(PredictionCollectors...)
 }
 
 const (
 	KoordletSubsystem = "koordlet"
 
-	NodeKey = "node"
+	NodeKey     = "node"
+	PriorityKey = "priority"
+
+	PredictorKey = "predictor"
 
 	StatusKey     = "status"
 	StatusSucceed = "succeeded"

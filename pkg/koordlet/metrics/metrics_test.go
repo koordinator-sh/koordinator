@@ -250,3 +250,37 @@ func TestResourceSummaryCollectors(t *testing.T) {
 		ResetContainerResourceLimits()
 	})
 }
+
+func TestPredictorCollectors(t *testing.T) {
+	testingNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test-node",
+			Labels: map[string]string{},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+		},
+	}
+	testNodeReclaimable := &corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("50"),
+		corev1.ResourceMemory: resource.MustParse("200Gi"),
+	}
+
+	t.Run("test", func(t *testing.T) {
+		Register(testingNode)
+		defer Register(nil)
+		RecordNodePredictedResourceReclaimable(string(corev1.ResourceCPU), UnitCore, "testPredictor", float64(testNodeReclaimable.Cpu().MilliValue())/1000)
+		RecordNodePredictedResourceReclaimable(string(corev1.ResourceMemory), UnitByte, "testPredictor", float64(testNodeReclaimable.Memory().Value()))
+	})
+}

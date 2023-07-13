@@ -48,6 +48,15 @@ var (
 	PriorityFreeValueMin int32 = 3000
 )
 
+// KnownPriorityClasses is the list of known priority classes in koordinator.
+var KnownPriorityClasses = []PriorityClass{
+	PriorityProd,
+	PriorityMid,
+	PriorityBatch,
+	PriorityFree,
+	PriorityNone,
+}
+
 func GetPodPriorityClassByName(priorityClass string) PriorityClass {
 	p := PriorityClass(priorityClass)
 

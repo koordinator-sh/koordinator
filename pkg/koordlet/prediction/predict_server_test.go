@@ -176,12 +176,11 @@ func TestPredictServerMainLoop(t *testing.T) {
 
 	peakPrediction.(*peakPredictServer).training()
 
-	if len(peakPrediction.(*peakPredictServer).models) != 3 {
-		t.Errorf("failed to update models, expected 3, actual %v", len(peakPrediction.(*peakPredictServer).models))
-	}
+	expectCount := 9 // pods(2)+node(1)+priority(5)+sys(1)
+	assert.Equal(t, expectCount, len(peakPrediction.(*peakPredictServer).models))
 
 	gen := &generator{}
-	peak, err := peakPrediction.GetPrediction(MetricDesc{UID: gen.Node(node)})
+	peak, err := peakPrediction.GetPrediction(MetricDesc{UID: gen.Node()})
 	if err != nil {
 		t.Errorf("err %v", err)
 	}
@@ -278,7 +277,7 @@ func TestPredictServerGCOldModels(t *testing.T) {
 	peakPrediction.(*peakPredictServer).training()
 
 	modelSize := len(peakPrediction.(*peakPredictServer).models)
-	if modelSize != 1 {
+	if modelSize != 7 { // 9 - 2
 		t.Errorf("unexpected modelSize, expected 1 actual %v", modelSize)
 	}
 	mockClock.Step(peakPrediction.(*peakPredictServer).cfg.ModelExpirationDuration)

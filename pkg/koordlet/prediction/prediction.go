@@ -26,11 +26,19 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
+const (
+	DefaultNodeID        = "__node__"
+	DefaultNodeItemIDFmt = "__node-%s__"
+	SystemItemID         = "sys" // node item ID for the system overhead which is not counted in any pod
+	AllPodsItemID        = "all-pods"
+)
+
 type UIDType string
 
 type UIDGenerator interface {
 	Pod(pod *v1.Pod) UIDType
-	Node(node *v1.Node) UIDType
+	Node() UIDType
+	NodeItem(itemID string) UIDType // generate a UID for the item supposed to unique on the node
 }
 
 type Options struct {
@@ -48,8 +56,16 @@ func (gen *generator) Pod(pod *v1.Pod) UIDType {
 	return UIDType(pod.GetUID())
 }
 
-func (gen *generator) Node(node *v1.Node) UIDType {
-	return UIDType(node.GetUID())
+func (gen *generator) Node() UIDType {
+	return DefaultNodeID
+}
+
+func (gen *generator) NodeItem(itemID string) UIDType {
+	return getNodeItemUID(itemID)
+}
+
+func getNodeItemUID(itemID string) UIDType {
+	return UIDType(fmt.Sprintf(DefaultNodeItemIDFmt, itemID))
 }
 
 type Result struct {
