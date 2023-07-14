@@ -69,7 +69,7 @@ func TestGetPodQoSClass(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GetPodQoSClass(tt.arg)
+			got := GetPodQoSClassRaw(tt.arg)
 			assert.Equal(t, tt.want, got)
 		})
 	}

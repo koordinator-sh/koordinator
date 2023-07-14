@@ -66,7 +66,7 @@ func (p *plugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		return nil
 	}
 	for _, podMeta := range pods {
-		podQOS := apiext.GetPodQoSClass(podMeta.Pod)
+		podQOS := apiext.GetPodQoSClassRaw(podMeta.Pod)
 		if podQOS != apiext.QoSBE {
 			continue
 		}

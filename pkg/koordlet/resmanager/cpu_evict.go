@@ -180,7 +180,7 @@ func (c *CPUEvictor) getPodEvictInfoAndSort(beMetric *metriccache.BECPUResourceM
 
 	for _, podMeta := range c.resmanager.statesInformer.GetAllPods() {
 		pod := podMeta.Pod
-		if apiext.GetPodQoSClass(pod) == apiext.QoSBE {
+		if apiext.GetPodQoSClassRaw(pod) == apiext.QoSBE {
 
 			bePodInfo := &podEvictCPUInfo{pod: podMeta.Pod}
 			queryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(pod.UID)))

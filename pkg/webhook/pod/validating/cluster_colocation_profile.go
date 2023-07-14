@@ -76,7 +76,7 @@ func validateRequiredQoSClass(pod *corev1.Pod) field.ErrorList {
 	if batchCPUQuantity.IsZero() && batchMemoryQuantity.IsZero() {
 		return nil
 	}
-	qosClass := extension.GetPodQoSClass(pod)
+	qosClass := extension.GetPodQoSClassRaw(pod)
 	if qosClass == extension.QoSBE {
 		return nil
 	}
@@ -84,14 +84,14 @@ func validateRequiredQoSClass(pod *corev1.Pod) field.ErrorList {
 }
 
 func validateImmutableQoSClass(oldPod, newPod *corev1.Pod) field.ErrorList {
-	oldQoSClass := extension.GetPodQoSClass(oldPod)
-	newQoSClass := extension.GetPodQoSClass(newPod)
+	oldQoSClass := extension.GetPodQoSClassRaw(oldPod)
+	newQoSClass := extension.GetPodQoSClassRaw(newPod)
 	return validation.ValidateImmutableField(newQoSClass, oldQoSClass, field.NewPath("labels", extension.LabelPodQoS))
 }
 
 func validateImmutablePriorityClass(oldPod, newPod *corev1.Pod) field.ErrorList {
-	oldPriorityClass := extension.GetPriorityClass(oldPod)
-	newPriorityClass := extension.GetPriorityClass(newPod)
+	oldPriorityClass := extension.GetPodPriorityClassRaw(oldPod)
+	newPriorityClass := extension.GetPodPriorityClassRaw(newPod)
 	return validation.ValidateImmutableField(newPriorityClass, oldPriorityClass, field.NewPath("spec.priority"))
 }
 
@@ -103,8 +103,8 @@ func validateImmutablePriority(oldPod, newPod *corev1.Pod) field.ErrorList {
 
 func forbidSpecialQoSClassAndPriorityClass(pod *corev1.Pod, qoSClass extension.QoSClass, priorityClasses ...extension.PriorityClass) field.ErrorList {
 	allErrs := field.ErrorList{}
-	if extension.GetPodQoSClass(pod) == qoSClass {
-		priorityClass := extension.GetPriorityClass(pod)
+	if extension.GetPodQoSClassRaw(pod) == qoSClass {
+		priorityClass := extension.GetPodPriorityClassRaw(pod)
 		found := false
 		for _, v := range priorityClasses {
 			if priorityClass == v {
@@ -121,7 +121,7 @@ func forbidSpecialQoSClassAndPriorityClass(pod *corev1.Pod, qoSClass extension.Q
 }
 
 func validateResources(pod *corev1.Pod) field.ErrorList {
-	qos := extension.GetPodQoSClass(pod)
+	qos := extension.GetPodQoSClassRaw(pod)
 	resourceValidator := NewRequestLimitValidator(pod)
 	switch qos {
 	case extension.QoSLSR:
@@ -133,7 +133,7 @@ func validateResources(pod *corev1.Pod) field.ErrorList {
 			ExpectRequestLimitMustEqual(corev1.ResourceMemory).
 			ExpectPositive()
 	case extension.QoSLS:
-		switch extension.GetPriorityClass(pod) {
+		switch extension.GetPodPriorityClassRaw(pod) {
 		case extension.PriorityProd:
 			resourceValidator = resourceValidator.
 				ExpectRequestNoMoreThanLimit(corev1.ResourceCPU).

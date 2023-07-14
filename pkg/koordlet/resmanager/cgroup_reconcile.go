@@ -233,7 +233,7 @@ func (m *CgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 		var memRequest int64
 		// memory.min, memory.low: just sum all containers' memory requests; regard as no memory protection when any
 		// of containers does not set request
-		if apiext.GetPodQoSClass(pod) != apiext.QoSBE {
+		if apiext.GetPodQoSClassRaw(pod) != apiext.QoSBE {
 			podRequest := util.GetPodRequest(pod)
 			memRequest = podRequest.Memory().Value()
 		} else {
@@ -279,7 +279,7 @@ func (m *CgroupResourcesReconcile) calculateContainerResources(container *corev1
 		// resources calculated with container spec
 		var memRequest int64
 		var memLimit int64
-		if apiext.GetPodQoSClass(pod) != apiext.QoSBE {
+		if apiext.GetPodQoSClassRaw(pod) != apiext.QoSBE {
 			memRequest = container.Resources.Requests.Memory().Value()
 			memLimit = util.GetContainerMemoryByteLimit(container)
 		} else {
@@ -402,7 +402,7 @@ func updateCgroupSummaryForQoS(summary *cgroupResourceSummary, pod *corev1.Pod, 
 	// `memory.low` for qos := sum(requests of pod with the qos * lowLimitPercent); if factor is nil, set kernel default
 	var memRequest int64
 	// if any container's memory request is not set, just consider it as zero
-	if apiext.GetPodQoSClass(pod) != apiext.QoSBE {
+	if apiext.GetPodQoSClassRaw(pod) != apiext.QoSBE {
 		podRequest := util.GetPodRequest(pod)
 		memRequest = podRequest.Memory().Value()
 	} else {

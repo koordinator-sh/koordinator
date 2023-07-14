@@ -163,7 +163,7 @@ func (m *MemoryEvictor) getSortedBEPodInfos(podMetricMap map[string]float64) []*
 	var bePodInfos []*podInfo
 	for _, podMeta := range m.resManager.statesInformer.GetAllPods() {
 		pod := podMeta.Pod
-		if extension.GetPodQoSClass(pod) == extension.QoSBE {
+		if extension.GetPodQoSClassRaw(pod) == extension.QoSBE {
 			info := &podInfo{
 				pod:     pod,
 				memUsed: podMetricMap[string(pod.UID)],

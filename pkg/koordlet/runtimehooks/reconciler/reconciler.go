@@ -113,7 +113,7 @@ func (p *podQOSFilter) Name() string {
 }
 
 func (p *podQOSFilter) Filter(podMeta *statesinformer.PodMeta) string {
-	qosClass := apiext.GetPodQoSClass(podMeta.Pod)
+	qosClass := apiext.GetPodQoSClassRaw(podMeta.Pod)
 
 	// consider as LSR if pod is qos=None and has cpuset
 	if qosClass == apiext.QoSNone && podMeta.Pod != nil && podMeta.Pod.Annotations != nil {
