@@ -19,8 +19,6 @@ package elasticquota
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 // todo the eventHandler's operation should be a complete transaction in the future work.
@@ -31,7 +29,6 @@ func (g *Plugin) OnPodAdd(obj interface{}) {
 		return
 	}
 
-	pod = core.RunDecoratePod(pod)
 	quotaName := g.getPodAssociateQuotaName(pod)
 	g.groupQuotaManager.OnPodAdd(quotaName, pod)
 	klog.V(5).Infof("OnPodAddFunc %v.%v add success, quotaName:%v", pod.Namespace, pod.Name, quotaName)
@@ -46,8 +43,6 @@ func (g *Plugin) OnPodUpdate(oldObj, newObj interface{}) {
 		return
 	}
 
-	oldPod = core.RunDecoratePod(oldPod)
-	newPod = core.RunDecoratePod(newPod)
 	oldQuotaName := g.getPodAssociateQuotaName(oldPod)
 	newQuotaName := g.getPodAssociateQuotaName(newPod)
 	g.groupQuotaManager.OnPodUpdate(newQuotaName, oldQuotaName, newPod, oldPod)
@@ -60,7 +55,6 @@ func (g *Plugin) OnPodDelete(obj interface{}) {
 		return
 	}
 
-	pod = core.RunDecoratePod(pod)
 	quotaName := g.getPodAssociateQuotaName(pod)
 	g.groupQuotaManager.OnPodDelete(quotaName, pod)
 	klog.V(5).Infof("OnPodDeleteFunc %v.%v delete success", pod.Namespace, pod.Name)

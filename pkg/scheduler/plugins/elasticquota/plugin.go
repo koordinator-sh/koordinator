@@ -44,6 +44,7 @@ import (
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
+	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
 )
 
 const (
@@ -103,6 +104,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		client = versioned.NewForConfigOrDie(&kubeConfig)
 	}
 	scheSharedInformerFactory := externalversions.NewSharedInformerFactory(client, 0)
+	transformer.SetupElasticQuotaTransformers(scheSharedInformerFactory)
 	elasticQuotaInformer := scheSharedInformerFactory.Scheduling().V1alpha1().ElasticQuotas()
 
 	elasticQuota := &Plugin{
@@ -115,9 +117,6 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		nodeLister:        handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
 		groupQuotaManager: core.NewGroupQuotaManager(pluginArgs.SystemQuotaGroupMax, pluginArgs.DefaultQuotaGroupMax),
 		nodeResourceMap:   make(map[string]struct{}),
-	}
-	if err := core.RunDecorateInit(handle); err != nil {
-		return nil, err
 	}
 
 	ctx := context.TODO()
@@ -174,7 +173,6 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	}
 	state := g.snapshotPostFilterState(quotaInfo, cycleState)
 
-	pod = core.RunDecoratePod(pod)
 	podRequest, _ := resource.PodRequestsAndLimits(pod)
 	used := quotav1.Add(podRequest, state.used)
 
@@ -208,8 +206,7 @@ func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToS
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	if postFilterState.quotaInfo.IsPodExist(podInfoToAdd.Pod) {
-		pod := core.RunDecoratePod(podInfoToAdd.Pod)
-		podReq, _ := resource.PodRequestsAndLimits(pod)
+		podReq, _ := resource.PodRequestsAndLimits(podInfoToAdd.Pod)
 		postFilterState.used = quotav1.Add(postFilterState.used, podReq)
 	}
 	return framework.NewStatus(framework.Success, "")
@@ -228,8 +225,7 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	if postFilterState.quotaInfo.IsPodExist(podInfoToRemove.Pod) {
-		pod := core.RunDecoratePod(podInfoToRemove.Pod)
-		podReq, _ := resource.PodRequestsAndLimits(pod)
+		podReq, _ := resource.PodRequestsAndLimits(podInfoToRemove.Pod)
 		postFilterState.used = quotav1.SubtractWithNonNegativeResult(postFilterState.used, podReq)
 	}
 	return framework.NewStatus(framework.Success, "")
@@ -258,14 +254,12 @@ func (g *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 }
 
 func (g *Plugin) Reserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
-	p = core.RunDecoratePod(p)
 	quotaName := g.getPodAssociateQuotaName(p)
 	g.groupQuotaManager.ReservePod(quotaName, p)
 	return framework.NewStatus(framework.Success, "")
 }
 
 func (g *Plugin) Unreserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) {
-	p = core.RunDecoratePod(p)
 	quotaName := g.getPodAssociateQuotaName(p)
 	g.groupQuotaManager.UnreservePod(quotaName, p)
 }
