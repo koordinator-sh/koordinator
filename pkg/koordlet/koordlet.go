@@ -29,8 +29,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
-	clientsetbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
-	"github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
+	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	schedv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/config"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
@@ -80,9 +80,9 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	klog.Infof("kernel version INFO: %+v", system.HostSystemInfo)
 
 	kubeClient := clientset.NewForConfigOrDie(config.KubeRestConf)
-	crdClient := clientsetbeta1.NewForConfigOrDie(config.KubeRestConf)
+	koordClient := koordclientset.NewForConfigOrDie(config.KubeRestConf)
 	topologyClient := topologyclientset.NewForConfigOrDie(config.KubeRestConf)
-	schedulingClient := v1alpha1.NewForConfigOrDie(config.KubeRestConf)
+	schedulingClient := schedv1alpha1.NewForConfigOrDie(config.KubeRestConf)
 
 	metricCache, err := metriccache.NewMetricCache(config.MetricCacheConf)
 	if err != nil {
@@ -91,7 +91,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	predictServer := prediction.NewPeakPredictServer(config.PredictionConf)
 	predictorFactory := prediction.NewPredictorFactory(predictServer, config.PredictionConf.ColdStartDuration, config.PredictionConf.SafetyMarginPercent)
 
-	statesInformer := statesinformerimpl.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, nodeName, schedulingClient, predictorFactory)
+	statesInformer := statesinformerimpl.NewStatesInformer(config.StatesInformerConf, kubeClient, koordClient, topologyClient, metricCache, nodeName, schedulingClient, predictorFactory)
 
 	detectCgroupDriver := system.DetectCgroupDriver()
 	system.SetupCgroupPathFormatter(detectCgroupDriver)
@@ -103,7 +103,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, err
 	}
 
-	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(config.CollectorConf.CollectResUsedInterval.Seconds()), evictVersion)
+	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, koordClient, nodeName, statesInformer, metricCache, int64(config.CollectorConf.CollectResUsedInterval.Seconds()), evictVersion)
 
 	qosManager := qosmanager.NewQosManager(config.QosManagerConf, scheme, kubeClient, nodeName, statesInformer, metricCache)
 

@@ -46,9 +46,9 @@ func main() {
 
 	if *options.EnablePprof {
 		go func() {
-			klog.V(4).Infof("Starting pprof on %v", *options.PprofAddr)
+			klog.Infof("Starting profiling on port %v", *options.PprofAddr)
 			if err := http.ListenAndServe(*options.PprofAddr, nil); err != nil {
-				klog.Errorf("Unable to start pprof on %v, error: %v", *options.PprofAddr, err)
+				klog.Errorf("Unable to enable profiling on %v, error: %v", *options.PprofAddr, err)
 			}
 		}()
 	}
@@ -88,8 +88,7 @@ func main() {
 		if features.DefaultKoordletFeatureGate.Enabled(features.AuditEventsHTTPHandler) {
 			http.HandleFunc("/events", audit.HttpHandler())
 		}
-		// http.HandleFunc("/healthz", d.HealthzHandler())
-		klog.Fatalf("Prometheus monitoring failed: %v", http.ListenAndServe(*options.ServerAddr, nil))
+		klog.Fatalf("Prometheus server listen error: %v", http.ListenAndServe(*options.ServerAddr, nil))
 	}()
 
 	// Start the Cmd
