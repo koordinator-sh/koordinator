@@ -1019,14 +1019,18 @@ func TestLowNodeLoad(t *testing.T) {
 						profile.PluginConfig = append(profile.PluginConfig, deschedulerconfig.PluginConfig{
 							Name: LowNodeLoadName,
 							Args: &deschedulerconfig.LowNodeLoadArgs{
-								NodeFit:                true,
-								LowThresholds:          tt.thresholds,
-								HighThresholds:         tt.targetThresholds,
-								UseDeviationThresholds: tt.useDeviationThresholds,
-								EvictableNamespaces:    tt.evictableNamespaces,
-								AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
-									ConsecutiveAbnormalities: 1,
+								NodeFit: true,
+								NodePools: []deschedulerconfig.LowNodeLoadNodePool{
+									{
+										LowThresholds:          tt.thresholds,
+										HighThresholds:         tt.targetThresholds,
+										UseDeviationThresholds: tt.useDeviationThresholds,
+										AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+											ConsecutiveAbnormalities: 1,
+										},
+									},
 								},
+								EvictableNamespaces: tt.evictableNamespaces,
 							},
 						})
 					},
@@ -1206,7 +1210,7 @@ func Test_filterNodes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := filterNodes(tt.nodeSelector, tt.nodes)
+			got, err := filterNodes(tt.nodeSelector, tt.nodes, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("expect wantErr=%v, but got=%v", tt.wantErr, err)
 			}

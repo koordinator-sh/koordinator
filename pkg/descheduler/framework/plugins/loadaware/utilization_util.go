@@ -222,6 +222,7 @@ func resourceUsagePercentages(nodeUsage *NodeUsage) map[corev1.ResourceName]floa
 
 func evictPodsFromSourceNodes(
 	ctx context.Context,
+	nodePoolName string,
 	sourceNodes, destinationNodes []NodeInfo,
 	dryRun bool,
 	nodeFit bool,
@@ -256,7 +257,9 @@ func evictPodsFromSourceNodes(
 		}
 	}
 
-	var keysAndValues []interface{}
+	keysAndValues := []interface{}{
+		"nodePool", nodePoolName,
+	}
 	for resourceName, quantity := range totalAvailableUsages {
 		keysAndValues = append(keysAndValues, string(resourceName), quantity.String())
 	}
@@ -273,11 +276,11 @@ func evictPodsFromSourceNodes(
 			}),
 		)
 		klog.V(4).InfoS("Evicting pods from node",
-			"node", klog.KObj(srcNode.node), "usage", srcNode.usage,
+			"nodePool", nodePoolName, "node", klog.KObj(srcNode.node), "usage", srcNode.usage,
 			"allPods", len(srcNode.allPods), "nonRemovablePods", len(nonRemovablePods), "removablePods", len(removablePods))
 
 		if len(removablePods) == 0 {
-			klog.V(4).InfoS("No removable pods on node, try next node", "node", klog.KObj(srcNode.node))
+			klog.V(4).InfoS("No removable pods on node, try next node", "node", klog.KObj(srcNode.node), "nodePool", nodePoolName)
 			continue
 		}
 
@@ -287,12 +290,13 @@ func evictPodsFromSourceNodes(
 			map[string]corev1.ResourceList{srcNode.node.Name: srcNode.node.Status.Allocatable},
 			resourceWeights,
 		)
-		evictPods(ctx, dryRun, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction, evictionReasonGenerator)
+		evictPods(ctx, nodePoolName, dryRun, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction, evictionReasonGenerator)
 	}
 }
 
 func evictPods(
 	ctx context.Context,
+	nodePoolName string,
 	dryRun bool,
 	inputPods []*corev1.Pod,
 	nodeInfo NodeInfo,
@@ -308,25 +312,25 @@ func evictPods(
 		}
 
 		if !podFilter(pod) {
-			klog.V(4).InfoS("Pod aborted eviction because it was filtered by filters", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node))
+			klog.V(4).InfoS("Pod aborted eviction because it was filtered by filters", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node), "nodePool", nodePoolName)
 			continue
 		}
 		if dryRun {
-			klog.InfoS("Evict pod in dry run mode", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node))
+			klog.InfoS("Evict pod in dry run mode", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node), "nodePool", nodePoolName)
 		} else {
 			evictionOptions := framework.EvictOptions{
 				Reason: evictionReasonGenerator(nodeInfo),
 			}
 			if !podEvictor.Evict(ctx, pod, evictionOptions) {
-				klog.InfoS("Failed to Evict Pod", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node))
+				klog.InfoS("Failed to Evict Pod", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node), "nodePool", nodePoolName)
 				continue
 			}
-			klog.InfoS("Evicted Pod", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node))
+			klog.InfoS("Evicted Pod", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node), "nodePool", nodePoolName)
 		}
 
 		podMetric := nodeInfo.podMetrics[types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}]
 		if podMetric == nil {
-			klog.V(4).InfoS("Failed to find PodMetric", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node))
+			klog.V(4).InfoS("Failed to find PodMetric", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.node), "nodePool", nodePoolName)
 			continue
 		}
 		for resourceName, availableUsage := range totalAvailableUsages {
@@ -344,6 +348,7 @@ func evictPods(
 
 		keysAndValues := []interface{}{
 			"node", nodeInfo.node.Name,
+			"nodePool", nodePoolName,
 		}
 		for k, v := range nodeInfo.usage {
 			keysAndValues = append(keysAndValues, k, v.String())

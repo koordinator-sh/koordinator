@@ -138,48 +138,64 @@ func (pl *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *frame
 		return nil
 	}
 
-	nodes, err := filterNodes(pl.args.NodeSelector, nodes)
+	processedNodes := sets.NewString()
+	for _, nodePool := range pl.args.NodePools {
+		klog.V(4).InfoS("try to process nodePool", "nodePool", nodePool.Name)
+		status := pl.processOneNodePool(ctx, &nodePool, nodes, processedNodes)
+		if status != nil && status.Err != nil {
+			klog.ErrorS(status.Err, "Failed to processOneNodePool", "nodePool", nodePool.Name)
+		} else {
+			klog.V(4).InfoS("Successfully processed nodePool", "nodePool", nodePool.Name)
+		}
+	}
+	return nil
+}
+
+func (pl *LowNodeLoad) processOneNodePool(ctx context.Context, nodePool *deschedulerconfig.LowNodeLoadNodePool, nodes []*corev1.Node, processedNodes sets.String) *framework.Status {
+	nodes, err := filterNodes(nodePool.NodeSelector, nodes, processedNodes)
 	if err != nil {
 		return &framework.Status{Err: err}
 	}
+
 	if len(nodes) == 0 {
-		klog.Infof("No nodes to process LowNodeLoad")
+		klog.InfoS("No nodes to process LowNodeLoad", "nodePool", nodePool.Name)
 		return nil
 	}
 
-	lowThresholds, highThresholds := newThresholds(pl.args)
+	lowThresholds, highThresholds := newThresholds(nodePool.UseDeviationThresholds, nodePool.LowThresholds, nodePool.HighThresholds)
 	resourceNames := getResourceNames(lowThresholds)
 	nodeUsages := getNodeUsage(nodes, resourceNames, pl.nodeMetricLister, pl.handle.GetPodsAssignedToNodeFunc())
-	nodeThresholds := getNodeThresholds(nodeUsages, lowThresholds, highThresholds, resourceNames, pl.args.UseDeviationThresholds)
+	nodeThresholds := getNodeThresholds(nodeUsages, lowThresholds, highThresholds, resourceNames, nodePool.UseDeviationThresholds)
 	lowNodes, sourceNodes := classifyNodes(nodeUsages, nodeThresholds, lowThresholdFilter, highThresholdFilter)
 
-	logUtilizationCriteria("Criteria for nodes under low thresholds and above high thresholds", lowThresholds, highThresholds, len(lowNodes), len(sourceNodes), len(nodes))
+	logUtilizationCriteria(nodePool.Name, "Criteria for nodes under low thresholds and above high thresholds", lowThresholds, highThresholds, len(lowNodes), len(sourceNodes), len(nodes))
 
 	if len(lowNodes) == 0 {
-		klog.V(4).InfoS("No nodes are underutilized, nothing to do here, you might tune your thresholds further")
+		klog.V(4).InfoS("No nodes are underutilized, nothing to do here, you might tune your thresholds further", "nodePool", nodePool.Name)
 		return nil
 	}
 
 	resetNodesAsNormal(lowNodes, pl.nodeAnomalyDetectors)
 
 	if len(lowNodes) <= int(pl.args.NumberOfNodes) {
-		klog.V(4).InfoS("Number of nodes underutilized is less or equal than NumberOfNodes, nothing to do here", "underutilizedNodes", len(lowNodes), "numberOfNodes", pl.args.NumberOfNodes)
+		klog.V(4).InfoS("Number of nodes underutilized is less or equal than NumberOfNodes, nothing to do here",
+			"underutilizedNodes", len(lowNodes), "numberOfNodes", pl.args.NumberOfNodes, "nodePool", nodePool.Name)
 		return nil
 	}
 
 	if len(lowNodes) == len(nodes) {
-		klog.V(4).InfoS("All nodes are underutilized, nothing to do here")
+		klog.V(4).InfoS("All nodes are underutilized, nothing to do here", "nodePool", nodePool.Name)
 		return nil
 	}
 
 	if len(sourceNodes) == 0 {
-		klog.V(4).InfoS("All nodes are under target utilization, nothing to do here")
+		klog.V(4).InfoS("All nodes are under target utilization, nothing to do here", "nodePool", nodePool.Name)
 		return nil
 	}
 
-	abnormalNodes := filterRealAbnormalNodes(sourceNodes, pl.nodeAnomalyDetectors, pl.args.AnomalyCondition)
+	abnormalNodes := filterRealAbnormalNodes(sourceNodes, pl.nodeAnomalyDetectors, nodePool.AnomalyCondition)
 	if len(abnormalNodes) == 0 {
-		klog.V(4).InfoS("None of the nodes were detected as anomalous, nothing to do here")
+		klog.V(4).InfoS("None of the nodes were detected as anomalous, nothing to do here", "nodePool", nodePool.Name)
 		return nil
 	}
 
@@ -198,15 +214,16 @@ func (pl *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *frame
 		return true
 	}
 
-	sortNodesByUsage(abnormalNodes, pl.args.ResourceWeights, false)
+	sortNodesByUsage(abnormalNodes, nodePool.ResourceWeights, false)
 
 	evictPodsFromSourceNodes(
 		ctx,
+		nodePool.Name,
 		abnormalNodes,
 		lowNodes,
 		pl.args.DryRun,
 		pl.args.NodeFit,
-		pl.args.ResourceWeights,
+		nodePool.ResourceWeights,
 		pl.handle.Evictor(),
 		pl.podFilter,
 		pl.handle.GetPodsAssignedToNodeFunc(),
@@ -215,7 +232,9 @@ func (pl *LowNodeLoad) Balance(ctx context.Context, nodes []*corev1.Node) *frame
 		overUtilizedEvictionReason(highThresholds),
 	)
 	tryMarkNodesAsNormal(sourceNodes, pl.nodeAnomalyDetectors)
-
+	for _, v := range sourceNodes {
+		processedNodes.Insert(v.node.Name)
+	}
 	return nil
 }
 
@@ -265,11 +284,9 @@ func filterRealAbnormalNodes(sourceNodes []NodeInfo, nodeAnomalyDetectors *gocac
 	return abnormalNodes
 }
 
-func newThresholds(args *deschedulerconfig.LowNodeLoadArgs) (thresholds, highThresholds deschedulerconfig.ResourceThresholds) {
-	useDeviationThresholds := args.UseDeviationThresholds
-	thresholds = args.LowThresholds
-	highThresholds = args.HighThresholds
-
+func newThresholds(useDeviationThresholds bool, low, high deschedulerconfig.ResourceThresholds) (thresholds, highThresholds deschedulerconfig.ResourceThresholds) {
+	thresholds = low
+	highThresholds = high
 	resourceNames := getResourceNames(thresholds)
 	resourceNames = append(resourceNames, getResourceNames(highThresholds)...)
 	resourceNames = append(resourceNames, corev1.ResourceMemory)
@@ -309,7 +326,7 @@ func highThresholdFilter(usage *NodeUsage, threshold NodeThresholds) bool {
 	return overutilized
 }
 
-func filterNodes(nodeSelector *metav1.LabelSelector, nodes []*corev1.Node) ([]*corev1.Node, error) {
+func filterNodes(nodeSelector *metav1.LabelSelector, nodes []*corev1.Node, processedNodes sets.String) ([]*corev1.Node, error) {
 	if nodeSelector == nil {
 		return nodes, nil
 	}
@@ -319,6 +336,9 @@ func filterNodes(nodeSelector *metav1.LabelSelector, nodes []*corev1.Node) ([]*c
 	}
 	r := make([]*corev1.Node, 0, len(nodes))
 	for _, v := range nodes {
+		if processedNodes.Has(v.Name) {
+			continue
+		}
 		if selector.Matches(labels.Set(v.Labels)) {
 			r = append(r, v)
 		}
@@ -351,8 +371,9 @@ func filterPods(podSelectors []deschedulerconfig.LowNodeLoadPodSelector) (framew
 	}, nil
 }
 
-func logUtilizationCriteria(message string, lowThresholds, highThresholds deschedulerconfig.ResourceThresholds, totalLowNodesNumber, totalHighNodesNumber, totalNumber int) {
+func logUtilizationCriteria(nodePoolName, message string, lowThresholds, highThresholds deschedulerconfig.ResourceThresholds, totalLowNodesNumber, totalHighNodesNumber, totalNumber int) {
 	utilizationCriteria := []interface{}{
+		"nodePool", nodePoolName,
 		"nodesUnderLowThresholds", totalLowNodesNumber,
 		"nodesAboveHighThresholds", totalHighNodesNumber,
 		"nodesAppropriately", totalNumber - totalLowNodesNumber - totalHighNodesNumber,
