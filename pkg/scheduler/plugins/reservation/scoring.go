@@ -21,11 +21,13 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync/atomic"
 
 	corev1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 	pluginhelper "k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -47,7 +49,14 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 		return nil
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	nominatedReservations := make([]*frameworkext.ReservationInfo, len(state.nodeReservationStates))
+	var nominatedNodeIndex int32
+
 	nodeOrders := make([]int64, len(nodes))
+	errCh := parallelize.NewErrorChannel()
 	pl.handle.Parallelizer().Until(ctx, len(nodes), func(piece int) {
 		node := nodes[piece]
 		reservationInfos := state.nodeReservationStates[node.Name].matched
@@ -56,7 +65,29 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 		}
 		_, order := findMostPreferredReservationByOrder(reservationInfos)
 		nodeOrders[piece] = order
+
+		nominatedReservationInfo, status := pl.NominateReservation(ctx, cycleState, pod, node.Name)
+		if !status.IsSuccess() {
+			errCh.SendErrorWithCancel(status.AsError(), cancel)
+			return
+		}
+
+		if nominatedReservationInfo != nil {
+			index := atomic.AddInt32(&nominatedNodeIndex, 1)
+			nominatedReservations[index-1] = nominatedReservationInfo
+		}
 	})
+	if err := errCh.ReceiveError(); err != nil {
+		return framework.AsStatus(err)
+	}
+
+	nominatedReservations = nominatedReservations[:nominatedNodeIndex]
+	reservations := make(map[string]*frameworkext.ReservationInfo, len(nominatedReservations))
+	for _, v := range nominatedReservations {
+		reservations[v.GetNodeName()] = v
+	}
+	frameworkext.SetNominatedReservation(cycleState, reservations)
+
 	var selectOrder int64 = math.MaxInt64
 	var nodeIndex int
 	for i, order := range nodeOrders {
@@ -82,19 +113,11 @@ func (pl *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, p
 		return mostPreferredScore, nil
 	}
 
-	reservationInfos := state.nodeReservationStates[nodeName].matched
-	if len(reservationInfos) == 0 {
+	reservationInfo := frameworkext.GetNominatedReservation(cycleState, nodeName)
+	if reservationInfo == nil {
 		return framework.MinNodeScore, nil
 	}
-
-	var maxScore int64
-	for _, rInfo := range reservationInfos {
-		score := scoreReservation(pod, rInfo)
-		if score > maxScore {
-			maxScore = score
-		}
-	}
-	return maxScore, nil
+	return scoreReservation(pod, reservationInfo), nil
 }
 
 func (pl *Plugin) ScoreExtensions() framework.ScoreExtensions {

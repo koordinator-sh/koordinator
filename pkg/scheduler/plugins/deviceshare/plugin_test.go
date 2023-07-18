@@ -2565,7 +2565,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				}
 				cycleState.Write(reservationRestoreStateKey, restoreState)
 				rInfo := frameworkext.NewReservationInfo(reservation)
-				frameworkext.SetNominatedReservation(cycleState, rInfo)
+				frameworkext.SetNominatedReservation(cycleState, map[string]*frameworkext.ReservationInfo{"test-node": rInfo})
 			}
 
 			status := p.Reserve(context.TODO(), cycleState, tt.args.pod, tt.args.nodeName)

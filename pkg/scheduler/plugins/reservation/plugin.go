@@ -544,10 +544,19 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		return nil
 	}
 
-	nominatedReservation := frameworkext.GetNominatedReservation(cycleState)
+	nominatedReservation := frameworkext.GetNominatedReservation(cycleState, nodeName)
 	if nominatedReservation == nil {
-		klog.V(5).Infof("Skip reserve with reservation since there are no matched reservations, pod %v, node: %v", klog.KObj(pod), nodeName)
-		return nil
+		// The scheduleOne skip scores and reservation nomination if there is only one node available.
+		var status *framework.Status
+		nominatedReservation, status = pl.NominateReservation(ctx, cycleState, pod, nodeName)
+		if status != nil {
+			return status
+		}
+		if nominatedReservation == nil {
+			klog.V(5).Infof("Skip reserve with reservation since there are no matched reservations, pod %v, node: %v", klog.KObj(pod), nodeName)
+			return nil
+		}
+		frameworkext.SetNominatedReservation(cycleState, map[string]*frameworkext.ReservationInfo{nodeName: nominatedReservation})
 	}
 
 	err := pl.reservationCache.assumePod(nominatedReservation.UID(), pod)

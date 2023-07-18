@@ -27,6 +27,7 @@ import (
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -58,7 +59,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	isReservedPod := reservationutil.IsReservePod(pod)
 	parallelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	errCh := NewErrorChannel()
+	errCh := parallelize.NewErrorChannel()
 
 	extender, _ := pl.handle.(frameworkext.FrameworkExtender)
 	if extender != nil {

@@ -149,6 +149,16 @@ func (ri *ReservationInfo) GetReservePod() *corev1.Pod {
 	return nil
 }
 
+func (ri *ReservationInfo) GetNodeName() string {
+	if ri.Reservation != nil {
+		return reservationutil.GetReservationNodeName(ri.Reservation)
+	}
+	if ri.Pod != nil {
+		return ri.Pod.Spec.NodeName
+	}
+	return ""
+}
+
 func (ri *ReservationInfo) IsAllocateOnce() bool {
 	if ri.Reservation != nil {
 		return apiext.IsReservationAllocateOnce(ri.Reservation)

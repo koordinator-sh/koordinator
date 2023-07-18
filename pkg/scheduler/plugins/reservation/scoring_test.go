@@ -218,6 +218,15 @@ func TestScore(t *testing.T) {
 			}
 			cycleState.Write(stateKey, state)
 
+			status := pl.PreScore(context.TODO(), cycleState, tt.pod, []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+				},
+			})
+			assert.True(t, status.IsSuccess())
+
 			score, status := pl.Score(context.TODO(), cycleState, tt.pod, "test-node")
 			assert.True(t, status.IsSuccess())
 			assert.Equal(t, tt.wantScore, score)
@@ -355,4 +364,330 @@ func TestScoreWithOrder(t *testing.T) {
 		{Name: "test-node-4", Score: framework.MaxNodeScore},
 	}
 	assert.Equal(t, expectedNodeScoreList, scoreList)
+}
+
+func TestPreScoreWithNominateReservation(t *testing.T) {
+	reservation4C8G := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "reservation4C8G",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node",
+		},
+	}
+	reservation2C4G := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "reservation2C4G",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node",
+		},
+	}
+	otherNodeReservation4C8G := reservation4C8G.DeepCopy()
+	otherNodeReservation4C8G.UID = uuid.NewUUID()
+	otherNodeReservation4C8G.Name = "otherNodeReservation4C8G"
+	otherNodeReservation4C8G.Status.NodeName = "test-node-1"
+	otherNodeReservation2C4G := reservation2C4G.DeepCopy()
+	otherNodeReservation2C4G.UID = uuid.NewUUID()
+	otherNodeReservation2C4G.Name = "otherNodeReservation2C4G"
+	otherNodeReservation2C4G.Status.NodeName = "test-node-1"
+
+	tests := []struct {
+		name            string
+		pod             *corev1.Pod
+		reservations    []*schedulingv1alpha1.Reservation
+		allocated       map[types.UID]corev1.ResourceList
+		wantReservation map[string]*frameworkext.ReservationInfo
+		wantStatus      bool
+	}{
+		{
+			name: "reserve pod",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						reservationutil.AnnotationReservePod: "true",
+					},
+				},
+			},
+			wantStatus: true,
+		},
+		{
+			name:       "node without reservations",
+			pod:        &corev1.Pod{},
+			wantStatus: true,
+		},
+		{
+			name: "preferred reservation",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			reservations: []*schedulingv1alpha1.Reservation{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "preferred-reservation",
+						Labels: map[string]string{
+							apiext.LabelReservationOrder: "100",
+						},
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("2"),
+												corev1.ResourceMemory: resource.MustParse("4Gi"),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					Status: schedulingv1alpha1.ReservationStatus{
+						NodeName: "test-node",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "normal-reservation",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("2"),
+												corev1.ResourceMemory: resource.MustParse("4Gi"),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					Status: schedulingv1alpha1.ReservationStatus{
+						NodeName: "test-node",
+					},
+				},
+			},
+			wantReservation: map[string]*frameworkext.ReservationInfo{
+				"test-node": frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "preferred-reservation",
+						Labels: map[string]string{
+							apiext.LabelReservationOrder: "100",
+						},
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("2"),
+												corev1.ResourceMemory: resource.MustParse("4Gi"),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					Status: schedulingv1alpha1.ReservationStatus{
+						NodeName: "test-node",
+					},
+				}),
+			},
+			wantStatus: true,
+		},
+		{
+			name: "allocated reservation",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			reservations: []*schedulingv1alpha1.Reservation{
+				reservation4C8G,
+				reservation2C4G,
+			},
+			allocated: map[types.UID]corev1.ResourceList{
+				reservation2C4G.UID: {
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+			},
+			wantStatus: true,
+			wantReservation: map[string]*frameworkext.ReservationInfo{
+				reservation4C8G.Status.NodeName: frameworkext.NewReservationInfo(reservation4C8G),
+			},
+		},
+		{
+			name: "matched reservations",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			reservations: []*schedulingv1alpha1.Reservation{
+				reservation4C8G,
+				reservation2C4G,
+			},
+			wantStatus: true,
+			wantReservation: map[string]*frameworkext.ReservationInfo{
+				reservation2C4G.Status.NodeName: frameworkext.NewReservationInfo(reservation2C4G),
+			},
+		},
+		{
+			name: "multiple nodes have reservations",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			reservations: []*schedulingv1alpha1.Reservation{
+				reservation4C8G,
+				reservation2C4G,
+				otherNodeReservation4C8G,
+				otherNodeReservation2C4G,
+			},
+			wantStatus: true,
+			wantReservation: map[string]*frameworkext.ReservationInfo{
+				reservation2C4G.Status.NodeName:          frameworkext.NewReservationInfo(reservation2C4G),
+				otherNodeReservation2C4G.Status.NodeName: frameworkext.NewReservationInfo(otherNodeReservation2C4G),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t)
+			plugin, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := plugin.(*Plugin)
+			cycleState := framework.NewCycleState()
+			state := &stateData{
+				nodeReservationStates: map[string]nodeReservationState{},
+			}
+			for _, reservation := range tt.reservations {
+				rInfo := frameworkext.NewReservationInfo(reservation)
+				if allocated := tt.allocated[reservation.UID]; len(allocated) > 0 {
+					rInfo.Allocated = allocated
+				}
+				nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
+				nodeRState.nodeName = reservation.Status.NodeName
+				nodeRState.matched = append(nodeRState.matched, rInfo)
+				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
+				pl.reservationCache.updateReservation(reservation)
+			}
+			cycleState.Write(stateKey, state)
+
+			nodes := []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node-1",
+					},
+				},
+			}
+
+			status := pl.PreScore(context.TODO(), cycleState, tt.pod, nodes)
+			assert.Equal(t, tt.wantStatus, status.IsSuccess())
+
+			for nodeName, wantReservationInfo := range tt.wantReservation {
+				sort.Slice(wantReservationInfo.ResourceNames, func(i, j int) bool {
+					return wantReservationInfo.ResourceNames[i] < wantReservationInfo.ResourceNames[j]
+				})
+				rInfo := frameworkext.GetNominatedReservation(cycleState, nodeName)
+				if rInfo != nil {
+					sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
+						return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
+					})
+				}
+				assert.Equal(t, wantReservationInfo, rInfo)
+			}
+		})
+	}
 }

@@ -1035,7 +1035,7 @@ func TestPlugin_Reserve(t *testing.T) {
 							},
 						}
 						rInfo := frameworkext.NewReservationInfo(reservation)
-						frameworkext.SetNominatedReservation(cycleState, rInfo)
+						frameworkext.SetNominatedReservation(cycleState, map[string]*frameworkext.ReservationInfo{"test-node-1": rInfo})
 					}
 					cycleState.Write(reservationRestoreStateKey, &reservationRestoreStateData{
 						skip: false,
