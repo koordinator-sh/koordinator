@@ -21,7 +21,6 @@ import (
 
 	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -42,7 +41,7 @@ const (
 type beResourceCollector struct {
 	collectInterval time.Duration
 	started         *atomic.Bool
-	metricDB        metriccache.MetricCache
+	metricCache     metriccache.MetricCache
 	statesInformer  statesinformer.StatesInformer
 	cgroupReader    resourceexecutor.CgroupReader
 
@@ -53,7 +52,7 @@ func New(opt *framework.Options) framework.Collector {
 	return &beResourceCollector{
 		collectInterval: opt.Config.CollectResUsedInterval,
 		started:         atomic.NewBool(false),
-		metricDB:        opt.MetricCache,
+		metricCache:     opt.MetricCache,
 		statesInformer:  opt.StatesInformer,
 		cgroupReader:    opt.CgroupReader,
 	}
@@ -88,31 +87,41 @@ func (b *beResourceCollector) collectBECPUResourceMetric() {
 		return
 	}
 
-	beCPURequest := b.getBECPURequestSum()
+	beCPUMilliRequest := b.getBECPURequestMilliCores()
 
-	beCPUUsageCores, err := b.getBECPUUsageCores()
+	beCPUUsageMilliCores, err := b.getBECPUUsageMilliCores()
 	if err != nil {
 		klog.Errorf("getBECPUUsageCores failed, error: %v", err)
 		return
 	}
 
-	if beCPUUsageCores == nil {
-		klog.Info("beCPUUsageCores is nil")
-		return
-	}
-
-	beCPUMetric := metriccache.BECPUResourceMetric{
-		CPUUsed:      *beCPUUsageCores,
-		CPURealLimit: *resource.NewMilliQuantity(int64(realMilliLimit), resource.DecimalSI),
-		CPURequest:   beCPURequest,
-	}
-
 	collectTime := time.Now()
-	err = b.metricDB.InsertBECPUResourceMetric(collectTime, &beCPUMetric)
-	if err != nil {
-		klog.Errorf("InsertBECPUResourceMetric failed, error: %v", err)
+	beLimit, err01 := metriccache.NodeBEMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRealLimit)), collectTime, float64(realMilliLimit))
+	beRequest, err02 := metriccache.NodeBEMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRequest)), collectTime, float64(beCPUMilliRequest))
+	beUsage, err03 := metriccache.NodeBEMetric.GenerateSample(
+		metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationUsage)), collectTime, float64(beCPUUsageMilliCores))
+
+	if err01 != nil || err02 != nil || err03 != nil {
+		klog.Errorf("failed to collect node BECPU, beLimitGenerateSampleErr: %v, beRequestGenerateSampleErr: %v, beUsageGenerateSampleErr: %v", err01, err02, err03)
 		return
 	}
+
+	beMetrics := make([]metriccache.MetricSample, 0)
+	beMetrics = append(beMetrics, beLimit, beRequest, beUsage)
+
+	appender := b.metricCache.Appender()
+	if err := appender.Append(beMetrics); err != nil {
+		klog.ErrorS(err, "Append node BECPUResource metrics error")
+		return
+	}
+
+	if err := appender.Commit(); err != nil {
+		klog.ErrorS(err, "Commit node BECPUResouce metrics failed")
+		return
+	}
+
 	b.started.Store(true)
 	klog.V(6).Info("collectBECPUResourceMetric finished")
 }
@@ -151,7 +160,7 @@ func (b *beResourceCollector) getBECPURealMilliLimit() (int, error) {
 	return limit, nil
 }
 
-func (b *beResourceCollector) getBECPURequestSum() resource.Quantity {
+func (b *beResourceCollector) getBECPURequestMilliCores() int64 {
 	requestSum := int64(0)
 	for _, podMeta := range b.statesInformer.GetAllPods() {
 		pod := podMeta.Pod
@@ -162,18 +171,19 @@ func (b *beResourceCollector) getBECPURequestSum() resource.Quantity {
 			}
 		}
 	}
-	return *resource.NewMilliQuantity(requestSum, resource.DecimalSI)
+	return requestSum
 }
 
-func (b *beResourceCollector) getBECPUUsageCores() (*resource.Quantity, error) {
+func (b *beResourceCollector) getBECPUUsageMilliCores() (int64, error) {
 	klog.V(6).Info("getBECPUUsageCores start")
 
+	cpuUsageMilliCores := int64(0)
 	collectTime := time.Now()
 	BECgroupParentDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
 	currentCPUUsage, err := b.cgroupReader.ReadCPUAcctUsage(BECgroupParentDir)
 	if err != nil {
 		klog.Warningf("failed to collect be cgroup usage, error: %v", err)
-		return nil, err
+		return cpuUsageMilliCores, err
 	}
 
 	lastCPUStat := b.lastBECPUStat
@@ -184,13 +194,16 @@ func (b *beResourceCollector) getBECPUUsageCores() (*resource.Quantity, error) {
 
 	if lastCPUStat == nil {
 		klog.V(6).Infof("ignore the first cpu stat collection")
-		return nil, nil
+		return cpuUsageMilliCores, nil
 	}
 
-	// NOTE: do subtraction and division first to avoid overflow
-	cpuUsageValue := float64(currentCPUUsage-lastCPUStat.CPUUsage) / float64(collectTime.Sub(lastCPUStat.Timestamp))
+	// NOTE:
+	// 1. do subtraction and division first to avoid overflow.
+	// 2. To solve the problem of insufficient precision of nanosecond floating-point numbers, convert to Milliseconds
+	cpuUsageValue := float64((currentCPUUsage-lastCPUStat.CPUUsage)/1000000) / float64(collectTime.Sub(lastCPUStat.Timestamp).Milliseconds())
+	cpuUsageMilliCores = int64(cpuUsageValue * 1000)
 	// 1.0 CPU = 1000 Milli-CPU
-	cpuUsageCores := resource.NewMilliQuantity(int64(cpuUsageValue*1000), resource.DecimalSI)
+	// cpuUsageCores := resource.NewMilliQuantity(int64(cpuUsageValue*1000), resource.DecimalSI)
 	klog.V(6).Infof("collectBECPUUsageCores finished %.2f", cpuUsageValue)
-	return cpuUsageCores, nil
+	return cpuUsageMilliCores, nil
 }

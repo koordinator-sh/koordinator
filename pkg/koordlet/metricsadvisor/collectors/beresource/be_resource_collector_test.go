@@ -53,7 +53,7 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	collector := beResourceCollector{
 		collectInterval: 0,
 		started:         atomic.NewBool(true),
-		metricDB:        metricCache,
+		metricCache:     metricCache,
 		statesInformer:  mockStatesInformer,
 		cgroupReader:    resourceexecutor.NewCgroupReader(),
 		lastBECPUStat:   &framework.CPUStat{},
@@ -66,7 +66,6 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 
 	// prepare BECPUUsageCores data,expect 4 cores usage
-	collector.lastBECPUStat = &framework.CPUStat{CPUUsage: 12000000000000, Timestamp: time.Now().Add(-1 * time.Second)}
 	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUAcctUsage, "12004000000000")
 
 	// prepare limit data,expect 8 cores limit
@@ -74,51 +73,85 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, "800000")
 	helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, "100000")
 
-	collector.collectBECPUResourceMetric()
+	collector.lastBECPUStat = &framework.CPUStat{CPUUsage: 12000000000000, Timestamp: time.Now().Add(-1 * time.Second)}
+
+	assert.NotPanics(t, func() {
+		collector.collectBECPUResourceMetric()
+	})
 
 	oldStartTime := time.Unix(0, 0)
 	now := time.Now()
-	params := &metriccache.QueryParam{
-		Aggregate: metriccache.AggregationTypeLast,
-		Start:     &oldStartTime,
-		End:       &now,
+	querier, err := collector.metricCache.Querier(oldStartTime, now)
+	assert.NoError(t, err)
+
+	beCPUUsageProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationUsage))
+	beCPURequestProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRequest))
+	beCPURealLimitProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRealLimit))
+
+	beCPUUsageQueryMeta, err := metriccache.NodeBEMetric.BuildQueryMeta(beCPUUsageProperties)
+	assert.NoError(t, err)
+	beCPURequestQueryMeta, err := metriccache.NodeBEMetric.BuildQueryMeta(beCPURequestProperties)
+	assert.NoError(t, err)
+	beCPURealLimitQueryMeta, err := metriccache.NodeBEMetric.BuildQueryMeta(beCPURealLimitProperties)
+	assert.NoError(t, err)
+
+	beCPUUsageAggregateResult := metriccache.DefaultAggregateResultFactory.New(beCPUUsageQueryMeta)
+	if err := querier.Query(beCPUUsageQueryMeta, nil, beCPUUsageAggregateResult); err != nil {
+		assert.NoError(t, err)
 	}
 
-	got := collector.metricDB.GetBECPUResourceMetric(params)
-	gotMetric := got.Metric
+	beCPURequeestAggregateResult := metriccache.DefaultAggregateResultFactory.New(beCPURequestQueryMeta)
+	if err := querier.Query(beCPURequestQueryMeta, nil, beCPURequeestAggregateResult); err != nil {
+		assert.NoError(t, err)
+	}
 
-	assert.Equal(t, int64(1500), gotMetric.CPURequest.MilliValue(), "checkRequest")
-	assert.Equal(t, int64(4), gotMetric.CPUUsed.Value(), "checkUsage")
-	assert.Equal(t, int64(8), gotMetric.CPURealLimit.Value(), "checkLimit")
+	beCPURealLimitAggregateResult := metriccache.DefaultAggregateResultFactory.New(beCPURealLimitQueryMeta)
+	if err := querier.Query(beCPURealLimitQueryMeta, nil, beCPURealLimitAggregateResult); err != nil {
+		assert.NoError(t, err)
+	}
+
+	// BECPUUsage
+	currentBECPUMilliUsage, err := beCPUUsageAggregateResult.Value(metriccache.AggregationTypeLast)
+	assert.NoError(t, err)
+	assert.Equal(t, float64(4*1000), currentBECPUMilliUsage, "checkRequest")
+	// BECPURequest
+	currentBECPUMilliRequest, _ := beCPURequeestAggregateResult.Value(metriccache.AggregationTypeLast)
+	assert.NoError(t, err)
+	assert.Equal(t, float64(1500), currentBECPUMilliRequest, "checkUsage")
+	// BECPULimit
+	currentBECPUMilliRealLimit, _ := beCPURealLimitAggregateResult.Value(metriccache.AggregationTypeLast)
+	assert.NoError(t, err)
+	assert.Equal(t, float64(8*1000), currentBECPUMilliRealLimit, "checkLimit")
 }
 
-func Test_getBECPUUsageCores(t *testing.T) {
+func Test_getBECPUUsageMilliCores(t *testing.T) {
 	tests := []struct {
-		name                  string
-		cpuacctUsage          string
-		lastBeCPUStat         *framework.CPUStat
-		expectCPUUsedCores    *resource.Quantity
-		expectCurrentCPUUsage uint64
-		expectNil             bool
-		expectError           bool
+		name                    string
+		cpuacctUsage            string
+		lastBeCPUStat           *framework.CPUStat
+		expectCPUUsedMilliCores int64
+		expectCurrentCPUUsage   uint64
+		expectNil               bool
+		expectError             bool
 	}{
 		{
-			name:                  "test_get_first_time",
-			cpuacctUsage:          "12000000000000\n",
-			lastBeCPUStat:         nil,
-			expectCPUUsedCores:    nil,
-			expectCurrentCPUUsage: 12000000000000,
-			expectNil:             true,
-			expectError:           false,
+			name:                    "test_get_first_time",
+			cpuacctUsage:            "12000000000000\n",
+			lastBeCPUStat:           nil,
+			expectCPUUsedMilliCores: int64(0),
+			expectCurrentCPUUsage:   12000000000000,
+			expectNil:               true,
+			expectError:             false,
 		},
 		{
-			name:                  "test_get_correct",
-			cpuacctUsage:          "12004000000000\n",
-			lastBeCPUStat:         &framework.CPUStat{CPUUsage: 12000000000000},
-			expectCPUUsedCores:    resource.NewQuantity(4, resource.DecimalSI),
-			expectCurrentCPUUsage: 12004000000000,
-			expectNil:             false,
-			expectError:           false,
+			name:          "test_get_correct",
+			cpuacctUsage:  "12004000000000\n",
+			lastBeCPUStat: &framework.CPUStat{CPUUsage: 12000000000000},
+			// expectCPUUsedCores:    resource.NewQuantity(4, resource.DecimalSI),
+			expectCPUUsedMilliCores: int64(4000),
+			expectCurrentCPUUsage:   12004000000000,
+			expectNil:               false,
+			expectError:             false,
 		},
 	}
 
@@ -138,10 +171,10 @@ func Test_getBECPUUsageCores(t *testing.T) {
 				collector.lastBECPUStat.Timestamp = time.Now().Add(-1 * time.Second)
 			}
 
-			gotCPUUsedCores, gotErr := collector.getBECPUUsageCores()
+			gotCPUUsedMilliCores, gotErr := collector.getBECPUUsageMilliCores()
 			assert.Equal(t, tt.expectError, gotErr != nil, "checkError")
 			if !tt.expectNil {
-				assert.Equal(t, tt.expectCPUUsedCores.Value(), gotCPUUsedCores.Value(), "checkCPU")
+				assert.Equal(t, tt.expectCPUUsedMilliCores, gotCPUUsedMilliCores, "checkCPU")
 			}
 			assert.Equal(t, tt.expectCurrentCPUUsage, collector.lastBECPUStat.CPUUsage, "checkCPUUsage")
 		})
@@ -209,7 +242,7 @@ func Test_getBECPURealMilliLimit(t *testing.T) {
 	}
 }
 
-func Test_getBECPURequestSum(t *testing.T) {
+func Test_getBECPURequestMilliSum(t *testing.T) {
 	ctl := gomock.NewController(t)
 	defer ctl.Finish()
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
@@ -224,8 +257,8 @@ func Test_getBECPURequestSum(t *testing.T) {
 		started:         atomic.NewBool(true),
 		statesInformer:  mockStatesInformer,
 	}
-	beRequest := c.getBECPURequestSum()
-	assert.Equal(t, int64(1500), beRequest.MilliValue())
+	beRequest := c.getBECPURequestMilliCores()
+	assert.Equal(t, int64(1500), beRequest)
 }
 
 func mockBEPod() *corev1.Pod {

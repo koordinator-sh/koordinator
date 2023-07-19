@@ -41,6 +41,9 @@ const (
 	NodeMetricGPUMemUsage  MetricKind = "node_gpu_memory_usage"
 	NodeMetricGPUMemTotal  MetricKind = "node_gpu_memory_total"
 
+	// NodeBE
+	NodeMetricBE MetricKind = "node_be"
+
 	PriorityMetricCPUUsage     MetricKind = "priority_cpu_usage"
 	PriorityMetricCPURealLimit MetricKind = "priority_cpu_real_limit"
 	PriorityMetricCPURequest   MetricKind = "priority_cpu_request"
@@ -85,6 +88,9 @@ const (
 	MetricPropertyPSIResource  MetricProperty = "psi_resource"
 	MetricPropertyPSIPrecision MetricProperty = "psi_precision"
 	MetricPropertyPSIDegree    MetricProperty = "psi_degree"
+
+	MetricPropertyBEResource   MetricProperty = "be_resource"
+	MetricPropertyBEAllocation MetricProperty = "be_allocation"
 )
 
 // MetricPropertyValue is the property value
@@ -102,6 +108,11 @@ const (
 	PSIPrecision300 MetricPropertyValue = "300"
 	PSIDegreeFull   MetricPropertyValue = "full"
 	PSIDegreeSome   MetricPropertyValue = "some"
+
+	BEResourceCPU                MetricPropertyValue = "cpu"
+	BEResouceAllocationUsage     MetricPropertyValue = "usage"
+	BEResouceAllocationRealLimit MetricPropertyValue = "real-limit"
+	BEResouceAllocationRequest   MetricPropertyValue = "request"
 )
 
 // MetricPropertiesFunc is a collection of functions generating metric property k-v, for metric sample generation and query
@@ -115,26 +126,13 @@ var MetricPropertiesFunc = struct {
 	ContainerPSI        func(string, string, string, string, string) map[MetricProperty]string
 	PodGPU              func(string, string, string) map[MetricProperty]string
 	ContainerGPU        func(string, string, string) map[MetricProperty]string
+	NodeBE              func(string, string) map[MetricProperty]string
 }{
 	Pod: func(podUID string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyPodUID: podUID}
 	},
-	PodGPU: func(podUID, minor, uuid string) map[MetricProperty]string {
-		return map[MetricProperty]string{
-			MetricPropertyPodUID:        podUID,
-			MetricPropertyGPUMinor:      minor,
-			MetricPropertyGPUDeviceUUID: uuid,
-		}
-	},
 	Container: func(containerID string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyContainerID: containerID}
-	},
-	ContainerGPU: func(containerID, minor, uuid string) map[MetricProperty]string {
-		return map[MetricProperty]string{
-			MetricPropertyContainerID:   containerID,
-			MetricPropertyGPUMinor:      minor,
-			MetricPropertyGPUDeviceUUID: uuid,
-		}
 	},
 	GPU: func(minor, uuid string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyGPUMinor: minor, MetricPropertyGPUDeviceUUID: uuid}
@@ -150,6 +148,15 @@ var MetricPropertiesFunc = struct {
 	},
 	ContainerPSI: func(podUID, containerID, psiResource, psiPrecision, psiDegree string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyPodUID: podUID, MetricPropertyContainerID: containerID, MetricPropertyPSIResource: psiResource, MetricPropertyPSIPrecision: psiPrecision, MetricPropertyPSIDegree: psiDegree}
+	},
+	PodGPU: func(podUID, minor, uuid string) map[MetricProperty]string {
+		return map[MetricProperty]string{MetricPropertyPodUID: podUID, MetricPropertyGPUMinor: minor, MetricPropertyGPUDeviceUUID: uuid}
+	},
+	ContainerGPU: func(containerID, minor, uuid string) map[MetricProperty]string {
+		return map[MetricProperty]string{MetricPropertyContainerID: containerID, MetricPropertyGPUMinor: minor, MetricPropertyGPUDeviceUUID: uuid}
+	},
+	NodeBE: func(beResource, beResourceAllocation string) map[MetricProperty]string {
+		return map[MetricProperty]string{MetricPropertyBEResource: beResource, MetricPropertyBEAllocation: beResourceAllocation}
 	},
 }
 

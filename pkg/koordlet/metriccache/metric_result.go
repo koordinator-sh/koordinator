@@ -173,8 +173,3 @@ func getAggregateFunc(aggregationType AggregationType) AggregationFunc {
 		return fieldAvgOfMetricList
 	}
 }
-
-func count(metrics interface{}) (float64, error) {
-	aggregateFunc := getAggregateFunc(AggregationTypeCount)
-	return aggregateFunc(metrics, AggregateParam{})
-}
