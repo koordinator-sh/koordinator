@@ -45,7 +45,7 @@ func NewPerfCollector(cgroupFile *os.File, cpus []int) (*PerfCollector, error) {
 		cpuHwProfilersMap: map[int]*perf.HardwareProfiler{},
 	}
 	for _, cpu := range cpus {
-		cpiProfiler, err := perf.NewHardwareProfiler(int(cgroupFile.Fd()), cpu, perf.RefCpuCyclesProfiler|perf.CpuInstrProfiler, unix.PERF_FLAG_PID_CGROUP)
+		cpiProfiler, err := perf.NewHardwareProfiler(int(cgroupFile.Fd()), cpu, perf.CpuCyclesProfiler|perf.CpuInstrProfiler, unix.PERF_FLAG_PID_CGROUP)
 		if err != nil && !cpiProfiler.HasProfilers() {
 			return nil, err
 		}
