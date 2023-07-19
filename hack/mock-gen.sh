@@ -23,9 +23,9 @@ LICENSE_HEADER_PATH="./hack/boilerplate/boilerplate.go.txt"
 cd $GOPATH/src/github.com/koordinator-sh/koordinator
 
 # generates gomock files
-mockgen -source pkg/koordlet/statesinformer/states_informer.go \
+mockgen -source pkg/koordlet/statesinformer/impl/states_informer.go \
   -destination pkg/koordlet/statesinformer/mockstatesinformer/mock.go \
-  -aux_files github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer=pkg/koordlet/statesinformer/states_informer.go \
+  -aux_files github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl=pkg/koordlet/statesinformer/impl/states_informer.go \
   -copyright_file ${LICENSE_HEADER_PATH}
 mockgen -source pkg/koordlet/metriccache/tsdb_storage.go \
   -destination pkg/koordlet/metriccache/mockmetriccache/mock_tsdb_storage.go \

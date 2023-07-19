@@ -337,11 +337,17 @@ func Test_getPodEvictInfoAndSort(t *testing.T) {
 		CPUUsed float64
 	}
 
+	type BECPUResourceMetric struct {
+		CPUUsed      resource.Quantity // cpuUsed cores for BestEffort Cgroup
+		CPURealLimit resource.Quantity // suppressCPUQuantity: if suppress by cfs_quota then this  value is cfs_quota/cfs_period
+		CPURequest   resource.Quantity // sum(extendResources_Cpu:request) by all qos:BE pod
+	}
+
 	tests := []struct {
 		name       string
 		podMetrics []podMetricSample
 		pods       []*corev1.Pod
-		beMetric   metriccache.BECPUResourceMetric
+		beMetric   BECPUResourceMetric
 		expect     []*podEvictCPUInfo
 	}{
 		{
@@ -360,7 +366,7 @@ func Test_getPodEvictInfoAndSort(t *testing.T) {
 				mockBEPodForCPUEvict("pod_be_2_priority100", 16*1000, 100),
 				mockBEPodForCPUEvict("pod_be_3_priority10", 16*1000, 10),
 			},
-			beMetric: metriccache.BECPUResourceMetric{
+			beMetric: BECPUResourceMetric{
 				CPUUsed:    *resource.NewMilliQuantity(11*1000, resource.DecimalSI),
 				CPURequest: *resource.NewMilliQuantity(48*1000, resource.DecimalSI),
 			},
