@@ -132,6 +132,7 @@ const (
 	CPUProcsName     = "cgroup.procs"
 	CPUThreadsName   = "cgroup.threads"
 	CPUMaxName       = "cpu.max"
+	CPUMaxBurstName  = "cpu.max.burst"
 	CPUWeightName    = "cpu.weight"
 
 	CPUSetCPUSName          = "cpuset.cpus"
@@ -174,6 +175,7 @@ var (
 	CPUBurstValidator                       = &RangeValidator{min: 0, max: 100 * 10 * 100000}
 	CPUBvtWarpNsValidator                   = &RangeValidator{min: -1, max: 2}
 	CPUWeightValidator                      = &RangeValidator{min: CPUWeightMinValue, max: CPUWeightMaxValue}
+	CPUMaxBurstValidator                    = &RangeValidator{min: 0, max: math.MaxInt64}
 	MemoryWmarkRatioValidator               = &RangeValidator{min: 0, max: 100}
 	MemoryPriorityValidator                 = &RangeValidator{min: 0, max: 12}
 	MemoryOomGroupValidator                 = &RangeValidator{min: 0, max: 1}
@@ -274,6 +276,7 @@ var (
 	CPUStatV2      = DefaultFactory.NewV2(CPUStatName, CPUStatName)
 	CPUAcctStatV2  = DefaultFactory.NewV2(CPUAcctStatName, CPUStatName)
 	CPUAcctUsageV2 = DefaultFactory.NewV2(CPUAcctUsageName, CPUStatName)
+	CPUBurstV2     = DefaultFactory.NewV2(CPUBurstName, CPUMaxBurstName).WithValidator(CPUMaxBurstValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 
 	CPUAcctCPUPressureV2    = DefaultFactory.NewV2(CPUAcctCPUPressureName, CPUAcctCPUPressureName).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	CPUAcctMemoryPressureV2 = DefaultFactory.NewV2(CPUAcctMemoryPressureName, CPUAcctMemoryPressureName).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
@@ -304,6 +307,7 @@ var (
 		CPUStatV2,
 		CPUAcctStatV2,
 		CPUAcctUsageV2,
+		CPUBurstV2,
 		CPUAcctCPUPressureV2,
 		CPUAcctMemoryPressureV2,
 		CPUAcctIOPressureV2,
@@ -356,18 +360,19 @@ func (c *CgroupResource) Path(parentDir string) string {
 }
 
 func (c *CgroupResource) IsSupported(parentDir string) (bool, string) {
-	if c.Supported == nil {
-		if c.CheckSupported == nil {
-			return false, "unknown support status"
-		}
-		isSupported, msg := c.CheckSupported(c, parentDir)
-		if c.CheckOnce {
-			c.Supported = &isSupported
-			c.SupportMsg = msg
-		}
-		return isSupported, msg
+	if c.Supported != nil {
+		return *c.Supported, c.SupportMsg
 	}
-	return *c.Supported, c.SupportMsg
+	if c.CheckSupported == nil {
+		return false, "unknown support status"
+	}
+	isSupported, msg := c.CheckSupported(c, parentDir)
+	if c.CheckOnce {
+		c.Supported = &isSupported
+		c.SupportMsg = msg
+	}
+
+	return isSupported, msg
 }
 
 func (c *CgroupResource) IsValid(v string) (bool, string) {
