@@ -164,7 +164,7 @@ func (b *beResourceCollector) getBECPURequestMilliCores() int64 {
 	requestSum := int64(0)
 	for _, podMeta := range b.statesInformer.GetAllPods() {
 		pod := podMeta.Pod
-		if apiext.GetPodQoSClass(pod) == apiext.QoSBE {
+		if apiext.GetPodQoSClassRaw(pod) == apiext.QoSBE {
 			podCPUReq := util.GetPodBEMilliCPURequest(pod)
 			if podCPUReq > 0 {
 				requestSum += podCPUReq

@@ -30,7 +30,7 @@ var QoSClassForGuaranteed = QoSLSR
 
 // GetPodQoSClassWithDefault gets the pod's QoSClass with the default config.
 func GetPodQoSClassWithDefault(pod *corev1.Pod) QoSClass {
-	qosClass := GetPodQoSClass(pod)
+	qosClass := GetPodQoSClassRaw(pod)
 	if qosClass != QoSNone {
 		return qosClass
 	}
@@ -54,7 +54,7 @@ func GetPodQoSClassWithKubeQoS(kubeQOS corev1.PodQOSClass) QoSClass {
 	return QoSNone
 }
 
-func GetPodQoSClass(pod *corev1.Pod) QoSClass {
+func GetPodQoSClassRaw(pod *corev1.Pod) QoSClass {
 	if pod == nil || pod.Labels == nil {
 		return QoSNone
 	}

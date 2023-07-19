@@ -387,7 +387,7 @@ func (s *nodeTopoInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInf
 	managedPods := make(map[types.UID]struct{})
 	for _, podMeta := range s.podsInformer.GetAllPods() {
 		pods[podMeta.Pod.UID] = podMeta
-		qosClass := extension.GetPodQoSClass(podMeta.Pod)
+		qosClass := extension.GetPodQoSClassRaw(podMeta.Pod)
 		if qosClass == extension.QoSLS || qosClass == extension.QoSBE {
 			managedPods[podMeta.Pod.UID] = struct{}{}
 			continue

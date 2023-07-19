@@ -160,7 +160,7 @@ func buildPodMetricMap(podLister corev1listers.PodLister, nodeMetric *slov1alpha
 		if err != nil {
 			continue
 		}
-		if filterProdPod && extension.GetPriorityClass(pod) != extension.PriorityProd {
+		if filterProdPod && extension.GetPodPriorityClassWithDefault(pod) != extension.PriorityProd {
 			continue
 		}
 		name := getPodNamespacedName(podMetric.Namespace, podMetric.Name)

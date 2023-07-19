@@ -24,7 +24,7 @@ var DefaultPriorityClass = PriorityNone
 
 // GetPodPriorityClassWithDefault gets the pod's PriorityClass with the default config.
 func GetPodPriorityClassWithDefault(pod *corev1.Pod) PriorityClass {
-	priorityClass := GetPriorityClass(pod)
+	priorityClass := GetPodPriorityClassRaw(pod)
 	if priorityClass != PriorityNone {
 		return priorityClass
 	}

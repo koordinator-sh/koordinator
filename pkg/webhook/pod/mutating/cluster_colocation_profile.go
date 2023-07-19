@@ -218,7 +218,7 @@ func (h *PodMutatingHandler) doMutateByColocationProfile(ctx context.Context, po
 }
 
 func (h *PodMutatingHandler) mutatePodResourceSpec(pod *corev1.Pod) error {
-	priorityClass := extension.GetPriorityClass(pod)
+	priorityClass := extension.GetPodPriorityClassWithDefault(pod)
 	if priorityClass == extension.PriorityNone || priorityClass == extension.PriorityProd {
 		return nil
 	}

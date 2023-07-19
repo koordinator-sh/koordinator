@@ -127,7 +127,7 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric float
 		if !ok {
 			klog.Warningf("podMetric not included in the podMetas %v", podUID)
 		}
-		if !ok || (apiext.GetPodQoSClass(podMeta.Pod) != apiext.QoSBE && util.GetKubeQosClass(podMeta.Pod) != corev1.PodQOSBestEffort) {
+		if !ok || (apiext.GetPodQoSClassRaw(podMeta.Pod) != apiext.QoSBE && util.GetKubeQosClass(podMeta.Pod) != corev1.PodQOSBestEffort) {
 			// NOTE: consider non-BE pods and podMeta-missing pods as LS
 			podNoneBEUsedCPU.Add(*resource.NewMilliQuantity(int64(podMetric*1000), resource.DecimalSI))
 		}
@@ -336,7 +336,7 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 			continue
 		}
 		for _, cpuID := range set.ToSliceNoSort() {
-			cpuIdToPool[int32(cpuID)] = apiext.GetPodQoSClass(podMeta.Pod)
+			cpuIdToPool[int32(cpuID)] = apiext.GetPodQoSClassRaw(podMeta.Pod)
 		}
 	}
 
@@ -458,7 +458,7 @@ func (r *CPUSuppress) recoverCPUSetIfNeed(maxDepth int) {
 		if err != nil {
 			continue
 		}
-		if apiext.GetPodQoSClass(podMeta.Pod) != apiext.QoSLSE {
+		if apiext.GetPodQoSClassRaw(podMeta.Pod) != apiext.QoSLSE {
 			continue
 		}
 		if alloc.CPUSet == "" {

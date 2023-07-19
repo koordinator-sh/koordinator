@@ -187,7 +187,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: false,
-			wantReason:  fmt.Sprintf(`spec.priority: Invalid value: %q: field is immutable`, extension.GetPriorityClass(&corev1.Pod{})),
+			wantReason:  fmt.Sprintf(`spec.priority: Invalid value: %q: field is immutable`, extension.GetPodPriorityClassRaw(&corev1.Pod{})),
 		},
 		{
 			name:      "validate koordinator priority",

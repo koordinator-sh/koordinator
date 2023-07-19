@@ -78,7 +78,7 @@ func TestGetPriorityClass(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		p := GetPriorityClass(tc.pod)
+		p := GetPodPriorityClassRaw(tc.pod)
 		if p != tc.expected {
 			t.Errorf("unexpected priority class, expected %v actual %v", tc.expected, p)
 		}
