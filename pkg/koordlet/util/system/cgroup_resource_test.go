@@ -35,6 +35,18 @@ func TestCgroupResourceRegistry(t *testing.T) {
 		cgroup, ok = r.(*CgroupResource)
 		assert.True(t, ok)
 		assert.Equal(t, cgroup.FileName, CPUMaxName)
+
+		r, ok = DefaultRegistry.Get(CgroupVersionV1, CPUBurstName)
+		assert.True(t, ok)
+		cgroup, ok = r.(*CgroupResource)
+		assert.True(t, ok)
+		assert.Equal(t, cgroup.FileName, CPUBurstName)
+
+		r, ok = DefaultRegistry.Get(CgroupVersionV2, CPUBurstName)
+		assert.True(t, ok)
+		cgroup, ok = r.(*CgroupResource)
+		assert.True(t, ok)
+		assert.Equal(t, cgroup.FileName, CPUMaxBurstName)
 	})
 }
 
