@@ -11,7 +11,7 @@ reviewers:
   - @saintube
   - @jasonliu747
 creation-date: 2023-07-07
-last-updated: 2023-07-07
+last-updated: 2023-07-21
 status: provisional
 ---
 
@@ -53,20 +53,20 @@ status: provisional
 
 ## Summary
 
-This proposal designed a mechanism in descheduler to arbitrate `PodMigrationJob`, through which the system's stability could be improved when a mount of pods or some important pods is being evicted. 
+This proposal designed a mechanism in descheduler to arbitrate `PodMigrationJob`, through which the system's stability could be improved when a mount of Pods or some important Pods is being evicted. 
 
 ## Motivation
 
-Arbitrate Mechanism is an important capability that Pod Migration relies on, and Pod Migration is relied on by many components (such as deschedulers). But pod Migration is a complex process,  involving steps such as auditing, resource allocation, and application startup, and is mixed with application upgrading, scaling scenarios, and resource operation and maintenance operations by cluster administrators. 
+Arbitrate Mechanism is an important capability that Pod Migration relies on, and Pod Migration is relied on by many components (such as deschedulers). But Pod Migration is a complex process,  involving steps such as auditing, resource allocation, and application startup, and is mixed with application upgrading, scaling scenarios, and resource operation and maintenance operations by cluster administrators. 
 
-So when a large number of PODs are simultaneously migrated, this may have some impact on the stability of the system. In addition, if many pods of the same workload are migrated simultaneously, it will also have an impact on the stability of the application. Moreover, if a job's pod migration takes too long, it can affect the job's completion time.
+So when a large number of Pods are simultaneously migrated, this may have some impact on the stability of the system. In addition, if many Pods of the same workload are migrated simultaneously, it will also have an impact on the stability of the application. Moreover, if a job's Pod migration takes too long, it can affect the job's completion time.
 
 Therefore, it is necessary to design an arbitration mechanism. This arbitration mechanism will select suitable `PodMigrationJob` to execute and control the execution speed of `PodMigrationJob` (to avoid a large number of jobs executing simultaneously), thereby ensuring the stability of the system and application.
 
 ### Goals
 
 1. Defines an Arbitrate Mechanism Configuration, through which user can configure the arbitration mechanism.
-2. Describe a simple central flow control mechanism to limit the number of pod migrations over a period of time.
+2. Describe a simple central flow control mechanism to limit the number of Pod migrations over a period of time.
 3. Describe in detail the design details of the arbitrate mechanism.
 
 ### Non-Goals/Future Work
@@ -81,19 +81,21 @@ Therefore, it is necessary to design an arbitration mechanism. This arbitration 
 
 #### Story 1
 
-The descheduler evicts the Pods through the Eviction API, and lots of pods may be migrated to the same node by the Migration Controller at the same time. This may cause an increase in the CPU and network pressure of the node, thereby affecting the stability of other Pods on the node.
+The descheduler evicts Pods with different priorities, and the importance of high priority Pods is also high. Therefore, The cost of migrating high priority Pods is greater than that of low priority Pods. So users expect low-priority Pods to be executed first to minimize migration costs.
 
 #### Story 2
 
-Multiple pods of the same workload may be simultaneously evicted by the descheduler. If these PodMigrationJobs are executed simultaneously, it may cause the number of workload replicas to fall below the watermark, thereby affecting the stability of the application.
+Multiple Pods of different workloads may be simultaneously evicted by the descheduler. We hope that the migrated Pods can be dispersed across different workloads (like deployments) as much as possible, in order to avoid a decrease in service availability caused by the migration process.
 
 #### Story 3
 
-Multiple pods in the same job are evicted. If the interval between these pods' migration start time is too long, it will result in an increase in the completion time of the entire job.
+Multiple Pods in different jobs are evicted. We should migrate all Pods from one job at a time and process different jobs in sequence to avoid a thundering herd effect.
 
 ### Pod Migration Job CRD Field
 
 In order to support the above user stories, we add some fileds in Custom Resource Definition(CRD) `PodMigrationJob`.
+
+We can use `PriorityClassName` and `Priority` fields to customize the priority of migration tasks, if we want a migration priority that is different from the pod priority.
 
 #### Migration Job Spec
 
@@ -119,6 +121,8 @@ type PodMigrationJobSpec struct {
 #### PodMigrationJob Controller
 
 The **PodMigrationJobController** will evaluate all PodMigrationJobs and select a batch of PodMigrationJob and execute them. This selection process is called the **arbitration mechanism**. The reason why the arbitration mechanism is introduced is mainly to control the stability risk and control the cost of migrating Pods. The arbitration mechanism includes three stages: `Sort`, `GroupFilter` and `Select`.
+
+![image](/docs/images/arbitration-mechanism-design.svg)
 
 ##### Controller Process
 
@@ -156,24 +160,28 @@ It arbitrates the PodMigrationJobs in the arbitration collection and places the 
 
 ###### Sort PodMigrationJob
 
+![image](/docs/images/arbitration-mechanism-sort-design.svg)
+
 - Using the **stable sorting** method, sort PodMigrationJobs in the following order:
   - The time interval between the start of migration and the current, the smaller the interval, the higher the ranking.
   - The Pod priority of PodMigrationJob, the lower the priority, the higher the ranking.
-  - If some pods in the job containing PodMigrationJob's pod is being migrated, the PodMigrationJob's ranking is higher.
+  - If some Pods in the job containing PodMigrationJob's Pod is being migrated, the PodMigrationJob's ranking is higher.
   - The higher the migration priority, the higher the ranking.
   - BE > LS > LSR = LSE
 - Use a map to record the sorted ranking (key is PodMigrationJob, value is position)
-- Set all `PodMigrationJob` ranking under the same job in the map to the highest one of them (Try to migrate pods from the same job simultaneously as much as possible).
+- Set all `PodMigrationJob` ranking under the same job in the map to the highest one of them (Try to migrate Pods from the same job simultaneously as much as possible).
 
 The definition of the type `SortFn` is as follows.
 
 ~~~ go
 // SortFn stably sorts PodMigrationJobs slice based on a certain strategy. Users 
 // can implement different SortFn according to their needs.
-type SortFn func(jobs []*v1alpha1.PodMigrationJob, client *client.Client) []*v1alpha1.PodMigrationJob
+type SortFn func(jobs []*v1alpha1.PodMigrationJob, client client.Client) []*v1alpha1.PodMigrationJob
 ~~~
 
 ###### GroupFilter PodMigrationJob
+
+![image](/docs/images/arbitration-mechanism-groupfilter-design.svg)
 
 Aggregate PodMigrationJob according to different workloads and filter them based on different strategies.
 
@@ -194,10 +202,12 @@ Aggregate PodMigrationJob according to different workloads and filter them based
 The definition of the type `GroupFilterFn` is as follows.
 
 ~~~ go
-type GroupFilterFn func(jobs []*v1alpha1.PodMigrationJob, client *client.Client) []*v1alpha1.PodMigrationJob
+type GroupFilterFn func(jobs []*v1alpha1.PodMigrationJob, client client.Client) []*v1alpha1.PodMigrationJob
 ~~~
 
 ###### Select PodMigrationJob
+
+![image](/docs/images/arbitration-mechanism-select-design.svg)
 
 - Sort PodMigrationJob slices based on the map.
 - Place the first **n** elements of slice to the rate limit queue.
@@ -212,29 +222,29 @@ User can configure the `MigrationControllerArgs.ArbitrationArgs` through Koordin
 type MigrationControllerArgs struct {
 	...
 	
-    // ArbitrationArgs define the control parameters of the arbitration mechanism.
+    // Arbitration define the control parameters of the arbitration mechanism.
     // +optional
-    ArbitrationArgs *PodMigrationArbitrationArgs
+    Arbitration *ArbitrationArgs
 }
 
-// PodMigrationArbitrationArgs holds arguments used to configure the Arbitration Mechanism.
-type PodMigrationArbitrationArgs struct {
-    // ArbitrationEnabled defines if Arbitration Mechanism should be enabled.
+// ArbitrationArgs holds arguments used to configure the Arbitration Mechanism.
+type ArbitrationArgs struct {
+    // Enabled defines if Arbitration Mechanism should be enabled.
     // Default is true
-    ArbitrationEnabled bool
+    Enabled bool
     
-    // ArbitrationInterval defines the running interval of the Arbitration Mechanism.
+    // Interval defines the running interval of the Arbitration Mechanism.
     // Default is 1 minute
-    ArbitrationInterval time.Duration
+    Interval time.Duration
     
-    // ArbitrationProcessQueueQPS defines the speed of process queues (per second)
+    // ProcessQueueQPS defines the speed of process queues (per second)
     // Default to 3
-    ArbitrationProcessQueueQPS int
+    ProcessQueueQPS int
     
-    // ArbitrationSelectJobRate defines the proportion of the number of PodMigrationJobs 
+    // JobSelectRatio defines the proportion of the number of PodMigrationJobs 
     // that the Arbitration Mechanism passes each time.
     // Default to 1.2
-    ArbitrationSelectJobRate float32
+    JobSelectRatio float32
 }
 ```
 
@@ -243,3 +253,4 @@ type PodMigrationArbitrationArgs struct {
 ## Implementation History
 
 - 2023-07-07: Initial proposal
+- 2023-07-21: Update proposal based on review comments
