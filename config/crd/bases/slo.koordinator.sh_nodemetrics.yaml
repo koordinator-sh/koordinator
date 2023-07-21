@@ -85,6 +85,13 @@ spec:
                                     id:
                                       description: UUID represents the UUID of device
                                       type: string
+                                    labels:
+                                      additionalProperties:
+                                        type: string
+                                      description: Labels represents the device properties
+                                        that can be used to organize and categorize
+                                        (scope and select) objects
+                                      type: object
                                     minor:
                                       description: Minor represents the Minor number
                                         of Device, starting from 0
@@ -105,9 +112,52 @@ spec:
                                       description: Resources is a set of (resource
                                         name, quantity) pairs
                                       type: object
+                                    topology:
+                                      description: Topology represents the topology
+                                        information about the device
+                                      properties:
+                                        busID:
+                                          type: string
+                                        nodeID:
+                                          format: int32
+                                          type: integer
+                                        pcieID:
+                                          format: int32
+                                          type: integer
+                                        socketID:
+                                          format: int32
+                                          type: integer
+                                      required:
+                                      - nodeID
+                                      - pcieID
+                                      - socketID
+                                      type: object
                                     type:
                                       description: Type represents the type of device
                                       type: string
+                                    vfGroups:
+                                      description: VFGroups represents the virtual
+                                        function devices
+                                      items:
+                                        properties:
+                                          labels:
+                                            additionalProperties:
+                                              type: string
+                                            type: object
+                                          vfs:
+                                            items:
+                                              properties:
+                                                busID:
+                                                  type: string
+                                                minor:
+                                                  format: int32
+                                                  type: integer
+                                              required:
+                                              - minor
+                                              type: object
+                                            type: array
+                                        type: object
+                                      type: array
                                   type: object
                                 type: array
                               resources:
@@ -144,6 +194,13 @@ spec:
                                     id:
                                       description: UUID represents the UUID of device
                                       type: string
+                                    labels:
+                                      additionalProperties:
+                                        type: string
+                                      description: Labels represents the device properties
+                                        that can be used to organize and categorize
+                                        (scope and select) objects
+                                      type: object
                                     minor:
                                       description: Minor represents the Minor number
                                         of Device, starting from 0
@@ -164,9 +221,52 @@ spec:
                                       description: Resources is a set of (resource
                                         name, quantity) pairs
                                       type: object
+                                    topology:
+                                      description: Topology represents the topology
+                                        information about the device
+                                      properties:
+                                        busID:
+                                          type: string
+                                        nodeID:
+                                          format: int32
+                                          type: integer
+                                        pcieID:
+                                          format: int32
+                                          type: integer
+                                        socketID:
+                                          format: int32
+                                          type: integer
+                                      required:
+                                      - nodeID
+                                      - pcieID
+                                      - socketID
+                                      type: object
                                     type:
                                       description: Type represents the type of device
                                       type: string
+                                    vfGroups:
+                                      description: VFGroups represents the virtual
+                                        function devices
+                                      items:
+                                        properties:
+                                          labels:
+                                            additionalProperties:
+                                              type: string
+                                            type: object
+                                          vfs:
+                                            items:
+                                              properties:
+                                                busID:
+                                                  type: string
+                                                minor:
+                                                  format: int32
+                                                  type: integer
+                                              required:
+                                              - minor
+                                              type: object
+                                            type: array
+                                        type: object
+                                      type: array
                                   type: object
                                 type: array
                               resources:
@@ -196,6 +296,13 @@ spec:
                             id:
                               description: UUID represents the UUID of device
                               type: string
+                            labels:
+                              additionalProperties:
+                                type: string
+                              description: Labels represents the device properties
+                                that can be used to organize and categorize (scope
+                                and select) objects
+                              type: object
                             minor:
                               description: Minor represents the Minor number of Device,
                                 starting from 0
@@ -216,9 +323,52 @@ spec:
                               description: Resources is a set of (resource name, quantity)
                                 pairs
                               type: object
+                            topology:
+                              description: Topology represents the topology information
+                                about the device
+                              properties:
+                                busID:
+                                  type: string
+                                nodeID:
+                                  format: int32
+                                  type: integer
+                                pcieID:
+                                  format: int32
+                                  type: integer
+                                socketID:
+                                  format: int32
+                                  type: integer
+                              required:
+                              - nodeID
+                              - pcieID
+                              - socketID
+                              type: object
                             type:
                               description: Type represents the type of device
                               type: string
+                            vfGroups:
+                              description: VFGroups represents the virtual function
+                                devices
+                              items:
+                                properties:
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  vfs:
+                                    items:
+                                      properties:
+                                        busID:
+                                          type: string
+                                        minor:
+                                          format: int32
+                                          type: integer
+                                      required:
+                                      - minor
+                                      type: object
+                                    type: array
+                                type: object
+                              type: array
                           type: object
                         type: array
                       resources:
@@ -246,6 +396,13 @@ spec:
                             id:
                               description: UUID represents the UUID of device
                               type: string
+                            labels:
+                              additionalProperties:
+                                type: string
+                              description: Labels represents the device properties
+                                that can be used to organize and categorize (scope
+                                and select) objects
+                              type: object
                             minor:
                               description: Minor represents the Minor number of Device,
                                 starting from 0
@@ -266,9 +423,52 @@ spec:
                               description: Resources is a set of (resource name, quantity)
                                 pairs
                               type: object
+                            topology:
+                              description: Topology represents the topology information
+                                about the device
+                              properties:
+                                busID:
+                                  type: string
+                                nodeID:
+                                  format: int32
+                                  type: integer
+                                pcieID:
+                                  format: int32
+                                  type: integer
+                                socketID:
+                                  format: int32
+                                  type: integer
+                              required:
+                              - nodeID
+                              - pcieID
+                              - socketID
+                              type: object
                             type:
                               description: Type represents the type of device
                               type: string
+                            vfGroups:
+                              description: VFGroups represents the virtual function
+                                devices
+                              items:
+                                properties:
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  vfs:
+                                    items:
+                                      properties:
+                                        busID:
+                                          type: string
+                                        minor:
+                                          format: int32
+                                          type: integer
+                                      required:
+                                      - minor
+                                      type: object
+                                    type: array
+                                type: object
+                              type: array
                           type: object
                         type: array
                       resources:
@@ -308,6 +508,13 @@ spec:
                               id:
                                 description: UUID represents the UUID of device
                                 type: string
+                              labels:
+                                additionalProperties:
+                                  type: string
+                                description: Labels represents the device properties
+                                  that can be used to organize and categorize (scope
+                                  and select) objects
+                                type: object
                               minor:
                                 description: Minor represents the Minor number of
                                   Device, starting from 0
@@ -328,9 +535,52 @@ spec:
                                 description: Resources is a set of (resource name,
                                   quantity) pairs
                                 type: object
+                              topology:
+                                description: Topology represents the topology information
+                                  about the device
+                                properties:
+                                  busID:
+                                    type: string
+                                  nodeID:
+                                    format: int32
+                                    type: integer
+                                  pcieID:
+                                    format: int32
+                                    type: integer
+                                  socketID:
+                                    format: int32
+                                    type: integer
+                                required:
+                                - nodeID
+                                - pcieID
+                                - socketID
+                                type: object
                               type:
                                 description: Type represents the type of device
                                 type: string
+                              vfGroups:
+                                description: VFGroups represents the virtual function
+                                  devices
+                                items:
+                                  properties:
+                                    labels:
+                                      additionalProperties:
+                                        type: string
+                                      type: object
+                                    vfs:
+                                      items:
+                                        properties:
+                                          busID:
+                                            type: string
+                                          minor:
+                                            format: int32
+                                            type: integer
+                                        required:
+                                        - minor
+                                        type: object
+                                      type: array
+                                  type: object
+                                type: array
                             type: object
                           type: array
                         resources:
@@ -363,6 +613,13 @@ spec:
                             id:
                               description: UUID represents the UUID of device
                               type: string
+                            labels:
+                              additionalProperties:
+                                type: string
+                              description: Labels represents the device properties
+                                that can be used to organize and categorize (scope
+                                and select) objects
+                              type: object
                             minor:
                               description: Minor represents the Minor number of Device,
                                 starting from 0
@@ -383,9 +640,52 @@ spec:
                               description: Resources is a set of (resource name, quantity)
                                 pairs
                               type: object
+                            topology:
+                              description: Topology represents the topology information
+                                about the device
+                              properties:
+                                busID:
+                                  type: string
+                                nodeID:
+                                  format: int32
+                                  type: integer
+                                pcieID:
+                                  format: int32
+                                  type: integer
+                                socketID:
+                                  format: int32
+                                  type: integer
+                              required:
+                              - nodeID
+                              - pcieID
+                              - socketID
+                              type: object
                             type:
                               description: Type represents the type of device
                               type: string
+                            vfGroups:
+                              description: VFGroups represents the virtual function
+                                devices
+                              items:
+                                properties:
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  vfs:
+                                    items:
+                                      properties:
+                                        busID:
+                                          type: string
+                                        minor:
+                                          format: int32
+                                          type: integer
+                                      required:
+                                      - minor
+                                      type: object
+                                    type: array
+                                type: object
+                              type: array
                           type: object
                         type: array
                       resources:
