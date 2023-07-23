@@ -93,8 +93,8 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 	statesInformer := statesinformerimpl.NewStatesInformer(config.StatesInformerConf, kubeClient, crdClient, topologyClient, metricCache, nodeName, schedulingClient, predictorFactory)
 
-	detectCgroupDriver := system.DetectCgroupDriver()
-	system.SetupCgroupPathFormatter(detectCgroupDriver)
+	cgroupDriver := system.GetCgroupDriver()
+	system.SetupCgroupPathFormatter(cgroupDriver)
 
 	collectorService := metricsadvisor.NewMetricAdvisor(config.CollectorConf, statesInformer, metricCache)
 

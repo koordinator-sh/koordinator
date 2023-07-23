@@ -27,21 +27,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_GuessCgroupDriverFromCgroupName(t *testing.T) {
+func Test_GetCgroupDriverFromCgroupName(t *testing.T) {
 	tests := []struct {
 		name       string
 		envSetup   func(cgroupRoot string)
 		isCgroupV2 bool
 		want       CgroupDriverType
 	}{
-		{
-			name: "'kubepods' and 'kubepods.slice' both exist",
-			envSetup: func(cgroupRoot string) {
-				os.MkdirAll(filepath.Join(cgroupRoot, "cpu", "kubepods"), 0755)
-				os.MkdirAll(filepath.Join(cgroupRoot, "cpu", "kubepods.slice"), 0755)
-			},
-			want: "",
-		},
 		{
 			name:     "neither 'kubepods' nor 'kubepods.slice' exists",
 			envSetup: func(cgroupRoot string) {},
@@ -85,7 +77,7 @@ func Test_GuessCgroupDriverFromCgroupName(t *testing.T) {
 			helper.SetCgroupsV2(tt.isCgroupV2)
 			tmpCgroupRoot := helper.TempDir
 			tt.envSetup(tmpCgroupRoot)
-			got := GuessCgroupDriverFromCgroupName()
+			got := GetCgroupDriverFromCgroupName()
 			assert.Equal(t, tt.want, got)
 		})
 	}
