@@ -42,9 +42,9 @@ type K8sClient interface {
 
 var _ K8sClient = &k8sClient{}
 
-func NewK8sClient(kubeClinet kubernetes.Interface, eventRecorder record.EventRecorder) K8sClient {
+func NewK8sClient(kubeClient kubernetes.Interface, eventRecorder record.EventRecorder) K8sClient {
 	return &k8sClient{
-		kubeClient:    kubeClinet,
+		kubeClient:    kubeClient,
 		eventRecorder: eventRecorder,
 		podsEvicted:   expireCache.NewCacheDefault(),
 	}
