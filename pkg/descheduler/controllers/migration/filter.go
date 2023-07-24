@@ -90,7 +90,9 @@ func (r *Reconciler) initFilters(args *deschedulerconfig.MigrationControllerArgs
 
 	wrapFilterFuncs := podutil.WrapFilterFuncs(
 		util.FilterPodWithMaxEvictionCost,
-		defaultEvictor.(framework.FilterPlugin).Filter)
+		defaultEvictor.(framework.FilterPlugin).Filter,
+		r.filterExpectedReplicas,
+	)
 	podFilter, err := podutil.NewOptions().
 		WithFilter(wrapFilterFuncs).
 		WithNamespaces(includedNamespaces).
@@ -276,15 +278,6 @@ func (r *Reconciler) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod)
 		return false
 	}
 
-	if r.args.SkipCheckExpectedReplicas == nil || !*r.args.SkipCheckExpectedReplicas {
-		// TODO(joseph): There are a few special scenarios where should we allow eviction?
-		if expectedReplicas == 1 || int(expectedReplicas) == maxMigrating || int(expectedReplicas) == maxUnavailable {
-			klog.Warningf("maxMigrating(%d) or maxUnavailable(%d) equals to the replicas(%d) of the workload %s/%s/%s(%s) of Pod %q, or the replicas equals to 1, please increase the replicas or update the defense configurations",
-				maxMigrating, maxUnavailable, expectedReplicas, ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID, klog.KObj(pod))
-			return false
-		}
-	}
-
 	var expectPhases []sev1alpha1.PodMigrationJobPhase
 	if isPodPrepareMigrating(pod) {
 		expectPhases = append(expectPhases, sev1alpha1.PodMigrationJobRunning)
@@ -331,6 +324,38 @@ func (r *Reconciler) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod)
 		klog.V(4).Infof("The workload %s/%s/%s(%s) of Pod %q has %d unavailable Pods that exceed MaxUnavailablePerWorkload %d",
 			ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID, klog.KObj(pod), len(unavailablePods), maxUnavailable)
 		return false
+	}
+	return true
+}
+
+func (r *Reconciler) filterExpectedReplicas(pod *corev1.Pod) bool {
+	ownerRef := metav1.GetControllerOf(pod)
+	if ownerRef == nil {
+		return true
+	}
+	_, expectedReplicas, err := r.controllerFinder.GetPodsForRef(ownerRef, pod.Namespace, nil, false)
+	if err != nil {
+		klog.Errorf("filterExpectedReplicas, getPodsForRef err: %s", err.Error())
+		return false
+	}
+
+	maxMigrating, err := util.GetMaxMigrating(int(expectedReplicas), r.args.MaxMigratingPerWorkload)
+	if err != nil {
+		klog.Errorf("filterExpectedReplicas, getMaxMigrating err: %s", err.Error())
+		return false
+	}
+	maxUnavailable, err := util.GetMaxUnavailable(int(expectedReplicas), r.args.MaxUnavailablePerWorkload)
+	if err != nil {
+		klog.Errorf("filterExpectedReplicas, getMaxUnavailable err: %s", err.Error())
+		return false
+	}
+	if r.args.SkipCheckExpectedReplicas == nil || !*r.args.SkipCheckExpectedReplicas {
+		// TODO(joseph): There are a few special scenarios where should we allow eviction?
+		if expectedReplicas == 1 || int(expectedReplicas) == maxMigrating || int(expectedReplicas) == maxUnavailable {
+			klog.Warningf("maxMigrating(%d) or maxUnavailable(%d) equals to the replicas(%d) of the workload %s/%s/%s(%s) of Pod %q, or the replicas equals to 1, please increase the replicas or update the defense configurations",
+				maxMigrating, maxUnavailable, expectedReplicas, ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID, klog.KObj(pod))
+			return false
+		}
 	}
 	return true
 }
