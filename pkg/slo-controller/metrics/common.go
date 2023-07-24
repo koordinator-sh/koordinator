@@ -71,7 +71,7 @@ func RecordNodeMetricReconcileCount(isSucceeded bool, reason string) {
 }
 
 func RecordNodeMetricSpecParseCount(isSucceeded bool, reason string) {
-	recordNodeCountMetric(NodeSLOSpecParseCount, isSucceeded, reason)
+	recordNodeCountMetric(NodeMetricSpecParseCount, isSucceeded, reason)
 }
 
 func RecordNodeSLOReconcileCount(isSucceeded bool, reason string) {

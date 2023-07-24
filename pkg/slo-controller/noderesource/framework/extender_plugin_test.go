@@ -79,6 +79,7 @@ func Test_RegisterAlreadyExistNodePrepareExtender(t *testing.T) {
 	})
 }
 
+var _ SetupPlugin = (*testNodeResourcePlugin)(nil)
 var _ NodePreparePlugin = (*testNodeResourcePlugin)(nil)
 var _ NodeSyncPlugin = (*testNodeResourcePlugin)(nil)
 var _ NodeMetaSyncPlugin = (*testNodeResourcePlugin)(nil)
@@ -88,6 +89,10 @@ type testNodeResourcePlugin struct{}
 
 func (p *testNodeResourcePlugin) Name() string {
 	return "testPlugin"
+}
+
+func (p *testNodeResourcePlugin) Setup(opt *Option) error {
+	return nil
 }
 
 func (p *testNodeResourcePlugin) Execute(strategy *extension.ColocationStrategy, node *corev1.Node, nr *NodeResource) error {
@@ -119,6 +124,22 @@ func (p *testNodeResourcePlugin) Calculate(strategy *extension.ColocationStrateg
 			Quantity: resource.NewQuantity(0, resource.DecimalSI),
 		},
 	}, nil
+}
+
+func TestSetupPlugin(t *testing.T) {
+	t.Run("setup extender", func(t *testing.T) {
+		plugin := &testNodeResourcePlugin{}
+		startedSize := globalSetupExtender.Size()
+		RegisterSetupExtender(AllPass, plugin)
+		assert.Equal(t, startedSize+1, globalSetupExtender.Size())
+
+		RegisterSetupExtender(AllPass, plugin)
+		assert.Equal(t, startedSize+1, globalSetupExtender.Size(), "register duplicated")
+
+		assert.NotPanics(t, func() {
+			UnregisterSetupExtender(plugin.Name())
+		}, "unregistered")
+	})
 }
 
 func TestNodeSyncPlugin(t *testing.T) {

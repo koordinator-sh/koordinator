@@ -1693,38 +1693,38 @@ func Test_updateNodeResource(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							extension.BatchCPU:    resource.MustParse("20"),
-							extension.BatchMemory: resource.MustParse("40G"),
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40Gi"),
 						},
 						Capacity: corev1.ResourceList{
-							extension.BatchCPU:    resource.MustParse("20"),
-							extension.BatchMemory: resource.MustParse("40G"),
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40Gi"),
 						},
 					},
 				},
 				nr: framework.NewNodeResource([]framework.ResourceItem{
 					{
-						Name:     extension.BatchCPU,
-						Quantity: resource.NewQuantity(20, resource.DecimalSI),
-					},
-					{
-						Name:     extension.BatchMemory,
-						Quantity: resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
+						Labels: map[string]string{
+							"xxx": "yyy",
+						},
 					},
 				}...),
 			},
 			want: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node0",
+					Labels: map[string]string{
+						"xxx": "yyy",
+					},
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
-						extension.BatchCPU:    resource.MustParse("20"),
-						extension.BatchMemory: resource.MustParse("40G"),
+						corev1.ResourceCPU:    resource.MustParse("20"),
+						corev1.ResourceMemory: resource.MustParse("40Gi"),
 					},
 					Capacity: corev1.ResourceList{
-						extension.BatchCPU:    resource.MustParse("20"),
-						extension.BatchMemory: resource.MustParse("40G"),
+						corev1.ResourceCPU:    resource.MustParse("20"),
+						corev1.ResourceMemory: resource.MustParse("40Gi"),
 					},
 				},
 			},

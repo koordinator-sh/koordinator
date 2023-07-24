@@ -25,6 +25,7 @@ import (
 )
 
 var (
+	globalSetupExtender             = NewRegistry("Setup")
 	globalNodePrepareExtender       = NewRegistry("NodePrepare")
 	globalNodeSyncExtender          = NewRegistry("NodeSync")
 	globalNodeMetaSyncExtender      = NewRegistry("NodeMetaSync")
@@ -36,18 +37,46 @@ type Plugin interface {
 	Name() string
 }
 
+// SetupPlugin implements setup for the plugin.
+// The Setup of each plugin will be called before other extension stages and invoked only once.
+type SetupPlugin interface {
+	Plugin
+	Setup(opt *Option) error
+}
+
+func RegisterSetupExtender(filter FilterFn, plugins ...SetupPlugin) {
+	ps := make([]Plugin, 0, len(plugins))
+	for i := range plugins {
+		if filter(plugins[i].Name()) {
+			ps = append(ps, plugins[i])
+		}
+	}
+	globalSetupExtender.MustRegister(ps...)
+}
+
+func RunSetupExtenders(opt *Option) {
+	for _, p := range globalSetupExtender.GetAll() {
+		plugin := p.(SetupPlugin)
+		if err := plugin.Setup(opt); err != nil {
+			metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), false, "Setup")
+			klog.ErrorS(err, "run setup plugin failed", "plugin", plugin.Name())
+		} else {
+			metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), true, "Setup")
+			klog.V(5).InfoS("run setup plugin successfully", "plugin", plugin.Name())
+		}
+	}
+}
+
+func UnregisterSetupExtender(name string) {
+	globalSetupExtender.Unregister(name)
+}
+
 // NodePreparePlugin implements node resource preparing for the calculated results.
 // For example, assign extended resources in the node allocatable.
 // It is invoked each time the controller tries updating the latest NodeResource object with calculated results.
 type NodePreparePlugin interface {
 	Plugin
 	Execute(strategy *extension.ColocationStrategy, node *corev1.Node, nr *NodeResource) error
-}
-
-type FilterFn func(string) bool
-
-var AllPass = func(string) bool {
-	return true
 }
 
 func RegisterNodePrepareExtender(filter FilterFn, plugins ...NodePreparePlugin) {
