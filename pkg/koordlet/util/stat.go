@@ -79,7 +79,7 @@ func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, n
 	return collector, nil
 }
 
-func GetContainerCyclesAndInstructions(collector *perf.PerfCollector) (uint64, uint64, error) {
+func GetContainerCyclesAndInstructions(collector *perf.PerfCollector) (float64, float64, error) {
 	return perf.GetContainerCyclesAndInstructions(collector)
 }
 
