@@ -29,6 +29,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/defaultprebind"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/deviceshare"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/limitaware"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/nodenumaresource"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
@@ -47,6 +48,7 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	deviceshare.Name:      deviceshare.New,
 	elasticquota.Name:     elasticquota.New,
 	defaultprebind.Name:   defaultprebind.New,
+	limitaware.Name:       limitaware.New,
 }
 
 func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {

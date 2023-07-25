@@ -183,3 +183,14 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 		}
 	}
 }
+
+func SetDefaults_LimitAwareArgs(obj *LimitAwareArgs) {
+	if len(obj.ScoringResourceWeights) == 0 {
+		obj.ScoringResourceWeights = defaultResourceWeights
+	}
+	for resourceName, weight := range obj.ScoringResourceWeights {
+		if weight == 0 {
+			obj.ScoringResourceWeights[resourceName] = 1
+		}
+	}
+}

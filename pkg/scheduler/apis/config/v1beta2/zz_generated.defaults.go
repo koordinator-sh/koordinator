@@ -32,6 +32,7 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&CoschedulingArgs{}, func(obj interface{}) { SetObjectDefaults_CoschedulingArgs(obj.(*CoschedulingArgs)) })
 	scheme.AddTypeDefaultingFunc(&DeviceShareArgs{}, func(obj interface{}) { SetObjectDefaults_DeviceShareArgs(obj.(*DeviceShareArgs)) })
 	scheme.AddTypeDefaultingFunc(&ElasticQuotaArgs{}, func(obj interface{}) { SetObjectDefaults_ElasticQuotaArgs(obj.(*ElasticQuotaArgs)) })
+	scheme.AddTypeDefaultingFunc(&LimitAwareArgs{}, func(obj interface{}) { SetObjectDefaults_LimitAwareArgs(obj.(*LimitAwareArgs)) })
 	scheme.AddTypeDefaultingFunc(&LoadAwareSchedulingArgs{}, func(obj interface{}) { SetObjectDefaults_LoadAwareSchedulingArgs(obj.(*LoadAwareSchedulingArgs)) })
 	scheme.AddTypeDefaultingFunc(&NodeNUMAResourceArgs{}, func(obj interface{}) { SetObjectDefaults_NodeNUMAResourceArgs(obj.(*NodeNUMAResourceArgs)) })
 	scheme.AddTypeDefaultingFunc(&ReservationArgs{}, func(obj interface{}) { SetObjectDefaults_ReservationArgs(obj.(*ReservationArgs)) })
@@ -48,6 +49,10 @@ func SetObjectDefaults_DeviceShareArgs(in *DeviceShareArgs) {
 
 func SetObjectDefaults_ElasticQuotaArgs(in *ElasticQuotaArgs) {
 	SetDefaults_ElasticQuotaArgs(in)
+}
+
+func SetObjectDefaults_LimitAwareArgs(in *LimitAwareArgs) {
+	SetDefaults_LimitAwareArgs(in)
 }
 
 func SetObjectDefaults_LoadAwareSchedulingArgs(in *LoadAwareSchedulingArgs) {
