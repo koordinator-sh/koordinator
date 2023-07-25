@@ -146,20 +146,20 @@ func (r *NodeResourceReconciler) updateNodeMeta(node *corev1.Node, strategy *ext
 		return err
 	}
 
-	nodeCopy = nodeCopy.DeepCopy() // avoid overwriting the cache
-	r.prepareNodeResource(strategy, nodeCopy, nr)
+	newNode := nodeCopy.DeepCopy() // avoid overwriting the cache
+	r.prepareNodeResource(strategy, newNode, nr)
 
-	patch := client.StrategicMergeFrom(nodeCopy)
-	if err := r.Client.Patch(context.Background(), nodeCopy, patch); err != nil {
+	patch := client.MergeFrom(nodeCopy)
+	if err := r.Client.Patch(context.Background(), newNode, patch); err != nil {
 		metrics.RecordNodeResourceReconcileCount(false, "patchNodeMeta")
 		klog.V(4).InfoS("failed to patch node meta for node resource",
-			"node", nodeCopy.Name, "err", err)
+			"node", newNode.Name, "err", err)
 		return err
 	}
 
 	metrics.RecordNodeResourceReconcileCount(true, "patchNodeMeta")
 	klog.V(5).InfoS("successfully patched node meta for node resource",
-		"node", nodeCopy.Name, "patch", patch)
+		"node", newNode.Name, "patch", patch)
 	return nil
 }
 

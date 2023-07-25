@@ -30,8 +30,9 @@ func init() {
 	NodeResourcePlugins = append(NodeResourcePlugins, batchresource.PluginName)
 }
 
-func addPlugins(filter func(string) bool) {
+func addPlugins(filter framework.FilterFn) {
 	// NOTE: plugins run in order of the registration.
+	framework.RegisterSetupExtender(filter, setupPlugins...)
 	framework.RegisterNodePrepareExtender(filter, nodePreparePlugins...)
 	framework.RegisterNodeSyncExtender(filter, nodeSyncPlugins...)
 	framework.RegisterNodeMetaSyncExtender(filter, nodeMetaSyncPlugins...)
@@ -39,6 +40,7 @@ func addPlugins(filter func(string) bool) {
 }
 
 var (
+	setupPlugins = []framework.SetupPlugin{}
 	// NodePreparePlugin implements node resource preparing for the calculated results.
 	nodePreparePlugins = []framework.NodePreparePlugin{
 		&midresource.Plugin{},

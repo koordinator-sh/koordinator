@@ -160,6 +160,10 @@ func Add(mgr ctrl.Manager) error {
 	// init plugins for NodeResource
 	addPlugins(isPluginEnabled)
 
+	// setup plugins
+	opt := framework.NewOption().WithManager(mgr)
+	framework.RunSetupExtenders(opt)
+
 	reconciler := &NodeResourceReconciler{
 		Recorder:        mgr.GetEventRecorderFor("noderesource-controller"),
 		Client:          mgr.GetClient(),
