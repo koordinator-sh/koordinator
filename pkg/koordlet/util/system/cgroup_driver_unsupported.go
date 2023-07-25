@@ -19,11 +19,11 @@ limitations under the License.
 
 package system
 
-func GuessCgroupDriverFromCgroupName() CgroupDriverType {
+func GetCgroupDriverFromCgroupName() CgroupDriverType {
 	return ""
 }
 
-func GuessCgroupDriverFromKubeletPort(int) (CgroupDriverType, error) {
+func GetCgroupDriverFromKubeletPort(port int) (CgroupDriverType, error) {
 	return kubeletDefaultCgroupDriver, nil
 }
 
