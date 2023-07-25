@@ -18,10 +18,6 @@ package metriccache
 
 import (
 	"time"
-
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog/v2"
 )
 
 type InterferenceMetricName string
@@ -65,16 +61,11 @@ type MetricCache interface {
 
 type metricCache struct {
 	config *Config
-	db     *storage
 	TSDBStorage
 	KVStorage
 }
 
 func NewMetricCache(cfg *Config) (MetricCache, error) {
-	database, err := NewStorage()
-	if err != nil {
-		return nil, err
-	}
 	tsdb, err := NewTSDBStorage(cfg)
 	if err != nil {
 		return nil, err
@@ -82,31 +73,13 @@ func NewMetricCache(cfg *Config) (MetricCache, error) {
 	kvdb := NewMemoryStorage()
 	return &metricCache{
 		config:      cfg,
-		db:          database,
 		TSDBStorage: tsdb,
 		KVStorage:   kvdb,
 	}, nil
 }
 
 func (m *metricCache) Run(stopCh <-chan struct{}) error {
-	defer utilruntime.HandleCrash()
-
-	go wait.Until(func() {
-		m.recycleDB()
-	}, time.Duration(m.config.MetricGCIntervalSeconds)*time.Second, stopCh)
-
+	<-stopCh
+	m.Close()
 	return nil
-}
-
-func (m *metricCache) recycleDB() {
-	now := time.Now()
-	oldTime := time.Unix(0, 0)
-	expiredTime := now.Add(-time.Duration(m.config.MetricExpireSeconds) * time.Second)
-
-	if err := m.db.DeleteBECPUResourceMetric(&oldTime, &expiredTime); err != nil {
-		klog.Warningf("DeleteBECPUResourceMetric failed during recycle, error %v", err)
-	}
-	// raw records do not need to cleanup
-	beCPUResCount, _ := m.db.CountBECPUResourceMetric()
-	klog.V(4).Infof("expired metric data before %v has been recycled, remaining in db size: beCPUResCount=%v", expiredTime, beCPUResCount)
 }

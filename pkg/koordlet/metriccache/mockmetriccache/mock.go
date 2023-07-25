@@ -95,34 +95,6 @@ func (mr *MockMetricCacheMockRecorder) Get(key interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockMetricCache)(nil).Get), key)
 }
 
-// GetBECPUResourceMetric mocks base method.
-func (m *MockMetricCache) GetBECPUResourceMetric(param *metriccache.QueryParam) metriccache.BECPUResourceQueryResult {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetBECPUResourceMetric", param)
-	ret0, _ := ret[0].(metriccache.BECPUResourceQueryResult)
-	return ret0
-}
-
-// GetBECPUResourceMetric indicates an expected call of GetBECPUResourceMetric.
-func (mr *MockMetricCacheMockRecorder) GetBECPUResourceMetric(param interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBECPUResourceMetric", reflect.TypeOf((*MockMetricCache)(nil).GetBECPUResourceMetric), param)
-}
-
-// InsertBECPUResourceMetric mocks base method.
-func (m *MockMetricCache) InsertBECPUResourceMetric(t time.Time, metric *metriccache.BECPUResourceMetric) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InsertBECPUResourceMetric", t, metric)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// InsertBECPUResourceMetric indicates an expected call of InsertBECPUResourceMetric.
-func (mr *MockMetricCacheMockRecorder) InsertBECPUResourceMetric(t, metric interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertBECPUResourceMetric", reflect.TypeOf((*MockMetricCache)(nil).InsertBECPUResourceMetric), t, metric)
-}
-
 // Querier mocks base method.
 func (m *MockMetricCache) Querier(startTime, endTime time.Time) (metriccache.Querier, error) {
 	m.ctrl.T.Helper()
