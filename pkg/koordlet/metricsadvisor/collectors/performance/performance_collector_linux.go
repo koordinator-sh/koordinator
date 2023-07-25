@@ -185,8 +185,8 @@ func (p *performanceCollector) profilePerfOnSingleContainer(status *corev1.Conta
 		return cpiMetrics
 	}
 
-	cpiCycle, err01 := metriccache.ContainerCPI.GenerateSample(metriccache.MetricPropertiesFunc.ContainerCPI(string(pod.GetUID()), status.ContainerID, string(metriccache.CPIResourceCycle)), collectTime, float64(cycles))
-	cpiInstruction, err02 := metriccache.ContainerCPI.GenerateSample(metriccache.MetricPropertiesFunc.ContainerCPI(string(pod.GetUID()), status.ContainerID, string(metriccache.CPIResourceInstruction)), collectTime, float64(instructions))
+	cpiCycle, err01 := metriccache.ContainerCPI.GenerateSample(metriccache.MetricPropertiesFunc.ContainerCPI(string(pod.GetUID()), status.ContainerID, string(metriccache.CPIResourceCycle)), collectTime, cycles)
+	cpiInstruction, err02 := metriccache.ContainerCPI.GenerateSample(metriccache.MetricPropertiesFunc.ContainerCPI(string(pod.GetUID()), status.ContainerID, string(metriccache.CPIResourceInstruction)), collectTime, instructions)
 
 	if err01 != nil || err02 != nil {
 		klog.Warningf("failed to collect Container CPI, Cycle err: %s, Instruction err: %s", err01, err02)
@@ -200,7 +200,7 @@ func (p *performanceCollector) profilePerfOnSingleContainer(status *corev1.Conta
 		klog.Errorf("collectorOnSingleContainer cleanup err : %v", err1)
 	}
 
-	metrics.RecordContainerCPI(status, pod, float64(cycles), float64(instructions))
+	metrics.RecordContainerCPI(status, pod, cycles, instructions)
 
 	return cpiMetrics
 }

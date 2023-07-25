@@ -76,7 +76,7 @@ func GetAndStartPerfCollectorOnContainer(cgroupFile *os.File, cpus []int) (*Perf
 }
 
 // todo: call collect() to get all metrics at the same time instead of put it inside GetContainerCyclesAndInstructions
-func GetContainerCyclesAndInstructions(collector *PerfCollector) (uint64, uint64, error) {
+func GetContainerCyclesAndInstructions(collector *PerfCollector) (float64, float64, error) {
 	defer func() {
 		stopErr := collector.stopAndClose()
 		if stopErr != nil {
@@ -91,8 +91,8 @@ func GetContainerCyclesAndInstructions(collector *PerfCollector) (uint64, uint64
 }
 
 type collectResult struct {
-	cycles       uint64
-	instructions uint64
+	cycles       float64
+	instructions float64
 
 	// todo: context-switches, etc.
 }
@@ -106,10 +106,18 @@ func (c *PerfCollector) collect() (result collectResult, err error) {
 		}
 		// skip not counted cases
 		if profile.RefCPUCycles != nil {
-			result.cycles += *profile.RefCPUCycles
+			scalingRatio := 1.0
+			if *profile.TimeRunning != 0 && *profile.TimeEnabled != 0 {
+				scalingRatio = float64(*profile.TimeRunning) / float64(*profile.TimeEnabled)
+			}
+			result.cycles += float64(*profile.RefCPUCycles) / scalingRatio
 		}
 		if profile.Instructions != nil {
-			result.instructions += *profile.Instructions
+			scalingRatio := 1.0
+			if *profile.TimeRunning != 0 && *profile.TimeEnabled != 0 {
+				scalingRatio = float64(*profile.TimeRunning) / float64(*profile.TimeEnabled)
+			}
+			result.instructions += float64(*profile.Instructions) / scalingRatio
 		}
 	}
 	return result, err
