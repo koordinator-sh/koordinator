@@ -152,6 +152,75 @@ func TestIsAvailable(t *testing.T) {
 	}
 }
 
+func TestIsSchedulable(t *testing.T) {
+	tests := []struct {
+		name string
+		obj  *schedulingv1alpha1.Reservation
+		want bool
+	}{
+		{
+			name: "normal reservation",
+			obj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-r",
+					UID:  "123456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					NodeName: "test-node",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "deleting reservation",
+			obj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-r",
+					UID:               "123456",
+					DeletionTimestamp: &metav1.Time{Time: time.Now()},
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					NodeName: "test-node",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "unschedulable reservation",
+			obj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-r",
+					UID:  "123456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template:      &corev1.PodTemplateSpec{},
+					Unschedulable: true,
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					NodeName: "test-node",
+				},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rInfo := NewReservationInfo(tt.obj)
+			assert.NotNil(t, rInfo)
+			assert.Equal(t, tt.want, rInfo.IsUnschedulable())
+		})
+	}
+}
+
 func TestIsTerminating(t *testing.T) {
 	tests := []struct {
 		name string

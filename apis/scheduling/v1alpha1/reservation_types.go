@@ -66,6 +66,9 @@ type ReservationSpec struct {
 	// +kubebuilder:validation:Enum=Aligned;Restricted
 	// +optional
 	AllocatePolicy ReservationAllocatePolicy `json:"allocatePolicy,omitempty"`
+	// Unschedulable controls reservation schedulability of new pods. By default, reservation is schedulable.
+	// +optional
+	Unschedulable bool `json:"unschedulable,omitempty"`
 }
 
 type ReservationAllocatePolicy string
