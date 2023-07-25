@@ -144,7 +144,7 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		}
 	}
 	for _, podMeta := range pods {
-		podQOS := ext.GetPodQoSClass(podMeta.Pod)
+		podQOS := ext.GetPodQoSClassRaw(podMeta.Pod)
 		podKubeQOS := podMeta.Pod.Status.QOSClass
 		podBvt := r.getPodBvtValue(podQOS, podKubeQOS)
 		podCgroupPath := podMeta.CgroupDir

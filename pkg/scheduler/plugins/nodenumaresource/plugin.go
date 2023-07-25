@@ -229,8 +229,8 @@ func AllowUseCPUSet(pod *corev1.Pod) bool {
 	if pod == nil {
 		return false
 	}
-	qosClass := extension.GetPodQoSClass(pod)
-	priorityClass := extension.GetPriorityClass(pod)
+	qosClass := extension.GetPodQoSClassRaw(pod)
+	priorityClass := extension.GetPodPriorityClassWithDefault(pod)
 	return (qosClass == extension.QoSLSE || qosClass == extension.QoSLSR) && priorityClass == extension.PriorityProd
 }
 

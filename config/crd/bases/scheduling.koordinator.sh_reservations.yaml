@@ -225,6 +225,10 @@ spec:
                   `ttl` are mutually exclusive. Defaults to 24h. Set 0 to disable
                   expiration.
                 type: string
+              unschedulable:
+                description: Unschedulable controls reservation schedulability of
+                  new pods. By default, reservation is schedulable.
+                type: boolean
             required:
             - owners
             - template

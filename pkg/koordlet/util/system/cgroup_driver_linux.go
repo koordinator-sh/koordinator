@@ -44,27 +44,28 @@ var (
 	isUnified     bool
 )
 
-func GuessCgroupDriverFromCgroupName() CgroupDriverType {
-	systemdKubepodDirExists := FileExists(filepath.Join(GetRootCgroupSubfsDir(CgroupCPUDir), KubeRootNameSystemd))
-	cgroupfsKubepodDirExists := FileExists(filepath.Join(GetRootCgroupSubfsDir(CgroupCPUDir), KubeRootNameCgroupfs))
-	if systemdKubepodDirExists != cgroupfsKubepodDirExists {
-		if systemdKubepodDirExists {
-			return Systemd
-		} else {
-			return Cgroupfs
-		}
+func GetCgroupDriverFromCgroupName() CgroupDriverType {
+	isSystemd := FileExists(filepath.Join(GetRootCgroupSubfsDir(CgroupCPUDir), KubeRootNameSystemd))
+	if isSystemd {
+		return Systemd
 	}
+
+	isCgroupfs := FileExists(filepath.Join(GetRootCgroupSubfsDir(CgroupCPUDir), KubeRootNameCgroupfs))
+	if isCgroupfs {
+		return Cgroupfs
+	}
+
 	return ""
 }
 
-// GuessCgroupDriverFromKubeletPort guesses Kubelet's cgroup driver from kubelet port.
+// GetCgroupDriverFromKubeletPort get Kubelet's cgroup driver from kubelet port.
 //  1. use KubeletPortToPid to get kubelet pid.
 //  2. If '--cgroup-driver' in args, that's it.
 //     else if '--config' not in args, is default driver('cgroupfs').
 //     else go to step-3.
 //  3. If kubelet config is relative path, join with /proc/${pidof kubelet}/cwd.
 //     search 'cgroupDriver:' in kubelet config file, that's it.
-func GuessCgroupDriverFromKubeletPort(port int) (CgroupDriverType, error) {
+func GetCgroupDriverFromKubeletPort(port int) (CgroupDriverType, error) {
 	kubeletPid, err := KubeletPortToPid(port)
 	if err != nil {
 		return "", fmt.Errorf("failed to find kubelet's pid, kubelet may stop: %v", err)

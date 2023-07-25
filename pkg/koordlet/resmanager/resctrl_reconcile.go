@@ -84,7 +84,7 @@ func (r *ResctrlReconcile) RunInit(stopCh <-chan struct{}) error {
 }
 
 func getPodResctrlGroup(pod *corev1.Pod) string {
-	podQoS := extension.GetPodQoSClass(pod)
+	podQoS := extension.GetPodQoSClassRaw(pod)
 	switch podQoS {
 	case extension.QoSLSR:
 		return LSRResctrlGroup
@@ -392,7 +392,7 @@ func (r *ResctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.Resou
 		// only extension-QoS-specified pod are considered
 		podQoSCfg := getPodResourceQoSByQoSClass(pod, qosStrategy, r.resManager.config)
 		if podQoSCfg.ResctrlQOS.Enable == nil || !(*podQoSCfg.ResctrlQOS.Enable) {
-			klog.V(5).Infof("pod %v with qos %v disabled resctrl", util.GetPodKey(pod), extension.GetPodQoSClass(pod))
+			klog.V(5).Infof("pod %v with qos %v disabled resctrl", util.GetPodKey(pod), extension.GetPodQoSClassRaw(pod))
 			continue
 		}
 

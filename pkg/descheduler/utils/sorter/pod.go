@@ -78,8 +78,8 @@ func KubernetesQoSClass(p1, p2 *corev1.Pod) int {
 
 // KoordinatorQoSClass compares pods by the Koordinator QoSClass
 func KoordinatorQoSClass(p1, p2 *corev1.Pod) int {
-	qos1 := koordQoSClassOrder[extension.GetPodQoSClass(p1)]
-	qos2 := koordQoSClassOrder[extension.GetPodQoSClass(p2)]
+	qos1 := koordQoSClassOrder[extension.GetPodQoSClassWithDefault(p1)]
+	qos2 := koordQoSClassOrder[extension.GetPodQoSClassWithDefault(p2)]
 	if qos1 == qos2 {
 		return 0
 	}
@@ -91,8 +91,8 @@ func KoordinatorQoSClass(p1, p2 *corev1.Pod) int {
 
 // KoordinatorPriorityClass compares pods by the Koordinator PriorityClass
 func KoordinatorPriorityClass(p1, p2 *corev1.Pod) int {
-	priorityClass1 := koordPriorityClassOrder[extension.GetPriorityClass(p1)]
-	priorityClass2 := koordPriorityClassOrder[extension.GetPriorityClass(p2)]
+	priorityClass1 := koordPriorityClassOrder[extension.GetPodPriorityClassWithDefault(p1)]
+	priorityClass2 := koordPriorityClassOrder[extension.GetPodPriorityClassWithDefault(p2)]
 	if priorityClass1 == priorityClass2 {
 		return 0
 	}

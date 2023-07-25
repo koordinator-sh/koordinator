@@ -60,7 +60,7 @@ func (e *DefaultEstimator) EstimatePod(pod *corev1.Pod) (map[corev1.ResourceName
 func estimatedPodUsed(pod *corev1.Pod, resourceWeights map[corev1.ResourceName]int64, scalingFactors map[corev1.ResourceName]int64) map[corev1.ResourceName]int64 {
 	requests, limits := resourceapi.PodRequestsAndLimits(pod)
 	estimatedUsed := make(map[corev1.ResourceName]int64)
-	priorityClass := extension.GetPriorityClass(pod)
+	priorityClass := extension.GetPodPriorityClassWithDefault(pod)
 	for resourceName := range resourceWeights {
 		realResourceName := extension.TranslateResourceNameByPriorityClass(priorityClass, resourceName)
 		estimatedUsed[resourceName] = estimatedUsedByResource(requests, limits, realResourceName, scalingFactors[resourceName])

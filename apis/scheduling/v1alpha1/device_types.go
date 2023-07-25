@@ -34,18 +34,41 @@ type DeviceSpec struct {
 }
 
 type DeviceInfo struct {
+	// Type represents the type of device
+	Type DeviceType `json:"type,omitempty"`
+	// Labels represents the device properties that can be used to organize and categorize (scope and select) objects
+	Labels map[string]string `json:"labels,omitempty"`
 	// UUID represents the UUID of device
 	UUID string `json:"id,omitempty"`
 	// Minor represents the Minor number of Device, starting from 0
 	Minor *int32 `json:"minor,omitempty"`
 	// ModuleID represents the physical id of Device
 	ModuleID *int32 `json:"moduleID,omitempty"`
-	// Type represents the type of device
-	Type DeviceType `json:"type,omitempty"`
 	// Health indicates whether the device is normal
 	Health bool `json:"health,omitempty"`
 	// Resources is a set of (resource name, quantity) pairs
 	Resources corev1.ResourceList `json:"resources,omitempty"`
+	// Topology represents the topology information about the device
+	Topology *DeviceTopology `json:"topology,omitempty"`
+	// VFGroups represents the virtual function devices
+	VFGroups []VirtualFunctionGroup `json:"vfGroups,omitempty"`
+}
+
+type DeviceTopology struct {
+	SocketID int32  `json:"socketID"`
+	NodeID   int32  `json:"nodeID"`
+	PCIEID   int32  `json:"pcieID"`
+	BusID    string `json:"busID,omitempty"`
+}
+
+type VirtualFunctionGroup struct {
+	Labels map[string]string `json:"labels,omitempty"`
+	VFs    []VirtualFunction `json:"vfs,omitempty"`
+}
+
+type VirtualFunction struct {
+	Minor int32  `json:"minor"`
+	BusID string `json:"busID,omitempty"`
 }
 
 type DeviceStatus struct {

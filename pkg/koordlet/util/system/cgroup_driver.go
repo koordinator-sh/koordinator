@@ -53,8 +53,7 @@ const (
 )
 
 func (c CgroupDriverType) Validate() bool {
-	s := string(c)
-	return s == string(Cgroupfs) || s == string(Systemd)
+	return c == Cgroupfs || c == Systemd
 }
 
 type Formatter struct {
@@ -155,7 +154,7 @@ var cgroupPathFormatterInSystemd = Formatter{
 				return basename[len(patterns[i].prefix) : len(basename)-len(patterns[i].suffix)], nil
 			}
 		}
-		return "", fmt.Errorf("fail to parse pod id: %v", basename)
+		return "", fmt.Errorf("fail to parse container id: %v", basename)
 	},
 }
 
@@ -207,7 +206,7 @@ var CgroupPathFormatter = GetCgroupFormatter()
 func GetCgroupFormatter() Formatter {
 	nodeName := os.Getenv("NODE_NAME")
 	// setup cgroup path formatter from cgroup driver type
-	driver := GuessCgroupDriverFromCgroupName()
+	driver := GetCgroupDriverFromCgroupName()
 	if driver.Validate() {
 		klog.Infof("Node %s use '%s' as cgroup driver guessed with the cgroup name", nodeName, string(driver))
 		return GetCgroupPathFormatter(driver)
@@ -216,57 +215,55 @@ func GetCgroupFormatter() Formatter {
 	return cgroupPathFormatterInSystemd
 }
 
-// DetectCgroupDriver gets the cgroup driver both from the cgroup directory names and kubelet configs. Check kubelet
+// GetCgroupDriver gets the cgroup driver both from the cgroup directory names and kubelet configs. Check kubelet
 // config can be slow, so it should be called infrequently.
-func DetectCgroupDriver() CgroupDriverType {
-	klog.Infoln("start to get cgroup driver formatter...")
+func GetCgroupDriver() CgroupDriverType {
 	nodeName := os.Getenv("NODE_NAME")
-	// guess cgroup driver from cgroup directory names
-	driver := GuessCgroupDriverFromCgroupName()
+	driver := GetCgroupDriverFromCgroupName()
 	if driver.Validate() {
 		klog.Infof("Node %s use '%s' as cgroup driver according to the cgroup name", nodeName, string(driver))
 		return driver
 	}
-	klog.Infof("can not detect cgroup driver from 'kubepods' cgroup name")
 
-	// guess cgroup driver from the kubelet; it may take at most 60s
-	driver, err := DetectCgroupDriverFromKubelet(nodeName)
-	if err == nil {
-		klog.Infof("Node %s use '%s' as cgroup driver according to the kubelet config", nodeName, string(driver))
-		return driver
+	// get cgroup driver from the kubelet config; it may take at most 60s
+	driver, err := GetCgroupDriverFromKubelet(nodeName)
+	if err != nil {
+		klog.Errorf("failed to get cgroup driver from kubelet config: %v", err)
+		return Systemd
 	}
-	klog.Errorf("can not detect cgroup driver from kubelet, use the default, err: %v", err)
-	return Systemd
+
+	klog.Infof("Node %s use '%s' as cgroup driver according to the kubelet config", nodeName, string(driver))
+	return driver
 }
 
-func DetectCgroupDriverFromKubelet(nodeName string) (CgroupDriverType, error) {
-	var detectCgroupDriver CgroupDriverType
+func GetCgroupDriverFromKubelet(nodeName string) (CgroupDriverType, error) {
+	var cgroupDriver CgroupDriverType
 	if pollErr := wait.PollImmediate(time.Second*10, time.Minute, func() (bool, error) {
 		cfg, err := config.GetConfig()
 		if err != nil {
-			klog.Errorf("failed to get rest config.err=%v", err)
+			klog.Errorf("failed to get kube restConfig. error: %v", err)
 			return false, nil
 		}
 		kubeClient := clientset.NewForConfigOrDie(cfg)
 		node, err := kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
-		if err != nil || node == nil {
-			klog.Errorf("Can't get node, err: %v", err)
+		if err != nil {
+			klog.Errorf("failed to get node %v. error: %v", nodeName, err)
 			return false, nil
 		}
 
 		port := int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
-		if driver, err := GuessCgroupDriverFromKubeletPort(port); err == nil && driver.Validate() {
-			detectCgroupDriver = driver
+		if driver, err := GetCgroupDriverFromKubeletPort(port); err == nil && driver.Validate() {
+			cgroupDriver = driver
 			return true, nil
 		} else {
-			klog.Errorf("guess kubelet cgroup driver failed, retry...: %v", err)
+			klog.Errorf("failed to get cgroup driver from kubelet, retry...: %v", err)
 			return false, nil
 		}
 	}); pollErr != nil {
 		return "", pollErr
 	}
 
-	return detectCgroupDriver, nil
+	return cgroupDriver, nil
 }
 
 func GetCgroupPathFormatter(driver CgroupDriverType) Formatter {

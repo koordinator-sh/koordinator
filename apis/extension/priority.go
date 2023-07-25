@@ -68,7 +68,7 @@ func GetPodPriorityClassByName(priorityClass string) PriorityClass {
 	return PriorityNone
 }
 
-func GetPriorityClass(pod *corev1.Pod) PriorityClass {
+func GetPodPriorityClassRaw(pod *corev1.Pod) PriorityClass {
 	if pod == nil {
 		return PriorityNone
 	}

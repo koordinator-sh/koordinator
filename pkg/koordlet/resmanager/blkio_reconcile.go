@@ -164,7 +164,7 @@ func (b *BlkIOReconcile) reconcile() {
 	// pods
 	podsMeta := b.resmanager.statesInformer.GetAllPods()
 	for _, podMeta := range podsMeta {
-		if extension.GetPodQoSClass(podMeta.Pod) == extension.QoSNone {
+		if extension.GetPodQoSClassRaw(podMeta.Pod) == extension.QoSNone {
 			// ignore unknown qos pods
 			continue
 		}
