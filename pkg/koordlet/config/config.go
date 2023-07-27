@@ -17,15 +17,9 @@ limitations under the License.
 package config
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
 	"flag"
 	"strings"
 
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	cliflag "k8s.io/component-base/cli/flag"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -35,8 +29,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	maframework "github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
-	qosmanagerconfig "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/config"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
+	qmframework "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	statesinformerimpl "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl"
@@ -57,8 +50,7 @@ type Configuration struct {
 	StatesInformerConf *statesinformerimpl.Config
 	CollectorConf      *maframework.Config
 	MetricCacheConf    *metriccache.Config
-	ResManagerConf     *resmanager.Config
-	QosManagerConf     *qosmanagerconfig.Config
+	QOSManagerConf     *qmframework.Config
 	RuntimeHookConf    *runtimehooks.Config
 	AuditConf          *audit.Config
 	PredictionConf     *prediction.Config
@@ -73,8 +65,7 @@ func NewConfiguration() *Configuration {
 		StatesInformerConf: statesinformerimpl.NewDefaultConfig(),
 		CollectorConf:      maframework.NewDefaultConfig(),
 		MetricCacheConf:    metriccache.NewDefaultConfig(),
-		ResManagerConf:     resmanager.NewDefaultConfig(),
-		QosManagerConf:     qosmanagerconfig.NewDefaultConfig(),
+		QOSManagerConf:     qmframework.NewDefaultConfig(),
 		RuntimeHookConf:    runtimehooks.NewDefaultConfig(),
 		AuditConf:          audit.NewDefaultConfig(),
 		PredictionConf:     prediction.NewDefaultConfig(),
@@ -88,7 +79,7 @@ func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 	c.StatesInformerConf.InitFlags(fs)
 	c.CollectorConf.InitFlags(fs)
 	c.MetricCacheConf.InitFlags(fs)
-	c.ResManagerConf.InitFlags(fs)
+	c.QOSManagerConf.InitFlags(fs)
 	c.RuntimeHookConf.InitFlags(fs)
 	c.AuditConf.InitFlags(fs)
 	c.PredictionConf.InitFlags(fs)
@@ -106,29 +97,5 @@ func (c *Configuration) InitKubeConfigForKoordlet(kubeAPIQPS float64, kubeAPIBur
 	cfg.QPS = float32(kubeAPIQPS)
 	cfg.Burst = kubeAPIBurst
 	c.KubeRestConf = cfg
-	return nil
-}
-
-func (c *Configuration) InitQosManagerConfigFromConfigMap() error {
-	if c.KubeRestConf == nil {
-		return errors.New("KubeRestConf is nil")
-	}
-	cli, err := kubernetes.NewForConfig(c.KubeRestConf)
-	if err != nil {
-		return err
-	}
-	cm, err := cli.CoreV1().ConfigMaps(c.ConfigMapNamesapce).Get(context.TODO(), c.ConfigMapName, metav1.GetOptions{})
-	if err == nil {
-		// Setup extra configs for QoS Manager.
-		if qosPluginExtraConfigRaw, found := cm.Data[CMKeyQoSPluginExtraConfigs]; found {
-			var extraConfigs map[string]string
-			if err = json.Unmarshal([]byte(qosPluginExtraConfigRaw), &extraConfigs); err != nil {
-				return err
-			}
-			c.QosManagerConf.PluginExtraConfigs = extraConfigs
-		}
-	} else if !k8serrors.IsNotFound(err) {
-		return err
-	}
 	return nil
 }

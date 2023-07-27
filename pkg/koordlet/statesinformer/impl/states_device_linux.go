@@ -144,7 +144,7 @@ func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
 	//queryParam := generateQueryParam()
 	gpuDeviceInfo, exist := s.metricsCache.Get(koordletuti.GPUDeviceType)
 	if !exist {
-		klog.Error("gpu device not exist")
+		klog.V(4).Infof("gpu device not exist")
 		return nil
 	}
 	gpus, ok := gpuDeviceInfo.(koordletuti.GPUDevices)

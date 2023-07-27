@@ -80,7 +80,7 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 	if sandbox {
 		var err error
 		if c.ContainerMeta.ID, err = koordletutil.GetPodSandboxContainerID(podMeta.Pod); err != nil {
-			klog.V(4).Infof("cannot get sandbox container id for pod %v, %v",
+			klog.V(4).Infof("no container id for pod %v, container may not start, %v",
 				util.GetPodKey(podMeta.Pod), err)
 			return
 		} else if c.ContainerMeta.ID == "" {

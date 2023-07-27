@@ -71,11 +71,6 @@ func main() {
 		klog.Fatalf("Unable to setup kubeconfig: %v", err)
 	}
 
-	// Init qos manager config from ConfigMap.
-	if err = cfg.InitQosManagerConfigFromConfigMap(); err != nil {
-		klog.Fatalf("Unable to init qos manager config from ConfigMap: %v", err)
-	}
-
 	d, err := agent.NewDaemon(cfg)
 	if err != nil {
 		klog.Fatalf("Unable to setup koordlet daemon: %v", err)

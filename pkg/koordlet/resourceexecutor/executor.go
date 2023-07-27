@@ -166,6 +166,10 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(updaters [][]ResourceUpd
 				continue
 			}
 			err = updater.update()
+			if err != nil && e.isUpdateErrIgnored(err) {
+				klog.V(5).Infof("failed to update resource %s to %v, ignored err: %v", updater.Key(), updater.Value(), err)
+				continue
+			}
 			if err != nil {
 				klog.V(4).Infof("failed update resource %s, err: %v", updater.Key(), err)
 				continue
