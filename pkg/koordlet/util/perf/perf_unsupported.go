@@ -27,7 +27,7 @@ func NewPerfCollector(cgroupFile *os.File, cpus []int) (*PerfCollector, error) {
 	return &PerfCollector{}, nil
 }
 
-func GetContainerCyclesAndInstructions(collector *PerfCollector) (uint64, uint64, error) {
+func GetContainerCyclesAndInstructions(collector *PerfCollector) (float64, float64, error) {
 	return 0, 0, nil
 }
 
