@@ -33,7 +33,13 @@ func Test_NewDefaultConfig(t *testing.T) {
 }
 
 func Test_InitFlags(t *testing.T) {
-	cfg := NewDefaultConfig()
-	cfg.InitFlags(flag.CommandLine)
-	flag.Parse()
+	cmdArgs := []string{
+		"",
+		"--qos-plugins=AllAlpha=false",
+	}
+	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
+	c := NewDefaultConfig()
+	c.InitFlags(fs)
+	err := fs.Parse(cmdArgs[1:])
+	assert.NoError(t, err)
 }
