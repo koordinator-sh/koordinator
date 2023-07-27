@@ -24,9 +24,10 @@ import (
 type DeviceType string
 
 const (
-	GPU  DeviceType = "gpu"
-	FPGA DeviceType = "fpga"
-	RDMA DeviceType = "rdma"
+	GPU      DeviceType = "gpu"
+	FPGA     DeviceType = "fpga"
+	RDMA     DeviceType = "rdma"
+	NVSWtich DeviceType = "nvswitch"
 )
 
 type DeviceSpec struct {

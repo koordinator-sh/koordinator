@@ -37,6 +37,7 @@ const (
 	ResourceGPUCore        corev1.ResourceName = DomainPrefix + "gpu-core"
 	ResourceGPUMemory      corev1.ResourceName = DomainPrefix + "gpu-memory"
 	ResourceGPUMemoryRatio corev1.ResourceName = DomainPrefix + "gpu-memory-ratio"
+	ResourceNVSwitch       corev1.ResourceName = DomainPrefix + "nvswitch"
 )
 
 const (
