@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
@@ -45,11 +45,11 @@ type SLOCfgCache interface {
 }
 
 type SLOCfg struct {
-	ThresholdCfgMerged   extension.ResourceThresholdCfg `json:"thresholdCfgMerged,omitempty"`
-	ResourceQOSCfgMerged extension.ResourceQOSCfg       `json:"resourceQOSCfgMerged,omitempty"`
-	CPUBurstCfgMerged    extension.CPUBurstCfg          `json:"cpuBurstCfgMerged,omitempty"`
-	SystemCfgMerged      extension.SystemCfg            `json:"systemCfgMerged,omitempty"`
-	ExtensionCfgMerged   extension.ExtensionCfgMap      `json:"extensionCfgMerged,omitempty"` // for third-party extension
+	ThresholdCfgMerged   configuration.ResourceThresholdCfg `json:"thresholdCfgMerged,omitempty"`
+	ResourceQOSCfgMerged configuration.ResourceQOSCfg       `json:"resourceQOSCfgMerged,omitempty"`
+	CPUBurstCfgMerged    configuration.CPUBurstCfg          `json:"cpuBurstCfgMerged,omitempty"`
+	SystemCfgMerged      configuration.SystemCfg            `json:"systemCfgMerged,omitempty"`
+	ExtensionCfgMerged   configuration.ExtensionCfgMap      `json:"extensionCfgMerged,omitempty"` // for third-party extension
 }
 
 func (in *SLOCfg) DeepCopy() *SLOCfg {
@@ -71,10 +71,10 @@ type sLOCfgCache struct {
 
 func DefaultSLOCfg() SLOCfg {
 	return SLOCfg{
-		ThresholdCfgMerged:   extension.ResourceThresholdCfg{ClusterStrategy: sloconfig.DefaultResourceThresholdStrategy()},
-		ResourceQOSCfgMerged: extension.ResourceQOSCfg{ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{}},
-		CPUBurstCfgMerged:    extension.CPUBurstCfg{ClusterStrategy: sloconfig.DefaultCPUBurstStrategy()},
-		SystemCfgMerged:      extension.SystemCfg{ClusterStrategy: sloconfig.DefaultSystemStrategy()},
+		ThresholdCfgMerged:   configuration.ResourceThresholdCfg{ClusterStrategy: sloconfig.DefaultResourceThresholdStrategy()},
+		ResourceQOSCfgMerged: configuration.ResourceQOSCfg{ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{}},
+		CPUBurstCfgMerged:    configuration.CPUBurstCfg{ClusterStrategy: sloconfig.DefaultCPUBurstStrategy()},
+		SystemCfgMerged:      configuration.SystemCfg{ClusterStrategy: sloconfig.DefaultSystemStrategy()},
 		ExtensionCfgMerged:   *getDefaultExtensionCfg(),
 	}
 }

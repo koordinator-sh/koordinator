@@ -19,11 +19,11 @@ package sloconfig
 import (
 	"fmt"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 )
 
 var (
-	defaultColocationStrategyExtender = extension.ColocationStrategyExtender{}
+	defaultColocationStrategyExtender = configuration.ColocationStrategyExtender{}
 )
 
 func RegisterDefaultColocationExtension(key string, extension interface{}) error {

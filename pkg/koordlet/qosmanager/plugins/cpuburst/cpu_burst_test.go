@@ -496,7 +496,7 @@ func Test_genPodBurstConfig(t *testing.T) {
 			}
 			if tt.args.podCfg != nil {
 				annoStr, _ := json.Marshal(tt.args.podCfg)
-				pod.Annotations[apiext.AnnotationPodCPUBurst] = string(annoStr)
+				pod.Annotations[slov1alpha1.AnnotationPodCPUBurst] = string(annoStr)
 			}
 			if got := genPodBurstConfig(pod, tt.args.nodeCfg); !reflect.DeepEqual(got, tt.want) {
 				gotStr, _ := json.Marshal(got)
@@ -1783,7 +1783,7 @@ func Test_genPodBurstConfigWithPlugin(t *testing.T) {
 			if tt.args.podCPUBurstCfg != nil {
 				podCPUBurstCfgStr, _ := json.Marshal(tt.args.podCPUBurstCfg)
 				tt.args.pod.Annotations = map[string]string{
-					apiext.AnnotationPodCPUBurst: string(podCPUBurstCfgStr),
+					slov1alpha1.AnnotationPodCPUBurst: string(podCPUBurstCfgStr),
 				}
 			}
 			gotCfg := genPodBurstConfig(tt.args.pod, &tt.args.nodeCfg)

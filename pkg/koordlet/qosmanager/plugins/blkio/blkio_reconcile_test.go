@@ -266,7 +266,7 @@ func newPodWithPVC(podName string, pvcName string) *corev1.Pod {
 			Namespace: "default",
 			UID:       uuid.NewUUID(),
 			Annotations: map[string]string{
-				extension.AnnotationPodBlkioQoS: `{"blocks":[{"name":"html","type":"podvolume","iocfg":{"readIOPS":1024,"writeIOPS":512}}]}`,
+				slov1alpha1.AnnotationPodBlkioQoS: `{"blocks":[{"name":"html","type":"podvolume","iocfg":{"readIOPS":1024,"writeIOPS":512}}]}`,
 			},
 			Labels: map[string]string{
 				extension.LabelPodQoS: string(extension.QoSBE),
@@ -308,7 +308,7 @@ func newPodWithEphemeralVolume(podName string) *corev1.Pod {
 			Namespace: "default",
 			UID:       uuid.NewUUID(),
 			Annotations: map[string]string{
-				extension.AnnotationPodBlkioQoS: `{"blocks":[{"name":"html","type":"podvolume","iocfg":{"readIOPS":1024,"writeIOPS":512}}]}`,
+				slov1alpha1.AnnotationPodBlkioQoS: `{"blocks":[{"name":"html","type":"podvolume","iocfg":{"readIOPS":1024,"writeIOPS":512}}]}`,
 			},
 			Labels: map[string]string{
 				extension.LabelPodQoS: string(extension.QoSBE),

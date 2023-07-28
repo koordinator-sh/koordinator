@@ -23,18 +23,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 )
 
 var _ ConfigChecker = &ResourceThresholdChecker{}
 
 type ResourceThresholdChecker struct {
-	cfg *extension.ResourceThresholdCfg
+	cfg *configuration.ResourceThresholdCfg
 	CommonChecker
 }
 
 func NewResourceThresholdChecker(oldConfig, newConfig *corev1.ConfigMap, needUnmarshal bool) *ResourceThresholdChecker {
-	checker := &ResourceThresholdChecker{CommonChecker: CommonChecker{OldConfigMap: oldConfig, NewConfigMap: newConfig, configKey: extension.ResourceThresholdConfigKey, initStatus: NotInit}}
+	checker := &ResourceThresholdChecker{CommonChecker: CommonChecker{OldConfigMap: oldConfig, NewConfigMap: newConfig, configKey: configuration.ResourceThresholdConfigKey, initStatus: NotInit}}
 	if !checker.IsCfgNotEmptyAndChanged() && !needUnmarshal {
 		return checker
 	}
@@ -51,8 +51,8 @@ func (c *ResourceThresholdChecker) ConfigParamValid() error {
 }
 
 func (c *ResourceThresholdChecker) initConfig() error {
-	cfg := &extension.ResourceThresholdCfg{}
-	configStr := c.NewConfigMap.Data[extension.ResourceThresholdConfigKey]
+	cfg := &configuration.ResourceThresholdCfg{}
+	configStr := c.NewConfigMap.Data[configuration.ResourceThresholdConfigKey]
 	err := json.Unmarshal([]byte(configStr), &cfg)
 	if err != nil {
 		message := fmt.Sprintf("Failed to parse resourceThreshold config in configmap %s/%s, err: %s",
@@ -62,7 +62,7 @@ func (c *ResourceThresholdChecker) initConfig() error {
 	}
 	c.cfg = cfg
 
-	c.NodeConfigProfileChecker, err = CreateNodeConfigProfileChecker(extension.ResourceThresholdConfigKey, c.getConfigProfiles)
+	c.NodeConfigProfileChecker, err = CreateNodeConfigProfileChecker(configuration.ResourceThresholdConfigKey, c.getConfigProfiles)
 	if err != nil {
 		klog.Error(fmt.Sprintf("Failed to parse resourceThreshold config in configmap %s/%s, err: %s",
 			c.NewConfigMap.Namespace, c.NewConfigMap.Name, err.Error()))
@@ -72,8 +72,8 @@ func (c *ResourceThresholdChecker) initConfig() error {
 	return nil
 }
 
-func (c *ResourceThresholdChecker) getConfigProfiles() []extension.NodeCfgProfile {
-	var profiles []extension.NodeCfgProfile
+func (c *ResourceThresholdChecker) getConfigProfiles() []configuration.NodeCfgProfile {
+	var profiles []configuration.NodeCfgProfile
 	for _, nodeCfg := range c.cfg.NodeStrategies {
 		profiles = append(profiles, nodeCfg.NodeCfgProfile)
 	}

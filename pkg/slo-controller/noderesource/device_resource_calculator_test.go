@@ -31,6 +31,7 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	schedulingfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -63,8 +64,8 @@ func Test_updateNodeGPUResource_updateGPUDriverAndModel(t *testing.T) {
 		GPUSyncContext: framework.NewSyncContext(),
 		Clock:          clock.RealClock{},
 		cfgCache: &FakeCfgCache{
-			cfg: extension.ColocationCfg{
-				ColocationStrategy: extension.ColocationStrategy{
+			cfg: configuration.ColocationCfg{
+				ColocationStrategy: configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -228,8 +229,8 @@ func Test_isGPUResourceNeedSync(t *testing.T) {
 			true,
 		},
 	}
-	configf := &extension.ColocationCfg{
-		ColocationStrategy: extension.ColocationStrategy{
+	configf := &configuration.ColocationCfg{
+		ColocationStrategy: configuration.ColocationStrategy{
 			Enable:                        pointer.Bool(true),
 			CPUReclaimThresholdPercent:    pointer.Int64(65),
 			MemoryReclaimThresholdPercent: pointer.Int64(65),

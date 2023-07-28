@@ -23,18 +23,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 )
 
 var _ ConfigChecker = &ResourceQOSChecker{}
 
 type ResourceQOSChecker struct {
-	cfg *extension.ResourceQOSCfg
+	cfg *configuration.ResourceQOSCfg
 	CommonChecker
 }
 
 func NewResourceQOSChecker(oldConfig, newConfig *corev1.ConfigMap, needUnmarshal bool) *ResourceQOSChecker {
-	checker := &ResourceQOSChecker{CommonChecker: CommonChecker{OldConfigMap: oldConfig, NewConfigMap: newConfig, configKey: extension.ResourceQOSConfigKey, initStatus: NotInit}}
+	checker := &ResourceQOSChecker{CommonChecker: CommonChecker{OldConfigMap: oldConfig, NewConfigMap: newConfig, configKey: configuration.ResourceQOSConfigKey, initStatus: NotInit}}
 	if !checker.IsCfgNotEmptyAndChanged() && !needUnmarshal {
 		return checker
 	}
@@ -51,8 +51,8 @@ func (c *ResourceQOSChecker) ConfigParamValid() error {
 }
 
 func (c *ResourceQOSChecker) initConfig() error {
-	cfg := &extension.ResourceQOSCfg{}
-	configStr := c.NewConfigMap.Data[extension.ResourceQOSConfigKey]
+	cfg := &configuration.ResourceQOSCfg{}
+	configStr := c.NewConfigMap.Data[configuration.ResourceQOSConfigKey]
 	err := json.Unmarshal([]byte(configStr), &cfg)
 	if err != nil {
 		message := fmt.Sprintf("Failed to parse ResourceQOS config in configmap %s/%s, err: %s",
@@ -62,7 +62,7 @@ func (c *ResourceQOSChecker) initConfig() error {
 	}
 	c.cfg = cfg
 
-	c.NodeConfigProfileChecker, err = CreateNodeConfigProfileChecker(extension.ResourceQOSConfigKey, c.getConfigProfiles)
+	c.NodeConfigProfileChecker, err = CreateNodeConfigProfileChecker(configuration.ResourceQOSConfigKey, c.getConfigProfiles)
 	if err != nil {
 		klog.Error(fmt.Sprintf("Failed to parse ResourceQOS config in configmap %s/%s, err: %s",
 			c.NewConfigMap.Namespace, c.NewConfigMap.Name, err.Error()))
@@ -71,8 +71,8 @@ func (c *ResourceQOSChecker) initConfig() error {
 	return nil
 }
 
-func (c *ResourceQOSChecker) getConfigProfiles() []extension.NodeCfgProfile {
-	var profiles []extension.NodeCfgProfile
+func (c *ResourceQOSChecker) getConfigProfiles() []configuration.NodeCfgProfile {
+	var profiles []configuration.NodeCfgProfile
 	for _, nodeCfg := range c.cfg.NodeStrategies {
 		profiles = append(profiles, nodeCfg.NodeCfgProfile)
 	}

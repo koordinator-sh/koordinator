@@ -20,7 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 )
 
@@ -76,7 +76,7 @@ func UnregisterSetupExtender(name string) {
 // It is invoked each time the controller tries updating the latest NodeResource object with calculated results.
 type NodePreparePlugin interface {
 	Plugin
-	Execute(strategy *extension.ColocationStrategy, node *corev1.Node, nr *NodeResource) error
+	Execute(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error
 }
 
 func RegisterNodePrepareExtender(filter FilterFn, plugins ...NodePreparePlugin) {
@@ -89,7 +89,7 @@ func RegisterNodePrepareExtender(filter FilterFn, plugins ...NodePreparePlugin) 
 	globalNodePrepareExtender.MustRegister(ps...)
 }
 
-func RunNodePrepareExtenders(strategy *extension.ColocationStrategy, node *corev1.Node, nr *NodeResource) {
+func RunNodePrepareExtenders(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) {
 	for _, p := range globalNodePrepareExtender.GetAll() {
 		plugin := p.(NodePreparePlugin)
 		if err := plugin.Execute(strategy, node, nr); err != nil {
@@ -112,7 +112,7 @@ func UnregisterNodePrepareExtender(name string) {
 // For example, trigger an update if the values of the current is more than 10% different with the former.
 type NodeSyncPlugin interface {
 	Plugin
-	NeedSync(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string)
+	NeedSync(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string)
 }
 
 func RegisterNodeSyncExtender(filter FilterFn, plugins ...NodeSyncPlugin) {
@@ -129,7 +129,7 @@ func UnregisterNodeSyncExtender(name string) {
 	globalNodeSyncExtender.Unregister(name)
 }
 
-func RunNodeSyncExtenders(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) bool {
+func RunNodeSyncExtenders(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) bool {
 	for _, p := range globalNodeSyncExtender.GetAll() {
 		plugin := p.(NodeSyncPlugin)
 		needSync, msg := plugin.NeedSync(strategy, oldNode, newNode)
@@ -148,7 +148,7 @@ func RunNodeSyncExtenders(strategy *extension.ColocationStrategy, oldNode, newNo
 
 type NodeMetaSyncPlugin interface {
 	Plugin
-	NeedSyncMeta(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string)
+	NeedSyncMeta(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string)
 }
 
 func RegisterNodeMetaSyncExtender(filter FilterFn, plugins ...NodeMetaSyncPlugin) {
@@ -165,7 +165,7 @@ func UnregisterNodeMetaSyncExtender(name string) {
 	globalNodeMetaSyncExtender.Unregister(name)
 }
 
-func RunNodeMetaSyncExtenders(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) bool {
+func RunNodeMetaSyncExtenders(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) bool {
 	for _, p := range globalNodeMetaSyncExtender.GetAll() {
 		plugin := p.(NodeMetaSyncPlugin)
 		needSync, msg := plugin.NeedSyncMeta(strategy, oldNode, newNode)
@@ -203,7 +203,7 @@ func RunResourceResetExtenders(nr *NodeResource, node *corev1.Node, message stri
 // A ResourceCalculatePlugin can handle the case when the metrics are abnormal by implementing degraded calculation.
 type ResourceCalculatePlugin interface {
 	ResourceResetPlugin
-	Calculate(strategy *extension.ColocationStrategy, node *corev1.Node, podList *corev1.PodList, metrics *ResourceMetrics) ([]ResourceItem, error)
+	Calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList, metrics *ResourceMetrics) ([]ResourceItem, error)
 }
 
 func RegisterResourceCalculateExtender(filter FilterFn, plugins ...ResourceCalculatePlugin) {
@@ -220,7 +220,7 @@ func UnregisterResourceCalculateExtender(name string) {
 	globalResourceCalculateExtender.Unregister(name)
 }
 
-func RunResourceCalculateExtenders(nr *NodeResource, strategy *extension.ColocationStrategy, node *corev1.Node,
+func RunResourceCalculateExtenders(nr *NodeResource, strategy *configuration.ColocationStrategy, node *corev1.Node,
 	podList *corev1.PodList, resourceMetrics *ResourceMetrics) {
 	for _, p := range globalResourceCalculateExtender.GetAll() {
 		plugin := p.(ResourceCalculatePlugin)

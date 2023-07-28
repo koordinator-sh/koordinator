@@ -22,6 +22,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,7 +54,7 @@ func (in *AggregatedUsage) DeepCopyInto(out *AggregatedUsage) {
 	*out = *in
 	if in.Usage != nil {
 		in, out := &in.Usage, &out.Usage
-		*out = make(map[AggregationType]ResourceMap, len(*in))
+		*out = make(map[extension.AggregationType]ResourceMap, len(*in))
 		for key, val := range *in {
 			(*out)[key] = *val.DeepCopy()
 		}

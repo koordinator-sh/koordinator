@@ -19,12 +19,12 @@ package nodemetric
 import (
 	"fmt"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
-func getNodeMetricCollectPolicy(strategy *extension.ColocationStrategy) (*slov1alpha1.NodeMetricCollectPolicy, error) {
+func getNodeMetricCollectPolicy(strategy *configuration.ColocationStrategy) (*slov1alpha1.NodeMetricCollectPolicy, error) {
 	if strategy == nil {
 		return nil, fmt.Errorf("failed to find satisfied strategy")
 	}

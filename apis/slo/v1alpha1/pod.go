@@ -14,25 +14,25 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package extension
+package v1alpha1
 
 import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 const (
-	AnnotationPodCPUBurst = DomainPrefix + "cpuBurst"
+	AnnotationPodCPUBurst = apiext.DomainPrefix + "cpuBurst"
 
-	AnnotationPodMemoryQoS = DomainPrefix + "memoryQOS"
+	AnnotationPodMemoryQoS = apiext.DomainPrefix + "memoryQOS"
 
-	AnnotationPodBlkioQoS = DomainPrefix + "blkioQOS"
+	AnnotationPodBlkioQoS = apiext.DomainPrefix + "blkioQOS"
 )
 
-func GetPodCPUBurstConfig(pod *corev1.Pod) (*slov1alpha1.CPUBurstConfig, error) {
+func GetPodCPUBurstConfig(pod *corev1.Pod) (*CPUBurstConfig, error) {
 	if pod == nil || pod.Annotations == nil {
 		return nil, nil
 	}
@@ -40,7 +40,7 @@ func GetPodCPUBurstConfig(pod *corev1.Pod) (*slov1alpha1.CPUBurstConfig, error) 
 	if !exist {
 		return nil, nil
 	}
-	cpuBurst := slov1alpha1.CPUBurstConfig{}
+	cpuBurst := CPUBurstConfig{}
 
 	err := json.Unmarshal([]byte(annotation), &cpuBurst)
 	if err != nil {
@@ -49,7 +49,7 @@ func GetPodCPUBurstConfig(pod *corev1.Pod) (*slov1alpha1.CPUBurstConfig, error) 
 	return &cpuBurst, nil
 }
 
-func GetPodMemoryQoSConfig(pod *corev1.Pod) (*slov1alpha1.PodMemoryQOSConfig, error) {
+func GetPodMemoryQoSConfig(pod *corev1.Pod) (*PodMemoryQOSConfig, error) {
 	if pod == nil || pod.Annotations == nil {
 		return nil, nil
 	}
@@ -57,7 +57,7 @@ func GetPodMemoryQoSConfig(pod *corev1.Pod) (*slov1alpha1.PodMemoryQOSConfig, er
 	if !exist {
 		return nil, nil
 	}
-	cfg := slov1alpha1.PodMemoryQOSConfig{}
+	cfg := PodMemoryQOSConfig{}
 	err := json.Unmarshal([]byte(value), &cfg)
 	if err != nil {
 		return nil, err

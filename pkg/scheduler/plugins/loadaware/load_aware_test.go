@@ -341,7 +341,7 @@ func TestFilterUsage(t *testing.T) {
 				UsageThresholds: map[corev1.ResourceName]int64{
 					corev1.ResourceCPU: 60,
 				},
-				UsageAggregationType:    slov1alpha1.P95,
+				UsageAggregationType:    extension.P95,
 				UsageAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
 			},
 			nodeMetric: &slov1alpha1.NodeMetric{
@@ -367,8 +367,8 @@ func TestFilterUsage(t *testing.T) {
 						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
 							{
 								Duration: metav1.Duration{Duration: 5 * time.Minute},
-								Usage: map[slov1alpha1.AggregationType]slov1alpha1.ResourceMap{
-									slov1alpha1.P95: {
+								Usage: map[extension.AggregationType]slov1alpha1.ResourceMap{
+									extension.P95: {
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("70"),
 											corev1.ResourceMemory: resource.MustParse("256Gi"),
@@ -448,7 +448,7 @@ func TestFilterUsage(t *testing.T) {
 				UsageThresholds: map[corev1.ResourceName]int64{
 					corev1.ResourceCPU: 60,
 				},
-				UsageAggregationType:    slov1alpha1.P95,
+				UsageAggregationType:    extension.P95,
 				UsageAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
 			},
 			nodeMetric: &slov1alpha1.NodeMetric{
@@ -474,8 +474,8 @@ func TestFilterUsage(t *testing.T) {
 						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
 							{
 								Duration: metav1.Duration{Duration: 5 * time.Minute},
-								Usage: map[slov1alpha1.AggregationType]slov1alpha1.ResourceMap{
-									slov1alpha1.P95: {
+								Usage: map[extension.AggregationType]slov1alpha1.ResourceMap{
+									extension.P95: {
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("70"),
 											corev1.ResourceMemory: resource.MustParse("256Gi"),
@@ -1071,7 +1071,7 @@ func TestScore(t *testing.T) {
 		{
 			name: "score load node with p95",
 			aggregatedArgs: &v1beta2.LoadAwareSchedulingAggregatedArgs{
-				ScoreAggregationType:    slov1alpha1.P95,
+				ScoreAggregationType:    extension.P95,
 				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
 			},
 			pod: &corev1.Pod{
@@ -1121,14 +1121,14 @@ func TestScore(t *testing.T) {
 						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
 							{
 								Duration: metav1.Duration{Duration: 5 * time.Minute},
-								Usage: map[slov1alpha1.AggregationType]slov1alpha1.ResourceMap{
-									slov1alpha1.P95: {
+								Usage: map[extension.AggregationType]slov1alpha1.ResourceMap{
+									extension.P95: {
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("32"),
 											corev1.ResourceMemory: resource.MustParse("10Gi"),
 										},
 									},
-									slov1alpha1.P99: {
+									extension.P99: {
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("50"),
 											corev1.ResourceMemory: resource.MustParse("70Gi"),
@@ -1146,7 +1146,7 @@ func TestScore(t *testing.T) {
 		{
 			name: "score load node with p95 but have not reported usage",
 			aggregatedArgs: &v1beta2.LoadAwareSchedulingAggregatedArgs{
-				ScoreAggregationType:    slov1alpha1.P95,
+				ScoreAggregationType:    extension.P95,
 				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
 			},
 			pod: &corev1.Pod{
@@ -1202,7 +1202,7 @@ func TestScore(t *testing.T) {
 		{
 			name: "score load node with p95 but have not reported usage and have assigned pods",
 			aggregatedArgs: &v1beta2.LoadAwareSchedulingAggregatedArgs{
-				ScoreAggregationType:    slov1alpha1.P95,
+				ScoreAggregationType:    extension.P95,
 				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
 			},
 			pod: &corev1.Pod{

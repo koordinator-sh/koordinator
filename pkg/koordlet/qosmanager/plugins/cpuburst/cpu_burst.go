@@ -663,7 +663,7 @@ func calcStaticCPUBurstVal(container *corev1.Container, burstCfg *slov1alpha1.CP
 
 // use node config by default, overlap if pod specify config
 func genPodBurstConfig(pod *corev1.Pod, nodeCfg *slov1alpha1.CPUBurstConfig) *slov1alpha1.CPUBurstConfig {
-	podCPUBurstCfg, err := apiext.GetPodCPUBurstConfig(pod)
+	podCPUBurstCfg, err := slov1alpha1.GetPodCPUBurstConfig(pod)
 	if err != nil {
 		klog.Infof("parse pod %s/%s cpu burst config failed, reason %v", pod.Namespace, pod.Name, err)
 		return nodeCfg

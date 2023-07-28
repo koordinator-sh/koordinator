@@ -33,6 +33,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -95,8 +96,8 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 		Client: client,
 		cfgCache: &FakeCfgCache{
 			available: true,
-			cfg: extension.ColocationCfg{
-				ColocationStrategy: extension.ColocationStrategy{
+			cfg: configuration.ColocationCfg{
+				ColocationStrategy: configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -137,8 +138,8 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 		Client: client,
 		cfgCache: &FakeCfgCache{
 			available: true,
-			cfg: extension.ColocationCfg{
-				ColocationStrategy: extension.ColocationStrategy{
+			cfg: configuration.ColocationCfg{
+				ColocationStrategy: configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),

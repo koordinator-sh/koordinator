@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
@@ -100,19 +101,19 @@ var _ = SIGDescribe("BatchResource", func() {
 				rollbackData := map[string]string{}
 				if configMap.Data == nil {
 					needUpdate = true
-				} else if configMap.Data[apiext.ColocationConfigKey] != colocationEnabledConfigData {
-					rollbackData[apiext.ColocationConfigKey] = configMap.Data[apiext.ColocationConfigKey]
+				} else if configMap.Data[configuration.ColocationConfigKey] != colocationEnabledConfigData {
+					rollbackData[configuration.ColocationConfigKey] = configMap.Data[configuration.ColocationConfigKey]
 					needUpdate = true
 				}
 
-				if _, ok := rollbackData[apiext.ColocationConfigKey]; ok && needUpdate {
+				if _, ok := rollbackData[configuration.ColocationConfigKey]; ok && needUpdate {
 					defer rollbackSLOConfigData(f, koordNamespace, sloConfigName, rollbackData)
 				}
 
 				if needUpdate {
 					framework.Logf("colocation is not enabled in slo-controller-config, need update")
 					newConfigMap := configMap.DeepCopy()
-					newConfigMap.Data[apiext.ColocationConfigKey] = colocationEnabledConfigData
+					newConfigMap.Data[configuration.ColocationConfigKey] = colocationEnabledConfigData
 					newConfigMapUpdated, err := c.CoreV1().ConfigMaps(koordNamespace).Update(context.TODO(), newConfigMap, metav1.UpdateOptions{})
 					framework.ExpectNoError(err)
 					framework.Logf("update slo-controller-config successfully, data: %v", newConfigMapUpdated.Data)

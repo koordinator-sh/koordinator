@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/utils/pointer"
 
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
@@ -167,9 +168,9 @@ func genPodMetric(namespace string, name string, cpu string, memory string) *slo
 }
 
 func TestPluginCalculate(t *testing.T) {
-	memoryCalculateByReq := extension.CalculateByPodRequest
+	memoryCalculateByReq := configuration.CalculateByPodRequest
 	type args struct {
-		strategy             *extension.ColocationStrategy
+		strategy             *configuration.ColocationStrategy
 		node                 *corev1.Node
 		podList              *corev1.PodList
 		resourceMetrics      *framework.ResourceMetrics
@@ -188,7 +189,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory usage",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -220,7 +221,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory usage and reserve nothing from node.annotation",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -255,7 +256,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory usage and reserve specific cpus from node.annotation and left equal sys.used",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -292,7 +293,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory usage and reserve specific cpus from node.annotation and right equal sys.used",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -329,7 +330,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory usage and reserve cpus by quantity from node.annotation and right equal sys.used",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -366,7 +367,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory usage and reserve cpus by quantity and specific cores from node.annotation and right equal sys.used",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -404,7 +405,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory usage and reserve memory from node.annotation and right equal sys.used",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -441,7 +442,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory usage and reserve memory from node.annotation and left equal sys.used",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -478,7 +479,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory usage and reserve memory and cpu from node.annotation and left equal sys.used",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -518,7 +519,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory usage and reserve memory and cpu from node.annotation and right equal sys.used",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -558,7 +559,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory usage and reserve memory and specific cores from node.annotation and right equal sys.used",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -598,7 +599,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory request",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					DegradeTimeMinutes:            pointer.Int64(15),
 					UpdateTimeThresholdSeconds:    pointer.Int64(300),
@@ -634,7 +635,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory request and reserve memory from node.annotation and left equal sys.used",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					DegradeTimeMinutes:            pointer.Int64(15),
 					UpdateTimeThresholdSeconds:    pointer.Int64(300),
@@ -675,7 +676,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with memory request and reserve memory from node.annotation and right equal sys.used",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					DegradeTimeMinutes:            pointer.Int64(15),
 					UpdateTimeThresholdSeconds:    pointer.Int64(300),
@@ -716,7 +717,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate with pods in multiple priority classes",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
@@ -897,7 +898,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		Clock clock.Clock
 	}
 	type args struct {
-		strategy   *extension.ColocationStrategy
+		strategy   *configuration.ColocationStrategy
 		nodeMetric *slov1alpha1.NodeMetric
 		node       *corev1.Node
 	}
@@ -933,7 +934,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 				Clock: clock.RealClock{},
 			},
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:             pointer.Bool(true),
 					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
 				},
@@ -968,7 +969,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 				Clock: clock.NewFakeClock(time.Now().Add(time.Minute * (degradeTimeoutMinutes + 1))),
 			},
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:             pointer.Bool(true),
 					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
 				},
@@ -1080,7 +1081,7 @@ func Test_getNodeMetricUsage(t *testing.T) {
 
 func Test_getNodeReservation(t *testing.T) {
 	type args struct {
-		strategy *extension.ColocationStrategy
+		strategy *configuration.ColocationStrategy
 		node     *corev1.Node
 	}
 	tests := []struct {
@@ -1091,7 +1092,7 @@ func Test_getNodeReservation(t *testing.T) {
 		{
 			name: "get correct reserved node resource quantity",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                        pointer.Bool(true),
 					CPUReclaimThresholdPercent:    pointer.Int64(65),
 					MemoryReclaimThresholdPercent: pointer.Int64(65),
