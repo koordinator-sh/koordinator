@@ -19,12 +19,23 @@ package config
 import (
 	"flag"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConfiguration_InitFlags(t *testing.T) {
+	cmdArgs := []string{
+		"",
+		"--collect-res-used-interval=2s",
+		"--reconcile-interval-seconds=5",
+		"--cgroup-root-dir=/host-cgroup/",
+		"--feature-gates=AllBeta=true,AllAlpha=false",
+	}
 	t.Run("ensure not panic", func(t *testing.T) {
+		fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 		cfg := NewConfiguration()
-		cfg.InitFlags(flag.CommandLine)
-		flag.Parse()
+		cfg.InitFlags(fs)
+		err := fs.Parse(cmdArgs[1:])
+		assert.NoError(t, err)
 	})
 }

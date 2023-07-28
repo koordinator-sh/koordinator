@@ -171,6 +171,7 @@ func newNodeResourceTopologyInformer(client topologyclientset.Interface, nodeNam
 		cache.Indexers{},
 	)
 }
+
 func (s *nodeTopoInformer) createNodeTopoIfNotExist() {
 	node := s.nodeInformer.GetNode()
 	topologyName := node.Name
@@ -607,7 +608,6 @@ func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.
 }
 
 func (s *nodeTopoInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extension.CPUTopology, map[int32]*extension.CPUInfo, error) {
-
 	nodeCPUInfoRaw, exist := s.metricCache.Get(metriccache.NodeCPUInfoKey)
 	if !exist {
 		klog.Warning("failed to get node cpu info : not exist")

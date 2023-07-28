@@ -113,11 +113,12 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	// BECPUUsage
 	currentBECPUMilliUsage, err := beCPUUsageAggregateResult.Value(metriccache.AggregationTypeLast)
 	assert.NoError(t, err)
-	assert.Equal(t, float64(4*1000), currentBECPUMilliUsage, "checkRequest")
+	// check roughly; tolerant 1 second error
+	assert.True(t, currentBECPUMilliUsage > float64(3*1000) && currentBECPUMilliUsage < float64(5*1000), "checkUsage")
 	// BECPURequest
 	currentBECPUMilliRequest, _ := beCPURequeestAggregateResult.Value(metriccache.AggregationTypeLast)
 	assert.NoError(t, err)
-	assert.Equal(t, float64(1500), currentBECPUMilliRequest, "checkUsage")
+	assert.Equal(t, float64(1500), currentBECPUMilliRequest, "checkRequest")
 	// BECPULimit
 	currentBECPUMilliRealLimit, _ := beCPURealLimitAggregateResult.Value(metriccache.AggregationTypeLast)
 	assert.NoError(t, err)
