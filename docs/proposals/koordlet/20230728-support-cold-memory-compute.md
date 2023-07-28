@@ -3,7 +3,11 @@ title: Support to collect and report cold memory
 authors:
   - "@BUPT-wxq"
 reviewers:
-  - "@YYY"
+  - "@saintube"
+  - "@zwzhang0107"
+  - "@eahydra"
+  - "@hormes"
+  - "@FillZpp"
 creation-date: 2023-07-28
 last-updated: 2023-07-28
 ---
