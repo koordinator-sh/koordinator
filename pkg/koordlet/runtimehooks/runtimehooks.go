@@ -24,6 +24,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/nri"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/proxyserver"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/reconciler"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/rule"
@@ -42,6 +43,7 @@ type RuntimeHook interface {
 type runtimeHook struct {
 	statesInformer statesinformer.StatesInformer
 	server         proxyserver.Server
+	nriServer      *nri.NriServer
 	reconciler     reconciler.Reconciler
 	executor       resourceexecutor.ResourceUpdateExecutor
 }
@@ -51,6 +53,12 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	go r.executor.Run(stopCh)
 	if err := r.server.Start(); err != nil {
 		return err
+	}
+	if r.nriServer != nil {
+		if err := r.nriServer.Start(); err != nil {
+			// if NRI is not enabled or container runtime not support NRI, we just skip NRI server start
+			klog.Errorf("nri runtime hook server start failed: %v", err)
+		}
 	}
 	if err := r.reconciler.Run(stopCh); err != nil {
 		return err
@@ -84,6 +92,22 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 		Executor:            e,
 	}
+
+	var nris *nri.NriServer
+	if cfg.RuntimeHooksNRI {
+		nriServerOptions := nri.Options{
+			PluginFailurePolicy: pluginFailurePolicy,
+			DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
+			Executor:            e,
+		}
+		nris, err = nri.NewNriServer(nriServerOptions)
+		if err != nil {
+			klog.Errorf("new nri server error, %v", err)
+		}
+	} else {
+		klog.Info("nri mode runtimehooks is disabled")
+	}
+
 	s, err := proxyserver.NewServer(newServerOptions)
 	newReconcilerOptions := reconciler.Options{
 		StatesInformer: si,
@@ -100,6 +124,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	r := &runtimeHook{
 		statesInformer: si,
 		server:         s,
+		nriServer:      nris,
 		reconciler:     reconciler.NewReconciler(newReconcilerOptions),
 		executor:       e,
 	}

@@ -18,6 +18,9 @@ package protocol
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/containerd/nri/pkg/api"
 
 	"k8s.io/klog/v2"
 
@@ -37,6 +40,12 @@ type ContainerMeta struct {
 	Sandbox bool
 }
 
+func (c *ContainerMeta) FromNri(container *api.Container, podAnnotations map[string]string) {
+	c.Name = container.GetName()
+	uid := container.GetId()
+	c.ID = getContainerID(podAnnotations, uid)
+}
+
 func (c *ContainerMeta) FromProxy(containerMeta *runtimeapi.ContainerMetadata, podAnnotations map[string]string) {
 	c.Name = containerMeta.GetName()
 	uid := containerMeta.GetId()
@@ -51,6 +60,45 @@ type ContainerRequest struct {
 	CgroupParent      string
 	ContainerEnvs     map[string]string
 	ExtendedResources *apiext.ExtendedResourceContainerSpec
+}
+
+func splitEnvVar(s string) (string, string) {
+	split := strings.SplitN(s, "=", 2)
+	if len(split) < 1 {
+		return "", ""
+	}
+	if len(split) != 2 {
+		return split[0], ""
+	}
+	return split[0], split[1]
+}
+
+func (c *ContainerRequest) FromNri(pod *api.PodSandbox, container *api.Container) {
+	c.PodMeta.FromNri(pod)
+	c.ContainerMeta.FromNri(container, pod.GetAnnotations())
+	c.PodLabels = pod.GetLabels()
+	c.PodAnnotations = pod.GetAnnotations()
+	c.CgroupParent, _ = koordletutil.GetContainerCgroupParentDirByID(pod.Linux.CgroupParent, c.ContainerMeta.ID)
+
+	envs := make(map[string]string)
+	for _, e := range container.GetEnv() {
+		k, v := splitEnvVar(e)
+		if k != "" && v != "" {
+			envs[k] = v
+		}
+	}
+	c.ContainerEnvs = envs
+
+	spec, err := apiext.GetExtendedResourceSpec(pod.GetAnnotations())
+	if err != nil {
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from nri via annotation, container %s/%s, err: %s",
+			c.PodMeta.Namespace, c.PodMeta.Name, c.ContainerMeta.Name, err)
+	}
+	if spec != nil && spec.Containers != nil {
+		if containerSpec, ok := spec.Containers[c.ContainerMeta.Name]; ok {
+			c.ExtendedResources = &containerSpec
+		}
+	}
 }
 
 func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookRequest) {
@@ -162,6 +210,10 @@ type ContainerContext struct {
 	Request  ContainerRequest
 	Response ContainerResponse
 	executor resourceexecutor.ResourceUpdateExecutor
+}
+
+func (c *ContainerContext) FromNri(pod *api.PodSandbox, container *api.Container) {
+	c.Request.FromNri(pod, container)
 }
 
 func (c *ContainerContext) FromProxy(req *runtimeapi.ContainerResourceHookRequest) {

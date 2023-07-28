@@ -84,6 +84,7 @@ type Config struct {
 	RuntimeHookConfigFilePath       string
 	RuntimeHookHostEndpoint         string
 	RuntimeHookDisableStages        []string
+	RuntimeHooksNRI                 bool
 	FeatureGates                    map[string]bool // Deprecated
 }
 
@@ -96,6 +97,7 @@ func NewDefaultConfig() *Config {
 		RuntimeHookConfigFilePath:       system.Conf.RuntimeHooksConfigDir,
 		RuntimeHookHostEndpoint:         "/var/run/koordlet/koordlet.sock",
 		RuntimeHookDisableStages:        []string{},
+		RuntimeHooksNRI:                 true,
 		FeatureGates:                    map[string]bool{},
 	}
 }
@@ -108,6 +110,7 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.RuntimeHookConfigFilePath, "runtime-hooks-config-path", c.RuntimeHookConfigFilePath, "config file path for runtime hooks")
 	fs.StringVar(&c.RuntimeHookHostEndpoint, "runtime-hooks-host-endpoint", c.RuntimeHookHostEndpoint, "host endpoint of runtime proxy")
 	fs.Var(cliflag.NewStringSlice(&c.RuntimeHookDisableStages), "runtime-hooks-disable-stages", "disable stages for runtime hooks")
+	fs.BoolVar(&c.RuntimeHooksNRI, "enable-nri-runtime-hook", c.RuntimeHooksNRI, "enable/disable runtime hooks nri mode")
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "runtime-hooks", "Deprecated because all settings have been moved to --feature-gates parameters")
 }
 
