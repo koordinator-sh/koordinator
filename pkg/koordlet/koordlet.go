@@ -37,7 +37,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resmanager"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	statesinformerimpl "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl"
@@ -61,8 +60,7 @@ type daemon struct {
 	metricAdvisor  metricsadvisor.MetricAdvisor
 	statesInformer statesinformer.StatesInformer
 	metricCache    metriccache.MetricCache
-	resManager     resmanager.ResManager
-	qosManager     qosmanager.QoSManager
+	qosManager     qosmanager.QOSManager
 	runtimeHook    runtimehooks.RuntimeHook
 	predictServer  prediction.PredictServer
 }
@@ -103,9 +101,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, err
 	}
 
-	resManagerService := resmanager.NewResManager(config.ResManagerConf, scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, int64(config.CollectorConf.CollectResUsedInterval.Seconds()), evictVersion)
-
-	qosManager := qosmanager.NewQosManager(config.QosManagerConf, scheme, kubeClient, nodeName, statesInformer, metricCache)
+	qosManager := qosmanager.NewQOSManager(config.QOSManagerConf, scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, config.CollectorConf, evictVersion)
 
 	runtimeHook, err := runtimehooks.NewRuntimeHook(statesInformer, config.RuntimeHookConf)
 	if err != nil {
@@ -116,7 +112,6 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		metricAdvisor:  collectorService,
 		statesInformer: statesInformer,
 		metricCache:    metricCache,
-		resManager:     resManagerService,
 		qosManager:     qosManager,
 		runtimeHook:    runtimeHook,
 		predictServer:  predictServer,
@@ -168,17 +163,10 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 		}
 	}()
 
-	// start resmanager
-	go func() {
-		if err := d.resManager.Run(stopCh); err != nil {
-			klog.Fatal("Unable to run the resManager: ", err)
-		}
-	}()
-
-	// start QoS Manager
+	// start qos manager
 	go func() {
 		if err := d.qosManager.Run(stopCh); err != nil {
-			klog.Fatal("Unable to run the QoSManager: ", err)
+			klog.Fatal("Unable to run the qosManager: ", err)
 		}
 	}()
 
