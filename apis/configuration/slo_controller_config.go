@@ -30,6 +30,7 @@ const (
 	ResourceQOSConfigKey       = "resource-qos-config"
 	CPUBurstConfigKey          = "cpu-burst-config"
 	SystemConfigKey            = "system-config"
+	HostApplicationConfigKey   = "host-application-config"
 )
 
 // +k8s:deepcopy-gen=true
@@ -86,6 +87,18 @@ type NodeSystemStrategy struct {
 type SystemCfg struct {
 	ClusterStrategy *slov1alpha1.SystemStrategy `json:"clusterStrategy,omitempty"`
 	NodeStrategies  []NodeSystemStrategy        `json:"nodeStrategies,omitempty" validate:"dive"`
+}
+
+// +k8s:deepcopy-gen=true
+type NodeHostApplicationCfg struct {
+	NodeCfgProfile `json:",inline"`
+	Applications   []slov1alpha1.HostApplicationSpec `json:"applications,omitempty"`
+}
+
+// +k8s:deepcopy-gen=true
+type HostApplicationCfg struct {
+	Applications []slov1alpha1.HostApplicationSpec `json:"applications,omitempty"`
+	NodeConfigs  []NodeHostApplicationCfg          `json:"nodeConfigs,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true
@@ -452,6 +465,43 @@ data:
             }
           },
           "cpuEvictBEUsageThresholdPercent": 80
+        }
+      ]
+    }
+  host-application-config: |
+    {
+      "applications": [
+        {
+          "name": "nginx",
+          "priority": "koord-prod",
+          "qos": "LS",
+          "cgroupPath": {
+            "base": "CgroupRoot",
+            "parentDir": "host-latency-sensitive/",
+            "relativePath": "nginx/",
+          }
+        }
+      ],
+      "nodeConfigs": [
+        {
+          "name": "colocation-pool",
+          "nodeSelector": {
+            "matchLabels": {
+              "node-pool": "colocation"
+            }
+          },
+          "applications": [
+            {
+              "name": "nginx",
+              "priority": "koord-prod",
+              "qos": "LS",
+              "cgroupPath": {
+                "base": "CgroupRoot",
+                "parentDir": "host-latency-sensitive/",
+                "relativePath": "nginx/",
+              }
+            }
+          ]
         }
       ]
     }
