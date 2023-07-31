@@ -422,9 +422,9 @@ func (r *Reconciler) preparePendingJob(ctx context.Context, job *sev1alpha1.PodM
 			}
 			return reconcile.Result{}, err
 		}
-	}
-	if requeue, err := r.requeueJobIfRetryablePodFilterFailed(ctx, pod, job); requeue || err != nil {
-		return reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
+		if requeue, err := r.requeueJobIfRetryablePodFilterFailed(ctx, pod, job); requeue || err != nil {
+			return reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
+		}
 	}
 
 	job.Status.Phase = sev1alpha1.PodMigrationJobRunning
