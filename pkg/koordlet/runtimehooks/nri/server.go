@@ -167,7 +167,7 @@ func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Containe
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromNri(pod, container)
 	// todo: return error or bypass error based on PluginFailurePolicy
-	err := hooks.RunHooks(p.options.PluginFailurePolicy, rmconfig.PreCreateContainer, containerCtx)
+	err := hooks.RunHooks(p.options.PluginFailurePolicy, rmconfig.PreUpdateContainerResources, containerCtx)
 	if err != nil {
 		klog.Errorf("nri run hooks error: %v", err)
 		if p.options.PluginFailurePolicy == rmconfig.PolicyFail {
@@ -196,6 +196,7 @@ func Protocol2NRI(proto protocol.HooksProtocol) (*api.ContainerAdjustment, *api.
 
 	adjust := &api.ContainerAdjustment{}
 	update := &api.ContainerUpdate{}
+	// todo: add more fields conversions
 	if containerCtx.Response.Resources.CPUSet != nil {
 		adjust.SetLinuxCPUSetCPUs(*containerCtx.Response.Resources.CPUSet)
 		update.SetLinuxCPUSetCPUs(*containerCtx.Response.Resources.CPUSet)
