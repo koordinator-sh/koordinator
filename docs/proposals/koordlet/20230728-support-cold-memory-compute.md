@@ -81,14 +81,14 @@ apis/slo/v1alpha1/nodemetric_types
 
 ```go
 type NodeMetricCollectPolicy struct {
-	// AggregateDurationSeconds represents the aggregation period in seconds
-	AggregateDurationSeconds *int64 `json:"aggregateDurationSeconds,omitempty"`
-	// ReportIntervalSeconds represents the report period in seconds
-	ReportIntervalSeconds *int64 `json:"reportIntervalSeconds,omitempty"`
-	// NodeAggregatePolicy represents the target grain of node aggregated usage
-	NodeAggregatePolicy *AggregatePolicy `json:"nodeAggregatePolicy,omitempty"`
-    //add
-    MemoryCollectPolicy 
+  // AggregateDurationSeconds represents the aggregation period in seconds
+  AggregateDurationSeconds *int64 `json:"aggregateDurationSeconds,omitempty"`
+  // ReportIntervalSeconds represents the report period in seconds
+  ReportIntervalSeconds *int64 `json:"reportIntervalSeconds,omitempty"`
+  // NodeAggregatePolicy represents the target grain of node aggregated usage
+  NodeAggregatePolicy *AggregatePolicy `json:"nodeAggregatePolicy,omitempty"`
+  //add
+  MemoryCollectPolicy 
 }
 ```
 
@@ -98,14 +98,14 @@ pkg/koordlet/koordlet.go
 
 ```go
 type daemon struct {
-	metricAdvisor  metricsadvisor.MetricAdvisor
-	statesInformer statesinformer.StatesInformer
-	metricCache    metriccache.MetricCache
-	resManager     resmanager.ResManager
-	qosManager     qosmanager.QoSManager
-	runtimeHook    runtimehooks.RuntimeHook
-    //add wether to support cold collection
-    feature-gate   bool
+metricAdvisor  metricsadvisor.MetricAdvisor
+statesInformer statesinformer.StatesInformer
+metricCache    metriccache.MetricCache
+resManager     resmanager.ResManager
+qosManager     qosmanager.QoSManager
+runtimeHook    runtimehooks.RuntimeHook
+//add wether to support cold collection
+feature-gate   bool
 }
 ```
 
