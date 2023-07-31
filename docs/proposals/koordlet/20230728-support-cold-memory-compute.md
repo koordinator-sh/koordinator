@@ -75,19 +75,6 @@ Currently, the memory usage of nodes and pods collected by koordlet does not con
 
 #### Add code
 
-- Add a field in NodeResourceMetric, PodResourceMetric and ContainerResourceMetric named ColdPage to represent cold page size.
-- pkg/koordlet/metriccache/api.go
-
-```go
-type NodeResourceMetric struct {
-	CPUUsed    CPUMetric
-	MemoryUsed MemoryMetric
-	GPUs       []GPUMetric
-	//add
-	ColdPageSize
-}
-```
-
 - Add a field named in spec named memorycollectpolicy to start cold page compute in cluster.
 
 apis/slo/v1alpha1/nodemetric_types
