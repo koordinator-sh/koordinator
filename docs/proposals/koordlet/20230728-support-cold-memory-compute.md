@@ -74,12 +74,25 @@ Currently, the memory usage of nodes and pods collected by koordlet does not con
 
 
 #### Add code
+
+- Add a field in NodeResourceMetric, PodResourceMetric and ContainerResourceMetric named ColdPage to represent cold page size.
+- pkg/koordlet/metriccache/api.go
+
+```go
+type NodeResourceMetric struct {
+	CPUUsed    CPUMetric
+	MemoryUsed MemoryMetric
+	GPUs       []GPUMetric
+	//add
+	ColdPageSize
+}
+```
+
 - Add a field named in spec named memorycollectpolicy to start cold page compute in cluster.
 
 apis/slo/v1alpha1/nodemetric_types
 
 ```go
-// NodeMetricCollectPolicy defines the Metric collection policy
 type NodeMetricCollectPolicy struct {
 	// AggregateDurationSeconds represents the aggregation period in seconds
 	AggregateDurationSeconds *int64 `json:"aggregateDurationSeconds,omitempty"`
@@ -87,8 +100,8 @@ type NodeMetricCollectPolicy struct {
 	ReportIntervalSeconds *int64 `json:"reportIntervalSeconds,omitempty"`
 	// NodeAggregatePolicy represents the target grain of node aggregated usage
 	NodeAggregatePolicy *AggregatePolicy `json:"nodeAggregatePolicy,omitempty"`
-	//add
-	MemoryCollectPolicy
+    //add
+    MemoryCollectPolicy 
 }
 ```
 
@@ -101,11 +114,11 @@ type daemon struct {
 	metricAdvisor  metricsadvisor.MetricAdvisor
 	statesInformer statesinformer.StatesInformer
 	metricCache    metriccache.MetricCache
-	qosManager     qosmanager.QOSManager
+	resManager     resmanager.ResManager
+	qosManager     qosmanager.QoSManager
 	runtimeHook    runtimehooks.RuntimeHook
-	predictServer  prediction.PredictServer
-	//add wether to support cold collection
-	feature-gate   bool
+    //add wether to support cold collection
+    feature-gate   bool
 }
 ```
 
