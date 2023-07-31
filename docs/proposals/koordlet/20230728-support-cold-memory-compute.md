@@ -14,7 +14,18 @@ last-updated: 2023-07-28
 
 ## Table of Contents
 
-[TOC]
+
+- [Title](#title)
+  - [Table of Contents](#table-of-contents)
+  - [Glossary](#glossary)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals/Future Work](#non-goalsfuture-work)
+  - [Proposal](#proposal)
+    - [Design](#design)
+    - [Collect cold memory info](#collect-cold-memory-info)
+	- [Report memory usage including hot page](#report-memory-usage-including-hot-page)
+	- [Add code](#add-code)
 
 ## Glossary
 
@@ -52,17 +63,17 @@ Currently, the memory usage of nodes and pods collected by koordlet does not con
 
 ### Design
 
-#### collect cold memory info
+#### Collect cold memory info
 
 ![image](../../images/support-cold-memory-1.svg)
 
-#### report memory usage including hot page
+#### Report memory usage including hot page
 
 ![image](../../images/support-cold-memory-2.svg)
 
 
 
-#### add code
+#### Add code
 
 - Add a field in NodeResourceMetric, PodResourceMetric and ContainerResourceMetric named ColdPage to represent cold page size.
 - pkg/koordlet/metriccache/api.go
@@ -72,8 +83,8 @@ type NodeResourceMetric struct {
 	CPUUsed    CPUMetric
 	MemoryUsed MemoryMetric
 	GPUs       []GPUMetric
-    //add
-    ColdPageSize
+	//add
+	ColdPageSize
 }
 ```
 
