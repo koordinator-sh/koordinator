@@ -54,17 +54,17 @@ Currently, the memory usage of nodes and pods collected by koordlet does not con
 
 #### collect cold memory info
 
-![image](../../images/support-cold-memory-1.png)
+![image](../../images/support-cold-memory-1.svg)
 
 #### report memory usage including hot page
 
-![image](../../images/support-cold-memory-2.png)
+![image](../../images/support-cold-memory-2.svg)
 
 
 
 #### add code
 
-- Add a filed in NodeResourceMetric, PodResourceMetric and ContainerResourceMetric named ColdPage to represent cold page size.
+- Add a field in NodeResourceMetric, PodResourceMetric and ContainerResourceMetric named ColdPage to represent cold page size.
 - pkg/koordlet/metriccache/api.go
 
 ```go
@@ -77,7 +77,7 @@ type NodeResourceMetric struct {
 }
 ```
 
-- Add a filed named in spec named memorycollectpolicy to start cold page compute in cluster.
+- Add a field named in spec named memorycollectpolicy to start cold page compute in cluster.
 
 apis/slo/v1alpha1/nodemetric_types
 
@@ -94,7 +94,7 @@ type NodeMetricCollectPolicy struct {
 }
 ```
 
-- Add a filed named in koordlet named feature-gate to start cold page compute in node.
+- Add a field named in koordlet named feature-gate to start cold page compute in node.
 
 pkg/koordlet/koordlet.go
 
