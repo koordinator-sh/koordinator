@@ -23,6 +23,7 @@ import (
 
 const (
 	NodeCPUInfoKey          = "node_cpu_info"
+	NodeNUMAInfoKey         = "node_numa_info"
 	NodeLocalStorageInfoKey = "node_local_storage_info"
 )
 

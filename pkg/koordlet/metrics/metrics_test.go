@@ -18,7 +18,6 @@ package metrics
 
 import (
 	"fmt"
-
 	"testing"
 	"time"
 
@@ -132,6 +131,10 @@ func TestCommonCollectors(t *testing.T) {
 		RecordKoordletStartTime(testingNode.Name, float64(testingNow.Unix()))
 		RecordCollectNodeCPUInfoStatus(testingErr)
 		RecordCollectNodeCPUInfoStatus(nil)
+		RecordCollectNodeNUMAInfoStatus(testingErr)
+		RecordCollectNodeNUMAInfoStatus(nil)
+		RecordCollectNodeLocalStorageInfoStatus(testingErr)
+		RecordCollectNodeLocalStorageInfoStatus(nil)
 		RecordBESuppressCores("cfsQuota", float64(1000))
 		RecordBESuppressLSUsedCPU(1.0)
 		RecordNodeUsedCPU(2.0)

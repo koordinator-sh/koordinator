@@ -18,6 +18,7 @@ package testutil
 
 import (
 	"fmt"
+
 	"github.com/golang/mock/gomock"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"

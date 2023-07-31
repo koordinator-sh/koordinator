@@ -366,7 +366,7 @@ func (r *resctrlReconcile) reconcileCatResctrlPolicy(qosStrategy *slov1alpha1.Re
 	cbm := uint(cbmValue)
 
 	// get the number of l3 caches; it is larger than 0
-	l3Num := int(nodeCPUInfo.TotalInfo.NumberL3s)
+	l3Num := len(nodeCPUInfo.TotalInfo.L3ToCPU)
 	if l3Num <= 0 {
 		klog.Warningf("failed to get the number of l3 caches, invalid value %v", l3Num)
 		return

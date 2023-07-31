@@ -35,6 +35,12 @@ var (
 		Help:      "the count of CollectNodeCPUInfo status",
 	}, []string{NodeKey, StatusKey})
 
+	CollectNodeNUMAInfoStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "collect_node_numa_info_status",
+		Help:      "the count of CollectNodeNUMAInfo status",
+	}, []string{NodeKey, StatusKey})
+
 	CollectNodeLocalStorageInfoStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "collect_node_local_storage_info_status",
@@ -62,6 +68,8 @@ var (
 	CommonCollectors = []prometheus.Collector{
 		KoordletStartTime,
 		CollectNodeCPUInfoStatus,
+		CollectNodeNUMAInfoStatus,
+		CollectNodeLocalStorageInfoStatus,
 		PodEviction,
 		PodEvictionDetail.GetCounterVec(),
 		NodeUsedCPU,
@@ -85,6 +93,18 @@ func RecordCollectNodeCPUInfoStatus(err error) {
 		labels[StatusKey] = StatusFailed
 	}
 	CollectNodeCPUInfoStatus.With(labels).Inc()
+}
+
+func RecordCollectNodeNUMAInfoStatus(err error) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[StatusKey] = StatusSucceed
+	if err != nil {
+		labels[StatusKey] = StatusFailed
+	}
+	CollectNodeNUMAInfoStatus.With(labels).Inc()
 }
 
 func RecordCollectNodeLocalStorageInfoStatus(err error) {

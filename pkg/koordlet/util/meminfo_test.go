@@ -17,7 +17,6 @@ limitations under the License.
 package util
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -27,9 +26,10 @@ import (
 )
 
 func Test_readMemInfo(t *testing.T) {
-	tempDir := t.TempDir()
-	tempInvalidMemInfoPath := filepath.Join(tempDir, "no_meminfo")
-	tempMemInfoPath := filepath.Join(tempDir, "meminfo")
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	tempInvalidMemInfoPath := filepath.Join(helper.TempDir, "no_meminfo")
+	tempMemInfoPath := filepath.Join(helper.TempDir, "meminfo")
 	memInfoContentStr := `MemTotal:       263432804 kB
 MemFree:        254391744 kB
 MemAvailable:   256703236 kB
@@ -78,9 +78,8 @@ Hugepagesize:       2048 kB
 DirectMap4k:      414760 kB
 DirectMap2M:     8876032 kB
 DirectMap1G:    261095424 kB`
-	err := os.WriteFile(tempMemInfoPath, []byte(memInfoContentStr), 0666)
-	assert.NoError(t, err)
-	tempMemInfoPath1 := filepath.Join(tempDir, "meminfo1")
+	helper.WriteFileContents(tempMemInfoPath, memInfoContentStr)
+	tempMemInfoPath1 := filepath.Join(helper.TempDir, "meminfo1")
 	memInfoContentStr1 := `MemTotal:       263432804 kB
 MemFree:        254391744 kB
 MemAvailable:   256703236 kB
@@ -129,10 +128,48 @@ Hugepagesize:       2048 kB
 DirectMap4k:      414760 kB
 DirectMap2M:     8876032 kB
 DirectMap1G:    261095424 kB`
-	err = os.WriteFile(tempMemInfoPath1, []byte(memInfoContentStr1), 0666)
-	assert.NoError(t, err)
+	helper.WriteFileContents(tempMemInfoPath1, memInfoContentStr1)
+	numaMemInfoContentStr := `Node 1 MemTotal:       263432804 kB
+Node 1 MemFree:        254391744 kB
+Node 1 MemAvailable:   256703236 kB
+Node 1 Buffers:          958096 kB
+Node 1 Cached:                0 kB
+Node 1 SwapCached:            0 kB
+Node 1 Active:          2786012 kB
+Node 1 Inactive:        2223752 kB
+Node 1 Active(anon):     289488 kB
+Node 1 Inactive(anon):     1300 kB
+Node 1 Active(file):    2496524 kB
+Node 1 Inactive(file):  2222452 kB
+Node 1 Unevictable:           0 kB
+Node 1 Mlocked:               0 kB
+Node 1 SwapTotal:             0 kB
+Node 1 SwapFree:              0 kB
+Node 1 Dirty:               624 kB
+Node 1 Writeback:             0 kB
+Node 1 AnonPages:        281748 kB
+Node 1 Mapped:           495936 kB
+Node 1 Shmem:              2340 kB
+Node 1 Slab:            1097040 kB
+Node 1 SReclaimable:     445164 kB
+Node 1 SUnreclaim:       651876 kB
+Node 1 KernelStack:       20944 kB
+Node 1 PageTables:         7896 kB
+Node 1 NFS_Unstable:          0 kB
+Node 1 Bounce:                0 kB
+Node 1 WritebackTmp:          0 kB
+Node 1 AnonHugePages:     38912 kB
+Node 1 ShmemHugePages:        0 kB
+Node 1 ShmemPmdMapped:        0 kB
+Node 1 HugePages_Total:       0
+Node 1 HugePages_Free:        0
+Node 1 HugePages_Rsvd:        0
+Node 1 HugePages_Surp:        0`
+	tempNUMAMemInfoPath := filepath.Join(helper.TempDir, "node1", "meminfo")
+	helper.WriteFileContents(tempNUMAMemInfoPath, numaMemInfoContentStr)
 	type args struct {
-		path string
+		path   string
+		isNUMA bool
 	}
 	tests := []struct {
 		name    string
@@ -212,10 +249,29 @@ DirectMap1G:    261095424 kB`
 			},
 			wantErr: false,
 		},
+		{
+			name: "read test numa meminfo path",
+			args: args{path: tempNUMAMemInfoPath, isNUMA: true},
+			want: &MemInfo{
+				MemTotal: 263432804, MemFree: 254391744, MemAvailable: 256703236,
+				Buffers: 958096, Cached: 0, SwapCached: 0,
+				Active: 2786012, Inactive: 2223752, ActiveAnon: 289488,
+				InactiveAnon: 1300, ActiveFile: 2496524, InactiveFile: 2222452,
+				Unevictable: 0, Mlocked: 0, SwapTotal: 0,
+				SwapFree: 0, Dirty: 624, Writeback: 0,
+				AnonPages: 281748, Mapped: 495936, Shmem: 2340,
+				Slab: 1097040, SReclaimable: 445164, SUnreclaim: 651876,
+				KernelStack: 20944, PageTables: 7896, NFS_Unstable: 0,
+				Bounce: 0, WritebackTmp: 0, AnonHugePages: 38912,
+				HugePages_Total: 0, HugePages_Free: 0, HugePages_Rsvd: 0,
+				HugePages_Surp: 0,
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := readMemInfo(tt.args.path)
+			got, gotErr := readMemInfo(tt.args.path, tt.args.isNUMA)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.want, got)
 		})
@@ -276,7 +332,155 @@ DirectMap1G:    261095424 kB`
 	defer helper.Cleanup()
 	helper.WriteProcSubFileContents(system.ProcMemInfoName, testMemInfo)
 
-	memInfoUsage, err := GetMemInfoUsageKB()
+	memInfo, err := GetMemInfo()
 	assert.NoError(t, err)
-	assert.NotNil(t, memInfoUsage)
+	assert.NotNil(t, memInfo)
+	got := memInfo.MemTotalBytes()
+	assert.Equal(t, uint64(263432804<<10), got)
+	got = memInfo.MemUsageBytes()
+	assert.Equal(t, uint64((263432804-256703236)<<10), got)
+}
+
+func TestGetNUMAMemInfo(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	numaMemInfoContentStr0 := `Node 0 MemTotal:       263432804 kB
+Node 0 MemFree:        254391744 kB
+Node 0 MemAvailable:   256703236 kB
+Node 0 Buffers:          958096 kB
+Node 0 Cached:                0 kB
+Node 0 SwapCached:            0 kB
+Node 0 Active:          2786012 kB
+Node 0 Inactive:        2223752 kB
+Node 0 Active(anon):     289488 kB
+Node 0 Inactive(anon):     1300 kB
+Node 0 Active(file):    2496524 kB
+Node 0 Inactive(file):  2222452 kB
+Node 0 Unevictable:           0 kB
+Node 0 Mlocked:               0 kB
+Node 0 SwapTotal:             0 kB
+Node 0 SwapFree:              0 kB
+Node 0 Dirty:               624 kB
+Node 0 Writeback:             0 kB
+Node 0 AnonPages:        281748 kB
+Node 0 Mapped:           495936 kB
+Node 0 Shmem:              2340 kB
+Node 0 Slab:            1097040 kB
+Node 0 SReclaimable:     445164 kB
+Node 0 SUnreclaim:       651876 kB
+Node 0 KernelStack:       20944 kB
+Node 0 PageTables:         7896 kB
+Node 0 NFS_Unstable:          0 kB
+Node 0 Bounce:                0 kB
+Node 0 WritebackTmp:          0 kB
+Node 0 AnonHugePages:     38912 kB
+Node 0 ShmemHugePages:        0 kB
+Node 0 ShmemPmdMapped:        0 kB
+Node 0 HugePages_Total:       0
+Node 0 HugePages_Free:        0
+Node 0 HugePages_Rsvd:        0
+Node 0 HugePages_Surp:        0`
+	numaMemInfoContentStr1 := `Node 1 MemTotal:       263432000 kB
+Node 1 MemFree:        254391744 kB
+Node 1 MemAvailable:   256703236 kB
+Node 1 Buffers:          958096 kB
+Node 1 Cached:                0 kB
+Node 1 SwapCached:            0 kB
+Node 1 Active:          2786012 kB
+Node 1 Inactive:        2223752 kB
+Node 1 Active(anon):     289488 kB
+Node 1 Inactive(anon):     1300 kB
+Node 1 Active(file):    2496524 kB
+Node 1 Inactive(file):  2222452 kB
+Node 1 Unevictable:           0 kB
+Node 1 Mlocked:               0 kB
+Node 1 SwapTotal:             0 kB
+Node 1 SwapFree:              0 kB
+Node 1 Dirty:               624 kB
+Node 1 Writeback:             0 kB
+Node 1 AnonPages:        281748 kB
+Node 1 Mapped:           495936 kB
+Node 1 Shmem:              2340 kB
+Node 1 Slab:            1097040 kB
+Node 1 SReclaimable:     445164 kB
+Node 1 SUnreclaim:       651876 kB
+Node 1 KernelStack:       20944 kB
+Node 1 PageTables:         7896 kB
+Node 1 NFS_Unstable:          0 kB
+Node 1 Bounce:                0 kB
+Node 1 WritebackTmp:          0 kB
+Node 1 AnonHugePages:     38912 kB
+Node 1 ShmemHugePages:        0 kB
+Node 1 ShmemPmdMapped:        0 kB
+Node 1 HugePages_Total:       0
+Node 1 HugePages_Free:        0
+Node 1 HugePages_Rsvd:        0
+Node 1 HugePages_Surp:        0`
+	numaMemInfoPath0 := system.GetNUMAMemInfoPath("node0")
+	helper.WriteFileContents(numaMemInfoPath0, numaMemInfoContentStr0)
+	numaMemInfoPath1 := system.GetNUMAMemInfoPath("node1")
+	helper.WriteFileContents(numaMemInfoPath1, numaMemInfoContentStr1)
+
+	testMemInfo0 := &MemInfo{
+		MemTotal: 263432804, MemFree: 254391744, MemAvailable: 256703236,
+		Buffers: 958096, Cached: 0, SwapCached: 0,
+		Active: 2786012, Inactive: 2223752, ActiveAnon: 289488,
+		InactiveAnon: 1300, ActiveFile: 2496524, InactiveFile: 2222452,
+		Unevictable: 0, Mlocked: 0, SwapTotal: 0,
+		SwapFree: 0, Dirty: 624, Writeback: 0,
+		AnonPages: 281748, Mapped: 495936, Shmem: 2340,
+		Slab: 1097040, SReclaimable: 445164, SUnreclaim: 651876,
+		KernelStack: 20944, PageTables: 7896, NFS_Unstable: 0,
+		Bounce: 0, WritebackTmp: 0, AnonHugePages: 38912,
+		HugePages_Total: 0, HugePages_Free: 0, HugePages_Rsvd: 0,
+		HugePages_Surp: 0,
+	}
+	testMemInfo1 := &MemInfo{
+		MemTotal: 263432000, MemFree: 254391744, MemAvailable: 256703236,
+		Buffers: 958096, Cached: 0, SwapCached: 0,
+		Active: 2786012, Inactive: 2223752, ActiveAnon: 289488,
+		InactiveAnon: 1300, ActiveFile: 2496524, InactiveFile: 2222452,
+		Unevictable: 0, Mlocked: 0, SwapTotal: 0,
+		SwapFree: 0, Dirty: 624, Writeback: 0,
+		AnonPages: 281748, Mapped: 495936, Shmem: 2340,
+		Slab: 1097040, SReclaimable: 445164, SUnreclaim: 651876,
+		KernelStack: 20944, PageTables: 7896, NFS_Unstable: 0,
+		Bounce: 0, WritebackTmp: 0, AnonHugePages: 38912,
+		HugePages_Total: 0, HugePages_Free: 0, HugePages_Rsvd: 0,
+		HugePages_Surp: 0,
+	}
+
+	expected := &NodeNUMAInfo{
+		NUMAInfos: []NUMAInfo{
+			{
+				NUMANodeID: 0,
+				MemInfo:    testMemInfo0,
+			},
+			{
+				NUMANodeID: 1,
+				MemInfo:    testMemInfo1,
+			},
+		},
+		MemInfoMap: map[int32]*MemInfo{
+			0: testMemInfo0,
+			1: testMemInfo1,
+		},
+	}
+
+	got, err := GetNodeNUMAInfo()
+	assert.NoError(t, err)
+	assert.Equal(t, expected, got)
+
+	// test partial failure
+	numaMemInfoPath2 := system.GetNUMAMemInfoPath("node2")
+	helper.MkDirAll(filepath.Dir(numaMemInfoPath2))
+	got, err = GetNodeNUMAInfo()
+	assert.Error(t, err)
+	assert.Nil(t, got)
+
+	// test path not exist
+	helper.Cleanup()
+	got, err = GetNodeNUMAInfo()
+	assert.Error(t, err)
+	assert.Nil(t, got)
 }

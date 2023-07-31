@@ -28,11 +28,11 @@ import (
 	"time"
 
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	topologylister "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -40,6 +40,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
@@ -56,13 +57,35 @@ import (
 
 const (
 	nodeTopoInformerName PluginName = "nodeTopoInformer"
+
+	NodeZoneType = "Node"
 )
+
+type nodeTopologyStatus struct {
+	Annotations    map[string]string
+	TopologyPolicy v1alpha1.TopologyManagerPolicy
+	Zones          v1alpha1.ZoneList
+}
+
+func (n *nodeTopologyStatus) updateNRT(nrt *v1alpha1.NodeResourceTopology) {
+	if nrt.Annotations == nil {
+		nrt.Annotations = map[string]string{}
+	}
+	for k, v := range n.Annotations {
+		nrt.Annotations[k] = v
+	}
+
+	nrt.TopologyPolicies = []string{string(n.TopologyPolicy)}
+
+	// TBD: merge with the existing
+	nrt.Zones = n.Zones
+}
 
 type nodeTopoInformer struct {
 	config         *Config
 	topologyClient topologyclientset.Interface
 	nodeTopoMutex  sync.RWMutex
-	nodeTopology   *topov1alpha1.NodeResourceTopology
+	nodeTopology   *v1alpha1.NodeResourceTopology
 
 	metricCache    metriccache.MetricCache
 	callbackRunner *callbackRunner
@@ -79,7 +102,7 @@ func NewNodeTopoInformer() *nodeTopoInformer {
 	return &nodeTopoInformer{}
 }
 
-func (s *nodeTopoInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology {
+func (s *nodeTopoInformer) GetNodeTopo() *v1alpha1.NodeResourceTopology {
 	s.nodeTopoMutex.RLock()
 	defer s.nodeTopoMutex.RUnlock()
 	return s.nodeTopology.DeepCopy()
@@ -166,7 +189,7 @@ func newNodeResourceTopologyInformer(client topologyclientset.Interface, nodeNam
 				return client.TopologyV1alpha1().NodeResourceTopologies().Watch(context.TODO(), options)
 			},
 		},
-		&topov1alpha1.NodeResourceTopology{},
+		&v1alpha1.NodeResourceTopology{},
 		time.Hour*12,
 		cache.Indexers{},
 	)
@@ -186,23 +209,33 @@ func (s *nodeTopoInformer) createNodeTopoIfNotExist() {
 		return
 	}
 
-	topology := newNodeTopo(node)
+	topo := newNodeTopo(node)
 	// TODO: add retry if create fail
-	_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Create(ctx, topology, metav1.CreateOptions{})
+	_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Create(ctx, topo, metav1.CreateOptions{})
 	if err != nil {
 		klog.Errorf("failed to create NodeResourceTopology %s, err: %v", topologyName, err)
 		return
 	}
 }
 
-func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
+// calcNodeTopo returns the calculated annotations, zone list, topology policy, error.
+func (s *nodeTopoInformer) calcNodeTopo() (*nodeTopologyStatus, error) {
 	nodeCPUInfo, cpuTopology, sharedPoolCPUs, err := s.calCPUTopology()
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate cpu topology, err: %v", err)
 	}
 
+	zoneList, err := s.calTopologyZoneList(nodeCPUInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate topology ZoneList, err: %v", err)
+	}
+
+	nodeTopoStatus := &nodeTopologyStatus{
+		Zones: zoneList,
+	}
+
 	var cpuManagerPolicy extension.KubeletCPUManagerPolicy
-	topology := kubelet.NewCPUTopology((*koordletutil.LocalCPUInfo)(nodeCPUInfo))
+	topo := kubelet.NewCPUTopology((*koordletutil.LocalCPUInfo)(nodeCPUInfo))
 	if s.config != nil && !s.config.DisableQueryKubeletConfig {
 		kubeletConfiguration, err := s.kubelet.GetKubeletConfiguration()
 		if err != nil {
@@ -217,7 +250,7 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 		}
 
 		if kubeletConfiguration.CPUManagerPolicy == string(cpumanager.PolicyStatic) {
-			reservedCPUs, err := kubelet.GetStaticCPUManagerPolicyReservedCPUs(topology, kubeletConfiguration)
+			reservedCPUs, err := kubelet.GetStaticCPUManagerPolicyReservedCPUs(topo, kubeletConfiguration)
 			if err != nil {
 				klog.Errorf("Failed to GetStaticCPUManagerPolicyReservedCPUs, err: %v", err)
 			}
@@ -227,6 +260,10 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 			//  ensure that Burstable Pods (e.g. Pods request 0C but are limited to 4C)
 			//  at least there are reservedCPUs available when nodes are allocated
 		}
+
+		// get NRT topology policy
+		nodeTopoStatus.TopologyPolicy = getTopologyPolicy(kubeletConfiguration.TopologyManagerPolicy,
+			kubeletConfiguration.TopologyManagerScope)
 	}
 
 	cpuManagerPolicyJSON, err := json.Marshal(cpuManagerPolicy)
@@ -236,7 +273,7 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 
 	// handle cpus reserved by annotation of node.
 	node := s.nodeInformer.GetNode()
-	reserved := getNodeReserved(topology, node.Annotations)
+	reserved := getNodeReserved(topo, node.Annotations)
 	reservedJson, err := json.Marshal(reserved)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal reserved resource by node.annotation, error: %v", err)
@@ -308,8 +345,9 @@ func (s *nodeTopoInformer) calcNodeTopo() (map[string]string, error) {
 	if len(systemQOSJson) != 0 {
 		annotations[extension.AnnotationNodeSystemQOSResource] = string(systemQOSJson)
 	}
+	nodeTopoStatus.Annotations = annotations
 
-	return annotations, nil
+	return nodeTopoStatus, nil
 }
 
 // removeNodeReservedCPUs filter out cpus that reserved by annotation of node.
@@ -448,13 +486,16 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 	klog.Info("start to report node topology")
 	// do not CREATE if reporting is disabled,
 	// but update the node topo object internally
-	if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+	isReportEnabled := features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport)
+
+	// TODO: merge the create and update
+	if isReportEnabled {
 		s.createNodeTopoIfNotExist()
 	} else {
 		klog.V(5).Infof("feature %v not enabled, node topo will not be reported", features.NodeTopologyReport)
 	}
 
-	nodeTopoAnnotations, err := s.calcNodeTopo()
+	nodeTopoResult, err := s.calcNodeTopo()
 	if err != nil {
 		klog.Errorf("failed to calculate node topology, err: %v", err)
 		return
@@ -463,29 +504,25 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 	node := s.nodeInformer.GetNode()
 	err = util.RetryOnConflictOrTooManyRequests(func() error {
 		var nodeResourceTopology *v1alpha1.NodeResourceTopology
-		if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+		if isReportEnabled {
 			nodeResourceTopology, err = s.nodeResourceTopologyLister.Get(node.Name)
 			if err != nil {
 				klog.Errorf("failed to get %s nodeTopo: %v", node.Name, err)
 				return err
 			}
+			nodeResourceTopology = nodeResourceTopology.DeepCopy() // avoid overwrite the cache
 		} else {
 			nodeResourceTopology = newNodeTopo(node)
 		}
 
-		// set fields
-		if nodeResourceTopology.Annotations == nil {
-			nodeResourceTopology.Annotations = make(map[string]string)
-		}
-		for k, v := range nodeTopoAnnotations {
-			nodeResourceTopology.Annotations[k] = v
-		}
+		// update fields
+		nodeTopoResult.updateNRT(nodeResourceTopology)
 
 		if isSyncNeeded(s.nodeTopology, nodeResourceTopology, node.Name) {
 			// do UPDATE
 			s.updateNodeTopo(nodeResourceTopology)
 
-			if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
+			if isReportEnabled {
 				_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
 				if err != nil {
 					klog.Errorf("failed to report topology of node %s, err: %v", node.Name, err)
@@ -521,7 +558,7 @@ func isEqualTopo(OldTopo map[string]string, NewTopo map[string]string) bool {
 		OldData interface{}
 		NewData interface{}
 	)
-	keyslice := []string{
+	keys := []string{
 		extension.AnnotationKubeletCPUManagerPolicy,
 		extension.AnnotationNodeCPUSharedPools,
 		extension.AnnotationNodeCPUTopology,
@@ -530,7 +567,7 @@ func isEqualTopo(OldTopo map[string]string, NewTopo map[string]string) bool {
 		extension.AnnotationNodeSystemQOSResource,
 	}
 
-	for _, key := range keyslice {
+	for _, key := range keys {
 		oldValue, oldExist := OldTopo[key]
 		newValue, newExist := NewTopo[key]
 		if !oldExist && !newExist {
@@ -610,7 +647,7 @@ func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.
 func (s *nodeTopoInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extension.CPUTopology, map[int32]*extension.CPUInfo, error) {
 	nodeCPUInfoRaw, exist := s.metricCache.Get(metriccache.NodeCPUInfoKey)
 	if !exist {
-		klog.Warning("failed to get node cpu info : not exist")
+		klog.Warning("failed to get node cpu info, err: not exist")
 		return nil, nil, nil, rawerrors.New("node cpu info not exist")
 	}
 	nodeCPUInfo, ok := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
@@ -633,6 +670,62 @@ func (s *nodeTopoInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extensio
 		return cpuTopology.Detail[i].ID < cpuTopology.Detail[j].ID
 	})
 	return nodeCPUInfo, cpuTopology, cpus, nil
+}
+
+func (s *nodeTopoInformer) calTopologyZoneList(nodeCPUInfo *metriccache.NodeCPUInfo) (v1alpha1.ZoneList, error) {
+	nodeNUMAInfoRaw, exist := s.metricCache.Get(metriccache.NodeNUMAInfoKey)
+	if !exist {
+		klog.Warning("failed to get node NUMA info, err: not exist")
+		return nil, fmt.Errorf("node cpu info not exist")
+	}
+	nodeNUMAInfo, ok := nodeNUMAInfoRaw.(*koordletutil.NodeNUMAInfo)
+	if !ok {
+		klog.Fatalf("type error, expect %T， but got %T", koordletutil.NodeNUMAInfo{}, nodeNUMAInfoRaw)
+	}
+	nodeNum := len(nodeNUMAInfo.NUMAInfos)
+
+	if nodeNumFromCPUInfo := len(nodeCPUInfo.TotalInfo.NodeToCPU); nodeNumFromCPUInfo != nodeNum {
+		klog.Warningf("failed to align cpu info with NUMA info, err: node number unmatched, cpu %v, NUMA %v",
+			nodeNumFromCPUInfo, nodeNum)
+		return nil, fmt.Errorf("NUMA node number not matched")
+	}
+
+	zoneList := make(v1alpha1.ZoneList, nodeNum)
+	for i := range zoneList {
+		zone := zoneList[i]
+		zone.Type = NodeZoneType
+		zone.Name = makeNodeZoneName(i)
+
+		var cpuQuant resource.Quantity
+		cpuInfos, ok := nodeCPUInfo.TotalInfo.NodeToCPU[int32(i)]
+		if ok {
+			cpuQuant = *resource.NewQuantity(int64(len(cpuInfos)), resource.DecimalSI)
+		} else {
+			cpuQuant = resource.MustParse("0")
+		}
+		var memQuant resource.Quantity
+		memInfo, ok := nodeNUMAInfo.MemInfoMap[int32(i)]
+		if ok {
+			memQuant = *resource.NewQuantity(int64(memInfo.MemTotalBytes()), resource.BinarySI)
+		} else {
+			memQuant = resource.MustParse("0")
+		}
+
+		zone.Resources = v1alpha1.ResourceInfoList{
+			{
+				Name:        string(corev1.ResourceCPU),
+				Capacity:    cpuQuant,
+				Allocatable: cpuQuant,
+			},
+			{
+				Name:        string(corev1.ResourceMemory),
+				Capacity:    memQuant,
+				Allocatable: memQuant,
+			},
+		}
+	}
+
+	return zoneList, nil
 }
 
 func (s *nodeTopoInformer) updateNodeTopo(newTopo *v1alpha1.NodeResourceTopology) {
@@ -670,4 +763,41 @@ func newNodeTopo(node *corev1.Node) *v1alpha1.NodeResourceTopology {
 		TopologyPolicies: []string{string(v1alpha1.None)},
 		Zones:            v1alpha1.ZoneList{v1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 	}
+}
+
+// getTopologyPolicy gets the NRT topology policy with the kubelet topology manager policy and scope.
+func getTopologyPolicy(topologyManagerPolicy string, topologyManagerScope string) v1alpha1.TopologyManagerPolicy {
+	if len(topologyManagerPolicy) <= 0 {
+		return v1alpha1.None
+	}
+
+	if topologyManagerScope == kubeletconfiginternal.ContainerTopologyManagerScope {
+		switch topologyManagerPolicy {
+		case kubeletconfiginternal.SingleNumaNodeTopologyManagerPolicy:
+			return v1alpha1.SingleNUMANodeContainerLevel
+		case kubeletconfiginternal.RestrictedTopologyManagerPolicy:
+			return v1alpha1.RestrictedContainerLevel
+		case kubeletconfiginternal.BestEffortTopologyManagerPolicy:
+			return v1alpha1.BestEffortContainerLevel
+		case kubeletconfiginternal.NoneTopologyManagerPolicy:
+			return v1alpha1.None
+		}
+	} else if topologyManagerScope == kubeletconfiginternal.PodTopologyManagerScope {
+		switch topologyManagerPolicy {
+		case kubeletconfiginternal.SingleNumaNodeTopologyManagerPolicy:
+			return v1alpha1.SingleNUMANodePodLevel
+		case kubeletconfiginternal.RestrictedTopologyManagerPolicy:
+			return v1alpha1.RestrictedPodLevel
+		case kubeletconfiginternal.BestEffortTopologyManagerPolicy:
+			return v1alpha1.BestEffortPodLevel
+		case kubeletconfiginternal.NoneTopologyManagerPolicy:
+			return v1alpha1.None
+		}
+	}
+
+	return v1alpha1.None
+}
+
+func makeNodeZoneName(nodeID int) string {
+	return fmt.Sprintf("node-%d", nodeID)
 }

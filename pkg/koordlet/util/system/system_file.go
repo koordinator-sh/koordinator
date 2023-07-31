@@ -36,6 +36,8 @@ const (
 	SysctlSubDir    = "sys"
 
 	KernelSchedGroupIdentityEnable = "kernel/sched_group_identity_enabled"
+
+	SysNUMASubDir = "bus/node/devices"
 )
 
 var (
@@ -85,6 +87,14 @@ func GetProcRootDir() string {
 
 func GetSysRootDir() string {
 	return Conf.SysRootDir
+}
+
+func GetSysNUMADir() string {
+	return filepath.Join(Conf.SysRootDir, SysNUMASubDir)
+}
+
+func GetNUMAMemInfoPath(numaNodeSubDir string) string {
+	return filepath.Join(Conf.SysRootDir, SysNUMASubDir, numaNodeSubDir, ProcMemInfoName)
 }
 
 func GetProcSysFilePath(file string) string {

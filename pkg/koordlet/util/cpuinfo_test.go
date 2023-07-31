@@ -20,6 +20,8 @@ import (
 	"reflect"
 	"runtime"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_getProcessorInfos(t *testing.T) {
@@ -411,11 +413,51 @@ func Test_calculateCPUTotalInfo(t *testing.T) {
 				{CPUID: 11, CoreID: 5, SocketID: 0, NodeID: 0},
 			}},
 			want: &CPUTotalInfo{
-				NumberCPUs:    6,
-				NumberCores:   3,
-				NumberSockets: 1,
-				NumberNodes:   1,
-				NumberL3s:     1,
+				NumberCPUs: 6,
+				CoreToCPU: map[int32][]ProcessorInfo{
+					3: {
+						{CPUID: 6, CoreID: 3, SocketID: 0, NodeID: 0},
+						{CPUID: 7, CoreID: 3, SocketID: 0, NodeID: 0},
+					},
+					4: {
+						{CPUID: 8, CoreID: 4, SocketID: 0, NodeID: 0},
+						{CPUID: 9, CoreID: 4, SocketID: 0, NodeID: 0},
+					},
+					5: {
+						{CPUID: 10, CoreID: 5, SocketID: 0, NodeID: 0},
+						{CPUID: 11, CoreID: 5, SocketID: 0, NodeID: 0},
+					},
+				},
+				NodeToCPU: map[int32][]ProcessorInfo{
+					0: {
+						{CPUID: 6, CoreID: 3, SocketID: 0, NodeID: 0},
+						{CPUID: 7, CoreID: 3, SocketID: 0, NodeID: 0},
+						{CPUID: 8, CoreID: 4, SocketID: 0, NodeID: 0},
+						{CPUID: 9, CoreID: 4, SocketID: 0, NodeID: 0},
+						{CPUID: 10, CoreID: 5, SocketID: 0, NodeID: 0},
+						{CPUID: 11, CoreID: 5, SocketID: 0, NodeID: 0},
+					},
+				},
+				SocketToCPU: map[int32][]ProcessorInfo{
+					0: {
+						{CPUID: 6, CoreID: 3, SocketID: 0, NodeID: 0},
+						{CPUID: 7, CoreID: 3, SocketID: 0, NodeID: 0},
+						{CPUID: 8, CoreID: 4, SocketID: 0, NodeID: 0},
+						{CPUID: 9, CoreID: 4, SocketID: 0, NodeID: 0},
+						{CPUID: 10, CoreID: 5, SocketID: 0, NodeID: 0},
+						{CPUID: 11, CoreID: 5, SocketID: 0, NodeID: 0},
+					},
+				},
+				L3ToCPU: map[int32][]ProcessorInfo{
+					0: {
+						{CPUID: 6, CoreID: 3, SocketID: 0, NodeID: 0},
+						{CPUID: 7, CoreID: 3, SocketID: 0, NodeID: 0},
+						{CPUID: 8, CoreID: 4, SocketID: 0, NodeID: 0},
+						{CPUID: 9, CoreID: 4, SocketID: 0, NodeID: 0},
+						{CPUID: 10, CoreID: 5, SocketID: 0, NodeID: 0},
+						{CPUID: 11, CoreID: 5, SocketID: 0, NodeID: 0},
+					},
+				},
 			},
 		},
 		{
@@ -431,11 +473,61 @@ func Test_calculateCPUTotalInfo(t *testing.T) {
 				{CPUID: 7, CoreID: 7, SocketID: 3, NodeID: 1},
 			}},
 			want: &CPUTotalInfo{
-				NumberCPUs:    8,
-				NumberCores:   8,
-				NumberSockets: 4,
-				NumberNodes:   2,
-				NumberL3s:     1,
+				NumberCPUs: 8,
+				CoreToCPU: map[int32][]ProcessorInfo{
+					0: {{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0}},
+					1: {{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0}},
+					2: {{CPUID: 2, CoreID: 2, SocketID: 1, NodeID: 0}},
+					3: {{CPUID: 3, CoreID: 3, SocketID: 1, NodeID: 0}},
+					4: {{CPUID: 4, CoreID: 4, SocketID: 2, NodeID: 1}},
+					5: {{CPUID: 5, CoreID: 5, SocketID: 2, NodeID: 1}},
+					6: {{CPUID: 6, CoreID: 6, SocketID: 3, NodeID: 1}},
+					7: {{CPUID: 7, CoreID: 7, SocketID: 3, NodeID: 1}},
+				},
+				NodeToCPU: map[int32][]ProcessorInfo{
+					0: {
+						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+						{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0},
+						{CPUID: 2, CoreID: 2, SocketID: 1, NodeID: 0},
+						{CPUID: 3, CoreID: 3, SocketID: 1, NodeID: 0},
+					},
+					1: {
+						{CPUID: 4, CoreID: 4, SocketID: 2, NodeID: 1},
+						{CPUID: 5, CoreID: 5, SocketID: 2, NodeID: 1},
+						{CPUID: 6, CoreID: 6, SocketID: 3, NodeID: 1},
+						{CPUID: 7, CoreID: 7, SocketID: 3, NodeID: 1},
+					},
+				},
+				SocketToCPU: map[int32][]ProcessorInfo{
+					0: {
+						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+						{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0},
+					},
+					1: {
+						{CPUID: 2, CoreID: 2, SocketID: 1, NodeID: 0},
+						{CPUID: 3, CoreID: 3, SocketID: 1, NodeID: 0},
+					},
+					2: {
+						{CPUID: 4, CoreID: 4, SocketID: 2, NodeID: 1},
+						{CPUID: 5, CoreID: 5, SocketID: 2, NodeID: 1},
+					},
+					3: {
+						{CPUID: 6, CoreID: 6, SocketID: 3, NodeID: 1},
+						{CPUID: 7, CoreID: 7, SocketID: 3, NodeID: 1},
+					},
+				},
+				L3ToCPU: map[int32][]ProcessorInfo{
+					0: {
+						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+						{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0},
+						{CPUID: 2, CoreID: 2, SocketID: 1, NodeID: 0},
+						{CPUID: 3, CoreID: 3, SocketID: 1, NodeID: 0},
+						{CPUID: 4, CoreID: 4, SocketID: 2, NodeID: 1},
+						{CPUID: 5, CoreID: 5, SocketID: 2, NodeID: 1},
+						{CPUID: 6, CoreID: 6, SocketID: 3, NodeID: 1},
+						{CPUID: 7, CoreID: 7, SocketID: 3, NodeID: 1},
+					},
+				},
 			},
 		},
 		{
@@ -443,28 +535,74 @@ func Test_calculateCPUTotalInfo(t *testing.T) {
 			args: args{processorInfos: []ProcessorInfo{
 				{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0, L3: 0},
 				{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0, L3: 0},
-				{CPUID: 2, CoreID: 2, SocketID: 1, NodeID: 0, L3: 0},
-				{CPUID: 3, CoreID: 3, SocketID: 1, NodeID: 0, L3: 0},
-				{CPUID: 4, CoreID: 4, SocketID: 2, NodeID: 1, L3: 1},
-				{CPUID: 5, CoreID: 5, SocketID: 2, NodeID: 1, L3: 1},
-				{CPUID: 6, CoreID: 6, SocketID: 3, NodeID: 1, L3: 1},
-				{CPUID: 7, CoreID: 7, SocketID: 3, NodeID: 1, L3: 1},
+				{CPUID: 2, CoreID: 2, SocketID: 0, NodeID: 0, L3: 0},
+				{CPUID: 3, CoreID: 3, SocketID: 0, NodeID: 0, L3: 0},
+				{CPUID: 4, CoreID: 4, SocketID: 1, NodeID: 1, L3: 1},
+				{CPUID: 5, CoreID: 5, SocketID: 1, NodeID: 1, L3: 1},
+				{CPUID: 6, CoreID: 6, SocketID: 1, NodeID: 1, L3: 1},
+				{CPUID: 7, CoreID: 7, SocketID: 1, NodeID: 1, L3: 1},
 			}},
 			want: &CPUTotalInfo{
-				NumberCPUs:    8,
-				NumberCores:   8,
-				NumberSockets: 4,
-				NumberNodes:   2,
-				NumberL3s:     2,
+				NumberCPUs: 8,
+				CoreToCPU: map[int32][]ProcessorInfo{
+					0: {{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0, L3: 0}},
+					1: {{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0, L3: 0}},
+					2: {{CPUID: 2, CoreID: 2, SocketID: 0, NodeID: 0, L3: 0}},
+					3: {{CPUID: 3, CoreID: 3, SocketID: 0, NodeID: 0, L3: 0}},
+					4: {{CPUID: 4, CoreID: 4, SocketID: 1, NodeID: 1, L3: 1}},
+					5: {{CPUID: 5, CoreID: 5, SocketID: 1, NodeID: 1, L3: 1}},
+					6: {{CPUID: 6, CoreID: 6, SocketID: 1, NodeID: 1, L3: 1}},
+					7: {{CPUID: 7, CoreID: 7, SocketID: 1, NodeID: 1, L3: 1}},
+				},
+				NodeToCPU: map[int32][]ProcessorInfo{
+					0: {
+						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0, L3: 0},
+						{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0, L3: 0},
+						{CPUID: 2, CoreID: 2, SocketID: 0, NodeID: 0, L3: 0},
+						{CPUID: 3, CoreID: 3, SocketID: 0, NodeID: 0, L3: 0},
+					},
+					1: {
+						{CPUID: 4, CoreID: 4, SocketID: 1, NodeID: 1, L3: 1},
+						{CPUID: 5, CoreID: 5, SocketID: 1, NodeID: 1, L3: 1},
+						{CPUID: 6, CoreID: 6, SocketID: 1, NodeID: 1, L3: 1},
+						{CPUID: 7, CoreID: 7, SocketID: 1, NodeID: 1, L3: 1},
+					},
+				},
+				SocketToCPU: map[int32][]ProcessorInfo{
+					0: {
+						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0, L3: 0},
+						{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0, L3: 0},
+						{CPUID: 2, CoreID: 2, SocketID: 0, NodeID: 0, L3: 0},
+						{CPUID: 3, CoreID: 3, SocketID: 0, NodeID: 0, L3: 0},
+					},
+					1: {
+						{CPUID: 4, CoreID: 4, SocketID: 1, NodeID: 1, L3: 1},
+						{CPUID: 5, CoreID: 5, SocketID: 1, NodeID: 1, L3: 1},
+						{CPUID: 6, CoreID: 6, SocketID: 1, NodeID: 1, L3: 1},
+						{CPUID: 7, CoreID: 7, SocketID: 1, NodeID: 1, L3: 1},
+					},
+				},
+				L3ToCPU: map[int32][]ProcessorInfo{
+					0: {
+						{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0, L3: 0},
+						{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0, L3: 0},
+						{CPUID: 2, CoreID: 2, SocketID: 0, NodeID: 0, L3: 0},
+						{CPUID: 3, CoreID: 3, SocketID: 0, NodeID: 0, L3: 0},
+					},
+					1: {
+						{CPUID: 4, CoreID: 4, SocketID: 1, NodeID: 1, L3: 1},
+						{CPUID: 5, CoreID: 5, SocketID: 1, NodeID: 1, L3: 1},
+						{CPUID: 6, CoreID: 6, SocketID: 1, NodeID: 1, L3: 1},
+						{CPUID: 7, CoreID: 7, SocketID: 1, NodeID: 1, L3: 1},
+					},
+				},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := calculateCPUTotalInfo(tt.args.processorInfos)
-			if !reflect.DeepEqual(tt.want, got) {
-				t.Errorf("calculateCPUTotalInfo want %v but got %v", tt.want, got)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

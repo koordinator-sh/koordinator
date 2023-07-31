@@ -17,14 +17,20 @@ limitations under the License.
 package util
 
 import (
+	"fmt"
 	"os"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
+
+	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
+// MemInfo is the content of system /proc/meminfo.
+// NOTE: the unit of each field is KiB.
 type MemInfo struct {
 	MemTotal          uint64 `json:"mem_total"`
 	MemFree           uint64 `json:"mem_free"`
@@ -72,22 +78,44 @@ type MemInfo struct {
 	DirectMap1G       uint64 `json:"direct_map_1G"`
 }
 
-func readMemInfo(path string) (*MemInfo, error) {
-	data, err := os.ReadFile(path)
+// MemTotalBytes returns the mem info's total bytes.
+func (i *MemInfo) MemTotalBytes() uint64 {
+	return i.MemTotal * 1024
+}
 
+// MemUsageBytes returns the mem info's usage bytes.
+func (i *MemInfo) MemUsageBytes() uint64 {
+	// total - available
+	return (i.MemTotal - i.MemAvailable) * 1024
+}
+
+// readMemInfo reads and parses the meminfo from the given file.
+// If isNUMA=false, it parses each line without a prefix like "Node 0". Otherwise, it parses each line with the NUMA
+// node prefix like "Node 0".
+func readMemInfo(path string, isNUMA bool) (*MemInfo, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
-	lines := strings.Split(string(data), "\n")
-
+	info := MemInfo{}
 	// Maps a meminfo metric to its value (i.e. MemTotal --> 100000)
 	statMap := make(map[string]uint64)
-
-	var info = MemInfo{}
-
+	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
-		fields := strings.SplitN(line, ":", 2)
+		var fields []string
+
+		// trim the NUMA prefix:
+		// e.g. `Node 1 MemTotal:       1048576 kB` -> `MemTotal:       1048576 kB`
+		if isNUMA {
+			fields = strings.SplitN(line, " ", 3)
+			if len(fields) < 3 {
+				continue
+			}
+			line = fields[2]
+		}
+
+		fields = strings.SplitN(line, ":", 2)
 		if len(fields) < 2 {
 			continue
 		}
@@ -114,13 +142,84 @@ func readMemInfo(path string) (*MemInfo, error) {
 	return &info, nil
 }
 
-// GetMemInfoUsageKB returns the node's memory usage quantity (kB)
-func GetMemInfoUsageKB() (int64, error) {
-	meminfoPath := system.GetProcFilePath(system.ProcMemInfoName)
-	memInfo, err := readMemInfo(meminfoPath)
+func GetMemInfo() (*MemInfo, error) {
+	memInfoPath := system.GetProcFilePath(system.ProcMemInfoName)
+	memInfo, err := readMemInfo(memInfoPath, false)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	usage := int64(memInfo.MemTotal - memInfo.MemAvailable)
-	return usage, nil
+	return memInfo, nil
+}
+
+type NUMAInfo struct {
+	NUMANodeID int32    `json:"numaNodeID,omitempty"`
+	MemInfo    *MemInfo `json:"memInfo,omitempty"`
+}
+
+// NodeNUMAInfo represents the node NUMA information.
+// Currently, it just contains the meminfo for each NUMA node.
+type NodeNUMAInfo struct {
+	NUMAInfos  []NUMAInfo         `json:"numaInfos,omitempty"`
+	MemInfoMap map[int32]*MemInfo `json:"memInfoMap,omitempty"` // NUMANodeID -> MemInfo
+}
+
+// GetNodeNUMAInfo gets the node NUMA information with the pre-configured sysfs path.
+func GetNodeNUMAInfo() (*NodeNUMAInfo, error) {
+	numaNodeParentDir := system.GetSysNUMADir()
+	nodeDirs, err := os.ReadDir(numaNodeParentDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read NUMA dir, err: %w", err)
+	}
+
+	result := &NodeNUMAInfo{
+		MemInfoMap: map[int32]*MemInfo{},
+	}
+	maxNodeID := int32(-1)
+	for _, n := range nodeDirs {
+		dirName := n.Name() // assert string pattern `nodeX`
+		if len(dirName) < 4 || dirName[:4] != "node" {
+			klog.V(4).Infof("failed to get node NUMA info, err: invalid dir name %s", dirName)
+			continue
+		}
+
+		nodeIDRaw, err := strconv.ParseInt(dirName[4:], 10, 32)
+		if err != nil {
+			klog.V(4).Infof("failed to parse NUMA ID, err: invalid dir name %s, err %v", dirName, err)
+			continue
+		}
+		nodeID := int32(nodeIDRaw)
+
+		numaMemInfoPath := system.GetNUMAMemInfoPath(dirName)
+		memInfo, err := readMemInfo(numaMemInfoPath, true)
+		if err != nil {
+			klog.V(4).Infof("failed to read NUMA info, dir %s, err: %v", dirName, err)
+			continue
+		}
+
+		numaInfo := NUMAInfo{
+			NUMANodeID: nodeID,
+			MemInfo:    memInfo,
+		}
+		result.NUMAInfos = append(result.NUMAInfos, numaInfo)
+		result.MemInfoMap[nodeID] = memInfo
+		if nodeID > maxNodeID {
+			maxNodeID = nodeID
+		}
+	}
+
+	if len(nodeDirs) != len(result.NUMAInfos) {
+		return nil, fmt.Errorf("invalid number of NUMA meminfo, dir %v, parsed %v",
+			len(nodeDirs), len(result.NUMAInfos))
+	}
+	if len(result.NUMAInfos) != int(maxNodeID+1) {
+		return nil, fmt.Errorf("unexpected number of NUMA node, max ID %v, parsed %v",
+			maxNodeID, len(result.NUMAInfos))
+	}
+
+	// sort NUMA infos by the order of node id
+	sort.Slice(result.NUMAInfos, func(i, j int) bool {
+		return result.NUMAInfos[i].NUMANodeID < result.NUMAInfos[j].NUMANodeID
+	})
+
+	return result, nil
 }
