@@ -2686,7 +2686,7 @@ func TestAllowAnnotatedPodMigrationJobPassFilter(t *testing.T) {
 	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
 
 	result, err := reconciler.preparePendingJob(context.TODO(), job)
-	assert.True(t, enterRetryable)
+	assert.False(t, enterRetryable)
 	assert.False(t, enterNonRetryable)
 	assert.Nil(t, err)
 	assert.Equal(t, reconcile.Result{}, result)
