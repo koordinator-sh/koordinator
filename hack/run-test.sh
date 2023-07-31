@@ -30,10 +30,10 @@ function run_test() {
     pattern=$1
     if [[ $pattern == *.go ]]; then
         pattern=`basename $pattern`
-        pkgs=`find ./pkg -name "$pattern" | xargs -i dirname {} | tr -s '\n' ' '`
+        pkgs=`find ./pkg -name "$pattern" | xargs -i dirname {}`
         while read -r line
         do
-            pkg=${line#".//"}
+            pkg=${line#"./"}
             echo go test -timeout 30s "github.com/koordinator-sh/koordinator/$pkg" -v
             go test -timeout 30s "github.com/koordinator-sh/koordinator/$pkg" -v
         done <<< "$pkgs"
@@ -41,7 +41,7 @@ function run_test() {
         pkgs=`grep "$pattern" -r ./pkg | cut -d: -f1 | grep -E ".go$" | xargs -i dirname {} | sort -u`
         while read -r line
         do
-            pkg=${line#".//"}
+            pkg=${line#"./"}
             echo go test -timeout 30s "github.com/koordinator-sh/koordinator/$pkg" -run ^$pattern$ -v
             go test -timeout 30s "github.com/koordinator-sh/koordinator/$pkg" -run ^$pattern$ -v
         done <<< "$pkgs"
