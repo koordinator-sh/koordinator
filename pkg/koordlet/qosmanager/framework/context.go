@@ -79,7 +79,7 @@ func (r *Evictor) evictPodIfNotEvicted(evictPod *corev1.Pod, node *corev1.Node, 
 }
 
 func (r *Evictor) evictPod(evictPod *corev1.Pod, reason string, message string) bool {
-	podEvictMessage := fmt.Sprintf("evict Pod:%s, reason: %s, message: %v", evictPod.Name, reason, message)
+	podEvictMessage := fmt.Sprintf("evict Pod:%s/%s, reason: %s, message: %v", evictPod.Namespace, evictPod.Name, reason, message)
 	_ = audit.V(0).Pod(evictPod.Namespace, evictPod.Name).Reason(reason).Message(message).Do()
 
 	if err := util.EvictPodByVersion(context.TODO(), r.kubeClient, evictPod.Namespace, evictPod.Name, metav1.DeleteOptions{
@@ -90,7 +90,8 @@ func (r *Evictor) evictPod(evictPod *corev1.Pod, reason string, message string) 
 		klog.Infof("evict pod %v/%v success, reason: %v", evictPod.Namespace, evictPod.Name, reason)
 		return true
 	} else {
-		r.eventRecorder.Eventf(evictPod, corev1.EventTypeWarning, helpers.EvictPodFail, podEvictMessage)
+		errorMsg := fmt.Sprintf("%v, error %v", podEvictMessage, err)
+		r.eventRecorder.Eventf(evictPod, corev1.EventTypeWarning, helpers.EvictPodFail, errorMsg)
 		klog.Errorf("evict pod %v/%v failed, reason: %v, error: %v", evictPod.Namespace, evictPod.Name, reason, err)
 		return false
 	}
