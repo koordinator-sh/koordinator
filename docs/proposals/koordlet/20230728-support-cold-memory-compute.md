@@ -26,38 +26,43 @@ last-updated: 2023-07-28
     - [Collect idle memory info and insert memory with hot page](#collect-idle-memory-info-and-insert-memory-with-hot-page)
 	- [Report memory usage including hot page](#report-memory-usage-including-hot-page)
 	- [Define cold memory API](#define-cold-memory-api)
+  - [Alternatives](#alternatives)
 
 ## Glossary
 
+**kidled**
+
+Kided, an open source cold memory collection solution, identifies the hot and cold conditions of nodes, pod and container memory in the cluster. The link introduces kildled in detail.
+
+https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst
+
 **cold page**
 
-A cold page is a page that keeps idle for a long time in the page cache.
+The part of memory that is allocated to application but probably unused for a while is called the "cold" memory. And the part of that in page cache is called cold page.
 
 **hot page**
 
-A cold page is a page that is often used in the page cache.
-
-**kidled**
-
-Kided, an open source cold memory collection solution, identifies the hot and cold conditions of nodes, pod and container memory in the cluster. 
+Relatively, the memory which may be reclaimable but would be reallocated shortly after is the "hot" memory. And the part of that in page cache is called hot page. 
 
 ## Summary
 
-To support more fine-grained memory overselling, incorporate cold memory compute into memory usage in koordinator.
+Implement the cold page info collecting and reporting. Based on that, we can incorporate cold memory compute into memory usage to support more fine-grained memory overcommitment in koordinator.
 
 ## Motivation
 
-Currently, the memory usage of nodes and pods collected by koordlet does not contain page cache. It is too aggressive. There are many hot pages that should be counted as memory usage in page cache .That will also help identify cold page and more fine-grained oversell memory. This proposal focuses on cold memory collection and report. 
+In general colocation scenarios, the resources that the high-priority (HP) applications have requested but not used are reclaimable to the low-priority (LP) applications to allocate. Resource reclaiming helps enhance the utilization of machines while increasing the risks of contentions. For memory resources, there are proportions of memory that are reusable on different levels. The free memory is allocatable to any process, while the page cache is potentially reusable after it is reclaimed by the system and no longer yields again. But  kernel does not proactively reclaim the page cache because for the better performance of the system, the kernel do not keep page cache idle and allocate the page cache to application as cache. To construct a more reliable and fine-grained memory overcommitment, the free and cold memory of the HP is preferred to reclaim to LP first. And if not required, the hot memory of HP should not be overcommitted, or the performance of HP can be affected. 
+
+In the Koordinator, we want to improve memory overcommitment by building the cold page reclaim ability, which can report the quantity of cold memory on the nodes and help assure that resource reclaiming like batch-memory are sound and efficient for the colocated applications.
+
+https://github.com/koordinator-sh/koordinator/issues/1178
 
 ### Goals
 
-- Define a new util struct named idleinfo  to collect idle memory info.
-- Informer report memory usage of including hot page and crd nodemetric will update status.
-- Collect cold and hot condition  in node, pod and contain and insert metric in metriccache.
+Define the API for the cold pages. Implement the cold page info collecting and reporting.
 
 ### Non-Goals/Future Work
 
-- Cold memory supports  scheduling optimization in koord-manager or koord-scheduler.
+Cold memory supports  scheduling optimization in koord-manager or koord-scheduler.
 
 ## Proposal
 
@@ -122,101 +127,29 @@ Define a function named GetIdleMemoryTotalKB(). It is uesd to return size of tot
 
 ```go
 func GetIdleMemoryTotalKB(idleFileRelativePath string) (uint64, error) {
-	idleinfoPath := GetIdleInfoFilePath(idleFileRelativePath)
-	idleInfo, err := readIdleInfo(idleinfoPath)
-	if err != nil {
-		return 0, err
-	}
-	sum := func(nums ...[]uint64) uint64 {
-		var total uint64
-		for _, v := range nums {
-			for _, num := range v {
-				total += num
-			}
-		}
-		return total
-	}
-	return sum(idleInfo.Csei, idleInfo.Dsei, idleInfo.Cfei, idleInfo.Dfei, idleInfo.Csui, idleInfo.Dsui, idleInfo.Cfui, idleInfo.Dfui, idleInfo.Csea, idleInfo.Dsea, idleInfo.Cfea, idleInfo.Dfea, idleInfo.Csua, idleInfo.Dsua, idleInfo.Cfua, idleInfo.Dfua, idleInfo.Slab), nil
+	return sum, nil
 }
 ```
 
-Add two functions  in pkg/koordlet/util/meminfo.go  to get node's MemTotal and MemFree. The values are used to compute Mem usage with hot page.
+Define two functions  in pkg/koordlet/util/meminfo.go  to get node's MemTotal and MemFree. The values are used to compute Mem usage with hot page.
 
 ```go
 // GetMemTotalKB returns the node's memory total quantity (kB)
 func GetMemTotalKB() (int64, error) {
-	meminfoPath := system.GetProcFilePath(system.ProcMemInfoName)
-	memInfo, err := readMemInfo(meminfoPath)
-	if err != nil {
-		return 0, err
-	}
-	usage := int64(memInfo.MemTotal)
 	return usage, nil
 }
 
 // GetMemFreeKB returns the node's memory free quantity (kB)
 func GetMemFreeKB() (int64, error) {
-	meminfoPath := system.GetProcFilePath(system.ProcMemInfoName)
-	memInfo, err := readMemInfo(meminfoPath)
-	if err != nil {
-		return 0, err
-	}
-	usage := int64(memInfo.MemFree)
 	return usage, nil
 }
 ```
 
-Add field named IdleMemoryGate. It represent whether support collect idle info.
-
-```go
-type nodeResourceCollector struct {
-	collectInterval time.Duration
-	//add
-	IdleMemoryGate  bool
-	started         *atomic.Bool
-	appendableDB    metriccache.Appendable
-	metricDB        metriccache.MetricCache
-
-	lastNodeCPUStat *framework.CPUStat
-
-	deviceCollectors map[string]framework.DeviceCollector
-}
-```
-
-Add a function named CollectNodeMemoryWithHotPageUsage in node_resource_collector. go file.  Compute node memory usage with hot page and generate metric. collectNodeResUsed() function will call that.
+Define a function named CollectNodeMemoryWithHotPageUsage().  Compute node memory usage with hot page and generate metric. collectNodeResUsed() function will call that and insert memoryWithHotPage metric.
 
 ```go
 func (n *nodeResourceCollector) CollectNodeMemoryWithHotPageUsage(collectTime time.Time) (metriccache.MetricSample, error) {
-	// get total node idle memory unit byte
-	idleMemTotalBytes, err2 := koordletutil.GetIdleMemoryTotalKB("/memory/")
-	if err2 != nil {
-		klog.Warningf("failed to collect node idle memory,err", err2)
-	}
-	idlememTotalValue := float64(idleMemTotalBytes)
-	klog.V(4).Infof("collect idle memory value:", idlememTotalValue)
-	//memWithHotPageUsageValue=total-free-idlememTotalValue
-	memTotalKB, _ := koordletutil.GetMemTotalKB()
-	memFreeKB, _ := koordletutil.GetMemFreeKB()
-	memTotalValue := 1024 * float64(memTotalKB)
-	memFreeValue := 1024 * float64(memFreeKB)
-	memWithHotPageUsageValue := memTotalValue - memFreeValue - idlememTotalValue
-	nodeMemorWithHotPageyUsageMetric, err := metriccache.NodeMetricMemoryWithHotPageUsageMetric.GenerateSample(nil, time.Now(), memWithHotPageUsageValue)
-	if err != nil {
-		klog.Warningf("generate node idlememory metrics failed, err %v", err)
-		return nil, err
-	}
 	return nodeMemorWithHotPageyUsageMetric, nil
-}
-
-func (n *nodeResourceCollector) collectNodeResUsed() {
-    if n.IdleMemoryGate {
-		memWithHotPageUsageMetrics, err := n.CollectNodeMemoryWithHotPageUsage(collectTime)
-		if err != nil {
-			klog.Warningf("failed to collect node memory with hot page: ", err)
-			return
-		}
-		nodeMetrics = append(nodeMetrics, memWithHotPageUsageMetrics)
-	}
 }
 ```
 
@@ -228,75 +161,13 @@ The same process is executed in podresource collector to collect idle page. Do n
 
 collectNodeMetric() is used to query metirc and return CPU And MemUsed in pkg/koordlet/statesinformer/impl/states_nodemetirc.go file.
 
-I want to add hot page compute in this part. After that, collectNodeMetric will return Memused including hot page size.
-
-Add field named MemoryCollectPolicy to represent which method is used to collect memory usage. Such as usageWithHotPageCache, usageWithoutPageCache,  usageWithPageCache.
-
-```go
-// NodeMetricCollectPolicy defines the Metric collection policy
-type NodeMetricCollectPolicy struct {
-	// AggregateDurationSeconds represents the aggregation period in seconds
-	AggregateDurationSeconds *int64 `json:"aggregateDurationSeconds,omitempty"`
-	// ReportIntervalSeconds represents the report period in seconds
-	ReportIntervalSeconds *int64 `json:"reportIntervalSeconds,omitempty"`
-	// NodeAggregatePolicy represents the target grain of node aggregated usage
-	NodeAggregatePolicy *AggregatePolicy `json:"nodeAggregatePolicy,omitempty"`
-	//MemoryCollectPolicy to represent which method is used to collect memory usage. Such as usageWithHotPageCache, usageWithoutPageCache,  usageWithPageCache.
-	MemoryCollectPolicy string `json:"memoryCollectPolicy,omitempty"`
-}
-```
-
-Add code in collectNodeMetric() function. According to nodeMetric.Spec.CollectPolicy.MemoryCollectPolicy, choose memory usage.
+We can report memory usage including hot page in collectNodeMetric().
 
 
 ```go
 func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam) (corev1.ResourceList, time.Duration, error) {
-	rl := corev1.ResourceList{}
-	querier, err := r.metricCache.Querier(*queryparam.Start, *queryparam.End)
-	if err != nil {
-		klog.V(5).Infof("get node metric querier failed, error %v", err)
-		return rl, 0, err
-	}
-
-	cpuAggregateResult, err := doQuery(querier, metriccache.NodeCPUUsageMetric, nil)
-	if err != nil {
-		return rl, 0, err
-	}
-	cpuUsed, err := cpuAggregateResult.Value(queryparam.Aggregate)
-	if err != nil {
-		return rl, 0, err
-	}
-
-	var memUsed float64
-	//collet memory with hot page instead of memory usage without page caches
-	if r.nodeMetric.Spec.CollectPolicy.MemoryCollectPolicy == usageWithHotPageCache {
-		memWithHotPageAggregateResult, err := doQuery(querier, metriccache.NodeMetricMemoryWithHotPageUsageMetric, nil)
-		if err != nil {
-			return rl, 0, err
-		}
-		memWithHotPageUsed, err := memWithHotPageAggregateResult.Value(queryparam.Aggregate)
-		if err != nil {
-			return rl, 0, err
-		}
-		memUsed = memWithHotPageUsed
-		klog.V(4).Infof("memWithHotPageUsed value:%v", memUsed)
-	} else if r.nodeMetric.Spec.CollectPolicy.MemoryCollectPolicy == usageWithoutPageCache {
-		memAggregateResult, err := doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
-		if err != nil {
-			return rl, 0, err
-		}
-
-		memUsed, err = memAggregateResult.Value(queryparam.Aggregate)
-		if err != nil {
-			return rl, 0, err
-		}
-	} else {
-		//TODO
-	}
-
 	rl[corev1.ResourceCPU] = *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI)
 	rl[corev1.ResourceMemory] = *resource.NewQuantity(int64(memUsed), resource.BinarySI)
-
 	return rl, cpuAggregateResult.TimeRangeDuration(), nil
 }
 ```
@@ -324,3 +195,23 @@ type NodeMetricCollectPolicy struct {
 	MemoryCollectPolicy string `json:"memoryCollectPolicy,omitempty"`
 }
 ```
+## Alternatives
+
+**kidled**: an open source cold memory collection solution.
+
+https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst
+
+**kstaled**:proactively reclaiming idle memory
+
+https://lore.kernel.org/lkml/20110922161448.91a2e2b2.akpm@google.com/T/
+
+https://lwn.net/Articles/459269/
+
+**DAMON**: proactive reclamation cold pages
+
+https://lwn.net/Articles/858682/
+
+why we choose kidled? The reasons are as below.
+
+1) Anolis OS has already supported kidled. We can directly use the api and it is very simple.
+2) Kidled have a global scanner to do this job. That avoids a lot of unnecessary job. For example switch between user and kernel mode and handle share mappings.
