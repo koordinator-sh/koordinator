@@ -10,8 +10,8 @@ aliases:
     - FillZpp
 
   scheduler-approvers:
-    - buptcozy
     - eahydra
+    - buptcozy
 
   slo-controller-approvers:
     - jasonliu747
@@ -23,8 +23,8 @@ aliases:
     - zwzhang0107
 
   descheduler-approvers:
-    - FillZpp
     - eahydra
+    - FillZpp
 
   runtime-proxy-approvers:
     - honpey
