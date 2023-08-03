@@ -40,8 +40,8 @@ import (
 func NewCPUTopology(cpuInfo *koordletutil.LocalCPUInfo) *topology.CPUTopology {
 	cpuTopology := &topology.CPUTopology{
 		NumCPUs:    int(cpuInfo.TotalInfo.NumberCPUs),
-		NumCores:   int(cpuInfo.TotalInfo.NumberCores),
-		NumSockets: int(cpuInfo.TotalInfo.NumberSockets),
+		NumCores:   len(cpuInfo.TotalInfo.CoreToCPU),
+		NumSockets: len(cpuInfo.TotalInfo.SocketToCPU),
 		CPUDetails: topology.CPUDetails{},
 	}
 	for _, v := range cpuInfo.ProcessorInfos {

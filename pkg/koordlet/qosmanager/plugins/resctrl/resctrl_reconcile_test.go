@@ -1097,7 +1097,7 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
-			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
+			TotalInfo: koordletutil.CPUTotalInfo{L3ToCPU: map[int32][]koordletutil.ProcessorInfo{0: {}, 1: {}}},
 		}, true).Times(3)
 		opt := &framework.Options{
 			MetricCache: metricCache,
@@ -1134,19 +1134,19 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 		// log error for invalid l3 number
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
-			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: -1},
+			TotalInfo: koordletutil.CPUTotalInfo{},
 		}, true).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for invalid l3 cbm
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "invalid"},
-			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
+			TotalInfo: koordletutil.CPUTotalInfo{L3ToCPU: map[int32][]koordletutil.ProcessorInfo{0: {}, 1: {}}},
 		}, true).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: ""},
-			TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
+			TotalInfo: koordletutil.CPUTotalInfo{L3ToCPU: map[int32][]koordletutil.ProcessorInfo{0: {}, 1: {}}},
 		}, true).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
@@ -1313,7 +1313,7 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 	}
 	testingNodeCPUInfo := &metriccache.NodeCPUInfo{
 		BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
-		TotalInfo: koordletutil.CPUTotalInfo{NumberL3s: 2},
+		TotalInfo: koordletutil.CPUTotalInfo{L3ToCPU: map[int32][]koordletutil.ProcessorInfo{0: {}, 1: {}}},
 	}
 
 	t.Run("test not panic", func(t *testing.T) {

@@ -330,6 +330,99 @@ func Test_reportNodeTopology(t *testing.T) {
 			{CPUID: 6, CoreID: 3, NodeID: 1, SocketID: 1},
 			{CPUID: 7, CoreID: 3, NodeID: 1, SocketID: 1},
 		},
+		TotalInfo: koordletutil.CPUTotalInfo{
+			NumberCPUs: 8,
+			CoreToCPU: map[int32][]koordletutil.ProcessorInfo{
+				0: {
+					{CPUID: 0, CoreID: 0, NodeID: 0, SocketID: 0},
+					{CPUID: 1, CoreID: 0, NodeID: 0, SocketID: 0},
+				},
+				1: {
+					{CPUID: 2, CoreID: 1, NodeID: 0, SocketID: 0},
+					{CPUID: 3, CoreID: 1, NodeID: 0, SocketID: 0},
+				},
+				2: {
+					{CPUID: 4, CoreID: 2, NodeID: 1, SocketID: 1},
+					{CPUID: 5, CoreID: 2, NodeID: 1, SocketID: 1},
+				},
+				3: {
+					{CPUID: 6, CoreID: 3, NodeID: 1, SocketID: 1},
+					{CPUID: 7, CoreID: 3, NodeID: 1, SocketID: 1},
+				},
+			},
+			NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+				0: {
+					{CPUID: 0, CoreID: 0, NodeID: 0, SocketID: 0},
+					{CPUID: 1, CoreID: 0, NodeID: 0, SocketID: 0},
+					{CPUID: 2, CoreID: 1, NodeID: 0, SocketID: 0},
+					{CPUID: 3, CoreID: 1, NodeID: 0, SocketID: 0},
+				},
+				1: {
+					{CPUID: 4, CoreID: 2, NodeID: 1, SocketID: 1},
+					{CPUID: 5, CoreID: 2, NodeID: 1, SocketID: 1},
+					{CPUID: 6, CoreID: 3, NodeID: 1, SocketID: 1},
+					{CPUID: 7, CoreID: 3, NodeID: 1, SocketID: 1},
+				},
+			},
+			SocketToCPU: map[int32][]koordletutil.ProcessorInfo{
+				0: {
+					{CPUID: 0, CoreID: 0, NodeID: 0, SocketID: 0},
+					{CPUID: 1, CoreID: 0, NodeID: 0, SocketID: 0},
+					{CPUID: 2, CoreID: 1, NodeID: 0, SocketID: 0},
+					{CPUID: 3, CoreID: 1, NodeID: 0, SocketID: 0},
+				},
+				1: {
+					{CPUID: 4, CoreID: 2, NodeID: 1, SocketID: 1},
+					{CPUID: 5, CoreID: 2, NodeID: 1, SocketID: 1},
+					{CPUID: 6, CoreID: 3, NodeID: 1, SocketID: 1},
+					{CPUID: 7, CoreID: 3, NodeID: 1, SocketID: 1},
+				},
+			},
+		},
+	}
+	testMemInfo0 := &koordletutil.MemInfo{
+		MemTotal: 263432804, MemFree: 254391744, MemAvailable: 256703236,
+		Buffers: 958096, Cached: 0, SwapCached: 0,
+		Active: 2786012, Inactive: 2223752, ActiveAnon: 289488,
+		InactiveAnon: 1300, ActiveFile: 2496524, InactiveFile: 2222452,
+		Unevictable: 0, Mlocked: 0, SwapTotal: 0,
+		SwapFree: 0, Dirty: 624, Writeback: 0,
+		AnonPages: 281748, Mapped: 495936, Shmem: 2340,
+		Slab: 1097040, SReclaimable: 445164, SUnreclaim: 651876,
+		KernelStack: 20944, PageTables: 7896, NFS_Unstable: 0,
+		Bounce: 0, WritebackTmp: 0, AnonHugePages: 38912,
+		HugePages_Total: 0, HugePages_Free: 0, HugePages_Rsvd: 0,
+		HugePages_Surp: 0,
+	}
+	testMemInfo1 := &koordletutil.MemInfo{
+		MemTotal: 263432000, MemFree: 254391744, MemAvailable: 256703236,
+		Buffers: 958096, Cached: 0, SwapCached: 0,
+		Active: 2786012, Inactive: 2223752, ActiveAnon: 289488,
+		InactiveAnon: 1300, ActiveFile: 2496524, InactiveFile: 2222452,
+		Unevictable: 0, Mlocked: 0, SwapTotal: 0,
+		SwapFree: 0, Dirty: 624, Writeback: 0,
+		AnonPages: 281748, Mapped: 495936, Shmem: 2340,
+		Slab: 1097040, SReclaimable: 445164, SUnreclaim: 651876,
+		KernelStack: 20944, PageTables: 7896, NFS_Unstable: 0,
+		Bounce: 0, WritebackTmp: 0, AnonHugePages: 38912,
+		HugePages_Total: 0, HugePages_Free: 0, HugePages_Rsvd: 0,
+		HugePages_Surp: 0,
+	}
+	mockNodeNUMAInfo := &koordletutil.NodeNUMAInfo{
+		NUMAInfos: []koordletutil.NUMAInfo{
+			{
+				NUMANodeID: 0,
+				MemInfo:    testMemInfo0,
+			},
+			{
+				NUMANodeID: 1,
+				MemInfo:    testMemInfo1,
+			},
+		},
+		MemInfoMap: map[int32]*koordletutil.MemInfo{
+			0: testMemInfo0,
+			1: testMemInfo1,
+		},
 	}
 
 	mockPodMeta := map[string]*statesinformer.PodMeta{
@@ -357,6 +450,7 @@ func Test_reportNodeTopology(t *testing.T) {
 		},
 	}
 	mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&mockNodeCPUInfo, true).AnyTimes()
+	mockMetricCache.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(mockNodeNUMAInfo, true).AnyTimes()
 
 	expectedCPUSharedPool := `[{"socket":0,"node":0,"cpuset":"0-2"},{"socket":1,"node":1,"cpuset":"6-7"}]`
 	expectedCPUTopology := `{"detail":[{"id":0,"core":0,"socket":0,"node":0},{"id":1,"core":0,"socket":0,"node":0},{"id":2,"core":1,"socket":0,"node":0},{"id":3,"core":1,"socket":0,"node":0},{"id":4,"core":2,"socket":1,"node":1},{"id":5,"core":2,"socket":1,"node":1},{"id":6,"core":3,"socket":1,"node":1},{"id":7,"core":3,"socket":1,"node":1}]}`
@@ -537,16 +631,43 @@ func Test_reportNodeTopology(t *testing.T) {
 	}
 }
 
-func Test_isEqualTopo(t *testing.T) {
+func Test_isSyncNeeded(t *testing.T) {
 	type args struct {
-		oldtopo map[string]string
-		newtopo map[string]string
+		isOldEmpty bool
+		oldtopo    map[string]string
+		newtopo    map[string]string
 	}
 	tests := []struct {
 		name string
 		args args
 		want bool
 	}{
+		{
+			name: "old is nil",
+			args: args{
+				isOldEmpty: true,
+				newtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default1\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "annotation is new",
+			args: args{
+				oldtopo: nil,
+				newtopo: map[string]string{
+					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default1\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				},
+			},
+			want: true,
+		},
 		{
 			name: "same json with different map order in cpu share pool",
 			args: args{
@@ -561,7 +682,7 @@ func Test_isEqualTopo(t *testing.T) {
 					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
 				},
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "diff json on pod-cpu-allocs",
@@ -579,7 +700,7 @@ func Test_isEqualTopo(t *testing.T) {
 					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default1\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
 				},
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "some are both not exist in old and new",
@@ -595,7 +716,7 @@ func Test_isEqualTopo(t *testing.T) {
 					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
 				},
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "part are not exist in old",
@@ -612,7 +733,7 @@ func Test_isEqualTopo(t *testing.T) {
 					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
 				},
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "part are not exist in new",
@@ -629,12 +750,27 @@ func Test_isEqualTopo(t *testing.T) {
 					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
 				},
 			},
-			want: false,
+			want: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, isEqualTopo(tt.args.oldtopo, tt.args.newtopo), "isEqualTopo(%v, %v)", tt.args.oldtopo, tt.args.newtopo)
+			newNRT := &topologyv1alpha1.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: tt.args.newtopo,
+				},
+			}
+			var oldNRT *topologyv1alpha1.NodeResourceTopology
+			if !tt.args.isOldEmpty {
+				oldNRT = &topologyv1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: tt.args.oldtopo,
+					},
+				}
+			}
+
+			got := isSyncNeeded(oldNRT, newNRT, "test-node")
+			assert.Equalf(t, tt.want, got, "isSyncNeeded(%v, %v)", tt.args.oldtopo, tt.args.newtopo)
 		})
 	}
 }
@@ -855,6 +991,107 @@ func Test_removeSystemQOSCPUs(t *testing.T) {
 			if got := removeSystemQOSCPUs(tt.args.cpuSharePools, tt.args.sysQOSRes); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("removeSystemQOSCPUs() = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func Test_getTopologyPolicy(t *testing.T) {
+	type args struct {
+		topologyManagerPolicy string
+		topologyManagerScope  string
+	}
+	tests := []struct {
+		name string
+		args args
+		want topologyv1alpha1.TopologyManagerPolicy
+	}{
+		{
+			name: "get None policy by default",
+			want: topologyv1alpha1.None,
+		},
+		{
+			name: "get None policy by default 1",
+			args: args{
+				topologyManagerScope: kubeletconfiginternal.ContainerTopologyManagerScope,
+			},
+			want: topologyv1alpha1.None,
+		},
+		{
+			name: "get None policy by default 2",
+			args: args{
+				topologyManagerPolicy: kubeletconfiginternal.BestEffortTopologyManagerPolicy,
+			},
+			want: topologyv1alpha1.None,
+		},
+		{
+			name: "get container single numa policy",
+			args: args{
+				topologyManagerPolicy: kubeletconfiginternal.SingleNumaNodeTopologyManagerPolicy,
+				topologyManagerScope:  kubeletconfiginternal.ContainerTopologyManagerScope,
+			},
+			want: topologyv1alpha1.SingleNUMANodeContainerLevel,
+		},
+		{
+			name: "get container restricted policy",
+			args: args{
+				topologyManagerPolicy: kubeletconfiginternal.RestrictedTopologyManagerPolicy,
+				topologyManagerScope:  kubeletconfiginternal.ContainerTopologyManagerScope,
+			},
+			want: topologyv1alpha1.RestrictedContainerLevel,
+		},
+		{
+			name: "get container besteffort policy",
+			args: args{
+				topologyManagerPolicy: kubeletconfiginternal.BestEffortTopologyManagerPolicy,
+				topologyManagerScope:  kubeletconfiginternal.ContainerTopologyManagerScope,
+			},
+			want: topologyv1alpha1.BestEffortContainerLevel,
+		},
+		{
+			name: "get container none policy",
+			args: args{
+				topologyManagerPolicy: kubeletconfiginternal.NoneTopologyManagerPolicy,
+				topologyManagerScope:  kubeletconfiginternal.ContainerTopologyManagerScope,
+			},
+			want: topologyv1alpha1.None,
+		},
+		{
+			name: "get pod single numa policy",
+			args: args{
+				topologyManagerPolicy: kubeletconfiginternal.SingleNumaNodeTopologyManagerPolicy,
+				topologyManagerScope:  kubeletconfiginternal.PodTopologyManagerScope,
+			},
+			want: topologyv1alpha1.SingleNUMANodePodLevel,
+		},
+		{
+			name: "get pod restricted policy",
+			args: args{
+				topologyManagerPolicy: kubeletconfiginternal.RestrictedTopologyManagerPolicy,
+				topologyManagerScope:  kubeletconfiginternal.PodTopologyManagerScope,
+			},
+			want: topologyv1alpha1.RestrictedPodLevel,
+		},
+		{
+			name: "get pod besteffort policy",
+			args: args{
+				topologyManagerPolicy: kubeletconfiginternal.BestEffortTopologyManagerPolicy,
+				topologyManagerScope:  kubeletconfiginternal.PodTopologyManagerScope,
+			},
+			want: topologyv1alpha1.BestEffortPodLevel,
+		},
+		{
+			name: "get pod none policy",
+			args: args{
+				topologyManagerPolicy: kubeletconfiginternal.NoneTopologyManagerPolicy,
+				topologyManagerScope:  kubeletconfiginternal.PodTopologyManagerScope,
+			},
+			want: topologyv1alpha1.None,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getTopologyPolicy(tt.args.topologyManagerPolicy, tt.args.topologyManagerScope)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

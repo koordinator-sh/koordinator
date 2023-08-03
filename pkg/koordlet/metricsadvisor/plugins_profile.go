@@ -18,7 +18,7 @@ package metricsadvisor
 
 import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/beresource"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/nodecpuinfo"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/nodeinfo"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/noderesource"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/nodestorageinfo"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/performance"
@@ -38,7 +38,7 @@ var (
 	collectorPlugins = map[string]framework.CollectorFactory{
 		noderesource.CollectorName:    noderesource.New,
 		beresource.CollectorName:      beresource.New,
-		nodecpuinfo.CollectorName:     nodecpuinfo.New,
+		nodeinfo.CollectorName:        nodeinfo.New,
 		nodestorageinfo.CollectorName: nodestorageinfo.New,
 		podresource.CollectorName:     podresource.New,
 		podthrottled.CollectorName:    podthrottled.New,

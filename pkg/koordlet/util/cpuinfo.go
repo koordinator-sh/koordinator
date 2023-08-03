@@ -32,7 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
-const cpuCmdTimeout = 3 * time.Second
+const cpuCmdTimeout = 5 * time.Second // maybe run slowly on some platforms
 
 // CPUBasicInfo describes the cpu basic features and status
 type CPUBasicInfo struct {
@@ -62,11 +62,11 @@ type ProcessorInfo struct {
 
 // CPUTotalInfo describes the total number infos of the local cpu, e.g. the number of cores, the number of numa nodes
 type CPUTotalInfo struct {
-	NumberCPUs    int32 `json:"numberCPUs"`
-	NumberCores   int32 `json:"numberCores"`
-	NumberSockets int32 `json:"numberSockets"`
-	NumberNodes   int32 `json:"numberNodes"`
-	NumberL3s     int32 `json:"numberL3s"`
+	NumberCPUs  int32                     `json:"numberCPUs"`
+	CoreToCPU   map[int32][]ProcessorInfo `json:"coreToCPU"`
+	NodeToCPU   map[int32][]ProcessorInfo `json:"nodeToCPU"`
+	SocketToCPU map[int32][]ProcessorInfo `json:"socketToCPU"`
+	L3ToCPU     map[int32][]ProcessorInfo `json:"l3ToCPU"`
 }
 
 // LocalCPUInfo contains the cpu information collected from the node
@@ -203,23 +203,24 @@ func getProcessorInfos(lsCPUStr string) ([]ProcessorInfo, error) {
 
 func calculateCPUTotalInfo(processorInfos []ProcessorInfo) *CPUTotalInfo {
 	cpuMap := map[int32]struct{}{}
-	coreMap := map[int32]struct{}{}
-	socketMap := map[int32]struct{}{}
-	nodeMap := map[int32]struct{}{}
-	l3Map := map[int32]struct{}{}
-	for _, p := range processorInfos {
+	coreMap := map[int32][]ProcessorInfo{}
+	socketMap := map[int32][]ProcessorInfo{}
+	nodeMap := map[int32][]ProcessorInfo{}
+	l3Map := map[int32][]ProcessorInfo{}
+	for i := range processorInfos {
+		p := processorInfos[i]
 		cpuMap[p.CPUID] = struct{}{}
-		coreMap[p.CoreID] = struct{}{}
-		socketMap[p.SocketID] = struct{}{}
-		nodeMap[p.NodeID] = struct{}{}
-		l3Map[p.L3] = struct{}{}
+		coreMap[p.CoreID] = append(coreMap[p.CoreID], p)
+		socketMap[p.SocketID] = append(socketMap[p.SocketID], p)
+		nodeMap[p.NodeID] = append(nodeMap[p.NodeID], p)
+		l3Map[p.L3] = append(l3Map[p.L3], p)
 	}
 	return &CPUTotalInfo{
-		NumberCPUs:    int32(len(cpuMap)),
-		NumberCores:   int32(len(coreMap)),
-		NumberSockets: int32(len(socketMap)),
-		NumberNodes:   int32(len(nodeMap)),
-		NumberL3s:     int32(len(l3Map)),
+		NumberCPUs:  int32(len(cpuMap)),
+		CoreToCPU:   coreMap,
+		SocketToCPU: socketMap,
+		NodeToCPU:   nodeMap,
+		L3ToCPU:     l3Map,
 	}
 }
 

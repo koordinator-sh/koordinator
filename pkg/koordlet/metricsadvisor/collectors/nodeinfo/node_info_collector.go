@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package nodecpuinfo
+package nodeinfo
 
 import (
 	"time"
@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	CollectorName = "NodeCPUInfoCollector"
+	CollectorName = "NodeInfoCollector"
 )
 
 // TODO more ut is needed for this plugin
@@ -55,21 +55,39 @@ func (n *nodeInfoCollector) Enabled() bool {
 func (n *nodeInfoCollector) Setup(s *framework.Context) {}
 
 func (n *nodeInfoCollector) Run(stopCh <-chan struct{}) {
-	go wait.Until(n.collectNodeCPUInfo, n.collectInterval, stopCh)
+	go wait.Until(n.collectNodeInfo, n.collectInterval, stopCh)
 }
 
 func (n *nodeInfoCollector) Started() bool {
 	return n.started.Load()
 }
 
-func (n *nodeInfoCollector) collectNodeCPUInfo() {
+func (n *nodeInfoCollector) collectNodeInfo() {
+	started := time.Now()
+
+	err := n.collectNodeCPUInfo()
+	if err != nil {
+		klog.Warningf("failed to collect node CPU info, err: %s", err)
+		return
+	}
+
+	err = n.collectNodeNUMAInfo()
+	if err != nil {
+		klog.Warningf("failed to collect node NUMA info, err: %s", err)
+		return
+	}
+
+	n.started.Store(true)
+	klog.V(4).Infof("collect node info finished, elapsed %s", time.Since(started).String())
+}
+
+func (n *nodeInfoCollector) collectNodeCPUInfo() error {
 	klog.V(6).Info("start collect node cpu info")
 
 	localCPUInfo, err := koordletutil.GetLocalCPUInfo()
 	if err != nil {
-		klog.Warningf("failed to collect node cpu info, err: %s", err)
 		metrics.RecordCollectNodeCPUInfoStatus(err)
-		return
+		return err
 	}
 
 	nodeCPUInfo := &metriccache.NodeCPUInfo{
@@ -77,9 +95,26 @@ func (n *nodeInfoCollector) collectNodeCPUInfo() {
 		ProcessorInfos: localCPUInfo.ProcessorInfos,
 		TotalInfo:      localCPUInfo.TotalInfo,
 	}
-	klog.V(6).Infof("collect cpu info finished, nodeCPUInfo %v", nodeCPUInfo)
+	klog.V(6).Infof("collect cpu info finished, info: %+v", nodeCPUInfo)
+
 	n.storage.Set(metriccache.NodeCPUInfoKey, nodeCPUInfo)
-	n.started.Store(true)
-	klog.Infof("collectNodeCPUInfo finished, cpu info: processors %v", len(nodeCPUInfo.ProcessorInfos))
+	klog.V(4).Infof("collectNodeCPUInfo finished, processors num %v", len(nodeCPUInfo.ProcessorInfos))
 	metrics.RecordCollectNodeCPUInfoStatus(nil)
+	return nil
+}
+
+func (n *nodeInfoCollector) collectNodeNUMAInfo() error {
+	klog.V(6).Info("start collect node NUMA info")
+
+	nodeNUMAInfo, err := koordletutil.GetNodeNUMAInfo()
+	if err != nil {
+		metrics.RecordCollectNodeNUMAInfoStatus(err)
+		return err
+	}
+	klog.V(6).Info("collect NUMA info successfully, info %+v", nodeNUMAInfo)
+
+	n.storage.Set(metriccache.NodeNUMAInfoKey, nodeNUMAInfo)
+	klog.V(4).Infof("collectNodeNUMAInfo finished, NUMA node num %v", len(nodeNUMAInfo.NUMAInfos))
+	metrics.RecordCollectNodeNUMAInfoStatus(nil)
+	return nil
 }
