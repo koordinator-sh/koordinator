@@ -76,7 +76,7 @@ Cold memory is idle pages in page cache. This proposal applies kidled to collect
 
 The proposal add a file idleinfo.go in pkg/koordlet/util/idleinfo.go
 
-Define an Idleinfo struct as follows. It corresponds to this memory.idle_stat file information.
+Define an idleinfo struct as follows. It corresponds to this memory.idle_stat file information. For example  c means clean. d means dirty. s means swap. f means file. e means evict. u means uevict.  i means inactive. a means active. ``csea`` means the pages are clean && swappable && evictable && active. More details are in https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst.
 
 ```go
 type IdleInfo struct {
@@ -192,13 +192,15 @@ type NodeMetricCollectPolicy struct {
 
 https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst
 
-**kstaled**:proactively reclaiming idle memory
+**kstaled**: Michel's patch was developed on a early kernel version 3.0 and was similar to kidled. kstable also use /sys/kernel/mm/kstaled/scan_seconds and export idle_page_stats file. But kidled did not cherry pick the original kstaled's patch directly and made improvements. (e.g. design use_hierarchy ).
 
-https://lore.kernel.org/lkml/20110922161448.91a2e2b2.akpm@google.com/T/
+But I did not see the /sys/kernel/mm/kstaled/scan_seconds in ubuntu 18 and 20 image. Perhaps kstaled is on google linux kernel.
 
 https://lwn.net/Articles/459269/
 
-**DAMON**: proactive reclamation cold pages
+https://lore.kernel.org/lkml/20110922161448.91a2e2b2.akpm@google.com/T/
+
+**DAMON**: DAMON was used  by amazon linux kernel.
 
 https://lwn.net/Articles/858682/
 
