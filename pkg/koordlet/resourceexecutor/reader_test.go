@@ -576,19 +576,19 @@ func TestCgroupReader_ReadCPUShares(t *testing.T) {
 			args: args{
 				parentDir: "/kubepods.slice",
 			},
-			want:    10,
+			want:    2,
 			wantErr: false,
 		},
 		{
 			name: "parse v2 value successfully 1",
 			fields: fields{
 				UseCgroupsV2:   true,
-				CPUWeightValue: "100",
+				CPUWeightValue: "39",
 			},
 			args: args{
 				parentDir: "/kubepods.slice",
 			},
-			want:    1024,
+			want:    998,
 			wantErr: false,
 		},
 		{

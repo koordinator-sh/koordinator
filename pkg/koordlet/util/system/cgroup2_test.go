@@ -340,13 +340,13 @@ func TestConvertCPUWeightToShares(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			input:    50,
-			expected: 512,
+			input:    1,
+			expected: 2,
 			wantErr:  false,
 		},
 		{
 			input:    10000,
-			expected: 102400,
+			expected: 262144,
 			wantErr:  false,
 		},
 		{
@@ -358,9 +358,8 @@ func TestConvertCPUWeightToShares(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			input:    -1,
-			expected: 2,
-			wantErr:  true,
+			input:   -1,
+			wantErr: true,
 		},
 	}
 
@@ -390,17 +389,22 @@ func TestConvertCPUSharesToWeight(t *testing.T) {
 	}{
 		{
 			input:    "1000",
-			expected: 97, // 1000 * 100 / 1024 = 97
+			expected: 39, // 1 + (1000 - 2) * 9999 / 262142 = 39
 			wantErr:  false,
 		},
 		{
 			input:    "1024",
-			expected: 100, // 1024 * 100 / 1024 = 100
+			expected: 39, // 1 + (1024 - 2) * 9999 / 262142 = 39
 			wantErr:  false,
 		},
 		{
-			input:    "512",
-			expected: 50, // 512 * 100 / 1024 = 50
+			input:    "2",
+			expected: 1, // 1 + (2 - 2) * 9999 / 262142 = 1
+			wantErr:  false,
+		},
+		{
+			input:    "262144",
+			expected: 10000, // 1 + (262144 - 2) * 9999 / 262142 = 10000
 			wantErr:  false,
 		},
 		{
@@ -409,12 +413,12 @@ func TestConvertCPUSharesToWeight(t *testing.T) {
 		},
 		{
 			input:    "2000",
-			expected: 195, // 2000 * 100 / 1024 = 195
+			expected: 77, // 1 + (77 - 2) * 9999 / 262142 = 77
 			wantErr:  false,
 		},
 		{
 			input:    "50000",
-			expected: 4882, // 50000 * 100 / 1024 = 4882
+			expected: 1908, // 1 + (50000 - 2) * 9999 / 262142 = 1908
 			wantErr:  false,
 		},
 		{

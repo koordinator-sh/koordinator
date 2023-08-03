@@ -286,9 +286,15 @@ func ConvertCPUWeightToShares(v int64) (int64, error) {
 	if !isValid {
 		return -1, fmt.Errorf("invalid cpu.weight value, err: %s", msg)
 	}
-	s := v * 1024 / 100 // no overflow since v is in [1, 10000]
+	// Use the inverse conversion of the kubelet.
+	// https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2254-cgroup-v2
+	// Map weights [1, 10000] to shares [2, 262144]:
+	// shares = (weights - 1) * 262142 / 9999 + 2
+	s := (v-1)*262142/9999 + 2
 	if s < CPUSharesMinValue {
 		s = CPUSharesMinValue
+	} else if s > CPUSharesMaxValue {
+		s = CPUSharesMaxValue
 	}
 	return s, nil
 }
@@ -299,7 +305,11 @@ func ConvertCPUSharesToWeight(s string) (int64, error) {
 		return -1, fmt.Errorf("invalid cpu.weight value, err: %s", msg)
 	}
 	v, _ := strconv.ParseInt(s, 10, 64) // the valid value must be an integer
-	w := v * 100 / 1024                 // assert no overflow since in k8s v is no more than 1024*num_cpus << math.MaxInt64
+	// Use the same conversion of the kubelet.
+	// https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2254-cgroup-v2
+	// Map shares [2, 262144] to weights [1, 10000]:
+	// weights = 1 + ((shares - 2) * 9999) / 262142
+	w := 1 + ((v-2)*9999)/262142
 	if w < CPUWeightMinValue {
 		w = CPUWeightMinValue
 	} else if w > CPUWeightMaxValue {

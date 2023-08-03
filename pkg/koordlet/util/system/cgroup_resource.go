@@ -119,6 +119,7 @@ const (
 	CFSBasePeriodValue int64 = 100000
 	CFSQuotaMinValue   int64 = 1000 // min value except `-1`
 	CPUSharesMinValue  int64 = 2
+	CPUSharesMaxValue  int64 = 262144
 	CPUWeightMinValue  int64 = 1
 	CPUWeightMaxValue  int64 = 10000
 
@@ -171,7 +172,7 @@ const (
 var (
 	NaturalInt64Validator = &RangeValidator{min: 0, max: math.MaxInt64}
 
-	CPUSharesValidator                      = &RangeValidator{min: CPUSharesMinValue, max: math.MaxInt64}
+	CPUSharesValidator                      = &RangeValidator{min: CPUSharesMinValue, max: CPUSharesMaxValue}
 	CPUBurstValidator                       = &RangeValidator{min: 0, max: 100 * 10 * 100000}
 	CPUBvtWarpNsValidator                   = &RangeValidator{min: -1, max: 2}
 	CPUWeightValidator                      = &RangeValidator{min: CPUWeightMinValue, max: CPUWeightMaxValue}
