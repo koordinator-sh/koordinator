@@ -56,6 +56,7 @@ func TestNewReservePod(t *testing.T) {
 		}
 		reservePod := NewReservePod(r)
 		assert.NotNil(t, reservePod)
+		assert.NotNil(t, reservePod.Spec.Priority)
 		assert.True(t, IsReservePod(reservePod))
 	})
 }
