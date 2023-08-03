@@ -188,13 +188,13 @@ type NodeMetricCollectPolicy struct {
 ```
 ## Alternatives
 
-**kidled**: an open source cold memory collection solution.
+**kidled**: kidled, an open source cold memory collection solution, is used by Anolis OS.
 
 https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst
 
-**kstaled**: Michel's patch was developed on a early kernel version 3.0 and was similar to kidled. kstable also use /sys/kernel/mm/kstaled/scan_seconds and export idle_page_stats file. But kidled did not cherry pick the original kstaled's patch directly and made improvements. (e.g. design use_hierarchy ).
+**kstaled**:  kstaled  is used by google linux kernel .It was designed by Michel. Michel's patch was developed on a early kernel version 3.0 and was similar to kidled. kstable also use /sys/kernel/mm/kstaled/scan_seconds and export idle_page_stats file. But kidled did not cherry pick the original kstaled's patch directly and made improvements. (e.g. design use_hierarchy ).
 
-But I did not see the /sys/kernel/mm/kstaled/scan_seconds in ubuntu 18 and 20 image. Perhaps kstaled is on google linux kernel.
+But I did not see the /sys/kernel/mm/kstaled/scan_seconds in ubuntu 18 and 20 image. Perhaps
 
 https://lwn.net/Articles/459269/
 
