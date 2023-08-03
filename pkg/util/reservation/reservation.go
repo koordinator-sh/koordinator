@@ -27,6 +27,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -85,6 +86,10 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	// use reservation status.nodeName as the real scheduled result
 	if nodeName := GetReservationNodeName(r); len(nodeName) > 0 {
 		reservePod.Spec.NodeName = nodeName
+	}
+
+	if reservePod.Spec.Priority == nil {
+		reservePod.Spec.Priority = pointer.Int32(0)
 	}
 
 	if IsReservationSucceeded(r) {
