@@ -207,4 +207,6 @@ type DeviceShareArgs struct {
 
 	// Allocator indicates the expected allocator to use
 	Allocator string
+	// ScoringStrategy selects the device resource scoring strategy.
+	ScoringStrategy *ScoringStrategy
 }

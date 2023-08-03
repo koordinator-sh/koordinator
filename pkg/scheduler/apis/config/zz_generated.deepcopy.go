@@ -67,6 +67,11 @@ func (in *CoschedulingArgs) DeepCopyObject() runtime.Object {
 func (in *DeviceShareArgs) DeepCopyInto(out *DeviceShareArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
+	if in.ScoringStrategy != nil {
+		in, out := &in.ScoringStrategy, &out.ScoringStrategy
+		*out = new(ScoringStrategy)
+		(*in).DeepCopyInto(*out)
+	}
 	return
 }
 

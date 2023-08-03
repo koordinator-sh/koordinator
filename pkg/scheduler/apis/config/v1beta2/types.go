@@ -203,4 +203,6 @@ type DeviceShareArgs struct {
 
 	// Allocator indicates the expected allocator to use
 	Allocator string `json:"allocator,omitempty"`
+	// ScoringStrategy selects the device resource scoring strategy.
+	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 }
