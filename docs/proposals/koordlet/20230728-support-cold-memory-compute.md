@@ -32,7 +32,7 @@ last-updated: 2023-07-28
 
 **kidled**
 
-Kided, an open source cold memory collection solution, identifies the hot and cold conditions of nodes, pod and container memory in the cluster. The link introduces kildled in detail.
+Kidled, an open source cold memory collection solution, identifies the hot and cold conditions of nodes, pod and container memory in the cluster. The link introduces kidled in detail.
 
 https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst
 
@@ -106,51 +106,43 @@ type IdleInfo struct {
 }
 ```
 
-Define a function named readIdleInfo(). It read idleinfo memory.idle_stat and return an idleinfo object.
+Define a function named readidleInfo() in koordlet util moudle. It can read idleinfo memory.idle_stat which exists  under every hierarchy of cgroup memory. (node e.g. /sys/fs/cgroup/memory/memory.idle_stat)
 
 ```go
-func readIdleInfo(path string) (*IdleInfo, error) {
-    //read file process  omit concrete process
-    return &info, nil
-}
+func readIdleInfo(path string) (*IdleInfo, error) 
 ```
 
 Define a function named GetIdleInfoFilePath(). It is uesd to return idleinfo file path.(node e.g. /sys/fs/cgroup/memory/memory.idle_stat)
 
 ```go
-func GetIdleInfoFilePath(idleFileRelativePath string) string {
-	return filepath.Join(system.Conf.CgroupRootDir, idleFileRelativePath, IdleInfoName)
-}
+func GetIdleInfoFilePath(idleFileRelativePath string) string 
 ```
 
 Define a function named GetIdleMemoryTotalKB(). It is uesd to return size of total idle page. The unit is byte.
 
 ```go
-func GetIdleMemoryTotalKB(idleFileRelativePath string) (uint64, error) {
-	return sum, nil
-}
+func GetIdleMemoryTotalKB(idleFileRelativePath string) (uint64, error) 
 ```
 
 Define two functions  in pkg/koordlet/util/meminfo.go  to get node's MemTotal and MemFree. The values are used to compute Mem usage with hot page.
 
 ```go
 // GetMemTotalKB returns the node's memory total quantity (kB)
-func GetMemTotalKB() (int64, error) {
-	return usage, nil
-}
-
+func GetMemTotalKB() (int64, error) 
 // GetMemFreeKB returns the node's memory free quantity (kB)
-func GetMemFreeKB() (int64, error) {
-	return usage, nil
-}
+func GetMemFreeKB() (int64, error)
 ```
 
-Define a function named CollectNodeMemoryWithHotPageUsage().  Compute node memory usage with hot page and generate metric. collectNodeResUsed() function will call that and insert memoryWithHotPage metric.
+Define a function named collectNodeMemoryWithHotPageUsage().  Compute node memory usage with hot page and generate metric. collectNodeResUsed() function will call that and insert memoryWithHotPage metric.
 
 ```go
-func (n *nodeResourceCollector) CollectNodeMemoryWithHotPageUsage(collectTime time.Time) (metriccache.MetricSample, error) {
-	return nodeMemorWithHotPageyUsageMetric, nil
-}
+func (n *nodeResourceCollector) collectNodeMemoryWithHotPageUsage(collectTime time.Time) (metriccache.MetricSample, error) 
+```
+
+Define a function named collectNodeMemoryColdPageSize().  Compute node memory cold page size and generate metric. collectNodeResUsed() function will call that and insert memoryColdPageSize metric.
+
+```go
+func (n *nodeResourceCollector) collectNodeMemoryColdPageSize(collectTime time.Time) (metriccache.MetricSample, error)
 ```
 
 The same process is executed in podresource collector to collect idle page. Do not repeat.
@@ -159,24 +151,23 @@ The same process is executed in podresource collector to collect idle page. Do n
 
 ![image](../../images/support-cold-memory-2.svg)
 
-collectNodeMetric() is used to query metirc and return CPU And MemUsed in pkg/koordlet/statesinformer/impl/states_nodemetirc.go file.
+collectNodeMetric() is used to query node metirc and return CPU And MemUsed in pkg/koordlet/statesinformer/impl/states_nodemetirc.go file.
 
-We can report memory usage including hot page in collectNodeMetric().
+We can report memory usage including hot pages in collectNodeMetric().
 
+The calculation formulas of node, pod and container are as follows.  
 
-```go
-func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam) (corev1.ResourceList, time.Duration, error) {
-	rl[corev1.ResourceCPU] = *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI)
-	rl[corev1.ResourceMemory] = *resource.NewQuantity(int64(memUsed), resource.BinarySI)
-	return rl, cpuAggregateResult.TimeRangeDuration(), nil
-}
-```
+node memory usage: nodeMemWithHotPageUasge=MemTotal-MemFree+NodeMeMWithHotPageSize
+
+pod memory usage: podMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+PodMeMwithHotPageSize
+
+container memory usage: containerMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+ContainerMeMwithHotPageSize
 
 The same process is executed pod informer to report memory usage. Do not repeat.
 
 #### Define cold memory API
 
-provide memory collect policy access
+Provide memory collect policy access.
 
 Add field named MemoryCollectPolicy to represent which method is used to collect memory usage. Such as usageWithHotPageCache, usageWithoutPageCache,  usageWithPageCache.
 
