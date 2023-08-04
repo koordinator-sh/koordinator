@@ -145,7 +145,42 @@ Define a function named collectNodeMemoryColdPageSize().  Compute node memory co
 func (n *nodeResourceCollector) collectNodeMemoryColdPageSize(collectTime time.Time) (metriccache.MetricSample, error)
 ```
 
-The same process is executed in podresource collector to collect idle page. Do not repeat.
+
+Add a new resource collector. Define a coldMemoryResouceCollector to manager all coldPageCollectors  and implement collector interface.
+```go
+type coldMemoryResouceCollector struct {
+	collectInterval    time.Duration
+	started            *atomic.Bool
+    Supported          *atomic.Bool
+	appendableDB       metriccache.Appendable
+	metricDB           metriccache.MetricCache
+    //concrete cold page collectors sush as kidled, kstaled and DAMON
+	coldPageCollectors map[string]framework.Collector
+}
+func (c *coldMemoryResouceCollector) Enabled() bool 
+func (c *coldMemoryResouceCollector) Setup(c *framework.Context) 
+func (c *coldMemoryResouceCollector) Run(stopCh <-chan struct{}) 
+func (c *coldMemoryResouceCollector) Started() bool
+func (c *coldMemoryResouceCollector) IsSupported() bool 
+```
+
+Define a concrete a coldPageCollector called kidled to cold page info of node, pod and container.
+
+```go
+type coldPageCollector struct {
+	collectInterval    time.Duration
+	started            *atomic.Bool
+	supported          *atomic.Bool
+	collectorName      string
+	appendableDB       metriccache.Appendable
+	metricDB           metriccache.MetricCache
+}
+func (c *coldPageCollector) Enabled() bool 
+func (c *coldPageCollector) Setup(c *framework.Context) 
+func (c *coldPageCollector) Run(stopCh <-chan struct{}) 
+func (c *coldPageCollector) Started() bool
+func (c *coldPageCollector) IsSupported() bool 
+```
 
 #### Report memory usage including hot page
 
