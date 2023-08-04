@@ -72,14 +72,82 @@ Cold memory supports  scheduling optimization in koord-manager or koord-schedule
 
 ![image](../../images/support-cold-memory-1.svg)
 
-Cold memory is idle pages in page cache. This proposal applies kidled to collect idle pages. Kidled will export a file named memory.idle_stat which includes idle page. The file will exist at each hierarchical of cgroup memory. The process of collect idle memory is as shown in figure. First, kidled exports memory.idle_stat file. Second, the corresponding collector(noderesource and podresource) will collect idle info and insert metric.
+Add a coldPageCollector in collectorPlugins. coldPageCollector read cgroup file memory.idle_stat which is exported by kidled(Anolis kernel), kstaled(Google kernel)  or DAMON(amazon) that depends on the kernel. And memory.idle_stat includes cold page info in page cache and exists at each hierarchical of cgroup memory. After collecting cold page info, coldPageCollector will insert metric(such as NodeMemoryWithHotPageUsageMetric, PodMemoryWithHotPageUsageMetric, ContainerMemoryWithHotPageUsageMetric, NodeMemoryColdPageSizeMetric, PodMemoryColdPageSizeMetric, ContainerMemoryColdPageSizeMetric) into metriccache. 
 
-The proposal add a file idleinfo.go in pkg/koordlet/util/idleinfo.go
+node memory usage: nodeMemWithHotPageUasge=MemTotal-MemFree+NodeMeMWithHotPageSize
+
+pod memory usage: podMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+PodMeMwithHotPageSize
+
+container memory usage: containerMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+ContainerMeMwithHotPageSize
+
+The proposal implement kidled cold page collector and provide other cold page collector interface.
+
+```go
+//add collector
+collectorPlugins = map[string]framework.CollectorFactory{
+    noderesource.CollectorName:    noderesource.New,
+    beresource.CollectorName:      beresource.New,
+    nodecpuinfo.CollectorName:     nodecpuinfo.New,
+    nodestorageinfo.CollectorName: nodestorageinfo.New,
+    podresource.CollectorName:     podresource.New,
+    podthrottled.CollectorName:    podthrottled.New,
+    performance.CollectorName:     performance.New,
+    coldmemoryresource.CollectorName: coldmemoryresource.New,
+	}
+//define metric types
+NodeMemoryWithHotPageUsage      MetricKind = "node_memory_with_hot_page_uasge"
+PodMemoryWithHotPageUsage       MetricKind = "pod_memory_with_hot_page_uasge"
+ContainerMemoryWithHotPageUsage MetricKind = "container_memory_with_hot_page_uasge"
+NodeMemoryColdPageSize          MetricKind = "node_memory_cold_page_size"
+PodMemoryColdPageSize           MetricKind = "pod_memory_cold_page_size"
+ContainerMemoryColdPageSize     MetricKind = "container_memory_cold_page_size"
+//add metric
+NodeMemoryWithHotPageUsageMetric      = defaultMetricFactory.New(NodeMemoryWithHotPageUsage)
+PodMemoryWithHotPageUsageMetric       = defaultMetricFactory.New(PodMemoryWithHotPageUsage)
+ContainerMemoryWithHotPageUsageMetric = defaultMetricFactory.New(ContainerMemoryWithHotPageUsage)
+NodeMemoryColdPageSizeMetric          = defaultMetricFactory.New(NodeMemoryColdPageSize)
+PodMemoryColdPageSizeMetric           = defaultMetricFactory.New(PodMemoryColdPageSize)
+ContainerMemoryColdPageSizeMetric     = defaultMetricFactory.New(ContainerMemoryColdPageSize)
+//the concrete cold page collector depending on kernel
+type kidledcoldPageCollector struct {
+	collectInterval       time.Duration
+	started               *atomic.Bool
+	supported             *atomic.Bool
+	cgroupReader          resourceexecutor.CgroupReader
+	statesInformer        statesinformer.StatesInformer
+	appendableDB          metriccache.Appendable
+	metricDB              metriccache.MetricCache
+	coldPageCollectorName string
+}
+//return different ColdPageCollector or nil (e.g.not support cold page) depending on kernel
+func New(opt *framework.Options) framework.Collector {
+	if opt.Config.ColdPageCollectorName == "kidled" {
+		return &kidledcoldPageCollector{
+			collectInterval:       opt.Config.CollectResUsedInterval,
+			started:               atomic.NewBool(false),
+			supported:             atomic.NewBool(false),
+			statesInformer:        opt.StatesInformer,
+			cgroupReader:          opt.CgroupReader,
+			appendableDB:          opt.MetricCache,
+			metricDB:              opt.MetricCache,
+			coldPageCollectorName: opt.Config.ColdPageCollectorName,
+		}
+	}
+	return nil
+}
+func (k *kidledcoldPageCollector) Enabled() bool
+func (k *kidledcoldPageCollector) Setup(c1 *framework.Context)
+func (k *kidledcoldPageCollector) Run(stopCh <-chan struct{})
+func (k *kidledcoldPageCollector) Started() bool
+func (k *kidledcoldPageCollector) collectColdPageInfo()
+```
+
+Implement kidled cold page collector. The proposal add a file idleinfo_exported_by_kided.go in pkg/koordlet/util/idleinfo_exported_by_kided.go
 
 Define an idleinfo struct as follows. It corresponds to this memory.idle_stat file information. For example  c means clean. d means dirty. s means swap. f means file. e means evict. u means uevict.  i means inactive. a means active. ``csea`` means the pages are clean && swappable && evictable && active. More details are in https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst.
 
 ```go
-type IdleInfo struct {
+type KidledIdleInfo struct {
 	Version             string   `json:"version"`
 	PageScans           uint64   `json:"page_scans"`
 	SlabScans           uint64   `json:"slab_scans"`
@@ -109,68 +177,13 @@ type IdleInfo struct {
 Define a function named readidleInfo() in koordlet util moudle. It can read idleinfo memory.idle_stat which exists  under every hierarchy of cgroup memory. (node e.g. /sys/fs/cgroup/memory/memory.idle_stat)
 
 ```go
-func readIdleInfo(path string) (*IdleInfo, error) 
+func ReadIdleInfo(path string) (*IdleInfo, error) 
 ```
 
 Define a function named GetIdleInfoFilePath(). It is uesd to return idleinfo file path.(node e.g. /sys/fs/cgroup/memory/memory.idle_stat)
 
 ```go
 func GetIdleInfoFilePath(idleFileRelativePath string) string 
-```
-
-Define a function named GetIdleMemoryTotalKB(). It is uesd to return size of total idle page. The unit is byte.
-
-```go
-func GetIdleMemoryTotalKB(idleFileRelativePath string) (uint64, error) 
-```
-
-Define a function named collectNodeMemoryWithHotPageUsage().  Compute node memory usage with hot page and generate metric. collectNodeResUsed() function will call that and insert memoryWithHotPage metric.
-
-```go
-func (n *nodeResourceCollector) collectNodeMemoryWithHotPageUsage(collectTime time.Time) (metriccache.MetricSample, error) 
-```
-
-Define a function named collectNodeMemoryColdPageSize().  Compute node memory cold page size and generate metric. collectNodeResUsed() function will call that and insert memoryColdPageSize metric.
-
-```go
-func (n *nodeResourceCollector) collectNodeMemoryColdPageSize(collectTime time.Time) (metriccache.MetricSample, error)
-```
-
-
-Add a new resource collector. Define a coldMemoryResouceCollector to manager all coldPageCollectors  and implement collector interface.
-```go
-type coldMemoryResouceCollector struct {
-	collectInterval time.Duration
-	started         *atomic.Bool
-	supported       *atomic.Bool
-	appendableDB    metriccache.Appendable
-	metricDB        metriccache.MetricCache
-	//concrete cold page collectors sush as kidled, kstaled and DAMON
-	coldPageCollectors map[string]framework.Collector
-}
-func (c *coldMemoryResouceCollector) Enabled() bool 
-func (c *coldMemoryResouceCollector) Setup(c *framework.Context) 
-func (c *coldMemoryResouceCollector) Run(stopCh <-chan struct{}) 
-func (c *coldMemoryResouceCollector) Started() bool
-func (c *coldMemoryResouceCollector) IsSupported() bool 
-```
-
-Define a concrete a coldPageCollector called kidled to cold page info of node, pod and container.
-
-```go
-type coldPageCollector struct {
-	collectInterval    time.Duration
-	started            *atomic.Bool
-	supported          *atomic.Bool
-	collectorName      string
-	appendableDB       metriccache.Appendable
-	metricDB           metriccache.MetricCache
-}
-func (c *coldPageCollector) Enabled() bool 
-func (c *coldPageCollector) Setup(c *framework.Context) 
-func (c *coldPageCollector) Run(stopCh <-chan struct{}) 
-func (c *coldPageCollector) Started() bool
-func (c *coldPageCollector) IsSupported() bool 
 ```
 
 #### Report memory usage including hot page
