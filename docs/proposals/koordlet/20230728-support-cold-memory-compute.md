@@ -124,15 +124,6 @@ Define a function named GetIdleMemoryTotalKB(). It is uesd to return size of tot
 func GetIdleMemoryTotalKB(idleFileRelativePath string) (uint64, error) 
 ```
 
-Define two functions  in pkg/koordlet/util/meminfo.go  to get node's MemTotal and MemFree. The values are used to compute Mem usage with hot page.
-
-```go
-// GetMemTotalKB returns the node's memory total quantity (kB)
-func GetMemTotalKB() (int64, error) 
-// GetMemFreeKB returns the node's memory free quantity (kB)
-func GetMemFreeKB() (int64, error)
-```
-
 Define a function named collectNodeMemoryWithHotPageUsage().  Compute node memory usage with hot page and generate metric. collectNodeResUsed() function will call that and insert memoryWithHotPage metric.
 
 ```go
@@ -227,9 +218,7 @@ type NodeMetricCollectPolicy struct {
 
 https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst
 
-**kstaled**:  kstaled  is used by google linux kernel .It was designed by Michel. Michel's patch was developed on a early kernel version 3.0 and was similar to kidled. kstable also use /sys/kernel/mm/kstaled/scan_seconds and export idle_page_stats file. But kidled did not cherry pick the original kstaled's patch directly and made improvements. (e.g. design use_hierarchy ).
-
-But I did not see the /sys/kernel/mm/kstaled/scan_seconds in ubuntu 18 and 20 image. Perhaps
+**kstaled**:  kstaled  is used by google linux kernel .It was designed by Michel. Michel's patch was developed on a early kernel version 3.0 and was similar to kidled. kstable also use /sys/kernel/mm/kstaled/scan_seconds and export idle_page_stats file. But kidled did not cherry pick the original kstaled's patch directly and made improvements. (e.g. design use_hierarchy )
 
 https://lwn.net/Articles/459269/
 
