@@ -154,7 +154,7 @@ type coldMemoryResouceCollector struct {
 	supported       *atomic.Bool
 	appendableDB    metriccache.Appendable
 	metricDB        metriccache.MetricCache
-	//concrete cold page collectors sush as kidled, kstaled and DAMON、
+	//concrete cold page collectors sush as kidled, kstaled and DAMON
 	coldPageCollectors map[string]framework.Collector
 }
 func (c *coldMemoryResouceCollector) Enabled() bool 
