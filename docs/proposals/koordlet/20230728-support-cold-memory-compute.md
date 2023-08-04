@@ -95,19 +95,23 @@ collectorPlugins = map[string]framework.CollectorFactory{
     coldmemoryresource.CollectorName: coldmemoryresource.New,
 	}
 //define metric types
-NodeMemoryWithHotPageUsage      MetricKind = "node_memory_with_hot_page_uasge"
-PodMemoryWithHotPageUsage       MetricKind = "pod_memory_with_hot_page_uasge"
-ContainerMemoryWithHotPageUsage MetricKind = "container_memory_with_hot_page_uasge"
-NodeMemoryColdPageSize          MetricKind = "node_memory_cold_page_size"
-PodMemoryColdPageSize           MetricKind = "pod_memory_cold_page_size"
-ContainerMemoryColdPageSize     MetricKind = "container_memory_cold_page_size"
+const {
+    NodeMemoryWithHotPageUsage      MetricKind = "node_memory_with_hot_page_uasge"
+    PodMemoryWithHotPageUsage       MetricKind = "pod_memory_with_hot_page_uasge"
+    ContainerMemoryWithHotPageUsage MetricKind = "container_memory_with_hot_page_uasge"
+    NodeMemoryColdPageSize          MetricKind = "node_memory_cold_page_size"
+    PodMemoryColdPageSize           MetricKind = "pod_memory_cold_page_size"
+    ContainerMemoryColdPageSize     MetricKind = "container_memory_cold_page_size"
+}
 //add metric
-NodeMemoryWithHotPageUsageMetric      = defaultMetricFactory.New(NodeMemoryWithHotPageUsage)
-PodMemoryWithHotPageUsageMetric       = defaultMetricFactory.New(PodMemoryWithHotPageUsage)
-ContainerMemoryWithHotPageUsageMetric = defaultMetricFactory.New(ContainerMemoryWithHotPageUsage)
-NodeMemoryColdPageSizeMetric          = defaultMetricFactory.New(NodeMemoryColdPageSize)
-PodMemoryColdPageSizeMetric           = defaultMetricFactory.New(PodMemoryColdPageSize)
-ContainerMemoryColdPageSizeMetric     = defaultMetricFactory.New(ContainerMemoryColdPageSize)
+var {
+    NodeMemoryWithHotPageUsageMetric      = defaultMetricFactory.New(NodeMemoryWithHotPageUsage)
+    PodMemoryWithHotPageUsageMetric       = defaultMetricFactory.New(PodMemoryWithHotPageUsage)
+    ContainerMemoryWithHotPageUsageMetric = defaultMetricFactory.New(ContainerMemoryWithHotPageUsage)
+    NodeMemoryColdPageSizeMetric          = defaultMetricFactory.New(NodeMemoryColdPageSize)
+    PodMemoryColdPageSizeMetric           = defaultMetricFactory.New(PodMemoryColdPageSize)
+    ContainerMemoryColdPageSizeMetric     = defaultMetricFactory.New(ContainerMemoryColdPageSize)
+}
 //the concrete cold page collector depending on kernel
 type kidledcoldPageCollector struct {
 	collectInterval       time.Duration
@@ -243,5 +247,5 @@ https://lwn.net/Articles/858682/
 
 why we choose kidled? The reasons are as below.
 
-1) Anolis OS has already supported kidled. We can directly use the api and it is very simple.
+1) Anolis OS  is open-sourced and has already supported kidled. We can directly use the api and it is very simple.
 2) Kidled have a global scanner to do this job. That avoids a lot of unnecessary job. For example switch between user and kernel mode and handle share mappings.
