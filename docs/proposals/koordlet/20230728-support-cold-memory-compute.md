@@ -149,12 +149,12 @@ func (n *nodeResourceCollector) collectNodeMemoryColdPageSize(collectTime time.T
 Add a new resource collector. Define a coldMemoryResouceCollector to manager all coldPageCollectors  and implement collector interface.
 ```go
 type coldMemoryResouceCollector struct {
-	collectInterval    time.Duration
-	started            *atomic.Bool
-    Supported          *atomic.Bool
-	appendableDB       metriccache.Appendable
-	metricDB           metriccache.MetricCache
-    //concrete cold page collectors sush as kidled, kstaled and DAMON
+	collectInterval time.Duration
+	started         *atomic.Bool
+	supported       *atomic.Bool
+	appendableDB    metriccache.Appendable
+	metricDB        metriccache.MetricCache
+	//concrete cold page collectors sush as kidled, kstaled and DAMON、
 	coldPageCollectors map[string]framework.Collector
 }
 func (c *coldMemoryResouceCollector) Enabled() bool 
