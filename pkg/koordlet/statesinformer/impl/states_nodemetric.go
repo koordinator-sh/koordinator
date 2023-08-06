@@ -349,13 +349,13 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 	for _, podMeta := range podsMeta {
 		podMetric, err := r.collectPodMetric(podMeta, podQueryParam)
 		if err != nil {
-			klog.Warningf("query pod metric failed, pod %s/%s, error %v", genPodMetaKey(podMeta), err)
+			klog.Warningf("query pod metric failed, pod %s, error %v", genPodMetaKey(podMeta), err)
 			continue
 		}
 		// predict pods which have valid metrics; ignore prediction failures
 		err = prodPredictor.AddPod(podMeta.Pod)
 		if err != nil {
-			klog.V(4).Infof("predictor add pod aborted, pod %s/%s, error %v", genPodMetaKey(podMeta), err)
+			klog.V(4).Infof("predictor add pod aborted, pod %s, error: %v", genPodMetaKey(podMeta), err)
 		}
 
 		r.fillExtensionMap(podMetric, podMeta.Pod)
