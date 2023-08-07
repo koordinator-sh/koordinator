@@ -514,6 +514,7 @@ func autoConvert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerA
 	if err := v1.Convert_Pointer_v1_Duration_To_v1_Duration(&in.DefaultJobTTL, &out.DefaultJobTTL, s); err != nil {
 		return err
 	}
+	out.SchedulerName = in.SchedulerName
 	out.EvictQPS = (*config.Float64OrString)(unsafe.Pointer(in.EvictQPS))
 	if err := v1.Convert_Pointer_int32_To_int32(&in.EvictBurst, &out.EvictBurst, s); err != nil {
 		return err
@@ -558,6 +559,7 @@ func autoConvert_config_MigrationControllerArgs_To_v1alpha2_MigrationControllerA
 	}
 	out.EvictionPolicy = in.EvictionPolicy
 	out.DefaultDeleteOptions = (*v1.DeleteOptions)(unsafe.Pointer(in.DefaultDeleteOptions))
+	out.SchedulerName = in.SchedulerName
 	return nil
 }
 

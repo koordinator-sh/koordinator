@@ -1413,7 +1413,8 @@ func TestEvict(t *testing.T) {
 			},
 		},
 		Spec: corev1.PodSpec{
-			NodeName: "test-node-1",
+			NodeName:      "test-node-1",
+			SchedulerName: "koord-scheduler",
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
