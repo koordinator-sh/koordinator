@@ -93,7 +93,8 @@ collectorPlugins = map[string]framework.CollectorFactory{
     podthrottled.CollectorName:    podthrottled.New,
     performance.CollectorName:     performance.New,
     coldmemoryresource.CollectorName: coldmemoryresource.New,
-	}
+}
+
 //define metric types
 const {
     NodeMemoryWithHotPageUsage      MetricKind = "node_memory_with_hot_page_uasge"
@@ -103,6 +104,7 @@ const {
     PodMemoryColdPageSize           MetricKind = "pod_memory_cold_page_size"
     ContainerMemoryColdPageSize     MetricKind = "container_memory_cold_page_size"
 }
+
 //add metric
 var {
     NodeMemoryWithHotPageUsageMetric      = defaultMetricFactory.New(NodeMemoryWithHotPageUsage)
@@ -112,6 +114,7 @@ var {
     PodMemoryColdPageSizeMetric           = defaultMetricFactory.New(PodMemoryColdPageSize)
     ContainerMemoryColdPageSizeMetric     = defaultMetricFactory.New(ContainerMemoryColdPageSize)
 }
+
 //the concrete cold page collector depending on kernel
 type kidledcoldPageCollector struct {
 	collectInterval       time.Duration
@@ -123,6 +126,7 @@ type kidledcoldPageCollector struct {
 	metricDB              metriccache.MetricCache
 	coldPageCollectorName string
 }
+
 //return different ColdPageCollector or nil (e.g.not support cold page) depending on kernel
 func New(opt *framework.Options) framework.Collector {
 	if opt.Config.ColdPageCollectorName == "kidled" {
@@ -139,6 +143,7 @@ func New(opt *framework.Options) framework.Collector {
 	}
 	return nil
 }
+
 func (k *kidledcoldPageCollector) Enabled() bool
 func (k *kidledcoldPageCollector) Setup(c1 *framework.Context)
 func (k *kidledcoldPageCollector) Run(stopCh <-chan struct{})
@@ -178,7 +183,7 @@ type KidledIdleInfo struct {
 }
 ```
 
-Define a function named readidleInfo() in koordlet util moudle. It can read idleinfo memory.idle_stat which exists  under every hierarchy of cgroup memory. (node e.g. /sys/fs/cgroup/memory/memory.idle_stat)
+Define a function named readidleInfo() in koordlet util module. It can read idleinfo memory.idle_stat which exists  under every hierarchy of cgroup memory. (node e.g. /sys/fs/cgroup/memory/memory.idle_stat)
 
 ```go
 func ReadIdleInfo(path string) (*IdleInfo, error) 
