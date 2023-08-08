@@ -50,7 +50,7 @@ Implement the cold page info collecting and reporting. Based on that, we can inc
 
 ## Motivation
 
-In general colocation scenarios, the resources that the high-priority (HP) applications have requested but not used are reclaimable to the low-priority (LP) applications to allocate. Resource reclaiming helps enhance the utilization of machines while increasing the risks of contentions. For memory resources, there are proportions of memory that are reusable on different levels. The free memory is allocatable to any process, while the page cache is potentially reusable after it is reclaimed by the system and no longer yields again. But  kernel does not proactively reclaim the page cache because for the better performance of the system, the kernel do not keep page cache idle and allocate the page cache to application as cache. To construct a more reliable and fine-grained memory overcommitment, the free and cold memory of the HP is preferred to reclaim to LP first. And if not required, the hot memory of HP should not be overcommitted, or the performance of HP can be affected. 
+In general colocation scenarios, the resources that the high-priority (HP) applications have requested but not used are reclaimable to the low-priority (LP) applications to allocate. Resource reclaiming helps enhance the utilization of machines while increasing the risks of contentions. For memory resources, there are proportions of memory that are reusable on different levels. The free memory is allocatable to any process, while the page cache is potentially reusable after it is reclaimed by the system and no longer yields again. But for the better performance of the system, the kernel do not keep page cache idle and allocate the page cache to application as possible. To construct a more reliable and fine-grained memory overcommitment, the free and cold memory of the HP is preferred to reclaim to LP first. And if not required, the hot memory of HP should not be overcommitted, or the performance of HP can be affected. 
 
 In the Koordinator, we want to improve memory overcommitment by building the cold page reclaim ability, which can report the quantity of cold memory on the nodes and help assure that resource reclaiming like batch-memory are sound and efficient for the colocated applications.
 
@@ -74,11 +74,14 @@ Cold memory supports  scheduling optimization in koord-manager or koord-schedule
 
 Add a coldPageCollector in collectorPlugins. coldPageCollector read cgroup file memory.idle_stat which is exported by kidled(Anolis kernel), kstaled(Google kernel)  or DAMON(amazon) that depends on the kernel. And memory.idle_stat includes cold page info in page cache and exists at each hierarchical of cgroup memory. After collecting cold page info, coldPageCollector will insert metric(such as NodeMemoryWithHotPageUsageMetric, PodMemoryWithHotPageUsageMetric, ContainerMemoryWithHotPageUsageMetric, NodeMemoryColdPageSizeMetric, PodMemoryColdPageSizeMetric, ContainerMemoryColdPageSizeMetric) into metriccache. 
 
-node memory usage: nodeMemWithHotPageUasge=MemTotal-MemFree+NodeMeMWithHotPageSize
+MemFree: free and unallocated memory
+NodeMemWithColdPage: cold page size in page cache of node
 
-pod memory usage: podMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+PodMeMwithHotPageSize
+node memory usage: nodeMemWithHotPageUasge=MemTotal-MemFree-NodeMemWithColdPage
 
-container memory usage: containerMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+ContainerMemWithHotPageSize
+pod memory usage: podMemWithHotPageUasge=PodInactiveAnon + PodActiveAnon + PodUnevictable+PodMeMwithHotPageSize
+
+container memory usage: containerMemWithHotPageUasge=ContainerInactiveAnon + ContainerActiveAnon + ContainerUnevictable+ContainerMemWithHotPageSize
 
 The proposal implement kidled cold page collector and provide other cold page collector interface.
 
@@ -203,15 +206,16 @@ collectNodeMetric() is used to query node metirc and return CPU And MemUsed in p
 
 We can report memory usage including hot pages in collectNodeMetric().
 
-The calculation formulas of node, pod and container are as follows.  
+The calculation formulas of node, pod and container are as follows. 
+
 MemFree: free and unallocated memory
 NodeMemWithColdPage: cold page size in page cache of node
- 
+
 node memory usage: nodeMemWithHotPageUasge=MemTotal-MemFree-NodeMemWithColdPage
 
-pod memory usage: podMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+PodMemWithHotPageSize
+pod memory usage: podMemWithHotPageUasge=PodInactiveAnon + PodActiveAnon + PodUnevictable+PodMeMwithHotPageSize
 
-container memory usage: containerMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+ContainerMemWithHotPageSize
+container memory usage: containerMemWithHotPageUasge=ContainerInactiveAnon + ContainerActiveAnon + ContainerUnevictable+ContainerMemWithHotPageSize
 
 The same process is executed pod informer to report memory usage. Do not repeat.
 
