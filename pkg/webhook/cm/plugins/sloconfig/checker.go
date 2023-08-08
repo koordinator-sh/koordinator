@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
@@ -91,11 +91,11 @@ type nodeConfigProfileChecker struct {
 }
 
 type profileCheckInfo struct {
-	profile   extension.NodeCfgProfile
+	profile   configuration.NodeCfgProfile
 	selectors labels.Selector
 }
 
-func CreateNodeConfigProfileChecker(configName string, profiles func() []extension.NodeCfgProfile) (NodeConfigProfileChecker, error) {
+func CreateNodeConfigProfileChecker(configName string, profiles func() []configuration.NodeCfgProfile) (NodeConfigProfileChecker, error) {
 	checker := &nodeConfigProfileChecker{cfgName: configName}
 
 	nodeCfgs := profiles()

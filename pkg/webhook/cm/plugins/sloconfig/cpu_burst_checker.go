@@ -23,18 +23,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 )
 
 var _ ConfigChecker = &CPUBurstChecker{}
 
 type CPUBurstChecker struct {
-	cfg *extension.CPUBurstCfg
+	cfg *configuration.CPUBurstCfg
 	CommonChecker
 }
 
 func NewCPUBurstChecker(oldConfig, newConfig *corev1.ConfigMap, needUnmarshal bool) *CPUBurstChecker {
-	checker := &CPUBurstChecker{CommonChecker: CommonChecker{OldConfigMap: oldConfig, NewConfigMap: newConfig, configKey: extension.CPUBurstConfigKey, initStatus: NotInit}}
+	checker := &CPUBurstChecker{CommonChecker: CommonChecker{OldConfigMap: oldConfig, NewConfigMap: newConfig, configKey: configuration.CPUBurstConfigKey, initStatus: NotInit}}
 	if !checker.IsCfgNotEmptyAndChanged() && !needUnmarshal {
 		return checker
 	}
@@ -51,8 +51,8 @@ func (c *CPUBurstChecker) ConfigParamValid() error {
 }
 
 func (c *CPUBurstChecker) initConfig() error {
-	cfg := &extension.CPUBurstCfg{}
-	configStr := c.NewConfigMap.Data[extension.CPUBurstConfigKey]
+	cfg := &configuration.CPUBurstCfg{}
+	configStr := c.NewConfigMap.Data[configuration.CPUBurstConfigKey]
 	err := json.Unmarshal([]byte(configStr), &cfg)
 	if err != nil {
 		message := fmt.Sprintf("Failed to parse CpuBurst config in configmap %s/%s, err: %s",
@@ -62,7 +62,7 @@ func (c *CPUBurstChecker) initConfig() error {
 	}
 	c.cfg = cfg
 
-	c.NodeConfigProfileChecker, err = CreateNodeConfigProfileChecker(extension.CPUBurstConfigKey, c.getConfigProfiles)
+	c.NodeConfigProfileChecker, err = CreateNodeConfigProfileChecker(configuration.CPUBurstConfigKey, c.getConfigProfiles)
 	if err != nil {
 		klog.Error(fmt.Sprintf("Failed to parse CpuBurst config in configmap %s/%s, err: %s",
 			c.NewConfigMap.Namespace, c.NewConfigMap.Name, err.Error()))
@@ -72,8 +72,8 @@ func (c *CPUBurstChecker) initConfig() error {
 	return nil
 }
 
-func (c *CPUBurstChecker) getConfigProfiles() []extension.NodeCfgProfile {
-	var profiles []extension.NodeCfgProfile
+func (c *CPUBurstChecker) getConfigProfiles() []configuration.NodeCfgProfile {
+	var profiles []configuration.NodeCfgProfile
 	for _, nodeCfg := range c.cfg.NodeStrategies {
 		profiles = append(profiles, nodeCfg.NodeCfgProfile)
 	}

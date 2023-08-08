@@ -27,7 +27,7 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
@@ -44,8 +44,8 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 			Namespace: sloconfig.ConfigNameSpace,
 		},
 		Data: map[string]string{
-			extension.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
-			extension.ResourceQOSConfigKey: `
+			configuration.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
+			configuration.ResourceQOSConfigKey: `
 {
   "clusterStrategy": {
     "beClass": {
@@ -56,8 +56,8 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
   }
 }
 `,
-			extension.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
-			extension.SystemConfigKey:   "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150,\"watermarkScaleFactor\":150}}",
+			configuration.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
+			configuration.SystemConfigKey:   "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150,\"watermarkScaleFactor\":150}}",
 		},
 	}
 
@@ -134,10 +134,10 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 					Namespace: sloconfig.ConfigNameSpace,
 				},
 				Data: map[string]string{
-					extension.ResourceThresholdConfigKey: "invalid_content",
-					extension.ResourceQOSConfigKey:       "invalid_content",
-					extension.CPUBurstConfigKey:          "invalid_content",
-					extension.SystemConfigKey:            "invalid_content",
+					configuration.ResourceThresholdConfigKey: "invalid_content",
+					configuration.ResourceQOSConfigKey:       "invalid_content",
+					configuration.CPUBurstConfigKey:          "invalid_content",
+					configuration.SystemConfigKey:            "invalid_content",
 				},
 			}},
 			wantChanged: false,

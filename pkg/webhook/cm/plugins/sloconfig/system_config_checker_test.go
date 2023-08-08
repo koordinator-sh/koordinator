@@ -26,13 +26,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 func Test_SystemConfig_InitConfig(t *testing.T) {
 	//clusterOnly
-	cfgClusterOnly := &extension.SystemCfg{
+	cfgClusterOnly := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
 			MinFreeKbytesFactor:  pointer.Int64(100),
 			WatermarkScaleFactor: pointer.Int64(150),
@@ -41,15 +41,15 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 	}
 	cfgClusterOnlyBytes, _ := json.Marshal(cfgClusterOnly)
 	//nodeSelector is empty
-	cfgHaveNodeInvalid := &extension.SystemCfg{
+	cfgHaveNodeInvalid := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
 			MinFreeKbytesFactor:  pointer.Int64(100),
 			WatermarkScaleFactor: pointer.Int64(150),
 			MemcgReapBackGround:  pointer.Int64(0),
 		},
-		NodeStrategies: []extension.NodeSystemStrategy{
+		NodeStrategies: []configuration.NodeSystemStrategy{
 			{
-				NodeCfgProfile: extension.NodeCfgProfile{
+				NodeCfgProfile: configuration.NodeCfgProfile{
 					Name: "xxx-yyy",
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
@@ -63,15 +63,15 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 	cfgHaveNodeInvalidBytes, _ := json.Marshal(cfgHaveNodeInvalid)
 
 	//valid node config
-	cfgHaveNodeValid := &extension.SystemCfg{
+	cfgHaveNodeValid := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
 			MinFreeKbytesFactor:  pointer.Int64(100),
 			WatermarkScaleFactor: pointer.Int64(150),
 			MemcgReapBackGround:  pointer.Int64(0),
 		},
-		NodeStrategies: []extension.NodeSystemStrategy{
+		NodeStrategies: []configuration.NodeSystemStrategy{
 			{
-				NodeCfgProfile: extension.NodeCfgProfile{
+				NodeCfgProfile: configuration.NodeCfgProfile{
 					Name: "xxx-yyy",
 					NodeSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
@@ -99,7 +99,7 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 	tests := []struct {
 		name               string
 		args               args
-		wantCfg            *extension.SystemCfg
+		wantCfg            *configuration.SystemCfg
 		wantProfileChecker NodeConfigProfileChecker
 		wantStatus         string
 	}{
@@ -131,7 +131,7 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.SystemConfigKey: "invalid config",
+						configuration.SystemConfigKey: "invalid config",
 					},
 				},
 			},
@@ -144,12 +144,12 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 			args: args{
 				oldConfigMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.SystemConfigKey: "invalid config",
+						configuration.SystemConfigKey: "invalid config",
 					},
 				},
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.SystemConfigKey: "invalid config",
+						configuration.SystemConfigKey: "invalid config",
 					},
 				},
 			},
@@ -162,12 +162,12 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.SystemConfigKey: string(cfgClusterOnlyBytes),
+						configuration.SystemConfigKey: string(cfgClusterOnlyBytes),
 					},
 				},
 			},
 			wantCfg:            cfgClusterOnly,
-			wantProfileChecker: &nodeConfigProfileChecker{cfgName: extension.SystemConfigKey},
+			wantProfileChecker: &nodeConfigProfileChecker{cfgName: configuration.SystemConfigKey},
 			wantStatus:         InitSuccess,
 		},
 		{
@@ -175,7 +175,7 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.SystemConfigKey: string(cfgHaveNodeInvalidBytes),
+						configuration.SystemConfigKey: string(cfgHaveNodeInvalidBytes),
 					},
 				},
 			},
@@ -188,13 +188,13 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.SystemConfigKey: string(cfgHaveNodeValidBytes),
+						configuration.SystemConfigKey: string(cfgHaveNodeValidBytes),
 					},
 				},
 			},
 			wantCfg: cfgHaveNodeValid,
 			wantProfileChecker: &nodeConfigProfileChecker{
-				cfgName: extension.SystemConfigKey,
+				cfgName: configuration.SystemConfigKey,
 				nodeConfigs: []profileCheckInfo{
 					{
 						profile:   cfgHaveNodeValid.NodeStrategies[0].NodeCfgProfile,
@@ -220,7 +220,7 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 func Test_SystemConfig_ConfigContentsValid(t *testing.T) {
 
 	type args struct {
-		cfg extension.SystemCfg
+		cfg configuration.SystemCfg
 	}
 
 	tests := []struct {
@@ -231,7 +231,7 @@ func Test_SystemConfig_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster MinFreeKbytesFactor invalid",
 			args: args{
-				cfg: extension.SystemCfg{
+				cfg: configuration.SystemCfg{
 					ClusterStrategy: &slov1alpha1.SystemStrategy{
 						MinFreeKbytesFactor: pointer.Int64(-1),
 					},
@@ -242,7 +242,7 @@ func Test_SystemConfig_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster WatermarkScaleFactor invalid",
 			args: args{
-				cfg: extension.SystemCfg{
+				cfg: configuration.SystemCfg{
 					ClusterStrategy: &slov1alpha1.SystemStrategy{
 						WatermarkScaleFactor: pointer.Int64(0),
 					},
@@ -253,7 +253,7 @@ func Test_SystemConfig_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster MemcgReapBackGround invalid",
 			args: args{
-				cfg: extension.SystemCfg{
+				cfg: configuration.SystemCfg{
 					ClusterStrategy: &slov1alpha1.SystemStrategy{
 						MemcgReapBackGround: pointer.Int64(-1),
 					},
@@ -264,11 +264,11 @@ func Test_SystemConfig_ConfigContentsValid(t *testing.T) {
 		{
 			name: "all is nil",
 			args: args{
-				cfg: extension.SystemCfg{
+				cfg: configuration.SystemCfg{
 					ClusterStrategy: &slov1alpha1.SystemStrategy{},
-					NodeStrategies: []extension.NodeSystemStrategy{
+					NodeStrategies: []configuration.NodeSystemStrategy{
 						{
-							NodeCfgProfile: extension.NodeCfgProfile{
+							NodeCfgProfile: configuration.NodeCfgProfile{
 								Name: "xxx-yyy",
 							},
 							SystemStrategy: &slov1alpha1.SystemStrategy{},
@@ -281,14 +281,14 @@ func Test_SystemConfig_ConfigContentsValid(t *testing.T) {
 		{
 			name: "config valid",
 			args: args{
-				cfg: extension.SystemCfg{
+				cfg: configuration.SystemCfg{
 					ClusterStrategy: &slov1alpha1.SystemStrategy{
 						MinFreeKbytesFactor:  pointer.Int64(100),
 						WatermarkScaleFactor: pointer.Int64(150),
 					},
-					NodeStrategies: []extension.NodeSystemStrategy{
+					NodeStrategies: []configuration.NodeSystemStrategy{
 						{
-							NodeCfgProfile: extension.NodeCfgProfile{
+							NodeCfgProfile: configuration.NodeCfgProfile{
 								Name: "xxx-yyy",
 								NodeSelector: &metav1.LabelSelector{
 									MatchLabels: map[string]string{

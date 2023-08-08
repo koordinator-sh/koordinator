@@ -36,3 +36,14 @@ const (
 
 	LabelManagedBy = "app.kubernetes.io/managed-by"
 )
+
+type AggregationType string
+
+const (
+	// max is not welcomed since it may import outliers
+	AVG AggregationType = "avg"
+	P99 AggregationType = "p99"
+	P95 AggregationType = "p95"
+	P90 AggregationType = "p90"
+	P50 AggregationType = "p50"
+)

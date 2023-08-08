@@ -24,7 +24,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 )
@@ -41,10 +41,10 @@ func RegisterNodeSLOMergedExtender(name string, extender NodeSLOMergedPlugin) er
 	return nil
 }
 
-func calculateExtensionsCfgMerged(oldCfgMap extension.ExtensionCfgMap, configMap *corev1.ConfigMap, recorder record.EventRecorder) extension.ExtensionCfgMap {
+func calculateExtensionsCfgMerged(oldCfgMap configuration.ExtensionCfgMap, configMap *corev1.ConfigMap, recorder record.EventRecorder) configuration.ExtensionCfgMap {
 	oldCfgMapCopy := *oldCfgMap.DeepCopy()
 	if oldCfgMapCopy.Object == nil {
-		oldCfgMapCopy.Object = make(map[string]extension.ExtensionCfg)
+		oldCfgMapCopy.Object = make(map[string]configuration.ExtensionCfg)
 	}
 	mergedCfgMap := oldCfgMapCopy
 	for name, extender := range globalNodeSLOMergedExtender {
@@ -62,7 +62,7 @@ func calculateExtensionsCfgMerged(oldCfgMap extension.ExtensionCfgMap, configMap
 	return mergedCfgMap
 }
 
-func getExtensionsConfigSpec(node *corev1.Node, cfgMap *extension.ExtensionCfgMap) *slov1alpha1.ExtensionsMap {
+func getExtensionsConfigSpec(node *corev1.Node, cfgMap *configuration.ExtensionCfgMap) *slov1alpha1.ExtensionsMap {
 	extMap := slov1alpha1.ExtensionsMap{}
 	if cfgMap == nil || cfgMap.Object == nil {
 		return &extMap
@@ -93,7 +93,7 @@ func UnregisterNodeSLOMergedExtender(name string) {
 
 type NodeSLOMergedPlugin interface {
 	// calculate each extension cfg merged
-	MergeNodeSLOExtension(oldCfgMap extension.ExtensionCfgMap, configMap *corev1.ConfigMap, recorder record.EventRecorder) (extension.ExtensionCfgMap, error)
+	MergeNodeSLOExtension(oldCfgMap configuration.ExtensionCfgMap, configMap *corev1.ConfigMap, recorder record.EventRecorder) (configuration.ExtensionCfgMap, error)
 	// get each extension config spec
-	GetNodeSLOExtension(node *corev1.Node, cfg *extension.ExtensionCfgMap) (string, interface{}, error)
+	GetNodeSLOExtension(node *corev1.Node, cfg *configuration.ExtensionCfgMap) (string, interface{}, error)
 }

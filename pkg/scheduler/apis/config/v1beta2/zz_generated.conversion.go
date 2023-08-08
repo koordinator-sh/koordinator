@@ -24,7 +24,7 @@ package v1beta2
 import (
 	unsafe "unsafe"
 
-	v1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	extension "github.com/koordinator-sh/koordinator/apis/extension"
 	config "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -207,11 +207,11 @@ func Convert_config_ElasticQuotaArgs_To_v1beta2_ElasticQuotaArgs(in *config.Elas
 
 func autoConvert_v1beta2_LoadAwareSchedulingAggregatedArgs_To_config_LoadAwareSchedulingAggregatedArgs(in *LoadAwareSchedulingAggregatedArgs, out *config.LoadAwareSchedulingAggregatedArgs, s conversion.Scope) error {
 	out.UsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
-	out.UsageAggregationType = v1alpha1.AggregationType(in.UsageAggregationType)
+	out.UsageAggregationType = extension.AggregationType(in.UsageAggregationType)
 	if err := v1.Convert_Pointer_v1_Duration_To_v1_Duration(&in.UsageAggregatedDuration, &out.UsageAggregatedDuration, s); err != nil {
 		return err
 	}
-	out.ScoreAggregationType = v1alpha1.AggregationType(in.ScoreAggregationType)
+	out.ScoreAggregationType = extension.AggregationType(in.ScoreAggregationType)
 	if err := v1.Convert_Pointer_v1_Duration_To_v1_Duration(&in.ScoreAggregatedDuration, &out.ScoreAggregatedDuration, s); err != nil {
 		return err
 	}
@@ -225,11 +225,11 @@ func Convert_v1beta2_LoadAwareSchedulingAggregatedArgs_To_config_LoadAwareSchedu
 
 func autoConvert_config_LoadAwareSchedulingAggregatedArgs_To_v1beta2_LoadAwareSchedulingAggregatedArgs(in *config.LoadAwareSchedulingAggregatedArgs, out *LoadAwareSchedulingAggregatedArgs, s conversion.Scope) error {
 	out.UsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
-	out.UsageAggregationType = v1alpha1.AggregationType(in.UsageAggregationType)
+	out.UsageAggregationType = extension.AggregationType(in.UsageAggregationType)
 	if err := v1.Convert_v1_Duration_To_Pointer_v1_Duration(&in.UsageAggregatedDuration, &out.UsageAggregatedDuration, s); err != nil {
 		return err
 	}
-	out.ScoreAggregationType = v1alpha1.AggregationType(in.ScoreAggregationType)
+	out.ScoreAggregationType = extension.AggregationType(in.ScoreAggregationType)
 	if err := v1.Convert_v1_Duration_To_Pointer_v1_Duration(&in.ScoreAggregatedDuration, &out.ScoreAggregatedDuration, s); err != nil {
 		return err
 	}

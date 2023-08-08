@@ -24,7 +24,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 const (
@@ -95,7 +94,7 @@ type CustomAggregatedUsage struct {
 	// UsageThresholds indicates the resource utilization threshold of the machine based on percentile statistics
 	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
 	// UsageAggregationType indicates the percentile type of the machine's utilization when filtering
-	UsageAggregationType slov1alpha1.AggregationType `json:"usageAggregationType,omitempty"`
+	UsageAggregationType AggregationType `json:"usageAggregationType,omitempty"`
 	// UsageAggregatedDuration indicates the statistical period of the percentile of the machine's utilization when filtering
 	UsageAggregatedDuration *metav1.Duration `json:"usageAggregatedDuration,omitempty"`
 }

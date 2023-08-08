@@ -23,18 +23,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 )
 
 var _ ConfigChecker = &SystemConfigChecker{}
 
 type SystemConfigChecker struct {
-	cfg *extension.SystemCfg
+	cfg *configuration.SystemCfg
 	CommonChecker
 }
 
 func NewSystemConfigChecker(oldConfig, newConfig *corev1.ConfigMap, needUnmarshal bool) *SystemConfigChecker {
-	checker := &SystemConfigChecker{CommonChecker: CommonChecker{OldConfigMap: oldConfig, NewConfigMap: newConfig, configKey: extension.SystemConfigKey, initStatus: NotInit}}
+	checker := &SystemConfigChecker{CommonChecker: CommonChecker{OldConfigMap: oldConfig, NewConfigMap: newConfig, configKey: configuration.SystemConfigKey, initStatus: NotInit}}
 	if !checker.IsCfgNotEmptyAndChanged() && !needUnmarshal {
 		return checker
 	}
@@ -51,8 +51,8 @@ func (c *SystemConfigChecker) ConfigParamValid() error {
 }
 
 func (c *SystemConfigChecker) initConfig() error {
-	cfg := &extension.SystemCfg{}
-	configStr := c.NewConfigMap.Data[extension.SystemConfigKey]
+	cfg := &configuration.SystemCfg{}
+	configStr := c.NewConfigMap.Data[configuration.SystemConfigKey]
 	err := json.Unmarshal([]byte(configStr), &cfg)
 	if err != nil {
 		message := fmt.Sprintf("Failed to parse System config in configmap %s/%s, err: %s",
@@ -62,7 +62,7 @@ func (c *SystemConfigChecker) initConfig() error {
 	}
 	c.cfg = cfg
 
-	c.NodeConfigProfileChecker, err = CreateNodeConfigProfileChecker(extension.SystemConfigKey, c.getConfigProfiles)
+	c.NodeConfigProfileChecker, err = CreateNodeConfigProfileChecker(configuration.SystemConfigKey, c.getConfigProfiles)
 	if err != nil {
 		klog.Error(fmt.Sprintf("Failed to parse System config in configmap %s/%s, err: %s",
 			c.NewConfigMap.Namespace, c.NewConfigMap.Name, err.Error()))
@@ -72,8 +72,8 @@ func (c *SystemConfigChecker) initConfig() error {
 	return nil
 }
 
-func (c *SystemConfigChecker) getConfigProfiles() []extension.NodeCfgProfile {
-	var profiles []extension.NodeCfgProfile
+func (c *SystemConfigChecker) getConfigProfiles() []configuration.NodeCfgProfile {
+	var profiles []configuration.NodeCfgProfile
 	for _, nodeCfg := range c.cfg.NodeStrategies {
 		profiles = append(profiles, nodeCfg.NodeCfgProfile)
 	}

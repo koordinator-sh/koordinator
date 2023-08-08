@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/utils/pointer"
 
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
@@ -54,7 +55,7 @@ func TestPluginNeedSync(t *testing.T) {
 		extension.MidMemory:   resource.MustParse("30Gi"),
 	})
 	type args struct {
-		strategy *extension.ColocationStrategy
+		strategy *configuration.ColocationStrategy
 		oldNode  *corev1.Node
 		newNode  *corev1.Node
 	}
@@ -67,7 +68,7 @@ func TestPluginNeedSync(t *testing.T) {
 		{
 			name: "no need to sync for no mid resource changed",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                pointer.Bool(true),
 					ResourceDiffThreshold: pointer.Float64(0.05),
 				},
@@ -80,7 +81,7 @@ func TestPluginNeedSync(t *testing.T) {
 		{
 			name: "need to sync for mid resource changed",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                pointer.Bool(true),
 					ResourceDiffThreshold: pointer.Float64(0.05),
 				},
@@ -112,7 +113,7 @@ func TestPluginExecute(t *testing.T) {
 		extension.MidMemory,
 	}...)
 	type args struct {
-		strategy *extension.ColocationStrategy
+		strategy *configuration.ColocationStrategy
 		node     *corev1.Node
 		nr       *framework.NodeResource
 	}
@@ -272,7 +273,7 @@ func TestPluginCalculate(t *testing.T) {
 	testMemoryQuant := resource.MustParse("15Gi")
 	testMemoryQuant2 := resource.MustParse("30Gi")
 	type args struct {
-		strategy *extension.ColocationStrategy
+		strategy *configuration.ColocationStrategy
 		node     *corev1.Node
 		podList  *corev1.PodList
 		metrics  *framework.ResourceMetrics
@@ -292,7 +293,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "degrade when node metric is expired",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:             pointer.Bool(true),
 					DegradeTimeMinutes: pointer.Int64(5),
 				},
@@ -361,7 +362,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate correctly when node metric is valid",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:             pointer.Bool(true),
 					DegradeTimeMinutes: pointer.Int64(10),
 				},
@@ -438,7 +439,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate correctly where the prod reclaimable exceeds the mid threshold",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:                    pointer.Bool(true),
 					DegradeTimeMinutes:        pointer.Int64(10),
 					MidCPUThresholdPercent:    pointer.Int64(10),
@@ -531,7 +532,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		Clock clock.Clock
 	}
 	type args struct {
-		strategy   *extension.ColocationStrategy
+		strategy   *configuration.ColocationStrategy
 		nodeMetric *slov1alpha1.NodeMetric
 		node       *corev1.Node
 	}
@@ -558,7 +559,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		{
 			name: "outdated NodeMetric status should degrade",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:             pointer.Bool(true),
 					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
 				},
@@ -587,7 +588,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 				Clock: clock.NewFakeClock(time.Now().Add(time.Minute * (degradeTimeoutMinutes + 1))),
 			},
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:             pointer.Bool(true),
 					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
 				},
@@ -619,7 +620,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		{
 			name: "NodeMetric without prod reclaimable should degrade",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:             pointer.Bool(true),
 					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
 				},
@@ -653,7 +654,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		{
 			name: "valid NodeMetric status should not degrade",
 			args: args{
-				strategy: &extension.ColocationStrategy{
+				strategy: &configuration.ColocationStrategy{
 					Enable:             pointer.Bool(true),
 					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
 				},

@@ -22,7 +22,6 @@ import (
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -61,12 +60,12 @@ type LoadAwareSchedulingAggregatedArgs struct {
 	// UsageThresholds indicates the resource utilization threshold of the machine based on percentile statistics
 	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
 	// UsageAggregationType indicates the percentile type of the machine's utilization when filtering
-	UsageAggregationType slov1alpha1.AggregationType `json:"usageAggregationType,omitempty"`
+	UsageAggregationType extension.AggregationType `json:"usageAggregationType,omitempty"`
 	// UsageAggregatedDuration indicates the statistical period of the percentile of the machine's utilization when filtering
 	UsageAggregatedDuration *metav1.Duration `json:"usageAggregatedDuration,omitempty"`
 
 	// ScoreAggregationType indicates the percentile type of the machine's utilization when scoring
-	ScoreAggregationType slov1alpha1.AggregationType `json:"scoreAggregationType,omitempty"`
+	ScoreAggregationType extension.AggregationType `json:"scoreAggregationType,omitempty"`
 	// ScoreAggregatedDuration indicates the statistical period of the percentile of Prod Pod's utilization when scoring
 	ScoreAggregatedDuration *metav1.Duration `json:"scoreAggregatedDuration,omitempty"`
 }

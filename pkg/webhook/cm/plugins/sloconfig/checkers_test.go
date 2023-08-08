@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 )
 
 func Test_CreateCheckersChanged_and_CheckContents(t *testing.T) {
@@ -41,11 +41,11 @@ func Test_CreateCheckersChanged_and_CheckContents(t *testing.T) {
 			args: args{
 				oldConfig: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":-1," +
+						configuration.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":-1," +
 							"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 							"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1}",
-						extension.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
-						extension.ResourceQOSConfigKey: `
+						configuration.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
+						configuration.ResourceQOSConfigKey: `
 {
   "clusterStrategy": {
     "enable": true,
@@ -57,8 +57,8 @@ func Test_CreateCheckersChanged_and_CheckContents(t *testing.T) {
   }
 }
 `,
-						extension.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
-						extension.SystemConfigKey:   "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150}}",
+						configuration.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
+						configuration.SystemConfigKey:   "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150}}",
 					},
 				},
 				newConfig: &corev1.ConfigMap{
@@ -73,20 +73,20 @@ func Test_CreateCheckersChanged_and_CheckContents(t *testing.T) {
 			args: args{
 				oldConfig: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ResourceThresholdConfigKey: "invalid_content",
-						extension.ResourceQOSConfigKey:       "invalid_content",
-						extension.CPUBurstConfigKey:          "invalid_content",
-						extension.SystemConfigKey:            "invalid_content",
-						extension.ColocationConfigKey:        "invalid_content",
+						configuration.ResourceThresholdConfigKey: "invalid_content",
+						configuration.ResourceQOSConfigKey:       "invalid_content",
+						configuration.CPUBurstConfigKey:          "invalid_content",
+						configuration.SystemConfigKey:            "invalid_content",
+						configuration.ColocationConfigKey:        "invalid_content",
 					},
 				},
 				newConfig: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ResourceThresholdConfigKey: "invalid_content",
-						extension.ResourceQOSConfigKey:       "invalid_content",
-						extension.CPUBurstConfigKey:          "invalid_content",
-						extension.SystemConfigKey:            "invalid_content",
-						extension.ColocationConfigKey:        "invalid_content",
+						configuration.ResourceThresholdConfigKey: "invalid_content",
+						configuration.ResourceQOSConfigKey:       "invalid_content",
+						configuration.CPUBurstConfigKey:          "invalid_content",
+						configuration.SystemConfigKey:            "invalid_content",
+						configuration.ColocationConfigKey:        "invalid_content",
 					},
 				},
 			},
@@ -98,11 +98,11 @@ func Test_CreateCheckersChanged_and_CheckContents(t *testing.T) {
 			args: args{
 				newConfig: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ResourceThresholdConfigKey: "invalid_content",
-						extension.ResourceQOSConfigKey:       "invalid_content",
-						extension.CPUBurstConfigKey:          "invalid_content",
-						extension.SystemConfigKey:            "invalid_content",
-						extension.ColocationConfigKey:        "invalid_content",
+						configuration.ResourceThresholdConfigKey: "invalid_content",
+						configuration.ResourceQOSConfigKey:       "invalid_content",
+						configuration.CPUBurstConfigKey:          "invalid_content",
+						configuration.SystemConfigKey:            "invalid_content",
+						configuration.ColocationConfigKey:        "invalid_content",
 					},
 				},
 			},
@@ -114,7 +114,7 @@ func Test_CreateCheckersChanged_and_CheckContents(t *testing.T) {
 			args: args{
 				newConfig: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":-1," +
+						configuration.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":-1," +
 							"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 							"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1}",
 					},
@@ -128,7 +128,7 @@ func Test_CreateCheckersChanged_and_CheckContents(t *testing.T) {
 			args: args{
 				newConfig: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
+						configuration.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
 							"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 							"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"nodeConfigs\":[{\"nodeSelector\":" +
 							"{\"matchLabels\":{\"xxx\":\"xxx\"}},\"enable\":true}]}",
@@ -143,7 +143,7 @@ func Test_CreateCheckersChanged_and_CheckContents(t *testing.T) {
 			args: args{
 				newConfig: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
+						configuration.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
 							"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 							"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"nodeConfigs\":[{\"nodeSelector\":" +
 							"{\"matchLabels\":{\"xxx\":\"xxx\"}},\"enable\":true,\"name\":\"test1\"},{\"nodeSelector\":" +
@@ -159,11 +159,11 @@ func Test_CreateCheckersChanged_and_CheckContents(t *testing.T) {
 			args: args{
 				newConfig: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":100," +
+						configuration.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":100," +
 							"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 							"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1}",
-						extension.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
-						extension.ResourceQOSConfigKey: `
+						configuration.ResourceThresholdConfigKey: "{\"clusterStrategy\":{\"enable\":true,\"cpuSuppressThresholdPercent\":60}}",
+						configuration.ResourceQOSConfigKey: `
 {
   "clusterStrategy": {
     "enable": true,
@@ -175,8 +175,8 @@ func Test_CreateCheckersChanged_and_CheckContents(t *testing.T) {
   }
 }
 `,
-						extension.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
-						extension.SystemConfigKey:   "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150}}",
+						configuration.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
+						configuration.SystemConfigKey:   "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150}}",
 					},
 				},
 			},
@@ -210,7 +210,7 @@ func Test_NeedCheckForNodes(t *testing.T) {
 			args: args{
 				newConfig: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
+						configuration.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
 							"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 							"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"nodeConfigs\":[{\"nodeSelector\":" +
 							"{\"matchLabels\":{\"xxx\":\"xxx\"}},\"enable\":true,\"name\":\"test1\"}]}",
@@ -224,7 +224,7 @@ func Test_NeedCheckForNodes(t *testing.T) {
 			args: args{
 				newConfig: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
+						configuration.ColocationConfigKey: "{\"enable\":true,\"metricAggregateDurationSeconds\":60," +
 							"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"updateTimeThresholdSeconds\":300," +
 							"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"nodeConfigs\":[{\"nodeSelector\":" +
 							"{\"matchLabels\":{\"xxx\":\"xxx\"}},\"enable\":true,\"name\":\"test1\"},{\"nodeSelector\":" +

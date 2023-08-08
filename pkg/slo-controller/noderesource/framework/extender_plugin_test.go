@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 )
 
 const (
@@ -38,7 +38,7 @@ func (s *SetNodeAnnotation) Name() string {
 	return "SetNodeAnnotation"
 }
 
-func (s *SetNodeAnnotation) Execute(strategy *extension.ColocationStrategy, node *corev1.Node, nr *NodeResource) error {
+func (s *SetNodeAnnotation) Execute(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error {
 	node.Annotations[testNodeAnnoKey] = testNodeAnnoVal
 	return nil
 }
@@ -95,15 +95,15 @@ func (p *testNodeResourcePlugin) Setup(opt *Option) error {
 	return nil
 }
 
-func (p *testNodeResourcePlugin) Execute(strategy *extension.ColocationStrategy, node *corev1.Node, nr *NodeResource) error {
+func (p *testNodeResourcePlugin) Execute(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error {
 	return nil
 }
 
-func (p *testNodeResourcePlugin) NeedSync(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
+func (p *testNodeResourcePlugin) NeedSync(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
 	return true, "always sync"
 }
 
-func (p *testNodeResourcePlugin) NeedSyncMeta(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
+func (p *testNodeResourcePlugin) NeedSyncMeta(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
 	return true, "always sync meta"
 }
 
@@ -117,7 +117,7 @@ func (p *testNodeResourcePlugin) Reset(node *corev1.Node, msg string) []Resource
 	}
 }
 
-func (p *testNodeResourcePlugin) Calculate(strategy *extension.ColocationStrategy, node *corev1.Node, podList *corev1.PodList, metrics *ResourceMetrics) ([]ResourceItem, error) {
+func (p *testNodeResourcePlugin) Calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList, metrics *ResourceMetrics) ([]ResourceItem, error) {
 	return []ResourceItem{
 		{
 			Name:     "unknown",

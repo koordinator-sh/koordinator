@@ -534,11 +534,11 @@ func Test_nodeMetricInformer_collectNodeAggregateMetric(t *testing.T) {
 				NodeUsage: tt.fields.nodeResultAVG,
 				AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
 					{
-						Usage: map[slov1alpha1.AggregationType]slov1alpha1.ResourceMap{
-							slov1alpha1.P50: tt.fields.nodeResultP50,
-							slov1alpha1.P90: tt.fields.nodeResultP90,
-							slov1alpha1.P95: tt.fields.nodeResultP95,
-							slov1alpha1.P99: tt.fields.nodeResultP99,
+						Usage: map[apiext.AggregationType]slov1alpha1.ResourceMap{
+							apiext.P50: tt.fields.nodeResultP50,
+							apiext.P90: tt.fields.nodeResultP90,
+							apiext.P95: tt.fields.nodeResultP95,
+							apiext.P99: tt.fields.nodeResultP99,
 						},
 						Duration: metav1.Duration{
 							Duration: end.Sub(start),

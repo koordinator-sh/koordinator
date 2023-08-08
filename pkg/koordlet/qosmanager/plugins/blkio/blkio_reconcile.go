@@ -198,10 +198,10 @@ func (b *blkIOReconcile) reconcile() {
 		}
 		var err error
 		podBlkIOQoS := &slov1alpha1.BlkIOQOS{}
-		if podVolumeResult, exist := podMeta.Pod.Annotations[extension.AnnotationPodBlkioQoS]; exist {
+		if podVolumeResult, exist := podMeta.Pod.Annotations[slov1alpha1.AnnotationPodBlkioQoS]; exist {
 			if podVolumeResult != "" {
 				if podBlkIOQoS, err = parseBlkIOResult(podVolumeResult); err != nil {
-					klog.Errorf("%s: unmarshal pod annotation %v failed, error %v", BlkIOReconcileName, extension.AnnotationPodBlkioQoS, err)
+					klog.Errorf("%s: unmarshal pod annotation %v failed, error %v", BlkIOReconcileName, slov1alpha1.AnnotationPodBlkioQoS, err)
 					continue
 				}
 			}

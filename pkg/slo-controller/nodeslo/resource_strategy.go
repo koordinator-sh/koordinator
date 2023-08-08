@@ -24,12 +24,12 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-func getResourceThresholdSpec(node *corev1.Node, cfg *extension.ResourceThresholdCfg) (*slov1alpha1.ResourceThresholdStrategy, error) {
+func getResourceThresholdSpec(node *corev1.Node, cfg *configuration.ResourceThresholdCfg) (*slov1alpha1.ResourceThresholdStrategy, error) {
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
@@ -45,7 +45,7 @@ func getResourceThresholdSpec(node *corev1.Node, cfg *extension.ResourceThreshol
 	return cfg.ClusterStrategy.DeepCopy(), nil
 }
 
-func getResourceQOSSpec(node *corev1.Node, cfg *extension.ResourceQOSCfg) (*slov1alpha1.ResourceQOSStrategy, error) {
+func getResourceQOSSpec(node *corev1.Node, cfg *configuration.ResourceQOSCfg) (*slov1alpha1.ResourceQOSStrategy, error) {
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
@@ -61,7 +61,7 @@ func getResourceQOSSpec(node *corev1.Node, cfg *extension.ResourceQOSCfg) (*slov
 	return cfg.ClusterStrategy.DeepCopy(), nil
 }
 
-func getCPUBurstConfigSpec(node *corev1.Node, cfg *extension.CPUBurstCfg) (*slov1alpha1.CPUBurstStrategy, error) {
+func getCPUBurstConfigSpec(node *corev1.Node, cfg *configuration.CPUBurstCfg) (*slov1alpha1.CPUBurstStrategy, error) {
 
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeStrategy := range cfg.NodeStrategies {
@@ -78,7 +78,7 @@ func getCPUBurstConfigSpec(node *corev1.Node, cfg *extension.CPUBurstCfg) (*slov
 	return cfg.ClusterStrategy.DeepCopy(), nil
 }
 
-func getSystemConfigSpec(node *corev1.Node, cfg *extension.SystemCfg) (*slov1alpha1.SystemStrategy, error) {
+func getSystemConfigSpec(node *corev1.Node, cfg *configuration.SystemCfg) (*slov1alpha1.SystemStrategy, error) {
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
@@ -94,15 +94,15 @@ func getSystemConfigSpec(node *corev1.Node, cfg *extension.SystemCfg) (*slov1alp
 	return cfg.ClusterStrategy.DeepCopy(), nil
 }
 
-func calculateResourceThresholdCfgMerged(oldCfg extension.ResourceThresholdCfg, configMap *corev1.ConfigMap) (extension.ResourceThresholdCfg, error) {
-	cfgStr, ok := configMap.Data[extension.ResourceThresholdConfigKey]
+func calculateResourceThresholdCfgMerged(oldCfg configuration.ResourceThresholdCfg, configMap *corev1.ConfigMap) (configuration.ResourceThresholdCfg, error) {
+	cfgStr, ok := configMap.Data[configuration.ResourceThresholdConfigKey]
 	if !ok {
 		return DefaultSLOCfg().ThresholdCfgMerged, nil
 	}
 
-	mergedCfg := extension.ResourceThresholdCfg{}
+	mergedCfg := configuration.ResourceThresholdCfg{}
 	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
-		klog.Errorf("failed to unmarshal config %s, err: %s", extension.ResourceThresholdConfigKey, err)
+		klog.Errorf("failed to unmarshal config %s, err: %s", configuration.ResourceThresholdConfigKey, err)
 		return oldCfg, err
 	}
 
@@ -129,15 +129,15 @@ func calculateResourceThresholdCfgMerged(oldCfg extension.ResourceThresholdCfg, 
 	return mergedCfg, nil
 }
 
-func calculateResourceQOSCfgMerged(oldCfg extension.ResourceQOSCfg, configMap *corev1.ConfigMap) (extension.ResourceQOSCfg, error) {
-	cfgStr, ok := configMap.Data[extension.ResourceQOSConfigKey]
+func calculateResourceQOSCfgMerged(oldCfg configuration.ResourceQOSCfg, configMap *corev1.ConfigMap) (configuration.ResourceQOSCfg, error) {
+	cfgStr, ok := configMap.Data[configuration.ResourceQOSConfigKey]
 	if !ok {
 		return DefaultSLOCfg().ResourceQOSCfgMerged, nil
 	}
 
 	mergedCfg := DefaultSLOCfg().ResourceQOSCfgMerged
 	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
-		klog.Errorf("failed to unmarshal config %s, err: %s", extension.ResourceQOSConfigKey, err)
+		klog.Errorf("failed to unmarshal config %s, err: %s", configuration.ResourceQOSConfigKey, err)
 		return oldCfg, err
 	}
 
@@ -166,15 +166,15 @@ func calculateResourceQOSCfgMerged(oldCfg extension.ResourceQOSCfg, configMap *c
 	return mergedCfg, nil
 }
 
-func calculateCPUBurstCfgMerged(oldCfg extension.CPUBurstCfg, configMap *corev1.ConfigMap) (extension.CPUBurstCfg, error) {
-	cfgStr, ok := configMap.Data[extension.CPUBurstConfigKey]
+func calculateCPUBurstCfgMerged(oldCfg configuration.CPUBurstCfg, configMap *corev1.ConfigMap) (configuration.CPUBurstCfg, error) {
+	cfgStr, ok := configMap.Data[configuration.CPUBurstConfigKey]
 	if !ok {
 		return DefaultSLOCfg().CPUBurstCfgMerged, nil
 	}
 
-	mergedCfg := extension.CPUBurstCfg{}
+	mergedCfg := configuration.CPUBurstCfg{}
 	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
-		klog.Errorf("failed to unmarshal config %s, err: %s", extension.CPUBurstConfigKey, err)
+		klog.Errorf("failed to unmarshal config %s, err: %s", configuration.CPUBurstConfigKey, err)
 		return oldCfg, err
 	}
 
@@ -201,15 +201,15 @@ func calculateCPUBurstCfgMerged(oldCfg extension.CPUBurstCfg, configMap *corev1.
 	return mergedCfg, nil
 }
 
-func calculateSystemConfigMerged(oldCfg extension.SystemCfg, configMap *corev1.ConfigMap) (extension.SystemCfg, error) {
-	cfgStr, ok := configMap.Data[extension.SystemConfigKey]
+func calculateSystemConfigMerged(oldCfg configuration.SystemCfg, configMap *corev1.ConfigMap) (configuration.SystemCfg, error) {
+	cfgStr, ok := configMap.Data[configuration.SystemConfigKey]
 	if !ok {
 		return DefaultSLOCfg().SystemCfgMerged, nil
 	}
 
-	mergedCfg := extension.SystemCfg{}
+	mergedCfg := configuration.SystemCfg{}
 	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
-		klog.Warningf("failed to unmarshal config %s, err: %s", extension.SystemConfigKey, err)
+		klog.Warningf("failed to unmarshal config %s, err: %s", configuration.SystemConfigKey, err)
 		return oldCfg, err
 	}
 

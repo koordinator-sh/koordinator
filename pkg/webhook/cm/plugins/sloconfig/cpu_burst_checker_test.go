@@ -26,13 +26,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 	//clusterOnly
-	cfgClusterOnly := &extension.CPUBurstCfg{
+	cfgClusterOnly := &configuration.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
 				CPUBurstPercent:            pointer.Int64(100),
@@ -43,7 +43,7 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 	}
 	cfgClusterOnlyBytes, _ := json.Marshal(cfgClusterOnly)
 	//nodeSelector is empty
-	cfgHaveNodeInvalid := &extension.CPUBurstCfg{
+	cfgHaveNodeInvalid := &configuration.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
 				CPUBurstPercent:            pointer.Int64(100),
@@ -51,9 +51,9 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 				CFSQuotaBurstPeriodSeconds: pointer.Int64(10000),
 			},
 		},
-		NodeStrategies: []extension.NodeCPUBurstCfg{
+		NodeStrategies: []configuration.NodeCPUBurstCfg{
 			{
-				NodeCfgProfile: extension.NodeCfgProfile{
+				NodeCfgProfile: configuration.NodeCfgProfile{
 					Name: "xxx-yyy",
 				},
 				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
@@ -69,7 +69,7 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 	cfgHaveNodeInvalidBytes, _ := json.Marshal(cfgHaveNodeInvalid)
 
 	//valid node config
-	cfgHaveNodeValid := &extension.CPUBurstCfg{
+	cfgHaveNodeValid := &configuration.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
 				CPUBurstPercent:            pointer.Int64(100),
@@ -77,9 +77,9 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 				CFSQuotaBurstPeriodSeconds: pointer.Int64(10000),
 			},
 		},
-		NodeStrategies: []extension.NodeCPUBurstCfg{
+		NodeStrategies: []configuration.NodeCPUBurstCfg{
 			{
-				NodeCfgProfile: extension.NodeCfgProfile{
+				NodeCfgProfile: configuration.NodeCfgProfile{
 					Name: "xxx-yyy",
 					NodeSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
@@ -109,7 +109,7 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 	tests := []struct {
 		name               string
 		args               args
-		wantCfg            *extension.CPUBurstCfg
+		wantCfg            *configuration.CPUBurstCfg
 		wantProfileChecker NodeConfigProfileChecker
 		wantStatus         string
 	}{
@@ -141,7 +141,7 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.CPUBurstConfigKey: "invalid config",
+						configuration.CPUBurstConfigKey: "invalid config",
 					},
 				},
 			},
@@ -154,12 +154,12 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 			args: args{
 				oldConfigMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.CPUBurstConfigKey: "invalid config",
+						configuration.CPUBurstConfigKey: "invalid config",
 					},
 				},
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.CPUBurstConfigKey: "invalid config",
+						configuration.CPUBurstConfigKey: "invalid config",
 					},
 				},
 			},
@@ -172,12 +172,12 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.CPUBurstConfigKey: string(cfgClusterOnlyBytes),
+						configuration.CPUBurstConfigKey: string(cfgClusterOnlyBytes),
 					},
 				},
 			},
 			wantCfg:            cfgClusterOnly,
-			wantProfileChecker: &nodeConfigProfileChecker{cfgName: extension.CPUBurstConfigKey},
+			wantProfileChecker: &nodeConfigProfileChecker{cfgName: configuration.CPUBurstConfigKey},
 			wantStatus:         InitSuccess,
 		},
 		{
@@ -185,7 +185,7 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.CPUBurstConfigKey: string(cfgHaveNodeInvalidBytes),
+						configuration.CPUBurstConfigKey: string(cfgHaveNodeInvalidBytes),
 					},
 				},
 			},
@@ -198,13 +198,13 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.CPUBurstConfigKey: string(cfgHaveNodeValidBytes),
+						configuration.CPUBurstConfigKey: string(cfgHaveNodeValidBytes),
 					},
 				},
 			},
 			wantCfg: cfgHaveNodeValid,
 			wantProfileChecker: &nodeConfigProfileChecker{
-				cfgName: extension.CPUBurstConfigKey,
+				cfgName: configuration.CPUBurstConfigKey,
 				nodeConfigs: []profileCheckInfo{
 					{
 						profile:   cfgHaveNodeValid.NodeStrategies[0].NodeCfgProfile,
@@ -230,7 +230,7 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 
 	type args struct {
-		cfg extension.CPUBurstCfg
+		cfg configuration.CPUBurstCfg
 	}
 
 	tests := []struct {
@@ -241,7 +241,7 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster CPUBurstPercent invalid",
 			args: args{
-				cfg: extension.CPUBurstCfg{
+				cfg: configuration.CPUBurstCfg{
 					ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 						CPUBurstConfig: slov1alpha1.CPUBurstConfig{
 							CPUBurstPercent: pointer.Int64(0),
@@ -254,7 +254,7 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster CFSQuotaBurstPercent invalid",
 			args: args{
-				cfg: extension.CPUBurstCfg{
+				cfg: configuration.CPUBurstCfg{
 					ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 						CPUBurstConfig: slov1alpha1.CPUBurstConfig{
 							CFSQuotaBurstPercent: pointer.Int64(-1),
@@ -267,7 +267,7 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster CFSQuotaBurstPeriodSeconds invalid",
 			args: args{
-				cfg: extension.CPUBurstCfg{
+				cfg: configuration.CPUBurstCfg{
 					ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 						CPUBurstConfig: slov1alpha1.CPUBurstConfig{
 							CFSQuotaBurstPeriodSeconds: pointer.Int64(-2),
@@ -280,11 +280,11 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 		{
 			name: "node CFSQuotaBurstPercent invalid",
 			args: args{
-				cfg: extension.CPUBurstCfg{
+				cfg: configuration.CPUBurstCfg{
 					ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 						CPUBurstConfig: slov1alpha1.CPUBurstConfig{},
 					},
-					NodeStrategies: []extension.NodeCPUBurstCfg{
+					NodeStrategies: []configuration.NodeCPUBurstCfg{
 						{
 							CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 								CPUBurstConfig: slov1alpha1.CPUBurstConfig{
@@ -300,13 +300,13 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 		{
 			name: "all is nil",
 			args: args{
-				cfg: extension.CPUBurstCfg{
+				cfg: configuration.CPUBurstCfg{
 					ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 						CPUBurstConfig: slov1alpha1.CPUBurstConfig{},
 					},
-					NodeStrategies: []extension.NodeCPUBurstCfg{
+					NodeStrategies: []configuration.NodeCPUBurstCfg{
 						{
-							NodeCfgProfile: extension.NodeCfgProfile{
+							NodeCfgProfile: configuration.NodeCfgProfile{
 								Name: "testNode",
 							},
 							CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
@@ -321,7 +321,7 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 		{
 			name: "config valid",
 			args: args{
-				cfg: extension.CPUBurstCfg{
+				cfg: configuration.CPUBurstCfg{
 					ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 						CPUBurstConfig: slov1alpha1.CPUBurstConfig{
 							CPUBurstPercent:            pointer.Int64(100),
@@ -329,9 +329,9 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 							CFSQuotaBurstPeriodSeconds: pointer.Int64(10000),
 						},
 					},
-					NodeStrategies: []extension.NodeCPUBurstCfg{
+					NodeStrategies: []configuration.NodeCPUBurstCfg{
 						{
-							NodeCfgProfile: extension.NodeCfgProfile{
+							NodeCfgProfile: configuration.NodeCfgProfile{
 								Name: "xxx-yyy",
 								NodeSelector: &metav1.LabelSelector{
 									MatchLabels: map[string]string{

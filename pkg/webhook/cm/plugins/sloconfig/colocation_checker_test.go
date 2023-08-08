@@ -27,13 +27,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 )
 
 func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 	//clusterOnly
-	cfgClusterOnly := &extension.ColocationCfg{
-		ColocationStrategy: extension.ColocationStrategy{
+	cfgClusterOnly := &configuration.ColocationCfg{
+		ColocationStrategy: configuration.ColocationStrategy{
 			MetricAggregateDurationSeconds: pointer.Int64(60),
 			CPUReclaimThresholdPercent:     pointer.Int64(70),
 			MemoryReclaimThresholdPercent:  pointer.Int64(70),
@@ -42,16 +42,16 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 	}
 	cfgClusterOnlyBytes, _ := json.Marshal(cfgClusterOnly)
 	//nodeSelector is empty
-	cfgHaveNodeInvalid := &extension.ColocationCfg{
-		ColocationStrategy: extension.ColocationStrategy{
+	cfgHaveNodeInvalid := &configuration.ColocationCfg{
+		ColocationStrategy: configuration.ColocationStrategy{
 			Enable: pointer.Bool(true),
 		},
-		NodeConfigs: []extension.NodeColocationCfg{
+		NodeConfigs: []configuration.NodeColocationCfg{
 			{
-				NodeCfgProfile: extension.NodeCfgProfile{
+				NodeCfgProfile: configuration.NodeCfgProfile{
 					Name: "xxx-yyy",
 				},
-				ColocationStrategy: extension.ColocationStrategy{
+				ColocationStrategy: configuration.ColocationStrategy{
 					Enable:                     pointer.Bool(true),
 					CPUReclaimThresholdPercent: pointer.Int64(60),
 				},
@@ -61,8 +61,8 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 	cfgHaveNodeInvalidBytes, _ := json.Marshal(cfgHaveNodeInvalid)
 
 	//valid node config
-	cfgHaveNodeValid := &extension.ColocationCfg{
-		ColocationStrategy: extension.ColocationStrategy{
+	cfgHaveNodeValid := &configuration.ColocationCfg{
+		ColocationStrategy: configuration.ColocationStrategy{
 			Enable:                         pointer.Bool(true),
 			MetricAggregateDurationSeconds: pointer.Int64(30),
 			CPUReclaimThresholdPercent:     pointer.Int64(70),
@@ -71,9 +71,9 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 			DegradeTimeMinutes:             pointer.Int64(5),
 			ResourceDiffThreshold:          pointer.Float64(0.1),
 		},
-		NodeConfigs: []extension.NodeColocationCfg{
+		NodeConfigs: []configuration.NodeColocationCfg{
 			{
-				NodeCfgProfile: extension.NodeCfgProfile{
+				NodeCfgProfile: configuration.NodeCfgProfile{
 					Name: "xxx-yyy",
 					NodeSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
@@ -81,7 +81,7 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 						},
 					},
 				},
-				ColocationStrategy: extension.ColocationStrategy{
+				ColocationStrategy: configuration.ColocationStrategy{
 					Enable:                     pointer.Bool(true),
 					CPUReclaimThresholdPercent: pointer.Int64(60),
 				},
@@ -100,7 +100,7 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 	tests := []struct {
 		name               string
 		args               args
-		wantCfg            *extension.ColocationCfg
+		wantCfg            *configuration.ColocationCfg
 		wantProfileChecker NodeConfigProfileChecker
 		wantStatus         string
 	}{
@@ -133,12 +133,12 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 			args: args{
 				oldConfigMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: "invalid config",
+						configuration.ColocationConfigKey: "invalid config",
 					},
 				},
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: "invalid config",
+						configuration.ColocationConfigKey: "invalid config",
 					},
 				},
 				needUnmarshal: false,
@@ -152,7 +152,7 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: "invalid config",
+						configuration.ColocationConfigKey: "invalid config",
 					},
 				},
 				needUnmarshal: false,
@@ -166,12 +166,12 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: string(cfgClusterOnlyBytes),
+						configuration.ColocationConfigKey: string(cfgClusterOnlyBytes),
 					},
 				},
 			},
 			wantCfg:            cfgClusterOnly,
-			wantProfileChecker: &nodeConfigProfileChecker{cfgName: extension.ColocationConfigKey},
+			wantProfileChecker: &nodeConfigProfileChecker{cfgName: configuration.ColocationConfigKey},
 			wantStatus:         InitSuccess,
 		},
 		{
@@ -179,21 +179,21 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":60,\"cpuReclaimThresholdPercent\":70," +
+						configuration.ColocationConfigKey: "{\"metricAggregateDurationSeconds\":60,\"cpuReclaimThresholdPercent\":70," +
 							"\"memoryReclaimThresholdPercent\":70,\"updateTimeThresholdSeconds\":100,\"nodeConfigs\":[]}",
 					},
 				},
 			},
-			wantCfg: &extension.ColocationCfg{
-				ColocationStrategy: extension.ColocationStrategy{
+			wantCfg: &configuration.ColocationCfg{
+				ColocationStrategy: configuration.ColocationStrategy{
 					MetricAggregateDurationSeconds: pointer.Int64(60),
 					CPUReclaimThresholdPercent:     pointer.Int64(70),
 					MemoryReclaimThresholdPercent:  pointer.Int64(70),
 					UpdateTimeThresholdSeconds:     pointer.Int64(100),
 				},
-				NodeConfigs: []extension.NodeColocationCfg{},
+				NodeConfigs: []configuration.NodeColocationCfg{},
 			},
-			wantProfileChecker: &nodeConfigProfileChecker{cfgName: extension.ColocationConfigKey},
+			wantProfileChecker: &nodeConfigProfileChecker{cfgName: configuration.ColocationConfigKey},
 			wantStatus:         InitSuccess,
 		},
 		{
@@ -201,7 +201,7 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: string(cfgHaveNodeInvalidBytes),
+						configuration.ColocationConfigKey: string(cfgHaveNodeInvalidBytes),
 					},
 				},
 			},
@@ -214,13 +214,13 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 			args: args{
 				configMap: &corev1.ConfigMap{
 					Data: map[string]string{
-						extension.ColocationConfigKey: string(cfgHaveNodeValidBytes),
+						configuration.ColocationConfigKey: string(cfgHaveNodeValidBytes),
 					},
 				},
 			},
 			wantCfg: cfgHaveNodeValid,
 			wantProfileChecker: &nodeConfigProfileChecker{
-				cfgName: extension.ColocationConfigKey,
+				cfgName: configuration.ColocationConfigKey,
 				nodeConfigs: []profileCheckInfo{
 					{
 						profile:   cfgHaveNodeValid.NodeConfigs[0].NodeCfgProfile,
@@ -246,7 +246,7 @@ func Test_Colocation_NewCheckerInitStatus(t *testing.T) {
 func Test_Colocation_ConfigContentsValid(t *testing.T) {
 
 	type args struct {
-		cfg extension.ColocationCfg
+		cfg configuration.ColocationCfg
 	}
 
 	tests := []struct {
@@ -257,8 +257,8 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster MetricAggregateDurationSeconds invalid",
 			args: args{
-				cfg: extension.ColocationCfg{
-					ColocationStrategy: extension.ColocationStrategy{
+				cfg: configuration.ColocationCfg{
+					ColocationStrategy: configuration.ColocationStrategy{
 						MetricAggregateDurationSeconds: pointer.Int64(0),
 					},
 				},
@@ -268,8 +268,8 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster CPUReclaimThresholdPercent invalid",
 			args: args{
-				cfg: extension.ColocationCfg{
-					ColocationStrategy: extension.ColocationStrategy{
+				cfg: configuration.ColocationCfg{
+					ColocationStrategy: configuration.ColocationStrategy{
 						CPUReclaimThresholdPercent: pointer.Int64(-1),
 					},
 				},
@@ -279,8 +279,8 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster MemoryReclaimThresholdPercent invalid",
 			args: args{
-				cfg: extension.ColocationCfg{
-					ColocationStrategy: extension.ColocationStrategy{
+				cfg: configuration.ColocationCfg{
+					ColocationStrategy: configuration.ColocationStrategy{
 						MemoryReclaimThresholdPercent: pointer.Int64(101),
 					},
 				},
@@ -290,8 +290,8 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster DegradeTimeMinutes invalid",
 			args: args{
-				cfg: extension.ColocationCfg{
-					ColocationStrategy: extension.ColocationStrategy{
+				cfg: configuration.ColocationCfg{
+					ColocationStrategy: configuration.ColocationStrategy{
 						DegradeTimeMinutes: pointer.Int64(0),
 					},
 				},
@@ -301,8 +301,8 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster UpdateTimeThresholdSeconds invalid",
 			args: args{
-				cfg: extension.ColocationCfg{
-					ColocationStrategy: extension.ColocationStrategy{
+				cfg: configuration.ColocationCfg{
+					ColocationStrategy: configuration.ColocationStrategy{
 						UpdateTimeThresholdSeconds: pointer.Int64(-1),
 					},
 				},
@@ -312,9 +312,9 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 		{
 			name: "cluster ResourceDiffThreshold invalid",
 			args: args{
-				cfg: extension.ColocationCfg{
+				cfg: configuration.ColocationCfg{
 
-					ColocationStrategy: extension.ColocationStrategy{
+					ColocationStrategy: configuration.ColocationStrategy{
 						ResourceDiffThreshold: pointer.Float64(2),
 					},
 				},
@@ -324,11 +324,11 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 		{
 			name: "node ResourceDiffThreshold invalid",
 			args: args{
-				cfg: extension.ColocationCfg{
-					ColocationStrategy: extension.ColocationStrategy{},
-					NodeConfigs: []extension.NodeColocationCfg{
+				cfg: configuration.ColocationCfg{
+					ColocationStrategy: configuration.ColocationStrategy{},
+					NodeConfigs: []configuration.NodeColocationCfg{
 						{
-							ColocationStrategy: extension.ColocationStrategy{
+							ColocationStrategy: configuration.ColocationStrategy{
 								ResourceDiffThreshold: pointer.Float64(-1),
 							},
 						},
@@ -340,14 +340,14 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 		{
 			name: "all is nil",
 			args: args{
-				cfg: extension.ColocationCfg{
-					ColocationStrategy: extension.ColocationStrategy{},
-					NodeConfigs: []extension.NodeColocationCfg{
+				cfg: configuration.ColocationCfg{
+					ColocationStrategy: configuration.ColocationStrategy{},
+					NodeConfigs: []configuration.NodeColocationCfg{
 						{
-							NodeCfgProfile: extension.NodeCfgProfile{
+							NodeCfgProfile: configuration.NodeCfgProfile{
 								Name: "testNode",
 							},
-							ColocationStrategy: extension.ColocationStrategy{},
+							ColocationStrategy: configuration.ColocationStrategy{},
 						},
 					},
 				},
@@ -357,8 +357,8 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 		{
 			name: "config valid",
 			args: args{
-				cfg: extension.ColocationCfg{
-					ColocationStrategy: extension.ColocationStrategy{
+				cfg: configuration.ColocationCfg{
+					ColocationStrategy: configuration.ColocationStrategy{
 						Enable:                         pointer.Bool(true),
 						MetricAggregateDurationSeconds: pointer.Int64(30),
 						CPUReclaimThresholdPercent:     pointer.Int64(70),
@@ -367,12 +367,12 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 						DegradeTimeMinutes:             pointer.Int64(5),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
 					},
-					NodeConfigs: []extension.NodeColocationCfg{
+					NodeConfigs: []configuration.NodeColocationCfg{
 						{
-							NodeCfgProfile: extension.NodeCfgProfile{
+							NodeCfgProfile: configuration.NodeCfgProfile{
 								Name: "testNode",
 							},
-							ColocationStrategy: extension.ColocationStrategy{
+							ColocationStrategy: configuration.ColocationStrategy{
 								Enable:                         pointer.Bool(true),
 								MetricAggregateDurationSeconds: pointer.Int64(30),
 								CPUReclaimThresholdPercent:     pointer.Int64(70),

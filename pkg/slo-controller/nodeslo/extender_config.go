@@ -19,25 +19,25 @@ package nodeslo
 import (
 	"fmt"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 )
 
 var (
-	defaultExtensionCfg = extension.ExtensionCfgMap{}
+	defaultExtensionCfg = configuration.ExtensionCfgMap{}
 )
 
-func getDefaultExtensionCfg() *extension.ExtensionCfgMap {
+func getDefaultExtensionCfg() *configuration.ExtensionCfgMap {
 	return defaultExtensionCfg.DeepCopy()
 }
 
 func RegisterDefaultExtension(key string, ext interface{}) error {
 	if defaultExtensionCfg.Object == nil {
-		defaultExtensionCfg.Object = map[string]extension.ExtensionCfg{}
+		defaultExtensionCfg.Object = map[string]configuration.ExtensionCfg{}
 	}
 	if _, exist := defaultExtensionCfg.Object[key]; exist {
 		return fmt.Errorf("extension %v of defaultExtensionStrategy already exist", key)
 	}
-	defaultExtensionCfg.Object[key] = extension.ExtensionCfg{ClusterStrategy: ext}
+	defaultExtensionCfg.Object[key] = configuration.ExtensionCfg{ClusterStrategy: ext}
 	return nil
 }
 

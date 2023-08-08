@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 )
 
 const (
@@ -34,16 +34,16 @@ const (
 
 type ManageNodeSLO struct{}
 
-func (m *ManageNodeSLO) MergeNodeSLOExtension(oldCfg extension.ExtensionCfgMap, configMap *corev1.ConfigMap, recorder record.EventRecorder) (extension.ExtensionCfgMap, error) {
+func (m *ManageNodeSLO) MergeNodeSLOExtension(oldCfg configuration.ExtensionCfgMap, configMap *corev1.ConfigMap, recorder record.EventRecorder) (configuration.ExtensionCfgMap, error) {
 	newCfg := oldCfg.DeepCopy()
 	if cfgIf, ok := configMap.Data[testExtKey]; ok {
-		extensionCfg := extension.ExtensionCfg{ClusterStrategy: cfgIf}
+		extensionCfg := configuration.ExtensionCfg{ClusterStrategy: cfgIf}
 		newCfg.Object[testExtKey] = extensionCfg
 	}
 	return *newCfg, nil
 }
 
-func (m *ManageNodeSLO) GetNodeSLOExtension(node *corev1.Node, cfgMap *extension.ExtensionCfgMap) (string, interface{}, error) {
+func (m *ManageNodeSLO) GetNodeSLOExtension(node *corev1.Node, cfgMap *configuration.ExtensionCfgMap) (string, interface{}, error) {
 	if cfg, ok := cfgMap.Object[testExtKey]; ok {
 		return testExtKey, cfg.ClusterStrategy, nil
 	}
@@ -67,7 +67,7 @@ func Test_NodeMergedExtender(t *testing.T) {
 				Labels: map[string]string{},
 			},
 		}
-		cfgMap := extension.ExtensionCfgMap{}
+		cfgMap := configuration.ExtensionCfgMap{}
 		newCfg := calculateExtensionsCfgMerged(cfgMap, configMap, &record.FakeRecorder{})
 		extMap := getExtensionsConfigSpec(node, &newCfg)
 		gotIf := extMap.Object[testExtKey].(string)

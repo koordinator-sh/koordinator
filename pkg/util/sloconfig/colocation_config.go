@@ -25,25 +25,25 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/pointer"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-func NewDefaultColocationCfg() *extension.ColocationCfg {
+func NewDefaultColocationCfg() *configuration.ColocationCfg {
 	defaultCfg := DefaultColocationCfg()
 	return &defaultCfg
 }
 
-func DefaultColocationCfg() extension.ColocationCfg {
-	return extension.ColocationCfg{
+func DefaultColocationCfg() configuration.ColocationCfg {
+	return configuration.ColocationCfg{
 		ColocationStrategy: DefaultColocationStrategy(),
 	}
 }
 
-func DefaultColocationStrategy() extension.ColocationStrategy {
-	calculatePolicy := extension.CalculateByPodUsage
-	cfg := extension.ColocationStrategy{
+func DefaultColocationStrategy() configuration.ColocationStrategy {
+	calculatePolicy := configuration.CalculateByPodUsage
+	cfg := configuration.ColocationStrategy{
 		Enable:                         pointer.Bool(false),
 		MetricAggregateDurationSeconds: pointer.Int64(300),
 		MetricReportIntervalSeconds:    pointer.Int64(60),
@@ -65,7 +65,7 @@ func DefaultColocationStrategy() extension.ColocationStrategy {
 	return cfg
 }
 
-func IsColocationStrategyValid(strategy *extension.ColocationStrategy) bool {
+func IsColocationStrategyValid(strategy *configuration.ColocationStrategy) bool {
 	return strategy != nil &&
 		(strategy.MetricAggregateDurationSeconds == nil || *strategy.MetricAggregateDurationSeconds > 0) &&
 		(strategy.MetricReportIntervalSeconds == nil || *strategy.MetricReportIntervalSeconds > 0) &&
@@ -76,7 +76,7 @@ func IsColocationStrategyValid(strategy *extension.ColocationStrategy) bool {
 		(strategy.ResourceDiffThreshold == nil || *strategy.ResourceDiffThreshold > 0)
 }
 
-func IsNodeColocationCfgValid(nodeCfg *extension.NodeColocationCfg) bool {
+func IsNodeColocationCfgValid(nodeCfg *configuration.NodeColocationCfg) bool {
 	if nodeCfg == nil {
 		return false
 	}
@@ -87,10 +87,10 @@ func IsNodeColocationCfgValid(nodeCfg *extension.NodeColocationCfg) bool {
 		return false
 	}
 	// node colocation should not be empty
-	return !reflect.DeepEqual(&nodeCfg.ColocationStrategy, &extension.ColocationStrategy{})
+	return !reflect.DeepEqual(&nodeCfg.ColocationStrategy, &configuration.ColocationStrategy{})
 }
 
-func GetNodeColocationStrategy(cfg *extension.ColocationCfg, node *corev1.Node) *extension.ColocationStrategy {
+func GetNodeColocationStrategy(cfg *configuration.ColocationCfg, node *corev1.Node) *configuration.ColocationStrategy {
 	if cfg == nil || node == nil {
 		return nil
 	}
@@ -109,7 +109,7 @@ func GetNodeColocationStrategy(cfg *extension.ColocationCfg, node *corev1.Node) 
 			continue
 		}
 
-		strategy, _ = merged.(*extension.ColocationStrategy)
+		strategy, _ = merged.(*configuration.ColocationStrategy)
 		break
 	}
 

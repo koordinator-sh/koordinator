@@ -374,7 +374,7 @@ func (m *cgroupResourcesReconcile) mergePodResourceQoSForMemoryQoS(pod *corev1.P
 	policy := slov1alpha1.PodMemoryQOSPolicyDefault
 
 	// get pod-level config
-	podCfg, err := apiext.GetPodMemoryQoSConfig(pod)
+	podCfg, err := slov1alpha1.GetPodMemoryQoSConfig(pod)
 	if err != nil { // ignore pod-level memory qos config when parse error
 		klog.Errorf("failed to parse memory qos config, pod %s, err: %s", util.GetPodKey(pod), err)
 		podCfg = nil

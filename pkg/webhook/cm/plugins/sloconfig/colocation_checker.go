@@ -23,18 +23,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	configuration "github.com/koordinator-sh/koordinator/apis/configuration"
 )
 
 var _ ConfigChecker = &ColocationConfigChecker{}
 
 type ColocationConfigChecker struct {
-	cfg *extension.ColocationCfg
+	cfg *configuration.ColocationCfg
 	CommonChecker
 }
 
 func NewColocationConfigChecker(oldConfig, newConfig *corev1.ConfigMap, needUnmarshal bool) *ColocationConfigChecker {
-	checker := &ColocationConfigChecker{CommonChecker: CommonChecker{OldConfigMap: oldConfig, NewConfigMap: newConfig, configKey: extension.ColocationConfigKey, initStatus: NotInit}}
+	checker := &ColocationConfigChecker{CommonChecker: CommonChecker{OldConfigMap: oldConfig, NewConfigMap: newConfig, configKey: configuration.ColocationConfigKey, initStatus: NotInit}}
 	if !checker.IsCfgNotEmptyAndChanged() && !needUnmarshal {
 		return checker
 	}
@@ -51,8 +51,8 @@ func (c *ColocationConfigChecker) ConfigParamValid() error {
 }
 
 func (c *ColocationConfigChecker) initConfig() error {
-	cfg := &extension.ColocationCfg{}
-	configStr := c.NewConfigMap.Data[extension.ColocationConfigKey]
+	cfg := &configuration.ColocationCfg{}
+	configStr := c.NewConfigMap.Data[configuration.ColocationConfigKey]
 	err := json.Unmarshal([]byte(configStr), &cfg)
 	if err != nil {
 		message := fmt.Sprintf("Failed to parse colocation config in configmap %s/%s, err: %s",
@@ -62,7 +62,7 @@ func (c *ColocationConfigChecker) initConfig() error {
 	}
 	c.cfg = cfg
 
-	c.NodeConfigProfileChecker, err = CreateNodeConfigProfileChecker(extension.ColocationConfigKey, c.getConfigProfiles)
+	c.NodeConfigProfileChecker, err = CreateNodeConfigProfileChecker(configuration.ColocationConfigKey, c.getConfigProfiles)
 	if err != nil {
 		klog.Error(fmt.Sprintf("Failed to parse colocation config in configmap %s/%s, err: %s",
 			c.NewConfigMap.Namespace, c.NewConfigMap.Name, err))
@@ -72,8 +72,8 @@ func (c *ColocationConfigChecker) initConfig() error {
 	return nil
 }
 
-func (c *ColocationConfigChecker) getConfigProfiles() []extension.NodeCfgProfile {
-	var profiles []extension.NodeCfgProfile
+func (c *ColocationConfigChecker) getConfigProfiles() []configuration.NodeCfgProfile {
+	var profiles []configuration.NodeCfgProfile
 	for _, nodeCfg := range c.cfg.NodeConfigs {
 		profiles = append(profiles, nodeCfg.NodeCfgProfile)
 	}

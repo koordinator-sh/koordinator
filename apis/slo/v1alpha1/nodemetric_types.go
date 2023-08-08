@@ -17,22 +17,12 @@ limitations under the License.
 package v1alpha1
 
 import (
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-type AggregationType string
-
-const (
-	// max is not welcomed since it may import outliers
-	AVG AggregationType = "avg"
-	P99 AggregationType = "p99"
-	P95 AggregationType = "p95"
-	P90 AggregationType = "p90"
-	P50 AggregationType = "p50"
-)
 
 type NodeMetricInfo struct {
 	// NodeUsage is the total resource usage of node
@@ -47,8 +37,8 @@ type NodeMetricInfo struct {
 }
 
 type AggregatedUsage struct {
-	Usage    map[AggregationType]ResourceMap `json:"usage,omitempty"`
-	Duration metav1.Duration                 `json:"duration,omitempty"`
+	Usage    map[apiext.AggregationType]ResourceMap `json:"usage,omitempty"`
+	Duration metav1.Duration                        `json:"duration,omitempty"`
 }
 
 type PodMetricInfo struct {

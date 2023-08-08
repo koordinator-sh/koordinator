@@ -26,6 +26,7 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
@@ -45,7 +46,7 @@ func (p *Plugin) Name() string {
 	return PluginName
 }
 
-func (p *Plugin) NeedSync(strategy *extension.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
+func (p *Plugin) NeedSync(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
 	// batch resource diff is bigger than ResourceDiffThreshold
 	resourcesToDiff := ResourceNames
 	for _, resourceName := range resourcesToDiff {
@@ -60,7 +61,7 @@ func (p *Plugin) NeedSync(strategy *extension.ColocationStrategy, oldNode, newNo
 	return false, ""
 }
 
-func (p *Plugin) Execute(strategy *extension.ColocationStrategy, node *corev1.Node, nr *framework.NodeResource) error {
+func (p *Plugin) Execute(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *framework.NodeResource) error {
 	for _, resourceName := range ResourceNames {
 		prepareNodeForResource(node, nr, resourceName)
 	}
@@ -80,7 +81,7 @@ func (p *Plugin) Reset(node *corev1.Node, message string) []framework.ResourceIt
 
 // Calculate calculates Batch resources using the formula below:
 // Node.Total - Node.Reserved - System.Used - Pod(High-Priority).Used, System.Used = Node.Used - Pod(All).Used.
-func (p *Plugin) Calculate(strategy *extension.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
+func (p *Plugin) Calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	resourceMetrics *framework.ResourceMetrics) ([]framework.ResourceItem, error) {
 	if strategy == nil || node == nil || podList == nil || resourceMetrics == nil || resourceMetrics.NodeMetric == nil {
 		return nil, fmt.Errorf("missing essential arguments")
@@ -167,7 +168,7 @@ func (p *Plugin) Calculate(strategy *extension.ColocationStrategy, node *corev1.
 	}, nil
 }
 
-func calculateBatchResourceByPolicy(strategy *extension.ColocationStrategy, node *corev1.Node,
+func calculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, node *corev1.Node,
 	nodeAllocatable, nodeReserve, systemUsed, podHPReq, podHPUsed corev1.ResourceList) (corev1.ResourceList, string, string) {
 	// Node(Batch).Alloc = Node.Total - Node.Reserved - System.Used - Pod(Prod/Mid).Used
 	batchAllocatableByUsage := quotav1.Max(quotav1.Subtract(quotav1.Subtract(quotav1.Subtract(
@@ -183,7 +184,7 @@ func calculateBatchResourceByPolicy(strategy *extension.ColocationStrategy, node
 		systemUsed.Cpu().MilliValue(), podHPUsed.Cpu().MilliValue())
 
 	var memMsg string
-	if strategy != nil && strategy.MemoryCalculatePolicy != nil && *strategy.MemoryCalculatePolicy == extension.CalculateByPodRequest {
+	if strategy != nil && strategy.MemoryCalculatePolicy != nil && *strategy.MemoryCalculatePolicy == configuration.CalculateByPodRequest {
 		batchAllocatable[corev1.ResourceMemory] = *batchAllocatableByRequest.Memory()
 		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeAllocatable:%v - nodeReservation:%v - podHPRequest:%v",
 			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeAllocatable.Memory().ScaledValue(resource.Giga),
@@ -198,7 +199,7 @@ func calculateBatchResourceByPolicy(strategy *extension.ColocationStrategy, node
 	return batchAllocatable, cpuMsg, memMsg
 }
 
-func (p *Plugin) isDegradeNeeded(strategy *extension.ColocationStrategy, nodeMetric *slov1alpha1.NodeMetric, node *corev1.Node) bool {
+func (p *Plugin) isDegradeNeeded(strategy *configuration.ColocationStrategy, nodeMetric *slov1alpha1.NodeMetric, node *corev1.Node) bool {
 	if nodeMetric == nil || nodeMetric.Status.UpdateTime == nil {
 		klog.V(3).Infof("invalid NodeMetric: %v, need degradation", nodeMetric)
 		return true
@@ -263,7 +264,7 @@ func getNodeAllocatable(node *corev1.Node) corev1.ResourceList {
 }
 
 // getNodeReservation gets node-level safe-guarding reservation with the node's allocatable
-func getNodeReservation(strategy *extension.ColocationStrategy, node *corev1.Node) corev1.ResourceList {
+func getNodeReservation(strategy *configuration.ColocationStrategy, node *corev1.Node) corev1.ResourceList {
 	nodeAllocatable := getNodeAllocatable(node)
 	cpuReserveQuant := util.MultiplyMilliQuant(nodeAllocatable[corev1.ResourceCPU], getReserveRatio(*strategy.CPUReclaimThresholdPercent))
 	memReserveQuant := util.MultiplyQuant(nodeAllocatable[corev1.ResourceMemory], getReserveRatio(*strategy.MemoryReclaimThresholdPercent))

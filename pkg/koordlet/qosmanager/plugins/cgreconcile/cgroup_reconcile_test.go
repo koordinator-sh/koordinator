@@ -911,7 +911,7 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 							apiext.LabelPodQoS: string(apiext.QoSBE),
 						},
 						Annotations: map[string]string{
-							apiext.AnnotationPodMemoryQoS: `{"policy":"none"}`,
+							slov1alpha1.AnnotationPodMemoryQoS: `{"policy":"none"}`,
 						},
 					},
 					Status: corev1.PodStatus{
@@ -936,7 +936,7 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 							apiext.LabelPodQoS: string(apiext.QoSBE),
 						},
 						Annotations: map[string]string{
-							apiext.AnnotationPodMemoryQoS: `{"policy":"auto"}`,
+							slov1alpha1.AnnotationPodMemoryQoS: `{"policy":"auto"}`,
 						},
 					},
 					Status: corev1.PodStatus{
@@ -961,7 +961,7 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 							apiext.LabelPodQoS: string(apiext.QoSBE),
 						},
 						Annotations: map[string]string{
-							apiext.AnnotationPodMemoryQoS: `{"policy":"auto","throttlingPercent":90}`,
+							slov1alpha1.AnnotationPodMemoryQoS: `{"policy":"auto","throttlingPercent":90}`,
 						},
 					},
 					Status: corev1.PodStatus{
@@ -984,7 +984,7 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 						Namespace: "default",
 						Annotations: map[string]string{
 							// qosNone
-							apiext.AnnotationPodMemoryQoS: `{"policy":"auto","throttlingPercent":90}`,
+							slov1alpha1.AnnotationPodMemoryQoS: `{"policy":"auto","throttlingPercent":90}`,
 						},
 					},
 					Status: corev1.PodStatus{
@@ -1204,7 +1204,7 @@ func createPodWithMemoryQOS(kubeQosClass corev1.PodQOSClass, qosClass apiext.QoS
 	if podMeta.Pod.Annotations == nil {
 		podMeta.Pod.Annotations = map[string]string{}
 	}
-	podMeta.Pod.Annotations[apiext.AnnotationPodMemoryQoS] = string(memQoSConfigBytes)
+	podMeta.Pod.Annotations[slov1alpha1.AnnotationPodMemoryQoS] = string(memQoSConfigBytes)
 	return podMeta
 }
 

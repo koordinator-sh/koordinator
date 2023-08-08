@@ -24,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
@@ -101,7 +101,7 @@ func Test_CreateNodeConfigProfileChecker(t *testing.T) {
 	nodeSelectorExpect, _ := metav1.LabelSelectorAsSelector(nodeSelectorValid)
 
 	type args struct {
-		profiles func() []extension.NodeCfgProfile
+		profiles func() []configuration.NodeCfgProfile
 	}
 	tests := []struct {
 		name    string
@@ -111,7 +111,7 @@ func Test_CreateNodeConfigProfileChecker(t *testing.T) {
 	}{
 		{
 			name: "profiles return nil",
-			args: args{profiles: func() []extension.NodeCfgProfile {
+			args: args{profiles: func() []configuration.NodeCfgProfile {
 				return nil
 			}},
 			want:    &nodeConfigProfileChecker{cfgName: "test"},
@@ -119,16 +119,16 @@ func Test_CreateNodeConfigProfileChecker(t *testing.T) {
 		},
 		{
 			name: "profiles return empty",
-			args: args{profiles: func() []extension.NodeCfgProfile {
-				return []extension.NodeCfgProfile{}
+			args: args{profiles: func() []configuration.NodeCfgProfile {
+				return []configuration.NodeCfgProfile{}
 			}},
 			want:    &nodeConfigProfileChecker{cfgName: "test"},
 			wantErr: false,
 		},
 		{
 			name: "profiles have nodeCfg with no labels",
-			args: args{profiles: func() []extension.NodeCfgProfile {
-				return []extension.NodeCfgProfile{
+			args: args{profiles: func() []configuration.NodeCfgProfile {
+				return []configuration.NodeCfgProfile{
 					{NodeSelector: &metav1.LabelSelector{}},
 				}
 			}},
@@ -137,13 +137,13 @@ func Test_CreateNodeConfigProfileChecker(t *testing.T) {
 		},
 		{
 			name: "profiles have nodeCfg with labels",
-			args: args{profiles: func() []extension.NodeCfgProfile {
-				return []extension.NodeCfgProfile{
+			args: args{profiles: func() []configuration.NodeCfgProfile {
+				return []configuration.NodeCfgProfile{
 					{NodeSelector: nodeSelectorValid},
 				}
 			}},
 			want: &nodeConfigProfileChecker{cfgName: "test", nodeConfigs: []profileCheckInfo{{
-				profile: extension.NodeCfgProfile{
+				profile: configuration.NodeCfgProfile{
 					NodeSelector: nodeSelectorValid,
 				},
 				selectors: nodeSelectorExpect,
@@ -182,7 +182,7 @@ func Test_nodeConfigProfileChecker_ProfileParamValid(t *testing.T) {
 			name: "profile name is empty",
 			args: args{
 				nodeConfigs: []profileCheckInfo{
-					{profile: extension.NodeCfgProfile{}},
+					{profile: configuration.NodeCfgProfile{}},
 				},
 			},
 			wantErr: true,
@@ -191,8 +191,8 @@ func Test_nodeConfigProfileChecker_ProfileParamValid(t *testing.T) {
 			name: "profile name conflict",
 			args: args{
 				nodeConfigs: []profileCheckInfo{
-					{profile: extension.NodeCfgProfile{Name: "test"}},
-					{profile: extension.NodeCfgProfile{Name: "test"}},
+					{profile: configuration.NodeCfgProfile{Name: "test"}},
+					{profile: configuration.NodeCfgProfile{Name: "test"}},
 				},
 			},
 			wantErr: true,
@@ -211,7 +211,7 @@ func Test_nodeConfigProfileChecker_ProfileParamValid(t *testing.T) {
 func Test_nodeConfigProfileChecker_NodeSelectorOverlap(t *testing.T) {
 
 	type args struct {
-		nodeConfigs []extension.NodeCfgProfile
+		nodeConfigs []configuration.NodeCfgProfile
 	}
 
 	tests := []struct {
@@ -222,7 +222,7 @@ func Test_nodeConfigProfileChecker_NodeSelectorOverlap(t *testing.T) {
 		{
 			name: "not overlap",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -246,7 +246,7 @@ func Test_nodeConfigProfileChecker_NodeSelectorOverlap(t *testing.T) {
 		{
 			name: "overlap: strategy1(xxx:xxx) , strategy2(xxx:xxx,yyy:yyy)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -271,7 +271,7 @@ func Test_nodeConfigProfileChecker_NodeSelectorOverlap(t *testing.T) {
 		{
 			name: "overlap: strategy1(xxx:xxx) , strategy2(xxx:xxx|yyy)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -299,7 +299,7 @@ func Test_nodeConfigProfileChecker_NodeSelectorOverlap(t *testing.T) {
 		{
 			name: "overlap: strategy1(xxx:xxx), strategy2 (xxx NotIn yyy)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -327,7 +327,7 @@ func Test_nodeConfigProfileChecker_NodeSelectorOverlap(t *testing.T) {
 		{
 			name: "overlap: strategy1(xxx:xxx), strategy2 (xxx Exist)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -354,7 +354,7 @@ func Test_nodeConfigProfileChecker_NodeSelectorOverlap(t *testing.T) {
 		{
 			name: "not overlap: strategy1(xxx:xxx), strategy2 (xxx NotExist)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -381,7 +381,7 @@ func Test_nodeConfigProfileChecker_NodeSelectorOverlap(t *testing.T) {
 		{
 			name: "overlap: strategy1(xxx:xxx), strategy2 (yyy NotExist)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -409,7 +409,7 @@ func Test_nodeConfigProfileChecker_NodeSelectorOverlap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			checker, _ := CreateNodeConfigProfileChecker(extension.ColocationConfigKey, func() []extension.NodeCfgProfile {
+			checker, _ := CreateNodeConfigProfileChecker(configuration.ColocationConfigKey, func() []configuration.NodeCfgProfile {
 				return tt.args.nodeConfigs
 			})
 			gotErr := checker.NodeSelectorOverlap()
@@ -423,7 +423,7 @@ func Test_nodeConfigProfileChecker_NodeSelectorOverlap(t *testing.T) {
 
 func Test_ExistNodeConflict(t *testing.T) {
 	type args struct {
-		nodeConfigs []extension.NodeCfgProfile
+		nodeConfigs []configuration.NodeCfgProfile
 		nodes       *corev1.Node
 	}
 
@@ -435,7 +435,7 @@ func Test_ExistNodeConflict(t *testing.T) {
 		{
 			name: "node config not conflict:node(xxx:xxx),strategy1(xxx:xxx),strategy2(yyy:yyy)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -466,7 +466,7 @@ func Test_ExistNodeConflict(t *testing.T) {
 		{
 			name: "node config conflict:node(xxx:xxx,yyy:yyy),strategy1(xxx:xxx),strategy2(yyy:yyy)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -498,7 +498,7 @@ func Test_ExistNodeConflict(t *testing.T) {
 		{
 			name: "node config conflict:node(xxx:xxx,yyy:yyy),strategy1(xxx:xxx),strategy2(xxx:xxx,yyy:yyy)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -530,7 +530,7 @@ func Test_ExistNodeConflict(t *testing.T) {
 		{
 			name: "node config not conflict:node(xxx:xxx),strategy1(xxx:xxx),strategy2(xxx:xxx,yyy:yyy)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -561,7 +561,7 @@ func Test_ExistNodeConflict(t *testing.T) {
 		{
 			name: "node config conflict:node(xxx:xxx),strategy1(xxx:xxx),strategy2(xxx In xxx,yyy)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -596,7 +596,7 @@ func Test_ExistNodeConflict(t *testing.T) {
 		{
 			name: "node config not conflict:node(xxx:yyy),strategy1(xxx:xxx),strategy2(xxx In xxx,yyy)",
 			args: args{
-				nodeConfigs: []extension.NodeCfgProfile{
+				nodeConfigs: []configuration.NodeCfgProfile{
 					{
 						Name: "strategy1",
 						NodeSelector: &metav1.LabelSelector{
@@ -632,7 +632,7 @@ func Test_ExistNodeConflict(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			checker, _ := CreateNodeConfigProfileChecker(extension.ColocationConfigKey, func() []extension.NodeCfgProfile {
+			checker, _ := CreateNodeConfigProfileChecker(configuration.ColocationConfigKey, func() []configuration.NodeCfgProfile {
 				return tt.args.nodeConfigs
 			})
 			gotErr := checker.ExistNodeConflict(tt.args.nodes)

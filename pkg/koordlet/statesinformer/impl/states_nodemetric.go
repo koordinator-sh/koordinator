@@ -514,11 +514,11 @@ func (r *nodeMetricInformer) collectNodeAggregateMetric(endTime time.Time, aggre
 	for _, d := range aggregatePolicy.Durations {
 		start := endTime.Add(-d.Duration)
 		aggregateUsage := slov1alpha1.AggregatedUsage{
-			Usage: map[slov1alpha1.AggregationType]slov1alpha1.ResourceMap{
-				slov1alpha1.P50: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP50, true),
-				slov1alpha1.P90: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP90, true),
-				slov1alpha1.P95: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP95, true),
-				slov1alpha1.P99: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP99, true),
+			Usage: map[apiext.AggregationType]slov1alpha1.ResourceMap{
+				apiext.P50: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP50, true),
+				apiext.P90: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP90, true),
+				apiext.P95: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP95, true),
+				apiext.P99: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP99, true),
 			},
 			Duration: d,
 		}
