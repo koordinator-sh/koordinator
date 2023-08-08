@@ -46,7 +46,8 @@ import (
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	v1beta2schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -148,6 +149,14 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 	}
 }
 
+func getDefaultArgs() *schedulerconfig.DeviceShareArgs {
+	v1beta2Args := &v1beta2schedulerconfig.DeviceShareArgs{}
+	v1beta2schedulerconfig.SetDefaults_DeviceShareArgs(v1beta2Args)
+	args := &schedulerconfig.DeviceShareArgs{}
+	_ = v1beta2schedulerconfig.Convert_v1beta2_DeviceShareArgs_To_config_DeviceShareArgs(v1beta2Args, args, nil)
+	return args
+}
+
 func Test_New(t *testing.T) {
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
@@ -173,7 +182,7 @@ func Test_New(t *testing.T) {
 		runtime.WithSnapshotSharedLister(snapshot),
 	)
 	assert.Nil(t, err)
-	p, err := proxyNew(&config.DeviceShareArgs{}, fh)
+	p, err := proxyNew(getDefaultArgs(), fh)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 	assert.Equal(t, Name, p.Name())
@@ -181,7 +190,7 @@ func Test_New(t *testing.T) {
 
 func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(&config.DeviceShareArgs{}, suit.Framework)
+	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
 
@@ -1417,7 +1426,7 @@ func Test_Plugin_Filter(t *testing.T) {
 
 func Test_Plugin_FilterReservation(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(&config.DeviceShareArgs{}, suit.Framework)
+	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
 
@@ -3035,7 +3044,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
 			_, err := suit.ClientSet().CoreV1().Pods(testPod.Namespace).Create(context.TODO(), testPod, metav1.CreateOptions{})
 			assert.NoError(t, err)
-			pl, err := suit.proxyNew(&config.DeviceShareArgs{}, suit.Framework)
+			pl, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 
 			suit.Framework.SharedInformerFactory().Start(nil)
@@ -3107,7 +3116,7 @@ func Test_Plugin_PreBindReservation(t *testing.T) {
 	_, err := suit.koordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	pl, err := suit.proxyNew(&config.DeviceShareArgs{}, suit.Framework)
+	pl, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 
 	suit.Framework.SharedInformerFactory().Start(nil)
@@ -3137,6 +3146,8 @@ func Test_Plugin_PreBindReservation(t *testing.T) {
 	assert.True(t, equality.Semantic.DeepEqual(expectAllocations, allocations))
 }
 
+var _ Allocator = &fakeAllocator{}
+
 type fakeAllocator struct {
 }
 
@@ -3144,8 +3155,19 @@ func (f *fakeAllocator) Name() string {
 	return "fake"
 }
 
-func (f *fakeAllocator) Allocate(nodeName string, pod *corev1.Pod, podRequest corev1.ResourceList, nodeDevice *nodeDevice, required, preferred map[schedulingv1alpha1.DeviceType]sets.Int, requiredFreeDevices, preemptibleFreeDevices map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
+func (f *fakeAllocator) Allocate(nodeName string, pod *corev1.Pod, podRequest corev1.ResourceList, nodeDevice *nodeDevice, required, preferred map[schedulingv1alpha1.DeviceType]sets.Int, requiredDevices, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources, allocationScorer *resourceAllocationScorer) (apiext.DeviceAllocations, error) {
 	return nil, nil
+}
+
+func (f *fakeAllocator) Score(
+	nodeName string,
+	pod *corev1.Pod,
+	podRequest corev1.ResourceList,
+	nodeDevice *nodeDevice,
+	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
+	allocationScorer *resourceAllocationScorer,
+) (int64, error) {
+	return 0, nil
 }
 
 func (f *fakeAllocator) Reserve(pod *corev1.Pod, nodeDevice *nodeDevice, allocations apiext.DeviceAllocations) {
@@ -3186,9 +3208,8 @@ func TestAllocator(t *testing.T) {
 		runtime.WithSnapshotSharedLister(snapshot),
 	)
 	assert.Nil(t, err)
-	args := &config.DeviceShareArgs{
-		Allocator: allocator.Name(),
-	}
+	args := getDefaultArgs()
+	args.Allocator = allocator.Name()
 	p, err := proxyNew(args, fh)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)

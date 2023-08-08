@@ -30,7 +30,8 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -54,11 +55,14 @@ var (
 
 	_ framework.PreFilterPlugin = &Plugin{}
 	_ framework.FilterPlugin    = &Plugin{}
+	_ framework.ScorePlugin     = &Plugin{}
+	_ framework.ScoreExtensions = &Plugin{}
 	_ framework.ReservePlugin   = &Plugin{}
 	_ framework.PreBindPlugin   = &Plugin{}
 
 	_ frameworkext.ReservationRestorePlugin = &Plugin{}
 	_ frameworkext.ReservationFilterPlugin  = &Plugin{}
+	_ frameworkext.ReservationScorePlugin   = &Plugin{}
 	_ frameworkext.ReservationPreBindPlugin = &Plugin{}
 )
 
@@ -66,6 +70,7 @@ type Plugin struct {
 	handle          framework.Handle
 	nodeDeviceCache *nodeDeviceCache
 	allocator       Allocator
+	scorer          *resourceAllocationScorer
 }
 
 type preFilterState struct {
@@ -142,7 +147,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	var status *framework.Status
-	state.skip, state.podRequests, status = preparePod(pod)
+	state.skip, state.podRequests, status = PreparePod(pod)
 	if !status.IsSuccess() {
 		return nil, status
 	}
@@ -150,7 +155,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	return nil, nil
 }
 
-func preparePod(pod *corev1.Pod) (skip bool, requests corev1.ResourceList, status *framework.Status) {
+func PreparePod(pod *corev1.Pod) (skip bool, requests corev1.ResourceList, status *framework.Status) {
 	podRequests, _ := resource.PodRequestsAndLimits(pod)
 	podRequests = quotav1.RemoveZeros(podRequests)
 
@@ -297,7 +302,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
-	allocateResult, status := p.tryAllocateFromReservation(state, restoreState, restoreState.matched, nodeDeviceInfo, node.Name, pod, preemptible, false)
+	allocateResult, status := p.tryAllocateFromReservation(state, restoreState, restoreState.matched, nodeDeviceInfo, node.Name, pod, preemptible, false, nil)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -306,7 +311,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	}
 
 	preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
-	allocateResult, err := p.allocator.Allocate(node.Name, pod, state.podRequests, nodeDeviceInfo, nil, nil, nil, preemptible)
+	allocateResult, err := p.allocator.Allocate(node.Name, pod, state.podRequests, nodeDeviceInfo, nil, nil, nil, preemptible, nil)
 	if len(allocateResult) > 0 && err == nil {
 		return nil
 	}
@@ -346,7 +351,7 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	allocateResult, status := p.tryAllocateFromReservation(state, restoreState, restoreState.matched[allocIndex:allocIndex+1], nodeDeviceInfo, nodeName, pod, preemptible, true)
+	allocateResult, status := p.tryAllocateFromReservation(state, restoreState, restoreState.matched[allocIndex:allocIndex+1], nodeDeviceInfo, nodeName, pod, preemptible, true, nil)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -378,14 +383,14 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	defer nodeDeviceInfo.lock.Unlock()
 
 	result, status := p.allocateWithNominatedReservation(
-		cycleState, state, restoreState, nodeDeviceInfo, nodeName, pod, preemptible)
+		cycleState, state, restoreState, nodeDeviceInfo, nodeName, pod, preemptible, p.scorer)
 	if !status.IsSuccess() {
 		return status
 	}
 	var err error
 	if len(result) == 0 {
 		preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
-		result, err = p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, nil, nil, nil, preemptible)
+		result, err = p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, nil, nil, nil, preemptible, p.scorer)
 	}
 	if err != nil || len(result) == 0 {
 		return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
@@ -448,9 +453,20 @@ func (p *Plugin) getAllNodeDeviceSummary() map[string]*NodeDeviceSummary {
 }
 
 func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	args, ok := obj.(*config.DeviceShareArgs)
+	args, ok := obj.(*schedulerconfig.DeviceShareArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type DeviceShareArgs, got %T", obj)
+	}
+	if err := validation.ValidateDeviceShareArgs(nil, args); err != nil {
+		return nil, err
+	}
+	if args.ScoringStrategy == nil {
+		return nil, fmt.Errorf("scoring strategy not specified")
+	}
+	strategy := args.ScoringStrategy.Type
+	scorePlugin, exists := deviceResourceStrategyTypeMap[strategy]
+	if !exists {
+		return nil, fmt.Errorf("scoring strategy %s is not supported", strategy)
 	}
 
 	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
@@ -473,5 +489,6 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		handle:          handle,
 		nodeDeviceCache: deviceCache,
 		allocator:       allocator,
+		scorer:          scorePlugin(args),
 	}, nil
 }

@@ -155,22 +155,39 @@ type deviceResourceMinorPair struct {
 	preferred bool
 	minor     int
 	resources corev1.ResourceList
+	score     int64
 }
 
-func sortDeviceResourcesByMinor(resources deviceResources, preferred sets.Int) []deviceResourceMinorPair {
-	r := make([]deviceResourceMinorPair, 0, len(resources))
-	for k, v := range resources {
+func scoreDevices(podRequest corev1.ResourceList, totalResources, freeResources deviceResources, allocationScorer *resourceAllocationScorer) []deviceResourceMinorPair {
+	r := make([]deviceResourceMinorPair, 0, len(freeResources))
+	for minor, free := range freeResources {
+		var score int64
+		if allocationScorer != nil {
+			score = allocationScorer.scoreDevice(podRequest, totalResources[minor], free)
+		}
 		r = append(r, deviceResourceMinorPair{
-			preferred: preferred.Has(k),
-			minor:     k,
-			resources: v,
+			minor:     minor,
+			resources: free,
+			score:     score,
 		})
+	}
+	return r
+}
+
+func sortDeviceResourcesByMinor(r []deviceResourceMinorPair, preferred sets.Int) []deviceResourceMinorPair {
+	for i := range r {
+		r[i].preferred = preferred.Has(r[i].minor)
 	}
 	sort.Slice(r, func(i, j int) bool {
 		if r[i].preferred && !r[j].preferred {
 			return true
 		} else if !r[i].preferred && r[j].preferred {
 			return false
+		}
+		if r[i].score < r[j].score {
+			return false
+		} else if r[i].score > r[j].score {
+			return true
 		}
 		return r[i].minor < r[j].minor
 	})

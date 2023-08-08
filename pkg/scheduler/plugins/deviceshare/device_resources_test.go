@@ -30,28 +30,54 @@ import (
 func Test_sortDeviceResourcesByMinor(t *testing.T) {
 	tests := []struct {
 		name         string
-		resources    deviceResources
+		resources    []deviceResourceMinorPair
 		preferred    []int
 		expectOrders []int
 	}{
 		{
 			name: "without preferred",
-			resources: deviceResources{
-				0: {},
-				1: {},
-				2: {},
+			resources: []deviceResourceMinorPair{
+				{minor: 0},
+				{minor: 1},
+				{minor: 2},
 			},
 			expectOrders: []int{0, 1, 2},
 		},
 		{
 			name: "with preferred",
-			resources: deviceResources{
-				0: {},
-				1: {},
-				2: {},
-				5: {},
-				6: {},
-				7: {},
+			resources: []deviceResourceMinorPair{
+				{minor: 0},
+				{minor: 1},
+				{minor: 2},
+				{minor: 5},
+				{minor: 6},
+				{minor: 7},
+			},
+			preferred:    []int{5, 6},
+			expectOrders: []int{5, 6, 0, 1, 2, 7},
+		},
+		{
+			name: "with preferred and score",
+			resources: []deviceResourceMinorPair{
+				{minor: 0},
+				{minor: 1},
+				{minor: 2},
+				{minor: 5, score: 10},
+				{minor: 6, score: 50},
+				{minor: 7},
+			},
+			preferred:    []int{5, 6},
+			expectOrders: []int{6, 5, 0, 1, 2, 7},
+		},
+		{
+			name: "with preferred and same score",
+			resources: []deviceResourceMinorPair{
+				{minor: 0},
+				{minor: 1},
+				{minor: 2},
+				{minor: 5, score: 10},
+				{minor: 6, score: 10},
+				{minor: 7},
 			},
 			preferred:    []int{5, 6},
 			expectOrders: []int{5, 6, 0, 1, 2, 7},

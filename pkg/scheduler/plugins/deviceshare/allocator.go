@@ -41,7 +41,26 @@ type AllocatorFactoryFn func(options AllocatorOptions) Allocator
 
 type Allocator interface {
 	Name() string
-	Allocate(nodeName string, pod *corev1.Pod, podRequest corev1.ResourceList, nodeDevice *nodeDevice, required, preferred map[schedulingv1alpha1.DeviceType]sets.Int, requiredDevices, preemptibleDevices map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error)
+
+	Allocate(
+		nodeName string,
+		pod *corev1.Pod,
+		podRequest corev1.ResourceList,
+		nodeDevice *nodeDevice,
+		required, preferred map[schedulingv1alpha1.DeviceType]sets.Int,
+		requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
+		allocationScorer *resourceAllocationScorer,
+	) (apiext.DeviceAllocations, error)
+
+	Score(
+		nodeName string,
+		pod *corev1.Pod,
+		podRequest corev1.ResourceList,
+		nodeDevice *nodeDevice,
+		requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
+		allocationScorer *resourceAllocationScorer,
+	) (int64, error)
+
 	Reserve(pod *corev1.Pod, nodeDevice *nodeDevice, allocations apiext.DeviceAllocations)
 	Unreserve(pod *corev1.Pod, nodeDevice *nodeDevice, allocations apiext.DeviceAllocations)
 }
@@ -63,15 +82,35 @@ func NewDefaultAllocator(
 	return &defaultAllocator{}
 }
 
-type defaultAllocator struct {
-}
+type defaultAllocator struct{}
 
 func (a *defaultAllocator) Name() string {
 	return defaultAllocatorName
 }
 
-func (a *defaultAllocator) Allocate(nodeName string, pod *corev1.Pod, podRequest corev1.ResourceList, nodeDevice *nodeDevice, required, preferred map[schedulingv1alpha1.DeviceType]sets.Int, requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources) (apiext.DeviceAllocations, error) {
-	return nodeDevice.tryAllocateDevice(podRequest, required, preferred, requiredDeviceResources, preemptibleDeviceResources)
+func (a *defaultAllocator) Allocate(
+	nodeName string,
+	pod *corev1.Pod,
+	podRequest corev1.ResourceList,
+	nodeDevice *nodeDevice,
+	required, preferred map[schedulingv1alpha1.DeviceType]sets.Int,
+	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
+	allocationScorer *resourceAllocationScorer,
+) (apiext.DeviceAllocations, error) {
+	allocations, err := nodeDevice.tryAllocateDevice(podRequest, required, preferred, requiredDeviceResources, preemptibleDeviceResources, allocationScorer)
+	return allocations, err
+}
+
+func (a *defaultAllocator) Score(
+	nodeName string,
+	pod *corev1.Pod,
+	podRequest corev1.ResourceList,
+	nodeDevice *nodeDevice,
+	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
+	allocationScorer *resourceAllocationScorer,
+) (int64, error) {
+	score, err := nodeDevice.score(podRequest, requiredDeviceResources, preemptibleDeviceResources, allocationScorer)
+	return score, err
 }
 
 func (a *defaultAllocator) Reserve(pod *corev1.Pod, nodeDevice *nodeDevice, allocations apiext.DeviceAllocations) {

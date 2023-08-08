@@ -33,12 +33,11 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
 func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(&config.DeviceShareArgs{}, suit.Framework)
+	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 
