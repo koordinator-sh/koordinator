@@ -88,9 +88,10 @@ func (r *Reconciler) initFilters(args *deschedulerconfig.MigrationControllerArgs
 		excludedNamespaces = sets.NewString(args.Namespaces.Exclude...)
 	}
 
+	filterPlugin := defaultEvictor.(framework.FilterPlugin)
 	wrapFilterFuncs := podutil.WrapFilterFuncs(
 		util.FilterPodWithMaxEvictionCost,
-		defaultEvictor.(framework.FilterPlugin).Filter,
+		filterPlugin.Filter,
 		r.filterExpectedReplicas,
 	)
 	podFilter, err := podutil.NewOptions().

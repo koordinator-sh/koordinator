@@ -24,8 +24,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 var (
@@ -47,19 +45,6 @@ var (
 				},
 				ObjectMeta: metav1.ObjectMeta{Name: "node1"},
 			},
-			nodeMetric: &slov1alpha1.NodeMetric{
-				Status: slov1alpha1.NodeMetricStatus{
-					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
-							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    *resource.NewMilliQuantity(1730, resource.DecimalSI),
-								corev1.ResourceMemory: *resource.NewQuantity(3038982964, resource.BinarySI),
-								corev1.ResourcePods:   *resource.NewQuantity(25, resource.BinarySI),
-							},
-						},
-					},
-				},
-			},
 			usage: map[corev1.ResourceName]*resource.Quantity{
 				corev1.ResourceCPU:    resource.NewMilliQuantity(1730, resource.DecimalSI),
 				corev1.ResourceMemory: resource.NewQuantity(3038982964, resource.BinarySI),
@@ -75,19 +60,6 @@ var (
 				},
 				ObjectMeta: metav1.ObjectMeta{Name: "node2"},
 			},
-			nodeMetric: &slov1alpha1.NodeMetric{
-				Status: slov1alpha1.NodeMetricStatus{
-					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
-							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    *resource.NewMilliQuantity(1220, resource.DecimalSI),
-								corev1.ResourceMemory: *resource.NewQuantity(3038982964, resource.BinarySI),
-								corev1.ResourcePods:   *resource.NewQuantity(11, resource.BinarySI),
-							},
-						},
-					},
-				},
-			},
 			usage: map[corev1.ResourceName]*resource.Quantity{
 				corev1.ResourceCPU:    resource.NewMilliQuantity(1220, resource.DecimalSI),
 				corev1.ResourceMemory: resource.NewQuantity(3038982964, resource.BinarySI),
@@ -102,19 +74,6 @@ var (
 					Allocatable: testNodeAllocatable,
 				},
 				ObjectMeta: metav1.ObjectMeta{Name: "node3"},
-			},
-			nodeMetric: &slov1alpha1.NodeMetric{
-				Status: slov1alpha1.NodeMetricStatus{
-					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
-							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    *resource.NewMilliQuantity(1530, resource.DecimalSI),
-								corev1.ResourceMemory: *resource.NewQuantity(5038982964, resource.BinarySI),
-								corev1.ResourcePods:   *resource.NewQuantity(20, resource.BinarySI),
-							},
-						},
-					},
-				},
 			},
 			usage: map[corev1.ResourceName]*resource.Quantity{
 				corev1.ResourceCPU:    resource.NewMilliQuantity(1530, resource.DecimalSI),
