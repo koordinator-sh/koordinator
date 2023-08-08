@@ -78,7 +78,7 @@ node memory usage: nodeMemWithHotPageUasge=MemTotal-MemFree+NodeMeMWithHotPageSi
 
 pod memory usage: podMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+PodMeMwithHotPageSize
 
-container memory usage: containerMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+ContainerMeMwithHotPageSize
+container memory usage: containerMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+ContainerMemWithHotPageSize
 
 The proposal implement kidled cold page collector and provide other cold page collector interface.
 
@@ -205,13 +205,13 @@ We can report memory usage including hot pages in collectNodeMetric().
 
 The calculation formulas of node, pod and container are as follows.  
 MemFree: free and unallocated memory
-NodeMeMWithColdPage: cold page size in page cache of node
+NodeMemWithColdPage: cold page size in page cache of node
  
-node memory usage: nodeMemWithHotPageUasge=MemTotal-MemFree-NodeMeMWithColdPage
+node memory usage: nodeMemWithHotPageUasge=MemTotal-MemFree-NodeMemWithColdPage
 
-pod memory usage: podMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+PodMeMwithHotPageSize
+pod memory usage: podMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+PodMemWithHotPageSize
 
-container memory usage: containerMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+ContainerMeMwithHotPageSize
+container memory usage: containerMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+ContainerMemWithHotPageSize
 
 The same process is executed pod informer to report memory usage. Do not repeat.
 
