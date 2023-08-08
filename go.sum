@@ -1979,8 +1979,8 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.37 h1:fAPTNEpzQMOLM
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.37/go.mod h1:vfnxT4FXNT8eGvO+xi/DsyC/qHmdujqwrUa1WSspCsk=
 sigs.k8s.io/controller-runtime v0.12.3 h1:FCM8xeY/FI8hoAfh/V4XbbYMY20gElh9yh+A98usMio=
 sigs.k8s.io/controller-runtime v0.12.3/go.mod h1:qKsk4WE6zW2Hfj0G4v10EnNB2jMG1C+NTb8h+DwCoU0=
-sigs.k8s.io/descheduler v0.26.1-0.20230216092500-02b1e8b8b9c1 h1:4u1i8qPZN26tP+9SGp8vSbib9ONN59meHTz342k82/4=
-sigs.k8s.io/descheduler v0.26.1-0.20230216092500-02b1e8b8b9c1/go.mod h1:/z7jjqyhgYDSd+LclGulcqX/JgfGIOTNB7ohFlGNQAQ=
+sigs.k8s.io/descheduler v0.26.1-0.20230402001301-90905d2c2194 h1:xPrRjhoJr6pst13/3UHNwATYAsJROWcv+vvGRa+Fk1Q=
+sigs.k8s.io/descheduler v0.26.1-0.20230402001301-90905d2c2194/go.mod h1:/z7jjqyhgYDSd+LclGulcqX/JgfGIOTNB7ohFlGNQAQ=
 sigs.k8s.io/json v0.0.0-20211208200746-9f7c6b3444d2/go.mod h1:B+TnT182UBxE84DiCz4CVE26eOSDAeYCpfDnC2kdKMY=
 sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2 h1:iXTIw73aPyC+oRdyqqvVJuloN1p0AC/kzH07hu3NE+k=
 sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2/go.mod h1:B8JuhiUyNFVKdsE8h686QcCxMaH6HrOAZj4vswFpcB0=

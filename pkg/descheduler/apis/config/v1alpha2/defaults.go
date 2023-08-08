@@ -42,6 +42,7 @@ const (
 	defaultMigrationJobEvictionPolicy = migrationevictor.NativeEvictorName
 	defaultMigrationEvictQPS          = 10
 	defaultMigrationEvictBurst        = 1
+	defaultSchedulerName              = "koord-scheduler"
 )
 
 var (
@@ -217,6 +218,9 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 	}
 	if obj.DefaultJobMode == "" {
 		obj.DefaultJobMode = string(defaultMigrationJobMode)
+	}
+	if obj.SchedulerName == "" {
+		obj.SchedulerName = defaultSchedulerName
 	}
 	if obj.DefaultJobTTL == nil {
 		obj.DefaultJobTTL = &metav1.Duration{Duration: defaultMigrationJobTTL}

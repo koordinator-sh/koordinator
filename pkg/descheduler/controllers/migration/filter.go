@@ -158,13 +158,10 @@ func (r *Reconciler) forEachAvailableMigrationJobs(listOpts *client.ListOptions,
 				break
 			}
 		}
-		if found {
-			if !handler(job) {
-				break
-			}
+		if found && !handler(job) {
+			break
 		}
 	}
-	return
 }
 
 func (r *Reconciler) filterExistingPodMigrationJob(pod *corev1.Pod) bool {
@@ -180,6 +177,7 @@ func (r *Reconciler) existingPodMigrationJob(pod *corev1.Pod, expectPhases ...se
 		}
 		return !existing
 	}, expectPhases...)
+
 	if !existing {
 		opts = &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobPodNamespacedName, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))}
 		r.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
@@ -215,10 +213,10 @@ func (r *Reconciler) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 	count := 0
 	for i := range podList.Items {
 		v := &podList.Items[i]
-		if v.UID != pod.UID && v.Spec.NodeName == pod.Spec.NodeName {
-			if r.existingPodMigrationJob(v, expectPhases...) {
-				count++
-			}
+		if v.UID != pod.UID &&
+			v.Spec.NodeName == pod.Spec.NodeName &&
+			r.existingPodMigrationJob(v, expectPhases...) {
+			count++
 		}
 	}
 

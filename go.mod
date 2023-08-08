@@ -273,6 +273,6 @@ replace (
 	k8s.io/mount-utils => k8s.io/mount-utils v0.24.15
 	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.24.15
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.24.15
-	sigs.k8s.io/descheduler => sigs.k8s.io/descheduler v0.26.1-0.20230216092500-02b1e8b8b9c1
+	sigs.k8s.io/descheduler => sigs.k8s.io/descheduler v0.26.1-0.20230402001301-90905d2c2194
 	sigs.k8s.io/scheduler-plugins => sigs.k8s.io/scheduler-plugins v0.22.6
 )
