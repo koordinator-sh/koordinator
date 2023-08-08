@@ -200,13 +200,13 @@ func (p *Plugin) filterNodeUsage(node *corev1.Node, nodeMetric *slov1alpha1.Node
 		// TODO(joseph): maybe we should estimate the Pod that just be scheduled that have not reported
 		var nodeUsage *slov1alpha1.ResourceMap
 		if filterProfile.AggregatedUsage != nil {
-			nodeUsage = getTargetAggregatedUsage(
+			nodeUsage = getAggregatedNodeUsage(
 				nodeMetric,
 				filterProfile.AggregatedUsage.UsageAggregatedDuration,
 				filterProfile.AggregatedUsage.UsageAggregationType,
 			)
 		} else {
-			nodeUsage = &nodeMetric.Status.NodeMetric.NodeUsage
+			nodeUsage = getNodeUsage(nodeMetric)
 		}
 		if nodeUsage == nil {
 			continue
@@ -310,9 +310,9 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 		if nodeMetric.Status.NodeMetric != nil {
 			var nodeUsage *slov1alpha1.ResourceMap
 			if scoreWithAggregation(p.args.Aggregated) {
-				nodeUsage = getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType)
+				nodeUsage = getAggregatedNodeUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType)
 			} else {
-				nodeUsage = &nodeMetric.Status.NodeMetric.NodeUsage
+				nodeUsage = getNodeUsage(nodeMetric)
 			}
 			if nodeUsage != nil {
 				for resourceName, quantity := range nodeUsage.ResourceList {
@@ -357,7 +357,7 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 			missedLatestUpdateTime(assignInfo.timestamp, nodeMetricUpdateTime) ||
 			stillInTheReportInterval(assignInfo.timestamp, nodeMetricUpdateTime, nodeMetricReportInterval) ||
 			(scoreWithAggregation(p.args.Aggregated) &&
-				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) {
+				getAggregatedNodeUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) {
 			estimated, err := p.estimator.EstimatePod(assignInfo.pod)
 			if err != nil {
 				continue

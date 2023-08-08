@@ -55,7 +55,7 @@ func stillInTheReportInterval(assignedTime, updateTime time.Time, reportInterval
 	return assignedTime.Before(updateTime) && updateTime.Sub(assignedTime) < reportInterval
 }
 
-func getTargetAggregatedUsage(nodeMetric *slov1alpha1.NodeMetric, aggregatedDuration *metav1.Duration, aggregationType extension.AggregationType) *slov1alpha1.ResourceMap {
+func getAggregatedNodeUsage(nodeMetric *slov1alpha1.NodeMetric, aggregatedDuration *metav1.Duration, aggregationType extension.AggregationType) *slov1alpha1.ResourceMap {
 	if nodeMetric.Status.NodeMetric == nil || len(nodeMetric.Status.NodeMetric.AggregatedNodeUsages) == 0 {
 		return nil
 	}
@@ -87,6 +87,22 @@ func getTargetAggregatedUsage(nodeMetric *slov1alpha1.NodeMetric, aggregatedDura
 		}
 	}
 	return nil
+}
+
+func getNodeUsage(nodeMetric *slov1alpha1.NodeMetric) *slov1alpha1.ResourceMap {
+	if nodeMetric.Status.NodeMetric == nil {
+		return nil
+	}
+	nodeUsage := &slov1alpha1.ResourceMap{
+		ResourceList: nodeMetric.Status.NodeMetric.SystemUsage.ResourceList.DeepCopy(),
+	}
+	if nodeUsage.ResourceList == nil {
+		nodeUsage.ResourceList = make(corev1.ResourceList)
+	}
+	for _, podMetricInfo := range nodeMetric.Status.PodsMetric {
+		util.AddResourceList(nodeUsage.ResourceList, podMetricInfo.PodUsage.ResourceList)
+	}
+	return nodeUsage
 }
 
 func filterWithAggregation(args *schedulingconfig.LoadAwareSchedulingAggregatedArgs) bool {

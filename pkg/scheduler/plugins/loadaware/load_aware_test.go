@@ -138,6 +138,20 @@ func TestNew(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func mockPodMetrics(numPod int, usagePerPod corev1.ResourceList) []*slov1alpha1.PodMetricInfo {
+	r := make([]*slov1alpha1.PodMetricInfo, 0, numPod)
+	for i := 0; i < numPod; i++ {
+		r = append(r, &slov1alpha1.PodMetricInfo{
+			Name:      fmt.Sprintf("pod-%d", i),
+			Namespace: "default",
+			PodUsage: slov1alpha1.ResourceMap{
+				ResourceList: usagePerPod.DeepCopy(),
+			},
+		})
+	}
+	return r
+}
+
 func TestFilterExpiredNodeMetric(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -323,13 +337,17 @@ func TestFilterUsage(t *testing.T) {
 						Time: time.Now(),
 					},
 					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
+						SystemUsage: slov1alpha1.ResourceMap{
 							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("70"),
-								corev1.ResourceMemory: resource.MustParse("256Gi"),
+								corev1.ResourceCPU:    resource.MustParse("10"),
+								corev1.ResourceMemory: resource.MustParse("16Gi"),
 							},
 						},
 					},
+					PodsMetric: mockPodMetrics(6, corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10"),
+						corev1.ResourceMemory: resource.MustParse("40Gi"),
+					}),
 				},
 			},
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
@@ -358,12 +376,6 @@ func TestFilterUsage(t *testing.T) {
 						Time: time.Now(),
 					},
 					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
-							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("30"),
-								corev1.ResourceMemory: resource.MustParse("100Gi"),
-							},
-						},
 						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
 							{
 								Duration: metav1.Duration{Duration: 5 * time.Minute},
@@ -399,13 +411,17 @@ func TestFilterUsage(t *testing.T) {
 						Time: time.Now(),
 					},
 					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
+						SystemUsage: slov1alpha1.ResourceMap{
 							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("30"),
-								corev1.ResourceMemory: resource.MustParse("500Gi"),
+								corev1.ResourceCPU:    resource.MustParse("10"),
+								corev1.ResourceMemory: resource.MustParse("300Gi"),
 							},
 						},
 					},
+					PodsMetric: mockPodMetrics(2, corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10"),
+						corev1.ResourceMemory: resource.MustParse("100Gi"),
+					}),
 				},
 			},
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
@@ -430,13 +446,17 @@ func TestFilterUsage(t *testing.T) {
 						Time: time.Now(),
 					},
 					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
+						SystemUsage: slov1alpha1.ResourceMap{
 							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("30"),
-								corev1.ResourceMemory: resource.MustParse("316Gi"),
+								corev1.ResourceCPU:    resource.MustParse("10"),
+								corev1.ResourceMemory: resource.MustParse("116Gi"),
 							},
 						},
 					},
+					PodsMetric: mockPodMetrics(2, corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10"),
+						corev1.ResourceMemory: resource.MustParse("100Gi"),
+					}),
 				},
 			},
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
@@ -465,12 +485,6 @@ func TestFilterUsage(t *testing.T) {
 						Time: time.Now(),
 					},
 					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
-							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("30"),
-								corev1.ResourceMemory: resource.MustParse("100Gi"),
-							},
-						},
 						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
 							{
 								Duration: metav1.Duration{Duration: 5 * time.Minute},
@@ -509,13 +523,17 @@ func TestFilterUsage(t *testing.T) {
 						Time: time.Now(),
 					},
 					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
+						SystemUsage: slov1alpha1.ResourceMap{
 							ResourceList: corev1.ResourceList{
 								corev1.ResourceCPU:    resource.MustParse("30"),
-								corev1.ResourceMemory: resource.MustParse("500Gi"),
+								corev1.ResourceMemory: resource.MustParse("300Gi"),
 							},
 						},
 					},
+					PodsMetric: mockPodMetrics(2, corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10"),
+						corev1.ResourceMemory: resource.MustParse("100Gi"),
+					}),
 				},
 			},
 			wantStatus: nil,
@@ -540,14 +558,7 @@ func TestFilterUsage(t *testing.T) {
 					UpdateTime: &metav1.Time{
 						Time: time.Now(),
 					},
-					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
-							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("63"),    // cpu usage: 65.6%
-								corev1.ResourceMemory: resource.MustParse("500Gi"), // memory usage: 97.6%
-							},
-						},
-					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{},
 					PodsMetric: []*slov1alpha1.PodMetricInfo{
 						{
 							Namespace: "default",
@@ -602,14 +613,7 @@ func TestFilterUsage(t *testing.T) {
 					UpdateTime: &metav1.Time{
 						Time: time.Now(),
 					},
-					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
-							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("63"),    // cpu usage: 65.6%
-								corev1.ResourceMemory: resource.MustParse("500Gi"), // memory usage: 97.6%
-							},
-						},
-					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{},
 					PodsMetric: []*slov1alpha1.PodMetricInfo{
 						{
 							Namespace: "default",
@@ -665,14 +669,7 @@ func TestFilterUsage(t *testing.T) {
 					UpdateTime: &metav1.Time{
 						Time: time.Now(),
 					},
-					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
-							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("63"),    // cpu usage: 65.6%
-								corev1.ResourceMemory: resource.MustParse("500Gi"), // memory usage: 97.6%
-							},
-						},
-					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{},
 					PodsMetric: []*slov1alpha1.PodMetricInfo{
 						{
 							Namespace: "default",
@@ -732,14 +729,7 @@ func TestFilterUsage(t *testing.T) {
 					UpdateTime: &metav1.Time{
 						Time: time.Now(),
 					},
-					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
-							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("63"),    // cpu usage: 65.6%
-								corev1.ResourceMemory: resource.MustParse("500Gi"), // memory usage: 97.6%
-							},
-						},
-					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{},
 					PodsMetric: []*slov1alpha1.PodMetricInfo{
 						{
 							Namespace: "default",
@@ -1056,13 +1046,17 @@ func TestScore(t *testing.T) {
 						Time: time.Now(),
 					},
 					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
+						SystemUsage: slov1alpha1.ResourceMap{
 							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("32"),
-								corev1.ResourceMemory: resource.MustParse("10Gi"),
+								corev1.ResourceCPU:    resource.MustParse("2"),
+								corev1.ResourceMemory: resource.MustParse("0"),
 							},
 						},
 					},
+					PodsMetric: mockPodMetrics(2, corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("15"),
+						corev1.ResourceMemory: resource.MustParse("5Gi"),
+					}),
 				},
 			},
 			wantScore:  72,
@@ -1365,13 +1359,17 @@ func TestScore(t *testing.T) {
 						Time: time.Now(),
 					},
 					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
+						SystemUsage: slov1alpha1.ResourceMap{
 							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("32"),
-								corev1.ResourceMemory: resource.MustParse("10Gi"),
+								corev1.ResourceCPU:    resource.MustParse("2"),
+								corev1.ResourceMemory: resource.MustParse("0"),
 							},
 						},
 					},
+					PodsMetric: mockPodMetrics(2, corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("15"),
+						corev1.ResourceMemory: resource.MustParse("5Gi"),
+					}),
 				},
 			},
 			wantScore:  63,
@@ -1446,13 +1444,17 @@ func TestScore(t *testing.T) {
 						Time: time.Now().Add(-10 * time.Second),
 					},
 					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
+						SystemUsage: slov1alpha1.ResourceMap{
 							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("32"),
-								corev1.ResourceMemory: resource.MustParse("10Gi"),
+								corev1.ResourceCPU:    resource.MustParse("2"),
+								corev1.ResourceMemory: resource.MustParse("0"),
 							},
 						},
 					},
+					PodsMetric: mockPodMetrics(2, corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("15"),
+						corev1.ResourceMemory: resource.MustParse("5Gi"),
+					}),
 				},
 			},
 			wantScore:  63,
@@ -1527,13 +1529,17 @@ func TestScore(t *testing.T) {
 						Time: time.Now(),
 					},
 					NodeMetric: &slov1alpha1.NodeMetricInfo{
-						NodeUsage: slov1alpha1.ResourceMap{
+						SystemUsage: slov1alpha1.ResourceMap{
 							ResourceList: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("32"),
-								corev1.ResourceMemory: resource.MustParse("10Gi"),
+								corev1.ResourceCPU:    resource.MustParse("2"),
+								corev1.ResourceMemory: resource.MustParse("0"),
 							},
 						},
 					},
+					PodsMetric: mockPodMetrics(2, corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("15"),
+						corev1.ResourceMemory: resource.MustParse("5Gi"),
+					}),
 				},
 			},
 			wantScore:  63,
