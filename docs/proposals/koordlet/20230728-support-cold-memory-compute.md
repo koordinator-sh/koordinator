@@ -205,7 +205,8 @@ We can report memory usage including hot pages in collectNodeMetric().
 
 The calculation formulas of node, pod and container are as follows.  
 MemFree: free and unallocated memory
-NodeMeMWithColdPage: cold page size in page cache of node 
+NodeMeMWithColdPage: cold page size in page cache of node
+ 
 node memory usage: nodeMemWithHotPageUasge=MemTotal-MemFree-NodeMeMWithColdPage
 
 pod memory usage: podMemWithHotPageUasge=m.InactiveAnon + m.ActiveAnon + m.Unevictable+PodMeMwithHotPageSize
