@@ -17,8 +17,10 @@ limitations under the License.
 package deviceshare
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -26,6 +28,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/informers"
+	kubefake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -476,4 +482,65 @@ func Test_nodeDevice_allocateRDMA(t *testing.T) {
 	assert.NoError(t, err)
 	expectAllocations = allocations
 	assert.True(t, equality.Semantic.DeepEqual(expectAllocations, allocateResult))
+}
+
+func Test_gcNodeDevices(t *testing.T) {
+	cache := newNodeDeviceCache()
+	fakeClient := kubefake.NewSimpleClientset()
+	expectedNodeNames := sets.NewString()
+	for i := 0; i < 10; i++ {
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("node-%d", i),
+			},
+		}
+		_, err := fakeClient.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
+		assert.NoError(t, err)
+		device := &schedulingv1alpha1.Device{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: node.Name,
+			},
+		}
+		cache.updateNodeDevice(node.Name, device)
+		expectedNodeNames.Insert(node.Name)
+	}
+
+	for i := 0; i < 3; i++ {
+		device := &schedulingv1alpha1.Device{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("invalid-node-%d", i),
+			},
+			Spec: schedulingv1alpha1.DeviceSpec{
+				Devices: []schedulingv1alpha1.DeviceInfo{
+					{
+						Type:   schedulingv1alpha1.GPU,
+						Minor:  pointer.Int32(1),
+						Health: true,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+						},
+					},
+				},
+			},
+		}
+		cache.updateNodeDevice(device.Name, device)
+		info := cache.getNodeDevice(device.Name, false)
+		assert.NotNil(t, info)
+		total := buildDeviceResources(device)
+		assert.Equal(t, total, info.deviceTotal)
+		cache.invalidateNodeDevice(device)
+		for _, v := range total {
+			for k := range v {
+				v[k] = make(corev1.ResourceList)
+			}
+		}
+		assert.Equal(t, total, info.deviceTotal)
+	}
+
+	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Second)
+	defer cancel()
+	cache.gcNodeDevice(ctx, informerFactory, defaultGCPeriod)
+	nodeNames := sets.StringKeySet(cache.nodeDeviceInfos)
+	assert.Equal(t, expectedNodeNames, nodeNames)
 }
