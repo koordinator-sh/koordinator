@@ -49,6 +49,7 @@ func Test_runtimeHook_Run(t *testing.T) {
 					RuntimeHooksPluginFailurePolicy: "Ignore",
 					RuntimeHookDisableStages:        []string{"PreRunPodSandbox"},
 					RuntimeHookConfigFilePath:       tmpDir,
+					RuntimeHooksNRI:                 true,
 				},
 				fg: map[string]bool{
 					string(GroupIdentity):   false,
@@ -70,6 +71,7 @@ func Test_runtimeHook_Run(t *testing.T) {
 					RuntimeHooksPluginFailurePolicy: "Ignore",
 					RuntimeHookDisableStages:        []string{"PreRunPodSandbox"},
 					RuntimeHookConfigFilePath:       tmpDir,
+					RuntimeHooksNRI:                 true,
 				},
 				fg: map[string]bool{
 					string(GroupIdentity):   false,
@@ -91,6 +93,7 @@ func Test_runtimeHook_Run(t *testing.T) {
 					RuntimeHooksPluginFailurePolicy: "Ignore",
 					RuntimeHookDisableStages:        []string{"PreRunPodSandbox"},
 					RuntimeHookConfigFilePath:       tmpDir,
+					RuntimeHooksNRI:                 true,
 				},
 				fg: map[string]bool{
 					string(GroupIdentity):   true,
