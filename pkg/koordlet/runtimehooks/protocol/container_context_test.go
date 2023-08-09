@@ -18,12 +18,14 @@ package protocol
 
 import (
 	"encoding/json"
+	"testing"
+
 	"github.com/containerd/nri/pkg/api"
-	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"testing"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 )
 
 func TestContainerContext_FromNri(t *testing.T) {

@@ -17,9 +17,11 @@ limitations under the License.
 package protocol
 
 import (
-	"github.com/containerd/nri/pkg/api"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"testing"
+
+	"github.com/containerd/nri/pkg/api"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 )
 
 func TestPodContext_FromNri(t *testing.T) {
