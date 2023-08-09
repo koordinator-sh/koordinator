@@ -50,6 +50,7 @@ type podResourceCollector struct {
 	lastContainerCPUStat *gocache.Cache
 
 	deviceCollectors map[string]framework.DeviceCollector
+	sharedState      *framework.SharedState
 }
 
 func New(opt *framework.Options) framework.Collector {
@@ -78,6 +79,7 @@ func (p *podResourceCollector) Enabled() bool {
 
 func (p *podResourceCollector) Setup(c *framework.Context) {
 	p.deviceCollectors = c.DeviceCollectors
+	p.sharedState = c.State
 }
 
 func (p *podResourceCollector) Run(stopCh <-chan struct{}) {
@@ -104,6 +106,8 @@ func (p *podResourceCollector) collectPodResUsed() {
 	podMetas := p.statesInformer.GetAllPods()
 	count := 0
 	metrics := make([]metriccache.MetricSample, 0)
+	allCPUUsageCores := metriccache.Point{Timestamp: time.Now(), Value: 0}
+	allMemoryUsage := metriccache.Point{Timestamp: time.Now(), Value: 0}
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
@@ -170,6 +174,8 @@ func (p *podResourceCollector) collectPodResUsed() {
 		klog.V(6).Infof("collect pod %s, uid %s finished, metric %+v", podKey, pod.UID, metrics)
 
 		count++
+		allCPUUsageCores.Value += cpuUsageValue
+		allMemoryUsage.Value += float64(memUsageValue)
 		containerMetrics := p.collectContainerResUsed(meta)
 		metrics = append(metrics, containerMetrics...)
 	}
@@ -184,6 +190,8 @@ func (p *podResourceCollector) collectPodResUsed() {
 		klog.Warningf("Commit pod metrics failed, error: %v", err)
 		return
 	}
+
+	p.sharedState.UpdatePodUsage(CollectorName, allCPUUsageCores, allMemoryUsage)
 
 	// update collect time
 	p.started.Store(true)

@@ -200,10 +200,16 @@ unevictable 0
 			statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 			metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 
-			c := NewMetricAdvisor(&framework.Config{
+			ci := NewMetricAdvisor(&framework.Config{
 				CollectResUsedInterval:     1 * time.Second,
 				CollectNodeCPUInfoInterval: 1 * time.Second,
 			}, statesInformer, metricCache)
+			c := ci.(*metricAdvisor)
+			c.context.State.UpdateNodeUsage(metriccache.Point{Timestamp: time.Now(), Value: 1},
+				metriccache.Point{Timestamp: time.Now(), Value: 1024})
+			c.context.State.UpdatePodUsage("pod-collector",
+				metriccache.Point{Timestamp: time.Now(), Value: 0.5},
+				metriccache.Point{Timestamp: time.Now(), Value: 512})
 
 			statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{{
 				CgroupDir: testPodMetaDir,

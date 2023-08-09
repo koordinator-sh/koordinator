@@ -325,8 +325,10 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 	startTime := endTime.Add(-time.Duration(*spec.CollectPolicy.AggregateDurationSeconds) * time.Second)
 
 	nodeMetricInfo := &slov1alpha1.NodeMetricInfo{
-		NodeUsage:            r.queryNodeMetric(startTime, endTime, metriccache.AggregationTypeAVG, false),
-		AggregatedNodeUsages: r.collectNodeAggregateMetric(endTime, spec.CollectPolicy.NodeAggregatePolicy),
+		NodeUsage:              r.queryNodeMetric(startTime, endTime, metriccache.AggregationTypeAVG, false),
+		AggregatedNodeUsages:   r.collectNodeAggregateMetric(endTime, spec.CollectPolicy.NodeAggregatePolicy),
+		SystemUsage:            r.querySystemMetric(startTime, endTime, metriccache.AggregationTypeAVG, false),
+		AggregatedSystemUsages: r.collectSystemAggregateMetric(endTime, spec.CollectPolicy.NodeAggregatePolicy),
 	}
 
 	var gpus koordletutil.GPUDevices
@@ -519,6 +521,85 @@ func (r *nodeMetricInformer) collectNodeAggregateMetric(endTime time.Time, aggre
 				apiext.P90: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP90, true),
 				apiext.P95: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP95, true),
 				apiext.P99: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP99, true),
+			},
+			Duration: d,
+		}
+		aggregateUsages = append(aggregateUsages, aggregateUsage)
+	}
+	return aggregateUsages
+}
+
+func (r *nodeMetricInformer) collectSystemMetric(queryparam metriccache.QueryParam) (corev1.ResourceList, time.Duration, error) {
+	rl := corev1.ResourceList{}
+	querier, err := r.metricCache.Querier(*queryparam.Start, *queryparam.End)
+	if err != nil {
+		klog.V(5).Infof("get system metric querier failed, error %v", err)
+		return rl, 0, err
+	}
+
+	cpuAggregateResult, err := doQuery(querier, metriccache.SystemCPUUsageMetric, nil)
+	if err != nil {
+		return rl, 0, err
+	}
+	cpuUsed, err := cpuAggregateResult.Value(queryparam.Aggregate)
+	if err != nil {
+		return rl, 0, err
+	}
+
+	memAggregateResult, err := doQuery(querier, metriccache.SystemMemoryUsageMetric, nil)
+	if err != nil {
+		return rl, 0, err
+	}
+
+	memUsed, err := memAggregateResult.Value(queryparam.Aggregate)
+	if err != nil {
+		return rl, 0, err
+	}
+
+	rl[corev1.ResourceCPU] = *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI)
+	rl[corev1.ResourceMemory] = *resource.NewQuantity(int64(memUsed), resource.BinarySI)
+
+	return rl, cpuAggregateResult.TimeRangeDuration(), nil
+}
+
+func (r *nodeMetricInformer) querySystemMetric(start time.Time, end time.Time, aggregateType metriccache.AggregationType,
+	coldStartFilter bool) slov1alpha1.ResourceMap {
+	rm := slov1alpha1.ResourceMap{}
+
+	queryParam := metriccache.QueryParam{
+		Start:     &start,
+		End:       &end,
+		Aggregate: aggregateType,
+	}
+	cpuAndMem, duration, err := r.collectSystemMetric(queryParam)
+	if err != nil {
+		klog.Warningf("query system metric failed, error %v", err)
+		return rm
+	}
+
+	if coldStartFilter && metricsInColdStart(start, end, duration) {
+		klog.V(4).Infof("metrics is in cold start, no need to report, current result sample duration %v",
+			duration.String())
+		return rm
+	}
+
+	rm.ResourceList = cpuAndMem
+	return rm
+}
+
+func (r *nodeMetricInformer) collectSystemAggregateMetric(endTime time.Time, aggregatePolicy *slov1alpha1.AggregatePolicy) []slov1alpha1.AggregatedUsage {
+	var aggregateUsages []slov1alpha1.AggregatedUsage
+	if aggregatePolicy == nil {
+		return aggregateUsages
+	}
+	for _, d := range aggregatePolicy.Durations {
+		start := endTime.Add(-d.Duration)
+		aggregateUsage := slov1alpha1.AggregatedUsage{
+			Usage: map[apiext.AggregationType]slov1alpha1.ResourceMap{
+				apiext.P50: r.querySystemMetric(start, endTime, metriccache.AggregationTypeP50, true),
+				apiext.P90: r.querySystemMetric(start, endTime, metriccache.AggregationTypeP90, true),
+				apiext.P95: r.querySystemMetric(start, endTime, metriccache.AggregationTypeP95, true),
+				apiext.P99: r.querySystemMetric(start, endTime, metriccache.AggregationTypeP99, true),
 			},
 			Duration: d,
 		}

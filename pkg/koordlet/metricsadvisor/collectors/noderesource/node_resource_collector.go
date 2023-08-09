@@ -35,6 +35,10 @@ const (
 	CollectorName = "NodeResourceCollector"
 )
 
+var (
+	timeNow = time.Now
+)
+
 // TODO more ut is needed for this plugin
 type nodeResourceCollector struct {
 	collectInterval time.Duration
@@ -44,6 +48,7 @@ type nodeResourceCollector struct {
 
 	lastNodeCPUStat *framework.CPUStat
 
+	sharedState      *framework.SharedState
 	deviceCollectors map[string]framework.DeviceCollector
 }
 
@@ -62,6 +67,7 @@ func (n *nodeResourceCollector) Enabled() bool {
 
 func (n *nodeResourceCollector) Setup(c *framework.Context) {
 	n.deviceCollectors = c.DeviceCollectors
+	n.sharedState = c.State
 }
 
 func (n *nodeResourceCollector) Run(stopCh <-chan struct{}) {
@@ -82,7 +88,7 @@ func (n *nodeResourceCollector) Started() bool {
 func (n *nodeResourceCollector) collectNodeResUsed() {
 	klog.V(6).Info("collectNodeResUsed start")
 	nodeMetrics := make([]metriccache.MetricSample, 0)
-	collectTime := time.Now()
+	collectTime := timeNow()
 
 	// get the accumulated cpu ticks
 	currentCPUTick, err0 := koordletutil.GetCPUStatUsageTicks()
@@ -139,6 +145,9 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 		klog.Warningf("Commit node metrics failed, reason: %v", err)
 		return
 	}
+
+	n.sharedState.UpdateNodeUsage(metriccache.Point{Timestamp: collectTime, Value: cpuUsageValue},
+		metriccache.Point{Timestamp: collectTime, Value: memUsageValue})
 
 	// update collect time
 	n.started.Store(true)

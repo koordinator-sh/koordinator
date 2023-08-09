@@ -20,16 +20,23 @@ var (
 	defaultMetricFactory = NewMetricFactory()
 
 	// define all kinds of MetricResource
-	NodeCPUUsageMetric          = defaultMetricFactory.New(NodeMetricCPUUsage)
-	NodeMemoryUsageMetric       = defaultMetricFactory.New(NodeMetricMemoryUsage)
-	NodeGPUCoreUsageMetric      = defaultMetricFactory.New(NodeMetricGPUCoreUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
-	NodeGPUMemUsageMetric       = defaultMetricFactory.New(NodeMetricGPUMemUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
-	NodeGPUTotalMetric          = defaultMetricFactory.New(NodeMetricGPUMemTotal).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
-	PodCPUUsageMetric           = defaultMetricFactory.New(PodMetricCPUUsage).withPropertySchema(MetricPropertyPodUID)
-	PodMemUsageMetric           = defaultMetricFactory.New(PodMetricMemoryUsage).withPropertySchema(MetricPropertyPodUID)
-	PodCPUThrottledMetric       = defaultMetricFactory.New(PodMetricCPUThrottled).withPropertySchema(MetricPropertyPodUID)
-	PodGPUCoreUsageMetric       = defaultMetricFactory.New(PodMetricGPUCoreUsage).withPropertySchema(MetricPropertyPodUID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
-	PodGPUMemUsageMetric        = defaultMetricFactory.New(PodMetricGPUMemUsage).withPropertySchema(MetricPropertyPodUID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	NodeCPUUsageMetric     = defaultMetricFactory.New(NodeMetricCPUUsage)
+	NodeMemoryUsageMetric  = defaultMetricFactory.New(NodeMetricMemoryUsage)
+	NodeGPUCoreUsageMetric = defaultMetricFactory.New(NodeMetricGPUCoreUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	NodeGPUMemUsageMetric  = defaultMetricFactory.New(NodeMetricGPUMemUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	NodeGPUMemTotalMetric  = defaultMetricFactory.New(NodeMetricGPUMemTotal).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+
+	// define system resource usage as independent metric, although this can be calculate by node-sum(pod), but the time series are
+	// unaligned across different type of metric, which makes it hard to aggregate.
+	SystemCPUUsageMetric    = defaultMetricFactory.New(SysMetricCPUUsage)
+	SystemMemoryUsageMetric = defaultMetricFactory.New(SysMetricMemoryUsage)
+
+	PodCPUUsageMetric     = defaultMetricFactory.New(PodMetricCPUUsage).withPropertySchema(MetricPropertyPodUID)
+	PodMemUsageMetric     = defaultMetricFactory.New(PodMetricMemoryUsage).withPropertySchema(MetricPropertyPodUID)
+	PodCPUThrottledMetric = defaultMetricFactory.New(PodMetricCPUThrottled).withPropertySchema(MetricPropertyPodUID)
+	PodGPUCoreUsageMetric = defaultMetricFactory.New(PodMetricGPUCoreUsage).withPropertySchema(MetricPropertyPodUID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	PodGPUMemUsageMetric  = defaultMetricFactory.New(PodMetricGPUMemUsage).withPropertySchema(MetricPropertyPodUID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+
 	ContainerCPUUsageMetric     = defaultMetricFactory.New(ContainerMetricCPUUsage).withPropertySchema(MetricPropertyContainerID)
 	ContainerMemUsageMetric     = defaultMetricFactory.New(ContainerMetricMemoryUsage).withPropertySchema(MetricPropertyContainerID)
 	ContainerGPUCoreUsageMetric = defaultMetricFactory.New(ContainerMetricGPUCoreUsage).withPropertySchema(MetricPropertyContainerID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)

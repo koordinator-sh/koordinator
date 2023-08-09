@@ -76,6 +76,20 @@ func MaxInt64(i, j int64) int64 {
 	return j
 }
 
+func MinFloat64(i, j float64) float64 {
+	if i < j {
+		return i
+	}
+	return j
+}
+
+func MaxFloat64(i, j float64) float64 {
+	if i > j {
+		return i
+	}
+	return j
+}
+
 func RetryOnConflictOrTooManyRequests(fn func() error) error {
 	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
 		return errors.IsConflict(err) || errors.IsTooManyRequests(err)

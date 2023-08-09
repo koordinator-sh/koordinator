@@ -24,7 +24,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 	faketopologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
-
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -172,12 +171,13 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 		nodeMetricClient clientsetv1alpha1.NodeMetricInterface
 	}
 	tests := []struct {
-		name             string
-		fields           fields
-		wantNilStatus    bool
-		wantNodeResource slov1alpha1.ResourceMap
-		wantPodsMetric   []*slov1alpha1.PodMetricInfo
-		wantErr          bool
+		name               string
+		fields             fields
+		wantNilStatus      bool
+		wantNodeResource   slov1alpha1.ResourceMap
+		wantSystemResource slov1alpha1.ResourceMap
+		wantPodsMetric     []*slov1alpha1.PodMetricInfo
+		wantErr            bool
 	}{
 		{
 			name: "nodeMetric not initialized",
@@ -192,10 +192,11 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 				nodeMetricClient: &fakeNodeMetricClient{},
 			},
 
-			wantNilStatus:    true,
-			wantNodeResource: slov1alpha1.ResourceMap{},
-			wantPodsMetric:   nil,
-			wantErr:          true,
+			wantNilStatus:      true,
+			wantNodeResource:   slov1alpha1.ResourceMap{},
+			wantSystemResource: slov1alpha1.ResourceMap{},
+			wantPodsMetric:     nil,
+			wantErr:            true,
 		},
 		{
 			name: "successfully report nodeMetric",
@@ -229,11 +230,19 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					duration := endTime.Sub(startTime)
 					cpuQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
 					assert.NoError(t, err)
-					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, cpuQueryMeta, 1, duration)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, cpuQueryMeta, 3, duration)
 
 					memQueryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
 					assert.NoError(t, err)
-					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, 1*1024*1024*1024, duration)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, 3*1024*1024*1024, duration)
+
+					sysCPUQueryMeta, err := metriccache.SystemCPUUsageMetric.BuildQueryMeta(nil)
+					assert.NoError(t, err)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, sysCPUQueryMeta, 2, duration)
+
+					sysMemQueryMeta, err := metriccache.SystemMemoryUsageMetric.BuildQueryMeta(nil)
+					assert.NoError(t, err)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, sysMemQueryMeta, 2*1024*1024*1024, duration)
 
 					mockMetricCache.EXPECT().Get(gomock.Any()).Return(util.GPUDevices{
 						{UUID: "1", Minor: 0, MemoryTotal: 100},
@@ -318,8 +327,8 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 			wantNilStatus: false,
 			wantNodeResource: slov1alpha1.ResourceMap{
 				ResourceList: v1.ResourceList{
-					v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
-					v1.ResourceMemory: *resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
+					v1.ResourceCPU:    *resource.NewMilliQuantity(3000, resource.DecimalSI),
+					v1.ResourceMemory: *resource.NewQuantity(3*1024*1024*1024, resource.BinarySI),
 				},
 				Devices: []schedulingv1alpha1.DeviceInfo{
 					{UUID: "1", Minor: pointer.Int32(0), Type: schedulingv1alpha1.GPU, Resources: map[v1.ResourceName]resource.Quantity{
@@ -332,6 +341,12 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 						apiext.ResourceGPUMemory:      *resource.NewQuantity(50, resource.BinarySI),
 						apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(25, resource.DecimalSI),
 					}},
+				},
+			},
+			wantSystemResource: slov1alpha1.ResourceMap{
+				ResourceList: v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+					v1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
 				},
 			},
 			wantPodsMetric: []*slov1alpha1.PodMetricInfo{
@@ -377,13 +392,23 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					mockQuerier := mockmetriccache.NewMockQuerier(ctrl)
 					c.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
 
+					duration := endTime.Sub(startTime)
 					cpuQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
 					assert.NoError(t, err)
-					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, cpuQueryMeta, 1000, endTime.Sub(startTime))
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, cpuQueryMeta, 2000, duration)
 
 					memQueryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
 					assert.NoError(t, err)
-					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, 1*1024*1024*1024, endTime.Sub(startTime))
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, 2*1024*1024*1024, duration)
+
+					sysCPUQueryMeta, err := metriccache.SystemCPUUsageMetric.BuildQueryMeta(nil)
+					assert.NoError(t, err)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, sysCPUQueryMeta, 2, duration)
+
+					sysMemQueryMeta, err := metriccache.SystemMemoryUsageMetric.BuildQueryMeta(nil)
+					assert.NoError(t, err)
+					buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, sysMemQueryMeta, 2*1024*1024*1024, duration)
+
 					c.EXPECT().Get(gomock.Any()).Return(nil, false).AnyTimes()
 					return c
 				},
@@ -437,6 +462,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					assert.Nil(t, nodeMetric.Status.PodsMetric)
 				} else {
 					assert.Equal(t, tt.wantNodeResource, nodeMetric.Status.NodeMetric.NodeUsage)
+					assert.Equal(t, tt.wantSystemResource, nodeMetric.Status.NodeMetric.SystemUsage)
 					assert.Equal(t, tt.wantPodsMetric, nodeMetric.Status.PodsMetric)
 				}
 			}
@@ -863,4 +889,175 @@ func buildMockQueryResult(ctrl *gomock.Controller, querier *mockmetriccache.Mock
 	result.EXPECT().TimeRangeDuration().Return(duration).AnyTimes()
 	factory.EXPECT().New(queryMeta).Return(result).AnyTimes()
 	querier.EXPECT().Query(queryMeta, gomock.Any(), result).SetArg(2, *result).Return(nil).AnyTimes()
+}
+
+func Test_nodeMetricInformer_collectSystemAggregateMetric(t *testing.T) {
+	end := time.Now()
+	start := end.Add(-defaultAggregateDurationSeconds * time.Second)
+	type fields struct {
+		sysResultAVG slov1alpha1.ResourceMap
+		sysResultP50 slov1alpha1.ResourceMap
+		sysResultP90 slov1alpha1.ResourceMap
+		sysResultP95 slov1alpha1.ResourceMap
+		sysResultP99 slov1alpha1.ResourceMap
+	}
+	tests := []struct {
+		name   string
+		fields fields
+	}{
+		{
+			name: "merge system metric",
+			fields: fields{
+				sysResultAVG: slov1alpha1.ResourceMap{
+					ResourceList: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(1, resource.BinarySI),
+					},
+				},
+				sysResultP50: slov1alpha1.ResourceMap{
+					ResourceList: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(2, resource.BinarySI),
+					},
+				},
+				sysResultP90: slov1alpha1.ResourceMap{
+					ResourceList: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(3000, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(3, resource.BinarySI),
+					},
+				},
+				sysResultP95: slov1alpha1.ResourceMap{
+					ResourceList: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(4000, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(4, resource.BinarySI),
+					},
+				},
+				sysResultP99: slov1alpha1.ResourceMap{
+					ResourceList: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(5000, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(5, resource.BinarySI),
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			mockMetricCache := mockmetriccache.NewMockMetricCache(ctrl)
+			mockResultFactory := mockmetriccache.NewMockAggregateResultFactory(ctrl)
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
+			mockQuerier := mockmetriccache.NewMockQuerier(ctrl)
+			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+			mockMetricCache.EXPECT().Get(gomock.Any()).Return(nil, false).AnyTimes()
+			result := mockmetriccache.NewMockAggregateResult(ctrl)
+			result.EXPECT().Value(metriccache.AggregationTypeAVG).Return(float64(1), nil).AnyTimes()
+			result.EXPECT().Value(metriccache.AggregationTypeP50).Return(float64(2), nil).AnyTimes()
+			result.EXPECT().Value(metriccache.AggregationTypeP90).Return(float64(3), nil).AnyTimes()
+			result.EXPECT().Value(metriccache.AggregationTypeP95).Return(float64(4), nil).AnyTimes()
+			result.EXPECT().Value(metriccache.AggregationTypeP99).Return(float64(5), nil).AnyTimes()
+			result.EXPECT().Count().Return(1).AnyTimes()
+			result.EXPECT().TimeRangeDuration().Return(end.Sub(start)).AnyTimes()
+			mockResultFactory.EXPECT().New(gomock.Any()).Return(result).AnyTimes()
+			mockQuerier.EXPECT().Query(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+			r := &nodeMetricInformer{
+				metricCache: mockMetricCache,
+				nodeMetric: &slov1alpha1.NodeMetric{
+					Spec: slov1alpha1.NodeMetricSpec{
+						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+							AggregateDurationSeconds: defaultNodeMetricSpec.CollectPolicy.AggregateDurationSeconds,
+							ReportIntervalSeconds:    defaultNodeMetricSpec.CollectPolicy.ReportIntervalSeconds,
+							NodeAggregatePolicy: &slov1alpha1.AggregatePolicy{
+								Durations: []metav1.Duration{
+									{Duration: 5 * time.Minute},
+								},
+							},
+						},
+					},
+				},
+			}
+			want := &slov1alpha1.NodeMetricInfo{
+				NodeUsage: tt.fields.sysResultAVG,
+				AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
+					{
+						Usage: map[apiext.AggregationType]slov1alpha1.ResourceMap{
+							apiext.P50: tt.fields.sysResultP50,
+							apiext.P90: tt.fields.sysResultP90,
+							apiext.P95: tt.fields.sysResultP95,
+							apiext.P99: tt.fields.sysResultP99,
+						},
+						Duration: metav1.Duration{
+							Duration: end.Sub(start),
+						},
+					},
+				},
+			}
+			got := r.collectSystemAggregateMetric(end, r.nodeMetric.Spec.CollectPolicy.NodeAggregatePolicy)
+			assert.Equal(t, want.AggregatedNodeUsages, got)
+		})
+	}
+}
+
+func Test_nodeMetricInformer_collectSystemMetric(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	now := time.Now()
+	startTime := now.Add(-time.Second * 120)
+
+	type args struct {
+		queryparam metriccache.QueryParam
+	}
+	type samples struct {
+		CPUUsed float64
+		MemUsed float64
+	}
+	tests := []struct {
+		name    string
+		args    args
+		samples samples
+		want    v1.ResourceList
+		want1   time.Duration
+	}{
+		{
+			name: "test-1",
+			args: args{
+				queryparam: metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+			},
+			samples: samples{
+				CPUUsed: 2,
+				MemUsed: 10 * 1024 * 1024 * 1024,
+			},
+			want: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+			},
+			want1: now.Sub(startTime),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockMetricCache := mockmetriccache.NewMockMetricCache(ctrl)
+			mockResultFactory := mockmetriccache.NewMockAggregateResultFactory(ctrl)
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
+			mockQuerier := mockmetriccache.NewMockQuerier(ctrl)
+			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+			duration := tt.args.queryparam.End.Sub(*tt.args.queryparam.Start)
+			cpuQueryMeta, err := metriccache.SystemCPUUsageMetric.BuildQueryMeta(nil)
+			assert.NoError(t, err)
+			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, cpuQueryMeta, tt.samples.CPUUsed, duration)
+
+			memQueryMeta, err := metriccache.SystemMemoryUsageMetric.BuildQueryMeta(nil)
+			assert.NoError(t, err)
+			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, tt.samples.MemUsed, duration)
+			r := &nodeMetricInformer{
+				metricCache: mockMetricCache,
+			}
+			got, got1, err := r.collectSystemMetric(tt.args.queryparam)
+			assert.NoError(t, err)
+			assert.Equalf(t, tt.want, got, "collectSystemMetric(%v)", tt.args.queryparam)
+			assert.Equalf(t, tt.want1, got1, "collectSystemMetric(%v)", tt.args.queryparam)
+		})
+	}
 }

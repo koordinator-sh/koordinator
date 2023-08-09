@@ -303,6 +303,9 @@ total_unevictable 0
 					CollectorName: tt.fields.podFilterOption,
 				},
 			})
+			collector.Setup(&framework.Context{
+				State: framework.NewSharedState(),
+			})
 			c := collector.(*podResourceCollector)
 			tt.fields.initPodLastStat(c.lastPodCPUStat)
 			tt.fields.initContainerLastStat(c.lastContainerCPUStat)
