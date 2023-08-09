@@ -44,8 +44,8 @@ type PredictorFactory interface {
 }
 
 type Predictor interface {
+	GetPredictorName() string
 	AddPod(pod *v1.Pod) error
-
 	GetResult() (v1.ResourceList, error)
 }
 
@@ -98,6 +98,10 @@ var _ Predictor = (*emptyPredictor)(nil)
 type emptyPredictor struct {
 }
 
+func (p *emptyPredictor) GetPredictorName() string {
+	return "emptyPredictor"
+}
+
 // AddPod adds a pod to the predictor for resource prediction.
 func (p *emptyPredictor) AddPod(pod *v1.Pod) error {
 	return nil
@@ -133,6 +137,11 @@ type podReclaimablePredictor struct {
 	pods        map[string]bool
 }
 
+// GetPredictorName is used to obtain the predictor name.
+func (p *podReclaimablePredictor) GetPredictorName() string {
+	return "podReclaimablePredictor"
+}
+
 // AddPod adds a pod to the predictor for resource prediction.
 func (p *podReclaimablePredictor) AddPod(pod *v1.Pod) error {
 	// podReclaimablePredictor process only specified PriorityClass pods.
@@ -142,10 +151,9 @@ func (p *podReclaimablePredictor) AddPod(pod *v1.Pod) error {
 	}
 
 	if p.pods[string(pod.UID)] {
-		return fmt.Errorf("pod %v already exists", pod.UID)
-	} else {
-		p.pods[string(pod.UID)] = true
+		return fmt.Errorf("Pod %s already exist in the pod reclaimable predictor", util.GetPodKey(pod))
 	}
+	p.pods[string(pod.UID)] = true
 
 	// Pods in cold start have 0 reclaimable resources
 	if time.Since(pod.CreationTimestamp.Time) <= p.coldStartDuration {
@@ -203,9 +211,8 @@ func (p *podReclaimablePredictor) AddPod(pod *v1.Pod) error {
 
 // GetResult returns the predicted resource list for the added pods.
 func (p *podReclaimablePredictor) GetResult() (v1.ResourceList, error) {
-	klog.V(6).Infof("podReclaimablePredictor get result: %+v", p.reclaimable)
-	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceCPU), metrics.UnitCore, "podReclaimablePredictor", float64(p.reclaimable.Cpu().MilliValue())/1000)
-	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceMemory), metrics.UnitByte, "podReclaimablePredictor", float64(p.reclaimable.Memory().Value()))
+	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceCPU), metrics.UnitCore, p.GetPredictorName(), float64(p.reclaimable.Cpu().MilliValue())/1000)
+	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceMemory), metrics.UnitByte, p.GetPredictorName(), float64(p.reclaimable.Memory().Value()))
 	return p.reclaimable, nil
 }
 
@@ -220,6 +227,11 @@ type priorityReclaimablePredictor struct {
 	priorityClassFilterFn func(p extension.PriorityClass) bool // return true if the priority class is reclaimable
 
 	reclaimRequest v1.ResourceList
+}
+
+// GetPredictorName is used to obtain the predictor name.
+func (n *priorityReclaimablePredictor) GetPredictorName() string {
+	return "priorityReclaimablePredictor"
 }
 
 func (n *priorityReclaimablePredictor) AddPod(pod *v1.Pod) error {
@@ -285,9 +297,8 @@ func (n *priorityReclaimablePredictor) GetResult() (v1.ResourceList, error) {
 
 	// reclaimable[P] := max(request[P] - peak[P], 0)
 	reclaimable := quotav1.Max(quotav1.Subtract(n.reclaimRequest, reclaimPredict), util.NewZeroResourceList())
-	klog.V(6).Infof("priorityReclaimablePredictor get result: %+v", reclaimable)
-	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceCPU), metrics.UnitCore, "priorityReclaimablePredictor", float64(reclaimable.Cpu().MilliValue())/1000)
-	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceMemory), metrics.UnitByte, "priorityReclaimablePredictor", float64(reclaimable.Memory().Value()))
+	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceCPU), metrics.UnitCore, n.GetPredictorName(), float64(reclaimable.Cpu().MilliValue())/1000)
+	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceMemory), metrics.UnitByte, n.GetPredictorName(), float64(reclaimable.Memory().Value()))
 	return reclaimable, nil
 }
 
@@ -298,11 +309,16 @@ type minPredictor struct {
 	predictors []Predictor
 }
 
+// GetPredictorName is used to obtain the predictor name.
+func (m *minPredictor) GetPredictorName() string {
+	return "minPredictor"
+}
+
 func (m *minPredictor) AddPod(pod *v1.Pod) error {
-	for i, p := range m.predictors {
+	for _, p := range m.predictors {
 		err := p.AddPod(pod)
 		if err != nil {
-			return fmt.Errorf("predictor %d AddPod failed, err: %w", i, err)
+			return fmt.Errorf("failed to add pod (%s/%s) to %v. error: %v", pod.Namespace, pod.Name, p.GetPredictorName(), err)
 		}
 	}
 	return nil
@@ -310,27 +326,25 @@ func (m *minPredictor) AddPod(pod *v1.Pod) error {
 
 func (m *minPredictor) GetResult() (v1.ResourceList, error) {
 	if len(m.predictors) <= 0 {
-		klog.V(6).Infof("minPredictor has no sub-predictor, return zero resource list")
 		return util.NewZeroResourceList(), nil
 	}
 
 	minimal, err := m.predictors[0].GetResult()
 	if err != nil {
-		return nil, fmt.Errorf("predictor %d GetResult failed, err: %w", 0, err)
+		return nil, fmt.Errorf("failed to get predictor %s result, error: %v", m.predictors[0].GetPredictorName(), err)
 	}
 	for i := 1; i < len(m.predictors); i++ {
 		result, err := m.predictors[i].GetResult()
 		if err != nil {
-			return nil, fmt.Errorf("predictor %d GetResult failed, err: %w", i, err)
+			return nil, fmt.Errorf("failed to get predictor %s result, error: %v", m.predictors[i].GetPredictorName(), err)
 		}
-		klog.V(6).Infof("predictor %d, type %T, GetResult: %+v", i, m.predictors[i], result)
 
 		minimal = util.MinResourceList(minimal, result)
 	}
 
 	klog.V(6).Infof("minPredictor get result: %+v", minimal)
-	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceCPU), metrics.UnitCore, "minPredictor", float64(minimal.Cpu().MilliValue())/1000)
-	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceMemory), metrics.UnitByte, "minPredictor", float64(minimal.Memory().Value()))
+	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceCPU), metrics.UnitCore, m.GetPredictorName(), float64(minimal.Cpu().MilliValue())/1000)
+	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceMemory), metrics.UnitByte, m.GetPredictorName(), float64(minimal.Memory().Value()))
 	return minimal, nil
 }
 
