@@ -32,13 +32,13 @@ last-updated: 2023-07-28
 
 **kidled**
 
-Kidled, an open source cold memory collection solution, identifies the hot and cold conditions of nodes, pod and container memory in the cluster. The link introduces kidled in detail.
+Kidled, an open-source cold memory collection solution, identifies the hot and cold conditions of nodes, pod and container memory in the cluster. The link introduces kidled in detail.
 
 https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst
 
 **cold page**
 
-The part of memory that is allocated to application but probably unused for a while is called the "cold" memory. And the part of that in page cache is called cold page.
+The part of memory that is allocated to the application but probably unused for a while is called the "cold" memory. And the part of that in page cache is called cold page.
 
 **hot page**
 
@@ -46,11 +46,11 @@ Relatively, the memory which may be reclaimable but would be reallocated shortly
 
 ## Summary
 
-Implement the cold page info collecting and reporting. Based on that, we can incorporate cold memory compute into memory usage to support more fine-grained memory overcommitment in koordinator.
+Implement the cold page info collecting and reporting. Based on that, we can incorporate cold memory computing into memory usage to support more fine-grained memory overcommitment in koordinator.
 
 ## Motivation
 
-In general colocation scenarios, the resources that the high-priority (HP) applications have requested but not used are reclaimable to the low-priority (LP) applications to allocate. Resource reclaiming helps enhance the utilization of machines while increasing the risks of contentions. For memory resources, there are proportions of memory that are reusable on different levels. The free memory is allocatable to any process, while the page cache is potentially reusable after it is reclaimed by the system and no longer yields again. But for the better performance of the system, the kernel do not keep page cache idle and allocate the page cache to application as possible. To construct a more reliable and fine-grained memory overcommitment, the free and cold memory of the HP is preferred to reclaim to LP first. And if not required, the hot memory of HP should not be overcommitted, or the performance of HP can be affected. 
+In general colocation scenarios, the resources that the high-priority (HP) applications have requested but not used are reclaimable to the low-priority (LP) applications to allocate. Resource reclaiming helps enhance the utilization of machines while increasing the risks of contentions. For memory resources, there are proportions of memory that are reusable on different levels. The free memory is allocatable to any process, while the page cache is potentially reusable after it is reclaimed by the system and no longer yields again. But for the better performance of the system, the kernel does not keep page cache idle and allocate the page cache to the application as possible. To construct a more reliable and fine-grained memory overcommitment, the free and cold memory of the HP is preferred to reclaim to LP first. And if not required, the hot memory of HP should not be overcommitted, or the performance of HP can be affected. 
 
 In the Koordinator, we want to improve memory overcommitment by building the cold page reclaim ability, which can report the quantity of cold memory on the nodes and help assure that resource reclaiming like batch-memory are sound and efficient for the colocated applications.
 
@@ -62,7 +62,7 @@ Define the API for the cold pages. Implement the cold page info collecting and r
 
 ### Non-Goals/Future Work
 
-Cold memory supports  scheduling optimization in koord-manager or koord-scheduler.
+Cold memory supports scheduling optimization in koord-manager or koord-scheduler.
 
 ## Proposal
 
@@ -72,18 +72,18 @@ Cold memory supports  scheduling optimization in koord-manager or koord-schedule
 
 ![image](../../images/support-cold-memory-1.svg)
 
-Add a coldPageCollector in collectorPlugins. coldPageCollector read cgroup file memory.idle_stat which is exported by kidled(Anolis kernel), kstaled(Google kernel)  or DAMON(amazon) that depends on the kernel. And memory.idle_stat includes cold page info in page cache and exists at each hierarchical of cgroup memory. After collecting cold page info, coldPageCollector will insert metric(such as NodeMemoryWithHotPageUsageMetric, PodMemoryWithHotPageUsageMetric, ContainerMemoryWithHotPageUsageMetric, NodeMemoryColdPageSizeMetric, PodMemoryColdPageSizeMetric, ContainerMemoryColdPageSizeMetric) into metriccache. 
+Add a coldPageCollector in collectorPlugins. coldPageCollector read cgroup file memory.idle_stat which is exported by kidled(Anolis kernel), kstaled(Google kernel)  or DAMON(amazon) that depends on the kernel. And memory.idle_stat includes cold page info in page cache and exists at each hierarchy of cgroup memory. After collecting cold page info, coldPageCollector will insert metric(such as NodeMemoryWithHotPageUsageMetric, PodMemoryWithHotPageUsageMetric, ContainerMemoryWithHotPageUsageMetric, NodeMemoryColdPageSizeMetric, PodMemoryColdPageSizeMetric, ContainerMemoryColdPageSizeMetric) into metriccache. 
 
 MemFree: free and unallocated memory
 NodeMemWithColdPage: cold page size in page cache of node
 
-node memory usage: nodeMemWithHotPageUasge=MemTotal-MemFree-NodeMemWithColdPage
+node-memory-usage: nodeMemWithHotPageUasge=MemTotal-MemFree-NodeMemWithColdPage
 
-pod memory usage: podMemWithHotPageUasge=PodInactiveAnon + PodActiveAnon + PodUnevictable+PodMeMwithHotPageSize
+pod-memory-usage: podMemWithHotPageUasge=PodInactiveAnon + PodActiveAnon + PodUnevictable+PodMeMwithHotPageSize
 
-container memory usage: containerMemWithHotPageUasge=ContainerInactiveAnon + ContainerActiveAnon + ContainerUnevictable+ContainerMemWithHotPageSize
+container-memory-usage: containerMemWithHotPageUasge=ContainerInactiveAnon + ContainerActiveAnon + ContainerUnevictable+ContainerMemWithHotPageSize
 
-The proposal implement kidled cold page collector and provide other cold page collector interface.
+The proposal implements kidled cold page collector and provides other cold page collector interfaces.
 
 ```go
 //add collector
@@ -156,7 +156,7 @@ func (k *kidledcoldPageCollector) collectColdPageInfo()
 
 Implement kidled cold page collector. The proposal add a file idleinfo_exported_by_kided.go in pkg/koordlet/util/idleinfo_exported_by_kided.go
 
-Define an idleinfo struct as follows. It corresponds to this memory.idle_stat file information. For example  c means clean. d means dirty. s means swap. f means file. e means evict. u means uevict.  i means inactive. a means active. ``csea`` means the pages are clean && swappable && evictable && active. More details are in https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst.
+Define an idleinfo struct as follows. It corresponds to this memory.idle_stat file information. For example, c means clean. d means dirty. s means swap. f means file. e means evict. u means unevict. i means inactive. a means active. ``csea`` means the pages are clean && swappable && evictable && active. More details are at https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst.
 
 ```go
 type KidledIdleInfo struct {
@@ -186,13 +186,13 @@ type KidledIdleInfo struct {
 }
 ```
 
-Define a function named readidleInfo() in koordlet util module. It can read idleinfo memory.idle_stat which exists  under every hierarchy of cgroup memory. (node e.g. /sys/fs/cgroup/memory/memory.idle_stat)
+Define a function named readidleInfo() in koordlet util module. It can read idleinfo memory.idle_stat which exists under every hierarchy of cgroup memory. (node e.g. /sys/fs/cgroup/memory/memory.idle_stat)
 
 ```go
 func ReadIdleInfo(path string) (*IdleInfo, error) 
 ```
 
-Define a function named GetIdleInfoFilePath(). It is uesd to return idleinfo file path.(node e.g. /sys/fs/cgroup/memory/memory.idle_stat)
+Define a function named GetIdleInfoFilePath(). It is used to return idleinfo file path. (node e.g. /sys/fs/cgroup/memory/memory.idle_stat)
 
 ```go
 func GetIdleInfoFilePath(idleFileRelativePath string) string 
@@ -202,7 +202,7 @@ func GetIdleInfoFilePath(idleFileRelativePath string) string
 
 ![image](../../images/support-cold-memory-2.svg)
 
-collectNodeMetric() is used to query node metirc and return CPU And MemUsed in pkg/koordlet/statesinformer/impl/states_nodemetirc.go file.
+collectNodeMetric() is used to query node metric and return CPU And MemUsed in pkg/koordlet/statesinformer/impl/states_nodemetirc.go file.
 
 We can report memory usage including hot pages in collectNodeMetric().
 
@@ -211,21 +211,21 @@ The calculation formulas of node, pod and container are as follows.
 MemFree: free and unallocated memory
 NodeMemWithColdPage: cold page size in page cache of node
 
-node memory usage: nodeMemWithHotPageUasge=MemTotal-MemFree-NodeMemWithColdPage
+node-memory-usage: nodeMemWithHotPageUasge=MemTotal-MemFree-NodeMemWithColdPage
 
-pod memory usage: podMemWithHotPageUasge=PodInactiveAnon + PodActiveAnon + PodUnevictable+PodMeMwithHotPageSize
+pod-memory-usage: podMemWithHotPageUasge=PodInactiveAnon + PodActiveAnon + PodUnevictable+PodMeMwithHotPageSize
 
-container memory usage: containerMemWithHotPageUasge=ContainerInactiveAnon + ContainerActiveAnon + ContainerUnevictable+ContainerMemWithHotPageSize
+container-memory-usage: containerMemWithHotPageUasge=ContainerInactiveAnon + ContainerActiveAnon + ContainerUnevictable+ContainerMemWithHotPageSize
 
 The same process is executed pod informer to report memory usage. Do not repeat.
 
 #### Define cold memory API
 
-Provide memory collect policy access.
+Provide memory-collect policy access.
 
-Add field named MemoryCollectPolicy to represent which method is used to collect memory usage. Such as usageWithHotPageCache, usageWithoutPageCache,  usageWithPageCache.
+Add a field named MemoryCollectPolicy to represent which method is used to collect memory usage. Such as usageWithHotPageCache, usageWithoutPageCache,  usageWithPageCache.
 
-You can create a crd nodemeric resource and specify value of spec.CollectPolicy.MemoryCollectPolicy to start collect cold memory compute. 
+You can create a crd nodemetric resource and specify the value of Spec.CollectPolicy.MemoryCollectPolicy to start collecting cold memory compute. 
 
 ```go
 // NodeMetricCollectPolicy defines the Metric collection policy
@@ -242,21 +242,21 @@ type NodeMetricCollectPolicy struct {
 ```
 ## Alternatives
 
-**kidled**: kidled, an open source cold memory collection solution, is used by Anolis OS.
+**kidled**: kidled, an open-source cold memory collection solution, is used by Anolis OS.
 
 https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst
 
-**kstaled**:  kstaled  is used by google linux kernel .It was designed by Michel. Michel's patch was developed on a early kernel version 3.0 and was similar to kidled. kstable also use /sys/kernel/mm/kstaled/scan_seconds and export idle_page_stats file. But kidled did not cherry pick the original kstaled's patch directly and made improvements. (e.g. design use_hierarchy )
+**kstaled**: kstaled is used by google linux kernel. It was designed by Michel. Michel's patch was developed on an early kernel version 3.0 and was similar to kidled. kstable also use /sys/kernel/mm/kstaled/scan_seconds and export idle_page_stats file. But kidled did not cherry pick the original kstaled's patch directly and made improvements. (e.g. design use_hierarchy )
 
 https://lwn.net/Articles/459269/
 
 https://lore.kernel.org/lkml/20110922161448.91a2e2b2.akpm@google.com/T/
 
-**DAMON**: DAMON was used  by amazon linux kernel.
+**DAMON**: DAMON was used by the Amazon Linux kernel.
 
 https://lwn.net/Articles/858682/
 
-why we choose kidled? The reasons are as below.
+Why do we choose kidled? The reasons are as below.
 
-1) Anolis OS  is open-sourced and has already supported kidled. We can directly use the api and it is very simple.
-2) Kidled have a global scanner to do this job. That avoids a lot of unnecessary job. For example switch between user and kernel mode and handle share mappings.
+1) Anolis OS  is open-sourced and has already supported kidled. We can directly use the API and it is very simple.
+2) Kidled has a global scanner to do this job. That avoids a lot of unnecessary jobs. For example switch between user and kernel mode and handle share mappings.
