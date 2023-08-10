@@ -17,18 +17,28 @@ limitations under the License.
 package deviceshare
 
 import (
+	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	"k8s.io/client-go/informers"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
+)
+
+const (
+	defaultGCPeriod = 3 * time.Second
 )
 
 type nodeDevice struct {
@@ -397,8 +407,7 @@ func (n *nodeDevice) calcFreeWithPreemptible(deviceType schedulingv1alpha1.Devic
 
 type nodeDeviceCache struct {
 	lock sync.Mutex
-	// nodeDeviceInfos stores nodeDevice for each node
-	// and uses node name as map key.
+	// nodeDeviceInfos stores nodeDevice for each node.
 	nodeDeviceInfos map[string]*nodeDevice
 }
 
@@ -430,34 +439,56 @@ func (n *nodeDeviceCache) removeNodeDevice(nodeName string) {
 	delete(n.nodeDeviceInfos, nodeName)
 }
 
+func (n *nodeDeviceCache) invalidateNodeDevice(device *schedulingv1alpha1.Device) {
+	device = device.DeepCopy()
+	for i := range device.Spec.Devices {
+		info := &device.Spec.Devices[i]
+		info.Health = false
+	}
+
+	nodeDeviceResource := buildDeviceResources(device)
+
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	info := n.nodeDeviceInfos[device.Name]
+	if info == nil {
+		return
+	}
+	info.lock.Lock()
+	defer info.lock.Unlock()
+	info.resetDeviceTotal(nodeDeviceResource)
+}
+
 func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1alpha1.Device) {
 	if nodeName == "" || device == nil {
 		return
 	}
 
+	nodeDeviceResource := buildDeviceResources(device)
 	info := n.getNodeDevice(nodeName, true)
-
 	info.lock.Lock()
 	defer info.lock.Unlock()
+	info.resetDeviceTotal(nodeDeviceResource)
+}
 
+func buildDeviceResources(device *schedulingv1alpha1.Device) map[schedulingv1alpha1.DeviceType]deviceResources {
 	nodeDeviceResource := map[schedulingv1alpha1.DeviceType]deviceResources{}
 	for _, deviceInfo := range device.Spec.Devices {
 		if nodeDeviceResource[deviceInfo.Type] == nil {
 			nodeDeviceResource[deviceInfo.Type] = make(deviceResources)
 		}
-		if !deviceInfo.Health {
-			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = make(corev1.ResourceList)
-			klog.Errorf("Find device unhealthy, nodeName:%v, deviceType:%v, minor:%v",
-				nodeName, deviceInfo.Type, deviceInfo.Minor)
-		} else {
-			resources := deviceInfo.Resources
-			nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = resources
-			klog.V(5).Infof("Find device resource update, nodeName:%v, deviceType:%v, minor:%v, res:%v",
-				nodeName, deviceInfo.Type, deviceInfo.Minor, resources)
-		}
-	}
 
-	info.resetDeviceTotal(nodeDeviceResource)
+		var resources corev1.ResourceList
+		if !deviceInfo.Health {
+			resources = make(corev1.ResourceList)
+			klog.Errorf("Find device unhealthy, nodeName:%v, deviceType:%v, minor:%v", device.Name, deviceInfo.Type, deviceInfo.Minor)
+		} else {
+			resources = deviceInfo.Resources
+			klog.V(5).Infof("Find device resource update, nodeName:%v, deviceType:%v, minor:%v, res:%v", device.Name, deviceInfo.Type, deviceInfo.Minor, resources)
+		}
+		nodeDeviceResource[deviceInfo.Type][int(*deviceInfo.Minor)] = resources
+	}
+	return nodeDeviceResource
 }
 
 func (n *nodeDeviceCache) getNodeDeviceSummary(nodeName string) (*NodeDeviceSummary, bool) {
@@ -481,4 +512,31 @@ func (n *nodeDeviceCache) getAllNodeDeviceSummary() map[string]*NodeDeviceSummar
 		nodeDeviceSummaries[nodeName] = nodeDeviceInfo.getNodeDeviceSummary()
 	}
 	return nodeDeviceSummaries
+}
+
+func (n *nodeDeviceCache) gcNodeDevice(ctx context.Context, informerFactory informers.SharedInformerFactory, period time.Duration) {
+	nodeInformer := informerFactory.Core().V1().Nodes().Informer()
+	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), informerFactory, nodeInformer, nil)
+
+	wait.UntilWithContext(ctx, func(ctx context.Context) {
+		nodeLister := informerFactory.Core().V1().Nodes().Lister()
+		nodes, err := nodeLister.List(labels.Everything())
+		if err != nil {
+			klog.ErrorS(err, "Failed to nodeLister.List")
+			return
+		}
+		nodeNames := make(sets.String, len(nodes))
+		for _, v := range nodes {
+			nodeNames.Insert(v.Name)
+		}
+
+		n.lock.Lock()
+		defer n.lock.Unlock()
+		for name := range n.nodeDeviceInfos {
+			if !nodeNames.Has(name) {
+				delete(n.nodeDeviceInfos, name)
+				klog.InfoS("nodeDevice has been removed since missing Node object", "node", name)
+			}
+		}
+	}, period)
 }

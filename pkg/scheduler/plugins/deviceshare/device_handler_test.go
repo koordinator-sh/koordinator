@@ -377,7 +377,22 @@ func Test_nodeDeviceCache_onDeviceDelete(t *testing.T) {
 			deviceCache: &nodeDeviceCache{
 				nodeDeviceInfos: generateFakeNodeDeviceInfos(),
 			},
-			wantCache: map[string]*nodeDevice{},
+			wantCache: map[string]*nodeDevice{
+				"test-node-1": {
+					deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {
+							1: corev1.ResourceList{},
+						},
+					},
+					deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {
+							1: corev1.ResourceList{},
+						},
+					},
+					deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
+					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
+				},
+			},
 		},
 	}
 	for _, tt := range tests {

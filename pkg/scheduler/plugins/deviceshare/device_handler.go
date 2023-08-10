@@ -73,6 +73,13 @@ func (n *nodeDeviceCache) onDeviceDelete(obj interface{}) {
 	default:
 		return
 	}
-	n.removeNodeDevice(device.Name)
-	klog.V(4).InfoS("device cache deleted", "Device", klog.KObj(device))
+
+	//
+	// The user may accidentally delete the Device CRD object,
+	// and then the Device CRD object will be recreated by koordlet/DevicePlugin.
+	// During this period, the internal state can only be marked as invalid,
+	// otherwise the GPU may be repeatedly allocated to different Pods.
+	//
+	n.invalidateNodeDevice(device)
+	klog.V(4).InfoS("device invalided", "Device", klog.KObj(device))
 }

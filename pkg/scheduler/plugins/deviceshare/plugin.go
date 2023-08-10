@@ -461,6 +461,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	deviceCache := newNodeDeviceCache()
 	registerDeviceEventHandler(deviceCache, extendedHandle.KoordinatorSharedInformerFactory())
 	registerPodEventHandler(deviceCache, handle.SharedInformerFactory(), extendedHandle.KoordinatorSharedInformerFactory())
+	go deviceCache.gcNodeDevice(context.TODO(), handle.SharedInformerFactory(), defaultGCPeriod)
 
 	allocatorOpts := AllocatorOptions{
 		SharedInformerFactory:      extendedHandle.SharedInformerFactory(),
