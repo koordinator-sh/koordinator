@@ -264,11 +264,11 @@ Why do we choose kidled? The reasons are as below.
 ## Evaluation and Observability
 In this part, some metrics are evaluated for performance after cold memory collection is turned on.
 
-After cold memory collection. memory usage includes hot page.
+After cold memory collection, memory usage includes hot page.
 
-page refault: Page fault on evited pages will occur when the page is not in memory.	
+Page refault: Page refault is a direct metirc. Page fault on evited pages will occur when the page is not in memory. For example, cold pages will be few and page refault will appear frequently when the overload rises and page cache is fully used.
 
-page recycling frequency: Page cache recycling will be triggered when the memory is tight.
+Page hit ratio: Page recycling frequency is a supplementary metric for page refault. When page refault always appears, page hit ratio declines.
 
-page hit ratio: Cachetop tool provides every process cache hits.
+Page cache recycling frequency: Page cache recycling will be triggered when the overload rises. And at the time, cold page is rare.
 
