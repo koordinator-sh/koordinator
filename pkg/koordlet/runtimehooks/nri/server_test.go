@@ -22,6 +22,7 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
+
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 

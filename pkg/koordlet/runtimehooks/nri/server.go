@@ -80,6 +80,7 @@ func NewNriServer(opt Options) (*NriServer, error) {
 	p := &NriServer{options: opt}
 	if p.mask, err = api.ParseEventMask(events); err != nil {
 		klog.V(5).ErrorS(err, "failed to parse events")
+		return p, err
 	}
 	p.cfg.Events = strings.Split(events, ",")
 

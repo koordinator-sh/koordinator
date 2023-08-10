@@ -17,10 +17,14 @@ limitations under the License.
 package protocol
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/containerd/nri/pkg/api"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 )
 
@@ -30,6 +34,31 @@ func TestPodContext_FromNri(t *testing.T) {
 		Response PodResponse
 		executor resourceexecutor.ResourceUpdateExecutor
 	}
+	testSpec := &extension.ExtendedResourceSpec{
+		Containers: map[string]extension.ExtendedResourceContainerSpec{
+			"test-container-1": {
+				Requests: corev1.ResourceList{
+					extension.BatchCPU:    resource.MustParse("500"),
+					extension.BatchMemory: resource.MustParse("1Gi"),
+				},
+				Limits: corev1.ResourceList{
+					extension.BatchCPU:    resource.MustParse("500"),
+					extension.BatchMemory: resource.MustParse("1Gi"),
+				},
+			},
+			"test-container-2": {
+				Requests: corev1.ResourceList{
+					extension.BatchCPU:    resource.MustParse("500"),
+					extension.BatchMemory: resource.MustParse("2Gi"),
+				},
+				Limits: corev1.ResourceList{
+					extension.BatchCPU:    resource.MustParse("500"),
+					extension.BatchMemory: resource.MustParse("2Gi"),
+				},
+			},
+		},
+	}
+	testBytes, _ := json.Marshal(testSpec)
 	type args struct {
 		pod *api.PodSandbox
 	}
@@ -39,7 +68,28 @@ func TestPodContext_FromNri(t *testing.T) {
 		args   args
 	}{
 		{
-			name: "",
+			name:   "fromnri GetExtendedResourceSpec failed",
+			fields: fields{},
+			args: args{
+				pod: &api.PodSandbox{
+					Linux: &api.LinuxPodSandbox{},
+					Annotations: map[string]string{
+						"node.koordinator.sh/extended-resource-spec": "test",
+					},
+				},
+			},
+		},
+		{
+			name:   "fromnri success",
+			fields: fields{},
+			args: args{
+				pod: &api.PodSandbox{
+					Linux: &api.LinuxPodSandbox{},
+					Annotations: map[string]string{
+						"node.koordinator.sh/extended-resource-spec": string(testBytes),
+					},
+				},
+			},
 		},
 	}
 	for _, tt := range tests {

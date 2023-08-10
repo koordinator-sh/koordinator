@@ -18,13 +18,13 @@ package protocol
 
 import (
 	"encoding/json"
-	"k8s.io/utils/pointer"
 	"reflect"
 	"testing"
 
 	"github.com/containerd/nri/pkg/api"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
