@@ -11,7 +11,7 @@ reviewers:
   - @saintube
   - @jasonliu747
 creation-date: 2023-07-07
-last-updated: 2023-07-21
+last-updated: 2023-08-10
 status: provisional
 ---
 
@@ -32,14 +32,12 @@ status: provisional
             - [Story 1](#story-1)
             - [Story 2](#story-2)
             - [Story 3](#story-3)
-        - [Pod Migration Job CRD Field](#pod-migration-job-crd-field)
-            - [Migration Job Spec](#migration-job-spec)
         - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
             - [PodMigrationJob Controller](#podmigrationjob-controller)
                 - [Controller Process](#controller-process)
-                    - [Controller Reconcile Process](#controller-reconcile-process)
+                    - [EventHandle Process in Watch](#eventhandle-process-in-watch)
                     - [Arbitration Process](#arbitration-process)
-                    - [Migration Process](#migration-process)
+                    - [Controller Reconcile Process](#controller-reconcile-process)
                 - [Arbitration Mechanism](#arbitration-mechanism)
                     - [Sort PodMigrationJob](#sort-podmigrationjob)
                     - [GroupFilter PodMigrationJob](#groupfilter-podmigrationjob)
@@ -59,9 +57,9 @@ This proposal designed a mechanism in descheduler to arbitrate `PodMigrationJob`
 
 Arbitrate Mechanism is an important capability that Pod Migration relies on, and Pod Migration is relied on by many components (such as deschedulers). But Pod Migration is a complex process,  involving steps such as auditing, resource allocation, and application startup, and is mixed with application upgrading, scaling scenarios, and resource operation and maintenance operations by cluster administrators. 
 
-So when a large number of Pods are simultaneously migrated, this may have some impact on the stability of the system. In addition, if many Pods of the same workload are migrated simultaneously, it will also have an impact on the stability of the application. Moreover, if a job's Pod migration takes too long, it can affect the job's completion time.
+So when a large number of Pods are concurrently migrated, this may have some impact on the stability of the system. In addition, if many Pods of the same workload are migrated concurrently, it will also have an impact on the stability of the application. Moreover, If multiple jobs' Pods are migrated concurrently, it will cause a thundering herd effect. So we hope to handle the Pods in each job in sequence.
 
-Therefore, it is necessary to design an arbitration mechanism. This arbitration mechanism will select suitable `PodMigrationJob` to execute and control the execution speed of `PodMigrationJob` (to avoid a large number of jobs executing simultaneously), thereby ensuring the stability of the system and application.
+Therefore, it is necessary to design an arbitration mechanism. This arbitration mechanism will select suitable `PodMigrationJob` to execute and control the execution speed of `PodMigrationJob` (to avoid a large number of jobs executing concurrently), thereby ensuring the stability of the system and application.
 
 ### Goals
 
@@ -85,48 +83,23 @@ The descheduler evicts Pods with different priorities, and the importance of hig
 
 #### Story 2
 
-Multiple Pods of different workloads may be simultaneously evicted by the descheduler. We hope that the migrated Pods can be dispersed across different workloads (like deployments) as much as possible, in order to avoid a decrease in service availability caused by the migration process.
+Multiple Pods of different workloads may be concurrently evicted by the descheduler. We hope that the migrated Pods can be dispersed across different workloads (like deployments) as much as possible, in order to avoid a decrease in service availability caused by the migration process.
 
 #### Story 3
 
 Multiple Pods in different jobs are evicted. We should migrate all Pods from one job at a time and process different jobs in sequence to avoid a thundering herd effect.
 
-### Pod Migration Job CRD Field
-
-In order to support the above user stories, we add some fileds in Custom Resource Definition(CRD) `PodMigrationJob`.
-
-We can use `PriorityClassName` and `Priority` fields to customize the priority of migration tasks, if we want a migration priority that is different from the pod priority.
-
-#### Migration Job Spec
-
-```go
-type PodMigrationJobSpec struct {
-    // PriorityClassName defines the priority of the PodMigrationJob which should be 
-    // the name of some PriorityClass object.
-    // +optional
-    PriorityClassName string `json:"priorityClassName,omitempty"`
-    
-    // Priority define the priority of the PodMigrationJob.
-    // If this field is set, PriorityClassName will be discarded.
-    // +optional
-    Priority          *int32 `json:"priority,omitempty"`
-}
-```
-
-- `PriorityClassName` indicates the priority of the PodMigrationJob which should be the name of some PriorityClass object, and the Priority value will be set as the value of the PriorityClass.
-- `Priority` indicate the priority of the PodMigrationJob. The higher the priority, the greater the possibility of arbitration. If this field is set, PriorityClassName will be discarded.
-
 ### Implementation Details/Notes/Constraints
 
 #### PodMigrationJob Controller
 
-The **PodMigrationJobController** will evaluate all PodMigrationJobs and select a batch of PodMigrationJob and execute them. This selection process is called the **arbitration mechanism**. The reason why the arbitration mechanism is introduced is mainly to control the stability risk and control the cost of migrating Pods. The arbitration mechanism includes three stages: `Sort`, `GroupFilter` and `Select`.
+The **PodMigrationJobController** will evaluate all PodMigrationJobs and select a batch of PodMigrationJob and add them to the reconcile queue for executing. This selection process is called the **arbitration mechanism**. The arbitration mechanism includes three stages: `Sort`, `GroupFilter` and `Select`.
 
 ![image](/docs/images/arbitration-mechanism-design.svg)
 
 ##### Controller Process
 
-Arbitration Mechanism Supports a simple central flow control mechanism to limit the number of migrations over a period of time. To achieve this goal, we used a rate limited queue to control the job processing speed during the migration process.
+Arbitration Mechanism will put arbitrated MigrationJob into the reconcile queue To achieve rate limit.
 
 The controller process can be roughly divided into three parts, namely the Controller Reconcile Process, Arbitration Process, and Migration Process:
 
@@ -134,11 +107,9 @@ The controller process can be roughly divided into three parts, namely the Contr
 - **Arbitration Process**: This process periodically arbitrates the PodMigrationJobs in the arbitration collection and places the PodMigrationJobs selected by the arbitration into the rate limit queue.
 - **Migration Process**: This process will read `PodMigrationJob` from the rate limit queue and call `doMigrat`e to handle the `PodMigrationJob`.
 
-###### Controller Reconcile Process
+###### EventHandle Process in Watch
 
-1. Get the `PodMigrationJob`.
-2. If PodMigrationJob's phase is empty or `pending`, put it to the arbitration collection.
-3. Else do other things.
+1. Intercept all Create events and place them in the arbitration collection.
 
 ###### Arbitration Process
 
@@ -146,11 +117,11 @@ The controller process can be roughly divided into three parts, namely the Contr
 2. Use a map to record the sorted positions of each `PodMigrationJob` in the slice, with key being the `PodMigrationJob` and value being the position.
 3. Call different `GroupFilter` functions in sequence for group and filter operations to update the slice.
 4. Resort the elements in the slice using the previous map.
-5. Place the first n elements of slice to the rate limit queue and remove these elements from the arbitration collection.
+5. Place all the jobs to the rate limit queue and remove these elements from the arbitration collection.
 
-###### Migration Process
+###### Controller Reconcile Process
 
-1. For each element in the rate limit queue, call `doMigrate` to process the PodMigrationJob.
+1. Do reconcile process as before.
 
 ##### Arbitration Mechanism
 
@@ -165,11 +136,11 @@ It arbitrates the PodMigrationJobs in the arbitration collection and places the 
 - Using the **stable sorting** method, sort PodMigrationJobs in the following order:
   - The time interval between the start of migration and the current, the smaller the interval, the higher the ranking.
   - The Pod priority of PodMigrationJob, the lower the priority, the higher the ranking.
-  - If some Pods in the job containing PodMigrationJob's Pod is being migrated, the PodMigrationJob's ranking is higher.
-  - The higher the migration priority, the higher the ranking.
   - BE > LS > LSR = LSE
+  - Disperse Jobs by Workload
+  - Make PodMigrationJobs close in the same job
+  - If some Pods in the job containing PodMigrationJob's Pod is being migrated, the PodMigrationJob's ranking is higher.
 - Use a map to record the sorted ranking (key is PodMigrationJob, value is position)
-- Set all `PodMigrationJob` ranking under the same job in the map to the highest one of them (Try to migrate Pods from the same job simultaneously as much as possible).
 
 The definition of the type `SortFn` is as follows.
 
@@ -197,7 +168,11 @@ Aggregate PodMigrationJob according to different workloads and filter them based
 - According to Namespace
   - Group: Aggregate PodMigrationJob by Namespace.
   - Filter: 
-    - Check the number of Pods being migrated in the Namespace where each target Pod is located. If it exceeds the maximum migration amount for a single Namespace, exclude excess parts
+    - Check the number of Pods being migrated in the Namespace where each target Pod is located. If it exceeds the maximum migration amount for a single Namespace, exclude excess parts.
+- According to Job
+  - Group: Aggregate PodMigrationJob by Job.
+  - Filter:
+    - Check the number of Jobs that PodMigrationJobs' Pod belongs to. If it exceeds 1, exclude excess parts.
 
 The definition of the type `GroupFilterFn` is as follows.
 
@@ -210,7 +185,7 @@ type GroupFilterFn func(jobs []*v1alpha1.PodMigrationJob, client client.Client) 
 ![image](/docs/images/arbitration-mechanism-select-design.svg)
 
 - Sort PodMigrationJob slices based on the map.
-- Place the first **n** elements of slice to the rate limit queue.
+- Place all remaining jobs to the rate limit queue.
 - Remove these elements from the arbitration collection.
 
 #### Controller Configuration
@@ -233,18 +208,9 @@ type ArbitrationArgs struct {
     // Default is true
     Enabled bool
     
-    // Interval defines the running interval of the Arbitration Mechanism.
-    // Default is 1 minute
-    Interval time.Duration
-    
-    // ProcessQueueQPS defines the speed of process queues (per second)
-    // Default to 3
-    ProcessQueueQPS int
-    
-    // JobSelectRatio defines the proportion of the number of PodMigrationJobs 
-    // that the Arbitration Mechanism passes each time.
-    // Default to 1.2
-    JobSelectRatio float32
+    // Interval defines the running interval (second) of the Arbitration Mechanism.
+    // Default is 60s
+    Interval int
 }
 ```
 
@@ -253,4 +219,5 @@ type ArbitrationArgs struct {
 ## Implementation History
 
 - 2023-07-07: Initial proposal
-- 2023-07-21: Update proposal based on review comments
+- 2023-07-21: Update proposal based on review comments 
+- 2023-08-10: Update proposal based on review comments
