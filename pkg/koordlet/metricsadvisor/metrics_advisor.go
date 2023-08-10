@@ -49,6 +49,7 @@ func NewMetricAdvisor(cfg *framework.Config, statesInformer statesinformer.State
 	ctx := &framework.Context{
 		DeviceCollectors: make(map[string]framework.DeviceCollector, len(devicePlugins)),
 		Collectors:       make(map[string]framework.Collector, len(collectorPlugins)),
+		State:            framework.NewSharedState(),
 	}
 	for name, device := range devicePlugins {
 		ctx.DeviceCollectors[name] = device(opt)

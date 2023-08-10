@@ -258,3 +258,12 @@ func Test_GeneratePodPatch(t *testing.T) {
 		t.Errorf("expect patchBytes: %q, got: %q", patchAnnotation, annotation)
 	}
 }
+
+func TestMinFloat64(t *testing.T) {
+	big := 2.0
+	small := 1.0
+	gotMin := MinFloat64(big, small)
+	assert.Equal(t, small, gotMin)
+	gotMax := MaxFloat64(big, small)
+	assert.Equal(t, big, gotMax)
+}
