@@ -108,7 +108,7 @@ func (rs *nodeReservationRestoreStateData) mergeReservationAllocations() {
 }
 
 func (p *Plugin) PreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
-	skip, _, status := preparePod(pod)
+	skip, _, status := PreparePod(pod)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -187,6 +187,7 @@ func (p *Plugin) tryAllocateFromReservation(
 	pod *corev1.Pod,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
 	requiredFromReservation bool,
+	scorer *resourceAllocationScorer,
 ) (apiext.DeviceAllocations, *framework.Status) {
 	if len(matchedReservations) == 0 {
 		return nil, nil
@@ -224,7 +225,7 @@ func (p *Plugin) tryAllocateFromReservation(
 			if requiredFromReservation {
 				required = preferred
 			}
-			result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, required, preferred, nil, preemptible)
+			result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, required, preferred, nil, preemptible, scorer)
 			if len(result) > 0 && err == nil {
 				return result, nil
 			}
@@ -251,13 +252,13 @@ func (p *Plugin) tryAllocateFromReservation(
 		}
 		preemptible := appendAllocated(nil, preemptibleForAligned, alloc.remained, preemptibleInRR)
 		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyAligned {
-			result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, preferred, preferred, nil, preemptible)
+			result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, preferred, preferred, nil, preemptible, scorer)
 			if len(result) > 0 && err == nil {
 				return result, nil
 			}
 			insufficientAligned++
 		} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
-			result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, preferred, preferred, nil, preemptible)
+			result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, preferred, preferred, nil, preemptible, nil)
 			nodeFits := len(result) > 0 && err == nil
 			if nodeFits {
 				//
@@ -266,7 +267,7 @@ func (p *Plugin) tryAllocateFromReservation(
 				// the intersecting resources do not exceed the reserved range of the Restricted Reservation.
 				//
 				requiredDeviceResources := calcRequiredDeviceResources(&alloc, preemptibleInRR)
-				result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, preferred, preferred, requiredDeviceResources, preemptible)
+				result, err := p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, preferred, preferred, requiredDeviceResources, preemptible, scorer)
 				if len(result) > 0 && err == nil {
 					return result, nil
 				}
@@ -279,6 +280,65 @@ func (p *Plugin) tryAllocateFromReservation(
 		return nil, framework.NewStatus(framework.Unschedulable, "node(s) reservations insufficient devices")
 	}
 	return nil, nil
+}
+
+// scoreWithReservation combine the reservation with the node's resource usage to calculate the reservation score.
+func (p *Plugin) scoreWithReservation(
+	state *preFilterState,
+	restoreState *nodeReservationRestoreStateData,
+	alloc *reservationAlloc,
+	nodeDeviceInfo *nodeDevice,
+	nodeName string,
+	pod *corev1.Pod,
+	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
+) (int64, *framework.Status) {
+	if alloc == nil {
+		return 0, nil
+	}
+
+	var (
+		preemptibleForDefault map[schedulingv1alpha1.DeviceType]deviceResources
+		preemptibleForAligned map[schedulingv1alpha1.DeviceType]deviceResources
+	)
+
+	rInfo := alloc.rInfo
+	preemptibleInRR := state.preemptibleInRRs[nodeName][rInfo.UID()]
+
+	allocatePolicy := rInfo.GetAllocatePolicy()
+	if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault {
+		if preemptibleForDefault == nil {
+			preemptibleForDefault = appendAllocated(nil, basicPreemptible, restoreState.mergedMatchedAllocatable)
+		}
+		preemptible := appendAllocated(nil, preemptibleForDefault, preemptibleInRR)
+		score, err := p.allocator.Score(nodeName, pod, state.podRequests, nodeDeviceInfo, nil, preemptible, p.scorer)
+		if err != nil {
+			return 0, framework.AsStatus(err)
+		}
+		return score, nil
+	}
+
+	if preemptibleForAligned == nil {
+		preemptibleForAligned = appendAllocated(nil, basicPreemptible, restoreState.mergedMatchedAllocated)
+	}
+	preemptible := appendAllocated(nil, preemptibleForAligned, alloc.remained, preemptibleInRR)
+	if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyAligned {
+		score, err := p.allocator.Score(nodeName, pod, state.podRequests, nodeDeviceInfo, nil, preemptible, p.scorer)
+		if err != nil {
+			return 0, framework.AsStatus(err)
+		}
+		return score, nil
+	}
+
+	if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
+		requiredDeviceResources := calcRequiredDeviceResources(alloc, preemptibleInRR)
+		score, err := p.allocator.Score(nodeName, pod, state.podRequests, nodeDeviceInfo, requiredDeviceResources, preemptible, p.scorer)
+		if err != nil {
+			return 0, framework.AsStatus(err)
+		}
+		return score, nil
+	}
+
+	return 0, nil
 }
 
 func calcRequiredDeviceResources(alloc *reservationAlloc, preemptibleInRR map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
@@ -310,6 +370,7 @@ func (p *Plugin) allocateWithNominatedReservation(
 	nodeName string,
 	pod *corev1.Pod,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
+	scorer *resourceAllocationScorer,
 ) (apiext.DeviceAllocations, *framework.Status) {
 	if reservationutil.IsReservePod(pod) {
 		return nil, nil
@@ -340,6 +401,43 @@ func (p *Plugin) allocateWithNominatedReservation(
 		pod,
 		basicPreemptible,
 		false,
+		scorer,
 	)
 	return result, status
+}
+
+func (p *Plugin) scoreWithNominatedReservation(
+	state *preFilterState,
+	restoreState *nodeReservationRestoreStateData,
+	nodeDeviceInfo *nodeDevice,
+	nodeName string,
+	pod *corev1.Pod,
+	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
+	reservationInfo *frameworkext.ReservationInfo,
+) (int64, *framework.Status) {
+	if reservationutil.IsReservePod(pod) || reservationInfo == nil {
+		return 0, nil
+	}
+
+	allocIndex := -1
+	for i, v := range restoreState.matched {
+		if v.rInfo.UID() == reservationInfo.UID() {
+			allocIndex = i
+			break
+		}
+	}
+	if allocIndex == -1 {
+		return 0, nil
+	}
+
+	score, status := p.scoreWithReservation(
+		state,
+		restoreState,
+		&restoreState.matched[allocIndex],
+		nodeDeviceInfo,
+		nodeName,
+		pod,
+		basicPreemptible,
+	)
+	return score, status
 }

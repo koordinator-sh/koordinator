@@ -8,7 +8,7 @@ reviewers:
 - "@FillZpp"
 - "@zwzhang0107"
 creation-date: 2023-08-02
-last-updated: 2023-08-02
+last-updated: 2023-08-07
 status: provisional
 
 ---
@@ -126,7 +126,8 @@ type resourceAllocationScorer struct {
 // resourceToValueMap is keyed with resource name and valued with quantity.
 type resourceToValueMap map[corev1.ResourceName]int64
 
-// scoreDevice will use `scorer` function to calculate the scoreDevice.
+
+// scoreDevice will use `scorer` function to calculate the score per device.
 func (r *resourceAllocationScorer) scoreDevice(podRequest corev1.ResourceList, total, free corev1.ResourceList) int64 {
 	if r.resourceToWeightMap == nil {
 		return 0
@@ -136,13 +137,18 @@ func (r *resourceAllocationScorer) scoreDevice(podRequest corev1.ResourceList, t
 	allocatable := make(resourceToValueMap)
 	for resourceName := range r.resourceToWeightMap {
 		totalQuantity := total[resourceName]
-		if !totalQuantity.IsZero() {
-			used := totalQuantity.DeepCopy()
-			used.Sub(free[resourceName])
-			req := podRequest[resourceName]
-			req.Add(used)
-			allocatable[resourceName], requested[resourceName] = totalQuantity.Value(), req.Value()
+		if totalQuantity.IsZero() {
+			continue
 		}
+		freeQuantity := free[resourceName]
+
+		req := totalQuantity.DeepCopy()
+		if totalQuantity.Cmp(freeQuantity) >= 0 {
+			req.Sub(freeQuantity)
+			req.Add(podRequest[resourceName])
+		}
+
+		allocatable[resourceName], requested[resourceName] = totalQuantity.Value(), req.Value()
 	}
 
 	score := r.scorer(requested, allocatable)
@@ -169,12 +175,12 @@ func (r *resourceAllocationScorer) scoreNode(podRequest corev1.ResourceList, tot
 			free.Add(deviceRes[resourceName])
 		}
 
+		req := total.DeepCopy()
 		if total.Cmp(free) >= 0 {
-			req := total.DeepCopy()
 			req.Sub(free)
 			req.Add(podRequest[resourceName])
-			allocatable[resourceName], requested[resourceName] = total.Value(), req.Value()
 		}
+		allocatable[resourceName], requested[resourceName] = total.Value(), req.Value()
 	}
 
 	score := r.scorer(requested, allocatable)
@@ -189,3 +195,4 @@ Users may expect that the scoring strategy for the node dimension is different f
 ## Implementation History
 
 - 2023-08-02: Initial proposal sent for review
+- 2023-08-07: Update scoring algorithm
