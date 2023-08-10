@@ -266,7 +266,7 @@ In this part, some metrics are evaluated for performance after cold memory colle
 
 After cold memory collection, memory usage includes hot page.
 
-Page refault: Page refault is a direct metirc. Page fault on evited pages will occur when the page is not in memory. For example, cold pages will be few and page refault will appear frequently when the overhead rises and page cache is fully used.
+Page refault: Page refault is a direct metirc. Page fault on evited pages will occur when the page is not in memory. For example, cold pages will be few and page refault will appear frequently when the overhead rises.
 
 Page hit ratio: Page recycling frequency is a supplementary metric for page refault. When page refault always appears, page hit ratio declines.
 
