@@ -262,10 +262,13 @@ Why do we choose kidled? The reasons are as below.
 1) Anolis OS  is open-sourced and has already supported kidled. We can directly use the API and it is very simple.
 2) Kidled has a global scanner to do this job. That avoids a lot of unnecessary jobs. For example switch between user and kernel mode and handle share mappings.
 ## Evaluation and Observability
-In this part, some metrics are evaluated for performance after cold memory collection is turned on. And memory usage includes hot page.
+In this part, some metrics are evaluated for performance after cold memory collection is turned on.
 
-page refault: page fault on evited pages will occur when page cache is not enough.
+After cold memory collection. memory usage includes hot page.
 
-page cache recycling frequency: Page cache recycling will be triggered when the memory is tight.
+page refault: Page fault on evited pages will occur when the page is not in memory.	
 
+page recycling frequency: Page cache recycling will be triggered when the memory is tight.
+
+page hit ratio: Cachetop tool provides every process cache hits.
 
