@@ -48,13 +48,10 @@ type Options struct {
 }
 
 type NriServer struct {
-	cfg             nriconfig
-	stub            stub.Stub
-	mask            stub.EventMask
-	options         Options // server options
-	runPodSandbox   func(*NriServer, *api.PodSandbox, *api.Container) error
-	createContainer func(*NriServer, *api.PodSandbox, *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error)
-	updateContainer func(*NriServer, *api.PodSandbox, *api.Container) ([]*api.ContainerUpdate, error)
+	cfg     nriconfig
+	stub    stub.Stub
+	mask    stub.EventMask
+	options Options // server options
 }
 
 const (
