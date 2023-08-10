@@ -40,9 +40,8 @@ type ResourceThresholds = deschedulerconfig.ResourceThresholds
 
 type NodeUsage struct {
 	node       *corev1.Node
-	nodeMetric *slov1alpha1.NodeMetric
-	usage      map[corev1.ResourceName]*resource.Quantity
 	allPods    []*corev1.Pod
+	usage      map[corev1.ResourceName]*resource.Quantity
 	podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap
 }
 
@@ -149,8 +148,15 @@ func getNodeUsage(nodes []*corev1.Node, resourceNames []corev1.ResourceName, nod
 
 		usage := map[corev1.ResourceName]*resource.Quantity{}
 		for _, resourceName := range resourceNames {
-			usageQuantity, ok := nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[resourceName]
-			if !ok {
+			sysUsage := nodeMetric.Status.NodeMetric.SystemUsage.ResourceList[resourceName]
+			var podUsage resource.Quantity
+			for _, podMetricInfo := range nodeMetric.Status.PodsMetric {
+				podUsage.Add(podMetricInfo.PodUsage.ResourceList[resourceName])
+			}
+			var usageQuantity resource.Quantity
+			usageQuantity.Add(sysUsage)
+			usageQuantity.Add(podUsage)
+			if usageQuantity.IsZero() {
 				switch resourceName {
 				case corev1.ResourceCPU:
 					usageQuantity = *resource.NewMilliQuantity(0, resource.DecimalSI)
@@ -171,9 +177,8 @@ func getNodeUsage(nodes []*corev1.Node, resourceNames []corev1.ResourceName, nod
 
 		nodeUsages[v.Name] = &NodeUsage{
 			node:       v,
-			nodeMetric: nodeMetric,
-			usage:      usage,
 			allPods:    pods,
+			usage:      usage,
 			podMetrics: podMetrics,
 		}
 	}
@@ -365,13 +370,8 @@ func evictPods(
 func sortNodesByUsage(nodes []NodeInfo, resourceToWeightMap map[corev1.ResourceName]int64, ascending bool) {
 	scorer := sorter.ResourceUsageScorer(resourceToWeightMap)
 	sort.Slice(nodes, func(i, j int) bool {
-		var iNodeUsage, jNodeUsage corev1.ResourceList
-		if nodeMetric := nodes[i].nodeMetric.Status.NodeMetric; nodeMetric != nil {
-			iNodeUsage = nodeMetric.NodeUsage.ResourceList
-		}
-		if nodeMetric := nodes[j].nodeMetric.Status.NodeMetric; nodeMetric != nil {
-			jNodeUsage = nodeMetric.NodeUsage.ResourceList
-		}
+		iNodeUsage := usageToResourceList(nodes[i].usage)
+		jNodeUsage := usageToResourceList(nodes[j].usage)
 
 		iScore := scorer(iNodeUsage, nodes[i].node.Status.Allocatable)
 		jScore := scorer(jNodeUsage, nodes[j].node.Status.Allocatable)
@@ -380,6 +380,14 @@ func sortNodesByUsage(nodes []NodeInfo, resourceToWeightMap map[corev1.ResourceN
 		}
 		return iScore > jScore
 	})
+}
+
+func usageToResourceList(usage map[corev1.ResourceName]*resource.Quantity) corev1.ResourceList {
+	m := corev1.ResourceList{}
+	for k, v := range usage {
+		m[k] = *v
+	}
+	return m
 }
 
 func isNodeOverutilized(usage, thresholds map[corev1.ResourceName]*resource.Quantity) (corev1.ResourceList, bool) {
