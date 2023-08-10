@@ -74,12 +74,9 @@ func TestNriServer_Start(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 
 			s := &NriServer{
-				stub:            tt.fields.stub,
-				mask:            tt.fields.mask,
-				options:         tt.fields.options,
-				runPodSandbox:   tt.fields.runPodSandbox,
-				createContainer: tt.fields.createContainer,
-				updateContainer: tt.fields.updateContainer,
+				stub:    tt.fields.stub,
+				mask:    tt.fields.mask,
+				options: tt.fields.options,
 			}
 
 			if err := s.Start(); (err != nil) != tt.wantErr {
@@ -221,12 +218,9 @@ func TestNriServer_Configure(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &NriServer{
-				stub:            tt.fields.stub,
-				mask:            tt.fields.mask,
-				options:         tt.fields.options,
-				runPodSandbox:   tt.fields.runPodSandbox,
-				createContainer: tt.fields.createContainer,
-				updateContainer: tt.fields.updateContainer,
+				stub:    tt.fields.stub,
+				mask:    tt.fields.mask,
+				options: tt.fields.options,
 			}
 			_, err := p.Configure(tt.args.config, tt.args.runtime, tt.args.version)
 			if (err != nil) != tt.wantErr {
@@ -274,12 +268,9 @@ func TestNriServer_Synchronize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &NriServer{
-				stub:            tt.fields.stub,
-				mask:            tt.fields.mask,
-				options:         tt.fields.options,
-				runPodSandbox:   tt.fields.runPodSandbox,
-				createContainer: tt.fields.createContainer,
-				updateContainer: tt.fields.updateContainer,
+				stub:    tt.fields.stub,
+				mask:    tt.fields.mask,
+				options: tt.fields.options,
 			}
 			got, err := p.Synchronize(tt.args.pods, tt.args.containers)
 			if (err != nil) != tt.wantErr {
@@ -349,12 +340,9 @@ func TestNriServer_RunPodSandbox(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &NriServer{
-				stub:            tt.fields.stub,
-				mask:            tt.fields.mask,
-				options:         tt.fields.options,
-				runPodSandbox:   tt.fields.runPodSandbox,
-				createContainer: tt.fields.createContainer,
-				updateContainer: tt.fields.updateContainer,
+				stub:    tt.fields.stub,
+				mask:    tt.fields.mask,
+				options: tt.fields.options,
 			}
 
 			if err := p.RunPodSandbox(tt.args.pod); (err != nil) != tt.wantErr {
@@ -410,12 +398,9 @@ func TestNriServer_CreateContainer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &NriServer{
-				stub:            tt.fields.stub,
-				mask:            tt.fields.mask,
-				options:         tt.fields.options,
-				runPodSandbox:   tt.fields.runPodSandbox,
-				createContainer: tt.fields.createContainer,
-				updateContainer: tt.fields.updateContainer,
+				stub:    tt.fields.stub,
+				mask:    tt.fields.mask,
+				options: tt.fields.options,
 			}
 			_, _, err := p.CreateContainer(tt.args.pod, tt.args.container)
 			if (err != nil) != tt.wantErr {
@@ -470,12 +455,9 @@ func TestNriServer_UpdateContainer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &NriServer{
-				stub:            tt.fields.stub,
-				mask:            tt.fields.mask,
-				options:         tt.fields.options,
-				runPodSandbox:   tt.fields.runPodSandbox,
-				createContainer: tt.fields.createContainer,
-				updateContainer: tt.fields.updateContainer,
+				stub:    tt.fields.stub,
+				mask:    tt.fields.mask,
+				options: tt.fields.options,
 			}
 			_, err := p.UpdateContainer(tt.args.pod, tt.args.container)
 			if (err != nil) != tt.wantErr {
