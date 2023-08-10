@@ -270,4 +270,4 @@ Page refault: Page refault is a direct metric. Page fault on evited pages will o
 
 Page hit ratio: Page recycling frequency is a supplementary metric for page refault. When page refault always appears, page hit ratio declines.
 
-Page cache recycling frequency: Page cache recycling will be triggered when the overhead rises and causes insufficient Memory. And at the time, cold page is rare.
+Page cache recycling frequency: Page cache recycling will be triggered when the overhead rises and causes insufficient memory. And at the time, cold page is rare.
