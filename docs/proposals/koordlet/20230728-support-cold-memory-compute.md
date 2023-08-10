@@ -27,6 +27,7 @@ last-updated: 2023-07-28
 	- [Report memory usage including hot page](#report-memory-usage-including-hot-page)
 	- [Define cold memory API](#define-cold-memory-api)
   - [Alternatives](#alternatives)
+  - [Evaluation and Observability](#evaluation-and-observability)
 
 ## Glossary
 
@@ -260,3 +261,11 @@ Why do we choose kidled? The reasons are as below.
 
 1) Anolis OS  is open-sourced and has already supported kidled. We can directly use the API and it is very simple.
 2) Kidled has a global scanner to do this job. That avoids a lot of unnecessary jobs. For example switch between user and kernel mode and handle share mappings.
+## Evaluation and Observability
+In this part, some metrics are evaluated for performance after cold memory collection is turned on. And memory usage includes hot page.
+
+page refault: page fault on evited pages will occur when page cache is not enough.
+
+page cache recycling frequency: Page cache recycling will be triggered when the memory is tight.
+
+
