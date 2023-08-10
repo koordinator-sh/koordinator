@@ -225,6 +225,40 @@ func (c *ContainerContext) ProxyDone(resp *runtimeapi.ContainerResourceHookRespo
 	c.Response.ProxyDone(resp)
 }
 
+func (c *ContainerContext) NriDone() (*api.ContainerAdjustment, *api.ContainerUpdate, error) {
+	c.injectForExt()
+	adjust := &api.ContainerAdjustment{}
+	update := &api.ContainerUpdate{}
+	// todo: add more fields conversions
+	if c.Response.Resources.CPUSet != nil {
+		adjust.SetLinuxCPUSetCPUs(*c.Response.Resources.CPUSet)
+		update.SetLinuxCPUSetCPUs(*c.Response.Resources.CPUSet)
+	}
+
+	if c.Response.Resources.CFSQuota != nil {
+		adjust.SetLinuxCPUQuota(*c.Response.Resources.CFSQuota)
+		update.SetLinuxCPUQuota(*c.Response.Resources.CFSQuota)
+	}
+
+	if c.Response.Resources.CPUShares != nil {
+		adjust.SetLinuxCPUShares(uint64(*c.Response.Resources.CPUShares))
+		update.SetLinuxCPUShares(uint64(*c.Response.Resources.CPUShares))
+	}
+
+	if c.Response.Resources.MemoryLimit != nil {
+		adjust.SetLinuxMemoryLimit(*c.Response.Resources.MemoryLimit)
+		update.SetLinuxMemoryLimit(*c.Response.Resources.MemoryLimit)
+	}
+
+	if c.Response.AddContainerEnvs != nil {
+		for k, v := range c.Response.AddContainerEnvs {
+			adjust.AddEnv(k, v)
+		}
+	}
+
+	return adjust, update, nil
+}
+
 func (c *ContainerContext) FromReconciler(podMeta *statesinformer.PodMeta, containerName string, sandbox bool) {
 	c.Request.FromReconciler(podMeta, containerName, sandbox)
 }

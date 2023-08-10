@@ -35,6 +35,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		RuntimeHookHostEndpoint:         "/var/run/koordlet/koordlet.sock",
 		RuntimeHookDisableStages:        []string{},
 		RuntimeHooksNRI:                 true,
+		RuntimeHooksNRISocketPath:       "nri/nri.sock",
 		FeatureGates:                    map[string]bool{},
 	}
 	defaultConfig := NewDefaultConfig()

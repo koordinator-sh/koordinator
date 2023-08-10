@@ -85,6 +85,7 @@ type Config struct {
 	RuntimeHookHostEndpoint         string
 	RuntimeHookDisableStages        []string
 	RuntimeHooksNRI                 bool
+	RuntimeHooksNRISocketPath       string
 	FeatureGates                    map[string]bool // Deprecated
 }
 
@@ -98,6 +99,7 @@ func NewDefaultConfig() *Config {
 		RuntimeHookHostEndpoint:         "/var/run/koordlet/koordlet.sock",
 		RuntimeHookDisableStages:        []string{},
 		RuntimeHooksNRI:                 true,
+		RuntimeHooksNRISocketPath:       "nri/nri.sock",
 		FeatureGates:                    map[string]bool{},
 	}
 }

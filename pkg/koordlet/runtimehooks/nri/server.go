@@ -39,6 +39,7 @@ type nriconfig struct {
 }
 
 type Options struct {
+	NriSocketPath string
 	// support stop running other hooks once someone failed
 	PluginFailurePolicy rmconfig.FailurePolicyType
 	// todo: add support for disable stages
@@ -47,6 +48,7 @@ type Options struct {
 }
 
 type NriServer struct {
+	cfg             nriconfig
 	stub            stub.Stub
 	mask            stub.EventMask
 	options         Options // server options
@@ -55,34 +57,34 @@ type NriServer struct {
 	updateContainer func(*NriServer, *api.PodSandbox, *api.Container) ([]*api.ContainerUpdate, error)
 }
 
+const (
+	events     = "RunPodSandbox,CreateContainer,UpdateContainer"
+	pluginName = "koordlet_nri"
+	pluginIdx  = "00"
+)
+
 var (
 	_ = stub.ConfigureInterface(&NriServer{})
 	_ = stub.SynchronizeInterface(&NriServer{})
 	_ = stub.RunPodInterface(&NriServer{})
 	_ = stub.CreateContainerInterface(&NriServer{})
 	_ = stub.UpdateContainerInterface(&NriServer{})
-
-	events        = "RunPodSandbox,CreateContainer,UpdateContainer"
-	nriSocketPath = "nri/nri.sock"
-	pluginName    = "koordlet_nri"
-	pluginIdx     = "00"
-	cfg           nriconfig
-	err           error
-	opts          []stub.Option
 )
 
 func NewNriServer(opt Options) (*NriServer, error) {
+	var opts []stub.Option
+	var err error
 	opts = append(opts, stub.WithPluginName(pluginName))
 	opts = append(opts, stub.WithPluginIdx(pluginIdx))
-	opts = append(opts, stub.WithSocketPath(filepath.Join(system.Conf.VarRunRootDir, nriSocketPath)))
+	opts = append(opts, stub.WithSocketPath(filepath.Join(system.Conf.VarRunRootDir, opt.NriSocketPath)))
 	p := &NriServer{options: opt}
 	if p.mask, err = api.ParseEventMask(events); err != nil {
-		klog.Errorf("failed to parse events: %v", err)
+		klog.V(5).ErrorS(err, "failed to parse events")
 	}
-	cfg.Events = strings.Split(events, ",")
+	p.cfg.Events = strings.Split(events, ",")
 
 	if p.stub, err = stub.New(p, append(opts, stub.WithOnClose(p.onClose))...); err != nil {
-		klog.Errorf("failed to create plugin stub: %v", err)
+		klog.V(5).ErrorS(err, "failed to create plugin stub")
 	}
 
 	return p, err
@@ -93,29 +95,29 @@ func (s *NriServer) Start() error {
 		if s.stub != nil {
 			err := s.stub.Run(context.Background())
 			if err != nil {
-				klog.Errorf("nri server exited with error %v", err)
+				klog.V(5).ErrorS(err, "nri server exited with error")
 			} else {
-				klog.Info("nri server start")
+				klog.V(5).Info("nri server started")
 			}
 		} else {
-			klog.Error("nri stub is nil")
+			klog.V(5).Info("nri stub is nil")
 		}
 	}()
 	return nil
 }
 
 func (p *NriServer) Configure(config, runtime, version string) (stub.EventMask, error) {
-	klog.Infof("got configuration data: %q from runtime %s %s", config, runtime, version)
+	klog.V(5).Infof("got configuration data: %q from runtime %s %s", config, runtime, version)
 	if config == "" {
 		return p.mask, nil
 	}
 
-	err := yaml.Unmarshal([]byte(config), &cfg)
+	err := yaml.Unmarshal([]byte(config), &p.cfg)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse provided configuration: %w", err)
 	}
 
-	p.mask, err = api.ParseEventMask(cfg.Events...)
+	p.mask, err = api.ParseEventMask(p.cfg.Events...)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse events in configuration: %w", err)
 	}
@@ -134,7 +136,7 @@ func (p *NriServer) RunPodSandbox(pod *api.PodSandbox) error {
 	// todo: return error or bypass error based on PluginFailurePolicy
 	err := hooks.RunHooks(p.options.PluginFailurePolicy, rmconfig.PreRunPodSandbox, podCtx)
 	if err != nil {
-		klog.Errorf("nri hooks run error: %v", err)
+		klog.V(5).ErrorS(err, "nri hooks run error")
 		if p.options.PluginFailurePolicy == rmconfig.PolicyFail {
 			return err
 		}
@@ -149,15 +151,15 @@ func (p *NriServer) CreateContainer(pod *api.PodSandbox, container *api.Containe
 	// todo: return error or bypass error based on PluginFailurePolicy
 	err := hooks.RunHooks(p.options.PluginFailurePolicy, rmconfig.PreCreateContainer, containerCtx)
 	if err != nil {
-		klog.Errorf("nri run hooks error: %v", err)
+		klog.V(5).ErrorS(err, "nri run hooks error")
 		if p.options.PluginFailurePolicy == rmconfig.PolicyFail {
 			return nil, nil, err
 		}
 	}
 
-	adjust, _, err := Protocol2NRI(containerCtx)
+	adjust, _, err := containerCtx.NriDone()
 	if err != nil {
-		klog.Errorf("nri convert protocol to : %v", err)
+		klog.V(5).ErrorS(err, "containerCtx nri done failed")
 		return nil, nil, nil
 	}
 	return adjust, nil, nil
@@ -169,15 +171,15 @@ func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Containe
 	// todo: return error or bypass error based on PluginFailurePolicy
 	err := hooks.RunHooks(p.options.PluginFailurePolicy, rmconfig.PreUpdateContainerResources, containerCtx)
 	if err != nil {
-		klog.Errorf("nri run hooks error: %v", err)
+		klog.V(5).ErrorS(err, "nri run hooks error")
 		if p.options.PluginFailurePolicy == rmconfig.PolicyFail {
 			return nil, err
 		}
 	}
 
-	_, update, err := Protocol2NRI(containerCtx)
+	_, update, err := containerCtx.NriDone()
 	if err != nil {
-		klog.Errorf("nri convert protocol to : %v", err)
+		klog.V(5).ErrorS(err, "containerCtx nri done failed")
 		return nil, nil
 	}
 
@@ -186,42 +188,4 @@ func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Containe
 
 func (p *NriServer) onClose() {
 	p.stub.Stop()
-}
-
-func Protocol2NRI(proto protocol.HooksProtocol) (*api.ContainerAdjustment, *api.ContainerUpdate, error) {
-	containerCtx := proto.(*protocol.ContainerContext)
-	if containerCtx == nil {
-		return nil, nil, fmt.Errorf("container protocol is nil for nri")
-	}
-
-	adjust := &api.ContainerAdjustment{}
-	update := &api.ContainerUpdate{}
-	// todo: add more fields conversions
-	if containerCtx.Response.Resources.CPUSet != nil {
-		adjust.SetLinuxCPUSetCPUs(*containerCtx.Response.Resources.CPUSet)
-		update.SetLinuxCPUSetCPUs(*containerCtx.Response.Resources.CPUSet)
-	}
-
-	if containerCtx.Response.Resources.CFSQuota != nil {
-		adjust.SetLinuxCPUQuota(*containerCtx.Response.Resources.CFSQuota)
-		update.SetLinuxCPUQuota(*containerCtx.Response.Resources.CFSQuota)
-	}
-
-	if containerCtx.Response.Resources.CPUShares != nil {
-		adjust.SetLinuxCPUShares(uint64(*containerCtx.Response.Resources.CPUShares))
-		update.SetLinuxCPUShares(uint64(*containerCtx.Response.Resources.CPUShares))
-	}
-
-	if containerCtx.Response.Resources.MemoryLimit != nil {
-		adjust.SetLinuxMemoryLimit(*containerCtx.Response.Resources.MemoryLimit)
-		update.SetLinuxMemoryLimit(*containerCtx.Response.Resources.MemoryLimit)
-	}
-
-	if containerCtx.Response.AddContainerEnvs != nil {
-		for k, v := range containerCtx.Response.AddContainerEnvs {
-			adjust.AddEnv(k, v)
-		}
-	}
-
-	return adjust, update, nil
 }

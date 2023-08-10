@@ -22,9 +22,6 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
-	"k8s.io/utils/pointer"
-
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
@@ -483,109 +480,6 @@ func TestNriServer_UpdateContainer(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("UpdateContainer() error = %v, wantErr %v", err, tt.wantErr)
 				return
-			}
-		})
-	}
-}
-
-func TestProtocol2NRI(t *testing.T) {
-	type args struct {
-		proto *protocol.ContainerContext
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    *api.ContainerAdjustment
-		want1   *api.ContainerUpdate
-		wantErr bool
-	}{
-		{
-			name:    "Protocol is nil",
-			wantErr: true,
-		},
-		{
-			name: "Protocol is empty",
-			args: args{proto: &protocol.ContainerContext{
-				Request:  protocol.ContainerRequest{},
-				Response: protocol.ContainerResponse{},
-			}},
-			want:  &api.ContainerAdjustment{Linux: nil},
-			want1: &api.ContainerUpdate{Linux: nil},
-		},
-		{
-			name: "Protocol with resources",
-			args: args{proto: &protocol.ContainerContext{
-				Response: protocol.ContainerResponse{
-					Resources: protocol.Resources{
-						CPUShares:   pointer.Int64(1024 * 500 / 1000),
-						CFSQuota:    pointer.Int64(1024 * 500 / 1000),
-						CPUSet:      pointer.String("0,1,2"),
-						MemoryLimit: pointer.Int64(2 * 1024 * 1024 * 1024),
-						CPUBvt:      pointer.Int64(10),
-					},
-					AddContainerEnvs: map[string]string{"test": "test"},
-				},
-			}},
-			want: &api.ContainerAdjustment{
-				Linux: &api.LinuxContainerAdjustment{
-					Resources: &api.LinuxResources{
-						Memory: &api.LinuxMemory{
-							Limit: &api.OptionalInt64{
-								Value: 2147483648,
-							},
-						},
-						Cpu: &api.LinuxCPU{
-							Shares: &api.OptionalUInt64{
-								Value: 512,
-							},
-							Quota: &api.OptionalInt64{
-								Value: 512,
-							},
-							Cpus: "0,1,2",
-						},
-					},
-				},
-			},
-			want1: &api.ContainerUpdate{
-				Linux: &api.LinuxContainerUpdate{
-					Resources: &api.LinuxResources{
-						Memory: &api.LinuxMemory{
-							Limit: &api.OptionalInt64{
-								Value: 2147483648,
-							},
-						},
-						Cpu: &api.LinuxCPU{
-							Shares: &api.OptionalUInt64{
-								Value: 512,
-							},
-							Quota: &api.OptionalInt64{
-								Value: 512,
-							},
-							Cpus: "0,1,2",
-						},
-					},
-				},
-				IgnoreFailure: false,
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, got1, err := Protocol2NRI(tt.args.proto)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Protocol2NRI() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if got != nil && !reflect.DeepEqual(got.Linux, tt.want.Linux) {
-				t.Errorf("Protocol2NRI() got = %v, want %v", got1, tt.want1)
-			}
-
-			if got != nil && got.Env != nil && got.Env[0].GetKey() != "test" && got.Env[0].GetValue() != "test" {
-				t.Errorf("Protocol2NRI() got env = %v, want env = test: test", got.Env[0])
-			}
-			if !reflect.DeepEqual(got1, tt.want1) {
-				t.Errorf("Protocol2NRI() got1 = %v, want %v", got1, tt.want1)
 			}
 		})
 	}
