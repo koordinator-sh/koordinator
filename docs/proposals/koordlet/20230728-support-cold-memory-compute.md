@@ -264,22 +264,14 @@ Why do we choose kidled? The reasons are as below.
 ## Evaluation and Observability
 In this part, some metrics are evaluated for performance after cold memory collection is turned on.
 
-Page refault's kernel interface: Page refault field is in memory.stat file.
+Page refault: Page refault field is in memory.stat file. Page refault is a direct metric. Page refault means page fault on evited pages. It will occur when the page is not in memory. For example, cold pages will be few and page refault will appear frequently when the overhead rises.
 
-cgroup v1: /sys/fs/cgroup/memory/memory.stat.
+Pgmajfault: Pgmajfault field is in memory.stat file. Pgmajfault means major page fault. When the virtual memory address is mapped to a physical memory address, the corresponding page is in swap, and such a page fault is a major page fault. When overhead rises, cold page will decline and pgmajfault will increase.
 
-cgroup v2: /sys/fs/cgroup/memory.stat
+Page hit ratio: Page recycling frequency is a supplementary metric for page refault and pgmajfault. When page refault always appears, page hit ratio declines.You can use some tools. pidstat and cachetop tools can query process page hit rate. cachestat tool can query the entire system page hit rate.
 
-Pgmajfault kernel interface: Pgmajfault field is in memory.stat file.
-
-cgroup v1: /sys/fs/cgroup/memory/memory.stat.
-
-cgroup v2: /sys/fs/cgroup/memory.stat. 
-
-Page hit ratio's kernel interface: The kernel interfaces which is used by the tools are some fields (e.g. maj_flt) in /proc/pid/stat file.
-
-|                | description                                                  | Cgroups-v1                                                   | Cgroups-v2      |
-| -------------- | ------------------------------------------------------------ | ------------------------------------------------------------ | --------------- |
-| Page refault   | Page refault is a direct metric. Page fault on evited pages will occur when the page is not in memory. For example, cold pages will be few and page refault will appear frequently when the overhead rises. | It is available on Anolis OS, but other kernel versions may not support. | All os support. |
-| Pgmajfault     | Pgmajfault means major page fault. When the virtual memory address is mapped to a physical memory address, the corresponding page is in swap, and such a page fault is a major page fault. When overhead rises, cold page will decline and pgmajfault will increase. | All os support.                                              | All os support. |
-| Page hit ratio | Page recycling frequency is a supplementary metric for page refault and pgmajfault. When page refault always appears, page hit ratio declines.You can use some tools. pidstat and cachetop tools can query process page hit rate. cachestat tool can query the entire system page hit rate. | All os support.                                              | All os support. |
+|                | Cgroups-v1                                                   | Cgroups-v2                                                   |
+| -------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| Page refault   | It is available on Anolis OS, but other kernel versions may not support. Page refault's kernel interface is page refault field in /sys/fs/cgroup/memory/memory.stat file. | All os support.Page refault's kernel interface is page refault field in /sys/fs/cgroup/memory.stat file. |
+| Pgmajfault     | All os support. Pgmajfault's kernel interface is pgmajfault field in /sys/fs/cgroup/memory/memory.stat file. | All os support.Pgmajfault's kernel interface is pgmajfault field in /sys/fs/cgroup/memory.stat file. |
+| Page hit ratio | All os support. Page hit ratio's kernel interfaces are fields (e.g. maj_flt) in /proc/pid/stat file. | All os support.Page hit ratio's kernel interfaces are fields (e.g. maj_flt) in /proc/pid/stat file. |
