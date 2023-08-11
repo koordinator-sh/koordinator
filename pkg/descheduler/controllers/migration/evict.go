@@ -44,12 +44,6 @@ func (r *Reconciler) Evict(ctx context.Context, pod *corev1.Pod, evictOptions fr
 		return false
 	}
 
-	if sev1alpha1.PodMigrationJobMode(r.args.DefaultJobMode) == sev1alpha1.PodMigrationJobModeReservationFirst &&
-		pod.Spec.SchedulerName != r.args.SchedulerName {
-		klog.Errorf("Pod %q can not be migrated by ReservationFirst mode because pod.schedulerName=%s but schuler of pmj controller assigned is %s", klog.KObj(pod), pod.Spec.SchedulerName, r.args.SchedulerName)
-		return false
-	}
-
 	err := CreatePodMigrationJob(ctx, pod, evictOptions, r.Client, r.args)
 	return err == nil
 }

@@ -176,3 +176,13 @@ func BoolToFloat64(b bool) float64 {
 	}
 	return 0.0
 }
+
+func IsIn(arr []string, val string) bool {
+	for _, cur := range arr {
+		if cur == val {
+			return true
+		}
+	}
+
+	return false
+}

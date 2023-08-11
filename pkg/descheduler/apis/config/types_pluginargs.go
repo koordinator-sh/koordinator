@@ -105,8 +105,8 @@ type MigrationControllerArgs struct {
 	// DefaultDeleteOptions defines options when deleting migrated pods and preempted pods through the method specified by EvictionPolicy
 	DefaultDeleteOptions *metav1.DeleteOptions
 
-	// SchedulerName defines options to assign scheduler, koord-schuler by default.
-	SchedulerName string
+	// SchedulerNames defines options to assign schedulers that can handle reservation if pmj.mode is ReservationFirst, koord-scheduler by default.
+	SchedulerNames []string
 }
 
 type MigrationLimitObjectType string

@@ -345,6 +345,11 @@ func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 		*out = new(v1.DeleteOptions)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.SchedulerNames != nil {
+		in, out := &in.SchedulerNames, &out.SchedulerNames
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 

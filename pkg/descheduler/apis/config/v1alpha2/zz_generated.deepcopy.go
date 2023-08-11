@@ -368,6 +368,11 @@ func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 		*out = new(v1.Duration)
 		**out = **in
 	}
+	if in.SchedulerNames != nil {
+		in, out := &in.SchedulerNames, &out.SchedulerNames
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.EvictQPS != nil {
 		in, out := &in.EvictQPS, &out.EvictQPS
 		*out = new(config.Float64OrString)

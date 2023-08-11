@@ -846,6 +846,11 @@ func (r *Reconciler) createReservation(ctx context.Context, job *sev1alpha1.PodM
 		return err
 	}
 
+	if !r.reservationFilter(pod) {
+		err = fmt.Errorf("pod %q can not be migrated by ReservationFirst mode because pod.schedulerName is not support reservation", klog.KObj(pod))
+		return err
+	}
+
 	reservationOptions := reservation.CreateOrUpdateReservationOptions(job, pod)
 	job.Spec.ReservationOptions = reservationOptions
 

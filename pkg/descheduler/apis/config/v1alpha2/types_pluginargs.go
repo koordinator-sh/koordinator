@@ -98,8 +98,8 @@ type MigrationControllerArgs struct {
 	// Default is 5 minute
 	DefaultJobTTL *metav1.Duration `json:"defaultJobTTL,omitempty"`
 
-	// SchedulerName defines options to assign scheduler, koord-schuler by default.
-	SchedulerName string `json:"schedulerName,omitempty"`
+	// SchedulerNames defines options to assign schedulers that can handle reservation if pmj.mode is ReservationFirst, koord-scheduler by default.
+	SchedulerNames []string `json:"schedulerNames,omitempty"`
 
 	// EvictQPS controls the number of evict per second
 	EvictQPS *config.Float64OrString `json:"evictQPS,omitempty"`

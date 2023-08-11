@@ -643,6 +643,9 @@ func TestCreateReservation(t *testing.T) {
 			Namespace: "default",
 			Name:      "test-pod",
 		},
+		Spec: corev1.PodSpec{
+			SchedulerName: "koord-scheduler",
+		},
 	}
 	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
 
@@ -792,6 +795,9 @@ func TestMigrate(t *testing.T) {
 				},
 			},
 		},
+		Spec: corev1.PodSpec{
+			SchedulerName: "koord-scheduler",
+		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
 		},
@@ -898,6 +904,9 @@ func TestMigrateWithSamePodName(t *testing.T) {
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
 				},
 			},
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: "koord-scheduler",
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
@@ -1008,6 +1017,9 @@ func TestMigrateWhenEvictingWithSucceededReservation(t *testing.T) {
 				},
 			},
 		},
+		Spec: corev1.PodSpec{
+			SchedulerName: "koord-scheduler",
+		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
 		},
@@ -1111,6 +1123,9 @@ func TestMigrateWithReservationScheduleFailed(t *testing.T) {
 				},
 			},
 		},
+		Spec: corev1.PodSpec{
+			SchedulerName: "koord-scheduler",
+		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
 		},
@@ -1198,6 +1213,9 @@ func TestMigrateWithReservationSucceeded(t *testing.T) {
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
 				},
 			},
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: "koord-scheduler",
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
@@ -1294,6 +1312,9 @@ func TestMigrateWithReservationExpired(t *testing.T) {
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
 				},
 			},
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: "koord-scheduler",
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
