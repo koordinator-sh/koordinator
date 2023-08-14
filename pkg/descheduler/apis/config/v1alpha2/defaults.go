@@ -36,13 +36,13 @@ import (
 const (
 	defaultMigrationControllerMaxConcurrentReconciles = 1
 
-	defaultMaxMigratingPerNode        = 2
-	defaultMigrationJobMode           = sev1alpha1.PodMigrationJobModeReservationFirst
-	defaultMigrationJobTTL            = 5 * time.Minute
-	defaultMigrationJobEvictionPolicy = migrationevictor.NativeEvictorName
-	defaultMigrationEvictQPS          = 10
-	defaultMigrationEvictBurst        = 1
-	defaultSchedulerName              = "koord-scheduler"
+	defaultMaxMigratingPerNode         = 2
+	defaultMigrationJobMode            = sev1alpha1.PodMigrationJobModeReservationFirst
+	defaultMigrationJobTTL             = 5 * time.Minute
+	defaultMigrationJobEvictionPolicy  = migrationevictor.NativeEvictorName
+	defaultMigrationEvictQPS           = 10
+	defaultMigrationEvictBurst         = 1
+	defaultSchedulerSupportReservation = "koord-scheduler"
 )
 
 var (
@@ -219,8 +219,9 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 	if obj.DefaultJobMode == "" {
 		obj.DefaultJobMode = string(defaultMigrationJobMode)
 	}
-	if obj.SchedulerName == "" {
-		obj.SchedulerName = defaultSchedulerName
+
+	if len(obj.SchedulerNames) == 0 {
+		obj.SchedulerNames = []string{defaultSchedulerSupportReservation}
 	}
 	if obj.DefaultJobTTL == nil {
 		obj.DefaultJobTTL = &metav1.Duration{Duration: defaultMigrationJobTTL}

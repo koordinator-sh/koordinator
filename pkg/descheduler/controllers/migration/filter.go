@@ -41,6 +41,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/kubernetes/defaultevictor"
 	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
+	pkgutil "github.com/koordinator-sh/koordinator/pkg/util"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
@@ -121,6 +122,11 @@ func (r *Reconciler) Filter(pod *corev1.Pod) bool {
 	if !r.filterExistingPodMigrationJob(pod) {
 		return false
 	}
+
+	if !r.reservationFilter(pod) {
+		return false
+	}
+
 	if r.nonRetryablePodFilter != nil && !r.nonRetryablePodFilter(pod) {
 		return false
 	}
@@ -128,6 +134,19 @@ func (r *Reconciler) Filter(pod *corev1.Pod) bool {
 		return false
 	}
 	return true
+}
+
+func (r *Reconciler) reservationFilter(pod *corev1.Pod) bool {
+	if sev1alpha1.PodMigrationJobMode(r.args.DefaultJobMode) != sev1alpha1.PodMigrationJobModeReservationFirst {
+		return true
+	}
+
+	if pkgutil.IsIn(r.args.SchedulerNames, pod.Spec.SchedulerName) {
+		return true
+	}
+
+	klog.Errorf("Pod %q can not be migrated by ReservationFirst mode because pod.schedulerName=%s but scheduler of pmj controller assigned is %s", klog.KObj(pod), pod.Spec.SchedulerName, r.args.SchedulerNames)
+	return false
 }
 
 func (r *Reconciler) PreEvictionFilter(pod *corev1.Pod) bool {
