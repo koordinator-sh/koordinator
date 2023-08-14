@@ -224,11 +224,12 @@ The same process is executed pod informer to report memory usage. Do not repeat.
 
 Provide memory-collect policy access.
 
-Add a field named MemoryCollectPolicy to represent which method is used to collect memory usage. Such as usageWithHotPageCache, usageWithoutPageCache,  usageWithPageCache.
+Add a field named MemoryCollectPolicy to represent which method is used to collect memory usage. Such as usageWithHotPageCache, usageWithoutPageCache,  usageWithPageCache. When os doesn't support kidled and set the usageWithHotPageCache, coldpage collector will degrade and apply the usageWithoutPageCache(default memory collectio).
 
 You can create a crd nodemetric resource and specify the value of Spec.CollectPolicy.MemoryCollectPolicy to start collecting cold memory compute. 
 
 ```go
+type MemoryCollectPolicy string
 // NodeMetricCollectPolicy defines the Metric collection policy
 type NodeMetricCollectPolicy struct {
 	// AggregateDurationSeconds represents the aggregation period in seconds
@@ -238,7 +239,7 @@ type NodeMetricCollectPolicy struct {
 	// NodeAggregatePolicy represents the target grain of node aggregated usage
 	NodeAggregatePolicy *AggregatePolicy `json:"nodeAggregatePolicy,omitempty"`
 	//MemoryWithHotPageCollectPolicy represents whether collet memory usage with hot page instead of memory usage without page cache
-	MemoryCollectPolicy string `json:"memoryCollectPolicy,omitempty"`
+	NodeMemoryCollectPolicy MemoryCollectPolicy `json:"nodeMemoryCollectPolicy,omitempty"`
 }
 ```
 ## Alternatives
