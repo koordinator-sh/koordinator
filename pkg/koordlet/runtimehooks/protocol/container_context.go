@@ -18,6 +18,9 @@ package protocol
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/containerd/nri/pkg/api"
 
 	"k8s.io/klog/v2"
 
@@ -37,6 +40,12 @@ type ContainerMeta struct {
 	Sandbox bool
 }
 
+func (c *ContainerMeta) FromNri(container *api.Container, podAnnotations map[string]string) {
+	c.Name = container.GetName()
+	uid := container.GetId()
+	c.ID = getContainerID(podAnnotations, uid)
+}
+
 func (c *ContainerMeta) FromProxy(containerMeta *runtimeapi.ContainerMetadata, podAnnotations map[string]string) {
 	c.Name = containerMeta.GetName()
 	uid := containerMeta.GetId()
@@ -51,6 +60,45 @@ type ContainerRequest struct {
 	CgroupParent      string
 	ContainerEnvs     map[string]string
 	ExtendedResources *apiext.ExtendedResourceContainerSpec
+}
+
+func splitEnvVar(s string) (string, string) {
+	split := strings.SplitN(s, "=", 2)
+	if len(split) < 1 {
+		return "", ""
+	}
+	if len(split) != 2 {
+		return split[0], ""
+	}
+	return split[0], split[1]
+}
+
+func (c *ContainerRequest) FromNri(pod *api.PodSandbox, container *api.Container) {
+	c.PodMeta.FromNri(pod)
+	c.ContainerMeta.FromNri(container, pod.GetAnnotations())
+	c.PodLabels = pod.GetLabels()
+	c.PodAnnotations = pod.GetAnnotations()
+	c.CgroupParent, _ = koordletutil.GetContainerCgroupParentDirByID(pod.Linux.CgroupParent, c.ContainerMeta.ID)
+
+	envs := make(map[string]string)
+	for _, e := range container.GetEnv() {
+		k, v := splitEnvVar(e)
+		if k != "" && v != "" {
+			envs[k] = v
+		}
+	}
+	c.ContainerEnvs = envs
+
+	spec, err := apiext.GetExtendedResourceSpec(pod.GetAnnotations())
+	if err != nil {
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from nri via annotation, container %s/%s, err: %s",
+			c.PodMeta.Namespace, c.PodMeta.Name, c.ContainerMeta.Name, err)
+	}
+	if spec != nil && spec.Containers != nil {
+		if containerSpec, ok := spec.Containers[c.ContainerMeta.Name]; ok {
+			c.ExtendedResources = &containerSpec
+		}
+	}
 }
 
 func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookRequest) {
@@ -164,6 +212,10 @@ type ContainerContext struct {
 	executor resourceexecutor.ResourceUpdateExecutor
 }
 
+func (c *ContainerContext) FromNri(pod *api.PodSandbox, container *api.Container) {
+	c.Request.FromNri(pod, container)
+}
+
 func (c *ContainerContext) FromProxy(req *runtimeapi.ContainerResourceHookRequest) {
 	c.Request.FromProxy(req)
 }
@@ -171,6 +223,40 @@ func (c *ContainerContext) FromProxy(req *runtimeapi.ContainerResourceHookReques
 func (c *ContainerContext) ProxyDone(resp *runtimeapi.ContainerResourceHookResponse) {
 	c.injectForExt()
 	c.Response.ProxyDone(resp)
+}
+
+func (c *ContainerContext) NriDone() (*api.ContainerAdjustment, *api.ContainerUpdate, error) {
+	c.injectForExt()
+	adjust := &api.ContainerAdjustment{}
+	update := &api.ContainerUpdate{}
+	// todo: add more fields conversions
+	if c.Response.Resources.CPUSet != nil {
+		adjust.SetLinuxCPUSetCPUs(*c.Response.Resources.CPUSet)
+		update.SetLinuxCPUSetCPUs(*c.Response.Resources.CPUSet)
+	}
+
+	if c.Response.Resources.CFSQuota != nil {
+		adjust.SetLinuxCPUQuota(*c.Response.Resources.CFSQuota)
+		update.SetLinuxCPUQuota(*c.Response.Resources.CFSQuota)
+	}
+
+	if c.Response.Resources.CPUShares != nil {
+		adjust.SetLinuxCPUShares(uint64(*c.Response.Resources.CPUShares))
+		update.SetLinuxCPUShares(uint64(*c.Response.Resources.CPUShares))
+	}
+
+	if c.Response.Resources.MemoryLimit != nil {
+		adjust.SetLinuxMemoryLimit(*c.Response.Resources.MemoryLimit)
+		update.SetLinuxMemoryLimit(*c.Response.Resources.MemoryLimit)
+	}
+
+	if c.Response.AddContainerEnvs != nil {
+		for k, v := range c.Response.AddContainerEnvs {
+			adjust.AddEnv(k, v)
+		}
+	}
+
+	return adjust, update, nil
 }
 
 func (c *ContainerContext) FromReconciler(podMeta *statesinformer.PodMeta, containerName string, sandbox bool) {
