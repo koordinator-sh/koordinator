@@ -1545,6 +1545,9 @@ func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
 				},
 			},
 		},
+		Spec: corev1.PodSpec{
+			SchedulerName: "koord-scheduler",
+		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
 		},
@@ -1595,6 +1598,9 @@ func TestAbortJobIfNonRetryablePodFilterFailed(t *testing.T) {
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
 				},
 			},
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: "koord-scheduler",
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
@@ -2700,6 +2706,9 @@ func TestAllowAnnotatedPodMigrationJobPassFilter(t *testing.T) {
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
 				},
 			},
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: "koord-scheduler",
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,

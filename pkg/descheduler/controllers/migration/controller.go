@@ -414,6 +414,12 @@ func (r *Reconciler) preparePendingJob(ctx context.Context, job *sev1alpha1.PodM
 			return reconcile.Result{}, err
 		}
 	}
+
+	if !r.reservationFilter(pod) {
+		err = fmt.Errorf("pod %q can not be migrated by ReservationFirst mode because pod.schedulerName is not support reservation", klog.KObj(pod))
+		return reconcile.Result{}, err
+	}
+
 	markPodPrepareMigrating(pod)
 	if !evictionsutil.HaveEvictAnnotation(job) {
 		if aborted, err := r.abortJobIfNonRetryablePodFilterFailed(ctx, pod, job); aborted || err != nil {
@@ -843,11 +849,6 @@ func (r *Reconciler) createReservation(ctx context.Context, job *sev1alpha1.PodM
 				klog.Errorf("Failed to abortJobByMissingPod, MigrationJob: %s, err: %v", job.Name, err)
 			}
 		}
-		return err
-	}
-
-	if !r.reservationFilter(pod) {
-		err = fmt.Errorf("pod %q can not be migrated by ReservationFirst mode because pod.schedulerName is not support reservation", klog.KObj(pod))
 		return err
 	}
 
