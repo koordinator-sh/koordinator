@@ -26,8 +26,8 @@ import (
 
 func init() {
 	// set default plugins
-	NodeResourcePlugins = append(NodeResourcePlugins, midresource.PluginName)
-	NodeResourcePlugins = append(NodeResourcePlugins, batchresource.PluginName)
+	addPluginOption(&midresource.Plugin{}, true)
+	addPluginOption(&batchresource.Plugin{}, true)
 }
 
 func addPlugins(filter framework.FilterFn) {
@@ -40,6 +40,7 @@ func addPlugins(filter framework.FilterFn) {
 }
 
 var (
+	// SetupPlugins implement the setup for node resource plugin.
 	setupPlugins = []framework.SetupPlugin{}
 	// NodePreparePlugin implements node resource preparing for the calculated results.
 	nodePreparePlugins = []framework.NodePreparePlugin{
