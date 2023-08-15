@@ -19,6 +19,7 @@ package helper
 import (
 	"reflect"
 	"strconv"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apimachinerytypes "k8s.io/apimachinery/pkg/types"
@@ -26,17 +27,22 @@ import (
 )
 
 type forceSyncEventHandler struct {
-	handler cache.ResourceEventHandler
-	syncCh  chan struct{}
-	objects map[apimachinerytypes.UID]int64
+	handler      cache.ResourceEventHandler
+	syncCh       chan struct{}
+	objects      map[apimachinerytypes.UID]int64
+	resyncPeriod time.Duration
 }
 
-func newForceSyncEventHandler(handler cache.ResourceEventHandler) *forceSyncEventHandler {
-	return &forceSyncEventHandler{
+func newForceSyncEventHandler(handler cache.ResourceEventHandler, options ...Option) *forceSyncEventHandler {
+	h := &forceSyncEventHandler{
 		handler: handler,
 		syncCh:  make(chan struct{}, 1),
 		objects: map[apimachinerytypes.UID]int64{},
 	}
+	for _, fn := range options {
+		fn(h)
+	}
+	return h
 }
 
 func (h *forceSyncEventHandler) syncDone() {
@@ -106,11 +112,19 @@ type CacheSyncer interface {
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 }
 
+type Option func(*forceSyncEventHandler)
+
+func WithResyncPeriod(resyncPeriod time.Duration) Option {
+	return func(handler *forceSyncEventHandler) {
+		handler.resyncPeriod = resyncPeriod
+	}
+}
+
 // ForceSyncFromInformer ensures that the EventHandler will synchronize data immediately after registration,
 // helping those plugins that need to build memory status through EventHandler to correctly synchronize data
-func ForceSyncFromInformer(stopCh <-chan struct{}, cacheSyncer CacheSyncer, informer cache.SharedInformer, handler cache.ResourceEventHandler) {
-	syncEventHandler := newForceSyncEventHandler(handler)
-	informer.AddEventHandler(syncEventHandler)
+func ForceSyncFromInformer(stopCh <-chan struct{}, cacheSyncer CacheSyncer, informer cache.SharedInformer, handler cache.ResourceEventHandler, options ...Option) {
+	syncEventHandler := newForceSyncEventHandler(handler, options...)
+	informer.AddEventHandlerWithResyncPeriod(syncEventHandler, syncEventHandler.resyncPeriod)
 	if cacheSyncer != nil {
 		cacheSyncer.Start(stopCh)
 		cacheSyncer.WaitForCacheSync(stopCh)
