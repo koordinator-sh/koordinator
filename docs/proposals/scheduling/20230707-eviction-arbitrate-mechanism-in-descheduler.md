@@ -3,15 +3,15 @@ title: Eviction Arbitration Mechanism in Descheduler
 authors:
   - "@baowj-678"
 reviewers:
-  - @hormes
-  - @eahydra
-  - @FillZpp
-  - @ZiMengSheng
-  - @zwzhang0107
-  - @saintube
-  - @jasonliu747
+  - "@hormes"
+  - "@eahydra"
+  - "@FillZpp"
+  - "@ZiMengSheng"
+  - "@zwzhang0107"
+  - "@saintube"
+  - "@jasonliu747"
 creation-date: 2023-07-07
-last-updated: 2023-08-10
+last-updated: 2023-08-15
 status: provisional
 ---
 
@@ -33,15 +33,13 @@ status: provisional
             - [Story 2](#story-2)
             - [Story 3](#story-3)
         - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-            - [PodMigrationJob Controller](#podmigrationjob-controller)
-                - [Controller Process](#controller-process)
-                    - [EventHandle Process in Watch](#eventhandle-process-in-watch)
-                    - [Arbitration Process](#arbitration-process)
-                    - [Controller Reconcile Process](#controller-reconcile-process)
-                - [Arbitration Mechanism](#arbitration-mechanism)
+            - [Arbitration Mechanism](#arbitration-mechanism)
+                - [About Arbitration Queue](#about-arbitration-queue)
+                - [Arbitration Process](#arbitration-process)
                     - [Sort PodMigrationJob](#sort-podmigrationjob)
                     - [GroupFilter PodMigrationJob](#groupfilter-podmigrationjob)
                     - [Select PodMigrationJob](#select-podmigrationjob)
+                - [About Work Queue](#about-work-queue)
             - [Controller Configuration](#controller-configuration)
     - [Alternatives](#alternatives)
     - [Implementation History](#implementation-history)
@@ -63,9 +61,9 @@ Therefore, it is necessary to design an arbitration mechanism. This arbitration 
 
 ### Goals
 
-1. Defines an Arbitrate Mechanism Configuration, through which user can configure the arbitration mechanism.
-2. Describe a simple central flow control mechanism to limit the number of Pod migrations over a period of time.
-3. Describe in detail the design details of the arbitrate mechanism.
+1. Provide an Arbitrate Mechanism to sort and filter the PodMigrationJobs from arbitration queue periodically.
+2. Provide an event handler to intercepts event in creation status and place them in the arbitration queue.
+3. Defines an Arbitrate Mechanism Configuration, through which user can configure the arbitration mechanism.
 
 ### Non-Goals/Future Work
 
@@ -91,63 +89,63 @@ Multiple Pods in different jobs are evicted. We should migrate all Pods from one
 
 ### Implementation Details/Notes/Constraints
 
-#### PodMigrationJob Controller
+#### Arbitration Mechanism
 
-The **PodMigrationJobController** will evaluate all PodMigrationJobs and select a batch of PodMigrationJob and add them to the reconcile queue for executing. This selection process is called the **arbitration mechanism**. The arbitration mechanism includes three stages: `Sort`, `GroupFilter` and `Select`.
+The **PodMigrationJob Controller** will evaluate all PodMigrationJobs and select a batch of PodMigrationJobs from arbitration queue and add them to the reconcile work queue for executing. This selection process is called the **arbitration mechanism**. The arbitration mechanism includes three stages: `Sort`, `GroupFilter` and `Select`. And the reconcile work queue will help us to achieve rate limit.
+
+
+This diagram can help us have a macro understanding of the system process.
 
 ![image](/docs/images/arbitration-mechanism-design.svg)
 
-##### Controller Process
+The controller process can be roughly divided into two parts, namely the **Arbitration Process**, **Controller Reconcile Process** (the EventHandler in the diagram is just an interceptor):
 
-Arbitration Mechanism will put arbitrated MigrationJob into the reconcile queue To achieve rate limit.
+- **Arbitration Process**: This process periodically arbitrates the PodMigrationJobs in the arbitration collection and places the PodMigrationJobs selected by the arbitration into the work queue.
+- **Controller Reconcile Process**: This is the original reconcile process of PodMigrationJob.
 
-The controller process can be roughly divided into three parts, namely the Controller Reconcile Process, Arbitration Process, and Migration Process:
+The following is a time series diagram that can help us understand the relationship between arbitration queue, arbitration mechanisms, and work queue.
 
-- **Controller Reconcile Process**: This is the `Reconcile` funtion of PodMigrationJob Controller, which aims to put PodMigrationJobs whose phase if `pending` or empty to the arbitration collection.
-- **Arbitration Process**: This process periodically arbitrates the PodMigrationJobs in the arbitration collection and places the PodMigrationJobs selected by the arbitration into the rate limit queue.
-- **Migration Process**: This process will read `PodMigrationJob` from the rate limit queue and call `doMigrat`e to handle the `PodMigrationJob`.
+![image](/docs/images/arbitration-mechanism-time-diagram.svg)
 
-###### EventHandle Process in Watch
+Below, I will provide a detailed introduction about **arbitration queue**, **arbitration process** and **work queue**.
 
-1. Intercept all Create events and place them in the arbitration collection.
+##### About Arbitration Queue
 
-###### Arbitration Process
+1. From: Event handler intercepts all events in creation status and place them in the arbitration queue.
+2. To: The arbitration queue is consumed by arbitration process.
 
-1. Sort the elements in the arbitration collection to generate a slice.
-2. Use a map to record the sorted positions of each `PodMigrationJob` in the slice, with key being the `PodMigrationJob` and value being the position.
-3. Call different `GroupFilter` functions in sequence for group and filter operations to update the slice.
-4. Resort the elements in the slice using the previous map.
-5. Place all the jobs to the rate limit queue and remove these elements from the arbitration collection.
+##### Arbitration Process
 
-###### Controller Reconcile Process
+The Arbitration Process works after the descheduler and before the PodMigrationJob Reconcile and mainly manages the PodMigrationJobs generated by the descheduler. It decides which PodMigrationJob to reconcile, to provide a guarantee for the stability of the descheduler and migration, and improve the stability of the system and applications.
 
-1. Do reconcile process as before.
+It arbitrates the PodMigrationJobs in the arbitration queue and places the PodMigrationJobs already passed the arbitration into the work queue.
 
-##### Arbitration Mechanism
+The brief process is as follows:
+1. **Sort** the elements in the arbitration collection to generate a slice.
+2. Call different `GroupFilter` functions in sequence for **group** and **filter** operations to update the slice.
+3. **Select** the remaining jobs to the work queue and remove these elements from the arbitration collection.
 
-The Arbitration Mechanism works after the descheduler and mainly manages the PodMigrationJobs generated by the descheduler. It decides which PodMigrationJob to execute, to provide a guarantee for the stability of the descheduler and migration, and improve the stability of the system and applications.
-
-It arbitrates the PodMigrationJobs in the arbitration collection and places the PodMigrationJobs already passed the arbitration into the rate limit queue.
+Now, I will provide a detailed introduction about **Sort**, **GroupFilter** and **Select** process.
 
 ###### Sort PodMigrationJob
 
 ![image](/docs/images/arbitration-mechanism-sort-design.svg)
 
-- Using the **stable sorting** method, sort PodMigrationJobs in the following order:
-  - The time interval between the start of migration and the current, the smaller the interval, the higher the ranking.
-  - The Pod priority of PodMigrationJob, the lower the priority, the higher the ranking.
-  - BE > LS > LSR = LSE
-  - Disperse Jobs by Workload
-  - Make PodMigrationJobs close in the same job
-  - If some Pods in the job containing PodMigrationJob's Pod is being migrated, the PodMigrationJob's ranking is higher.
-- Use a map to record the sorted ranking (key is PodMigrationJob, value is position)
+- Sort PodMigrationJobs in the following order:
+    - The time interval between the start of migration and the current, the smaller the interval, the higher the ranking.
+    - The Pod priority of PodMigrationJob, the lower the priority, the higher the ranking.
+    - BE > LS > LSR = LSE.
+    - Disperse Jobs by workload.
+    - Make PodMigrationJobs close in the same job.
+    - If some Pods in the job containing PodMigrationJob's Pod is being migrated, the PodMigrationJob's ranking is higher.
+- Use a map to record the sorted ranking (key is PodMigrationJob, value is position).
 
 The definition of the type `SortFn` is as follows.
 
 ~~~ go
 // SortFn stably sorts PodMigrationJobs slice based on a certain strategy. Users 
 // can implement different SortFn according to their needs.
-type SortFn func(jobs []*v1alpha1.PodMigrationJob, client client.Client) []*v1alpha1.PodMigrationJob
+type SortFn func(jobs []*v1alpha1.PodMigrationJob) []*v1alpha1.PodMigrationJob
 ~~~
 
 ###### GroupFilter PodMigrationJob
@@ -157,27 +155,27 @@ type SortFn func(jobs []*v1alpha1.PodMigrationJob, client client.Client) []*v1al
 Aggregate PodMigrationJob according to different workloads and filter them based on different strategies.
 
 - According to Workload
-  - Group: Aggregate PodMigrationJob by workload.
-  - Filter: 
-    - Check how many PodMigrationJob of each workload are in the Running state, and record them as ***migratingReplicas***. If the **migratingReplicas** reach a certain threshold, excess parts will be excluded. 
-    - Check the number of **unavailableReplicas** of each workload, and determine whether the **unavailableReplicas** exceeds the **MaxUnavailablePerWorkload**, exclude excess parts.
+    - Group: Aggregate PodMigrationJob by workload.
+    - Filter:
+        - Check how many PodMigrationJob of each workload are in the Running state, and record them as ***migratingReplicas***. If the **migratingReplicas** reach a certain threshold, excess parts will be excluded.
+        - Check the number of **unavailableReplicas** of each workload, and determine whether the **unavailableReplicas** exceeds the **MaxUnavailablePerWorkload**, exclude excess parts.
 - According to Node
-  - Group: Aggregate PodMigrationJob by Node.
-  - Filter:
-    - Check the number of Pods being migrated on the node where each target Pod is located. If it exceeds the maximum migration amount for a single node, exclude excess parts.
+    - Group: Aggregate PodMigrationJob by Node.
+    - Filter:
+        - Check the number of Pods being migrated on the node where each target Pod is located. If it exceeds the maximum migration amount for a single node, exclude excess parts.
 - According to Namespace
-  - Group: Aggregate PodMigrationJob by Namespace.
-  - Filter: 
-    - Check the number of Pods being migrated in the Namespace where each target Pod is located. If it exceeds the maximum migration amount for a single Namespace, exclude excess parts.
+    - Group: Aggregate PodMigrationJob by Namespace.
+    - Filter:
+        - Check the number of Pods being migrated in the Namespace where each target Pod is located. If it exceeds the maximum migration amount for a single Namespace, exclude excess parts.
 - According to Job
-  - Group: Aggregate PodMigrationJob by Job.
-  - Filter:
-    - Check the number of Jobs that PodMigrationJobs' Pod belongs to. If it exceeds 1, exclude excess parts.
+    - Group: Aggregate PodMigrationJob by Job.
+    - Filter:
+        - Check the number of Jobs that PodMigrationJobs' Pod belongs to. If it exceeds 1, exclude excess parts.
 
 The definition of the type `GroupFilterFn` is as follows.
 
 ~~~ go
-type GroupFilterFn func(jobs []*v1alpha1.PodMigrationJob, client client.Client) []*v1alpha1.PodMigrationJob
+type GroupFilterFn func(jobs []*v1alpha1.PodMigrationJob) []*v1alpha1.PodMigrationJob
 ~~~
 
 ###### Select PodMigrationJob
@@ -185,8 +183,15 @@ type GroupFilterFn func(jobs []*v1alpha1.PodMigrationJob, client client.Client) 
 ![image](/docs/images/arbitration-mechanism-select-design.svg)
 
 - Sort PodMigrationJob slices based on the map.
-- Place all remaining jobs to the rate limit queue.
+- Place all remaining jobs to the work queue.
 - Remove these elements from the arbitration collection.
+
+##### About Work Queue
+
+1. From: 
+   1. Original kubernetes events (update/delete/genetic).
+   2. Events that passed arbitration mechanism.
+2. To: The work queue is consumed by the Controller Reconcile Process.
 
 #### Controller Configuration
 
@@ -208,8 +213,8 @@ type ArbitrationArgs struct {
     // Default is true
     Enabled bool
     
-    // Interval defines the running interval (second) of the Arbitration Mechanism.
-    // Default is 60s
+    // Interval defines the running interval (ms) of the Arbitration Mechanism.
+    // Default is 500ms
     Interval int
 }
 ```
@@ -218,6 +223,7 @@ type ArbitrationArgs struct {
 
 ## Implementation History
 
-- 2023-07-07: Initial proposal
-- 2023-07-21: Update proposal based on review comments 
-- 2023-08-10: Update proposal based on review comments
+- 2023-07-07: Initial proposal.
+- 2023-07-21: Update proposal based on review comments.
+- 2023-08-10: Update proposal based on review comments.
+- 2023-08-15: Update proposal based on review comments.
