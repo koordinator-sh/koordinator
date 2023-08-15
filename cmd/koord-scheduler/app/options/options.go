@@ -25,6 +25,7 @@ import (
 	schedulerappconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 )
 
@@ -60,6 +61,14 @@ func (o *Options) Config() (*schedulerappconfig.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// NOTE(joseph): When the K8s Scheduler Framework starts, the thread that constructs NodeInfo
+	// and the scheduling thread are not synchronized. In this way, when the Pod on a Node is not
+	// filled in the NodeInfo, the Node is scheduled for a new Pod. This behavior is not expected.
+	// The K8s community itself has also noticed this issue https://github.com/kubernetes/kubernetes/issues/116717,
+	// but it was only fixed in the K8s v1.28 version https://github.com/kubernetes/kubernetes/pull /116729.
+	// So we need to fix it ourselves.
+	config.InformerFactory = frameworkexthelper.NewForceSyncSharedInformerFactory(config.InformerFactory)
 
 	// use json for CRD clients
 	kubeConfig := *config.KubeConfig
