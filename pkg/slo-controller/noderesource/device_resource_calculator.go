@@ -126,14 +126,12 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 			updateNode.Status.Capacity[resourceName] = quantity.DeepCopy()
 			updateNode.Status.Allocatable[resourceName] = quantity.DeepCopy()
 		}
-		if err := r.Client.Status().Update(context.TODO(), updateNode); err != nil {
-			klog.Errorf("failed to update node gpu resource, %v, error: %v", updateNode.Name, err)
-			return err
-		}
-		return nil
+		return r.Client.Status().Update(context.TODO(), updateNode)
 	})
 	if err == nil {
 		r.GPUSyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), r.Clock.Now())
+	} else {
+		klog.Errorf("failed to update node gpu resource, %v, error: %v", node.Name, err)
 	}
 	return err
 }
@@ -166,17 +164,14 @@ func (r *NodeResourceReconciler) updateGPUDriverAndModel(node *corev1.Node, devi
 		updateNodeNew.Labels[extension.LabelGPUDriverVersion] = device.Labels[extension.LabelGPUDriverVersion]
 
 		patch := client.MergeFrom(updateNode)
-		if err := r.Client.Patch(context.Background(), updateNodeNew, patch); err != nil {
-			klog.Errorf("failed to patch node gpu model and version, err:%v", err)
-			return err
-		} else {
-			klog.Infof("Success to patch node:%v gpu model:%v and version:%v",
-				node.Name, device.Labels[extension.LabelGPUModel], device.Labels[extension.LabelGPUDriverVersion])
-		}
-		return nil
+		return r.Client.Patch(context.Background(), updateNodeNew, patch)
 	})
 	if err == nil {
 		r.GPUSyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), r.Clock.Now())
+		klog.Infof("Success to patch node:%v gpu model:%v and version:%v",
+			node.Name, device.Labels[extension.LabelGPUModel], device.Labels[extension.LabelGPUDriverVersion])
+	} else {
+		klog.Errorf("failed to patch node gpu model and version, err:%v", err)
 	}
 
 	return nil
