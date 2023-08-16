@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 const (
@@ -62,6 +63,15 @@ func Test_NodeMergedExtender(t *testing.T) {
 				testExtKey: testExtIF,
 			},
 		}
+		oldOtherExtKey := "old-other-ext-key"
+		oldOtherExtVal := "old-other-ext-val"
+		oldSpec := &slov1alpha1.NodeSLOSpec{
+			Extensions: &slov1alpha1.ExtensionsMap{
+				Object: map[string]interface{}{
+					oldOtherExtKey: oldOtherExtVal,
+				},
+			},
+		}
 		node := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{},
@@ -69,10 +79,14 @@ func Test_NodeMergedExtender(t *testing.T) {
 		}
 		cfgMap := configuration.ExtensionCfgMap{}
 		newCfg := calculateExtensionsCfgMerged(cfgMap, configMap, &record.FakeRecorder{})
-		extMap := getExtensionsConfigSpec(node, &newCfg)
+		extMap := getExtensionsConfigSpec(node, oldSpec, &newCfg)
 		gotIf := extMap.Object[testExtKey].(string)
 		if gotIf != testExtIF {
 			t.Errorf("run NodeMergedExtender got ext key %s, want %s", gotIf, testExtIF)
+		}
+		gotOtherIf := extMap.Object[oldOtherExtKey].(string)
+		if gotOtherIf != oldOtherExtVal {
+			t.Errorf("run NodeMergedExtender got other ext key %s, want %s", gotOtherIf, oldOtherExtVal)
 		}
 		UnregisterNodeSLOMergedExtender(pluginName)
 	})

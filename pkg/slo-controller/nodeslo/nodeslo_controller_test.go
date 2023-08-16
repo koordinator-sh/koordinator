@@ -43,7 +43,7 @@ import (
 // plugins in koordlet/resmanager will get the interface and
 // change it to strategy individually
 func getExtensionsIfMap(in slov1alpha1.ExtensionsMap) (*slov1alpha1.ExtensionsMap, error) {
-	extensionsMap := &slov1alpha1.ExtensionsMap{}
+	extensionsMap := &slov1alpha1.ExtensionsMap{Object: map[string]interface{}{}}
 	for extkey, extIf := range in.Object {
 		//marshal unmarshal to
 		extStr, err := json.Marshal(extIf)

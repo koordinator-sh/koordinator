@@ -107,7 +107,7 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 		metrics.RecordNodeSLOSpecParseCount(true, "getSystemConfigSpec")
 	}
 
-	nodeSLOSpec.Extensions = getExtensionsConfigSpec(node, &sloCfg.ExtensionCfgMerged)
+	nodeSLOSpec.Extensions = getExtensionsConfigSpec(node, oldSpec, &sloCfg.ExtensionCfgMerged)
 
 	return nodeSLOSpec, nil
 }
