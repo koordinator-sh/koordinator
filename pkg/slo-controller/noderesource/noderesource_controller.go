@@ -50,6 +50,7 @@ const (
 
 var (
 	NodeResourcePlugins []string
+	AllPlugins          []string
 )
 
 type NodeResourceReconciler struct {
@@ -137,7 +138,14 @@ func InitFlags(fs *flag.FlagSet) {
 		"'-noderesource-plugins=*' enables all plugins. "+
 		"'-noderesource-plugins=BatchResource' means only the 'BatchResource' plugin is enabled. "+
 		"'-noderesource-plugins=*,-BatchResource' means all plugins except the 'BatchResource' plugin are enabled.\n"+
-		"All plugins: %s", strings.Join(NodeResourcePlugins, ", ")))
+		"All plugins: %s", strings.Join(AllPlugins, ", ")))
+}
+
+func addPluginOption(plugin framework.Plugin, enabled bool) {
+	AllPlugins = append(AllPlugins, plugin.Name())
+	if enabled {
+		NodeResourcePlugins = append(NodeResourcePlugins, plugin.Name())
+	}
 }
 
 func isPluginEnabled(pluginName string) bool {
