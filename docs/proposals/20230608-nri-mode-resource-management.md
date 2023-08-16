@@ -190,7 +190,7 @@ There are a little difference in execution timing between `NRI` and `proxy` mode
 
 ## Upgrade Strategy
 
-- Need to upgrade containerd to 1.7.0+ or CRIO to 1.25.0+
+- Need to upgrade containerd to 1.7.0+ or CRIO to 1.26.0+
 - Need to enable NRI
 
 ### Test Plan [optional]
