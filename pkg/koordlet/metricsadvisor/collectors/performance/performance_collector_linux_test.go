@@ -19,6 +19,7 @@ package performance
 import (
 	"os"
 	"path"
+	"syscall"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -200,7 +201,7 @@ func Test_getAndStartCollectorOnSingleContainer(t *testing.T) {
 	})
 	c := collector.(*performanceCollector)
 	assert.NotPanics(t, func() {
-		_, err := c.getAndStartCollectorOnSingleContainer(tempDir, containerStatus, 0)
+		_, err := c.getAndStartCollectorOnSingleContainer(tempDir, containerStatus, 0, []string{"cycles", "instructions"})
 		if err != nil {
 			return
 		}
@@ -222,7 +223,9 @@ func Test_profilePerfOnSingleContainer(t *testing.T) {
 	}
 	tempDir := t.TempDir()
 	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
-	perfCollector, _ := perf.NewPerfCollector(f, []int{})
+	perf.LibInit()
+	defer perf.LibFinalize()
+	perfCollector, _ := perf.NewPerfCollector(f, []int{}, []string{"cycles", "instructions"}, syscall.Syscall6)
 
 	collector := New(&framework.Options{
 		Config:         framework.NewDefaultConfig(),
@@ -239,7 +242,7 @@ func Test_profilePerfOnSingleContainer(t *testing.T) {
 		},
 	}
 	assert.NotPanics(t, func() {
-		c.profilePerfOnSingleContainer(containerStatus, perfCollector, testingPod)
+		c.profileCPIOnSingleContainer(containerStatus, perfCollector, testingPod)
 	})
 }
 

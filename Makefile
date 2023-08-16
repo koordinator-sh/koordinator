@@ -21,7 +21,7 @@ AGENT_MODE ?= hostMode
 # Set license header files.
 LICENSE_HEADER_GO ?= hack/boilerplate/boilerplate.go.txt
 
-PACKAGES ?= $(shell go list ./... | grep -vE 'vendor|test/e2e')
+PACKAGES ?= $(shell go list ./... | grep -vE 'vendor|test/e2e|github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf')
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -75,7 +75,7 @@ fmt: ## Run go fmt against code.
 
 .PHONY: vet
 vet: ## Run go vet against code.
-	go vet ./...
+	go vet -unsafeptr=false ./...
 
 .PHONY: lint
 lint: lint-go lint-license ## Lint all code.

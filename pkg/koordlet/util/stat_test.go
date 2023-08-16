@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -96,11 +97,16 @@ func Test_GetCPUStatUsageTicks(t *testing.T) {
 }
 
 func Test_GetContainerCyclesAndInstructions(t *testing.T) {
+	perf.LibInit()
+	perf.InitBufferPool(map[int]struct{}{
+		2: {},
+	})
 	tempDir := t.TempDir()
 	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
-	collector, _ := perf.NewPerfCollector(f, []int{})
+	collector, _ := perf.NewPerfCollector(f, []int{}, []string{"cycles", "instructions"}, syscall.Syscall6)
 	_, _, err := GetContainerCyclesAndInstructions(collector)
 	assert.Nil(t, err)
+	perf.LibFinalize()
 }
 
 func Test_GetContainerPerfCollector(t *testing.T) {
@@ -109,7 +115,7 @@ func Test_GetContainerPerfCollector(t *testing.T) {
 		ContainerID: "containerd://test",
 	}
 	assert.NotPanics(t, func() {
-		_, err := GetContainerPerfCollector(tempDir, containerStatus, 1)
+		_, err := GetContainerPerfCollector(tempDir, containerStatus, 1, []string{"cycles", "instructions"})
 		if err != nil {
 			return
 		}
@@ -117,6 +123,6 @@ func Test_GetContainerPerfCollector(t *testing.T) {
 	wrongContainerStatus := &corev1.ContainerStatus{
 		ContainerID: "wrong-container-status-test",
 	}
-	_, err := GetContainerPerfCollector(tempDir, wrongContainerStatus, 1)
+	_, err := GetContainerPerfCollector(tempDir, wrongContainerStatus, 1, []string{"cycles", "instructions"})
 	assert.NotNil(t, err)
 }

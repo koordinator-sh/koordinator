@@ -62,7 +62,7 @@ func GetCPUStatUsageTicks() (uint64, error) {
 	return readTotalCPUStat(statPath)
 }
 
-func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, number int32) (*perf.PerfCollector, error) {
+func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, number int32, events []string) (*perf.PerfCollector, error) {
 	cpus := make([]int, number)
 	for i := range cpus {
 		cpus[i] = i
@@ -72,7 +72,7 @@ func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, n
 	if err != nil {
 		return nil, err
 	}
-	collector, err := perf.GetAndStartPerfCollectorOnContainer(containerCgroupFile, cpus)
+	collector, err := perf.GetAndStartPerfCollectorOnContainer(containerCgroupFile, cpus, events)
 	if err != nil {
 		return nil, err
 	}

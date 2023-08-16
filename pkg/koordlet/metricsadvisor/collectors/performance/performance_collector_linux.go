@@ -66,7 +66,12 @@ func New(opt *framework.Options) framework.Collector {
 }
 
 func (p *performanceCollector) Enabled() bool {
+	// TODO: add tma analyze feature gate
 	return features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) || features.DefaultKoordletFeatureGate.Enabled(features.PSICollector)
+}
+
+func (p *performanceCollector) EnabledPerf() bool {
+	return features.DefaultKoordletFeatureGate.Enabled(features.CPICollector)
 }
 
 func (p *performanceCollector) Setup(s *framework.Context) {}
@@ -79,8 +84,22 @@ func (p *performanceCollector) Run(stopCh <-chan struct{}) {
 	if features.DefaultKoordletFeatureGate.Enabled(features.PSICollector) {
 		p.collectPSI(stopCh)
 	}
-	if features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) {
-		go wait.Until(p.collectContainerCPI, p.cpiCollectInterval, stopCh)
+	if p.EnabledPerf() {
+		eventsMap := make(map[int]struct{})
+		perf.LibInit()
+		if features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) {
+			eventsMap[len(perf.EventsMap[string(features.CPICollector)])] = struct{}{}
+		}
+		// init perf buffer pool for different perf group collectors
+		perf.InitBufferPool(eventsMap)
+
+		if features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) {
+			go wait.Until(p.collectContainerCPI, p.cpiCollectInterval, stopCh)
+		}
+		go func() {
+			<-stopCh
+			perf.LibFinalize()
+		}()
 	}
 }
 
@@ -111,13 +130,13 @@ func (p *performanceCollector) collectContainerCPI() {
 	}
 	nodeCPUInfo, ok := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
 	if !ok {
-		klog.Fatalf("type error, expect %T， but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
+		klog.Fatalf("type error, expect %T, but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
 	}
 	cpuNumber := nodeCPUInfo.TotalInfo.NumberCPUs
 	for containerStatus, parentPod := range containerStatusesMap {
 		go func(status *corev1.ContainerStatus, parent string) {
 			defer wg.Done()
-			collectorOnSingleContainer, err := p.getAndStartCollectorOnSingleContainer(parent, status, cpuNumber)
+			collectorOnSingleContainer, err := p.getAndStartCollectorOnSingleContainer(parent, status, cpuNumber, perf.EventsMap["CPICollector"])
 			if err != nil {
 				return
 			}
@@ -147,14 +166,10 @@ func (p *performanceCollector) collectContainerCPI() {
 				klog.Errorf("PerfCollector type convert failed")
 				return
 			}
-			metrics := p.profilePerfOnSingleContainer(status, perfCollector, pod)
+			metrics := p.profileCPIOnSingleContainer(status, perfCollector, pod)
 			mutex.Lock()
 			cpiMetrics = append(cpiMetrics, metrics...)
 			mutex.Unlock()
-			err1 := perfCollector.CleanUp()
-			if err1 != nil {
-				klog.Errorf("PerfCollector cleanup err : %v", err1)
-			}
 		}(containerStatus, pod)
 	}
 	wg1.Wait()
@@ -167,8 +182,8 @@ func (p *performanceCollector) collectContainerCPI() {
 		timeWindow, time.Now(), len(containerStatusesMap))
 }
 
-func (p *performanceCollector) getAndStartCollectorOnSingleContainer(podParentCgroupDir string, containerStatus *corev1.ContainerStatus, number int32) (*perf.PerfCollector, error) {
-	perfCollector, err := util.GetContainerPerfCollector(podParentCgroupDir, containerStatus, number)
+func (p *performanceCollector) getAndStartCollectorOnSingleContainer(podParentCgroupDir string, containerStatus *corev1.ContainerStatus, number int32, events []string) (*perf.PerfCollector, error) {
+	perfCollector, err := util.GetContainerPerfCollector(podParentCgroupDir, containerStatus, number, events)
 	if err != nil {
 		klog.Errorf("get and start container %s collector err: %v", containerStatus.Name, err)
 		return nil, err
@@ -176,7 +191,7 @@ func (p *performanceCollector) getAndStartCollectorOnSingleContainer(podParentCg
 	return perfCollector, nil
 }
 
-func (p *performanceCollector) profilePerfOnSingleContainer(status *corev1.ContainerStatus, collectorOnSingleContainer *perf.PerfCollector, pod *corev1.Pod) []metriccache.MetricSample {
+func (p *performanceCollector) profileCPIOnSingleContainer(status *corev1.ContainerStatus, collectorOnSingleContainer *perf.PerfCollector, pod *corev1.Pod) []metriccache.MetricSample {
 	collectTime := time.Now()
 	cpiMetrics := make([]metriccache.MetricSample, 0)
 	cycles, instructions, err := util.GetContainerCyclesAndInstructions(collectorOnSingleContainer)
@@ -194,11 +209,6 @@ func (p *performanceCollector) profilePerfOnSingleContainer(status *corev1.Conta
 	}
 
 	cpiMetrics = append(cpiMetrics, cpiCycle, cpiInstruction)
-
-	err1 := collectorOnSingleContainer.CleanUp()
-	if err1 != nil {
-		klog.Errorf("collectorOnSingleContainer cleanup err : %v", err1)
-	}
 
 	metrics.RecordContainerCPI(status, pod, cycles, instructions)
 
