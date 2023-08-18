@@ -153,7 +153,7 @@ func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuot
 		quota.Annotations = make(map[string]string)
 	}
 
-	if parentName, exist := quota.Labels[extension.LabelQuotaParent]; !exist || len(parentName) == 0 {
+	if parentName, exist := quota.Labels[extension.LabelQuotaParent]; (!exist || len(parentName) == 0) && quota.Name != extension.RootQuotaName {
 		quota.Labels[extension.LabelQuotaParent] = extension.RootQuotaName
 		klog.V(5).Infof("fill quota %v parent as root", quota.Name)
 	}

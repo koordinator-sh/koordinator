@@ -167,6 +167,9 @@ type ElasticQuotaArgs struct {
 	// SystemQuotaGroupMax limit the maxQuota of SystemQuotaGroup
 	SystemQuotaGroupMax corev1.ResourceList `json:"systemQuotaGroupMax,omitempty"`
 
+	// RootQuotaGroupMax limit the maxQuota of RootQuotaGroup
+	RootQuotaGroupMax corev1.ResourceList `json:"rootQuotaGroupMax,omitempty"`
+
 	// QuotaGroupNamespace is the namespace of the DefaultQuotaGroup
 	QuotaGroupNamespace string `json:"quotaGroupNamespace,omitempty"`
 

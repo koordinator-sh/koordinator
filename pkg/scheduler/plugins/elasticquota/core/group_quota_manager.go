@@ -77,6 +77,7 @@ func NewGroupQuotaManager(systemGroupMax, defaultGroupMax v1.ResourceList, nodeL
 	quotaManager.quotaInfoMap[extension.SystemQuotaName].setMaxQuotaNoLock(systemGroupMax)
 	quotaManager.quotaInfoMap[extension.DefaultQuotaName] = NewQuotaInfo(false, true, extension.DefaultQuotaName, extension.RootQuotaName)
 	quotaManager.quotaInfoMap[extension.DefaultQuotaName].setMaxQuotaNoLock(defaultGroupMax)
+	quotaManager.quotaInfoMap[extension.RootQuotaName] = NewQuotaInfo(true, false, extension.RootQuotaName, "")
 	quotaManager.runtimeQuotaCalculatorMap[extension.RootQuotaName] = NewRuntimeQuotaCalculator(extension.RootQuotaName)
 	quotaManager.setScaleMinQuotaEnabled(true)
 	return quotaManager
@@ -116,7 +117,7 @@ func (gqm *GroupQuotaManager) updateClusterTotalResourceNoLock(deltaRes v1.Resou
 
 	if !quotav1.IsZero(diffRes) {
 		gqm.totalResourceExceptSystemAndDefaultUsed = totalResNoSysOrDefault.DeepCopy()
-		gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(totalResNoSysOrDefault)
+		gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(gqm.totalResource)
 		klog.V(5).Infof("UpdateClusterResource finish totalResourceExceptSystemAndDefaultUsed:%v", gqm.totalResourceExceptSystemAndDefaultUsed)
 	}
 }
@@ -148,7 +149,7 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaRequest(deltaReq 
 		curQuotaInfo := curToAllParInfos[i]
 		oldSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
 		curQuotaInfo.addRequestNonNegativeNoLock(deltaReq)
-		if curQuotaInfo.Name == extension.SystemQuotaName || curQuotaInfo.Name == extension.DefaultQuotaName {
+		if curQuotaInfo.Name == extension.RootQuotaName {
 			return
 		}
 		newSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
@@ -199,6 +200,10 @@ func (gqm *GroupQuotaManager) RefreshRuntimeNoLock(quotaName string) v1.Resource
 		return nil
 	}
 
+	if quotaName == extension.RootQuotaName {
+		return gqm.totalResource.DeepCopy()
+	}
+
 	if quotaName == extension.SystemQuotaName || quotaName == extension.DefaultQuotaName {
 		return quotaInfo.getMax()
 	}
@@ -207,8 +212,8 @@ func (gqm *GroupQuotaManager) RefreshRuntimeNoLock(quotaName string) v1.Resource
 
 	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
 
-	totalRes := gqm.totalResourceExceptSystemAndDefaultUsed.DeepCopy()
-	for i := len(curToAllParInfos) - 1; i >= 0; i-- {
+	totalRes := gqm.totalResource.DeepCopy()
+	for i := len(curToAllParInfos) - 2; i >= 0; i-- {
 		quotaInfo = curToAllParInfos[i]
 		parRuntimeQuotaCalculator := gqm.getRuntimeQuotaCalculatorByNameNoLock(quotaInfo.ParentName)
 		if parRuntimeQuotaCalculator == nil {
@@ -265,7 +270,7 @@ func (gqm *GroupQuotaManager) getCurToAllParentGroupQuotaInfoNoLock(quotaName st
 
 	for true {
 		curToAllParInfos = append(curToAllParInfos, quotaInfo)
-		if quotaInfo.ParentName == extension.RootQuotaName {
+		if quotaInfo.Name == extension.RootQuotaName {
 			break
 		}
 
@@ -347,14 +352,9 @@ func (gqm *GroupQuotaManager) updateQuotaGroupConfigNoLock() {
 func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 	// rebuild QuotaTopoNodeMap
 	gqm.quotaTopoNodeMap = make(map[string]*QuotaTopoNode)
-	rootNode := NewQuotaTopoNode(NewQuotaInfo(false, true, extension.RootQuotaName, extension.RootQuotaName))
-	gqm.quotaTopoNodeMap[extension.RootQuotaName] = rootNode
 
 	// add node according to the quotaInfoMap
 	for quotaName, quotaInfo := range gqm.quotaInfoMap {
-		if quotaName == extension.SystemQuotaName || quotaName == extension.DefaultQuotaName {
-			continue
-		}
 		gqm.quotaTopoNodeMap[quotaName] = NewQuotaTopoNode(quotaInfo)
 	}
 
@@ -380,9 +380,6 @@ func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
 	childRequestMap, childUsedMap := make(quotaResMapType), make(quotaResMapType)
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
-		if quotaName == extension.RootQuotaName {
-			continue
-		}
 		topoNode.quotaInfo.lock.Lock()
 		if !topoNode.quotaInfo.IsParent {
 			childRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.Request.DeepCopy()
@@ -396,7 +393,7 @@ func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
 	gqm.runtimeQuotaCalculatorMap = make(map[string]*RuntimeQuotaCalculator)
 	// reset runtimeQuotaCalculator
 	gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName] = NewRuntimeQuotaCalculator(extension.RootQuotaName)
-	gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(gqm.totalResourceExceptSystemAndDefaultUsed)
+	gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(gqm.totalResource)
 	rootNode := gqm.quotaTopoNodeMap[extension.RootQuotaName]
 	gqm.resetAllGroupQuotaRecursiveNoLock(rootNode)
 	gqm.updateResourceKeyNoLock()

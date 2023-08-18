@@ -116,6 +116,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 
 	ctx := context.TODO()
 
+	elasticQuota.createRootQuotaIfNotPresent()
 	elasticQuota.createSystemQuotaIfNotPresent()
 	elasticQuota.createDefaultQuotaIfNotPresent()
 	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), scheSharedInformerFactory, elasticQuotaInformer.Informer(), cache.ResourceEventHandlerFuncs{

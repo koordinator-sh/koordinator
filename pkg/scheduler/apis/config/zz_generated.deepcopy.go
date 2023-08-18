@@ -121,6 +121,13 @@ func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
+	if in.RootQuotaGroupMax != nil {
+		in, out := &in.RootQuotaGroupMax, &out.RootQuotaGroupMax
+		*out = make(corev1.ResourceList, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val.DeepCopy()
+		}
+	}
 	if in.MonitorAllQuotas != nil {
 		in, out := &in.MonitorAllQuotas, &out.MonitorAllQuotas
 		*out = new(bool)
