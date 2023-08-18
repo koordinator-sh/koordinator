@@ -63,12 +63,10 @@ func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) err
 }
 
 // validateQuotaTopology checks the quotaInfo's topology with its parent and its children (when update calls the function).
-func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, quotaInfo *QuotaInfo) error {
-	// interchange between parentQuotaGroup and childQuotaGroup is prohibited now.
-	if oldQuotaInfo != nil && oldQuotaInfo.IsParent != quotaInfo.IsParent {
-		return fmt.Errorf("IsParent is forbidden modify now, quotaName:%v", oldQuotaInfo.Name)
+func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, quotaInfo *QuotaInfo, oldQuota *v1alpha1.ElasticQuota) error {
+	if err := qt.checkIsParentChange(oldQuotaInfo, quotaInfo, oldQuota); err != nil {
+		return err
 	}
-
 	// if the quotaInfo's parent is root and its IsParent is false, the following checks will be true, just return nil.
 	if quotaInfo.ParentName == extension.RootQuotaName && !quotaInfo.IsParent {
 		return nil
@@ -84,6 +82,29 @@ func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, quotaInfo *QuotaInf
 
 	if err := qt.checkMinQuotaSum(quotaInfo); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (qt *quotaTopology) checkIsParentChange(oldQuotaInfo, quotaInfo *QuotaInfo, oldQuota *v1alpha1.ElasticQuota) error {
+	// means create quota, no need check
+	if oldQuotaInfo == nil || oldQuotaInfo.IsParent == quotaInfo.IsParent {
+		return nil
+	}
+
+	if len(qt.quotaHierarchyInfo[oldQuotaInfo.Name]) > 0 && !quotaInfo.IsParent {
+		return fmt.Errorf("quota has children, isParent is forbidden to modify as false, quotaName:%v", oldQuotaInfo.Name)
+	}
+
+	if quotaInfo.IsParent {
+		podList, err := ListQuotaBoundPods(qt.client, oldQuota)
+		if err != nil {
+			return err
+		}
+		if len(podList.Items) > 0 {
+			return fmt.Errorf("quota has bound pods, isParent is forbidden to modify as true, quotaName: %v", oldQuotaInfo.Name)
+		}
 	}
 
 	return nil
