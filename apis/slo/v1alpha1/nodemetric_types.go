@@ -24,6 +24,20 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+type AggregationType string
+
+// +kubebuilder:validation:Enum=usageWithHotPageCache;usageWithoutPageCache;usageWithPageCache
+type MemoryCollectPolicy string
+
+const (
+	// max is not welcomed since it may import outliers
+	AVG AggregationType = "avg"
+	P99 AggregationType = "p99"
+	P95 AggregationType = "p95"
+	P90 AggregationType = "p90"
+	P50 AggregationType = "p50"
+)
+
 type NodeMetricInfo struct {
 	// NodeUsage is the total resource usage of node
 	NodeUsage ResourceMap `json:"nodeUsage,omitempty"`
@@ -63,6 +77,8 @@ type NodeMetricCollectPolicy struct {
 	ReportIntervalSeconds *int64 `json:"reportIntervalSeconds,omitempty"`
 	// NodeAggregatePolicy represents the target grain of node aggregated usage
 	NodeAggregatePolicy *AggregatePolicy `json:"nodeAggregatePolicy,omitempty"`
+	//NodeMemoryPolicy represents apply which method collect memory info
+	NodeMemoryCollectPolicy *MemoryCollectPolicy `json:"nodeMemoryCollectPolicy,omitempty"`
 }
 
 type AggregatePolicy struct {

@@ -85,18 +85,20 @@ func (p *ColocationHandlerForConfigMapEvent) syncColocationCfgIfChanged(configMa
 func (p *ColocationHandlerForConfigMapEvent) syncConfig(configMap *corev1.ConfigMap) bool {
 	// get co-location config from the configmap
 	// if the configmap does not exist, use the default
+	klog.Errorf("aaaaaaaaaaaaaaaaaaaaaaaa")
 	if configMap == nil {
 		klog.Errorf("configmap is deleted!,use default config")
 		return p.updateCacheIfChanged(sloconfig.NewDefaultColocationCfg(), true)
 	}
-
-	newCfg := &configuration.ColocationCfg{}
-	configStr := configMap.Data[configuration.ColocationConfigKey]
+	//null pointer
+	newCfg := &extension.ColocationCfg{}
+	configStr := configMap.Data[extension.ColocationConfigKey]
+	klog.Errorf("aaaaaaaaaaaaaaaaaaaaaaaa")
 	if configStr == "" {
 		klog.Warningf("colocation config is empty!,use default config")
 		return p.updateCacheIfChanged(sloconfig.NewDefaultColocationCfg(), false)
 	}
-
+	klog.Errorf("ConfigStr :%s", configStr)
 	err := json.Unmarshal([]byte(configStr), &newCfg)
 	if err != nil {
 		//if controller restart ,cache will unavailable, else use old cfg
@@ -108,11 +110,13 @@ func (p *ColocationHandlerForConfigMapEvent) syncConfig(configMap *corev1.Config
 	}
 
 	defaultCfg := sloconfig.NewDefaultColocationCfg()
+	klog.Errorf("NewDefaultColocationCfg MetricMemoryCollectPolicy %s", *defaultCfg.MetricMemoryCollectPolicy)
 	// merge default cluster strategy
 	mergedClusterCfg := defaultCfg.ColocationStrategy.DeepCopy()
+	klog.Errorf("MergedClusterCfg MetricMemoryCollectPolicy %s", *mergedClusterCfg.MetricMemoryCollectPolicy)
 	mergedInterface, _ := util.MergeCfg(mergedClusterCfg, &newCfg.ColocationStrategy)
-	newCfg.ColocationStrategy = *(mergedInterface.(*configuration.ColocationStrategy))
-
+	newCfg.ColocationStrategy = *(mergedInterface.(*extension.ColocationStrategy))
+	klog.Errorf("NewCfg.ColocationStrategy %s", *newCfg.ColocationStrategy.MetricMemoryCollectPolicy)
 	if !sloconfig.IsColocationStrategyValid(&newCfg.ColocationStrategy) {
 		//if controller restart ,cache will unavailable, else use old cfg
 		klog.Errorf("syncConfig failed!  invalid cluster config,%+v", newCfg.ColocationStrategy)

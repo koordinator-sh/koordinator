@@ -41,9 +41,10 @@ func DefaultColocationCfg() configuration.ColocationCfg {
 	}
 }
 
-func DefaultColocationStrategy() configuration.ColocationStrategy {
-	calculatePolicy := configuration.CalculateByPodUsage
-	cfg := configuration.ColocationStrategy{
+func DefaultColocationStrategy() extension.ColocationStrategy {
+	calculatePolicy := extension.CalculateByPodUsage
+	var defaultMemoryCollectPolicy slov1alpha1.MemoryCollectPolicy = "usageWithoutPageCache"
+	cfg := extension.ColocationStrategy{
 		Enable:                         pointer.Bool(false),
 		MetricAggregateDurationSeconds: pointer.Int64(300),
 		MetricReportIntervalSeconds:    pointer.Int64(60),
@@ -54,6 +55,7 @@ func DefaultColocationStrategy() configuration.ColocationStrategy {
 				{Duration: 30 * time.Minute},
 			},
 		},
+		MetricMemoryCollectPolicy:     &defaultMemoryCollectPolicy,
 		CPUReclaimThresholdPercent:    pointer.Int64(60),
 		MemoryReclaimThresholdPercent: pointer.Int64(65),
 		MemoryCalculatePolicy:         &calculatePolicy,
@@ -73,7 +75,8 @@ func IsColocationStrategyValid(strategy *configuration.ColocationStrategy) bool 
 		(strategy.MemoryReclaimThresholdPercent == nil || *strategy.MemoryReclaimThresholdPercent > 0) &&
 		(strategy.DegradeTimeMinutes == nil || *strategy.DegradeTimeMinutes > 0) &&
 		(strategy.UpdateTimeThresholdSeconds == nil || *strategy.UpdateTimeThresholdSeconds > 0) &&
-		(strategy.ResourceDiffThreshold == nil || *strategy.ResourceDiffThreshold > 0)
+		(strategy.ResourceDiffThreshold == nil || *strategy.ResourceDiffThreshold > 0) &&
+		(strategy.MetricMemoryCollectPolicy == nil || len(*strategy.MetricMemoryCollectPolicy) > 0)
 }
 
 func IsNodeColocationCfgValid(nodeCfg *configuration.NodeColocationCfg) bool {

@@ -163,6 +163,7 @@ func (r *NodeMetricReconciler) getNodeMetricSpec(node *corev1.Node, oldSpec *slo
 		metrics.RecordNodeMetricSpecParseCount(true, "getNodeMetricCollectPolicy")
 		nodeMetricSpec.CollectPolicy = nodeMetricCollectPolicy
 	}
+	klog.V(2).Infof("init nodemetric spec getNodeMetricSpec: %s", *nodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy)
 
 	return nodeMetricSpec, nil
 }
@@ -174,6 +175,7 @@ func getDefaultSpec() *slov1alpha1.NodeMetricSpec {
 			AggregateDurationSeconds: defaultColocationCfg.MetricAggregateDurationSeconds,
 			ReportIntervalSeconds:    defaultColocationCfg.MetricReportIntervalSeconds,
 			NodeAggregatePolicy:      defaultColocationCfg.MetricAggregatePolicy,
+			NodeMemoryCollectPolicy:  defaultColocationCfg.MetricMemoryCollectPolicy,
 		},
 	}
 }

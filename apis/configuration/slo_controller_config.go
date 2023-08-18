@@ -195,10 +195,11 @@ func (in *ExtraFields) DeepCopy() *ExtraFields {
 // ColocationStrategy defines the strategy for node colocation.
 // +k8s:deepcopy-gen=true
 type ColocationStrategy struct {
-	Enable                         *bool                        `json:"enable,omitempty"`
-	MetricAggregateDurationSeconds *int64                       `json:"metricAggregateDurationSeconds,omitempty" validate:"omitempty,min=1"`
-	MetricReportIntervalSeconds    *int64                       `json:"metricReportIntervalSeconds,omitempty" validate:"omitempty,min=1"`
-	MetricAggregatePolicy          *slov1alpha1.AggregatePolicy `json:"metricAggregatePolicy,omitempty"`
+	Enable                         *bool                            `json:"enable,omitempty"`
+	MetricAggregateDurationSeconds *int64                           `json:"metricAggregateDurationSeconds,omitempty" validate:"omitempty,min=1"`
+	MetricReportIntervalSeconds    *int64                           `json:"metricReportIntervalSeconds,omitempty" validate:"omitempty,min=1"`
+	MetricAggregatePolicy          *slov1alpha1.AggregatePolicy     `json:"metricAggregatePolicy,omitempty"`
+	MetricMemoryCollectPolicy      *slov1alpha1.MemoryCollectPolicy `json:"metricMemoryCollectPolicy,omitempty"`
 
 	CPUReclaimThresholdPercent    *int64           `json:"cpuReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
 	MemoryReclaimThresholdPercent *int64           `json:"memoryReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
@@ -244,13 +245,14 @@ data:
           "15m"
         ]
       },
+      "metricMemoryCollectPolicy": "usageWithoutPageCache"
       "cpuReclaimThresholdPercent": 60,
       "memoryReclaimThresholdPercent": 65,
       "memoryCalculatePolicy": "usage",
       "degradeTimeMinutes": 15,
       "updateTimeThresholdSeconds": 300,
       "resourceDiffThreshold": 0.1,
-      "nodeConfigs": [
+      "nodeConfigs": [vcjcvjicvijivjoivfujcjcjcjcjcjcjcididvhff                                    sjddhdfufhertu8u587et7et7r7t7yt7e8ryt5u48uttyreygilr9wt8eoqp.[/3qri uakliqa87  qw6skyu78w6eakuy7w86ed7y683944t78r47r7r4t7rt248rot7r7847r7t47trr7474rt3trt44t47t7rbbrbtrt7rtr]7
         {
           "name": "alios",
           "nodeSelector": {

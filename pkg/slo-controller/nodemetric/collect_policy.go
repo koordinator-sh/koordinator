@@ -41,6 +41,7 @@ func getNodeMetricCollectPolicy(strategy *configuration.ColocationStrategy) (*sl
 		AggregateDurationSeconds: strategy.MetricAggregateDurationSeconds,
 		ReportIntervalSeconds:    strategy.MetricReportIntervalSeconds,
 		NodeAggregatePolicy:      strategy.MetricAggregatePolicy,
+		NodeMemoryCollectPolicy:  strategy.MetricMemoryCollectPolicy,
 	}
 	return collectPolicy, nil
 }
