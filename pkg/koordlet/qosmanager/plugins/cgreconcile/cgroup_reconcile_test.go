@@ -491,6 +491,10 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 	podParentDirBE := testingPodBEWithMemQOS.CgroupDir
 	containerDirBE, _ := koordletutil.GetContainerCgroupParentDir(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[0])
 	containerDirBE1, _ := koordletutil.GetContainerCgroupParentDir(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[1])
+	testingPodSYS := testutil.MockTestPodWithQOS(corev1.PodQOSBurstable, apiext.QoSSystem)
+	podParentDirSYS := testingPodSYS.CgroupDir
+	containerDirSYS, _ := koordletutil.GetContainerCgroupParentDir(testingPodSYS.CgroupDir, &testingPodSYS.Pod.Status.ContainerStatuses[0])
+	containerDirSYS1, _ := koordletutil.GetContainerCgroupParentDir(testingPodSYS.CgroupDir, &testingPodSYS.Pod.Status.ContainerStatuses[1])
 	type fields struct {
 		opt *framework.Options
 	}
@@ -819,6 +823,66 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirBE1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirBE1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirBE1, "0", false),
+			},
+		},
+		{
+			name:   "single SYSTEM pod using node-level config",
+			fields: fields{opt: &framework.Options{Config: framework.NewDefaultConfig()}},
+			args: args{
+				nodeCfg: &slov1alpha1.ResourceQOSStrategy{
+					LSRClass:    sloconfig.DefaultResourceQOSStrategy().LSRClass,
+					LSClass:     sloconfig.DefaultResourceQOSStrategy().LSClass,
+					BEClass:     sloconfig.DefaultResourceQOSStrategy().BEClass,
+					SystemClass: sloconfig.DefaultResourceQOSStrategy().SystemClass,
+				},
+				podMetas: []*statesinformer.PodMeta{
+					testingPodSYS,
+				},
+			},
+			want: []resourceexecutor.ResourceUpdater{
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "0", false),
+			},
+			want1: []resourceexecutor.ResourceUpdater{
+				createCgroupResourceUpdater(t, system.MemoryMinName, podParentDirSYS, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, podParentDirSYS, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, podParentDirSYS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, podParentDirSYS, "50", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, podParentDirSYS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, podParentDirSYS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, podParentDirSYS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, podParentDirSYS, "0", false),
+			},
+			want2: []resourceexecutor.ResourceUpdater{
+				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirSYS, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirSYS, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirSYS, strconv.FormatInt(math.MaxInt64, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirSYS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirSYS, "50", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirSYS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirSYS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirSYS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirSYS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirSYS1, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirSYS1, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirSYS1, strconv.FormatInt(math.MaxInt64, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirSYS1, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirSYS1, "50", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirSYS1, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirSYS1, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirSYS1, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirSYS1, "0", false),
 			},
 		},
 	}
