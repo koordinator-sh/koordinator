@@ -109,6 +109,9 @@ type MigrationControllerArgs struct {
 	EvictionPolicy string `json:"evictionPolicy,omitempty"`
 	// DefaultDeleteOptions defines options when deleting migrated pods and preempted pods through the method specified by EvictionPolicy
 	DefaultDeleteOptions *metav1.DeleteOptions `json:"defaultDeleteOptions,omitempty"`
+
+	// ArbitrationArgs define the control parameters of the arbitrator mechanism.
+	ArbitrationArgs *ArbitrationArgs `json:"arbitrationArgs,omitempty"`
 }
 
 type MigrationLimitObjectType string
@@ -127,4 +130,11 @@ type MigrationObjectLimiter struct {
 	// MaxMigrating indicates the maximum number of migrations/evictions allowed within the window time.
 	// If configured as 0, the maximum number will be calculated according to MaxMigratingPerWorkload.
 	MaxMigrating *intstr.IntOrString `json:"maxMigrating,omitempty"`
+}
+
+// ArbitrationArgs holds arguments used to configure the Arbitration Mechanism.
+type ArbitrationArgs struct {
+	// Interval defines the running interval (ms) of the Arbitration Mechanism.
+	// Default is 500 ms
+	Interval int `json:"interval,omitempty"`
 }
