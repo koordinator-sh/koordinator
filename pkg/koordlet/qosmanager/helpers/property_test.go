@@ -66,6 +66,14 @@ func Test_getPodResourceQoSByQoSClass(t *testing.T) {
 			},
 			want: testutil.DefaultQOSStrategy().BEClass,
 		},
+		{
+			name: "get qos=SYSTEM config",
+			args: args{
+				pod:      testutil.MockTestPodWithQOS(corev1.PodQOSBurstable, apiext.QoSSystem).Pod,
+				strategy: testutil.DefaultQOSStrategy(),
+			},
+			want: testutil.DefaultQOSStrategy().SystemClass,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

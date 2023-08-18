@@ -100,7 +100,7 @@ func (m *cgroupResourcesReconcile) reconcile() {
 	nodeSLO := m.statesInformer.GetNodeSLO()
 	if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil {
 		// do nothing if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil
-		klog.Warning("nodeSLO or nodeSLO.Spec.ResourceQOSStrategy is nil %v", util.DumpJSON(nodeSLO))
+		klog.Warningf("nodeSLO or nodeSLO.Spec.ResourceQOSStrategy is nil %v", util.DumpJSON(nodeSLO))
 		return
 	}
 

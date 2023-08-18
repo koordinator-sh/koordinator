@@ -36,13 +36,15 @@ func GetPodResourceQoSByQoSClass(pod *corev1.Pod, strategy *slov1alpha1.Resource
 		resourceQoS = strategy.LSClass
 	case apiext.QoSBE:
 		resourceQoS = strategy.BEClass
+	case apiext.QoSSystem:
+		resourceQoS = strategy.SystemClass
 	default:
 		// should never reach here
 	}
 	return resourceQoS
 }
 
-// getKubeQoSResourceQoSByQoSClass gets pod config by mapping kube qos into koordinator qos.
+// GetKubeQoSResourceQoSByQoSClass gets pod config by mapping kube qos into koordinator qos.
 // https://koordinator.sh/docs/core-concepts/qos/#koordinator-qos-vs-kubernetes-qos
 func GetKubeQoSResourceQoSByQoSClass(qosClass corev1.PodQOSClass, strategy *slov1alpha1.ResourceQOSStrategy) *slov1alpha1.ResourceQOS {
 	// NOTE: only used for static qos resource calculation here, and it may be incorrect mapping for dynamic qos
