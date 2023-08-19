@@ -89,12 +89,14 @@ func (p *ColocationHandlerForConfigMapEvent) syncConfig(configMap *corev1.Config
 		klog.Errorf("configmap is deleted!,use default config")
 		return p.updateCacheIfChanged(sloconfig.NewDefaultColocationCfg(), true)
 	}
+
 	newCfg := &configuration.ColocationCfg{}
 	configStr := configMap.Data[configuration.ColocationConfigKey]
 	if configStr == "" {
 		klog.Warningf("colocation config is empty!,use default config")
 		return p.updateCacheIfChanged(sloconfig.NewDefaultColocationCfg(), false)
 	}
+
 	err := json.Unmarshal([]byte(configStr), &newCfg)
 	if err != nil {
 		//if controller restart ,cache will unavailable, else use old cfg
@@ -110,6 +112,7 @@ func (p *ColocationHandlerForConfigMapEvent) syncConfig(configMap *corev1.Config
 	mergedClusterCfg := defaultCfg.ColocationStrategy.DeepCopy()
 	mergedInterface, _ := util.MergeCfg(mergedClusterCfg, &newCfg.ColocationStrategy)
 	newCfg.ColocationStrategy = *(mergedInterface.(*configuration.ColocationStrategy))
+
 	if !sloconfig.IsColocationStrategyValid(&newCfg.ColocationStrategy) {
 		//if controller restart ,cache will unavailable, else use old cfg
 		klog.Errorf("syncConfig failed!  invalid cluster config,%+v", newCfg.ColocationStrategy)
