@@ -41,10 +41,10 @@ func DefaultColocationCfg() configuration.ColocationCfg {
 	}
 }
 
-func DefaultColocationStrategy() extension.ColocationStrategy {
-	calculatePolicy := extension.CalculateByPodUsage
+func DefaultColocationStrategy() configuration.ColocationStrategy {
+	calculatePolicy := configuration.CalculateByPodUsage
 	var defaultMemoryCollectPolicy slov1alpha1.MemoryCollectPolicy = "usageWithoutPageCache"
-	cfg := extension.ColocationStrategy{
+	cfg := configuration.ColocationStrategy{
 		Enable:                         pointer.Bool(false),
 		MetricAggregateDurationSeconds: pointer.Int64(300),
 		MetricReportIntervalSeconds:    pointer.Int64(60),

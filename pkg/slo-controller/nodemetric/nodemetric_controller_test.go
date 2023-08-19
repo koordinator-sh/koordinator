@@ -524,6 +524,7 @@ func Test_CreateNodeMetricAndUpdateUnmarshalError(t *testing.T) {
 			AggregateDurationSeconds: cfg.MetricAggregateDurationSeconds,
 			ReportIntervalSeconds:    cfg.MetricReportIntervalSeconds,
 			NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
+			NodeMemoryCollectPolicy:  getDefaultSpec().CollectPolicy.NodeMemoryCollectPolicy,
 		},
 	}
 	assert.Equal(t, wantSpec, &createdNodeMetric.Spec, "create node metric success by valid config")
@@ -578,6 +579,7 @@ func Test_UpdateNodeMetricFromConfigmap(t *testing.T) {
 			AggregateDurationSeconds: cfg.MetricAggregateDurationSeconds,
 			ReportIntervalSeconds:    cfg.MetricReportIntervalSeconds,
 			NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
+			NodeMemoryCollectPolicy:  getDefaultSpec().CollectPolicy.NodeMemoryCollectPolicy,
 		},
 	}, &nodeMetric.Spec, "update node metric success by valid config")
 }
