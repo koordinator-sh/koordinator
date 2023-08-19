@@ -252,7 +252,7 @@ data:
       "degradeTimeMinutes": 15,
       "updateTimeThresholdSeconds": 300,
       "resourceDiffThreshold": 0.1,
-      "nodeConfigs": [vcjcvjicvijivjoivfujcjcjcjcjcjcjcididvhff                                    sjddhdfufhertu8u587et7et7r7t7yt7e8ryt5u48uttyreygilr9wt8eoqp.[/3qri uakliqa87  qw6skyu78w6eakuy7w86ed7y683944t78r47r7r4t7rt248rot7r7847r7t47trr7474rt3trt44t47t7rbbrbtrt7rtr]7
+      "nodeConfigs": [
         {
           "name": "alios",
           "nodeSelector": {
