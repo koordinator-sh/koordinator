@@ -59,12 +59,12 @@ func (r *NodeResourceReconciler) resetNodeResource(node *corev1.Node, message st
 func (r *NodeResourceReconciler) calculateNodeResource(node *corev1.Node,
 	nodeMetric *slov1alpha1.NodeMetric, podList *corev1.PodList) *framework.NodeResource {
 	nr := framework.NewNodeResource()
-	metrics := &framework.ResourceMetrics{
+	resourceMetrics := &framework.ResourceMetrics{
 		NodeMetric: nodeMetric,
 	}
 
 	strategy := sloconfig.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
-	framework.RunResourceCalculateExtenders(nr, strategy, node, podList, metrics)
+	framework.RunResourceCalculateExtenders(nr, strategy, node, podList, resourceMetrics)
 
 	return nr
 }
