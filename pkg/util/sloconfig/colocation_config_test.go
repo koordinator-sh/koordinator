@@ -26,10 +26,12 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 func Test_GetNodeColocationStrategy(t *testing.T) {
 	memoryCalcPolicyByUsage := configuration.CalculateByPodUsage
+	var defaultMemoryCollectPolicy slov1alpha1.MemoryCollectPolicy = "usageWithoutPageCache"
 	defaultCfg := NewDefaultColocationCfg()
 	type args struct {
 		cfg  *configuration.ColocationCfg
@@ -192,6 +194,7 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 				DegradeTimeMinutes:             pointer.Int64(15),
 				UpdateTimeThresholdSeconds:     pointer.Int64(300),
 				ResourceDiffThreshold:          pointer.Float64(0.1),
+				MetricMemoryCollectPolicy:      &defaultMemoryCollectPolicy,
 			},
 		},
 		{
