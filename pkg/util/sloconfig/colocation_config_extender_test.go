@@ -45,8 +45,8 @@ func Test_registerDefaultColocationExtension(t *testing.T) {
 
 		expectStr := "{\"enable\":false,\"metricAggregateDurationSeconds\":300,\"metricReportIntervalSeconds\":60," +
 			"\"metricAggregatePolicy\":{\"durations\":[\"5m0s\",\"10m0s\",\"30m0s\"]}," +
-			"\"cpuReclaimThresholdPercent\":60,\"memoryReclaimThresholdPercent\":65,\"memoryCalculatePolicy\":\"usage\"," +
 			"\"metricMemoryCollectPolicy\":\"usageWithoutPageCache\"," +
+			"\"cpuReclaimThresholdPercent\":60,\"memoryReclaimThresholdPercent\":65,\"memoryCalculatePolicy\":\"usage\"," +
 			"\"degradeTimeMinutes\":15,\"updateTimeThresholdSeconds\":300,\"resourceDiffThreshold\":0.1," +
 			"\"extensions\":{\"test-ext-key\":{\"testBoolVal\":true}}}"
 		assert.Equal(t, expectStr, configStr, "config json")
