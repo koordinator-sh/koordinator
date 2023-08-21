@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"reflect"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -61,18 +62,28 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 	}
 	clone := obj.DeepCopy()
 	// when pod.namespace is empty, using req.namespace
+	var isNamespaceEmpty bool
 	if obj.Namespace == "" {
 		obj.Namespace = req.Namespace
+		isNamespaceEmpty = true
 	}
 
-	if err = h.clusterColocationProfileMutatingPod(ctx, req, obj); err != nil {
-		klog.Errorf("Failed to mutating Pod %s/%s by ClusterColocationProfile, err: %v", obj.Namespace, obj.Name, err)
+	switch req.Operation {
+	case admissionv1.Create:
+		err = h.handleCreate(ctx, req, obj)
+	case admissionv1.Update:
+		err = h.handleUpdate(ctx, req, obj)
+	default:
+		return admission.Allowed("")
+	}
+
+	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
-	if err = h.extendedResourceSpecMutatingPod(ctx, req, obj); err != nil {
-		klog.Errorf("Failed to mutating Pod %s/%s by ExtendedResourceSpec, err: %v", obj.Namespace, obj.Name, err)
-		return admission.Errored(http.StatusInternalServerError, err)
+	// Do not modify namespace in webhook
+	if isNamespaceEmpty {
+		obj.Namespace = ""
 	}
 
 	if reflect.DeepEqual(obj, clone) {
@@ -84,6 +95,25 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 	return admission.PatchResponseFromRaw(req.AdmissionRequest.Object.Raw, marshaled)
+}
+
+func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
+	if err := h.clusterColocationProfileMutatingPod(ctx, req, obj); err != nil {
+		klog.Errorf("Failed to mutating Pod %s/%s by ClusterColocationProfile, err: %v", obj.Namespace, obj.Name, err)
+		return err
+	}
+
+	if err := h.extendedResourceSpecMutatingPod(ctx, req, obj); err != nil {
+		klog.Errorf("Failed to mutating Pod %s/%s by ExtendedResourceSpec, err: %v", obj.Namespace, obj.Name, err)
+		return err
+	}
+
+	return nil
+}
+
+func (h *PodMutatingHandler) handleUpdate(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
+	// TODO: add mutating logic for pod update here
+	return nil
 }
 
 var _ inject.Client = &PodMutatingHandler{}
