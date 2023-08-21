@@ -632,18 +632,33 @@ func (gqm *GroupQuotaManager) OnPodUpdate(newQuotaName, oldQuotaName string, new
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	if oldQuotaName == newQuotaName {
+		isAssigned := gqm.getPodIsAssignedNoLock(newQuotaName, newPod)
+		if isAssigned {
+			// reserve phase will assign the pod. Just update it.
+			// upgrade will change the resource.
+			gqm.updatePodUsedNoLock(newQuotaName, oldPod, newPod)
+		} else {
+			if newPod.Spec.NodeName != "" && !util.IsPodTerminated(newPod) {
+				// assign it
+				gqm.updatePodIsAssignedNoLock(newQuotaName, newPod, true)
+				gqm.updatePodUsedNoLock(newQuotaName, nil, newPod)
+			}
+		}
 		gqm.updatePodRequestNoLock(newQuotaName, oldPod, newPod)
-		gqm.updatePodUsedNoLock(newQuotaName, oldPod, newPod)
 	} else {
 		isAssigned := gqm.getPodIsAssignedNoLock(oldQuotaName, oldPod)
+		if isAssigned {
+			gqm.updatePodUsedNoLock(oldQuotaName, oldPod, nil)
+		}
 		gqm.updatePodRequestNoLock(oldQuotaName, oldPod, nil)
-		gqm.updatePodUsedNoLock(oldQuotaName, oldPod, nil)
 		gqm.updatePodCacheNoLock(oldQuotaName, oldPod, false)
 
 		gqm.updatePodCacheNoLock(newQuotaName, newPod, true)
-		gqm.updatePodIsAssignedNoLock(newQuotaName, newPod, isAssigned)
 		gqm.updatePodRequestNoLock(newQuotaName, nil, newPod)
-		gqm.updatePodUsedNoLock(newQuotaName, nil, newPod)
+		if newPod.Spec.NodeName != "" && !util.IsPodTerminated(newPod) {
+			gqm.updatePodIsAssignedNoLock(newQuotaName, newPod, true)
+			gqm.updatePodUsedNoLock(newQuotaName, nil, newPod)
+		}
 	}
 }
 

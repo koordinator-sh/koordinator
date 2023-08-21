@@ -1181,6 +1181,44 @@ func TestGroupQuotaManager_UpdatePodCache_UpdatePodIsAssigned_GetPodIsAssigned_U
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("2").GetUsed())
 }
 
+func TestGroupQuotaManager_OnPodUpdate(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.scaleMinQuotaEnabled = true
+
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	qi1 := createQuota("1", extension.RootQuotaName, 40, 40, 10, 10)
+	qi2 := createQuota("2", extension.RootQuotaName, 40, 40, 10, 10)
+	gqm.UpdateQuota(qi1, false)
+	gqm.UpdateQuota(qi2, false)
+
+	// unscheduler pod
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	pod1.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	gqm.OnPodAdd(qi1.Name, pod1)
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetUsed())
+
+	// scheduler the pod.
+	pod2 := pod1.DeepCopy()
+	pod2.Spec.NodeName = "node1"
+	gqm.OnPodUpdate("1", "1", pod2, pod1)
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetUsed())
+
+	// change the quota
+	gqm.OnPodUpdate("2", "1", pod2, pod2)
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetUsed())
+
+}
+
 func TestNewGroupQuotaManager(t *testing.T) {
 	gqm := NewGroupQuotaManager(createResourceList(100, 100), createResourceList(300, 300))
 	assert.Equal(t, createResourceList(100, 100), gqm.GetQuotaInfoByName(extension.SystemQuotaName).getMax())
