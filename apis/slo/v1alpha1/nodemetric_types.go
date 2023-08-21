@@ -25,7 +25,13 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // +kubebuilder:validation:Enum=usageWithHotPageCache;usageWithoutPageCache;usageWithPageCache
-type MemoryCollectPolicy string
+type NodeMemoryCollectPolicy string
+
+const (
+	UsageWithoutPageCache NodeMemoryCollectPolicy = "usageWithoutPageCache"
+	UsageWithHotPageCache NodeMemoryCollectPolicy = "usageWithHotPageCache"
+	UsageWithPageCache    NodeMemoryCollectPolicy = "usageWithPageCache"
+)
 
 type NodeMetricInfo struct {
 	// NodeUsage is the total resource usage of node
@@ -67,7 +73,7 @@ type NodeMetricCollectPolicy struct {
 	// NodeAggregatePolicy represents the target grain of node aggregated usage
 	NodeAggregatePolicy *AggregatePolicy `json:"nodeAggregatePolicy,omitempty"`
 	//NodeMemoryPolicy represents apply which method collect memory info
-	NodeMemoryCollectPolicy *MemoryCollectPolicy `json:"nodeMemoryCollectPolicy,omitempty"`
+	NodeMemoryCollectPolicy *NodeMemoryCollectPolicy `json:"nodeMemoryCollectPolicy,omitempty"`
 }
 
 type AggregatePolicy struct {

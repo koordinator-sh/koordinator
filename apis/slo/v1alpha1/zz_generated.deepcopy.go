@@ -405,7 +405,7 @@ func (in *NodeMetricCollectPolicy) DeepCopyInto(out *NodeMetricCollectPolicy) {
 	}
 	if in.NodeMemoryCollectPolicy != nil {
 		in, out := &in.NodeMemoryCollectPolicy, &out.NodeMemoryCollectPolicy
-		*out = new(MemoryCollectPolicy)
+		*out = new(NodeMemoryCollectPolicy)
 		**out = **in
 	}
 }

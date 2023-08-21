@@ -43,7 +43,7 @@ func DefaultColocationCfg() configuration.ColocationCfg {
 
 func DefaultColocationStrategy() configuration.ColocationStrategy {
 	calculatePolicy := configuration.CalculateByPodUsage
-	var defaultMemoryCollectPolicy slov1alpha1.MemoryCollectPolicy = "usageWithoutPageCache"
+	var defaultMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
 	cfg := configuration.ColocationStrategy{
 		Enable:                         pointer.Bool(false),
 		MetricAggregateDurationSeconds: pointer.Int64(300),
