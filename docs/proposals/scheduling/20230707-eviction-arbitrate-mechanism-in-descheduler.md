@@ -11,7 +11,7 @@ reviewers:
   - "@saintube"
   - "@jasonliu747"
 creation-date: 2023-07-07
-last-updated: 2023-08-15
+last-updated: 2023-08-21
 status: provisional
 ---
 
@@ -37,8 +37,7 @@ status: provisional
                 - [About Arbitration Queue](#about-arbitration-queue)
                 - [Arbitration Process](#arbitration-process)
                     - [Sort PodMigrationJob](#sort-podmigrationjob)
-                    - [GroupFilter PodMigrationJob](#groupfilter-podmigrationjob)
-                    - [Select PodMigrationJob](#select-podmigrationjob)
+                    - [Filter PodMigrationJob](#filter-podmigrationjob)
                 - [About Work Queue](#about-work-queue)
             - [Controller Configuration](#controller-configuration)
     - [Alternatives](#alternatives)
@@ -91,7 +90,7 @@ Multiple Pods in different jobs are evicted. We should migrate all Pods from one
 
 #### Arbitration Mechanism
 
-The **PodMigrationJob Controller** will evaluate all PodMigrationJobs and select a batch of PodMigrationJobs from arbitration queue and add them to the reconcile work queue for executing. This selection process is called the **arbitration mechanism**. The arbitration mechanism includes three stages: `Sort`, `GroupFilter` and `Select`. And the reconcile work queue will help us to achieve rate limit.
+The **PodMigrationJob Controller** will evaluate all PodMigrationJobs and select a batch of PodMigrationJobs from arbitration queue and add them to the reconcile work queue for executing. This selection process is called the **arbitration mechanism**. The arbitration mechanism includes two stages: `Sort` and `Filter`. And the reconcile work queue will help us to achieve rate limit.
 
 
 This diagram can help us have a macro understanding of the system process.
@@ -122,10 +121,9 @@ It arbitrates the PodMigrationJobs in the arbitration queue and places the PodMi
 
 The brief process is as follows:
 1. **Sort** the elements in the arbitration collection to generate a slice.
-2. Call different `GroupFilter` functions in sequence for **group** and **filter** operations to update the slice.
-3. **Select** the remaining jobs to the work queue and remove these elements from the arbitration collection.
+2. Call `NonRetryableFilter` and `RetryableFilter` functions to handle each PodMigrationJob in slice in loop.
 
-Now, I will provide a detailed introduction about **Sort**, **GroupFilter** and **Select** process.
+Now, I will provide a detailed introduction about **Sort** and **Filter** process.
 
 ###### Sort PodMigrationJob
 
@@ -148,43 +146,20 @@ The definition of the type `SortFn` is as follows.
 type SortFn func(jobs []*v1alpha1.PodMigrationJob) []*v1alpha1.PodMigrationJob
 ~~~
 
-###### GroupFilter PodMigrationJob
+###### Filter PodMigrationJob
 
-![image](/docs/images/arbitration-mechanism-groupfilter-design.svg)
+![image](/docs/images/arbitration-mechanism-filter-design.svg)
 
-Aggregate PodMigrationJob according to different workloads and filter them based on different strategies.
+Filter will check each PodMigrationJob in the slice in order, and call the `NonRetryableFilter` and `RetryableFilter` functions to filter this PMJ.
 
-- According to Workload
-    - Group: Aggregate PodMigrationJob by workload.
-    - Filter:
-        - Check how many PodMigrationJob of each workload are in the Running state, and record them as ***migratingReplicas***. If the **migratingReplicas** reach a certain threshold, excess parts will be excluded.
-        - Check the number of **unavailableReplicas** of each workload, and determine whether the **unavailableReplicas** exceeds the **MaxUnavailablePerWorkload**, exclude excess parts.
-- According to Node
-    - Group: Aggregate PodMigrationJob by Node.
-    - Filter:
-        - Check the number of Pods being migrated on the node where each target Pod is located. If it exceeds the maximum migration amount for a single node, exclude excess parts.
-- According to Namespace
-    - Group: Aggregate PodMigrationJob by Namespace.
-    - Filter:
-        - Check the number of Pods being migrated in the Namespace where each target Pod is located. If it exceeds the maximum migration amount for a single Namespace, exclude excess parts.
-- According to Job
-    - Group: Aggregate PodMigrationJob by Job.
-    - Filter:
-        - Check the number of Jobs that PodMigrationJobs' Pod belongs to. If it exceeds 1, exclude excess parts.
+The specific process is shown in the figure above, and the following will briefly introduce the process.
 
-The definition of the type `GroupFilterFn` is as follows.
-
-~~~ go
-type GroupFilterFn func(jobs []*v1alpha1.PodMigrationJob) []*v1alpha1.PodMigrationJob
-~~~
-
-###### Select PodMigrationJob
-
-![image](/docs/images/arbitration-mechanism-select-design.svg)
-
-- Sort PodMigrationJob slices based on the map.
-- Place all remaining jobs to the work queue.
-- Remove these elements from the arbitration collection.
+- Read PMJ from list in loop.
+- Call `NonRetryableFilter` to filter the PMJ.
+  - If failed, update PMJ phase to `Failed` and delete if from the arbitration queue.
+- Call `RetryableFilter` to filter the PMJ.
+  - If failed, continue the next PMJ.
+- If passed, update PMJ annotation, remove it from the arbitration queue and add it to the work queue.
 
 ##### About Work Queue
 
@@ -227,3 +202,4 @@ type ArbitrationArgs struct {
 - 2023-07-21: Update proposal based on review comments.
 - 2023-08-10: Update proposal based on review comments.
 - 2023-08-15: Update proposal based on review comments.
+- 2023-08-21: Update proposal based on review comments.
