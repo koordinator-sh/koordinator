@@ -26,6 +26,7 @@ const (
 	SchedulingDomainPrefix = "scheduling.koordinator.sh"
 	// NodeDomainPrefix represents the node domain prefix
 	NodeDomainPrefix = "node.koordinator.sh"
+	PodDomainPrefix  = "pod.koordinator.sh"
 
 	LabelPodQoS      = DomainPrefix + "qosClass"
 	LabelPodPriority = DomainPrefix + "priority"
@@ -35,6 +36,10 @@ const (
 	LabelPodPriorityClass = DomainPrefix + "priority-class"
 
 	LabelManagedBy = "app.kubernetes.io/managed-by"
+
+	// LabelPodMutatingUpdate is a label key that pods with `pod.koordinator.sh/mutating-update=true` will
+	// be mutated by Koordinator webhook when updating.
+	LabelPodMutatingUpdate = PodDomainPrefix + "/mutating-update"
 )
 
 type AggregationType string
