@@ -37,18 +37,14 @@ const (
 )
 
 // NewPodSortFn sort a SortFn that sorts PodMigrationJobs by their Pods, including priority, QoS.
-func NewPodSortFn(c client.Client, sorter *sorter.MultiSorter) SortFn {
-	return func(jobs []*schedulingv1alpha1.PodMigrationJob) []*schedulingv1alpha1.PodMigrationJob {
+func NewPodSortFn(sorter *sorter.MultiSorter) SortFn {
+	return func(jobs []*schedulingv1alpha1.PodMigrationJob, podOfJob map[*schedulingv1alpha1.PodMigrationJob]*corev1.Pod) []*schedulingv1alpha1.PodMigrationJob {
 		var pods []*corev1.Pod
 		jobOfPod := map[*corev1.Pod]*schedulingv1alpha1.PodMigrationJob{}
 		rankOfJob := map[*schedulingv1alpha1.PodMigrationJob]int{}
 		for _, job := range jobs {
-			pod := &corev1.Pod{}
-			err := c.Get(context.TODO(), types.NamespacedName{
-				Namespace: job.GetNamespace(),
-				Name:      job.GetName(),
-			}, pod)
-			if err != nil {
+			pod := podOfJob[job]
+			if pod == nil {
 				rankOfJob[job] = math.MaxInt
 				continue
 			}
@@ -72,7 +68,7 @@ func NewPodSortFn(c client.Client, sorter *sorter.MultiSorter) SortFn {
 
 // NewTimeSortFn returns a SortFn that stably sorts PodMigrationJobs by create time.
 func NewTimeSortFn() SortFn {
-	return func(jobs []*schedulingv1alpha1.PodMigrationJob) []*schedulingv1alpha1.PodMigrationJob {
+	return func(jobs []*schedulingv1alpha1.PodMigrationJob, podOfJob map[*schedulingv1alpha1.PodMigrationJob]*corev1.Pod) []*schedulingv1alpha1.PodMigrationJob {
 		// calculate the time interval between the creation of migration job and the current for each job.
 		timeMap := map[*schedulingv1alpha1.PodMigrationJob]int64{}
 		for _, job := range jobs {
@@ -87,14 +83,14 @@ func NewTimeSortFn() SortFn {
 }
 
 // NewDisperseByWorkloadSortFn returns a SortFn that disperses jobs by workload.
-func NewDisperseByWorkloadSortFn(c client.Client) SortFn {
-	return func(jobs []*schedulingv1alpha1.PodMigrationJob) []*schedulingv1alpha1.PodMigrationJob {
+func NewDisperseByWorkloadSortFn() SortFn {
+	return func(jobs []*schedulingv1alpha1.PodMigrationJob, podOfJob map[*schedulingv1alpha1.PodMigrationJob]*corev1.Pod) []*schedulingv1alpha1.PodMigrationJob {
 		jobsOfWorkloads := map[types.UID][]*schedulingv1alpha1.PodMigrationJob{}
 		var ranks []int
 		rankOfJobs := map[*schedulingv1alpha1.PodMigrationJob]int{}
 		// group jobs by workload
 		for i, job := range jobs {
-			uid, ok := getWorkloadUIDForPodMigrationJob(job, c)
+			uid, ok := getWorkloadUIDForPod(podOfJob[job])
 			if ok {
 				ranks = append(ranks, i)
 				rankOfJobs[job] = i
@@ -122,7 +118,7 @@ func NewDisperseByWorkloadSortFn(c client.Client) SortFn {
 		h := dispersePQ(disperseJobs)
 		heap.Init(&h)
 		for _, index := range ranks {
-			// put the job in the heap to the queue
+			// put the job in the heap to the workQueue
 			x := h[0].job
 			heap.Pop(&h)
 			jobs[index] = x
@@ -131,9 +127,9 @@ func NewDisperseByWorkloadSortFn(c client.Client) SortFn {
 	}
 }
 
-// NewJobMigratingSortFn returns a SortFn that .
+// NewJobMigratingSortFn returns a SortFn that gives higher priority to the PMJs of the migrating job.
 func NewJobMigratingSortFn(c client.Client) SortFn {
-	return func(podMigrationJobs []*schedulingv1alpha1.PodMigrationJob) []*schedulingv1alpha1.PodMigrationJob {
+	return func(podMigrationJobs []*schedulingv1alpha1.PodMigrationJob, podOfJob map[*schedulingv1alpha1.PodMigrationJob]*corev1.Pod) []*schedulingv1alpha1.PodMigrationJob {
 		// get all the PodMigrationJobs
 		podMigrationJobList := &schedulingv1alpha1.PodMigrationJobList{}
 		err := c.List(context.TODO(), podMigrationJobList)
@@ -145,7 +141,18 @@ func NewJobMigratingSortFn(c client.Client) SortFn {
 		migratingJobUID := map[types.UID]struct{}{}
 		for _, job := range podMigrationJobList.Items {
 			if isJobMigrating(&job) {
-				owner, ok := getJobControllerOfMigrationJob(&job, c)
+				pod := &corev1.Pod{}
+				if job.Spec.PodRef == nil {
+					continue
+				}
+				err = c.Get(context.TODO(), types.NamespacedName{
+					Namespace: job.Spec.PodRef.Namespace,
+					Name:      job.Spec.PodRef.Name,
+				}, pod)
+				if err != nil {
+					continue
+				}
+				owner, ok := getJobControllerOfPod(pod)
 				if !ok {
 					continue
 				}
@@ -153,10 +160,10 @@ func NewJobMigratingSortFn(c client.Client) SortFn {
 			}
 		}
 
-		// check jobs in arbitrator queue
+		// check jobs in arbitrator workQueue
 		rankOfPodMigrationJobs := map[*schedulingv1alpha1.PodMigrationJob]int{}
 		for i, job := range podMigrationJobs {
-			owner, ok := getJobControllerOfMigrationJob(job, c)
+			owner, ok := getJobControllerOfPod(podOfJob[job])
 			if !ok {
 				rankOfPodMigrationJobs[job] = 0
 				continue
@@ -176,12 +183,12 @@ func NewJobMigratingSortFn(c client.Client) SortFn {
 }
 
 // NewJobGatherSortFn returns a SortFn that places PodMigrationJobs in the same job in adjacent positions.
-func NewJobGatherSortFn(c client.Client) SortFn {
-	return func(podMigrationJobs []*schedulingv1alpha1.PodMigrationJob) []*schedulingv1alpha1.PodMigrationJob {
+func NewJobGatherSortFn() SortFn {
+	return func(podMigrationJobs []*schedulingv1alpha1.PodMigrationJob, podOfJob map[*schedulingv1alpha1.PodMigrationJob]*corev1.Pod) []*schedulingv1alpha1.PodMigrationJob {
 		highestRankOfJob := map[types.UID]int{}
 		rankOfPodMigrationJobs := map[*schedulingv1alpha1.PodMigrationJob]int{}
 		for i, job := range podMigrationJobs {
-			owner, ok := getJobControllerOfMigrationJob(job, c)
+			owner, ok := getJobControllerOfPod(podOfJob[job])
 			if !ok {
 				rankOfPodMigrationJobs[job] = i
 				continue
@@ -200,10 +207,10 @@ func NewJobGatherSortFn(c client.Client) SortFn {
 	}
 }
 
-func getJobControllerOfMigrationJob(job *schedulingv1alpha1.PodMigrationJob, c client.Client) (*metav1.OwnerReference, bool) {
-	owner, ok := getControllerOfMigrationJob(job, c)
-	if !ok {
-		return owner, false
+func getJobControllerOfPod(pod *corev1.Pod) (*metav1.OwnerReference, bool) {
+	owner := metav1.GetControllerOf(pod)
+	if owner == nil {
+		return nil, false
 	}
 	if owner.Kind != JobKind {
 		return nil, false
@@ -211,32 +218,9 @@ func getJobControllerOfMigrationJob(job *schedulingv1alpha1.PodMigrationJob, c c
 	return owner, true
 }
 
-func getControllerOfMigrationJob(job *schedulingv1alpha1.PodMigrationJob, c client.Client) (*metav1.OwnerReference, bool) {
-	if job.Spec.PodRef == nil {
-		klog.Infof("the PodRef of job %v is nil", job.GetNamespace()+"/"+job.GetName())
-		return nil, false
-	}
-	nn := types.NamespacedName{
-		Namespace: job.Spec.PodRef.Namespace,
-		Name:      job.Spec.PodRef.Name,
-	}
-	pod := &corev1.Pod{}
-	err := c.Get(context.TODO(), nn, pod)
-	if err != nil {
-		klog.Infof("fail to get pod %v", nn)
-		return nil, false
-	}
-
+func getWorkloadUIDForPod(pod *corev1.Pod) (types.UID, bool) {
 	owner := metav1.GetControllerOf(pod)
 	if owner == nil {
-		return owner, false
-	}
-	return owner, true
-}
-
-func getWorkloadUIDForPodMigrationJob(job *schedulingv1alpha1.PodMigrationJob, c client.Client) (types.UID, bool) {
-	owner, ok := getControllerOfMigrationJob(job, c)
-	if !ok {
 		return "", false
 	}
 	switch owner.Kind {
@@ -246,6 +230,12 @@ func getWorkloadUIDForPodMigrationJob(job *schedulingv1alpha1.PodMigrationJob, c
 		return owner.UID, true
 	}
 	return "", false
+}
+
+func isJobMigrating(job *schedulingv1alpha1.PodMigrationJob) bool {
+	return job.Status.Phase == schedulingv1alpha1.PodMigrationJobRunning ||
+		(job.Annotations[AnnotationPassedArbitration] == "true" && (job.Status.Phase == "" || job.Status.Phase == schedulingv1alpha1.PodMigrationJobPending))
+
 }
 
 type disperseItem struct {

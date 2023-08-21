@@ -19,6 +19,8 @@ package migration
 import (
 	"context"
 	"fmt"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/arbitrator"
+	"k8s.io/klog/v2"
 	"strconv"
 	"sync"
 	"time"
@@ -33,7 +35,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/klog/v2"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -53,7 +54,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/util"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/names"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/options"
-	evictionsutil "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
@@ -86,6 +86,8 @@ type Reconciler struct {
 	lock           sync.Mutex
 	objectLimiters map[types.UID]*rate.Limiter
 	limiterCache   *gocache.Cache
+
+	arbitrate func(<-chan struct{})
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -108,7 +110,14 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, err
 	}
 
-	if err = c.Watch(&source.Kind{Type: &sev1alpha1.PodMigrationJob{}}, &handler.EnqueueRequestForObject{}, &predicate.Funcs{
+	var eventHandler handler.EventHandler = &handler.EnqueueRequestForObject{}
+	// arbitrator
+	if arbitration, ok := arbitrator.NewArbitration(controllerArgs.ArbitrationArgs, r.Client, r.eventRecorder, r.retryablePodFilter, r.nonRetryablePodFilter); ok {
+		r.arbitrate = arbitration.Arbitrate
+		eventHandler = arbitration
+	}
+
+	if err = c.Watch(&source.Kind{Type: &sev1alpha1.PodMigrationJob{}}, eventHandler, &predicate.Funcs{
 		DeleteFunc: func(event event.DeleteEvent) bool {
 			job := event.Object.(*sev1alpha1.PodMigrationJob)
 			r.assumedCache.delete(job)
@@ -184,6 +193,9 @@ func (r *Reconciler) Name() string {
 }
 
 func (r *Reconciler) Start(ctx context.Context) error {
+	if r.arbitrate != nil {
+		go r.arbitrate(ctx.Done())
+	}
 	r.scavenger(ctx.Done())
 	return nil
 }
@@ -421,18 +433,10 @@ func (r *Reconciler) preparePendingJob(ctx context.Context, job *sev1alpha1.PodM
 	}
 
 	markPodPrepareMigrating(pod)
-	if !evictionsutil.HaveEvictAnnotation(job) {
-		if aborted, err := r.abortJobIfNonRetryablePodFilterFailed(ctx, pod, job); aborted || err != nil {
-			if err == nil {
-				err = fmt.Errorf("abort job since failed to non-retryable Pod filter")
-			}
-			return reconcile.Result{}, err
-		}
-		if requeue, err := r.requeueJobIfRetryablePodFilterFailed(ctx, pod, job); requeue || err != nil {
-			return reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
-		}
-	}
 
+	if r.arbitrate != nil && job.Annotations != nil {
+		delete(job.Annotations, arbitrator.AnnotationPassedArbitration)
+	}
 	job.Status.Phase = sev1alpha1.PodMigrationJobRunning
 	err = r.Client.Status().Update(ctx, job)
 	return reconcile.Result{}, err

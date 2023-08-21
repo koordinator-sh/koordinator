@@ -18,6 +18,7 @@ package arbitrator
 
 import (
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 )
 
@@ -31,7 +32,4 @@ type Arbitrator interface {
 
 // SortFn stably sorts PodMigrationJobs slice based on a certain strategy. Users
 // can implement different SortFn according to their needs.
-type SortFn func(jobs []*v1alpha1.PodMigrationJob) []*v1alpha1.PodMigrationJob
-
-// GroupFilterFn group and filter jobs according to workload.
-type GroupFilterFn func(jobs []*v1alpha1.PodMigrationJob) []*v1alpha1.PodMigrationJob
+type SortFn func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*v1.Pod) []*v1alpha1.PodMigrationJob

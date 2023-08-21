@@ -18,145 +18,143 @@ package arbitrator
 
 import (
 	"context"
+	"fmt"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/controllerfinder"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sort"
 	"sync"
 	"time"
 )
 
 const (
-	DefaultArbitrationInterval int = 500
+	AnnotationPassedArbitration = "descheduler.koordinator.sh/passed-arbitrator"
 )
 
 var enqueueLog = klog.Background().WithName("eventhandler").WithName("DefaultArbitrator")
 
 type DefaultArbitrator struct {
-	collection map[types.UID]*v1alpha1.PodMigrationJob
-	queue      workqueue.RateLimitingInterface
+	waitCollection map[types.UID]*v1alpha1.PodMigrationJob
+	workQueue      workqueue.RateLimitingInterface
 
-	sorts        []SortFn
-	groupFilters []GroupFilterFn
+	sorts                 []SortFn
+	nonRetryablePodFilter framework.FilterFunc
+	retryablePodFilter    framework.FilterFunc
 
-	client           client.Client
-	mu               sync.Mutex
-	controllerFinder controllerfinder.Interface
-	podSorter        sorter.MultiSorter
+	client        client.Client
+	mu            sync.Mutex
+	eventRecorder events.EventRecorder
 
 	arbitrationInterval int
-
-	// maxMigratingPerNamespace represents he maximum number of pods that can be migrating during migrate per namespace.
-	// Configured by MigrationControllerArgs.MaxMigratingPerNamespace.
-	maxMigratingPerNamespace int
-
-	// maxMigratingPerNode represents he maximum number of pods that can be migrating during migrate per node.
-	// Configured by MigrationControllerArgs.MaxMigratingPerNode.
-	maxMigratingPerNode int
-
-	// maxMigratingPerWorkload represents he maximum number of pods that can be migrating during migrate per workload.
-	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
-	// Configured by MigrationControllerArgs.MaxMigratingPerWorkload.
-	maxMigratingPerWorkload intstr.IntOrString
-
-	// maxUnavailablePerWorkload represents he maximum number of pods that can be unavailable during migrate per workload.
-	// The unavailable state includes NotRunning/NotReady/Migrating/Evicting
-	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
-	// Configured by MigrationControllerArgs.MaxUnavailablePerWorkload.
-	maxUnavailablePerWorkload intstr.IntOrString
 }
 
 // Sort stably sorts jobs, outputs the sorted results and corresponding ranking map.
-func (a *DefaultArbitrator) Sort(jobs []*v1alpha1.PodMigrationJob) ([]*v1alpha1.PodMigrationJob, map[*v1alpha1.PodMigrationJob]int) {
+func (a *DefaultArbitrator) Sort(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 	for _, sortFn := range a.sorts {
-		jobs = sortFn(jobs)
-	}
-	rankOfJobs := map[*v1alpha1.PodMigrationJob]int{}
-	for i, job := range jobs {
-		rankOfJobs[job] = i
-	}
-	return jobs, rankOfJobs
-}
-
-// GroupFilter loop calls GroupFilterFn to perform group and filter operations on PodMigrationJobs.
-func (a *DefaultArbitrator) GroupFilter(jobs []*v1alpha1.PodMigrationJob, rankMap map[*v1alpha1.PodMigrationJob]int) []*v1alpha1.PodMigrationJob {
-	for _, groupFilter := range a.groupFilters {
-		jobs = groupFilter(jobs)
-		sort.Slice(jobs, func(i, j int) bool {
-			return rankMap[jobs[i]] < rankMap[jobs[j]]
-		})
+		jobs = sortFn(jobs, podOfJob)
 	}
 	return jobs
 }
 
-// Select some jobs to place into the queue and remove them from the waiting collection.
-func (a *DefaultArbitrator) Select(jobs []*v1alpha1.PodMigrationJob) []*v1alpha1.PodMigrationJob {
-	if a.queue != nil {
+// Filter calls nonRetryablePodFilter and retryablePodFilter to filter operations on PodMigrationJobs.
+func (a *DefaultArbitrator) Filter(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) {
+	for _, job := range jobs {
+		pod := podOfJob[job]
+		if pod == nil {
+			// TODO: nil处理
+			continue
+		}
+		if a.nonRetryablePodFilter != nil && !a.nonRetryablePodFilter(pod) {
+			a.updateNonRetryableFailedJob(job, pod)
+			continue
+		}
+		if a.retryablePodFilter != nil && !a.retryablePodFilter(pod) {
+			continue
+		}
+		a.updatePassedJob(job)
+	}
+}
+
+// updatePassedJob do something after PMJ passed the Filter.
+func (a *DefaultArbitrator) updatePassedJob(job *v1alpha1.PodMigrationJob) {
+	if job.Annotations == nil {
+		job.Annotations = map[string]string{}
+	}
+	job.Annotations[AnnotationPassedArbitration] = "true"
+
+	err := a.client.Update(context.TODO(), job)
+	if err != nil {
+		klog.Errorf("failed to update job %v, err: %v", job.Namespace+"/"+job.Name, err)
+	}
+
+	if a.workQueue != nil {
 		a.mu.Lock()
-		for _, job := range jobs {
-			// place jobs into the queue
-			a.queue.Add(job)
+		// place jobs into the workQueue
+		a.workQueue.Add(reconcile.Request{NamespacedName: types.NamespacedName{
+			Name:      job.GetName(),
+			Namespace: job.GetNamespace(),
+		}})
 
-			// remove job from the waiting collection
-			delete(a.collection, job.UID)
-
-			// mark job
-			markJobPassedArbitration(job)
-
-		}
+		// remove job from the waiting waitCollection
+		delete(a.waitCollection, job.UID)
 		a.mu.Unlock()
-
-		// update job
-		for _, job := range jobs {
-			err := a.client.Update(context.TODO(), job)
-			if err != nil {
-				klog.Errorf("failed to update job %v, err: %v", job.Namespace+"/"+job.Name, err)
-			}
-		}
 	} else {
-		klog.Warningf("work queue is nil")
+		klog.Warningf("work workQueue is nil")
 	}
-	return jobs
 }
 
-// AddJob add a PodMigrationJob to the waiting collection of Arbitrator.
+// AddJob add a PodMigrationJob to the waiting waitCollection of Arbitrator.
 func (a *DefaultArbitrator) AddJob(job *v1alpha1.PodMigrationJob) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.collection == nil {
-		klog.Errorf("Waiting collection of Arbitrator is nil")
+	if a.waitCollection == nil {
+		klog.Errorf("Waiting waitCollection of Arbitrator is nil")
 	}
-	a.collection[job.UID] = job.DeepCopy()
+	a.waitCollection[job.UID] = job.DeepCopy()
 }
 
-// doOnceArbitrate performs an arbitrator operation on PodMigrationJobs in the waiting collection.
+// doOnceArbitrate performs an arbitrator operation on PodMigrationJobs in the waiting waitCollection.
 func (a *DefaultArbitrator) doOnceArbitrate() {
-	// copy jobs from waiting collection
+	// copy jobs from waiting waitCollection
 	a.mu.Lock()
-	jobs := make([]*v1alpha1.PodMigrationJob, len(a.collection))
+	jobs := make([]*v1alpha1.PodMigrationJob, len(a.waitCollection))
 	i := 0
-	for _, job := range a.collection {
+	for _, job := range a.waitCollection {
 		jobs[i] = job
 		i++
 	}
 	a.mu.Unlock()
 
+	podOfJob := getPodOfJob(a.client, jobs)
 	// Sort
-	jobs, rankOfJobs := a.Sort(jobs)
+	jobs = a.Sort(jobs, podOfJob)
 
 	// GroupFilter
-	pastJobs := a.GroupFilter(jobs, rankOfJobs)
+	a.Filter(jobs, podOfJob)
+}
 
-	// Select
-	a.Select(pastJobs)
+func (a *DefaultArbitrator) updateNonRetryableFailedJob(job *v1alpha1.PodMigrationJob, pod *corev1.Pod) {
+	// delete from waitCollection
+	a.mu.Lock()
+	delete(a.waitCollection, job.UID)
+	a.mu.Unlock()
+
+	// change phase to Failed
+	job.Status.Phase = v1alpha1.PodMigrationJobFailed
+	job.Status.Reason = v1alpha1.PodMigrationJobReasonForbiddenMigratePod
+	job.Status.Message = fmt.Sprintf("Pod %q is forbidden to migrate because it does not meet the requirements", klog.KObj(pod))
+	err := a.client.Status().Update(context.TODO(), job)
+	if err == nil {
+		a.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, v1alpha1.PodMigrationJobReasonForbiddenMigratePod, "Migrating", job.Status.Message)
+	}
 }
 
 // Arbitrate the goroutine to arbitrate jobs periodically.
@@ -167,61 +165,38 @@ func (a *DefaultArbitrator) Arbitrate(stopCh <-chan struct{}) {
 		select {
 		case <-stopCh:
 			return
-		case <-time.After(time.Duration(a.arbitrationInterval) * time.Second):
+		case <-time.After(time.Duration(a.arbitrationInterval) * time.Millisecond):
 		}
 	}
 }
 
 // NewArbitration creates an DefaultArbitrator structure based on parameters.
-func NewArbitration(config *config.MigrationControllerArgs, finder controllerfinder.Interface, c client.Client) (Arbitrator, error) {
-	arbitrationInterval := DefaultArbitrationInterval
-	maxMigratingPerNamespace := 0
-	maxMigratingPerNode := 0
-	maxMigratingPerWorkload := intstr.IntOrString{}
-	maxUnavailablePerWorkload := intstr.IntOrString{}
-	skipCheckExpectedReplicas := false
-
-	if args := config.ArbitrationArgs; args != nil {
-		if args.Interval != 0 {
-			arbitrationInterval = args.Interval
-		}
-	}
-	if config.MaxMigratingPerNamespace != nil {
-		maxMigratingPerNamespace = int(*config.MaxMigratingPerNamespace)
-	}
-	if config.MaxMigratingPerNode != nil {
-		maxMigratingPerNode = int(*config.MaxMigratingPerNode)
-	}
-	if config.MaxMigratingPerWorkload != nil {
-		maxMigratingPerWorkload = *config.MaxMigratingPerWorkload
-	}
-	if config.MaxUnavailablePerWorkload != nil {
-		maxUnavailablePerWorkload = *config.MaxUnavailablePerWorkload
-	}
-	if config.SkipCheckExpectedReplicas != nil {
-		skipCheckExpectedReplicas = *config.SkipCheckExpectedReplicas
+func NewArbitration(args *config.ArbitrationArgs, c client.Client, eventRecorder events.EventRecorder, retryableFilter framework.FilterFunc, nonRetryableFilter framework.FilterFunc) (Arbitrator, bool) {
+	if args.Enabled == false {
+		return nil, false
 	}
 
 	return &DefaultArbitrator{
 		client:              c,
-		queue:               nil,
+		workQueue:           nil,
 		mu:                  sync.Mutex{},
-		collection:          map[types.UID]*v1alpha1.PodMigrationJob{},
-		controllerFinder:    finder,
-		arbitrationInterval: arbitrationInterval,
+		waitCollection:      map[types.UID]*v1alpha1.PodMigrationJob{},
+		arbitrationInterval: *args.Interval,
+		eventRecorder:       eventRecorder,
 
 		sorts: []SortFn{
-			NewPodSortFn(c, sorter.PodSorter()),
-			NewDisperseByWorkloadSortFn(c),
-			NewJobGatherSortFn(c),
+			NewPodSortFn(sorter.PodSorter()),
+			NewDisperseByWorkloadSortFn(),
+			NewJobGatherSortFn(),
 			NewJobMigratingSortFn(c),
 		},
-		groupFilters: []GroupFilterFn{
-			NewNamespaceGroupFilter(c, maxMigratingPerNamespace),
-			NewNodeGroupFilter(c, maxMigratingPerNode),
-			NewWorkloadGroupFilter(c, finder, maxMigratingPerWorkload, maxUnavailablePerWorkload, skipCheckExpectedReplicas),
-		},
-	}, nil
+		retryablePodFilter:    retryableFilter,
+		nonRetryablePodFilter: nonRetryableFilter,
+	}, true
+}
+
+func (a *DefaultArbitrator) WithSortFn(sort SortFn) {
+	a.sorts = append(a.sorts, sort)
 }
 
 // Create implements EventHandler.
@@ -230,8 +205,8 @@ func (a *DefaultArbitrator) Create(evt event.CreateEvent, q workqueue.RateLimiti
 		klog.Error(nil, "CreateEvent received with no metadata", "event", evt)
 		return
 	}
-	if a.queue == nil {
-		a.queue = q
+	if a.workQueue == nil {
+		a.workQueue = q
 	}
 	job := &v1alpha1.PodMigrationJob{}
 	err := a.client.Get(context.TODO(), types.NamespacedName{
@@ -250,8 +225,8 @@ func (a *DefaultArbitrator) Create(evt event.CreateEvent, q workqueue.RateLimiti
 
 // Update implements EventHandler.
 func (a *DefaultArbitrator) Update(evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
-	if a.queue == nil {
-		a.queue = q
+	if a.workQueue == nil {
+		a.workQueue = q
 	}
 	switch {
 	case evt.ObjectNew != nil:
@@ -271,8 +246,8 @@ func (a *DefaultArbitrator) Update(evt event.UpdateEvent, q workqueue.RateLimiti
 
 // Delete implements EventHandler.
 func (a *DefaultArbitrator) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
-	if a.queue == nil {
-		a.queue = q
+	if a.workQueue == nil {
+		a.workQueue = q
 	}
 	if evt.Object == nil {
 		enqueueLog.Error(nil, "DeleteEvent received with no metadata", "event", evt)
@@ -286,8 +261,8 @@ func (a *DefaultArbitrator) Delete(evt event.DeleteEvent, q workqueue.RateLimiti
 
 // Generic implements EventHandler.
 func (a *DefaultArbitrator) Generic(evt event.GenericEvent, q workqueue.RateLimitingInterface) {
-	if a.queue == nil {
-		a.queue = q
+	if a.workQueue == nil {
+		a.workQueue = q
 	}
 	if evt.Object == nil {
 		enqueueLog.Error(nil, "GenericEvent received with no metadata", "event", evt)
@@ -299,9 +274,24 @@ func (a *DefaultArbitrator) Generic(evt event.GenericEvent, q workqueue.RateLimi
 	}})
 }
 
-func markJobPassedArbitration(job *v1alpha1.PodMigrationJob) {
-	if job.Annotations == nil {
-		job.Annotations = make(map[string]string)
+func getPodOfJob(c client.Client, jobs []*v1alpha1.PodMigrationJob) map[*v1alpha1.PodMigrationJob]*corev1.Pod {
+	podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
+	for _, job := range jobs {
+		pod := &corev1.Pod{}
+		if job.Spec.PodRef == nil {
+			klog.Infof("the podRef of job %v is nil", job.Name)
+			continue
+		}
+		nn := types.NamespacedName{
+			Namespace: job.Spec.PodRef.Namespace,
+			Name:      job.Spec.PodRef.Name,
+		}
+		err := c.Get(context.TODO(), nn, pod)
+		if err != nil {
+			klog.Infof("failed to get Pod of PodMigrationJob %v, err: %v", nn, err)
+			continue
+		}
+		podOfJob[job] = pod
 	}
-	job.Annotations[AnnotationPassedArbitration] = "true"
+	return podOfJob
 }

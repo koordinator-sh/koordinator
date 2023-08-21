@@ -43,7 +43,6 @@ func TestPodSortFn(t *testing.T) {
 		makePod("test-11", 0, extension.QoSNone, corev1.PodQOSBurstable, creationTime),
 		makePod("test-12", 8, extension.QoSNone, corev1.PodQOSBestEffort, creationTime),
 		makePod("test-13", 9, extension.QoSNone, corev1.PodQOSGuaranteed, creationTime),
-		makePod("test-14", 10, extension.QoSNone, corev1.PodQOSBurstable, creationTime),
 		makePod("test-5", extension.PriorityProdValueMax, extension.QoSLSE, corev1.PodQOSGuaranteed, creationTime),
 		makePod("test-6", extension.PriorityProdValueMax-1, extension.QoSLSE, corev1.PodQOSGuaranteed, creationTime),
 		makePod("test-3", extension.PriorityProdValueMax-100, extension.QoSLS, corev1.PodQOSBurstable, creationTime),
@@ -52,9 +51,6 @@ func TestPodSortFn(t *testing.T) {
 		makePod("test-8", extension.PriorityBatchValueMax, extension.QoSBE, corev1.PodQOSBurstable, creationTime),
 		makePod("test-15", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
 		makePod("test-16", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime.Add(1*time.Minute)),
-		makePod("test-17", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
-		makePod("test-18", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime.Add(1*time.Minute)),
-		makePod("test-19", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
 		makePod("test-20", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime, withCost(corev1.PodDeletionCost, 200)),
 		makePod("test-21", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime, withCost(corev1.PodDeletionCost, 100)),
 		makePod("test-22", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime, withCost(corev1.PodDeletionCost, 200), withCost(extension.AnnotationEvictionCost, 200)),
@@ -68,36 +64,35 @@ func TestPodSortFn(t *testing.T) {
 		makePodMigrationJob("test-11", creationTime, pods[2]),
 		makePodMigrationJob("test-12", creationTime, pods[3]),
 		makePodMigrationJob("test-13", creationTime, pods[4]),
-		makePodMigrationJob("test-14", creationTime, pods[5]),
-		makePodMigrationJob("test-5", creationTime, pods[6]),
-		makePodMigrationJob("test-6", creationTime, pods[7]),
-		makePodMigrationJob("test-3", creationTime, pods[8]),
-		makePodMigrationJob("test-9", creationTime, pods[9]),
-		makePodMigrationJob("test-2", creationTime, pods[10]),
-		makePodMigrationJob("test-8", creationTime, pods[11]),
-		makePodMigrationJob("test-15", creationTime, pods[12]),
-		makePodMigrationJob("test-16", creationTime, pods[13]),
-		makePodMigrationJob("test-17", creationTime, pods[14]),
-		makePodMigrationJob("test-18", creationTime, pods[15]),
-		makePodMigrationJob("test-19", creationTime, pods[16]),
-		makePodMigrationJob("test-20", creationTime, pods[17]),
-		makePodMigrationJob("test-21", creationTime, pods[18]),
-		makePodMigrationJob("test-22", creationTime, pods[19]),
-		makePodMigrationJob("test-23", creationTime, pods[20]),
-		makePodMigrationJob("test-4", creationTime, pods[21]),
-		makePodMigrationJob("test-7", creationTime, pods[22]),
+		makePodMigrationJob("test-5", creationTime, pods[5]),
+		makePodMigrationJob("test-6", creationTime, pods[6]),
+		makePodMigrationJob("test-3", creationTime, pods[7]),
+		makePodMigrationJob("test-9", creationTime, pods[8]),
+		makePodMigrationJob("test-2", creationTime, pods[9]),
+		makePodMigrationJob("test-8", creationTime, pods[10]),
+		makePodMigrationJob("test-15", creationTime, pods[11]),
+		makePodMigrationJob("test-16", creationTime, pods[12]),
+		makePodMigrationJob("test-20", creationTime, pods[13]),
+		makePodMigrationJob("test-21", creationTime, pods[14]),
+		makePodMigrationJob("test-22", creationTime, pods[15]),
+		makePodMigrationJob("test-23", creationTime, pods[16]),
+		makePodMigrationJob("test-4", creationTime, pods[17]),
+		makePodMigrationJob("test-7", creationTime, pods[18]),
 	}
 
 	fakeClient := fake.NewClientBuilder().Build()
 	for _, pod := range pods {
-		err := fakeClient.Create(context.TODO(), pod)
-		if err != nil {
-			t.Errorf("failed to create pod, err: %v", err)
-		}
+		assert.Nil(t, fakeClient.Create(context.TODO(), pod))
 	}
-	podSorter := NewPodSortFn(fakeClient, sorter.PodSorter())
-	podSorter(jobs)
-	expectedPodsOrder := []string{"test-1", "test-12", "test-18", "test-16", "test-19", "test-17", "test-15", "test-21", "test-20", "test-23", "test-22", "test-9", "test-8", "test-11", "test-10", "test-13", "test-14", "test-2", "test-3", "test-7", "test-4", "test-6", "test-5"}
+
+	podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
+	for i := 0; i < len(pods); i++ {
+		podOfJob[jobs[i]] = pods[i]
+	}
+
+	podSorter := NewPodSortFn(sorter.PodSorter())
+	podSorter(jobs, podOfJob)
+	expectedPodsOrder := []string{"test-1", "test-12", "test-16", "test-15", "test-21", "test-20", "test-23", "test-22", "test-9", "test-8", "test-11", "test-10", "test-13", "test-2", "test-3", "test-7", "test-4", "test-6", "test-5"}
 	var podsOrder []string
 	for _, v := range jobs {
 		podsOrder = append(podsOrder, v.Name)
@@ -150,7 +145,7 @@ func TestTimeSortFn(t *testing.T) {
 		fakeJobs[4]: 4,
 	}
 	fn := NewTimeSortFn()
-	fakeJobs = fn(fakeJobs)
+	fakeJobs = fn(fakeJobs, nil)
 
 	for i, job := range fakeJobs {
 		assert.Equal(t, fakeRanks[job], i)
@@ -159,6 +154,7 @@ func TestTimeSortFn(t *testing.T) {
 
 func TestJobMigratingSortFn(t *testing.T) {
 	testCases := []struct {
+		name                       string
 		podMigrationJobNums        int
 		runningPodMigrationJobNums int
 		jobNums                    int
@@ -167,106 +163,97 @@ func TestJobMigratingSortFn(t *testing.T) {
 		jobOfRunningPodMigrationJob map[int]int
 		expectIdx                   []int
 	}{
-		{10, 5, 2, map[int]int{4: 0, 8: 0}, map[int]int{3: 0, 1: 1}, []int{4, 8, 0, 1, 2, 3, 4, 6, 7, 9}},
-		{10, 2, 2, map[int]int{}, map[int]int{}, []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
-		{5, 2, 2, map[int]int{0: 0, 1: 0, 2: 0, 3: 0, 4: 0}, map[int]int{0: 0}, []int{0, 1, 2, 3, 4}},
+		{"test-1", 10, 5, 2, map[int]int{4: 0, 8: 0}, map[int]int{3: 0, 1: 1}, []int{4, 8, 0, 1, 2, 3, 4, 6, 7, 9}},
+		{"test-2", 10, 2, 2, map[int]int{}, map[int]int{}, []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+		{"test-3", 5, 2, 2, map[int]int{0: 0, 1: 0, 2: 0, 3: 0, 4: 0}, map[int]int{0: 0}, []int{0, 1, 2, 3, 4}},
 	}
 
 	for _, testCase := range testCases {
-		fakeClient := fake.NewClientBuilder().Build()
+		t.Run(testCase.name, func(t *testing.T) {
+			fakeClient := fake.NewClientBuilder().Build()
 
-		creationTime := time.Now()
-		podMigrationJobs := make([]*v1alpha1.PodMigrationJob, testCase.podMigrationJobNums)
-		runningPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, testCase.runningPodMigrationJobNums)
-		jobs := make([]*batchv1.Job, testCase.jobNums)
-
-		// create jobs
-		for k := 0; k < testCase.jobNums; k++ {
-			job := &batchv1.Job{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "Job",
-					APIVersion: "batch/v1",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-job-" + strconv.Itoa(k),
-					Namespace: "default",
-					UID:       types.UID("test-job-" + strconv.Itoa(k)),
-				},
-			}
-			jobs[k] = job
-			err := fakeClient.Create(context.TODO(), job)
-			if err != nil {
-				t.Errorf("fail to create job %v", err)
-				return
-			}
-		}
-		// create PodMigrationJobs
-		for k := 0; k < testCase.podMigrationJobNums; k++ {
-			pod := makePod("test-pod-"+strconv.Itoa(k), 0, extension.QoSNone, corev1.PodQOSBestEffort, creationTime)
-			job := makePodMigrationJob("test-migration-job-"+strconv.Itoa(k), creationTime, pod)
-			job.Status = v1alpha1.PodMigrationJobStatus{
-				Phase: "",
-			}
-
-			if idx, ok := testCase.jobOfPodMigrationJob[k]; ok {
-				controller := true
-				pod.SetOwnerReferences([]metav1.OwnerReference{
-					{
-						APIVersion:         jobs[idx].APIVersion,
-						Kind:               jobs[idx].Kind,
-						Name:               jobs[idx].Name,
-						UID:                jobs[idx].UID,
-						Controller:         &controller,
-						BlockOwnerDeletion: nil,
+			creationTime := time.Now()
+			podMigrationJobs := make([]*v1alpha1.PodMigrationJob, testCase.podMigrationJobNums)
+			runningPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, testCase.runningPodMigrationJobNums)
+			jobs := make([]*batchv1.Job, testCase.jobNums)
+			podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
+			// create jobs
+			for k := 0; k < testCase.jobNums; k++ {
+				job := &batchv1.Job{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "Job",
+						APIVersion: "batch/v1",
 					},
-				})
-			}
-			err := fakeClient.Create(context.TODO(), pod)
-			if err != nil {
-				t.Errorf("fail to create pod %v", err)
-				return
-			}
-			podMigrationJobs = append(podMigrationJobs, job)
-		}
-
-		// create Running PodMigrationJobs
-		for k := 0; k < testCase.podMigrationJobNums; k++ {
-			pod := makePod("test-running-pod-"+strconv.Itoa(k), 0, extension.QoSNone, corev1.PodQOSBestEffort, creationTime)
-			job := makePodMigrationJob("test-running-migration-job-"+strconv.Itoa(k), creationTime, pod)
-
-			job.Status = v1alpha1.PodMigrationJobStatus{
-				Phase: v1alpha1.PodMigrationJobRunning,
-			}
-
-			if idx, ok := testCase.jobOfRunningPodMigrationJob[k]; ok {
-				controller := true
-				pod.SetOwnerReferences([]metav1.OwnerReference{
-					{
-						APIVersion:         jobs[idx].APIVersion,
-						Kind:               jobs[idx].Kind,
-						Name:               jobs[idx].Name,
-						UID:                jobs[idx].UID,
-						Controller:         &controller,
-						BlockOwnerDeletion: nil,
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-job-" + strconv.Itoa(k),
+						Namespace: "default",
+						UID:       types.UID("test-job-" + strconv.Itoa(k)),
 					},
-				})
+				}
+				jobs[k] = job
+				assert.Nil(t, fakeClient.Create(context.TODO(), job))
 			}
-			err := fakeClient.Create(context.TODO(), pod)
-			if err != nil {
-				t.Errorf("fail to create pod %v", pod)
-				return
+			// create PodMigrationJobs
+			for k := 0; k < testCase.podMigrationJobNums; k++ {
+				pod := makePod("test-pod-"+strconv.Itoa(k), 0, extension.QoSNone, corev1.PodQOSBestEffort, creationTime)
+				job := makePodMigrationJob("test-migration-job-"+strconv.Itoa(k), creationTime, pod)
+				job.Status = v1alpha1.PodMigrationJobStatus{
+					Phase: "",
+				}
+
+				if idx, ok := testCase.jobOfPodMigrationJob[k]; ok {
+					controller := true
+					pod.SetOwnerReferences([]metav1.OwnerReference{
+						{
+							APIVersion:         jobs[idx].APIVersion,
+							Kind:               jobs[idx].Kind,
+							Name:               jobs[idx].Name,
+							UID:                jobs[idx].UID,
+							Controller:         &controller,
+							BlockOwnerDeletion: nil,
+						},
+					})
+				}
+				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
+				podMigrationJobs = append(podMigrationJobs, job)
+				podOfJob[job] = pod
 			}
-			runningPodMigrationJobs = append(runningPodMigrationJobs, job)
-		}
 
-		sort := NewJobGatherSortFn(fakeClient)
-		var actualPodMigrationJobs []*v1alpha1.PodMigrationJob
-		copy(actualPodMigrationJobs, podMigrationJobs)
-		sort(actualPodMigrationJobs)
+			// create Running PodMigrationJobs
+			for k := 0; k < testCase.podMigrationJobNums; k++ {
+				pod := makePod("test-running-pod-"+strconv.Itoa(k), 0, extension.QoSNone, corev1.PodQOSBestEffort, creationTime)
+				job := makePodMigrationJob("test-running-migration-job-"+strconv.Itoa(k), creationTime, pod)
 
-		for i, job := range actualPodMigrationJobs {
-			assert.Equal(t, podMigrationJobs[testCase.expectIdx[i]], job)
-		}
+				job.Status = v1alpha1.PodMigrationJobStatus{
+					Phase: v1alpha1.PodMigrationJobRunning,
+				}
+
+				if idx, ok := testCase.jobOfRunningPodMigrationJob[k]; ok {
+					controller := true
+					pod.SetOwnerReferences([]metav1.OwnerReference{
+						{
+							APIVersion:         jobs[idx].APIVersion,
+							Kind:               jobs[idx].Kind,
+							Name:               jobs[idx].Name,
+							UID:                jobs[idx].UID,
+							Controller:         &controller,
+							BlockOwnerDeletion: nil,
+						},
+					})
+				}
+				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
+				runningPodMigrationJobs = append(runningPodMigrationJobs, job)
+			}
+
+			sort := NewJobGatherSortFn()
+			var actualPodMigrationJobs []*v1alpha1.PodMigrationJob
+			copy(actualPodMigrationJobs, podMigrationJobs)
+			sort(actualPodMigrationJobs, podOfJob)
+
+			for i, job := range actualPodMigrationJobs {
+				assert.Equal(t, podMigrationJobs[testCase.expectIdx[i]], job)
+			}
+		})
 	}
 }
 
@@ -309,6 +296,7 @@ func TestJobGatherSortFn(t *testing.T) {
 	}
 
 	// create pods
+	podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
 	for i := 0; i < len(pods); i++ {
 		pods[i] = &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -330,6 +318,7 @@ func TestJobGatherSortFn(t *testing.T) {
 				},
 			},
 		}
+		podOfJob[podMigrationJobs[i]] = pods[i]
 	}
 
 	pods[1].SetOwnerReferences([]metav1.OwnerReference{getOwnerReferenceFromObj(jobs[0])})
@@ -354,27 +343,18 @@ func TestJobGatherSortFn(t *testing.T) {
 	// create jobs
 	for i := 0; i < len(jobs); i++ {
 		job := jobs[i]
-		if err := fakeClient.Create(ctx, job); err != nil {
-			t.Errorf("failed to create job %v", err)
-			return
-		}
+		assert.Nil(t, fakeClient.Create(ctx, job))
 	}
 
 	// create pod
 	for i := 0; i < len(pods); i++ {
-		if i == 6 {
-			continue
-		}
 		pod := pods[i]
-		if err := fakeClient.Create(ctx, pod); err != nil {
-			t.Errorf("failed to create pod %v", err)
-			return
-		}
+		assert.Nil(t, fakeClient.Create(ctx, pod))
 	}
 
 	// create func
-	f := NewJobGatherSortFn(fakeClient)
-	migrationJobs := f(podMigrationJobs)
+	f := NewJobGatherSortFn()
+	migrationJobs := f(podMigrationJobs, podOfJob)
 
 	for i, job := range migrationJobs {
 		assert.Equal(t, rankOfJobs[job], i)
@@ -412,6 +392,7 @@ func TestDisperseByWorkloadSortFn(t *testing.T) {
 	}
 
 	// create pods
+	podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
 	for i := 0; i < len(pods); i++ {
 		pods[i] = &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -433,6 +414,7 @@ func TestDisperseByWorkloadSortFn(t *testing.T) {
 				},
 			},
 		}
+		podOfJob[podMigrationJobs[i]] = pods[i]
 	}
 
 	pods[1].SetOwnerReferences([]metav1.OwnerReference{getOwnerReferenceFromObj(rs)})
@@ -467,25 +449,180 @@ func TestDisperseByWorkloadSortFn(t *testing.T) {
 			continue
 		}
 		pod := pods[i]
-		if err := fakeClient.Create(ctx, pod); err != nil {
-			t.Errorf("failed to create pod %v", err)
-		}
+		assert.Nil(t, fakeClient.Create(ctx, pod))
 	}
 
-	if err := fakeClient.Create(ctx, rs); err != nil {
-		t.Errorf("failed to create replicaset %v", err)
-	}
+	assert.Nil(t, fakeClient.Create(ctx, rs))
 
-	if err := fakeClient.Create(ctx, ss); err != nil {
-		t.Errorf("failed to create statefulset %v", err)
-	}
+	assert.Nil(t, fakeClient.Create(ctx, ss))
 
 	// create func
-	f := NewDisperseByWorkloadSortFn(fakeClient)
-	migrationJobs := f(podMigrationJobs)
+	f := NewDisperseByWorkloadSortFn()
+	migrationJobs := f(podMigrationJobs, podOfJob)
 
 	for i, job := range migrationJobs {
 		assert.Equal(t, rankOfJobs[job], i)
+	}
+}
+
+func TestGetJobControllerOfPod(t *testing.T) {
+	controller := true
+	testCases := []struct {
+		name  string
+		pod   corev1.Pod
+		owner *metav1.OwnerReference
+	}{
+		{
+			name:  "test-1",
+			owner: nil,
+			pod:   corev1.Pod{},
+		},
+		{
+			name: "test-2",
+			owner: &metav1.OwnerReference{
+				APIVersion:         "",
+				Kind:               JobKind,
+				Name:               "test-controller1",
+				UID:                "",
+				Controller:         &controller,
+				BlockOwnerDeletion: nil,
+			},
+			pod: corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion:         "",
+						Kind:               JobKind,
+						Name:               "test-controller1",
+						UID:                "",
+						Controller:         &controller,
+						BlockOwnerDeletion: nil,
+					}},
+				},
+			},
+		},
+		{
+			name:  "test-3",
+			owner: nil,
+			pod: corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion:         "",
+						Kind:               JobKind,
+						Name:               "test-controller2",
+						UID:                "",
+						Controller:         nil,
+						BlockOwnerDeletion: nil,
+					}},
+				},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run("", func(t *testing.T) {
+			owner, ok := getJobControllerOfPod(&testCase.pod)
+			if ok {
+				assert.Equal(t, *testCase.owner, *owner)
+			} else {
+				assert.Equal(t, testCase.owner, owner)
+			}
+		})
+	}
+}
+
+func TestGetWorkloadUIDForPod(t *testing.T) {
+	controller := true
+	testCases := []struct {
+		name string
+		pod  corev1.Pod
+		uid  types.UID
+	}{
+		{
+			name: "test-1",
+			pod: corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test1",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion:         "",
+						Kind:               JobKind,
+						Name:               "test-controller1",
+						UID:                "test-controller1-uid",
+						Controller:         &controller,
+						BlockOwnerDeletion: nil,
+					}},
+				},
+			},
+			uid: "",
+		},
+		{
+			name: "test-2",
+			pod: corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test2",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion:         "",
+						Kind:               ReplicaSetKind,
+						Name:               "test-controller2",
+						UID:                "test-controller2-uid",
+						Controller:         &controller,
+						BlockOwnerDeletion: nil,
+					}},
+				},
+			},
+			uid: "test-controller2-uid",
+		},
+		{
+			name: "test-3",
+			pod: corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test3",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion:         "",
+						Kind:               StatefulSetKind,
+						Name:               "test-controller3",
+						UID:                "test-controller3-uid",
+						Controller:         &controller,
+						BlockOwnerDeletion: nil,
+					}},
+				},
+			},
+			uid: "test-controller3-uid",
+		},
+		{
+			name: "test-4",
+			pod: corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test4",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion:         "",
+						Kind:               StatefulSetKind,
+						Name:               "test-controller4",
+						UID:                "test-controller4-uid",
+						Controller:         nil,
+						BlockOwnerDeletion: nil,
+					}},
+				},
+			},
+			uid: "",
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run("", func(t *testing.T) {
+			uid, ok := getWorkloadUIDForPod(&testCase.pod)
+			if ok {
+				assert.Equal(t, testCase.uid, uid)
+			} else {
+				assert.Equal(t, testCase.uid, types.UID(""))
+			}
+		})
 	}
 }
 

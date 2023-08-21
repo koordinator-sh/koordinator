@@ -134,7 +134,11 @@ type MigrationObjectLimiter struct {
 
 // ArbitrationArgs holds arguments used to configure the Arbitration Mechanism.
 type ArbitrationArgs struct {
+	// Enabled defines if Arbitration Mechanism should be enabled.
+	// Default is true
+	Enabled bool `json:"enabled,omitempty"`
+
 	// Interval defines the running interval (ms) of the Arbitration Mechanism.
 	// Default is 500 ms
-	Interval int `json:"interval,omitempty"`
+	Interval *int `json:"interval,omitempty"`
 }
