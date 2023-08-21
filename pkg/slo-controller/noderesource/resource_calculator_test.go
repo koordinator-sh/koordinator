@@ -37,10 +37,14 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/batchresource"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/midresource"
 )
 
 func init() {
-	addPlugins(framework.AllPass)
+	addPlugins(func(s string) bool {
+		return s == midresource.PluginName || s == batchresource.PluginName
+	})
 }
 
 type FakeCfgCache struct {
