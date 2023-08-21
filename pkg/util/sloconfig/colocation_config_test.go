@@ -31,7 +31,7 @@ import (
 
 func Test_GetNodeColocationStrategy(t *testing.T) {
 	memoryCalcPolicyByUsage := configuration.CalculateByPodUsage
-	var defaultMemoryCollectPolicy slov1alpha1.MemoryCollectPolicy = "usageWithoutPageCache"
+	var defaultMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
 	defaultCfg := NewDefaultColocationCfg()
 	type args struct {
 		cfg  *configuration.ColocationCfg

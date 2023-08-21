@@ -27,7 +27,7 @@ import (
 )
 
 func Test_getNodeMetricCollectPolicy(t *testing.T) {
-	var defaultNodeMemoryCollectPolicy slov1alpha1.MemoryCollectPolicy = "usageWithoutPageCache"
+	var defaultNodeMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
 	tests := []struct {
 		name    string
 		config  *configuration.ColocationStrategy
