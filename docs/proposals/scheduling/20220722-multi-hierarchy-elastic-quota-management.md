@@ -371,7 +371,7 @@ spec:
 We introduce a new label on the pod to associate pod with quota group:
 ```yaml
 labels:
-  quota.scheduling.koordinator.sh/quota-name: "test1"
+  quota.scheduling.koordinator.sh/name: "test1"
 ```
 
 if pod's don't have the label, we will follow [Elastic Quota](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/9-capacity-scheduling/README.md#goals)
@@ -379,9 +379,9 @@ using namespace to associate pod with quota group.
 
 ### Compatibility
 We are fully compatible with [Elastic Quota](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/9-capacity-scheduling/README.md#goals) 's interface.
-If pod's don't have the "quota-name" label, we will use the namespace to associate pod with quota group. If the pod has 
-the "quota-name" label, we will use it to associate pod with quota group instead of namespace. If we can't find the 
-matched quota group, we force the pod to associate with the "default-group". 
+If pod's don't have the "name" label, we will use the namespace to associate pod with quota group. If the pod has the "name" label, 
+we will use it to associate pod with quota group instead of namespace. If we can't find the matched quota group, we force the pod to 
+associate with the "default-group". 
 
 ## Unsolved Problems
 Please see Non-goals/Future work.
