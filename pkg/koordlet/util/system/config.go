@@ -32,6 +32,7 @@ var Conf = NewDsModeConfig()
 var AgentMode = DS_MODE
 
 var UseCgroupsV2 = atomic.NewBool(false)
+var CgroupMemRootDir string
 
 type Config struct {
 	CgroupRootDir         string
@@ -53,6 +54,7 @@ func init() {
 		Conf = NewHostModeConfig()
 		AgentMode = agentMode
 	}
+	CgroupMemRootDir = Conf.CgroupRootDir + "/memory/"
 }
 
 func initSupportConfigs() {

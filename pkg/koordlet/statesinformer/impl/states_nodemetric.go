@@ -69,9 +69,9 @@ const (
 )
 
 var (
-	scheme = runtime.NewScheme()
-
-	defaultNodeMetricSpec = slov1alpha1.NodeMetricSpec{
+	scheme                                                         = runtime.NewScheme()
+	defaultMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
+	defaultNodeMetricSpec                                          = slov1alpha1.NodeMetricSpec{
 		CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 			AggregateDurationSeconds: pointer.Int64(defaultAggregateDurationSeconds),
 			ReportIntervalSeconds:    pointer.Int64(defaultReportIntervalSeconds),
@@ -82,6 +82,7 @@ var (
 					{Duration: 30 * time.Minute},
 				},
 			},
+			NodeMemoryCollectPolicy: &defaultMemoryCollectPolicy,
 		},
 	}
 )
@@ -444,9 +445,20 @@ func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam
 		return rl, 0, err
 	}
 
-	memAggregateResult, err := doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
-	if err != nil {
-		return rl, 0, err
+	var memAggregateResult metriccache.AggregateResult
+	memoryCollectPolicy := *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy
+	//report usageMemoryWithHotPageCache
+	if memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
+		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryWithHotPageUsageMetric, nil)
+		if err != nil {
+			return rl, 0, err
+		}
+	} else {
+		//default memory reporting policy: usageWithoutPageCache
+		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
+		if err != nil {
+			return rl, 0, err
+		}
 	}
 
 	memUsed, err := memAggregateResult.Value(queryparam.Aggregate)
@@ -628,12 +640,19 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, q
 	if err != nil {
 		return nil, err
 	}
-
-	memAggregateResult, err := doQuery(querier, metriccache.PodMemUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
-	if err != nil {
-		return nil, err
+	var memAggregateResult metriccache.AggregateResult
+	memoryCollectPolicy := *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy
+	if memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
+		memAggregateResult, err = doQuery(querier, metriccache.PodMemoryWithHotPageUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		memAggregateResult, err = doQuery(querier, metriccache.PodMemUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
+		if err != nil {
+			return nil, err
+		}
 	}
-
 	memUsed, err := memAggregateResult.Value(queryParam.Aggregate)
 	if err != nil {
 		return nil, err
