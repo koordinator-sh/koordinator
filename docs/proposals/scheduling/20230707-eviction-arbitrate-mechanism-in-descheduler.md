@@ -11,7 +11,7 @@ reviewers:
   - "@saintube"
   - "@jasonliu747"
 creation-date: 2023-07-07
-last-updated: 2023-08-21
+last-updated: 2023-08-22
 status: provisional
 ---
 
@@ -161,6 +161,28 @@ The specific process is shown in the figure above, and the following will briefl
   - If failed, continue the next PMJ.
 - If passed, update PMJ annotation, remove it from the arbitration queue and add it to the work queue.
 
+If PMJ does not pass `NonRetryableFilter`, it will be directly marked as Failed. And if PMJ does not pass the `RetryableFilter`, it will be filtered again in the next arbitration.
+
+`RetryableFilter` will filter PMJ based on workload, node, etc., as follows:
+
+- According to Workload
+    - Group: Aggregate PodMigrationJob by workload.
+    - Filter:
+        - Check how many PodMigrationJob of each workload are in the Running state, and record them as ***migratingReplicas***. If the **migratingReplicas** reach a certain threshold, excess parts will be excluded.
+        - Check the number of **unavailableReplicas** of each workload, and determine whether the **unavailableReplicas** exceeds the **MaxUnavailablePerWorkload**, exclude excess parts.
+- According to Node
+    - Group: Aggregate PodMigrationJob by Node.
+    - Filter:
+        - Check the number of Pods being migrated on the node where each target Pod is located. If it exceeds the maximum migration amount for a single node, exclude excess parts.
+- According to Namespace
+    - Group: Aggregate PodMigrationJob by Namespace.
+    - Filter:
+        - Check the number of Pods being migrated in the Namespace where each target Pod is located. If it exceeds the maximum migration amount for a single Namespace, exclude excess parts.
+- According to Job
+    - Group: Aggregate PodMigrationJob by Job.
+    - Filter:
+        - Check the number of Jobs that PodMigrationJobs' Pod belongs to. If it exceeds 1, exclude excess parts.
+
 ##### About Work Queue
 
 1. From: 
@@ -203,3 +225,4 @@ type ArbitrationArgs struct {
 - 2023-08-10: Update proposal based on review comments.
 - 2023-08-15: Update proposal based on review comments.
 - 2023-08-21: Update proposal based on review comments.
+- 2023-08-22: Update proposal based on review comments.
