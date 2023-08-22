@@ -2,18 +2,18 @@ package util
 
 import (
 	"os"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"k8s.io/klog/v2"
 )
 
-const IdleInfoFileName = "memory.idle_page_stats"
+const ColdPageInfoFileName = "memory.idle_page_stats"
+const KidledScanPeriodInSecondsFilePath = "/kernel/mm/kidled/scan_period_in_seconds"
+const KidledUseHierarchyFilePath = "/kernel/mm/kidled/use_hierarchy"
 
-type IdleInfoByKidled struct {
+type ColdPageInfoByKidled struct {
 	Version             string   `json:"version"`
 	PageScans           uint64   `json:"page_scans"`
 	SlabScans           uint64   `json:"slab_scans"`
@@ -39,7 +39,7 @@ type IdleInfoByKidled struct {
 	Slab                []uint64 `json:"slab"`
 }
 
-func kidledReadIdleInfo(path string) (*IdleInfoByKidled, error) {
+func KidledColdPageInfo(path string) (*ColdPageInfoByKidled, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func kidledReadIdleInfo(path string) (*IdleInfoByKidled, error) {
 
 	lines := strings.Split(string(data), "\n")
 	statMap := make(map[string]interface{})
-	var info = IdleInfoByKidled{}
+	var info = ColdPageInfoByKidled{}
 	for i, line := range lines {
 		if i == 0 {
 			fields := strings.Fields(line)
@@ -103,7 +103,7 @@ func kidledReadIdleInfo(path string) (*IdleInfoByKidled, error) {
 	return &info, nil
 }
 
-func (i *IdleInfoByKidled) GetColdPageTotalBytes() uint64 {
+func (i *ColdPageInfoByKidled) GetColdPageTotalBytes() uint64 {
 	sum := func(nums ...[]uint64) uint64 {
 		var total uint64
 		for _, v := range nums {
@@ -115,19 +115,9 @@ func (i *IdleInfoByKidled) GetColdPageTotalBytes() uint64 {
 	}
 
 	return sum(i.Csei, i.Dsei, i.Cfei, i.Dfei, i.Csui, i.Dsui, i.Cfui, i.Dfui, i.Csea, i.Dsea, i.Cfea, i.Dfea, i.Csua, i.Dsua, i.Cfua, i.Dfua, i.Slab)
-
 }
 
-func KidledGetColdPageInfo(idleFileRelativePath string) (*IdleInfoByKidled, error) {
-	path := filepath.Join(system.CgroupMemRootDir, idleFileRelativePath, IdleInfoFileName)
-	coldPageInfo, err := kidledReadIdleInfo(path)
-	if err != nil {
-		return nil, err
-	}
-	return coldPageInfo, nil
-}
-
-func (i *IdleInfoByKidled) NodeMemWithHotPageUsageBytes() (uint64, error) {
+func (i *ColdPageInfoByKidled) NodeMemWithHotPageUsageBytes() (uint64, error) {
 	Meminfo, err := GetMemInfo()
 	if err != nil {
 		return 0, err
@@ -138,19 +128,12 @@ func (i *IdleInfoByKidled) NodeMemWithHotPageUsageBytes() (uint64, error) {
 }
 
 func IsKidledSupported() bool {
-	path := filepath.Join(system.Conf.SysRootDir, "/kernel/mm/kidled/")
-	_, err := os.Stat(path)
-	if err != nil {
-		klog.Errorf("dir kidled is not exist,err: ", err)
-		return false
-	}
-	path = filepath.Join(system.Conf.SysRootDir, "/kernel/mm/kidled/scan_period_in_seconds")
-	_, err = os.Stat(path)
+	_, err := os.Stat(KidledScanPeriodInSecondsFilePath)
 	if err != nil {
 		klog.Errorf("file scan_period_in_seconds is not exist,err: ", err)
 		return false
 	}
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(KidledScanPeriodInSecondsFilePath)
 	if err != nil {
 		klog.Errorf("read scan_period_in_seconds err: ", err)
 		return false
@@ -164,9 +147,7 @@ func IsKidledSupported() bool {
 		klog.Errorf("scan_period_in_seconds is negative,err: ", err)
 		return false
 	}
-
-	path = filepath.Join(system.Conf.SysRootDir, "/kernel/mm/kidled/use_hierarchy")
-	content, err = os.ReadFile(path)
+	content, err = os.ReadFile(KidledUseHierarchyFilePath)
 	if err != nil {
 		klog.Errorf("file use_hierarchy is not exist,err: ", err)
 		return false
