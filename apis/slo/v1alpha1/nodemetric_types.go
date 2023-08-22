@@ -24,13 +24,15 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// default NodeMemoryCollectPolicy is usageWithoutPageCache
 // +kubebuilder:validation:Enum=usageWithHotPageCache;usageWithoutPageCache;usageWithPageCache
 type NodeMemoryCollectPolicy string
 
 const (
 	UsageWithoutPageCache NodeMemoryCollectPolicy = "usageWithoutPageCache"
 	UsageWithHotPageCache NodeMemoryCollectPolicy = "usageWithHotPageCache"
-	UsageWithPageCache    NodeMemoryCollectPolicy = "usageWithPageCache"
+	// TODO(BUPT-wxq): implement the UsageWithPageCache policy
+	UsageWithPageCache NodeMemoryCollectPolicy = "usageWithPageCache"
 )
 
 type NodeMetricInfo struct {
@@ -72,7 +74,7 @@ type NodeMetricCollectPolicy struct {
 	ReportIntervalSeconds *int64 `json:"reportIntervalSeconds,omitempty"`
 	// NodeAggregatePolicy represents the target grain of node aggregated usage
 	NodeAggregatePolicy *AggregatePolicy `json:"nodeAggregatePolicy,omitempty"`
-	//NodeMemoryPolicy represents apply which method collect memory info
+	// NodeMemoryPolicy represents apply which method collect memory info
 	NodeMemoryCollectPolicy *NodeMemoryCollectPolicy `json:"nodeMemoryCollectPolicy,omitempty"`
 }
 
