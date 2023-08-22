@@ -27,6 +27,7 @@ import (
 )
 
 func Test_getNodeMetricCollectPolicy(t *testing.T) {
+	var defaultNodeMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
 	tests := []struct {
 		name    string
 		config  *configuration.ColocationStrategy
@@ -52,10 +53,12 @@ func Test_getNodeMetricCollectPolicy(t *testing.T) {
 				Enable:                         pointer.Bool(true),
 				MetricAggregateDurationSeconds: pointer.Int64(60),
 				MetricReportIntervalSeconds:    pointer.Int64(180),
+				MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 			},
 			want: &slov1alpha1.NodeMetricCollectPolicy{
 				AggregateDurationSeconds: pointer.Int64(60),
 				ReportIntervalSeconds:    pointer.Int64(180),
+				NodeMemoryCollectPolicy:  &defaultNodeMemoryCollectPolicy,
 			},
 		},
 	}

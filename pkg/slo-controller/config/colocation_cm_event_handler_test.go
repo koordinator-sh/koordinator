@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
@@ -37,6 +38,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 	oldCfg.MemoryReclaimThresholdPercent = pointer.Int64(40)
 	memoryCalcPolicyByUsage := configuration.CalculateByPodUsage
 	memoryCalcPolicyByRequest := configuration.CalculateByPodRequest
+	var defaultNodeMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
 
 	type fields struct {
 		config *colocationCfgCache
@@ -202,6 +204,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						DegradeTimeMinutes:             pointer.Int64(15),
 						UpdateTimeThresholdSeconds:     pointer.Int64(100),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
+						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 					},
 				},
 				available:   true,
@@ -291,6 +294,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						DegradeTimeMinutes:             pointer.Int64(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
+						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 					},
 					NodeConfigs: []configuration.NodeColocationCfg{
 						{
@@ -312,6 +316,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								DegradeTimeMinutes:             pointer.Int64(5),
 								UpdateTimeThresholdSeconds:     pointer.Int64(300),
 								ResourceDiffThreshold:          pointer.Float64(0.1),
+								MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 							},
 						},
 					},
@@ -355,6 +360,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						DegradeTimeMinutes:             pointer.Int64(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
+						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 					},
 				},
 				available:   true,
@@ -376,6 +382,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						DegradeTimeMinutes:             pointer.Int64(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
+						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 					},
 				},
 				available: true,
@@ -409,6 +416,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						DegradeTimeMinutes:             pointer.Int64(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
+						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 					},
 				},
 				available:   true,
@@ -429,6 +437,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						DegradeTimeMinutes:             pointer.Int64(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
+						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 					},
 					NodeConfigs: []configuration.NodeColocationCfg{
 						{
@@ -449,6 +458,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								DegradeTimeMinutes:             pointer.Int64(5),
 								UpdateTimeThresholdSeconds:     pointer.Int64(300),
 								ResourceDiffThreshold:          pointer.Float64(0.1),
+								MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 							},
 						},
 					},
@@ -506,6 +516,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						ResourceDiffThreshold:          pointer.Float64(0.1),
 						MidCPUThresholdPercent:         pointer.Int64(45),
 						MidMemoryThresholdPercent:      pointer.Int64(65),
+						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 					},
 					NodeConfigs: []configuration.NodeColocationCfg{
 						{
@@ -529,6 +540,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								ResourceDiffThreshold:          pointer.Float64(0.1),
 								MidCPUThresholdPercent:         pointer.Int64(45),
 								MidMemoryThresholdPercent:      pointer.Int64(65),
+								MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 							},
 						},
 					},
@@ -552,6 +564,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						DegradeTimeMinutes:             pointer.Int64(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
+						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 					},
 					NodeConfigs: []configuration.NodeColocationCfg{
 						{
@@ -602,6 +615,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						DegradeTimeMinutes:             pointer.Int64(5),
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
+						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 					},
 					NodeConfigs: []configuration.NodeColocationCfg{
 						{
@@ -623,6 +637,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								DegradeTimeMinutes:             pointer.Int64(5),
 								UpdateTimeThresholdSeconds:     pointer.Int64(300),
 								ResourceDiffThreshold:          pointer.Float64(0.1),
+								MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 								//change
 								CPUReclaimThresholdPercent: pointer.Int64(60),
 							},
@@ -651,6 +666,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 func Test_IsCfgAvailable(t *testing.T) {
 	defaultConfig := sloconfig.DefaultColocationCfg()
 	memoryCalcPolicyByUsage := configuration.CalculateByPodUsage
+	var defaultNodeMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
 	type fields struct {
 		config    *colocationCfgCache
 		configMap *corev1.ConfigMap
@@ -726,6 +742,7 @@ func Test_IsCfgAvailable(t *testing.T) {
 					UpdateTimeThresholdSeconds:     pointer.Int64(300),
 					ResourceDiffThreshold:          pointer.Float64(0.1),
 					MetricReportIntervalSeconds:    pointer.Int64(60),
+					MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 				},
 			},
 		},

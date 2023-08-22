@@ -52,6 +52,14 @@ spec:
                           type: string
                         type: array
                     type: object
+                  nodeMemoryCollectPolicy:
+                    description: NodeMemoryPolicy represents apply which method collect
+                      memory info
+                    enum:
+                    - usageWithHotPageCache
+                    - usageWithoutPageCache
+                    - usageWithPageCache
+                    type: string
                   reportIntervalSeconds:
                     description: ReportIntervalSeconds represents the report period
                       in seconds
