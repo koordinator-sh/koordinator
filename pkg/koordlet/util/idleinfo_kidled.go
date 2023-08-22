@@ -113,7 +113,6 @@ func (i *ColdPageInfoByKidled) GetColdPageTotalBytes() uint64 {
 		}
 		return total
 	}
-
 	return sum(i.Csei, i.Dsei, i.Cfei, i.Dfei, i.Csui, i.Dsui, i.Cfui, i.Dfui, i.Csea, i.Dsea, i.Cfea, i.Dfea, i.Csua, i.Dsua, i.Cfua, i.Dfua, i.Slab)
 }
 
@@ -127,38 +126,43 @@ func (i *ColdPageInfoByKidled) NodeMemWithHotPageUsageBytes() (uint64, error) {
 	return memWithHotPageUsageBytes, nil
 }
 
-func IsKidledSupported() bool {
-	_, err := os.Stat(KidledScanPeriodInSecondsFilePath)
+func IsKidledSupported(kidledScanPeriodInSecondsFilePath string, kidledUseHierarchyFilePath string) bool {
+	_, err := os.Stat(kidledScanPeriodInSecondsFilePath)
 	if err != nil {
-		klog.Errorf("file scan_period_in_seconds is not exist,err: ", err)
+		klog.Errorf("file scan_period_in_seconds is not exist,err: %s", err)
 		return false
 	}
-	content, err := os.ReadFile(KidledScanPeriodInSecondsFilePath)
+	content, err := os.ReadFile(kidledScanPeriodInSecondsFilePath)
 	if err != nil {
-		klog.Errorf("read scan_period_in_seconds err: ", err)
+		klog.Errorf("read scan_period_in_seconds err: %s", err)
 		return false
 	}
 	scanPeriodInSeconds, err := strconv.Atoi(string(content))
 	if err != nil {
-		klog.Errorf("string to int scan_period_in_seconds err: ", err)
+		klog.Errorf("string to int scan_period_in_seconds err: %s", err)
 		return false
 	}
 	if scanPeriodInSeconds <= 0 {
-		klog.Errorf("scan_period_in_seconds is negative,err: ", err)
+		klog.Errorf("scan_period_in_seconds is negative,err: %s", err)
 		return false
 	}
-	content, err = os.ReadFile(KidledUseHierarchyFilePath)
+	_, err = os.Stat(kidledUseHierarchyFilePath)
 	if err != nil {
-		klog.Errorf("file use_hierarchy is not exist,err: ", err)
+		klog.Errorf("file use_hierarchy is not exist,err: %s", err)
+		return false
+	}
+	content, err = os.ReadFile(kidledUseHierarchyFilePath)
+	if err != nil {
+		klog.Errorf("read use_hierarchy ,err: %s", err)
 		return false
 	}
 	useHierarchy, err := strconv.Atoi(string(content))
 	if err != nil {
-		klog.Errorf("string to int useHierarchy err: ", err)
+		klog.Errorf("string to int useHierarchy err: %s", err)
 		return false
 	}
 	if useHierarchy != 1 {
-		klog.Errorf("useHierarchy is not equal to 1,err: ", err)
+		klog.Errorf("useHierarchy is not equal to 1,err: %s", err)
 		return false
 	}
 	return true

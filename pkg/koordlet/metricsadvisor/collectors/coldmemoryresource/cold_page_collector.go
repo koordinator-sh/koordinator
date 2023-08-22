@@ -47,7 +47,7 @@ func New(opt *framework.Options) framework.Collector {
 func (c *coldPageCollector) Enabled() bool {
 	// check enable
 	// check kidled cold page collector
-	if koordletutil.IsKidledSupported() {
+	if koordletutil.IsKidledSupported(koordletutil.KidledScanPeriodInSecondsFilePath, koordletutil.KidledUseHierarchyFilePath) {
 		c.coldPageCollector = &kidledcoldPageCollector{
 			collectInterval: c.collectInterval,
 			cgroupReader:    c.cgroupReader,
@@ -59,8 +59,8 @@ func (c *coldPageCollector) Enabled() bool {
 		}
 		return true
 	}
-	// TODO check kstaled cold page collector
-	// TODO check DAMON cold page collector
+	// TODO(BUPT-wxq): check kstaled cold page collector
+	// TODO(BUPT-wxq): check DAMON cold page collector
 	return false
 }
 func (c *coldPageCollector) Setup(c1 *framework.Context) {}

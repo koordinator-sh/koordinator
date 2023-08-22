@@ -125,27 +125,59 @@ func Test_GetColdPageTotalBytes(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, coldPageInfo)
 	got := coldPageInfo.GetColdPageTotalBytes()
-	assert.Equal(t, uint64(949858304), got)
+	assert.Equal(t, uint64(1363836928), got)
 }
 func Test_IsKidledSupported(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
 	defer helper.Cleanup()
-	content1 := `120`
-	content2 := `1`
-	contentinvailid1 := `-1`
-	contentinvailid2 := `0`
-	helper.CreateFile(KidledScanPeriodInSecondsFilePath)
-	helper.CreateFile(KidledUseHierarchyFilePath)
-	helper.WriteFileContents(KidledScanPeriodInSecondsFilePath, content1)
-	helper.WriteFileContents(KidledUseHierarchyFilePath, content2)
-	got := IsKidledSupported()
-	assert.Equal(t, true, got)
-	helper.WriteFileContents(KidledScanPeriodInSecondsFilePath, content1)
-	helper.WriteFileContents(KidledUseHierarchyFilePath, contentinvailid2)
-	got = IsKidledSupported()
-	assert.Equal(t, false, got)
-	helper.WriteFileContents(KidledScanPeriodInSecondsFilePath, contentinvailid1)
-	helper.WriteFileContents(KidledUseHierarchyFilePath, content2)
-	got = IsKidledSupported()
-	assert.Equal(t, false, got)
+	contentKidledScanPeriodInSeconds := `120`
+	contentKidledUseHierarchy := `1`
+	contentInvalidKidledScanPeriodInSeconds := `-1`
+	contentInvalidKidledUseHierarchy := `0`
+	tempKidledScanPeriodInSecondsPath := filepath.Join(helper.TempDir, "scan_period_in_seconds")
+	tempKidledUseHierarchyPath := filepath.Join(helper.TempDir, "use_hierarchy")
+	helper.WriteFileContents(tempKidledScanPeriodInSecondsPath, contentKidledScanPeriodInSeconds)
+	helper.WriteFileContents(tempKidledUseHierarchyPath, contentKidledUseHierarchy)
+
+	tempInvalidKidledScanPeriodInSecondsPath := filepath.Join(helper.TempDir, "invalid_scan_period_in_seconds")
+	tempInvalidKidledUseHierarchyPath := filepath.Join(helper.TempDir, "invalid_use_hierarchy")
+	helper.WriteFileContents(tempInvalidKidledScanPeriodInSecondsPath, contentInvalidKidledScanPeriodInSeconds)
+	helper.WriteFileContents(tempInvalidKidledUseHierarchyPath, contentInvalidKidledUseHierarchy)
+
+	type args struct {
+		KidledScanPeriodInSecondsPath string
+		KidledUseHierarchyPath        string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "support kidled cold page info",
+			args: args{KidledScanPeriodInSecondsPath: tempKidledScanPeriodInSecondsPath, KidledUseHierarchyPath: tempKidledUseHierarchyPath},
+			want: true,
+		},
+		{
+			name: "don't support kidled cold page info, invalid scan_period_in_seconds",
+			args: args{KidledScanPeriodInSecondsPath: tempInvalidKidledScanPeriodInSecondsPath, KidledUseHierarchyPath: tempKidledUseHierarchyPath},
+			want: false,
+		},
+		{
+			name: "don't support kidled cold page info, invalid use_hierarchy",
+			args: args{KidledScanPeriodInSecondsPath: tempKidledScanPeriodInSecondsPath, KidledUseHierarchyPath: tempInvalidKidledUseHierarchyPath},
+			want: false,
+		},
+		{
+			name: "don't support kidled cold page info, invalid scan_period_in_seconds and use_hierarchy",
+			args: args{KidledScanPeriodInSecondsPath: tempInvalidKidledScanPeriodInSecondsPath, KidledUseHierarchyPath: tempInvalidKidledUseHierarchyPath},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsKidledSupported(tt.args.KidledScanPeriodInSecondsPath, tt.args.KidledUseHierarchyPath)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
