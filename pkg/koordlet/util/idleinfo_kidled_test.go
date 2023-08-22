@@ -1,11 +1,119 @@
 package util
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
 
-func Test_readIdleInfo(t *testing.T) {
-	kidledReadIdleInfo("C:\\projects\\kkkkd\\koordinator\\memory.idle_page_stats")
-}
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	"github.com/stretchr/testify/assert"
+)
 
-func Test_GetIdleInfoFilePath(t *testing.T) {
-	GetIdleInfoFilePath("/memory/")
+func Test_kidledReadIdleInfo(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	tempInvalidMemInfoPath := filepath.Join(helper.TempDir, "no_Idleinfo")
+	tempIdleInfoPath := filepath.Join(helper.TempDir, "memory.idle_page_stats")
+	idleInfoContentStr := `# version: 1.0
+	# page_scans: 24
+	# slab_scans: 0
+	# scan_period_in_seconds: 120
+	# use_hierarchy: 1
+	# buckets: 1,2,5,15,30,60,120,240
+	#
+	#   _-----=> clean/dirty
+	#  / _----=> swap/file
+	# | / _---=> evict/unevict
+	# || / _--=> inactive/active
+	# ||| / _-=> slab
+	# |||| /
+	# |||||             [1,2)          [2,5)         [5,15)        [15,30)        [30,60)       [60,120)      [120,240)     [240,+inf)
+	  csei            2613248        4657152       18182144      293683200              0              0              0              0
+	  dsei            2568192        5140480       15306752       48648192              0              0              0              0
+	  cfei            2633728        4640768       66531328      340172800              0              0              0              0
+	  dfei                  0              0           4096              0              0              0              0              0
+	  csui                  0              0              0              0              0              0              0              0
+	  dsui                  0              0              0              0              0              0              0              0
+	  cfui                  0              0              0              0              0              0              0              0
+	  dfui                  0              0              0              0              0              0              0              0
+	  csea             765952        1044480        3784704       52834304              0              0              0              0
+	  dsea             286720         270336        1564672        5390336              0              0              0              0
+	  cfea            9273344       16609280      152109056      315121664              0              0              0              0
+	  dfea                  0              0              0              0              0              0              0              0
+	  csua                  0              0              0              0              0              0              0              0
+	  dsua                  0              0              0              0              0              0              0              0
+	  cfua                  0              0              0              0              0              0              0              0
+	  dfua                  0              0              0              0              0              0              0              0
+	  slab                  0              0              0              0              0              0              0              0`
+	helper.WriteFileContents(tempIdleInfoPath, idleInfoContentStr)
+	tempIdleInfoPath1 := filepath.Join(helper.TempDir, "memory.idle_page_stats1")
+	idleInfoContentStr1 := `# version: 1.0
+	# page_scans: 24
+	# slab_scans: 0
+	# scan_period_in_seconds: 120
+	# use_hierarchy: 1
+	# buckets: 1,2,5,15,30,60,120,240
+	#
+	#   _-----=> clean/dirty
+	#  / _----=> swap/file
+	# | / _---=> evict/unevict
+	# || / _--=> inactive/active
+	# ||| / _-=> slab
+	# |||| /
+	# |||||             [1,2)          [2,5)         [5,15)        [15,30)        [30,60)       [60,120)      [120,240)     [240,+inf)
+	  csei            2613248        4657152       18182144      293683200              0              0              0              0
+	  dsei            2568192        5140480       15306752       48648192              0              0              0              0
+	  cfei            2633728        4640768       66531328      340172800              0              0              0              0
+	  dfei                  0              0           4096              0              0              0              0              0
+	  csui                  0              0              0              0              0              0              0              0
+	  dsui                  0              0              0              0              0              0              0              0
+	  cfui                  0              0              0              0              0              0              0              0
+	  dfui                  0              0              0              0              0              0              0              0
+	  csea             765952        1044480        3784704       52834304              0              0              0              0
+	  dsea             286720         270336        1564672        5390336              0              0              0              0
+	  cfea            9273344       16609280      152109056      315121664              0              0              0              0
+	  dfea                  0              0              0              0              0              0              0              0
+	  csua                  0              0              0              0              0              0              0              0
+	  dsua                  0              0              0              0              0              0              0              0
+	  cfua                  0              0              0              0              0              0              0              0
+	  dfua                  0              0              0              0              0              0              0              0
+	  slab                  0              0              0              0              0              0              0              0`
+	helper.WriteFileContents(tempIdleInfoPath1, idleInfoContentStr1)
+	type args struct {
+		path string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *IdleInfoByKidled
+		wantErr bool
+	}{
+		{
+			name:    "read illegal idle stat",
+			args:    args{path: tempInvalidMemInfoPath},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "read test idle stat path",
+			args: args{path: tempIdleInfoPath},
+			want: &IdleInfoByKidled{
+				Version: "1.0", PageScans: 24, SlabScans: 0, ScanPeriodInSeconds: 120, UseHierarchy: 1, Buckets: []uint64{1, 2, 5, 15, 30, 60, 120, 240},
+				Csei: []uint64{2613248, 4657152, 18182144, 293683200, 0, 0, 0, 0}, Dsei: []uint64{2568192, 5140480, 15306752, 48648192, 0, 0, 0, 0}, Cfei: []uint64{2633728, 4640768, 66531328, 340172800, 0, 0, 0, 0},
+				Dfei: []uint64{0, 0, 0, 0, 0, 0, 0, 0}, Csui: []uint64{0, 0, 0, 0, 0, 0, 0, 0}, Dsui: []uint64{0, 0, 0, 0, 0, 0, 0, 0},
+				Cfui: []uint64{0, 0, 0, 0, 0, 0, 0, 0}, Dfui: []uint64{0, 0, 0, 0, 0, 0, 0, 0}, Csea: []uint64{765952, 1044480, 3784704, 52834304, 0, 0, 0, 0},
+				Dsea: []uint64{286720, 270336, 1564672, 5390336, 0, 0, 0, 0}, Cfea: []uint64{9273344, 16609280, 152109056, 315121664, 0, 0, 0, 0}, Dfea: []uint64{0, 0, 0, 0, 0, 0, 0, 0},
+				Csua: []uint64{0, 0, 0, 0, 0, 0, 0, 0}, Dsua: []uint64{0, 0, 0, 0, 0, 0, 0, 0}, Cfua: []uint64{0, 0, 0, 0, 0, 0, 0, 0},
+				Dfua: []uint64{0, 0, 0, 0, 0, 0, 0, 0}, Slab: []uint64{0, 0, 0, 0, 0, 0, 0, 0},
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := kidledReadIdleInfo(tt.args.path)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+
 }

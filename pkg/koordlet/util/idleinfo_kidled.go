@@ -100,7 +100,6 @@ func kidledReadIdleInfo(path string) (*IdleInfoByKidled, error) {
 			}
 		}
 	}
-	// fmt.Printf("%+v\n", info)
 	return &info, nil
 }
 
@@ -117,10 +116,6 @@ func (i *IdleInfoByKidled) GetColdPageTotalBytes() uint64 {
 
 	return sum(i.Csei, i.Dsei, i.Cfei, i.Dfei, i.Csui, i.Dsui, i.Cfui, i.Dfui, i.Csea, i.Dsea, i.Cfea, i.Dfea, i.Csua, i.Dsua, i.Cfua, i.Dfua, i.Slab)
 
-}
-
-func GetIdleInfoFilePath(idleFileRelativePath string) string {
-	return filepath.Join(system.Conf.CgroupRootDir, idleFileRelativePath, IdleInfoFileName)
 }
 
 func KidledGetColdPageInfo(idleFileRelativePath string) (*IdleInfoByKidled, error) {
