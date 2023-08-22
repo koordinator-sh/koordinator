@@ -31,6 +31,7 @@ type LoadAwareSchedulingArgs struct {
 	metav1.TypeMeta
 
 	// FilterExpiredNodeMetrics indicates whether to filter nodes where koordlet fails to update NodeMetric.
+	// Deprecated: NodeMetric should always be checked for expiration.
 	FilterExpiredNodeMetrics *bool
 	// NodeMetricExpirationSeconds indicates the NodeMetric expiration in seconds.
 	// When NodeMetrics expired, the node is considered abnormal.
