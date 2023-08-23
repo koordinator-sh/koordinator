@@ -105,12 +105,12 @@ func (c *PerfCollector) collect() (result collectResult, err error) {
 			return result, err
 		}
 		// skip not counted cases
-		if profile.RefCPUCycles != nil {
+		if profile.CPUCycles != nil {
 			scalingRatio := 1.0
 			if *profile.TimeRunning != 0 && *profile.TimeEnabled != 0 {
 				scalingRatio = float64(*profile.TimeRunning) / float64(*profile.TimeEnabled)
 			}
-			result.cycles += float64(*profile.RefCPUCycles) / scalingRatio
+			result.cycles += float64(*profile.CPUCycles) / scalingRatio
 		}
 		if profile.Instructions != nil {
 			scalingRatio := 1.0
