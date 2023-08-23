@@ -160,6 +160,7 @@ const (
 	MemoryPriorityName         = "memory.priority"
 	MemoryUsePriorityOomName   = "memory.use_priority_oom"
 	MemoryOomGroupName         = "memory.oom.group"
+	MemoryIdlePageStatsName    = "memory.idle_page_stats"
 
 	BlkioTRIopsName   = "blkio.throttle.read_iops_device"
 	BlkioTRBpsName    = "blkio.throttle.read_bps_device"
@@ -227,6 +228,7 @@ var (
 	MemoryPriority         = DefaultFactory.New(MemoryPriorityName, CgroupMemDir).WithValidator(MemoryPriorityValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryUsePriorityOom   = DefaultFactory.New(MemoryUsePriorityOomName, CgroupMemDir).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryOomGroup         = DefaultFactory.New(MemoryOomGroupName, CgroupMemDir).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryIdlePageStats    = DefaultFactory.New(MemoryIdlePageStatsName, CgroupMemDir)
 
 	BlkioReadIops  = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir).WithValidator(BlkioTRIopsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	BlkioReadBps   = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir).WithValidator(BlkioTRBpsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)

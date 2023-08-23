@@ -2,16 +2,19 @@ package util
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"k8s.io/klog/v2"
 )
 
-const ColdPageInfoFileName = "memory.idle_page_stats"
-const KidledScanPeriodInSecondsFilePath = "/kernel/mm/kidled/scan_period_in_seconds"
-const KidledUseHierarchyFilePath = "/kernel/mm/kidled/use_hierarchy"
+var (
+	KidledScanPeriodInSecondsFilePath = filepath.Join(system.Conf.SysRootDir, "/kernel/mm/kidled/scan_period_in_seconds")
+	KidledUseHierarchyFilePath        = filepath.Join(system.Conf.SysRootDir, "/kernel/mm/kidled/use_hierarchy")
+)
 
 type ColdPageInfoByKidled struct {
 	Version             string   `json:"version"`
@@ -126,43 +129,45 @@ func (i *ColdPageInfoByKidled) NodeMemWithHotPageUsageBytes() (uint64, error) {
 	return memWithHotPageUsageBytes, nil
 }
 
-func IsKidledSupported(kidledScanPeriodInSecondsFilePath string, kidledUseHierarchyFilePath string) bool {
-	_, err := os.Stat(kidledScanPeriodInSecondsFilePath)
+func IsKidledSupported() bool {
+	_, err := os.Stat(KidledScanPeriodInSecondsFilePath)
 	if err != nil {
-		klog.Errorf("file scan_period_in_seconds is not exist,err: %s", err)
+		klog.Error("file scan_period_in_seconds is not exist,err: ", err)
 		return false
 	}
-	content, err := os.ReadFile(kidledScanPeriodInSecondsFilePath)
+	str, err := os.ReadFile(KidledScanPeriodInSecondsFilePath)
+	content := strings.Replace(string(str), "\n", "", -1)
 	if err != nil {
-		klog.Errorf("read scan_period_in_seconds err: %s", err)
+		klog.Error("read scan_period_in_seconds err: ", err)
 		return false
 	}
-	scanPeriodInSeconds, err := strconv.Atoi(string(content))
+	scanPeriodInSeconds, err := strconv.Atoi(content)
 	if err != nil {
-		klog.Errorf("string to int scan_period_in_seconds err: %s", err)
+		klog.Error("string to int scan_period_in_seconds err: ", err)
 		return false
 	}
 	if scanPeriodInSeconds <= 0 {
-		klog.Errorf("scan_period_in_seconds is negative,err: %s", err)
+		klog.Error("scan_period_in_seconds is negative,err: ", err)
 		return false
 	}
-	_, err = os.Stat(kidledUseHierarchyFilePath)
+	_, err = os.Stat(KidledUseHierarchyFilePath)
 	if err != nil {
-		klog.Errorf("file use_hierarchy is not exist,err: %s", err)
+		klog.Error("file use_hierarchy is not exist,err: ", err)
 		return false
 	}
-	content, err = os.ReadFile(kidledUseHierarchyFilePath)
+	str, err = os.ReadFile(KidledUseHierarchyFilePath)
+	content = strings.Replace(string(str), "\n", "", -1)
 	if err != nil {
-		klog.Errorf("read use_hierarchy ,err: %s", err)
+		klog.Error("read use_hierarchy ,err: ", err)
 		return false
 	}
-	useHierarchy, err := strconv.Atoi(string(content))
+	useHierarchy, err := strconv.Atoi(content)
 	if err != nil {
-		klog.Errorf("string to int useHierarchy err: %s", err)
+		klog.Error("string to int useHierarchy err: ", err)
 		return false
 	}
 	if useHierarchy != 1 {
-		klog.Errorf("useHierarchy is not equal to 1,err: %s", err)
+		klog.Error("useHierarchy is not equal to 1,err: ", err)
 		return false
 	}
 	return true
