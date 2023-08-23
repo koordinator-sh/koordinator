@@ -46,14 +46,9 @@ spec:
           imagePullPolicy: Always
           name: scheduler
           readinessProbe:
-            failureThreshold: 3
             httpGet:
               path: healthz
               port: 10251
-              scheme: HTTP
-            periodSeconds: 10
-            successThreshold: 1
-            timeoutSeconds: 1
           resources:
             limits:
               cpu: "1"

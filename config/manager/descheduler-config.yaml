@@ -40,3 +40,18 @@ data:
               - koordinator-system
           evictQPS: "10"
           evictBurst: 1
+      - name: LowNodeLoad
+        args:
+          apiVersion: descheduler/v1alpha2
+          kind: LowNodeLoadArgs
+          evictableNamespaces:
+            exclude:
+              - kube-system
+              - koordinator-system
+          useDeviationThresholds: false
+          lowThresholds:
+            cpu: 45
+            memory: 55
+          highThresholds:
+            cpu: 75
+            memory: 80

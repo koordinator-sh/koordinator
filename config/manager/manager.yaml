@@ -13,7 +13,7 @@ metadata:
   labels:
     koord-app: koord-manager
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       koord-app: koord-manager
@@ -48,7 +48,7 @@ spec:
             - --leader-election-namespace=koordinator-system
             - --config-namespace=koordinator-system
             - --v=4
-            - --feature-gates=AllAlpha=true
+            - --feature-gates=AllAlpha=false,AllBeta=false
             - --sync-period=0
           command:
             - /koord-manager
@@ -76,14 +76,9 @@ spec:
               name: health
               protocol: TCP
           readinessProbe:
-            failureThreshold: 3
             httpGet:
-              path: readyz
-              port: 8000
-              scheme: HTTP
-            periodSeconds: 10
-            successThreshold: 1
-            timeoutSeconds: 1
+              path: metrics
+              port: 8080
           resources:
             limits:
               cpu: "1"
@@ -92,5 +87,5 @@ spec:
               cpu: 500m
               memory: 256Mi
       restartPolicy: Always
-      serviceAccountName: koord-manager
+      serviceAccountName: manager
       terminationGracePeriodSeconds: 10
