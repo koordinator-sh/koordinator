@@ -175,7 +175,7 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
+			wantStatus: nil,
 		},
 		{
 			name: "filter unhealthy nodeMetric with expired updateTime",
@@ -194,7 +194,7 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
+			wantStatus: nil,
 		},
 	}
 	for _, tt := range tests {

@@ -42,7 +42,6 @@ import (
 
 const (
 	Name                                    = "LoadAwareScheduling"
-	ErrReasonNodeMetricExpired              = "node(s) nodeMetric expired"
 	ErrReasonUsageExceedThreshold           = "node(s) %s usage exceed threshold"
 	ErrReasonAggregatedUsageExceedThreshold = "node(s) %s aggregated usage exceed threshold"
 	ErrReasonFailedEstimatePod
@@ -142,10 +141,9 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
-	if p.args.FilterExpiredNodeMetrics != nil && *p.args.FilterExpiredNodeMetrics && p.args.NodeMetricExpirationSeconds != nil {
-		if isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
-			return framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired)
-		}
+	if p.args.FilterExpiredNodeMetrics != nil && *p.args.FilterExpiredNodeMetrics &&
+		p.args.NodeMetricExpirationSeconds != nil && isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
+		return nil
 	}
 
 	filterProfile := generateUsageThresholdsFilterProfile(node, p.args)
