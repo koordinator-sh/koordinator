@@ -151,10 +151,6 @@ func (p *performanceCollector) collectContainerCPI() {
 			mutex.Lock()
 			cpiMetrics = append(cpiMetrics, metrics...)
 			mutex.Unlock()
-			err1 := perfCollector.CleanUp()
-			if err1 != nil {
-				klog.Errorf("PerfCollector cleanup err : %v", err1)
-			}
 		}(containerStatus, pod)
 	}
 	wg1.Wait()
