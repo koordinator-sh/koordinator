@@ -103,6 +103,12 @@ const (
 	// CPICollector enables cpi collector feature of koordlet.
 	CPICollector featuregate.Feature = "CPICollector"
 
+	// owner: @bowen-intel
+	// alpha: v0.1
+	//
+	// Libpfm4 enables libpfm4 feature of koordlet.
+	Libpfm4 featuregate.Feature = "Libpfm4"
+
 	// owner: @songtao98 @zwzhang0107
 	// alpha: v1.0
 	//
@@ -137,6 +143,7 @@ var (
 		NodeTopologyReport:     {Default: true, PreRelease: featuregate.Beta},
 		Accelerators:           {Default: false, PreRelease: featuregate.Alpha},
 		CPICollector:           {Default: false, PreRelease: featuregate.Alpha},
+		Libpfm4:                {Default: false, PreRelease: featuregate.Alpha},
 		PSICollector:           {Default: false, PreRelease: featuregate.Alpha},
 		BlkIOReconcile:         {Default: false, PreRelease: featuregate.Alpha},
 	}

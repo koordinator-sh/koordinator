@@ -62,7 +62,7 @@ func GetCPUStatUsageTicks() (uint64, error) {
 	return readTotalCPUStat(statPath)
 }
 
-func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, number int32, events []string) (*perf.PerfCollector, error) {
+func GetContainerPerfGroupCollector(podCgroupDir string, c *corev1.ContainerStatus, number int32, events []string) (*perf.PerfGroupCollector, error) {
 	cpus := make([]int, number)
 	for i := range cpus {
 		cpus[i] = i
@@ -72,15 +72,36 @@ func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, n
 	if err != nil {
 		return nil, err
 	}
-	collector, err := perf.GetAndStartPerfCollectorOnContainer(containerCgroupFile, cpus, events)
+	collector, err := perf.GetAndStartPerfGroupCollectorOnContainer(containerCgroupFile, cpus, events)
 	if err != nil {
 		return nil, err
 	}
 	return collector, nil
 }
 
-func GetContainerCyclesAndInstructions(collector *perf.PerfCollector) (float64, float64, error) {
-	return perf.GetContainerCyclesAndInstructions(collector)
+func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, number int32) (*perf.PerfCollector, error) {
+	cpus := make([]int, number)
+	for i := range cpus {
+		cpus[i] = i
+	}
+	// get file descriptor for cgroup mode perf_event_open
+	containerCgroupFile, err := getContainerCgroupFile(podCgroupDir, c)
+	if err != nil {
+		return nil, err
+	}
+	collector, err := perf.GetAndStartPerfCollectorOnContainer(containerCgroupFile, cpus)
+	if err != nil {
+		return nil, err
+	}
+	return collector, nil
+}
+
+func GetContainerCyclesAndInstructions(collector perf.Collector) (float64, float64, error) {
+	if pc, ok := collector.(*perf.PerfGroupCollector); ok {
+		return perf.GetContainerCyclesAndInstructionsGroup(pc)
+	} else {
+		return perf.GetContainerCyclesAndInstructions(collector.(*perf.PerfCollector))
+	}
 }
 
 func getContainerCgroupFile(podCgroupDir string, c *corev1.ContainerStatus) (*os.File, error) {

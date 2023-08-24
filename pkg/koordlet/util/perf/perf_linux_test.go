@@ -37,7 +37,7 @@ func Test_InitBufferPool(t *testing.T) {
 	assert.NotNil(t, BufPools[2])
 }
 
-func Test_NewPerfCollector(t *testing.T) {
+func Test_NewPerfGroupCollector(t *testing.T) {
 	assert.NotPanics(t, func() {
 		LibInit()
 	})
@@ -114,7 +114,7 @@ func Test_NewPerfCollector(t *testing.T) {
 		fakeFds[i].Seek(0, 0)
 	}
 	cpus := []int{0, 1}
-	collector, err := NewPerfCollector(fakeCgroupFd, cpus, []string{"cycles", "instructions"}, fakeSyscall)
+	collector, err := NewPerfGroupCollector(fakeCgroupFd, cpus, []string{"cycles", "instructions"}, fakeSyscall)
 	assert.NoError(t, err)
 	res, err := GetContainerPerfResult(collector)
 	assert.NoError(t, err)
@@ -122,5 +122,82 @@ func Test_NewPerfCollector(t *testing.T) {
 	assert.Equal(t, float64(20), res["instructions"])
 	assert.NotPanics(t, func() {
 		LibFinalize()
+	})
+}
+
+func Test_NewPerfCollector(t *testing.T) {
+	tempDir := t.TempDir()
+	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
+	cpus := []int{0}
+	assert.NotPanics(t, func() {
+		_, err := NewPerfCollector(f, cpus)
+		if err != nil {
+			return
+		}
+	})
+}
+
+func Test_GetAndStartPerfCollectorOnContainer(t *testing.T) {
+	tempDir := t.TempDir()
+	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
+	cpus := []int{0}
+	assert.NotPanics(t, func() {
+		_, err := GetAndStartPerfCollectorOnContainer(f, cpus)
+		if err != nil {
+			return
+		}
+	})
+}
+
+func Test_GetContainerCyclesAndInstructions(t *testing.T) {
+	tempDir := t.TempDir()
+	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
+	cpus := []int{0}
+	collector, _ := NewPerfCollector(f, cpus)
+	assert.NotPanics(t, func() {
+		_, _, err := GetContainerCyclesAndInstructions(collector)
+		if err != nil {
+			return
+		}
+	})
+}
+
+func Test_stopAndClose(t *testing.T) {
+	tempDir := t.TempDir()
+	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
+	cpus := []int{0}
+	collector, _ := NewPerfCollector(f, cpus)
+	assert.NotPanics(t, func() {
+		err := collector.stopAndClose()
+		if err != nil {
+			return
+		}
+	})
+}
+
+func Test_collect(t *testing.T) {
+	tempDir := t.TempDir()
+	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
+	cpus := []int{0}
+	collector, _ := NewPerfCollector(f, cpus)
+	assert.NotPanics(t, func() {
+		_, err := collector.collect()
+		if err != nil {
+			return
+		}
+	})
+}
+
+func Test_CleanUp(t *testing.T) {
+	tempDir := t.TempDir()
+	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
+	cpus := []int{0}
+	collector, _ := NewPerfCollector(f, cpus)
+	f.Close()
+	assert.NotPanics(t, func() {
+		err := collector.CleanUp()
+		if err != nil {
+			return
+		}
 	})
 }

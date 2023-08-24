@@ -103,8 +103,8 @@ func Test_GetContainerCyclesAndInstructions(t *testing.T) {
 	})
 	tempDir := t.TempDir()
 	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
-	collector, _ := perf.NewPerfCollector(f, []int{}, []string{"cycles", "instructions"}, syscall.Syscall6)
-	_, _, err := GetContainerCyclesAndInstructions(collector)
+	collector, _ := perf.NewPerfGroupCollector(f, []int{}, []string{"cycles", "instructions"}, syscall.Syscall6)
+	_, _, err := perf.GetContainerCyclesAndInstructionsGroup(collector)
 	assert.Nil(t, err)
 	perf.LibFinalize()
 }
@@ -115,7 +115,7 @@ func Test_GetContainerPerfCollector(t *testing.T) {
 		ContainerID: "containerd://test",
 	}
 	assert.NotPanics(t, func() {
-		_, err := GetContainerPerfCollector(tempDir, containerStatus, 1, []string{"cycles", "instructions"})
+		_, err := GetContainerPerfGroupCollector(tempDir, containerStatus, 1, []string{"cycles", "instructions"})
 		if err != nil {
 			return
 		}
@@ -123,6 +123,6 @@ func Test_GetContainerPerfCollector(t *testing.T) {
 	wrongContainerStatus := &corev1.ContainerStatus{
 		ContainerID: "wrong-container-status-test",
 	}
-	_, err := GetContainerPerfCollector(tempDir, wrongContainerStatus, 1, []string{"cycles", "instructions"})
+	_, err := GetContainerPerfGroupCollector(tempDir, wrongContainerStatus, 1, []string{"cycles", "instructions"})
 	assert.NotNil(t, err)
 }

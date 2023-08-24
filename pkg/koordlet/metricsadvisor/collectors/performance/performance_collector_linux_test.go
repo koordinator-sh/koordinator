@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mockmetriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
@@ -218,6 +219,7 @@ func Test_profilePerfOnSingleContainer(t *testing.T) {
 	}
 	m, _ := metriccache.NewMetricCache(config)
 
+	features.DefaultMutableKoordletFeatureGate.Set("Libpfm4=true")
 	containerStatus := &corev1.ContainerStatus{
 		ContainerID: "containerd://test",
 	}
@@ -225,7 +227,7 @@ func Test_profilePerfOnSingleContainer(t *testing.T) {
 	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
 	perf.LibInit()
 	defer perf.LibFinalize()
-	perfCollector, _ := perf.NewPerfCollector(f, []int{}, []string{"cycles", "instructions"}, syscall.Syscall6)
+	perfCollector, _ := perf.NewPerfGroupCollector(f, []int{}, []string{"cycles", "instructions"}, syscall.Syscall6)
 
 	collector := New(&framework.Options{
 		Config:         framework.NewDefaultConfig(),
