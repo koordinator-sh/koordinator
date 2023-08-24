@@ -22,12 +22,6 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
-	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/assert"
@@ -35,6 +29,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
 func Test_collectNodeColdPageInfo(t *testing.T) {
@@ -166,7 +167,6 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 	helper.WriteCgroupFileContents("", system.MemoryIdlePageStats, ``)
 	helper.WriteProcSubFileContents(system.ProcMemInfoName, ``)
 	t.Log(helper.ReadProcSubFileContents(system.ProcMemInfoName))
-	_, err = c.collectNodeColdPageInfo()
 	assert.NotPanics(t, func() {
 		c.collectNodeColdPageInfo()
 	})
