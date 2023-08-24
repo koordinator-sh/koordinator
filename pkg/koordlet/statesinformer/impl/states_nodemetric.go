@@ -447,20 +447,25 @@ func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam
 
 	var memAggregateResult metriccache.AggregateResult
 	memoryCollectPolicy := *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy
-	//report usageMemoryWithHotPageCache
-	if memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
+	// report usageMemoryWithHotPageCache
+	if memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && koordletutil.IsSupportColdMemory {
 		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryWithHotPageUsageMetric, nil)
 		if err != nil {
 			return rl, 0, err
 		}
+	} else if memoryCollectPolicy == slov1alpha1.UsageWithoutPageCache {
+		// report usageWithoutPageCache
+		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
+		if err != nil {
+			return rl, 0, err
+		}
 	} else {
-		//default memory reporting policy: usageWithoutPageCache
+		// degrade and apply default memory reporting policy: usageWithoutPageCache
 		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
 		if err != nil {
 			return rl, 0, err
 		}
 	}
-
 	memUsed, err := memAggregateResult.Value(queryparam.Aggregate)
 	if err != nil {
 		return rl, 0, err
@@ -642,8 +647,13 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, q
 	}
 	var memAggregateResult metriccache.AggregateResult
 	memoryCollectPolicy := *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy
-	if memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
+	if memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && koordletutil.IsSupportColdMemory {
 		memAggregateResult, err = doQuery(querier, metriccache.PodMemoryWithHotPageUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
+		if err != nil {
+			return nil, err
+		}
+	} else if memoryCollectPolicy == slov1alpha1.UsageWithoutPageCache {
+		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
 		if err != nil {
 			return nil, err
 		}

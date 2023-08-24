@@ -14,6 +14,7 @@ import (
 var (
 	KidledScanPeriodInSecondsFilePath = filepath.Join(system.Conf.SysRootDir, "/kernel/mm/kidled/scan_period_in_seconds")
 	KidledUseHierarchyFilePath        = filepath.Join(system.Conf.SysRootDir, "/kernel/mm/kidled/use_hierarchy")
+	IsSupportColdMemory               = false
 )
 
 type ColdPageInfoByKidled struct {

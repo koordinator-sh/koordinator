@@ -16,6 +16,7 @@ type nonCollector struct {
 func New(opt *framework.Options) framework.Collector {
 	// check whether support kidled cold page info collector
 	if koordletutil.IsKidledSupported() {
+		koordletutil.IsSupportColdMemory = true
 		return &kidledcoldPageCollector{
 			collectInterval: opt.Config.CollectResUsedInterval,
 			cgroupReader:    opt.CgroupReader,

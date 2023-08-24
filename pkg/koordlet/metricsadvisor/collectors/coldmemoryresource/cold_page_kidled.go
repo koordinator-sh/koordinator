@@ -119,14 +119,13 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		}
 		collectTime := time.Now()
 		podCgroupDir := meta.CgroupDir
-		// /sys/fs/cgroup/memory/podDir/memory.idle_page_stats
+		// /host-sys/fs/cgroup/memory/podDir/memory.idle_page_stats
 		path := filepath.Join(system.Conf.CgroupRootDir, system.CgroupMemDir, dockerMinikubePath, podCgroupDir, system.MemoryIdlePageStatsName)
 		coldPageInfo, err := koordletutil.KidledColdPageInfo(path)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
 			continue
 		}
-		klog.V(4).Infof("collect pod ColdPageInfo for pod %s/%s", pod.Namespace, pod.Name)
 		podColdPageBytes := coldPageInfo.GetColdPageTotalBytes()
 		podColdPageBytesValue := float64(podColdPageBytes)
 		podColdPageMetrics, err := metriccache.PodMemoryColdPageSizeMetric.GenerateSample(metriccache.MetricPropertiesFunc.Pod(uid), collectTime, podColdPageBytesValue)
@@ -139,7 +138,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		if err != nil {
 			// higher verbosity for probably non-running pods
 			if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
-				klog.V(6).Infof("failed to collect non-running pod usage for Memory err: %s", err)
+				klog.Warningf("failed to collect non-running pod usage for Memory err: %s", err)
 			} else {
 				klog.Warningf("failed to collect pod usage for Memory err: %s", err)
 			}
@@ -180,7 +179,7 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 				containerKey, err)
 			continue
 		}
-		// /sys/fs/cgroup/memory/containerdir/memory.idle_page_stats
+		// /host-sys/fs/cgroup/memory/containerdir/memory.idle_page_stats
 		path := filepath.Join(system.Conf.CgroupRootDir, system.CgroupMemDir, dockerMinikubePath, containerCgroupDir, system.MemoryIdlePageStatsName)
 		containerColdPageInfo, err := koordletutil.KidledColdPageInfo(path)
 		if err != nil {
@@ -209,9 +208,9 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 		}
 		coldMetrics = append(coldMetrics, containerMemUsageWithHotPageMetrics)
 		count++
-		klog.V(5).Infof("collect container %s, id %s finished, metric %+v", containerKey, pod.UID, coldMetrics)
+		klog.V(6).Infof("collect container %s, id %s finished, metric %+v", containerKey, pod.UID, coldMetrics)
 	}
-	klog.V(5).Infof("collect Container ColdPageInfo for pod %s/%s finished, container num %d, collected %d",
+	klog.V(6).Infof("collect Container ColdPageInfo for pod %s/%s finished, container num %d, collected %d",
 		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses), count)
 	return coldMetrics, nil
 }
