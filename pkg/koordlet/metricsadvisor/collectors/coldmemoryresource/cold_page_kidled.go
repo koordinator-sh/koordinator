@@ -54,7 +54,7 @@ func (k *kidledcoldPageCollector) collectColdPageInfo() {
 
 	podsColdPageInfoMetric, err := k.collectPodsColdPageInfo()
 	if err != nil {
-		klog.Warningf("generate pods or conatiner cold page info metrics failed, err %v", err)
+		klog.Warningf("generate pods or container cold page info metrics failed, err %v", err)
 	}
 	coldPageMetrics = append(coldPageMetrics, podsColdPageInfoMetric...)
 
