@@ -37,6 +37,10 @@ func (k *kidledcoldPageCollector) Run(stopCh <-chan struct{}) {
 func (k *kidledcoldPageCollector) Started() bool {
 	return k.started.Load()
 }
+func (k *kidledcoldPageCollector) Enabled() bool {
+	return true
+}
+func (k *kidledcoldPageCollector) Setup(c1 *framework.Context) {}
 func (k *kidledcoldPageCollector) collectColdPageInfo() {
 	if k.statesInformer == nil {
 		return
@@ -75,12 +79,11 @@ func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.Metri
 	coldPageMetrics := make([]metriccache.MetricSample, 0)
 	collectTime := time.Now()
 	// /sys/fs/cgroup/memory/memory.idle_page_stats
-	path := filepath.Join(system.CgroupMemRootDir, koordletutil.ColdPageInfoFileName)
+	path := filepath.Join(system.Conf.CgroupRootDir, system.CgroupMemDir, system.MemoryIdlePageStatsName)
 	coldPageInfo, err := koordletutil.KidledColdPageInfo(path)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(4).Info("collect node cold page info")
 	memUsageWithHotPageBytes, err := coldPageInfo.NodeMemWithHotPageUsageBytes()
 	if err != nil {
 		return nil, err
@@ -117,7 +120,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		collectTime := time.Now()
 		podCgroupDir := meta.CgroupDir
 		// /sys/fs/cgroup/memory/podDir/memory.idle_page_stats
-		path := filepath.Join(system.CgroupMemRootDir, dockerMinikubePath, podCgroupDir, koordletutil.ColdPageInfoFileName)
+		path := filepath.Join(system.Conf.CgroupRootDir, system.CgroupMemDir, dockerMinikubePath, podCgroupDir, system.MemoryIdlePageStatsName)
 		coldPageInfo, err := koordletutil.KidledColdPageInfo(path)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
@@ -178,7 +181,7 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 			continue
 		}
 		// /sys/fs/cgroup/memory/containerdir/memory.idle_page_stats
-		path := filepath.Join(system.CgroupMemRootDir, dockerMinikubePath, containerCgroupDir, koordletutil.ColdPageInfoFileName)
+		path := filepath.Join(system.Conf.CgroupRootDir, system.CgroupMemDir, dockerMinikubePath, containerCgroupDir, system.MemoryIdlePageStatsName)
 		containerColdPageInfo, err := koordletutil.KidledColdPageInfo(path)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for container %s", containerKey)
@@ -208,19 +211,11 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 		count++
 		klog.V(5).Infof("collect container %s, id %s finished, metric %+v", containerKey, pod.UID, coldMetrics)
 	}
-	klog.V(4).Infof("collect Container ColdPageInfo for pod %s/%s finished, container num %d, collected %d",
+	klog.V(5).Infof("collect Container ColdPageInfo for pod %s/%s finished, container num %d, collected %d",
 		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses), count)
 	return coldMetrics, nil
 }
 
-func (k *kidledcoldPageCollector) FilterPod(podMeta *statesinformer.PodMeta) (bool, string) {
-	if podMeta == nil || podMeta.Pod == nil {
-		return true, "invalid pod meta"
-	}
-
-	pod := podMeta.Pod
-	if phase := pod.Status.Phase; phase != corev1.PodRunning && phase != corev1.PodPending {
-		return true, fmt.Sprintf("pod phase %s is terminated", phase)
-	}
-	return false, ""
+func (k *kidledcoldPageCollector) FilterPod(meta *statesinformer.PodMeta) (bool, string) {
+	return k.podFilter.FilterPod(meta)
 }
