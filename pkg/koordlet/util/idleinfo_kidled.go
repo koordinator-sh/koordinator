@@ -23,8 +23,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 var (
