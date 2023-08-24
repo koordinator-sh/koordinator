@@ -1210,3 +1210,25 @@ func TestGetPodName(t *testing.T) {
 	assert.Equal(t, pod1.Name, getPodName(pod1, nil))
 	assert.Equal(t, pod1.Name, getPodName(nil, pod1))
 }
+
+func TestGroupQuotaManager_IsParent(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	qi1 := createQuota("1", extension.RootQuotaName, 40, 40, 10, 10)
+	qi2 := createQuota("2", "1", 40, 40, 10, 10)
+	gqm.UpdateQuota(qi1, false)
+
+	qi1Info := gqm.GetQuotaInfoByName("1")
+	assert.False(t, qi1Info.IsParent)
+
+	gqm.UpdateQuota(qi2, false)
+
+	qi1Info = gqm.GetQuotaInfoByName("1")
+	assert.True(t, qi1Info.IsParent)
+
+	qi2Info := gqm.GetQuotaInfoByName("2")
+	assert.False(t, qi2Info.IsParent)
+
+}
