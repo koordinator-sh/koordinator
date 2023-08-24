@@ -13,6 +13,8 @@ webhooks:
     matchExpressions:
     - key: control-plane
       operator: DoesNotExist
+  objectSelector:
+    matchExpressions:
     - key: pod.koordinator.sh/mutating-update
       operator: In
       values:
