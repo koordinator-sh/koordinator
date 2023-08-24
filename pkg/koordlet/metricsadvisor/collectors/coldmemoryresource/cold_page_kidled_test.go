@@ -22,13 +22,14 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
