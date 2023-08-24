@@ -149,42 +149,42 @@ func (i *ColdPageInfoByKidled) NodeMemWithHotPageUsageBytes() (uint64, error) {
 func IsKidledSupported() bool {
 	_, err := os.Stat(KidledScanPeriodInSecondsFilePath)
 	if err != nil {
-		klog.Error("file scan_period_in_seconds is not exist,err: ", err)
+		klog.Errorf("file scan_period_in_seconds is not exist,err: ", err)
 		return false
 	}
 	str, err := os.ReadFile(KidledScanPeriodInSecondsFilePath)
 	content := strings.Replace(string(str), "\n", "", -1)
 	if err != nil {
-		klog.Error("read scan_period_in_seconds err: ", err)
+		klog.Errorf("read scan_period_in_seconds err: ", err)
 		return false
 	}
 	scanPeriodInSeconds, err := strconv.Atoi(content)
 	if err != nil {
-		klog.Error("string to int scan_period_in_seconds err: ", err)
+		klog.Errorf("string to int scan_period_in_seconds err: %s", err)
 		return false
 	}
 	if scanPeriodInSeconds <= 0 {
-		klog.Error("scan_period_in_seconds is negative,err: ", err)
+		klog.Errorf("scan_period_in_seconds is negative,err: ", err)
 		return false
 	}
 	_, err = os.Stat(KidledUseHierarchyFilePath)
 	if err != nil {
-		klog.Error("file use_hierarchy is not exist,err: ", err)
+		klog.Errorf("file use_hierarchy is not exist,err: ", err)
 		return false
 	}
 	str, err = os.ReadFile(KidledUseHierarchyFilePath)
 	content = strings.Replace(string(str), "\n", "", -1)
 	if err != nil {
-		klog.Error("read use_hierarchy ,err: ", err)
+		klog.Errorf("read use_hierarchy ,err: ", err)
 		return false
 	}
 	useHierarchy, err := strconv.Atoi(content)
 	if err != nil {
-		klog.Error("string to int useHierarchy err: ", err)
+		klog.Errorf("string to int useHierarchy err: ", err)
 		return false
 	}
 	if useHierarchy != 1 {
-		klog.Error("useHierarchy is not equal to 1,err: ", err)
+		klog.Errorf("useHierarchy is not equal to 1,err: ", err)
 		return false
 	}
 	return true
