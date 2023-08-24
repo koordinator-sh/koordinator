@@ -138,5 +138,5 @@ type ArbitrationArgs struct {
 
 	// Interval defines the running interval (ms) of the Arbitration Mechanism.
 	// Default is 500 ms
-	Interval *int
+	Interval *metav1.Duration
 }

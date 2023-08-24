@@ -34,7 +34,7 @@ func (in *ArbitrationArgs) DeepCopyInto(out *ArbitrationArgs) {
 	*out = *in
 	if in.Interval != nil {
 		in, out := &in.Interval, &out.Interval
-		*out = new(int)
+		*out = new(v1.Duration)
 		**out = **in
 	}
 	return

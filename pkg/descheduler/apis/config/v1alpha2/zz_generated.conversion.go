@@ -195,7 +195,7 @@ func RegisterConversions(s *runtime.Scheme) error {
 
 func autoConvert_v1alpha2_ArbitrationArgs_To_config_ArbitrationArgs(in *ArbitrationArgs, out *config.ArbitrationArgs, s conversion.Scope) error {
 	out.Enabled = in.Enabled
-	out.Interval = (*int)(unsafe.Pointer(in.Interval))
+	out.Interval = (*v1.Duration)(unsafe.Pointer(in.Interval))
 	return nil
 }
 
@@ -206,7 +206,7 @@ func Convert_v1alpha2_ArbitrationArgs_To_config_ArbitrationArgs(in *ArbitrationA
 
 func autoConvert_config_ArbitrationArgs_To_v1alpha2_ArbitrationArgs(in *config.ArbitrationArgs, out *ArbitrationArgs, s conversion.Scope) error {
 	out.Enabled = in.Enabled
-	out.Interval = (*int)(unsafe.Pointer(in.Interval))
+	out.Interval = (*v1.Duration)(unsafe.Pointer(in.Interval))
 	return nil
 }
 

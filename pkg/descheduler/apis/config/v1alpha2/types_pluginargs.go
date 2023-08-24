@@ -140,5 +140,5 @@ type ArbitrationArgs struct {
 
 	// Interval defines the running interval (ms) of the Arbitration Mechanism.
 	// Default is 500 ms
-	Interval *int `json:"interval,omitempty"`
+	Interval *metav1.Duration `json:"interval,omitempty"`
 }
