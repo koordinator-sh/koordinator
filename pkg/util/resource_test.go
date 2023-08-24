@@ -313,12 +313,25 @@ func TestIsResourceDiff(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "both resources are zero",
+			args: args{
+				old: corev1.ResourceList{
+					corev1.ResourceCPU: *resource.NewQuantity(0, resource.DecimalSI),
+				},
+				new: corev1.ResourceList{
+					corev1.ResourceCPU: *resource.NewQuantity(0, resource.DecimalSI),
+				},
+				resourceName:  corev1.ResourceCPU,
+				diffThreshold: 2,
+			},
+			want: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsResourceDiff(tt.args.old, tt.args.new, tt.args.resourceName, tt.args.diffThreshold); got != tt.want {
-				t.Errorf("IsResourceDiff() = %v, want %v", got, tt.want)
-			}
+			got := IsResourceDiff(tt.args.old, tt.args.new, tt.args.resourceName, tt.args.diffThreshold)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

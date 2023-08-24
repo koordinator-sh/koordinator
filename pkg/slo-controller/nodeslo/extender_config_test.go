@@ -29,7 +29,7 @@ import (
 
 func getDefaultExtensionStrategy() *slov1alpha1.ExtensionsMap {
 	defaultCfg := getDefaultExtensionCfg()
-	defaultStrategy := slov1alpha1.ExtensionsMap{}
+	defaultStrategy := slov1alpha1.ExtensionsMap{Object: map[string]interface{}{}}
 	if defaultCfg == nil || defaultCfg.Object == nil {
 		return &defaultStrategy
 	}

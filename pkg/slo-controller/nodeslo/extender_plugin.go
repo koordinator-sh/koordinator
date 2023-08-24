@@ -62,10 +62,13 @@ func calculateExtensionsCfgMerged(oldCfgMap configuration.ExtensionCfgMap, confi
 	return mergedCfgMap
 }
 
-func getExtensionsConfigSpec(node *corev1.Node, cfgMap *configuration.ExtensionCfgMap) *slov1alpha1.ExtensionsMap {
-	extMap := slov1alpha1.ExtensionsMap{}
+func getExtensionsConfigSpec(node *corev1.Node, oldSpec *slov1alpha1.NodeSLOSpec, cfgMap *configuration.ExtensionCfgMap) *slov1alpha1.ExtensionsMap {
+	extMap := &slov1alpha1.ExtensionsMap{Object: map[string]interface{}{}}
+	if oldSpec != nil && oldSpec.Extensions != nil && oldSpec.Extensions.Object != nil {
+		extMap = oldSpec.Extensions.DeepCopy()
+	}
 	if cfgMap == nil || cfgMap.Object == nil {
-		return &extMap
+		return extMap
 	}
 	for name, extender := range globalNodeSLOMergedExtender {
 		extKey, extStrategy, err := extender.GetNodeSLOExtension(node, cfgMap)
@@ -75,16 +78,14 @@ func getExtensionsConfigSpec(node *corev1.Node, cfgMap *configuration.ExtensionC
 			continue
 		}
 		if extStrategy == nil {
-			continue
+			delete(extMap.Object, extKey)
+		} else {
+			extMap.Object[extKey] = extStrategy
 		}
-		if extMap.Object == nil {
-			extMap.Object = make(map[string]interface{})
-		}
-		extMap.Object[extKey] = extStrategy
 		metrics.RecordNodeSLOSpecParseCount(true, "getNodeSLOExtension")
 		klog.V(5).Infof("run get nodeSLO extender %v success, extMap %v", name, extMap)
 	}
-	return &extMap
+	return extMap
 }
 
 func UnregisterNodeSLOMergedExtender(name string) {

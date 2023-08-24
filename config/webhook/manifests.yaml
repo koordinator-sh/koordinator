@@ -14,7 +14,7 @@ webhooks:
       namespace: system
       path: /mutate-scheduling-sigs-k8s-io-v1alpha1-elasticquota
   failurePolicy: Fail
-  name: melasticquota.kb.io
+  name: melasticquota.koordinator.sh
   rules:
   - apiGroups:
     - scheduling.sigs.k8s.io
@@ -34,7 +34,7 @@ webhooks:
       namespace: system
       path: /mutate-pod
   failurePolicy: Fail
-  name: mpod.kb.io
+  name: mpod-create.koordinator.sh
   rules:
   - apiGroups:
     - ""
@@ -42,6 +42,26 @@ webhooks:
     - v1
     operations:
     - CREATE
+    resources:
+    - pods
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-pod
+  failurePolicy: Fail
+  name: mpod-update.koordinator.sh
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - UPDATE
     resources:
     - pods
   sideEffects: None
@@ -60,7 +80,7 @@ webhooks:
       namespace: system
       path: /validate-configmap
   failurePolicy: Fail
-  name: vconfigmap.kb.io
+  name: vconfigmap.koordinator.sh
   rules:
   - apiGroups:
     - ""
@@ -82,7 +102,7 @@ webhooks:
       namespace: system
       path: /validate-scheduling-sigs-k8s-io-v1alpha1-elasticquota
   failurePolicy: Fail
-  name: velasticquota.kb.io
+  name: velasticquota.koordinator.sh
   rules:
   - apiGroups:
     - scheduling.sigs.k8s.io
@@ -103,7 +123,7 @@ webhooks:
       namespace: system
       path: /validate-node
   failurePolicy: Fail
-  name: vnode.kb.io
+  name: vnode.koordinator.sh
   rules:
   - apiGroups:
     - ""
@@ -124,7 +144,7 @@ webhooks:
       namespace: system
       path: /validate-pod
   failurePolicy: Fail
-  name: vpod.kb.io
+  name: vpod.koordinator.sh
   rules:
   - apiGroups:
     - ""

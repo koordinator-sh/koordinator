@@ -66,7 +66,7 @@ func (qt *quotaTopology) ValidAddQuota(quota *v1alpha1.ElasticQuota) error {
 	}
 
 	quotaInfo := NewQuotaInfoFromQuota(quota)
-	if err := qt.validateQuotaTopology(nil, quotaInfo); err != nil {
+	if err := qt.validateQuotaTopology(nil, quotaInfo, nil); err != nil {
 		return err
 	}
 
@@ -104,7 +104,7 @@ func (qt *quotaTopology) ValidUpdateQuota(oldQuota, newQuota *v1alpha1.ElasticQu
 	}
 
 	newQuotaInfo := NewQuotaInfoFromQuota(newQuota)
-	if err := qt.validateQuotaTopology(oldQuotaInfo, newQuotaInfo); err != nil {
+	if err := qt.validateQuotaTopology(oldQuotaInfo, newQuotaInfo, oldQuota); err != nil {
 		return err
 	}
 

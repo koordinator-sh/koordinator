@@ -46,7 +46,8 @@ func (s *forceSyncsharedIndexInformer) AddEventHandler(handler cache.ResourceEve
 
 func (s *forceSyncsharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.ResourceEventHandler, resyncPeriod time.Duration) {
 	if _, ok := handler.(*forceSyncEventHandler); ok {
+		s.SharedIndexInformer.AddEventHandlerWithResyncPeriod(handler, resyncPeriod)
 		return
 	}
-	ForceSyncFromInformer(context.Background().Done(), s.factory, s.SharedIndexInformer, handler)
+	ForceSyncFromInformer(context.Background().Done(), s.factory, s.SharedIndexInformer, handler, WithResyncPeriod(resyncPeriod))
 }

@@ -24,6 +24,8 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 var registerOnce sync.Once
@@ -50,6 +52,21 @@ var indexDescriptors = []fieldIndexDescriptor{
 				return []string{}
 			}
 			return []string{pod.Spec.NodeName}
+		},
+	},
+	{
+		description: "index pod by label.QuotaName",
+		obj:         &corev1.Pod{},
+		field:       "label.quotaName",
+		indexerFunc: func(obj client.Object) []string {
+			pod, ok := obj.(*corev1.Pod)
+			if !ok {
+				return []string{}
+			}
+			if len(pod.Labels) == 0 || pod.Labels[extension.LabelQuotaName] == "" {
+				return []string{}
+			}
+			return []string{pod.Labels[extension.LabelQuotaName]}
 		},
 	},
 }

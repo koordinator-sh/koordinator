@@ -195,10 +195,11 @@ func (in *ExtraFields) DeepCopy() *ExtraFields {
 // ColocationStrategy defines the strategy for node colocation.
 // +k8s:deepcopy-gen=true
 type ColocationStrategy struct {
-	Enable                         *bool                        `json:"enable,omitempty"`
-	MetricAggregateDurationSeconds *int64                       `json:"metricAggregateDurationSeconds,omitempty" validate:"omitempty,min=1"`
-	MetricReportIntervalSeconds    *int64                       `json:"metricReportIntervalSeconds,omitempty" validate:"omitempty,min=1"`
-	MetricAggregatePolicy          *slov1alpha1.AggregatePolicy `json:"metricAggregatePolicy,omitempty"`
+	Enable                         *bool                                `json:"enable,omitempty"`
+	MetricAggregateDurationSeconds *int64                               `json:"metricAggregateDurationSeconds,omitempty" validate:"omitempty,min=1"`
+	MetricReportIntervalSeconds    *int64                               `json:"metricReportIntervalSeconds,omitempty" validate:"omitempty,min=1"`
+	MetricAggregatePolicy          *slov1alpha1.AggregatePolicy         `json:"metricAggregatePolicy,omitempty"`
+	MetricMemoryCollectPolicy      *slov1alpha1.NodeMemoryCollectPolicy `json:"metricMemoryCollectPolicy,omitempty"`
 
 	CPUReclaimThresholdPercent    *int64           `json:"cpuReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
 	MemoryReclaimThresholdPercent *int64           `json:"memoryReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
@@ -244,6 +245,7 @@ data:
           "15m"
         ]
       },
+      "metricMemoryCollectPolicy": "usageWithoutPageCache",
       "cpuReclaimThresholdPercent": 60,
       "memoryReclaimThresholdPercent": 65,
       "memoryCalculatePolicy": "usage",

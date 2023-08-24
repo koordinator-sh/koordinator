@@ -111,7 +111,8 @@ func IsResourceDiff(old, new corev1.ResourceList, resourceName corev1.ResourceNa
 		return false
 	}
 
-	return newQuant >= oldQuant*(1+diffThreshold) || newQuant <= oldQuant*(1-diffThreshold)
+	// not equal for both are zero
+	return newQuant > oldQuant*(1+diffThreshold) || newQuant < oldQuant*(1-diffThreshold)
 }
 
 func QuantityPtr(q resource.Quantity) *resource.Quantity {

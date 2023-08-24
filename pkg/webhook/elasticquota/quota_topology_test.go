@@ -360,7 +360,33 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 
 	quota.Labels[extension.LabelQuotaIsParent] = "false"
 	err = qt.ValidUpdateQuota(oldQuotaCopy, quota)
-	assert.NotNil(t, err)
+	assert.Nil(t, err)
+
+	newQuota1 := quota1.DeepCopy()
+	newQuota1.Labels[extension.LabelQuotaIsParent] = "false"
+	err = qt.ValidUpdateQuota(quota1, newQuota1)
+	assert.Equal(t, fmt.Sprintf("quota has children, isParent is forbidden to modify as false, quotaName:%v", quota1.Name), err.Error())
+
+	pod1 := MakePod("", "pod1").Label(extension.LabelQuotaName, "sub-1").Obj()
+	client := fake.NewClientBuilder().Build()
+	v1alpha1.AddToScheme(client.Scheme())
+	qt.client = client
+	qt.client.Create(context.TODO(), pod1)
+
+	sub1.Name = "sub-1"
+	sub1.Spec.Min = MakeResourceList().CPU(120).Mem(1048576).Obj()
+	newSub1 := sub1.DeepCopy()
+	newSub1.Labels[extension.LabelQuotaIsParent] = "true"
+	err = qt.ValidUpdateQuota(sub1, newSub1)
+	assert.Equal(t, fmt.Sprintf("quota has bound pods, isParent is forbidden to modify as true, quotaName: sub-1"), err.Error())
+
+	qt.client.Delete(context.TODO(), pod1)
+	pod2 := MakePod("sub-1", "pod2").Obj()
+	err = qt.client.Create(context.TODO(), pod2)
+	assert.Nil(t, err)
+
+	err = qt.ValidUpdateQuota(sub1, newSub1)
+	assert.Equal(t, fmt.Sprintf("quota has bound pods, isParent is forbidden to modify as true, quotaName: sub-1"), err.Error())
 }
 
 func TestQuotaTopology_ValidDeleteQuota(t *testing.T) {

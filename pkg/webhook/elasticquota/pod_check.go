@@ -22,12 +22,14 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
 // TODO If the parentQuotaGroup submits pods, the runtime will be calculated incorrectly.
@@ -75,4 +77,26 @@ var GetQuotaName = func(pod *corev1.Pod, client client.Client) string {
 		klog.Errorf("Failed to Get ElasticQuota %s, err: %v", pod.Namespace, err)
 	}
 	return extension.DefaultQuotaName
+}
+
+var ListQuotaBoundPods = func(kubeClient client.Client, quota *v1alpha1.ElasticQuota) (*corev1.PodList, error) {
+	podList := &corev1.PodList{}
+	if err := kubeClient.List(context.TODO(), podList, &client.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector("label.quotaName", quota.Name),
+	}, utilclient.DisableDeepCopy); err != nil {
+		return nil, err
+	}
+	if len(podList.Items) > 0 {
+		return podList, nil
+	}
+
+	if err := kubeClient.List(context.TODO(), podList, &client.ListOptions{
+		Namespace: quota.Name,
+	}, utilclient.DisableDeepCopy); err != nil {
+		return nil, err
+	}
+	if len(podList.Items) > 0 {
+		return podList, nil
+	}
+	return nil, nil
 }

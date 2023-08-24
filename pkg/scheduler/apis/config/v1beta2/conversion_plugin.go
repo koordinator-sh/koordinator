@@ -14,17 +14,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package validating
+package v1beta2
 
 import (
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+	"k8s.io/apimachinery/pkg/conversion"
+
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
-// +kubebuilder:webhook:path=/validate-configmap,mutating=false,failurePolicy=fail,sideEffects=None,groups="",resources=configmaps,verbs=create;update;delete,versions=v1,name=vconfigmap.koordinator.sh,admissionReviewVersions={v1beta1}
-
-var (
-	// HandlerMap contains admission webhook handlers
-	HandlerMap = map[string]admission.Handler{
-		"validate-configmap": NewConfigMapValidatingHandler(),
+func Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(in *LoadAwareSchedulingArgs, out *config.LoadAwareSchedulingArgs, s conversion.Scope) error {
+	if err := autoConvert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(in, out, s); err != nil {
+		return err
 	}
-)
+
+	*out.FilterExpiredNodeMetrics = true
+
+	return nil
+}

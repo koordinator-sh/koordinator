@@ -174,6 +174,7 @@ func getDefaultSpec() *slov1alpha1.NodeMetricSpec {
 			AggregateDurationSeconds: defaultColocationCfg.MetricAggregateDurationSeconds,
 			ReportIntervalSeconds:    defaultColocationCfg.MetricReportIntervalSeconds,
 			NodeAggregatePolicy:      defaultColocationCfg.MetricAggregatePolicy,
+			NodeMemoryCollectPolicy:  defaultColocationCfg.MetricMemoryCollectPolicy,
 		},
 	}
 }
