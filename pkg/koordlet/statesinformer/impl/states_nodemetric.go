@@ -653,7 +653,7 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, q
 			return nil, err
 		}
 	} else if memoryCollectPolicy == slov1alpha1.UsageWithoutPageCache {
-		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
+		memAggregateResult, err = doQuery(querier, metriccache.PodMemUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
 		if err != nil {
 			return nil, err
 		}
