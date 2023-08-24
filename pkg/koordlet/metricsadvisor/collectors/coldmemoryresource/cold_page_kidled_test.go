@@ -38,7 +38,7 @@ import (
 )
 
 func Test_collectNodeColdPageInfo(t *testing.T) {
-	// test collect sucess
+	// test collect success
 	idleInfoContentStr := `# version: 1.0
 	# page_scans: 24
 	# slab_scans: 0
