@@ -3,9 +3,9 @@ package util
 import (
 	"path/filepath"
 	"testing"
-
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	
 	"github.com/stretchr/testify/assert"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func Test_KidledGetIdleInfo(t *testing.T) {
