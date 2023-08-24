@@ -17,9 +17,10 @@ limitations under the License.
 package coldmemoryresource
 
 import (
+	"go.uber.org/atomic"
+
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	"go.uber.org/atomic"
 )
 
 const (

@@ -22,14 +22,15 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/atomic"
+
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	"github.com/stretchr/testify/assert"
-	"go.uber.org/atomic"
 )
 
 func Test_NewColdPageCollector(t *testing.T) {
