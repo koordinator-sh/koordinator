@@ -19,7 +19,6 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -54,7 +53,7 @@ func TestGroupQuotaManager_QuotaAdd(t *testing.T) {
 		t.Errorf("error")
 	}
 
-	assert.Equal(t, 8, len(gqm.runtimeQuotaCalculatorMap))
+	assert.Equal(t, 6, len(gqm.runtimeQuotaCalculatorMap))
 	assert.Equal(t, 8, len(gqm.quotaInfoMap))
 	assert.Equal(t, 2, len(gqm.resourceKeys))
 }
@@ -180,7 +179,7 @@ func TestGroupQuotaManager_DeleteOneGroup(t *testing.T) {
 	quota1 := AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 	quota2 := AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96, 160*GigaByte, 80, 80*GigaByte, true, false)
 	quota3 := AddQuotaToManager(t, gqm, "test3", extension.RootQuotaName, 96, 160*GigaByte, 40, 40*GigaByte, true, false)
-	assert.Equal(t, 6, len(gqm.runtimeQuotaCalculatorMap))
+	assert.Equal(t, 4, len(gqm.runtimeQuotaCalculatorMap))
 	assert.Equal(t, 6, len(gqm.quotaInfoMap))
 
 	err := gqm.UpdateQuota(quota1, true)
@@ -198,13 +197,13 @@ func TestGroupQuotaManager_DeleteOneGroup(t *testing.T) {
 	quotaInfo = gqm.GetQuotaInfoByName("test3")
 	assert.True(t, quotaInfo == nil)
 
-	assert.Equal(t, 3, len(gqm.runtimeQuotaCalculatorMap))
+	assert.Equal(t, 1, len(gqm.runtimeQuotaCalculatorMap))
 	assert.Equal(t, 3, len(gqm.quotaInfoMap))
 
 	AddQuotaToManager(t, gqm, "youku", extension.RootQuotaName, 96, 160*GigaByte, 70, 70*GigaByte, true, false)
 	quotaInfo = gqm.GetQuotaInfoByName("youku")
 	assert.NotNil(t, quotaInfo)
-	assert.Equal(t, 4, len(gqm.runtimeQuotaCalculatorMap))
+	assert.Equal(t, 2, len(gqm.runtimeQuotaCalculatorMap))
 	assert.Equal(t, 4, len(gqm.quotaInfoMap))
 }
 
@@ -325,10 +324,10 @@ func TestGroupQuotaManager_MultiQuotaAdd(t *testing.T) {
 	AddQuotaToManager(t, gqm, "test2-sub2", "test2", 82, 100*GigaByte, 80, 80*GigaByte, true, true)
 	AddQuotaToManager(t, gqm, "test2-sub2-1", "test2-sub2", 96, 160*GigaByte, 0, 0*GigaByte, true, false)
 
-	assert.Equal(t, 11, len(gqm.runtimeQuotaCalculatorMap))
+	assert.Equal(t, 9, len(gqm.runtimeQuotaCalculatorMap))
 	assert.Equal(t, 11, len(gqm.quotaInfoMap))
 	assert.Equal(t, 2, len(gqm.resourceKeys))
-	assert.Equal(t, 4, len(gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].quotaTree[v1.ResourceCPU].quotaNodes))
+	assert.Equal(t, 2, len(gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].quotaTree[v1.ResourceCPU].quotaNodes))
 	assert.Equal(t, 2, len(gqm.runtimeQuotaCalculatorMap["test2"].quotaTree[v1.ResourceCPU].quotaNodes))
 	assert.Equal(t, 1, len(gqm.runtimeQuotaCalculatorMap["test2-sub2"].quotaTree[v1.ResourceCPU].quotaNodes))
 }
@@ -708,7 +707,7 @@ func TestGroupQuotaManager_UpdateClusterTotalResource(t *testing.T) {
 	assert.Equal(t, totalRes, gqm.totalResource)
 	assert.Equal(t, delta, gqm.totalResourceExceptSystemAndDefaultUsed)
 	quotaTotalRes = gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].totalResource.DeepCopy()
-	assert.Equal(t, totalRes, quotaTotalRes)
+	assert.Equal(t, delta, quotaTotalRes)
 
 	// 80, 480
 	gqm.updateGroupDeltaUsedNoLock(extension.SystemQuotaName, createResourceList(10, 30))
@@ -1093,9 +1092,6 @@ func NewGroupQuotaManagerForTest() *GroupQuotaManager {
 	quotaManager.quotaInfoMap[extension.DefaultQuotaName] = NewQuotaInfo(false, true, extension.DefaultQuotaName, extension.RootQuotaName)
 	quotaManager.quotaInfoMap[extension.RootQuotaName] = NewQuotaInfo(true, false, extension.RootQuotaName, "")
 	quotaManager.runtimeQuotaCalculatorMap[extension.RootQuotaName] = NewRuntimeQuotaCalculator(extension.RootQuotaName)
-	quotaManager.quotaInfoMap[extension.SystemQuotaName].setMaxQuotaNoLock(createResourceList(math.MaxInt64/1000, math.MaxInt64/1000))
-	quotaManager.quotaInfoMap[extension.DefaultQuotaName].setMaxQuotaNoLock(createResourceList(math.MaxInt64/1000, math.MaxInt64/1000))
-
 	return quotaManager
 }
 
@@ -1426,5 +1422,5 @@ func TestGroupQuotaManager_RootQuotaRuntime(t *testing.T) {
 	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000))
 
 	// case: test root quota runtime
-	assert.Equal(t, gqm.RefreshRuntime(extension.RootQuotaName), gqm.GetClusterTotalResource())
+	assert.Equal(t, gqm.RefreshRuntime(extension.RootQuotaName), gqm.totalResourceExceptSystemAndDefaultUsed.DeepCopy())
 }

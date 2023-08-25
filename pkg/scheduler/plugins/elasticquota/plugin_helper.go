@@ -20,8 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -151,6 +154,10 @@ func (g *Plugin) createRootQuotaIfNotPresent() {
 		klog.Infof("RootQuota already exists, skip create it.")
 		return
 	}
+	defaultRootQuotaGroupMax := v1.ResourceList{
+		v1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.BinarySI),
+	}
 	rootElasticQuota := &schedulerv1alpha1.ElasticQuota{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        extension.RootQuotaName,
@@ -159,7 +166,7 @@ func (g *Plugin) createRootQuotaIfNotPresent() {
 			Annotations: make(map[string]string),
 		},
 		Spec: schedulerv1alpha1.ElasticQuotaSpec{
-			Max: g.pluginArgs.RootQuotaGroupMax.DeepCopy(),
+			Max: defaultRootQuotaGroupMax,
 		},
 	}
 	rootElasticQuota.Labels[extension.LabelQuotaIsParent] = "true"

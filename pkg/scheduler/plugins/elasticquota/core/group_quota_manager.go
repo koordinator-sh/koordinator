@@ -117,7 +117,7 @@ func (gqm *GroupQuotaManager) updateClusterTotalResourceNoLock(deltaRes v1.Resou
 
 	if !quotav1.IsZero(diffRes) {
 		gqm.totalResourceExceptSystemAndDefaultUsed = totalResNoSysOrDefault.DeepCopy()
-		gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(gqm.totalResource)
+		gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(totalResNoSysOrDefault)
 		klog.V(5).Infof("UpdateClusterResource finish totalResourceExceptSystemAndDefaultUsed:%v", gqm.totalResourceExceptSystemAndDefaultUsed)
 	}
 }
@@ -201,7 +201,7 @@ func (gqm *GroupQuotaManager) RefreshRuntimeNoLock(quotaName string) v1.Resource
 	}
 
 	if quotaName == extension.RootQuotaName {
-		return gqm.totalResource.DeepCopy()
+		return gqm.totalResourceExceptSystemAndDefaultUsed.DeepCopy()
 	}
 
 	if quotaName == extension.SystemQuotaName || quotaName == extension.DefaultQuotaName {
@@ -212,9 +212,12 @@ func (gqm *GroupQuotaManager) RefreshRuntimeNoLock(quotaName string) v1.Resource
 
 	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
 
-	totalRes := gqm.totalResource.DeepCopy()
-	for i := len(curToAllParInfos) - 2; i >= 0; i-- {
+	totalRes := gqm.totalResourceExceptSystemAndDefaultUsed.DeepCopy()
+	for i := len(curToAllParInfos) - 1; i >= 0; i-- {
 		quotaInfo = curToAllParInfos[i]
+		if quotaInfo.Name == extension.RootQuotaName {
+			continue
+		}
 		parRuntimeQuotaCalculator := gqm.getRuntimeQuotaCalculatorByNameNoLock(quotaInfo.ParentName)
 		if parRuntimeQuotaCalculator == nil {
 			klog.Errorf("treeWrapper not exist! parentQuotaName:%v", quotaInfo.ParentName)
@@ -352,9 +355,14 @@ func (gqm *GroupQuotaManager) updateQuotaGroupConfigNoLock() {
 func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 	// rebuild QuotaTopoNodeMap
 	gqm.quotaTopoNodeMap = make(map[string]*QuotaTopoNode)
+	rootNode := NewQuotaTopoNode(NewQuotaInfo(false, true, extension.RootQuotaName, extension.RootQuotaName))
+	gqm.quotaTopoNodeMap[extension.RootQuotaName] = rootNode
 
 	// add node according to the quotaInfoMap
 	for quotaName, quotaInfo := range gqm.quotaInfoMap {
+		if quotaName == extension.SystemQuotaName || quotaName == extension.DefaultQuotaName {
+			continue
+		}
 		gqm.quotaTopoNodeMap[quotaName] = NewQuotaTopoNode(quotaInfo)
 	}
 
@@ -380,6 +388,10 @@ func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
 	childRequestMap, childUsedMap := make(quotaResMapType), make(quotaResMapType)
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
+		if quotaName == extension.RootQuotaName {
+			gqm.resetRootQuotaUsedAndRequest()
+			continue
+		}
 		topoNode.quotaInfo.lock.Lock()
 		if !topoNode.quotaInfo.IsParent {
 			childRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.Request.DeepCopy()
@@ -393,7 +405,7 @@ func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
 	gqm.runtimeQuotaCalculatorMap = make(map[string]*RuntimeQuotaCalculator)
 	// reset runtimeQuotaCalculator
 	gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName] = NewRuntimeQuotaCalculator(extension.RootQuotaName)
-	gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(gqm.totalResource)
+	gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(gqm.totalResourceExceptSystemAndDefaultUsed)
 	rootNode := gqm.quotaTopoNodeMap[extension.RootQuotaName]
 	gqm.resetAllGroupQuotaRecursiveNoLock(rootNode)
 	gqm.updateResourceKeyNoLock()
@@ -787,4 +799,17 @@ func (gqm *GroupQuotaManager) ResyncNodes() {
 	}
 
 	// TODO: remove none-exist node
+}
+
+func (gqm *GroupQuotaManager) resetRootQuotaUsedAndRequest() {
+	rootQuotaInfo := gqm.getQuotaInfoByNameNoLock(extension.RootQuotaName)
+	rootQuotaInfo.lock.Lock()
+	defer rootQuotaInfo.lock.Unlock()
+
+	systemQuotaInfo := gqm.getQuotaInfoByNameNoLock(extension.SystemQuotaName)
+	defaultQuotaInfo := gqm.getQuotaInfoByNameNoLock(extension.DefaultQuotaName)
+
+	rootQuotaInfo.CalculateInfo.Used = quotav1.Add(systemQuotaInfo.GetUsed(), defaultQuotaInfo.GetUsed()).DeepCopy()
+	rootQuotaInfo.CalculateInfo.Request = quotav1.Add(systemQuotaInfo.GetRequest(), defaultQuotaInfo.GetRequest()).DeepCopy()
+
 }

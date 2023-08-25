@@ -71,10 +71,6 @@ var (
 		corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
 		corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.BinarySI),
 	}
-	defaultRootQuotaGroupMax = corev1.ResourceList{
-		corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
-		corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.BinarySI),
-	}
 
 	defaultQuotaGroupNamespace = "koordinator-system"
 
@@ -142,9 +138,6 @@ func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
 	}
 	if len(obj.SystemQuotaGroupMax) == 0 {
 		obj.SystemQuotaGroupMax = defaultSystemQuotaGroupMax
-	}
-	if len(obj.RootQuotaGroupMax) == 0 {
-		obj.RootQuotaGroupMax = defaultRootQuotaGroupMax
 	}
 	if len(obj.QuotaGroupNamespace) == 0 {
 		obj.QuotaGroupNamespace = defaultQuotaGroupNamespace

@@ -172,9 +172,6 @@ type ElasticQuotaArgs struct {
 	// SystemQuotaGroupMax limit the maxQuota of SystemQuotaGroup
 	SystemQuotaGroupMax corev1.ResourceList
 
-	// RootQuotaGroupMax limit the maxQuota of RootQuotaGroup
-	RootQuotaGroupMax corev1.ResourceList
-
 	// QuotaGroupNamespace is the namespace of the DefaultQuotaGroup/SystemQuotaGroup
 	QuotaGroupNamespace string
 
