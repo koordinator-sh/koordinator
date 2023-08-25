@@ -43,6 +43,7 @@ const (
 	defaultMigrationEvictQPS           = 10
 	defaultMigrationEvictBurst         = 1
 	defaultSchedulerSupportReservation = "koord-scheduler"
+	defaultArbitrationInterval         = 500 * time.Millisecond
 )
 
 var (
@@ -240,6 +241,15 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 	}
 	if len(obj.ObjectLimiters) == 0 {
 		obj.ObjectLimiters = defaultObjectLimiters
+	}
+	if obj.ArbitrationArgs == nil {
+		obj.ArbitrationArgs = &ArbitrationArgs{
+			Enabled:  true,
+			Interval: &metav1.Duration{Duration: defaultArbitrationInterval},
+		}
+	}
+	if obj.ArbitrationArgs.Interval == nil {
+		obj.ArbitrationArgs.Interval = &metav1.Duration{Duration: defaultArbitrationInterval}
 	}
 }
 

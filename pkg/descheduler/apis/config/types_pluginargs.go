@@ -107,6 +107,9 @@ type MigrationControllerArgs struct {
 
 	// SchedulerNames defines options to assign schedulers that can handle reservation if pmj.mode is ReservationFirst, koord-scheduler by default.
 	SchedulerNames []string
+
+	// ArbitrationArgs defines the control parameters of the Arbitration Mechanism.
+	ArbitrationArgs *ArbitrationArgs
 }
 
 type MigrationLimitObjectType string
@@ -125,4 +128,15 @@ type MigrationObjectLimiter struct {
 	// MaxMigrating indicates the maximum number of migrations/evictions allowed within the window time.
 	// If configured as nil or 0, the maximum number will be calculated according to MaxMigratingPerWorkload.
 	MaxMigrating *intstr.IntOrString
+}
+
+// ArbitrationArgs holds arguments used to configure the Arbitration Mechanism.
+type ArbitrationArgs struct {
+	// Enabled defines if Arbitration Mechanism should be enabled.
+	// Default is true
+	Enabled bool
+
+	// Interval defines the running interval (ms) of the Arbitration Mechanism.
+	// Default is 500 ms
+	Interval *metav1.Duration
 }
