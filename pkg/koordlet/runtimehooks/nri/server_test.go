@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
@@ -87,18 +88,39 @@ func TestNriServer_Start(t *testing.T) {
 }
 
 func TestNewNriServer(t *testing.T) {
+	type fields struct {
+		isNriSocketExist bool
+	}
 	type args struct {
 		opt Options
 	}
 	tests := []struct {
 		name    string
+		fields  fields
 		args    args
 		want    *NriServer
 		wantErr bool
 	}{
 		{
-			name: "new a nri server",
+			name: "nri socket not exit",
+			fields: fields{
+				isNriSocketExist: false,
+			},
 			args: args{opt: Options{
+				NriSocketPath:       "nri/nri.sock",
+				PluginFailurePolicy: "Ignore",
+				DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
+				Executor:            nil,
+			}},
+			wantErr: true,
+		},
+		{
+			name: "new a nri server",
+			fields: fields{
+				isNriSocketExist: true,
+			},
+			args: args{opt: Options{
+				NriSocketPath:       "nri/nri.sock",
 				PluginFailurePolicy: "Ignore",
 				DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
 				Executor:            nil,
@@ -107,6 +129,12 @@ func TestNewNriServer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			if tt.fields.isNriSocketExist {
+				helper.WriteFileContents("nri/nri.sock", "")
+			}
+
 			_, err := NewNriServer(tt.args.opt)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewNriServer() error = %v, wantErr %v", err, tt.wantErr)

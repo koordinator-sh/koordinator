@@ -57,9 +57,9 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	if r.nriServer != nil {
 		if err := r.nriServer.Start(); err != nil {
 			// if NRI is not enabled or container runtime not support NRI, we just skip NRI server start
-			klog.Errorf("nri mode runtimehooks server start failed: %v", err)
+			klog.Errorf("nri mode runtime hook server start failed: %v", err)
 		} else {
-			klog.V(4).Infof("nri mode runtimehooks server has started")
+			klog.V(4).Infof("nri mode runtime hook server has started")
 		}
 	}
 	if err := r.reconciler.Run(stopCh); err != nil {
@@ -95,7 +95,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		Executor:            e,
 	}
 
-	var nris *nri.NriServer
+	var nriServer *nri.NriServer
 	if cfg.RuntimeHooksNRI {
 		nriServerOptions := nri.Options{
 			NriSocketPath:       cfg.RuntimeHooksNRISocketPath,
@@ -103,7 +103,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 			DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 			Executor:            e,
 		}
-		nris, err = nri.NewNriServer(nriServerOptions)
+		nriServer, err = nri.NewNriServer(nriServerOptions)
 		if err != nil {
 			klog.Errorf("new nri mode runtimehooks server error: %v", err)
 		}
@@ -127,7 +127,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	r := &runtimeHook{
 		statesInformer: si,
 		server:         s,
-		nriServer:      nris,
+		nriServer:      nriServer,
 		reconciler:     reconciler.NewReconciler(newReconcilerOptions),
 		executor:       e,
 	}
