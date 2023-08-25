@@ -36,7 +36,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
-	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
 func Test_collectNodeColdPageInfo(t *testing.T) {
@@ -292,10 +291,10 @@ func Test_collectPodsColdPageInfo(t *testing.T) {
 					}, gocache.DefaultExpiration)
 				},
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					koordletutil.KidledScanPeriodInSecondsFilePath = filepath.Join(helper.TempDir, "scan_period_in_seconds")
-					koordletutil.KidledUseHierarchyFilePath = filepath.Join(helper.TempDir, "use_hierarchy")
-					helper.WriteFileContents(koordletutil.KidledScanPeriodInSecondsFilePath, `120`)
-					helper.WriteFileContents(koordletutil.KidledUseHierarchyFilePath, `1`)
+					system.KidledScanPeriodInSecondsFilePath = filepath.Join(helper.TempDir, "scan_period_in_seconds")
+					system.KidledUseHierarchyFilePath = filepath.Join(helper.TempDir, "use_hierarchy")
+					helper.WriteFileContents(system.KidledScanPeriodInSecondsFilePath, `120`)
+					helper.WriteFileContents(system.KidledUseHierarchyFilePath, `1`)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, testMemStat)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, testMemStat)
@@ -333,10 +332,10 @@ func Test_collectPodsColdPageInfo(t *testing.T) {
 					}, gocache.DefaultExpiration)
 				},
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					koordletutil.KidledScanPeriodInSecondsFilePath = filepath.Join(helper.TempDir, "scan_period_in_seconds")
-					koordletutil.KidledUseHierarchyFilePath = filepath.Join(helper.TempDir, "use_hierarchy")
-					helper.WriteFileContents(koordletutil.KidledScanPeriodInSecondsFilePath, `120`)
-					helper.WriteFileContents(koordletutil.KidledUseHierarchyFilePath, `1`)
+					system.KidledScanPeriodInSecondsFilePath = filepath.Join(helper.TempDir, "scan_period_in_seconds")
+					system.KidledUseHierarchyFilePath = filepath.Join(helper.TempDir, "use_hierarchy")
+					helper.WriteFileContents(system.KidledScanPeriodInSecondsFilePath, `120`)
+					helper.WriteFileContents(system.KidledUseHierarchyFilePath, `1`)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, testMemStat)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, testMemStat)

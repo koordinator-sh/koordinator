@@ -49,18 +49,21 @@ type kidledcoldPageCollector struct {
 func (k *kidledcoldPageCollector) Run(stopCh <-chan struct{}) {
 	go wait.Until(k.collectColdPageInfo, k.collectInterval, stopCh)
 }
+
 func (k *kidledcoldPageCollector) Started() bool {
 	return k.started.Load()
 }
+
 func (k *kidledcoldPageCollector) Enabled() bool {
 	return true
 }
+
 func (k *kidledcoldPageCollector) Setup(c1 *framework.Context) {}
+
 func (k *kidledcoldPageCollector) collectColdPageInfo() {
 	if k.statesInformer == nil {
 		return
 	}
-	klog.V(4).Info("collectColdPageInfo start")
 	coldPageMetrics := make([]metriccache.MetricSample, 0)
 
 	nodeColdPageInfoMetric, err := k.collectNodeColdPageInfo()
@@ -87,7 +90,6 @@ func (k *kidledcoldPageCollector) collectColdPageInfo() {
 	}
 
 	k.started.Store(true)
-	klog.V(4).Info("collectColdPageInfo finished")
 }
 
 func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.MetricSample, error) {
@@ -179,6 +181,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 	return coldMetrics, nil
 
 }
+
 func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinformer.PodMeta) ([]metriccache.MetricSample, error) {
 	pod := meta.Pod
 	count := 0

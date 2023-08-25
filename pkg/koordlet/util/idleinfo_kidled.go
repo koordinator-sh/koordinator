@@ -18,20 +18,9 @@ package util
 
 import (
 	"os"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
-
-	"k8s.io/klog/v2"
-
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-)
-
-var (
-	KidledScanPeriodInSecondsFilePath = filepath.Join(system.Conf.SysRootDir, "/kernel/mm/kidled/scan_period_in_seconds")
-	KidledUseHierarchyFilePath        = filepath.Join(system.Conf.SysRootDir, "/kernel/mm/kidled/use_hierarchy")
-	IsSupportColdMemory               = false
 )
 
 type ColdPageInfoByKidled struct {
@@ -145,48 +134,4 @@ func (i *ColdPageInfoByKidled) NodeMemWithHotPageUsageBytes() (uint64, error) {
 	//memWithHotPage=Total-Free-ColdPage
 	memWithHotPageUsageBytes := Meminfo.MemTotal*1024 - Meminfo.MemFree*1024 - i.GetColdPageTotalBytes()
 	return memWithHotPageUsageBytes, nil
-}
-
-func IsKidledSupported() bool {
-	_, err := os.Stat(KidledScanPeriodInSecondsFilePath)
-	if err != nil {
-		klog.Errorf("file scan_period_in_seconds is not exist,err: ", err)
-		return false
-	}
-	str, err := os.ReadFile(KidledScanPeriodInSecondsFilePath)
-	content := strings.Replace(string(str), "\n", "", -1)
-	if err != nil {
-		klog.Errorf("read scan_period_in_seconds err: ", err)
-		return false
-	}
-	scanPeriodInSeconds, err := strconv.Atoi(content)
-	if err != nil {
-		klog.Errorf("string to int scan_period_in_seconds err: %s", err)
-		return false
-	}
-	if scanPeriodInSeconds <= 0 {
-		klog.Errorf("scan_period_in_seconds is negative,err: ", err)
-		return false
-	}
-	_, err = os.Stat(KidledUseHierarchyFilePath)
-	if err != nil {
-		klog.Errorf("file use_hierarchy is not exist,err: ", err)
-		return false
-	}
-	str, err = os.ReadFile(KidledUseHierarchyFilePath)
-	content = strings.Replace(string(str), "\n", "", -1)
-	if err != nil {
-		klog.Errorf("read use_hierarchy ,err: ", err)
-		return false
-	}
-	useHierarchy, err := strconv.Atoi(content)
-	if err != nil {
-		klog.Errorf("string to int useHierarchy err: ", err)
-		return false
-	}
-	if useHierarchy != 1 {
-		klog.Errorf("useHierarchy is not equal to 1,err: ", err)
-		return false
-	}
-	return true
 }

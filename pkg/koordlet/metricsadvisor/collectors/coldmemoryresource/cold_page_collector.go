@@ -20,20 +20,20 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
-	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 const (
 	CollectorName = "coldPageCollector"
 )
 
-type nonCollector struct {
+type nonColdPageCollector struct {
 }
 
 func New(opt *framework.Options) framework.Collector {
 	// check whether support kidled cold page info collector
-	if koordletutil.IsKidledSupported() {
-		koordletutil.IsSupportColdMemory = true
+	if system.IsKidledSupported() {
+		system.SetIsSupportColdMemory(true)
 		return &kidledcoldPageCollector{
 			collectInterval: opt.Config.CollectResUsedInterval,
 			cgroupReader:    opt.CgroupReader,
@@ -47,13 +47,17 @@ func New(opt *framework.Options) framework.Collector {
 	// TODO(BUPT-wxq): check kstaled cold page collector
 	// TODO(BUPT-wxq): check DAMON cold page collector
 	// nonCollector does nothing
-	return &nonCollector{}
+	return &nonColdPageCollector{}
 }
-func (n *nonCollector) Run(stopCh <-chan struct{}) {}
-func (n *nonCollector) Started() bool {
+
+func (n *nonColdPageCollector) Run(stopCh <-chan struct{}) {}
+
+func (n *nonColdPageCollector) Started() bool {
 	return false
 }
-func (n *nonCollector) Enabled() bool {
+
+func (n *nonColdPageCollector) Enabled() bool {
 	return false
 }
-func (n *nonCollector) Setup(c1 *framework.Context) {}
+
+func (n *nonColdPageCollector) Setup(c1 *framework.Context) {}
