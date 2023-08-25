@@ -79,12 +79,13 @@ func main() {
 	// Expose the Prometheus http endpoint
 	go func() {
 		klog.Infof("Starting prometheus server on %v", *options.ServerAddr)
-		http.Handle("/metrics", promhttp.Handler())
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
 		if features.DefaultKoordletFeatureGate.Enabled(features.AuditEventsHTTPHandler) {
-			http.HandleFunc("/events", audit.HttpHandler())
+			mux.HandleFunc("/events", audit.HttpHandler())
 		}
 		// http.HandleFunc("/healthz", d.HealthzHandler())
-		klog.Fatalf("Prometheus monitoring failed: %v", http.ListenAndServe(*options.ServerAddr, nil))
+		klog.Fatalf("Prometheus monitoring failed: %v", http.ListenAndServe(*options.ServerAddr, mux))
 	}()
 
 	// Start the Cmd
