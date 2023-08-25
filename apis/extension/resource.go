@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -28,30 +27,9 @@ const (
 	BatchMemory corev1.ResourceName = ResourceDomainPrefix + "batch-memory"
 	MidCPU      corev1.ResourceName = ResourceDomainPrefix + "mid-cpu"
 	MidMemory   corev1.ResourceName = ResourceDomainPrefix + "mid-memory"
-
-	ResourceNvidiaGPU      corev1.ResourceName = "nvidia.com/gpu"
-	ResourceHygonDCU       corev1.ResourceName = "dcu.com/gpu"
-	ResourceRDMA           corev1.ResourceName = DomainPrefix + "rdma"
-	ResourceFPGA           corev1.ResourceName = DomainPrefix + "fpga"
-	ResourceGPU            corev1.ResourceName = DomainPrefix + "gpu"
-	ResourceGPUCore        corev1.ResourceName = DomainPrefix + "gpu-core"
-	ResourceGPUMemory      corev1.ResourceName = DomainPrefix + "gpu-memory"
-	ResourceGPUMemoryRatio corev1.ResourceName = DomainPrefix + "gpu-memory-ratio"
 )
 
 const (
-	LabelGPUModel         string = NodeDomainPrefix + "/gpu-model"
-	LabelGPUDriverVersion string = NodeDomainPrefix + "/gpu-driver-version"
-)
-
-const (
-	// AnnotationResourceSpec represents resource allocation API defined by Koordinator.
-	// The user specifies the desired CPU orchestration policy by setting the annotation.
-	AnnotationResourceSpec = SchedulingDomainPrefix + "/resource-spec"
-	// AnnotationResourceStatus represents resource allocation result.
-	// koord-scheduler patch Pod with the annotation before binding to node.
-	AnnotationResourceStatus = SchedulingDomainPrefix + "/resource-status"
-
 	// AnnotationExtendedResourceSpec specifies the resource requirements of extended resources for internal usage.
 	// It annotates the requests/limits of extended resources and can be used by runtime proxy and koordlet that
 	// cannot get the original pod spec in CRI requests.
@@ -70,129 +48,6 @@ var (
 		},
 	}
 )
-
-// ResourceSpec describes extra attributes of the resource requirements.
-type ResourceSpec struct {
-	// PreferredCPUBindPolicy represents best-effort CPU bind policy.
-	PreferredCPUBindPolicy CPUBindPolicy `json:"preferredCPUBindPolicy,omitempty"`
-	// PreferredCPUExclusivePolicy represents best-effort CPU exclusive policy.
-	PreferredCPUExclusivePolicy CPUExclusivePolicy `json:"preferredCPUExclusivePolicy,omitempty"`
-}
-
-// ResourceStatus describes resource allocation result, such as how to bind CPU.
-type ResourceStatus struct {
-	// CPUSet represents the allocated CPUs. It is Linux CPU list formatted string.
-	// When LSE/LSR Pod requested, koord-scheduler will update the field.
-	CPUSet string `json:"cpuset,omitempty"`
-	// CPUSharedPools represents the desired CPU Shared Pools used by LS Pods.
-	CPUSharedPools []CPUSharedPool `json:"cpuSharedPools,omitempty"`
-}
-
-// CPUBindPolicy defines the CPU binding policy
-type CPUBindPolicy string
-
-const (
-	// CPUBindPolicyDefault performs the default bind policy that specified in koord-scheduler configuration
-	CPUBindPolicyDefault CPUBindPolicy = "Default"
-	// CPUBindPolicyFullPCPUs favor cpuset allocation that pack in few physical cores
-	CPUBindPolicyFullPCPUs CPUBindPolicy = "FullPCPUs"
-	// CPUBindPolicySpreadByPCPUs favor cpuset allocation that evenly allocate logical cpus across physical cores
-	CPUBindPolicySpreadByPCPUs CPUBindPolicy = "SpreadByPCPUs"
-	// CPUBindPolicyConstrainedBurst constrains the CPU Shared Pool range of the Burstable Pod
-	CPUBindPolicyConstrainedBurst CPUBindPolicy = "ConstrainedBurst"
-)
-
-type CPUExclusivePolicy string
-
-const (
-	// CPUExclusivePolicyNone does not perform any exclusive policy
-	CPUExclusivePolicyNone CPUExclusivePolicy = "None"
-	// CPUExclusivePolicyPCPULevel represents mutual exclusion in the physical core dimension
-	CPUExclusivePolicyPCPULevel CPUExclusivePolicy = "PCPULevel"
-	// CPUExclusivePolicyNUMANodeLevel indicates mutual exclusion in the NUMA topology dimension
-	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = "NUMANodeLevel"
-)
-
-// NUMAAllocateStrategy indicates how to choose satisfied NUMA Nodes
-type NUMAAllocateStrategy string
-
-const (
-	// NUMAMostAllocated indicates that allocates from the NUMA Node with the least amount of available resource.
-	NUMAMostAllocated NUMAAllocateStrategy = "MostAllocated"
-	// NUMALeastAllocated indicates that allocates from the NUMA Node with the most amount of available resource.
-	NUMALeastAllocated NUMAAllocateStrategy = "LeastAllocated"
-	// NUMADistributeEvenly indicates that evenly distribute CPUs across NUMA Nodes.
-	NUMADistributeEvenly NUMAAllocateStrategy = "DistributeEvenly"
-)
-
-type NUMACPUSharedPools []CPUSharedPool
-
-type CPUSharedPool struct {
-	Socket int32  `json:"socket"`
-	Node   int32  `json:"node"`
-	CPUSet string `json:"cpuset,omitempty"`
-}
-
-// GetResourceSpec parses ResourceSpec from annotations
-func GetResourceSpec(annotations map[string]string) (*ResourceSpec, error) {
-	resourceSpec := &ResourceSpec{
-		PreferredCPUBindPolicy: CPUBindPolicyDefault,
-	}
-	data, ok := annotations[AnnotationResourceSpec]
-	if !ok {
-		return resourceSpec, nil
-	}
-	err := json.Unmarshal([]byte(data), resourceSpec)
-	if err != nil {
-		return nil, err
-	}
-	return resourceSpec, nil
-}
-
-func SetResourceSpec(obj metav1.Object, spec *ResourceSpec) error {
-	data, err := json.Marshal(spec)
-	if err != nil {
-		return err
-	}
-	annotations := obj.GetAnnotations()
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
-	annotations[AnnotationResourceSpec] = string(data)
-	obj.SetAnnotations(annotations)
-	return nil
-}
-
-// GetResourceStatus parses ResourceStatus from annotations
-func GetResourceStatus(annotations map[string]string) (*ResourceStatus, error) {
-	resourceStatus := &ResourceStatus{}
-	data, ok := annotations[AnnotationResourceStatus]
-	if !ok {
-		return resourceStatus, nil
-	}
-	err := json.Unmarshal([]byte(data), resourceStatus)
-	if err != nil {
-		return nil, err
-	}
-	return resourceStatus, nil
-}
-
-func SetResourceStatus(obj metav1.Object, status *ResourceStatus) error {
-	if obj == nil {
-		return nil
-	}
-	annotations := obj.GetAnnotations()
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
-	data, err := json.Marshal(status)
-	if err != nil {
-		return err
-	}
-	annotations[AnnotationResourceStatus] = string(data)
-	obj.SetAnnotations(annotations)
-	return nil
-}
 
 // TranslateResourceNameByPriorityClass translates defaultResourceName to extend resourceName by PriorityClass
 func TranslateResourceNameByPriorityClass(priorityClass PriorityClass, defaultResourceName corev1.ResourceName) corev1.ResourceName {

@@ -468,7 +468,7 @@ func TestPlugin_Filter(t *testing.T) {
 		{
 			name: "verify FullPCPUsOnly with SMTAlignmentError",
 			nodeLabels: map[string]string{
-				extension.LabelNodeCPUBindPolicy: extension.NodeCPUBindPolicyFullPCPUsOnly,
+				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
 			},
 			state: &preFilterState{
 				skip:                   false,
@@ -484,7 +484,7 @@ func TestPlugin_Filter(t *testing.T) {
 		{
 			name: "verify FullPCPUsOnly with RequiredFullPCPUsPolicy",
 			nodeLabels: map[string]string{
-				extension.LabelNodeCPUBindPolicy: extension.NodeCPUBindPolicyFullPCPUsOnly,
+				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
 			},
 			state: &preFilterState{
 				skip:                   false,
@@ -729,7 +729,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with Node NUMA Allocate Strategy",
 			nodeLabels: map[string]string{
-				extension.LabelNodeNUMAAllocateStrategy: extension.NodeNUMAAllocateStrategyLeastAllocated,
+				extension.LabelNodeNUMAAllocateStrategy: string(extension.NodeNUMAAllocateStrategyLeastAllocated),
 			},
 			state: &preFilterState{
 				skip: false,
@@ -747,7 +747,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with Node CPU Bind Policy",
 			nodeLabels: map[string]string{
-				extension.LabelNodeCPUBindPolicy: extension.NodeCPUBindPolicyFullPCPUsOnly,
+				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
 			},
 			state: &preFilterState{
 				skip: false,
@@ -884,7 +884,7 @@ func TestPlugin_Reserve(t *testing.T) {
 		{
 			name: "allocated by node cpu bind policy",
 			nodeLabels: map[string]string{
-				extension.LabelNodeCPUBindPolicy: extension.NodeCPUBindPolicySpreadByPCPUs,
+				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicySpreadByPCPUs),
 			},
 			state: &preFilterState{
 				skip:          false,
@@ -923,7 +923,7 @@ func TestPlugin_Reserve(t *testing.T) {
 		{
 			name: "succeed with valid cpu topology and node numa least allocate strategy",
 			nodeLabels: map[string]string{
-				extension.LabelNodeNUMAAllocateStrategy: extension.NodeNUMAAllocateStrategyLeastAllocated,
+				extension.LabelNodeNUMAAllocateStrategy: string(extension.NodeNUMAAllocateStrategyLeastAllocated),
 			},
 			state: &preFilterState{
 				skip:          false,
@@ -942,7 +942,7 @@ func TestPlugin_Reserve(t *testing.T) {
 		{
 			name: "succeed with valid cpu topology and node numa most allocate strategy",
 			nodeLabels: map[string]string{
-				extension.LabelNodeNUMAAllocateStrategy: extension.NodeNUMAAllocateStrategyMostAllocated,
+				extension.LabelNodeNUMAAllocateStrategy: string(extension.NodeNUMAAllocateStrategyMostAllocated),
 			},
 			state: &preFilterState{
 				skip:          false,

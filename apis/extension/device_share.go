@@ -26,45 +26,25 @@ import (
 )
 
 const (
-	// AnnotationCustomUsageThresholds represents the user-defined resource utilization threshold.
-	// For specific value definitions, see CustomUsageThresholds
-	AnnotationCustomUsageThresholds = SchedulingDomainPrefix + "/usage-thresholds"
-
 	// AnnotationDeviceAllocated represents the device allocated by the pod
 	AnnotationDeviceAllocated = SchedulingDomainPrefix + "/device-allocated"
 )
 
-// CustomUsageThresholds supports user-defined node resource utilization thresholds.
-type CustomUsageThresholds struct {
-	// UsageThresholds indicates the resource utilization threshold of the whole machine.
-	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
-	// ProdUsageThresholds indicates the resource utilization threshold of Prod Pods compared to the whole machine
-	ProdUsageThresholds map[corev1.ResourceName]int64 `json:"prodUsageThresholds,omitempty"`
-	// AggregatedUsage supports resource utilization filtering and scoring based on percentile statistics
-	AggregatedUsage *CustomAggregatedUsage `json:"aggregatedUsage,omitempty"`
-}
+const (
+	ResourceNvidiaGPU      corev1.ResourceName = "nvidia.com/gpu"
+	ResourceHygonDCU       corev1.ResourceName = "dcu.com/gpu"
+	ResourceRDMA           corev1.ResourceName = DomainPrefix + "rdma"
+	ResourceFPGA           corev1.ResourceName = DomainPrefix + "fpga"
+	ResourceGPU            corev1.ResourceName = DomainPrefix + "gpu"
+	ResourceGPUCore        corev1.ResourceName = DomainPrefix + "gpu-core"
+	ResourceGPUMemory      corev1.ResourceName = DomainPrefix + "gpu-memory"
+	ResourceGPUMemoryRatio corev1.ResourceName = DomainPrefix + "gpu-memory-ratio"
+)
 
-type CustomAggregatedUsage struct {
-	// UsageThresholds indicates the resource utilization threshold of the machine based on percentile statistics
-	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
-	// UsageAggregationType indicates the percentile type of the machine's utilization when filtering
-	UsageAggregationType AggregationType `json:"usageAggregationType,omitempty"`
-	// UsageAggregatedDuration indicates the statistical period of the percentile of the machine's utilization when filtering
-	UsageAggregatedDuration *metav1.Duration `json:"usageAggregatedDuration,omitempty"`
-}
-
-func GetCustomUsageThresholds(node *corev1.Node) (*CustomUsageThresholds, error) {
-	usageThresholds := &CustomUsageThresholds{}
-	data, ok := node.Annotations[AnnotationCustomUsageThresholds]
-	if !ok {
-		return usageThresholds, nil
-	}
-	err := json.Unmarshal([]byte(data), usageThresholds)
-	if err != nil {
-		return nil, err
-	}
-	return usageThresholds, nil
-}
+const (
+	LabelGPUModel         string = NodeDomainPrefix + "/gpu-model"
+	LabelGPUDriverVersion string = NodeDomainPrefix + "/gpu-driver-version"
+)
 
 // DeviceAllocations would be injected into Pod as form of annotation during Pre-bind stage.
 /*
