@@ -47,6 +47,9 @@ const (
 	LabelNodeCPUBindPolicy = NodeDomainPrefix + "/cpu-bind-policy"
 	// LabelNodeNUMAAllocateStrategy indicates how to choose satisfied NUMA Nodes when scheduling.
 	LabelNodeNUMAAllocateStrategy = NodeDomainPrefix + "/numa-allocate-strategy"
+
+	// LabelNUMATopologyPolicy represents that how to align resource allocation according to the NUMA topology
+	LabelNUMATopologyPolicy = NodeDomainPrefix + "/numa-topology-policy"
 )
 
 // ResourceSpec describes extra attributes of the resource requirements.
@@ -126,6 +129,15 @@ const (
 const (
 	NodeNUMAAllocateStrategyLeastAllocated = NUMALeastAllocated
 	NodeNUMAAllocateStrategyMostAllocated  = NUMAMostAllocated
+)
+
+type NUMATopologyPolicy string
+
+const (
+	NUMATopologyPolicyNone           NUMATopologyPolicy = ""
+	NUMATopologyPolicyBestEffort     NUMATopologyPolicy = "BestEffort"
+	NUMATopologyPolicyRestricted     NUMATopologyPolicy = "Restricted"
+	NUMATopologyPolicySingleNUMANode NUMATopologyPolicy = "SingleNUMANode"
 )
 
 const (
@@ -289,4 +301,18 @@ func GetNodeCPUBindPolicy(nodeLabels map[string]string, kubeletCPUPolicy *Kubele
 		return nodeCPUBindPolicy
 	}
 	return NodeCPUBindPolicyNone
+}
+
+func GetNodeNUMATopologyPolicy(labels map[string]string) NUMATopologyPolicy {
+	return NUMATopologyPolicy(labels[LabelNUMATopologyPolicy])
+}
+
+func SetNodeNUMATopologyPolicy(obj metav1.Object, policy NUMATopologyPolicy) {
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[LabelNUMATopologyPolicy] = string(policy)
+	obj.SetLabels(labels)
+	return
 }
