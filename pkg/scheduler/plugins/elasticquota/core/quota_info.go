@@ -40,8 +40,12 @@ type QuotaCalculateInfo struct {
 	AutoScaleMin v1.ResourceList
 	// All assigned pods used
 	Used v1.ResourceList
-	// All pods request
+	// If the quota is allow to lent resource, it's equal to childRequest
+	// else it's the max of min and childRequest
 	Request v1.ResourceList
+	// ChildRquest is the sum of child quota requests.
+	// If the quota is leaf, it's the sum of pods requests
+	ChildRequest v1.ResourceList
 	// SharedWeight determines the ability of quota groups to compete for shared resources
 	SharedWeight v1.ResourceList
 	// Runtime is the current actual resource that can be used by the quota group
@@ -80,6 +84,7 @@ func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *Qu
 			Request:      v1.ResourceList{},
 			SharedWeight: v1.ResourceList{},
 			Runtime:      v1.ResourceList{},
+			ChildRequest: v1.ResourceList{},
 		},
 	}
 }
@@ -106,6 +111,7 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 			Request:      qi.CalculateInfo.Request.DeepCopy(),
 			SharedWeight: qi.CalculateInfo.SharedWeight.DeepCopy(),
 			Runtime:      qi.CalculateInfo.Runtime.DeepCopy(),
+			ChildRequest: qi.CalculateInfo.ChildRequest.DeepCopy(),
 		},
 	}
 	for name, pod := range qi.PodCache {
@@ -131,6 +137,7 @@ func (qi *QuotaInfo) GetQuotaSummary() *QuotaInfoSummary {
 	quotaInfoSummary.Request = qi.CalculateInfo.Request.DeepCopy()
 	quotaInfoSummary.SharedWeight = qi.CalculateInfo.SharedWeight.DeepCopy()
 	quotaInfoSummary.Runtime = qi.CalculateInfo.Runtime.DeepCopy()
+	quotaInfoSummary.ChildRequest = qi.CalculateInfo.ChildRequest.DeepCopy()
 
 	for podName, podInfo := range qi.PodCache {
 		quotaInfoSummary.PodCache[podName] = &SimplePodInfo{
@@ -185,6 +192,13 @@ func (qi *QuotaInfo) addRequestNonNegativeNoLock(delta v1.ResourceList) {
 	}
 }
 
+func (qi *QuotaInfo) addChildRequestNonNegativeNoLock(delta v1.ResourceList) {
+	qi.CalculateInfo.ChildRequest = quotav1.Add(qi.CalculateInfo.ChildRequest, delta)
+	for _, resName := range quotav1.IsNegative(qi.CalculateInfo.ChildRequest) {
+		qi.CalculateInfo.ChildRequest[resName] = createQuantity(0, resName)
+	}
+}
+
 func (qi *QuotaInfo) addUsedNonNegativeNoLock(delta v1.ResourceList) {
 	qi.CalculateInfo.Used = quotav1.Add(qi.CalculateInfo.Used, delta)
 	for _, resName := range quotav1.IsNegative(qi.CalculateInfo.Used) {
@@ -212,6 +226,12 @@ func (qi *QuotaInfo) GetRequest() v1.ResourceList {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 	return qi.CalculateInfo.Request.DeepCopy()
+}
+
+func (qi *QuotaInfo) GetChildRequest() v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.CalculateInfo.ChildRequest.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetUsed() v1.ResourceList {
@@ -255,6 +275,7 @@ func (qi *QuotaInfo) clearForResetNoLock() {
 	qi.CalculateInfo.Request = v1.ResourceList{}
 	qi.CalculateInfo.Used = v1.ResourceList{}
 	qi.CalculateInfo.Runtime = v1.ResourceList{}
+	qi.CalculateInfo.ChildRequest = v1.ResourceList{}
 	qi.RuntimeVersion = 0
 }
 

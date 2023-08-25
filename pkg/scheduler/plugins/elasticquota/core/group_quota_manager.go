@@ -152,6 +152,25 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaRequest(deltaReq 
 		if curQuotaInfo.Name == extension.RootQuotaName {
 			return
 		}
+
+		curQuotaInfo.addChildRequestNonNegativeNoLock(deltaReq)
+		realRequest := curQuotaInfo.CalculateInfo.ChildRequest.DeepCopy()
+		// If the quota not allow to lent resource. we should request for min
+		if !curQuotaInfo.AllowLentResource {
+			if realRequest == nil {
+				realRequest = v1.ResourceList{}
+			}
+			for r, q := range curQuotaInfo.CalculateInfo.Min {
+				p, ok := realRequest[r]
+				if !ok {
+					realRequest[r] = q
+				}
+				if q.Cmp(p) == 1 {
+					realRequest[r] = q
+				}
+			}
+		}
+		curQuotaInfo.CalculateInfo.Request = realRequest
 		newSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
 		deltaReq = quotav1.Subtract(newSubLimitReq, oldSubLimitReq)
 
@@ -378,10 +397,26 @@ func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 				Name: topoNode.quotaInfo.ParentName,
 			})
 		}
-		parQuotaTopoNode.quotaInfo.IsParent = true
 		topoNode.parQuotaTopoNode = parQuotaTopoNode
 		parQuotaTopoNode.addChildGroupQuotaInfo(topoNode)
 	}
+
+	for _, topoNode := range gqm.quotaTopoNodeMap {
+		if topoNode.name == extension.RootQuotaName {
+			continue
+		}
+		if len(topoNode.childGroupQuotaInfos) > 0 {
+			topoNode.quotaInfo.IsParent = true
+		} else {
+			// the parent node become leaf node. clean used and childRequest
+			if topoNode.quotaInfo.IsParent == true {
+				topoNode.quotaInfo.IsParent = false
+				topoNode.quotaInfo.CalculateInfo.ChildRequest = v1.ResourceList{}
+				topoNode.quotaInfo.CalculateInfo.Used = v1.ResourceList{}
+			}
+		}
+	}
+
 }
 
 // ResetAllGroupQuotaNoLock no need to lock gqm.lock
@@ -394,7 +429,7 @@ func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
 		}
 		topoNode.quotaInfo.lock.Lock()
 		if !topoNode.quotaInfo.IsParent {
-			childRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.Request.DeepCopy()
+			childRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.ChildRequest.DeepCopy()
 			childUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.Used.DeepCopy()
 		}
 		topoNode.quotaInfo.clearForResetNoLock()
@@ -708,17 +743,17 @@ func (gqm *GroupQuotaManager) UnreservePod(quotaName string, p *v1.Pod) {
 	gqm.updatePodIsAssignedNoLock(quotaName, p, false)
 }
 
-func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used, request, runtime v1.ResourceList, err error) {
+func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used, request, childRequest, runtime v1.ResourceList, err error) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
-		return nil, nil, nil, fmt.Errorf("groupQuotaManager doesn't have this quota:%v", quotaName)
+		return nil, nil, nil, nil, fmt.Errorf("groupQuotaManager doesn't have this quota:%v", quotaName)
 	}
 
 	runtime = gqm.RefreshRuntimeNoLock(quotaName)
-	return quotaInfo.GetUsed(), quotaInfo.GetRequest(), runtime, nil
+	return quotaInfo.GetUsed(), quotaInfo.GetRequest(), quotaInfo.GetChildRequest(), runtime, nil
 }
 
 func getPodName(oldPod, newPod *v1.Pod) string {

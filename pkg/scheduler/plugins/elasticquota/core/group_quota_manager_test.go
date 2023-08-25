@@ -132,7 +132,8 @@ func TestGroupQuotaManager_UpdateQuotaInternal(t *testing.T) {
 	assert.Nil(t, err)
 	quotaInfo = gqm.quotaInfoMap["test1"]
 	assert.True(t, quotaInfo != nil)
-	assert.True(t, quotaInfo.IsParent)
+	// quota test1 has LabelQuotaIsParent. but it has no children. So IsParent is false
+	assert.False(t, quotaInfo.IsParent)
 	assert.Equal(t, createResourceList(84, 120*GigaByte), quotaInfo.CalculateInfo.Max)
 	assert.Equal(t, createResourceList(60, 100*GigaByte), quotaInfo.CalculateInfo.AutoScaleMin)
 	assert.Equal(t, int64(84), quotaInfo.CalculateInfo.SharedWeight.Cpu().Value())
@@ -249,6 +250,148 @@ func TestGroupQuotaManager_NotAllowLentResource(t *testing.T) {
 	assert.Equal(t, int64(60), runtime.Cpu().Value())
 	runtime = gqm.RefreshRuntime("test2")
 	assert.Equal(t, int64(40), runtime.Cpu().Value())
+}
+
+func TestGroupQuotaManager_NotAllowLentResource_2(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+
+	deltaRes := createResourceList(100, 0)
+	gqm.UpdateClusterTotalResource(deltaRes)
+
+	// root not allow  min:60
+	//  - child1 not allow  min:20
+	//  - child2 not allow  min:20
+	AddQuotaToManager(t, gqm, "test-root", extension.RootQuotaName, 96, 0, 60, 0, false, true)
+	AddQuotaToManager(t, gqm, "test-child1", "test-root", 96, 0, 20, 0, false, false)
+	AddQuotaToManager(t, gqm, "test-child2", "test-root", 96, 0, 20, 0, false, false)
+
+	// no request
+	rootRuntime := gqm.RefreshRuntime("test-root")
+	child1Runtime := gqm.RefreshRuntime("test-child1")
+	child2Runtime := gqm.RefreshRuntime("test-child2")
+
+	assert.Equal(t, int64(60), rootRuntime.Cpu().Value())
+	assert.Equal(t, int64(20), child1Runtime.Cpu().Value())
+	assert.Equal(t, int64(20), child2Runtime.Cpu().Value())
+
+	// add 40 request
+	request := createResourceList(40, 0)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request)
+
+	rootRuntime = gqm.RefreshRuntime("test-root")
+	child1Runtime = gqm.RefreshRuntime("test-child1")
+	child2Runtime = gqm.RefreshRuntime("test-child2")
+
+	assert.Equal(t, int64(60), rootRuntime.Cpu().Value())
+	assert.Equal(t, int64(40), child1Runtime.Cpu().Value())
+	assert.Equal(t, int64(20), child2Runtime.Cpu().Value())
+
+	// add 20 request
+	request2 := createResourceList(20, 0)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request2)
+
+	rootRuntime = gqm.RefreshRuntime("test-root")
+	child1Runtime = gqm.RefreshRuntime("test-child1")
+	child2Runtime = gqm.RefreshRuntime("test-child2")
+
+	assert.Equal(t, int64(80), rootRuntime.Cpu().Value())
+	assert.Equal(t, int64(60), child1Runtime.Cpu().Value())
+	assert.Equal(t, int64(20), child2Runtime.Cpu().Value())
+}
+
+func TestGroupQuotaManager_NotAllowLentResource_3(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+
+	deltaRes := createResourceList(100, 0)
+	gqm.UpdateClusterTotalResource(deltaRes)
+
+	// root allow  min:60
+	//  - child1 not allow  min:20
+	//  - child2 allow  min:20
+	AddQuotaToManager(t, gqm, "test-root", extension.RootQuotaName, 96, 0, 60, 0, true, true)
+	AddQuotaToManager(t, gqm, "test-child1", "test-root", 96, 0, 20, 0, false, false)
+	AddQuotaToManager(t, gqm, "test-child2", "test-root", 96, 0, 20, 0, true, false)
+
+	// no request
+	rootRuntime := gqm.RefreshRuntime("test-root")
+	child1Runtime := gqm.RefreshRuntime("test-child1")
+	child2Runtime := gqm.RefreshRuntime("test-child2")
+
+	assert.Equal(t, int64(20), rootRuntime.Cpu().Value())
+	assert.Equal(t, int64(20), child1Runtime.Cpu().Value())
+	assert.Equal(t, int64(0), child2Runtime.Cpu().Value())
+
+	// add 40 request
+	request := createResourceList(40, 0)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request)
+
+	rootRuntime = gqm.RefreshRuntime("test-root")
+	child1Runtime = gqm.RefreshRuntime("test-child1")
+	child2Runtime = gqm.RefreshRuntime("test-child2")
+
+	assert.Equal(t, int64(40), rootRuntime.Cpu().Value())
+	assert.Equal(t, int64(40), child1Runtime.Cpu().Value())
+	assert.Equal(t, int64(0), child2Runtime.Cpu().Value())
+
+	// add 20 request
+	request2 := createResourceList(20, 0)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request2)
+
+	rootRuntime = gqm.RefreshRuntime("test-root")
+	child1Runtime = gqm.RefreshRuntime("test-child1")
+	child2Runtime = gqm.RefreshRuntime("test-child2")
+
+	assert.Equal(t, int64(60), rootRuntime.Cpu().Value())
+	assert.Equal(t, int64(60), child1Runtime.Cpu().Value())
+	assert.Equal(t, int64(0), child2Runtime.Cpu().Value())
+}
+
+func TestGroupQuotaManager_NotAllowLentResource_4(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+
+	deltaRes := createResourceList(100, 0)
+	gqm.UpdateClusterTotalResource(deltaRes)
+
+	// root allow  min:60
+	//  - child1 not allow  min:20
+	//  - child2 not allow  min:20
+	AddQuotaToManager(t, gqm, "test-root", extension.RootQuotaName, 96, 0, 60, 0, true, true)
+	AddQuotaToManager(t, gqm, "test-child1", "test-root", 96, 0, 20, 0, false, false)
+	AddQuotaToManager(t, gqm, "test-child2", "test-root", 96, 0, 20, 0, false, false)
+
+	// no request
+	rootRuntime := gqm.RefreshRuntime("test-root")
+	child1Runtime := gqm.RefreshRuntime("test-child1")
+	child2Runtime := gqm.RefreshRuntime("test-child2")
+
+	assert.Equal(t, int64(40), rootRuntime.Cpu().Value())
+	assert.Equal(t, int64(20), child1Runtime.Cpu().Value())
+	assert.Equal(t, int64(20), child2Runtime.Cpu().Value())
+
+	// add 40 request
+	request := createResourceList(40, 0)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request)
+
+	rootRuntime = gqm.RefreshRuntime("test-root")
+	child1Runtime = gqm.RefreshRuntime("test-child1")
+	child2Runtime = gqm.RefreshRuntime("test-child2")
+
+	assert.Equal(t, int64(60), rootRuntime.Cpu().Value())
+	assert.Equal(t, int64(40), child1Runtime.Cpu().Value())
+	assert.Equal(t, int64(20), child2Runtime.Cpu().Value())
+
+	// add 20 request
+	request2 := createResourceList(20, 0)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request2)
+
+	rootRuntime = gqm.RefreshRuntime("test-root")
+	child1Runtime = gqm.RefreshRuntime("test-child1")
+	child2Runtime = gqm.RefreshRuntime("test-child2")
+
+	assert.Equal(t, int64(80), rootRuntime.Cpu().Value())
+	assert.Equal(t, int64(60), child1Runtime.Cpu().Value())
+	assert.Equal(t, int64(20), child2Runtime.Cpu().Value())
+
 }
 
 func TestGroupQuotaManager_UpdateQuotaRequest(t *testing.T) {
@@ -640,6 +783,17 @@ func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 	//   `-- test1-a Max[96, 160]  Min[50,80] request[0,0]
 	changeQuota.Labels[extension.LabelQuotaParent] = "test2"
 	gqm.UpdateQuota(changeQuota, false)
+
+	test2, _ := json.Marshal(gqm.GetQuotaInfoByName("test2"))
+	fmt.Println("test2", string(test2))
+	test2a, _ := json.Marshal(gqm.GetQuotaInfoByName("test2-a"))
+	fmt.Println("test2-a", string(test2a))
+	a123, _ := json.Marshal(gqm.GetQuotaInfoByName("a-123"))
+	fmt.Println("a-123", string(a123))
+	test1, _ := json.Marshal(gqm.GetQuotaInfoByName("test1"))
+	fmt.Println("test1", string(test1))
+	test1a, _ := json.Marshal(gqm.GetQuotaInfoByName("test1-a"))
+	fmt.Println("test1-a", string(test1a))
 
 	quotaInfo := gqm.GetQuotaInfoByName("test1-a")
 	gqm.RefreshRuntime("test1-a")
@@ -1272,10 +1426,11 @@ func TestGroupQuotaManager_GetQuotaInformationForSyncHandler(t *testing.T) {
 	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100))
 	gqm.RefreshRuntime("1")
 	gqm.updateGroupDeltaUsedNoLock("1", createResourceList(10, 10))
-	used, request, runtime, err := gqm.GetQuotaInformationForSyncHandler("1")
+	used, request, childRequest, runtime, err := gqm.GetQuotaInformationForSyncHandler("1")
 	assert.Nil(t, err)
 	assert.Equal(t, used, createResourceList(10, 10))
 	assert.Equal(t, request, createResourceList(100, 100))
+	assert.Equal(t, childRequest, createResourceList(100, 100))
 	assert.Equal(t, runtime, createResourceList(100, 100))
 }
 
@@ -1360,6 +1515,80 @@ func TestGroupQuotaManager_UpdateRootQuotaUsed(t *testing.T) {
 
 	rootQuotaUsed = gqm.GetQuotaInfoByName(extension.RootQuotaName).GetUsed()
 	assert.Equal(t, expectedTotalUsed, rootQuotaUsed)
+}
+
+func TestGroupQuotaManager_ChildRequestAndRequest_All_not_allowLent(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+	// quota1 Max[40, 40]  Min[20,20] request[0,0]
+	//   |-- quota2 Max[40, 40]  Min[10,10] request[0,0]
+	//   |-- quota3 Max[40, 40]  Min[5,5] request[0,0]
+	qi1 := CreateQuota("1", extension.RootQuotaName, 40, 40, 20, 20, false, false)
+	qi2 := CreateQuota("2", "1", 40, 40, 10, 10, false, false)
+	qi3 := CreateQuota("3", "1", 40, 40, 5, 5, false, false)
+	gqm.UpdateQuota(qi1, false)
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetChildRequest())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("1").GetRequest())
+	gqm.UpdateQuota(qi2, false)
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("2").GetChildRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetChildRequest())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("1").GetRequest())
+	gqm.UpdateQuota(qi3, false)
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("3").GetChildRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("3").GetRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("2").GetChildRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("1").GetChildRequest())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("1").GetRequest())
+	// add pod1
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	pod1.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(5, 5),
+			},
+		},
+	}
+	gqm.OnPodAdd("2", pod1)
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("3").GetChildRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("3").GetRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("2").GetChildRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("1").GetChildRequest())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("1").GetRequest())
+	// add pod2
+	pod2 := schetesting.MakePod().Name("2").Obj()
+	pod2.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	gqm.OnPodAdd("2", pod2)
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("3").GetChildRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("3").GetRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("2").GetChildRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("2").GetRequest())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("1").GetChildRequest())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("1").GetRequest())
+	// add pod3
+	pod3 := schetesting.MakePod().Name("3").Obj()
+	pod3.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	gqm.OnPodAdd("2", pod3)
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("3").GetChildRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("3").GetRequest())
+	assert.Equal(t, createResourceList(25, 25), gqm.GetQuotaInfoByName("2").GetChildRequest())
+	assert.Equal(t, createResourceList(25, 25), gqm.GetQuotaInfoByName("2").GetRequest())
+	assert.Equal(t, createResourceList(30, 30), gqm.GetQuotaInfoByName("1").GetChildRequest())
+	assert.Equal(t, createResourceList(30, 30), gqm.GetQuotaInfoByName("1").GetRequest())
 }
 
 func TestGroupQuotaManager_UpdateRootQuotaRequest(t *testing.T) {

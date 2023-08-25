@@ -39,6 +39,7 @@ type QuotaInfoSummary struct {
 	Request      v1.ResourceList `json:"request"`
 	SharedWeight v1.ResourceList `json:"sharedWeight"`
 	Runtime      v1.ResourceList `json:"runtime"`
+	ChildRequest v1.ResourceList `json:"childRequest"`
 
 	PodCache map[string]*SimplePodInfo `json:"podCache"`
 }
@@ -52,6 +53,7 @@ func NewQuotaInfoSummary() *QuotaInfoSummary {
 		Request:      make(v1.ResourceList),
 		SharedWeight: make(v1.ResourceList),
 		Runtime:      make(v1.ResourceList),
+		ChildRequest: make(v1.ResourceList),
 		PodCache:     make(map[string]*SimplePodInfo),
 	}
 }

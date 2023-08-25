@@ -99,15 +99,21 @@ func (ctrl *Controller) syncHandler() []error {
 
 	for _, eq := range eqList {
 		func() {
-			used, request, runtime, err := ctrl.groupQuotaManager.GetQuotaInformationForSyncHandler(eq.Name)
+			used, request, childRequest, runtime, err := ctrl.groupQuotaManager.GetQuotaInformationForSyncHandler(eq.Name)
 			if err != nil {
 				errors = append(errors, err)
 				return
 			}
 
-			var oriRuntime, oriRequest v1.ResourceList
+			var oriRuntime, oriRequest, oriChildRequest v1.ResourceList
 			if eq.Annotations[extension.AnnotationRequest] != "" {
 				if err := json.Unmarshal([]byte(eq.Annotations[extension.AnnotationRequest]), &oriRequest); err != nil {
+					errors = append(errors, err)
+					return
+				}
+			}
+			if eq.Annotations[extension.AnnotationChildRequest] != "" {
+				if err := json.Unmarshal([]byte(eq.Annotations[extension.AnnotationChildRequest]), &oriChildRequest); err != nil {
 					errors = append(errors, err)
 					return
 				}
@@ -121,7 +127,8 @@ func (ctrl *Controller) syncHandler() []error {
 			// Ignore this loop if the runtime/request/used doesn't change
 			if quotav1.Equals(quotav1.RemoveZeros(eq.Status.Used), quotav1.RemoveZeros(used)) &&
 				quotav1.Equals(quotav1.RemoveZeros(oriRuntime), quotav1.RemoveZeros(runtime)) &&
-				quotav1.Equals(quotav1.RemoveZeros(oriRequest), quotav1.RemoveZeros(request)) {
+				quotav1.Equals(quotav1.RemoveZeros(oriRequest), quotav1.RemoveZeros(request)) &&
+				quotav1.Equals(quotav1.RemoveZeros(oriChildRequest), quotav1.RemoveZeros(childRequest)) {
 				return
 			}
 			newEQ := eq.DeepCopy()
@@ -138,13 +145,20 @@ func (ctrl *Controller) syncHandler() []error {
 				errors = append(errors, err)
 				return
 			}
+			childRequestBytes, err := json.Marshal(childRequest)
+			if err != nil {
+				errors = append(errors, err)
+				return
+			}
 			newEQ.Annotations[extension.AnnotationRuntime] = string(runtimeBytes)
 			newEQ.Annotations[extension.AnnotationRequest] = string(requestBytes)
+			newEQ.Annotations[extension.AnnotationChildRequest] = string(childRequestBytes)
 			newEQ.Status.Used = used
 
-			klog.V(5).Infof("quota:%v, oldUsed:%v, newUsed:%v, oldRuntime:%v, newRuntime:%v, oldRequest:%v, newRequest:%v",
+			klog.V(5).Infof("quota:%v, oldUsed:%v, newUsed:%v, oldRuntime:%v, newRuntime:%v, oldRequest:%v, newRequest:%v, oldChildRequest:%v, newChildRequest:%v",
 				eq.Name, eq.Status.Used, used, eq.Annotations[extension.AnnotationRuntime], string(runtimeBytes),
-				eq.Annotations[extension.AnnotationRequest], string(requestBytes))
+				eq.Annotations[extension.AnnotationRequest], string(requestBytes),
+				eq.Annotations[extension.AnnotationChildRequest], string(childRequestBytes))
 
 			patch, err := util.CreateMergePatch(eq, newEQ)
 			if err != nil {
