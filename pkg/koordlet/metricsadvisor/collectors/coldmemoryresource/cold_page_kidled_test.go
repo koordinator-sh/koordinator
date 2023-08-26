@@ -132,7 +132,6 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 		metricCache.Close()
 	}()
 	statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
-
 	helper.CreateCgroupFile("", system.MemoryIdlePageStats)
 	helper.WriteCgroupFileContents("", system.MemoryIdlePageStats, idleInfoContentStr)
 	helper.WriteProcSubFileContents(system.ProcMemInfoName, meminfo)
