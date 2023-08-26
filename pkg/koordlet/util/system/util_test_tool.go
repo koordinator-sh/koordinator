@@ -78,6 +78,7 @@ func NewFileTestUtil(t *testing.T) *FileTestUtil {
 	assert.NoError(t, err)
 	Conf.CgroupRootDir = tempDir
 	Conf.SysRootDir = tempDir
+	Conf.VarRunRootDir = tempDir
 
 	initSupportConfigs()
 

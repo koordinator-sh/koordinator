@@ -34,7 +34,7 @@ import (
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
-type nriconfig struct {
+type nriConfig struct {
 	Events []string `json:"events"`
 }
 
@@ -47,8 +47,18 @@ type Options struct {
 	Executor      resourceexecutor.ResourceUpdateExecutor
 }
 
+func (o Options) Validate() error {
+	// a fast check for the NRI support status
+	completeNriSocketPath := filepath.Join(system.Conf.VarRunRootDir, o.NriSocketPath)
+	if !system.FileExists(completeNriSocketPath) {
+		return fmt.Errorf("nri socket path %q does not exist", completeNriSocketPath)
+	}
+
+	return nil
+}
+
 type NriServer struct {
-	cfg     nriconfig
+	cfg     nriConfig
 	stub    stub.Stub
 	mask    stub.EventMask
 	options Options // server options
@@ -69,8 +79,12 @@ var (
 )
 
 func NewNriServer(opt Options) (*NriServer, error) {
+	err := opt.Validate()
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate nri server, err: %w", err)
+	}
+
 	var opts []stub.Option
-	var err error
 	opts = append(opts, stub.WithPluginName(pluginName))
 	opts = append(opts, stub.WithPluginIdx(pluginIdx))
 	opts = append(opts, stub.WithSocketPath(filepath.Join(system.Conf.VarRunRootDir, opt.NriSocketPath)))
@@ -83,15 +97,16 @@ func NewNriServer(opt Options) (*NriServer, error) {
 
 	if p.stub, err = stub.New(p, append(opts, stub.WithOnClose(p.onClose))...); err != nil {
 		klog.Errorf("failed to create plugin stub: %v", err)
+		return nil, err
 	}
 
-	return p, err
+	return p, nil
 }
 
-func (s *NriServer) Start() error {
+func (p *NriServer) Start() error {
 	go func() {
-		if s.stub != nil {
-			err := s.stub.Run(context.Background())
+		if p.stub != nil {
+			err := p.stub.Run(context.Background())
 			if err != nil {
 				klog.Errorf("nri server exited with error: %v", err)
 			} else {
@@ -120,6 +135,8 @@ func (p *NriServer) Configure(config, runtime, version string) (stub.EventMask, 
 		return 0, fmt.Errorf("failed to parse events in configuration: %w", err)
 	}
 
+	klog.V(6).Infof("handle NRI Configure successfully, config %s, runtime %s, version %s",
+		config, runtime, version)
 	return p.mask, nil
 }
 
@@ -140,6 +157,8 @@ func (p *NriServer) RunPodSandbox(pod *api.PodSandbox) error {
 		}
 	}
 	podCtx.NriDone(p.options.Executor)
+
+	klog.V(6).Infof("handle NRI RunPodSandbox successfully, pod %s/%s", pod.GetNamespace(), pod.GetName())
 	return nil
 }
 
@@ -160,6 +179,9 @@ func (p *NriServer) CreateContainer(pod *api.PodSandbox, container *api.Containe
 		klog.Errorf("containerCtx nri done failed: %v", err)
 		return nil, nil, nil
 	}
+
+	klog.V(6).Infof("handle NRI CreateContainer successfully, container %s/%s/%s",
+		pod.GetNamespace(), pod.GetName(), container.GetName())
 	return adjust, nil, nil
 }
 
@@ -181,9 +203,12 @@ func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Containe
 		return nil, nil
 	}
 
+	klog.V(6).Infof("handle NRI UpdateContainer successfully, container %s/%s/%s",
+		pod.GetNamespace(), pod.GetName(), container.GetName())
 	return []*api.ContainerUpdate{update}, nil
 }
 
 func (p *NriServer) onClose() {
 	p.stub.Stop()
+	klog.V(6).Infof("NRI server closes")
 }
