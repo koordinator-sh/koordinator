@@ -35,8 +35,7 @@ import (
 func Test_NewColdPageCollector(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
 	defer helper.Cleanup()
-	system.KidledScanPeriodInSecondsFilePath = filepath.Join(helper.TempDir, "scan_period_in_seconds")
-	system.KidledUseHierarchyFilePath = filepath.Join(helper.TempDir, "use_hierarchy")
+	system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 	metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
 		TSDBPath:              t.TempDir(),
 		TSDBEnablePromMetrics: false,
@@ -89,8 +88,8 @@ func Test_NewColdPageCollector(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			helper.WriteFileContents(system.KidledScanPeriodInSecondsFilePath, tt.args.contcontentKidledScanPeriodInSecondsent)
-			helper.WriteFileContents(system.KidledUseHierarchyFilePath, tt.args.contentKidledUseHierarchy)
+			helper.WriteFileContents(system.GetKidledScanPeriodInSecondsFilePath(), tt.args.contcontentKidledScanPeriodInSecondsent)
+			helper.WriteFileContents(system.GetKidledUseHierarchyFilePath(), tt.args.contentKidledUseHierarchy)
 			got := New(opt)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantEnable, got.Enabled())

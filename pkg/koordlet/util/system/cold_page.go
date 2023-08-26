@@ -26,18 +26,16 @@ import (
 )
 
 var (
-	KidledScanPeriodInSecondsFilePath = filepath.Join(Conf.SysRootDir, "/kernel/mm/kidled/scan_period_in_seconds")
-	KidledUseHierarchyFilePath        = filepath.Join(Conf.SysRootDir, "/kernel/mm/kidled/use_hierarchy")
-	isSupportColdMemory               = false
+	isSupportColdMemory = false
 )
 
 func IsKidledSupported() bool {
-	_, err := os.Stat(KidledScanPeriodInSecondsFilePath)
+	_, err := os.Stat(GetKidledScanPeriodInSecondsFilePath())
 	if err != nil {
 		klog.V(4).Infof("file scan_period_in_seconds is not exist err: ", err)
 		return false
 	}
-	str, err := os.ReadFile(KidledScanPeriodInSecondsFilePath)
+	str, err := os.ReadFile(GetKidledScanPeriodInSecondsFilePath())
 	content := strings.Replace(string(str), "\n", "", -1)
 	if err != nil {
 		klog.V(4).Infof("read scan_period_in_seconds err: ", err)
@@ -52,12 +50,12 @@ func IsKidledSupported() bool {
 		klog.V(4).Infof("scan_period_in_seconds is negative err: ", err)
 		return false
 	}
-	_, err = os.Stat(KidledUseHierarchyFilePath)
+	_, err = os.Stat(GetKidledUseHierarchyFilePath())
 	if err != nil {
 		klog.V(4).Infof("file use_hierarchy is not exist err: ", err)
 		return false
 	}
-	str, err = os.ReadFile(KidledUseHierarchyFilePath)
+	str, err = os.ReadFile(GetKidledUseHierarchyFilePath())
 	content = strings.Replace(string(str), "\n", "", -1)
 	if err != nil {
 		klog.V(4).Infof("read use_hierarchy err: ", err)
@@ -81,4 +79,11 @@ func GetIsSupportColdMemory() bool {
 
 func SetIsSupportColdMemory(flag bool) {
 	isSupportColdMemory = flag
+}
+
+func GetKidledScanPeriodInSecondsFilePath() string {
+	return filepath.Join(Conf.SysRootDir, "/kernel/mm/kidled/scan_period_in_seconds")
+}
+func GetKidledUseHierarchyFilePath() string {
+	return filepath.Join(Conf.SysRootDir, "/kernel/mm/kidled/use_hierarchy")
 }

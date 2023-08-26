@@ -26,8 +26,7 @@ import (
 func Test_IsKidledSupported(t *testing.T) {
 	helper := NewFileTestUtil(t)
 	defer helper.Cleanup()
-	KidledScanPeriodInSecondsFilePath = filepath.Join(helper.TempDir, "scan_period_in_seconds")
-	KidledUseHierarchyFilePath = filepath.Join(helper.TempDir, "use_hierarchy")
+	Conf.SysRootDir = filepath.Join(helper.TempDir, Conf.SysRootDir)
 
 	type args struct {
 		contcontentKidledScanPeriodInSecondsent string
@@ -61,8 +60,8 @@ func Test_IsKidledSupported(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			helper.WriteFileContents(KidledScanPeriodInSecondsFilePath, tt.args.contcontentKidledScanPeriodInSecondsent)
-			helper.WriteFileContents(KidledUseHierarchyFilePath, tt.args.contentKidledUseHierarchy)
+			helper.WriteFileContents(GetKidledScanPeriodInSecondsFilePath(), tt.args.contcontentKidledScanPeriodInSecondsent)
+			helper.WriteFileContents(GetKidledUseHierarchyFilePath(), tt.args.contentKidledUseHierarchy)
 			got := IsKidledSupported()
 			assert.Equal(t, tt.want, got)
 		})

@@ -291,10 +291,9 @@ func Test_collectPodsColdPageInfo(t *testing.T) {
 					}, gocache.DefaultExpiration)
 				},
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					system.KidledScanPeriodInSecondsFilePath = filepath.Join(helper.TempDir, "scan_period_in_seconds")
-					system.KidledUseHierarchyFilePath = filepath.Join(helper.TempDir, "use_hierarchy")
-					helper.WriteFileContents(system.KidledScanPeriodInSecondsFilePath, `120`)
-					helper.WriteFileContents(system.KidledUseHierarchyFilePath, `1`)
+					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
+					helper.WriteFileContents(system.GetKidledScanPeriodInSecondsFilePath(), `120`)
+					helper.WriteFileContents(system.GetKidledUseHierarchyFilePath(), `1`)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, testMemStat)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, testMemStat)
@@ -332,10 +331,9 @@ func Test_collectPodsColdPageInfo(t *testing.T) {
 					}, gocache.DefaultExpiration)
 				},
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					system.KidledScanPeriodInSecondsFilePath = filepath.Join(helper.TempDir, "scan_period_in_seconds")
-					system.KidledUseHierarchyFilePath = filepath.Join(helper.TempDir, "use_hierarchy")
-					helper.WriteFileContents(system.KidledScanPeriodInSecondsFilePath, `120`)
-					helper.WriteFileContents(system.KidledUseHierarchyFilePath, `1`)
+					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
+					helper.WriteFileContents(system.GetKidledScanPeriodInSecondsFilePath(), `120`)
+					helper.WriteFileContents(system.GetKidledUseHierarchyFilePath(), `1`)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, testMemStat)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, testMemStat)
