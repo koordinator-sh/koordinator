@@ -4,6 +4,13 @@ nodes:
   - role: control-plane
   - role: worker
   - role: worker
-  - role: worker
-featureGates:
-  EphemeralContainers: true
+
+kubeadmConfigPatches:
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        "cgroup-root": "/"
+    ---
+    kind: KubeletConfiguration
+    cgroupRoot: /

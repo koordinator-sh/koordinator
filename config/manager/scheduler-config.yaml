@@ -25,9 +25,9 @@ data:
                   weight: 1
                 - name: memory
                   weight: 1
-                - name: "koordinator.sh/batch-cpu"
+                - name: "kubernetes.io/batch-cpu"
                   weight: 1
-                - name: "koordinator.sh/batch-mem"
+                - name: "kubernetes.io/batch-memory"
                   weight: 1
         - name: LoadAwareScheduling
           args:
@@ -57,9 +57,9 @@ data:
               - name: Coscheduling
           preFilter:
             enabled:
+              - name: Reservation
               - name: NodeNUMAResource
               - name: DeviceShare
-              - name: Reservation
               - name: Coscheduling
               - name: ElasticQuota
           filter:
@@ -68,7 +68,6 @@ data:
               - name: NodeNUMAResource
               - name: DeviceShare
               - name: Reservation
-              - name: BatchResourceFit
           postFilter:
             disabled:
               - name: "*"
@@ -86,6 +85,8 @@ data:
                 weight: 1
               - name: NodeNUMAResource
                 weight: 1
+              - name: DeviceShare
+                weight: 1
               - name: Reservation
                 weight: 5000
           reserve:
@@ -93,7 +94,6 @@ data:
               - name: LoadAwareScheduling
               - name: NodeNUMAResource
               - name: DeviceShare
-              - name: Reservation
               - name: Coscheduling
               - name: ElasticQuota
           permit:
@@ -104,6 +104,7 @@ data:
               - name: NodeNUMAResource
               - name: DeviceShare
               - name: Reservation
+              - name: DefaultPreBind
           bind:
             disabled:
               - name: "*"
