@@ -20,8 +20,6 @@ import (
 	"fmt"
 	"time"
 
-	"path/filepath"
-
 	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -95,8 +93,8 @@ func (k *kidledcoldPageCollector) collectColdPageInfo() {
 func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.MetricSample, error) {
 	coldPageMetrics := make([]metriccache.MetricSample, 0)
 	collectTime := time.Now()
-	// /sys/fs/cgroup/memory/memory.idle_page_stats
-	path := filepath.Join(system.Conf.CgroupRootDir, system.CgroupMemDir, system.MemoryIdlePageStatsName)
+	// /host-sys/fs/cgroup/memory/memory.idle_page_stats
+	path := system.GetCgroupFilePath("", system.MemoryIdlePageStats)
 	coldPageInfo, err := koordletutil.KidledColdPageInfo(path)
 	if err != nil {
 		return nil, err
@@ -139,7 +137,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		collectTime := time.Now()
 		podCgroupDir := meta.CgroupDir
 		// /host-sys/fs/cgroup/memory/podDir/memory.idle_page_stats
-		path := filepath.Join(system.Conf.CgroupRootDir, system.CgroupMemDir, podCgroupDir, system.MemoryIdlePageStatsName)
+		path := system.GetCgroupFilePath(podCgroupDir, system.MemoryIdlePageStats)
 		coldPageInfo, err := koordletutil.KidledColdPageInfo(path)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
@@ -201,7 +199,7 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 			continue
 		}
 		// /host-sys/fs/cgroup/memory/containerdir/memory.idle_page_stats
-		path := filepath.Join(system.Conf.CgroupRootDir, system.CgroupMemDir, containerCgroupDir, system.MemoryIdlePageStatsName)
+		path := system.GetCgroupFilePath(containerCgroupDir, system.MemoryIdlePageStats)
 		containerColdPageInfo, err := koordletutil.KidledColdPageInfo(path)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for container %s", containerKey)
