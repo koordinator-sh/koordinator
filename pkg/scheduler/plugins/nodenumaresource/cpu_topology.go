@@ -43,7 +43,6 @@ func NewCPUTopologyBuilder() *CPUTopologyBuilder {
 
 func (b *CPUTopologyBuilder) AddCPUInfo(socketID, nodeID, coreID, cpuID int) *CPUTopologyBuilder {
 	coreID = socketID<<16 | coreID
-	nodeID = socketID<<16 | nodeID
 	cpuInfo := &CPUInfo{
 		CPUID:    cpuID,
 		CoreID:   coreID,

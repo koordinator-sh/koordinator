@@ -185,10 +185,9 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 			},
 			args: args{
 				podAlloc: &ext.ResourceStatus{
-					CPUSharedPools: []ext.CPUSharedPool{
+					NUMANodeResources: []ext.NUMANodeResource{
 						{
-							Socket: 0,
-							Node:   0,
+							Node: 0,
 						},
 					},
 				},
@@ -213,7 +212,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 						},
 						{
 							Socket: 1,
-							Node:   0,
+							Node:   1,
 							CPUSet: "8-15",
 						},
 					},
@@ -245,7 +244,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 						},
 						{
 							Socket: 1,
-							Node:   0,
+							Node:   1,
 							CPUSet: "8-15",
 						},
 					},
@@ -277,7 +276,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 						},
 						{
 							Socket: 1,
-							Node:   0,
+							Node:   1,
 							CPUSet: "8-15",
 						},
 					},
@@ -285,10 +284,9 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 			},
 			args: args{
 				podAlloc: &ext.ResourceStatus{
-					CPUSharedPools: []ext.CPUSharedPool{
+					NUMANodeResources: []ext.NUMANodeResource{
 						{
-							Socket: 0,
-							Node:   0,
+							Node: 0,
 						},
 					},
 				},
@@ -313,7 +311,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 						},
 						{
 							Socket: 1,
-							Node:   0,
+							Node:   1,
 							CPUSet: "8-15",
 						},
 					},
@@ -436,10 +434,9 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 			name: "not change cfs quota by pod allocated share pool",
 			args: args{
 				podAlloc: &ext.ResourceStatus{
-					CPUSharedPools: []ext.CPUSharedPool{
+					NUMANodeResources: []ext.NUMANodeResource{
 						{
-							Socket: 0,
-							Node:   0,
+							Node: 0,
 						},
 					},
 				},
@@ -566,10 +563,9 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 			name: "not change cfs quota by pod allocated share pool",
 			args: args{
 				podAlloc: &ext.ResourceStatus{
-					CPUSharedPools: []ext.CPUSharedPool{
+					NUMANodeResources: []ext.NUMANodeResource{
 						{
-							Socket: 0,
-							Node:   0,
+							Node: 0,
 						},
 					},
 				},

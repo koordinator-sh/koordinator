@@ -19,6 +19,7 @@ package extension
 import (
 	"encoding/json"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -65,8 +66,13 @@ type ResourceStatus struct {
 	// CPUSet represents the allocated CPUs. It is Linux CPU list formatted string.
 	// When LSE/LSR Pod requested, koord-scheduler will update the field.
 	CPUSet string `json:"cpuset,omitempty"`
-	// CPUSharedPools represents the desired CPU Shared Pools used by LS Pods.
-	CPUSharedPools []CPUSharedPool `json:"cpuSharedPools,omitempty"`
+	// NUMANodeResources indicates that the Pod is constrained to run on the specified NUMA Node.
+	NUMANodeResources []NUMANodeResource `json:"numaNodeResources,omitempty"`
+}
+
+type NUMANodeResource struct {
+	Node      int32               `json:"node"`
+	Resources corev1.ResourceList `json:"resources,omitempty"`
 }
 
 // CPUBindPolicy defines the CPU binding policy
@@ -93,14 +99,6 @@ const (
 	// CPUExclusivePolicyNUMANodeLevel indicates mutual exclusion in the NUMA topology dimension
 	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = "NUMANodeLevel"
 )
-
-type NUMACPUSharedPools []CPUSharedPool
-
-type CPUSharedPool struct {
-	Socket int32  `json:"socket"`
-	Node   int32  `json:"node"`
-	CPUSet string `json:"cpuset,omitempty"`
-}
 
 type NodeCPUBindPolicy string
 
@@ -170,6 +168,12 @@ type PodCPUAlloc struct {
 }
 
 type PodCPUAllocs []PodCPUAlloc
+
+type CPUSharedPool struct {
+	Socket int32  `json:"socket"`
+	Node   int32  `json:"node"`
+	CPUSet string `json:"cpuset,omitempty"`
+}
 
 type KubeletCPUManagerPolicy struct {
 	Policy       string            `json:"policy,omitempty"`
