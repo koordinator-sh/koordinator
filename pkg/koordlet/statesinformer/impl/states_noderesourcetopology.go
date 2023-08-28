@@ -67,6 +67,29 @@ type nodeTopologyStatus struct {
 	Zones          v1alpha1.ZoneList
 }
 
+func (n *nodeTopologyStatus) isChanged(oldNRT *v1alpha1.NodeResourceTopology) (bool, string) {
+	if oldNRT == nil || oldNRT.Annotations == nil {
+		return true, "metadata changed"
+	}
+
+	// check TopologyPolicies
+	if !reflect.DeepEqual(oldNRT.TopologyPolicies, []string{string(n.TopologyPolicy)}) {
+		return true, "TopologyPolicies changed"
+	}
+
+	// check annotations
+	if isEqual, key := isEqualNRTAnnotations(oldNRT.Annotations, n.Annotations); !isEqual {
+		return true, fmt.Sprintf("annotations changed, key %s", key)
+	}
+
+	// check Zones
+	if isEqual, msg := isEqualNRTZones(oldNRT.Zones, n.Zones); !isEqual {
+		return true, fmt.Sprintf("Zones changed, item: %s", msg)
+	}
+
+	return false, ""
+}
+
 func (n *nodeTopologyStatus) updateNRT(nrt *v1alpha1.NodeResourceTopology) {
 	if nrt.Annotations == nil {
 		nrt.Annotations = map[string]string{}
@@ -231,7 +254,8 @@ func (s *nodeTopoInformer) calcNodeTopo() (*nodeTopologyStatus, error) {
 	}
 
 	nodeTopoStatus := &nodeTopologyStatus{
-		Zones: zoneList,
+		TopologyPolicy: v1alpha1.None,
+		Zones:          zoneList,
 	}
 
 	var cpuManagerPolicy extension.KubeletCPUManagerPolicy
@@ -347,6 +371,7 @@ func (s *nodeTopoInformer) calcNodeTopo() (*nodeTopologyStatus, error) {
 	}
 	nodeTopoStatus.Annotations = annotations
 
+	klog.V(6).Infof("calculate node topology status: %+v", nodeTopoStatus)
 	return nodeTopoStatus, nil
 }
 
@@ -483,7 +508,7 @@ func (s *nodeTopoInformer) calGuaranteedCpu(usedCPUs map[int32]*extension.CPUInf
 }
 
 func (s *nodeTopoInformer) reportNodeTopology() {
-	klog.Info("start to report node topology")
+	klog.V(4).Info("start to report node topology")
 	// do not CREATE if reporting is disabled,
 	// but update the node topo object internally
 	isReportEnabled := features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport)
@@ -492,7 +517,7 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 	if isReportEnabled {
 		s.createNodeTopoIfNotExist()
 	} else {
-		klog.V(5).Infof("feature %v not enabled, node topo will not be reported", features.NodeTopologyReport)
+		klog.V(5).Infof("feature %v not enabled, node topology will not be reported", features.NodeTopologyReport)
 	}
 
 	nodeTopoResult, err := s.calcNodeTopo()
@@ -507,7 +532,7 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		if isReportEnabled {
 			nodeResourceTopology, err = s.nodeResourceTopologyLister.Get(node.Name)
 			if err != nil {
-				klog.Errorf("failed to get %s nodeTopo: %v", node.Name, err)
+				klog.Errorf("failed to get node topology, node %s, err: %v", node.Name, err)
 				return err
 			}
 			nodeResourceTopology = nodeResourceTopology.DeepCopy() // avoid overwrite the cache
@@ -515,21 +540,31 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 			nodeResourceTopology = newNodeTopo(node)
 		}
 
+		isNRTChanged, msg := nodeTopoResult.isChanged(nodeResourceTopology)
+		if !isNRTChanged {
+			klog.V(5).Infof("all good, no need to update node topology, node %s", node.Name)
+			return nil
+		}
+		klog.V(4).Infof("need to update node topology, node %s, reason: %s", node.Name, msg)
+
 		// update fields
 		nodeTopoResult.updateNRT(nodeResourceTopology)
 
-		if isSyncNeeded(s.nodeTopology, nodeResourceTopology, node.Name) {
-			// do UPDATE
-			s.updateNodeTopo(nodeResourceTopology)
+		// do UPDATE
+		s.updateNodeTopo(nodeResourceTopology)
 
-			if isReportEnabled {
-				_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
-				if err != nil {
-					klog.Errorf("failed to report topology of node %s, err: %v", node.Name, err)
-					return err
-				}
-			}
+		if !isReportEnabled {
+			klog.V(6).Infof("skip report node topology since reporting is disabled")
+			return nil
 		}
+
+		_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
+		if err != nil {
+			klog.Errorf("failed to report node topology, node %s, err: %v", node.Name, err)
+			return err
+		}
+
+		klog.V(6).Infof("update NodeResourceTopology successfully, %+v", nodeResourceTopology)
 		return nil
 	})
 	if err != nil {
@@ -537,26 +572,48 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 	}
 }
 
-func isSyncNeeded(oldNRT, newNRT *v1alpha1.NodeResourceTopology, nodename string) bool {
-	if oldNRT == nil || oldNRT.Annotations == nil || newNRT.Annotations == nil {
-		return true
+func isEqualNRTZones(oldZones, newZones v1alpha1.ZoneList) (bool, string) {
+	if len(oldZones) != len(newZones) {
+		return false, "zones number"
 	}
 
-	if isEqualTopo(oldNRT.Annotations, newNRT.Annotations) {
-		// do nothing
-		klog.V(4).Infof("all good, no need to report nodetopo  %s", nodename)
-		return false
+	for i := range oldZones {
+		newZone := oldZones[i]
+		oldZone := newZones[i]
+
+		if newZone.Name != oldZone.Name {
+			return false, fmt.Sprintf("zone %v name", i)
+		}
+		if newZone.Type != oldZone.Type {
+			return false, fmt.Sprintf("zone %v type", i)
+		}
+
+		if len(newZone.Resources) != len(oldZone.Resources) {
+			return false, fmt.Sprintf("zone %v resources number", i)
+		}
+		for j := range newZone.Resources {
+			newRes := newZone.Resources[j]
+			oldRes := oldZone.Resources[j]
+			if newRes.Name != oldRes.Name {
+				return false, fmt.Sprintf("zone %v resource %v name", i, j)
+			}
+			if !newRes.Allocatable.Equal(oldRes.Allocatable) {
+				return false, fmt.Sprintf("zone %v resource %v allocatable", i, j)
+			}
+			if !newRes.Capacity.Equal(oldRes.Capacity) {
+				return false, fmt.Sprintf("zone %v resource %v capacity", i, j)
+			}
+		}
 	}
-	//not equal
-	klog.V(4).Infof("node %s topology is changed, need sync", nodename)
-	return true
+
+	return true, ""
 }
 
-// IsequalTopo returns whether the new topology has difference with the old one or not
-func isEqualTopo(OldTopo map[string]string, NewTopo map[string]string) bool {
+// isEqualNRTAnnotations returns whether the new topology annotations has difference with the old one or not
+func isEqualNRTAnnotations(oldAnno, newAnno map[string]string) (bool, string) {
 	var (
-		OldData interface{}
-		NewData interface{}
+		oldData interface{}
+		newData interface{}
 	)
 	keys := []string{
 		extension.AnnotationKubeletCPUManagerPolicy,
@@ -566,30 +623,32 @@ func isEqualTopo(OldTopo map[string]string, NewTopo map[string]string) bool {
 		extension.AnnotationNodeReservation,
 		extension.AnnotationNodeSystemQOSResource,
 	}
-
 	for _, key := range keys {
-		oldValue, oldExist := OldTopo[key]
-		newValue, newExist := NewTopo[key]
+		oldValue, oldExist := oldAnno[key]
+		newValue, newExist := newAnno[key]
 		if !oldExist && !newExist {
 			// both not exist, no need to compare this key
 			continue
-		} else if oldExist != newExist {
+		}
+		if oldExist != newExist {
 			// (oldExist = true, newExist = false) OR (oldExist = false, newExist = true), node topo not equal
-			return false
+			return false, key
 		} // else both exist in new and old, compare value
-		err := json.Unmarshal([]byte(oldValue), &OldData)
+
+		err := json.Unmarshal([]byte(oldValue), &oldData)
 		if err != nil {
-			klog.V(5).Infof("failed to unmarshal, err: %v,and key: %v", err, key)
+			klog.V(5).Infof("failed to unmarshal, key %s, err: %v", key, err)
 		}
-		err1 := json.Unmarshal([]byte(newValue), &NewData)
+		err1 := json.Unmarshal([]byte(newValue), &newData)
 		if err1 != nil {
-			klog.V(5).Infof("failed to unmarshal, err: %v,and key: %v", err1, key)
+			klog.V(5).Infof("failed to unmarshal, key %s, err: %v", key, err1)
 		}
-		if !reflect.DeepEqual(OldData, NewData) {
-			return false
+		if !reflect.DeepEqual(oldData, newData) {
+			return false, key
 		}
 	}
-	return true
+
+	return true, ""
 }
 
 func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.CPUInfo) []extension.CPUSharedPool {
@@ -692,7 +751,7 @@ func (s *nodeTopoInformer) calTopologyZoneList(nodeCPUInfo *metriccache.NodeCPUI
 
 	zoneList := make(v1alpha1.ZoneList, nodeNum)
 	for i := range zoneList {
-		zone := zoneList[i]
+		zone := &zoneList[i]
 		zone.Type = NodeZoneType
 		zone.Name = makeNodeZoneName(i)
 
@@ -716,11 +775,13 @@ func (s *nodeTopoInformer) calTopologyZoneList(nodeCPUInfo *metriccache.NodeCPUI
 				Name:        string(corev1.ResourceCPU),
 				Capacity:    cpuQuant,
 				Allocatable: cpuQuant,
+				Available:   cpuQuant,
 			},
 			{
 				Name:        string(corev1.ResourceMemory),
 				Capacity:    memQuant,
 				Allocatable: memQuant,
+				Available:   memQuant,
 			},
 		}
 	}
