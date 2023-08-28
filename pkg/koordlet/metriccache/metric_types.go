@@ -77,9 +77,9 @@ const (
 	PodMetricPSICPUFullSupported       MetricKind = "pod_psi_cpu_full_supported"
 
 	//cold memory metircs
-	NodeMemoryWithHotPageUsage      MetricKind = "node_memory_with_hot_page_uasge"
-	PodMemoryWithHotPageUsage       MetricKind = "pod_memory_with_hot_page_uasge"
-	ContainerMemoryWithHotPageUsage MetricKind = "container_memory_with_hot_page_uasge"
+	NodeMemoryWithHotPageUsage      MetricKind = "node_memory_with_hot_page_usage"
+	PodMemoryWithHotPageUsage       MetricKind = "pod_memory_with_hot_page_usage"
+	ContainerMemoryWithHotPageUsage MetricKind = "container_memory_with_hot_page_usage"
 	NodeMemoryColdPageSize          MetricKind = "node_memory_cold_page_size"
 	PodMemoryColdPageSize           MetricKind = "pod_memory_cold_page_size"
 	ContainerMemoryColdPageSize     MetricKind = "container_memory_cold_page_size"
