@@ -26,12 +26,15 @@ import (
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 var _ FrameworkExtender = &frameworkExtenderImpl{}
+var _ topologymanager.NUMATopologyHintProviderFactory = &frameworkExtenderImpl{}
 
 type frameworkExtenderImpl struct {
 	framework.Framework
@@ -54,6 +57,9 @@ type frameworkExtenderImpl struct {
 	reservationRestorePlugins []ReservationRestorePlugin
 
 	preBindExtensionsPlugins map[string]PreBindExtensions
+
+	numaTopologyHintProviders []topologymanager.NUMATopologyHintProvider
+	topologyManager           topologymanager.Interface
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -72,6 +78,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		scoreTransformers:                map[string]ScoreTransformer{},
 		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
 	}
+	frameworkExtender.topologyManager = topologymanager.New(frameworkExtender)
 	return frameworkExtender
 }
 
@@ -113,6 +120,9 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	}
 	if p, ok := pl.(PreBindExtensions); ok {
 		ext.preBindExtensionsPlugins[p.Name()] = p
+	}
+	if p, ok := pl.(topologymanager.NUMATopologyHintProvider); ok {
+		ext.numaTopologyHintProviders = append(ext.numaTopologyHintProviders, p)
 	}
 }
 
@@ -387,4 +397,12 @@ func (ext *frameworkExtenderImpl) ForgetPod(pod *corev1.Pod) error {
 		handler(pod)
 	}
 	return nil
+}
+
+func (ext *frameworkExtenderImpl) RunNUMATopologyManagerAllocate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, assume bool) *framework.Status {
+	return ext.topologyManager.Allocate(ctx, cycleState, pod, nodeName, numaNodes, policyType, assume)
+}
+
+func (ext *frameworkExtenderImpl) GetNUMATopologyHintProvider() []topologymanager.NUMATopologyHintProvider {
+	return ext.numaTopologyHintProviders
 }
