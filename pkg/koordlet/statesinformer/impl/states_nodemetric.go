@@ -454,12 +454,6 @@ func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam
 		if err != nil {
 			return rl, 0, err
 		}
-	} else if memoryCollectPolicy == slov1alpha1.UsageWithoutPageCache {
-		// report usageWithoutPageCache
-		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
-		if err != nil {
-			return rl, 0, err
-		}
 	} else {
 		// degrade and apply default memory reporting policy: usageWithoutPageCache
 		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
@@ -650,11 +644,6 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, q
 	memoryCollectPolicy := *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy
 	if memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsSupportColdMemory() {
 		memAggregateResult, err = doQuery(querier, metriccache.PodMemoryWithHotPageUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
-		if err != nil {
-			return nil, err
-		}
-	} else if memoryCollectPolicy == slov1alpha1.UsageWithoutPageCache {
-		memAggregateResult, err = doQuery(querier, metriccache.PodMemUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
 		if err != nil {
 			return nil, err
 		}

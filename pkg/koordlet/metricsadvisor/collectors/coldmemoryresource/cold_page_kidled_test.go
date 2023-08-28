@@ -171,6 +171,7 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 		c.collectNodeColdPageInfo()
 	})
 }
+
 func Test_collectPodsColdPageInfo(t *testing.T) {
 	testNow := time.Now()
 	testContainerID := "containerd://123abc"
@@ -389,6 +390,7 @@ func Test_collectPodsColdPageInfo(t *testing.T) {
 	}
 
 }
+
 func testGetNodeMetrics(t *testing.T, metricCache metriccache.TSDBStorage, testNow time.Time, d time.Duration) (float64, float64) {
 	testStart := testNow.Add(-d)
 	testEnd := testNow.Add(d)
@@ -409,6 +411,7 @@ func testGetNodeMetrics(t *testing.T, metricCache metriccache.TSDBStorage, testN
 	assert.NoError(t, err)
 	return memWithHotPageCacheUsed, coldPageSize
 }
+
 func testQuery(querier metriccache.Querier, resource metriccache.MetricResource, properties map[metriccache.MetricProperty]string) (metriccache.AggregateResult, error) {
 	queryMeta, err := resource.BuildQueryMeta(properties)
 	if err != nil {
