@@ -75,6 +75,7 @@ func IsKidledSupported() bool {
 		klog.V(4).Infof("useHierarchy is not equal to 1 err: ", err)
 		return false
 	}
+	SetIsSupportColdMemory(true)
 	return true
 }
 
@@ -89,6 +90,7 @@ func SetIsSupportColdMemory(flag bool) {
 func GetKidledScanPeriodInSecondsFilePath() string {
 	return filepath.Join(Conf.SysRootDir, kidledScanPeriodInSecondsFileSubPath)
 }
+
 func GetKidledUseHierarchyFilePath() string {
 	return filepath.Join(Conf.SysRootDir, kidledUseHierarchyFileFileSubPath)
 }
