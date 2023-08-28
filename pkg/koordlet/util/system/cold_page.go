@@ -35,6 +35,7 @@ const (
 )
 
 func IsKidledSupported() bool {
+	isSupportColdMemory = false
 	_, err := os.Stat(GetKidledScanPeriodInSecondsFilePath())
 	if err != nil {
 		klog.V(4).Infof("file scan_period_in_seconds is not exist err: ", err)
@@ -75,16 +76,12 @@ func IsKidledSupported() bool {
 		klog.V(4).Infof("useHierarchy is not equal to 1 err: ", err)
 		return false
 	}
-	SetIsSupportColdMemory(true)
+	isSupportColdMemory = true
 	return true
 }
 
 func GetIsSupportColdMemory() bool {
 	return isSupportColdMemory
-}
-
-func SetIsSupportColdMemory(flag bool) {
-	isSupportColdMemory = flag
 }
 
 func GetKidledScanPeriodInSecondsFilePath() string {
