@@ -42,7 +42,7 @@ var (
 	ContainerGPUCoreUsageMetric = defaultMetricFactory.New(ContainerMetricGPUCoreUsage).withPropertySchema(MetricPropertyContainerID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
 	ContainerGPUMemUsageMetric  = defaultMetricFactory.New(ContainerMetricGPUMemUsage).withPropertySchema(MetricPropertyContainerID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
 	ContainerCPUThrottledMetric = defaultMetricFactory.New(ContainerMetricCPUThrottled).withPropertySchema(MetricPropertyContainerID)
-	//cold memory metrics
+	// cold memory metrics
 	NodeMemoryWithHotPageUsageMetric      = defaultMetricFactory.New(NodeMemoryWithHotPageUsage)
 	PodMemoryWithHotPageUsageMetric       = defaultMetricFactory.New(PodMemoryWithHotPageUsage).withPropertySchema(MetricPropertyPodUID)
 	ContainerMemoryWithHotPageUsageMetric = defaultMetricFactory.New(ContainerMemoryWithHotPageUsage).withPropertySchema(MetricPropertyContainerID)
