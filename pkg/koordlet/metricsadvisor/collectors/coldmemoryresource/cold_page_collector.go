@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	CollectorName = "coldPageCollector"
+	CollectorName = "ColdPageCollector"
 )
 
 type nonColdPageCollector struct {
@@ -44,8 +44,7 @@ func New(opt *framework.Options) framework.Collector {
 			started:         atomic.NewBool(false),
 		}
 	}
-	// TODO(BUPT-wxq): check kstaled cold page collector
-	// TODO(BUPT-wxq): check DAMON cold page collector
+	// TODO(BUPT-wxq): check kstaled cold page collectorgoimports -w
 	// nonCollector does nothing
 	return &nonColdPageCollector{}
 }
