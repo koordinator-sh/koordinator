@@ -29,6 +29,11 @@ var (
 	isSupportColdMemory = false
 )
 
+const (
+	kidledScanPeriodInSecondsFileSubPath = "/kernel/mm/kidled/scan_period_in_seconds"
+	kidledUseHierarchyFileFileSubPath    = "/kernel/mm/kidled/use_hierarchy"
+)
+
 func IsKidledSupported() bool {
 	_, err := os.Stat(GetKidledScanPeriodInSecondsFilePath())
 	if err != nil {
@@ -82,8 +87,8 @@ func SetIsSupportColdMemory(flag bool) {
 }
 
 func GetKidledScanPeriodInSecondsFilePath() string {
-	return filepath.Join(Conf.SysRootDir, "/kernel/mm/kidled/scan_period_in_seconds")
+	return filepath.Join(Conf.SysRootDir, kidledScanPeriodInSecondsFileSubPath)
 }
 func GetKidledUseHierarchyFilePath() string {
-	return filepath.Join(Conf.SysRootDir, "/kernel/mm/kidled/use_hierarchy")
+	return filepath.Join(Conf.SysRootDir, kidledUseHierarchyFileFileSubPath)
 }
