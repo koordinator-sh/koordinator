@@ -455,6 +455,46 @@ func Test_reportNodeTopology(t *testing.T) {
 	expectedCPUSharedPool := `[{"socket":0,"node":0,"cpuset":"0-2"},{"socket":1,"node":1,"cpuset":"6-7"}]`
 	expectedCPUTopology := `{"detail":[{"id":0,"core":0,"socket":0,"node":0},{"id":1,"core":0,"socket":0,"node":0},{"id":2,"core":1,"socket":0,"node":0},{"id":3,"core":1,"socket":0,"node":0},{"id":4,"core":2,"socket":1,"node":1},{"id":5,"core":2,"socket":1,"node":1},{"id":6,"core":3,"socket":1,"node":1},{"id":7,"core":3,"socket":1,"node":1}]}`
 
+	expectedTopologyPolices := []string{string(topologyv1alpha1.None)}
+	expectedZones := topologyv1alpha1.ZoneList{
+		{
+			Name: "node-0",
+			Type: NodeZoneType,
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{
+					Name:        "cpu",
+					Capacity:    *resource.NewQuantity(4, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(4, resource.DecimalSI),
+					Available:   *resource.NewQuantity(4, resource.DecimalSI),
+				},
+				{
+					Name:        "memory",
+					Capacity:    *resource.NewQuantity(269755191296, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(269755191296, resource.BinarySI),
+					Available:   *resource.NewQuantity(269755191296, resource.BinarySI),
+				},
+			},
+		},
+		{
+			Name: "node-1",
+			Type: NodeZoneType,
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{
+					Name:        "cpu",
+					Capacity:    *resource.NewQuantity(4, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(4, resource.DecimalSI),
+					Available:   *resource.NewQuantity(4, resource.DecimalSI),
+				},
+				{
+					Name:        "memory",
+					Capacity:    *resource.NewQuantity(269754368000, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(269754368000, resource.BinarySI),
+					Available:   *resource.NewQuantity(269754368000, resource.BinarySI),
+				},
+			},
+		},
+	}
+
 	tests := []struct {
 		name                            string
 		config                          *Config
@@ -467,6 +507,8 @@ func Test_reportNodeTopology(t *testing.T) {
 		expectedCPUTopology             string
 		expectedNodeReservation         string
 		expectedSystemQOS               string
+		expectedTopologyPolicies        []string
+		expectedZones                   topologyv1alpha1.ZoneList
 	}{
 		{
 			name:   "report topology",
@@ -483,10 +525,12 @@ func Test_reportNodeTopology(t *testing.T) {
 				Policy:       "static",
 				ReservedCPUs: "0-1",
 			},
-			expectedCPUSharedPool:   expectedCPUSharedPool,
-			expectedCPUTopology:     expectedCPUTopology,
-			expectedNodeReservation: "{}",
-			expectedSystemQOS:       "{}",
+			expectedCPUSharedPool:    expectedCPUSharedPool,
+			expectedCPUTopology:      expectedCPUTopology,
+			expectedNodeReservation:  "{}",
+			expectedSystemQOS:        "{}",
+			expectedTopologyPolicies: expectedTopologyPolices,
+			expectedZones:            expectedZones,
 		},
 		{
 			name:   "report node topo with reserved and system qos specified",
@@ -510,10 +554,12 @@ func Test_reportNodeTopology(t *testing.T) {
 				Policy:       "static",
 				ReservedCPUs: "0-1",
 			},
-			expectedCPUSharedPool:   `[{"socket":0,"node":0,"cpuset":"0"},{"socket":1,"node":1,"cpuset":"6"}]`,
-			expectedCPUTopology:     expectedCPUTopology,
-			expectedNodeReservation: `{"reservedCPUs":"1-2"}`,
-			expectedSystemQOS:       `{"cpuset":"7"}`,
+			expectedCPUSharedPool:    `[{"socket":0,"node":0,"cpuset":"0"},{"socket":1,"node":1,"cpuset":"6"}]`,
+			expectedCPUTopology:      expectedCPUTopology,
+			expectedNodeReservation:  `{"reservedCPUs":"1-2"}`,
+			expectedSystemQOS:        `{"cpuset":"7"}`,
+			expectedTopologyPolicies: expectedTopologyPolices,
+			expectedZones:            expectedZones,
 		},
 		{
 			name: "disable query topology",
@@ -532,10 +578,12 @@ func Test_reportNodeTopology(t *testing.T) {
 				Policy:       "",
 				ReservedCPUs: "",
 			},
-			expectedCPUSharedPool:   expectedCPUSharedPool,
-			expectedCPUTopology:     expectedCPUTopology,
-			expectedNodeReservation: "{}",
-			expectedSystemQOS:       "{}",
+			expectedCPUSharedPool:    expectedCPUSharedPool,
+			expectedCPUTopology:      expectedCPUTopology,
+			expectedNodeReservation:  "{}",
+			expectedSystemQOS:        "{}",
+			expectedTopologyPolicies: expectedTopologyPolices,
+			expectedZones:            expectedZones,
 		},
 		{
 			name:                     "disable report topology",
@@ -553,10 +601,12 @@ func Test_reportNodeTopology(t *testing.T) {
 				Policy:       "static",
 				ReservedCPUs: "0-1",
 			},
-			expectedCPUSharedPool:   expectedCPUSharedPool,
-			expectedCPUTopology:     expectedCPUTopology,
-			expectedNodeReservation: "{}",
-			expectedSystemQOS:       "{}",
+			expectedCPUSharedPool:    expectedCPUSharedPool,
+			expectedCPUTopology:      expectedCPUTopology,
+			expectedNodeReservation:  "{}",
+			expectedSystemQOS:        "{}",
+			expectedTopologyPolicies: expectedTopologyPolices,
+			expectedZones:            expectedZones,
 		},
 	}
 	for _, tt := range tests {
@@ -609,77 +659,108 @@ func Test_reportNodeTopology(t *testing.T) {
 			}
 			r.reportNodeTopology()
 
-			var topology *topologyv1alpha1.NodeResourceTopology
+			var topo *topologyv1alpha1.NodeResourceTopology
 			if tt.disableCreateTopologyCRD {
-				topology = r.GetNodeTopo()
+				topo = r.GetNodeTopo()
 				_, err = client.TopologyV1alpha1().NodeResourceTopologies().Get(context.TODO(), topologyName, metav1.GetOptions{})
 				assert.True(t, errors.IsNotFound(err))
 			} else {
-				topology, err = client.TopologyV1alpha1().NodeResourceTopologies().Get(context.TODO(), topologyName, metav1.GetOptions{})
+				topo, err = client.TopologyV1alpha1().NodeResourceTopologies().Get(context.TODO(), topologyName, metav1.GetOptions{})
 				assert.NoError(t, err)
 			}
 
 			var kubeletCPUManagerPolicy extension.KubeletCPUManagerPolicy
-			err = json.Unmarshal([]byte(topology.Annotations[extension.AnnotationKubeletCPUManagerPolicy]), &kubeletCPUManagerPolicy)
+			err = json.Unmarshal([]byte(topo.Annotations[extension.AnnotationKubeletCPUManagerPolicy]), &kubeletCPUManagerPolicy)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedKubeletCPUManagerPolicy, kubeletCPUManagerPolicy)
-			assert.Equal(t, tt.expectedCPUSharedPool, topology.Annotations[extension.AnnotationNodeCPUSharedPools])
-			assert.Equal(t, tt.expectedCPUTopology, topology.Annotations[extension.AnnotationNodeCPUTopology])
-			assert.Equal(t, tt.expectedNodeReservation, topology.Annotations[extension.AnnotationNodeReservation])
-			assert.Equal(t, tt.expectedSystemQOS, topology.Annotations[extension.AnnotationNodeSystemQOSResource])
+			assert.Equal(t, tt.expectedCPUSharedPool, topo.Annotations[extension.AnnotationNodeCPUSharedPools])
+			assert.Equal(t, tt.expectedCPUTopology, topo.Annotations[extension.AnnotationNodeCPUTopology])
+			assert.Equal(t, tt.expectedNodeReservation, topo.Annotations[extension.AnnotationNodeReservation])
+			assert.Equal(t, tt.expectedSystemQOS, topo.Annotations[extension.AnnotationNodeSystemQOSResource])
+			assert.Equal(t, tt.expectedTopologyPolicies, topo.TopologyPolicies)
+			assert.Equal(t, tt.expectedZones, topo.Zones)
 		})
 	}
 }
 
-func Test_isSyncNeeded(t *testing.T) {
+func Test_nodeTopology_isChanged(t *testing.T) {
 	type args struct {
-		isOldEmpty bool
-		oldtopo    map[string]string
-		newtopo    map[string]string
+		oldTopo       *topologyv1alpha1.NodeResourceTopology
+		newTopoStatus *nodeTopologyStatus
 	}
 	tests := []struct {
-		name string
-		args args
-		want bool
+		name    string
+		args    args
+		want    bool
+		wantMsg string
 	}{
 		{
 			name: "old is nil",
 			args: args{
-				isOldEmpty: true,
-				newtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
-					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default1\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				oldTopo: &topologyv1alpha1.NodeResourceTopology{},
+				newTopoStatus: &nodeTopologyStatus{
+					Annotations: map[string]string{
+						"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+						"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+						"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+						"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default1\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+					},
 				},
 			},
-			want: true,
+			want:    true,
+			wantMsg: "metadata changed",
 		},
 		{
 			name: "annotation is new",
 			args: args{
-				oldtopo: nil,
-				newtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
-					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default1\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				oldTopo: newNodeTopo(&corev1.Node{}),
+				newTopoStatus: &nodeTopologyStatus{
+					Annotations: map[string]string{
+						"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+						"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+						"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+						"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default1\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+					},
 				},
 			},
-			want: true,
+			want:    true,
+			wantMsg: "metadata changed",
 		},
 		{
 			name: "same json with different map order in cpu share pool",
 			args: args{
-				oldtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"cpuset\":\"0-25,52-77\",\"socket\":0,\"node\":0},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+				oldTopo: &topologyv1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							extension.LabelManagedBy: "Koordinator",
+						},
+						Annotations: map[string]string{
+							"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+							"node.koordinator.sh/cpu-shared-pools":      "[{\"cpuset\":\"0-25,52-77\",\"socket\":0,\"node\":0},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+							"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+						},
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: "v1",
+								Kind:       "Node",
+								Name:       "test-node",
+								UID:        "xxx",
+							},
+						},
+					},
+					// fields are required
+					TopologyPolicies: []string{string(topologyv1alpha1.None)},
+					Zones:            topologyv1alpha1.ZoneList{topologyv1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 				},
-				newtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+				newTopoStatus: &nodeTopologyStatus{
+					Annotations: map[string]string{
+						"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+						"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+						"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					},
+					TopologyPolicy: topologyv1alpha1.None,
+					Zones:          topologyv1alpha1.ZoneList{topologyv1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 				},
 			},
 			want: false,
@@ -687,33 +768,80 @@ func Test_isSyncNeeded(t *testing.T) {
 		{
 			name: "diff json on pod-cpu-allocs",
 			args: args{
-				oldtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
-					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				oldTopo: &topologyv1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							extension.LabelManagedBy: "Koordinator",
+						},
+						Annotations: map[string]string{
+							"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+							"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+							"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+							"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+						},
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: "v1",
+								Kind:       "Node",
+								Name:       "test-node",
+								UID:        "xxx",
+							},
+						},
+					},
+					// fields are required
+					TopologyPolicies: []string{string(topologyv1alpha1.None)},
+					Zones:            topologyv1alpha1.ZoneList{topologyv1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 				},
-				newtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
-					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default1\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				newTopoStatus: &nodeTopologyStatus{
+					Annotations: map[string]string{
+						"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+						"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+						"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+						"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default1\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+					},
+					TopologyPolicy: topologyv1alpha1.None,
+					Zones:          topologyv1alpha1.ZoneList{topologyv1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 				},
 			},
-			want: true,
+			want:    true,
+			wantMsg: "annotations changed, key node.koordinator.sh/pod-cpu-allocs",
 		},
 		{
 			name: "some are both not exist in old and new",
 			args: args{
-				oldtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+				oldTopo: &topologyv1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							extension.LabelManagedBy: "Koordinator",
+						},
+						Annotations: map[string]string{
+							"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+							"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+							"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+						},
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: "v1",
+								Kind:       "Node",
+								Name:       "test-node",
+								UID:        "xxx",
+							},
+						},
+					},
+					// fields are required
+					TopologyPolicies: []string{string(topologyv1alpha1.None)},
+					Zones:            topologyv1alpha1.ZoneList{topologyv1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 				},
-				newtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+				newTopoStatus: &nodeTopologyStatus{
+					Annotations: map[string]string{
+						"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+						"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+						"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+					},
+					TopologyPolicy: topologyv1alpha1.None,
+					Zones:          topologyv1alpha1.ZoneList{topologyv1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 				},
 			},
 			want: false,
@@ -721,56 +849,376 @@ func Test_isSyncNeeded(t *testing.T) {
 		{
 			name: "part are not exist in old",
 			args: args{
-				oldtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+				oldTopo: &topologyv1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							extension.LabelManagedBy: "Koordinator",
+						},
+						Annotations: map[string]string{
+							"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+							"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+							"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+						},
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: "v1",
+								Kind:       "Node",
+								Name:       "test-node",
+								UID:        "xxx",
+							},
+						},
+					},
+					// fields are required
+					TopologyPolicies: []string{string(topologyv1alpha1.None)},
+					Zones:            topologyv1alpha1.ZoneList{topologyv1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 				},
-				newtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
-					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				newTopoStatus: &nodeTopologyStatus{
+					Annotations: map[string]string{
+						"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+						"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+						"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+						"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+					},
+					TopologyPolicy: topologyv1alpha1.None,
+					Zones:          topologyv1alpha1.ZoneList{topologyv1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 				},
 			},
-			want: true,
+			want:    true,
+			wantMsg: "annotations changed, key node.koordinator.sh/pod-cpu-allocs",
 		},
 		{
 			name: "part are not exist in new",
 			args: args{
-				oldtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
-					"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+				oldTopo: &topologyv1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							extension.LabelManagedBy: "Koordinator",
+						},
+						Annotations: map[string]string{
+							"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
+							"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+							"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+							"node.koordinator.sh/pod-cpu-allocs":        "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+						},
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: "v1",
+								Kind:       "Node",
+								Name:       "test-node",
+								UID:        "xxx",
+							},
+						},
+					},
+					// fields are required
+					TopologyPolicies: []string{string(topologyv1alpha1.None)},
+					Zones:            topologyv1alpha1.ZoneList{topologyv1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 				},
-				newtopo: map[string]string{
-					"kubelet.koordinator.sh/cpu-manager-policy": "{\"policy\":\"none\"}",
-					"node.koordinator.sh/cpu-shared-pools":      "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
-					"node.koordinator.sh/cpu-topology":          "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+				newTopoStatus: &nodeTopologyStatus{
+					Annotations: map[string]string{
+						"node.koordinator.sh/cpu-topology":     "{\"detail\":[{\"id\":0,\"core\":0,\"socket\":0,\"node\":0},{\"id\":52,\"core\":0,\"socket\":0,\"node\":0},{\"id\":1,\"core\":1,\"socket\":0,\"node\":0}]}",
+						"node.koordinator.sh/pod-cpu-allocs":   "{\"Namespace\":\"default\",\"Name\":\"test-pod\",\"UID\":\"pod\",\"CPUSet\":\"1-3\",\"ManagedByKubelet\": \"true\"}",
+						"node.koordinator.sh/cpu-shared-pools": "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					},
+					TopologyPolicy: topologyv1alpha1.None,
+					Zones:          topologyv1alpha1.ZoneList{topologyv1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
 				},
 			},
-			want: true,
+			want:    true,
+			wantMsg: "annotations changed, key kubelet.koordinator.sh/cpu-manager-policy",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			newNRT := &topologyv1alpha1.NodeResourceTopology{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: tt.args.newtopo,
-				},
-			}
-			var oldNRT *topologyv1alpha1.NodeResourceTopology
-			if !tt.args.isOldEmpty {
-				oldNRT = &topologyv1alpha1.NodeResourceTopology{
-					ObjectMeta: metav1.ObjectMeta{
-						Annotations: tt.args.oldtopo,
-					},
-				}
-			}
+			got, msg := tt.args.newTopoStatus.isChanged(tt.args.oldTopo)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantMsg, msg)
+		})
+	}
+}
 
-			got := isSyncNeeded(oldNRT, newNRT, "test-node")
-			assert.Equalf(t, tt.want, got, "isSyncNeeded(%v, %v)", tt.args.oldtopo, tt.args.newtopo)
+func Test_calTopologyZoneList(t *testing.T) {
+	type fields struct {
+		metricCache func(ctrl *gomock.Controller) metriccache.MetricCache
+	}
+	type args struct {
+		nodeCPUInfo *metriccache.NodeCPUInfo
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    topologyv1alpha1.ZoneList
+		wantErr bool
+	}{
+		{
+			name: "err when numa info not exist",
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mc := mock_metriccache.NewMockMetricCache(ctrl)
+					mc.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(nil, false).Times(1)
+					return mc
+				},
+			},
+			args:    args{},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "err when cpu info and numa info are not aligned",
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mc := mock_metriccache.NewMockMetricCache(ctrl)
+					mc.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(&koordletutil.NodeNUMAInfo{
+						NUMAInfos: []koordletutil.NUMAInfo{
+							{
+								NUMANodeID: 0,
+								MemInfo:    &koordletutil.MemInfo{},
+							},
+						},
+					}, true).Times(1)
+					return mc
+				},
+			},
+			args: args{
+				nodeCPUInfo: &metriccache.NodeCPUInfo{
+					TotalInfo: koordletutil.CPUTotalInfo{
+						NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+							0: {
+								{
+									CPUID:    0,
+									CoreID:   0,
+									SocketID: 0,
+									NodeID:   0,
+								},
+							},
+							1: {
+								{
+									CPUID:    1,
+									CoreID:   1,
+									SocketID: 1,
+									NodeID:   1,
+								},
+							},
+						},
+					},
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "calculate single numa node",
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mc := mock_metriccache.NewMockMetricCache(ctrl)
+					mc.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(&koordletutil.NodeNUMAInfo{
+						NUMAInfos: []koordletutil.NUMAInfo{
+							{
+								NUMANodeID: 0,
+								MemInfo: &koordletutil.MemInfo{
+									MemTotal: 1024000,
+								},
+							},
+						},
+						MemInfoMap: map[int32]*koordletutil.MemInfo{
+							0: {
+								MemTotal: 1024000,
+							},
+						},
+					}, true).Times(1)
+					return mc
+				},
+			},
+			args: args{
+				nodeCPUInfo: &metriccache.NodeCPUInfo{
+					TotalInfo: koordletutil.CPUTotalInfo{
+						NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+							0: {
+								{
+									CPUID:    0,
+									CoreID:   0,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    1,
+									CoreID:   1,
+									SocketID: 0,
+									NodeID:   0,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: NodeZoneType,
+					Resources: topologyv1alpha1.ResourceInfoList{
+						{
+							Name:        "cpu",
+							Capacity:    *resource.NewQuantity(2, resource.DecimalSI),
+							Allocatable: *resource.NewQuantity(2, resource.DecimalSI),
+							Available:   *resource.NewQuantity(2, resource.DecimalSI),
+						},
+						{
+							Name:        "memory",
+							Capacity:    *resource.NewQuantity(1048576000, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(1048576000, resource.BinarySI),
+							Available:   *resource.NewQuantity(1048576000, resource.BinarySI),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate multiple numa nodes",
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mc := mock_metriccache.NewMockMetricCache(ctrl)
+					mc.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(&koordletutil.NodeNUMAInfo{
+						NUMAInfos: []koordletutil.NUMAInfo{
+							{
+								NUMANodeID: 0,
+								MemInfo: &koordletutil.MemInfo{
+									MemTotal: 1024000,
+								},
+							},
+							{
+								NUMANodeID: 1,
+								MemInfo: &koordletutil.MemInfo{
+									MemTotal: 1000000,
+								},
+							},
+						},
+						MemInfoMap: map[int32]*koordletutil.MemInfo{
+							0: {
+								MemTotal: 1024000,
+							},
+							1: {
+								MemTotal: 1000000,
+							},
+						},
+					}, true).Times(1)
+					return mc
+				},
+			},
+			args: args{
+				nodeCPUInfo: &metriccache.NodeCPUInfo{
+					TotalInfo: koordletutil.CPUTotalInfo{
+						NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+							0: {
+								{
+									CPUID:    0,
+									CoreID:   0,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    1,
+									CoreID:   1,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    4,
+									CoreID:   0,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    5,
+									CoreID:   1,
+									SocketID: 0,
+									NodeID:   0,
+								},
+							},
+							1: {
+								{
+									CPUID:    2,
+									CoreID:   2,
+									SocketID: 1,
+									NodeID:   1,
+								},
+								{
+									CPUID:    3,
+									CoreID:   3,
+									SocketID: 1,
+									NodeID:   1,
+								},
+								{
+									CPUID:    6,
+									CoreID:   2,
+									SocketID: 1,
+									NodeID:   1,
+								},
+								{
+									CPUID:    7,
+									CoreID:   3,
+									SocketID: 1,
+									NodeID:   1,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: NodeZoneType,
+					Resources: topologyv1alpha1.ResourceInfoList{
+						{
+							Name:        "cpu",
+							Capacity:    *resource.NewQuantity(4, resource.DecimalSI),
+							Allocatable: *resource.NewQuantity(4, resource.DecimalSI),
+							Available:   *resource.NewQuantity(4, resource.DecimalSI),
+						},
+						{
+							Name:        "memory",
+							Capacity:    *resource.NewQuantity(1048576000, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(1048576000, resource.BinarySI),
+							Available:   *resource.NewQuantity(1048576000, resource.BinarySI),
+						},
+					},
+				},
+				{
+					Name: "node-1",
+					Type: NodeZoneType,
+					Resources: topologyv1alpha1.ResourceInfoList{
+						{
+							Name:        "cpu",
+							Capacity:    *resource.NewQuantity(4, resource.DecimalSI),
+							Allocatable: *resource.NewQuantity(4, resource.DecimalSI),
+							Available:   *resource.NewQuantity(4, resource.DecimalSI),
+						},
+						{
+							Name:        "memory",
+							Capacity:    *resource.NewQuantity(1024000000, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(1024000000, resource.BinarySI),
+							Available:   *resource.NewQuantity(1024000000, resource.BinarySI),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			s := &nodeTopoInformer{
+				metricCache: tt.fields.metricCache(ctrl),
+			}
+			got, gotErr := s.calTopologyZoneList(tt.args.nodeCPUInfo)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
 		})
 	}
 }

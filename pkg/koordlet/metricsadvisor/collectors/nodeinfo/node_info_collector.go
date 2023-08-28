@@ -111,7 +111,7 @@ func (n *nodeInfoCollector) collectNodeNUMAInfo() error {
 		metrics.RecordCollectNodeNUMAInfoStatus(err)
 		return err
 	}
-	klog.V(6).Info("collect NUMA info successfully, info %+v", nodeNUMAInfo)
+	klog.V(6).Infof("collect NUMA info successfully, info %+v", nodeNUMAInfo)
 
 	n.storage.Set(metriccache.NodeNUMAInfoKey, nodeNUMAInfo)
 	klog.V(4).Infof("collectNodeNUMAInfo finished, NUMA node num %v", len(nodeNUMAInfo.NUMAInfos))
