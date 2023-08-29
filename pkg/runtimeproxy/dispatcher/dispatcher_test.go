@@ -21,15 +21,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc"
 
 	"github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/client"
-	mock_hookclient "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/client/mock"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
-	mock_config "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config/mock"
-	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/mock"
 )
 
 func TestRuntimeHookDispatcher_Dispatch(t *testing.T) {
@@ -101,20 +98,8 @@ func TestRuntimeHookDispatcher_Dispatch(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		ctl := gomock.NewController(t)
-		configManager := mock_config.NewMockManagerInterface(ctl)
-		configManager.EXPECT().GetAllHook().Return(tt.allHooks).AnyTimes()
-
-		runtimeProxyClient := mock.NewMockRuntimeHookServiceClient(ctl)
-		runtimeProxyClient.EXPECT().PreRunPodSandboxHook(gomock.Any(), gomock.Any()).Return(&v1alpha1.PodSandboxHookResponse{},
-			tt.hookSeverReturnErr).AnyTimes()
-
-		clientManager := mock_hookclient.NewMockHookServerClientManagerInterface(ctl)
-
-		runtimeHookClient := client.RuntimeHookClient{
-			RuntimeHookServiceClient: runtimeProxyClient,
-		}
-		clientManager.EXPECT().RuntimeHookServerClient(gomock.Any()).Return(&runtimeHookClient, nil).AnyTimes()
+		configManager := NewMockManager(tt.allHooks)
+		clientManager := NewMockHookServerClientManager(tt.hookSeverReturnErr)
 
 		// construct the real runtimeHookDispatcher
 		runtimeHookDispatcher := &RuntimeHookDispatcher{
@@ -129,4 +114,66 @@ func TestRuntimeHookDispatcher_Dispatch(t *testing.T) {
 			assert.Equal(t, rsp == nil, true)
 		}
 	}
+}
+
+type mockManager struct {
+	allHooks []*config.RuntimeHookConfig
+}
+
+func NewMockManager(allHooks []*config.RuntimeHookConfig) *mockManager {
+	return &mockManager{
+		allHooks: allHooks,
+	}
+}
+
+func (m *mockManager) GetAllHook() []*config.RuntimeHookConfig {
+	return m.allHooks
+}
+
+func (m *mockManager) Run() error {
+	return nil
+}
+
+type mockHookServerClientManager struct {
+	hookServerError error
+}
+
+func NewMockHookServerClientManager(hookServerError error) *mockHookServerClientManager {
+	return &mockHookServerClientManager{
+		hookServerError: hookServerError,
+	}
+}
+
+func (m *mockHookServerClientManager) RuntimeHookServerClient(serverPath client.HookServerPath) (*client.RuntimeHookClient, error) {
+	return &client.RuntimeHookClient{
+		RuntimeHookServiceClient: &mockHookServerClient{
+			hookServerError: m.hookServerError,
+		},
+	}, nil
+}
+
+type mockHookServerClient struct {
+	hookServerError error
+}
+
+func (m *mockHookServerClient) PreRunPodSandboxHook(ctx context.Context, in *v1alpha1.PodSandboxHookRequest, opts ...grpc.CallOption) (*v1alpha1.PodSandboxHookResponse, error) {
+	return &v1alpha1.PodSandboxHookResponse{}, m.hookServerError
+}
+func (m *mockHookServerClient) PostStopPodSandboxHook(ctx context.Context, in *v1alpha1.PodSandboxHookRequest, opts ...grpc.CallOption) (*v1alpha1.PodSandboxHookResponse, error) {
+	return nil, nil
+}
+func (m *mockHookServerClient) PreCreateContainerHook(ctx context.Context, in *v1alpha1.ContainerResourceHookRequest, opts ...grpc.CallOption) (*v1alpha1.ContainerResourceHookResponse, error) {
+	return nil, nil
+}
+func (m *mockHookServerClient) PreStartContainerHook(ctx context.Context, in *v1alpha1.ContainerResourceHookRequest, opts ...grpc.CallOption) (*v1alpha1.ContainerResourceHookResponse, error) {
+	return nil, nil
+}
+func (m *mockHookServerClient) PostStartContainerHook(ctx context.Context, in *v1alpha1.ContainerResourceHookRequest, opts ...grpc.CallOption) (*v1alpha1.ContainerResourceHookResponse, error) {
+	return nil, nil
+}
+func (m *mockHookServerClient) PostStopContainerHook(ctx context.Context, in *v1alpha1.ContainerResourceHookRequest, opts ...grpc.CallOption) (*v1alpha1.ContainerResourceHookResponse, error) {
+	return nil, nil
+}
+func (m *mockHookServerClient) PreUpdateContainerResourcesHook(ctx context.Context, in *v1alpha1.ContainerResourceHookRequest, opts ...grpc.CallOption) (*v1alpha1.ContainerResourceHookResponse, error) {
+	return nil, nil
 }

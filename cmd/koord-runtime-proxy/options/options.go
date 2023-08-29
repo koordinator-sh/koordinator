@@ -20,7 +20,6 @@ const (
 	DefaultRuntimeProxyEndpoint = "/var/run/koord-runtimeproxy/runtimeproxy.sock"
 
 	DefaultContainerdRuntimeServiceEndpoint = "/var/run/containerd/containerd.sock"
-	DefaultContainerdImageServiceEndpoint   = "/var/run/containerd/containerd.sock"
 
 	BackendRuntimeModeContainerd = "Containerd"
 	BackendRuntimeModeDocker     = "Docker"
@@ -33,7 +32,6 @@ const (
 var (
 	RuntimeProxyEndpoint         string
 	RemoteRuntimeServiceEndpoint string
-	RemoteImageServiceEndpoint   string
 
 	// BackendRuntimeMode default to 'containerd'
 	BackendRuntimeMode string
