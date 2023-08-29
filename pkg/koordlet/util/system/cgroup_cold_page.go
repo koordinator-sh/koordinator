@@ -24,11 +24,12 @@ import (
 	"strconv"
 	"strings"
 
+	"go.uber.org/atomic"
 	"k8s.io/klog/v2"
 )
 
 var (
-	isSupportColdMemory = false
+	isSupportColdMemory *atomic.Bool = atomic.NewBool(false)
 )
 
 const (
@@ -137,8 +138,9 @@ func (i *ColdPageInfoByKidled) GetColdPageTotalBytes() uint64 {
 	return sum(i.Csei, i.Dsei, i.Cfei, i.Dfei, i.Csui, i.Dsui, i.Cfui, i.Dfui, i.Csea, i.Dsea, i.Cfea, i.Dfea, i.Csua, i.Dsua, i.Cfua, i.Dfua, i.Slab)
 }
 
+// check kidled and set var isSupportColdMemory
 func IsKidledSupported() bool {
-	isSupportColdMemory = false
+	isSupportColdMemory.Store(false)
 	_, err := os.Stat(GetKidledScanPeriodInSecondsFilePath())
 	if err != nil {
 		klog.V(4).Infof("file scan_period_in_seconds is not exist err: ", err)
@@ -179,12 +181,12 @@ func IsKidledSupported() bool {
 		klog.V(4).Infof("useHierarchy is not equal to 1 err: ", err)
 		return false
 	}
-	isSupportColdMemory = true
+	isSupportColdMemory.Store(true)
 	return true
 }
 
 func GetIsSupportColdMemory() bool {
-	return isSupportColdMemory
+	return isSupportColdMemory.Load()
 }
 
 func GetKidledScanPeriodInSecondsFilePath() string {
