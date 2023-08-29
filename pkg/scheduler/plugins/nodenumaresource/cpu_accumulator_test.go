@@ -42,7 +42,7 @@ func buildCPUTopologyForTest(numSockets, nodesPerSocket, coresPerNode, cpusPerCo
 				for p := 0; p < cpusPerCore; p++ {
 					topo.CPUDetails[cpuID] = CPUInfo{
 						SocketID: s,
-						NodeID:   s<<16 | nodeID,
+						NodeID:   nodeID,
 						CoreID:   coreID,
 						CPUID:    cpuID,
 					}

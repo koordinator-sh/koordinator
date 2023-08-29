@@ -56,12 +56,12 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 		return nil, err
 	}
 
-	if len(podAlloc.CPUSharedPools) != 0 {
+	if len(podAlloc.NUMANodeResources) != 0 {
 		// LS pods which have specified cpu share pool
-		cpusetList := make([]string, 0, len(podAlloc.CPUSharedPools))
-		for _, specifiedSharePool := range podAlloc.CPUSharedPools {
+		cpusetList := make([]string, 0, len(podAlloc.NUMANodeResources))
+		for _, numaNode := range podAlloc.NUMANodeResources {
 			for _, nodeSharePool := range r.sharePools {
-				if specifiedSharePool.Socket == nodeSharePool.Socket && specifiedSharePool.Node == nodeSharePool.Node {
+				if numaNode.Node == nodeSharePool.Node {
 					cpusetList = append(cpusetList, nodeSharePool.CPUSet)
 				}
 			}

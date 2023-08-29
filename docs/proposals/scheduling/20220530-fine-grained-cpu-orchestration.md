@@ -11,7 +11,7 @@ reviewers:
 - "@stormgbs"
 - "@zwzhang0107"
 creation-date: 2022-05-30
-last-updated: 2022-12-13
+last-updated: 2023-08-28
 status: provisional
 
 ---
@@ -235,13 +235,18 @@ The scheme corresponding to the annotation value is defined as follows:
 
 ```go
 type ResourceStatus struct {
-  CPUSet         string          `json:"cpuset,omitempty"`
-  CPUSharedPools []CPUSharedPool `json:"cpuSharedPools,omitempty"`
+  CPUSet            string             `json:"cpuset,omitempty"`
+  NUMANodeResources []NUMANodeResource `json:"numaNodeResources,omitempty"`
+}
+
+type NUMANodeResource struct {
+  Node      int32               `json:"node"`
+  Resources corev1.ResourceList `json:"resources,omitempty"`
 }
 ```
 
 - `CPUSet` represents the allocated CPUs. When LSE/LSR Pod requested, koord-scheduler will update the field. It is Linux CPU list formatted string. For more details, please refer to [doc](http://man7.org/linux/man-pages/man7/cpuset.7.html#FORMATS).
-- `CPUSharedPools` represents the desired CPU Shared Pools used by LS Pods. If the Node has the label `node.koordinator.sh/numa-topology-alignment-policy` with `Restricted/SingleNUMANode`, koord-scheduler will find the best-fit NUMA Node for the LS Pod, and update the field that requires koordlet uses the specified CPU Shared Pool. It should be noted that the scheduler does not update the `CPUSet` field in the `CPUSharedPool`, koordlet binds the CPU Shared Pool of the corresponding NUMA Node according to the `SocketID` and `NodeID` fields in the `CPUSharedPool`.
+- `NUMANodeResources` indicates that the Pod is constrained to run on the specified NUMA Node. If the Node has the label `node.koordinator.sh/numa-topology-alignment-policy` with `BestEffort/Restricted/SingleNUMANode`, koord-scheduler will find the best-fit NUMA Node for the Pod, and update the field. The koordlet binds the CPU Shared Pool of the corresponding NUMA Node according to the `Node` fields in the `NUMANodeResource`.
 
 ##### Example
 
@@ -400,8 +405,6 @@ type PodCPUAllocs []PodCPUAlloc
 - The annotation `node.koordinator.sh/cpu-shared-pools` describes the CPU Shared Pool defined by Koordinator. The shared pool is mainly used by Koordinator LS Pods or K8s Burstable Pods. The scheme is defined as follows:
 
 ```go
-type NUMACPUSharedPools []CPUSharedPool
-
 type CPUSharedPool struct {
   Socket int32  `json:"socket"`
   Node   int32  `json:"node"`
@@ -709,3 +712,4 @@ type ScoringStrategy struct {
 - 2022-09-08: Add ReservedCPUs in KubeletCPUManagerPolicy
 - 2022-12-02: Clarify the mistakes in the original text and add QoS CPU orchestration picture
 - 2022-12-12: NodeCPUBindPolicy support SpreadByPCPUs
+- 2023-08-28: Update the ResourceStatus

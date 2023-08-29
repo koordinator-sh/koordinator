@@ -86,7 +86,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					},
 					{
 						Socket: 1,
-						Node:   0,
+						Node:   1,
 						CPUSet: "8-15",
 					},
 				},
@@ -100,10 +100,9 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					CgroupParent:   "burstable/test-pod/test-container",
 				},
 				podAlloc: &ext.ResourceStatus{
-					CPUSharedPools: []ext.CPUSharedPool{
+					NUMANodeResources: []ext.NUMANodeResource{
 						{
-							Socket: 0,
-							Node:   0,
+							Node: 0,
 						},
 					},
 				},
@@ -122,7 +121,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					},
 					{
 						Socket: 1,
-						Node:   0,
+						Node:   1,
 						CPUSet: "8-15",
 					},
 				},
@@ -153,7 +152,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					},
 					{
 						Socket: 1,
-						Node:   0,
+						Node:   1,
 						CPUSet: "8-15",
 					},
 				},
@@ -182,7 +181,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					},
 					{
 						Socket: 1,
-						Node:   0,
+						Node:   1,
 						CPUSet: "8-15",
 					},
 				},
@@ -210,7 +209,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					},
 					{
 						Socket: 1,
-						Node:   0,
+						Node:   1,
 						CPUSet: "8-15",
 					},
 				},
