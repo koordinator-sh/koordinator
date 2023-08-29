@@ -293,7 +293,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(node.Name, false)
 	if nodeDeviceInfo == nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
+		return nil
 	}
 
 	reservationRestoreState := getReservationRestoreState(cycleState)
@@ -343,7 +343,7 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
 	if nodeDeviceInfo == nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
+		return nil
 	}
 
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeName])
@@ -372,7 +372,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
 	if nodeDeviceInfo == nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice)
+		return nil
 	}
 
 	reservationRestoreState := getReservationRestoreState(cycleState)
