@@ -726,7 +726,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 	type args struct {
 		group        string
 		l3Num        int
-		basicCPUInfo koordletutil.CPUBasicInfo
+		basicCPUInfo extension.CPUBasicInfo
 		qosStrategy  *slov1alpha1.ResourceQOSStrategy
 	}
 	type field struct {
@@ -752,7 +752,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			args: args{
 				group:        LSResctrlGroup,
 				l3Num:        2,
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
@@ -772,7 +772,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			args: args{
 				group:        LSResctrlGroup,
 				l3Num:        2,
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
@@ -791,7 +791,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			args: args{
 				group:        LSResctrlGroup,
 				l3Num:        2,
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
@@ -813,7 +813,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			args: args{
 				group:        BEResctrlGroup,
 				l3Num:        4,
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
@@ -836,7 +836,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			args: args{
 				group:        BEResctrlGroup,
 				l3Num:        4,
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
@@ -855,7 +855,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			args: args{
 				group:        BEResctrlGroup,
 				l3Num:        2,
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
@@ -885,7 +885,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			args: args{
 				group:        BEResctrlGroup,
 				l3Num:        1,
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
@@ -1096,7 +1096,7 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
-			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
+			BasicInfo: extension.CPUBasicInfo{CatL3CbmMask: "7ff"},
 			TotalInfo: koordletutil.CPUTotalInfo{L3ToCPU: map[int32][]koordletutil.ProcessorInfo{0: {}, 1: {}}},
 		}, true).Times(3)
 		opt := &framework.Options{
@@ -1133,19 +1133,19 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 
 		// log error for invalid l3 number
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
-			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
+			BasicInfo: extension.CPUBasicInfo{CatL3CbmMask: "7ff"},
 			TotalInfo: koordletutil.CPUTotalInfo{},
 		}, true).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for invalid l3 cbm
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
-			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "invalid"},
+			BasicInfo: extension.CPUBasicInfo{CatL3CbmMask: "invalid"},
 			TotalInfo: koordletutil.CPUTotalInfo{L3ToCPU: map[int32][]koordletutil.ProcessorInfo{0: {}, 1: {}}},
 		}, true).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
-			BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: ""},
+			BasicInfo: extension.CPUBasicInfo{CatL3CbmMask: ""},
 			TotalInfo: koordletutil.CPUTotalInfo{L3ToCPU: map[int32][]koordletutil.ProcessorInfo{0: {}, 1: {}}},
 		}, true).Times(1)
 		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
@@ -1312,7 +1312,7 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 		CgroupDir: "p0",
 	}
 	testingNodeCPUInfo := &metriccache.NodeCPUInfo{
-		BasicInfo: koordletutil.CPUBasicInfo{CatL3CbmMask: "7ff"},
+		BasicInfo: extension.CPUBasicInfo{CatL3CbmMask: "7ff"},
 		TotalInfo: koordletutil.CPUTotalInfo{L3ToCPU: map[int32][]koordletutil.ProcessorInfo{0: {}, 1: {}}},
 	}
 
@@ -1371,7 +1371,7 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 func Test_calculateMbaPercentForGroup(t *testing.T) {
 	type args struct {
 		group        string
-		basicCPUInfo koordletutil.CPUBasicInfo
+		basicCPUInfo extension.CPUBasicInfo
 		mbPercent    *int64
 	}
 	tests := []struct {
@@ -1383,7 +1383,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			name: "mbPercent not config",
 			args: args{
 				group:        "BE",
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 			},
 			want: "",
 		},
@@ -1391,7 +1391,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			name: "mbPercent value is invalid,not between (0,100]",
 			args: args{
 				group:        "BE",
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				mbPercent:    pointer.Int64(0),
 			},
 			want: "",
@@ -1400,7 +1400,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			name: "mbPercent value is invalid,not between (0,100]",
 			args: args{
 				group:        "BE",
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				mbPercent:    pointer.Int64(101),
 			},
 			want: "",
@@ -1409,7 +1409,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			name: "mbPercent value is invalid, not multiple of 10",
 			args: args{
 				group:        "BE",
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				mbPercent:    pointer.Int64(85),
 			},
 			want: "90",
@@ -1418,7 +1418,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			name: "mbPercent value is valid on intel",
 			args: args{
 				group:        "BE",
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: "GenuineIntel"},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				mbPercent:    pointer.Int64(80),
 			},
 			want: "80",
@@ -1427,7 +1427,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			name: "mbPercent value is valid on amd",
 			args: args{
 				group:        "BE",
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
 				mbPercent:    pointer.Int64(80),
 			},
 			want: strconv.FormatInt(int64(0.8*AMDCCDMaxMBGbps), 10),
@@ -1436,7 +1436,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			name: "mbPercent value is unlimited on amd",
 			args: args{
 				group:        "BE",
-				basicCPUInfo: koordletutil.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
+				basicCPUInfo: extension.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
 				mbPercent:    pointer.Int64(100),
 			},
 			want: AMDCCDUnlimitedMB,
