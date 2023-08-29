@@ -17,6 +17,7 @@ limitations under the License.
 package system
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -65,6 +66,9 @@ func ParseMemoryIdlePageStats(content string) (*ColdPageInfoByKidled, error) {
 	lines := strings.Split(content, "\n")
 	statMap := make(map[string]interface{})
 	var info = ColdPageInfoByKidled{}
+	if (len(lines)) != 31 {
+		return nil, fmt.Errorf("format err")
+	}
 	for i, line := range lines {
 		if i == 0 {
 			fields := strings.Fields(line)

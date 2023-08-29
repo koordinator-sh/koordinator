@@ -69,10 +69,6 @@ func Test_IsKidledSupported(t *testing.T) {
 }
 
 func Test_ParseMemoryIdlePageStats(t *testing.T) {
-	// helper := NewFileTestUtil(t)
-	// defer helper.Cleanup()
-	// tempInvalidColdInfoPath := filepath.Join(helper.TempDir, "no_Idleinfo")
-	// tempColdPageInfoPath := filepath.Join(helper.TempDir, "memory.idle_page_stats")
 	idleInfoContentStr := `# version: 1.0
 	# page_scans: 24
 	# slab_scans: 0
@@ -104,7 +100,6 @@ func Test_ParseMemoryIdlePageStats(t *testing.T) {
 	  cfua                  0              0              0              0              0              0              0              0
 	  dfua                  0              0              0              0              0              0              0              0
 	  slab                  0              0              0              0              0              0              0              0`
-	//helper.WriteFileContents(tempColdPageInfoPath, idleInfoContentStr)
 	type args struct {
 		content string
 	}
@@ -177,10 +172,6 @@ func Test_GetColdPageTotalBytes(t *testing.T) {
 	  cfua                  0              0              0              0              0              0              0              0
 	  dfua                  0              0              0              0              0              0              0              0
 	  slab                  0              0              0              0              0              0              0              0`
-	// helper := NewFileTestUtil(t)
-	// defer helper.Cleanup()
-	// tempColdPageInfoPath := filepath.Join(helper.TempDir, "memory.idle_page_stats")
-	// helper.WriteFileContents(tempColdPageInfoPath, coldPageInfoContentStr)
 	coldPageInfo, err := ParseMemoryIdlePageStats(coldPageInfoContentStr)
 	assert.NoError(t, err)
 	assert.NotNil(t, coldPageInfo)
