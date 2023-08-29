@@ -81,6 +81,11 @@ func (p *Plugin) Reset(node *corev1.Node, message string) []framework.ResourceIt
 
 // Calculate calculates Batch resources using the formula below:
 // Node.Total - Node.Reserved - System.Used - Pod(High-Priority).Used, System.Used = Node.Used - Pod(All).Used.
+// As node and podList are the nearly latest state at time T1, the resourceMetrics are the node metric and pod
+// metrics collected and snapshot at time T0 (T0 < T1). There can be gaps between the states of T0 and T1.
+// We firstly calculate an infimum of the batch allocatable at time T0.
+// `BatchAllocatable0 = NodeAllocatable * ratio - SystemUsed0 - Pod(HP and in Pods1).Used0` - Pod(not in Pods1).Used0.
+// Then we minus the sum requests of the pods newly scheduled but have not been reported metrics to give a safe result.
 func (p *Plugin) Calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	resourceMetrics *framework.ResourceMetrics) ([]framework.ResourceItem, error) {
 	if strategy == nil || node == nil || podList == nil || resourceMetrics == nil || resourceMetrics.NodeMetric == nil {
@@ -96,15 +101,18 @@ func (p *Plugin) Calculate(strategy *configuration.ColocationStrategy, node *cor
 
 	// compute the requests and usages according to the pods' priority classes.
 	// HP means High-Priority (i.e. not Batch or Free) pods
-	// pod(HP).Used = pod(All).Used - pod(Batch/Free).Used
-	podAllUsed := util.NewZeroResourceList()
 	podHPRequest := util.NewZeroResourceList()
 	podHPUsed := util.NewZeroResourceList()
+	// podAllUsed is the sum usage of all pods reported in NodeMetric.
+	// podKnownUsed is the sum usage of pods which are both reported in NodeMetric and shown in current pod list.
+	podAllUsed := util.NewZeroResourceList()
+	podKnownUsed := util.NewZeroResourceList()
 
 	nodeMetric := resourceMetrics.NodeMetric
 	podMetricMap := make(map[string]*slov1alpha1.PodMetricInfo)
 	for _, podMetric := range nodeMetric.Status.PodsMetric {
 		podMetricMap[util.GetPodMetricKey(podMetric)] = podMetric
+		podAllUsed = quotav1.Add(podAllUsed, getPodMetricUsage(podMetric))
 	}
 
 	for i := range podList.Items {
@@ -113,36 +121,39 @@ func (p *Plugin) Calculate(strategy *configuration.ColocationStrategy, node *cor
 			continue
 		}
 
+		// check if the pod has metrics
+		podKey := util.GetPodKey(pod)
+		podMetric, hasMetric := podMetricMap[podKey]
+		if hasMetric {
+			podKnownUsed = quotav1.Add(podKnownUsed, getPodMetricUsage(podMetric))
+		}
+
+		// count the high-priority usage
 		priorityClass := extension.GetPodPriorityClassWithDefault(pod)
 		podRequest := util.GetPodRequest(pod, corev1.ResourceCPU, corev1.ResourceMemory)
 		isPodHighPriority := priorityClass != extension.PriorityBatch && priorityClass != extension.PriorityFree
-		if isPodHighPriority {
-			podHPRequest = quotav1.Add(podHPRequest, podRequest)
-		}
-		podKey := util.GetPodKey(pod)
-		podMetric, ok := podMetricMap[podKey]
-		if !ok {
-			if isPodHighPriority {
-				podHPUsed = quotav1.Add(podHPUsed, podRequest)
-			}
-			podAllUsed = quotav1.Add(podAllUsed, podRequest)
+		if !isPodHighPriority {
 			continue
 		}
-
-		if isPodHighPriority {
+		podHPRequest = quotav1.Add(podHPRequest, podRequest)
+		if hasMetric {
 			podHPUsed = quotav1.Add(podHPUsed, getPodMetricUsage(podMetric))
+		} else {
+			podHPUsed = quotav1.Add(podHPUsed, podRequest)
 		}
-		podAllUsed = quotav1.Add(podAllUsed, getPodMetricUsage(podMetric))
 	}
+
+	// For the pods reported with metrics but not shown in the current list, count them into the HP used.
+	podUnknownPriorityUsed := quotav1.Subtract(podAllUsed, podKnownUsed)
+	podHPUsed = quotav1.Add(podHPUsed, podUnknownPriorityUsed)
+	klog.V(6).InfoS("batch resource got unknown priority pods used", "node", node.Name,
+		"cpu", podUnknownPriorityUsed.Cpu().String(), "memory", podUnknownPriorityUsed.Memory().String())
 
 	nodeAllocatable := getNodeAllocatable(node)
 	nodeReservation := getNodeReservation(strategy, node)
 
-	// System.Used = Node.Used - Pod(All).Used
-	nodeUsage := getNodeMetricUsage(nodeMetric.Status.NodeMetric)
-	systemUsed := quotav1.Max(quotav1.Subtract(nodeUsage, podAllUsed), util.NewZeroResourceList())
-
-	// System.Used = max(System.Used, Node.Anno.Reserved)
+	// System.Used = max(Node.Used - Pod(All).Used, Node.Anno.Reserved)
+	systemUsed := getResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
 	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
 	systemUsed = quotav1.Max(systemUsed, nodeAnnoReserved)
 
@@ -240,27 +251,12 @@ func prepareNodeForResource(node *corev1.Node, nr *framework.NodeResource, name 
 
 // getPodMetricUsage gets pod usage from the PodMetricInfo
 func getPodMetricUsage(info *slov1alpha1.PodMetricInfo) corev1.ResourceList {
-	cpuQuant := info.PodUsage.ResourceList[corev1.ResourceCPU]
-	cpuUsageQuant := resource.NewMilliQuantity(cpuQuant.MilliValue(), cpuQuant.Format)
-	memQuant := info.PodUsage.ResourceList[corev1.ResourceMemory]
-	memUsageQuant := resource.NewQuantity(memQuant.Value(), memQuant.Format)
-	return corev1.ResourceList{corev1.ResourceCPU: *cpuUsageQuant, corev1.ResourceMemory: *memUsageQuant}
-}
-
-// getNodeMetricUsage gets node usage from the NodeMetricInfo
-func getNodeMetricUsage(info *slov1alpha1.NodeMetricInfo) corev1.ResourceList {
-	cpuQ := info.NodeUsage.ResourceList[corev1.ResourceCPU]
-	cpuUsageQ := resource.NewMilliQuantity(cpuQ.MilliValue(), cpuQ.Format)
-	memQ := info.NodeUsage.ResourceList[corev1.ResourceMemory]
-	memUsageQ := resource.NewQuantity(memQ.Value(), memQ.Format)
-	return corev1.ResourceList{corev1.ResourceCPU: *cpuUsageQ, corev1.ResourceMemory: *memUsageQ}
+	return getResourceListForCPUAndMemory(info.PodUsage.ResourceList)
 }
 
 // getNodeAllocatable gets node allocatable and filters out non-CPU and non-Mem resources
 func getNodeAllocatable(node *corev1.Node) corev1.ResourceList {
-	result := node.Status.Allocatable.DeepCopy()
-	result = quotav1.Mask(result, []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory})
-	return result
+	return getResourceListForCPUAndMemory(node.Status.Allocatable)
 }
 
 // getNodeReservation gets node-level safe-guarding reservation with the node's allocatable
@@ -273,6 +269,10 @@ func getNodeReservation(strategy *configuration.ColocationStrategy, node *corev1
 		corev1.ResourceCPU:    cpuReserveQuant,
 		corev1.ResourceMemory: memReserveQuant,
 	}
+}
+
+func getResourceListForCPUAndMemory(rl corev1.ResourceList) corev1.ResourceList {
+	return quotav1.Mask(rl, []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory})
 }
 
 // getReserveRatio returns resource reserved ratio

@@ -146,6 +146,9 @@ func getTestResourceMetrics() *framework.ResourceMetrics {
 					NodeUsage: slov1alpha1.ResourceMap{
 						ResourceList: makeResourceList("50", "55G"),
 					},
+					SystemUsage: slov1alpha1.ResourceMap{
+						ResourceList: makeResourceList("7", "12G"),
+					},
 				},
 				PodsMetric: []*slov1alpha1.PodMetricInfo{
 					genPodMetric("test", "podA", "11", "11G"),
@@ -847,6 +850,12 @@ func TestPluginCalculate(t *testing.T) {
 								NodeUsage: slov1alpha1.ResourceMap{
 									ResourceList: makeResourceList("50", "55G"),
 								},
+								SystemUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("7"),
+										corev1.ResourceMemory: resource.MustParse("12G"),
+									},
+								},
 							},
 							PodsMetric: []*slov1alpha1.PodMetricInfo{
 								genPodMetric("test", "podProd", "5", "5G"),
@@ -868,6 +877,105 @@ func TestPluginCalculate(t *testing.T) {
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
 					Message:  "batchAllocatable[Mem(GB)]:33 = nodeAllocatable:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate with pods terminated",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSLS),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Prod by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd1",
+								Namespace: "test",
+								// missing qos label
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityProd),
+								Priority:          pointer.Int32(extension.PriorityProdValueMax),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+					},
+				},
+				resourceMetrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now()},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: makeResourceList("25", "30G"),
+								},
+								SystemUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("5"),
+										corev1.ResourceMemory: resource.MustParse("10G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								genPodMetric("test", "podProd", "5", "5G"),
+								genPodMetric("test", "podProd2", "10", "10G"),
+							},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(35000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:35000 = nodeAllocatable:100000 - nodeReservation:35000 - systemUsage:5000 - podHPUsed:25000",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(43, 9),
+					Message:  "batchAllocatable[Mem(GB)]:43 = nodeAllocatable:120 - nodeReservation:42 - systemUsage:10 - podHPUsed:25",
 				},
 			},
 			wantErr: false,
@@ -1046,9 +1154,9 @@ func Test_getPodMetricUsage(t *testing.T) {
 	}
 }
 
-func Test_getNodeMetricUsage(t *testing.T) {
+func Test_getResourceListForCPUAndMemory(t *testing.T) {
 	type args struct {
-		info *slov1alpha1.NodeMetricInfo
+		rl corev1.ResourceList
 	}
 	tests := []struct {
 		name string
@@ -1058,14 +1166,10 @@ func Test_getNodeMetricUsage(t *testing.T) {
 		{
 			name: "get correct scaled resource quantity",
 			args: args{
-				info: &slov1alpha1.NodeMetricInfo{
-					NodeUsage: slov1alpha1.ResourceMap{
-						ResourceList: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("40"),
-							corev1.ResourceMemory: resource.MustParse("80Gi"),
-							"unknown_resource":    resource.MustParse("10"),
-						},
-					},
+				rl: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("40"),
+					corev1.ResourceMemory: resource.MustParse("80Gi"),
+					"unknown_resource":    resource.MustParse("10"),
 				},
 			},
 			want: makeResourceList("40", "80Gi"),
@@ -1073,7 +1177,7 @@ func Test_getNodeMetricUsage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getNodeMetricUsage(tt.args.info)
+			got := getResourceListForCPUAndMemory(tt.args.rl)
 			testingCorrectResourceList(t, &tt.want, &got)
 		})
 	}

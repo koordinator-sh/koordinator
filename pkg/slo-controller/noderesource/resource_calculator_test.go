@@ -338,6 +338,12 @@ func Test_calculateNodeResource(t *testing.T) {
 									corev1.ResourceMemory: resource.MustParse("55G"),
 								},
 							},
+							SystemUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("7"),
+									corev1.ResourceMemory: resource.MustParse("12G"),
+								},
+							},
 						},
 						PodsMetric: []*slov1alpha1.PodMetricInfo{
 							{
@@ -540,6 +546,12 @@ func Test_calculateNodeResource(t *testing.T) {
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("50"),
 									corev1.ResourceMemory: resource.MustParse("55G"),
+								},
+							},
+							SystemUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("7"),
+									corev1.ResourceMemory: resource.MustParse("12G"),
 								},
 							},
 						},
@@ -746,6 +758,12 @@ func Test_calculateNodeResource(t *testing.T) {
 									corev1.ResourceMemory: resource.MustParse("55G"),
 								},
 							},
+							SystemUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("7"),
+									corev1.ResourceMemory: resource.MustParse("12G"),
+								},
+							},
 						},
 						PodsMetric: []*slov1alpha1.PodMetricInfo{
 							{
@@ -945,6 +963,12 @@ func Test_calculateNodeResource(t *testing.T) {
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("50"),
 									corev1.ResourceMemory: resource.MustParse("55G"),
+								},
+							},
+							SystemUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("7"),
+									corev1.ResourceMemory: resource.MustParse("12G"),
 								},
 							},
 						},
