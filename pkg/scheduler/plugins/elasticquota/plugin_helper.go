@@ -169,6 +169,8 @@ func (g *Plugin) createRootQuotaIfNotPresent() {
 		},
 	}
 	rootElasticQuota.Labels[extension.LabelQuotaIsParent] = "true"
+	rootElasticQuota.Labels[extension.LabelAllowLentResource] = "false"
+	rootElasticQuota.Labels[extension.LabelQuotaParent] = ""
 	sharedWeight, _ := json.Marshal(rootElasticQuota.Spec.Max)
 	rootElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
 	_, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
