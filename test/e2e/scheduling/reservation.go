@@ -902,6 +902,56 @@ var _ = SIGDescribe("Reservation", func() {
 			reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
 			framework.ExpectNoError(err, "unable to load reservation")
 
+			reservation.Spec.Template.Namespace = f.Namespace.Name
+			reservation.Spec.Template.Labels = map[string]string{
+				"e2e-reservation-interpodaffinity": "true",
+			}
+
+			reservation.Spec.Template.Spec.Affinity = &corev1.Affinity{
+				PodAntiAffinity: &corev1.PodAntiAffinity{
+					RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+						{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"e2e-reservation-interpodaffinity": "true",
+								},
+							},
+							TopologyKey: corev1.LabelHostname,
+						},
+					},
+				},
+			}
+
+			_, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+			framework.ExpectNoError(err, "unable to create reservation")
+
+			ginkgo.By("Wait for reservation scheduled")
+			reservation = waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
+
+			ginkgo.By("Create pod and wait for scheduled")
+			pod := createPausePod(f, pausePodConfig{
+				Name: string(uuid.NewUUID()),
+				Labels: map[string]string{
+					"e2e-reservation-interpodaffinity": "true",
+					"app":                              "e2e-test-reservation",
+				},
+				Affinity:      reservation.Spec.Template.Spec.Affinity,
+				NodeName:      reservation.Status.NodeName,
+				SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
+			})
+			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, pod))
+
+			p, err := f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+			gomega.Expect(p.Spec.NodeName).Should(gomega.Equal(reservation.Status.NodeName))
+		})
+
+		framework.ConformanceIt("validates PodAntiAffinity with reservation - Pod failed to schedule", func() {
+			ginkgo.By("Create reservation")
+			reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
+			framework.ExpectNoError(err, "unable to load reservation")
+
+			reservation.Spec.Template.Namespace = f.Namespace.Name
 			reservation.Spec.Template.Labels = map[string]string{
 				"e2e-reservation-interpodaffinity": "true",
 			}
@@ -937,11 +987,10 @@ var _ = SIGDescribe("Reservation", func() {
 				NodeName:      reservation.Status.NodeName,
 				SchedulerName: reservation.Spec.Template.Spec.SchedulerName,
 			})
-			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, pod))
-
-			p, err := f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
-			gomega.Expect(err).NotTo(gomega.HaveOccurred())
-			gomega.Expect(p.Spec.NodeName).Should(gomega.Equal(reservation.Status.NodeName))
+			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+				_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+				return scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse, nil
+			}))
 		})
 
 		ginkgo.Context("PodTopologySpread Filtering With Reservation", func() {

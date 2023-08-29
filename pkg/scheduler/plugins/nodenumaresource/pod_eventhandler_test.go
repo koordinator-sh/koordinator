@@ -103,22 +103,22 @@ func TestPodEventHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cpuTopology := buildCPUTopologyForTest(2, 2, 4, 2)
-			topologyManager := NewCPUTopologyManager()
-			topologyManager.UpdateCPUTopologyOptions("test-node-1", func(options *CPUTopologyOptions) {
+			topologyOptionsManager := NewTopologyOptionsManager()
+			topologyOptionsManager.UpdateTopologyOptions("test-node-1", func(options *TopologyOptions) {
 				options.CPUTopology = cpuTopology
 			})
-			cpuManager := &cpuManagerImpl{
-				topologyManager:  topologyManager,
-				allocationStates: map[string]*cpuAllocation{},
+			resourceManager := &resourceManager{
+				topologyManager:  topologyOptionsManager,
+				allocationStates: map[string]*NodeAllocation{},
 			}
 			handler := &podEventHandler{
-				cpuManager: cpuManager,
+				resourceManager: resourceManager,
 			}
 			handler.OnAdd(tt.pod)
 			handler.OnUpdate(tt.pod, tt.pod)
 
-			allocation := cpuManager.getOrCreateAllocation("test-node-1")
-			_, ok := allocation.allocatedPods[tt.pod.UID]
+			nodeAllocation := resourceManager.getOrCreateNodeAllocation("test-node-1")
+			_, ok := nodeAllocation.allocatedPods[tt.pod.UID]
 			if tt.wantAdd && !ok {
 				t.Errorf("expect add the Pod but not found")
 			} else if !tt.wantAdd && ok {
@@ -126,7 +126,7 @@ func TestPodEventHandler(t *testing.T) {
 			}
 
 			cpusetBuilder := cpuset.NewCPUSetBuilder()
-			for _, v := range allocation.allocatedCPUs {
+			for _, v := range nodeAllocation.allocatedCPUs {
 				cpusetBuilder.Add(v.CPUID)
 			}
 			cpuset := cpusetBuilder.Result()
@@ -137,7 +137,8 @@ func TestPodEventHandler(t *testing.T) {
 			} else if !tt.want.Equals(cpuset) {
 				t.Errorf("expect cpuset equal, but failed, expect: %v, got: %v", tt.want, cpuset)
 			}
-			cpuset = allocation.allocatedPods[tt.pod.UID]
+			allocation := nodeAllocation.allocatedPods[tt.pod.UID]
+			cpuset = allocation.CPUSet
 			if tt.want.IsEmpty() && !cpuset.IsEmpty() {
 				t.Errorf("expect empty cpuset but got")
 			} else if !tt.want.IsEmpty() && cpuset.IsEmpty() {
@@ -147,8 +148,8 @@ func TestPodEventHandler(t *testing.T) {
 			}
 
 			handler.OnDelete(tt.pod)
-			assert.Empty(t, allocation.allocatedPods)
-			assert.Empty(t, allocation.allocatedCPUs)
+			assert.Empty(t, nodeAllocation.allocatedPods)
+			assert.Empty(t, nodeAllocation.allocatedCPUs)
 		})
 	}
 
