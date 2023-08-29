@@ -29,17 +29,11 @@ import (
 
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 const cpuCmdTimeout = 5 * time.Second // maybe run slowly on some platforms
-
-// CPUBasicInfo describes the cpu basic features and status
-type CPUBasicInfo struct {
-	HyperThreadEnabled bool   `json:"hyperThreadEnabled,omitempty"`
-	CatL3CbmMask       string `json:"catL3CbmMask,omitempty"`
-	VendorID           string `json:"vendorID,omitempty"`
-}
 
 // ProcessorInfo describes the processor topology information of a single logic cpu, including the core, socket and numa
 // node it belongs to
@@ -72,7 +66,7 @@ type CPUTotalInfo struct {
 // LocalCPUInfo contains the cpu information collected from the node
 type LocalCPUInfo struct {
 	// BasicInfo describe the cpu features and their status
-	BasicInfo CPUBasicInfo `json:"basicInfo,omitempty"`
+	BasicInfo extension.CPUBasicInfo `json:"basicInfo,omitempty"`
 	// ProcessorInfos contains topology information of all available CPUs
 	ProcessorInfos []ProcessorInfo `json:"processorInfos,omitempty"`
 	// TotalInfo stores the numbers of cpu processors, cores, sockets and nodes
@@ -108,8 +102,8 @@ func getHyperThreadEnabled() (bool, error) {
 	return false, nil
 }
 
-func getCPUBasicInfo() (*CPUBasicInfo, error) {
-	cpuBasicInfo := &CPUBasicInfo{}
+func getCPUBasicInfo() (*extension.CPUBasicInfo, error) {
+	cpuBasicInfo := &extension.CPUBasicInfo{}
 	var err error
 	if cpuBasicInfo.HyperThreadEnabled, err = getHyperThreadEnabled(); err != nil {
 		klog.V(5).Infof("get hyperthreadEnabled info error: %v", err)

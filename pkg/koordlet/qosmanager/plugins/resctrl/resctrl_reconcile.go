@@ -165,7 +165,7 @@ func initCatGroupIfNotExist(group string) error {
 	return nil
 }
 
-func calculateMbaPercentForGroup(group string, mbaPercentConfig *int64, cpuBasicInfo koordletutil.CPUBasicInfo) string {
+func calculateMbaPercentForGroup(group string, mbaPercentConfig *int64, cpuBasicInfo extension.CPUBasicInfo) string {
 	if mbaPercentConfig == nil {
 		klog.Warningf("cat MBA will not change, since MBAPercent is nil for group %v, "+
 			"mbaPercentConfig %v", mbaPercentConfig, group)
@@ -282,7 +282,7 @@ func (r *resctrlReconcile) calculateAndApplyCatL3PolicyForGroup(group string, cb
 	return nil
 }
 
-func (r *resctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3Num int, cpuBasicInfo koordletutil.CPUBasicInfo, resourceQoS *slov1alpha1.ResourceQOS) error {
+func (r *resctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3Num int, cpuBasicInfo extension.CPUBasicInfo, resourceQoS *slov1alpha1.ResourceQOS) error {
 	if resourceQoS == nil || resourceQoS.ResctrlQOS == nil {
 		klog.Warningf("skipped, since resourceQoS or ResctrlQOS is nil for group %v, "+
 			"resourceQoS %v", resourceQoS, group)
