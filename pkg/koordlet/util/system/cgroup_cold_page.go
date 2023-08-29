@@ -14,13 +14,25 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package system
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
+
+	"k8s.io/klog/v2"
+)
+
+var (
+	isSupportColdMemory = false
+)
+
+const (
+	kidledScanPeriodInSecondsFileSubPath = "/kernel/mm/kidled/scan_period_in_seconds"
+	kidledUseHierarchyFileFileSubPath    = "/kernel/mm/kidled/use_hierarchy"
 )
 
 type ColdPageInfoByKidled struct {
@@ -49,13 +61,8 @@ type ColdPageInfoByKidled struct {
 	Slab                []uint64 `json:"slab"`
 }
 
-func KidledColdPageInfo(path string) (*ColdPageInfoByKidled, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	lines := strings.Split(string(data), "\n")
+func ParseMemoryIdlePageStats(content string) (*ColdPageInfoByKidled, error) {
+	lines := strings.Split(content, "\n")
 	statMap := make(map[string]interface{})
 	var info = ColdPageInfoByKidled{}
 	for i, line := range lines {
@@ -126,12 +133,60 @@ func (i *ColdPageInfoByKidled) GetColdPageTotalBytes() uint64 {
 	return sum(i.Csei, i.Dsei, i.Cfei, i.Dfei, i.Csui, i.Dsui, i.Cfui, i.Dfui, i.Csea, i.Dsea, i.Cfea, i.Dfea, i.Csua, i.Dsua, i.Cfua, i.Dfua, i.Slab)
 }
 
-func (i *ColdPageInfoByKidled) NodeMemWithHotPageUsageBytes() (uint64, error) {
-	Meminfo, err := GetMemInfo()
+func IsKidledSupported() bool {
+	isSupportColdMemory = false
+	_, err := os.Stat(GetKidledScanPeriodInSecondsFilePath())
 	if err != nil {
-		return 0, err
+		klog.V(4).Infof("file scan_period_in_seconds is not exist err: ", err)
+		return false
 	}
-	//memWithHotPage=Total-Free-ColdPage
-	memWithHotPageUsageBytes := Meminfo.MemTotal*1024 - Meminfo.MemFree*1024 - i.GetColdPageTotalBytes()
-	return memWithHotPageUsageBytes, nil
+	str, err := os.ReadFile(GetKidledScanPeriodInSecondsFilePath())
+	content := strings.Replace(string(str), "\n", "", -1)
+	if err != nil {
+		klog.V(4).Infof("read scan_period_in_seconds err: ", err)
+		return false
+	}
+	scanPeriodInSeconds, err := strconv.Atoi(content)
+	if err != nil {
+		klog.V(4).Infof("string to int scan_period_in_seconds err: %s", err)
+		return false
+	}
+	if scanPeriodInSeconds <= 0 {
+		klog.V(4).Infof("scan_period_in_seconds is negative err: ", err)
+		return false
+	}
+	_, err = os.Stat(GetKidledUseHierarchyFilePath())
+	if err != nil {
+		klog.V(4).Infof("file use_hierarchy is not exist err: ", err)
+		return false
+	}
+	str, err = os.ReadFile(GetKidledUseHierarchyFilePath())
+	content = strings.Replace(string(str), "\n", "", -1)
+	if err != nil {
+		klog.V(4).Infof("read use_hierarchy err: ", err)
+		return false
+	}
+	useHierarchy, err := strconv.Atoi(content)
+	if err != nil {
+		klog.V(4).Infof("string to int useHierarchy err: ", err)
+		return false
+	}
+	if useHierarchy != 1 {
+		klog.V(4).Infof("useHierarchy is not equal to 1 err: ", err)
+		return false
+	}
+	isSupportColdMemory = true
+	return true
+}
+
+func GetIsSupportColdMemory() bool {
+	return isSupportColdMemory
+}
+
+func GetKidledScanPeriodInSecondsFilePath() string {
+	return filepath.Join(Conf.SysRootDir, kidledScanPeriodInSecondsFileSubPath)
+}
+
+func GetKidledUseHierarchyFilePath() string {
+	return filepath.Join(Conf.SysRootDir, kidledUseHierarchyFileFileSubPath)
 }

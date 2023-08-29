@@ -30,7 +30,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -94,12 +93,22 @@ func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.Metri
 	coldPageMetrics := make([]metriccache.MetricSample, 0)
 	collectTime := time.Now()
 	// /host-sys/fs/cgroup/memory/memory.idle_page_stats
-	path := system.GetCgroupFilePath("", system.MemoryIdlePageStats)
-	coldPageInfo, err := koordletutil.KidledColdPageInfo(path)
+	coldPageInfo, err := k.cgroupReader.ReadMemoryIdlePageStatsByKidled("")
 	if err != nil {
 		return nil, err
 	}
-	memUsageWithHotPageBytes, err := coldPageInfo.NodeMemWithHotPageUsageBytes()
+	nodeColdPageBytes := coldPageInfo.GetColdPageTotalBytes()
+	nodeColdPageBytesValue := float64(nodeColdPageBytes)
+	nodeColdPageMetrics, err := metriccache.NodeMemoryColdPageSizeMetric.GenerateSample(nil, collectTime, nodeColdPageBytesValue)
+	if err != nil {
+		return nil, err
+	}
+	coldPageMetrics = append(coldPageMetrics, nodeColdPageMetrics)
+	memInfo, err := koordletutil.GetMemInfo()
+	if err != nil {
+		return nil, err
+	}
+	memUsageWithHotPageBytes := memInfo.MemTotal*1024 - memInfo.MemFree*1024 - nodeColdPageBytes
 	if err != nil {
 		return nil, err
 	}
@@ -109,14 +118,6 @@ func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.Metri
 		return nil, err
 	}
 	coldPageMetrics = append(coldPageMetrics, memUsageWithHotPageMetrics)
-
-	nodeColdPageBytes := coldPageInfo.GetColdPageTotalBytes()
-	nodeColdPageBytesValue := float64(nodeColdPageBytes)
-	nodeColdPageMetrics, err := metriccache.NodeMemoryColdPageSizeMetric.GenerateSample(nil, collectTime, nodeColdPageBytesValue)
-	if err != nil {
-		return nil, err
-	}
-	coldPageMetrics = append(coldPageMetrics, nodeColdPageMetrics)
 	klog.V(4).Infof("collectNodeResUsed finished, count %v, memUsageWithHotPage[%v], coldPageSize[%v]",
 		len(coldPageMetrics), memUsageWithHotPageValue, nodeColdPageBytes)
 	return coldPageMetrics, nil
@@ -137,8 +138,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		collectTime := time.Now()
 		podCgroupDir := meta.CgroupDir
 		// /host-sys/fs/cgroup/memory/podDir/memory.idle_page_stats
-		path := system.GetCgroupFilePath(podCgroupDir, system.MemoryIdlePageStats)
-		coldPageInfo, err := koordletutil.KidledColdPageInfo(path)
+		coldPageInfo, err := k.cgroupReader.ReadMemoryIdlePageStatsByKidled(podCgroupDir)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
 			continue
@@ -197,14 +197,12 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 				containerKey, err)
 			continue
 		}
-		// /host-sys/fs/cgroup/memory/containerdir/memory.idle_page_stats
-		path := system.GetCgroupFilePath(containerCgroupDir, system.MemoryIdlePageStats)
-		containerColdPageInfo, err := koordletutil.KidledColdPageInfo(path)
+		coldPageInfo, err := k.cgroupReader.ReadMemoryIdlePageStatsByKidled(containerCgroupDir)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for container %s", containerKey)
 			continue
 		}
-		containerColdPageBytes := containerColdPageInfo.GetColdPageTotalBytes()
+		containerColdPageBytes := coldPageInfo.GetColdPageTotalBytes()
 		containerColdPageBytesValue := float64(containerColdPageBytes)
 		containerColdPageMetrics, err := metriccache.ContainerMemoryColdPageSizeMetric.GenerateSample(metriccache.MetricPropertiesFunc.Container(containerStat.ContainerID), collectTime, containerColdPageBytesValue)
 		if err != nil {

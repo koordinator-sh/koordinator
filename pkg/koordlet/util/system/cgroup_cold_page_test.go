@@ -14,22 +14,65 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package system
 
 import (
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
-func Test_KidledGetIdleInfo(t *testing.T) {
-	helper := system.NewFileTestUtil(t)
+func Test_IsKidledSupported(t *testing.T) {
+	helper := NewFileTestUtil(t)
 	defer helper.Cleanup()
-	tempInvalidColdInfoPath := filepath.Join(helper.TempDir, "no_Idleinfo")
-	tempColdPageInfoPath := filepath.Join(helper.TempDir, "memory.idle_page_stats")
+	Conf.SysRootDir = filepath.Join(helper.TempDir, Conf.SysRootDir)
+
+	type args struct {
+		contcontentKidledScanPeriodInSecondsent string
+		contentKidledUseHierarchy               string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "support kidled cold page info",
+			args: args{contcontentKidledScanPeriodInSecondsent: "120", contentKidledUseHierarchy: "1"},
+			want: true,
+		},
+		{
+			name: "don't support kidled cold page info, invalid scan_period_in_seconds",
+			args: args{contcontentKidledScanPeriodInSecondsent: "-1", contentKidledUseHierarchy: "1"},
+			want: false,
+		},
+		{
+			name: "don't support kidled cold page info, invalid use_hierarchy",
+			args: args{contcontentKidledScanPeriodInSecondsent: "120", contentKidledUseHierarchy: "0"},
+			want: false,
+		},
+		{
+			name: "don't support kidled cold page info, invalid scan_period_in_seconds and use_hierarchy",
+			args: args{contcontentKidledScanPeriodInSecondsent: "-1", contentKidledUseHierarchy: "0"},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper.WriteFileContents(GetKidledScanPeriodInSecondsFilePath(), tt.args.contcontentKidledScanPeriodInSecondsent)
+			helper.WriteFileContents(GetKidledUseHierarchyFilePath(), tt.args.contentKidledUseHierarchy)
+			got := IsKidledSupported()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_ParseMemoryIdlePageStats(t *testing.T) {
+	// helper := NewFileTestUtil(t)
+	// defer helper.Cleanup()
+	// tempInvalidColdInfoPath := filepath.Join(helper.TempDir, "no_Idleinfo")
+	// tempColdPageInfoPath := filepath.Join(helper.TempDir, "memory.idle_page_stats")
 	idleInfoContentStr := `# version: 1.0
 	# page_scans: 24
 	# slab_scans: 0
@@ -61,9 +104,9 @@ func Test_KidledGetIdleInfo(t *testing.T) {
 	  cfua                  0              0              0              0              0              0              0              0
 	  dfua                  0              0              0              0              0              0              0              0
 	  slab                  0              0              0              0              0              0              0              0`
-	helper.WriteFileContents(tempColdPageInfoPath, idleInfoContentStr)
+	//helper.WriteFileContents(tempColdPageInfoPath, idleInfoContentStr)
 	type args struct {
-		path string
+		content string
 	}
 	tests := []struct {
 		name    string
@@ -73,13 +116,13 @@ func Test_KidledGetIdleInfo(t *testing.T) {
 	}{
 		{
 			name:    "read illegal idle stat",
-			args:    args{path: tempInvalidColdInfoPath},
+			args:    args{content: ""},
 			want:    nil,
 			wantErr: true,
 		},
 		{
 			name: "read test idle stat path",
-			args: args{path: tempColdPageInfoPath},
+			args: args{content: idleInfoContentStr},
 			want: &ColdPageInfoByKidled{
 				Version: "1.0", PageScans: 24, SlabScans: 0, ScanPeriodInSeconds: 120, UseHierarchy: 1, Buckets: []uint64{1, 2, 5, 15, 30, 60, 120, 240},
 				Csei: []uint64{2613248, 4657152, 18182144, 293683200, 0, 0, 0, 0}, Dsei: []uint64{2568192, 5140480, 15306752, 48648192, 0, 0, 0, 0}, Cfei: []uint64{2633728, 4640768, 66531328, 340172800, 0, 0, 0, 0},
@@ -94,7 +137,7 @@ func Test_KidledGetIdleInfo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := KidledColdPageInfo(tt.args.path)
+			got, gotErr := ParseMemoryIdlePageStats(tt.args.content)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.want, got)
 		})
@@ -134,11 +177,11 @@ func Test_GetColdPageTotalBytes(t *testing.T) {
 	  cfua                  0              0              0              0              0              0              0              0
 	  dfua                  0              0              0              0              0              0              0              0
 	  slab                  0              0              0              0              0              0              0              0`
-	helper := system.NewFileTestUtil(t)
-	defer helper.Cleanup()
-	tempColdPageInfoPath := filepath.Join(helper.TempDir, "memory.idle_page_stats")
-	helper.WriteFileContents(tempColdPageInfoPath, coldPageInfoContentStr)
-	coldPageInfo, err := KidledColdPageInfo(tempColdPageInfoPath)
+	// helper := NewFileTestUtil(t)
+	// defer helper.Cleanup()
+	// tempColdPageInfoPath := filepath.Join(helper.TempDir, "memory.idle_page_stats")
+	// helper.WriteFileContents(tempColdPageInfoPath, coldPageInfoContentStr)
+	coldPageInfo, err := ParseMemoryIdlePageStats(coldPageInfoContentStr)
 	assert.NoError(t, err)
 	assert.NotNil(t, coldPageInfo)
 	got := coldPageInfo.GetColdPageTotalBytes()
