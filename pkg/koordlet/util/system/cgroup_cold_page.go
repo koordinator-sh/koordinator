@@ -190,9 +190,9 @@ func GetIsSupportColdMemory() bool {
 }
 
 func GetKidledScanPeriodInSecondsFilePath() string {
-	return filepath.Join(Conf.SysRootDir, kidledScanPeriodInSecondsFileSubPath)
+	return filepath.Join(GetSysRootDir(), kidledScanPeriodInSecondsFileSubPath)
 }
 
 func GetKidledUseHierarchyFilePath() string {
-	return filepath.Join(Conf.SysRootDir, kidledUseHierarchyFileFileSubPath)
+	return filepath.Join(GetSysRootDir(), kidledUseHierarchyFileFileSubPath)
 }
