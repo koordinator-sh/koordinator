@@ -20,6 +20,7 @@ package fake
 
 import (
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	quotav1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,6 +35,7 @@ var codecs = serializer.NewCodecFactory(scheme)
 
 var localSchemeBuilder = runtime.SchemeBuilder{
 	configv1alpha1.AddToScheme,
+	quotav1alpha1.AddToScheme,
 	schedulingv1alpha1.AddToScheme,
 	slov1alpha1.AddToScheme,
 }

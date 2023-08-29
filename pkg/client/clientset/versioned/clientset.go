@@ -23,6 +23,7 @@ import (
 	"net/http"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/config/v1alpha1"
+	quotav1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/quota/v1alpha1"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
@@ -33,6 +34,7 @@ import (
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
 	ConfigV1alpha1() configv1alpha1.ConfigV1alpha1Interface
+	QuotaV1alpha1() quotav1alpha1.QuotaV1alpha1Interface
 	SchedulingV1alpha1() schedulingv1alpha1.SchedulingV1alpha1Interface
 	SloV1alpha1() slov1alpha1.SloV1alpha1Interface
 }
@@ -42,6 +44,7 @@ type Interface interface {
 type Clientset struct {
 	*discovery.DiscoveryClient
 	configV1alpha1     *configv1alpha1.ConfigV1alpha1Client
+	quotaV1alpha1      *quotav1alpha1.QuotaV1alpha1Client
 	schedulingV1alpha1 *schedulingv1alpha1.SchedulingV1alpha1Client
 	sloV1alpha1        *slov1alpha1.SloV1alpha1Client
 }
@@ -49,6 +52,11 @@ type Clientset struct {
 // ConfigV1alpha1 retrieves the ConfigV1alpha1Client
 func (c *Clientset) ConfigV1alpha1() configv1alpha1.ConfigV1alpha1Interface {
 	return c.configV1alpha1
+}
+
+// QuotaV1alpha1 retrieves the QuotaV1alpha1Client
+func (c *Clientset) QuotaV1alpha1() quotav1alpha1.QuotaV1alpha1Interface {
+	return c.quotaV1alpha1
 }
 
 // SchedulingV1alpha1 retrieves the SchedulingV1alpha1Client
@@ -109,6 +117,10 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 	if err != nil {
 		return nil, err
 	}
+	cs.quotaV1alpha1, err = quotav1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	if err != nil {
+		return nil, err
+	}
 	cs.schedulingV1alpha1, err = schedulingv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
 		return nil, err
@@ -139,6 +151,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
 	cs.configV1alpha1 = configv1alpha1.New(c)
+	cs.quotaV1alpha1 = quotav1alpha1.New(c)
 	cs.schedulingV1alpha1 = schedulingv1alpha1.New(c)
 	cs.sloV1alpha1 = slov1alpha1.New(c)
 
