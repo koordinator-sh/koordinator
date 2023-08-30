@@ -293,8 +293,8 @@ func Test_collectPodsColdPageInfo(t *testing.T) {
 				},
 				SetSysUtil: func(helper *system.FileTestUtil) {
 					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
-					helper.WriteFileContents(system.GetKidledScanPeriodInSecondsFilePath(), `120`)
-					helper.WriteFileContents(system.GetKidledUseHierarchyFilePath(), `1`)
+					helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), `120`)
+					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
 					helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, testMemStat)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
@@ -334,8 +334,8 @@ func Test_collectPodsColdPageInfo(t *testing.T) {
 				},
 				SetSysUtil: func(helper *system.FileTestUtil) {
 					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
-					helper.WriteFileContents(system.GetKidledScanPeriodInSecondsFilePath(), `120`)
-					helper.WriteFileContents(system.GetKidledUseHierarchyFilePath(), `1`)
+					helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), `120`)
+					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
 					helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, testMemStat)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)

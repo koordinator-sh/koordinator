@@ -88,8 +88,8 @@ func Test_NewColdPageCollector(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			helper.WriteFileContents(system.GetKidledScanPeriodInSecondsFilePath(), tt.args.contcontentKidledScanPeriodInSecondsent)
-			helper.WriteFileContents(system.GetKidledUseHierarchyFilePath(), tt.args.contentKidledUseHierarchy)
+			helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), tt.args.contcontentKidledScanPeriodInSecondsent)
+			helper.WriteFileContents(system.KidledUseHierarchy.Path(""), tt.args.contentKidledUseHierarchy)
 			got := New(opt)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantEnable, got.Enabled())
