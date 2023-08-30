@@ -41,7 +41,7 @@ func (r *NodeResourceReconciler) updateDeviceResources(node *corev1.Node) error 
 		if !errors.IsNotFound(err) {
 			return fmt.Errorf("failed to get device resources: %w", err)
 		}
-		return nil
+		return r.cleanupGPUNodeResource(node)
 	}
 
 	// update device resources
@@ -133,6 +133,49 @@ func (r *NodeResourceReconciler) updateGPUNodeResource(node *corev1.Node, device
 	} else {
 		klog.Errorf("failed to update node gpu resource, %v, error: %v", node.Name, err)
 	}
+	return err
+}
+
+func (r *NodeResourceReconciler) cleanupGPUNodeResource(node *corev1.Node) error {
+	deletedKeys := []corev1.ResourceName{
+		extension.ResourceGPU,
+		extension.ResourceGPUCore,
+		extension.ResourceGPUMemory,
+		extension.ResourceGPUMemoryRatio,
+	}
+	needUpdate := false
+	for _, key := range deletedKeys {
+		if _, ok := node.Status.Allocatable[key]; ok {
+			needUpdate = true
+			break
+		}
+	}
+	if !needUpdate {
+		return nil
+	}
+
+	err := util.RetryOnConflictOrTooManyRequests(func() error {
+		updateNode := &corev1.Node{}
+		if err := r.Client.Get(context.TODO(), types.NamespacedName{Name: node.Name}, updateNode); err != nil {
+			klog.Errorf("failed to get node %v, error: %v", node.Name, err)
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+
+		updateNode = updateNode.DeepCopy() // avoid overwriting the cache
+		for _, resourceName := range deletedKeys {
+			delete(updateNode.Status.Allocatable, resourceName)
+			delete(updateNode.Status.Capacity, resourceName)
+		}
+
+		return r.Client.Status().Update(context.TODO(), updateNode)
+	})
+	if err != nil {
+		klog.ErrorS(err, "failed to cleanup device resource on node", "node", klog.KObj(node))
+	}
+
 	return err
 }
 

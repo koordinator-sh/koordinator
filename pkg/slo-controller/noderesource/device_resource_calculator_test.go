@@ -18,6 +18,7 @@ package noderesource
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -28,13 +29,16 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	schedulingfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 )
 
@@ -324,5 +328,158 @@ func Test_isGPULabelNeedSync(t *testing.T) {
 		r := &NodeResourceReconciler{}
 		actual := r.isGPULabelNeedSync(tt.newNode.Labels, tt.oldNode.Labels)
 		assert.Equal(t, tt.expected, actual)
+	}
+}
+
+func TestNodeResourceReconciler_cleanupGPUNodeResource(t *testing.T) {
+	testNodeWithoutDevice := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node0",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("20"),
+				corev1.ResourceMemory: resource.MustParse("40G"),
+			},
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("20"),
+				corev1.ResourceMemory: resource.MustParse("40G"),
+			},
+		},
+	}
+	testNodeWithGPU := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node0",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:               resource.MustParse("20"),
+				corev1.ResourceMemory:            resource.MustParse("40G"),
+				extension.ResourceGPUCore:        resource.MustParse("20"),
+				extension.ResourceGPUMemory:      resource.MustParse("40G"),
+				extension.ResourceGPUMemoryRatio: resource.MustParse("20"),
+			},
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:               resource.MustParse("20"),
+				corev1.ResourceMemory:            resource.MustParse("40G"),
+				extension.ResourceGPUCore:        resource.MustParse("20"),
+				extension.ResourceGPUMemory:      resource.MustParse("40G"),
+				extension.ResourceGPUMemoryRatio: resource.MustParse("20"),
+			},
+		},
+	}
+	expected := corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node0",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("20"),
+				corev1.ResourceMemory: resource.MustParse("40G"),
+			},
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("20"),
+				corev1.ResourceMemory: resource.MustParse("40G"),
+			},
+		},
+	}
+
+	type fields struct {
+		Client          client.Client
+		Recorder        record.EventRecorder
+		Scheme          *runtime.Scheme
+		Clock           clock.Clock
+		NodeSyncContext *framework.SyncContext
+		GPUSyncContext  *framework.SyncContext
+		cfgCache        config.ColocationCfgCache
+	}
+	type args struct {
+		oldNode *corev1.Node
+	}
+
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *corev1.Node
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "no need to cleanup, do nothing",
+			fields: fields{
+				Client: fake.NewClientBuilder().WithRuntimeObjects(&testNodeWithoutDevice).Build(),
+			},
+			args: args{
+				oldNode: &testNodeWithoutDevice,
+			},
+			want:    &expected,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "cleanup gpu resource successfully",
+			fields: fields{
+				Client: fake.NewClientBuilder().WithRuntimeObjects(&testNodeWithGPU).Build(),
+			},
+			args: args{
+				oldNode: &testNodeWithGPU,
+			},
+			want:    &expected,
+			wantErr: assert.NoError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &NodeResourceReconciler{
+				Client:          tt.fields.Client,
+				Recorder:        tt.fields.Recorder,
+				Scheme:          tt.fields.Scheme,
+				Clock:           tt.fields.Clock,
+				NodeSyncContext: tt.fields.NodeSyncContext,
+				GPUSyncContext:  tt.fields.GPUSyncContext,
+				cfgCache:        tt.fields.cfgCache,
+			}
+			tt.wantErr(t, r.cleanupGPUNodeResource(tt.args.oldNode), fmt.Sprintf("cleanupDeviceNodeResource(%v)", tt.args.oldNode))
+
+			gotNode := &corev1.Node{}
+			err := r.Client.Get(context.TODO(), types.NamespacedName{Name: tt.args.oldNode.Name}, gotNode)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want.Status, gotNode.Status)
+		})
+	}
+
+	failedCases := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *corev1.Node
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "failed to cleanup gpu resource for node not found ",
+			fields: fields{
+				Client: fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build(),
+			},
+			args: args{
+				oldNode: &testNodeWithGPU,
+			},
+			want:    &testNodeWithGPU,
+			wantErr: assert.Error,
+		},
+	}
+
+	for _, tt := range failedCases {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &NodeResourceReconciler{
+				Client:          tt.fields.Client,
+				Recorder:        tt.fields.Recorder,
+				Scheme:          tt.fields.Scheme,
+				Clock:           tt.fields.Clock,
+				NodeSyncContext: tt.fields.NodeSyncContext,
+				GPUSyncContext:  tt.fields.GPUSyncContext,
+				cfgCache:        tt.fields.cfgCache,
+			}
+			tt.wantErr(t, r.cleanupGPUNodeResource(tt.args.oldNode), fmt.Sprintf("cleanupDeviceNodeResource(%v)", tt.args.oldNode))
+		})
 	}
 }
