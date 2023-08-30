@@ -144,6 +144,33 @@ func (g *Plugin) createSystemQuotaIfNotPresent() {
 	klog.Infof("create SystemQuota successfully")
 }
 
+// createRootQuotaIfNotPresent create RootQuotaGroup's CRD
+func (g *Plugin) createRootQuotaIfNotPresent() {
+	eq, _ := g.quotaLister.ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(extension.RootQuotaName)
+	if eq != nil {
+		klog.Infof("RootQuota already exists, skip create it.")
+		return
+	}
+	rootElasticQuota := &schedulerv1alpha1.ElasticQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        extension.RootQuotaName,
+			Namespace:   g.pluginArgs.QuotaGroupNamespace,
+			Labels:      make(map[string]string),
+			Annotations: make(map[string]string),
+		},
+	}
+	rootElasticQuota.Labels[extension.LabelQuotaIsParent] = "true"
+	rootElasticQuota.Labels[extension.LabelAllowLentResource] = "false"
+	rootElasticQuota.Labels[extension.LabelQuotaParent] = ""
+	_, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
+		Create(context.TODO(), rootElasticQuota, metav1.CreateOptions{})
+	if err != nil {
+		klog.Errorf("create root group fail, err:%v", err.Error())
+		return
+	}
+	klog.Infof("create RootQuota successfully")
+}
+
 func (g *Plugin) snapshotPostFilterState(quotaInfo *core.QuotaInfo, state *framework.CycleState) *PostFilterState {
 	postFilterState := &PostFilterState{
 		quotaInfo: quotaInfo,

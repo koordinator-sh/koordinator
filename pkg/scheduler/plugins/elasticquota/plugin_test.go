@@ -1306,7 +1306,7 @@ func TestPlugin_Recover(t *testing.T) {
 	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetRequest(), createResourceList(40, 40))
 	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetUsed(), createResourceList(40, 40))
 	assert.True(t, quotav1.IsZero(pl.groupQuotaManager.GetQuotaInfoByName(extension.DefaultQuotaName).GetRequest()))
-	assert.Equal(t, len(pl.groupQuotaManager.GetAllQuotaNames()), 4)
+	assert.Equal(t, len(pl.groupQuotaManager.GetAllQuotaNames()), 5)
 }
 
 func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {

@@ -127,6 +127,9 @@ func (qt *quotaTopology) checkParentQuotaInfo(quotaName, parentName string) erro
 }
 
 func (qt *quotaTopology) checkSubAndParentGroupMaxQuotaKeySame(quotaInfo *QuotaInfo) error {
+	if quotaInfo.Name == extension.RootQuotaName {
+		return nil
+	}
 	if quotaInfo.ParentName != extension.RootQuotaName {
 		parentInfo := qt.quotaInfoMap[quotaInfo.ParentName]
 		if !checkQuotaKeySame(parentInfo.CalculateInfo.Max, quotaInfo.CalculateInfo.Max) {

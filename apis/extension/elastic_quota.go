@@ -42,7 +42,7 @@ const (
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {
 	parentName := quota.Labels[LabelQuotaParent]
-	if parentName == "" {
+	if parentName == "" && quota.Name != RootQuotaName {
 		return RootQuotaName //default return RootQuotaName
 	}
 	return parentName
