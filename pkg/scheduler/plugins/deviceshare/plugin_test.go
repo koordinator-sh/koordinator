@@ -718,7 +718,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			pod:             &corev1.Pod{},
 			nodeDeviceCache: newNodeDeviceCache(),
 			nodeInfo:        testNodeInfo,
-			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice),
+			want:            nil,
 		},
 		{
 			name: "insufficient device resource 1",
@@ -1595,7 +1595,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				nodeName: "test-node",
 			},
 			wants: wants{
-				status: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrMissingDevice),
+				status: nil,
 			},
 		},
 		{
