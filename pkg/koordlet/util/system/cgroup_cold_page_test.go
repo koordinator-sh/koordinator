@@ -60,8 +60,10 @@ func Test_IsKidledSupported(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			helper.WriteFileContents(GetKidledScanPeriodInSecondsFilePath(), tt.args.contcontentKidledScanPeriodInSecondsent)
-			helper.WriteFileContents(GetKidledUseHierarchyFilePath(), tt.args.contentKidledUseHierarchy)
+			helper.WriteFileContents(KidledScanPeriodInSeconds.Path(""), tt.args.contcontentKidledScanPeriodInSecondsent)
+			helper.WriteFileContents(KidledUseHierarchy.Path(""), tt.args.contentKidledUseHierarchy)
+			KidledScanPeriodInSeconds.WithSupported(true, "test")
+			KidledUseHierarchy.WithSupported(true, "test")
 			got := IsKidledSupported()
 			assert.Equal(t, tt.want, got)
 		})

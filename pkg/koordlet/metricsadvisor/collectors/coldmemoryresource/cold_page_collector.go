@@ -43,7 +43,7 @@ func New(opt *framework.Options) framework.Collector {
 			started:         atomic.NewBool(false),
 		}
 	}
-	// TODO(BUPT-wxq): check kstaled cold page collectorgoimports -w
+	// TODO(BUPT-wxq): check kstaled cold page collector
 	// nonCollector does nothing
 	return &nonColdPageCollector{}
 }

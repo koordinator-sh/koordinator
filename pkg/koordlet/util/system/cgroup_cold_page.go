@@ -19,7 +19,6 @@ package system
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -30,11 +29,6 @@ import (
 
 var (
 	isSupportColdMemory *atomic.Bool = atomic.NewBool(false)
-)
-
-const (
-	kidledScanPeriodInSecondsFileSubPath = "/kernel/mm/kidled/scan_period_in_seconds"
-	kidledUseHierarchyFileFileSubPath    = "/kernel/mm/kidled/use_hierarchy"
 )
 
 type ColdPageInfoByKidled struct {
@@ -141,44 +135,29 @@ func (i *ColdPageInfoByKidled) GetColdPageTotalBytes() uint64 {
 // check kidled and set var isSupportColdMemory
 func IsKidledSupported() bool {
 	isSupportColdMemory.Store(false)
-	_, err := os.Stat(GetKidledScanPeriodInSecondsFilePath())
-	if err != nil {
-		klog.V(4).Infof("file scan_period_in_seconds is not exist err: ", err)
+	isSupport, str := KidledScanPeriodInSeconds.IsSupported("")
+	if !isSupport {
+		klog.V(4).Infof("file scan_period_in_seconds is not exist ", str)
 		return false
 	}
-	str, err := os.ReadFile(GetKidledScanPeriodInSecondsFilePath())
-	content := strings.Replace(string(str), "\n", "", -1)
-	if err != nil {
-		klog.V(4).Infof("read scan_period_in_seconds err: ", err)
+	kidledScanPeriodInSecondsBytes, _ := os.ReadFile(KidledScanPeriodInSeconds.Path(""))
+	content := strings.Trim(string(kidledScanPeriodInSecondsBytes), "\n")
+	isValid, str := KidledScanPeriodInSeconds.IsValid(content)
+	if !isValid {
+		klog.V(4).Infof("scan_period_in_seconds is invalid ", str)
 		return false
 	}
-	scanPeriodInSeconds, err := strconv.Atoi(content)
-	if err != nil {
-		klog.V(4).Infof("string to int scan_period_in_seconds err: %s", err)
+
+	isSupport, str = KidledUseHierarchy.IsSupported("")
+	if !isSupport {
+		klog.V(4).Infof("file use_hierarchy is not exist ", str)
 		return false
 	}
-	if scanPeriodInSeconds <= 0 {
-		klog.V(4).Infof("scan_period_in_seconds is negative err: ", err)
-		return false
-	}
-	_, err = os.Stat(GetKidledUseHierarchyFilePath())
-	if err != nil {
-		klog.V(4).Infof("file use_hierarchy is not exist err: ", err)
-		return false
-	}
-	str, err = os.ReadFile(GetKidledUseHierarchyFilePath())
-	content = strings.Replace(string(str), "\n", "", -1)
-	if err != nil {
-		klog.V(4).Infof("read use_hierarchy err: ", err)
-		return false
-	}
-	useHierarchy, err := strconv.Atoi(content)
-	if err != nil {
-		klog.V(4).Infof("string to int useHierarchy err: ", err)
-		return false
-	}
-	if useHierarchy != 1 {
-		klog.V(4).Infof("useHierarchy is not equal to 1 err: ", err)
+	kidledUseHierarchyBytes, _ := os.ReadFile(KidledUseHierarchy.Path(""))
+	content = strings.Trim(string(kidledUseHierarchyBytes), "\n")
+	isValid, str = KidledUseHierarchy.IsValid(content)
+	if !isValid {
+		klog.V(4).Infof("use_hierarchy is invalid ", str)
 		return false
 	}
 	isSupportColdMemory.Store(true)
@@ -187,12 +166,4 @@ func IsKidledSupported() bool {
 
 func GetIsSupportColdMemory() bool {
 	return isSupportColdMemory.Load()
-}
-
-func GetKidledScanPeriodInSecondsFilePath() string {
-	return filepath.Join(GetSysRootDir(), kidledScanPeriodInSecondsFileSubPath)
-}
-
-func GetKidledUseHierarchyFilePath() string {
-	return filepath.Join(GetSysRootDir(), kidledUseHierarchyFileFileSubPath)
 }

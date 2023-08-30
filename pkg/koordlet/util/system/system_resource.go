@@ -25,22 +25,29 @@ import (
 const (
 	ProcSysVmRelativePath   = "sys/vm/"
 	MemcgReaperRelativePath = "kernel/mm/memcg_reaper/"
+	KidledRelativePath      = "kernel/mm/kidled/"
 
-	MinFreeKbytesFileName        = "min_free_kbytes"
-	WatermarkScaleFactorFileName = "watermark_scale_factor"
-	MemcgReapBackGroundFileName  = "reap_background"
+	MinFreeKbytesFileName             = "min_free_kbytes"
+	WatermarkScaleFactorFileName      = "watermark_scale_factor"
+	MemcgReapBackGroundFileName       = "reap_background"
+	KidledScanPeriodInSecondsFileName = "scan_period_in_seconds"
+	KidledUseHierarchyFileFileName    = "use_hierarchy"
 )
 
 var (
-	MinFreeKbytesValidator        = &RangeValidator{min: 10 * 1024, max: 10 * 1024 * 1024}
-	WatermarkScaleFactorValidator = &RangeValidator{min: 10, max: 400}
-	MemcgReapBackGroundValidator  = &RangeValidator{min: 0, max: 1}
+	MinFreeKbytesValidator             = &RangeValidator{min: 10 * 1024, max: 10 * 1024 * 1024}
+	WatermarkScaleFactorValidator      = &RangeValidator{min: 10, max: 400}
+	MemcgReapBackGroundValidator       = &RangeValidator{min: 0, max: 1}
+	KidledScanPeriodInSecondsValidator = &RangeValidator{min: 1, max: 3600}
+	KidledUseHierarchyValidator        = &RangeValidator{min: 1, max: 1}
 )
 
 var (
-	MinFreeKbytes        = NewCommonSystemResource(ProcSysVmRelativePath, MinFreeKbytesFileName, GetProcRootDir).WithValidator(MinFreeKbytesValidator)
-	WatermarkScaleFactor = NewCommonSystemResource(ProcSysVmRelativePath, WatermarkScaleFactorFileName, GetProcRootDir).WithValidator(WatermarkScaleFactorValidator)
-	MemcgReapBackGround  = NewCommonSystemResource(MemcgReaperRelativePath, MemcgReapBackGroundFileName, GetSysRootDir).WithValidator(MemcgReapBackGroundValidator).WithCheckSupported(SupportedIfFileExists)
+	MinFreeKbytes             = NewCommonSystemResource(ProcSysVmRelativePath, MinFreeKbytesFileName, GetProcRootDir).WithValidator(MinFreeKbytesValidator)
+	WatermarkScaleFactor      = NewCommonSystemResource(ProcSysVmRelativePath, WatermarkScaleFactorFileName, GetProcRootDir).WithValidator(WatermarkScaleFactorValidator)
+	MemcgReapBackGround       = NewCommonSystemResource(MemcgReaperRelativePath, MemcgReapBackGroundFileName, GetSysRootDir).WithValidator(MemcgReapBackGroundValidator).WithCheckSupported(SupportedIfFileExists)
+	KidledScanPeriodInSeconds = NewCommonSystemResource(KidledRelativePath, KidledScanPeriodInSecondsFileName, GetSysRootDir).WithValidator(KidledScanPeriodInSecondsValidator).WithCheckSupported(SupportedIfFileExists)
+	KidledUseHierarchy        = NewCommonSystemResource(KidledRelativePath, KidledUseHierarchyFileFileName, GetSysRootDir).WithValidator(KidledUseHierarchyValidator).WithCheckSupported(SupportedIfFileExists)
 )
 
 var _ Resource = &SystemResource{}

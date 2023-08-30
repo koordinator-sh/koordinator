@@ -117,6 +117,19 @@ func TestSystemResource(t *testing.T) {
 			wantValid:        true,
 			wantResourceType: MemcgReapBackGroundFileName,
 		},
+		{
+			name: "kidledScanPeriodInSeconds resource supported",
+			fields: fields{
+				resource:    NewCommonSystemResource(KidledRelativePath, KidledScanPeriodInSecondsFileName, GetSysRootDir).WithValidator(KidledScanPeriodInSecondsValidator).WithCheckSupported(SupportedIfFileExists),
+				createdFile: true,
+				initValue:   0,
+				newValue:    120,
+			},
+			wantPath:         path.Join(GetSysRootDir(), KidledRelativePath, KidledScanPeriodInSecondsFileName),
+			wantSupported:    true,
+			wantValid:        true,
+			wantResourceType: KidledScanPeriodInSecondsFileName,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
