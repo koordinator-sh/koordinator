@@ -809,7 +809,6 @@ func (gqm *GroupQuotaManager) resetRootQuotaUsedAndRequest() {
 	systemQuotaInfo := gqm.getQuotaInfoByNameNoLock(extension.SystemQuotaName)
 	defaultQuotaInfo := gqm.getQuotaInfoByNameNoLock(extension.DefaultQuotaName)
 
-	rootQuotaInfo.CalculateInfo.Used = quotav1.Add(systemQuotaInfo.GetUsed(), defaultQuotaInfo.GetUsed()).DeepCopy()
-	rootQuotaInfo.CalculateInfo.Request = quotav1.Add(systemQuotaInfo.GetRequest(), defaultQuotaInfo.GetRequest()).DeepCopy()
-
+	rootQuotaInfo.CalculateInfo.Used = quotav1.Add(systemQuotaInfo.GetUsed(), defaultQuotaInfo.GetUsed())
+	rootQuotaInfo.CalculateInfo.Request = quotav1.Add(systemQuotaInfo.GetRequest(), defaultQuotaInfo.GetRequest())
 }

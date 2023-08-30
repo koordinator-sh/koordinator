@@ -20,13 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
@@ -153,10 +151,6 @@ func (g *Plugin) createRootQuotaIfNotPresent() {
 		klog.Infof("RootQuota already exists, skip create it.")
 		return
 	}
-	defaultRootQuotaGroupMax := v1.ResourceList{
-		v1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
-		v1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.BinarySI),
-	}
 	rootElasticQuota := &schedulerv1alpha1.ElasticQuota{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        extension.RootQuotaName,
@@ -164,15 +158,10 @@ func (g *Plugin) createRootQuotaIfNotPresent() {
 			Labels:      make(map[string]string),
 			Annotations: make(map[string]string),
 		},
-		Spec: schedulerv1alpha1.ElasticQuotaSpec{
-			Max: defaultRootQuotaGroupMax,
-		},
 	}
 	rootElasticQuota.Labels[extension.LabelQuotaIsParent] = "true"
 	rootElasticQuota.Labels[extension.LabelAllowLentResource] = "false"
 	rootElasticQuota.Labels[extension.LabelQuotaParent] = ""
-	sharedWeight, _ := json.Marshal(rootElasticQuota.Spec.Max)
-	rootElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
 	_, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
 		Create(context.TODO(), rootElasticQuota, metav1.CreateOptions{})
 	if err != nil {
