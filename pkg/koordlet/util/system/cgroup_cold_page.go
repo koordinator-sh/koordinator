@@ -138,30 +138,30 @@ func IsKidledSupported() bool {
 	isSupport, str := KidledScanPeriodInSeconds.IsSupported("")
 	if !isSupport {
 		klog.V(4).Infof("file scan_period_in_seconds is not exist ", str)
-		return false
+		return isSupportColdMemory.Load()
 	}
 	kidledScanPeriodInSecondsBytes, _ := os.ReadFile(KidledScanPeriodInSeconds.Path(""))
 	content := strings.Trim(string(kidledScanPeriodInSecondsBytes), "\n")
 	isValid, str := KidledScanPeriodInSeconds.IsValid(content)
 	if !isValid {
 		klog.V(4).Infof("scan_period_in_seconds is invalid ", str)
-		return false
+		return isSupportColdMemory.Load()
 	}
 
 	isSupport, str = KidledUseHierarchy.IsSupported("")
 	if !isSupport {
 		klog.V(4).Infof("file use_hierarchy is not exist ", str)
-		return false
+		return isSupportColdMemory.Load()
 	}
 	kidledUseHierarchyBytes, _ := os.ReadFile(KidledUseHierarchy.Path(""))
 	content = strings.Trim(string(kidledUseHierarchyBytes), "\n")
 	isValid, str = KidledUseHierarchy.IsValid(content)
 	if !isValid {
 		klog.V(4).Infof("use_hierarchy is invalid ", str)
-		return false
+		return isSupportColdMemory.Load()
 	}
 	isSupportColdMemory.Store(true)
-	return true
+	return isSupportColdMemory.Load()
 }
 
 func GetIsSupportColdMemory() bool {
