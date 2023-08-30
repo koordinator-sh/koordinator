@@ -62,8 +62,6 @@ func Test_IsKidledSupported(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			helper.WriteFileContents(KidledScanPeriodInSeconds.Path(""), tt.args.contcontentKidledScanPeriodInSecondsent)
 			helper.WriteFileContents(KidledUseHierarchy.Path(""), tt.args.contentKidledUseHierarchy)
-			KidledScanPeriodInSeconds.WithSupported(true, "test")
-			KidledUseHierarchy.WithSupported(true, "test")
 			got := IsKidledSupported()
 			assert.Equal(t, tt.want, got)
 		})
