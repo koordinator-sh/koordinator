@@ -510,7 +510,7 @@ func TestPlugin_OnNodeUpdate(t *testing.T) {
 			totalRes: createResourceList(200, 2000),
 		},
 		{
-			name: "node not exist",
+			name: "node not exist. we should add node",
 			nodes: []*corev1.Node{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -529,7 +529,7 @@ func TestPlugin_OnNodeUpdate(t *testing.T) {
 					},
 				},
 			},
-			totalRes: createResourceList(300, 3000),
+			totalRes: createResourceList(400, 4000),
 		},
 	}
 
@@ -547,6 +547,32 @@ func TestPlugin_OnNodeUpdate(t *testing.T) {
 			assert.Equal(t, p.(*Plugin).groupQuotaManager.GetClusterTotalResource(), tt.totalRes)
 		})
 	}
+}
+
+func TestPlugin_ResyncNodes(t *testing.T) {
+
+	suit := newPluginTestSuit(t, nil)
+	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	plugin := p.(*Plugin)
+
+	// add node
+	nodes := []*corev1.Node{defaultCreateNodeWithResourceVersion("1"), defaultCreateNodeWithResourceVersion("2"),
+		defaultCreateNodeWithResourceVersion("3")}
+	for _, node := range nodes {
+		plugin.handle.ClientSet().CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
+	}
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, plugin.groupQuotaManager.GetClusterTotalResource(), createResourceList(300, 3000))
+
+	// delete node in cache
+	plugin.OnNodeDelete(nodes[1])
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, plugin.groupQuotaManager.GetClusterTotalResource(), createResourceList(200, 2000))
+
+	// resync nodes
+	plugin.ResyncNodes()
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, plugin.groupQuotaManager.GetClusterTotalResource(), createResourceList(300, 3000))
 }
 
 func defaultCreateNodeWithResourceVersion(nodeName string) *corev1.Node {

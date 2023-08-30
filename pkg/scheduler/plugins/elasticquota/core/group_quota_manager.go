@@ -22,7 +22,9 @@ import (
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -50,9 +52,16 @@ type GroupQuotaManager struct {
 	// scaleMinQuotaManager is used when overRootResource
 	scaleMinQuotaManager *ScaleMinQuotaManager
 	once                 sync.Once
+
+	// nodeResourceMapLock  used to lock the nodeResourceMapLock.
+	nodeResourceMapLock sync.Mutex
+	// nodeResourceMap store the nodes belong to the manager.
+	nodeResourceMap map[string]struct{}
+	// nodeLister used to list nodes.
+	nodeLister listerv1.NodeLister
 }
 
-func NewGroupQuotaManager(systemGroupMax, defaultGroupMax v1.ResourceList) *GroupQuotaManager {
+func NewGroupQuotaManager(systemGroupMax, defaultGroupMax v1.ResourceList, nodeLister listerv1.NodeLister) *GroupQuotaManager {
 	quotaManager := &GroupQuotaManager{
 		totalResourceExceptSystemAndDefaultUsed: v1.ResourceList{},
 		totalResource:                           v1.ResourceList{},
@@ -61,6 +70,8 @@ func NewGroupQuotaManager(systemGroupMax, defaultGroupMax v1.ResourceList) *Grou
 		runtimeQuotaCalculatorMap:               make(map[string]*RuntimeQuotaCalculator),
 		quotaTopoNodeMap:                        make(map[string]*QuotaTopoNode),
 		scaleMinQuotaManager:                    NewScaleMinQuotaManager(),
+		nodeResourceMap:                         make(map[string]struct{}),
+		nodeLister:                              nodeLister,
 	}
 	quotaManager.quotaInfoMap[extension.SystemQuotaName] = NewQuotaInfo(false, true, extension.SystemQuotaName, extension.RootQuotaName)
 	quotaManager.quotaInfoMap[extension.SystemQuotaName].setMaxQuotaNoLock(systemGroupMax)
@@ -709,4 +720,74 @@ func getPodName(oldPod, newPod *v1.Pod) string {
 		return newPod.Name
 	}
 	return ""
+}
+
+func (gqm *GroupQuotaManager) OnNodeAdd(node *v1.Node) {
+	gqm.nodeResourceMapLock.Lock()
+	defer gqm.nodeResourceMapLock.Unlock()
+
+	if _, ok := gqm.nodeResourceMap[node.Name]; ok {
+		return
+	}
+	gqm.nodeResourceMap[node.Name] = struct{}{}
+	gqm.UpdateClusterTotalResource(node.Status.Allocatable)
+	klog.V(5).Infof("OnNodeAddFunc success %v", node.Name)
+}
+
+func (gqm *GroupQuotaManager) OnNodeUpdate(oldNode, newNode *v1.Node) {
+	gqm.nodeResourceMapLock.Lock()
+	defer gqm.nodeResourceMapLock.Unlock()
+
+	if _, exist := gqm.nodeResourceMap[newNode.Name]; !exist {
+		gqm.nodeResourceMap[newNode.Name] = struct{}{}
+		gqm.UpdateClusterTotalResource(newNode.Status.Allocatable)
+		return
+	}
+
+	oldNodeAllocatable := oldNode.Status.Allocatable
+	newNodeAllocatable := newNode.Status.Allocatable
+	if quotav1.Equals(oldNodeAllocatable, newNodeAllocatable) {
+		return
+	}
+
+	deltaNodeAllocatable := quotav1.Subtract(newNodeAllocatable, oldNodeAllocatable)
+	gqm.UpdateClusterTotalResource(deltaNodeAllocatable)
+	klog.V(5).Infof("OnNodeUpdateFunc success:%v [%v]", newNode.Name, newNodeAllocatable)
+}
+
+func (gqm *GroupQuotaManager) OnNodeDelete(node *v1.Node) {
+	gqm.nodeResourceMapLock.Lock()
+	defer gqm.nodeResourceMapLock.Unlock()
+
+	if _, exist := gqm.nodeResourceMap[node.Name]; !exist {
+		return
+	}
+
+	delta := quotav1.Subtract(v1.ResourceList{}, node.Status.Allocatable)
+	gqm.UpdateClusterTotalResource(delta)
+	delete(gqm.nodeResourceMap, node.Name)
+	klog.V(5).Infof("OnNodeDeleteFunc success:%v [%v]", node.Name, delta)
+}
+
+func (gqm *GroupQuotaManager) ResyncNodes() {
+	nodes, err := gqm.nodeLister.List(labels.Everything())
+	if err != nil {
+		klog.Errorf("failed to list nodes for ResyncNodes")
+		return
+	}
+
+	for _, node := range nodes {
+		func() {
+			gqm.nodeResourceMapLock.Lock()
+			defer gqm.nodeResourceMapLock.Unlock()
+			if _, exist := gqm.nodeResourceMap[node.Name]; exist {
+				return
+			}
+
+			gqm.nodeResourceMap[node.Name] = struct{}{}
+			gqm.UpdateClusterTotalResource(node.Status.Allocatable)
+		}()
+	}
+
+	// TODO: remove none-exist node
 }

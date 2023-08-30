@@ -19,7 +19,6 @@ package elasticquota
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -68,17 +67,14 @@ func (p *PostFilterState) Clone() framework.StateData {
 }
 
 type Plugin struct {
-	handle      framework.Handle
-	client      versioned.Interface
-	pluginArgs  *config.ElasticQuotaArgs
-	quotaLister v1alpha1.ElasticQuotaLister
-	podLister   v1.PodLister
-	pdbLister   policylisters.PodDisruptionBudgetLister
-	nodeLister  v1.NodeLister
-	// only used in OnNodeAdd,in case Recover and normal Watch double call OnNodeAdd
-	nodeResourceMapLock sync.Mutex
-	nodeResourceMap     map[string]struct{}
-	groupQuotaManager   *core.GroupQuotaManager
+	handle            framework.Handle
+	client            versioned.Interface
+	pluginArgs        *config.ElasticQuotaArgs
+	quotaLister       v1alpha1.ElasticQuotaLister
+	podLister         v1.PodLister
+	pdbLister         policylisters.PodDisruptionBudgetLister
+	nodeLister        v1.NodeLister
+	groupQuotaManager *core.GroupQuotaManager
 }
 
 var (
@@ -108,16 +104,15 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	elasticQuotaInformer := scheSharedInformerFactory.Scheduling().V1alpha1().ElasticQuotas()
 
 	elasticQuota := &Plugin{
-		handle:            handle,
-		client:            client,
-		pluginArgs:        pluginArgs,
-		podLister:         handle.SharedInformerFactory().Core().V1().Pods().Lister(),
-		quotaLister:       elasticQuotaInformer.Lister(),
-		pdbLister:         getPDBLister(handle),
-		nodeLister:        handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
-		groupQuotaManager: core.NewGroupQuotaManager(pluginArgs.SystemQuotaGroupMax, pluginArgs.DefaultQuotaGroupMax),
-		nodeResourceMap:   make(map[string]struct{}),
+		handle:      handle,
+		client:      client,
+		pluginArgs:  pluginArgs,
+		podLister:   handle.SharedInformerFactory().Core().V1().Pods().Lister(),
+		quotaLister: elasticQuotaInformer.Lister(),
+		pdbLister:   getPDBLister(handle),
+		nodeLister:  handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
 	}
+	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager(pluginArgs.SystemQuotaGroupMax, pluginArgs.DefaultQuotaGroupMax, elasticQuota.nodeLister)
 
 	ctx := context.TODO()
 
