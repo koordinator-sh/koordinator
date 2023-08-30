@@ -31,7 +31,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
-func TestCPUTopologyManager(t *testing.T) {
+func TestTopologyOptionsManager(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
 
 	expectCPUTopology := buildCPUTopologyForTest(2, 1, 4, 2)
@@ -99,46 +99,48 @@ func TestCPUTopologyManager(t *testing.T) {
 	_, err = suit.NRTClientset.TopologyV1alpha1().NodeResourceTopologies().Create(context.TODO(), topology, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	topologyManager := NewCPUTopologyManager()
-	assert.NotNil(t, topologyManager)
+	topologyOptionsManager := NewTopologyOptionsManager()
+	assert.NotNil(t, topologyOptionsManager)
 
 	extendHandle := &frameworkHandleExtender{
 		ExtendedHandle: suit.Extender,
 		Clientset:      suit.NRTClientset,
 	}
-	err = registerNodeResourceTopologyEventHandler(extendHandle, topologyManager)
+	nrtInformerFactory, err := initNRTInformerFactory(extendHandle)
+	assert.NoError(t, err)
+	err = registerNodeResourceTopologyEventHandler(nrtInformerFactory, topologyOptionsManager)
 	assert.NoError(t, err)
 
 	suit.start()
 
-	cpuTopologyOptions := topologyManager.GetCPUTopologyOptions(nodeName)
-	assert.NotNil(t, cpuTopologyOptions.CPUTopology)
+	topologyOptions := topologyOptionsManager.GetTopologyOptions(nodeName)
+	assert.NotNil(t, topologyOptions.CPUTopology)
 	for k, v := range expectCPUTopology.CPUDetails {
 		v.CoreID = v.SocketID<<16 | v.CoreID
 		expectCPUTopology.CPUDetails[k] = v
 	}
-	assert.Equal(t, expectCPUTopology, cpuTopologyOptions.CPUTopology)
+	assert.Equal(t, expectCPUTopology, topologyOptions.CPUTopology)
 
-	policy := cpuTopologyOptions.Policy
+	policy := topologyOptions.Policy
 	assert.NotNil(t, policy)
 	assert.Equal(t, expectPolicy, policy)
 
-	assert.Equal(t, 1, cpuTopologyOptions.MaxRefCount)
+	assert.Equal(t, 1, topologyOptions.MaxRefCount)
 
 	expectReservedCPUs := cpuset.MustParse("0-7")
-	assert.Equal(t, expectReservedCPUs, cpuTopologyOptions.ReservedCPUs)
+	assert.Equal(t, expectReservedCPUs, topologyOptions.ReservedCPUs)
 
 	delete(topology.Annotations, extension.AnnotationNodeCPUAllocs)
 	_, err = suit.NRTClientset.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), topology, metav1.UpdateOptions{})
 	assert.NoError(t, err)
 
 	time.Sleep(100 * time.Millisecond)
-	cpuTopologyOptions = topologyManager.GetCPUTopologyOptions(nodeName)
-	assert.Equal(t, "0-1,4-7", cpuTopologyOptions.ReservedCPUs.String())
+	topologyOptions = topologyOptionsManager.GetTopologyOptions(nodeName)
+	assert.Equal(t, "0-1,4-7", topologyOptions.ReservedCPUs.String())
 
 	err = suit.NRTClientset.TopologyV1alpha1().NodeResourceTopologies().Delete(context.TODO(), topology.Name, metav1.DeleteOptions{})
 	assert.NoError(t, err)
 	time.Sleep(100 * time.Millisecond)
-	cpuTopologyOptions = topologyManager.GetCPUTopologyOptions(nodeName)
-	assert.Equal(t, CPUTopologyOptions{}, cpuTopologyOptions)
+	topologyOptions = topologyOptionsManager.GetTopologyOptions(nodeName)
+	assert.Equal(t, TopologyOptions{}, topologyOptions)
 }

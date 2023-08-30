@@ -37,16 +37,51 @@ func takePreferredCPUs(
 	cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy,
 	numaAllocatedStrategy schedulingconfig.NUMAAllocateStrategy,
 ) (cpuset.CPUSet, error) {
+	result := cpuset.CPUSet{}
 	preferredCPUs = availableCPUs.Intersection(preferredCPUs)
-	size := preferredCPUs.Size()
-	if size == 0 {
-		return cpuset.CPUSet{}, nil
-	}
-	if numCPUsNeeded > size {
-		numCPUsNeeded = size
+	if !preferredCPUs.IsEmpty() {
+		needed := numCPUsNeeded
+		if needed > preferredCPUs.Size() {
+			needed = preferredCPUs.Size()
+		}
+		var err error
+		result, err = takeCPUs(
+			topology,
+			maxRefCount,
+			preferredCPUs,
+			allocatedCPUs,
+			needed,
+			cpuBindPolicy,
+			cpuExclusivePolicy,
+			numaAllocatedStrategy)
+		if err != nil {
+			return result, err
+		}
+		numCPUsNeeded -= result.Size()
+		availableCPUs = availableCPUs.Difference(preferredCPUs)
 	}
 
-	return takeCPUs(topology, maxRefCount, preferredCPUs, allocatedCPUs, numCPUsNeeded, cpuBindPolicy, cpuExclusivePolicy, numaAllocatedStrategy)
+	if numCPUsNeeded > 0 {
+		cpus, err := takeCPUs(
+			topology,
+			maxRefCount,
+			availableCPUs,
+			allocatedCPUs,
+			numCPUsNeeded,
+			cpuBindPolicy,
+			cpuExclusivePolicy,
+			numaAllocatedStrategy)
+		if err != nil {
+			return cpuset.CPUSet{}, err
+		}
+		if result.IsEmpty() {
+			result = cpus
+		} else {
+			result = result.Union(cpus)
+		}
+	}
+
+	return result, nil
 }
 
 func takeCPUs(

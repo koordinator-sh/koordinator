@@ -150,6 +150,10 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 	}
 
 	cs := kubefake.NewSimpleClientset()
+	for _, v := range nodes {
+		_, err := cs.CoreV1().Nodes().Create(context.TODO(), v, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nodes)
 	fh, err := schedulertesting.NewFramework(
@@ -221,7 +225,10 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				skip:                   false,
+				requestCPUBind: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
@@ -253,7 +260,10 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				skip:                   false,
+				requestCPUBind: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
@@ -282,7 +292,10 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				skip:                   false,
+				requestCPUBind: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
 				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyDefault},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
@@ -292,7 +305,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 			name: "skip cpu share pod",
 			pod:  &corev1.Pod{},
 			wantState: &preFilterState{
-				skip: true,
+				requestCPUBind: false,
+				requests:       corev1.ResourceList{},
 			},
 		},
 		{
@@ -321,7 +335,10 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				skip: true,
+				requestCPUBind: false,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
 			},
 		},
 		{
@@ -340,7 +357,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				skip: true,
+				requestCPUBind: false,
+				requests:       corev1.ResourceList{},
 			},
 		},
 		{
@@ -383,10 +401,23 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 				Spec: corev1.PodSpec{
 					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "container-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4.5"),
+								},
+							},
+						},
+					},
 				},
 			},
 			wantState: &preFilterState{
-				skip: true,
+				requestCPUBind: false,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4.5"),
+				},
 			},
 		},
 	}
@@ -421,7 +452,7 @@ func TestPlugin_Filter(t *testing.T) {
 		cpuTopology     *CPUTopology
 		state           *preFilterState
 		pod             *corev1.Pod
-		allocationState *cpuAllocation
+		allocationState *NodeAllocation
 		want            *framework.Status
 	}{
 		{
@@ -432,7 +463,7 @@ func TestPlugin_Filter(t *testing.T) {
 		{
 			name: "error with missing CPUTopology",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 			},
 			pod:  &corev1.Pod{},
 			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNotFoundCPUTopology),
@@ -440,27 +471,27 @@ func TestPlugin_Filter(t *testing.T) {
 		{
 			name: "error with invalid cpu topology",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 			},
 			cpuTopology:     &CPUTopology{},
-			allocationState: newCPUAllocation("test-node-1"),
+			allocationState: NewNodeAllocation("test-node-1"),
 			pod:             &corev1.Pod{},
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology),
 		},
 		{
 			name: "succeed with valid cpu topology",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
+			allocationState: NewNodeAllocation("test-node-1"),
 			pod:             &corev1.Pod{},
 			want:            nil,
 		},
 		{
 			name: "succeed with skip",
 			state: &preFilterState{
-				skip: true,
+				requestCPUBind: false,
 			},
 			pod:  &corev1.Pod{},
 			want: nil,
@@ -471,13 +502,13 @@ func TestPlugin_Filter(t *testing.T) {
 				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
 			},
 			state: &preFilterState{
-				skip:                   false,
+				requestCPUBind:         true,
 				resourceSpec:           &extension.ResourceSpec{},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          5,
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
+			allocationState: NewNodeAllocation("test-node-1"),
 			pod:             &corev1.Pod{},
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
 		},
@@ -487,26 +518,26 @@ func TestPlugin_Filter(t *testing.T) {
 				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
 			},
 			state: &preFilterState{
-				skip:                   false,
+				requestCPUBind:         true,
 				resourceSpec:           &extension.ResourceSpec{},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
+			allocationState: NewNodeAllocation("test-node-1"),
 			pod:             &corev1.Pod{},
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
 		},
 		{
 			name: "verify Kubelet FullPCPUsOnly with SMTAlignmentError",
 			state: &preFilterState{
-				skip:                   false,
+				requestCPUBind:         true,
 				resourceSpec:           &extension.ResourceSpec{},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          5,
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
+			allocationState: NewNodeAllocation("test-node-1"),
 			kubeletPolicy: &extension.KubeletCPUManagerPolicy{
 				Policy: extension.KubeletCPUManagerPolicyStatic,
 				Options: map[string]string{
@@ -519,13 +550,13 @@ func TestPlugin_Filter(t *testing.T) {
 		{
 			name: "verify Kubelet FullPCPUsOnly with RequiredFullPCPUsPolicy",
 			state: &preFilterState{
-				skip:                   false,
+				requestCPUBind:         true,
 				resourceSpec:           &extension.ResourceSpec{},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
-			allocationState: newCPUAllocation("test-node-1"),
+			allocationState: NewNodeAllocation("test-node-1"),
 			kubeletPolicy: &extension.KubeletCPUManagerPolicy{
 				Policy: extension.KubeletCPUManagerPolicyStatic,
 				Options: map[string]string{
@@ -563,15 +594,15 @@ func TestPlugin_Filter(t *testing.T) {
 
 			plg := p.(*Plugin)
 			if tt.allocationState != nil {
-				topologyOptions := CPUTopologyOptions{
+				topologyOptions := TopologyOptions{
 					CPUTopology: tt.cpuTopology,
 					Policy:      tt.kubeletPolicy,
 				}
-				plg.topologyManager.UpdateCPUTopologyOptions(tt.allocationState.nodeName, func(options *CPUTopologyOptions) {
+				plg.topologyOptionsManager.UpdateTopologyOptions(tt.allocationState.nodeName, func(options *TopologyOptions) {
 					*options = topologyOptions
 				})
 
-				cpuManager := plg.cpuManager.(*cpuManagerImpl)
+				cpuManager := plg.resourceManager.(*resourceManager)
 				cpuManager.allocationStates[tt.allocationState.nodeName] = tt.allocationState
 			}
 
@@ -611,7 +642,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "error with missing allocationState",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 			},
 			pod:       &corev1.Pod{},
 			want:      nil,
@@ -620,7 +651,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "error with invalid cpu topology",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 			},
 			cpuTopology: &CPUTopology{},
 			pod:         &corev1.Pod{},
@@ -630,7 +661,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "succeed with skip",
 			state: &preFilterState{
-				skip: true,
+				requestCPUBind: false,
 			},
 			pod:       &corev1.Pod{},
 			want:      nil,
@@ -639,7 +670,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with full empty node FullPCPUs",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
@@ -654,7 +685,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with satisfied node FullPCPUs",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
@@ -669,7 +700,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with full empty node SpreadByPCPUs",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
 				},
@@ -684,7 +715,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with exceed socket FullPCPUs",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
@@ -699,7 +730,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with satisfied socket FullPCPUs",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
@@ -714,7 +745,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with full empty socket SpreadByPCPUs",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
 				},
@@ -732,7 +763,7 @@ func TestPlugin_Score(t *testing.T) {
 				extension.LabelNodeNUMAAllocateStrategy: string(extension.NodeNUMAAllocateStrategyLeastAllocated),
 			},
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
 				},
@@ -750,7 +781,7 @@ func TestPlugin_Score(t *testing.T) {
 				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
 			},
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
 				},
@@ -790,14 +821,14 @@ func TestPlugin_Score(t *testing.T) {
 			assert.Nil(t, err)
 
 			plg := p.(*Plugin)
-			allocateState := newCPUAllocation("test-node-1")
+			allocateState := NewNodeAllocation("test-node-1")
 			if tt.cpuTopology != nil {
-				plg.topologyManager.UpdateCPUTopologyOptions(allocateState.nodeName, func(options *CPUTopologyOptions) {
+				plg.topologyOptionsManager.UpdateTopologyOptions(allocateState.nodeName, func(options *TopologyOptions) {
 					options.CPUTopology = tt.cpuTopology
 				})
 			}
 
-			cpuManager := plg.cpuManager.(*cpuManagerImpl)
+			cpuManager := plg.resourceManager.(*resourceManager)
 			cpuManager.allocationStates[allocateState.nodeName] = allocateState
 
 			suit.start()
@@ -844,7 +875,7 @@ func TestPlugin_Reserve(t *testing.T) {
 		{
 			name: "error with missing allocationState",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 			},
 			pod:  &corev1.Pod{},
 			want: framework.NewStatus(framework.Error, ErrNotFoundCPUTopology),
@@ -852,7 +883,7 @@ func TestPlugin_Reserve(t *testing.T) {
 		{
 			name: "error with invalid cpu topology",
 			state: &preFilterState{
-				skip: false,
+				requestCPUBind: true,
 			},
 			cpuTopology: &CPUTopology{},
 			pod:         &corev1.Pod{},
@@ -861,7 +892,7 @@ func TestPlugin_Reserve(t *testing.T) {
 		{
 			name: "succeed with skip",
 			state: &preFilterState{
-				skip: true,
+				requestCPUBind: false,
 			},
 			pod:  &corev1.Pod{},
 			want: nil,
@@ -869,8 +900,8 @@ func TestPlugin_Reserve(t *testing.T) {
 		{
 			name: "succeed with valid cpu topology",
 			state: &preFilterState{
-				skip:          false,
-				numCPUsNeeded: 4,
+				requestCPUBind: true,
+				numCPUsNeeded:  4,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
@@ -887,8 +918,8 @@ func TestPlugin_Reserve(t *testing.T) {
 				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicySpreadByPCPUs),
 			},
 			state: &preFilterState{
-				skip:          false,
-				numCPUsNeeded: 4,
+				requestCPUBind: true,
+				numCPUsNeeded:  4,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
@@ -899,8 +930,8 @@ func TestPlugin_Reserve(t *testing.T) {
 			want:        nil,
 			wantCPUSet:  cpuset.NewCPUSet(0, 2, 4, 6),
 			wantState: &preFilterState{
-				skip:          false,
-				numCPUsNeeded: 4,
+				requestCPUBind: true,
+				numCPUsNeeded:  4,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
@@ -910,8 +941,8 @@ func TestPlugin_Reserve(t *testing.T) {
 		{
 			name: "error with big request cpu",
 			state: &preFilterState{
-				skip:          false,
-				numCPUsNeeded: 24,
+				requestCPUBind: true,
+				numCPUsNeeded:  24,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
@@ -926,8 +957,8 @@ func TestPlugin_Reserve(t *testing.T) {
 				extension.LabelNodeNUMAAllocateStrategy: string(extension.NodeNUMAAllocateStrategyLeastAllocated),
 			},
 			state: &preFilterState{
-				skip:          false,
-				numCPUsNeeded: 4,
+				requestCPUBind: true,
+				numCPUsNeeded:  4,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
@@ -945,8 +976,8 @@ func TestPlugin_Reserve(t *testing.T) {
 				extension.LabelNodeNUMAAllocateStrategy: string(extension.NodeNUMAAllocateStrategyMostAllocated),
 			},
 			state: &preFilterState{
-				skip:          false,
-				numCPUsNeeded: 4,
+				requestCPUBind: true,
+				numCPUsNeeded:  4,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
@@ -961,8 +992,8 @@ func TestPlugin_Reserve(t *testing.T) {
 		{
 			name: "succeed allocate from reservation reserved cpus",
 			state: &preFilterState{
-				skip:          false,
-				numCPUsNeeded: 4,
+				requestCPUBind: true,
+				numCPUsNeeded:  4,
 				resourceSpec: &extension.ResourceSpec{
 					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 				},
@@ -1003,23 +1034,23 @@ func TestPlugin_Reserve(t *testing.T) {
 			assert.Nil(t, err)
 
 			plg := p.(*Plugin)
-			allocationState := newCPUAllocation("test-node-1")
+			nodeAllocation := NewNodeAllocation("test-node-1")
 			if tt.cpuTopology != nil {
-				plg.topologyManager.UpdateCPUTopologyOptions(allocationState.nodeName, func(options *CPUTopologyOptions) {
+				plg.topologyOptionsManager.UpdateTopologyOptions(nodeAllocation.nodeName, func(options *TopologyOptions) {
 					options.CPUTopology = tt.cpuTopology
 				})
 				if len(tt.allocatedCPUs) > 0 {
-					allocationState.addCPUs(tt.cpuTopology, uuid.NewUUID(), cpuset.NewCPUSet(tt.allocatedCPUs...), schedulingconfig.CPUExclusivePolicyNone)
+					nodeAllocation.addCPUs(tt.cpuTopology, uuid.NewUUID(), cpuset.NewCPUSet(tt.allocatedCPUs...), schedulingconfig.CPUExclusivePolicyNone)
 				}
 				if len(tt.reservedCPUs) > 0 {
 					for reservationUID, cpus := range tt.reservedCPUs {
-						allocationState.addCPUs(tt.cpuTopology, reservationUID, cpus, schedulingconfig.CPUExclusivePolicyNone)
+						nodeAllocation.addCPUs(tt.cpuTopology, reservationUID, cpus, schedulingconfig.CPUExclusivePolicyNone)
 					}
 				}
 			}
 
-			cpuManager := plg.cpuManager.(*cpuManagerImpl)
-			cpuManager.allocationStates[allocationState.nodeName] = allocationState
+			cpuManager := plg.resourceManager.(*resourceManager)
+			cpuManager.allocationStates[nodeAllocation.nodeName] = nodeAllocation
 
 			suit.start()
 
@@ -1056,19 +1087,25 @@ func TestPlugin_Reserve(t *testing.T) {
 			if !tt.want.IsSuccess() {
 				return
 			}
-			assert.True(t, tt.wantCPUSet.Equals(tt.state.allocatedCPUs))
+			var gotCPUs cpuset.CPUSet
+			if tt.state.allocation != nil {
+				gotCPUs = tt.state.allocation.CPUSet
+			}
+			assert.True(t, tt.wantCPUSet.Equals(gotCPUs))
 		})
 	}
 }
 
 func TestPlugin_Unreserve(t *testing.T) {
 	state := &preFilterState{
-		skip:          false,
-		numCPUsNeeded: 24,
+		requestCPUBind: true,
+		numCPUsNeeded:  24,
 		resourceSpec: &extension.ResourceSpec{
 			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 		},
-		allocatedCPUs: cpuset.NewCPUSet(0, 1, 2, 3),
+		allocation: &PodAllocation{
+			CPUSet: cpuset.NewCPUSet(0, 1, 2, 3),
+		},
 	}
 	cpuTopology := buildCPUTopologyForTest(2, 1, 4, 2)
 
@@ -1080,20 +1117,24 @@ func TestPlugin_Unreserve(t *testing.T) {
 
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
-	topologyManager := NewCPUTopologyManager()
-	topologyManager.UpdateCPUTopologyOptions("test-node-1", func(options *CPUTopologyOptions) {
+	topologyOptionsManager := NewTopologyOptionsManager()
+	topologyOptionsManager.UpdateTopologyOptions("test-node-1", func(options *TopologyOptions) {
 		options.CPUTopology = cpuTopology
 	})
 	plg := &Plugin{
-		cpuManager: &cpuManagerImpl{
-			topologyManager:  topologyManager,
-			allocationStates: map[string]*cpuAllocation{},
+		resourceManager: &resourceManager{
+			topologyManager:  topologyOptionsManager,
+			allocationStates: map[string]*NodeAllocation{},
 		},
 	}
-	plg.cpuManager.UpdateAllocatedCPUSet("test-node-1", pod.UID, state.allocatedCPUs, schedulingconfig.CPUExclusivePolicyNone)
+	plg.resourceManager.Update("test-node-1", &PodAllocation{
+		UID:                pod.UID,
+		CPUSet:             state.allocation.CPUSet,
+		CPUExclusivePolicy: schedulingconfig.CPUExclusivePolicyNone,
+	})
 	plg.Unreserve(context.TODO(), cycleState, pod, "test-node-1")
 
-	availableCPUs, allocated, err := plg.cpuManager.GetAvailableCPUs("test-node-1")
+	availableCPUs, allocated, err := plg.resourceManager.GetAvailableCPUs("test-node-1", cpuset.CPUSet{})
 	assert.NoError(t, err)
 	assert.Empty(t, allocated)
 	assert.Equal(t, cpuTopology.CPUDetails.CPUs().ToSlice(), availableCPUs.ToSlice())
@@ -1121,12 +1162,14 @@ func TestPlugin_PreBind(t *testing.T) {
 	plg := p.(*Plugin)
 
 	state := &preFilterState{
-		skip:          false,
-		numCPUsNeeded: 4,
+		requestCPUBind: true,
+		numCPUsNeeded:  4,
 		resourceSpec: &extension.ResourceSpec{
 			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 		},
-		allocatedCPUs: cpuset.NewCPUSet(0, 1, 2, 3),
+		allocation: &PodAllocation{
+			CPUSet: cpuset.NewCPUSet(0, 1, 2, 3),
+		},
 	}
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
@@ -1164,13 +1207,15 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 	plg := p.(*Plugin)
 
 	state := &preFilterState{
-		skip:          false,
-		numCPUsNeeded: 4,
+		requestCPUBind: true,
+		numCPUsNeeded:  4,
 		resourceSpec: &extension.ResourceSpec{
 			PreferredCPUBindPolicy: extension.CPUBindPolicyDefault,
 		},
 		preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
-		allocatedCPUs:          cpuset.NewCPUSet(0, 1, 2, 3),
+		allocation: &PodAllocation{
+			CPUSet: cpuset.NewCPUSet(0, 1, 2, 3),
+		},
 	}
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
@@ -1214,12 +1259,14 @@ func TestPlugin_PreBindReservation(t *testing.T) {
 	plg := p.(*Plugin)
 
 	state := &preFilterState{
-		skip:          false,
-		numCPUsNeeded: 4,
+		requestCPUBind: true,
+		numCPUsNeeded:  4,
 		resourceSpec: &extension.ResourceSpec{
 			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 		},
-		allocatedCPUs: cpuset.NewCPUSet(0, 1, 2, 3),
+		allocation: &PodAllocation{
+			CPUSet: cpuset.NewCPUSet(0, 1, 2, 3),
+		},
 	}
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
@@ -1243,8 +1290,8 @@ func TestRestoreReservation(t *testing.T) {
 	pl := p.(*Plugin)
 	cycleState := framework.NewCycleState()
 	state := &preFilterState{
-		skip:          false,
-		numCPUsNeeded: 4,
+		requestCPUBind: true,
+		numCPUsNeeded:  4,
 		resourceSpec: &extension.ResourceSpec{
 			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 		},
@@ -1263,11 +1310,15 @@ func TestRestoreReservation(t *testing.T) {
 			NodeName: "test-node",
 		},
 	}
-	pl.topologyManager.UpdateCPUTopologyOptions("test-node", func(options *CPUTopologyOptions) {
+	pl.topologyOptionsManager.UpdateTopologyOptions("test-node", func(options *TopologyOptions) {
 		options.CPUTopology = buildCPUTopologyForTest(1, 2, 8, 2)
 		options.MaxRefCount = 1
 	})
-	pl.cpuManager.UpdateAllocatedCPUSet("test-node", reservation.UID, cpuset.NewCPUSet(6, 7, 8, 9), schedulingconfig.CPUExclusivePolicyNone)
+	pl.resourceManager.Update("test-node", &PodAllocation{
+		UID:                reservation.UID,
+		CPUSet:             cpuset.NewCPUSet(6, 7, 8, 9),
+		CPUExclusivePolicy: schedulingconfig.CPUExclusivePolicyNone,
+	})
 
 	podA := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1289,9 +1340,16 @@ func TestRestoreReservation(t *testing.T) {
 			NodeName: "test-node",
 		},
 	}
-	pl.cpuManager.UpdateAllocatedCPUSet("test-node", podA.UID, cpuset.NewCPUSet(6, 7), schedulingconfig.CPUExclusivePolicyNone)
-	pl.cpuManager.UpdateAllocatedCPUSet("test-node", podB.UID, cpuset.NewCPUSet(8, 9), schedulingconfig.CPUExclusivePolicyNone)
-
+	pl.resourceManager.Update("test-node", &PodAllocation{
+		UID:                podA.UID,
+		CPUSet:             cpuset.NewCPUSet(6, 7),
+		CPUExclusivePolicy: schedulingconfig.CPUExclusivePolicyNone,
+	})
+	pl.resourceManager.Update("test-node", &PodAllocation{
+		UID:                podB.UID,
+		CPUSet:             cpuset.NewCPUSet(8, 9),
+		CPUExclusivePolicy: schedulingconfig.CPUExclusivePolicyNone,
+	})
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",

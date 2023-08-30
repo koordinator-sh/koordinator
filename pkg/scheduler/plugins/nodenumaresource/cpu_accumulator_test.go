@@ -564,7 +564,7 @@ func TestTakeCPUsWithMaxRefCount(t *testing.T) {
 		cpuTopology.CPUDetails[v.CPUID] = v
 	}
 
-	allocationState := newCPUAllocation("test-node-1")
+	allocationState := NewNodeAllocation("test-node-1")
 	assert.NotNil(t, allocationState)
 
 	// first pod request 4 CPUs
@@ -605,7 +605,7 @@ func TestTakeCPUsSortByRefCount(t *testing.T) {
 		cpuTopology.CPUDetails[v.CPUID] = v
 	}
 
-	allocationState := newCPUAllocation("test-node-1")
+	allocationState := NewNodeAllocation("test-node-1")
 	assert.NotNil(t, allocationState)
 
 	// first pod request 16 CPUs
@@ -762,9 +762,13 @@ func TestTakePreferredCPUs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []int{0, 2}, result.ToSlice())
 
-	result, err = takePreferredCPUs(topology, 1, cpus, cpuset.NewCPUSet(), nil, 2, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	result, err = takePreferredCPUs(topology, 1, cpus, cpuset.NewCPUSet(0, 2), nil, 2, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
 	assert.NoError(t, err)
-	assert.Empty(t, result.ToSlice())
+	assert.Equal(t, []int{0, 2}, result.ToSlice())
+
+	result, err = takePreferredCPUs(topology, 1, cpus.Difference(result), cpuset.NewCPUSet(), nil, 2, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)
+	assert.NoError(t, err)
+	assert.Equal(t, []int{1, 3}, result.ToSlice())
 
 	preferredCPUs := cpuset.NewCPUSet(11, 13, 15, 17)
 	result, err = takePreferredCPUs(topology, 1, cpus, preferredCPUs, nil, 2, schedulingconfig.CPUBindPolicySpreadByPCPUs, schedulingconfig.CPUExclusivePolicyNone, schedulingconfig.NUMAMostAllocated)

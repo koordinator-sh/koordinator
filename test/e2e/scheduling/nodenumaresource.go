@@ -19,13 +19,20 @@ package scheduling
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
+	nrtclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/utils/pointer"
 
@@ -356,6 +363,494 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 				}
 				prePodCPUs = cpus
 			}
+		})
+	})
+
+	ginkgo.Context("NUMA Topology Policy", func() {
+		var targetNodeName string
+		var nrtClient nrtclientset.Interface
+
+		ginkgo.BeforeEach(func() {
+			targetNodeName = ""
+			config := f.ClientConfig()
+			var err error
+			nrtClient, err = nrtclientset.NewForConfig(config)
+			framework.ExpectNoError(err, "unable to create NRT ClientSet")
+		})
+
+		ginkgo.AfterEach(func() {
+			if targetNodeName != "" {
+				framework.RemoveLabelOffNode(f.ClientSet, targetNodeName, extension.LabelNUMATopologyPolicy)
+			}
+		})
+
+		// SingleNUMANode with 2 NUMA Nodes
+		framework.ConformanceIt("SingleNUMANode with 2 NUMA Nodes", func() {
+			nrt := getSuitableNodeResourceTopology(nrtClient, 2)
+			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
+			framework.ExpectNoError(err, "unable to get node")
+
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode))
+			targetNodeName = node.Name
+
+			ginkgo.By("Create two pods allocate 56% resources of Node, and every Pod allocates 28% resources per NUMA Node")
+			cpuQuantity := node.Status.Allocatable[corev1.ResourceCPU]
+			memoryQuantity := node.Status.Allocatable[corev1.ResourceMemory]
+			percent := intstr.FromString("28%")
+			cpu, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests := corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			rsConfig := pauseRSConfig{
+				Replicas: int32(2),
+				PodConfig: pausePodConfig{
+					Name:      "request-resource-with-single-numa-pod",
+					Namespace: f.Namespace.Name,
+					Labels: map[string]string{
+						"test-app": "true",
+					},
+					Resources: &corev1.ResourceRequirements{
+						Limits:   requests,
+						Requests: requests,
+					},
+					SchedulerName: "koord-scheduler",
+					NodeName:      node.Name,
+				},
+			}
+			runPauseRS(f, rsConfig)
+
+			ginkgo.By("Check the two pods allocated in two NUMA Nodes")
+			podList, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).List(context.TODO(), metav1.ListOptions{})
+			framework.ExpectNoError(err)
+			nodes := sets.NewInt()
+			for i := range podList.Items {
+				pod := &podList.Items[i]
+				ginkgo.By(fmt.Sprintf("pod %q, resourceStatus: %s", pod.Name, pod.Annotations[extension.AnnotationResourceStatus]))
+				resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+				framework.ExpectNoError(err, "invalid resourceStatus")
+				gomega.Expect(len(resourceStatus.NUMANodeResources)).Should(gomega.Equal(1))
+				r := equality.Semantic.DeepEqual(resourceStatus.NUMANodeResources[0].Resources, requests)
+				gomega.Expect(r).Should(gomega.Equal(true))
+				gomega.Expect(false).Should(gomega.Equal(nodes.Has(int(resourceStatus.NUMANodeResources[0].Node))))
+				nodes.Insert(int(resourceStatus.NUMANodeResources[0].Node))
+			}
+			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
+
+			ginkgo.By("Create the third Pod allocates 30% resources of Node, expect it failed to schedule")
+			percent = intstr.FromString("30%")
+			cpu, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests = corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			pod := createPausePod(f, pausePodConfig{
+				Name:      "must-be-failed-pod",
+				Namespace: f.Namespace.Name,
+				Resources: &corev1.ResourceRequirements{
+					Limits:   requests,
+					Requests: requests,
+				},
+				SchedulerName: "koord-scheduler",
+				NodeName:      node.Name,
+			})
+			ginkgo.By("Wait for Pod schedule failed")
+			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+				_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+				if scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse &&
+					strings.Contains(scheduledCondition.Message, "NUMA Topology affinity") {
+					return true, nil
+				}
+				return false, nil
+			}))
+		})
+
+		// SingleNUMANode with 2 NUMA Nodes with LSR
+		framework.ConformanceIt("SingleNUMANode with 2 NUMA Nodes with LSR", func() {
+			nrt := getSuitableNodeResourceTopology(nrtClient, 2)
+			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
+			framework.ExpectNoError(err, "unable to get node")
+
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode))
+			targetNodeName = node.Name
+
+			ginkgo.By("Create two pods allocate 56% resources of Node, and every Pod allocates 28% resources per NUMA Node")
+			cpuQuantity := node.Status.Allocatable[corev1.ResourceCPU]
+			memoryQuantity := node.Status.Allocatable[corev1.ResourceMemory]
+			percent := intstr.FromString("28%")
+			cpu, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			cpu -= cpu % 1000
+			memory, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests := corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			rsConfig := pauseRSConfig{
+				Replicas: int32(2),
+				PodConfig: pausePodConfig{
+					Name:      "request-resource-with-single-numa-pod",
+					Namespace: f.Namespace.Name,
+					Labels: map[string]string{
+						"test-app":            "true",
+						extension.LabelPodQoS: string(extension.QoSLSR),
+					},
+					PriorityClassName: string(extension.PriorityProd),
+					Resources: &corev1.ResourceRequirements{
+						Limits:   requests,
+						Requests: requests,
+					},
+					SchedulerName: "koord-scheduler",
+					NodeName:      node.Name,
+				},
+			}
+			runPauseRS(f, rsConfig)
+
+			ginkgo.By("Check the two pods allocated in two NUMA Nodes")
+			podList, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).List(context.TODO(), metav1.ListOptions{})
+			framework.ExpectNoError(err)
+			nodes := sets.NewInt()
+			for i := range podList.Items {
+				pod := &podList.Items[i]
+				ginkgo.By(fmt.Sprintf("pod %q, resourceStatus: %s", pod.Name, pod.Annotations[extension.AnnotationResourceStatus]))
+				resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+				framework.ExpectNoError(err, "invalid resourceStatus")
+				gomega.Expect(len(resourceStatus.NUMANodeResources)).Should(gomega.Equal(1))
+				r := equality.Semantic.DeepEqual(resourceStatus.NUMANodeResources[0].Resources, requests)
+				gomega.Expect(r).Should(gomega.Equal(true))
+				gomega.Expect(false).Should(gomega.Equal(nodes.Has(int(resourceStatus.NUMANodeResources[0].Node))))
+				nodes.Insert(int(resourceStatus.NUMANodeResources[0].Node))
+				gomega.Expect(resourceStatus.CPUSet).Should(gomega.Not(gomega.BeEmpty()))
+			}
+			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
+		})
+
+		// SingleNUMANode with 2 NUMA Nodes - resources crossover two NUMA Nodes
+		framework.ConformanceIt("SingleNUMANode with 2 NUMA Nodes - resources crossover two NUMA Nodes", func() {
+			nrt := getSuitableNodeResourceTopology(nrtClient, 2)
+			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
+			framework.ExpectNoError(err, "unable to get node")
+
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode))
+			targetNodeName = node.Name
+
+			ginkgo.By("Create two pods allocate 40% cpu of one NUMA Node, and 40% memory of one NUMA Node")
+			cpuQuantity := node.Status.Allocatable[corev1.ResourceCPU]
+			memoryQuantity := node.Status.Allocatable[corev1.ResourceMemory]
+			percent := intstr.FromString("40%")
+			cpu, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			for i := 0; i < 2; i++ {
+				requests := corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+				}
+				runPausePod(f, pausePodConfig{
+					Name:      fmt.Sprintf("request-memory-with-single-numa-pod-%d", i),
+					Namespace: f.Namespace.Name,
+					Resources: &corev1.ResourceRequirements{
+						Limits:   requests,
+						Requests: requests,
+					},
+					SchedulerName: "koord-scheduler",
+					NodeName:      node.Name,
+				})
+			}
+			for i := 0; i < 2; i++ {
+				requests := corev1.ResourceList{
+					corev1.ResourceCPU: *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				}
+				runPausePod(f, pausePodConfig{
+					Name:      fmt.Sprintf("request-cpu-with-single-numa-pod-%d", i),
+					Namespace: f.Namespace.Name,
+					Resources: &corev1.ResourceRequirements{
+						Limits:   requests,
+						Requests: requests,
+					},
+					SchedulerName: "koord-scheduler",
+					NodeName:      node.Name,
+				})
+			}
+			framework.ExpectNoError(e2epod.DeletePodWithWaitByName(f.ClientSet, "request-memory-with-single-numa-pod-0", f.Namespace.Name))
+			framework.ExpectNoError(e2epod.DeletePodWithWaitByName(f.ClientSet, "request-cpu-with-single-numa-pod-1", f.Namespace.Name))
+
+			ginkgo.By("Create the third Pod allocates 40% resources of Node, expect it failed to schedule")
+			percent = intstr.FromString("40%")
+			cpu, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests := corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			pod := createPausePod(f, pausePodConfig{
+				Name:      "must-be-failed-pod",
+				Namespace: f.Namespace.Name,
+				Resources: &corev1.ResourceRequirements{
+					Limits:   requests,
+					Requests: requests,
+				},
+				SchedulerName: "koord-scheduler",
+				NodeName:      node.Name,
+			})
+			ginkgo.By("Wait for Pod schedule failed")
+			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+				_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+				if scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse &&
+					strings.Contains(scheduledCondition.Message, "NUMA Topology affinity") {
+					return true, nil
+				}
+				return false, nil
+			}))
+		})
+
+		// Restricted with 2 NUMA Nodes
+		framework.ConformanceIt("Restricted with 2 NUMA Nodes", func() {
+			nrt := getSuitableNodeResourceTopology(nrtClient, 2)
+			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
+			framework.ExpectNoError(err, "unable to get node")
+
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted))
+			targetNodeName = node.Name
+
+			ginkgo.By("Create two pods allocate 60% resources of Node, and every Pod allocates 30% resources per NUMA Node")
+			cpuQuantity := node.Status.Allocatable[corev1.ResourceCPU]
+			memoryQuantity := node.Status.Allocatable[corev1.ResourceMemory]
+			percent := intstr.FromString("28%")
+			cpu, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests := corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			rsConfig := pauseRSConfig{
+				Replicas: int32(2),
+				PodConfig: pausePodConfig{
+					Name:      "request-resource-with-single-numa-pod",
+					Namespace: f.Namespace.Name,
+					Labels: map[string]string{
+						"test-app": "true",
+					},
+					Resources: &corev1.ResourceRequirements{
+						Limits:   requests,
+						Requests: requests,
+					},
+					SchedulerName: "koord-scheduler",
+					NodeName:      node.Name,
+				},
+			}
+			runPauseRS(f, rsConfig)
+
+			ginkgo.By("Check the two pods allocated in two NUMA Nodes")
+			podList, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).List(context.TODO(), metav1.ListOptions{})
+			framework.ExpectNoError(err)
+			nodes := sets.NewInt()
+			for i := range podList.Items {
+				pod := &podList.Items[i]
+				resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+				framework.ExpectNoError(err, "invalid resourceStatus")
+				gomega.Expect(len(resourceStatus.NUMANodeResources)).Should(gomega.Equal(1))
+				r := equality.Semantic.DeepEqual(resourceStatus.NUMANodeResources[0].Resources, requests)
+				gomega.Expect(r).Should(gomega.Equal(true))
+				gomega.Expect(false).Should(gomega.Equal(nodes.Has(int(resourceStatus.NUMANodeResources[0].Node))))
+				nodes.Insert(int(resourceStatus.NUMANodeResources[0].Node))
+			}
+			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
+
+			ginkgo.By("Create the third Pod allocates 40% resources of Node, expect it scheduled")
+			percent = intstr.FromString("30%")
+			cpu, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests = corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			pod := runPausePod(f, pausePodConfig{
+				Name:      "must-be-succeeded-pod",
+				Namespace: f.Namespace.Name,
+				Resources: &corev1.ResourceRequirements{
+					Limits:   requests,
+					Requests: requests,
+				},
+				SchedulerName: "koord-scheduler",
+				NodeName:      node.Name,
+			})
+			nodes = sets.NewInt()
+			resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+			framework.ExpectNoError(err, "invalid resourceStatus")
+			gomega.Expect(len(resourceStatus.NUMANodeResources)).Should(gomega.Equal(2))
+			allocated := quotav1.Add(resourceStatus.NUMANodeResources[0].Resources, resourceStatus.NUMANodeResources[1].Resources)
+			r := equality.Semantic.DeepEqual(allocated, requests)
+			gomega.Expect(r).Should(gomega.Equal(true))
+			nodes.Insert(int(resourceStatus.NUMANodeResources[0].Node))
+			nodes.Insert(int(resourceStatus.NUMANodeResources[1].Node))
+			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
+		})
+
+		// Restricted with 2 NUMA Nodes - resources crossover two NUMA Nodes
+		framework.ConformanceIt("Restricted with 2 NUMA Nodes - resources crossover two NUMA Nodes", func() {
+			nrt := getSuitableNodeResourceTopology(nrtClient, 2)
+			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
+			framework.ExpectNoError(err, "unable to get node")
+
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted))
+			targetNodeName = node.Name
+
+			ginkgo.By("Create two pods allocate 40% cpu of one NUMA Node, and 40% memory of one NUMA Node")
+			cpuQuantity := node.Status.Allocatable[corev1.ResourceCPU]
+			memoryQuantity := node.Status.Allocatable[corev1.ResourceMemory]
+			percent := intstr.FromString("40%")
+			cpu, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			for i := 0; i < 2; i++ {
+				requests := corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+				}
+				runPausePod(f, pausePodConfig{
+					Name:      fmt.Sprintf("request-memory-with-single-numa-pod-%d", i),
+					Namespace: f.Namespace.Name,
+					Resources: &corev1.ResourceRequirements{
+						Limits:   requests,
+						Requests: requests,
+					},
+					SchedulerName: "koord-scheduler",
+					NodeName:      node.Name,
+				})
+			}
+			for i := 0; i < 2; i++ {
+				requests := corev1.ResourceList{
+					corev1.ResourceCPU: *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				}
+				runPausePod(f, pausePodConfig{
+					Name:      fmt.Sprintf("request-cpu-with-single-numa-pod-%d", i),
+					Namespace: f.Namespace.Name,
+					Resources: &corev1.ResourceRequirements{
+						Limits:   requests,
+						Requests: requests,
+					},
+					SchedulerName: "koord-scheduler",
+					NodeName:      node.Name,
+				})
+			}
+			framework.ExpectNoError(e2epod.DeletePodWithWaitByName(f.ClientSet, "request-memory-with-single-numa-pod-0", f.Namespace.Name))
+			framework.ExpectNoError(e2epod.DeletePodWithWaitByName(f.ClientSet, "request-cpu-with-single-numa-pod-1", f.Namespace.Name))
+
+			ginkgo.By("Create the third Pod allocates 40% resources of Node, expect it scheduled")
+			percent = intstr.FromString("40%")
+			cpu, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests := corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			pod := runPausePod(f, pausePodConfig{
+				Name:      "must-be-failed-pod",
+				Namespace: f.Namespace.Name,
+				Resources: &corev1.ResourceRequirements{
+					Limits:   requests,
+					Requests: requests,
+				},
+				SchedulerName: "koord-scheduler",
+				NodeName:      node.Name,
+			})
+			nodes := sets.NewInt()
+			resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+			framework.ExpectNoError(err, "invalid resourceStatus")
+			gomega.Expect(len(resourceStatus.NUMANodeResources)).Should(gomega.Equal(2))
+			allocated := quotav1.Add(resourceStatus.NUMANodeResources[0].Resources, resourceStatus.NUMANodeResources[1].Resources)
+			r := equality.Semantic.DeepEqual(allocated, requests)
+			gomega.Expect(r).Should(gomega.Equal(true))
+			nodes.Insert(int(resourceStatus.NUMANodeResources[0].Node))
+			nodes.Insert(int(resourceStatus.NUMANodeResources[1].Node))
+			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
+		})
+
+		// BestEffort with 2 NUMA Nodes
+		framework.ConformanceIt("BestEffort with 2 NUMA Nodes", func() {
+			nrt := getSuitableNodeResourceTopology(nrtClient, 2)
+			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
+			framework.ExpectNoError(err, "unable to get node")
+
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyBestEffort)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyBestEffort))
+			targetNodeName = node.Name
+
+			ginkgo.By("Create two pods allocate 60% resources of Node, and every Pod allocates 30% resources per NUMA Node")
+			cpuQuantity := node.Status.Allocatable[corev1.ResourceCPU]
+			memoryQuantity := node.Status.Allocatable[corev1.ResourceMemory]
+			percent := intstr.FromString("28%")
+			cpu, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests := corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			rsConfig := pauseRSConfig{
+				Replicas: int32(2),
+				PodConfig: pausePodConfig{
+					Name:      "request-resource-with-single-numa-pod",
+					Namespace: f.Namespace.Name,
+					Labels: map[string]string{
+						"test-app": "true",
+					},
+					Resources: &corev1.ResourceRequirements{
+						Limits:   requests,
+						Requests: requests,
+					},
+					SchedulerName: "koord-scheduler",
+					NodeName:      node.Name,
+				},
+			}
+			runPauseRS(f, rsConfig)
+
+			ginkgo.By("Check the two pods allocated in two NUMA Nodes")
+			podList, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).List(context.TODO(), metav1.ListOptions{})
+			framework.ExpectNoError(err)
+			nodes := sets.NewInt()
+			for i := range podList.Items {
+				pod := &podList.Items[i]
+				resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+				framework.ExpectNoError(err, "invalid resourceStatus")
+				gomega.Expect(len(resourceStatus.NUMANodeResources)).Should(gomega.Equal(1))
+				r := equality.Semantic.DeepEqual(resourceStatus.NUMANodeResources[0].Resources, requests)
+				gomega.Expect(r).Should(gomega.Equal(true))
+				gomega.Expect(false).Should(gomega.Equal(nodes.Has(int(resourceStatus.NUMANodeResources[0].Node))))
+				nodes.Insert(int(resourceStatus.NUMANodeResources[0].Node))
+			}
+			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
+
+			ginkgo.By("Create the third Pod allocates 40% resources of Node, expect it failed to schedule")
+			percent = intstr.FromString("30%")
+			cpu, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests = corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			pod := runPausePod(f, pausePodConfig{
+				Name:      "must-be-succeeded-pod",
+				Namespace: f.Namespace.Name,
+				Resources: &corev1.ResourceRequirements{
+					Limits:   requests,
+					Requests: requests,
+				},
+				SchedulerName: "koord-scheduler",
+				NodeName:      node.Name,
+			})
+			nodes = sets.NewInt()
+			resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+			framework.ExpectNoError(err, "invalid resourceStatus")
+			gomega.Expect(len(resourceStatus.NUMANodeResources)).Should(gomega.Equal(2))
+			allocated := quotav1.Add(resourceStatus.NUMANodeResources[0].Resources, resourceStatus.NUMANodeResources[1].Resources)
+			r := equality.Semantic.DeepEqual(allocated, requests)
+			gomega.Expect(r).Should(gomega.Equal(true))
+			nodes.Insert(int(resourceStatus.NUMANodeResources[0].Node))
+			nodes.Insert(int(resourceStatus.NUMANodeResources[1].Node))
+			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
 		})
 	})
 })

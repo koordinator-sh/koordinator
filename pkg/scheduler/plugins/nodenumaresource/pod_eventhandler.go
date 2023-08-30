@@ -32,13 +32,13 @@ import (
 )
 
 type podEventHandler struct {
-	cpuManager CPUManager
+	resourceManager ResourceManager
 }
 
-func registerPodEventHandler(handle framework.Handle, cpuManager CPUManager) {
+func registerPodEventHandler(handle framework.Handle, resourceManager ResourceManager) {
 	podInformer := handle.SharedInformerFactory().Core().V1().Pods().Informer()
 	eventHandler := &podEventHandler{
-		cpuManager: cpuManager,
+		resourceManager: resourceManager,
 	}
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), handle.SharedInformerFactory(), podInformer, eventHandler)
 	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
@@ -104,17 +104,35 @@ func (c *podEventHandler) updatePod(oldPod, pod *corev1.Pod) {
 	if err != nil {
 		return
 	}
-	cpus, err := cpuset.Parse(resourceStatus.CPUSet)
-	if err != nil || cpus.IsEmpty() {
-		return
-	}
-
 	resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
 	if err != nil {
 		return
 	}
 
-	c.cpuManager.UpdateAllocatedCPUSet(pod.Spec.NodeName, pod.UID, cpus, resourceSpec.PreferredCPUExclusivePolicy)
+	cpus, err := cpuset.Parse(resourceStatus.CPUSet)
+	if err != nil {
+		return
+	}
+	if len(resourceStatus.NUMANodeResources) == 0 && cpus.IsEmpty() {
+		return
+	}
+
+	allocation := &PodAllocation{
+		UID:                pod.UID,
+		Namespace:          pod.Namespace,
+		Name:               pod.Name,
+		CPUSet:             cpus,
+		CPUExclusivePolicy: resourceSpec.PreferredCPUExclusivePolicy,
+		NUMANodeResources:  make([]NUMANodeResource, 0, len(resourceStatus.NUMANodeResources)),
+	}
+	for _, numaNodeRes := range resourceStatus.NUMANodeResources {
+		allocation.NUMANodeResources = append(allocation.NUMANodeResources, NUMANodeResource{
+			Node:      int(numaNodeRes.Node),
+			Resources: numaNodeRes.Resources,
+		})
+	}
+
+	c.resourceManager.Update(pod.Spec.NodeName, allocation)
 }
 
 func (c *podEventHandler) deletePod(pod *corev1.Pod) {
@@ -122,14 +140,5 @@ func (c *podEventHandler) deletePod(pod *corev1.Pod) {
 		return
 	}
 
-	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
-	if err != nil {
-		return
-	}
-	cpus, err := cpuset.Parse(resourceStatus.CPUSet)
-	if err != nil || cpus.IsEmpty() {
-		return
-	}
-
-	c.cpuManager.Free(pod.Spec.NodeName, pod.UID)
+	c.resourceManager.Release(pod.Spec.NodeName, pod.UID)
 }

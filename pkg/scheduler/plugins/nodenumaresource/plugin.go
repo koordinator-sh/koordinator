@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologylister "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -33,6 +34,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -65,33 +67,36 @@ var (
 	_ framework.ReservePlugin   = &Plugin{}
 	_ framework.PreBindPlugin   = &Plugin{}
 
-	_ frameworkext.ReservationRestorePlugin = &Plugin{}
-	_ frameworkext.ReservationPreBindPlugin = &Plugin{}
+	_ frameworkext.ReservationRestorePlugin    = &Plugin{}
+	_ frameworkext.ReservationPreBindPlugin    = &Plugin{}
+	_ topologymanager.NUMATopologyHintProvider = &Plugin{}
 )
 
 type Plugin struct {
 	handle          framework.Handle
 	pluginArgs      *schedulingconfig.NodeNUMAResourceArgs
-	topologyManager CPUTopologyManager
-	cpuManager      CPUManager
+	nrtLister       topologylister.NodeResourceTopologyLister
+	resourceManager ResourceManager
+
+	topologyOptionsManager TopologyOptionsManager
 }
 
 type Option func(*pluginOptions)
 
 type pluginOptions struct {
-	topologyManager CPUTopologyManager
-	cpuManager      CPUManager
+	topologyOptionsManager TopologyOptionsManager
+	resourceManager        ResourceManager
 }
 
-func WithCPUTopologyManager(topologyManager CPUTopologyManager) Option {
+func WithTopologyOptionsManager(topologyOptionsManager TopologyOptionsManager) Option {
 	return func(opts *pluginOptions) {
-		opts.topologyManager = topologyManager
+		opts.topologyOptionsManager = topologyOptionsManager
 	}
 }
 
-func WithCPUManager(cpuManager CPUManager) Option {
+func WithResourceManager(resourceManager ResourceManager) Option {
 	return func(opts *pluginOptions) {
-		opts.cpuManager = cpuManager
+		opts.resourceManager = resourceManager
 	}
 }
 
@@ -106,25 +111,32 @@ func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option
 		optFnc(options)
 	}
 
-	if options.topologyManager == nil {
-		options.topologyManager = NewCPUTopologyManager()
+	if options.topologyOptionsManager == nil {
+		options.topologyOptionsManager = NewTopologyOptionsManager()
 	}
 
-	if options.cpuManager == nil {
+	if options.resourceManager == nil {
 		defaultNUMAAllocateStrategy := GetDefaultNUMAAllocateStrategy(pluginArgs)
-		options.cpuManager = NewCPUManager(handle, defaultNUMAAllocateStrategy, options.topologyManager)
+		options.resourceManager = NewResourceManager(handle, defaultNUMAAllocateStrategy, options.topologyOptionsManager)
 	}
 
-	if err := registerNodeResourceTopologyEventHandler(handle, options.topologyManager); err != nil {
+	nrtInformerFactory, err := initNRTInformerFactory(handle)
+	if err != nil {
 		return nil, err
 	}
-	registerPodEventHandler(handle, options.cpuManager)
+	if err := registerNodeResourceTopologyEventHandler(nrtInformerFactory, options.topologyOptionsManager); err != nil {
+		return nil, err
+	}
+	registerPodEventHandler(handle, options.resourceManager)
+
+	nrtLister := nrtInformerFactory.Topology().V1alpha1().NodeResourceTopologies().Lister()
 
 	return &Plugin{
-		handle:          handle,
-		pluginArgs:      pluginArgs,
-		topologyManager: options.topologyManager,
-		cpuManager:      options.cpuManager,
+		handle:                 handle,
+		pluginArgs:             pluginArgs,
+		nrtLister:              nrtLister,
+		resourceManager:        options.resourceManager,
+		topologyOptionsManager: options.topologyOptionsManager,
 	}, nil
 }
 
@@ -142,31 +154,32 @@ func GetDefaultNUMAAllocateStrategy(pluginArgs *schedulingconfig.NodeNUMAResourc
 
 func (p *Plugin) Name() string { return Name }
 
-func (p *Plugin) GetCPUManager() CPUManager {
-	return p.cpuManager
+func (p *Plugin) GetResourceManager() ResourceManager {
+	return p.resourceManager
 }
 
-func (p *Plugin) GetCPUTopologyManager() CPUTopologyManager {
-	return p.topologyManager
+func (p *Plugin) GetTopologyOptionsManager() TopologyOptionsManager {
+	return p.topologyOptionsManager
 }
 
 type preFilterState struct {
-	skip                        bool
+	requests                    corev1.ResourceList
+	requestCPUBind              bool
 	resourceSpec                *extension.ResourceSpec
 	preferredCPUBindPolicy      schedulingconfig.CPUBindPolicy
 	preferredCPUExclusivePolicy schedulingconfig.CPUExclusivePolicy
 	numCPUsNeeded               int
-	allocatedCPUs               cpuset.CPUSet
+	allocation                  *PodAllocation
 }
 
 func (s *preFilterState) Clone() framework.StateData {
 	ns := &preFilterState{
-		skip:                        s.skip,
+		requestCPUBind:              s.requestCPUBind,
 		resourceSpec:                s.resourceSpec,
 		preferredCPUBindPolicy:      s.preferredCPUBindPolicy,
 		preferredCPUExclusivePolicy: s.preferredCPUExclusivePolicy,
 		numCPUsNeeded:               s.numCPUsNeeded,
-		allocatedCPUs:               s.allocatedCPUs.Clone(),
+		allocation:                  s.allocation,
 	}
 	return ns
 }
@@ -195,8 +208,10 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		return nil, framework.NewStatus(framework.Error, err.Error())
 	}
 
+	requests, _ := resourceapi.PodRequestsAndLimits(pod)
 	state := &preFilterState{
-		skip: true,
+		requestCPUBind: false,
+		requests:       requests,
 	}
 	if AllowUseCPUSet(pod) {
 		preferredCPUBindPolicy := schedulingconfig.CPUBindPolicy(resourceSpec.PreferredCPUBindPolicy)
@@ -205,14 +220,13 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		}
 		if preferredCPUBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs ||
 			preferredCPUBindPolicy == schedulingconfig.CPUBindPolicySpreadByPCPUs {
-			requests, _ := resourceapi.PodRequestsAndLimits(pod)
 			requestedCPU := requests.Cpu().MilliValue()
 			if requestedCPU%1000 != 0 {
 				return nil, framework.NewStatus(framework.Error, "the requested CPUs must be integer")
 			}
 
 			if requestedCPU > 0 {
-				state.skip = false
+				state.requestCPUBind = true
 				state.resourceSpec = resourceSpec
 				state.preferredCPUBindPolicy = preferredCPUBindPolicy
 				state.preferredCPUExclusivePolicy = resourceSpec.PreferredCPUExclusivePolicy
@@ -243,35 +257,34 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	if !status.IsSuccess() {
 		return status
 	}
-	if state.skip {
-		return nil
-	}
 
 	node := nodeInfo.Node()
-	if node == nil {
-		return framework.NewStatus(framework.Error, "node not found")
-	}
-
-	cpuTopologyOptions := p.topologyManager.GetCPUTopologyOptions(node.Name)
-	if cpuTopologyOptions.CPUTopology == nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNotFoundCPUTopology)
-	}
-
-	// It's necessary to force node to have NodeResourceTopology and CPUTopology
-	// We must satisfy the user's CPUSet request. Even if some nodes in the cluster have resources,
-	// they cannot be allocated without valid CPU topology.
-	if !cpuTopologyOptions.CPUTopology.IsValid() {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
-	}
-
-	kubeletCPUPolicy := cpuTopologyOptions.Policy
-	if extension.GetNodeCPUBindPolicy(node.Labels, kubeletCPUPolicy) == extension.NodeCPUBindPolicyFullPCPUsOnly {
-		if state.numCPUsNeeded%cpuTopologyOptions.CPUTopology.CPUsPerCore() != 0 {
-			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError)
+	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
+	if state.requestCPUBind {
+		if topologyOptions.CPUTopology == nil {
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNotFoundCPUTopology)
 		}
-		if state.preferredCPUBindPolicy != schedulingconfig.CPUBindPolicyFullPCPUs {
-			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy)
+
+		// It's necessary to force node to have NodeResourceTopology and CPUTopology
+		// We must satisfy the user's CPUSet request. Even if some nodes in the cluster have resources,
+		// they cannot be allocated without valid CPU topology.
+		if !topologyOptions.CPUTopology.IsValid() {
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
 		}
+		kubeletCPUPolicy := topologyOptions.Policy
+		if extension.GetNodeCPUBindPolicy(node.Labels, kubeletCPUPolicy) == extension.NodeCPUBindPolicyFullPCPUsOnly {
+			if state.numCPUsNeeded%topologyOptions.CPUTopology.CPUsPerCore() != 0 {
+				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError)
+			}
+			if state.preferredCPUBindPolicy != schedulingconfig.CPUBindPolicyFullPCPUs {
+				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy)
+			}
+		}
+	}
+
+	policyType := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+	if policyType != extension.NUMATopologyPolicyNone {
+		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, policyType)
 	}
 
 	return nil
@@ -282,7 +295,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	if !status.IsSuccess() {
 		return 0, status
 	}
-	if state.skip {
+	if !state.requestCPUBind {
 		return 0, nil
 	}
 
@@ -291,20 +304,11 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 	node := nodeInfo.Node()
-	if node == nil {
-		return 0, framework.NewStatus(framework.Error, "node not found")
-	}
-
-	preferredCPUBindPolicy, err := p.getPreferredCPUBindPolicy(node, state.preferredCPUBindPolicy)
+	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{})
 	if err != nil {
 		return 0, nil
 	}
-
-	reservationReservedCPUs, err := p.getReservationReservedCPUs(cycleState, pod, node)
-	if err != nil {
-		return 0, framework.AsStatus(err)
-	}
-	score := p.cpuManager.Score(node, state.numCPUsNeeded, preferredCPUBindPolicy, state.preferredCPUExclusivePolicy, reservationReservedCPUs)
+	score := p.resourceManager.Score(node, pod, resourceOptions)
 	return score, nil
 }
 
@@ -317,59 +321,48 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	if !status.IsSuccess() {
 		return status
 	}
-	if state.skip {
-		return nil
-	}
 
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
 		return framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 	node := nodeInfo.Node()
-	if node == nil {
-		return framework.NewStatus(framework.Error, "node not found")
+	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
+	if state.requestCPUBind {
+		if topologyOptions.CPUTopology == nil {
+			return framework.NewStatus(framework.Error, ErrNotFoundCPUTopology)
+		}
+		if !topologyOptions.CPUTopology.IsValid() {
+			return framework.NewStatus(framework.Error, ErrInvalidCPUTopology)
+		}
 	}
 
-	preferredCPUBindPolicy, err := p.getPreferredCPUBindPolicy(node, state.preferredCPUBindPolicy)
-	if err != nil {
-		return framework.AsStatus(err)
+	policyType := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+	if policyType != extension.NUMATopologyPolicyNone {
+		status := p.ReserveByNUMANode(ctx, cycleState, pod, nodeName, policyType)
+		if !status.IsSuccess() {
+			return status
+		}
+		return nil
 	}
 
-	reservationReservedCPUs, err := p.getReservationReservedCPUs(cycleState, pod, node)
+	// Only request CPUs by bind policy and exclusive policy.
+	if !state.requestCPUBind {
+		return nil
+	}
+
+	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{})
 	if err != nil {
 		return framework.AsStatus(err)
 	}
-	result, err := p.cpuManager.Allocate(node, state.numCPUsNeeded, preferredCPUBindPolicy, state.preferredCPUExclusivePolicy, reservationReservedCPUs)
+	result, err := p.resourceManager.Allocate(node, pod, resourceOptions)
 	if err != nil {
 		return framework.AsStatus(err)
 	}
-	p.cpuManager.UpdateAllocatedCPUSet(nodeName, pod.UID, result, state.preferredCPUExclusivePolicy)
-	state.allocatedCPUs = result
-	state.preferredCPUBindPolicy = preferredCPUBindPolicy
+	p.resourceManager.Update(nodeName, result)
+	state.allocation = result
+	state.preferredCPUBindPolicy = resourceOptions.cpuBindPolicy
 	return nil
-}
-
-func (p *Plugin) getReservationReservedCPUs(cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) (cpuset.CPUSet, error) {
-	var result cpuset.CPUSet
-	if reservationutil.IsReservePod(pod) {
-		return result, nil
-	}
-	nominatedReservation := frameworkext.GetNominatedReservation(cycleState, node.Name)
-	if nominatedReservation == nil {
-		return result, nil
-	}
-
-	allocatedCPUs, _ := p.cpuManager.GetAllocatedCPUSet(node.Name, nominatedReservation.UID())
-	if allocatedCPUs.IsEmpty() {
-		return result, nil
-	}
-	reservationRestoreState := getReservationRestoreState(cycleState)
-	nodeReservationRestoreState := reservationRestoreState.getNodeState(node.Name)
-	reservedCPUs := nodeReservationRestoreState.reservedCPUs[nominatedReservation.UID()]
-	if !reservedCPUs.IsEmpty() && !reservedCPUs.IsSubsetOf(allocatedCPUs) {
-		return result, fmt.Errorf("reservation reserved CPUs are invalid")
-	}
-	return reservedCPUs, nil
 }
 
 func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
@@ -377,10 +370,9 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 	if !status.IsSuccess() {
 		return
 	}
-	if state.skip || state.allocatedCPUs.IsEmpty() {
-		return
+	if state.allocation != nil {
+		p.resourceManager.Release(nodeName, pod.UID)
 	}
-	p.cpuManager.Free(nodeName, pod.UID)
 }
 
 func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
@@ -396,14 +388,85 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 	if !status.IsSuccess() {
 		return status
 	}
-	if state.skip {
+	if state.allocation == nil {
 		return nil
 	}
 
-	if state.allocatedCPUs.IsEmpty() {
-		return nil
+	if state.requestCPUBind {
+		if err := appendResourceSpecIfMissed(object, state); err != nil {
+			return framework.AsStatus(err)
+		}
 	}
 
+	resourceStatus := &extension.ResourceStatus{
+		CPUSet: state.allocation.CPUSet.String(),
+	}
+	for _, nodeRes := range state.allocation.NUMANodeResources {
+		resourceStatus.NUMANodeResources = append(resourceStatus.NUMANodeResources, extension.NUMANodeResource{
+			Node:      int32(nodeRes.Node),
+			Resources: nodeRes.Resources,
+		})
+	}
+	if err := extension.SetResourceStatus(object, resourceStatus); err != nil {
+		return framework.AsStatus(err)
+	}
+	return nil
+}
+
+func getNUMATopologyPolicy(nodeLabels map[string]string, kubeletTopologyManagerPolicy extension.NUMATopologyPolicy) extension.NUMATopologyPolicy {
+	policyType := extension.GetNodeNUMATopologyPolicy(nodeLabels)
+	if policyType != extension.NUMATopologyPolicyNone {
+		return policyType
+	}
+	return kubeletTopologyManagerPolicy
+}
+
+func (p *Plugin) getResourceOptions(cycleState *framework.CycleState, state *preFilterState, node *corev1.Node, pod *corev1.Pod, affinity topologymanager.NUMATopologyHint) (*ResourceOptions, error) {
+	preferredCPUBindPolicy, err := p.getPreferredCPUBindPolicy(node, state.preferredCPUBindPolicy)
+	if err != nil {
+		return nil, err
+	}
+
+	reservationReservedCPUs, err := p.getReservationReservedCPUs(cycleState, pod, node.Name)
+	if err != nil {
+		return nil, err
+	}
+	options := &ResourceOptions{
+		requests:           state.requests,
+		numCPUsNeeded:      state.numCPUsNeeded,
+		requestCPUBind:     state.requestCPUBind,
+		cpuBindPolicy:      preferredCPUBindPolicy,
+		cpuExclusivePolicy: state.preferredCPUExclusivePolicy,
+		preferredCPUs:      reservationReservedCPUs,
+		hint:               affinity,
+	}
+	return options, nil
+}
+
+func (p *Plugin) getReservationReservedCPUs(cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (cpuset.CPUSet, error) {
+	var result cpuset.CPUSet
+	if reservationutil.IsReservePod(pod) {
+		return result, nil
+	}
+	nominatedReservation := frameworkext.GetNominatedReservation(cycleState, nodeName)
+	if nominatedReservation == nil {
+		return result, nil
+	}
+
+	allocatedCPUs, _ := p.resourceManager.GetAllocatedCPUSet(nodeName, nominatedReservation.UID())
+	if allocatedCPUs.IsEmpty() {
+		return result, nil
+	}
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	nodeReservationRestoreState := reservationRestoreState.getNodeState(nodeName)
+	reservedCPUs := nodeReservationRestoreState.reservedCPUs[nominatedReservation.UID()]
+	if !reservedCPUs.IsEmpty() && !reservedCPUs.IsSubsetOf(allocatedCPUs) {
+		return result, fmt.Errorf("reservation reserved CPUs are invalid")
+	}
+	return reservedCPUs, nil
+}
+
+func appendResourceSpecIfMissed(object metav1.Object, state *preFilterState) error {
 	annotations := object.GetAnnotations()
 	// Write back ResourceSpec annotation if LSR Pod hasn't specified CPUBindPolicy
 	preferredCPUBindPolicy := schedulingconfig.CPUBindPolicy(state.resourceSpec.PreferredCPUBindPolicy)
@@ -415,7 +478,7 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		}
 		resourceSpecData, err := json.Marshal(resourceSpec)
 		if err != nil {
-			return framework.AsStatus(err)
+			return err
 		}
 		if annotations == nil {
 			annotations = make(map[string]string)
@@ -423,24 +486,19 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		annotations[extension.AnnotationResourceSpec] = string(resourceSpecData)
 		object.SetAnnotations(annotations)
 	}
-
-	resourceStatus := &extension.ResourceStatus{CPUSet: state.allocatedCPUs.String()}
-	if err := extension.SetResourceStatus(object, resourceStatus); err != nil {
-		return framework.AsStatus(err)
-	}
 	return nil
 }
 
 func (p *Plugin) getPreferredCPUBindPolicy(node *corev1.Node, preferredCPUBindPolicy schedulingconfig.CPUBindPolicy) (schedulingconfig.CPUBindPolicy, error) {
-	cpuTopologyOptions := p.topologyManager.GetCPUTopologyOptions(node.Name)
-	if cpuTopologyOptions.CPUTopology == nil {
+	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
+	if topologyOptions.CPUTopology == nil {
 		return preferredCPUBindPolicy, errors.New(ErrNotFoundCPUTopology)
 	}
-	if !cpuTopologyOptions.CPUTopology.IsValid() {
+	if !topologyOptions.CPUTopology.IsValid() {
 		return preferredCPUBindPolicy, errors.New(ErrInvalidCPUTopology)
 	}
 
-	kubeletCPUPolicy := cpuTopologyOptions.Policy
+	kubeletCPUPolicy := topologyOptions.Policy
 	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, kubeletCPUPolicy)
 	switch nodeCPUBindPolicy {
 	default:

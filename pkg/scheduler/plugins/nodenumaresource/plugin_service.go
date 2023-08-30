@@ -27,28 +27,72 @@ import (
 
 var _ services.APIServiceProvider = &Plugin{}
 
-type AvailableCPUsResponse struct {
-	AvailableCPUs cpuset.CPUSet `json:"availableCPUs,omitempty"`
-	Allocated     CPUDetails    `json:"allocated,omitempty"`
+type NodeResponse struct {
+	Name                       string `json:"name,omitempty"`
+	TopologyOptions            `json:",inline"`
+	RemainingNUMANodeResources []NUMANodeResource `json:"remainingNUMANodeResources"`
+	AllocatedNUMANodeResources []NUMANodeResource `json:"allocatedNUMANodeResources"`
+	AvailableCPUs              cpuset.CPUSet      `json:"availableCPUs"`
+	AllocatedCPUs              CPUDetails         `json:"allocatedCPUs"`
+	AllocatedPods              []PodAllocation    `json:"allocatedPods"`
 }
 
 func (p *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
-	group.GET("/cpuTopologyOptions/:nodeName", func(c *gin.Context) {
+	group.GET("/nodes/:nodeName", func(c *gin.Context) {
 		nodeName := c.Param("nodeName")
-		topologyOptions := p.topologyManager.GetCPUTopologyOptions(nodeName)
-		c.JSON(http.StatusOK, topologyOptions)
-	})
-	group.GET("/availableCPUs/:nodeName", func(c *gin.Context) {
-		nodeName := c.Param("nodeName")
-		availableCPUs, allocated, err := p.cpuManager.GetAvailableCPUs(nodeName)
+		nodeLister := p.handle.SharedInformerFactory().Core().V1().Nodes().Lister()
+		node, err := nodeLister.Get(nodeName)
 		if err != nil {
 			services.ResponseErrorMessage(c, http.StatusInternalServerError, err.Error())
 			return
 		}
-		r := &AvailableCPUsResponse{
-			AvailableCPUs: availableCPUs,
-			Allocated:     allocated,
+
+		topologyOptions := p.topologyOptionsManager.GetTopologyOptions(nodeName)
+		if topologyOptions.CPUTopology == nil || !topologyOptions.CPUTopology.IsValid() {
+			services.ResponseErrorMessage(c, http.StatusInternalServerError, "invalid topology, please check the NodeResourceTopology object")
+			return
 		}
-		c.JSON(http.StatusOK, r)
+		topologyOptions.NUMATopologyPolicy = getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+
+		nodeAllocation := p.resourceManager.GetNodeAllocation(nodeName)
+		if nodeAllocation == nil {
+			services.ResponseErrorMessage(c, http.StatusNotFound, "cannot find target node")
+			return
+		}
+		resp := dumpNodeAllocation(nodeAllocation, topologyOptions)
+		c.JSON(http.StatusOK, resp)
 	})
+}
+
+func dumpNodeAllocation(nodeAllocation *NodeAllocation, topologyOptions TopologyOptions) *NodeResponse {
+	resp := &NodeResponse{
+		Name:            nodeAllocation.nodeName,
+		TopologyOptions: topologyOptions,
+	}
+
+	nodeAllocation.lock.RLock()
+	defer nodeAllocation.lock.RUnlock()
+	if len(nodeAllocation.allocatedPods) != 0 {
+		podAllocations := make([]PodAllocation, 0, len(nodeAllocation.allocatedPods))
+		for _, v := range nodeAllocation.allocatedPods {
+			podAllocations = append(podAllocations, v)
+		}
+		resp.AllocatedPods = podAllocations
+	}
+	resp.AvailableCPUs, resp.AllocatedCPUs = nodeAllocation.getAvailableCPUs(topologyOptions.CPUTopology, topologyOptions.MaxRefCount, topologyOptions.ReservedCPUs, cpuset.CPUSet{})
+	availableResources, allocatedResource := nodeAllocation.getAvailableNUMANodeResources(topologyOptions)
+	for nodeID, v := range availableResources {
+		resp.RemainingNUMANodeResources = append(resp.RemainingNUMANodeResources, NUMANodeResource{
+			Node:      nodeID,
+			Resources: v.DeepCopy(),
+		})
+	}
+	for nodeID, v := range allocatedResource {
+		resp.AllocatedNUMANodeResources = append(resp.AllocatedNUMANodeResources, NUMANodeResource{
+			Node:      nodeID,
+			Resources: v.DeepCopy(),
+		})
+	}
+
+	return resp
 }

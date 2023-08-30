@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	nrtclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -237,4 +239,26 @@ func expectPodBoundReservation(clientSet clientset.Interface, koordinatorClientS
 		Name: reservation.Name,
 		UID:  reservation.UID,
 	}), "pod is not using the expected reservation")
+}
+
+func getSuitableNodeResourceTopology(client nrtclientset.Interface, expectNumNodes int) *nrtv1alpha1.NodeResourceTopology {
+	nrtList, err := client.TopologyV1alpha1().NodeResourceTopologies().List(context.TODO(), metav1.ListOptions{})
+	framework.ExpectNoError(err, "unable to list NRT")
+	var gotNRT *nrtv1alpha1.NodeResourceTopology
+	for i := range nrtList.Items {
+		nrt := &nrtList.Items[i]
+		numNodes := 0
+		for _, zone := range nrt.Zones {
+			if zone.Type == "Node" {
+				numNodes++
+			}
+		}
+		if numNodes != expectNumNodes {
+			continue
+		}
+		gotNRT = nrt
+		break
+	}
+	gomega.Expect(gotNRT).Should(gomega.Not(gomega.BeNil()))
+	return gotNRT
 }
