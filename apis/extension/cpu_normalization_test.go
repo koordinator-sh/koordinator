@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 )
 
 func TestGetCPUNormalizationRatio(t *testing.T) {
@@ -181,6 +182,78 @@ func TestSetCPUNormalizationRatio(t *testing.T) {
 			got := SetCPUNormalizationRatio(tt.args.node, tt.args.ratio)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantField, tt.args.node)
+		})
+	}
+}
+
+func TestGetCPUNormalizationEnabled(t *testing.T) {
+	tests := []struct {
+		name    string
+		arg     *corev1.Node
+		want    *bool
+		wantErr bool
+	}{
+		{
+			name:    "node has no label",
+			arg:     &corev1.Node{},
+			want:    nil,
+			wantErr: false,
+		},
+		{
+			name: "node has no label key",
+			arg: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"xxx": "yyy",
+					},
+				},
+			},
+			want:    nil,
+			wantErr: false,
+		},
+		{
+			name: "parse label value failed",
+			arg: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"xxx":                        "yyy",
+						LabelCPUNormalizationEnabled: "{invalidContent",
+					},
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "value is false",
+			arg: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						LabelCPUNormalizationEnabled: "false",
+					},
+				},
+			},
+			want:    pointer.Bool(false),
+			wantErr: false,
+		},
+		{
+			name: "value is true",
+			arg: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						LabelCPUNormalizationEnabled: "true",
+					},
+				},
+			},
+			want:    pointer.Bool(true),
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := GetCPUNormalizationEnabled(tt.arg)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
 		})
 	}
 }

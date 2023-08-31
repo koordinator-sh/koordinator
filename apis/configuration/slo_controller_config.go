@@ -31,6 +31,7 @@ const (
 	CPUBurstConfigKey          = "cpu-burst-config"
 	SystemConfigKey            = "system-config"
 	HostApplicationConfigKey   = "host-application-config"
+	CPUNormalizationConfigKey  = "cpu-normalization-config"
 )
 
 // +k8s:deepcopy-gen=true
@@ -229,6 +230,44 @@ type ColocationStrategy struct {
 	MidMemoryThresholdPercent *int64 `json:"midMemoryThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
 
 	ColocationStrategyExtender `json:",inline"` // for third-party extension
+}
+
+// CPUNormalizationCfg is the cluster-level configuration of the CPU normalization strategy.
+// +k8s:deepcopy-gen=true
+type CPUNormalizationCfg struct {
+	CPUNormalizationStrategy `json:",inline"`
+	NodeConfigs              []NodeCPUNormalizationCfg `json:"nodeConfigs,omitempty" validate:"dive"`
+}
+
+// NodeCPUNormalizationCfg is the node-level configuration of the CPU normalization strategy.
+// +k8s:deepcopy-gen=true
+type NodeCPUNormalizationCfg struct {
+	NodeCfgProfile `json:",inline"`
+	CPUNormalizationStrategy
+}
+
+// CPUNormalizationStrategy is the CPU normalization strategy.
+// +k8s:deepcopy-gen=true
+type CPUNormalizationStrategy struct {
+	// Enable defines whether the cpu normalization is enabled.
+	// If set to false, the node cpu normalization ratio will be removed.
+	Enable *bool `json:"enable,omitempty"`
+	// RatioModel defines the cpu normalization ratio of each CPU model.
+	// It maps the CPUModel of BasicInfo into the ratios.
+	RatioModel map[string]ModelRatioCfg `json:"ratioModel,omitempty"`
+}
+
+// ModelRatioCfg defines the cpu normalization ratio of a CPU model.
+// +k8s:deepcopy-gen=true
+type ModelRatioCfg struct {
+	// BaseRatio defines the ratio of which the CPU neither enables Hyper Thread, nor the Turbo.
+	BaseRatio *float64 `json:"baseRatio,omitempty"`
+	// HyperThreadEnabledRatio defines the ratio of which the CPU enables the Hyper Thread.
+	HyperThreadEnabledRatio *float64 `json:"hyperThreadEnabledRatio,omitempty"`
+	// TurboEnabledRatio defines the ratio of which the CPU enables the Turbo.
+	TurboEnabledRatio *float64 `json:"turboEnabledRatio,omitempty"`
+	// HyperThreadTurboEnabledRatio defines the ratio of which the CPU enables the Hyper Thread and Turbo.
+	HyperThreadTurboEnabledRatio *float64 `json:"hyperThreadTurboEnabledRatio,omitempty"`
 }
 
 /*
@@ -502,6 +541,35 @@ data:
               }
             }
           ]
+        }
+      ]
+    }
+  cpu-normalization-config: |
+    {
+      "enable": false,
+      "ratioModel": {
+        "Intel(R) Xeon(R) Platinum XXX CPU @ 2.50GHz": {
+          "baseRatio": 1.5,
+          "hyperThreadEnabledRatio": 1.0,
+          "turboEnabledRatio": 1.8,
+          "hyperThreadTurboEnabledRatio": 1.2
+        },
+        "Intel(R) Xeon(R) Platinum YYY CPU @ 2.50GHz": {
+          "baseRatio": 1.8,
+          "hyperThreadEnabledRatio": 1.2,
+          "turboEnabledRatio": 2.16,
+          "hyperThreadTurboEnabledRatio": 1.44
+        }
+      },
+      "nodeConfigs": [
+        {
+          "name": "test",
+          "nodeSelector": {
+            "matchLabels": {
+              "AAA": "BBB"
+            }
+          },
+          "enable": true
         }
       ]
     }
