@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	quotav1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -57,6 +58,10 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 	// Group=config, Version=v1alpha1
 	case v1alpha1.SchemeGroupVersion.WithResource("clustercolocationprofiles"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Config().V1alpha1().ClusterColocationProfiles().Informer()}, nil
+
+		// Group=quota, Version=v1alpha1
+	case quotav1alpha1.SchemeGroupVersion.WithResource("elasticquotaprofiles"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Quota().V1alpha1().ElasticQuotaProfiles().Informer()}, nil
 
 		// Group=scheduling, Version=v1alpha1
 	case schedulingv1alpha1.SchemeGroupVersion.WithResource("devices"):
