@@ -86,11 +86,8 @@ func (p *performanceCollector) Run(stopCh <-chan struct{}) {
 	}
 	if p.EnabledPerf() {
 		if features.DefaultKoordletFeatureGate.Enabled(features.Libpfm4) {
-			eventsMap := make(map[int]struct{})
 			perf.LibInit()
-			if features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) {
-				eventsMap[len(perf.EventsMap[string(features.CPICollector)])] = struct{}{}
-			}
+			eventsMap := p.getLibpfm4EventMap()
 			// init perf buffer pool for different perf group collectors
 			perf.InitBufferPool(eventsMap)
 
@@ -104,6 +101,14 @@ func (p *performanceCollector) Run(stopCh <-chan struct{}) {
 			go wait.Until(p.collectContainerCPI, p.cpiCollectInterval, stopCh)
 		}
 	}
+}
+
+func (p *performanceCollector) getLibpfm4EventMap() map[int]struct{} {
+	eventsMap := make(map[int]struct{})
+	if features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) {
+		eventsMap[len(perf.EventsMap[string(features.CPICollector)])] = struct{}{}
+	}
+	return eventsMap
 }
 
 func (p *performanceCollector) Started() bool {
