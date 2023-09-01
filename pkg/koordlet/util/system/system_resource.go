@@ -38,7 +38,7 @@ var (
 	MinFreeKbytesValidator             = &RangeValidator{min: 10 * 1024, max: 10 * 1024 * 1024}
 	WatermarkScaleFactorValidator      = &RangeValidator{min: 10, max: 400}
 	MemcgReapBackGroundValidator       = &RangeValidator{min: 0, max: 1}
-	KidledScanPeriodInSecondsValidator = &RangeValidator{min: 1, max: 3600}
+	KidledScanPeriodInSecondsValidator = &RangeValidator{min: 1, max: 300}
 	KidledUseHierarchyValidator        = &RangeValidator{min: 1, max: 1}
 )
 

@@ -37,10 +37,11 @@ func New(opt *framework.Options) framework.Collector {
 			collectInterval: opt.Config.CollectResUsedInterval,
 			cgroupReader:    opt.CgroupReader,
 			statesInformer:  opt.StatesInformer,
-			podFilter:       framework.DefaultPodFilter,
-			appendableDB:    opt.MetricCache,
-			metricDB:        opt.MetricCache,
-			started:         atomic.NewBool(false),
+			// TODO(BUPT-wxq): implement podFilter for the VM-based pods and containers
+			podFilter:    framework.DefaultPodFilter,
+			appendableDB: opt.MetricCache,
+			metricDB:     opt.MetricCache,
+			started:      atomic.NewBool(false),
 		}
 	}
 	// TODO(BUPT-wxq): check kstaled cold page collector

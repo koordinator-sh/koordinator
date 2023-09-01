@@ -1416,7 +1416,7 @@ func TestCgroupReader_ReadMemoryIdlePageStatsByKidled(t *testing.T) {
 			if tt.fields.MemoryIdlePageStatsValue != "" {
 				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.MemoryIdlePageStats, tt.fields.MemoryIdlePageStatsValue)
 			}
-			got, gotErr := NewCgroupReader().ReadMemoryIdlePageStatsByKidled(tt.args.parentDir)
+			got, gotErr := NewCgroupReader().ReadColdPageUsage(tt.args.parentDir)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.want, got)
 		})

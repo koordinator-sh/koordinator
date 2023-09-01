@@ -92,7 +92,7 @@ func (k *kidledcoldPageCollector) collectColdPageInfo() {
 func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.MetricSample, error) {
 	coldPageMetrics := make([]metriccache.MetricSample, 0)
 	collectTime := time.Now()
-	coldPageInfo, err := k.cgroupReader.ReadMemoryIdlePageStatsByKidled("")
+	coldPageInfo, err := k.cgroupReader.ReadColdPageUsage("")
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		}
 		collectTime := time.Now()
 		podCgroupDir := meta.CgroupDir
-		coldPageInfo, err := k.cgroupReader.ReadMemoryIdlePageStatsByKidled(podCgroupDir)
+		coldPageInfo, err := k.cgroupReader.ReadColdPageUsage(podCgroupDir)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
 			continue
@@ -195,7 +195,7 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 				containerKey, err)
 			continue
 		}
-		coldPageInfo, err := k.cgroupReader.ReadMemoryIdlePageStatsByKidled(containerCgroupDir)
+		coldPageInfo, err := k.cgroupReader.ReadColdPageUsage(containerCgroupDir)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for container %s", containerKey)
 			continue
