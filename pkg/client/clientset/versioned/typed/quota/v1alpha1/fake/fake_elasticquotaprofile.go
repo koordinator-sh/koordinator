@@ -36,9 +36,9 @@ type FakeElasticQuotaProfiles struct {
 	ns   string
 }
 
-var elasticquotaprofilesResource = schema.GroupVersionResource{Group: "quota", Version: "v1alpha1", Resource: "elasticquotaprofiles"}
+var elasticquotaprofilesResource = schema.GroupVersionResource{Group: "quota.koordinator.sh", Version: "v1alpha1", Resource: "elasticquotaprofiles"}
 
-var elasticquotaprofilesKind = schema.GroupVersionKind{Group: "quota", Version: "v1alpha1", Kind: "ElasticQuotaProfile"}
+var elasticquotaprofilesKind = schema.GroupVersionKind{Group: "quota.koordinator.sh", Version: "v1alpha1", Kind: "ElasticQuotaProfile"}
 
 // Get takes name of the elasticQuotaProfile, and returns the corresponding elasticQuotaProfile object, and an error if there is any.
 func (c *FakeElasticQuotaProfiles) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ElasticQuotaProfile, err error) {

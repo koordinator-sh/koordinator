@@ -79,4 +79,4 @@ function custom_sed(){
 custom_sed 's#\"config\"#\"config.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/config/v1alpha1/fake/fake_*.go
 custom_sed 's#\"slo\"#\"slo.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/slo/v1alpha1/fake/fake_*.go
 custom_sed 's#\"scheduling\"#\"scheduling.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/scheduling/v1alpha1/fake/fake_*.go
-custom_sed 's#\"quota\"#\"quota.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/scheduling/v1alpha1/fake/fake_*.go
+custom_sed 's#\"quota\"#\"quota.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/quota/v1alpha1/fake/fake_*.go
