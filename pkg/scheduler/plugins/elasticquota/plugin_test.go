@@ -133,6 +133,7 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 	)
+	assert.Nil(t, err)
 	pgClientSet := pgfake.NewSimpleClientset()
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
 		return New(configuration, &ElasticQuotaSetAndHandle{
@@ -214,7 +215,7 @@ func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 	)
-
+	assert.Nil(t, err)
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
 		return New(configuration, &ElasticQuotaSetAndHandle{
 			ExtendedHandle: f.(frameworkext.ExtendedHandle),

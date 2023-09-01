@@ -85,9 +85,6 @@ type Plugin struct {
 	quotaManagerLock          sync.RWMutex
 	profileGroupQuotaManagers map[string]*core.GroupQuotaManager
 	profileLister             quotalister.ElasticQuotaProfileLister
-
-	quotaLock       sync.Mutex
-	quotoToProfiles map[string]string
 }
 
 var (
@@ -137,7 +134,6 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		nodeLister:                handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
 		profileLister:             profileInformer.Lister(),
 		profileGroupQuotaManagers: make(map[string]*core.GroupQuotaManager),
-		quotoToProfiles:           make(map[string]string),
 	}
 	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager(pluginArgs.SystemQuotaGroupMax, pluginArgs.DefaultQuotaGroupMax, elasticQuota.nodeLister, nil)
 
