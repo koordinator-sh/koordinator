@@ -30,6 +30,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/deviceshare"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/nodecpuamplification"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/nodenumaresource"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 
@@ -40,13 +41,14 @@ import (
 )
 
 var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
-	loadaware.Name:        loadaware.New,
-	nodenumaresource.Name: nodenumaresource.New,
-	reservation.Name:      reservation.New,
-	coscheduling.Name:     coscheduling.New,
-	deviceshare.Name:      deviceshare.New,
-	elasticquota.Name:     elasticquota.New,
-	defaultprebind.Name:   defaultprebind.New,
+	loadaware.Name:            loadaware.New,
+	nodenumaresource.Name:     nodenumaresource.New,
+	reservation.Name:          reservation.New,
+	coscheduling.Name:         coscheduling.New,
+	deviceshare.Name:          deviceshare.New,
+	elasticquota.Name:         elasticquota.New,
+	defaultprebind.Name:       defaultprebind.New,
+	nodecpuamplification.Name: nodecpuamplification.New,
 }
 
 func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {

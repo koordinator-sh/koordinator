@@ -37,6 +37,11 @@ var (
 		corev1.ResourceMemory: 1,
 	}
 
+	defaultResourceSpec = []schedconfigv1beta2.ResourceSpec{
+		{Name: string(corev1.ResourceCPU), Weight: 1},
+		{Name: string(corev1.ResourceMemory), Weight: 1},
+	}
+
 	defaultUsageThresholds = map[corev1.ResourceName]int64{
 		corev1.ResourceCPU:    65, // 65%
 		corev1.ResourceMemory: 95, // 95%
@@ -184,6 +189,25 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 					Weight: 1,
 				},
 			},
+		}
+	}
+}
+
+func SetDefaults_NodeCPUAmplificationArgs(obj *NodeCPUAmplificationArgs) {
+	if obj.ScoringStrategy == nil {
+		obj.ScoringStrategy = &ScoringStrategy{
+			// By default, LeastAllocate is used to ensure high availability of applications
+			Type:      LeastAllocated,
+			Resources: defaultResourceSpec,
+		}
+	}
+	if len(obj.ScoringStrategy.Resources) == 0 {
+		// If no resources specified, use the default set.
+		obj.ScoringStrategy.Resources = append(obj.ScoringStrategy.Resources, defaultResourceSpec...)
+	}
+	for i := range obj.ScoringStrategy.Resources {
+		if obj.ScoringStrategy.Resources[i].Weight == 0 {
+			obj.ScoringStrategy.Resources[i].Weight = 1
 		}
 	}
 }

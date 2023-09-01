@@ -170,3 +170,15 @@ func ValidateNodeNUMAResourceArgs(path *field.Path, args *config.NodeNUMAResourc
 	}
 	return allErrs.ToAggregate()
 }
+
+func ValidateNodeCPUAmplificationArgs(path *field.Path, args *config.NodeCPUAmplificationArgs) error {
+	var allErrs field.ErrorList
+	if args.ScoringStrategy != nil {
+		allErrs = append(allErrs, validateResources(args.ScoringStrategy.Resources, path.Child("resources"))...)
+	}
+
+	if len(allErrs) == 0 {
+		return nil
+	}
+	return allErrs.ToAggregate()
+}

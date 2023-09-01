@@ -33,6 +33,7 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&DeviceShareArgs{}, func(obj interface{}) { SetObjectDefaults_DeviceShareArgs(obj.(*DeviceShareArgs)) })
 	scheme.AddTypeDefaultingFunc(&ElasticQuotaArgs{}, func(obj interface{}) { SetObjectDefaults_ElasticQuotaArgs(obj.(*ElasticQuotaArgs)) })
 	scheme.AddTypeDefaultingFunc(&LoadAwareSchedulingArgs{}, func(obj interface{}) { SetObjectDefaults_LoadAwareSchedulingArgs(obj.(*LoadAwareSchedulingArgs)) })
+	scheme.AddTypeDefaultingFunc(&NodeCPUAmplificationArgs{}, func(obj interface{}) { SetObjectDefaults_NodeCPUAmplificationArgs(obj.(*NodeCPUAmplificationArgs)) })
 	scheme.AddTypeDefaultingFunc(&NodeNUMAResourceArgs{}, func(obj interface{}) { SetObjectDefaults_NodeNUMAResourceArgs(obj.(*NodeNUMAResourceArgs)) })
 	scheme.AddTypeDefaultingFunc(&ReservationArgs{}, func(obj interface{}) { SetObjectDefaults_ReservationArgs(obj.(*ReservationArgs)) })
 	return nil
@@ -52,6 +53,10 @@ func SetObjectDefaults_ElasticQuotaArgs(in *ElasticQuotaArgs) {
 
 func SetObjectDefaults_LoadAwareSchedulingArgs(in *LoadAwareSchedulingArgs) {
 	SetDefaults_LoadAwareSchedulingArgs(in)
+}
+
+func SetObjectDefaults_NodeCPUAmplificationArgs(in *NodeCPUAmplificationArgs) {
+	SetDefaults_NodeCPUAmplificationArgs(in)
 }
 
 func SetObjectDefaults_NodeNUMAResourceArgs(in *NodeNUMAResourceArgs) {

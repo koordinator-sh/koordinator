@@ -205,3 +205,13 @@ type DeviceShareArgs struct {
 	// ScoringStrategy selects the device resource scoring strategy.
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// NodeCPUAmplificationArgs defines the parameters for NodeCPUAmplification plugin.
+type NodeCPUAmplificationArgs struct {
+	metav1.TypeMeta
+
+	// ScoringStrategy selects the normalized node resource scoring strategy.
+	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
+}
