@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -179,7 +180,9 @@ func TestController_Run(t *testing.T) {
 				},
 			}
 			suit := newPluginTestSuitWithPod(t, nodes, nil)
-			p := suit.plugin.(*Plugin)
+			plugin, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
+			p := plugin.(*Plugin)
 			ctrl := NewElasticQuotaController(p.client, p.quotaLister, p.groupQuotaManager)
 			for _, v := range c.elasticQuotas {
 				suit.client.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Create(ctx, v, metav1.CreateOptions{})
@@ -190,7 +193,6 @@ func TestController_Run(t *testing.T) {
 			}
 			time.Sleep(100 * time.Millisecond)
 			ctrl.Start()
-			var err error
 			for i := 0; i < 10; i++ {
 				for _, v := range c.want {
 					get, _ := suit.client.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Get(ctx, v.Name, metav1.GetOptions{})

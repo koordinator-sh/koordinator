@@ -47,6 +47,9 @@ const (
 
 	// WebhookFramework enables webhook framework
 	WebhookFramework featuregate.Feature = "WebhookFramework"
+
+	// MultiRootQuota enables multi root quota.
+	MultiRootQuota featuregate.Feature = "MultiRootQuota"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -58,6 +61,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	ConfigMapValidatingWebhook:             {Default: false, PreRelease: featuregate.Alpha},
 	WebhookFramework:                       {Default: true, PreRelease: featuregate.Beta},
 	ColocationProfileSkipMutatingResources: {Default: false, PreRelease: featuregate.Alpha},
+	MultiRootQuota:                         {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (

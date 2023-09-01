@@ -19,12 +19,14 @@ package elasticquota
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	v1 "k8s.io/client-go/listers/core/v1"
 	policylisters "k8s.io/client-go/listers/policy/v1"
 	"k8s.io/client-go/tools/cache"
@@ -37,6 +39,9 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
+	koordversioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	quotalister "github.com/koordinator-sh/koordinator/pkg/client/listers/quota/v1alpha1"
+	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -69,12 +74,20 @@ func (p *PostFilterState) Clone() framework.StateData {
 type Plugin struct {
 	handle            framework.Handle
 	client            versioned.Interface
+	koordClient       koordversioned.Interface
 	pluginArgs        *config.ElasticQuotaArgs
 	quotaLister       v1alpha1.ElasticQuotaLister
 	podLister         v1.PodLister
 	pdbLister         policylisters.PodDisruptionBudgetLister
 	nodeLister        v1.NodeLister
 	groupQuotaManager *core.GroupQuotaManager
+
+	quotaManagerLock          sync.RWMutex
+	profileGroupQuotaManagers map[string]*core.GroupQuotaManager
+	profileLister             quotalister.ElasticQuotaProfileLister
+
+	quotaLock       sync.Mutex
+	quotoToProfiles map[string]string
 }
 
 var (
@@ -99,22 +112,44 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		kubeConfig.AcceptContentTypes = runtime.ContentTypeJSON
 		client = versioned.NewForConfigOrDie(&kubeConfig)
 	}
+
 	scheSharedInformerFactory := externalversions.NewSharedInformerFactory(client, 0)
 	transformer.SetupElasticQuotaTransformers(scheSharedInformerFactory)
 	elasticQuotaInformer := scheSharedInformerFactory.Scheduling().V1alpha1().ElasticQuotas()
 
-	elasticQuota := &Plugin{
-		handle:      handle,
-		client:      client,
-		pluginArgs:  pluginArgs,
-		podLister:   handle.SharedInformerFactory().Core().V1().Pods().Lister(),
-		quotaLister: elasticQuotaInformer.Lister(),
-		pdbLister:   getPDBLister(handle),
-		nodeLister:  handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
+	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
+	if !ok {
+		return nil, fmt.Errorf("want handle to be of type frameworkext.ExtendedHandle, got %T", handle)
 	}
-	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager(pluginArgs.SystemQuotaGroupMax, pluginArgs.DefaultQuotaGroupMax, elasticQuota.nodeLister)
+
+	koordClient := extendedHandle.KoordinatorClientSet()
+	koordSharedInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
+	profileInformer := koordSharedInformerFactory.Quota().V1alpha1().ElasticQuotaProfiles()
+
+	elasticQuota := &Plugin{
+		handle:                    handle,
+		client:                    client,
+		koordClient:               koordClient,
+		pluginArgs:                pluginArgs,
+		podLister:                 handle.SharedInformerFactory().Core().V1().Pods().Lister(),
+		quotaLister:               elasticQuotaInformer.Lister(),
+		pdbLister:                 getPDBLister(handle),
+		nodeLister:                handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
+		profileLister:             profileInformer.Lister(),
+		profileGroupQuotaManagers: make(map[string]*core.GroupQuotaManager),
+		quotoToProfiles:           make(map[string]string),
+	}
+	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager(pluginArgs.SystemQuotaGroupMax, pluginArgs.DefaultQuotaGroupMax, elasticQuota.nodeLister, nil)
 
 	ctx := context.TODO()
+
+	if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.MultiRootQuota) {
+		frameworkexthelper.ForceSyncFromInformer(ctx.Done(), koordSharedInformerFactory, profileInformer.Informer(), cache.ResourceEventHandlerFuncs{
+			AddFunc:    elasticQuota.OnElasticQuotaProfileAdd,
+			UpdateFunc: elasticQuota.OnElasticQuotaProfileUpdate,
+			DeleteFunc: elasticQuota.OnElasticQuotaProfileDelete,
+		})
+	}
 
 	elasticQuota.createRootQuotaIfNotPresent()
 	elasticQuota.createSystemQuotaIfNotPresent()

@@ -65,6 +65,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	CompatiblePodDisruptionBudget:      {Default: false, PreRelease: featuregate.Alpha},
 	DisablePodDisruptionBudgetInformer: {Default: false, PreRelease: featuregate.Alpha},
 	ResizePod:                          {Default: false, PreRelease: featuregate.Alpha},
+	MultiRootQuota:                     {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {
