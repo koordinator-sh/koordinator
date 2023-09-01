@@ -1342,7 +1342,7 @@ func TestCgroupReader_ReadPSI(t *testing.T) {
 	}
 }
 
-func TestCgroupReader_ReadMemoryIdlePageStatsByKidled(t *testing.T) {
+func TestCgroupReader_ReadColdPageUsage(t *testing.T) {
 	type fields struct {
 		UseCgroupsV2             bool
 		MemoryIdlePageStatsValue string
