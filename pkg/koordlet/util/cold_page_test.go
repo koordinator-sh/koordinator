@@ -18,8 +18,9 @@ package util
 import (
 	"testing"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func Test_GetNodeMemUsageWithHotPagee(t *testing.T) {
@@ -83,6 +84,6 @@ DirectMap1G:    261095424 kB`
 	got = memInfo.MemUsageBytes()
 	assert.Equal(t, uint64((263432804-256703236)<<10), got)
 	got, err = GetNodeMemUsageWithHotPage(100)
-	assert.Equal(t, uint64(263432804<<10)+100, got)
+	assert.Equal(t, (uint64(256703236-254391744)<<10)+100, got)
 	assert.NoError(t, err)
 }
