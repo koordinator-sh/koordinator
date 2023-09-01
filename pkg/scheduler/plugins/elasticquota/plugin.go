@@ -143,7 +143,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 
 	ctx := context.TODO()
 
-	if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.MultiRootQuota) {
+	if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.MultiQuotaTree) {
 		frameworkexthelper.ForceSyncFromInformer(ctx.Done(), koordSharedInformerFactory, profileInformer.Informer(), cache.ResourceEventHandlerFuncs{
 			AddFunc:    elasticQuota.OnElasticQuotaProfileAdd,
 			UpdateFunc: elasticQuota.OnElasticQuotaProfileUpdate,

@@ -9,6 +9,18 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
+func (g *Plugin) GetGroupQuotaManager(profile string) *core.GroupQuotaManager {
+	g.quotaManagerLock.RLock()
+	defer g.quotaManagerLock.RUnlock()
+
+	if profile == "" {
+		// return the default groupQuotaManager
+		return g.groupQuotaManager
+	}
+
+	return g.profileGroupQuotaManagers[profile]
+}
+
 func (g *Plugin) OnElasticQuotaProfileAdd(obj interface{}) {
 	profile, ok := obj.(*quotav1alpha1.ElasticQuotaProfile)
 	if !ok {

@@ -64,8 +64,12 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	DisableCSIStorageCapacityInformer:  {Default: false, PreRelease: featuregate.Alpha},
 	CompatiblePodDisruptionBudget:      {Default: false, PreRelease: featuregate.Alpha},
 	DisablePodDisruptionBudgetInformer: {Default: false, PreRelease: featuregate.Alpha},
+<<<<<<< HEAD
 	ResizePod:                          {Default: false, PreRelease: featuregate.Alpha},
 	MultiRootQuota:                     {Default: false, PreRelease: featuregate.Alpha},
+=======
+	MultiQuotaTree:                     {Default: false, PreRelease: featuregate.Alpha},
+>>>>>>> 4134cd5b0 (fix SystemQuota and DefaultQuota for profile GroupQuotaManager)
 }
 
 func init() {
