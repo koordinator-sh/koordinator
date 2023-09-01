@@ -45,7 +45,7 @@ type DeviceInfo struct {
 	// ModuleID represents the physical id of Device
 	ModuleID *int32 `json:"moduleID,omitempty"`
 	// Health indicates whether the device is normal
-	Health bool `json:"health,omitempty"`
+	Health bool `json:"health"`
 	// Resources is a set of (resource name, quantity) pairs
 	Resources corev1.ResourceList `json:"resources,omitempty"`
 	// Topology represents the topology information about the device

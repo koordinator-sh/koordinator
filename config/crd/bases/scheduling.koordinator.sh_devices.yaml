@@ -112,6 +112,8 @@ spec:
                             type: array
                         type: object
                       type: array
+                  required:
+                  - health
                   type: object
                 type: array
             type: object
