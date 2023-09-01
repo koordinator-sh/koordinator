@@ -166,6 +166,8 @@ spec:
                                             type: array
                                         type: object
                                       type: array
+                                  required:
+                                  - health
                                   type: object
                                 type: array
                               resources:
@@ -275,6 +277,8 @@ spec:
                                             type: array
                                         type: object
                                       type: array
+                                  required:
+                                  - health
                                   type: object
                                 type: array
                               resources:
@@ -377,6 +381,8 @@ spec:
                                     type: array
                                 type: object
                               type: array
+                          required:
+                          - health
                           type: object
                         type: array
                       resources:
@@ -477,6 +483,8 @@ spec:
                                     type: array
                                 type: object
                               type: array
+                          required:
+                          - health
                           type: object
                         type: array
                       resources:
@@ -589,6 +597,8 @@ spec:
                                       type: array
                                   type: object
                                 type: array
+                            required:
+                            - health
                             type: object
                           type: array
                         resources:
@@ -694,6 +704,8 @@ spec:
                                     type: array
                                 type: object
                               type: array
+                          required:
+                          - health
                           type: object
                         type: array
                       resources:
