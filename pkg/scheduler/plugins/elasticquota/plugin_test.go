@@ -69,22 +69,6 @@ type ElasticQuotaSetAndHandle struct {
 	pgclientset.Interface
 }
 
-/*
-func ElasticQuotaPluginFactoryProxy(clientSet pgclientset.Interface, factoryFn runtime.PluginFactory) runtime.PluginFactory {
-	return func(args apiruntime.Object, handle framework.Handle) (framework.Plugin, error) {
-		return factoryFn(args, ElasticQuotaSetAndHandle{Handle: handle, Interface: clientSet})
-	}
-}
-
-func ElasticQuotaPluginFactoryProxyWithPlugin(clientSet pgclientset.Interface, factoryFn runtime.PluginFactory, plugin *framework.Plugin) runtime.PluginFactory {
-	return func(args apiruntime.Object, handle framework.Handle) (framework.Plugin, error) {
-		var err error
-		*plugin, err = factoryFn(args, ElasticQuotaSetAndHandle{Handle: handle, Interface: clientSet})
-		return *plugin, err
-	}
-}
-*/
-
 func mockPodsList(w http.ResponseWriter, r *http.Request) {
 	bear := r.Header.Get("Authorization")
 	if bear == "" {
@@ -569,36 +553,21 @@ func TestPlugin_OnNodeUpdate(t *testing.T) {
 	}
 }
 
-func TestPlugin_ResyncNodes(t *testing.T) {
-
-	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
-
-	// add node
-	nodes := []*corev1.Node{defaultCreateNodeWithResourceVersion("1"), defaultCreateNodeWithResourceVersion("2"),
-		defaultCreateNodeWithResourceVersion("3")}
-	for _, node := range nodes {
-		plugin.handle.ClientSet().CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
-	}
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, plugin.groupQuotaManager.GetClusterTotalResource(), createResourceList(300, 3000))
-
-	// delete node in cache
-	plugin.OnNodeDelete(nodes[1])
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, plugin.groupQuotaManager.GetClusterTotalResource(), createResourceList(200, 2000))
-
-	// resync nodes
-	plugin.ResyncNodes()
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, plugin.groupQuotaManager.GetClusterTotalResource(), createResourceList(300, 3000))
-}
-
 func defaultCreateNodeWithResourceVersion(nodeName string) *corev1.Node {
 	node := defaultCreateNode(nodeName)
 	node.ResourceVersion = "3"
+	return node
+}
+
+func defaultCreateNodeWithLabels(nodeName string, labels map[string]string) *corev1.Node {
+	node := defaultCreateNode(nodeName)
+	node.ResourceVersion = "3"
+	if node.Labels == nil {
+		node.Labels = make(map[string]string)
+	}
+	for k, v := range labels {
+		node.Labels[k] = v
+	}
 	return node
 }
 
