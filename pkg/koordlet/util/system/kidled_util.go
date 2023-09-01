@@ -133,7 +133,7 @@ func (i *ColdPageInfoByKidled) GetColdPageTotalBytes() uint64 {
 }
 
 // check kidled and set var isSupportColdMemory
-func IsKidledSupported() bool {
+func IsKidledStart() bool {
 	isSupportColdMemory.Store(false)
 	isSupport, str := KidledScanPeriodInSeconds.IsSupported("")
 	if !isSupport {
@@ -147,6 +147,11 @@ func IsKidledSupported() bool {
 		klog.V(4).Infof("scan_period_in_seconds is invalid ", str)
 		return isSupportColdMemory.Load()
 	}
+	value, _ := strconv.Atoi(content)
+	if value == 0 {
+		klog.V(4).Infof("value of the scan_period_in_seconds is 0, kidled doesn't start ")
+		return isSupportColdMemory.Load()
+	}
 
 	isSupport, str = KidledUseHierarchy.IsSupported("")
 	if !isSupport {
@@ -158,6 +163,11 @@ func IsKidledSupported() bool {
 	isValid, str = KidledUseHierarchy.IsValid(content)
 	if !isValid {
 		klog.V(4).Infof("use_hierarchy is invalid ", str)
+		return isSupportColdMemory.Load()
+	}
+	value, _ = strconv.Atoi(content)
+	if value == 0 {
+		klog.V(4).Infof("value of use_hierarchy is 0, kidled doesn't apply hierarchy")
 		return isSupportColdMemory.Load()
 	}
 	isSupportColdMemory.Store(true)

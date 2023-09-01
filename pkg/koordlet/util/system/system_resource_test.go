@@ -118,7 +118,7 @@ func TestSystemResource(t *testing.T) {
 			wantResourceType: MemcgReapBackGroundFileName,
 		},
 		{
-			name: "kidledScanPeriodInSeconds resource supported",
+			name: "kidledScanPeriodInSeconds resource valid and support",
 			fields: fields{
 				resource:    NewCommonSystemResource(KidledRelativePath, KidledScanPeriodInSecondsFileName, GetSysRootDir).WithValidator(KidledScanPeriodInSecondsValidator).WithCheckSupported(SupportedIfFileExists),
 				createdFile: true,
@@ -131,20 +131,20 @@ func TestSystemResource(t *testing.T) {
 			wantResourceType: KidledScanPeriodInSecondsFileName,
 		},
 		{
-			name: "kidledScanPeriodInSeconds resource not supported",
+			name: "kidledScanPeriodInSeconds resource invalid and not support",
 			fields: fields{
 				resource:    NewCommonSystemResource(KidledRelativePath, KidledScanPeriodInSecondsFileName, GetSysRootDir).WithValidator(KidledScanPeriodInSecondsValidator).WithCheckSupported(SupportedIfFileExists),
 				createdFile: false,
 				initValue:   0,
-				newValue:    120,
+				newValue:    -1,
 			},
 			wantPath:         path.Join(GetSysRootDir(), KidledRelativePath, KidledScanPeriodInSecondsFileName),
 			wantSupported:    false,
-			wantValid:        true,
+			wantValid:        false,
 			wantResourceType: KidledScanPeriodInSecondsFileName,
 		},
 		{
-			name: "kidledUseHierarchyFileFileName resource supported",
+			name: "kidledUseHierarchy resource valid and supported",
 			fields: fields{
 				resource:    NewCommonSystemResource(KidledRelativePath, KidledUseHierarchyFileFileName, GetSysRootDir).WithValidator(KidledUseHierarchyValidator).WithCheckSupported(SupportedIfFileExists),
 				createdFile: true,
@@ -157,16 +157,16 @@ func TestSystemResource(t *testing.T) {
 			wantResourceType: KidledUseHierarchyFileFileName,
 		},
 		{
-			name: "kidledUseHierarchyFileFileName resource not supported",
+			name: "kidledUseHierarchy resource invalid and not support",
 			fields: fields{
 				resource:    NewCommonSystemResource(KidledRelativePath, KidledUseHierarchyFileFileName, GetSysRootDir).WithValidator(KidledUseHierarchyValidator).WithCheckSupported(SupportedIfFileExists),
 				createdFile: false,
 				initValue:   0,
-				newValue:    1,
+				newValue:    -1,
 			},
 			wantPath:         path.Join(GetSysRootDir(), KidledRelativePath, KidledUseHierarchyFileFileName),
 			wantSupported:    false,
-			wantValid:        true,
+			wantValid:        false,
 			wantResourceType: KidledUseHierarchyFileFileName,
 		},
 	}

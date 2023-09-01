@@ -92,22 +92,18 @@ func (k *kidledcoldPageCollector) collectColdPageInfo() {
 func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.MetricSample, error) {
 	coldPageMetrics := make([]metriccache.MetricSample, 0)
 	collectTime := time.Now()
-	coldPageInfo, err := k.cgroupReader.ReadColdPageUsage("")
+	nodeColdPageBytes, err := k.cgroupReader.ReadColdPageUsage("")
 	if err != nil {
 		return nil, err
 	}
-	nodeColdPageBytes := coldPageInfo.GetColdPageTotalBytes()
 	nodeColdPageBytesValue := float64(nodeColdPageBytes)
 	nodeColdPageMetrics, err := metriccache.NodeMemoryColdPageSizeMetric.GenerateSample(nil, collectTime, nodeColdPageBytesValue)
 	if err != nil {
 		return nil, err
 	}
 	coldPageMetrics = append(coldPageMetrics, nodeColdPageMetrics)
-	memInfo, err := koordletutil.GetMemInfo()
-	if err != nil {
-		return nil, err
-	}
-	memUsageWithHotPageBytes := memInfo.MemTotal*1024 - memInfo.MemFree*1024 - nodeColdPageBytes
+
+	memUsageWithHotPageBytes, err := koordletutil.GetNodeMemUsageWithHotPage(nodeColdPageBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -136,12 +132,11 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		}
 		collectTime := time.Now()
 		podCgroupDir := meta.CgroupDir
-		coldPageInfo, err := k.cgroupReader.ReadColdPageUsage(podCgroupDir)
+		podColdPageBytes, err := k.cgroupReader.ReadColdPageUsage(podCgroupDir)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
 			continue
 		}
-		podColdPageBytes := coldPageInfo.GetColdPageTotalBytes()
 		podColdPageBytesValue := float64(podColdPageBytes)
 		podColdPageMetrics, err := metriccache.PodMemoryColdPageSizeMetric.GenerateSample(metriccache.MetricPropertiesFunc.Pod(uid), collectTime, podColdPageBytesValue)
 		if err != nil {
@@ -149,7 +144,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		}
 		coldMetrics = append(coldMetrics, podColdPageMetrics)
 
-		memStat, err := k.cgroupReader.ReadMemoryStat(podCgroupDir)
+		podMemUsageWithHotPageBytes, err := koordletutil.GetPodMemUsageWithHotPage(k.cgroupReader, podCgroupDir, podColdPageBytes)
 		if err != nil {
 			// higher verbosity for probably non-running pods
 			if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
@@ -159,7 +154,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 			}
 			continue
 		}
-		podMemUsageWithHotPageBytes := uint64(memStat.Usage()) + uint64(memStat.ActiveFile+memStat.InactiveFile) - podColdPageBytes
+
 		podMemUsageWithHotPageValue := float64(podMemUsageWithHotPageBytes)
 		podMemUsageWithHotPageMetrics, err := metriccache.PodMemoryWithHotPageUsageMetric.GenerateSample(metriccache.MetricPropertiesFunc.Pod(uid), collectTime, podMemUsageWithHotPageValue)
 		if err != nil {
@@ -195,23 +190,19 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 				containerKey, err)
 			continue
 		}
-		coldPageInfo, err := k.cgroupReader.ReadColdPageUsage(containerCgroupDir)
+		containerColdPageBytes, err := k.cgroupReader.ReadColdPageUsage(containerCgroupDir)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for container %s", containerKey)
 			continue
 		}
-		containerColdPageBytes := coldPageInfo.GetColdPageTotalBytes()
 		containerColdPageBytesValue := float64(containerColdPageBytes)
 		containerColdPageMetrics, err := metriccache.ContainerMemoryColdPageSizeMetric.GenerateSample(metriccache.MetricPropertiesFunc.Container(containerStat.ContainerID), collectTime, containerColdPageBytesValue)
 		if err != nil {
 			return nil, err
 		}
 		coldMetrics = append(coldMetrics, containerColdPageMetrics)
-		memStat, err := k.cgroupReader.ReadMemoryStat(containerCgroupDir)
-		if err != nil {
-			continue
-		}
-		containerMemUsageWithHotPageBytes := uint64(memStat.Usage()) + uint64(memStat.ActiveFile+memStat.InactiveFile) - containerColdPageBytes
+
+		containerMemUsageWithHotPageBytes, err := koordletutil.GetContainerMemUsageWithHotPage(k.cgroupReader, containerCgroupDir, containerColdPageBytes)
 		if err != nil {
 			return nil, err
 		}

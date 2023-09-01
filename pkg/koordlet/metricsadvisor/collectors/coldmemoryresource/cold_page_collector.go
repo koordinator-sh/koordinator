@@ -32,7 +32,7 @@ type nonColdPageCollector struct {
 
 func New(opt *framework.Options) framework.Collector {
 	// check whether support kidled cold page info collector
-	if system.IsKidledSupported() {
+	if system.IsKidledStart() {
 		return &kidledcoldPageCollector{
 			collectInterval: opt.Config.CollectResUsedInterval,
 			cgroupReader:    opt.CgroupReader,

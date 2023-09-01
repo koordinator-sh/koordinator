@@ -38,7 +38,7 @@ type CgroupReader interface {
 	ReadMemoryNumaStat(parentDir string) ([]sysutil.NumaMemoryPages, error)
 	ReadCPUTasks(parentDir string) ([]int32, error)
 	ReadPSI(parentDir string) (*PSIByResource, error)
-	ReadColdPageUsage(parentDir string) (*sysutil.ColdPageInfoByKidled, error)
+	ReadColdPageUsage(parentDir string) (uint64, error)
 }
 
 var _ CgroupReader = &CgroupV1Reader{}
@@ -199,20 +199,20 @@ func (r *CgroupV1Reader) ReadCPUTasks(parentDir string) ([]int32, error) {
 	return readCgroupAndParseInt32Slice(parentDir, resource)
 }
 
-func (r *CgroupV1Reader) ReadColdPageUsage(parentDir string) (*sysutil.ColdPageInfoByKidled, error) {
+func (r *CgroupV1Reader) ReadColdPageUsage(parentDir string) (uint64, error) {
 	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.MemoryIdlePageStatsName)
 	if !ok {
-		return nil, ErrResourceNotRegistered
+		return 0, ErrResourceNotRegistered
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return 0, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
 	v, err := sysutil.ParseMemoryIdlePageStats(s)
 	if err != nil {
-		return nil, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
+		return 0, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
 	}
-	return v, nil
+	return v.GetColdPageTotalBytes(), nil
 }
 
 var _ CgroupReader = &CgroupV2Reader{}
@@ -401,20 +401,20 @@ func (r *CgroupV2Reader) ReadPSI(parentDir string) (*PSIByResource, error) {
 	}
 	return psi, nil
 }
-func (r *CgroupV2Reader) ReadColdPageUsage(parentDir string) (*sysutil.ColdPageInfoByKidled, error) {
+func (r *CgroupV2Reader) ReadColdPageUsage(parentDir string) (uint64, error) {
 	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.MemoryIdlePageStatsName)
 	if !ok {
-		return nil, ErrResourceNotRegistered
+		return 0, ErrResourceNotRegistered
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return 0, fmt.Errorf("cannot read cgroup file, err: %v", err)
 	}
 	v, err := sysutil.ParseMemoryIdlePageStats(s)
 	if err != nil {
-		return nil, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
+		return 0, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
 	}
-	return v, nil
+	return v.GetColdPageTotalBytes(), nil
 }
 
 func NewCgroupReader() CgroupReader {

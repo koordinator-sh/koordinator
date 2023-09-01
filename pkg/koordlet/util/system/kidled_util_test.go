@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_IsKidledSupported(t *testing.T) {
+func Test_IsKidledStart(t *testing.T) {
 	helper := NewFileTestUtil(t)
 	defer helper.Cleanup()
 	Conf.SysRootDir = filepath.Join(helper.TempDir, Conf.SysRootDir)
@@ -62,7 +62,7 @@ func Test_IsKidledSupported(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			helper.WriteFileContents(KidledScanPeriodInSeconds.Path(""), tt.args.contcontentKidledScanPeriodInSecondsent)
 			helper.WriteFileContents(KidledUseHierarchy.Path(""), tt.args.contentKidledUseHierarchy)
-			got := IsKidledSupported()
+			got := IsKidledStart()
 			assert.Equal(t, tt.want, got)
 		})
 	}
