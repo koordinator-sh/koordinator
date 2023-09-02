@@ -17,12 +17,14 @@ limitations under the License.
 package reservation
 
 import (
+	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
@@ -40,6 +42,8 @@ var (
 	AnnotationReservationName = extension.SchedulingDomainPrefix + "/reservation-name"
 	// AnnotationReservationNode indicates the node name if the reservation specifies a node.
 	AnnotationReservationNode = extension.SchedulingDomainPrefix + "/reservation-node"
+	// AnnotationReservationResizeAllocatable indicates the desired allocatable are to be updated.
+	AnnotationReservationResizeAllocatable = extension.SchedulingDomainPrefix + "/reservation-resize-allocatable"
 )
 
 // NewReservePod returns a fake pod set as the reservation's specifications.
@@ -91,15 +95,53 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	if reservePod.Spec.Priority == nil {
 		reservePod.Spec.Priority = pointer.Int32(0)
 	}
+	reservePod.Spec.SchedulerName = GetReservationSchedulerName(r)
 
 	if IsReservationSucceeded(r) {
 		reservePod.Status.Phase = corev1.PodSucceeded
 	} else if IsReservationExpired(r) || IsReservationFailed(r) {
 		reservePod.Status.Phase = corev1.PodFailed
 	}
-
-	reservePod.Spec.SchedulerName = GetReservationSchedulerName(r)
+	if IsReservationAvailable(r) {
+		podRequests, _ := resource.PodRequestsAndLimits(reservePod)
+		if !quotav1.Equals(podRequests, r.Status.Allocatable) {
+			//
+			// PodRequests is different from r.Status.Allocatable,
+			// which means that the scheduler allocates additional resources during scheduling
+			// or Reservation has changed the resource specifications through VPA.
+			//
+			UpdateReservePodWithAllocatable(reservePod, podRequests, r.Status.Allocatable)
+		}
+	}
 	return reservePod
+}
+
+func UpdateReservePodWithAllocatable(reservePod *corev1.Pod, podRequests, allocatable corev1.ResourceList) {
+	if podRequests == nil {
+		podRequests, _ = resource.PodRequestsAndLimits(reservePod)
+	} else {
+		podRequests = podRequests.DeepCopy()
+	}
+	for resourceName, quantity := range allocatable {
+		podRequests[resourceName] = quantity
+	}
+	reservePod.Spec.Overhead = nil
+	cleanContainerResources(reservePod.Spec.InitContainers)
+	cleanContainerResources(reservePod.Spec.Containers)
+	reservePod.Spec.Containers = append(reservePod.Spec.Containers, corev1.Container{
+		Name: "__internal_fake_container__",
+		Resources: corev1.ResourceRequirements{
+			Limits:   podRequests.DeepCopy(),
+			Requests: podRequests.DeepCopy(),
+		},
+	})
+}
+
+func cleanContainerResources(containers []corev1.Container) {
+	for i := range containers {
+		c := &containers[i]
+		c.Resources = corev1.ResourceRequirements{}
+	}
 }
 
 func ValidateReservation(r *schedulingv1alpha1.Reservation) error {
@@ -254,14 +296,18 @@ func SetReservationSucceeded(r *schedulingv1alpha1.Reservation) {
 	}
 }
 
-func SetReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string) {
+func SetReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string) error {
+	resizeAllocatable, err := GetReservationResizeAllocatable(r.Annotations)
+	if err != nil {
+		return err
+	}
+	requests := ReservationRequests(r)
+	for resourceName, quantity := range resizeAllocatable.Resources {
+		requests[resourceName] = quantity
+	}
+	r.Status.Allocatable = requests
 	r.Status.NodeName = nodeName
 	r.Status.Phase = schedulingv1alpha1.ReservationAvailable
-	r.Status.CurrentOwners = make([]corev1.ObjectReference, 0)
-
-	requests := ReservationRequests(r)
-	r.Status.Allocatable = requests
-	r.Status.Allocated = nil
 
 	// initialize the conditions
 	r.Status.Conditions = []schedulingv1alpha1.ReservationCondition{
@@ -280,9 +326,13 @@ func SetReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string)
 			LastTransitionTime: metav1.Now(),
 		},
 	}
+	return nil
 }
 
 func ReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceList {
+	if IsReservationAvailable(r) {
+		return r.Status.Allocatable.DeepCopy()
+	}
 	if r.Spec.Template != nil {
 		requests, _ := resource.PodRequestsAndLimits(&corev1.Pod{
 			Spec: r.Spec.Template.Spec,
@@ -404,4 +454,47 @@ func (s *RequiredReservationAffinity) Match(node *corev1.Node) bool {
 		return s.nodeSelector.Match(node)
 	}
 	return true
+}
+
+type ReservationResizeAllocatable struct {
+	Resources corev1.ResourceList `json:"resources,omitempty"`
+}
+
+func GetReservationResizeAllocatable(annotations map[string]string) (*ReservationResizeAllocatable, error) {
+	var allocatable ReservationResizeAllocatable
+	if s := annotations[AnnotationReservationResizeAllocatable]; s != "" {
+		if err := json.Unmarshal([]byte(s), &allocatable); err != nil {
+			return nil, err
+		}
+	}
+	return &allocatable, nil
+}
+
+func SetReservationResizeAllocatable(obj metav1.Object, resizeAllocatable *ReservationResizeAllocatable) error {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	data, err := json.Marshal(resizeAllocatable)
+	if err != nil {
+		return err
+	}
+	annotations[AnnotationReservationResizeAllocatable] = string(data)
+	obj.SetAnnotations(annotations)
+	return nil
+}
+
+// UpdateReservationResizeAllocatable replaces or add the resources to the resizeAllocatable.
+func UpdateReservationResizeAllocatable(obj metav1.Object, resources corev1.ResourceList) error {
+	resizeAllocatable, err := GetReservationResizeAllocatable(obj.GetAnnotations())
+	if err != nil {
+		return err
+	}
+	if resizeAllocatable.Resources == nil {
+		resizeAllocatable.Resources = corev1.ResourceList{}
+	}
+	for resourceName, quantity := range resources {
+		resizeAllocatable.Resources[resourceName] = quantity
+	}
+	return SetReservationResizeAllocatable(obj, resizeAllocatable)
 }

@@ -638,7 +638,9 @@ func (pl *Plugin) Bind(ctx context.Context, cycleState *framework.CycleState, po
 
 		// mark reservation as available
 		reservation = reservation.DeepCopy()
-		reservationutil.SetReservationAvailable(reservation, nodeName)
+		if err = reservationutil.SetReservationAvailable(reservation, nodeName); err != nil {
+			return err
+		}
 		_, err = pl.client.Reservations().UpdateStatus(context.TODO(), reservation, metav1.UpdateOptions{})
 		if err != nil {
 			klog.V(4).ErrorS(err, "failed to update reservation", "reservation", klog.KObj(reservation))

@@ -25,6 +25,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1506,6 +1507,10 @@ func TestFilterReservation(t *testing.T) {
 		Status: schedulingv1alpha1.ReservationStatus{
 			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: "test-node",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("8Gi"),
+			},
 		},
 	}
 	reservation2C4G := &schedulingv1alpha1.Reservation{
@@ -1532,6 +1537,10 @@ func TestFilterReservation(t *testing.T) {
 		Status: schedulingv1alpha1.ReservationStatus{
 			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: "test-node",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("2"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
 		},
 	}
 	allocateOnceAndAllocatedReservation := reservation2C4G.DeepCopy()
@@ -2029,6 +2038,18 @@ func TestBind(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "reserve-pod-0",
 				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									"test-resource": *resource.NewQuantity(100, resource.DecimalSI),
+								},
+							},
+						},
+					},
+				},
 			},
 		},
 	}
@@ -2038,7 +2059,17 @@ func TestBind(t *testing.T) {
 		Phase: schedulingv1alpha1.ReservationFailed,
 	}
 	activeReservation := reservation.DeepCopy()
-	reservationutil.SetReservationAvailable(activeReservation, testNodeName)
+	assert.NoError(t, reservationutil.SetReservationAvailable(activeReservation, testNodeName))
+
+	reservationWithResizeAllocatable := reservation.DeepCopy()
+	assert.NoError(t, reservationutil.UpdateReservationResizeAllocatable(reservationWithResizeAllocatable, corev1.ResourceList{
+		"test-resource": *resource.NewQuantity(200, resource.DecimalSI),
+	}))
+	activeReservationWithResizedAllocatable := reservationWithResizeAllocatable.DeepCopy()
+	assert.NoError(t, reservationutil.SetReservationAvailable(activeReservationWithResizedAllocatable, testNodeName))
+	assert.True(t, equality.Semantic.DeepEqual(activeReservationWithResizedAllocatable.Status.Allocatable, corev1.ResourceList{
+		"test-resource": *resource.NewQuantity(200, resource.DecimalSI),
+	}))
 
 	tests := []struct {
 		name            string
@@ -2080,6 +2111,14 @@ func TestBind(t *testing.T) {
 			nodeName:        testNodeName,
 			reservation:     reservation,
 			wantReservation: activeReservation,
+			want:            nil,
+		},
+		{
+			name:            "resize reservation status allocatable",
+			pod:             reservePod,
+			nodeName:        testNodeName,
+			reservation:     reservationWithResizeAllocatable,
+			wantReservation: activeReservationWithResizedAllocatable,
 			want:            nil,
 		},
 	}

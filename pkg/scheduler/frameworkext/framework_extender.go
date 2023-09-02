@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -29,6 +30,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -56,6 +58,7 @@ type frameworkExtenderImpl struct {
 	reservationPreBindPlugins []ReservationPreBindPlugin
 	reservationRestorePlugins []ReservationRestorePlugin
 
+	resizePodPlugins         []ResizePodPlugin
 	preBindExtensionsPlugins map[string]PreBindExtensions
 
 	numaTopologyHintProviders []topologymanager.NUMATopologyHintProvider
@@ -117,6 +120,9 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	}
 	if r, ok := pl.(ReservationRestorePlugin); ok {
 		ext.reservationRestorePlugins = append(ext.reservationRestorePlugins, r)
+	}
+	if r, ok := pl.(ResizePodPlugin); ok {
+		ext.resizePodPlugins = append(ext.resizePodPlugins, r)
 	}
 	if p, ok := pl.(PreBindExtensions); ok {
 		ext.preBindExtensionsPlugins[p.Name()] = p
@@ -405,4 +411,40 @@ func (ext *frameworkExtenderImpl) RunNUMATopologyManagerAllocate(ctx context.Con
 
 func (ext *frameworkExtenderImpl) GetNUMATopologyHintProvider() []topologymanager.NUMATopologyHintProvider {
 	return ext.numaTopologyHintProviders
+}
+
+func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
+		if isPodAssumed(cycleState) {
+			return nil
+		}
+	}
+	return ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
+}
+
+func (ext *frameworkExtenderImpl) RunResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	for _, pl := range ext.resizePodPlugins {
+		status := pl.ResizePod(ctx, cycleState, pod, nodeName)
+		if !status.IsSuccess() {
+			return status
+		}
+	}
+	return nil
+}
+
+const podAssumedStateKey = "koordinator.sh/assumed"
+
+type assumedState struct{}
+
+func (s *assumedState) Clone() framework.StateData {
+	return s
+}
+
+func markPodAssumed(cycleState *framework.CycleState) {
+	cycleState.Write(podAssumedStateKey, &assumedState{})
+}
+
+func isPodAssumed(cycleState *framework.CycleState) bool {
+	assumed, _ := cycleState.Read(podAssumedStateKey)
+	return assumed != nil
 }
