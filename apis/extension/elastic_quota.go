@@ -38,6 +38,7 @@ const (
 	AnnotationSharedWeight = QuotaKoordinatorPrefix + "/shared-weight"
 	AnnotationRuntime      = QuotaKoordinatorPrefix + "/runtime"
 	AnnotationRequest      = QuotaKoordinatorPrefix + "/request"
+	AnnotationChildRequest = QuotaKoordinatorPrefix + "/child-request"
 )
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {
