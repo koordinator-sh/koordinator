@@ -61,6 +61,8 @@ type FrameworkExtender interface {
 	RunReservationScorePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfos []*ReservationInfo, nodeName string) (PluginToReservationScores, *framework.Status)
 
 	RunNUMATopologyManagerAllocate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, assume bool) *framework.Status
+
+	RunResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status
 }
 
 // SchedulingTransformer is the parent type for all the custom transformer plugins.
@@ -152,6 +154,12 @@ type PluginToReservationScores map[string]ReservationScoreList
 type ReservationScorePlugin interface {
 	framework.Plugin
 	ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) (int64, *framework.Status)
+}
+
+// ResizePodPlugin is an interface that resize the pod resource spec after reserve.
+// If you want to use the feature, must enable the feature gate ResizePod=true
+type ResizePodPlugin interface {
+	ResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status
 }
 
 var (

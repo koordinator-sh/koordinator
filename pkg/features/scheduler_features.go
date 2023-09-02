@@ -51,6 +51,12 @@ const (
 	//
 	// DisablePodDisruptionBudgetInformer is used to disable PodDisruptionBudget informer
 	DisablePodDisruptionBudgetInformer featuregate.Feature = "DisablePodDisruptionBudgetInformer"
+
+	// owner: @joseph
+	// alpha: v0.1
+	//
+	// ResizePod is used to enable resize pod feature
+	ResizePod featuregate.Feature = "ResizePod"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -58,6 +64,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	DisableCSIStorageCapacityInformer:  {Default: false, PreRelease: featuregate.Alpha},
 	CompatiblePodDisruptionBudget:      {Default: false, PreRelease: featuregate.Alpha},
 	DisablePodDisruptionBudgetInformer: {Default: false, PreRelease: featuregate.Alpha},
+	ResizePod:                          {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {

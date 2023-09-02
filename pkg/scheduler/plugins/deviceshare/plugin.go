@@ -25,11 +25,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -60,6 +62,7 @@ var (
 	_ framework.ReservePlugin   = &Plugin{}
 	_ framework.PreBindPlugin   = &Plugin{}
 
+	_ frameworkext.ResizePodPlugin          = &Plugin{}
 	_ frameworkext.ReservationRestorePlugin = &Plugin{}
 	_ frameworkext.ReservationFilterPlugin  = &Plugin{}
 	_ frameworkext.ReservationScorePlugin   = &Plugin{}
@@ -421,12 +424,41 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 	state.allocationResult = nil
 }
 
+func (p *Plugin) ResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	if !reservationutil.IsReservePod(pod) {
+		return nil
+	}
+	state, status := getPreFilterState(cycleState)
+	if !status.IsSuccess() {
+		return status
+	}
+	if state.skip {
+		return nil
+	}
+
+	var allocated corev1.ResourceList
+	for _, allocations := range state.allocationResult {
+		for _, v := range allocations {
+			allocated = quotav1.Add(allocated, v.Resources)
+		}
+	}
+	reservationutil.UpdateReservePodWithAllocatable(pod, nil, allocated)
+	return nil
+}
+
 func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	return p.preBindObject(ctx, cycleState, pod, nodeName)
 }
 
 func (p *Plugin) PreBindReservation(ctx context.Context, cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
-	return p.preBindObject(ctx, cycleState, reservation, nodeName)
+	status := p.preBindObject(ctx, cycleState, reservation, nodeName)
+	if !status.IsSuccess() {
+		return status
+	}
+	if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
+		return updateReservationAllocatable(cycleState, reservation)
+	}
+	return nil
 }
 
 func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleState, object metav1.Object, nodeName string) *framework.Status {
@@ -440,6 +472,27 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 
 	if err := apiext.SetDeviceAllocations(object, state.allocationResult); err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
+	}
+	return nil
+}
+
+func updateReservationAllocatable(cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation) *framework.Status {
+	state, status := getPreFilterState(cycleState)
+	if !status.IsSuccess() {
+		return status
+	}
+	if state.skip {
+		return nil
+	}
+
+	var allocated corev1.ResourceList
+	for _, allocations := range state.allocationResult {
+		for _, v := range allocations {
+			allocated = quotav1.Add(allocated, v.Resources)
+		}
+	}
+	if err := reservationutil.UpdateReservationResizeAllocatable(reservation, allocated); err != nil {
+		return framework.AsStatus(err)
 	}
 	return nil
 }

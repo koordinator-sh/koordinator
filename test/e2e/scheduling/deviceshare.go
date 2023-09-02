@@ -107,7 +107,9 @@ var _ = SIGDescribe("DeviceShare", func() {
 			numPods := totalGPU.Value() / 50
 
 			ginkgo.By(fmt.Sprintf("Create %d pods", numPods))
-			requests := reservationutil.ReservationRequests(reservation)
+			requests := corev1.ResourceList{
+				apiext.ResourceGPU: resource.MustParse("50"),
+			}
 			replicas := numPods
 			rsConfig := pauseRSConfig{
 				Replicas: int32(replicas),
@@ -202,7 +204,9 @@ var _ = SIGDescribe("DeviceShare", func() {
 			reservation = waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
 
 			ginkgo.By("Create 1 pods that matched reservation")
-			requests := reservationutil.ReservationRequests(reservation)
+			requests := corev1.ResourceList{
+				apiext.ResourceGPU: resource.MustParse("50"),
+			}
 			rsConfig := pauseRSConfig{
 				Replicas: int32(1),
 				PodConfig: pausePodConfig{
@@ -328,7 +332,9 @@ var _ = SIGDescribe("DeviceShare", func() {
 				reservation = waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
 
 				ginkgo.By("Create 1 pods allocated from reservation")
-				requests := reservationutil.ReservationRequests(reservation)
+				requests := corev1.ResourceList{
+					apiext.ResourceGPU: resource.MustParse("50"),
+				}
 				rsConfig := pauseRSConfig{
 					Replicas: int32(1),
 					PodConfig: pausePodConfig{

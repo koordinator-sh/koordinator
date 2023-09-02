@@ -17,13 +17,18 @@ limitations under the License.
 package frameworkext
 
 import (
+	"context"
+
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 )
@@ -61,6 +66,7 @@ type FrameworkExtenderFactory struct {
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	profiles                         map[string]FrameworkExtender
 	scheduler                        Scheduler
+	schedulePod                      func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error)
 	*errorHandlerDispatcher
 }
 
@@ -118,6 +124,51 @@ func (f *FrameworkExtenderFactory) Scheduler() Scheduler {
 
 func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 	f.scheduler = sched
+	if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
+		adaptor, ok := sched.(*SchedulerAdapter)
+		if ok {
+			schedulePod := adaptor.Scheduler.SchedulePod
+			f.schedulePod = schedulePod
+			adaptor.Scheduler.SchedulePod = f.scheduleOne
+
+			nextPod := adaptor.Scheduler.NextPod
+			adaptor.Scheduler.NextPod = func() *framework.QueuedPodInfo {
+				podInfo := nextPod()
+				// Deep copy podInfo to allow pod modification during scheduling
+				podInfo = podInfo.DeepCopy()
+				return podInfo
+			}
+		}
+	}
+}
+
+func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
+	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)
+	if err != nil {
+		return scheduleResult, err
+	}
+
+	if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
+		// NOTE(joseph): We can modify the Pod because we have cloned the Pod in the NextPod function.
+		pod.Spec.NodeName = scheduleResult.SuggestedHost
+		status := fwk.RunReservePluginsReserve(ctx, cycleState, pod, scheduleResult.SuggestedHost)
+		if !status.IsSuccess() {
+			fwk.RunReservePluginsUnreserve(ctx, cycleState, pod, scheduleResult.SuggestedHost)
+			return scheduleResult, status.AsError()
+		}
+		markPodAssumed(cycleState)
+
+		extender, ok := fwk.(*frameworkExtenderImpl)
+		if ok {
+			status = extender.RunResizePod(ctx, cycleState, pod, scheduleResult.SuggestedHost)
+			if !status.IsSuccess() {
+				fwk.RunReservePluginsUnreserve(ctx, cycleState, pod, scheduleResult.SuggestedHost)
+				return scheduleResult, status.AsError()
+			}
+		}
+	}
+
+	return scheduleResult, nil
 }
 
 func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Scheduler) {

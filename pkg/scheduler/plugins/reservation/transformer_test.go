@@ -182,6 +182,10 @@ func TestRestoreReservation(t *testing.T) {
 		Status: schedulingv1alpha1.ReservationStatus{
 			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: "test-node",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("12"),
+				corev1.ResourceMemory: resource.MustParse("24Gi"),
+			},
 		},
 	}
 	pods = append(pods, reservationutil.NewReservePod(unmatchedReservation))
@@ -241,6 +245,10 @@ func TestRestoreReservation(t *testing.T) {
 		Status: schedulingv1alpha1.ReservationStatus{
 			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: "test-node",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8"),
+				corev1.ResourceMemory: resource.MustParse("16Gi"),
+			},
 		},
 	}
 	pods = append(pods, reservationutil.NewReservePod(matchedReservation))

@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -46,9 +47,11 @@ import (
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	v1beta2schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -3064,6 +3067,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 }
 
 func Test_Plugin_PreBindReservation(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.ResizePod, true)()
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:  "123456789",
@@ -3144,6 +3148,9 @@ func Test_Plugin_PreBindReservation(t *testing.T) {
 		},
 	}
 	assert.True(t, equality.Semantic.DeepEqual(expectAllocations, allocations))
+	resizeAllocatable, err := reservationutil.GetReservationResizeAllocatable(reservation.Annotations)
+	assert.NoError(t, err)
+	assert.Equal(t, expectAllocations[schedulingv1alpha1.GPU][0].Resources, resizeAllocatable.Resources)
 }
 
 var _ Allocator = &fakeAllocator{}
