@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	quotav1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
@@ -32,10 +33,12 @@ var Scheme = runtime.NewScheme()
 func init() {
 	_ = clientgoscheme.AddToScheme(Scheme)
 	_ = configv1alpha1.AddToScheme(clientgoscheme.Scheme)
+	_ = quotav1alpha1.AddToScheme(clientgoscheme.Scheme)
 	_ = slov1alpha1.AddToScheme(clientgoscheme.Scheme)
 	_ = schedulingv1alpha1.AddToScheme(clientgoscheme.Scheme)
 
 	_ = configv1alpha1.AddToScheme(Scheme)
+	_ = quotav1alpha1.AddToScheme(Scheme)
 	_ = slov1alpha1.AddToScheme(Scheme)
 	_ = schedulingv1alpha1.AddToScheme(Scheme)
 	_ = v1alpha1.AddToScheme(Scheme)

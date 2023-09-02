@@ -35,10 +35,12 @@ const (
 	LabelQuotaParent       = QuotaKoordinatorPrefix + "/parent"
 	LabelAllowLentResource = QuotaKoordinatorPrefix + "/allow-lent-resource"
 	LabelQuotaName         = QuotaKoordinatorPrefix + "/name"
+	LabelQuotaProfile      = QuotaKoordinatorPrefix + "/profile"
 	AnnotationSharedWeight = QuotaKoordinatorPrefix + "/shared-weight"
 	AnnotationRuntime      = QuotaKoordinatorPrefix + "/runtime"
 	AnnotationRequest      = QuotaKoordinatorPrefix + "/request"
 	AnnotationChildRequest = QuotaKoordinatorPrefix + "/child-request"
+	AnnotationResourceKeys = QuotaKoordinatorPrefix + "/resource-keys"
 )
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {
