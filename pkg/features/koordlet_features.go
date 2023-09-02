@@ -144,7 +144,7 @@ var (
 
 // IsFeatureDisabled returns whether the featuregate is disabled by nodeSLO config
 func IsFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature) (bool, error) {
-	if nodeSLO == nil || nodeSLO.Spec == (slov1alpha1.NodeSLOSpec{}) {
+	if nodeSLO == nil {
 		return true, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
 	}
 

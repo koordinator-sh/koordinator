@@ -317,6 +317,8 @@ type NodeSLOSpec struct {
 	SystemStrategy *SystemStrategy `json:"systemStrategy,omitempty"`
 	// Third party extensions for NodeSLO
 	Extensions *ExtensionsMap `json:"extensions,omitempty"`
+	// QoS management for out-of-band applications
+	HostApplications []HostApplicationSpec `json:"hostApplications,omitempty"`
 }
 
 // NodeSLOStatus defines the observed state of NodeSLO

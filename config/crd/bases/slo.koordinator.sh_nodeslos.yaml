@@ -67,6 +67,40 @@ spec:
                 description: Third party extensions for NodeSLO
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              hostApplications:
+                description: QoS management for out-of-band applications
+                items:
+                  description: HostApplicationSpec describes the QoS management for
+                    out-out-band applications on node
+                  properties:
+                    cgroupPath:
+                      description: Optional, defines the host cgroup configuration,
+                        use default if not specified according to priority and qos
+                      properties:
+                        base:
+                          description: cgroup base dir, the format is various across
+                            cgroup drivers
+                          type: string
+                        parentDir:
+                          description: cgroup parent path under base dir
+                          type: string
+                        relativePath:
+                          description: cgroup relative path under parent dir
+                          type: string
+                      type: object
+                    name:
+                      type: string
+                    priority:
+                      description: Priority class of the application
+                      type: string
+                    qos:
+                      description: QoS class of the application
+                      type: string
+                    strategy:
+                      description: QoS Strategy of host application
+                      type: object
+                  type: object
+                type: array
               resourceQOSStrategy:
                 description: QoS config strategy for pods of different qos-class
                 properties:
