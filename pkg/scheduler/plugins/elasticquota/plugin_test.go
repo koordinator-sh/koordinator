@@ -60,26 +60,13 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 type ElasticQuotaSetAndHandle struct {
-	framework.Handle
+	frameworkext.ExtendedHandle
 	pgclientset.Interface
-}
-
-func ElasticQuotaPluginFactoryProxy(clientSet pgclientset.Interface, factoryFn runtime.PluginFactory) runtime.PluginFactory {
-	return func(args apiruntime.Object, handle framework.Handle) (framework.Plugin, error) {
-		return factoryFn(args, ElasticQuotaSetAndHandle{Handle: handle, Interface: clientSet})
-	}
-}
-
-func ElasticQuotaPluginFactoryProxyWithPlugin(clientSet pgclientset.Interface, factoryFn runtime.PluginFactory, plugin *framework.Plugin) runtime.PluginFactory {
-	return func(args apiruntime.Object, handle framework.Handle) (framework.Plugin, error) {
-		var err error
-		*plugin, err = factoryFn(args, ElasticQuotaSetAndHandle{Handle: handle, Interface: clientSet})
-		return *plugin, err
-	}
 }
 
 func mockPodsList(w http.ResponseWriter, r *http.Request) {
@@ -142,9 +129,18 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 
 	koordClientSet := fake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-
+	extenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	assert.Nil(t, err)
 	pgClientSet := pgfake.NewSimpleClientset()
-	proxyNew := ElasticQuotaPluginFactoryProxy(pgClientSet, New)
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
+		return New(configuration, &ElasticQuotaSetAndHandle{
+			ExtendedHandle: f.(frameworkext.ExtendedHandle),
+			Interface:      pgClientSet,
+		})
+	})
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
 		func(reg *runtime.Registry, profile *schedulerconfig.KubeSchedulerProfile) {
@@ -214,8 +210,18 @@ func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 
 	pgClientSet := pgfake.NewSimpleClientset()
-	var plugin framework.Plugin
-	proxyNew := ElasticQuotaPluginFactoryProxyWithPlugin(pgClientSet, New, &plugin)
+
+	extenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	assert.Nil(t, err)
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
+		return New(configuration, &ElasticQuotaSetAndHandle{
+			ExtendedHandle: f.(frameworkext.ExtendedHandle),
+			Interface:      pgClientSet,
+		})
+	})
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
 		func(reg *runtime.Registry, profile *schedulerconfig.KubeSchedulerProfile) {
@@ -267,7 +273,6 @@ func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1
 		elasticQuotaArgs:                 &elasticQuotaArgs,
 		client:                           pgClientSet,
 		Framework:                        fh,
-		plugin:                           plugin,
 	}
 }
 
@@ -334,7 +339,6 @@ type pluginTestSuit struct {
 	proxyNew                         runtime.PluginFactory
 	elasticQuotaArgs                 *config.ElasticQuotaArgs
 	client                           *pgfake.Clientset
-	plugin                           framework.Plugin
 }
 
 func TestNew(t *testing.T) {
@@ -536,7 +540,8 @@ func TestPlugin_OnNodeUpdate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
 			plugin := p.(*Plugin)
 			for _, node := range nodes {
 				plugin.OnNodeAdd(node)
@@ -549,35 +554,21 @@ func TestPlugin_OnNodeUpdate(t *testing.T) {
 	}
 }
 
-func TestPlugin_ResyncNodes(t *testing.T) {
-
-	suit := newPluginTestSuit(t, nil)
-	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
-	plugin := p.(*Plugin)
-
-	// add node
-	nodes := []*corev1.Node{defaultCreateNodeWithResourceVersion("1"), defaultCreateNodeWithResourceVersion("2"),
-		defaultCreateNodeWithResourceVersion("3")}
-	for _, node := range nodes {
-		plugin.handle.ClientSet().CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
-	}
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, plugin.groupQuotaManager.GetClusterTotalResource(), createResourceList(300, 3000))
-
-	// delete node in cache
-	plugin.OnNodeDelete(nodes[1])
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, plugin.groupQuotaManager.GetClusterTotalResource(), createResourceList(200, 2000))
-
-	// resync nodes
-	plugin.ResyncNodes()
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, plugin.groupQuotaManager.GetClusterTotalResource(), createResourceList(300, 3000))
-}
-
 func defaultCreateNodeWithResourceVersion(nodeName string) *corev1.Node {
 	node := defaultCreateNode(nodeName)
 	node.ResourceVersion = "3"
+	return node
+}
+
+func defaultCreateNodeWithLabels(nodeName string, labels map[string]string) *corev1.Node {
+	node := defaultCreateNode(nodeName)
+	node.ResourceVersion = "3"
+	if node.Labels == nil {
+		node.Labels = make(map[string]string)
+	}
+	for k, v := range labels {
+		node.Labels[k] = v
+	}
 	return node
 }
 
@@ -603,7 +594,8 @@ func createResourceList(cpu, mem int64) corev1.ResourceList {
 
 func TestPlugin_OnQuotaAdd(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	assert.Nil(t, err)
 	pl := p.(*Plugin)
 	pl.groupQuotaManager.UpdateClusterTotalResource(createResourceList(501952056, 0))
 	gqm := pl.groupQuotaManager
@@ -655,7 +647,8 @@ func CreateQuota2(name string, parentName string, maxCpu, maxMem int64, minCpu, 
 
 func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
 	// test2 Max[96, 160]  Min[50,80] request[20,40]
@@ -752,7 +745,9 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 
 func TestPlugin_OnPodAdd_Update_Delete(t *testing.T) {
 	suit := newPluginTestSuitWithPod(t, nil, nil)
-	plugin := suit.plugin.(*Plugin)
+	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	assert.Nil(t, err)
+	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
 	plugin.addQuota("test1", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
 	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
@@ -863,7 +858,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			qi := gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name)
 			qi.Lock()
@@ -924,7 +920,8 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			gp.pluginArgs.EnableCheckParentQuota = pointer.Bool(true)
 			gp.OnQuotaAdd(tt.parQuotaInfo)
@@ -967,7 +964,8 @@ func TestPlugin_Reserve(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			pod := makePod2("pod", tt.quotaInfo.CalculateInfo.Used)
 			gp.OnPodAdd(pod)
@@ -1003,7 +1001,8 @@ func TestPlugin_Unreserve(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			ctx := context.TODO()
 			gp.OnPodAdd(tt.pod)
@@ -1046,7 +1045,8 @@ func TestPlugin_AddPod(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			pod := makePod2("test", tt.quotaInfo.CalculateInfo.Used)
 			gp.OnPodAdd(pod)
@@ -1096,7 +1096,8 @@ func TestPlugin_RemovePod(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			pod := makePod2("pod", tt.quotaInfo.CalculateInfo.Used)
 			gp.OnPodAdd(pod)
@@ -1300,7 +1301,8 @@ func TestPlugin_Recover(t *testing.T) {
 		suit.Handle.ClientSet().CoreV1().Pods("").Create(context.TODO(), pod, metav1.CreateOptions{})
 	}
 	time.Sleep(100 * time.Millisecond)
-	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	assert.Nil(t, err)
 	pl := p.(*Plugin)
 	time.Sleep(100 * time.Millisecond)
 	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetRequest(), createResourceList(40, 40))
@@ -1311,7 +1313,8 @@ func TestPlugin_Recover(t *testing.T) {
 
 func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
 	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")

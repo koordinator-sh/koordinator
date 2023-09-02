@@ -1410,7 +1410,7 @@ func TestGroupQuotaManager_OnPodUpdateAfterReserve(t *testing.T) {
 }
 
 func TestNewGroupQuotaManager(t *testing.T) {
-	gqm := NewGroupQuotaManager(createResourceList(100, 100), createResourceList(300, 300), nil)
+	gqm := NewGroupQuotaManager(createResourceList(100, 100), createResourceList(300, 300), nil, nil)
 	assert.Equal(t, createResourceList(100, 100), gqm.GetQuotaInfoByName(extension.SystemQuotaName).getMax())
 	assert.Equal(t, createResourceList(300, 300), gqm.GetQuotaInfoByName(extension.DefaultQuotaName).getMax())
 	assert.True(t, gqm.scaleMinQuotaEnabled)

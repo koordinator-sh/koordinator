@@ -59,7 +59,3 @@ func (g *Plugin) OnNodeDelete(obj interface{}) {
 
 	g.groupQuotaManager.OnNodeDelete(node)
 }
-
-func (g *Plugin) ResyncNodes() {
-	g.groupQuotaManager.ResyncNodes()
-}
