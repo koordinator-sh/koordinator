@@ -25,6 +25,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/batchresource"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpunormalization"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/gpu"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/groupidentity"
@@ -32,47 +33,55 @@ import (
 )
 
 const (
+	// GroupIdentity sets pod cpu group identity(bvt) according to QoS.
+	//
 	// owner: @zwzhang0107 @saintube
 	// alpha: v0.3
 	// beta: v1.1
-	//
-	// GroupIdentity set pod cpu group identity(bvt) according to QoS.
 	GroupIdentity featuregate.Feature = "GroupIdentity"
 
+	// CPUSetAllocator sets container cpuset according to allocate result from koord-scheduler for LSR/LS pods.
+	//
 	// owner: @saintube @zwzhang0107
 	// alpha: v0.3
 	// beta: v1.1
-	//
-	// CPUSetAllocator set container cpuset according to allocate result from koord-scheduler for LSR/LS pods.
 	CPUSetAllocator featuregate.Feature = "CPUSetAllocator"
 
+	// GPUEnvInject injects gpu allocated env info according to allocate result from koord-scheduler.
+	//
 	// owner: @ZYecho @jasonliu747
 	// alpha: v0.3
 	// beta: v1.1
-	//
-	// GPUEnvInject injects gpu allocated env info according to allocate result from koord-scheduler.
 	GPUEnvInject featuregate.Feature = "GPUEnvInject"
 
+	// BatchResource sets request and limits of cpu and memory on cgroup file according batch resources.
+	//
 	// owner: @saintube @zwzhang0107
 	// alpha: v1.1
-	//
-	// BatchResource set request and limits of cpu and memory on cgroup file.
 	BatchResource featuregate.Feature = "BatchResource"
+
+	// CPUNormalization adjusts cpu cgroups value for cpu normalized LS pod.
+	//
+	// owner: @saintube @zwzhang0107
+	// alpha: v1.4
+	CPUNormalization featuregate.Feature = "CPUNormalization"
 )
 
 var (
 	defaultRuntimeHooksFG = map[featuregate.Feature]featuregate.FeatureSpec{
-		GroupIdentity:   {Default: true, PreRelease: featuregate.Beta},
-		CPUSetAllocator: {Default: true, PreRelease: featuregate.Beta},
-		GPUEnvInject:    {Default: false, PreRelease: featuregate.Alpha},
-		BatchResource:   {Default: true, PreRelease: featuregate.Beta},
+		GroupIdentity:    {Default: true, PreRelease: featuregate.Beta},
+		CPUSetAllocator:  {Default: true, PreRelease: featuregate.Beta},
+		GPUEnvInject:     {Default: false, PreRelease: featuregate.Alpha},
+		BatchResource:    {Default: true, PreRelease: featuregate.Beta},
+		CPUNormalization: {Default: false, PreRelease: featuregate.Alpha},
 	}
 
 	runtimeHookPlugins = map[featuregate.Feature]HookPlugin{
-		GroupIdentity:   groupidentity.Object(),
-		CPUSetAllocator: cpuset.Object(),
-		GPUEnvInject:    gpu.Object(),
-		BatchResource:   batchresource.Object(),
+		GroupIdentity:    groupidentity.Object(),
+		CPUSetAllocator:  cpuset.Object(),
+		GPUEnvInject:     gpu.Object(),
+		BatchResource:    batchresource.Object(),
+		CPUNormalization: cpunormalization.Object(),
 	}
 )
 

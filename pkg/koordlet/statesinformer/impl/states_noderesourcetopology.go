@@ -248,6 +248,13 @@ func (s *nodeTopoInformer) calcNodeTopo() (*nodeTopologyStatus, error) {
 		return nil, fmt.Errorf("failed to calculate cpu topology, err: %v", err)
 	}
 
+	// get CPUBasicInfo
+	cpuBasicInfo := &nodeCPUInfo.BasicInfo
+	cpuBasicInfoJSON, err := json.Marshal(cpuBasicInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal cpu basic info, err: %v", err)
+	}
+
 	zoneList, err := s.calTopologyZoneList(nodeCPUInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate topology ZoneList, err: %v", err)
@@ -356,10 +363,12 @@ func (s *nodeTopoInformer) calcNodeTopo() (*nodeTopologyStatus, error) {
 		return nil, fmt.Errorf("failed to marshal cpushare pools of node, err: %v", err)
 	}
 
-	annotations := map[string]string{}
-	annotations[extension.AnnotationNodeCPUTopology] = string(cpuTopologyJSON)
-	annotations[extension.AnnotationNodeCPUSharedPools] = string(cpuSharePoolsJSON)
-	annotations[extension.AnnotationKubeletCPUManagerPolicy] = string(cpuManagerPolicyJSON)
+	annotations := map[string]string{
+		extension.AnnotationCPUBasicInfo:            string(cpuBasicInfoJSON),
+		extension.AnnotationNodeCPUTopology:         string(cpuTopologyJSON),
+		extension.AnnotationNodeCPUSharedPools:      string(cpuSharePoolsJSON),
+		extension.AnnotationKubeletCPUManagerPolicy: string(cpuManagerPolicyJSON),
+	}
 	if len(podAllocsJSON) != 0 {
 		annotations[extension.AnnotationNodeCPUAllocs] = string(podAllocsJSON)
 	}
@@ -616,6 +625,7 @@ func isEqualNRTAnnotations(oldAnno, newAnno map[string]string) (bool, string) {
 		newData interface{}
 	)
 	keys := []string{
+		extension.AnnotationCPUBasicInfo,
 		extension.AnnotationKubeletCPUManagerPolicy,
 		extension.AnnotationNodeCPUSharedPools,
 		extension.AnnotationNodeCPUTopology,

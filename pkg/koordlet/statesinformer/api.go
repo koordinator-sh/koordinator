@@ -21,6 +21,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type PodMeta struct {
@@ -35,12 +36,28 @@ func (in *PodMeta) DeepCopy() *PodMeta {
 	return out
 }
 
+func (in *PodMeta) Key() string {
+	if in == nil || in.Pod == nil {
+		return ""
+	}
+	return util.GetPodKey(in.Pod)
+}
+
+func (in *PodMeta) IsRunningOrPending() bool {
+	if in == nil || in.Pod == nil {
+		return false
+	}
+	phase := in.Pod.Status.Phase
+	return phase == corev1.PodRunning || phase == corev1.PodPending
+}
+
 type RegisterType int64
 
 const (
 	RegisterTypeNodeSLOSpec RegisterType = iota
 	RegisterTypeAllPods
 	RegisterTypeNodeTopology
+	RegisterTypeNodeMetadata
 )
 
 func (r RegisterType) String() string {
@@ -51,6 +68,8 @@ func (r RegisterType) String() string {
 		return "RegisterTypeAllPods"
 	case RegisterTypeNodeTopology:
 		return "RegisterTypeNodeTopology"
+	case RegisterTypeNodeMetadata:
+		return "RegisterNodeMetadata"
 
 	default:
 		return "RegisterTypeUnknown"
@@ -58,6 +77,7 @@ func (r RegisterType) String() string {
 }
 
 type UpdateCbFn func(t RegisterType, obj interface{}, pods []*PodMeta)
+
 type StatesInformer interface {
 	Run(stopCh <-chan struct{}) error
 	HasSynced() bool

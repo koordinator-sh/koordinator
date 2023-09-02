@@ -17,11 +17,11 @@ limitations under the License.
 package util
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,10 +73,40 @@ type LocalCPUInfo struct {
 	TotalInfo CPUTotalInfo `json:"totalInfo,omitempty"`
 }
 
+// getCPUModel gets the Model name of the CPU.
+func getCPUModel() (string, error) {
+	cpuInfoPath := system.GetCPUInfoPath()
+	vendorID := "unknown"
+	f, err := os.Open(cpuInfoPath)
+	if err != nil {
+		return vendorID, fmt.Errorf("open %s failed, err: %w", cpuInfoPath, err)
+	}
+	defer f.Close()
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		if err = s.Err(); err != nil {
+			return vendorID, fmt.Errorf("scan %s failed, err: %w", cpuInfoPath, err)
+		}
+
+		line := s.Text()
+		if strings.Contains(line, "model name") || strings.Contains(line, "Model Name") {
+			attrs := strings.Split(line, ":")
+			if len(attrs) >= 2 {
+				vendorID = strings.TrimSpace(attrs[1])
+				return vendorID, nil
+			}
+		}
+	}
+
+	return vendorID, fmt.Errorf("not found cpu model")
+}
+
 // getHyperThreadEnabled returns whether the cpu is HT-enabled or not
 // NOTE: currently only support intel cpu, otherwise it can always return false
 func getHyperThreadEnabled() (bool, error) {
-	out, err := os.ReadFile("/sys/devices/system/cpu/smt/active")
+	hyperThreadEnabledPath := system.GetSysCPUSMTActivePath()
+	out, err := os.ReadFile(hyperThreadEnabledPath)
 	if err == nil {
 		active, err := strconv.Atoi(strings.TrimSpace(strings.Trim(string(out), "\n")))
 		if err != nil {
@@ -84,7 +114,7 @@ func getHyperThreadEnabled() (bool, error) {
 		}
 		return active == 1, nil
 	}
-	klog.V(5).Infof("read /sys/devices/system/cpu/smt/active err: %v, try `lscpu`", err)
+	klog.V(5).Infof("read %s err: %v, try `lscpu`", hyperThreadEnabledPath, err)
 
 	lsCPUStr, err := lsCPU("-y")
 	for _, line := range strings.Split(lsCPUStr, "\n") {
@@ -102,16 +132,38 @@ func getHyperThreadEnabled() (bool, error) {
 	return false, nil
 }
 
+func getCPUTurboEnabled() (bool, error) {
+	// TODO: In the current version, only intel cpu is collected turbo status. The other vendors' interfaces are not
+	//       supported yet. We may check the frequency in the future.
+	turboDisabledPath := system.GetSysIntelPStateNoTurboPath()
+	out, err := os.ReadFile(turboDisabledPath)
+	if err == nil {
+		disabled, err := strconv.Atoi(strings.TrimSpace(strings.Trim(string(out), "\n")))
+		if err != nil {
+			return false, fmt.Errorf("parse %s failed, content: %s, err: %w", turboDisabledPath, string(out), err)
+		}
+		return disabled == 0, nil
+	}
+	klog.V(6).Infof("failed to read %s for TurboEnabled, err: %s", turboDisabledPath, err)
+	return false, err
+}
+
 func getCPUBasicInfo() (*extension.CPUBasicInfo, error) {
 	cpuBasicInfo := &extension.CPUBasicInfo{}
 	var err error
+	if cpuBasicInfo.CPUModel, err = getCPUModel(); err != nil {
+		klog.V(4).Infof("get cpu model error: %v", err)
+	}
 	if cpuBasicInfo.HyperThreadEnabled, err = getHyperThreadEnabled(); err != nil {
-		klog.V(5).Infof("get hyperthreadEnabled info error: %v", err)
+		klog.V(4).Infof("get hyperthreadEnabled info error: %v", err)
+	}
+	if cpuBasicInfo.TurboEnabled, err = getCPUTurboEnabled(); err != nil {
+		klog.V(4).Infof("get TurboEnabled info error: %v", err)
 	}
 	if cpuBasicInfo.CatL3CbmMask, err = system.ReadCatL3CbmString(); err != nil {
 		klog.V(5).Infof("get l3 cache bit mask error: %v", err)
 	}
-	if cpuBasicInfo.VendorID, err = system.GetVendorIDByCPUInfo(filepath.Join(system.Conf.ProcRootDir, system.CPUInfoFileName)); err != nil {
+	if cpuBasicInfo.VendorID, err = system.GetVendorIDByCPUInfo(system.GetCPUInfoPath()); err != nil {
 		klog.V(5).Infof("get cpu vendor error: %v", err)
 	}
 	return cpuBasicInfo, nil

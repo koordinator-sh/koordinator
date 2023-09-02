@@ -18,7 +18,7 @@ package batchresource
 
 import (
 	"encoding/json"
-
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,7 +33,7 @@ import (
 
 func Test_plugin_Register(t *testing.T) {
 	t.Run("test not panic", func(t *testing.T) {
-		p := &plugin{}
+		p := newPlugin()
 		p.Register(hooks.Options{})
 	})
 }
@@ -41,7 +41,7 @@ func Test_plugin_Register(t *testing.T) {
 func TestObject(t *testing.T) {
 	t.Run("test not panic", func(t *testing.T) {
 		p := Object()
-		assert.Equal(t, &plugin{}, p)
+		assert.Equal(t, &plugin{rule: newRule()}, p)
 	})
 }
 
@@ -123,7 +123,7 @@ func Test_plugin_SetPodResources(t *testing.T) {
 	testSpecBytes3, err := json.Marshal(testSpec3)
 	assert.NoError(t, err)
 	type fields struct {
-		rule *batchResourceRule
+		rule *Rule
 	}
 	type args struct {
 		proto protocol.HooksProtocol
@@ -157,8 +157,9 @@ func Test_plugin_SetPodResources(t *testing.T) {
 		{
 			name: "a Batch pod without requests",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: true,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -187,8 +188,9 @@ func Test_plugin_SetPodResources(t *testing.T) {
 		{
 			name: "a Batch pod with cfs quota unset",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: false,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(false),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -226,8 +228,9 @@ func Test_plugin_SetPodResources(t *testing.T) {
 		{
 			name: "a Batch pod with cpu memory requests",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: true,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -265,8 +268,9 @@ func Test_plugin_SetPodResources(t *testing.T) {
 		{
 			name: "a Batch pod with cpu memory requests 1",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: true,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -304,8 +308,9 @@ func Test_plugin_SetPodResources(t *testing.T) {
 		{
 			name: "a Batch pod with no limit",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: true,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -343,8 +348,9 @@ func Test_plugin_SetPodResources(t *testing.T) {
 		{
 			name: "a Batch pod with partial limited",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: true,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -375,6 +381,46 @@ func Test_plugin_SetPodResources(t *testing.T) {
 						CPUShares:   pointer.Int64(1000 * 1024 / 1000),
 						CFSQuota:    pointer.Int64(-1),
 						MemoryLimit: pointer.Int64(-1),
+					},
+				},
+			},
+		},
+		{
+			name: "a Batch pod scaled with ratio",
+			fields: fields{
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(1.2),
+				},
+			},
+			args: args{
+				proto: &protocol.PodContext{
+					Request: protocol.PodRequest{
+						Labels: map[string]string{
+							apiext.LabelPodQoS: string(apiext.QoSBE),
+						},
+						Annotations: map[string]string{
+							apiext.AnnotationExtendedResourceSpec: string(testSpecBytes),
+						},
+						ExtendedResources: testSpec,
+					},
+				},
+			},
+			want: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSBE),
+					},
+					Annotations: map[string]string{
+						apiext.AnnotationExtendedResourceSpec: string(testSpecBytes),
+					},
+					ExtendedResources: testSpec,
+				},
+				Response: protocol.PodResponse{
+					Resources: protocol.Resources{
+						CPUShares:   pointer.Int64(1024 * 500 / 1000),
+						CFSQuota:    pointer.Int64(int64(math.Ceil(float64(100000*500/1000) / 1.2))),
+						MemoryLimit: pointer.Int64(2 * 1024 * 1024 * 1024),
 					},
 				},
 			},
@@ -429,7 +475,7 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 	testSpecBytes1, err := json.Marshal(testSpec1)
 	assert.NoError(t, err)
 	type fields struct {
-		rule *batchResourceRule
+		rule *Rule
 	}
 	type args struct {
 		proto protocol.HooksProtocol
@@ -463,8 +509,9 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 		{
 			name: "a Batch container without requests",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: true,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -493,8 +540,9 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 		{
 			name: "a Batch container with cfs quota unset",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: false,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(false),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -538,8 +586,9 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 		{
 			name: "a Batch container with requests not matched",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: true,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -574,8 +623,9 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 		{
 			name: "a Batch container with requests",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: true,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -619,8 +669,9 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 		{
 			name: "a Batch container with requests not matched",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: true,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -655,8 +706,9 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 		{
 			name: "a Batch container with requests 1",
 			fields: fields{
-				rule: &batchResourceRule{
-					enableCFSQuota: true,
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(-1),
 				},
 			},
 			args: args{
@@ -692,6 +744,52 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 					Resources: protocol.Resources{
 						CPUShares:   pointer.Int64(2),
 						CFSQuota:    pointer.Int64(100000 * 1000 / 1000),
+						MemoryLimit: pointer.Int64(2 * 1024 * 1024 * 1024),
+					},
+				},
+			},
+		},
+		{
+			name: "a Batch container scaled by ratio",
+			fields: fields{
+				rule: &Rule{
+					enableCFSQuota:        pointer.Bool(true),
+					cpuNormalizationRatio: pointer.Float64(1.2),
+				},
+			},
+			args: args{
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						PodLabels: map[string]string{
+							apiext.LabelPodQoS: string(apiext.QoSBE),
+						},
+						PodAnnotations: map[string]string{
+							apiext.AnnotationExtendedResourceSpec: string(testSpecBytes),
+						},
+						ContainerMeta: protocol.ContainerMeta{
+							Name: "container-0",
+						},
+						ExtendedResources: testContainerSpec,
+					},
+				},
+			},
+			want: &protocol.ContainerContext{
+				Request: protocol.ContainerRequest{
+					PodLabels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSBE),
+					},
+					PodAnnotations: map[string]string{
+						apiext.AnnotationExtendedResourceSpec: string(testSpecBytes),
+					},
+					ContainerMeta: protocol.ContainerMeta{
+						Name: "container-0",
+					},
+					ExtendedResources: testContainerSpec,
+				},
+				Response: protocol.ContainerResponse{
+					Resources: protocol.Resources{
+						CPUShares:   pointer.Int64(1024 * 500 / 1000),
+						CFSQuota:    pointer.Int64(int64(math.Ceil(float64(100000*500/1000) / 1.2))),
 						MemoryLimit: pointer.Int64(2 * 1024 * 1024 * 1024),
 					},
 				},

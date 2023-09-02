@@ -139,6 +139,7 @@ func TestContainerContext_NriDone(t *testing.T) {
 					},
 					AddContainerEnvs: map[string]string{"test": "test"},
 				},
+				executor: resourceexecutor.NewTestResourceExecutor(),
 			},
 			want: &api.ContainerAdjustment{
 				Linux: &api.LinuxContainerAdjustment{
@@ -190,7 +191,7 @@ func TestContainerContext_NriDone(t *testing.T) {
 				Response: tt.fields.Response,
 				executor: tt.fields.executor,
 			}
-			got, got1, err := c.NriDone()
+			got, got1, err := c.NriDone(tt.fields.executor)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Protocol2NRI() error = %v, wantErr %v", err, tt.wantErr)
 				return

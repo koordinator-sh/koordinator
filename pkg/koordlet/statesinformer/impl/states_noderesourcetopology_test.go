@@ -320,6 +320,11 @@ func Test_reportNodeTopology(t *testing.T) {
 
 	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
 	mockNodeCPUInfo := metriccache.NodeCPUInfo{
+		BasicInfo: extension.CPUBasicInfo{
+			CPUModel:           "XXX",
+			HyperThreadEnabled: true,
+			TurboEnabled:       true,
+		},
 		ProcessorInfos: []koordletutil.ProcessorInfo{
 			{CPUID: 0, CoreID: 0, NodeID: 0, SocketID: 0},
 			{CPUID: 1, CoreID: 0, NodeID: 0, SocketID: 0},
@@ -454,6 +459,8 @@ func Test_reportNodeTopology(t *testing.T) {
 
 	expectedCPUSharedPool := `[{"socket":0,"node":0,"cpuset":"0-2"},{"socket":1,"node":1,"cpuset":"6-7"}]`
 	expectedCPUTopology := `{"detail":[{"id":0,"core":0,"socket":0,"node":0},{"id":1,"core":0,"socket":0,"node":0},{"id":2,"core":1,"socket":0,"node":0},{"id":3,"core":1,"socket":0,"node":0},{"id":4,"core":2,"socket":1,"node":1},{"id":5,"core":2,"socket":1,"node":1},{"id":6,"core":3,"socket":1,"node":1},{"id":7,"core":3,"socket":1,"node":1}]}`
+	expectedCPUBasicInfoBytes, err := json.Marshal(mockNodeCPUInfo.BasicInfo)
+	assert.NoError(t, err)
 
 	expectedTopologyPolices := []string{string(topologyv1alpha1.None)}
 	expectedZones := topologyv1alpha1.ZoneList{
@@ -503,6 +510,7 @@ func Test_reportNodeTopology(t *testing.T) {
 		nodeReserved                    *extension.NodeReservation
 		systemQOSRes                    *extension.SystemQOSResource
 		expectedKubeletCPUManagerPolicy extension.KubeletCPUManagerPolicy
+		expectedCPUBasicInfo            string
 		expectedCPUSharedPool           string
 		expectedCPUTopology             string
 		expectedNodeReservation         string
@@ -525,6 +533,7 @@ func Test_reportNodeTopology(t *testing.T) {
 				Policy:       "static",
 				ReservedCPUs: "0-1",
 			},
+			expectedCPUBasicInfo:     string(expectedCPUBasicInfoBytes),
 			expectedCPUSharedPool:    expectedCPUSharedPool,
 			expectedCPUTopology:      expectedCPUTopology,
 			expectedNodeReservation:  "{}",
@@ -554,6 +563,7 @@ func Test_reportNodeTopology(t *testing.T) {
 				Policy:       "static",
 				ReservedCPUs: "0-1",
 			},
+			expectedCPUBasicInfo:     string(expectedCPUBasicInfoBytes),
 			expectedCPUSharedPool:    `[{"socket":0,"node":0,"cpuset":"0"},{"socket":1,"node":1,"cpuset":"6"}]`,
 			expectedCPUTopology:      expectedCPUTopology,
 			expectedNodeReservation:  `{"reservedCPUs":"1-2"}`,
@@ -578,6 +588,7 @@ func Test_reportNodeTopology(t *testing.T) {
 				Policy:       "",
 				ReservedCPUs: "",
 			},
+			expectedCPUBasicInfo:     string(expectedCPUBasicInfoBytes),
 			expectedCPUSharedPool:    expectedCPUSharedPool,
 			expectedCPUTopology:      expectedCPUTopology,
 			expectedNodeReservation:  "{}",
@@ -601,6 +612,7 @@ func Test_reportNodeTopology(t *testing.T) {
 				Policy:       "static",
 				ReservedCPUs: "0-1",
 			},
+			expectedCPUBasicInfo:     string(expectedCPUBasicInfoBytes),
 			expectedCPUSharedPool:    expectedCPUSharedPool,
 			expectedCPUTopology:      expectedCPUTopology,
 			expectedNodeReservation:  "{}",
@@ -614,7 +626,7 @@ func Test_reportNodeTopology(t *testing.T) {
 			// prepare feature map
 			enabled := features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport)
 			testFeatureGates := map[string]bool{string(features.NodeTopologyReport): !tt.disableCreateTopologyCRD}
-			err := features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
+			err = features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
 			assert.NoError(t, err)
 			defer func() {
 				testFeatureGates[string(features.NodeTopologyReport)] = enabled
@@ -673,6 +685,7 @@ func Test_reportNodeTopology(t *testing.T) {
 			err = json.Unmarshal([]byte(topo.Annotations[extension.AnnotationKubeletCPUManagerPolicy]), &kubeletCPUManagerPolicy)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedKubeletCPUManagerPolicy, kubeletCPUManagerPolicy)
+			assert.Equal(t, tt.expectedCPUBasicInfo, topo.Annotations[extension.AnnotationCPUBasicInfo])
 			assert.Equal(t, tt.expectedCPUSharedPool, topo.Annotations[extension.AnnotationNodeCPUSharedPools])
 			assert.Equal(t, tt.expectedCPUTopology, topo.Annotations[extension.AnnotationNodeCPUTopology])
 			assert.Equal(t, tt.expectedNodeReservation, topo.Annotations[extension.AnnotationNodeReservation])

@@ -88,7 +88,7 @@ func isResctrlAvailableByCpuInfo(path string) (bool, bool, error) {
 	return isCatFlagSet, isMbaFlagSet, nil
 }
 
-// return vendor_id like AuthenticAMD from cpu info, e.g.
+// GetVendorIDByCPUInfo returns vendor_id like AuthenticAMD from cpu info, e.g.
 // vendor_id       : AuthenticAMD
 // vendor_id       : GenuineIntel
 func GetVendorIDByCPUInfo(path string) (string, error) {

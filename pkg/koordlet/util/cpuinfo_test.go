@@ -22,6 +22,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func Test_getProcessorInfos(t *testing.T) {
@@ -617,4 +620,52 @@ func Test_GetLocalCPUInfo(t *testing.T) {
 		t.Error("failed to get local CPU info: ", err)
 	}
 	t.Log("get local CPU info ", localCPUInfo)
+}
+
+func Test_getCPUBasicInfo(t *testing.T) {
+	mockCPUInfoContent := `processor       : 0
+vendor_id       : unknown
+cpu family      : 0
+model           : 100
+model name      : Fake 2000 CPU @ 2.50GHz
+stepping        : 5
+microcode       : 0xd000111
+cpu MHz         : 3500.000
+cache size      : 64000 KB
+physical id     : 0
+siblings        : 64
+core id         : 0
+cpu cores       : 32
+apicid          : 0
+initial apicid  : 0
+fpu             : yes
+fpu_exception   : yes
+cpuid level     : 10
+wp              : yes
+flags           : fpu vme de pse tsc msr apic sep mtrr pge mcaclflush dts acpi mmx sse ss ht smx
+vmx flags       : 
+bugs            : 
+bogomips        : 6000.00
+clflush size    : 64
+cache_alignment : 64
+address sizes   : 46 bits physical, 57 bits virtual
+power management:
+`
+	t.Run("test", func(t *testing.T) {
+		helper := system.NewFileTestUtil(t)
+		defer helper.Cleanup()
+		helper.WriteProcSubFileContents(system.ProcCPUInfoName, mockCPUInfoContent)
+		helper.WriteFileContents(system.GetSysCPUSMTActivePath(), "1")
+		helper.WriteFileContents(system.GetSysIntelPStateNoTurboPath(), "0")
+
+		expectBasicInfo := &extension.CPUBasicInfo{
+			CPUModel:           "Fake 2000 CPU @ 2.50GHz",
+			HyperThreadEnabled: true,
+			TurboEnabled:       true,
+			VendorID:           "unknown",
+		}
+		basicInfo, err := getCPUBasicInfo()
+		assert.NoError(t, err)
+		assert.Equal(t, expectBasicInfo, basicInfo)
+	})
 }

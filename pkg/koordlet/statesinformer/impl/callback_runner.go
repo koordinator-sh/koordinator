@@ -42,17 +42,19 @@ func NewCallbackRunner() *callbackRunner {
 		statesinformer.RegisterTypeNodeSLOSpec:  make(chan UpdateCbCtx, 1),
 		statesinformer.RegisterTypeAllPods:      make(chan UpdateCbCtx, 1),
 		statesinformer.RegisterTypeNodeTopology: make(chan UpdateCbCtx, 1),
+		statesinformer.RegisterTypeNodeMetadata: make(chan UpdateCbCtx, 1),
 	}
 	c.stateUpdateCallbacks = map[statesinformer.RegisterType][]updateCallback{
 		statesinformer.RegisterTypeNodeSLOSpec:  {},
 		statesinformer.RegisterTypeAllPods:      {},
 		statesinformer.RegisterTypeNodeTopology: {},
+		statesinformer.RegisterTypeNodeMetadata: {},
 	}
 	return c
 }
 
-func (c *callbackRunner) Setup(s StatesInformer) {
-	c.statesInformer = s
+func (s *callbackRunner) Setup(i StatesInformer) {
+	s.statesInformer = i
 }
 
 func (s *callbackRunner) RegisterCallbacks(rType statesinformer.RegisterType, name, description string, callbackFn statesinformer.UpdateCbFn) {
@@ -134,6 +136,8 @@ func (s *callbackRunner) getObjByType(objType statesinformer.RegisterType, cbCtx
 		return &struct{}{}
 	case statesinformer.RegisterTypeNodeTopology:
 		return s.statesInformer.GetNodeTopo()
+	case statesinformer.RegisterTypeNodeMetadata:
+		return s.statesInformer.GetNode()
 	}
 	return nil
 }

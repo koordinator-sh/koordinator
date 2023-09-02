@@ -21,6 +21,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
@@ -65,6 +68,196 @@ func TestResources_IsOriginResSet(t *testing.T) {
 			if got := r.IsOriginResSet(); got != tt.want {
 				t.Errorf("IsOriginResSet() = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestResourcesFromPod(t *testing.T) {
+	tests := []struct {
+		name      string
+		field     *Resources
+		arg       *corev1.Pod
+		wantField *Resources
+	}{
+		{
+			name:  "pod no resource requirements",
+			field: &Resources{},
+			arg: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name:      "test-pod-name",
+					UID:       "test-pod-uid",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-name",
+						},
+					},
+				},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:        "test-container-name",
+							ContainerID: "test-container-id",
+						},
+					},
+				},
+			},
+			wantField: &Resources{
+				CPUShares:   pointer.Int64(2),
+				CFSQuota:    pointer.Int64(-1),
+				MemoryLimit: pointer.Int64(-1),
+			},
+		},
+		{
+			name:  "pod requests=limits=2C4GiB",
+			field: &Resources{},
+			arg: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name:      "test-pod-name",
+					UID:       "test-pod-uid",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-name",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantField: &Resources{
+				CPUShares:   pointer.Int64(2048),
+				CFSQuota:    pointer.Int64(200000),
+				MemoryLimit: pointer.Int64(4294967296),
+			},
+		},
+		{
+			name:  "pod requests=1C2GiB, limits=2C4GiB",
+			field: &Resources{},
+			arg: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name:      "test-pod-name",
+					UID:       "test-pod-uid",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-name",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantField: &Resources{
+				CPUShares:   pointer.Int64(1024),
+				CFSQuota:    pointer.Int64(200000),
+				MemoryLimit: pointer.Int64(4294967296),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.NotPanics(t, func() {
+				tt.field.FromPod(tt.arg)
+			})
+			assert.Equal(t, tt.wantField, tt.field)
+		})
+	}
+}
+
+func TestResourcesFromContainer(t *testing.T) {
+	tests := []struct {
+		name      string
+		field     *Resources
+		arg       *corev1.Container
+		wantField *Resources
+	}{
+		{
+			name:  "container no resource requirements",
+			field: &Resources{},
+			arg: &corev1.Container{
+				Name: "test-container-name",
+			},
+			wantField: &Resources{
+				CPUShares:   pointer.Int64(2),
+				CFSQuota:    pointer.Int64(-1),
+				MemoryLimit: pointer.Int64(-1),
+			},
+		},
+		{
+			name:  "container requests=limits=2C4GiB",
+			field: &Resources{},
+			arg: &corev1.Container{
+
+				Name: "test-container-name",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("2"),
+						corev1.ResourceMemory: resource.MustParse("4Gi"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("2"),
+						corev1.ResourceMemory: resource.MustParse("4Gi"),
+					},
+				},
+			},
+			wantField: &Resources{
+				CPUShares:   pointer.Int64(2048),
+				CFSQuota:    pointer.Int64(200000),
+				MemoryLimit: pointer.Int64(4294967296),
+			},
+		},
+		{
+			name:  "container requests=1C2GiB, limits=2C4GiB",
+			field: &Resources{},
+			arg: &corev1.Container{
+				Name: "test-container-name",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("2"),
+						corev1.ResourceMemory: resource.MustParse("4Gi"),
+					},
+				},
+			},
+			wantField: &Resources{
+				CPUShares:   pointer.Int64(1024),
+				CFSQuota:    pointer.Int64(200000),
+				MemoryLimit: pointer.Int64(4294967296),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.NotPanics(t, func() {
+				tt.field.FromContainer(tt.arg)
+			})
+			assert.Equal(t, tt.wantField, tt.field)
 		})
 	}
 }
@@ -254,7 +447,6 @@ func TestPodResponse_ReconcilerDone(t *testing.T) {
 				executor: nil,
 			}
 			c.ReconcilerDone(tt.ex)
-
 		})
 	}
 }

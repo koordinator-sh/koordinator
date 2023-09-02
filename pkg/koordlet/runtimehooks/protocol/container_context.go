@@ -59,6 +59,7 @@ type ContainerRequest struct {
 	PodAnnotations    map[string]string
 	CgroupParent      string
 	ContainerEnvs     map[string]string
+	Resources         *Resources // TODO: support proxy & nri mode
 	ExtendedResources *apiext.ExtendedResourceContainerSpec
 }
 
@@ -144,7 +145,8 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 		}
 	}
 	var specFromContainer *apiext.ExtendedResourceContainerSpec
-	for _, containerSpec := range podMeta.Pod.Spec.Containers {
+	for i := range podMeta.Pod.Spec.Containers {
+		containerSpec := podMeta.Pod.Spec.Containers[i]
 		if containerSpec.Name == containerName {
 			if c.ContainerEnvs == nil {
 				c.ContainerEnvs = map[string]string{}
@@ -153,6 +155,8 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 				c.ContainerEnvs[envVar.Name] = envVar.Value
 			}
 			specFromContainer = util.GetContainerExtendedResources(&containerSpec)
+			c.Resources = &Resources{}
+			c.Resources.FromContainer(&containerSpec)
 			break
 		}
 	}
@@ -210,6 +214,7 @@ type ContainerContext struct {
 	Request  ContainerRequest
 	Response ContainerResponse
 	executor resourceexecutor.ResourceUpdateExecutor
+	updaters []resourceexecutor.ResourceUpdater
 }
 
 func (c *ContainerContext) FromNri(pod *api.PodSandbox, container *api.Container) {
@@ -223,9 +228,13 @@ func (c *ContainerContext) FromProxy(req *runtimeapi.ContainerResourceHookReques
 func (c *ContainerContext) ProxyDone(resp *runtimeapi.ContainerResourceHookResponse) {
 	c.injectForExt()
 	c.Response.ProxyDone(resp)
+	c.Update()
 }
 
-func (c *ContainerContext) NriDone() (*api.ContainerAdjustment, *api.ContainerUpdate, error) {
+func (c *ContainerContext) NriDone(executor resourceexecutor.ResourceUpdateExecutor) (*api.ContainerAdjustment, *api.ContainerUpdate, error) {
+	if c.executor == nil {
+		c.executor = executor
+	}
 	c.injectForExt()
 	adjust := &api.ContainerAdjustment{}
 	update := &api.ContainerUpdate{}
@@ -256,6 +265,8 @@ func (c *ContainerContext) NriDone() (*api.ContainerAdjustment, *api.ContainerUp
 		}
 	}
 
+	c.Update()
+
 	return adjust, update, nil
 }
 
@@ -263,17 +274,32 @@ func (c *ContainerContext) FromReconciler(podMeta *statesinformer.PodMeta, conta
 	c.Request.FromReconciler(podMeta, containerName, sandbox)
 }
 
-func (c *ContainerContext) ReconcilerDone(executor resourceexecutor.ResourceUpdateExecutor) {
+// ReconcilerProcess generate the resource updaters but not do the update until the Update() is called.
+func (c *ContainerContext) ReconcilerProcess(executor resourceexecutor.ResourceUpdateExecutor) {
+	if c.executor == nil {
+		c.executor = executor
+	}
 	if len(c.Request.CgroupParent) == 0 {
 		klog.V(4).Infof("container cgroup parent is empty, skip reconciler for %v/%v",
 			c.Request.PodMeta.String(), c.Request.ContainerMeta.Name)
 		return
 	}
-	if c.executor == nil {
-		c.executor = executor
-	}
 	c.injectForExt()
 	c.injectForOrigin()
+}
+
+func (c *ContainerContext) ReconcilerDone(executor resourceexecutor.ResourceUpdateExecutor) {
+	c.ReconcilerProcess(executor)
+	c.Update()
+}
+
+func (c *ContainerContext) GetUpdaters() []resourceexecutor.ResourceUpdater {
+	return c.updaters
+}
+
+func (c *ContainerContext) Update() {
+	c.executor.UpdateBatch(true, c.updaters...)
+	c.updaters = nil
 }
 
 // Inject valid parameters in ContainerContext.Response.Resources,
@@ -283,28 +309,26 @@ func (c *ContainerContext) injectForOrigin() {
 	if c.Response.Resources.CPUShares != nil {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 			"set container cpu share to %v", *c.Response.Resources.CPUShares)
-		if err := injectCPUShares(c.Request.CgroupParent, *c.Response.Resources.CPUShares, eventHelper, c.executor); err != nil {
+		updater, err := injectCPUShares(c.Request.CgroupParent, *c.Response.Resources.CPUShares, eventHelper, c.executor)
+		if err != nil {
 			klog.Infof("set container %v/%v/%v cpu share %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CPUShares, c.Request.CgroupParent, err)
 		} else {
+			c.updaters = append(c.updaters, updater)
 			klog.V(5).Infof("set container %v/%v/%v cpu share %v on cgroup parent %v",
 				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
 				*c.Response.Resources.CPUShares, c.Request.CgroupParent)
-			audit.V(2).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
-				"set container cpu share to %v", *c.Response.Resources.CPUShares).Do()
 		}
 	}
 	// If CPUSet is not nil and is not an empty string, set container cpuset
 	if c.Response.Resources.CPUSet != nil && *c.Response.Resources.CPUSet != "" {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message("set container cpuset to %v", *c.Response.Resources.CPUSet)
-		err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet, eventHelper, c.executor)
-		if err != nil && resourceexecutor.IsCgroupDirErr(err) {
-			klog.V(5).Infof("set container %v/%v/%v cpuset %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
-				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CPUSet, c.Request.CgroupParent, err)
-		} else if err != nil {
+		updater, err := injectCPUSet(c.Request.CgroupParent, *c.Response.Resources.CPUSet, eventHelper, c.executor)
+		if err != nil {
 			klog.Infof("set container %v/%v/%v cpuset %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CPUSet, c.Request.CgroupParent, err)
 		} else {
+			c.updaters = append(c.updaters, updater)
 			klog.V(5).Infof("set container %v/%v/%v cpuset %v on cgroup parent %v",
 				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
 				*c.Response.Resources.CPUSet, c.Request.CgroupParent)
@@ -314,10 +338,12 @@ func (c *ContainerContext) injectForOrigin() {
 	if c.Response.Resources.CFSQuota != nil {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 			"set container cfs quota to %v", *c.Response.Resources.CFSQuota)
-		if err := injectCPUQuota(c.Request.CgroupParent, *c.Response.Resources.CFSQuota, eventHelper, c.executor); err != nil {
+		updater, err := injectCPUQuota(c.Request.CgroupParent, *c.Response.Resources.CFSQuota, eventHelper, c.executor)
+		if err != nil {
 			klog.Infof("set container %v/%v/%v cfs quota %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CFSQuota, c.Request.CgroupParent, err)
 		} else {
+			c.updaters = append(c.updaters, updater)
 			klog.V(5).Infof("set container %v/%v/%v cfs quota %v on cgroup parent %v",
 				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
 				*c.Response.Resources.CFSQuota, c.Request.CgroupParent)
@@ -327,10 +353,12 @@ func (c *ContainerContext) injectForOrigin() {
 	if c.Response.Resources.MemoryLimit != nil {
 		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message(
 			"set container memory limit to %v", *c.Response.Resources.MemoryLimit)
-		if err := injectMemoryLimit(c.Request.CgroupParent, *c.Response.Resources.MemoryLimit, eventHelper, c.executor); err != nil {
+		updater, err := injectMemoryLimit(c.Request.CgroupParent, *c.Response.Resources.MemoryLimit, eventHelper, c.executor)
+		if err != nil {
 			klog.Infof("set container %v/%v/%v memory limit %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
 				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.MemoryLimit, c.Request.CgroupParent, err)
 		} else {
+			c.updaters = append(c.updaters, updater)
 			klog.V(5).Infof("set container %v/%v/%v memory limit %v on cgroup parent %v",
 				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
 				*c.Response.Resources.MemoryLimit, c.Request.CgroupParent)

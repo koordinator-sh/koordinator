@@ -118,7 +118,7 @@ func (p *podQOSFilter) Filter(podMeta *statesinformer.PodMeta) string {
 	// consider as LSR if pod is qos=None and has cpuset
 	if qosClass == apiext.QoSNone && podMeta.Pod != nil && podMeta.Pod.Annotations != nil {
 		cpuset, _ := util.GetCPUSetFromPod(podMeta.Pod.Annotations)
-		if len(cpuset) >= 0 {
+		if len(cpuset) > 0 {
 			return string(apiext.QoSLSR)
 		}
 	}
@@ -142,7 +142,7 @@ type reconcileFunc func(protocol.HooksProtocol) error
 // conditions. A cgroup file of one level can have multiple reconcile functions with different filtered conditions.
 //
 //	e.g. pod-level cfs_quota can be registered both by cpuset hook and batchresource hook. While cpuset hook reconciles
-//	cfs_quota for LSE and LSR pods, batchresource reconciles pods of other QoS classes.
+//	cfs_quota for LSE and LSR pods, batchresource reconciles pods of BE QoS.
 //
 // TODO: support priority+qos filter.
 func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.Resource, description string,

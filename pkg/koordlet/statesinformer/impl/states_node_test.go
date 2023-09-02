@@ -19,13 +19,33 @@ package impl
 import (
 	"testing"
 
+	faketopologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fakeclientset "k8s.io/client-go/kubernetes/fake"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 )
+
+func TestNodeInformerSetup(t *testing.T) {
+	t.Run("test", func(t *testing.T) {
+		s := NewNodeInformer()
+		s.Setup(&PluginOption{
+			config:      NewDefaultConfig(),
+			KubeClient:  fakeclientset.NewSimpleClientset(),
+			KoordClient: fakekoordclientset.NewSimpleClientset(),
+			TopoClient:  faketopologyclientset.NewSimpleClientset(),
+			NodeName:    "test-node",
+		}, &PluginState{
+			callbackRunner: NewCallbackRunner(),
+		})
+		assert.Nil(t, s.GetNode())
+	})
+}
 
 func Test_statesInformer_syncNode(t *testing.T) {
 	tests := []struct {
@@ -71,7 +91,9 @@ func Test_statesInformer_syncNode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &nodeInformer{}
+			m := &nodeInformer{
+				callbackRunner: NewCallbackRunner(),
+			}
 			metrics.Register(tt.arg)
 			defer metrics.Register(nil)
 

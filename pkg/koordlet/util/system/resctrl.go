@@ -30,9 +30,6 @@ import (
 )
 
 const (
-	CPUInfoFileName       string = "cpuinfo"
-	KernelCmdlineFileName string = "cmdline"
-
 	ResctrlName string = "resctrl"
 
 	ResctrlDir string = "resctrl/"
@@ -59,7 +56,7 @@ var (
 )
 
 func isCPUSupportResctrl() (bool, error) {
-	isCatFlagSet, isMbaFlagSet, err := isResctrlAvailableByCpuInfo(filepath.Join(Conf.ProcRootDir, CPUInfoFileName))
+	isCatFlagSet, isMbaFlagSet, err := isResctrlAvailableByCpuInfo(GetCPUInfoPath())
 	if err != nil {
 		klog.Errorf("isResctrlAvailableByCpuInfo error: %v", err)
 		return false, err
@@ -70,7 +67,7 @@ func isCPUSupportResctrl() (bool, error) {
 }
 
 func isKernelSupportResctrl() (bool, error) {
-	if vendorID, err := GetVendorIDByCPUInfo(filepath.Join(Conf.ProcRootDir, CPUInfoFileName)); err == nil && vendorID == AMD_VENDOR_ID {
+	if vendorID, err := GetVendorIDByCPUInfo(GetCPUInfoPath()); err == nil && vendorID == AMD_VENDOR_ID {
 		// AMD CPU support resctrl by default
 		klog.V(4).Infof("isKernelSupportResctrl true, since the cpu vendor is %v, no need to check kernel command line", vendorID)
 		return true, nil

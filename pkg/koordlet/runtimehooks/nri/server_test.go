@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
@@ -356,7 +357,7 @@ func TestNriServer_RunPodSandbox(t *testing.T) {
 				options: Options{
 					PluginFailurePolicy: config.PolicyIgnore,
 					DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
-					Executor:            nil,
+					Executor:            resourceexecutor.NewTestResourceExecutor(),
 				},
 			},
 			args: args{
@@ -402,8 +403,12 @@ func TestNriServer_CreateContainer(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:   "CreateContainer success",
-			fields: fields{},
+			name: "CreateContainer success",
+			fields: fields{
+				options: Options{
+					Executor: resourceexecutor.NewTestResourceExecutor(),
+				},
+			},
 			args: args{
 				pod: &api.PodSandbox{
 					Id:        "test",
@@ -430,6 +435,9 @@ func TestNriServer_CreateContainer(t *testing.T) {
 				mask:    tt.fields.mask,
 				options: tt.fields.options,
 			}
+			newStopCh := make(chan struct{})
+			defer close(newStopCh)
+			p.options.Executor.Run(newStopCh)
 			_, _, err := p.CreateContainer(tt.args.pod, tt.args.container)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CreateContainer() error = %v, wantErr %v", err, tt.wantErr)
@@ -460,8 +468,12 @@ func TestNriServer_UpdateContainer(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:   "CreateContainer success",
-			fields: fields{},
+			name: "CreateContainer success",
+			fields: fields{
+				options: Options{
+					Executor: resourceexecutor.NewTestResourceExecutor(),
+				},
+			},
 			args: args{
 				pod: &api.PodSandbox{
 					Id:        "test",

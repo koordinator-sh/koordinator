@@ -18,7 +18,7 @@ package batchresource
 
 import (
 	"fmt"
-	"sync"
+	"math"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/klog/v2"
@@ -39,21 +39,26 @@ import (
 const (
 	name        = "BatchResource"
 	description = "set fundamental cgroups value for batch pod"
+
+	ruleNameForNodeSLO  = name + " (nodeSLO)"
+	ruleNameForNodeMeta = name + " (nodeMeta)"
 )
 
 type plugin struct {
-	rule        *batchResourceRule
-	ruleRWMutex sync.RWMutex
-	executor    resourceexecutor.ResourceUpdateExecutor
+	rule     *Rule
+	executor resourceexecutor.ResourceUpdateExecutor
 }
 
-var podQOSConditions = []string{string(apiext.QoSBE), string(apiext.QoSLS), string(apiext.QoSNone)}
+var podQOSConditions = []string{string(apiext.QoSBE)}
 
 func (p *plugin) Register(op hooks.Options) {
 	klog.V(5).Infof("register hook %v", name)
-	rule.Register(name, description,
-		rule.WithParseFunc(statesinformer.RegisterTypeNodeSLOSpec, p.parseRule),
-		rule.WithUpdateCallback(p.ruleUpdateCb))
+	rule.Register(ruleNameForNodeSLO, description,
+		rule.WithParseFunc(statesinformer.RegisterTypeNodeSLOSpec, p.parseRuleForNodeSLO),
+		rule.WithUpdateCallback(p.ruleUpdateCbForNodeSLO))
+	rule.Register(ruleNameForNodeMeta, description,
+		rule.WithParseFunc(statesinformer.RegisterTypeNodeMetadata, p.parseRuleForNodeMeta),
+		rule.WithUpdateCallback(p.ruleUpdateCbForNodeMeta))
 	hooks.Register(rmconfig.PreRunPodSandbox, name, description+" (pod)", p.SetPodResources)
 	hooks.Register(rmconfig.PreCreateContainer, name, description+" (container)", p.SetContainerResources)
 	hooks.Register(rmconfig.PreUpdateContainerResources, name, description+" (container)", p.SetContainerResources)
@@ -76,9 +81,15 @@ var singleton *plugin
 
 func Object() *plugin {
 	if singleton == nil {
-		singleton = &plugin{}
+		singleton = newPlugin()
 	}
 	return singleton
+}
+
+func newPlugin() *plugin {
+	return &plugin{
+		rule: newRule(),
+	}
 }
 
 func (p *plugin) SetPodResources(proto protocol.HooksProtocol) error {
@@ -136,11 +147,8 @@ func (p *plugin) SetPodCPUShares(proto protocol.HooksProtocol) error {
 		}
 		milliCPURequest += containerRequest
 	}
-	cpuShares := milliCPURequest * sysutil.CPUShareUnitValue / 1000
-	if cpuShares < sysutil.CPUSharesMinValue {
-		cpuShares = sysutil.CPUSharesMinValue
-	}
 
+	cpuShares := sysutil.MilliCPUToShares(milliCPURequest)
 	podCtx.Response.Resources.CPUShares = pointer.Int64(cpuShares)
 	return nil
 }
@@ -161,8 +169,10 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 		return nil
 	}
 
+	isCFSQuotaEnabled, scaleRatio := p.rule.GetCFSQuotaScaleRatio()
+
 	// if cfs quota is disabled, set as -1
-	if !p.getRule().getEnableCFSQuota() {
+	if !isCFSQuotaEnabled {
 		podCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
 		klog.V(5).Infof("try to unset pod-level cfs quota since it is disabled in rule of plugin %v", name)
 		return nil
@@ -183,11 +193,12 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 		milliCPULimit += containerLimit
 	}
 
-	cfsQuota := milliCPULimit * sysutil.CFSBasePeriodValue / 1000 // TBD: assert base cfs period not changed
-	if cfsQuota <= 0 {                                            // pod unlimited
-		cfsQuota = -1
-	} else if cfsQuota < sysutil.CFSQuotaMinValue { // cfs_quota_us should be no less than 1000
-		cfsQuota = sysutil.CFSQuotaMinValue
+	cfsQuota := sysutil.MilliCPUToQuota(milliCPULimit)
+	if cfsQuota > 0 && scaleRatio > 1.0 { // no support ratio in (0, 1) yet
+		originalCFSQuota := cfsQuota
+		cfsQuota = int64(math.Ceil(float64(originalCFSQuota) / scaleRatio))
+		klog.V(6).Infof("plugin %s adjusts BE pod %s/%s cfs quota from %d to %d",
+			name, podCtx.Request.PodMeta.Namespace, podCtx.Request.PodMeta.Name, originalCFSQuota, cfsQuota)
 	}
 
 	podCtx.Response.Resources.CFSQuota = pointer.Int64(cfsQuota)
@@ -246,14 +257,14 @@ func (p *plugin) SetContainerResources(proto protocol.HooksProtocol) error {
 	if err1 != nil {
 		klog.V(5).Infof("failed to set container cfs quota in plugin %s, container %s/%s/%s, err: %v",
 			name, containerCtx.Request.PodMeta.Namespace, containerCtx.Request.PodMeta.Name,
-			containerCtx.Request.ContainerMeta.Name, err)
+			containerCtx.Request.ContainerMeta.Name, err1)
 	}
 
 	err2 := p.SetContainerMemoryLimit(proto)
 	if err2 != nil {
 		klog.V(5).Infof("failed to set container memory limit in plugin %s, container %s/%s/%s, err: %v",
 			name, containerCtx.Request.PodMeta.Namespace, containerCtx.Request.PodMeta.Name,
-			containerCtx.Request.ContainerMeta.Name, err)
+			containerCtx.Request.ContainerMeta.Name, err2)
 	}
 
 	return utilerrors.NewAggregate([]error{err, err1, err2})
@@ -282,11 +293,8 @@ func (p *plugin) SetContainerCPUShares(proto protocol.HooksProtocol) error {
 			milliCPURequest = containerRequest
 		}
 	}
-	cpuShares := milliCPURequest * sysutil.CPUShareUnitValue / 1000
-	if cpuShares < sysutil.CPUSharesMinValue {
-		cpuShares = sysutil.CPUSharesMinValue
-	}
 
+	cpuShares := sysutil.MilliCPUToShares(milliCPURequest)
 	containerCtx.Response.Resources.CPUShares = pointer.Int64(cpuShares)
 	return nil
 }
@@ -307,8 +315,10 @@ func (p *plugin) SetContainerCFSQuota(proto protocol.HooksProtocol) error {
 		return nil
 	}
 
+	isCFSQuotaEnabled, scaleRatio := p.rule.GetCFSQuotaScaleRatio()
+
 	// if cfs quota is disabled, set as -1
-	if !p.getRule().getEnableCFSQuota() {
+	if !isCFSQuotaEnabled {
 		containerCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
 		klog.V(5).Infof("try to unset container-level cfs quota since it is disabled in rule of plugin %v", name)
 		return nil
@@ -321,11 +331,14 @@ func (p *plugin) SetContainerCFSQuota(proto protocol.HooksProtocol) error {
 			milliCPULimit = containerLimit
 		}
 	}
-	cfsQuota := milliCPULimit * sysutil.CFSBasePeriodValue / 1000
-	if cfsQuota <= 0 {
-		cfsQuota = -1
-	} else if cfsQuota < sysutil.CFSQuotaMinValue {
-		cfsQuota = sysutil.CFSQuotaMinValue
+
+	cfsQuota := sysutil.MilliCPUToQuota(milliCPULimit)
+	if cfsQuota > 0 && scaleRatio > 1.0 { // no support ratio in (0, 1) yet
+		originalCFSQuota := cfsQuota
+		cfsQuota = int64(math.Ceil(float64(originalCFSQuota) / scaleRatio))
+		klog.V(6).Infof("plugin %s adjusts BE pod %s/%s cfs quota from %d to %d",
+			name, containerCtx.Request.PodMeta.Namespace, containerCtx.Request.PodMeta.Name,
+			containerCtx.Request.ContainerMeta.Name, originalCFSQuota, cfsQuota)
 	}
 
 	containerCtx.Response.Resources.CFSQuota = pointer.Int64(cfsQuota)
