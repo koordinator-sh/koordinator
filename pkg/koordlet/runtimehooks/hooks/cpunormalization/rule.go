@@ -95,7 +95,11 @@ func (p *Plugin) parseRule(nodeIf interface{}) (bool, error) {
 	return isUpdated, nil
 }
 
-func (p *Plugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
+func (p *Plugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
+	if target == nil {
+		klog.Warningf("callback target is nil")
+		return nil
+	}
 	// NOTE: if the ratio becomes bigger, scale top down, otherwise, scale bottom up
 	r := p.rule
 	if r == nil {
@@ -104,7 +108,7 @@ func (p *Plugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 	}
 	filter := reconciler.PodQOSFilter()
 	var podUpdaters, containerUpdaters []resourceexecutor.ResourceUpdater
-	for _, podMeta := range pods {
+	for _, podMeta := range target.Pods {
 		if qos := extension.QoSClass(filter.Filter(podMeta)); qos != extension.QoSLS && qos != extension.QoSNone {
 			continue
 		}

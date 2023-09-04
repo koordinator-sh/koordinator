@@ -430,7 +430,7 @@ func Test_plugin_ruleUpdateCbForNodeSLO(t *testing.T) {
 			defer func() { close(stop) }()
 			p.executor.Run(stop)
 
-			err := p.ruleUpdateCbForNodeSLO(tt.args.pods)
+			err := p.ruleUpdateCbForNodeSLO(&statesinformer.CallbackTarget{Pods: tt.args.pods})
 			assert.Equal(t, tt.wantErr, err != nil)
 			// init cgroups cpuset file
 			for i, podMeta := range tt.args.pods {
@@ -922,7 +922,10 @@ func Test_plugin_ruleUpdateCbForNodeMeta(t *testing.T) {
 			p.executor = resourceexecutor.NewTestResourceExecutor()
 			p.executor.Run(stopCh)
 			p.rule = tt.fields.rule
-			gotErr := p.ruleUpdateCbForNodeMeta(tt.arg)
+			target := &statesinformer.CallbackTarget{
+				Pods: tt.arg,
+			}
+			gotErr := p.ruleUpdateCbForNodeMeta(target)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			if tt.wantCheck != nil {
 				tt.wantCheck(t, helper)

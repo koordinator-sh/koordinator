@@ -74,6 +74,8 @@ func (p *cpusetPlugin) Register(op hooks.Options) {
 	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.CPUSet,
 		"set sandbox container cpuset for be pod is specified",
 		p.SetContainerCPUSet, reconciler.PodQOSFilter(), bePodQOSConditions...)
+	reconciler.RegisterHostAppReconciler(sysutil.CPUSet, "set host application cpuset",
+		p.SetHostAppCPUSet, &reconciler.ReconcilerOption{})
 	p.executor = op.Executor
 }
 
@@ -98,7 +100,7 @@ func (p *cpusetPlugin) SetContainerCPUSetAndUnsetCFS(proto protocol.HooksProtoco
 }
 
 func (p *cpusetPlugin) SetContainerCPUSet(proto protocol.HooksProtocol) error {
-	containerCtx := proto.(*protocol.ContainerContext)
+	containerCtx, _ := proto.(*protocol.ContainerContext)
 	if containerCtx == nil {
 		return fmt.Errorf("container protocol is nil for plugin %v", name)
 	}
@@ -130,10 +132,36 @@ func (p *cpusetPlugin) SetContainerCPUSet(proto protocol.HooksProtocol) error {
 		klog.V(5).Infof("get cpuset %v for container %v/%v from rule", *cpusetValue,
 			containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name)
 	} else {
-		klog.V(5).Infof("get empty cpuset for container %v/%v from rule", *cpusetValue,
+		klog.V(5).Infof("get empty cpuset for container %v/%v from rule",
 			containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name)
 	}
 	containerCtx.Response.Resources.CPUSet = cpusetValue
+	return nil
+}
+
+func (p *cpusetPlugin) SetHostAppCPUSet(proto protocol.HooksProtocol) error {
+	hostAppCtx, _ := proto.(*protocol.HostAppContext)
+	if hostAppCtx == nil {
+		return fmt.Errorf("host application protocol is nil for plugin %v", name)
+	}
+
+	r := p.getRule()
+	if r == nil {
+		klog.V(5).Infof("hook plugin rule is nil, do nothing for plugin %v", name)
+		return nil
+	}
+	hostAppReq := hostAppCtx.Request
+	cpusetValue, err := r.getHostAppCpuset(&hostAppReq)
+	if err != nil {
+		return err
+	}
+	if cpusetValue != nil {
+		klog.V(5).Infof("get cpuset %v for host application %v from rule", *cpusetValue,
+			hostAppReq.Name)
+	} else {
+		klog.V(5).Infof("get empty cpuset for host application %v from rule", hostAppReq.Name)
+	}
+	hostAppCtx.Response.Resources.CPUSet = cpusetValue
 	return nil
 }
 

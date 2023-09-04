@@ -138,12 +138,16 @@ func (p *plugin) parseRuleForNodeMeta(nodeIf interface{}) (bool, error) {
 	return isUpdated, nil
 }
 
-func (p *plugin) ruleUpdateCbForNodeSLO(pods []*statesinformer.PodMeta) error {
-	if p.rule == nil {
-		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", ruleNameForNodeSLO)
+func (p *plugin) ruleUpdateCbForNodeSLO(target *statesinformer.CallbackTarget) error {
+	if target == nil {
+		klog.Warningf("callback target is nil")
 		return nil
 	}
-	for _, podMeta := range pods {
+	if p.rule == nil {
+		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
+		return nil
+	}
+	for _, podMeta := range target.Pods {
 		podQOS := apiext.GetPodQoSClassRaw(podMeta.Pod)
 		if podQOS != apiext.QoSBE {
 			continue
@@ -175,7 +179,11 @@ func (p *plugin) ruleUpdateCbForNodeSLO(pods []*statesinformer.PodMeta) error {
 	return nil
 }
 
-func (p *plugin) ruleUpdateCbForNodeMeta(pods []*statesinformer.PodMeta) error {
+func (p *plugin) ruleUpdateCbForNodeMeta(target *statesinformer.CallbackTarget) error {
+	if target == nil {
+		klog.Warningf("callback target is nil")
+		return nil
+	}
 	// NOTE: if the ratio becomes bigger, scale top down, otherwise, scale bottom up
 	if p.rule == nil {
 		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", ruleNameForNodeMeta)
@@ -183,7 +191,7 @@ func (p *plugin) ruleUpdateCbForNodeMeta(pods []*statesinformer.PodMeta) error {
 	}
 	filter := reconciler.PodQOSFilter()
 	var podUpdaters, containerUpdaters []resourceexecutor.ResourceUpdater
-	for _, podMeta := range pods {
+	for _, podMeta := range target.Pods {
 		if qos := apiext.QoSClass(filter.Filter(podMeta)); qos != apiext.QoSBE {
 			continue
 		}

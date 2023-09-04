@@ -95,10 +95,15 @@ func (s *callbackRunner) runCallbacks(objType statesinformer.RegisterType, obj i
 		klog.Errorf("states informer callbacks type %v not exist", objType.String())
 		return
 	}
-	pods := s.statesInformer.GetAllPods()
+	callbackTarget := &statesinformer.CallbackTarget{
+		Pods: s.statesInformer.GetAllPods(),
+	}
+	if nodeSLO := s.statesInformer.GetNodeSLO(); nodeSLO != nil {
+		callbackTarget.HostApplications = nodeSLO.Spec.HostApplications
+	}
 	for _, c := range callbacks {
 		klog.V(5).Infof("start running callback function %v for type %v", c.name, objType.String())
-		c.fn(objType, obj, pods)
+		c.fn(objType, obj, callbackTarget)
 	}
 }
 

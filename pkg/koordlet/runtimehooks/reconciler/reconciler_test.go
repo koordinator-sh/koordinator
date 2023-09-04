@@ -222,7 +222,9 @@ func Test_reconciler_podRefreshCallback(t *testing.T) {
 			c := &reconciler{
 				podUpdated: make(chan struct{}, 1),
 			}
-			c.podRefreshCallback(statesinformer.RegisterTypeAllPods, nil, tt.args.podsMeta)
+			c.podRefreshCallback(statesinformer.RegisterTypeAllPods, nil, &statesinformer.CallbackTarget{
+				Pods: tt.args.podsMeta,
+			})
 			assert.Equal(t, c.podsMeta, tt.args.podsMeta, "callback update pod meta")
 		})
 	}
@@ -233,11 +235,11 @@ func TestNewReconciler(t *testing.T) {
 	defer ctrl.Finish()
 	si := mock_statesinformer.NewMockStatesInformer(ctrl)
 	si.EXPECT().RegisterCallbacks(statesinformer.RegisterTypeAllPods, gomock.Any(), gomock.Any(), gomock.Any())
-	op := Options{
+	ctx := Context{
 		StatesInformer: si,
 		Executor:       resourceexecutor.NewResourceUpdateExecutor(),
 	}
-	r := NewReconciler(op)
+	r := NewReconciler(ctx)
 	nr := r.(*reconciler)
 	stopCh := make(chan struct{}, 1)
 	stopCh <- struct{}{}

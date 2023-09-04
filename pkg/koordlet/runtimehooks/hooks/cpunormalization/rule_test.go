@@ -497,7 +497,10 @@ func TestPlugin_ruleUpdateCb(t *testing.T) {
 			p.executor = resourceexecutor.NewTestResourceExecutor()
 			p.executor.Run(stopCh)
 			p.rule = tt.fields.rule
-			gotErr := p.ruleUpdateCb(tt.arg)
+			target := &statesinformer.CallbackTarget{
+				Pods: tt.arg,
+			}
+			gotErr := p.ruleUpdateCb(target)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			if tt.wantCheck != nil {
 				tt.wantCheck(t, helper)
