@@ -107,6 +107,14 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 		metrics.RecordNodeSLOSpecParseCount(true, "getSystemConfigSpec")
 	}
 
+	nodeSLOSpec.HostApplications, err = getHostApplicationConfig(node, &sloCfg.HostAppCfgMerged)
+	if err != nil {
+		metrics.RecordNodeSLOSpecParseCount(false, "getHostApplicationConfig")
+		klog.Warningf("getHostApplicationConfig(): failed to get hostApplicationConfig spec for node %s,error: %v", node.Name, err)
+	} else {
+		metrics.RecordNodeSLOSpecParseCount(true, "getHostApplicationConfig")
+	}
+
 	nodeSLOSpec.Extensions = getExtensionsConfigSpec(node, oldSpec, &sloCfg.ExtensionCfgMerged)
 
 	return nodeSLOSpec, nil
@@ -119,7 +127,7 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 
 func (r *NodeSLOReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// reconcile for 2 things:
-	//   1. ensuring the NodeSLO exists iff the Node exists
+	//   1. ensuring the NodeSLO exists if the Node exists
 	//   2. update NodeSLO Spec
 	_ = log.FromContext(ctx, "node-slo-reconciler", req.NamespacedName)
 

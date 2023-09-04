@@ -373,7 +373,7 @@ func Test_plugin_ruleUpdateCb(t *testing.T) {
 			defer func() { close(stop) }()
 			p.executor.Run(stop)
 
-			err := p.ruleUpdateCb(tt.args.pods)
+			err := p.ruleUpdateCb(&statesinformer.CallbackTarget{Pods: tt.args.pods})
 			assert.Equal(t, tt.wantErr, err != nil)
 			// init cgroups cpuset file
 			for i, podMeta := range tt.args.pods {

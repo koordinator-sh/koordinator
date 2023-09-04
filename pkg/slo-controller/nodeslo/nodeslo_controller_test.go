@@ -114,6 +114,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            sloconfig.DefaultCPUBurstStrategy(),
 				SystemStrategy:              sloconfig.DefaultSystemStrategy(),
+				HostApplications:            []slov1alpha1.HostApplicationSpec{},
 				Extensions:                  testingExtensions,
 			},
 			wantErr: false,
@@ -143,6 +144,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            sloconfig.DefaultCPUBurstStrategy(),
 				SystemStrategy:              sloconfig.DefaultSystemStrategy(),
+				HostApplications:            []slov1alpha1.HostApplicationSpec{},
 				Extensions:                  testingExtensions,
 			},
 			wantErr: false,
@@ -171,6 +173,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceQOSStrategy:         &slov1alpha1.ResourceQOSStrategy{},
 				CPUBurstStrategy:            sloconfig.DefaultCPUBurstStrategy(),
 				SystemStrategy:              sloconfig.DefaultSystemStrategy(),
+				HostApplications:            []slov1alpha1.HostApplicationSpec{},
 				Extensions:                  testingExtensions,
 			},
 			wantErr: false,
@@ -210,6 +213,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceQOSStrategy:         testingResourceQOSStrategy,
 				CPUBurstStrategy:            sloconfig.DefaultCPUBurstStrategy(),
 				SystemStrategy:              sloconfig.DefaultSystemStrategy(),
+				HostApplications:            []slov1alpha1.HostApplicationSpec{},
 				Extensions:                  testingExtensions,
 			},
 			wantErr: false,
@@ -249,6 +253,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 				ResourceQOSStrategy:         testingResourceQOSStrategyOld,
 				CPUBurstStrategy:            sloconfig.DefaultCPUBurstStrategy(),
 				SystemStrategy:              sloconfig.DefaultSystemStrategy(),
+				HostApplications:            []slov1alpha1.HostApplicationSpec{},
 				Extensions:                  testingExtensions,
 			},
 			wantErr: false,
@@ -314,8 +319,9 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
   }
 }
 `,
-			configuration.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
-			configuration.SystemConfigKey:   "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150,\"watermarkScaleFactor\":150}}",
+			configuration.CPUBurstConfigKey:        "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
+			configuration.SystemConfigKey:          "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150,\"watermarkScaleFactor\":150}}",
+			configuration.HostApplicationConfigKey: "{\"applications\": [{\"name\": \"test-app\"}]}",
 		},
 	}
 	testingResourceThresholdStrategy := sloconfig.DefaultResourceThresholdStrategy()
@@ -337,6 +343,12 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 	testingSystemStrategy := sloconfig.DefaultSystemStrategy()
 	testingSystemStrategy.MinFreeKbytesFactor = pointer.Int64(150)
 
+	testingHostApplication := []slov1alpha1.HostApplicationSpec{
+		{
+			Name: "test-app",
+		},
+	}
+
 	testingExtensionsMap := *getDefaultExtensionStrategy()
 	testingExtensionsIfMap, err := getExtensionsIfMap(testingExtensionsMap)
 	if err != nil {
@@ -348,6 +360,7 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 		ResourceQOSStrategy:         testingResourceQOSStrategy,
 		CPUBurstStrategy:            testingCPUBurstStrategy,
 		SystemStrategy:              testingSystemStrategy,
+		HostApplications:            testingHostApplication,
 		Extensions:                  testingExtensionsIfMap,
 	}
 	nodeReq := ctrl.Request{NamespacedName: types.NamespacedName{Name: testingNode.Name}}

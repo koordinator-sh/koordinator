@@ -33,9 +33,13 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 		name        string
 		description string
 	}
+	type wants struct {
+		callbackRunSucceec bool
+	}
 	tests := []struct {
-		name string
-		args args
+		name  string
+		args  args
+		wants wants
 	}{
 		{
 			name: "register RegisterTypeNodeSLOSpec and run",
@@ -43,6 +47,9 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 				objType:     statesinformer.RegisterTypeNodeSLOSpec,
 				name:        "set-bool-var",
 				description: "set test bool var as true",
+			},
+			wants: wants{
+				callbackRunSucceec: true,
 			},
 		},
 		{
@@ -52,6 +59,9 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 				name:        "set-bool-var",
 				description: "set test bool var as true",
 			},
+			wants: wants{
+				callbackRunSucceec: true,
+			},
 		},
 		{
 			name: "register RegisterTypeNodeSLOSpec and run",
@@ -60,12 +70,15 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 				name:        "set-bool-var",
 				description: "set test bool var as true",
 			},
+			wants: wants{
+				callbackRunSucceec: true,
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testVar := pointer.Bool(false)
-			callbackFn := func(t statesinformer.RegisterType, obj interface{}, pods []*statesinformer.PodMeta) {
+			callbackFn := func(t statesinformer.RegisterType, obj interface{}, target *statesinformer.CallbackTarget) {
 				*testVar = true
 			}
 			si := &callbackRunner{
@@ -90,7 +103,7 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 			si.RegisterCallbacks(tt.args.objType, tt.args.name, tt.args.description, callbackFn)
 			si.getObjByType(tt.args.objType, UpdateCbCtx{})
 			si.runCallbacks(tt.args.objType, &slov1alpha1.NodeSLO{})
-			assert.Equal(t, *testVar, true)
+			assert.Equal(t, *testVar, tt.wants.callbackRunSucceec)
 		})
 	}
 }
@@ -124,7 +137,7 @@ func Test_statesInformer_startCallbackRunners(t *testing.T) {
 				nodeSLO:     nodeSLO,
 				name:        "get value from node slo label",
 				description: "get value from node slo label",
-				fn: func(t statesinformer.RegisterType, obj interface{}, pods []*statesinformer.PodMeta) {
+				fn: func(t statesinformer.RegisterType, obj interface{}, target *statesinformer.CallbackTarget) {
 					output <- nodeSLO.Labels["test-label-key"]
 					stopCh <- struct{}{}
 				},

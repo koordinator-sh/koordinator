@@ -18,6 +18,7 @@ package runtimehooks
 
 import (
 	"flag"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
 	cliflag "k8s.io/component-base/cli/flag"
@@ -86,7 +87,7 @@ type Config struct {
 	RuntimeHookDisableStages        []string
 	RuntimeHooksNRI                 bool
 	RuntimeHooksNRISocketPath       string
-	FeatureGates                    map[string]bool // Deprecated
+	RuntimeHookReconcileInterval    time.Duration
 }
 
 func NewDefaultConfig() *Config {
@@ -100,7 +101,7 @@ func NewDefaultConfig() *Config {
 		RuntimeHookDisableStages:        []string{},
 		RuntimeHooksNRI:                 true,
 		RuntimeHooksNRISocketPath:       "nri/nri.sock",
-		FeatureGates:                    map[string]bool{},
+		RuntimeHookReconcileInterval:    10 * time.Second,
 	}
 }
 
@@ -113,7 +114,7 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.RuntimeHookHostEndpoint, "runtime-hooks-host-endpoint", c.RuntimeHookHostEndpoint, "host endpoint of runtime proxy")
 	fs.Var(cliflag.NewStringSlice(&c.RuntimeHookDisableStages), "runtime-hooks-disable-stages", "disable stages for runtime hooks")
 	fs.BoolVar(&c.RuntimeHooksNRI, "enable-nri-runtime-hook", c.RuntimeHooksNRI, "enable/disable runtime hooks nri mode")
-	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "runtime-hooks", "Deprecated because all settings have been moved to --feature-gates parameters")
+	fs.DurationVar(&c.RuntimeHookReconcileInterval, "runtime-hooks-reconcile-interval", c.RuntimeHookReconcileInterval, "reconcile interval for each plugins")
 }
 
 func init() {

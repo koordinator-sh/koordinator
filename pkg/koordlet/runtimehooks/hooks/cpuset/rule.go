@@ -110,6 +110,21 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 	}
 }
 
+func (r *cpusetRule) getHostAppCpuset(hostAppReq *protocol.HostAppRequest) (*string, error) {
+	if hostAppReq == nil {
+		return nil, nil
+	}
+	if hostAppReq.QOSClass != ext.QoSLS {
+		return nil, fmt.Errorf("only LS is supported for host application %v", hostAppReq.Name)
+	}
+	allSharePoolCPUs := make([]string, 0, len(r.sharePools))
+	for _, nodeSharePool := range r.sharePools {
+		allSharePoolCPUs = append(allSharePoolCPUs, nodeSharePool.CPUSet)
+	}
+	klog.V(6).Infof("get cpuset from all share pool for host application %v", hostAppReq.Name)
+	return pointer.String(strings.Join(allSharePoolCPUs, ",")), nil
+}
+
 func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 	nodeTopo, ok := nodeTopoIf.(*topov1alpha1.NodeResourceTopology)
 	if !ok {
@@ -147,8 +162,12 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 	return updated, nil
 }
 
-func (p *cpusetPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
-	for _, podMeta := range pods {
+func (p *cpusetPlugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
+	if target == nil {
+		klog.Warningf("callback target is nil")
+		return nil
+	}
+	for _, podMeta := range target.Pods {
 		for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
 			containerCtx := &protocol.ContainerContext{}
 			containerCtx.FromReconciler(podMeta, containerStat.Name, false)
@@ -169,6 +188,15 @@ func (p *cpusetPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		sandboxContainerCtx.ReconcilerDone(p.executor)
 		klog.V(5).Infof("set cpuset finished pod sandbox %v/%v",
 			sandboxContainerCtx.Request.PodMeta.String(), sandboxContainerCtx.Request.ContainerMeta.ID)
+	}
+	for _, hostApp := range target.HostApplications {
+		hostCtx := protocol.HooksProtocolBuilder.HostApp(&hostApp)
+		if err := p.SetHostAppCPUSet(hostCtx); err != nil {
+			klog.Warningf("set host application %v cpuset value failed, error %v", hostApp.Name, err)
+		} else {
+			hostCtx.ReconcilerDone(p.executor)
+			klog.V(5).Infof("set host application %v cpuset value finished", hostApp.Name)
+		}
 	}
 	return nil
 }

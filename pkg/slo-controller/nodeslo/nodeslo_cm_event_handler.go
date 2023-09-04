@@ -49,6 +49,7 @@ type SLOCfg struct {
 	ResourceQOSCfgMerged configuration.ResourceQOSCfg       `json:"resourceQOSCfgMerged,omitempty"`
 	CPUBurstCfgMerged    configuration.CPUBurstCfg          `json:"cpuBurstCfgMerged,omitempty"`
 	SystemCfgMerged      configuration.SystemCfg            `json:"systemCfgMerged,omitempty"`
+	HostAppCfgMerged     configuration.HostApplicationCfg   `json:"hostAppCfgMerged,omitempty"`
 	ExtensionCfgMerged   configuration.ExtensionCfgMap      `json:"extensionCfgMerged,omitempty"` // for third-party extension
 }
 
@@ -59,6 +60,7 @@ func (in *SLOCfg) DeepCopy() *SLOCfg {
 	out.ResourceQOSCfgMerged = *in.ResourceQOSCfgMerged.DeepCopy()
 	out.SystemCfgMerged = *in.SystemCfgMerged.DeepCopy()
 	out.ExtensionCfgMerged = *in.ExtensionCfgMerged.DeepCopy()
+	out.HostAppCfgMerged = *in.HostAppCfgMerged.DeepCopy()
 	return out
 }
 
@@ -75,6 +77,7 @@ func DefaultSLOCfg() SLOCfg {
 		ResourceQOSCfgMerged: configuration.ResourceQOSCfg{ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{}},
 		CPUBurstCfgMerged:    configuration.CPUBurstCfg{ClusterStrategy: sloconfig.DefaultCPUBurstStrategy()},
 		SystemCfgMerged:      configuration.SystemCfg{ClusterStrategy: sloconfig.DefaultSystemStrategy()},
+		HostAppCfgMerged:     configuration.HostApplicationCfg{},
 		ExtensionCfgMerged:   *getDefaultExtensionCfg(),
 	}
 }
@@ -138,11 +141,15 @@ func (p *SLOCfgHandlerForConfigMapEvent) syncConfig(configMap *corev1.ConfigMap)
 		klog.V(5).Infof("failed to get CPUBurstCfg, err: %s", err)
 		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal CPUBurstCfg, err: %s", err)
 	}
-
 	newSLOCfg.SystemCfgMerged, err = calculateSystemConfigMerged(oldSLOCfgCopy.SystemCfgMerged, configMap)
 	if err != nil {
 		klog.V(5).Infof("failed to get SystemCfg, err: %s", err)
 		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal SystemCfg, err: %s", err)
+	}
+	newSLOCfg.HostAppCfgMerged, err = calculateHostAppConfigMerged(oldSLOCfgCopy.HostAppCfgMerged, configMap)
+	if err != nil {
+		klog.V(5).Infof("failed to get HostApplicationCfg, err: %s", err)
+		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal HostApplicationCfg, err: %s", err)
 	}
 	newSLOCfg.ExtensionCfgMerged = calculateExtensionsCfgMerged(oldSLOCfgCopy.ExtensionCfgMerged, configMap, p.recorder)
 	return p.updateCacheIfChanged(newSLOCfg)
@@ -154,7 +161,7 @@ func (p *SLOCfgHandlerForConfigMapEvent) updateCacheIfChanged(newSLOCfg SLOCfg) 
 	if changed {
 		oldInfoFmt, _ := json.MarshalIndent(p.cfgCache.sloCfg, "", "\t")
 		newInfoFmt, _ := json.MarshalIndent(newSLOCfg, "", "\t")
-		klog.Infof("NodeSLO config Changed success! oldCfg:%s\n,newCfg:%s", string(oldInfoFmt), string(newInfoFmt))
+		klog.V(4).Infof("NodeSLO config Changed success! oldCfg:%s\n,newCfg:%s", string(oldInfoFmt), string(newInfoFmt))
 		p.cfgCache.sloCfg = newSLOCfg
 	}
 	// set the available flag and never change it

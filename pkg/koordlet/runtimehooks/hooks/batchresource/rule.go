@@ -59,13 +59,17 @@ func (p *plugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
 	return updated, nil
 }
 
-func (p *plugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
+func (p *plugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
+	if target == nil {
+		klog.Warningf("callback taret is nil")
+		return nil
+	}
 	r := p.getRule()
 	if r == nil {
 		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
 		return nil
 	}
-	for _, podMeta := range pods {
+	for _, podMeta := range target.Pods {
 		podQOS := apiext.GetPodQoSClassRaw(podMeta.Pod)
 		if podQOS != apiext.QoSBE {
 			continue

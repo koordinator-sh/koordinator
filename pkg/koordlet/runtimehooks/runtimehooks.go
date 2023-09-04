@@ -41,11 +41,12 @@ type RuntimeHook interface {
 }
 
 type runtimeHook struct {
-	statesInformer statesinformer.StatesInformer
-	server         proxyserver.Server
-	nriServer      *nri.NriServer
-	reconciler     reconciler.Reconciler
-	executor       resourceexecutor.ResourceUpdateExecutor
+	statesInformer    statesinformer.StatesInformer
+	server            proxyserver.Server
+	nriServer         *nri.NriServer
+	reconciler        reconciler.Reconciler
+	hostAppReconciler reconciler.Reconciler
+	executor          resourceexecutor.ResourceUpdateExecutor
 }
 
 func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
@@ -63,6 +64,9 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 		}
 	}
 	if err := r.reconciler.Run(stopCh); err != nil {
+		return err
+	}
+	if err := r.hostAppReconciler.Run(stopCh); err != nil {
 		return err
 	}
 	if err := r.server.Register(); err != nil {
@@ -112,9 +116,10 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	}
 
 	s, err := proxyserver.NewServer(newServerOptions)
-	newReconcilerOptions := reconciler.Options{
-		StatesInformer: si,
-		Executor:       e,
+	newReconcilerCtx := reconciler.Context{
+		StatesInformer:    si,
+		Executor:          e,
+		ReconcileInterval: cfg.RuntimeHookReconcileInterval,
 	}
 
 	newPluginOptions := hooks.Options{
@@ -125,11 +130,12 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		return nil, err
 	}
 	r := &runtimeHook{
-		statesInformer: si,
-		server:         s,
-		nriServer:      nriServer,
-		reconciler:     reconciler.NewReconciler(newReconcilerOptions),
-		executor:       e,
+		statesInformer:    si,
+		server:            s,
+		nriServer:         nriServer,
+		reconciler:        reconciler.NewReconciler(newReconcilerCtx),
+		hostAppReconciler: reconciler.NewHostAppReconciler(newReconcilerCtx),
+		executor:          e,
 	}
 	registerPlugins(newPluginOptions)
 	si.RegisterCallbacks(statesinformer.RegisterTypeNodeSLOSpec, "runtime-hooks-rule-node-slo",
