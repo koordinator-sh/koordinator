@@ -154,6 +154,16 @@ type PluginToReservationScores map[string]ReservationScoreList
 type ReservationScorePlugin interface {
 	framework.Plugin
 	ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) (int64, *framework.Status)
+	// ReservationScoreExtensions returns a ReservationScoreExtensions interface if it implements one, or nil if does not.
+	ReservationScoreExtensions() ReservationScoreExtensions
+}
+
+// ReservationScoreExtensions is an interface for Score extended functionality.
+type ReservationScoreExtensions interface {
+	// NormalizeReservationScore is called for all node scores produced by the same plugin's "ScoreReservation"
+	// method. A successful run of NormalizeReservationScore will update the scores list and return
+	// a success status.
+	NormalizeReservationScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, scores ReservationScoreList) *framework.Status
 }
 
 // ResizePodPlugin is an interface that resize the pod resource spec after reserve.

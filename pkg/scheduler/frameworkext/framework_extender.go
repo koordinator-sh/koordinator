@@ -371,9 +371,19 @@ func (ext *frameworkExtenderImpl) RunReservationScorePlugins(ctx context.Context
 		}
 	}
 
-	// TODO: Should support score normalization
-	// TODO: Should support configure weight
+	for _, pl := range ext.reservationScorePlugins {
+		scoreExtensions := pl.ReservationScoreExtensions()
+		if scoreExtensions == nil {
+			continue
+		}
+		reservationScoreList := pluginToReservationScores[pl.Name()]
+		status := scoreExtensions.NormalizeReservationScore(ctx, cycleState, pod, reservationScoreList)
+		if !status.IsSuccess() {
+			return nil, framework.AsStatus(fmt.Errorf("running Normalize on Score plugins: %w", status.AsError()))
+		}
+	}
 
+	// TODO: Should support configure weight
 	for _, pl := range ext.reservationScorePlugins {
 		weight := 1
 		reservationScoreList := pluginToReservationScores[pl.Name()]

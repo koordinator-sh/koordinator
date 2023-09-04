@@ -104,6 +104,14 @@ func (p *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cyc
 	return p.scoreWithNominatedReservation(state, restoreState, nodeDeviceInfo, nodeName, pod, preemptible, reservationInfo)
 }
 
+func (p *Plugin) ReservationScoreExtensions() frameworkext.ReservationScoreExtensions {
+	return p
+}
+
+func (p *Plugin) NormalizeReservationScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, scores frameworkext.ReservationScoreList) *framework.Status {
+	return frameworkext.DefaultReservationNormalizeScore(frameworkext.MaxReservationScore, false, scores)
+}
+
 // deviceResourceStrategyTypeMap maps strategy to scorer implementation
 var deviceResourceStrategyTypeMap = map[schedulerconfig.ScoringStrategyType]scorer{
 	schedulerconfig.LeastAllocated: func(args *schedulerconfig.DeviceShareArgs) *resourceAllocationScorer {

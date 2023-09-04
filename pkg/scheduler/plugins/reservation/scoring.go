@@ -149,6 +149,10 @@ func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cy
 	return scoreReservation(pod, rInfo), nil
 }
 
+func (pl *Plugin) ReservationScoreExtensions() frameworkext.ReservationScoreExtensions {
+	return nil
+}
+
 func findMostPreferredReservationByOrder(rOnNode []*frameworkext.ReservationInfo) (*frameworkext.ReservationInfo, int64) {
 	var selectOrder int64 = math.MaxInt64
 	var highOrder *frameworkext.ReservationInfo
