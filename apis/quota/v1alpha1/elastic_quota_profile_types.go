@@ -29,6 +29,9 @@ type ElasticQuotaProfileSpec struct {
 	QuotaName string `json:"quotaName"`
 	// QuotaLabels defines the labels of the quota.
 	QuotaLabels map[string]string `json:"quotaLabels,omitempty"`
+	// ResourceRatio is a ratio, we will use it to fix the resource fragmentation problem.
+	// If the total resource is 100 and the resource ratio is 0.9, the allocable resource is 100*0.9=90
+	ResourceRatio *string `json:"resourceRatio,omitempty"`
 	// NodeSelector defines a node selector to select nodes.
 	// +required
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector"`

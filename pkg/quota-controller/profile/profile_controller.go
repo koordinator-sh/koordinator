@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"math"
 	"reflect"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -45,6 +46,11 @@ import (
 )
 
 const Name = "quotaprofile"
+
+const (
+	ReasonCreateQuotaFailed = "CreateQuotaFailed"
+	ReasonUpdateQuotaFailed = "UpdateQuotaFailed"
+)
 
 // QuotaProfileReconciler reconciles a QuotaProfile object
 type QuotaProfileReconciler struct {
@@ -113,21 +119,30 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	min := corev1.ResourceList{}
-	for _, key := range resourceKeys {
-		resourceName := corev1.ResourceName(key)
-		quantity, ok := totalResource[resourceName]
-		if ok {
-			min[resourceName] = quantity
+	ratio := 1.0
+	if profile.Spec.ResourceRatio != nil {
+		val, err := strconv.ParseFloat(*profile.Spec.ResourceRatio, 64)
+		if err == nil && val > 0 && val <= 1.0 {
+			ratio = val
 		}
 	}
 
-	quota.Spec.Min = min
-	// TODO: make it configurable.
-	quota.Spec.Max = corev1.ResourceList{
-		corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
-		corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
+	min := corev1.ResourceList{}
+	max := corev1.ResourceList{}
+	for _, key := range resourceKeys {
+		resourceName := corev1.ResourceName(key)
+		quantity, ok := totalResource[resourceName]
+		if !ok {
+			continue
+		}
+		value := MultiplyQuantity(quantity, resourceName, ratio)
+
+		min[resourceName] = value
+		max[resourceName] = *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI)
 	}
+
+	quota.Spec.Min = min
+	quota.Spec.Max = max
 
 	if quota.Labels == nil {
 		quota.Labels = make(map[string]string)
@@ -142,6 +157,7 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if !quotaExist {
 		err = r.Client.Create(context.TODO(), quota)
 		if err != nil {
+			r.Recorder.Eventf(profile, "Warning", ReasonCreateQuotaFailed, "failed to create quota, err: %s", err)
 			klog.Errorf("failed create quota for profile %v, error: %v", req.NamespacedName, err)
 			return ctrl.Result{Requeue: true}, err
 		}
@@ -149,6 +165,7 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if !reflect.DeepEqual(quota.Labels, oldQuota.Labels) || !reflect.DeepEqual(quota.Spec, oldQuota.Spec) {
 			err = r.Client.Update(context.TODO(), quota)
 			if err != nil {
+				r.Recorder.Eventf(profile, "Warning", ReasonUpdateQuotaFailed, "failed to update quota, err: %s", err)
 				klog.Errorf("failed update quota for profile %v, error: %v", req.NamespacedName, err)
 				return ctrl.Result{Requeue: true}, err
 			}
@@ -172,4 +189,20 @@ func (r *QuotaProfileReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v1alpha1.ElasticQuotaProfile{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Named(Name).
 		Complete(r)
+}
+
+func MultiplyQuantity(value resource.Quantity, resName corev1.ResourceName, ratio float64) resource.Quantity {
+	var q resource.Quantity
+	switch resName {
+	case corev1.ResourceCPU:
+		v := int64(float64(value.MilliValue()) * ratio)
+		q = *resource.NewMilliQuantity(v, resource.DecimalSI)
+	case corev1.ResourceMemory:
+		v := int64(float64(value.Value()) * ratio)
+		q = *resource.NewQuantity(v, resource.BinarySI)
+	default:
+		v := int64(float64(value.Value()) * ratio)
+		q = *resource.NewQuantity(v, resource.DecimalSI)
+	}
+	return q
 }

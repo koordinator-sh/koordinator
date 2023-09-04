@@ -18,7 +18,6 @@ package profile
 
 import (
 	"context"
-	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -70,12 +69,13 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 		defaultCreateNode("node3", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-b"}, createResourceList(10, 1000)),
 	}
 
+	resourceRatio := "0.9"
+
 	tests := []struct {
 		name              string
 		profile           *quotav1alpha1.ElasticQuotaProfile
 		oriQuota          *schedv1alpha1.ElasticQuota
 		expectQuotaMin    corev1.ResourceList
-		expectQuotaMax    corev1.ResourceList
 		expectQuotaLabels map[string]string
 	}{
 		{
@@ -91,12 +91,8 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:       nil,
-			expectQuotaMin: createResourceList(20, 2000),
-			expectQuotaMax: corev1.ResourceList{
-				corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
-				corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
-			},
+			oriQuota:          nil,
+			expectQuotaMin:    createResourceList(20, 2000),
 			expectQuotaLabels: map[string]string{extension.LabelQuotaProfile: "profile1"},
 		},
 		{
@@ -112,12 +108,8 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:       nil,
-			expectQuotaMin: createResourceList(10, 1000),
-			expectQuotaMax: corev1.ResourceList{
-				corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
-				corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
-			},
+			oriQuota:          nil,
+			expectQuotaMin:    createResourceList(10, 1000),
 			expectQuotaLabels: map[string]string{extension.LabelQuotaProfile: "profile2"},
 		},
 		{
@@ -136,12 +128,8 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:       nil,
-			expectQuotaMin: createResourceList(20, 2000),
-			expectQuotaMax: corev1.ResourceList{
-				corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
-				corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
-			},
+			oriQuota:          nil,
+			expectQuotaMin:    createResourceList(20, 2000),
 			expectQuotaLabels: map[string]string{extension.LabelQuotaProfile: "profile3", "topology.kubernetes.io/zone": "cn-hangzhou-a"},
 		},
 		{
@@ -167,15 +155,28 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 				},
 				Spec: schedv1alpha1.ElasticQuotaSpec{
 					Min: createResourceList(5, 50),
-					Max: createResourceList(50, 500),
 				},
 			},
-			expectQuotaMin: createResourceList(20, 2000),
-			expectQuotaMax: corev1.ResourceList{
-				corev1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
-				corev1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
-			},
+			expectQuotaMin:    createResourceList(20, 2000),
 			expectQuotaLabels: map[string]string{extension.LabelQuotaProfile: "profile4", "topology.kubernetes.io/zone": "cn-hangzhou-a", "a": "a"},
+		},
+		{
+			name: "has ratio",
+			profile: &quotav1alpha1.ElasticQuotaProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "profile1",
+				},
+				Spec: quotav1alpha1.ElasticQuotaProfileSpec{
+					QuotaName:     "profile1-root",
+					ResourceRatio: &resourceRatio,
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"},
+					},
+				},
+			},
+			oriQuota:          nil,
+			expectQuotaMin:    createResourceList(18, 1800),
+			expectQuotaLabels: map[string]string{extension.LabelQuotaProfile: "profile1"},
 		},
 	}
 
@@ -206,8 +207,52 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 			err = r.Client.Get(context.TODO(), types.NamespacedName{Namespace: tc.profile.Namespace, Name: tc.profile.Spec.QuotaName}, quota)
 			assert.NoError(t, err)
 			assert.True(t, quotav1.Equals(tc.expectQuotaMin, quota.Spec.Min))
-			assert.True(t, quotav1.Equals(tc.expectQuotaMin, quota.Spec.Min))
 			assert.Equal(t, tc.expectQuotaLabels, quota.Labels)
+		})
+	}
+}
+
+func TestMultiplyQuantity(t *testing.T) {
+	tests := []struct {
+		name         string
+		resourceName corev1.ResourceName
+		value        resource.Quantity
+		ratio        float64
+		expectValue  resource.Quantity
+	}{
+		{
+			name:         "basic cpu 1",
+			resourceName: corev1.ResourceCPU,
+			value:        resource.MustParse("1"),
+			ratio:        0.9,
+			expectValue:  resource.MustParse("0.9"),
+		},
+		{
+			name:         "basic cpu 2",
+			resourceName: corev1.ResourceCPU,
+			value:        resource.MustParse("100m"),
+			ratio:        0.5,
+			expectValue:  resource.MustParse("50m"),
+		},
+		{
+			name:         "basic memory 1",
+			resourceName: corev1.ResourceCPU,
+			value:        resource.MustParse("1Gi"),
+			ratio:        0.9,
+			expectValue:  resource.MustParse("0.9Gi"),
+		},
+		{
+			name:         "basic memory 2",
+			resourceName: corev1.ResourceCPU,
+			value:        resource.MustParse("1Gi"),
+			ratio:        0.5,
+			expectValue:  resource.MustParse("512Mi"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			target := MultiplyQuantity(tc.value, tc.resourceName, tc.ratio)
+			assert.Equal(t, tc.expectValue.MilliValue(), target.MilliValue())
 		})
 	}
 }
