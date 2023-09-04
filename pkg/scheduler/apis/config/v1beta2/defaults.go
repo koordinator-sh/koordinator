@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
+	schedconfigv1beta2 "k8s.io/kube-scheduler/config/v1beta2"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -47,16 +47,7 @@ var (
 		corev1.ResourceMemory: 70, // 70%
 	}
 
-	defaultPreferredCPUBindPolicy          = CPUBindPolicyFullPCPUs
-	defaultNodeNUMAResourceScoringStrategy = &ScoringStrategy{
-		Type: MostAllocated,
-		Resources: []schedconfig.ResourceSpec{
-			{
-				Name:   string(corev1.ResourceCPU),
-				Weight: 1,
-			},
-		},
-	}
+	defaultPreferredCPUBindPolicy = CPUBindPolicyFullPCPUs
 
 	defaultEnablePreemption = pointer.Bool(false)
 
@@ -109,10 +100,23 @@ func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 // SetDefaults_NodeNUMAResourceArgs sets the default parameters for NodeNUMANodeResource plugin.
 func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
 	if obj.DefaultCPUBindPolicy == nil {
-		obj.DefaultCPUBindPolicy = &defaultPreferredCPUBindPolicy
+		policy := defaultPreferredCPUBindPolicy
+		obj.DefaultCPUBindPolicy = &policy
 	}
 	if obj.ScoringStrategy == nil {
-		obj.ScoringStrategy = defaultNodeNUMAResourceScoringStrategy
+		obj.ScoringStrategy = &ScoringStrategy{
+			Type: LeastAllocated,
+			Resources: []schedconfigv1beta2.ResourceSpec{
+				{
+					Name:   string(corev1.ResourceCPU),
+					Weight: 1,
+				},
+				{
+					Name:   string(corev1.ResourceMemory),
+					Weight: 1,
+				},
+			},
+		}
 	}
 }
 
@@ -166,7 +170,7 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 		obj.ScoringStrategy = &ScoringStrategy{
 			// By default, LeastAllocate is used to ensure high availability of applications
 			Type: LeastAllocated,
-			Resources: []schedconfig.ResourceSpec{
+			Resources: []schedconfigv1beta2.ResourceSpec{
 				{
 					Name:   string(extension.ResourceGPUMemoryRatio),
 					Weight: 1,

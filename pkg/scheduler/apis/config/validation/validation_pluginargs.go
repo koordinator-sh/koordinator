@@ -152,3 +152,15 @@ func ValidateDeviceShareArgs(path *field.Path, args *config.DeviceShareArgs) err
 	}
 	return allErrs.ToAggregate()
 }
+
+func ValidateNodeNUMAResourceArgs(path *field.Path, args *config.NodeNUMAResourceArgs) error {
+	var allErrs field.ErrorList
+	if args.ScoringStrategy != nil {
+		allErrs = append(allErrs, validateResources(args.ScoringStrategy.Resources, path.Child("resources"))...)
+	}
+
+	if len(allErrs) == 0 {
+		return nil
+	}
+	return allErrs.ToAggregate()
+}
