@@ -107,7 +107,7 @@ func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 }
 
 type frameworkHandleExtender struct {
-	frameworkext.ExtendedHandle
+	frameworkext.FrameworkExtender
 	*nrtfake.Clientset
 }
 
@@ -139,8 +139,8 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
 		return New(configuration, &frameworkHandleExtender{
-			ExtendedHandle: f.(frameworkext.ExtendedHandle),
-			Clientset:      nrtClientSet,
+			FrameworkExtender: f.(frameworkext.FrameworkExtender),
+			Clientset:         nrtClientSet,
 		})
 	})
 

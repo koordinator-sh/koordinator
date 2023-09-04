@@ -236,6 +236,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	cycleState.Write(stateKey, state)
+	topologymanager.InitStore(cycleState)
 	return nil, nil
 }
 
